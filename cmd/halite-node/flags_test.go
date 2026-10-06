@@ -59,7 +59,7 @@ func documentedFlags(text string) map[string]bool {
 func parsedFlags(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	for _, f := range regexp.MustCompile(`args\.(?:Flag|Bool)\("([a-z-]+)"`).
+	for _, f := range regexp.MustCompile(`(?:args\.(?:Flag|Bool)\(|cli\.IntFlag\(args, )"([a-z-]+)"`).
 		FindAllStringSubmatch(sourceOfThisPackage(t), -1) {
 		out["--"+f[1]] = true
 	}

@@ -164,7 +164,8 @@ Holds the job cache, the event bus and the key store.
 exits 0 on success and 1 when a command fails.
 .Pp
 A command line it does not understand, with no subcommand, an unknown
-one, or a flag the subcommand does not take, exits 64
+one, a flag the subcommand does not take, an operand it needs left out,
+or a number that is not one, exits 64
 .Pq Dv EX_USAGE ,
 as does a subcommand given none of the operands it needs, such as a bare
 .Cm keys

@@ -19867,6 +19867,65 @@ case.
 **Not covered:** other hub subcommands were not checked for the same
 order. Only run on macOS.
 
+### 5.221 Missing operands and malformed numbers were not usage errors anywhere else either
+
+5.219 made `run`'s malformed command lines exit 64 and recorded "other
+subcommands' value parsing" as not covered. 5.220 recorded two more
+cases. Looking at all three programs found the rest. They are the same
+two defects in more places.
+
+- **Missing operands exited 1, through `cli.Fatalf`.** These are the
+  `keys`, `jobs`, `orch`, `runner doc`, `lint` and `migrate` operands in
+  the hub, `call`, `state`, `event`, `grains item`, `pillar item` and
+  `lint` in the node, and `token show` and `token revoke` in the API.
+  Some were checked only after the hub or token store was opened:
+  - `keys show` with no node opened the hub in its own argument list
+    before noticing, and on a machine without a CA said so instead;
+  - `halite-api token show` created `<state_dir>/tokens` first;
+  - `ssh` read `--ssh-concurrency`, `--indent` and `--out` only after
+    the run, so a bad `--out` failed at the report, once the command had
+    already run on every target.
+- **Every other numeric flag was read with an unchecked `fmt.Sscanf`.**
+  These are `--limit` on `jobs list`, `event watch` and
+  `halite-api token list`, `--uses` on `keys token create`,
+  `--ssh-concurrency`, and `--indent` in four places. As 5.219's
+  correction measured, that reads leading digits and stops: `10x` was
+  10, and `abc` kept the default. `--ssh-concurrency 0` was quietly
+  turned into 8. `--uses 0` and `--uses -1` were safe only because the
+  key store replaces 0 with 1 and refuses a negative.
+
+`cli.IntFlag` reads a whole number with a floor, or makes a usage
+error. Every one of those flags and `run`'s two use it, replacing 5.219's
+`positiveCount`. The missing-operand errors use `cli.Usagef`:
+- In `keys` they moved from inside each subcommand function up to the
+  switch, ahead of the call that opens the hub.
+- `halite-api token` and `ssh` check up front with the same calls their
+  later code makes, so the two readings cannot disagree.
+- `orch`'s `--pillar` that is not JSON is a usage error too.
+
+Configuration errors are left at 1, because they are not about the
+command line: a relay without `node_id`, a node without
+`hub_fingerprint`, an API without `tls_cert`.
+
+The flag-documentation audits matched only `args.Flag(...)` and
+`args.Bool(...)`, so they reported every `IntFlag` read as a documented
+flag nothing parses. They now recognise `cli.IntFlag(args, ...)` too.
+
+`TestMissingOperandsAndMalformedNumbersAreUsageErrors` covers 23 hub
+cases, 8 node cases and 4 API cases. The hub's run in an empty root and
+fail if the message is about the CA or the operator certificate, which
+is how reaching for the hub would show.
+
+Three deliberate breaks each failed the tests:
+- `IntFlag` falling back to the default failed every numeric case in
+  all three programs;
+- the switch's `keys` operand checks removed failed `keys show`,
+  `reject`, `revoke` and `delete` with exit 1;
+- 5.219's `Usagef` exiting 1, shown there.
+
+**Not covered:** errors from the hub itself, and configuration errors,
+still exit 1, as intended. Only run on macOS.
+
 
 ## 6. Everything else not started
 

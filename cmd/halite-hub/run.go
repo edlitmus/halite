@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -135,8 +134,8 @@ func runRun(args *cli.Args) int {
 	}
 
 	ttl := seconds(args.Flag("ttl", ""), "ttl")
-	subset := positiveCount(args.Flag("subset", ""), "subset")
-	safeLimit := positiveCount(args.Flag("batch-safe-limit", ""), "batch-safe-limit")
+	subset := cli.IntFlag(args, "subset", 0, 1)
+	safeLimit := cli.IntFlag(args, "batch-safe-limit", 0, 1)
 	batchWait := seconds(args.Flag("batch-wait", ""), "batch-wait")
 	batchTimeout := seconds(args.Flag("batch-timeout", ""), "batch-timeout")
 	timeout, err := time.ParseDuration(args.Flag("timeout", "5m"))
@@ -220,21 +219,6 @@ func seconds(v, name string) int {
 		cli.Usagef("--%s %q: %v", name, v, err)
 	}
 	return int(d.Seconds())
-}
-
-// positiveCount reads a flag that counts nodes, where absent is 0 and
-// means "no limit". Anything given has to be a whole number above zero:
-// a value that does not parse, or 0, or a negative one, would otherwise
-// read as absent and lift the limit the operator was setting.
-func positiveCount(v, name string) int {
-	if v == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 {
-		cli.Usagef("--%s %q is not a number of nodes; give a whole number above zero", name, v)
-	}
-	return n
 }
 
 func gather(client *transport.Client, sub *transport.SubmitResponse, timeout time.Duration, args *cli.Args) int {

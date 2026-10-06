@@ -54,7 +54,7 @@ func TestEveryFlagIsDocumentedAndParsed(t *testing.T) {
 		documented[f[1]] = true
 	}
 	parsed := map[string]bool{}
-	for _, f := range regexp.MustCompile(`args\.(?:Flag|Bool)\("([a-z-]+)"`).
+	for _, f := range regexp.MustCompile(`(?:args\.(?:Flag|Bool)\(|cli\.IntFlag\(args, )"([a-z-]+)"`).
 		FindAllStringSubmatch(source.String(), -1) {
 		parsed["--"+f[1]] = true
 	}
