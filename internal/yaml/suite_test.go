@@ -182,7 +182,6 @@ var deviations = []deviation{
 	{"26DV", devRejects, gapMappingKey},
 	{"2JQS", devRejects, specDuplicateKey},
 	{"2XXW", devRejects, gapExplicitKey},
-	{"3HFZ", devAccepts, gapLenient},
 	{"4FJ6", devRejects, gapFlow},
 	{"4JVG", devAccepts, gapLenient},
 	{"52DL", devRejects, specTag},

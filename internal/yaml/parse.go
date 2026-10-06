@@ -128,7 +128,9 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 			break
 		}
 		if p.atDocEnd() {
-			p.skipLine()
+			if err := p.skipDocEnd(); err != nil {
+				return nil, p.warnings, err
+			}
 			docClosed = true
 			continue
 		}
@@ -427,6 +429,25 @@ func (p *parser) skipIndicatorSeparation(indicator string) error {
 			return nil
 		}
 	}
+	return nil
+}
+
+// skipDocEnd consumes a `...` line, which may carry a comment and
+// nothing else.
+//
+// It used to skip the rest of the line whatever was on it, so
+// `... invalid` threw the word away and loaded what came before. PyYAML
+// 6.0.3 refuses it -- "expected '<document start>', but found
+// '<scalar>'" -- and so does the suite (3HFZ). DIVERGENCE 5.226.
+func (p *parser) skipDocEnd() error {
+	p.next()
+	p.next()
+	p.next()
+	p.skipSpaces()
+	if !p.eof() && p.peek() != '\n' && p.peek() != '#' {
+		return p.err("nothing but a comment may follow a ... document end marker on its line")
+	}
+	p.skipLine()
 	return nil
 }
 
