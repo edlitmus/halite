@@ -2316,7 +2316,7 @@ Every cryptographic primitive used, so that a FIPS assessment has one table to r
 
 | Purpose | Primitive |
 |---|---|
-| Transport | TLS 1.3: `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`; key exchange X25519 or P-256 and P-384, with P-256 and P-384 only in FIPS mode |
+| Transport | TLS 1.3: `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`; key exchange X25519MLKEM768 (a hybrid post-quantum group, which a default build negotiates first), X25519, P-256 or P-384, with P-256 and P-384 only in FIPS mode |
 | Peer identity | X.509 with ECDSA P-256 or P-384, or RSA-3072 and RSA-4096 with RSA-PSS |
 | File and content integrity | SHA-256 default; SHA-384, SHA-512, SHA3-256 available |
 | Message authentication | HMAC-SHA-256 for webhooks, bootstrap tokens, and returner signing |

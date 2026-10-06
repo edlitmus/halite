@@ -54,3 +54,27 @@ func TestAMistypedSubcommandIsRefusedBeforeTheHubIsOpened(t *testing.T) {
 		}
 	}
 }
+
+// `extensions` opened the hub's configuration and log file before
+// reading its subcommand, as keys and jobs did; and `policy test` short
+// of its operands exited 1. DIVERGENCE 5.224.
+func TestExtensionsAndPolicyRefuseBeforeTouchingAnything(t *testing.T) {
+	root := t.TempDir()
+	logFile := filepath.Join(root, "hub.log")
+	if err := os.WriteFile(filepath.Join(root, "hub.yaml"),
+		[]byte("log_file: "+logFile+"\nstate_dir: "+filepath.Join(root, "state")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := run(t, "extensions", "lsit", "--root", root)
+	if res.code != cli.ExitUsage || !strings.Contains(res.stderr, `"lsit"`) {
+		t.Errorf("extensions lsit: exited %d: %s", res.code, res.stderr)
+	}
+	if _, err := os.Stat(logFile); err == nil {
+		t.Error("extensions lsit created the log file before refusing the subcommand")
+	}
+
+	res = run(t, "policy", "test", "cert:CN=ed", "--root", root)
+	if res.code != cli.ExitUsage || !strings.Contains(res.stderr, "takes a principal, a target, and a function") {
+		t.Errorf("policy test with one operand: exited %d: %s", res.code, res.stderr)
+	}
+}

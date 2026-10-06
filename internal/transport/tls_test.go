@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fips"
 	"github.com/edlitmus/halite/internal/pki"
 )
 
@@ -217,4 +218,40 @@ func poolOf(cert *x509.Certificate) *x509.CertPool {
 	p := x509.NewCertPool()
 	p.AddCert(cert)
 	return p
+}
+
+// The key exchange a hub and a node agree on is one SPEC 25.3 lists.
+//
+// Outside FIPS mode this package sets no curve preference, so the
+// handshake takes Go's default, which since Go 1.24 offers the hybrid
+// post-quantum group X25519MLKEM768 first -- a group SPEC did not list
+// until the owner chose to list it rather than give it up (DIVERGENCE
+// 6.4). Under FIPS mode approvedCurves restricts it to P-256 and P-384.
+// Either way the answer is measured on a real handshake between this
+// package's own server and client configurations, so a Go release that
+// changes the default, or a change here that pins something else, fails
+// this rather than quietly making SPEC wrong again.
+func TestTheNegotiatedKeyExchangeIsOneSPECLists(t *testing.T) {
+	f := newFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.TLS.CurveID.String())
+	}))
+	client, _ := f.enrolledClient(t, "web1.example")
+	res, err := client.Get(f.url + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	got, _ := io.ReadAll(res.Body)
+	group := string(got)
+
+	if fips.Restricted() {
+		if group != tls.CurveP256.String() && group != tls.CurveP384.String() {
+			t.Errorf("in FIPS mode the handshake used %s; SPEC 25.3 allows P-256 and P-384 only", group)
+		}
+		return
+	}
+	if group != tls.X25519MLKEM768.String() {
+		t.Errorf("outside FIPS mode the handshake used %s; SPEC 25.3 names X25519MLKEM768 "+
+			"as the group a default build negotiates", group)
+	}
 }

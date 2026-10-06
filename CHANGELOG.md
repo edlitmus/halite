@@ -30,6 +30,28 @@ sending the job. An unknown format, such as `--out table` or a typo,
 used to print the nested format silently, after the job had already run
 on every node.
 
+### extensions and policy test refuse a bad command line cleanly
+
+`halite-hub extensions` with a mistyped subcommand no longer creates the
+hub's log file before refusing it. `halite-hub policy test` with fewer
+than three operands now exits 64 rather than 1.
+
+### halite-api doctor scrubs its report
+
+`halite-api doctor` now scrubs the API's configured secrets from its
+report, as text and as `--out json`/`yaml`, as the hub's and the node's
+doctors already did. No check was found that prints one, so this closes
+a gap rather than a leak anyone saw.
+
+### A node keeps one renewed-away key, not all of them
+
+A node no longer keeps a private key for every certificate renewal. A
+renewal now sets the old key aside as `node.key.renewed.<UTC time>`, and
+once a renewal has succeeded, the keys earlier renewals set aside are
+removed, so the node keeps one. A key moved aside by
+`halite-node enroll --force` is never removed. Neither is a
+`node.key.<UTC time>` left by an earlier build; remove those by hand.
+
 ### Missing operands and malformed numbers exit 64
 
 All three programs now exit 64, sysexits' `EX_USAGE`, before contacting
