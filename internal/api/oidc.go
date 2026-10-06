@@ -44,7 +44,7 @@ type pendingAuth struct {
 // sweep that read the whole map on every call, a flood grew the map
 // without limit and made each new login slower than the last: 40,000
 // pending made 30,000 more take 4.5 seconds, under the one lock every
-// login shares. DIVERGENCE 5.229.
+// login shares. DIVERGENCE 5.230.
 //
 // A thousand is hundreds of times the operators an estate has logging
 // in within ten minutes. Past it a new login is refused rather than an

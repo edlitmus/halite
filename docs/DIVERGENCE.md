@@ -20394,7 +20394,7 @@ accepted line, is the guarantee.
   report; there is no rate limit.
 - No alert rule or dashboard panel was added for the conflict metric.
 
-### 5.229 OIDC login starts had no bound, and each swept every one in flight
+### 5.230 OIDC login starts had no bound, and each swept every one in flight
 
 `POST /v1/login/oidc` starts an interactive login. It is
 unauthenticated, as it has to be, because it is how somebody with no

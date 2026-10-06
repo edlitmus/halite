@@ -305,7 +305,7 @@ func nonceFrom(t *testing.T, authURL string) string {
 // is unauthenticated: past maxPendingLogins a new start is refused with
 // 503 and said in the log, and the room comes back as the old ones
 // expire. Unbounded, a flood grew the map without limit, and every start
-// swept the whole of it under the lock all logins share. DIVERGENCE 5.229.
+// swept the whole of it under the lock all logins share. DIVERGENCE 5.230.
 func TestOIDCLoginsInFlightAreBounded(t *testing.T) {
 	l, _ := oidcLab(t, nil)
 	now := time.Now()
