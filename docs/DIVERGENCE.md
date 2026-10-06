@@ -18892,6 +18892,16 @@ consistency change, not a fix, and is left for one. A mistyped
 `halite-node state` subcommand already exited 1, through `cli.Fatalf`,
 and still does.
 
+#### 5.198, corrected: SPEC 11.4 has a fourth answer
+
+This section said SPEC 11.4 gives a state run three answers. It gives
+four: 11.4 also lists 3 for a compilation error. No build has exited 3.
+A YAML error, an undeclared requisite or a Jinja error in a local
+`state apply` or `sls` exits 1, the failed-run code, through
+`cli.Fatalf` in `cmd/halite-node/commands.go`. That was measured against
+`2bdce28`. So the restatement above described the code, and called it
+SPEC. The divergence is recorded in 6.4.
+
 ### 5.199 A release's archives would not have been where its links point
 
 `make dist` names each archive `halite-<version>-<os>-<arch>`, and the
@@ -20732,6 +20742,85 @@ pillar files (5.26), and against a smaller real tree (5.9), as well as
 against synthetic ones. What it has not been run against is a Salt tree
 of any size, which is phase 0's stated exit criterion. That criterion is
 therefore **not** met in substance, only in mechanism.
+
+### 6.4 SPEC promises no build keeps, found by a sweep
+
+A sweep of SPEC against the code on 2026-10-02 listed promises that
+nothing in this file recorded. Each one below was checked again against
+`2bdce28`, by running the binaries built from it unless it says "read".
+SPEC line numbers are from that commit. None turned out to have been
+built. Where one is written down elsewhere, it says where.
+
+- **Native `crypt` encrypted pillar (12.5, 12.6; SPEC 1200, 1214-1215,
+  1229-1230).**
+  - `#!yaml|crypt` fails: "the crypt renderer runs as a bridged
+    extension, which is not available in this build"
+    (`internal/render/render.go`).
+  - `halite-hub pillar encrypt`, `decrypt`, `rekey`, `recipients` and
+    `migrate-gpg` are "unknown subcommand "pillar"".
+  - `docs/migrating-from-salt.md` already says crypt is not built.
+- **The `exec` renderer (10.3; SPEC 925-930).** `#!exec` is refused the
+  same way. `#!exec:name`, SPEC's own spelling, is "unknown renderer": the
+  `:name` form is not parsed.
+- **`run` and `state` flags (SPEC 578-695, 1014, 1087).** Each of these
+  is refused with "is not a flag of", exit 64:
+  - on `halite-hub run`: `--require-match`, `--fresh`, `--arg-json`,
+    `--gather-timeout`, `--parallel`, `--diff` and `--out-diff`;
+  - on `halite-node state`: `show_lowstate --graph=dot`, `--diff` and
+    `--out-diff`.
+
+  The `highstate` and `table` output formats (SPEC 623-624) are refused
+  by `halite-node` as unknown formats. `halite-hub run` does not refuse
+  them: it accepts any `--out` and prints nested. That is a defect, not
+  only a gap, and it is read from `cmd/halite-hub/run.go`, not run,
+  because it needs a hub. It is its own change.
+- **Exit 3 for a compilation error (11.4; SPEC 1061-1062).** A local
+  state run with a YAML, requisite or Jinja error exits 1. See 5.198's
+  correction. A hub-dispatched `state.apply` with a compile error was
+  not tested.
+- **`halite-hub state.compile` (11.9; SPEC 1129-1131).** "unknown
+  subcommand". `internal/signature/signature.go` said it existed; it is
+  corrected in the change that adds this section.
+- **RSA-3072/4096 and Ed25519 node keys (7.1; SPEC 456-465, 2320).**
+  `internal/pki` accepts only `ecdsa-p256` and `ecdsa-p384`. `enroll
+  --key-algorithm rsa-3072`, `rsa-4096` or `ed25519` each fail: "is not
+  one this build issues". The Ed25519 mentions elsewhere in this file are
+  about FIPS (1.10) and extension signing.
+- **TLS key exchange outside FIPS mode (25.3; SPEC 2319).**
+  - SPEC lists "X25519 or P-256 and P-384".
+  - `internal/transport/tls.go` sets `CurvePreferences` only under FIPS,
+    so a default build negotiates Go's default. A handshake between this
+    package's own `ServerConfig` and `ClientConfig` negotiated
+    **X25519MLKEM768**, a hybrid post-quantum group SPEC does not list.
+    With `GODEBUG=fips140=on` it negotiated P-256.
+  - That ran on Go 1.27.1, not the pinned 1.26.6. Go has offered the
+    hybrid group by default since 1.24.
+  - 5.15 measured which single groups a hub accepts. It did not measure
+    what halite negotiates with halite.
+  - Whether SPEC should list the hybrid group, or the build should pin
+    the listed ones, is the owner's decision.
+- **The in-tree reference bridges (12.7, 20.3; SPEC 1246, 1915).** No
+  Vault pillar bridge, and no `postgres` or `sqs` returner bridge, under
+  `cmd/`, `contrib/extensions/` or `internal/`. The returner code names
+  `postgres` and `sqs` as bridged names only. This was searched by name
+  and directory, not exercised. 6.1 says the bridged ext_pillar set is
+  unbuilt, but did not name these.
+- **`--log-level-component` (26.1; SPEC 2392-2393).** Refused by
+  `halite-hub serve` and `halite-node connect`. There is one `log_level`
+  per process.
+- **The gitfs webhook trigger (13.3; SPEC 1308-1309). Read, not run.**
+  - No code refers to `/v1/hook/gitfs`. gitfs refreshes at start, on its
+    interval, and by `runner fileserver.update` (5.13).
+  - The generic `POST /v1/hook/{path}` only puts an event on the bus.
+    Whether a reactor on it calling `fileserver.update` already amounts
+    to the trigger was not checked.
+- **The CycloneDX SBOM and a toolchain fetched by digest (4.3; SPEC
+  217-239).**
+  - No SBOM is produced.
+  - The workflows install Go with `actions/setup-go` and a version tag
+    (`1.26.6`), not a digest from a mirror.
+  - Both are already in plan.md, and SPEC 4.3 itself says the
+    attestation does not yet name the toolchain digest.
 
 ---
 
