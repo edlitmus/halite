@@ -158,9 +158,11 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 				if err := p.skipBlank(); err != nil {
 					return nil, p.warnings, err
 				}
-				if p.eof() || p.atDocStart() || p.atDocEnd() {
+				if p.eof() || p.atDocBoundary() {
 					docs = append(docs, nil)
-					docClosed = false
+					// A directive ends a document as `...` does: see
+					// atDirectiveLine.
+					docClosed = p.atDirectiveLine()
 					continue
 				}
 			}
@@ -180,6 +182,13 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 		}
 		if p.eof() {
 			break
+		}
+		if p.atDirectiveLine() {
+			if !opts.Stream {
+				return nil, p.warnings, p.err("this file has more than one YAML document; an SLS file must contain exactly one")
+			}
+			docClosed = true
+			continue
 		}
 		if !p.atDocStart() && !p.atDocEnd() {
 			return nil, p.warnings, p.err("unexpected content after the document; expected end of file or a --- document marker")
@@ -520,6 +529,28 @@ func (p *parser) blockOnMarkerLine(what string) error {
 		return p.err("%s cannot start on the --- line; begin it on the next line", what)
 	}
 	return nil
+}
+
+// atDirectiveLine reports a `%` in column zero, which PyYAML reads as a
+// directive wherever a token can start -- inside a document as well as
+// between two -- and which ends the document it is in, as `...` would.
+//
+// halite read it as an ordinary plain scalar inside a document, so
+// `%YAML 1.2` after an empty document became the string "%YAML 1.2"
+// where PyYAML 6.0.3 reads two null documents (MUS6/01), and
+// `key: value` then `%foo: bar` became a two-key mapping where PyYAML
+// refuses the directive. SPEC 10.1 makes PyYAML's the dialect. The one
+// place it is not a directive is the continuation of a multi-line plain
+// scalar, where PyYAML folds it into the text, and so does this: the
+// plain-scalar scanner does not check for it. DIVERGENCE 5.226.
+func (p *parser) atDirectiveLine() bool {
+	return p.col == 1 && !p.eof() && p.peek() == '%'
+}
+
+// atDocBoundary is where a block collection or a document ends: a
+// document marker, or a directive.
+func (p *parser) atDocBoundary() bool {
+	return p.atDocStart() || p.atDocEnd() || p.atDirectiveLine()
 }
 
 func (p *parser) atDocStart() bool {

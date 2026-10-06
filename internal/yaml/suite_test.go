@@ -106,7 +106,11 @@ var reasons = map[string]reason{
 			"reads. A flow sequence whose entries start in column zero (9C9N) and a " +
 			"double-quoted scalar whose continuation lines do (QB6E) are both found in " +
 			"real trees, and SPEC 10.1 makes PyYAML's the dialect. They were counted as " +
-			"leniency defects until the two references were compared on them."},
+			"leniency defects until the two references were compared on them. A directive " +
+			"in column zero ends the document it follows, as `...` would, where the suite " +
+			"requires the `...` (EB22, RHX7, MUS6/01): PyYAML reads each as the documents " +
+			"halite now reads, where halite used to refuse the first two and read the " +
+			"third's directive as the string \"%YAML 1.2\"."},
 	specComplexKey: {true,
 		"SPEC 10.1.2 rejects a mapping or a sequence used as a mapping key."},
 	specDuplicateKey: {true,
@@ -206,6 +210,7 @@ var deviations = []deviation{
 	{"DK95/01", devAccepts, specTabQuoted},
 	{"DK95/03", devRejects, specTab},
 	{"DK95/07", devRejects, specTab},
+	{"EB22", devAccepts, specPyYAMLReads},
 	{"J7PZ", devRejects, specTag},
 	{"JEF9/02", devValue, specEndOfInput},
 	{"KK5P", devRejects, specComplexKey},
@@ -215,12 +220,13 @@ var deviations = []deviation{
 	{"M2N8/01", devRejects, specComplexKey},
 	{"M5C3", devRejects, specTag},
 	{"M5DY", devRejects, specComplexKey},
-	{"MUS6/01", devAccepts, gapLenient},
+	{"MUS6/01", devAccepts, specPyYAMLReads},
 	{"N782", devAccepts, gapLenient},
 	{"P76L", devRejects, specTag},
 	{"Q5MG", devRejects, specTab},
 	{"Q9WF", devRejects, gapOther},
 	{"QB6E", devAccepts, specPyYAMLReads},
+	{"RHX7", devAccepts, specPyYAMLReads},
 	{"RZP5", devRejects, specComplexKey},
 	{"S4JQ", devRejects, specTag},
 	{"SBG9", devRejects, specComplexKey},

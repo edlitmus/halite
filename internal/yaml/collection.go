@@ -119,7 +119,7 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 		if err := p.skipBlank(); err != nil {
 			return nil, err
 		}
-		if p.eof() || p.atDocStart() || p.atDocEnd() || p.col < indent {
+		if p.eof() || p.atDocBoundary() || p.col < indent {
 			break
 		}
 		if p.col > indent {
@@ -401,7 +401,7 @@ func (p *parser) parseMapValue(keyIndent int, explicitEntry bool) (any, error) {
 	if err := p.skipBlank(); err != nil {
 		return nil, err
 	}
-	if p.eof() || p.atDocStart() || p.atDocEnd() {
+	if p.eof() || p.atDocBoundary() {
 		return nil, nil
 	}
 	switch {
@@ -430,7 +430,7 @@ func (p *parser) parseBlockSeq(indent int) ([]any, error) {
 		if err := p.skipBlank(); err != nil {
 			return nil, err
 		}
-		if p.eof() || p.atDocStart() || p.atDocEnd() || p.col != indent || !isBlockSeqEntry(p) {
+		if p.eof() || p.atDocBoundary() || p.col != indent || !isBlockSeqEntry(p) {
 			break
 		}
 		p.next() // the '-'
@@ -447,7 +447,7 @@ func (p *parser) parseBlockSeq(indent int) ([]any, error) {
 			if err := p.skipBlank(); err != nil {
 				return nil, err
 			}
-			if !p.eof() && p.col > indent && !p.atDocStart() && !p.atDocEnd() {
+			if !p.eof() && p.col > indent && !p.atDocBoundary() {
 				v, err := p.parseBlockValue(p.col, indent-1, false)
 				if err != nil {
 					return nil, err

@@ -142,7 +142,7 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int, inline bool) (any,
 	if err := p.skipBlank(); err != nil {
 		return nil, err
 	}
-	if p.eof() || p.atDocStart() || p.atDocEnd() || p.col < minIndent {
+	if p.eof() || p.atDocBoundary() || p.col < minIndent {
 		return nil, nil
 	}
 
