@@ -23,6 +23,23 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Logins are throttled per name, and password checks are bounded
+
+`halite-api` now throttles `POST /v1/login`, which needs no credentials
+and costs about 50 ms of CPU per password check.
+
+- **Per-name backoff:** a failed login backs its name off, answering
+  429 with `Retry-After` for a window that doubles from one second to 15
+  minutes, until a successful login clears it. Unknown names are held to
+  the same backoff, so it doesn't reveal which accounts exist. LDAP
+  logins get the same backoff.
+- **CPU cap:** password checks in flight are capped at half the CPUs,
+  and a login past the cap gets 503.
+
+`halite_auth_attempts_total` gains the results `throttled` and `busy`.
+Before this, password guessing was unlimited, and enough parallel
+requests could occupy every core.
+
 ### Evidence-head reports are rate-limited per node
 
 The hub now rate-limits each node's evidence-head reports:

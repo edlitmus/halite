@@ -93,6 +93,7 @@ func TestEveryLDAPFailureGivesOneMessage(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, request := range cases {
+		l.passTheLoginBackoff()
 		res, body := l.post(t, PathLogin, request, "")
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s answered %d: %s", request, res.StatusCode, body)

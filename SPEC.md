@@ -2037,6 +2037,14 @@ the standard library in Go 1.24 and is FIPS-approvable. Parameters are stored pe
 can be raised without invalidating existing hashes. Minimum iteration count is enforced and is
 raised on each release.
 
+`POST /v1/login` takes no credential before the password, so it is throttled two ways. Password
+checks in flight are bounded at half the CPUs, and a login past that is refused with 503 before any
+hash is computed. And a failed login holds its name — any name, whether an account by it exists or
+not, so the answer is no oracle for which do — to a window refused with 429 and `Retry-After`,
+doubling from one second to fifteen minutes and cleared by a success. It is a backoff rather than a
+lockout, because a lockout lets anybody who knows the break-glass account's name keep its owner out.
+The LDAP path is held to the same backoff.
+
 Local accounts are intended for break-glass and for automation identities, not as the primary
 operator path. TOTP second-factor support is included, HMAC-SHA-1 over a time counter per RFC 6238,
 which is entirely standard library.
@@ -2289,6 +2297,7 @@ number. Changing it is a decision recorded here, not an implementation detail.
 | Adversary | Capability assumed | Primary controls |
 |---|---|---|
 | Unauthenticated network attacker reaching the hub port | Can send arbitrary TCP bytes | TLS 1.3 mutual auth terminated by the standard library before any application code; one port; no pre-auth application parsing; `/v1/health` returns a constant |
+| Unauthenticated network attacker reaching the API port | Can call the endpoints that issue a token | TLS 1.3; one answer for every failed login; a per-name login backoff that does not reveal which names exist; a bound on password checks in flight and on OIDC logins in flight (section 23.2) |
 | Compromised node | Full control of one node, its key, its grains | Hub-side targeting so it sees only its own jobs; trusted-grain allowlist for pillar; event tag restrictions; deny-by-default peer access; rate limits; its certificate is revocable and short-lived; its evidence chain anchored at the hub, so a rewrite of anything it had reported contradicts the hub's record |
 | Compromised hub | Full control of the hub process | Optional detached job signing by an operator key the hub does not hold; node-side job expiry and replay caches; signed and pinned extensions; signed gitfs refs; append-only local evidence on the node, holding receipts the hub signed for the heads it anchored |
 | Malicious or compromised state tree | Can put arbitrary SLS, templates, and files in the file server | gitfs signature verification; strict undefined; render sandbox; template resource limits; no YAML object construction; `cmd.run` as a distinct permission; optional signed state trees |

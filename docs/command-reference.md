@@ -1378,6 +1378,7 @@ token_idle: 4h
 | `eauth: oidc` | `POST /v1/login/oidc`, Authorization Code with PKCE | works |
 | no equivalent | `POST /v1/login/oidc/token`, a token you already hold | works |
 | `eauth: ldap` | same, bind-only over LDAPS or StartTLS | works |
+| no equivalent | a failed login backs its name off, 429 with `Retry-After`, from one second doubling to fifteen minutes; password checks in flight are bounded, 503 past it | works |
 | `POST /run` | `POST /v1/run`, synchronous | works |
 | `POST /minions` | `POST /v1/jobs`, asynchronous | works | <!-- lexicon:allow -->
 | `GET /jobs`, `GET /jobs/{jid}` | same under `/v1/` | works |

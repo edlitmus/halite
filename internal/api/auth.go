@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,26 @@ type LoginResponse struct {
 	Expires   string   `json:"expires"`
 }
 
+// loginThrottled answers 429 for a name still inside its backoff window,
+// and reports whether it did. Nothing is hashed and nothing is looked up
+// for it, and the window is not lengthened: a refused attempt is free to
+// the hub and gains the caller nothing.
+func (s *Server) loginThrottled(w http.ResponseWriter, r *http.Request, method, key string) bool {
+	wait := s.logins().wait(key, s.now())
+	if wait <= 0 {
+		return false
+	}
+	s.m().authAttempts.With(method, "throttled").Inc()
+	seconds := int(wait.Seconds())
+	if wait > time.Duration(seconds)*time.Second {
+		seconds++
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	writeError(w, http.StatusTooManyRequests,
+		"too many failed logins for this name; try again in "+strconv.Itoa(seconds)+"s")
+	return true
+}
+
 // login exchanges credentials for a token.
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
@@ -68,6 +89,20 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Held to the backoff before anything is looked up or hashed, and
+	// for any name, real or not: see loginLimit.
+	key := "local:" + req.Username
+	if s.loginThrottled(w, r, "local", key) {
+		return
+	}
+	if !s.logins().acquire() {
+		s.m().authAttempts.With("local", "busy").Inc()
+		s.warn("a login was refused: too many password checks are running",
+			"remote", remoteHost(r))
+		writeError(w, http.StatusServiceUnavailable,
+			"too many logins are being checked; try again in a moment")
+		return
+	}
 	acct, _ := s.Accounts.Lookup(req.Username)
 	// Verified even when the account does not exist, so that the answer
 	// takes the same time either way: a login that is faster for an
@@ -79,7 +114,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if ok && acct.NeedsSecondFactor() && !acct.VerifyTOTP(req.Code, s.now()) {
 		ok = false
 	}
+	s.logins().release()
 	if !ok {
+		s.logins().failed(key, s.now())
 		s.m().authAttempts.With("local", "refused").Inc()
 		// One message for every failure. Which of the three it was is
 		// in the log and not in the answer, because the difference
@@ -103,6 +140,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "the token could not be issued")
 		return
 	}
+	s.logins().succeeded(key)
 	s.m().authAttempts.With("local", "accepted").Inc()
 	s.m().tokensIssued.With("local").Inc()
 	namePrincipal(w, token.Principal)
