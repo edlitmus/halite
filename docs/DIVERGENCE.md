@@ -20798,7 +20798,7 @@ built. Where one is written down elsewhere, it says where.
   - 5.15 measured which single groups a hub accepts. It did not measure
     what halite negotiates with halite.
   - Whether SPEC should list the hybrid group, or the build should pin
-    the listed ones, is the owner's decision.
+    the listed ones, is the owner's decision. Decided; see below.
 - **The in-tree reference bridges (12.7, 20.3; SPEC 1246, 1915).** No
   Vault pillar bridge, and no `postgres` or `sqs` returner bridge, under
   `cmd/`, `contrib/extensions/` or `internal/`. The returner code names
@@ -20821,6 +20821,31 @@ built. Where one is written down elsewhere, it says where.
     (`1.26.6`), not a digest from a mirror.
   - Both are already in plan.md, and SPEC 4.3 itself says the
     attestation does not yet name the toolchain digest.
+
+#### 6.4, the key exchange: SPEC now lists the hybrid group
+
+The owner chose to keep Go's post-quantum default and say so, rather
+than pin the three groups SPEC listed. SPEC 25.3's transport row now
+names X25519MLKEM768 first, as the group a default build negotiates,
+with X25519, P-256 and P-384 after it, and P-256 and P-384 alone in
+FIPS mode. No behaviour changed.
+
+`TestTheNegotiatedKeyExchangeIsOneSPECLists` (internal/transport) holds
+the row to the code with a real handshake between this package's own
+server and client configurations:
+- outside FIPS mode it requires X25519MLKEM768;
+- under `GODEBUG=fips140=on` it requires P-256 or P-384.
+
+It passed both ways here on Go 1.27.1. CI runs it on the pinned 1.26.6.
+With `approvedCurves` pinning P-256 unconditionally, it failed outside
+FIPS mode, naming the group it got. A Go release that changes the
+default now fails a test instead of making SPEC wrong again.
+
+The same row lists two TLS 1.3 cipher suites. Outside FIPS mode Go
+also offers `TLS_CHACHA20_POLY1305_SHA256` (1.10 records the FIPS
+half). That was not part of this decision and is left as it stands.
+`internal/transport/tls.go` cited "SPEC 26.1" for the suites; 26.1 is
+logging, and the citation now says 25.3.
 
 ---
 
