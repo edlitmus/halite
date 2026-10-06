@@ -49,7 +49,14 @@ func (p *parser) readProps(minIndent int) (nodeProps, error) {
 			if p.peek() == '!' {
 				p.next()
 			}
-			for !p.eof() && !isFlowIndicator(p.peek()) && p.peek() != ' ' && p.peek() != '\n' {
+			// A tag runs to white space. The flow indicators are URI
+			// characters a tag may contain, and PyYAML 6.0.3 reads them as
+			// part of it -- `!!str,` is the tag `str,`, `[!!str]` an
+			// unclosed sequence -- where halite stopped at them and read
+			// `- !!str, xxx` as a tagged string (U99R). The longer tag is
+			// one SPEC 10.1.2 does not admit, so it is refused, as there.
+			// DIVERGENCE 5.226.
+			for !p.eof() && p.peek() != ' ' && p.peek() != '\t' && p.peek() != '\n' {
 				p.next()
 			}
 			np.tag = string(p.src[start:p.off])

@@ -316,6 +316,13 @@ func (p *parser) skipFlowBlank() error {
 			}
 			p.skipLine()
 		default:
+			// A document marker in column zero ends the document, and a
+			// flow collection cannot run across that: PyYAML refuses it,
+			// and halite read `---` inside `[ ]` as an entry (N782).
+			// DIVERGENCE 5.226.
+			if p.atDocStart() || p.atDocEnd() {
+				return p.err("a flow collection is not closed before a document marker in column zero")
+			}
 			return nil
 		}
 	}

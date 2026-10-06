@@ -111,6 +111,12 @@ var reasons = map[string]reason{
 			"requires the `...` (EB22, RHX7, MUS6/01): PyYAML reads each as the documents " +
 			"halite now reads, where halite used to refuse the first two and read the " +
 			"third's directive as the string \"%YAML 1.2\"."},
+	specPyYAMLRefuses: {true,
+		"the suite reads these and PyYAML 6.0.3 refuses them, and SPEC 10.1 makes " +
+			"PyYAML's the dialect. A tag runs to white space there -- the flow indicators " +
+			"are URI characters it may contain -- so in `foo : !!str,` the tag is `str,`, " +
+			"which nothing constructs (WZ62). halite stopped the tag at the comma, which is " +
+			"what let `- !!str, xxx` load (U99R); reading it as PyYAML does refuses both."},
 	specComplexKey: {true,
 		"SPEC 10.1.2 rejects a mapping or a sequence used as a mapping key."},
 	specDuplicateKey: {true,
@@ -151,13 +157,14 @@ var reasons = map[string]reason{
 }
 
 const (
-	specTag          = "specTag"
-	specTab          = "specTab"
-	specComplexKey   = "specComplexKey"
-	specDuplicateKey = "specDuplicateKey"
-	specTabQuoted    = "specTabQuoted"
-	specEndOfInput   = "specEndOfInput"
-	specPyYAMLReads  = "specPyYAMLReads"
+	specTag           = "specTag"
+	specTab           = "specTab"
+	specComplexKey    = "specComplexKey"
+	specDuplicateKey  = "specDuplicateKey"
+	specTabQuoted     = "specTabQuoted"
+	specEndOfInput    = "specEndOfInput"
+	specPyYAMLReads   = "specPyYAMLReads"
+	specPyYAMLRefuses = "specPyYAMLRefuses"
 
 	gapAfterDocument = "gapAfterDocument"
 	gapDirective     = "gapDirective"
@@ -220,7 +227,6 @@ var deviations = []deviation{
 	{"M5C3", devRejects, specTag},
 	{"M5DY", devRejects, specComplexKey},
 	{"MUS6/01", devAccepts, specPyYAMLReads},
-	{"N782", devAccepts, gapLenient},
 	{"P76L", devRejects, specTag},
 	{"Q5MG", devRejects, specTab},
 	{"Q9WF", devRejects, gapOther},
@@ -232,15 +238,13 @@ var deviations = []deviation{
 	{"SKE5", devRejects, gapAfterDocument},
 	{"SY6V", devAccepts, gapLenient},
 	{"U3C3", devRejects, specTag},
-	{"U99R", devAccepts, gapLenient},
 	{"UGM3", devRejects, specTag},
 	{"UKK6/02", devRejects, specTag},
 	{"V9D5", devRejects, gapPlainScalar},
 	{"VJP3/00", devAccepts, gapLenient},
 	{"W4TN", devValue, gapDirective},
-	{"WZ62", devValue, gapValueOther},
+	{"WZ62", devRejects, specPyYAMLRefuses},
 	{"X38W", devRejects, gapFlow},
-	{"X4QW", devAccepts, gapLenient},
 	{"XW4D", devRejects, specComplexKey},
 	{"Y79Y/002", devRejects, specTab},
 	{"Y79Y/010", devRejects, specTab},

@@ -483,6 +483,12 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 	}
 	p.skipSpaces()
 	if p.peek() == '#' {
+		// A comment needs white space before it here as anywhere:
+		// `>#x` is a header with content after it, which PyYAML 6.0.3
+		// refuses and halite read as a comment (X4QW). DIVERGENCE 5.226.
+		if !p.commentStart() {
+			return "", p.err("a `#` after a block scalar header starts a comment only after white space")
+		}
 		p.skipLine()
 	} else if p.peek() == '\n' {
 		p.next()
