@@ -97,7 +97,7 @@ func (n *node) renewIdentity(args *cli.Args, alg pki.KeyAlgorithm) (*x509.Certif
 // `enroll --force` did. They used to share `node.key.<time>`, and
 // nothing pruned either, so a node collected a private key for every
 // renewal -- one every 45 days on the default lifetime -- each for a
-// certificate the hub had already revoked (DIVERGENCE 5.221). Only the
+// certificate the hub had already revoked (DIVERGENCE 5.222). Only the
 // renewal's are pruned: a key an operator moved aside by re-enrolling
 // was a decision, and may be the one copy of an identity they meant to
 // keep.

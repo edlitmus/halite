@@ -127,7 +127,7 @@ func TestAlgorithmOfNamesTheCurve(t *testing.T) {
 //
 // Nothing pruned them: a node kept every private key it had renewed
 // away from, one per 45 days on the default lifetime, each for a
-// certificate the hub had revoked. DIVERGENCE 5.221. A key `enroll
+// certificate the hub had revoked. DIVERGENCE 5.222. A key `enroll
 // --force` moved aside, and one named the old way that could be either,
 // are not the renewal's to remove.
 func TestARenewalPrunesOnlyTheKeysEarlierRenewalsSetAside(t *testing.T) {
