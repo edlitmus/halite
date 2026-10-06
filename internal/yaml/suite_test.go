@@ -100,6 +100,13 @@ var reasons = map[string]reason{
 			"halite reads it too, for the same reason it refuses the cases above: SPEC 10.1 " +
 			"picks the dialect an existing tree was written against. It was recorded as a " +
 			"leniency defect until the two references were actually compared."},
+	specPyYAMLReads: {true,
+		"the suite refuses these and PyYAML 6.0.3 reads them -- both SafeLoader, which " +
+			"Salt's loader is built on, and libyaml's CSafeLoader -- to the values halite " +
+			"reads. A flow sequence whose entries start in column zero (9C9N) and a " +
+			"double-quoted scalar whose continuation lines do (QB6E) are both found in " +
+			"real trees, and SPEC 10.1 makes PyYAML's the dialect. They were counted as " +
+			"leniency defects until the two references were compared on them."},
 	specComplexKey: {true,
 		"SPEC 10.1.2 rejects a mapping or a sequence used as a mapping key."},
 	specDuplicateKey: {true,
@@ -146,6 +153,7 @@ const (
 	specDuplicateKey = "specDuplicateKey"
 	specTabQuoted    = "specTabQuoted"
 	specEndOfInput   = "specEndOfInput"
+	specPyYAMLReads  = "specPyYAMLReads"
 
 	gapAfterDocument = "gapAfterDocument"
 	gapDirective     = "gapDirective"
@@ -185,7 +193,7 @@ var deviations = []deviation{
 	{"6WLZ", devRejects, specTag},
 	{"7FWL", devRejects, specTag},
 	{"8MK2", devRejects, specTag},
-	{"9C9N", devAccepts, gapLenient},
+	{"9C9N", devAccepts, specPyYAMLReads},
 	{"9KBC", devAccepts, gapLenient},
 	{"9MMW", devRejects, gapFlow},
 	{"9MQT/01", devAccepts, gapLenient},
@@ -216,7 +224,7 @@ var deviations = []deviation{
 	{"P76L", devRejects, specTag},
 	{"Q5MG", devRejects, specTab},
 	{"Q9WF", devRejects, gapOther},
-	{"QB6E", devAccepts, gapLenient},
+	{"QB6E", devAccepts, specPyYAMLReads},
 	{"RXY3", devAccepts, gapLenient},
 	{"RZP5", devRejects, specComplexKey},
 	{"S4JQ", devRejects, specTag},
