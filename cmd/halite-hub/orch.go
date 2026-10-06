@@ -49,7 +49,7 @@ func runOrch(args *cli.Args) int {
 
 func orchRun(args *cli.Args, lintOnly bool) int {
 	if len(args.Positional) < 2 {
-		cli.Fatalf("orch %s needs an orchestration SLS", args.Positional[0])
+		cli.Usagef("orch %s needs an orchestration SLS", args.Positional[0])
 	}
 	kwargs := map[string]any{
 		"sls": strings.Join(args.Positional[1:], ","),
@@ -66,7 +66,7 @@ func orchRun(args *cli.Args, lintOnly bool) int {
 	if raw := args.Flag("pillar", ""); raw != "" {
 		decoded, err := value.DecodeJSON([]byte(raw))
 		if err != nil {
-			cli.Fatalf("--pillar %q is not JSON: %v", raw, err)
+			cli.Usagef("--pillar %q is not JSON: %v", raw, err)
 		}
 		kwargs["pillar"] = decoded
 	}
@@ -75,7 +75,7 @@ func orchRun(args *cli.Args, lintOnly bool) int {
 
 func orchShow(args *cli.Args) int {
 	if len(args.Positional) < 2 {
-		cli.Fatalf("orch show needs a jid")
+		cli.Usagef("orch show needs a jid")
 	}
 	return orchCall(args, "state.orch_show", args.Positional[1:2], nil)
 }
@@ -90,11 +90,11 @@ func orchList(args *cli.Args) int {
 
 func orchResume(args *cli.Args) int {
 	if len(args.Positional) < 2 {
-		cli.Fatalf("orch resume needs a jid")
+		cli.Usagef("orch resume needs a jid")
 	}
 	from := args.Flag("from", "")
 	if from == "" {
-		cli.Fatalf("orch resume needs --from <step>; `orch show %s` lists the steps", args.Positional[1])
+		cli.Usagef("orch resume needs --from <step>; `orch show %s` lists the steps", args.Positional[1])
 	}
 	kwargs := map[string]any{"from": from}
 	if args.Bool("test", false) {
@@ -105,7 +105,7 @@ func orchResume(args *cli.Args) int {
 	if raw := args.Flag("pillar", ""); raw != "" {
 		decoded, err := value.DecodeJSON([]byte(raw))
 		if err != nil {
-			cli.Fatalf("--pillar %q is not JSON: %v", raw, err)
+			cli.Usagef("--pillar %q is not JSON: %v", raw, err)
 		}
 		kwargs["pillar"] = decoded
 	}

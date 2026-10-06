@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -368,6 +369,27 @@ func Usagef(format string, args ...any) {
 	}
 	fmt.Fprintln(os.Stderr, "halite: "+msg)
 	os.Exit(ExitUsage)
+}
+
+// IntFlag reads a whole-number flag: def when it is not given, and
+// otherwise a number no smaller than min, or a usage error.
+//
+// Every numeric flag used to be read with fmt.Sscanf and its error
+// dropped. That reads leading digits and stops, so `--limit 10x` was 10
+// and `1.5` was 1; `abc` failed, leaving whatever the variable held; and
+// a negative or zero value went through untouched. For `run --subset`
+// and `--batch-safe-limit` that meant no limit at all. DIVERGENCE 5.219,
+// 5.221.
+func IntFlag(a *Args, name string, def, min int) int {
+	raw, given := a.Flags[name]
+	if !given || raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < min {
+		Usagef("--%s %q is not a whole number of at least %d", name, raw, min)
+	}
+	return n
 }
 
 // Fatalf prints an error and exits non-zero. The message goes to stderr so

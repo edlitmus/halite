@@ -156,3 +156,26 @@ func TestAnUnknownFlagIsAUsageError(t *testing.T) {
 		t.Errorf("the refusal does not name the flag: %s", errb)
 	}
 }
+
+// A subcommand missing an operand, or given a number that is not one, is
+// a usage error, 64. DIVERGENCE 5.221.
+func TestMissingOperandsAndMalformedNumbersAreUsageErrors(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"token", "show"}, "token show needs a token identifier"},
+		{[]string{"token", "revoke"}, "token revoke needs an identifier"},
+		{[]string{"token", "list", "--limit", "many"}, "--limit"},
+		{[]string{"token", "list", "--limit=-1"}, "--limit"},
+	} {
+		name := strings.Join(tc.args, " ")
+		_, errb, code := run(t, append(tc.args, "--root", t.TempDir())...)
+		if code != cli.ExitUsage {
+			t.Errorf("%s: exit = %d, want %d: %s", name, code, cli.ExitUsage, errb)
+		}
+		if !strings.Contains(errb, tc.says) {
+			t.Errorf("%s: the message does not say %q: %s", name, tc.says, errb)
+		}
+	}
+}

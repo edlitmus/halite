@@ -19328,6 +19328,23 @@ the new.
 "translated into RBAC rules" and "translated to a draft RBAC policy".
 SPEC is the authority, so whether it changes or this stays a recorded
 divergence is the owner's decision; until then it is this one.
+
+#### 5.209, closed: SPEC now says what happens
+
+The owner chose to amend SPEC rather than build the translator. 28.3's
+row for `publisher_acl`, `external_auth`, `peer` and `peer_run` now says
+they are not translated, but kept under `legacy_acl`, which nothing
+reads and which grants nothing. The row also says a warning per key
+tells the operator to write the section 23.5 policy by hand, and gives
+the reason above for not translating. 28.5's ACL row says each key is
+reported as not translated and no draft policy is generated.
+
+The warning claim was checked against a build of this tree. A
+`hub.yaml` holding all four keys made `halite-hub doctor` report four
+shim warnings, one per key. Each said "not translated: it is kept under
+legacy_acl, which is never consulted and grants nothing; write the
+rules in the policy file by hand". A translator, if one is ever built,
+is a SPEC change of its own.
 ### 5.210 `halite-hub` and `halite-api` exited 2 on a usage error, and three of their 2s never ran
 
 5.198 moved `halite-node` to `cli.ExitUsage` and left the 33 `exit 2`
@@ -19795,6 +19812,28 @@ breaks each failed the tests again:
 - Errors from the hub itself still exit 1, as before.
 - Not run on FreeBSD or Linux; nothing here is platform-specific.
 
+#### 5.219, corrected: what `Sscanf` made of `2x`
+
+This section said `--subset 2x` left the subset at 0. It did not. Go's
+`fmt.Sscanf` with `%d` reads the leading digits, stops, and reports
+success, so `2x` was 2 and `1.5` was 1. Measured with Go 1.26 after the
+merge:
+
+| Input | Read as | Error |
+|---|---|---|
+| `2x` | 2 | none |
+| `1.5` | 1 | none |
+| `-1` | -1 | none |
+| `abc` | 0 | `expected integer`, which nothing checked |
+
+So the defect stands, and for these: `abc` was 0 and `-1` was -1, both
+"no subset", and the job went to every matched node. `2x` was the wrong
+example. The test's `2x` case still passes, because the fix refuses all
+four, but the claim was written from what an unchecked error ought to
+do, not from what this one did. The CHANGELOG entry and the two code
+comments that repeated it are corrected. 5.221 extends the strict read
+to the remaining numeric flags.
+
 ### 5.220 `keys`, `keys token` and `jobs` opened the hub before reading their subcommand
 
 `halite-hub keys`, `keys token` and `jobs` each opened what they act on
@@ -19844,6 +19883,65 @@ case.
 
 **Not covered:** other hub subcommands were not checked for the same
 order. Only run on macOS.
+
+### 5.221 Missing operands and malformed numbers were not usage errors anywhere else either
+
+5.219 made `run`'s malformed command lines exit 64 and recorded "other
+subcommands' value parsing" as not covered. 5.220 recorded two more
+cases. Looking at all three programs found the rest. They are the same
+two defects in more places.
+
+- **Missing operands exited 1, through `cli.Fatalf`.** These are the
+  `keys`, `jobs`, `orch`, `runner doc`, `lint` and `migrate` operands in
+  the hub, `call`, `state`, `event`, `grains item`, `pillar item` and
+  `lint` in the node, and `token show` and `token revoke` in the API.
+  Some were checked only after the hub or token store was opened:
+  - `keys show` with no node opened the hub in its own argument list
+    before noticing, and on a machine without a CA said so instead;
+  - `halite-api token show` created `<state_dir>/tokens` first;
+  - `ssh` read `--ssh-concurrency`, `--indent` and `--out` only after
+    the run, so a bad `--out` failed at the report, once the command had
+    already run on every target.
+- **Every other numeric flag was read with an unchecked `fmt.Sscanf`.**
+  These are `--limit` on `jobs list`, `event watch` and
+  `halite-api token list`, `--uses` on `keys token create`,
+  `--ssh-concurrency`, and `--indent` in four places. As 5.219's
+  correction measured, that reads leading digits and stops: `10x` was
+  10, and `abc` kept the default. `--ssh-concurrency 0` was quietly
+  turned into 8. `--uses 0` and `--uses -1` were safe only because the
+  key store replaces 0 with 1 and refuses a negative.
+
+`cli.IntFlag` reads a whole number with a floor, or makes a usage
+error. Every one of those flags and `run`'s two use it, replacing 5.219's
+`positiveCount`. The missing-operand errors use `cli.Usagef`:
+- In `keys` they moved from inside each subcommand function up to the
+  switch, ahead of the call that opens the hub.
+- `halite-api token` and `ssh` check up front with the same calls their
+  later code makes, so the two readings cannot disagree.
+- `orch`'s `--pillar` that is not JSON is a usage error too.
+
+Configuration errors are left at 1, because they are not about the
+command line: a relay without `node_id`, a node without
+`hub_fingerprint`, an API without `tls_cert`.
+
+The flag-documentation audits matched only `args.Flag(...)` and
+`args.Bool(...)`, so they reported every `IntFlag` read as a documented
+flag nothing parses. They now recognise `cli.IntFlag(args, ...)` too.
+
+`TestMissingOperandsAndMalformedNumbersAreUsageErrors` covers 23 hub
+cases, 8 node cases and 4 API cases. The hub's run in an empty root and
+fail if the message is about the CA or the operator certificate, which
+is how reaching for the hub would show.
+
+Three deliberate breaks each failed the tests:
+- `IntFlag` falling back to the default failed every numeric case in
+  all three programs;
+- the switch's `keys` operand checks removed failed `keys show`,
+  `reject`, `revoke` and `delete` with exit 1;
+- 5.219's `Usagef` exiting 1, shown there.
+
+**Not covered:** errors from the hub itself, and configuration errors,
+still exit 1, as intended. Only run on macOS.
 
 ### 5.221 A node kept the key from every renewal
 
