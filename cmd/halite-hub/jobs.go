@@ -64,14 +64,24 @@ func runJobs(args *cli.Args) int {
 		fmt.Print(jobsUsage)
 		return 0
 	}
-	cache := openJobs(args)
+	// Opened on first use rather than here, so that a subcommand that
+	// is none of these is refused before the job cache directory is
+	// created -- by root, usually, in a directory the hub's account has
+	// to write. The switch stays the one list of what `jobs` takes.
+	var opened *job.Cache
+	cache := func() *job.Cache {
+		if opened == nil {
+			opened = openJobs(args)
+		}
+		return opened
+	}
 	rest := args.Positional[1:]
 
 	switch args.Positional[0] {
 	case "list":
 		limit := 20
 		fmt.Sscanf(args.Flag("limit", "20"), "%d", &limit)
-		jobs, err := cache.List(limit)
+		jobs, err := cache().List(limit)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -83,7 +93,7 @@ func runJobs(args *cli.Args) int {
 			return 0
 		}
 		for _, j := range jobs {
-			missing, _ := cache.Missing(j.JID)
+			missing, _ := cache().Missing(j.JID)
 			state := string(j.State)
 			if len(missing) > 0 && state != string(job.Complete) {
 				state = fmt.Sprintf("%s, %d outstanding", state, len(missing))
@@ -100,11 +110,11 @@ func runJobs(args *cli.Args) int {
 			cli.Fatalf("%s needs a jid", args.Positional[0])
 		}
 		id := job.ID(rest[0])
-		j, err := cache.Get(id)
+		j, err := cache().Get(id)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
-		returns, err := cache.Returns(id)
+		returns, err := cache().Returns(id)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -124,7 +134,7 @@ func runJobs(args *cli.Args) int {
 				fmt.Printf("to go     %s\n", strings.Join(remaining, ", "))
 			}
 		}
-		missing, _ := cache.Missing(id)
+		missing, _ := cache().Missing(id)
 		if len(missing) > 0 {
 			fmt.Printf("missing   %s\n", strings.Join(missing, ", "))
 		}
@@ -143,7 +153,7 @@ func runJobs(args *cli.Args) int {
 		if len(rest) == 0 {
 			cli.Fatalf("missing needs a jid")
 		}
-		nodes, err := cache.Missing(job.ID(rest[0]))
+		nodes, err := cache().Missing(job.ID(rest[0]))
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -156,7 +166,7 @@ func runJobs(args *cli.Args) int {
 		return 0
 
 	case "active":
-		jobs, err := cache.List(200)
+		jobs, err := cache().List(200)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -172,7 +182,7 @@ func runJobs(args *cli.Args) int {
 			if j.Expired(now) {
 				continue
 			}
-			missing, _ := cache.Missing(j.JID)
+			missing, _ := cache().Missing(j.JID)
 			if j.State == job.Dispatched && len(missing) == 0 {
 				continue
 			}
@@ -231,15 +241,15 @@ func runJobs(args *cli.Args) int {
 			cli.Fatalf("export needs a jid")
 		}
 		id := job.ID(rest[0])
-		j, err := cache.Get(id)
+		j, err := cache().Get(id)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
-		returns, err := cache.Returns(id)
+		returns, err := cache().Returns(id)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
-		missing, _ := cache.Missing(id)
+		missing, _ := cache().Missing(id)
 		// One document, so that an incident record is one file: the
 		// job as submitted, every return, and who never answered.
 		out, err := json.MarshalIndent(map[string]any{
@@ -252,7 +262,7 @@ func runJobs(args *cli.Args) int {
 		return 0
 
 	case "prune":
-		removed, err := cache.Prune()
+		removed, err := cache().Prune()
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}

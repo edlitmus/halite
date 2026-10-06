@@ -75,26 +75,35 @@ func runKeys(args *cli.Args) int {
 		return runKeysSigner(args)
 	}
 
-	h := openHub(args, false)
+	// Opened on first use, so that a subcommand that is none of these
+	// is refused before openHub loads the configuration, opens the log
+	// file and creates the key store's directory. See runJobs.
+	var opened *hubContext
+	h := func() *hubContext {
+		if opened == nil {
+			opened = openHub(args, false)
+		}
+		return opened
+	}
 	rest := args.Positional[1:]
 
 	switch args.Positional[0] {
 	case "list":
-		return keysList(h, args)
+		return keysList(h(), args)
 	case "show":
-		return keysShow(h, args, rest)
+		return keysShow(h(), args, rest)
 	case "fingerprint":
-		return keysFingerprint(h, rest)
+		return keysFingerprint(h(), rest)
 	case "accept":
-		return keysAccept(h, args, rest)
+		return keysAccept(h(), args, rest)
 	case "reject":
-		return keysDecide(h, rest, args.Flag("reason", ""), h.auth.Reject, "rejected")
+		return keysDecide(h(), rest, args.Flag("reason", ""), h().auth.Reject, "rejected")
 	case "revoke":
-		return keysDecide(h, rest, args.Flag("reason", ""), h.auth.Revoke, "revoked")
+		return keysDecide(h(), rest, args.Flag("reason", ""), h().auth.Revoke, "revoked")
 	case "delete":
-		return keysDelete(h, rest)
+		return keysDelete(h(), rest)
 	case "export-crl":
-		return keysExportCRL(h, args)
+		return keysExportCRL(h(), args)
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub keys: unknown subcommand %q\n\n%s", args.Positional[0], keysUsage)
 		return cli.ExitUsage
@@ -358,7 +367,16 @@ func runKeysToken(args *cli.Args) int {
 		fmt.Fprint(os.Stderr, keysUsage)
 		return cli.ExitUsage
 	}
-	h := openHub(args, false)
+	// Opened on first use, so that a subcommand that is none of these
+	// is refused before openHub loads the configuration, opens the log
+	// file and creates the key store's directory. See runJobs.
+	var opened *hubContext
+	h := func() *hubContext {
+		if opened == nil {
+			opened = openHub(args, false)
+		}
+		return opened
+	}
 	rest := args.Positional[2:]
 
 	switch args.Positional[1] {
@@ -373,7 +391,7 @@ func runKeysToken(args *cli.Args) int {
 		}
 		uses := 1
 		fmt.Sscanf(args.Flag("uses", "1"), "%d", &uses)
-		tok, secret, err := h.store.MintToken(keystore.TokenOptions{
+		tok, secret, err := h().store.MintToken(keystore.TokenOptions{
 			TTL:      d,
 			NodeGlob: args.Flag("nodes", ""),
 			CIDR:     args.Flag("cidr", ""),
@@ -399,7 +417,7 @@ func runKeysToken(args *cli.Args) int {
 		return 0
 
 	case "list":
-		tokens, err := h.store.ListTokens()
+		tokens, err := h().store.ListTokens()
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -432,7 +450,7 @@ func runKeysToken(args *cli.Args) int {
 			cli.Fatalf("token revoke needs a token id, which `keys token list` prints")
 		}
 		for _, id := range rest {
-			if err := h.store.RevokeToken(id); err != nil {
+			if err := h().store.RevokeToken(id); err != nil {
 				cli.Fatalf("%v", err)
 			}
 			fmt.Printf("revoked token %s\n", id)
@@ -457,11 +475,11 @@ func runKeysToken(args *cli.Args) int {
 				"`keys token revoke <id>` stops a token without forgetting what it admitted")
 		}
 		for _, id := range rest {
-			tok, err := h.store.GetToken(id)
+			tok, err := h().store.GetToken(id)
 			if err != nil {
 				cli.Fatalf("%v", err)
 			}
-			if err := h.store.DeleteToken(id); err != nil {
+			if err := h().store.DeleteToken(id); err != nil {
 				cli.Fatalf("%v", err)
 			}
 			if len(tok.SpentBy) > 0 {
