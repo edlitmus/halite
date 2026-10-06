@@ -65,8 +65,7 @@ func runEvent(args *cli.Args) int {
 		if v := args.Flag("tag", ""); v != "" && v != "true" {
 			tags = strings.Split(v, ",")
 		}
-		limit := 200
-		fmt.Sscanf(args.Flag("limit", "200"), "%d", &limit)
+		limit := cli.IntFlag(args, "limit", 200, 1)
 		from := args.Flag("from", eventbus.Latest)
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

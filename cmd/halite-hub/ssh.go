@@ -40,6 +40,17 @@ func runSSH(args *cli.Args) int {
 		fmt.Fprint(os.Stderr, sshUsage)
 		return cli.ExitUsage
 	}
+	// The flags read after the run, checked before it. runAcross and
+	// reportSSH read these again with the same calls, so the two
+	// readings cannot disagree; doing it here means a malformed one is
+	// a usage error before the hub is opened -- and, for --out, before
+	// the command has been run on every target only to fail at the
+	// report. DIVERGENCE 5.221.
+	cli.IntFlag(args, "ssh-concurrency", 8, 1)
+	cli.IntFlag(args, "indent", 0, 0)
+	if _, err := cli.ParseFormat(args.Flag("out", "nested")); err != nil {
+		cli.Usagef("%v", err)
+	}
 
 	h := openHub(args, false)
 	targets, err := sshTargets(h, args, kind, expression)
@@ -403,11 +414,7 @@ func compileRosterPillar(h *hubContext, t roster.Target, env string) (*value.Map
 func runAcross(targets []roster.Target, args *cli.Args,
 	run func(roster.Target) sshexec.Result) []sshexec.Result {
 
-	limit := 8
-	fmt.Sscanf(args.Flag("ssh-concurrency", "8"), "%d", &limit)
-	if limit <= 0 {
-		limit = 8
-	}
+	limit := cli.IntFlag(args, "ssh-concurrency", 8, 1)
 	results := make([]sshexec.Result, len(targets))
 	tokens := make(chan struct{}, limit)
 	var wg sync.WaitGroup
@@ -457,8 +464,7 @@ func reportSSH(args *cli.Args, results []sshexec.Result) int {
 		out.Set(result.Target.ID, decoded)
 	}
 
-	indent := 0
-	fmt.Sscanf(args.Flag("indent", "0"), "%d", &indent)
+	indent := cli.IntFlag(args, "indent", 0, 0)
 	if err := cli.Write(os.Stdout, out, format, indent); err != nil {
 		cli.Fatalf("%v", err)
 	}

@@ -20,13 +20,13 @@ import (
 // and Salt's reactor runs with full master privilege. // lexicon:allow
 func runEvent(args *cli.Args) int {
 	if len(args.Positional) == 0 {
-		cli.Fatalf("event needs a subcommand; try `event send <tag> '{\"key\":\"value\"}'`")
+		cli.Usagef("event needs a subcommand; try `event send <tag> '{\"key\":\"value\"}'`")
 	}
 	if args.Positional[0] != "send" {
 		cli.Fatalf("event has no subcommand %q; there is `send`", args.Positional[0])
 	}
 	if len(args.Positional) < 2 {
-		cli.Fatalf("event send needs a tag")
+		cli.Usagef("event send needs a tag")
 	}
 	tag := args.Positional[1]
 

@@ -5,8 +5,9 @@
 //
 // Salt derives this by Python introspection at runtime. Here it is
 // declared at build time, which is what lets the state compiler validate a
-// whole tree without executing anything, and lets `halite-hub state.compile`
-// gate a tree in CI without touching a node. SPEC section 15.6.
+// whole tree without executing anything. SPEC section 15.6. SPEC 11.9's
+// `halite-hub state.compile`, which would gate a tree in CI this way, is
+// not built (DIVERGENCE 6.4); this comment used to say it was.
 package signature
 
 import (

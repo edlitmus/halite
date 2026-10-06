@@ -132,7 +132,7 @@ func runnerList(args *cli.Args) int {
 // runnerDoc prints one runner's signature.
 func runnerDoc(args *cli.Args) int {
 	if len(args.Positional) < 2 {
-		cli.Fatalf("runner doc needs a name: halite-hub runner doc manage.up")
+		cli.Usagef("runner doc needs a name: halite-hub runner doc manage.up")
 	}
 	name := args.Positional[1]
 	reg := hub.NewRunners()

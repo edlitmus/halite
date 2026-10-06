@@ -94,7 +94,8 @@ The operator certificate and key this service presents to the hub.
 .Nm
 exits 0 on success and 1 when a command fails.
 A command line it does not understand, with no subcommand, an unknown
-one, or a flag the subcommand does not take, exits 64
+one, a flag the subcommand does not take, an operand it needs left out,
+or a number that is not one, exits 64
 .Pq Dv EX_USAGE ,
 and so do
 .Cm token

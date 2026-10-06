@@ -226,7 +226,7 @@ func main() {
 // state tree is not trustworthy.
 func runMigrate(args *cli.Args) int {
 	if len(args.Positional) == 0 {
-		cli.Fatalf("migrate needs a tree to audit")
+		cli.Usagef("migrate needs a tree to audit")
 	}
 
 	// `--config` names this program's own configuration everywhere else,
@@ -272,8 +272,7 @@ func runMigrate(args *cli.Args) int {
 	if summary {
 		fmt.Print(rep.Summary())
 	} else {
-		indent := 0
-		fmt.Sscanf(args.Flag("indent", "0"), "%d", &indent)
+		indent := cli.IntFlag(args, "indent", 0, 0)
 		if err := cli.Write(os.Stdout, rep.JSON(), format, indent); err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -317,7 +316,7 @@ func runMigrate(args *cli.Args) int {
 // runLint renders and parses without executing.
 func runLint(args *cli.Args) int {
 	if len(args.Positional) == 0 {
-		cli.Fatalf("lint needs a path")
+		cli.Usagef("lint needs a path")
 	}
 	cfg, err := config.Load(config.Hub, config.LoadOptions{
 		Path:         args.Flag("config", ""),

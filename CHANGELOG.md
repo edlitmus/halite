@@ -29,6 +29,39 @@ The state of the rebuild, by what it means rather than by commit.
 hub's log file before refusing it. `halite-hub policy test` with fewer
 than three operands now exits 64 rather than 1.
 
+### halite-api doctor scrubs its report
+
+`halite-api doctor` now scrubs the API's configured secrets from its
+report, as text and as `--out json`/`yaml`, as the hub's and the node's
+doctors already did. No check was found that prints one, so this closes
+a gap rather than a leak anyone saw.
+
+### A node keeps one renewed-away key, not all of them
+
+A node no longer keeps a private key for every certificate renewal. A
+renewal now sets the old key aside as `node.key.renewed.<UTC time>`, and
+once a renewal has succeeded, the keys earlier renewals set aside are
+removed, so the node keeps one. A key moved aside by
+`halite-node enroll --force` is never removed. Neither is a
+`node.key.<UTC time>` left by an earlier build; remove those by hand.
+
+### Missing operands and malformed numbers exit 64
+
+All three programs now exit 64, sysexits' `EX_USAGE`, before contacting
+the hub or opening any store, when a subcommand is missing an operand or
+a numeric flag isn't a whole number. They used to exit 1, the same as a
+failed command.
+
+- **Missing operands:** `halite-hub keys show` with no node, `jobs kill`
+  with no jid, `halite-node call` with no function,
+  `halite-api token show` with no identifier, and the like.
+- **Numeric flags:** `--limit`, `--uses`, `--ssh-concurrency` and
+  `--indent` used to read `10x` as 10, keep the default for `abc`, and
+  silently turn `--ssh-concurrency 0` into 8. They now refuse anything
+  that isn't a whole number in range.
+- **`halite-hub ssh --out`:** an unknown format is refused before the
+  command runs, not after it has run on every target.
+
 ### A mistyped keys or jobs subcommand no longer touches the hub
 
 `halite-hub keys`, `keys token` and `jobs` now refuse a mistyped
@@ -48,9 +81,10 @@ it cannot read, before anything is sent. It used to exit 1, the code it
 uses for a node that failed.
 
 **`--subset` and `--batch-safe-limit`** must now be whole numbers above
-zero. A value that did not parse, such as `--subset 2x`, or a
-non-positive one, such as `--subset=-1`, used to be ignored, and the job
-went to every node the target matched.
+zero. A value that was not a number, such as `--subset abc`, or a
+non-positive one, such as `--subset=-1`, used to mean no subset, and the
+job went to every node the target matched. A number with something after
+it, such as `--subset 2x`, was read as far as its digits went.
 
 **A flag a subcommand does not take** now exits 64 in `halite-node`,
 `halite-hub` and `halite-api`. So does a `key=value` argument that looks

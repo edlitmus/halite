@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
@@ -66,8 +68,8 @@ func (n *node) renewIdentity(args *cli.Args, alg pki.KeyAlgorithm) (*x509.Certif
 	// The key is written only once the hub has issued against it: a
 	// node that replaced its key and then failed to get a certificate
 	// would have locked itself out.
-	aside := files.Path(pki.NodeKeyFile) + "." + time.Now().UTC().Format("20060102T150405")
-	if err := atomicfile.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
+	aside, err := setRenewedKeyAside(files, time.Now())
+	if err != nil {
 		return nil, "", err
 	}
 	if err := files.WriteKey(pki.NodeKeyFile, key); err != nil {
@@ -80,7 +82,63 @@ func (n *node) renewIdentity(args *cli.Args, alg pki.KeyAlgorithm) (*x509.Certif
 	if err != nil {
 		return nil, aside, err
 	}
+	// Only now, with the new key and its certificate both written and
+	// read back: until then an earlier key is still the way back.
+	if removed, err := pruneRenewedKeys(files, aside); err != nil {
+		n.log.Warn("could not remove a key an earlier renewal set aside",
+			"error", err.Error(), "removed", len(removed))
+	} else if len(removed) > 0 {
+		n.log.Info("removed keys earlier renewals set aside", "count", len(removed))
+	}
 	return fresh, aside, nil
+}
+
+// renewedKeyPrefix names a key a renewal moved aside, as opposed to one
+// `enroll --force` did. They used to share `node.key.<time>`, and
+// nothing pruned either, so a node collected a private key for every
+// renewal -- one every 45 days on the default lifetime -- each for a
+// certificate the hub had already revoked (DIVERGENCE 5.222). Only the
+// renewal's are pruned: a key an operator moved aside by re-enrolling
+// was a decision, and may be the one copy of an identity they meant to
+// keep.
+const renewedKeyPrefix = pki.NodeKeyFile + ".renewed."
+
+// setRenewedKeyAside moves the current key to node.key.renewed.<UTC time>
+// and returns where.
+func setRenewedKeyAside(files pki.Files, now time.Time) (string, error) {
+	aside := files.Path(renewedKeyPrefix + now.UTC().Format("20060102T150405"))
+	if err := atomicfile.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
+		return "", err
+	}
+	return aside, nil
+}
+
+// pruneRenewedKeys removes every key an earlier renewal set aside, keeping
+// keep -- the one this renewal just made, which is the way back if the
+// new identity turns out to be bad. A key named the old way, before
+// renewals were told apart from re-enrollments, is left alone: it cannot
+// be told which it was.
+func pruneRenewedKeys(files pki.Files, keep string) ([]string, error) {
+	entries, err := os.ReadDir(files.Dir)
+	if err != nil {
+		return nil, err
+	}
+	var removed []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, renewedKeyPrefix) {
+			continue
+		}
+		path := files.Path(name)
+		if path == keep {
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			return removed, err
+		}
+		removed = append(removed, path)
+	}
+	return removed, nil
 }
 
 // renewalCheckEvery is how often the connect loop looks at the
