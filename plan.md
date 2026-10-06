@@ -2996,11 +2996,12 @@ somebody would otherwise rediscover.
 
 **Last**
 
-23. The YAML over-acceptance set — **15** documents halite reads that
-    the reference refuses, down from 20 (§5, DIVERGENCE 5.64). What is
-    left is document markers inside quoted scalars, under-indented
-    continuations, and anchors in positions the reference refuses; the
-    tab cluster is closed. Then the six real template gaps and the
+23. ~~The YAML over-acceptance set~~ — **closed, 2026-10-06**
+    (DIVERGENCE 5.226). Each of the 15 was put to PyYAML 6.0.3 first:
+    two were its dialect, one was a wrong value, and twelve are refused
+    now as PyYAML refuses them. Ten suite-valid documents PyYAML also
+    refuses moved to deliberate with them. No over-acceptance is left.
+    What remains of this item is the six real template gaps and the
     regexcompat character-class false positive.
 
 ---
