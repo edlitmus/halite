@@ -20263,37 +20263,37 @@ reading, not measured.
 
 ### 5.228 A Salt configuration file ran without its drop-in directory
 
-SPEC 27.5 promises that `halite-node serve --config /etc/salt/minion`
-"reads a Salt minion configuration file, applies the key mapping … and
-runs", and the same for a Salt master configuration. `halite-hub
+SPEC 27.5 promises that `halite-node serve --config /etc/salt/minion` <!-- lexicon:allow -->
+"reads a Salt minion configuration file, applies the key mapping … and <!-- lexicon:allow -->
+runs", and the same for a Salt master configuration. `halite-hub <!-- lexicon:allow -->
 migrate` reads such a file with its drop-in directory beside it,
-`minion.d/`, as Salt does, and reports the keys it finds there as
+`minion.d/`, as Salt does, and reports the keys it finds there as <!-- lexicon:allow -->
 translated. `config.LoadSaltConfig` said the same, and was called by
 nothing, as the unreferenced-function sweep found.
 
 The running node and hub did not read the directory. With `--config`
 naming a Salt file they read only that file, plus
-`<config root>/node.d`. So `id:` and `master:` kept in `minion.d/*.conf`,
+`<config root>/node.d`. So `id:` and `master:` kept in `minion.d/*.conf`, <!-- lexicon:allow -->
 which is Salt's common layout, were silently absent at run time, after
 migrate had said they would be translated. Measured with the
-`halite-node` binary and a `minion` holding `master: hub.example`
-beside `minion.d/id.conf` holding `id: web1`:
-- **before**, it translated only `master`, and reported its id as this
+`halite-node` binary and a `minion` holding `master: hub.example` <!-- lexicon:allow -->
+beside `minion.d/id.conf` holding `id: web1`: <!-- lexicon:allow -->
+- **before**, it translated only `master`, and reported its id as this <!-- lexicon:allow -->
   host's name, `NA-4R1WPW9MBP`;
 - **after**, it translates both, and its id is `web1`.
 
 The owner chose Salt's behaviour. `config.Load` now reads `<file>.d`
-when the `--config` file is named as Salt names its own, `minion` or
-`master`, with no extension. Every caller gets it, and the running node
+when the `--config` file is named as Salt names its own, `minion` or <!-- lexicon:allow -->
+`master`, with no extension. Every caller gets it, and the running node <!-- lexicon:allow -->
 and hub now read exactly what migrate reads. Any other file passed with
 `--config` keeps `<config root>/<role>.d`, so a halite `node.yaml`
 loses nothing and `node.yaml.d` is never consulted. `LoadSaltConfig`
 had nothing left to add, and is removed.
 
 `TestASaltConfigFileReadsItsDropInsAndAHaliteOneKeepsTheRoots` covers:
-- a `minion`'s drop-in being read;
+- a `minion`'s drop-in being read; <!-- lexicon:allow -->
 - the node's file list matching migrate's;
-- a `master`'s drop-in being read;
+- a `master`'s drop-in being read; <!-- lexicon:allow -->
 - a halite file keeping the root's drop-ins and ignoring
   `node.yaml.d`.
 
@@ -20301,7 +20301,7 @@ With the name rule disabled, the three Salt cases failed. The command
 reference's migration table now says the drop-in directory is read in
 place when `--config` names the Salt file.
 
-**Not covered:** `halite-hub serve` against a real Salt `master` file;
+**Not covered:** `halite-hub serve` against a real Salt `master` file; <!-- lexicon:allow -->
 the hub shares `config.Load`, and the test covers its case at that
 level. Only run on macOS.
 

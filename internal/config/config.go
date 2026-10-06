@@ -101,8 +101,8 @@ func Load(role Role, opts LoadOptions) (*Config, error) {
 	dropIn := opts.DropInDir
 	if dropIn == "" && opts.Path != "" && isSaltConfigName(opts.Path) {
 		// A Salt configuration file read in place keeps Salt's drop-ins
-		// beside it -- `/etc/salt/minion` reads `/etc/salt/minion.d/` --
-		// which is where a Salt estate keeps `id:` and `master:`. SPEC
+		// beside it -- `/etc/salt/minion` reads `/etc/salt/minion.d/` -- // lexicon:allow
+		// which is where a Salt estate keeps `id:` and `master:`. SPEC // lexicon:allow
 		// 27.5 promises such a file "runs", and `halite-hub migrate` has
 		// always read the directory and reported its keys as translated.
 		// The running node and hub did not, so a node configured that way
@@ -202,7 +202,7 @@ func dropInFiles(dir string) ([]string, error) {
 }
 
 // isSaltConfigName reports whether a configuration file is named as
-// Salt names its own, `minion` or `master`, with no extension. Only those
+// Salt names its own, `minion` or `master`, with no extension. Only those // lexicon:allow
 // read their drop-ins from beside them: a halite file passed with
 // --config keeps `<config root>/<role>.d`, which is where its fragments
 // are, and `node.yaml.d` is nowhere anyone keeps anything.

@@ -381,9 +381,9 @@ func TestASaltConfigFileReadsItsDropInsAndAHaliteOneKeepsTheRoots(t *testing.T) 
 		}
 	}
 	root := filepath.Join(dir, "root")
-	write(filepath.Join(dir, "salt", "minion"), "master: hub.example\n") // lexicon:allow
-	write(filepath.Join(dir, "salt", "minion.d", "id.conf"), "id: web1\n") // lexicon:allow
-	write(filepath.Join(dir, "salt", "master"), "interface: 0.0.0.0\n") // lexicon:allow
+	write(filepath.Join(dir, "salt", "minion"), "master: hub.example\n")           // lexicon:allow
+	write(filepath.Join(dir, "salt", "minion.d", "id.conf"), "id: web1\n")         // lexicon:allow
+	write(filepath.Join(dir, "salt", "master"), "interface: 0.0.0.0\n")            // lexicon:allow
 	write(filepath.Join(dir, "salt", "master.d", "port.conf"), "ret_port: 4506\n") // lexicon:allow
 	write(filepath.Join(root, "node.d", "fragment.yaml"), "node_id: from-root\n")
 
