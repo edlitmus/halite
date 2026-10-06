@@ -57,7 +57,7 @@ func TestAMistypedSubcommandIsRefusedBeforeTheHubIsOpened(t *testing.T) {
 
 // `extensions` opened the hub's configuration and log file before
 // reading its subcommand, as keys and jobs did; and `policy test` short
-// of its operands exited 1. DIVERGENCE 5.221.
+// of its operands exited 1. DIVERGENCE 5.224.
 func TestExtensionsAndPolicyRefuseBeforeTouchingAnything(t *testing.T) {
 	root := t.TempDir()
 	logFile := filepath.Join(root, "hub.log")

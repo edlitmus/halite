@@ -20057,7 +20057,7 @@ both formats:
 **Not covered:** secrets in the `_file` forms, which `doctor` never
 reads. Only run on macOS.
 
-### 5.221 `extensions` opened the hub before its subcommand, and `policy test` exited 1
+### 5.224 `extensions` opened the hub before its subcommand, and `policy test` exited 1
 
 5.220 found that `keys`, `keys token` and `jobs` opened the hub before
 reading their subcommand, and recorded that the other hub subcommands
