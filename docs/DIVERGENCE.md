@@ -19795,6 +19795,56 @@ breaks each failed the tests again:
 - Errors from the hub itself still exit 1, as before.
 - Not run on FreeBSD or Linux; nothing here is platform-specific.
 
+### 5.220 `keys`, `keys token` and `jobs` opened the hub before reading their subcommand
+
+`halite-hub keys`, `keys token` and `jobs` each opened what they act on
+before reading which subcommand they had been given. 5.210 recorded this
+as found and not fixed.
+- **`keys` and `keys token`** called `openHub`. That loads the
+  configuration, opens `log_file` and creates the key store's directory,
+  and refuses when there is no enrollment CA.
+- **`jobs`** called `openJobs`, which creates `<state_dir>/jobs`.
+
+So a mistyped subcommand had two outcomes:
+- **On a machine without a CA:** `keys lsit` said there was no CA, with
+  exit 1. That is an answer about the wrong thing, with the exit for a
+  command that failed.
+- **On a hub:** `keys lsit` created the log file and the key store's
+  directory before saying "unknown subcommand", and `jobs lsit` created
+  the job cache directory. These commands are usually run as root, so
+  that means a root-owned file or directory where the service account
+  has to write. That is how a hub stops starting.
+
+Each command now opens its hub or job cache on first use, through an
+accessor the switch's cases call. A name that matches no case reaches
+the `default` refusal having opened nothing. The alternative, a list of
+valid names checked before opening, would have been a second list that
+has to agree with the switch; this way the switch is the only list. As
+a side effect, a case's own argument checks, such as
+`keys token create` without `--ttl`, also now run before anything is
+opened.
+
+`TestAMistypedSubcommandIsRefusedBeforeTheHubIsOpened` runs `keys lsit`,
+`keys token lsit` and `jobs lsit` against a configuration whose
+`state_dir`, `log_file` and `pki_dir` sit in a directory of its own,
+with no CA. It requires exit 64, the subcommand named, and nothing
+created. It failed on the old code:
+- `keys lsit` and `keys token lsit` exited 1, about the CA, and created
+  `hub.log`;
+- `jobs lsit` created `state/`.
+
+Making each command open eagerly again failed exactly that command's
+case.
+
+**Found, not fixed:**
+- `jobs list --limit` is read with an unchecked `fmt.Sscanf`, so a bad
+  value lists 20.
+- `keys operator create` and `keys signer create` without a name exit 1
+  through `cli.Fatalf`, where 5.219's `cli.Usagef` belongs.
+
+**Not covered:** other hub subcommands were not checked for the same
+order. Only run on macOS.
+
 
 ## 6. Everything else not started
 

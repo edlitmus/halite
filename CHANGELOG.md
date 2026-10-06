@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A mistyped keys or jobs subcommand no longer touches the hub
+
+`halite-hub keys`, `keys token` and `jobs` now refuse a mistyped
+subcommand, with exit 64 and the name they did not recognise, before
+opening anything.
+
+Before, `keys lsit` on a machine without an enrollment CA reported that
+there was no CA, with exit 1. On a hub, it created the log file and the
+key store's directory before saying "unknown subcommand", and `jobs lsit`
+created the job cache directory. Run as root, either could leave a
+root-owned path where the hub's service account needs to write.
+
 ### Usage errors exit 64, and run refuses a malformed --subset
 
 `halite-hub run` now exits 64, sysexits' `EX_USAGE`, for a command line
