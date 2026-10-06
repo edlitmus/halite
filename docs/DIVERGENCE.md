@@ -19845,6 +19845,43 @@ case.
 **Not covered:** other hub subcommands were not checked for the same
 order. Only run on macOS.
 
+### 5.221 A node kept the key from every renewal
+
+A renewal moves the node's key aside before writing the new one (SPEC
+7.4 renews with a new key every time), as `node.key.<UTC time>`.
+`enroll --force` moved its key aside under the same name. Nothing pruned
+either, and `docs/operations.md` said so. So a node collected a private
+key for every renewal, one every 45 days on the default lifetime, each
+for a certificate the hub had already revoked when it issued the next.
+
+The choice made was to prune only what renewals set aside. A key
+`enroll --force` moved aside was an operator's decision, and may be the
+one copy of an identity they meant to keep.
+- A renewal now names its aside `node.key.renewed.<UTC time>`.
+- Once the renewal has fully succeeded, with the new key and its
+  certificate both written and read back, `pruneRenewedKeys` removes the
+  earlier renewed asides. It keeps the one just made as the way back if
+  the new identity turns out to be bad.
+- A failure to remove one is a warning, not a failed renewal.
+- `node.key.<UTC time>` files are left alone, whether from
+  `enroll --force` or from an earlier build's renewals, because the two
+  cannot be told apart. The operations guide says to remove the old ones
+  by hand.
+
+`renewIdentity` needs a hub, and no node test stands one up. So the set
+aside and the prune are two functions it calls, and
+`TestARenewalPrunesOnlyTheKeysEarlierRenewalsSetAside` drives them
+through three renewals over a directory that also holds an `enroll
+--force` aside. After each renewal one renewed aside is left, the
+newest, and the other key is untouched. Three breaks each failed it:
+- pruning every `node.key.*`, which took the enroll aside;
+- pruning nothing;
+- the old aside name, which left every aside.
+
+**Not covered:** the prune inside a real renewal against a hub; the
+order (prune only after the certificate reads back) is held by the code,
+not by a test. Only run on macOS.
+
 
 ## 6. Everything else not started
 
