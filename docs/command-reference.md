@@ -1786,7 +1786,7 @@ grain is named in `pillar_trusted_grains`. SPEC section 12.4.
 |---|---|
 | `/etc/salt/minion` | `<config root>/node.yaml` | <!-- lexicon:allow -->
 | `/etc/salt/master` | `<config root>/hub.yaml` | <!-- lexicon:allow -->
-| `/etc/salt/minion.d/` | `<config root>/node.d/` | <!-- lexicon:allow -->
+| `/etc/salt/minion.d/` | `<config root>/node.d/`; or read in place, beside the file, when `--config` names `/etc/salt/minion` itself | <!-- lexicon:allow -->
 | `master:` | `hub:` | <!-- lexicon:allow -->
 | `id:` | `node_id:` |
 | `gpg_keydir:` | `gpg_home:` |

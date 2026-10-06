@@ -360,3 +360,67 @@ func TestASecretFilesContentsAreRefusedWhenReadable(t *testing.T) {
 		t.Error("an empty secret file was accepted")
 	}
 }
+
+// A Salt configuration file read in place brings its drop-in directory,
+// as Salt's own does, and as `halite-hub migrate` always assumed; a
+// halite file passed by path keeps <config root>/<role>.d.
+//
+// The node and hub loaded a `--config /etc/salt/minion` without
+// `minion.d/`, so an estate that keeps `id:` there -- Salt's common
+// layout -- ran a node named after its host, while migrate's report had
+// said the key would be translated. DIVERGENCE 5.228.
+func TestASaltConfigFileReadsItsDropInsAndAHaliteOneKeepsTheRoots(t *testing.T) {
+	dir := t.TempDir()
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := filepath.Join(dir, "root")
+	write(filepath.Join(dir, "salt", "minion"), "master: hub.example\n")           // lexicon:allow
+	write(filepath.Join(dir, "salt", "minion.d", "id.conf"), "id: web1\n")         // lexicon:allow
+	write(filepath.Join(dir, "salt", "master"), "interface: 0.0.0.0\n")            // lexicon:allow
+	write(filepath.Join(dir, "salt", "master.d", "port.conf"), "ret_port: 4506\n") // lexicon:allow
+	write(filepath.Join(root, "node.d", "fragment.yaml"), "node_id: from-root\n")
+
+	// What the node does with --config and the default root.
+	cfg, err := Load(Node, LoadOptions{Path: filepath.Join(dir, "salt", "minion"), Root: root}) // lexicon:allow
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.String("node_id", ""); got != "web1" {
+		t.Errorf("a Salt minion file's drop-in was not read: node_id = %q", got) // lexicon:allow
+	}
+	// And what migrate reads, which it must agree with.
+	audit, err := Load(Node, LoadOptions{Path: filepath.Join(dir, "salt", "minion"), DropInDir: filepath.Join(dir, "salt", "minion.d")}) // lexicon:allow
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.Files, ",") != strings.Join(audit.Files, ",") {
+		t.Errorf("the node reads %v and migrate reads %v", cfg.Files, audit.Files)
+	}
+
+	hub, err := Load(Hub, LoadOptions{Path: filepath.Join(dir, "salt", "master"), Root: root}) // lexicon:allow
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hub.Files) != 2 {
+		t.Errorf("a Salt master file read %v; its drop-in was missed", hub.Files) // lexicon:allow
+	}
+
+	// A halite file passed by path still takes the root's drop-ins, and
+	// node.yaml.d is not consulted.
+	write(filepath.Join(dir, "etc", "node.yaml"), "hub: hub.example\n")
+	write(filepath.Join(dir, "etc", "node.yaml.d", "x.yaml"), "node_id: wrong\n")
+	cfg, err = Load(Node, LoadOptions{Path: filepath.Join(dir, "etc", "node.yaml"), Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.String("node_id", ""); got != "from-root" {
+		t.Errorf("a halite file's drop-ins came from somewhere other than the root: node_id = %q", got)
+	}
+}
