@@ -75,6 +75,22 @@ Who a program is and what it talks to. A node dials the hub
 and the hub never dials a node, so these are the settings that decide
 whether anything talks at all.
 
+### `evidence_anchor_burst`
+
+*`halite-hub` · `60` · SPEC section 25.7*
+
+Evidence-head reports one node may make at once before evidence_anchor_rate applies.
+
+Read by the hub. How many evidence-head reports one node may make at once before `evidence_anchor_rate` applies: a highstate's jobs finishing together, or a node reconnecting. Below one, the default of 60 is used.
+
+### `evidence_anchor_rate`
+
+*`halite-hub` · `1` · SPEC section 25.7*
+
+Evidence-head reports one node may make per second, sustained; over it a report is refused with 429.
+
+Read by the hub. How many evidence-head reports one node may make a second, sustained, as a token bucket; a report over it is refused with 429 before the hub reads, signs or writes anything, and the node's next report covers its head. A node reports when its stream opens and after each job, so its honest rate is its job rate; raise this only for a node that runs many jobs a second and is anchored later than you want. What it bounds is a compromised node writing to its own anchor file as fast as the hub will fsync.
+
 ### `hub`
 
 *`halite-node`, `halite-api` · no default · SPEC section 5.1*
@@ -2015,6 +2031,8 @@ Every setting, and which programs read it.
 | `event_return_tags` | `halite-hub` | — | Returners |
 | `event_tag_compat` | `halite-hub` | `false` | The event bus |
 | `evidence` | `halite-node` | `true` | Node execution controls |
+| `evidence_anchor_burst` | `halite-hub` | `60` | Identity and connection |
+| `evidence_anchor_rate` | `halite-hub` | `1` | Identity and connection |
 | `evidence_dir` | `halite-node` | — | Node execution controls |
 | `evidence_max_bytes` | `halite-node` | `67108864` | Node execution controls |
 | `exec_path` | `halite-node`, `halite-hub` | — | Node execution controls |

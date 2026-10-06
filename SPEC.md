@@ -2393,7 +2393,9 @@ numbered above everything it holds with a receipt: a signature by the enrollment
 node identity, the head and the time it was recorded. The node checks the receipt against the CA it
 pinned and files it in its own chain. A head that contradicts the record — the same number with
 another hash, or a number below the highest — is recorded as a conflict, answered with 409 and no
-receipt, logged, counted, and raised as `halite/node/<node_id>/evidence/conflict`.
+receipt, logged, counted, and raised as `halite/node/<node_id>/evidence/conflict`. Reports are
+rate-limited per node (`evidence_anchor_rate`, `evidence_anchor_burst`); one over the rate is
+refused with 429 and nothing recorded, and the node's next report covers its head.
 `halite-hub evidence anchors <node>` prints the hub's record as stored, and
 `halite-node verify-evidence --anchors <file>` checks a chain against it; the receipts in a chain
 are checked against the CA certificate on every run.

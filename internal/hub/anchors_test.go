@@ -365,3 +365,58 @@ func TestSubscribeOpenedFiresOnAcceptanceOnly(t *testing.T) {
 	cancel()
 	<-errs
 }
+
+// A node is held to a rate, as a token bucket, and a report over it is
+// refused before it costs anything: 429, no line written, nothing
+// signed, counted. Without it a compromised node could report an
+// ever-larger head as fast as the hub would fsync it, growing its own
+// file without bound. Another node's bucket is its own, and the refused
+// node is let back in as the bucket refills. DIVERGENCE 5.230.
+func TestANodeOverItsAnchorRateIsRefusedAndNothingIsWritten(t *testing.T) {
+	l := newLab(t)
+	dir := l.withAnchors(t)
+	now := time.Now()
+	l.server.Now = func() time.Time { return now }
+	l.server.Anchors.Rate, l.server.Anchors.Burst = 0.5, 3
+	web1 := l.enrolled(t, "web1.example")
+	web2 := l.enrolled(t, "web2.example")
+	ctx := context.Background()
+
+	for seq := uint64(1); seq <= 3; seq++ {
+		if _, err := web1.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: seq, Hash: headA}); err != nil {
+			t.Fatalf("report %d of a burst of 3 was refused: %v", seq, err)
+		}
+	}
+	_, err := web1.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 4, Hash: headA})
+	if err == nil {
+		t.Fatal("a fourth report inside a burst of 3 was accepted")
+	}
+	// A StatusError rather than a RefusedError: 429 is "not now", and the
+	// client keeps the two apart so that only a refusal is treated as
+	// final. The code is what the node acts on.
+	var status *transport.StatusError
+	if !errors.As(err, &status) || status.Status != http.StatusTooManyRequests ||
+		transport.CodeOf(err) != transport.CodeRateLimited {
+		t.Errorf("the refusal was %v (code %q)", err, transport.CodeOf(err))
+	}
+	if lines := anchorLines(t, dir, "web1.example"); len(lines) != 3 {
+		t.Errorf("a refused report left a line: %d lines", len(lines))
+	}
+
+	if _, err := web2.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 1, Hash: headA}); err != nil {
+		t.Errorf("another node was held to web1's rate: %v", err)
+	}
+
+	now = now.Add(2 * time.Second) // one token at 0.5 a second
+	if _, err := web1.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 4, Hash: headA}); err != nil {
+		t.Errorf("the bucket refilled and the report was still refused: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := l.server.Metrics.Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `halite_hub_evidence_anchors_total{result="rate_limited"} 1`) {
+		t.Errorf("the refusal is not counted:\n%s", out.String())
+	}
+}

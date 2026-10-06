@@ -499,6 +499,9 @@ const (
 	// node is not being told it may not ask; it is being told that what
 	// it said disagrees with what it said before.
 	CodeEvidenceConflict = "evidence_conflict"
+	// CodeRateLimited is a request refused because its sender is over
+	// its rate. Nothing was recorded; a later request may succeed.
+	CodeRateLimited = "rate_limited"
 )
 
 // WriteJSON sends a value with the canonical settings of SPEC 6.4:

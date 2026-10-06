@@ -956,6 +956,14 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Node execution controls",
 		Detail: "The current segment is sealed at this size and a new one started; the chain continues across the boundary, so this changes how the record is filed and not what it contains. Sealed segments are named for the record they start at and nothing removes them.",
 	},
+	"evidence_anchor_rate": {
+		Group:  "Identity and connection",
+		Detail: "Read by the hub. How many evidence-head reports one node may make a second, sustained, as a token bucket; a report over it is refused with 429 before the hub reads, signs or writes anything, and the node's next report covers its head. A node reports when its stream opens and after each job, so its honest rate is its job rate; raise this only for a node that runs many jobs a second and is anchored later than you want. What it bounds is a compromised node writing to its own anchor file as fast as the hub will fsync.",
+	},
+	"evidence_anchor_burst": {
+		Group:  "Identity and connection",
+		Detail: "Read by the hub. How many evidence-head reports one node may make at once before `evidence_anchor_rate` applies: a highstate's jobs finishing together, or a node reconnecting. Below one, the default of 60 is used.",
+	},
 	"extension_trust_keys": {
 		Group:  "Extensions",
 		Detail: "The keys whose signed bundles this node accepts, as `<name> <base64>`. An extension is code, so this is the same decision as trusting a package repository.",
