@@ -54,6 +54,7 @@ func TestRunRefusesAMalformedCommandLineAsAUsageError(t *testing.T) {
 		{"a bad timeout", []string{"--timeout", "soon", "*", "test.ping"}, "--timeout"},
 		{"a bad batch wait", []string{"--batch-wait", "soon", "*", "test.ping"}, "--batch-wait"},
 		{"an argument that looks like JSON and is not", []string{"*", "test.ping", "x={nope"}, "did not parse"},
+		{"an output format that does not exist", []string{"--out", "table", "*", "test.ping"}, "table"},
 		{"two signers", []string{"--sign-key", "k", "--sign-extension", "e", "*", "test.ping"}, "two different signers"},
 	} {
 		res := run(t, append([]string{"run", "--root", root}, tc.args...)...)

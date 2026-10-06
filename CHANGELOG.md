@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### run --out refuses an unknown format
+
+`halite-hub run --out` now refuses a format it doesn't know, before
+sending the job. An unknown format, such as `--out table` or a typo,
+used to print the nested format silently, after the job had already run
+on every node.
+
 ### extensions and policy test refuse a bad command line cleanly
 
 `halite-hub extensions` with a mistyped subcommand no longer creates the
