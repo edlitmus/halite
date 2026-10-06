@@ -79,8 +79,7 @@ func runJobs(args *cli.Args) int {
 
 	switch args.Positional[0] {
 	case "list":
-		limit := 20
-		fmt.Sscanf(args.Flag("limit", "20"), "%d", &limit)
+		limit := cli.IntFlag(args, "limit", 20, 1)
 		jobs, err := cache().List(limit)
 		if err != nil {
 			cli.Fatalf("%v", err)
@@ -107,7 +106,7 @@ func runJobs(args *cli.Args) int {
 
 	case "show", "lookup":
 		if len(rest) == 0 {
-			cli.Fatalf("%s needs a jid", args.Positional[0])
+			cli.Usagef("%s needs a jid", args.Positional[0])
 		}
 		id := job.ID(rest[0])
 		j, err := cache().Get(id)
@@ -151,7 +150,7 @@ func runJobs(args *cli.Args) int {
 
 	case "missing":
 		if len(rest) == 0 {
-			cli.Fatalf("missing needs a jid")
+			cli.Usagef("missing needs a jid")
 		}
 		nodes, err := cache().Missing(job.ID(rest[0]))
 		if err != nil {
@@ -197,7 +196,7 @@ func runJobs(args *cli.Args) int {
 
 	case "resume":
 		if len(rest) == 0 {
-			cli.Fatalf("resume needs a jid; `jobs active` lists what is in flight")
+			cli.Usagef("resume needs a jid; `jobs active` lists what is in flight")
 		}
 		// Resuming asks the running hub, because the hub is what owns
 		// a batch. Reading the cache would say what is left and could
@@ -216,7 +215,7 @@ func runJobs(args *cli.Args) int {
 
 	case "kill":
 		if len(rest) == 0 {
-			cli.Fatalf("kill needs a jid")
+			cli.Usagef("kill needs a jid")
 		}
 		client := operatorClient(args)
 		res, err := client.KillJob(context.Background(), rest[0])
@@ -238,7 +237,7 @@ func runJobs(args *cli.Args) int {
 
 	case "export":
 		if len(rest) == 0 {
-			cli.Fatalf("export needs a jid")
+			cli.Usagef("export needs a jid")
 		}
 		id := job.ID(rest[0])
 		j, err := cache().Get(id)

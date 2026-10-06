@@ -87,20 +87,36 @@ func runKeys(args *cli.Args) int {
 	}
 	rest := args.Positional[1:]
 
+	// An operand a subcommand needs is checked here rather than inside
+	// it, because the hub is opened in the call's own argument list:
+	// `keys show` with no node used to open it before noticing.
+	needsNode := func() {
+		if len(rest) == 0 {
+			cli.Usagef("%s needs a node", args.Positional[0])
+		}
+	}
+
 	switch args.Positional[0] {
 	case "list":
 		return keysList(h(), args)
 	case "show":
+		needsNode()
 		return keysShow(h(), args, rest)
 	case "fingerprint":
 		return keysFingerprint(h(), rest)
 	case "accept":
+		if len(rest) == 0 && !args.Bool("all", false) {
+			cli.Usagef("accept needs a node, or --all")
+		}
 		return keysAccept(h(), args, rest)
 	case "reject":
+		needsNode()
 		return keysDecide(h(), rest, args.Flag("reason", ""), h().auth.Reject, "rejected")
 	case "revoke":
+		needsNode()
 		return keysDecide(h(), rest, args.Flag("reason", ""), h().auth.Revoke, "revoked")
 	case "delete":
+		needsNode()
 		return keysDelete(h(), rest)
 	case "export-crl":
 		return keysExportCRL(h(), args)
@@ -187,9 +203,6 @@ func keysList(h *hubContext, args *cli.Args) int {
 }
 
 func keysShow(h *hubContext, args *cli.Args, names []string) int {
-	if len(names) == 0 {
-		cli.Fatalf("show needs a node")
-	}
 	rec, err := h.store.Get(names[0])
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -256,9 +269,6 @@ func keysAccept(h *hubContext, args *cli.Args, names []string) int {
 			return 0
 		}
 	}
-	if len(names) == 0 {
-		cli.Fatalf("accept needs a node, or --all")
-	}
 	failed := 0
 	for _, name := range names {
 		rec, err := h.auth.Accept(name)
@@ -277,9 +287,6 @@ func keysAccept(h *hubContext, args *cli.Args, names []string) int {
 }
 
 func keysDecide(h *hubContext, names []string, reason string, decide func(string, string) (*keystore.Record, error), verb string) int {
-	if len(names) == 0 {
-		cli.Fatalf("%s needs a node", verb)
-	}
 	failed := 0
 	for _, name := range names {
 		if _, err := decide(name, reason); err != nil {
@@ -302,9 +309,6 @@ func keysDecide(h *hubContext, names []string, reason string, decide func(string
 }
 
 func keysDelete(h *hubContext, names []string) int {
-	if len(names) == 0 {
-		cli.Fatalf("delete needs a node")
-	}
 	failed := 0
 	for _, name := range names {
 		// A delete of an accepted node revokes first, or the
@@ -383,14 +387,13 @@ func runKeysToken(args *cli.Args) int {
 	case "create":
 		ttl := args.Flag("ttl", "")
 		if ttl == "" {
-			cli.Fatalf("a bootstrap token needs --ttl; the maximum is %s (SPEC 7.3)", keystore.MaxTokenTTL)
+			cli.Usagef("a bootstrap token needs --ttl; the maximum is %s (SPEC 7.3)", keystore.MaxTokenTTL)
 		}
 		d, err := time.ParseDuration(ttl)
 		if err != nil {
 			cli.Fatalf("--ttl %q: %v", ttl, err)
 		}
-		uses := 1
-		fmt.Sscanf(args.Flag("uses", "1"), "%d", &uses)
+		uses := cli.IntFlag(args, "uses", 1, 1)
 		tok, secret, err := h().store.MintToken(keystore.TokenOptions{
 			TTL:      d,
 			NodeGlob: args.Flag("nodes", ""),
@@ -447,7 +450,7 @@ func runKeysToken(args *cli.Args) int {
 
 	case "revoke":
 		if len(rest) == 0 {
-			cli.Fatalf("token revoke needs a token id, which `keys token list` prints")
+			cli.Usagef("token revoke needs a token id, which `keys token list` prints")
 		}
 		for _, id := range rest {
 			if err := h().store.RevokeToken(id); err != nil {
@@ -471,7 +474,7 @@ func runKeysToken(args *cli.Args) int {
 	// disk. DIVERGENCE 5.144.
 	case "delete":
 		if len(rest) == 0 {
-			cli.Fatalf("token delete needs a token id, which `keys token list` prints; " +
+			cli.Usagef("token delete needs a token id, which `keys token list` prints; " +
 				"`keys token revoke <id>` stops a token without forgetting what it admitted")
 		}
 		for _, id := range rest {
@@ -509,7 +512,7 @@ func runKeysOperator(args *cli.Args) int {
 		return cli.ExitUsage
 	}
 	if len(args.Positional) < 3 {
-		cli.Fatalf("operator create needs a name; it becomes the RBAC principal cert:CN=<name>")
+		cli.Usagef("operator create needs a name; it becomes the RBAC principal cert:CN=<name>")
 	}
 	name := args.Positional[2]
 	h := openHub(args, false)
@@ -580,8 +583,7 @@ func writeOut(args *cli.Args, v any) int {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	indent := 0
-	fmt.Sscanf(args.Flag("indent", "2"), "%d", &indent)
+	indent := cli.IntFlag(args, "indent", 2, 0)
 	if err := cli.Write(os.Stdout, v, format, indent); err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -602,7 +604,7 @@ func runKeysSigner(args *cli.Args) int {
 		return cli.ExitUsage
 	}
 	if len(args.Positional) < 3 {
-		cli.Fatalf("signer create needs a name; it is what a node records when a signature verifies")
+		cli.Usagef("signer create needs a name; it is what a node records when a signature verifies")
 	}
 	name := args.Positional[2]
 	if strings.ContainsAny(name, " \t") {

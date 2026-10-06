@@ -994,3 +994,30 @@ func TestAnUnknownFlagIsAUsageError(t *testing.T) {
 		t.Errorf("an argument that will not parse: exit = %d, want %d: %s", got.code, cli.ExitUsage, got.stderr)
 	}
 }
+
+// A subcommand missing an operand, or given a number that is not one, is
+// a usage error, 64, not the 1 a failed state exits. DIVERGENCE 5.221.
+func TestMissingOperandsAndMalformedNumbersAreUsageErrors(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"call"}, "call needs a module.function"},
+		{[]string{"state"}, "state needs a subcommand"},
+		{[]string{"event"}, "event needs a subcommand"},
+		{[]string{"event", "send"}, "event send needs a tag"},
+		{[]string{"grains", "item"}, "grains item needs a key"},
+		{[]string{"pillar", "item"}, "pillar item needs a key"},
+		{[]string{"lint"}, "lint needs a path"},
+		{[]string{"call", "test.ping", "--indent", "two"}, "--indent"},
+	} {
+		name := strings.Join(tc.args, " ")
+		got := run(t, append(tc.args, "--root", t.TempDir())...)
+		if got.code != cli.ExitUsage {
+			t.Errorf("%s: exit = %d, want %d: %s", name, got.code, cli.ExitUsage, got.stderr)
+		}
+		if !strings.Contains(got.stderr, tc.says) {
+			t.Errorf("%s: the message does not say %q: %s", name, tc.says, got.stderr)
+		}
+	}
+}
