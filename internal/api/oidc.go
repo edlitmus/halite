@@ -67,12 +67,6 @@ func (p *pendingAuth) sweep() {
 	}
 }
 
-func (p *pendingAuth) size() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return len(p.byKey)
-}
-
 // AuthStartResponse tells a client where to send the operator.
 type AuthStartResponse struct {
 	// URL is the provider's authorization endpoint, fully formed.

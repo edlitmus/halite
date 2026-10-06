@@ -122,9 +122,6 @@ func OpenOrchStore(dir string) (*OrchStore, error) {
 	return &OrchStore{dir: dir}, nil
 }
 
-// Dir is where the records are.
-func (c *OrchStore) Dir() string { return c.dir }
-
 // path refuses a jid that is not one, so that a record name cannot
 // become a path.
 func (c *OrchStore) path(id job.ID) (string, error) {

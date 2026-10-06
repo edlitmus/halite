@@ -58,9 +58,6 @@ func shellCommand(script, shell string) []string {
 	return []string{shell, "/c", script}
 }
 
-// shellName is what to call the interpreter in a message.
-func shellName() string { return comspec() }
-
 // cleanEnv is the environment a spawned process receives unless a module
 // says otherwise.
 //
@@ -87,17 +84,6 @@ func cleanEnv() []string {
 	}
 	return env
 }
-
-// quoteScriptArg wraps a string so the interpreter reads it as one
-// argument.
-//
-// cmd.exe has no quoting that makes a value safe the way a POSIX single
-// quote does: `^` escapes, `"` groups, and the two interact differently
-// depending on whether the line is parsed once or twice. The only caller
-// is the umask rewrite, which does not run here, so this refuses to
-// pretend by returning the value unchanged rather than a quoting that
-// would look right and not be.
-func quoteScriptArg(s string) string { return s }
 
 // shellSeparator ends one command in a Shell string so another can
 // follow. cmd.exe uses `&`; `;` is an ordinary character there and a

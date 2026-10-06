@@ -28,6 +28,3 @@ func platformNotes() []string {
 // canDropPrivilege is false here: the credential fields a unix
 // SysProcAttr carries have no counterpart this build uses on Windows.
 func canDropPrivilege() bool { return false }
-
-// renderAccount has nothing to resolve on a platform that cannot use it.
-func renderAccount(cfg Config) (uint32, uint32, error) { return 0, 0, nil }

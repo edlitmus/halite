@@ -65,11 +65,6 @@ func windowsRoot() string {
 	return winJoin(`C:\ProgramData`, "Halite")
 }
 
-// isBSD reports whether this platform uses the /usr/local hierarchy for
-// ports and packages. macOS is excluded: Homebrew's prefix is not fixed,
-// so /etc is the honest default there.
-func isBSD() bool { return isBSDFor(runtime.GOOS) }
-
 func isBSDFor(goos string) bool {
 	switch goos {
 	case "freebsd", "openbsd", "netbsd", "dragonfly":
@@ -77,9 +72,6 @@ func isBSDFor(goos string) bool {
 	}
 	return false
 }
-
-// prefix is where packaged configuration lives.
-func prefix() string { return prefixFor(runtime.GOOS) }
 
 func prefixFor(goos string) string {
 	if isBSDFor(goos) {

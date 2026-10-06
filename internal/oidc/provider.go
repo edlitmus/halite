@@ -131,9 +131,6 @@ func certPool(path string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// Issuer is the configured issuer.
-func (p *Provider) Issuer() string { return p.cfg.Issuer }
-
 func (p *Provider) client() *http.Client {
 	if p.cfg.Client != nil {
 		return p.cfg.Client

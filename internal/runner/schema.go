@@ -307,10 +307,6 @@ func writeChanges(b *strings.Builder, m *value.Map, indent string) {
 	}
 }
 
-// renderScalar keeps the old signature for callers that have no indent
-// to give.
-func renderScalar(v any) string { return renderScalarAt(v, "        ") }
-
 // renderScalarAt renders a value, continuing a multi-line one under the
 // indent its key sits at. A fixed indent put the body of a diff to the
 // left of the key that introduced it.

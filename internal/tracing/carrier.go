@@ -75,11 +75,6 @@ func Inject(h http.Header, s *Span) {
 	h.Set(TraceParentHeader, FormatTraceParent(s.Context))
 }
 
-// InjectContext is Inject for the span a context carries.
-func InjectContext(h http.Header, ctx context.Context) {
-	Inject(h, SpanFrom(ctx))
-}
-
 // Extract reads an incoming request's parent.
 //
 // A header that does not parse is treated as absent rather than as an

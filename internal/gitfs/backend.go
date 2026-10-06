@@ -288,10 +288,3 @@ func (b *Backend) now() time.Time {
 	}
 	return time.Now()
 }
-
-// Updated is when the last successful update finished.
-func (b *Backend) Updated() time.Time {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.updated
-}

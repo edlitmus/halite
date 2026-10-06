@@ -138,19 +138,12 @@ var refusals = []Refusal{
 	},
 }
 
-// Renames returns the mapping table, sorted, for documentation generation
-// and for the migration report.
+// Renames returns the mapping table, sorted. Only the tests read it: the
+// migration report and the generated docs take the translations from
+// ApplyShim's result. This comment used to say otherwise.
 func Renames() []Rename {
 	out := make([]Rename, len(renames))
 	copy(out, renames)
-	sort.Slice(out, func(i, j int) bool { return out[i].Salt < out[j].Salt })
-	return out
-}
-
-// Refusals returns the refused keys and why.
-func Refusals() []Refusal {
-	out := make([]Refusal, len(refusals))
-	copy(out, refusals)
 	sort.Slice(out, func(i, j int) bool { return out[i].Salt < out[j].Salt })
 	return out
 }
