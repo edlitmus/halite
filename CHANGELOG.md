@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### --config with a Salt file reads its .d directory
+
+`--config /etc/salt/minion` now also reads `/etc/salt/minion.d/`, as
+Salt does, and `--config /etc/salt/master` reads `master.d/`. Before,
+keys kept in the drop-in directory, such as `id:` and `master:`, were
+silently ignored, so a node configured that way ran under its hostname,
+even though `halite-hub migrate` had reported those keys as translated.
+A halite configuration file passed with `--config` still takes its
+drop-ins from `<config root>/<role>.d`.
+
 ### YAML: twelve kinds of document PyYAML refuses are refused
 
 **This may refuse a file that loads today.** Before deploying it, lint
