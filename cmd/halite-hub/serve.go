@@ -230,6 +230,14 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	// SPEC 25.7's anchors: the heads nodes report, kept where the node
+	// cannot reach. Durable state, because a record of what a node said
+	// that is lost on a restart is a record a node can outwait.
+	anchors, err := hub.OpenAnchorStore(anchorDir(h.cfg))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	groups, err := nodegroupsFrom(h.cfg)
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -374,6 +382,7 @@ func runServe(args *cli.Args) int {
 		Nodes:          nodes,
 		Orch:           orchestrations,
 		Mine:           mineStore,
+		Anchors:        anchors,
 		Reactors:       reactors,
 		Nodegroups:     groups,
 		Files:          files,

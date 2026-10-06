@@ -91,10 +91,27 @@ or removing one from the middle breaks every entry after it.
 Prints the record count, the span of time it covers and the head hash,
 and exits non-zero if the chain does not hold.
 It changes nothing, including a chain it finds broken.
-The head hash is worth keeping somewhere this machine cannot reach:
-anything with root here could recompute the whole chain, so what the
-record establishes on its own is what a compromised hub did, not what a
-compromised node did.
+.Pp
+On its own the chain establishes what a compromised hub did, not what a
+compromised node did: anything with root here could recompute the whole
+chain.
+So the agent reports its head to the hub when it connects and after
+every job, and files the hub's signed receipt in the chain.
+.Fl -anchors Ar file ,
+given what
+.Nm halite-hub Cm evidence anchors
+prints for this node, checks that every head the hub accepted is still
+the record at that number, which a rewritten chain cannot satisfy
+however well it verifies.
+The receipts in the chain are always checked against the CA
+certificate,
+.Fl -ca-file
+or
+.Pa ca.crt
+under
+.Fl -pki-dir .
+Records written after the last head the hub accepted are not anchored,
+and a node and hub compromised together are not covered.
 .It Cm enroll
 Ask a hub for a certificate.
 The first request is pending until an operator accepts it; the second

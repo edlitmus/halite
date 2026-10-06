@@ -283,14 +283,63 @@ The chain holds: every record's contents match its hash and every record
 follows the one before it.
 
 What that does not establish: anything with root on this node can rewrite
-the whole chain. Keeping the head hash above somewhere this node cannot
-reach is what makes that detectable.
+the whole chain. The hub keeps the heads this node reported; check the chain
+against them with --anchors and the file `halite-hub evidence anchors`
+prints for this node.
+```
+
+The agent reports its head to the hub when its stream opens and after
+every job, and files the receipt the hub signs in the chain. On the hub,
+`halite-hub evidence anchors <node>` prints what it recorded for a node,
+exactly as stored; on the node, `--anchors` checks the chain against it:
+
+```sh
+halite-hub evidence anchors web1.example > web1.example.jsonl   # on the hub
+halite-node verify-evidence --anchors web1.example.jsonl        # on the node
+```
+
+What `verify-evidence --anchors` printed in the end-to-end test
+(`TestTheAgentAnchorsOnConnectAndAfterAJob`, which runs a real hub and
+`halite-node connect` and reads the hub's file directly), with the
+temporary directories shortened to `…`:
+
+```
+halite-node verify-evidence — web1.example
+
+directory: …/state/evidence
+segments:  1
+records:   7
+from:      record 1 at 2026-10-06T18:10:12.476899Z
+to:        record 7 at 2026-10-06T18:10:12.519599Z
+head:      sha256:cca4747520ceb0d8297176bea183379c820d0dffca4462bd277cf46f7337330a
+anchors:   2 accepted, 0 conflict(s), from …/web1.example.jsonl
+receipts:  2 checked against …/ca.crt
+
+The chain holds: every record's contents match its hash and every record
+follows the one before it.
+
+It also agrees with the hub: every head the hub accepted from this node is
+still the record at that number. What that does not establish: records
+written after the last head the hub accepted are not anchored, and a node
+and hub compromised together can agree on anything.
+```
+
+The same test then throws the chain away and writes a new one of the
+same length from its first record. That verifies on its own, and against
+the hub's file it exits 1 with, hashes shortened:
+
+```
+2 break(s):
+  web1.example.jsonl line 1 (record 2): the hub recorded record 2 as sha256:57d12d18… and this chain's record 2 is sha256:b741092b…, so the chain has been rewritten since it was reported
+  web1.example.jsonl line 2 (record 5): the hub recorded record 5 as sha256:7fe410dd… and this chain's record 5 is sha256:4790a91d…, so the chain has been rewritten since it was reported
 ```
 
 | Salt | halite | Status |
 |---|---|---|
 | no equivalent | `halite-node verify-evidence` | works |
 | no equivalent | `halite-node verify-evidence --out json` | works |
+| no equivalent | `halite-node verify-evidence --anchors <file>` | works |
+| no equivalent | `halite-hub evidence anchors <node>` | works |
 
 It exits non-zero on a break, so a monitoring job can run it, and it
 changes nothing — including a chain it finds broken, because a verifier
@@ -303,10 +352,10 @@ A disagreement between the two records is the finding.
 
 **What it does not.** Anything with root on the node can delete the
 chain, or recompute it from the first record and produce a consistent
-forgery. It is evidence about a compromised hub, not about a compromised
-node. What closes that gap is keeping the head hash somewhere the node
-cannot reach — the `head:` line of the output above — and comparing it
-later; halite does not yet ship anything that does that for you.
+forgery. On its own it is evidence about a compromised hub, not about a
+compromised node; the anchor at the hub is what closes that gap for
+everything up to the node's last report. Records written after that are
+not protected, and a node and hub compromised together are not covered.
 
 Nothing deletes a segment. The current file is sealed at
 `evidence_max_bytes` and a new one started, and an estate that keeps

@@ -71,6 +71,13 @@ enroll and connect flags:
   --server-name <name> the name to verify in the hub's certificate
   --correlation <id>   tie an event to the ones that caused it
 
+verify-evidence flags:
+  --anchors <file>     also check the chain against the heads the hub
+                       recorded, as ` + "`halite-hub evidence anchors <node>`" + ` prints them
+  --ca-file <path>     the CA certificate receipts are checked against,
+                       default hub_ca_file or <pki-dir>/ca.crt
+  --pki-dir <dir>      where to find ca.crt, default ` + config.DefaultPKIDir + `
+
 Common flags:
   --help               describe the program without running a command
   --local              work from local roots rather than through a hub

@@ -377,6 +377,7 @@ multiplexing and per-stream flow control, so a large file transfer cannot stall 
 | `/v1/files/{env}` | GET | Node to hub | File list and hash manifest for an environment or subtree. |
 | `/v1/grains` | PUT | Node to hub | Grain refresh push. |
 | `/v1/mine` | POST | Node to hub | Mine update and mine query, subject to the peer policy in section 19.5. |
+| `/v1/evidence/anchor` | POST | Node to hub | The head of the node's evidence chain, answered with a signed receipt or a conflict. Section 25.7. |
 | `/v1/health` | GET | Any to hub | Liveness. The only endpoint reachable without a client certificate, and it returns a fixed string with no state. |
 
 The `/v1/subscribe` stream carries NDJSON messages. One JSON object per line, no trailing state, so
@@ -1620,6 +1621,7 @@ SLS translates mechanically.
 | `halite/node/<node_id>/start` | A node connects |
 | `halite/node/<node_id>/stop` | A node disconnects, with a reason |
 | `halite/node/<node_id>/enroll/<state>` | Enrollment state change |
+| `halite/node/<node_id>/evidence/conflict` | A reported evidence head contradicts one the hub recorded (section 25.7) |
 | `halite/beacon/<node_id>/<beacon>/...` | A beacon fires |
 | `halite/state/<jid>/<node_id>/<result>` | A state run completes |
 | `halite/presence/change` | The connected set changes |
@@ -2287,8 +2289,8 @@ number. Changing it is a decision recorded here, not an implementation detail.
 | Adversary | Capability assumed | Primary controls |
 |---|---|---|
 | Unauthenticated network attacker reaching the hub port | Can send arbitrary TCP bytes | TLS 1.3 mutual auth terminated by the standard library before any application code; one port; no pre-auth application parsing; `/v1/health` returns a constant |
-| Compromised node | Full control of one node, its key, its grains | Hub-side targeting so it sees only its own jobs; trusted-grain allowlist for pillar; event tag restrictions; deny-by-default peer access; rate limits; its certificate is revocable and short-lived |
-| Compromised hub | Full control of the hub process | Optional detached job signing by an operator key the hub does not hold; node-side job expiry and replay caches; signed and pinned extensions; signed gitfs refs; append-only local evidence on the node |
+| Compromised node | Full control of one node, its key, its grains | Hub-side targeting so it sees only its own jobs; trusted-grain allowlist for pillar; event tag restrictions; deny-by-default peer access; rate limits; its certificate is revocable and short-lived; its evidence chain anchored at the hub, so a rewrite of anything it had reported contradicts the hub's record |
+| Compromised hub | Full control of the hub process | Optional detached job signing by an operator key the hub does not hold; node-side job expiry and replay caches; signed and pinned extensions; signed gitfs refs; append-only local evidence on the node, holding receipts the hub signed for the heads it anchored |
 | Malicious or compromised state tree | Can put arbitrary SLS, templates, and files in the file server | gitfs signature verification; strict undefined; render sandbox; template resource limits; no YAML object construction; `cmd.run` as a distinct permission; optional signed state trees |
 | Malicious insider with API access | A valid operator credential | Deny-by-default RBAC with target, function, and argument scoping; separate permission for `cmd.run` and the wheel write functions; full decision logging; token binding |
 | Supply chain attacker | Can publish a malicious library version | Section 4: near-zero third-party code, vendored, digest-pinned, offline builds, reproducible builds, SBOM from the linked binary, signed provenance |
@@ -2324,6 +2326,7 @@ Every cryptographic primitive used, so that a FIPS assessment has one table to r
 | Key derivation | HKDF-SHA-256 |
 | Encrypted pillar | ECDH P-256 or RSA-OAEP for key establishment, HKDF-SHA-256, AES-256-GCM with bound AAD |
 | Signatures on artifacts, extensions, and jobs | ECDSA P-256 or P-384 over SHA-256 or SHA-384 |
+| Evidence anchor receipts | ECDSA by the enrollment CA key over SHA-256 of a domain-separated text payload (section 25.7) |
 | TOTP | HMAC-SHA-1 per RFC 6238, the only use of SHA-1 apart from the `source_hash` verification below, and only where the RFC requires it |
 | Random | `crypto/rand` exclusively. `math/rand` appears nowhere outside the deterministic template seed of section 10.2.4, and CI enforces this by import check. |
 
@@ -2380,6 +2383,28 @@ Each node keeps an append-only, hash-chained local record of every job it accept
 its result, and every configuration and extension change. The chain is verifiable with
 `halite-node verify-evidence`. This gives an investigator a node-local record that a compromised hub
 cannot rewrite.
+
+A hash chain detects editing and not rewriting: anything with root on the node can recompute the
+chain from its first record. So the chain is anchored at the hub. The node reports its head
+(`seq`, `hash`) to `/v1/evidence/anchor` when its stream opens and after every job, and never holds
+up a job to do it. The hub keeps an append-only record per node under
+`<state_dir>/evidence-anchors/`, under the identity in the node's certificate, and answers a head
+numbered above everything it holds with a receipt: a signature by the enrollment CA's key over the
+node identity, the head and the time it was recorded. The node checks the receipt against the CA it
+pinned and files it in its own chain. A head that contradicts the record — the same number with
+another hash, or a number below the highest — is recorded as a conflict, answered with 409 and no
+receipt, logged, counted, and raised as `halite/node/<node_id>/evidence/conflict`.
+`halite-hub evidence anchors <node>` prints the hub's record as stored, and
+`halite-node verify-evidence --anchors <file>` checks a chain against it; the receipts in a chain
+are checked against the CA certificate on every run.
+
+What that establishes: a compromised node cannot rewrite anything up to its last accepted report
+without contradicting the hub's record, and a compromised hub cannot deny an anchor without
+contradicting a receipt it signed. What it does not: records written after the last report the hub
+accepted are not protected, and a node and hub compromised together are not covered. The conflict
+check at the hub is a prompt rather than the guarantee — a rewritten chain padded past the highest
+recorded number before it is next reported is accepted there — and the guarantee is the comparison
+`verify-evidence --anchors` makes against every accepted line.
 
 ## 26. Observability
 

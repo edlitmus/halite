@@ -444,6 +444,24 @@ func (c *Client) Renew(ctx context.Context, key crypto.Signer, nodeID string) (*
 // end and a truncated one are the same thing at this level: the caller
 // reconnects either way.
 func (c *Client) Subscribe(ctx context.Context, req SubscribeRequest, onMessage func(Message) error) error {
+	return c.SubscribeOpened(ctx, req, nil, onMessage)
+}
+
+// SubscribeOpened is Subscribe, calling opened once the hub has accepted
+// the stream and before the first message is read.
+//
+// The moment exists only in here. A caller of Subscribe learns that the
+// stream was up when its first message arrives, and a hub with nothing
+// queued for the node sends nothing until the first ping, thirty seconds
+// later by default (`hub_alive_interval`) -- so "after connecting",
+// measured from the caller's side, was either a guess or half a minute
+// late. The hub answers 200 only
+// after it has authenticated the certificate, checked revocation and
+// attached the node to the fleet, which is what "connected" means.
+//
+// opened runs on this goroutine, so the stream is not read while it
+// runs: anything slow belongs in a goroutine it starts.
+func (c *Client) SubscribeOpened(ctx context.Context, req SubscribeRequest, opened func(), onMessage func(Message) error) error {
 	client, err := c.client()
 	if err != nil {
 		return err
@@ -465,6 +483,9 @@ func (c *Client) Subscribe(ctx context.Context, req SubscribeRequest, onMessage 
 	if res.StatusCode != http.StatusOK {
 		payload, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 		return decodeError(PathSubscribe, payload, res.StatusCode)
+	}
+	if opened != nil {
+		opened()
 	}
 
 	scanner := bufio.NewScanner(res.Body)
@@ -502,6 +523,22 @@ func (c *Client) Subscribe(ctx context.Context, req SubscribeRequest, onMessage 
 func (c *Client) Return(ctx context.Context, ret any) error {
 	_, err := c.post(ctx, PathReturn, ret, nil)
 	return err
+}
+
+// AnchorEvidence reports this node's evidence head and answers with the
+// hub's receipt. SPEC 25.7.
+//
+// A hub that holds a different head at the same number, or a higher one,
+// answers 409 with CodeEvidenceConflict, which arrives here as a
+// RefusedError carrying that code. A hub built before this endpoint
+// existed answers 404, which arrives as a RefusedError with Status 404;
+// the caller tells the two apart by code and status, not by wording.
+func (c *Client) AnchorEvidence(ctx context.Context, req EvidenceAnchorRequest) (*EvidenceAnchorResponse, error) {
+	var res EvidenceAnchorResponse
+	if _, err := c.post(ctx, PathEvidenceAnchor, req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 // Submit asks the hub to run a job. The caller is an operator, and the

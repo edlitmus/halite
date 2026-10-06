@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/x509"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/nodeevidence"
+	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -34,6 +36,8 @@ type evidenceState struct {
 	// failure that looks like nothing at all, so something has to be able
 	// to answer it on demand.
 	err error
+	// anchor is the reporter's state, under mu. See anchor.go.
+	anchor anchorState
 }
 
 // evidenceOn reports whether this node keeps the record. On by default: a
@@ -211,6 +215,9 @@ func (n *node) recordJobResult(ret *job.Return) {
 		"retcode":     strconv.Itoa(ret.RetCode),
 		"duration_ms": strconv.FormatInt(ret.DurationMS, 10),
 	})
+	// After the result is on disk, so the head reported is the one that
+	// holds it. Asynchronous: see anchor.go.
+	n.requestAnchor()
 }
 
 // recordExtensionChange records a bundle appearing, changing version or
@@ -374,17 +381,49 @@ func evidenceDirUsable(dir string) error {
 // Exits non-zero on a break, so that a monitoring job can run it. It
 // changes nothing, including a chain it finds broken: a verifier that
 // repaired what it found would destroy the thing it was asked about.
+//
+// Three checks, of which the first was the whole command until the
+// anchor existed. The chain against itself, which finds editing. The
+// chain against the hub's record (`--anchors`), which finds rewriting --
+// the one thing a chain that verifies cannot rule out. And the receipts
+// the chain holds against the CA certificate, always, because a receipt
+// that does not verify, or names a hash the chain no longer has at that
+// number, is a break whether or not anybody fetched the hub's file.
 func runVerifyEvidence(args *cli.Args) int {
 	n := setup(args)
 	dir := n.evidenceDir()
+
+	anchorsPath := args.Flag("anchors", "")
+	if anchorsPath == "true" {
+		cli.Usagef("--anchors needs the file `halite-hub evidence anchors <node>` printed")
+	}
+	var anchors []nodeevidence.Anchor
+	if anchorsPath != "" {
+		f, err := os.Open(anchorsPath)
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		anchors, err = nodeevidence.ReadAnchors(f)
+		f.Close()
+		if err != nil {
+			cli.Fatalf("%s: %v", anchorsPath, err)
+		}
+	}
+
 	res, err := nodeevidence.Verify(dir)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	caPath, ca, caErr := evidenceCA(n, args)
+	check, err := nodeevidence.CheckAnchors(dir, anchorsPath, anchors, ca)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	ok := res.OK() && check.OK()
 
 	if n.format == cli.JSON || n.format == cli.YAML {
-		n.out(verifyValue(res))
-		if res.OK() {
+		n.out(verifyValue(res, check, anchorsPath, caPath, caErr))
+		if ok {
 			return 0
 		}
 		return 1
@@ -399,6 +438,19 @@ func runVerifyEvidence(args *cli.Args) int {
 		fmt.Printf("to:        record %d at %s\n", res.Last.Seq, res.Last.TS)
 		fmt.Printf("head:      %s\n", res.Last.Hash)
 	}
+	if anchorsPath != "" {
+		fmt.Printf("anchors:   %d accepted, %d conflict(s), from %s\n",
+			check.Anchored, len(check.Conflicts), anchorsPath)
+	}
+	// Only for a chain that holds receipts: a chain from before the
+	// anchor existed has none, and a line about a certificate it does
+	// not need would read as a problem.
+	switch {
+	case check.Found > 0 && caErr == nil:
+		fmt.Printf("receipts:  %d checked against %s\n", check.Receipts, caPath)
+	case check.Found > 0:
+		fmt.Printf("receipts:  %d, none checked; the CA certificate could not be read: %v\n", check.Found, caErr)
+	}
 	if res.Lost > 0 {
 		fmt.Printf("\n%d record(s) could not be written and the chain says so; those jobs have no entry.\n",
 			res.Lost)
@@ -407,34 +459,81 @@ func runVerifyEvidence(args *cli.Args) int {
 		fmt.Printf("\nRecords written with schema %s cannot be checked by this build; their links\nare verified and their contents are not. That is a newer halite, not a broken chain.\n",
 			schema)
 	}
-	if res.Records == 0 {
+	for _, note := range check.Unchecked {
+		fmt.Printf("\nNot checked: %s.\n", note)
+	}
+	if len(check.Conflicts) > 0 {
+		fmt.Printf("\nThe hub recorded %d conflict(s): heads this node reported that contradicted\n"+
+			"heads it had reported before. The chain was rewritten, reset or rolled back.\n",
+			len(check.Conflicts))
+		for _, c := range check.Conflicts {
+			fmt.Printf("  line %d at %s: record %d as %s, where the hub had record %d as %s\n",
+				c.Line, c.Received, c.Seq, c.Hash, c.PriorSeq, c.PriorHash)
+		}
+	}
+	if res.Records == 0 && ok {
 		fmt.Print("\nThere is no record here. An agent writes one when it starts, so this is a\n" +
 			"node that has not run one since `evidence` was turned on.\n")
 		return 0
 	}
-	if res.OK() {
+	if ok {
 		fmt.Print("\nThe chain holds: every record's contents match its hash and every record\n" +
 			"follows the one before it.\n")
-		fmt.Print("\nWhat that does not establish: anything with root on this node can rewrite\n" +
-			"the whole chain. Keeping the head hash above somewhere this node cannot\n" +
-			"reach is what makes that detectable.\n")
+		if anchorsPath != "" && check.Anchored > 0 {
+			fmt.Print("\nIt also agrees with the hub: every head the hub accepted from this node is\n" +
+				"still the record at that number. What that does not establish: records\n" +
+				"written after the last head the hub accepted are not anchored, and a node\n" +
+				"and hub compromised together can agree on anything.\n")
+		} else {
+			fmt.Print("\nWhat that does not establish: anything with root on this node can rewrite\n" +
+				"the whole chain. The hub keeps the heads this node reported; check the chain\n" +
+				"against them with --anchors and the file `halite-hub evidence anchors`\n" +
+				"prints for this node.\n")
+		}
 		return 0
 	}
-	fmt.Printf("\n%d break(s):\n", len(res.Breaks))
-	for _, b := range res.Breaks {
-		fmt.Printf("  %s\n", b)
+	breaks := append(append([]nodeevidence.Break(nil), res.Breaks...), check.Breaks...)
+	if len(breaks) > 0 {
+		fmt.Printf("\n%d break(s):\n", len(breaks))
+		for _, b := range breaks {
+			fmt.Printf("  %s\n", b)
+		}
 	}
 	return 1
 }
 
+// evidenceCA reads the certificate a receipt is checked against: the
+// enrollment CA, found where hubClient finds it, so that verify-evidence
+// and the agent cannot be looking at two different files.
+//
+// `--ca-file` rather than a flag of its own. It already means "the hub's
+// CA" on this program, and two flags naming one certificate, differing
+// by a suffix, is a pair somebody types the wrong half of.
+func evidenceCA(n *node, args *cli.Args) (string, *x509.Certificate, error) {
+	path := args.Flag("ca-file", n.cfg.String("hub_ca_file", ""))
+	if path == "" || path == "true" {
+		files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.PathUnderRoot("pki_dir", "pki"))}
+		path = files.Path(pki.CACertFile)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return path, nil, err
+	}
+	cert, err := pki.DecodeCert(raw)
+	if err != nil {
+		return path, nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return path, cert, nil
+}
+
 // verifyValue renders a verification for `--out json` or `yaml`, so that
 // a monitoring job can read it rather than parse the text.
-func verifyValue(res *nodeevidence.Result) *value.Map {
+func verifyValue(res *nodeevidence.Result, check *nodeevidence.AnchorCheck, anchorsPath, caPath string, caErr error) *value.Map {
 	out := value.NewMap(8)
 	out.Set("directory", res.Dir)
 	out.Set("segments", int64(len(res.Segments)))
 	out.Set("records", int64(res.Records))
-	out.Set("ok", res.OK())
+	out.Set("ok", res.OK() && check.OK())
 	out.Set("lost", int64(res.Lost))
 	if res.First != nil {
 		out.Set("first_seq", int64(res.First.Seq))
@@ -452,8 +551,37 @@ func verifyValue(res *nodeevidence.Result) *value.Map {
 		}
 		out.Set("unverified_schemas", schemas)
 	}
-	breaks := make([]any, 0, len(res.Breaks))
-	for _, b := range res.Breaks {
+	if anchorsPath != "" {
+		out.Set("anchors_file", anchorsPath)
+		out.Set("anchors_checked", int64(check.Anchored))
+	}
+	out.Set("ca_file", caPath)
+	if caErr != nil && check.Found > 0 {
+		out.Set("ca_error", caErr.Error())
+	}
+	out.Set("receipts", int64(check.Found))
+	out.Set("receipts_checked", int64(check.Receipts))
+	conflicts := make([]any, 0, len(check.Conflicts))
+	for _, c := range check.Conflicts {
+		entry := value.NewMap(6)
+		entry.Set("line", int64(c.Line))
+		entry.Set("received", c.Received)
+		entry.Set("record", int64(c.Seq))
+		entry.Set("hash", c.Hash)
+		entry.Set("prior_record", int64(c.PriorSeq))
+		entry.Set("prior_hash", c.PriorHash)
+		conflicts = append(conflicts, entry)
+	}
+	out.Set("conflicts", conflicts)
+	if len(check.Unchecked) > 0 {
+		unchecked := make([]any, len(check.Unchecked))
+		for i, s := range check.Unchecked {
+			unchecked[i] = s
+		}
+		out.Set("unchecked", unchecked)
+	}
+	breaks := make([]any, 0, len(res.Breaks)+len(check.Breaks))
+	for _, b := range append(append([]nodeevidence.Break(nil), res.Breaks...), check.Breaks...) {
 		entry := value.NewMap(4)
 		entry.Set("segment", filepath.Base(b.Segment))
 		entry.Set("line", int64(b.Line))

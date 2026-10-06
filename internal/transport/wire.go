@@ -55,6 +55,9 @@ const (
 	PathMine        = "/v1/mine"
 	PathMineGet     = "/v1/mine/get"
 	PathRunners     = "/v1/runners"
+	// PathEvidenceAnchor is where a node reports its evidence head.
+	// SPEC 25.7.
+	PathEvidenceAnchor = "/v1/evidence/anchor"
 )
 
 // EnrollRequest is the body of a POST to /v1/enroll.
@@ -366,6 +369,31 @@ type MineGetResponse struct {
 	Data map[string]json.RawMessage `json:"data"`
 }
 
+// EvidenceAnchorRequest is POST /v1/evidence/anchor: a node reporting
+// the head of its SPEC 25.7 chain so that the hub can keep it where the
+// node cannot reach.
+//
+// NodeID is optional and is never what the hub records under. It is here
+// so that a node which believes it is called something other than its
+// certificate says is refused, as the subscribe stream refuses it,
+// rather than having its head filed under a name it did not expect.
+type EvidenceAnchorRequest struct {
+	NodeID string `json:"node_id,omitempty"`
+	Seq    uint64 `json:"seq"`
+	Hash   string `json:"hash"`
+}
+
+// EvidenceAnchorResponse is the hub's receipt: the head it recorded, the
+// identity it recorded it under, when, and a signature by the enrollment
+// CA's key over nodeevidence.ReceiptPayload of those four.
+type EvidenceAnchorResponse struct {
+	NodeID    string `json:"node_id"`
+	Seq       uint64 `json:"seq"`
+	Hash      string `json:"hash"`
+	Received  string `json:"received"`
+	Signature string `json:"signature"`
+}
+
 // GrainsRequest is PUT /v1/grains: a node pushing a refreshed fact
 // set, per SPEC 6.2. The identity is the certificate's.
 type GrainsRequest struct {
@@ -465,6 +493,12 @@ const (
 	// behind it. A follower acts on the two differently -- one is a bug
 	// in the follower, the other is a follower that was away too long.
 	CodeSubscriberLag = "subscriber_lag"
+	// CodeEvidenceConflict is a hub saying the head a node reported
+	// contradicts the heads it recorded for that node: the chain was
+	// rewritten, reset or rolled back. Not CodeRefused, because the
+	// node is not being told it may not ask; it is being told that what
+	// it said disagrees with what it said before.
+	CodeEvidenceConflict = "evidence_conflict"
 )
 
 // WriteJSON sends a value with the canonical settings of SPEC 6.4:
