@@ -3010,8 +3010,10 @@ somebody would otherwise rediscover.
     two were its dialect, one was a wrong value, and twelve are refused
     now as PyYAML refuses them. Ten suite-valid documents PyYAML also
     refuses moved to deliberate with them. No over-acceptance is left.
-    What remains of this item is the six real template gaps and the
-    regexcompat character-class false positive.
+    The rest of this item was already done when that was written: the
+    six real template gaps closed in DIVERGENCE 5.68, and the regexcompat
+    character-class false positive in 5.67. This item had kept listing
+    both, and the closing note above repeated it.
 
 ---
 
