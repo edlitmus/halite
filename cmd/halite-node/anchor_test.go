@@ -448,7 +448,7 @@ func testLogger(t *testing.T, w *bytes.Buffer) *hlog.Logger {
 // faster than the hub's limit: nothing is filed, nothing above debug is
 // said, and the next report the hub takes is filed as usual. A warning
 // per refused report would make a busy node's log the flood. DIVERGENCE
-// 5.230.
+// 5.231.
 func TestARateLimitedReportIsQuietAndTheNextIsFiled(t *testing.T) {
 	lab := newAnchorLab(t, "web1.example")
 	now := time.Now()

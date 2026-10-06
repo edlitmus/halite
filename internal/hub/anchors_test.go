@@ -371,7 +371,7 @@ func TestSubscribeOpenedFiresOnAcceptanceOnly(t *testing.T) {
 // signed, counted. Without it a compromised node could report an
 // ever-larger head as fast as the hub would fsync it, growing its own
 // file without bound. Another node's bucket is its own, and the refused
-// node is let back in as the bucket refills. DIVERGENCE 5.230.
+// node is let back in as the bucket refills. DIVERGENCE 5.231.
 func TestANodeOverItsAnchorRateIsRefusedAndNothingIsWritten(t *testing.T) {
 	l := newLab(t)
 	dir := l.withAnchors(t)

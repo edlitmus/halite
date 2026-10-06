@@ -20441,7 +20441,7 @@ limit would make it harder, but behind a proxy every source is the
 proxy. `/v1/login`, the local-account login, was not examined for the
 same shape. Only run on macOS.
 
-### 5.230 A node's evidence-head reports had no rate
+### 5.231 A node's evidence-head reports had no rate
 
 The evidence anchor (5.229) recorded among its gaps that a compromised
 node could grow its own anchor file without bound. It could report an

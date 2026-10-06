@@ -99,7 +99,7 @@ type nodeAnchors struct {
 // jobs on one machine. What it bounds is a compromised node, which could
 // otherwise report an ever-larger number as fast as the hub would fsync
 // it: about 86,000 lines a day at the default, where before there was no
-// limit at all. DIVERGENCE 5.230.
+// limit at all. DIVERGENCE 5.231.
 const (
 	DefaultAnchorRate  = 1.0
 	DefaultAnchorBurst = 60
