@@ -321,7 +321,11 @@ func TestOIDCLoginsInFlightAreBounded(t *testing.T) {
 		t.Errorf("login %d answered %d: %s", maxPendingLogins+1, res.StatusCode, body)
 	}
 
-	now = now.Add(AuthStateTTL + time.Second)
+	// From the real clock, not from `now`: a pending login's Created is
+	// the provider's time.Now(), not the server's clock, so a run slower
+	// than a second -- the windows-2022 runner took 1.8 -- left the later
+	// logins inside the window and 442 of them still pending.
+	now = time.Now().Add(AuthStateTTL + time.Second)
 	if res, body := l.post(t, PathLoginOIDC, `{}`, ""); res.StatusCode != http.StatusOK {
 		t.Errorf("after the pending logins expired a new one was refused: %d %s", res.StatusCode, body)
 	}
