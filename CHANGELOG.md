@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### OIDC logins in flight are bounded
+
+`halite-api` now holds at most 1,024 OIDC logins in progress at once. A
+new `POST /v1/login/oidc` past that is refused with 503 and a warning in
+the log. That endpoint needs no credentials, and before this a flood of
+login starts grew memory without limit and made each start slower than
+the last.
+
 ### --config with a Salt file reads its .d directory
 
 `--config /etc/salt/minion` now also reads `/etc/salt/minion.d/`, as

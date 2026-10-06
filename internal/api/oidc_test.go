@@ -300,3 +300,69 @@ func nonceFrom(t *testing.T, authURL string) string {
 	t.Fatalf("no nonce in %s", authURL)
 	return ""
 }
+
+// The logins in flight are bounded, because the endpoint that starts one
+// is unauthenticated: past maxPendingLogins a new start is refused with
+// 503 and said in the log, and the room comes back as the old ones
+// expire. Unbounded, a flood grew the map without limit, and every start
+// swept the whole of it under the lock all logins share. DIVERGENCE 5.229.
+func TestOIDCLoginsInFlightAreBounded(t *testing.T) {
+	l, _ := oidcLab(t, nil)
+	now := time.Now()
+	l.server.Now = func() time.Time { return now }
+
+	for i := 0; i < maxPendingLogins; i++ {
+		if res, body := l.post(t, PathLoginOIDC, `{}`, ""); res.StatusCode != http.StatusOK {
+			t.Fatalf("login %d of %d was refused: %d %s", i+1, maxPendingLogins, res.StatusCode, body)
+		}
+	}
+	res, body := l.post(t, PathLoginOIDC, `{}`, "")
+	if res.StatusCode != http.StatusServiceUnavailable || !strings.Contains(body, "too many logins") {
+		t.Errorf("login %d answered %d: %s", maxPendingLogins+1, res.StatusCode, body)
+	}
+
+	now = now.Add(AuthStateTTL + time.Second)
+	if res, body := l.post(t, PathLoginOIDC, `{}`, ""); res.StatusCode != http.StatusOK {
+		t.Errorf("after the pending logins expired a new one was refused: %d %s", res.StatusCode, body)
+	}
+	if got := len(l.server.pending().byKey); got != 1 {
+		t.Errorf("%d logins pending after the expired ones were swept, want 1", got)
+	}
+}
+
+// The sweep works from the oldest login and stops at the first one still
+// live, so a start costs the expired logins it removes rather than every
+// login in flight -- and a login already taken is passed over, not
+// mistaken for one still waiting.
+func TestThePendingSweepStopsAtTheFirstLiveLogin(t *testing.T) {
+	now := time.Now()
+	p := newPendingAuth(func() time.Time { return now })
+	put := func(state string, at time.Time) {
+		t.Helper()
+		if err := p.put(&oidc.AuthRequest{State: state, Created: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := now.Add(-AuthStateTTL - time.Minute)
+	put("old-1", old)
+	put("old-2", old)
+	put("taken", now)
+	put("live", now)
+	if p.take("taken") == nil {
+		t.Fatal("a pending login could not be taken")
+	}
+	if p.take("taken") != nil {
+		t.Error("a state was good twice")
+	}
+	if p.take("old-1") != nil {
+		t.Error("an expired login was still answerable")
+	}
+	if _, ok := p.byKey["live"]; !ok || len(p.byKey) != 1 {
+		t.Errorf("pending = %v, want only the live login", p.byKey)
+	}
+	// The taken login, already gone from the map, is dropped from the
+	// order as the sweep passes it, and the sweep stops at "live".
+	if len(p.order) != 1 || p.order[0] != "live" {
+		t.Errorf("order = %v, want only the live login left", p.order)
+	}
+}
