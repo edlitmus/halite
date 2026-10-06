@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A node keeps one renewed-away key, not all of them
+
+A node no longer keeps a private key for every certificate renewal. A
+renewal now sets the old key aside as `node.key.renewed.<UTC time>`, and
+once a renewal has succeeded, the keys earlier renewals set aside are
+removed, so the node keeps one. A key moved aside by
+`halite-node enroll --force` is never removed. Neither is a
+`node.key.<UTC time>` left by an earlier build; remove those by hand.
+
 ### Missing operands and malformed numbers exit 64
 
 All three programs now exit 64, sysexits' `EX_USAGE`, before contacting
