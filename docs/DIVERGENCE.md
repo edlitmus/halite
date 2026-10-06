@@ -20305,6 +20305,95 @@ place when `--config` names the Salt file.
 the hub shares `config.Load`, and the test covers its case at that
 level. Only run on macOS.
 
+### 5.229 Node evidence is anchored at the hub, with receipts
+
+`internal/nodeevidence`'s chain satisfies SPEC 25.7, a node-local
+record that a compromised *hub* cannot rewrite. Its own package doc said
+what it could not do: anything with root on the node can recompute the
+whole chain from its first record, and the forgery verifies. A hash
+chain detects editing, not rewriting. Anchoring the head somewhere the
+node cannot reach was "not built". It is now, to the design the owner
+chose (A+).
+
+**What happens:**
+- The node reports its head, `(seq, hash)`, to `POST /v1/evidence/anchor`
+  when its stream opens and after every job. It never holds up a job to
+  do so, and says each kind of failure once.
+- The hub files the head in `<state_dir>/evidence-anchors/<node>.jsonl`,
+  append-only and fsynced, under the identity in the node's certificate.
+  A body naming another node is refused.
+- A head numbered above everything the hub holds is answered with a
+  receipt: an ECDSA signature by the enrollment CA's key over a
+  domain-separated text payload. The payload's prefix means it can never
+  be read as X.509 DER. `openssl` verified one.
+- The node checks that the receipt is for the head it sent, and verifies
+  it against the CA it pins, before filing it in its own chain as an
+  `anchor.receipt` record. Filing the receipt triggers no report.
+- A head that contradicts the hub's record gets no receipt. That means
+  the same number with another hash, or a number below the highest. It
+  is recorded as a conflict line, answered with 409, logged, counted in
+  `halite_hub_evidence_anchors_total{result="conflict"}`, and raised as
+  `halite/node/<id>/evidence/conflict`.
+- `halite-hub evidence anchors <node>` prints the hub's record.
+  `halite-node verify-evidence --anchors <file>` requires every accepted
+  anchor to match the chain at its number. It checks every receipt in
+  the chain against the CA certificate on every run, and every receipt
+  against the hub's file, which catches a hub that drops a line it
+  signed.
+
+**What it establishes:** a compromised node cannot rewrite anything up
+to its last accepted report without contradicting the hub's record, and
+a compromised hub cannot deny an anchor without contradicting a receipt
+it signed. SPEC 25.7 and 25.1 now say so, along with what it does not
+cover:
+- records written after the last accepted report;
+- a node and a hub compromised together.
+
+The hub's conflict check is a prompt, not the guarantee. A rewritten
+chain padded past the highest recorded number before its next report is
+accepted there. `verify-evidence --anchors`, comparing against every
+accepted line, is the guarantee.
+
+**Choices made while building it:**
+- A repeat of an older head that is below the highest is a conflict.
+  It is a rollback, such as a snapshot restore. Only a repeat of the
+  highest head is idempotent.
+- A node can write the conflict event's tag itself, so the event is a
+  prompt and the anchor file is the finding.
+- A snapshot restore or a wiped evidence directory causes a permanent
+  conflict. The remedy is to move the node's anchor file aside, and a
+  running hub notices that.
+
+**Demonstrated:**
+- 27 tests, each break-checked by disabling the code it covers.
+- An end-to-end test runs a real `hub.Server` and `halite-node connect`
+  as a subprocess. It checks a report on connect, a report after a job,
+  and `verify-evidence --anchors` passing. It checks that a chain
+  rewritten from record 1, which verifies on its own, fails against the
+  hub's file with exit 1.
+- In review, the attack test was break-checked again independently: with
+  the comparison of accepted anchors off, both the unit test and the
+  end-to-end test failed.
+- The new tests pass under `-race`, and the end-to-end test passed four
+  times in a row.
+- A chain restarted above every anchor cannot dodge the comparison by
+  being reported as "archived": `Verify` breaks a chain that does not
+  start at record 1.
+
+**Not covered:**
+- Run only on this Mac: not on FreeBSD or Linux, not against a real hub
+  and node in the lab, and not through a relay.
+- The node checks that a receipt is for the head it sent and verifies its
+  signature. It does not check that the receipt names this node; a real
+  hub signs only for the certificate's node, so only a fake hub could
+  exercise that check.
+- A receipt arriving after `stopEvidence` closes the log.
+- A partial last line left by a hub crash, which stops that node's
+  reports until it is fixed by hand.
+- A compromised node can grow its own anchor file with one fsync per
+  report; there is no rate limit.
+- No alert rule or dashboard panel was added for the conflict metric.
+
 
 ## 6. Everything else not started
 

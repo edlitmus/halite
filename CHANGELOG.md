@@ -23,6 +23,25 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Evidence chains are anchored at the hub
+
+A node's evidence record is now anchored at the hub, so a compromised
+node can't quietly rewrite its own history.
+
+- **Reporting:** the node reports the head of its evidence chain on
+  connect and after every job.
+- **Receipts:** the hub keeps an append-only record per node and answers
+  with a receipt signed by the enrollment CA, which the node files in its
+  own chain. A head that contradicts what the hub recorded gets no
+  receipt, and is logged, counted and raised as
+  `halite/node/<node>/evidence/conflict`.
+- **Checking a node:** `halite-hub evidence anchors <node>` prints the
+  hub's record. `halite-node verify-evidence --anchors <file>` checks a
+  chain against it; receipts in the chain are checked on every run.
+- **Restored or wiped nodes:** a node restored from a snapshot, or whose
+  evidence directory was wiped, conflicts from then on. Move its file in
+  `<state_dir>/evidence-anchors/` aside to start its record again.
+
 ### --config with a Salt file reads its .d directory
 
 `--config /etc/salt/minion` now also reads `/etc/salt/minion.d/`, as
