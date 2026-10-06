@@ -20,14 +20,14 @@ import (
 func TestAColumnZeroDirectiveIsReadAsPyYAMLReadsIt(t *testing.T) {
 	for src, want := range map[string]string{
 		"---\nscalar1 # comment\n%YAML 1.2\n---\nscalar2\n": `"scalar1" "scalar2"`,
-		"---\nkey: value\n%YAML 1.2\n---\n":                `{"key":"value"} null`,
-		"%YAML 1.2\n---\n%YAML 1.2\n---\n":                 `null null`,
-		"a: b\n%YAML 1.2\n---\nc\n":                        `{"a":"b"} "c"`,
-		"- a\n%YAML 1.2\n---\nc\n":                         `["a"] "c"`,
-		"key: value\n%foo: bar\n":                          "",
-		"a: |\n  x\n%y\n":                                  "",
-		"---\na\n%YAML 1.2\n---\nb\n":                      `"a %YAML 1.2" "b"`,
-		"a: b\n  %c\n":                                     `{"a":"b %c"}`,
+		"---\nkey: value\n%YAML 1.2\n---\n":                 `{"key":"value"} null`,
+		"%YAML 1.2\n---\n%YAML 1.2\n---\n":                  `null null`,
+		"a: b\n%YAML 1.2\n---\nc\n":                         `{"a":"b"} "c"`,
+		"- a\n%YAML 1.2\n---\nc\n":                          `["a"] "c"`,
+		"key: value\n%foo: bar\n":                           "",
+		"a: |\n  x\n%y\n":                                   "",
+		"---\na\n%YAML 1.2\n---\nb\n":                       `"a %YAML 1.2" "b"`,
+		"a: b\n  %c\n":                                      `{"a":"b %c"}`,
 	} {
 		docs, _, err := ParseStream([]byte(src), Options{Stream: true})
 		if want == "" {

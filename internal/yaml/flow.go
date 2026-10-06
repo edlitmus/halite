@@ -101,9 +101,9 @@ func (p *parser) parseFlowMap() (*value.Map, error) {
 		if p.peek() == '[' || p.peek() == '{' {
 			return nil, p.errAt(keyPos, "a mapping or sequence cannot be used as a key")
 		}
-		// Not asKey: a plain scalar in a flow mapping may span lines, both
-		// as an entry with no value and as a key that takes its colon on
-		// the following line. `{foo\n: bar}` is valid YAML.
+		// Not asKey: a plain scalar in a flow mapping may span lines as an
+		// entry with no value, `{foo,\n  bar\n}`. As a key it may not:
+		// see the check on the colon below.
 		raw, quoted, err := p.parseScalar(0, false, flowInMap)
 		if err != nil {
 			return nil, err
@@ -120,6 +120,16 @@ func (p *parser) parseFlowMap() (*value.Map, error) {
 		}
 		var val any
 		var valPos value.Pos
+		if p.peek() == ':' && p.line != keyPos.Line {
+			// An implicit key and its colon start on one line. YAML 1.2
+			// lets the colon follow on the next, and this comment used to
+			// say `{foo\n: bar}` was valid YAML; PyYAML 6.0.3 refuses it,
+			// and refuses a key that spans lines, `{foo\nbar: baz}`, too.
+			// SPEC 10.1 makes PyYAML's the dialect (VJP3/00, VJP3/01).
+			// An explicit `? key` is not held to it. DIVERGENCE 5.226.
+			return nil, p.errAt(keyPos, "a flow mapping key must be on one line with its `:`; "+
+				"join them, or write the key as `? key`")
+		}
 		if p.peek() == ':' {
 			p.next()
 			if err := p.skipFlowBlank(); err != nil {
