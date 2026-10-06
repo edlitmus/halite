@@ -56,6 +56,10 @@ type parser struct {
 	warnings []Warning
 	nodes    int
 	depth    int
+	// markerLine is the line of the `---` that began the current
+	// document, or 0. A block collection may not start on it: see
+	// blockOnMarkerLine.
+	markerLine int
 }
 
 // Parse reads a single YAML document. It returns the value, any lint
@@ -141,6 +145,7 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 			// newline threw that node away. What followed was then
 			// reparsed as a plain scalar, which is why a block scalar
 			// written this way silently lost its style and its chomping.
+			p.markerLine = p.line
 			p.next()
 			p.next()
 			p.next()
@@ -494,6 +499,25 @@ func (p *parser) skipInlineTrailer() error {
 	}
 	if !p.eof() {
 		p.next()
+	}
+	return nil
+}
+
+// blockOnMarkerLine refuses a block mapping or block sequence that starts
+// on the `---` line of its document.
+//
+// A node may begin on the marker line -- `--- |`, `--- value`, `--- [a]`
+// -- but a block collection's indentation is the column it starts at,
+// and on the marker line there is none to give it. PyYAML refuses it:
+// "mapping values are not allowed here" for `--- a: b`, "sequence
+// entries are not allowed here" for `--- - a`. halite read both as the
+// collection, so a document Salt will not load loaded here (9KBC,
+// CXX2). An anchor or a tag on the marker line, with the collection on
+// the lines after it, is still a collection that starts on its own line,
+// and PyYAML reads that. DIVERGENCE 5.226.
+func (p *parser) blockOnMarkerLine(what string) error {
+	if p.markerLine != 0 && p.line == p.markerLine {
+		return p.err("%s cannot start on the --- line; begin it on the next line", what)
 	}
 	return nil
 }

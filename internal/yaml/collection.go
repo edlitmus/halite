@@ -107,6 +107,9 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 	if err := p.count(); err != nil {
 		return nil, err
 	}
+	if err := p.blockOnMarkerLine("a block mapping"); err != nil {
+		return nil, err
+	}
 	m := value.NewMap(8)
 	m.Pos = p.pos()
 
@@ -417,6 +420,9 @@ func (p *parser) parseMapValue(keyIndent int, explicitEntry bool) (any, error) {
 // indent.
 func (p *parser) parseBlockSeq(indent int) ([]any, error) {
 	if err := p.count(); err != nil {
+		return nil, err
+	}
+	if err := p.blockOnMarkerLine("a block sequence"); err != nil {
 		return nil, err
 	}
 	items := []any{}
