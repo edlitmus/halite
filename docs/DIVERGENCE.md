@@ -19795,7 +19795,7 @@ breaks each failed the tests again:
 - Errors from the hub itself still exit 1, as before.
 - Not run on FreeBSD or Linux; nothing here is platform-specific.
 
-### 5.219 `keys`, `keys token` and `jobs` opened the hub before reading their subcommand
+### 5.220 `keys`, `keys token` and `jobs` opened the hub before reading their subcommand
 
 `halite-hub keys`, `keys token` and `jobs` each opened what they act on
 before reading which subcommand they had been given. 5.210 recorded this
