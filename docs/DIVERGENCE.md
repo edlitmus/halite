@@ -19328,6 +19328,23 @@ the new.
 "translated into RBAC rules" and "translated to a draft RBAC policy".
 SPEC is the authority, so whether it changes or this stays a recorded
 divergence is the owner's decision; until then it is this one.
+
+#### 5.209, closed: SPEC now says what happens
+
+The owner chose to amend SPEC rather than build the translator. 28.3's
+row for `publisher_acl`, `external_auth`, `peer` and `peer_run` now says
+they are not translated, but kept under `legacy_acl`, which nothing
+reads and which grants nothing. The row also says a warning per key
+tells the operator to write the section 23.5 policy by hand, and gives
+the reason above for not translating. 28.5's ACL row says each key is
+reported as not translated and no draft policy is generated.
+
+The warning claim was checked against a build of this tree. A
+`hub.yaml` holding all four keys made `halite-hub doctor` report four
+shim warnings, one per key. Each said "not translated: it is kept under
+legacy_acl, which is never consulted and grants nothing; write the
+rules in the policy file by hand". A translator, if one is ever built,
+is a SPEC change of its own.
 ### 5.210 `halite-hub` and `halite-api` exited 2 on a usage error, and three of their 2s never ran
 
 5.198 moved `halite-node` to `cli.ExitUsage` and left the 33 `exit 2`

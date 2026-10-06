@@ -2628,7 +2628,7 @@ date. Notable mappings:
 | `gitfs_saltenv_whitelist`, `..._blacklist` | `gitfs_env_allowlist`, `..._denylist` |
 | `saltenv`, `pillarenv` | `env`, `pillarenv`. `saltenv` remains a permanent alias in templates and targeting. |
 | `file_roots`, `pillar_roots` | Unchanged |
-| `publisher_acl`, `external_auth`, `peer`, `peer_run` | Translated into RBAC rules where a mechanical translation is sound, and reported as needing review where it is not |
+| `publisher_acl`, `external_auth`, `peer`, `peer_run` | Not translated. Kept under `legacy_acl`, which nothing reads and which grants nothing, with a warning per key saying the RBAC policy of section 23.5 is written by hand. Salt's regex targets and `.*` grants -- which here would include `cmd.run` -- differ enough that a mechanical translation would be a new claim rather than a translation. |
 
 `auto_accept` being refused rather than translated is the one place the shim declines to be helpful,
 because silently reproducing it would undo section 7.3.
@@ -2656,7 +2656,7 @@ silently rewrites a production state tree is not trustworthy.
 | `_modules/` and friends | Every custom Python module, with its function signatures, plus a generated Go bridge skeleton |
 | Pillar grain targeting | Every pillar top entry targeting an untrusted grain, so section 12.4 can be configured deliberately |
 | Configuration | Key-by-key translation with an unmapped list |
-| ACL | `publisher_acl`, `external_auth`, `peer`, and `peer_run` translated to a draft RBAC policy, with items needing review flagged |
+| ACL | `publisher_acl`, `external_auth`, `peer`, and `peer_run` each reported as not translated, needing the RBAC policy written by hand. No draft policy is generated. |
 | Effort estimate | A count by category, so a migration can be scoped before it is committed to |
 
 The report is machine-readable JSON plus a rendered summary, and it is intended to be run in CI
