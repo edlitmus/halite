@@ -20394,6 +20394,53 @@ accepted line, is the guarantee.
   report; there is no rate limit.
 - No alert rule or dashboard panel was added for the conflict metric.
 
+### 5.230 OIDC login starts had no bound, and each swept every one in flight
+
+`POST /v1/login/oidc` starts an interactive login. It is
+unauthenticated, as it has to be, because it is how somebody with no
+token gets one. Every call put a pending login, with its nonce and PKCE
+verifier, into an in-memory map for `AuthStateTTL`, ten minutes. Two
+things followed:
+- **The map had no bound.** A flood of starts grew it for as long as
+  the flood lasted.
+- **Every start swept the whole map**, under the lock all logins share.
+  So each start cost the number of logins in flight, and a flood cost
+  quadratically.
+
+Measured with the real `put`: 40,000 pending logins made the next 30,000
+starts take 4.5 seconds, and the per-start cost kept climbing. A
+sustained 100 requests a second, with no credentials, holds 60,000.
+The 5.227 triage noted it in passing, when it found `pendingAuth.size`
+had no caller.
+
+Now, in `internal/api/oidc.go`:
+- **The map holds at most 1,024 logins.** That is hundreds of times the
+  operators an estate has logging in within ten minutes.
+- **A start past the bound is refused** with 503, "too many logins are
+  in progress", and a warning in the hub's log.
+- **The sweep works from the oldest login** and stops at the first one
+  still live, so a start costs only the expired logins it removes. A
+  login already taken is passed over and dropped from the order.
+
+Refusing was chosen over evicting the oldest. Eviction would fail an
+operator part-way through logging in, with nothing said; a refusal is
+said at once and logged.
+
+The same flood now runs 40,000 starts in 5 ms: 1,024 held, the rest
+refused.
+- `TestOIDCLoginsInFlightAreBounded` fills the bound through the
+  endpoint, against the fake provider. It requires the next start to get
+  a 503, and a start after the TTL has passed to succeed.
+- `TestThePendingSweepStopsAtTheFirstLiveLogin` covers the sweep.
+- Removing the bound failed the first: login 1,025 got a 200. Making the
+  sweep not stop at a live login failed the second.
+
+**Not covered:** a flood still blocks new OIDC logins until pending ones
+expire. Bounding memory and CPU does not stop that. A per-source rate
+limit would make it harder, but behind a proxy every source is the
+proxy. `/v1/login`, the local-account login, was not examined for the
+same shape. Only run on macOS.
+
 
 ## 6. Everything else not started
 

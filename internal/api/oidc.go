@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -30,21 +31,48 @@ const AuthStateTTL = 10 * time.Minute
 type pendingAuth struct {
 	mu    sync.Mutex
 	byKey map[string]*oidc.AuthRequest
+	// order is the states in the order they were put, so that sweep can
+	// stop at the first one still live instead of reading every entry.
+	order []string
 	now   func() time.Time
 }
+
+// maxPendingLogins bounds the logins in flight at once.
+//
+// `POST /v1/login/oidc` is unauthenticated and every call holds a
+// nonce and a PKCE verifier here for AuthStateTTL. With no bound, and a
+// sweep that read the whole map on every call, a flood grew the map
+// without limit and made each new login slower than the last: 40,000
+// pending made 30,000 more take 4.5 seconds, under the one lock every
+// login shares. DIVERGENCE 5.230.
+//
+// A thousand is hundreds of times the operators an estate has logging
+// in within ten minutes. Past it a new login is refused rather than an
+// old one evicted: eviction would fail somebody half way through
+// logging in, quietly, where a refusal is said at once and logged.
+const maxPendingLogins = 1024
+
+var errTooManyLogins = errors.New("too many OIDC logins are in progress")
 
 func newPendingAuth(now func() time.Time) *pendingAuth {
 	return &pendingAuth{byKey: map[string]*oidc.AuthRequest{}, now: now}
 }
 
-func (p *pendingAuth) put(req *oidc.AuthRequest) {
+func (p *pendingAuth) put(req *oidc.AuthRequest) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.sweep()
+	if len(p.byKey) >= maxPendingLogins {
+		return errTooManyLogins
+	}
 	p.byKey[req.State] = req
+	p.order = append(p.order, req.State)
+	return nil
 }
 
 // take returns a pending login and removes it, so a state is good once.
+// Its place in order stays until sweep reaches it, which costs one
+// lookup then.
 func (p *pendingAuth) take(state string) *oidc.AuthRequest {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -57,14 +85,22 @@ func (p *pendingAuth) take(state string) *oidc.AuthRequest {
 	return req
 }
 
-// sweep drops what has expired. The caller holds the lock.
+// sweep drops what has expired, oldest first, and stops at the first
+// login still live: they were put in creation order, so everything
+// after it is younger. The caller holds the lock.
 func (p *pendingAuth) sweep() {
 	cutoff := p.now().Add(-AuthStateTTL)
-	for key, req := range p.byKey {
-		if req.Created.Before(cutoff) {
-			delete(p.byKey, key)
+	i := 0
+	for ; i < len(p.order); i++ {
+		req, ok := p.byKey[p.order[i]]
+		if ok && !req.Created.Before(cutoff) {
+			break
+		}
+		if ok {
+			delete(p.byKey, p.order[i])
 		}
 	}
+	p.order = p.order[i:]
 }
 
 // AuthStartResponse tells a client where to send the operator.
@@ -96,7 +132,13 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "the identity provider could not be reached")
 		return
 	}
-	s.pending().put(req)
+	if err := s.pending().put(req); err != nil {
+		s.warn("an OIDC login was refused: too many are in progress",
+			"limit", maxPendingLogins, "remote", remoteHost(r))
+		writeError(w, http.StatusServiceUnavailable,
+			"too many logins are in progress; try again in a few minutes")
+		return
+	}
 	s.info("oidc login started", "state", req.State, "remote", remoteHost(r))
 	writeJSON(w, http.StatusOK, AuthStartResponse{
 		URL:     req.URL,
