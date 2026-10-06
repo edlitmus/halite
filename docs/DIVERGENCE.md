@@ -19857,7 +19857,8 @@ had not been checked. Checking them found two more.
   the hub itself, so an unknown name reaches the refusal having opened
   nothing.
 - **`policy test` with fewer than three operands** exited 1 through
-  `cli.Fatalf`, a usage error that 5.221's sweep missed because its
+  `cli.Fatalf`, a usage error that the missing-operand sweep before this
+  one missed because its
   message says "takes" rather than "needs". It now uses `cli.Usagef`.
 
 The rest were read and are fine:
