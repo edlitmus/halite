@@ -1325,6 +1325,8 @@ SPEC section 25.7.
 ```sh
 halite-node verify-evidence            # on the node
 halite-node verify-evidence --out json # for a monitoring check
+halite-hub evidence anchors web1.example > web1.example.jsonl        # on the hub
+halite-node verify-evidence --anchors web1.example.jsonl             # on that node
 ```
 
 It exits non-zero if the chain does not hold, and changes nothing —
@@ -1342,13 +1344,52 @@ is a claim, and the hub's job cache holds the same field:
 `halite-hub jobs show <jid>`. Agreement means little on its own;
 disagreement is a finding.
 
-**Keep the head hash somewhere the node cannot reach.** The last line of
-the output is the head. Truncating the end of the chain leaves every
-remaining record valid, and a head hash you recorded a week ago is what
-contradicts it. Anything with root on the node could recompute the whole
-chain, so without an off-node copy this record establishes what a
-compromised hub did rather than what a compromised node did. halite does
-not yet ship anything that keeps that copy for you.
+**The anchor at the hub.** Anything with root on the node could
+recompute the whole chain, so on its own this record establishes what a
+compromised hub did rather than what a compromised node did. The agent
+therefore reports its head — the record number and hash of the newest
+record — to the hub when its stream opens and after every job. The hub
+appends it to `<state_dir>/evidence-anchors/<node>.jsonl`, under the name
+in the node's certificate, and answers with a receipt signed by the
+enrollment CA's key, which the node checks against the CA it pinned and
+files in its own chain as an `anchor.receipt` record. A report never holds
+up a job: a hub that is down or slow costs a log line.
+
+`verify-evidence --anchors <file>`, given what `halite-hub evidence
+anchors` prints for the node, checks that every head the hub accepted is
+still the record at that number. A chain rewritten from its first record
+verifies on its own and fails this. The receipts in the chain are checked
+against the CA certificate on every run, `--anchors` or not — `--ca-file`,
+or `ca.crt` under the node's `pki_dir`. A hub that has lost or removed a
+line it signed a receipt for is caught the same way, from the node's side.
+
+What it does not cover: records written after the last head the hub
+accepted, and a node and hub compromised together.
+
+**When the hub records a conflict.** A head that contradicts one the hub
+already holds — the same record number with another hash, or a number
+below the highest — is written to the file as a `conflict` line, refused
+with 409 and no receipt, logged as a warning naming the node, counted in
+`halite_hub_evidence_anchors_total{result="conflict"}`, and raised as
+`halite/node/<node>/evidence/conflict`. Treat the event as a prompt and
+the file as the finding: a node can put an event on that same tag
+itself, and only the hub writes the file. `verify-evidence --anchors`
+reports every conflict line and exits non-zero.
+
+Two ordinary operations produce one, and both are worth knowing before
+the alert fires. Restoring a node from a snapshot rolls its chain back, so
+its next report goes backwards; removing `<state_dir>/evidence` starts the
+chain again at record 1. Either way the node's chain no longer contains
+what it reported, and the hub's file will keep saying so. Once you have
+satisfied yourself which it was, move the node's anchor file aside on the
+hub — keep it, it is the record of what the node said before — and the
+next report starts a new one. The hub's conflict check is a prompt rather
+than the guarantee: a rewritten chain padded past the highest recorded
+number before it is next reported is accepted there, and what catches it
+is `verify-evidence --anchors` against the lines accepted before.
+
+A hub older than the node answers the report with 404; the node says once
+that its record is anchored nowhere and carries on.
 
 **Disk.** Nothing prunes it: the current file is sealed at
 `evidence_max_bytes` (64 MiB by default) and a new one started, and
