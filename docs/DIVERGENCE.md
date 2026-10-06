@@ -3022,6 +3022,7 @@ than by anything failing.
 
 What this did not establish: the estate is two FreeBSD machines. Nothing
 here was run on Linux, and the systemd units remain unexercised.
+
 ### 5.23 Two of SPEC 26.2's metric families are not registered
 
 The specification's table names thirty-two; this build registers
@@ -7605,6 +7606,7 @@ text was reported as undocumented — a failure in the check rather than
 in the program, and the kind that gets worked around by moving the
 documentation somewhere it does not belong. It reads the same map the
 program judges an unknown flag against now, so the two cannot disagree.
+
 ### 5.82 The grains, compared against a real Salt for the first time
 
 SPEC 31 makes the Salt differential the primary correctness gate, and
@@ -8919,6 +8921,7 @@ asserts the bytes it writes.
 behind them: `defaults.conf` calls `.append()` on a list, which Jinja
 allows because Python lists have the method and this engine does not
 implement it.
+
 ### 5.102 `grains.absent` refused what Salt clears
 
 An estate writes `grains.absent: node_exporter` to retire a grain. This
@@ -12802,6 +12805,7 @@ The `job_queue_depth` disagreement and the `listen` one were both found by
 the audit on its first run; nobody had read those two lines and noticed.
 The `sysrc` note and the `state show` page were found by reading. The
 score is even, and the audits keep running.
+
 ### 5.143 `--root` moved the configuration file and nothing it describes
 
 Found while probing the last row of a documentation audit, which is worth
@@ -13077,6 +13081,7 @@ functions and methods with no reference in the module, against the review's
 49 — the difference is methodology, and several of mine are false positives
 (`MarshalJSON` and `UnmarshalJSON` are reached by reflection). The count is
 not worth quoting until the sweep is worth trusting.
+
 ### 5.145 Seven merges in a day, and the two pages nobody re-read
 
 Prompted by a plain question — *"a lot of PRs landed today, make sure the
@@ -13563,6 +13568,7 @@ on every platform, and fails with the gui branch of `Status` removed.
   before.
 - **`service.get_all`** still lists the system domain only.
 - **A label loaded in both domains** is treated as the system job.
+
 ### 5.151 The leg installs a snap, and the test stopped assuming one exists
 
 5.147 fixed the `linux` leg's filter so four live tests were selected, and two
@@ -13644,6 +13650,7 @@ over whatever channels exist and will see none truncated, which shows the
 reader does not *introduce* truncation rather than that it handles it. A
 machine with a long-tracked snap is still the only thing that would show the
 original defect, and none is scheduled.
+
 ### 5.152 `group.present` members: refused on FreeBSD, ignored on macOS, stuck on Linux
 
 `group.present`'s `members` is the group's whole member list: anyone
@@ -13707,6 +13714,7 @@ test against the unchanged module.
   implemented.
 - **A member that is not an account on the machine.** The tools refuse
   it, and the state reports their refusal. That was not run.
+
 ### 5.153 Ledger numbering stopped being hand work
 
 A section number is chosen when an entry is written and checked when it is
@@ -15524,6 +15532,7 @@ the build and vet, but not by an end-to-end run: reaching that line needs
 a real orchestration against the estate, which runs states on live
 machines. The edit is the same three-line shape applied to `migrate`,
 which *is* exercised above.
+
 ### 5.159 The certificate check passed while the certificate nothing could connect with had expired
 
 `halite-hub doctor` reported
@@ -16674,6 +16683,7 @@ either host.
 test has not been run on the `linux` leg's Ubuntu, so it is not in that leg's `-run`
 filter; XFS, RHEL's default root filesystem, which neither lab image used; any
 attribute but `i` and `a` through the module; symlinks; a non-root caller; `rpm -Va`.
+
 ### 5.173 `authselect`: built against the real tool, and the Common Linux row is complete
 
 5.54 left `authselect` pending on purpose: it is Fedora/RHEL 8+ only, and
@@ -16820,6 +16830,7 @@ nil): both new unit tests failed, one of them on finding
 is the Alma 8 run above, done before the fix; it was not re-run with the
 broken build. `sshd`, a plain file on the same node, is still editable —
 checked in the unit test, not on a host.
+
 ### 5.174 `dnf_module`: built against two real EL hosts, and a reset is not a deletion
 
 SPEC 15.3's RHEL row named `dnf_module` and nothing built it; §2.3 and
@@ -16907,6 +16918,7 @@ spanning more than one repository; `switch_to` with packages installed, which is
 where it does real work; globs; RHEL proper, CentOS Stream, and Fedora, whose dnf5
 removed modularity. No `fleet.yml` leg is RHEL, so like `pro` (5.171) this
 evidence is a run a person repeats by hand on a lab host.
+
 ### 5.175 `firewalld`: built against two real daemons, and why it is not a `firewall` provider
 
 plan.md §7 item 14 named `firewalld` among the RHEL row's modules waiting on a machine,
@@ -17662,6 +17674,7 @@ The `TestLiveLocale*` tests are in no CI leg. `fleet.yml`'s linux leg runs the
 whole conformance harness, so the `locale.system` case will run on its Ubuntu
 runner and `locale.present` will skip there (it runs only where rpm and dnf or
 yum are both present); neither had run there when this was written.
+
 ### 5.182 `user.present`'s `password:` could write a second account's record
 
 Found while building `shadow` (5.180), which refuses it for its own
@@ -17686,6 +17699,7 @@ cases before the change — on Linux it showed the record chpasswd would have
 received, `alice:<hash>\nroot:<hash>` — and passes after; an ordinary hash
 is still accepted on both platforms. **Not verified:** on a real chpasswd
 or pw, deliberately — the point is that the command is never built.
+
 ### 5.183 `selinux`: built against two enforcing policies, and the running mode only
 
 §2.2 listed `selinux` as missing from both 15.2 and 15.5, and §2.4 held
@@ -18666,6 +18680,7 @@ CHANGELOG.md was left saying what was true when it was written.
 tag or a dispatch, and a dispatch writes a permanent Sigstore entry,
 which is not a thing to spend on a count. `make dist` is the same build
 the workflow runs, so the number is the one it will see.
+
 ### 5.194 The root `.gitignore` unpinned the lab's tofu provider
 
 `contrib/tofu/.terraform.lock.hcl` pins the vultr provider -- version
@@ -18695,6 +18710,7 @@ version and the same `zh:` hashes and adds fourteen `h1:` package
 hashes for that machine; it was not committed. The first `tofu init` on
 another platform may add its own, which is tofu recording what it
 verified, not a change of provider.
+
 ### 5.195 Nothing renewed a node's certificate
 
 SPEC 7.4: "A node renews at 50% of lifetime … renewal needs no operator
@@ -18758,6 +18774,7 @@ failure; and the hub side of a short lifetime, which also governs the
 hub's own serving certificate -- the run above reused a hub certificate
 issued at the default and changed the setting afterwards. The kept
 `node.key.<time>` files are not pruned, one per renewal.
+
 ### 5.196 A failed external pillar source panicked the hub's pillar request
 
 The hub counts every external pillar source that fails, ignored
@@ -19072,6 +19089,7 @@ ownership, or that `/etc/halite/pki` exists when `ReadWritePaths=`
 requires it to. A hub and a node on one host share `/var/lib/halite` and
 `/var/cache/halite` by default, the node writing as root and the hub's
 unit handing those directories to `halite`; that was not looked into.
+
 ### 5.203 `extbundle` filed every executable under the platform it was run on
 
 `tools/extbundle` wrote the manifest's `executables` key from
@@ -19115,6 +19133,7 @@ test of its own.
 "non-Go ELF" tests are Go binaries with their build-information marker
 overwritten, not C binaries; the universal Mach-O refusal and several
 PE and ELF machine mappings have no test.
+
 ### 5.204 Pillar targeting matched an empty pillar: `-I` nothing, `not I@` everything
 
 On the hub, `-I`, `-J`, and `I@`/`J@` inside `-C` were accepted and
@@ -19159,6 +19178,7 @@ environment compiles a different pillar from the one the hub targeted
 with. The node's signed-target check treats a pillar that will not
 compile as "matches nothing", which is false under `not` -- its own
 change. Not run on a real hub.
+
 ### 5.205 Each service read its own log settings, and the API read the wrong one
 
 `halite-api` read its log format from `log_fmt` and gave the logger no
@@ -19193,6 +19213,7 @@ the helper to `log_fmt`, or to no file, fails them. **Not covered:**
 `token`, which the test runs); FreeBSD and Linux. **Found, not fixed:**
 the API has no secret redactor, so an LDAP bind password or OIDC client
 secret would print if it ever reached a log field -- its own change.
+
 ### 5.206 `--file-root` and `--pillar-root` did not imply `--local` on an enrolled node
 
 `halite-node --help` and the manual page said `--file-root` and
@@ -19224,6 +19245,7 @@ that `connect` still makes its pillar probe. It failed before the fix,
 and fails again with either flag removed from the decision. **Not
 covered:** FreeBSD and Linux; a `connect` agent given `--pillar-root`
 against a hub that compiles no pillar.
+
 ### 5.207 Two job metrics: one never counted, one never came down
 
 `halite_jobs_expired_total` was declared and never incremented: it read
@@ -19262,6 +19284,7 @@ twenty runs, so it rests on reasoning; a real hub's once-a-minute settle
 loop and a real Prometheus. A matched node that is not connected under
 offline skip stays on the gauge for the job's whole TTL, which with the
 default fifteen minutes can briefly trip the alert's `for: 15m`.
+
 ### 5.208 `make install` on macOS installed systemd units
 
 `make install` on macOS ran the Linux branch. The install recipes picked
@@ -19296,6 +19319,7 @@ FreeBSD and Linux (the override was exercised, with the same `case`
 pattern `CONFDIR` already uses); GNU make 4 with the computed variable
 names. The test skips without a BSD make and should run on the FreeBSD
 leg, which has not been seen.
+
 ### 5.209 migrate said Salt ACLs were translated into RBAC rules, and nothing was
 
 `halite-hub migrate --salt-config` reported each Salt ACL key --
@@ -19328,6 +19352,24 @@ the new.
 "translated into RBAC rules" and "translated to a draft RBAC policy".
 SPEC is the authority, so whether it changes or this stays a recorded
 divergence is the owner's decision; until then it is this one.
+
+#### 5.209, closed: SPEC now says what happens
+
+The owner chose to amend SPEC rather than build the translator. 28.3's
+row for `publisher_acl`, `external_auth`, `peer` and `peer_run` now says
+they are not translated, but kept under `legacy_acl`, which nothing
+reads and which grants nothing. The row also says a warning per key
+tells the operator to write the section 23.5 policy by hand, and gives
+the reason above for not translating. 28.5's ACL row says each key is
+reported as not translated and no draft policy is generated.
+
+The warning claim was checked against a build of this tree. A
+`hub.yaml` holding all four keys made `halite-hub doctor` report four
+shim warnings, one per key. Each said "not translated: it is kept under
+legacy_acl, which is never consulted and grants nothing; write the
+rules in the policy file by hand". A translator, if one is ever built,
+is a SPEC change of its own.
+
 ### 5.210 `halite-hub` and `halite-api` exited 2 on a usage error, and three of their 2s never ran
 
 5.198 moved `halite-node` to `cli.ExitUsage` and left the 33 `exit 2`
@@ -19361,6 +19403,7 @@ exit 1; their 64 path on a configured hub was not run. And `halite-hub
 run` with no target still exits 1 through `cli.Fatalf`, which is also its
 code for "a node failed" -- the 5.198 collision again, left for its own
 entry.
+
 ### 5.211 cron for another account fell back to root's crontab
 
 `cron.present` and `cron.absent` were `Hardware` only for root's own
@@ -19400,6 +19443,7 @@ platform's crontab(1) makes them.
 the test reads the crontab back; an unprivileged caller managing its own
 crontab, which only the recorded-runner test exercises; the EL and SUSE
 legs, which do not run it.
+
 ### 5.212 Two reactor tests returned while the reactor was still writing
 
 `TestARestartedReactorResumesFromWhereItStopped` failed on the
@@ -19436,6 +19480,7 @@ iterations in one process to see it.
 **Not covered:** the original failure was not reproduced as CI saw it,
 only the late write that causes it; nor was the rest of `internal/hub`
 audited for other goroutines that outlive their test.
+
 ### 5.213 The extension harness timed a slow start as a buffering writer
 
 `internal/extconform` bounded every read by the exchange timeout -- two
@@ -19795,6 +19840,28 @@ breaks each failed the tests again:
 - Errors from the hub itself still exit 1, as before.
 - Not run on FreeBSD or Linux; nothing here is platform-specific.
 
+#### 5.219, corrected: what `Sscanf` made of `2x`
+
+This section said `--subset 2x` left the subset at 0. It did not. Go's
+`fmt.Sscanf` with `%d` reads the leading digits, stops, and reports
+success, so `2x` was 2 and `1.5` was 1. Measured with Go 1.26 after the
+merge:
+
+| Input | Read as | Error |
+|---|---|---|
+| `2x` | 2 | none |
+| `1.5` | 1 | none |
+| `-1` | -1 | none |
+| `abc` | 0 | `expected integer`, which nothing checked |
+
+So the defect stands, and for these: `abc` was 0 and `-1` was -1, both
+"no subset", and the job went to every matched node. `2x` was the wrong
+example. The test's `2x` case still passes, because the fix refuses all
+four, but the claim was written from what an unchecked error ought to
+do, not from what this one did. The CHANGELOG entry and the two code
+comments that repeated it are corrected. 5.221 extends the strict read
+to the remaining numeric flags.
+
 ### 5.220 `keys`, `keys token` and `jobs` opened the hub before reading their subcommand
 
 `halite-hub keys`, `keys token` and `jobs` each opened what they act on
@@ -19844,6 +19911,102 @@ case.
 
 **Not covered:** other hub subcommands were not checked for the same
 order. Only run on macOS.
+
+### 5.221 Missing operands and malformed numbers were not usage errors anywhere else either
+
+5.219 made `run`'s malformed command lines exit 64 and recorded "other
+subcommands' value parsing" as not covered. 5.220 recorded two more
+cases. Looking at all three programs found the rest. They are the same
+two defects in more places.
+
+- **Missing operands exited 1, through `cli.Fatalf`.** These are the
+  `keys`, `jobs`, `orch`, `runner doc`, `lint` and `migrate` operands in
+  the hub, `call`, `state`, `event`, `grains item`, `pillar item` and
+  `lint` in the node, and `token show` and `token revoke` in the API.
+  Some were checked only after the hub or token store was opened:
+  - `keys show` with no node opened the hub in its own argument list
+    before noticing, and on a machine without a CA said so instead;
+  - `halite-api token show` created `<state_dir>/tokens` first;
+  - `ssh` read `--ssh-concurrency`, `--indent` and `--out` only after
+    the run, so a bad `--out` failed at the report, once the command had
+    already run on every target.
+- **Every other numeric flag was read with an unchecked `fmt.Sscanf`.**
+  These are `--limit` on `jobs list`, `event watch` and
+  `halite-api token list`, `--uses` on `keys token create`,
+  `--ssh-concurrency`, and `--indent` in four places. As 5.219's
+  correction measured, that reads leading digits and stops: `10x` was
+  10, and `abc` kept the default. `--ssh-concurrency 0` was quietly
+  turned into 8. `--uses 0` and `--uses -1` were safe only because the
+  key store replaces 0 with 1 and refuses a negative.
+
+`cli.IntFlag` reads a whole number with a floor, or makes a usage
+error. Every one of those flags and `run`'s two use it, replacing 5.219's
+`positiveCount`. The missing-operand errors use `cli.Usagef`:
+- In `keys` they moved from inside each subcommand function up to the
+  switch, ahead of the call that opens the hub.
+- `halite-api token` and `ssh` check up front with the same calls their
+  later code makes, so the two readings cannot disagree.
+- `orch`'s `--pillar` that is not JSON is a usage error too.
+
+Configuration errors are left at 1, because they are not about the
+command line: a relay without `node_id`, a node without
+`hub_fingerprint`, an API without `tls_cert`.
+
+The flag-documentation audits matched only `args.Flag(...)` and
+`args.Bool(...)`, so they reported every `IntFlag` read as a documented
+flag nothing parses. They now recognise `cli.IntFlag(args, ...)` too.
+
+`TestMissingOperandsAndMalformedNumbersAreUsageErrors` covers 23 hub
+cases, 8 node cases and 4 API cases. The hub's run in an empty root and
+fail if the message is about the CA or the operator certificate, which
+is how reaching for the hub would show.
+
+Three deliberate breaks each failed the tests:
+- `IntFlag` falling back to the default failed every numeric case in
+  all three programs;
+- the switch's `keys` operand checks removed failed `keys show`,
+  `reject`, `revoke` and `delete` with exit 1;
+- 5.219's `Usagef` exiting 1, shown there.
+
+**Not covered:** errors from the hub itself, and configuration errors,
+still exit 1, as intended. Only run on macOS.
+
+### 5.222 A node kept the key from every renewal
+
+A renewal moves the node's key aside before writing the new one (SPEC
+7.4 renews with a new key every time), as `node.key.<UTC time>`.
+`enroll --force` moved its key aside under the same name. Nothing pruned
+either, and `docs/operations.md` said so. So a node collected a private
+key for every renewal, one every 45 days on the default lifetime, each
+for a certificate the hub had already revoked when it issued the next.
+
+The choice made was to prune only what renewals set aside. A key
+`enroll --force` moved aside was an operator's decision, and may be the
+one copy of an identity they meant to keep.
+- A renewal now names its aside `node.key.renewed.<UTC time>`.
+- Once the renewal has fully succeeded, with the new key and its
+  certificate both written and read back, `pruneRenewedKeys` removes the
+  earlier renewed asides. It keeps the one just made as the way back if
+  the new identity turns out to be bad.
+- A failure to remove one is a warning, not a failed renewal.
+- `node.key.<UTC time>` files are left alone, whether from
+  `enroll --force` or from an earlier build's renewals, because the two
+  cannot be told apart. The operations guide says to remove the old ones
+  by hand.
+
+`renewIdentity` needs a hub, and no node test stands one up. So the set
+aside and the prune are two functions it calls, and
+`TestARenewalPrunesOnlyTheKeysEarlierRenewalsSetAside` drives them
+through three renewals over a directory that also holds an `enroll
+--force` aside. After each renewal one renewed aside is left, the
+newest, and the other key is untouched. Three breaks each failed it:
+- pruning every `node.key.*`, which took the enroll aside;
+- pruning nothing;
+- the old aside name, which left every aside.
+
+**Not covered:** the prune inside a real renewal against a hub; the
+order (prune only after the certificate reads back) is held by the code,
+not by a test. Only run on macOS.
 
 ### 5.221 `halite-api doctor` printed its report unscrubbed
 

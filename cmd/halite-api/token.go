@@ -25,8 +25,22 @@ func runToken(args *cli.Args) int {
 		fmt.Fprintln(os.Stderr, "halite-api token needs a subcommand; there are list, show, revoke, and prune")
 		return cli.ExitUsage
 	}
+	// Operands and numbers too, before setup opens the token store --
+	// which creates <state_dir>/tokens, as root if that is who ran it.
+	// The cases below make the same checks with the same calls, so the
+	// two cannot disagree. DIVERGENCE 5.221.
 	switch args.Positional[0] {
-	case "list", "show", "revoke", "prune":
+	case "list":
+		cli.IntFlag(args, "limit", 20, 0)
+	case "show":
+		if len(args.Positional) < 2 {
+			cli.Usagef("token show needs a token identifier")
+		}
+	case "revoke":
+		if len(args.Positional) < 2 && args.Flag("principal", "") == "" {
+			cli.Usagef("token revoke needs an identifier, or --principal <name>")
+		}
+	case "prune":
 	default:
 		fmt.Fprintf(os.Stderr, "halite-api token has no subcommand %q; there are list, show, revoke, and prune\n",
 			args.Positional[0])
@@ -45,7 +59,7 @@ func runToken(args *cli.Args) int {
 		return tokenList(args, tokens)
 	case "show":
 		if len(rest) == 0 {
-			cli.Fatalf("token show needs a token identifier")
+			cli.Usagef("token show needs a token identifier")
 		}
 		return tokenShow(args, tokens, rest[0])
 	case "revoke":
@@ -71,8 +85,8 @@ func tokenList(args *cli.Args, tokens *apitoken.Store) int {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	limit := 20
-	fmt.Sscanf(args.Flag("limit", "20"), "%d", &limit)
+	// 0 is all of them, as the check below reads it.
+	limit := cli.IntFlag(args, "limit", 20, 0)
 	if limit > 0 && len(all) > limit {
 		all = all[:limit]
 	}
@@ -122,7 +136,7 @@ func tokenRevoke(args *cli.Args, tokens *apitoken.Store, rest []string) int {
 		return 0
 	}
 	if len(rest) == 0 {
-		cli.Fatalf("token revoke needs an identifier, or --principal <name>")
+		cli.Usagef("token revoke needs an identifier, or --principal <name>")
 	}
 	for _, id := range rest {
 		t, err := tokens.Revoke(id)

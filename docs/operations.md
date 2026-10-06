@@ -59,7 +59,7 @@ commands exit 0 on success.
 | 0 | The run succeeded and something changed. |
 | 2 | The run succeeded and nothing needed changing. |
 | 1 | A state failed, or the command could not run. |
-| 64 | The program did not understand its command line — no subcommand, one that does not exist, or a flag the subcommand does not take. sysexits' `EX_USAGE`, from `halite-node`, `halite-hub` and `halite-api` alike; it used to be 2, the same as a converged run, and an unknown flag exited 1, the same as a failed state. |
+| 64 | The program did not understand its command line — no subcommand, one that does not exist, a flag the subcommand does not take, an operand it needs left out, or a number that is not one. sysexits' `EX_USAGE`, from `halite-node`, `halite-hub` and `halite-api` alike; it used to be 2, the same as a converged run, and an unknown flag exited 1, the same as a failed state. |
 
 **Treat 2 as success.** A monitor that does not will alert on every
 machine that was already correct, which is nearly all of them nearly all
@@ -669,8 +669,15 @@ within a second. A renewal that fails is logged at warning level and
 tried again at the next check; the old certificate keeps working until
 it expires, and `halite-node doctor` warns a fortnight before that.
 
-The previous key is kept beside the new one as `node.key.<UTC time>`,
-one per renewal. Nothing prunes them.
+The previous key is kept beside the new one as
+`node.key.renewed.<UTC time>`, in case the new identity turns out to be
+bad. Once a renewal has succeeded -- the new key and its certificate both
+written -- the keys earlier renewals set aside are removed, so a node
+holds one at a time rather than one per renewal. A key `enroll --force`
+moved aside, `node.key.<UTC time>`, is never removed: re-enrolling was an
+operator's decision. Nor is a `node.key.<UTC time>` from a build before
+this one, which named renewals that way too and so cannot be told apart;
+remove those by hand once the node is renewing on a current build.
 
 A node that is not running `connect` -- one that is stopped, or used
 only for `--local` runs -- is not renewed. `halite-node renew` does it by

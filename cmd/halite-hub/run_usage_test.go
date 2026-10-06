@@ -17,10 +17,11 @@ import (
 // errors to cli.ExitUsage; `run`'s were not among them.
 //
 // And two of its numbers were read with fmt.Sscanf, which reports a
-// failure that nothing checked. `--subset 2x` or `--subset -1` left the
-// subset at 0, which means no subset at all: a job meant for two nodes of
-// a target went to every one of them. Those are refused now, like any
-// other malformed flag. So is a flag `run` does not take, which is
+// failure that nothing checked. `--subset abc` left the subset at 0 and
+// `--subset=-1` set it to -1, both of which mean no subset at all: a job
+// meant for two nodes of a target went to every one of them. And
+// `--subset 2x` read as 2 and `1.5` as 1, the number ending wherever the
+// digits did. Those are refused now, like any other malformed flag. So is a flag `run` does not take, which is
 // cli.RejectUnknownFlags's refusal and exited 1 in all three programs.
 func TestRunRefusesAMalformedCommandLineAsAUsageError(t *testing.T) {
 	root := t.TempDir()

@@ -344,7 +344,7 @@ func setup(args *cli.Args) *node {
 		env:           args.Flag("env", cfg.String("env", "base")),
 		test:          args.Bool("test", cfg.Bool("test", false)),
 		format:        format,
-		indent:        int(parseInt(args.Flag("indent", "0"))),
+		indent:        cli.IntFlag(args, "indent", 0, 0),
 		undef:         template.Strict,
 	}
 	if args.Bool("permissive", false) || cfg.String("undefined", "strict") == "permissive" {
@@ -625,12 +625,6 @@ func repeatedFlag(args *cli.Args, name string) []string {
 		}
 	}
 	return out
-}
-
-func parseInt(s string) int64 {
-	var n int64
-	fmt.Sscanf(s, "%d", &n)
-	return n
 }
 
 // templateOptions reads the renderer settings a tree may set. They were

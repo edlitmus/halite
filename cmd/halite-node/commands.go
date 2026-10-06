@@ -26,7 +26,7 @@ import (
 // memory has.
 func runCall(args *cli.Args) int {
 	if len(args.Positional) == 0 {
-		cli.Fatalf("call needs a module.function")
+		cli.Usagef("call needs a module.function")
 	}
 	fn := args.Positional[0]
 	rest := args.Positional[1:]
@@ -119,7 +119,7 @@ func applyStateKwargs(n *node, kwargs *value.Map) error {
 // runState is `halite-node state <subcommand>`.
 func runState(args *cli.Args) int {
 	if len(args.Positional) == 0 {
-		cli.Fatalf("state needs a subcommand; try `state apply`")
+		cli.Usagef("state needs a subcommand; try `state apply`")
 	}
 	return runStateFunction(args, args.Positional[0], args.Positional[1:])
 }
@@ -371,7 +371,7 @@ func runGrains(args *cli.Args) int {
 		n.out(value.MapOf(n.nodeID, v))
 	case "item":
 		if len(args.Positional) < 2 {
-			cli.Fatalf("grains item needs a key")
+			cli.Usagef("grains item needs a key")
 		}
 		n.out(value.MapOf(n.nodeID, traverseAll(n.grains, args.Positional[1:])))
 	case "ls", "keys":
@@ -425,7 +425,7 @@ func runPillar(args *cli.Args) int {
 		n.out(value.MapOf(n.nodeID, maskPillar(v, reveal)))
 	case "item":
 		if len(args.Positional) < 2 {
-			cli.Fatalf("pillar item needs a key")
+			cli.Usagef("pillar item needs a key")
 		}
 		n.out(value.MapOf(n.nodeID, maskPillar(traverseAll(p, args.Positional[1:]), reveal)))
 	default:
@@ -501,7 +501,7 @@ func maskValue(v any) any {
 // constructs, YAML 1.1 coercions, and duplicate keys. SPEC section 10.1.4.
 func runLint(args *cli.Args) int {
 	if len(args.Positional) == 0 {
-		cli.Fatalf("lint needs a path")
+		cli.Usagef("lint needs a path")
 	}
 	n := setup(args)
 	p := n.compilePillar()
