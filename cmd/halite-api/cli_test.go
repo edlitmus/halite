@@ -143,3 +143,16 @@ func TestUnknownSubcommandIsUsageNotSuccess(t *testing.T) {
 		t.Errorf("help = %q %d", out, code)
 	}
 }
+
+// A flag the subcommand does not take is a usage error, 64, in this
+// program as in the other two: cli.RejectUnknownFlags is shared, and
+// exited 1. DIVERGENCE 5.219.
+func TestAnUnknownFlagIsAUsageError(t *testing.T) {
+	_, errb, code := run(t, "token", "list", "--root", t.TempDir(), "--no-such-flag")
+	if code != cli.ExitUsage {
+		t.Errorf("exit = %d, want %d: %s", code, cli.ExitUsage, errb)
+	}
+	if !strings.Contains(errb, "--no-such-flag is not a flag") {
+		t.Errorf("the refusal does not name the flag: %s", errb)
+	}
+}

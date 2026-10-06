@@ -190,8 +190,8 @@ exits 0 when it changed something, or under
 when it would; 2 when nothing needed changing; and 1 when a state failed.
 Treat 2 as success.
 .Pp
-A command line it does not understand, with no subcommand or an unknown
-one, exits 64
+A command line it does not understand, with no subcommand, an unknown
+one, or a flag the subcommand does not take, exits 64
 .Pq Dv EX_USAGE ,
 so that a mistyped subcommand is never read as a converged run.
 .Pp

@@ -977,3 +977,20 @@ func TestEnrollingWithAFingerprintFetchesRatherThanAskingForAFile(t *testing.T) 
 		t.Errorf("the node did not try to fetch the CA:\n%s", out)
 	}
 }
+
+// A flag the subcommand does not take is a usage error, 64, as an unknown
+// subcommand is. It exited 1 -- a failed state, to a monitor -- through
+// cli.RejectUnknownFlags, which all three programs share. DIVERGENCE 5.219.
+func TestAnUnknownFlagIsAUsageError(t *testing.T) {
+	got := run(t, "version", "--no-such-flag")
+	if got.code != cli.ExitUsage {
+		t.Errorf("exit = %d, want %d: %s", got.code, cli.ExitUsage, got.stderr)
+	}
+	if !strings.Contains(got.stderr, "--no-such-flag is not a flag") {
+		t.Errorf("the refusal does not name the flag: %s", got.stderr)
+	}
+	got = run(t, "version", "x={nope")
+	if got.code != cli.ExitUsage {
+		t.Errorf("an argument that will not parse: exit = %d, want %d: %s", got.code, cli.ExitUsage, got.stderr)
+	}
+}

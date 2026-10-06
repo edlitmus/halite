@@ -92,7 +92,8 @@ func RejectUnknownFlags(a *Args, program string, usages ...string) {
 			fmt.Fprintf(&said, "; did you mean %s?", dashed(guess))
 		}
 	}
-	Fatalf("%s\n\nrun `%s --help` for the flags it does take", said.String(), program)
+	// A usage error, not a failure: see Usagef.
+	Usagef("%s\n\nrun `%s --help` for the flags it does take", said.String(), program)
 }
 
 // dashed writes a flag the way it would be typed.
