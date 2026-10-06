@@ -147,7 +147,7 @@ func runRun(args *cli.Args) int {
 	// not know as nested: `--out table` -- one of SPEC's, never built --
 	// printed nested with no word, and `--out highstate` skipped the
 	// highstate renderer the default uses. Checked here, before anything
-	// is sent. DIVERGENCE 5.221; SPEC's unbuilt formats are 6.4.
+	// is sent. DIVERGENCE 5.222; SPEC's unbuilt formats are 6.4.
 	if out := args.Flag("out", "nested"); out != "summary" {
 		if _, err := cli.ParseFormat(out); err != nil {
 			cli.Usagef("%v", err)
