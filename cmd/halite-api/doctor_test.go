@@ -14,7 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/doctor"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/redact"
 )
 
 // writeAPICert puts a parseable certificate with an exact validity window
@@ -156,6 +160,48 @@ func TestDoctorRendersJSONForAState(t *testing.T) {
 	for _, want := range []string{`"role":"api"`, `"checks"`, `"worst"`, `"counts"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--out json has no %s:\n%s", want, out)
+		}
+	}
+}
+
+// The report is scrubbed of the configured secrets, both ways it prints.
+//
+// The hub's and the node's doctors scrub what they print; this one did
+// not. No check here was found to print a secret, so the finding is
+// injected: a check whose detail quotes the bind password, which is the
+// shape the hub's pillar check leaked in (DIVERGENCE 5.110). The secret
+// comes from a real api.yaml, through the same seeding runDoctor uses,
+// so a seeding that missed it fails here too. DIVERGENCE 5.221.
+func TestTheAPIDoctorScrubsBothOutputPaths(t *testing.T) {
+	const secret = "doctor-bind-pw-7e21"
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "api.yaml"),
+		[]byte("ldap_bind_password: "+secret+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.API, config.LoadOptions{Root: root, AllowMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets := doctorSecrets(cfg)
+	report := doctor.Report{
+		Role: doctor.RoleAPI,
+		Results: []doctor.Result{{
+			Name:   "directory",
+			Status: doctor.Fail,
+			Detail: "bind as cn=svc with " + secret + " was refused",
+		}},
+	}
+	for _, format := range []cli.Format{cli.Nested, cli.JSON} {
+		var out strings.Builder
+		if err := writeDoctor(&out, report, format, root, secrets); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out.String(), secret) {
+			t.Errorf("%v output carries the secret:\n%s", format, out.String())
+		}
+		if !strings.Contains(out.String(), "directory") || !strings.Contains(out.String(), redact.Placeholder) {
+			t.Errorf("%v output lost the report, or nothing was replaced:\n%s", format, out.String())
 		}
 	}
 }

@@ -19845,6 +19845,45 @@ case.
 **Not covered:** other hub subcommands were not checked for the same
 order. Only run on macOS.
 
+### 5.221 `halite-api doctor` printed its report unscrubbed
+
+The hub's and the node's `doctor` scrub what they print, as text and as
+`--out json`/`yaml`, because a check prints what it found. On the hub,
+that has included a decrypted pillar value (5.110). `halite-api doctor`
+printed its report unscrubbed. It also did not set `cli.Redact`, which
+5.215 had set for `serve` and the other subcommands, through `setup`;
+`doctor` does not go through `setup`.
+
+No leak was found. No check here reads a secret: the API doctor checks
+the configuration, three certificates, the hub's reachability and the
+FIPS state. Five malformed configurations carrying a secret did not get
+it into the report, as text or as JSON:
+- a bad `ldap_tls` beside `ldap_bind_password`;
+- a password given as a list;
+- a bad `oidc_skew` beside `oidc_client_secret`;
+- a mis-indented line after the password;
+- an unknown key in a hook carrying a `secret`.
+
+So this closes the one output in the three programs that SPEC 26.1's
+"scrubbed at the sink" did not cover, rather than a leak anyone saw.
+
+- `doctorSecrets` seeds a redactor from `config.Config.SecretValues`,
+  the same rule `serve` uses.
+- `writeDoctor` prints the report through it, either way it prints.
+- `cli.Redact` is set for its fatal messages.
+- A bad `--out` is a usage error, as everywhere else.
+
+`TestTheAPIDoctorScrubsBothOutputPaths` loads a real `api.yaml` holding
+a bind password, seeds through `doctorSecrets`, and has `writeDoctor`
+print a report whose check quotes the password. The test injects that
+finding, since no real check produces one. Two breaks each failed it in
+both formats:
+- `writeDoctor` not scrubbing;
+- `doctorSecrets` seeding nothing.
+
+**Not covered:** secrets in the `_file` forms, which `doctor` never
+reads. Only run on macOS.
+
 
 ## 6. Everything else not started
 

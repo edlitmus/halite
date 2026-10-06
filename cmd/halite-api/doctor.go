@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/edlitmus/halite/internal/doctor"
 	"github.com/edlitmus/halite/internal/fips"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/redact"
 )
 
 // runDoctor checks this service and says what to fix.
@@ -56,17 +58,41 @@ func runDoctor(args *cli.Args) int {
 	// so there is no word here that ParseFormat does not know.
 	format, err := cli.ParseFormat(args.Flag("out", "nested"))
 	if err != nil {
+		cli.Usagef("%v", err)
+	}
+	secrets := doctorSecrets(cfg)
+	cli.Redact = secrets.Scrub
+	if err := writeDoctor(os.Stdout, report, format, shown, secrets); err != nil {
 		cli.Fatalf("%v", err)
 	}
-	if format == cli.JSON || format == cli.YAML {
-		if err := cli.Write(os.Stdout, doctor.Value(report), format, 0); err != nil {
-			cli.Fatalf("%v", err)
-		}
-		return report.ExitCode()
-	}
-	fmt.Printf("halite-api doctor — %s\n\n", shown)
-	fmt.Print(report.Text())
 	return report.ExitCode()
+}
+
+// doctorSecrets is the redactor this report is scrubbed with: the
+// configured values whose names say they are secret, as `serve` seeds
+// its own.
+//
+// The hub's and the node's doctors scrub what they print, both ways
+// they print it, because a check prints what it found. This one did not.
+// No check here reads a secret, and none of a set of malformed
+// configurations carrying one got it into the report -- so this is not a
+// leak that was seen, but the one output of the three programs that SPEC
+// 26.1's "scrubbed at the sink" did not cover. DIVERGENCE 5.221.
+func doctorSecrets(cfg *config.Config) *redact.Set {
+	secrets := redact.New()
+	for _, v := range cfg.SecretValues() {
+		secrets.AddTree(v)
+	}
+	return secrets
+}
+
+// writeDoctor prints the report, scrubbed, in the format asked for.
+func writeDoctor(w io.Writer, report doctor.Report, format cli.Format, shown string, secrets *redact.Set) error {
+	if format == cli.JSON || format == cli.YAML {
+		return cli.Write(w, secrets.ScrubValue(doctor.Value(report)), format, 0)
+	}
+	_, err := fmt.Fprint(w, secrets.Scrub(fmt.Sprintf("halite-api doctor — %s\n\n", shown)+report.Text()))
+	return err
 }
 
 // apiCertificateCheck covers all three certificates this service holds.
