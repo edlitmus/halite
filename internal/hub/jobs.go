@@ -79,9 +79,11 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 	}
 
 	// A pong is a node answering a ping, per SPEC 6.2, and is not a
-	// job return: it has no jid to file against.
+	// job return: it has no jid to file against. Nothing records it.
+	// SPEC 6.2 puts the missed-ping reconnect on the node, and the hub
+	// learns a peer is gone when a ping write fails (subscribe.go); the
+	// timestamp this used to keep was never read. DIVERGENCE 5.227.
 	if ret.Fun == "pong" && ret.JID == "" {
-		s.fleet().sawPong(nodeID, s.now())
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

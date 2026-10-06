@@ -2928,18 +2928,15 @@ somebody would otherwise rediscover.
     `TestNothingElseWritesThroughATempFileAndARename` that said the opposite is
     corrected.
 
-19g. **The unreferenced-symbol sweep is not worth trusting yet.** A
-    coarse pass finds 25 functions and methods with no reference in the
-    module, against the 49 an earlier review counted. The difference is
-    methodology, and several of the 25 are false positives —
-    `MarshalJSON` and `UnmarshalJSON` are reached by reflection, and an
-    assignment like `traceShutdown = n.stopTracing` is a call site that a
-    search for `stopTracing(` does not find.
+19g. ~~**The unreferenced-symbol sweep is not worth trusting yet.**~~ —
+    **done, 2026-10-06** (DIVERGENCE 5.227), with `deadcode`'s call graph
+    run per platform rather than a text search. 107 functions are
+    unreachable on every platform that builds them. 78 of those are
+    called only by tests, mostly test infrastructure. 29 are called by
+    nothing: 28 were leftovers and are deleted, and one,
+    `config.LoadSaltConfig`, was a missing call and is its own change. The 25
+    and the 49 were both wrong, in opposite directions.
 
-    The two with a consequence were fixed (`DeleteToken`,
-    `closeRenderSandbox`; DIVERGENCE 5.144). The rest needs a sweep that
-    understands per-GOOS builds and interface satisfaction before a count
-    is quoted anywhere.
 19h. ~~**`halite-hub migrate` does not flag a `user.present` with
     `groups:`**~~ — **done** (DIVERGENCE 5.162). A new category,
     `CatSemantics`, for the class `CatPillarGrain` was the first member of:

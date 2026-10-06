@@ -150,12 +150,6 @@ func register(name string, events bool, build Constructor) {
 	registry[name] = entry{build: build, events: events}
 }
 
-// CarriesEvents reports whether `event_return` may name this returner.
-func CarriesEvents(name string) bool {
-	e, ok := registry[name]
-	return ok && e.events
-}
-
 // CheckEventReturn reports why `event_return: <name>` will not work.
 //
 // Three different problems, and they need three different answers: a

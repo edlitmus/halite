@@ -51,11 +51,6 @@ type KeySet struct {
 	lastAttempt time.Time
 }
 
-// NewKeySet answers with a key set that has fetched nothing yet.
-func NewKeySet(url string) *KeySet {
-	return &KeySet{URL: url}
-}
-
 func (k *KeySet) now() time.Time {
 	if k.Now != nil {
 		return k.Now()

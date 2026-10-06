@@ -87,14 +87,6 @@ func NewHooks(hooks []*Hook) *Hooks {
 	return h
 }
 
-// Len is how many paths are configured.
-func (h *Hooks) Len() int {
-	if h == nil {
-		return 0
-	}
-	return len(h.byPath)
-}
-
 // ParseHooks reads the `hooks` configuration.
 func ParseHooks(v any) ([]*Hook, error) {
 	if v == nil {

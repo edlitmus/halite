@@ -20200,6 +20200,67 @@ and passes a well-formed file with 0. It takes files and not a
 directory, so give it each file, for example
 `find <tree> -name '*.sls' -exec halite-hub lint {} +`.
 
+### 5.227 The unreferenced-function sweep, measured per platform
+
+`plan.md` 19g said a coarse search found 25 unreferenced functions,
+against an earlier review's 49. It said neither count could be trusted
+without a sweep that understands per-platform builds and interface
+satisfaction. This is that sweep.
+
+**How it was measured.** `deadcode` from `golang.org/x/tools`, at the
+current release, builds a call graph from the `main` packages by Rapid
+Type Analysis, so interface calls and method values count.
+- It ran from `./cmd/...` and `./tools/...` for each of Linux, FreeBSD,
+  macOS and Windows.
+- A function counted as dead only if every platform whose build includes
+  its file reported it. Each platform's file set came from `go list`.
+- A second run with `-test` separated functions only tests call from
+  those nothing calls.
+- It was installed outside the module, so it is not a dependency.
+
+**What it found.** 107 functions are unreachable on every platform that
+builds them.
+- **78 are called only by tests.** Most are test infrastructure in
+  non-test files, such as the LDAP test directory and the
+  state-conformance harness. They are left.
+- **29 are called by nothing, not even tests**: 26 measured, and three
+  Windows-only ones found to have no caller by reading. Each was read in
+  context, re-grepped for method values, checked against every interface
+  in the repository, and classified.
+- **Twenty-eight were leftovers**, each superseded by something named in the
+  change. Several would have been wrong to call:
+  - `oidc.NewKeySet` would drop the internal-CA trust the provider's
+    own literal passes;
+  - `transport.PeerNodeID` would skip the revocation check
+    `hub.Server.authenticated` makes;
+  - `ldap.null` would encode an UnbindRequest as a universal NULL;
+  - `builtin.sameFileContents` would compare unrendered templates.
+
+  All 28 were deleted, along with the hub's pong timestamp, which
+  was written on every pong and read by nothing. SPEC 6.2 puts the
+  missed-ping reconnect on the node, and the hub learns a peer is gone
+  when a ping write fails.
+- **One is a missing call:** `config.LoadSaltConfig`. It is the next
+  section.
+
+**Four comments were false.** Two went with their functions: the
+Windows `quoteScriptArg` said its only caller was the umask rewrite,
+and nothing called it on any platform; `ber.null` described an
+UnbindRequest's body. `Renames()` said documentation generation and the
+migration report used it; only a test does. The pong field described a
+reader that did not exist.
+
+The packages touched, and the four audits, pass on this build. The
+build vets for Linux, FreeBSD, macOS and Windows. Re-running
+`deadcode -test` leaves only reports that are reachable on another
+platform, plus `LoadSaltConfig`.
+
+**Not covered:** functions reached only by reflection, which RTA cannot
+see. None of the 29 was reached that way, and none has a reflection-
+shaped name. A `-test` run was not made for Windows, so the six
+Windows-only functions counted as test-only were classified from
+reading, not measured.
+
 ### 5.227 A Salt configuration file ran without its drop-in directory
 
 SPEC 27.5 promises that `halite-node serve --config /etc/salt/minion`

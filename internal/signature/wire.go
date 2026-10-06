@@ -15,30 +15,6 @@ import (
 // signature refused. One definition, in the package both sides import,
 // is what stops that.
 
-// ToWire converts a signature for sending.
-func ToWire(sig Signature) ext.Signature {
-	out := ext.Signature{
-		Module: sig.Module, Function: sig.Function, Doc: sig.Doc,
-		Mutates: sig.Mutates, Platforms: sig.Platforms, Privileges: sig.Privileges,
-	}
-	for _, p := range sig.Params {
-		out.Params = append(out.Params, ext.Param{
-			Name: p.Name, Type: p.Type.String(), Required: p.Required,
-			Doc: p.Doc, Default: p.Default,
-		})
-	}
-	return out
-}
-
-// ToWireAll converts several, which is the usual case.
-func ToWireAll(sigs ...Signature) []ext.Signature {
-	out := make([]ext.Signature, 0, len(sigs))
-	for _, sig := range sigs {
-		out = append(out, ToWire(sig))
-	}
-	return out
-}
-
 // FromWire converts a received signature, resolving the type names.
 //
 // A type name this build does not know becomes Any rather than an

@@ -289,23 +289,6 @@ func filterTreePaths(paths []string, include, exclude string) []string {
 	return out
 }
 
-// sameFileContents reports whether the destination already holds what
-// the source has. A missing destination is not the same.
-func sameFileContents(source, target string) (bool, error) {
-	want, err := os.ReadFile(source)
-	if err != nil {
-		return false, err
-	}
-	have, err := os.ReadFile(target)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, nil
-	}
-	return string(want) == string(have), nil
-}
-
 func modeOrDefault(spec string, def os.FileMode) os.FileMode {
 	if spec == "" {
 		return def
