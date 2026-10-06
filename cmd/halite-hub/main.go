@@ -38,6 +38,7 @@ Usage:
   halite-hub jobs <subcommand>   the job cache
   halite-hub policy <show|test>  the RBAC policy, and what it decides
   halite-hub event <listen|tags> the event bus
+  halite-hub evidence anchors <node>  the evidence heads a node reported
   halite-hub metrics             the Prometheus exposition
   halite-hub ssh <target> <fun>  run on a machine with no agent
   halite-hub doctor              check this hub and say what to fix
@@ -155,6 +156,7 @@ var subUsage = map[string][]string{
 	"ssh":    {sshUsage},
 
 	"extensions": {extensionsUsage},
+	"evidence":   {evidenceUsage},
 }
 
 func main() {
@@ -200,6 +202,8 @@ func main() {
 		os.Exit(runPolicy(args))
 	case "event":
 		os.Exit(runEvent(args))
+	case "evidence":
+		os.Exit(runEvidence(args))
 	case "runner":
 		os.Exit(runRunner(args))
 	case "metrics":
