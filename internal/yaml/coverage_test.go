@@ -607,14 +607,15 @@ func TestPlainScalarsInsideFlow(t *testing.T) {
 		t.Errorf("the error should say why: %v", err)
 	}
 
-	// A flow mapping is the other case: there the break is allowed, and
-	// treating the two alike is wrong whichever way it is written.
-	v, _, err = Parse([]byte("{foo\n: bar}\n"), Options{File: "t.sls"})
-	if err != nil {
-		t.Fatalf("a flow mapping key may take its colon on the next line: %v", err)
-	}
-	if got, _ := v.(*value.Map).Get("foo"); got != "bar" {
-		t.Errorf("value = %#v", v)
+	// A flow mapping holds its keys to one line as well. This used to
+	// assert the opposite, from YAML 1.2, which allows the break there;
+	// PyYAML 6.0.3 refuses `{foo\n: bar}` ("while parsing a flow
+	// mapping"), and SPEC 10.1 makes PyYAML's the dialect. DIVERGENCE 5.226.
+	_, _, err = Parse([]byte("{foo\n: bar}\n"), Options{File: "t.sls"})
+	if err == nil {
+		t.Error("a flow mapping key taking its colon on the next line was read; PyYAML refuses it")
+	} else if !strings.Contains(err.Error(), "one line") {
+		t.Errorf("the error should say why: %v", err)
 	}
 
 	// A folded key with no value at all is an entry in its own right.

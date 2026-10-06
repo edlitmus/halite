@@ -23,6 +23,32 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### YAML: twelve kinds of document PyYAML refuses are refused
+
+**This may refuse a file that loads today.** Before deploying it, lint
+the state and pillar trees. `halite-hub lint` takes files, not
+directories, so give it each one, for example
+`find /srv/halite -name '*.sls' -exec halite-hub lint {} +`. A refused
+file names the line and exits 1.
+
+halite's YAML parser now refuses twelve kinds of document that PyYAML,
+the dialect SPEC 10.1 names, refuses, and that halite used to read.
+Salt would also have refused all of them, so they can only be in a tree
+written since the migration:
+- a block mapping or sequence starting on the `---` line (`--- a: b`);
+- content after `...` on its line;
+- a document marker in column zero inside a quoted scalar or a flow
+  collection;
+- `#` straight after a block-scalar header;
+- an anchor or tag on the same line as a block sequence entry;
+- a scalar with two anchors;
+- a tag directly followed by `,`, `]` or `}`;
+- a flow-mapping key whose colon, or the key itself, runs onto another
+  line, such as `{foo` with `: bar}` on the next line.
+
+A `%` directive in column zero now ends the document before it, as
+PyYAML reads it.
+
 ### run --out refuses an unknown format
 
 `halite-hub run --out` now refuses a format it doesn't know, before

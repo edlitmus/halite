@@ -56,6 +56,10 @@ type parser struct {
 	warnings []Warning
 	nodes    int
 	depth    int
+	// markerLine is the line of the `---` that began the current
+	// document, or 0. A block collection may not start on it: see
+	// blockOnMarkerLine.
+	markerLine int
 }
 
 // Parse reads a single YAML document. It returns the value, any lint
@@ -124,7 +128,9 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 			break
 		}
 		if p.atDocEnd() {
-			p.skipLine()
+			if err := p.skipDocEnd(); err != nil {
+				return nil, p.warnings, err
+			}
 			docClosed = true
 			continue
 		}
@@ -141,6 +147,7 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 			// newline threw that node away. What followed was then
 			// reparsed as a plain scalar, which is why a block scalar
 			// written this way silently lost its style and its chomping.
+			p.markerLine = p.line
 			p.next()
 			p.next()
 			p.next()
@@ -153,9 +160,11 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 				if err := p.skipBlank(); err != nil {
 					return nil, p.warnings, err
 				}
-				if p.eof() || p.atDocStart() || p.atDocEnd() {
+				if p.eof() || p.atDocBoundary() {
 					docs = append(docs, nil)
-					docClosed = false
+					// A directive ends a document as `...` does: see
+					// atDirectiveLine.
+					docClosed = p.atDirectiveLine()
 					continue
 				}
 			}
@@ -175,6 +184,13 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 		}
 		if p.eof() {
 			break
+		}
+		if p.atDirectiveLine() {
+			if !opts.Stream {
+				return nil, p.warnings, p.err("this file has more than one YAML document; an SLS file must contain exactly one")
+			}
+			docClosed = true
+			continue
 		}
 		if !p.atDocStart() && !p.atDocEnd() {
 			return nil, p.warnings, p.err("unexpected content after the document; expected end of file or a --- document marker")
@@ -416,6 +432,25 @@ func (p *parser) skipIndicatorSeparation(indicator string) error {
 	return nil
 }
 
+// skipDocEnd consumes a `...` line, which may carry a comment and
+// nothing else.
+//
+// It used to skip the rest of the line whatever was on it, so
+// `... invalid` threw the word away and loaded what came before. PyYAML
+// 6.0.3 refuses it -- "expected '<document start>', but found
+// '<scalar>'" -- and so does the suite (3HFZ). DIVERGENCE 5.226.
+func (p *parser) skipDocEnd() error {
+	p.next()
+	p.next()
+	p.next()
+	p.skipSpaces()
+	if !p.eof() && p.peek() != '\n' && p.peek() != '#' {
+		return p.err("nothing but a comment may follow a ... document end marker on its line")
+	}
+	p.skipLine()
+	return nil
+}
+
 func (p *parser) skipLine() {
 	for !p.eof() && p.peek() != '\n' {
 		p.next()
@@ -496,6 +531,47 @@ func (p *parser) skipInlineTrailer() error {
 		p.next()
 	}
 	return nil
+}
+
+// blockOnMarkerLine refuses a block mapping or block sequence that starts
+// on the `---` line of its document.
+//
+// A node may begin on the marker line -- `--- |`, `--- value`, `--- [a]`
+// -- but a block collection's indentation is the column it starts at,
+// and on the marker line there is none to give it. PyYAML refuses it:
+// "mapping values are not allowed here" for `--- a: b`, "sequence
+// entries are not allowed here" for `--- - a`. halite read both as the
+// collection, so a document Salt will not load loaded here (9KBC,
+// CXX2). An anchor or a tag on the marker line, with the collection on
+// the lines after it, is still a collection that starts on its own line,
+// and PyYAML reads that. DIVERGENCE 5.226.
+func (p *parser) blockOnMarkerLine(what string) error {
+	if p.markerLine != 0 && p.line == p.markerLine {
+		return p.err("%s cannot start on the --- line; begin it on the next line", what)
+	}
+	return nil
+}
+
+// atDirectiveLine reports a `%` in column zero, which PyYAML reads as a
+// directive wherever a token can start -- inside a document as well as
+// between two -- and which ends the document it is in, as `...` would.
+//
+// halite read it as an ordinary plain scalar inside a document, so
+// `%YAML 1.2` after an empty document became the string "%YAML 1.2"
+// where PyYAML 6.0.3 reads two null documents (MUS6/01), and
+// `key: value` then `%foo: bar` became a two-key mapping where PyYAML
+// refuses the directive. SPEC 10.1 makes PyYAML's the dialect. The one
+// place it is not a directive is the continuation of a multi-line plain
+// scalar, where PyYAML folds it into the text, and so does this: the
+// plain-scalar scanner does not check for it. DIVERGENCE 5.226.
+func (p *parser) atDirectiveLine() bool {
+	return p.col == 1 && !p.eof() && p.peek() == '%'
+}
+
+// atDocBoundary is where a block collection or a document ends: a
+// document marker, or a directive.
+func (p *parser) atDocBoundary() bool {
+	return p.atDocStart() || p.atDocEnd() || p.atDirectiveLine()
 }
 
 func (p *parser) atDocStart() bool {

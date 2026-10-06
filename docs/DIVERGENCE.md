@@ -20113,6 +20113,93 @@ hub with exit 1. With it, `--out` of `summary`, `nested`, `json` and
 **Not covered:** the printed output of a real run, which needs a hub.
 Only run on macOS.
 
+### 5.226 The YAML over-acceptance set, put to PyYAML and closed
+
+`plan.md` §7 item 23 was the YAML over-acceptance set: 15 documents the
+YAML test suite says are errors, which halite read. SPEC 10.1 makes
+PyYAML's the dialect, so each was put to PyYAML 6.0.3, with the
+`SafeLoader` Salt's loader is built on and libyaml's `CSafeLoader`
+beside it, before anything changed. That split them three ways.
+
+**Three were PyYAML's dialect, not defects.**
+- `9C9N` (flow-sequence entries in column zero) and `QB6E` (a quoted
+  scalar's continuation lines in column zero): both loaders read them,
+  to the values halite reads.
+- `MUS6/01`: PyYAML reads it as two null documents, but halite read the
+  first as the string `"%YAML 1.2"`. So it was a wrong value, and is
+  fixed below.
+
+**Twelve were defects, and are refused now as PyYAML refuses them:**
+- **A document marker in column zero inside a quoted scalar** (`5TRB`,
+  `9MQT/01`, `RXY3`): the scalar was never closed.
+- **A block mapping or sequence starting on the `---` line** (`9KBC`,
+  `CXX2`). A scalar, flow collection, block scalar, or an anchor or tag
+  with the collection on the next line is still read, as PyYAML reads
+  all of those; fifteen variants were probed and agree.
+- **Content after `...` on its line** (`3HFZ`). A comment is allowed.
+- **A marker in column zero inside a flow collection** (`N782`).
+- **A `#` straight after a block-scalar header** (`X4QW`). The pure
+  `SafeLoader` refuses this; libyaml alone accepts it.
+- **A tag runs to white space** (`U99R`). The flow indicators are URI
+  characters a tag may contain, so `!!str,` is the unknown tag `str,`.
+- **An anchor or tag on the same line as a block sequence entry**
+  (`SY6V`).
+- **One scalar with two anchors** (`4JVG`): halite read `&v2 val2` as
+  the string.
+- **An implicit flow-mapping key and its colon on different lines**
+  (`VJP3/00`).
+
+**A directive in column zero now ends the document it follows**, as `...`
+would, wherever a token can start. That is PyYAML's reading. It fixes
+`MUS6/01`, and it makes halite read `EB22` and `RHX7` as PyYAML does,
+where halite and the suite had refused them. A multi-line plain
+scalar's continuation is the exception, in both parsers.
+
+**Two of these rules refuse documents the suite says are valid**, and
+PyYAML refuses them too:
+- The tag rule refuses `WZ62`, which halite had read with a wrong value.
+- The flow-key rule refuses seven cases where YAML 1.2 lets an implicit
+  key run onto a second line: the three `4MUZ` cases, `5MUD`, `9SA2`,
+  `K3WX`, `NJ66`, `UT92` and `VJP3/01`.
+
+All ten are recorded as the dialect. `TestPlainScalarsInsideFlow` had
+asserted `{foo\n: bar}` loads, from YAML 1.2 rather than from PyYAML; it
+now asserts the refusal.
+
+The suite stands at 332 agreeing, 55 deliberate and 15 gaps, from 331,
+40 and 31 in 5.64, and 95.7% conformance where halite claims to conform.
+There are no over-acceptances left, and `gapLenient` is removed.
+Agreement rose by only one despite twelve fixes because ten
+suite-valid documents moved to deliberate. That is the trade 5.56 and
+5.64 made: less agreement with the suite, more with the reference SPEC
+names.
+
+Every fix was checked by turning its check off and watching its suite
+cases fail again. `TestAColumnZeroDirectiveIsReadAsPyYAMLReadsIt` pins
+nine directive variants to PyYAML's captured values, because the suite
+table records only whether a document is accepted, and so could not see
+`MUS6/01`'s value. The parser's consumers pass:
+- render;
+- state;
+- pillar;
+- config;
+- template;
+- migrate.
+
+**The risk this carries.** The fleet runs only halite. A tree written
+since the migration may use a construct halite accepted and PyYAML
+refuses, such as a flow-mapping key split across lines or `--- a: b`.
+That file now fails to load, where Salt would also have refused it. The
+31 non-templated YAML and SLS files in this repository parse identically
+before and after.
+
+**Not covered:** the estate's own state and pillar trees, which are not
+on this host. Lint them before deploying this. `halite-hub lint` refuses
+`{a` followed by `: b}` on the next line with exit 1, naming the line,
+and passes a well-formed file with 0. It takes files and not a
+directory, so give it each file, for example
+`find <tree> -name '*.sls' -exec halite-hub lint {} +`.
+
 
 ## 6. Everything else not started
 

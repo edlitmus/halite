@@ -49,7 +49,14 @@ func (p *parser) readProps(minIndent int) (nodeProps, error) {
 			if p.peek() == '!' {
 				p.next()
 			}
-			for !p.eof() && !isFlowIndicator(p.peek()) && p.peek() != ' ' && p.peek() != '\n' {
+			// A tag runs to white space. The flow indicators are URI
+			// characters a tag may contain, and PyYAML 6.0.3 reads them as
+			// part of it -- `!!str,` is the tag `str,`, `[!!str]` an
+			// unclosed sequence -- where halite stopped at them and read
+			// `- !!str, xxx` as a tagged string (U99R). The longer tag is
+			// one SPEC 10.1.2 does not admit, so it is refused, as there.
+			// DIVERGENCE 5.226.
+			for !p.eof() && p.peek() != ' ' && p.peek() != '\t' && p.peek() != '\n' {
 				p.next()
 			}
 			np.tag = string(p.src[start:p.off])
@@ -142,7 +149,7 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int, inline bool) (any,
 	if err := p.skipBlank(); err != nil {
 		return nil, err
 	}
-	if p.eof() || p.atDocStart() || p.atDocEnd() || p.col < minIndent {
+	if p.eof() || p.atDocBoundary() || p.col < minIndent {
 		return nil, nil
 	}
 
@@ -155,6 +162,17 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int, inline bool) (any,
 		return nil, err
 	}
 	inline = inline && p.line == keyLine
+	// Properties on one line and a node with properties of its own on
+	// the next: unless that next line is a mapping entry, whose key the
+	// second set belongs to, it is one node with two anchors or two tags.
+	// `top2: &node2` then `&v2 val2` is that, and PyYAML 6.0.3 refuses it;
+	// halite read it as the string "&v2 val2" (4JVG). DIVERGENCE 5.226.
+	if !p.eof() && p.line != np.pos.Line &&
+		((p.peek() == '&' && np.anchor != "") || (p.peek() == '!' && np.tag != "")) &&
+		!p.lineIsMappingEntry() {
+		return nil, p.err("a node may carry only one anchor and one tag; " +
+			"this one already has its properties on the line above")
+	}
 	if p.eof() || p.col < minIndent {
 		// An anchor or tag with an empty node, such as `key: !!null`.
 		v, err := p.applyTag(np.tag, "", false, np.pos)
@@ -184,6 +202,15 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int, inline bool) (any,
 		if inline {
 			return nil, p.err("a block sequence cannot begin on the same line as the key it belongs to; " +
 				"put the `-` on the next line, indented under the key")
+		}
+		// Nor on the line of its own anchor or tag: `&a - x` gives the
+		// sequence no column to be indented from. PyYAML 6.0.3 refuses
+		// it, "sequence entries are not allowed here"; halite read it as
+		// an anchored sequence (SY6V). `&a` alone on a line, with the
+		// sequence below it, is still read. DIVERGENCE 5.226.
+		if (np.anchor != "" || np.tag != "") && np.pos.Line == p.line {
+			return nil, p.err("a block sequence cannot begin on the same line as its anchor or tag; " +
+				"put the `-` on the next line")
 		}
 		v, err := p.parseBlockSeq(col)
 		if err != nil {
