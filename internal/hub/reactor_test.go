@@ -370,6 +370,59 @@ reactor:
 	}
 }
 
+// An entry's rate_limit lets its burst through and throttles the rest,
+// saying so on the bus. Only the parsing of rate_limit was tested until
+// the bucket moved to internal/ratelimit, so a bucket that never ran
+// dry passed every reactor test. DIVERGENCE 5.233.
+func TestAReactorOverItsRateLimitIsThrottled(t *testing.T) {
+	l, r, _ := reactorLab(t, map[string]string{
+		"noop.sls": "ping:\n  local.test.ping:\n    - tgt: '*'\n",
+	}, `
+reactor:
+  - tag: 'halite/beacon/**'
+    sls:
+      - $DIR/noop.sls
+    principal: 'cert:CN=ed'
+    rate_limit: 2/m
+`)
+	l.enrolled(t, "web1.example")
+
+	handled := make(chan struct{}, 16)
+	r.Handled = func(string, []ReactionResult) { handled <- struct{}{} }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.start(ctx)
+
+	// Two a minute is a burst of two, and a refill far slower than the
+	// five offers take.
+	for i := 0; i < 5; i++ {
+		r.Offer(&eventbus.Event{
+			Tag:  "halite/beacon/web1.example/inotify/etc/thing",
+			Node: "web1.example",
+			Data: map[string]any{"n": i},
+		})
+	}
+
+	ran := 0
+	deadline := time.After(3 * time.Second)
+	for ran < 2 {
+		select {
+		case <-handled:
+			ran++
+		case <-deadline:
+			t.Fatalf("%d reactions ran; a burst of two should give two", ran)
+		}
+	}
+	select {
+	case <-handled:
+		t.Error("a reaction past the burst ran")
+	case <-time.After(300 * time.Millisecond):
+	}
+	if !busHas(t, l, "halite/reactor/throttled") {
+		t.Error("no halite/reactor/throttled event")
+	}
+}
+
 // The queue is bounded and drops the oldest, reporting the count. A
 // channel would block the bus reader instead, which turns a burst into
 // a backlog -- the Salt failure SPEC 18.2 names.
