@@ -20057,6 +20057,35 @@ both formats:
 **Not covered:** secrets in the `_file` forms, which `doctor` never
 reads. Only run on macOS.
 
+### 5.224 `extensions` opened the hub before its subcommand, and `policy test` exited 1
+
+5.220 found that `keys`, `keys token` and `jobs` opened the hub before
+reading their subcommand, and recorded that the other hub subcommands
+had not been checked. Checking them found two more.
+
+- **`extensions`** called `openHubForConfig`, which opens `log_file`,
+  before its switch. So `extensions lsit` created the log file, as root
+  if root ran it, before saying "unknown subcommand". Each case now opens
+  the hub itself, so an unknown name reaches the refusal having opened
+  nothing.
+- **`policy test` with fewer than three operands** exited 1 through
+  `cli.Fatalf`, a usage error that the missing-operand sweep before this
+  one missed because its
+  message says "takes" rather than "needs". It now uses `cli.Usagef`.
+
+The rest were read and are fine:
+- `policy` loads the configuration before its switch, but loading only
+  reads, so a mistyped `policy` subcommand has no side effect.
+- `event` and `orch` check before opening anything.
+- `metrics` takes no subcommand.
+- `runner` opens its client only after `list` and `doc`.
+
+`TestExtensionsAndPolicyRefuseBeforeTouchingAnything` failed against the
+old two files on both counts: the log file was created, and the exit
+was 1. It passes on the new.
+
+**Not covered:** only run on macOS.
+
 
 ## 6. Everything else not started
 
