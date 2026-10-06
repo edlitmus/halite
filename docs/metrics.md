@@ -578,6 +578,7 @@ themselves, under whatever you call that job.
 | `halite_hub_soonest_certificate_expiry_seconds` | gauge | — | Seconds until the first node certificate expires; negative once one has. |
 | `halite_hub_ca_expiry_seconds` | gauge | — | Seconds until the enrollment CA expires. Every node's identity is signed by it. |
 | `halite_hub_enrollments_total` | counter | `result` | Enrollment requests: `issued`, `pending`, `refused`, `failed`. |
+| `halite_hub_evidence_anchors_total` | counter | `result` | Evidence heads nodes reported: `accepted`, `conflict`, `failed`. A conflict is a node whose chain was rewritten, reset or rolled back since it last reported, and is worth an alert; `failed` is this hub not managing to record one. |
 | `halite_hub_requests_total` | counter | `route` `code` | Requests the hub answered. |
 | `halite_hub_request_duration_seconds` | histogram | `route` | How long it took to answer one. |
 | `halite_jobs_dispatched_total` | counter | `fun` | Jobs sent, by function. |

@@ -84,6 +84,11 @@ type Server struct {
 	Mine     *MineStore
 	mineOnce sync.Once
 
+	// Anchors is SPEC 25.7's record of the evidence heads nodes report.
+	// Nil for a hub that keeps none, which answers a report with 503
+	// rather than a receipt for something it did not write down.
+	Anchors *AnchorStore
+
 	// Reactors is the configured reactor of SPEC 18.1. The engine that
 	// consumes them is started by `serve`; the list is here so that
 	// `reactor.test` and `reactor.list` can read it without one.
@@ -261,6 +266,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathEvent, s.authenticated(s.events))
 	mux.HandleFunc("PUT "+transport.PathMine, s.authenticated(s.minePublish))
 	mux.HandleFunc("POST "+transport.PathMineGet, s.authenticated(s.mineFetch))
+	mux.HandleFunc("POST "+transport.PathEvidenceAnchor, s.authenticated(s.evidenceAnchor))
 	mux.HandleFunc("GET "+transport.PathEvents, s.operator(s.eventStream))
 	mux.HandleFunc("GET "+transport.PathMetrics, s.operator(s.metricsExposition))
 	// An unrouted path under /v1/ is a version skew or a scan, and

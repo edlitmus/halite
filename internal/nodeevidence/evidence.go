@@ -18,11 +18,26 @@
 // What it is not is tamper-proof. Anything running as root on the node
 // can delete the file, or recompute the whole chain from the genesis
 // record and produce a consistent forgery; a hash chain detects editing,
-// not rewriting. Making the chain evidence against the node itself means
-// anchoring its head hash somewhere the node cannot reach -- shipped to
-// an operator, countersigned by a key the node does not hold -- and that
-// is not built. Nothing here should be read as a claim about a
-// compromised node.
+// not rewriting, and Verify on its own says nothing about a compromised
+// node.
+//
+// # The anchor
+//
+// What makes the chain evidence against the node as well is a copy of
+// its head somewhere the node cannot write. The agent reports its head to
+// the hub when its stream opens and after every job; the hub keeps every
+// head it accepted in an append-only file (Anchor is one line of it) and
+// answers with a receipt signed by the enrollment CA's key, which the
+// node files in its own chain as a KindAnchorReceipt record. CheckAnchors
+// holds a chain to both: every head the hub accepted must still be the
+// record at that number, and every receipt must verify against the CA
+// certificate and name a record the chain still has.
+//
+// The two halves bind opposite parties. A node that rewrites its chain
+// contradicts the hub's file for everything up to its last report; a
+// hub that drops a line from its file is contradicted by a receipt only
+// it could have signed. What neither covers: records written after the
+// last report the hub accepted, and a node and hub compromised together.
 //
 // # The name
 //
@@ -399,8 +414,8 @@ func (l *Log) seal() error {
 	return nil
 }
 
-// Head is the last record's hash and sequence number, which is what an
-// operator copies somewhere the node cannot reach.
+// Head is the last record's hash and sequence number, which is what the
+// agent reports to the hub as the chain's anchor.
 func (l *Log) Head() (uint64, string) {
 	if l == nil {
 		return 0, ""

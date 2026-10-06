@@ -343,6 +343,12 @@ func runConnect(args *cli.Args) int {
 	// see startEvidence.
 	n.startEvidence()
 	defer n.stopEvidence("the agent stopped")
+	// The anchor reporter, which reads the client afresh for each
+	// report: see startAnchoring.
+	n.startAnchoring(ctx, func() *transport.Client {
+		c, _ := n.hubClient(args)
+		return c
+	})
 
 	// The render sandbox child, ended deliberately rather than left to
 	// notice its stdin has gone. `closeRenderSandbox` was written and
@@ -412,11 +418,15 @@ func runConnect(args *cli.Args) int {
 		n.attachToHub(args, client)
 		n.log.Info("connecting", "hub", client.HubURL)
 		n.metrics.countConnect()
-		err := client.Subscribe(ctx, transport.SubscribeRequest{
+		// The head is reported once the hub has accepted the stream,
+		// which is the first moment this node is known to be talking to
+		// a hub that will take it -- and, after an outage, the moment
+		// to anchor whatever was recorded while it was away.
+		err := client.SubscribeOpened(ctx, transport.SubscribeRequest{
 			NodeID:  n.nodeID,
 			Grains:  grainsJSON(n),
 			Version: version.String(),
-		}, func(msg transport.Message) error {
+		}, n.requestAnchor, func(msg transport.Message) error {
 			return n.handle(msg)
 		})
 		n.metrics.countDisconnect()

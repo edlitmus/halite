@@ -81,6 +81,16 @@ func tagState(jid, node, result string) string {
 	return "halite/state/" + jid + "/" + node + "/" + result
 }
 
+// tagEvidenceConflict is under the node's own namespace because it is
+// about that node, and that namespace is one the node can also write
+// to: `halite-node event send evidence/conflict` lands on this same tag.
+// So the event is a prompt to look, never the finding itself. The
+// finding is the conflict line in the hub's anchor file, which only the
+// hub writes.
+func tagEvidenceConflict(node string) string {
+	return "halite/node/" + node + "/evidence/conflict"
+}
+
 // events is POST /v1/event: a node putting something on the hub's bus,
 // which is `event.send` on the node.
 //

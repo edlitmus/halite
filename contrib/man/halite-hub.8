@@ -64,6 +64,15 @@ The role-based authorization policy, and what it decides for a given
 principal, target and function.
 .It Cm event Oo Cm listen | tags Oc
 The event bus: follow it, or list the tags it carries.
+.It Cm evidence anchors Ar node
+Print the evidence heads a node has reported, exactly as the hub stored
+them: one JSON object per line, each a head the hub accepted and signed
+a receipt for, or one that contradicted what the node had reported
+before.
+Give the output to
+.Nm halite-node Cm verify-evidence Fl -anchors
+to check a node's chain against it.
+Reads the file directly, so it works with the hub stopped.
 .It Cm metrics
 Print the Prometheus exposition.
 .It Cm ssh Ar target Ar function Op Ar args ...
@@ -157,7 +166,7 @@ The enrollment CA, and this hub's own certificate and key.
 Durable state on the BSDs;
 .Pa /var/lib/halite
 elsewhere.
-Holds the job cache, the event bus and the key store.
+Holds the job cache, the event bus, the key store and the evidence anchors.
 .El
 .Sh EXIT STATUS
 .Nm

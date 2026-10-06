@@ -62,6 +62,9 @@ type hubMetrics struct {
 	requestDuration *metrics.Histogram
 
 	enrollments *metrics.Counter
+	// evidenceAnchors counts SPEC 25.7 head reports by what the hub did
+	// with them. A conflict is the one an operator alerts on.
+	evidenceAnchors *metrics.Counter
 
 	subscriberLag *metrics.Histogram
 
@@ -170,6 +173,9 @@ func (s *Server) setupMetrics() {
 
 		enrollments: r.Counter("halite_hub_enrollments_total",
 			"Enrollment requests, by what the hub did with one.", "result"),
+		evidenceAnchors: r.Counter("halite_hub_evidence_anchors_total",
+			"Evidence heads reported by nodes, by whether the hub accepted one, found it "+
+				"contradicted an earlier one, or failed to record it.", "result"),
 
 		subscriberLag: r.Histogram("halite_event_subscriber_lag_seconds",
 			"How old an event was when a subscriber was handed it.",
