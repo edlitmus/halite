@@ -142,6 +142,17 @@ func runRun(args *cli.Args) int {
 	if err != nil {
 		cli.Usagef("--timeout %q: %v", args.Flag("timeout", ""), err)
 	}
+	// --out is read after the job has run, and anything but nested or
+	// summary went to cli.Write unchecked, which renders a format it does
+	// not know as nested: `--out table` -- one of SPEC's, never built --
+	// printed nested with no word, and `--out highstate` skipped the
+	// highstate renderer the default uses. Checked here, before anything
+	// is sent. DIVERGENCE 5.221; SPEC's unbuilt formats are 6.4.
+	if out := args.Flag("out", "nested"); out != "summary" {
+		if _, err := cli.ParseFormat(out); err != nil {
+			cli.Usagef("%v", err)
+		}
+	}
 	if args.Flag("sign-key", "") != "" && args.Flag("sign-extension", "") != "" {
 		cli.Usagef("--sign-key and --sign-extension name two different signers; use one")
 	}

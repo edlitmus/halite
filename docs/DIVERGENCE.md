@@ -19943,6 +19943,33 @@ Three deliberate breaks each failed the tests:
 **Not covered:** errors from the hub itself, and configuration errors,
 still exit 1, as intended. Only run on macOS.
 
+### 5.222 `run --out` accepted any format and printed nested
+
+`halite-hub run` read `--out` only after the job had run, and only to
+pick a printer. `nested` and `summary` take the per-node path, which
+renders a state run's return as highstate. Anything else went to
+`cli.Write` as `cli.Format(format)`, unchecked, and `cli.Write` renders
+a format it does not know as nested. So:
+- `--out table`, one of SPEC 9.5's formats and never built (6.4),
+  printed nested and said nothing.
+- `--out highstate` skipped the highstate renderer the default uses.
+- A typo, such as `--out jsno`, printed nested, after the job had
+  already run on every node.
+
+`halite-node`, `ssh`, `runner` and the API all check `--out` with
+`cli.ParseFormat`. `run` now checks it with the rest of its flags,
+before anything is sent: `summary`, or anything `ParseFormat` accepts,
+or a usage error. The verification sweep behind 6.4 found this by
+reading the code.
+
+`TestRunRefusesAMalformedCommandLineAsAUsageError` gained the
+`--out table` case. With the check disabled it failed, reaching for the
+hub with exit 1. With it, `--out` of `summary`, `nested`, `json` and
+`txt` still got past the argument check to the operator certificate.
+
+**Not covered:** the printed output of a real run, which needs a hub.
+Only run on macOS.
+
 
 ## 6. Everything else not started
 
