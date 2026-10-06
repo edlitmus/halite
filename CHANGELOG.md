@@ -23,6 +23,12 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### extensions and policy test refuse a bad command line cleanly
+
+`halite-hub extensions` with a mistyped subcommand no longer creates the
+hub's log file before refusing it. `halite-hub policy test` with fewer
+than three operands now exits 64 rather than 1.
+
 ### A mistyped keys or jobs subcommand no longer touches the hub
 
 `halite-hub keys`, `keys token` and `jobs` now refuse a mistyped

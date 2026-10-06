@@ -101,7 +101,7 @@ func runPolicy(args *cli.Args) int {
 
 	case "test":
 		if len(args.Positional) < 4 {
-			cli.Fatalf("policy test takes a principal, a target, and a function: " +
+			cli.Usagef("policy test takes a principal, a target, and a function: " +
 				"halite-hub policy test 'cert:CN=alice' 'web*.prod' state.apply")
 		}
 		loaded, _ := loadPolicyFile(cfg)
