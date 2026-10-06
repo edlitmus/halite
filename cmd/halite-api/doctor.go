@@ -77,7 +77,7 @@ func runDoctor(args *cli.Args) int {
 // No check here reads a secret, and none of a set of malformed
 // configurations carrying one got it into the report -- so this is not a
 // leak that was seen, but the one output of the three programs that SPEC
-// 26.1's "scrubbed at the sink" did not cover. DIVERGENCE 5.221.
+// 26.1's "scrubbed at the sink" did not cover. DIVERGENCE 5.223.
 func doctorSecrets(cfg *config.Config) *redact.Set {
 	secrets := redact.New()
 	for _, v := range cfg.SecretValues() {

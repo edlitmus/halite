@@ -171,7 +171,7 @@ func TestDoctorRendersJSONForAState(t *testing.T) {
 // injected: a check whose detail quotes the bind password, which is the
 // shape the hub's pillar check leaked in (DIVERGENCE 5.110). The secret
 // comes from a real api.yaml, through the same seeding runDoctor uses,
-// so a seeding that missed it fails here too. DIVERGENCE 5.221.
+// so a seeding that missed it fails here too. DIVERGENCE 5.223.
 func TestTheAPIDoctorScrubsBothOutputPaths(t *testing.T) {
 	const secret = "doctor-bind-pw-7e21"
 	root := t.TempDir()

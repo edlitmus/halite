@@ -20008,7 +20008,7 @@ newest, and the other key is untouched. Three breaks each failed it:
 order (prune only after the certificate reads back) is held by the code,
 not by a test. Only run on macOS.
 
-### 5.221 `halite-api doctor` printed its report unscrubbed
+### 5.223 `halite-api doctor` printed its report unscrubbed
 
 The hub's and the node's `doctor` scrub what they print, as text and as
 `--out json`/`yaml`, because a check prints what it found. On the hub,
