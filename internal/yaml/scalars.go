@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // parseScalar reads a plain, single-quoted, or double-quoted scalar and
@@ -198,6 +200,9 @@ func (p *parser) parseSingleQuoted() (string, error) {
 			return foldQuoted(lines), nil
 		case '\n':
 			p.next()
+			if err := p.markerInQuoted(openPos); err != nil {
+				return "", err
+			}
 			lines = append(lines, cur)
 			cur = qline{}
 			p.skipSpaces()
@@ -227,6 +232,9 @@ func (p *parser) parseDoubleQuoted() (string, error) {
 			return foldQuoted(lines), nil
 		case '\n':
 			p.next()
+			if err := p.markerInQuoted(openPos); err != nil {
+				return "", err
+			}
 			lines = append(lines, cur)
 			cur = qline{}
 			p.skipSpaces()
@@ -256,6 +264,22 @@ func (p *parser) parseDoubleQuoted() (string, error) {
 			cur.writeByte(c)
 		}
 	}
+}
+
+// markerInQuoted refuses a document marker at the start of a quoted
+// scalar's continuation line.
+//
+// A `---` or `...` in column zero ends the document wherever it is, so a
+// quoted scalar that reaches one was never closed. PyYAML says so --
+// "found unexpected document separator" -- and the suite agrees; halite
+// read the marker as three characters of the string, so a document
+// split in the middle of a quoted value loaded as one value with a
+// separator inside it (5TRB, 9MQT/01, RXY3). DIVERGENCE 5.226.
+func (p *parser) markerInQuoted(open value.Pos) error {
+	if p.atDocStart() || p.atDocEnd() {
+		return p.errAt(open, "a quoted string is not closed before a document marker in column zero")
+	}
+	return nil
 }
 
 // qline is one line of a quoted scalar, remembering which of its bytes
