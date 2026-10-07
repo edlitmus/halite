@@ -20707,11 +20707,18 @@ that an alert in `docs/metrics.md` reads with `increase()` has the same
 first-event gap, and none was checked or changed here:
 `halite_orch_runs_total{result="compile_failed"}` is one.
 
+**Run afterwards, 2026-10-07:** `promtool` 2.55.1 (the version of the
+Prometheus on the LAN; checksum from the release's own `sha256sums.txt`)
+accepted all 26 rules in the `docs/metrics.md` blocks, these two
+included. `promtool test rules` then ran the rule on two synthetic
+series: one that does not exist until its first sample is 1 produced no
+alert at the eighth minute, and one exported at 0 first did. That is the
+mechanism above shown on the real rule engine, not on real data.
+
 **Not covered:**
-- The rules were parsed as YAML but not run through `promtool check
-  rules`, which is not installed on this host, and not evaluated against
-  a Prometheus. The doc's claim that the block is accepted by promtool
-  is for the block before these two were added.
+- The rules were not evaluated against live halite data: the Prometheus
+  on the LAN does not scrape halite at all (no `job="halite"` target and
+  no `halite_*` series), and nothing was changed there.
 - The zero series was shown in the exposition text only, not scraped.
 - No dashboard panel.
 
@@ -20753,7 +20760,8 @@ exemption is named in the test with its reason.
 
 **Not covered:** the node's and the API's families are not covered by that
 test, which sees only the hub's exposition; the reading above is the only
-check on them. No rule was evaluated against a Prometheus.
+check on them. `promtool check rules` accepts every rule (see 5.235); no
+rule was evaluated against live halite data.
 
 ## 6. Everything else not started
 
