@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Alerts for evidence-anchor conflicts and failures
+
+`docs/metrics.md` has two new rules: `HaliteEvidenceConflict`, for a node
+whose evidence chain contradicts the hub's record of it, and
+`HaliteEvidenceNotRecorded`, for a hub that could not write an anchor.
+The hub now exports every `halite_hub_evidence_anchors_total` result at 0
+from startup, so the first conflict after a restart is seen by
+`increase()` rather than missed.
+
 ### A hub that crashed mid-write no longer locks a node out of evidence anchoring
 
 If the hub stopped while appending to a node's evidence-anchor file, that

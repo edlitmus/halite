@@ -1381,7 +1381,8 @@ accepted, and a node and hub compromised together.
 already holds — the same record number with another hash, or a number
 below the highest — is written to the file as a `conflict` line, refused
 with 409 and no receipt, logged as a warning naming the node, counted in
-`halite_hub_evidence_anchors_total{result="conflict"}`, and raised as
+`halite_hub_evidence_anchors_total{result="conflict"}` (which
+[Metrics](metrics.md#alerting) has the alert for), and raised as
 `halite/node/<node>/evidence/conflict`. Treat the event as a prompt and
 the file as the finding: a node can put an event on that same tag
 itself, and only the hub writes the file. `verify-evidence --anchors`
