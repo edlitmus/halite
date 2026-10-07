@@ -406,13 +406,15 @@ func appendAnchor(path string, line nodeevidence.Anchor) error {
 		f.Close()
 		return fmt.Errorf("reading the evidence anchors: %w", err)
 	}
+	// The cut goes through a second handle, opened after this one is
+	// closed. This handle is O_APPEND, and on Windows that is an open
+	// for appending only: Truncate on it fails with "Access is denied",
+	// which left the fragment in place on the Windows legs.
 	undo := func(cause error) error {
-		if terr := f.Truncate(info.Size()); terr != nil {
-			cause = fmt.Errorf("%w; and cutting the partial line back failed too: %v", cause, terr)
-		} else if serr := f.Sync(); serr != nil {
-			cause = fmt.Errorf("%w; and flushing the cut failed too: %v", cause, serr)
-		}
 		f.Close()
+		if terr := truncateSync(path, info.Size()); terr != nil {
+			cause = fmt.Errorf("%w; and cutting the partial line back failed too: %v", cause, terr)
+		}
 		return cause
 	}
 	// One write, so that a crash leaves at most one partial line.

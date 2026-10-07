@@ -20662,6 +20662,14 @@ the file back to its prior size when the write or the fsync fails.
 still refuses an incomplete last line but now says what it is and that
 the hub removes it, rather than "not an anchor record".
 
+The first version of the cut-back truncated through the append handle,
+and passed on Linux, macOS and FreeBSD. CI's Windows legs failed it:
+a Windows `O_APPEND` handle is opened for appending only, so `Truncate`
+on it returned "Access is denied" and the fragment stayed. It now closes
+that handle and cuts through a second one, the way the load-time repair
+does. Confirmed only by the Windows CI legs re-running, not locally;
+`GOOS=windows go vet` was the only local Windows check.
+
 Breaking it on purpose: with the cut-back truncating to the wrong size
 (a sparse terabyte past the end), `TestAFailedAnchorAppendIsCutBack`
 did not pass; it hung until the test binary's timeout killed it
