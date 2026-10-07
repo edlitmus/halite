@@ -20393,6 +20393,7 @@ accepted line, is the guarantee.
 - A compromised node can grow its own anchor file with one fsync per
   report; there is no rate limit.
 - No alert rule or dashboard panel was added for the conflict metric.
+  (The alert rule is 5.235; the dashboard panel is still not added.)
 
 ### 5.230 OIDC login starts had no bound, and each swept every one in flight
 
@@ -20681,6 +20682,38 @@ passes. The torn-tail tests were not separately broken.
   the lab, and not on a disk that is actually full: the failed append is
   simulated by a write that stops half way.
 - A crash between the truncate and its fsync is not simulated.
+
+### 5.235 The conflict alert would have missed the first conflict
+
+5.229 left "no alert rule" open. Writing the rule found that the obvious
+one, `increase(halite_hub_evidence_anchors_total{result="conflict"}[15m])
+> 0`, does not fire on the report it exists for. A labelled counter has
+no series until it is incremented, so the first conflict arrives as a
+series that is already 1, and `increase()` over a series with no earlier
+sample is empty. Unlabelled counters in this exposition do not have the
+problem, because they are exported at 0.
+
+The hub now names all four results (`accepted`, `conflict`,
+`rate_limited`, `failed`) when it declares the family, which exports each
+at 0. `TestEveryAnchorResultIsExportedAtZeroBeforeAnyReport` requires all
+four on a hub that has seen no report; with the declaration taken out it
+failed on all four. Two rules are in `docs/metrics.md`: `HaliteEvidenceConflict`
+(critical) and `HaliteEvidenceNotRecorded` (warning, `failed`). Nothing
+alerts on `rate_limited`, which 5.231 says a node running many short jobs
+reaches in passing.
+
+This is not specific to the evidence family. Every other labelled counter
+that an alert in `docs/metrics.md` reads with `increase()` has the same
+first-event gap, and none was checked or changed here:
+`halite_orch_runs_total{result="compile_failed"}` is one.
+
+**Not covered:**
+- The rules were parsed as YAML but not run through `promtool check
+  rules`, which is not installed on this host, and not evaluated against
+  a Prometheus. The doc's claim that the block is accepted by promtool
+  is for the block before these two were added.
+- The zero series was shown in the exposition text only, not scraped.
+- No dashboard panel.
 
 ## 6. Everything else not started
 

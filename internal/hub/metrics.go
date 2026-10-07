@@ -11,6 +11,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
+	"github.com/edlitmus/halite/internal/nodeevidence"
 	"github.com/edlitmus/halite/internal/transport"
 
 	"github.com/edlitmus/halite/internal/metrics"
@@ -202,6 +203,15 @@ func (s *Server) setupMetrics() {
 			"Time a node spent on a state run end to end, from its return. Compiling the tree is inside it.", nil),
 	}
 	s.metrics = m
+	// A labelled counter has no series until something increments it, so
+	// the first conflict would appear already at 1, and Prometheus'
+	// increase() over a series with no earlier sample is empty: the one
+	// report the alert in docs/metrics.md exists for would not fire it.
+	// Naming each result here exports it at 0 from the start.
+	for _, result := range []string{nodeevidence.AnchorAccepted, nodeevidence.AnchorConflict,
+		"rate_limited", "failed"} {
+		m.evidenceAnchors.With(result)
+	}
 
 	r.GaugeFunc("halite_hub_nodes_connected",
 		"Nodes with a live subscribe stream.", func() float64 {

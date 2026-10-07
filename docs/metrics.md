@@ -989,6 +989,29 @@ groups:
       - alert: HaliteOrchestrationWillNotCompile
         expr: increase(halite_orch_runs_total{result="compile_failed"}[15m]) > 0
         labels: {severity: warning}
+
+      # A node reported an evidence head that contradicts what this hub
+      # recorded: its chain was rewritten, reset or rolled back since it
+      # last reported (SPEC 25.7). The series carries no node label --
+      # one per node would be unbounded -- so the node is in the hub's
+      # log and in the halite/node/<node>/evidence/conflict event, and
+      # the finding is the hub's anchor file. A snapshot restore and
+      # removing a node's evidence directory both do this innocently;
+      # operations.md says how to tell and how to start the record again.
+      - alert: HaliteEvidenceConflict
+        expr: increase(halite_hub_evidence_anchors_total{result="conflict"}[15m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "A node's evidence chain contradicts the hub's record of it; see the hub log"
+
+      # The hub could not write an anchor line, so the node got no
+      # receipt and its head is not recorded. Usually a full or
+      # read-only state directory.
+      - alert: HaliteEvidenceNotRecorded
+        expr: increase(halite_hub_evidence_anchors_total{result="failed"}[10m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "The hub failed to record {{ $value }} evidence heads"
 ```
 
 One of these reads a family that only moves on a hub with the feature

@@ -575,3 +575,26 @@ func TestAFailedAnchorAppendIsCutBack(t *testing.T) {
 		t.Fatalf("after a failed append the file holds %+v", lines)
 	}
 }
+
+// The first conflict must be visible to increase(). A labelled counter
+// has no series until it is incremented, so one that is born at 1 gives
+// Prometheus no earlier sample to subtract and the alert in
+// docs/metrics.md stays silent for exactly the report it exists for. A
+// hub that has seen no report at all exports every result at 0.
+func TestEveryAnchorResultIsExportedAtZeroBeforeAnyReport(t *testing.T) {
+	l := newLab(t)
+	l.withAnchors(t)
+	// Metrics are declared on first use, and a scrape gets there by
+	// counting its own authorization decision before it writes.
+	l.server.m()
+	var out bytes.Buffer
+	if err := l.server.Metrics.Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range []string{"accepted", "conflict", "rate_limited", "failed"} {
+		want := `halite_hub_evidence_anchors_total{result="` + result + `"} 0`
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("no %s before the first report:\n%s", want, out.String())
+		}
+	}
+}
