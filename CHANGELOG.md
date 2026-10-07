@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The example Grafana dashboard covers the evidence record
+
+`contrib/examples/grafana-dashboard.json` gains an "Evidence anchors" row
+(conflicts in the last 24 hours, and heads by result), and in the node
+row the evidence records by kind, write failures, beacon queue depth,
+requests to the hub and job duration. Two more hub panels cover returns
+from a newer node and failing external pillar sources. Every documented
+metric family is now on the dashboard; before, eight were not.
+
 ### The "node evidence stopped" alert could not fire
 
 `HaliteNodeEvidenceStopped` in `docs/metrics.md` joined two series that

@@ -1279,12 +1279,77 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Returns whose schema this hub does not know, which means a node is newer than it. Non-zero while an upgrade is in flight and zero afterwards; non-zero afterwards is a node somebody forgot. Counted from the hub's start.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 35
+      },
+      "id": 78,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(halite_returns_foreign_schema_total{job=\"$job\", instance=~\"$instance\"})",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "title": "Returns from a newer node",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 39
       },
       "id": 20,
       "panels": [],
@@ -1352,7 +1417,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 36
+        "y": 40
       },
       "id": 21,
       "options": {
@@ -1444,7 +1509,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 36
+        "y": 40
       },
       "id": 22,
       "options": {
@@ -1536,7 +1601,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 44
+        "y": 48
       },
       "id": 23,
       "options": {
@@ -1639,7 +1704,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 44
+        "y": 48
       },
       "id": 24,
       "options": {
@@ -1731,7 +1796,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 44
+        "y": 48
       },
       "id": 25,
       "options": {
@@ -1768,7 +1833,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 56
       },
       "id": 26,
       "panels": [],
@@ -1836,7 +1901,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 53
+        "y": 57
       },
       "id": 27,
       "options": {
@@ -1928,7 +1993,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 53
+        "y": 57
       },
       "id": 28,
       "options": {
@@ -1960,12 +2025,104 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "External pillar sources that failed, by the name the configuration gave them. Counted whether the failure stopped the compilation or was ignored: an ignored one is still a node whose pillar is missing what that source held.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 65
+      },
+      "id": 79,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (source) (rate(halite_pillar_ext_failures_total{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "refId": "A",
+          "range": true,
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "title": "External pillar sources failing, by source",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 73
       },
       "id": 29,
       "panels": [],
@@ -2033,7 +2190,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 74
       },
       "id": 30,
       "options": {
@@ -2125,7 +2282,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 74
       },
       "id": 31,
       "options": {
@@ -2228,7 +2385,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 70
+        "y": 82
       },
       "id": 32,
       "options": {
@@ -2320,7 +2477,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 70
+        "y": 82
       },
       "id": 33,
       "options": {
@@ -2423,7 +2580,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 78
+        "y": 90
       },
       "id": 34,
       "options": {
@@ -2515,7 +2672,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 78
+        "y": 90
       },
       "id": 35,
       "options": {
@@ -2552,7 +2709,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 98
       },
       "id": 36,
       "panels": [],
@@ -2620,7 +2777,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 87
+        "y": 99
       },
       "id": 37,
       "options": {
@@ -2712,7 +2869,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 99
       },
       "id": 38,
       "options": {
@@ -2804,7 +2961,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 95
+        "y": 107
       },
       "id": 39,
       "options": {
@@ -2896,7 +3053,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 95
+        "y": 107
       },
       "id": 40,
       "options": {
@@ -2944,7 +3101,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 115
       },
       "id": 41,
       "panels": [],
@@ -3012,7 +3169,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 104
+        "y": 116
       },
       "id": 42,
       "options": {
@@ -3104,7 +3261,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 104
+        "y": 116
       },
       "id": 43,
       "options": {
@@ -3164,7 +3321,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 112
+        "y": 124
       },
       "id": 44,
       "options": {
@@ -3257,7 +3414,7 @@
         "h": 4,
         "w": 18,
         "x": 6,
-        "y": 112
+        "y": 124
       },
       "id": 45,
       "options": {
@@ -3305,7 +3462,177 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 116
+        "y": 128
+      },
+      "id": 80,
+      "panels": [],
+      "title": "Evidence anchors",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Evidence heads a node reported that contradict the hub's record of that node: a chain that was rewritten, reset or rolled back (SPEC 25.7). Any value is worth reading the hub's log for, which names the node. A snapshot restore and removing a node's evidence directory both cause one innocently; operations.md says how to tell. The hub's counter starts again at zero when it restarts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 129
+      },
+      "id": 81,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(halite_hub_evidence_anchors_total{result=\"conflict\", job=\"$job\", instance=~\"$instance\"}[24h]))",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "title": "Evidence conflicts, last 24 hours",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "The heads nodes reported to the hub. accepted is the ordinary case; conflict contradicts the hub's record; rate_limited was refused because the node was over evidence_anchor_rate, which a node running many short jobs reaches in passing and its next report covers; failed is this hub not managing to write the line, usually a full or read-only state directory.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 6,
+        "y": 129
+      },
+      "id": 82,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (result) (rate(halite_hub_evidence_anchors_total{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "refId": "A",
+          "range": true,
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "title": "Evidence heads, by result",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 137
       },
       "id": 46,
       "panels": [],
@@ -3373,7 +3700,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 117
+        "y": 138
       },
       "id": 47,
       "options": {
@@ -3465,7 +3792,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 117
+        "y": 138
       },
       "id": 48,
       "options": {
@@ -3502,7 +3829,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 125
+        "y": 146
       },
       "id": 49,
       "panels": [],
@@ -3570,7 +3897,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 126
+        "y": 147
       },
       "id": 50,
       "options": {
@@ -3662,7 +3989,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 126
+        "y": 147
       },
       "id": 51,
       "options": {
@@ -3765,7 +4092,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 134
+        "y": 155
       },
       "id": 52,
       "options": {
@@ -3857,7 +4184,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 134
+        "y": 155
       },
       "id": 53,
       "options": {
@@ -3917,7 +4244,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 142
+        "y": 163
       },
       "id": 54,
       "options": {
@@ -4010,7 +4337,7 @@
         "h": 4,
         "w": 9,
         "x": 6,
-        "y": 142
+        "y": 163
       },
       "id": 55,
       "options": {
@@ -4113,7 +4440,7 @@
         "h": 4,
         "w": 9,
         "x": 15,
-        "y": 142
+        "y": 163
       },
       "id": 56,
       "options": {
@@ -4150,7 +4477,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 146
+        "y": 167
       },
       "id": 69,
       "panels": [
@@ -5188,6 +5515,408 @@
           ],
           "title": "Jobs run, by result",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Records appended to this node's SPEC 25.7 chain: job.accepted, job.refused, job.result, config, extension, node.start and node.stop. A node running jobs while this is flat is what HaliteNodeEvidenceStopped watches for. A node with evidence turned off has no series and draws nothing, which is not the same as a node whose log failed to open: that one also draws nothing.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 36
+          },
+          "id": 83,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (kind) (rate(halite_node_evidence_records_total{job=\"$node_job\", instance=~\"$node_instance\"}[5m]))",
+              "refId": "A",
+              "range": true,
+              "legendFormat": "{{kind}}"
+            }
+          ],
+          "title": "Evidence records, by kind",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Evidence records that could not be written, which are jobs with no entry in the record. Counted from the node's start.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 12,
+            "y": 36
+          },
+          "id": 84,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum(halite_node_evidence_failures_total{job=\"$node_job\", instance=~\"$node_instance\"})",
+              "refId": "A",
+              "range": true
+            }
+          ],
+          "title": "Evidence write failures",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Beacon events waiting to be sent. Only a node that is the running agent and has beacons exports it.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 18,
+            "y": 36
+          },
+          "id": 85,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum(halite_beacon_queue_depth{job=\"$node_job\", instance=~\"$node_instance\"})",
+              "refId": "A",
+              "range": true
+            }
+          ],
+          "title": "Beacon queue depth",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Requests this node made to the hub, by route and status code.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 44
+          },
+          "id": 86,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (route, code) (rate(halite_node_hub_requests_total{job=\"$node_job\", instance=~\"$node_instance\"}[5m]))",
+              "refId": "A",
+              "range": true,
+              "legendFormat": "{{route}} {{code}}"
+            }
+          ],
+          "title": "Node requests to the hub, by route and code",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "How long a node spent on one job, 95th percentile by function.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 44
+          },
+          "id": 87,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum by (fun, le) (rate(halite_node_job_duration_seconds_bucket{job=\"$node_job\", instance=~\"$node_instance\"}[5m])))",
+              "refId": "A",
+              "range": true,
+              "legendFormat": "{{fun}}"
+            }
+          ],
+          "title": "Job duration, by function",
+          "type": "timeseries"
         }
       ],
       "title": "Node agents",
@@ -5199,7 +5928,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 147
+        "y": 168
       },
       "id": 75,
       "panels": [
@@ -5576,7 +6305,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 148
+        "y": 169
       },
       "id": 76,
       "panels": [],
@@ -5615,7 +6344,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 149
+        "y": 170
       },
       "id": 77,
       "options": {
@@ -5812,6 +6541,6 @@
   "timezone": "",
   "title": "halite",
   "uid": "halite-control-plane",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
