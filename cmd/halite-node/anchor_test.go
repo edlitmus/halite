@@ -478,3 +478,90 @@ func TestARateLimitedReportIsQuietAndTheNextIsFiled(t *testing.T) {
 		t.Errorf("after the bucket refilled, %d receipts; the report should have been filed", len(got))
 	}
 }
+
+// A report in flight when the agent stops. The hub has answered and the
+// receipt is about to be filed, and the log is closed under it: a
+// shutdown that lands in the few milliseconds between the response and
+// the append.
+//
+// The close is made from the client's Observe hook, which runs after the
+// exchange and before AnchorEvidence returns, so the interleaving is
+// exact rather than a sleep that usually lands there.
+//
+// What must hold: the chain is sound and ends at the stop record, the
+// receipt is not in it, and the node does not call that a lost record --
+// halite_node_evidence_failures_total is what HaliteNodeEvidenceNotWritten
+// pages on, and a clean shutdown must not page. DIVERGENCE 5.237.
+func TestAReceiptThatArrivesAfterTheLogClosesIsNotALostRecord(t *testing.T) {
+	lab := newAnchorLab(t, "web1.example")
+	// A metrics_listen, because a node without one keeps no registry and
+	// counts nothing, which would make the counter assertion below pass
+	// whatever the node did.
+	n := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\n")
+	var logged bytes.Buffer
+	n.log = testLogger(t, &logged)
+	n.recordEvidence(nodeevidence.KindStart, map[string]string{"version": "test"})
+
+	client := lab.client(t)
+	stopped := false
+	client.Observe = func(route string, status int, _ time.Duration) {
+		if route == transport.PathEvidenceAnchor && !stopped {
+			stopped = true
+			n.stopEvidence("the agent stopped")
+		}
+	}
+	n.reportHead(context.Background(), client)
+
+	if !stopped {
+		t.Fatal("the report was never made, so the log was never closed under it")
+	}
+	if len(lab.lines(t)) != 1 {
+		t.Fatal("the hub did not record the head, so no receipt was in flight")
+	}
+	recs := records(t, n)
+	if got := receiptsIn(recs); len(got) != 0 {
+		t.Errorf("a receipt was filed after the log closed: %+v", got)
+	}
+	if last := recs[len(recs)-1]; last.Kind != nodeevidence.KindStop {
+		t.Errorf("the chain ends at %q, not at the stop record: %v", last.Kind, kindsOf(recs))
+	}
+	var expo bytes.Buffer
+	if err := n.metrics.registry.Write(&expo); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(expo.String(), "# TYPE halite_node_evidence_failures_total counter") {
+		t.Fatalf("the failure counter is not exported, so the check on it means nothing:\n%s", expo.String())
+	}
+	if strings.Contains(expo.String(), "halite_node_evidence_failures_total 1") {
+		t.Errorf("a receipt that arrived late is counted as a record that could not be written:\n%s", expo.String())
+	}
+	if strings.Contains(logged.String(), "could not be written") {
+		t.Errorf("a clean stop logged an error:\n%s", logged.String())
+	}
+}
+
+// Only a receipt is excused when it arrives after the close. A job's
+// result that does is a job with no entry in the record, which is what
+// halite_node_evidence_failures_total counts and what
+// HaliteNodeEvidenceNotWritten pages on; excusing every kind would turn
+// the alert off for exactly the loss it exists to find.
+func TestAJobRecordAfterTheLogClosesIsStillALostRecord(t *testing.T) {
+	n := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\n")
+	var logged bytes.Buffer
+	n.log = testLogger(t, &logged)
+	n.recordEvidence(nodeevidence.KindStart, map[string]string{"version": "test"})
+	n.stopEvidence("the agent stopped")
+
+	n.recordEvidence(nodeevidence.KindJobResult, map[string]string{"jid": "20261007T000000000001"})
+
+	var expo bytes.Buffer
+	if err := n.metrics.registry.Write(&expo); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(expo.String(), "halite_node_evidence_failures_total 1") {
+		t.Errorf("a job result after the close was not counted as lost:\n%s", expo.String())
+	}
+	if !strings.Contains(logged.String(), "could not be written") {
+		t.Errorf("a job result after the close was lost without an error:\n%s", logged.String())
+	}
+}

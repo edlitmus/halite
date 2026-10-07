@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A clean stop no longer pages "evidence record not written"
+
+If a node's agent stopped while an evidence-head report was in flight, the
+hub's receipt arrived at a log that had just closed, was counted in
+`halite_node_evidence_failures_total` and logged as an error, and
+`HaliteNodeEvidenceNotWritten` could page on a normal shutdown. A late
+receipt is now dropped quietly, because the head it covers is already in
+the chain and on the hub. Any other record that arrives after the close is
+still counted as lost.
+
 ### The example Grafana dashboard covers the evidence record
 
 `contrib/examples/grafana-dashboard.json` gains an "Evidence anchors" row

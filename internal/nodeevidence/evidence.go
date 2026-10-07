@@ -332,6 +332,11 @@ func (l *Log) recover() error {
 	return nil
 }
 
+// ErrClosed is what Append answers once Close has run. A caller that can
+// race a shutdown -- the anchor reporter, filing a receipt -- tells it
+// from a write that failed.
+var ErrClosed = errors.New("the evidence log is closed")
+
 // Append writes one record and waits for it to reach the disk.
 //
 // Synchronous, because the caller's next act is to run the job. A record
@@ -344,6 +349,12 @@ func (l *Log) Append(kind string, detail map[string]string) error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.file == nil {
+		// Closed. Say so, and touch nothing: before this the write went
+		// to a nil file and failed with "invalid argument", counted as a
+		// lost record, which a record arriving as the agent stops is not.
+		return ErrClosed
+	}
 
 	r := Record{
 		Schema: Schema,

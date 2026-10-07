@@ -2,6 +2,7 @@ package nodeevidence
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -524,4 +525,31 @@ func readLines(t *testing.T, path string) []string {
 		t.Fatal(err)
 	}
 	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+}
+
+// An Append after Close is refused by name, and changes nothing: not the
+// head, and not the count of records declared lost, which the next
+// record of a log that is still open would otherwise carry as though a
+// write had failed. DIVERGENCE 5.237.
+func TestAppendAfterCloseIsRefusedAndChangesNothing(t *testing.T) {
+	dir := t.TempDir()
+	l := open(t, dir, Options{})
+	appendJobs(t, l, 2)
+	seqBefore, headBefore := l.Head()
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err := l.Append(KindAnchorReceipt, map[string]string{"anchored_seq": "2"})
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("Append after Close answered %v, not ErrClosed", err)
+	}
+	seq, head := l.Head()
+	if seq != seqBefore || head != headBefore {
+		t.Errorf("the head moved from %d/%s to %d/%s", seqBefore, headBefore, seq, head)
+	}
+	if res := verify(t, dir); !res.OK() || res.Records != 2 || res.Lost != 0 {
+		t.Errorf("the chain after a refused append: ok=%v records=%d lost=%d %v",
+			res.OK(), res.Records, res.Lost, res.Breaks)
+	}
 }
