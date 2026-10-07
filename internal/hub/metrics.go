@@ -212,6 +212,14 @@ func (s *Server) setupMetrics() {
 		"rate_limited", "failed"} {
 		m.evidenceAnchors.With(result)
 	}
+	// The same for every other series an alert in docs/metrics.md reads
+	// with increase(); TestEveryAlertedHubSeriesStartsAtZero holds the
+	// list to the rules. The events alert sums every reason, so each
+	// reason is named; the orchestration alert reads one result.
+	for _, reason := range []string{"no_bus", "append_failed", "subscriber_lag", "returner_failed"} {
+		m.eventsDropped.With(reason)
+	}
+	m.orchRuns.With("compile_failed")
 
 	r.GaugeFunc("halite_hub_nodes_connected",
 		"Nodes with a live subscribe stream.", func() float64 {

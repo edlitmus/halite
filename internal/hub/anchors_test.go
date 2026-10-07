@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -596,5 +597,72 @@ func TestEveryAnchorResultIsExportedAtZeroBeforeAnyReport(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("no %s before the first report:\n%s", want, out.String())
 		}
+	}
+}
+
+// Every hub series that an alert in docs/metrics.md reads with increase()
+// must exist at 0 before the first event, or the first event is
+// invisible to the alert (DIVERGENCE 5.235). The rules are read from the
+// document rather than listed here, so a rule added later that selects a
+// series nobody pre-creates fails this instead of staying quiet in
+// production.
+//
+// A family with no equality matcher in the rule is checked only for
+// having some series, because the test cannot know what values the
+// alert means to cover: `halite_events_dropped_total` is the one on a
+// hub, and its reasons are named in setupMetrics. Families that are not
+// on a hub's exposition at all -- the node's and the API's -- are
+// skipped; their rules are not this package's.
+func TestEveryAlertedHubSeriesStartsAtZero(t *testing.T) {
+	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "metrics.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := newLab(t)
+	l.withAnchors(t)
+	l.server.m()
+	var out bytes.Buffer
+	if err := l.server.Metrics.Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	expo := out.String()
+
+	// Families whose label values are the operator's own and so cannot be
+	// named in advance. Each is a gap the alert's comment in
+	// docs/metrics.md has to say out loud.
+	notPreCreatable := map[string]string{
+		"halite_beacon_dropped_total": "one series per beacon name, which a pillar chooses",
+	}
+	rule := regexp.MustCompile(`increase\((halite_\w+)(?:\{([^}]*)\})?\[`)
+	matcher := regexp.MustCompile(`(\w+)="([^"]*)"`)
+	checked := 0
+	for _, m := range rule.FindAllStringSubmatch(string(doc), -1) {
+		family, selector := m[1], m[2]
+		if !strings.Contains(expo, "# TYPE "+family+" ") {
+			continue
+		}
+		if _, ok := notPreCreatable[family]; ok {
+			continue
+		}
+		checked++
+		pairs := matcher.FindAllStringSubmatch(selector, -1)
+		if len(pairs) == 0 {
+			if !strings.Contains(expo, "\n"+family+" 0\n") && !strings.Contains(expo, "\n"+family+"{") {
+				t.Errorf("%s is read by an alert and has no series before its first event", family)
+			}
+			continue
+		}
+		labels := make([]string, 0, len(pairs))
+		for _, p := range pairs {
+			labels = append(labels, p[1]+`="`+p[2]+`"`)
+		}
+		want := family + "{" + strings.Join(labels, ",") + "} 0\n"
+		if !strings.Contains(expo, want) {
+			t.Errorf("an alert reads %s{%s} and the hub does not export %q before its first event",
+				family, selector, strings.TrimSpace(want))
+		}
+	}
+	if checked < 3 {
+		t.Errorf("only %d alerted hub families were found in docs/metrics.md; the pattern no longer matches the rules", checked)
 	}
 }

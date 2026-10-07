@@ -20715,6 +20715,46 @@ first-event gap, and none was checked or changed here:
 - The zero series was shown in the exposition text only, not scraped.
 - No dashboard panel.
 
+#### 5.235, swept: the other alerts
+
+5.235 said every other labelled counter read by an `increase()` rule had
+the same gap, and that none had been checked. All seventeen rules in
+`docs/metrics.md` that use `increase()` or `rate()` were read against the
+families they select:
+
+- **Unlabelled counters** (reactor, pillar, hub scrape, gitfs signature,
+  node returns, node evidence failures) are exported at 0 and were never
+  affected.
+- **`halite_events_dropped_total{reason}`** and
+  **`halite_orch_runs_total{result="compile_failed"}`** were affected and
+  are now declared at 0 -- all four drop reasons, and `compile_failed`.
+- **`halite_beacon_dropped_total{beacon}`** is affected and cannot be
+  fixed: its labels are beacon names. The alert's comment now says a
+  beacon's first drop is not seen.
+- **`halite_ext_timeouts_total{name}`** has the same shape, on the node's
+  exposition, and was not changed.
+- **The three rate rules** (`authz denied`, `login refused`, node jobs
+  refused) are sustained-threshold rules; a first event born at 1 delays
+  them by one event and is not the miss 5.235 described. Not changed.
+- **`HaliteNodeEvidenceStopped`** was deliberately not touched. It needs
+  `increase(halite_node_evidence_records_total[1h]) == 0`, which is empty
+  rather than 0 when the series does not exist, and so stays silent on a
+  node with evidence off. Declaring the series at 0 would make it fire on
+  those nodes. Whether silence on such a node is right is a decision, not
+  something this sweep settled.
+
+`TestEveryAlertedHubSeriesStartsAtZero` now reads the rules from
+`docs/metrics.md` and requires each hub series one selects to exist at 0.
+With the `compile_failed` declaration removed it failed naming that
+series; with the `events_dropped` loop removed it failed naming the
+family. It found `beacon_dropped` on its first run, which the reading
+above had classed as a node-only family: it is on the hub too. The one
+exemption is named in the test with its reason.
+
+**Not covered:** the node's and the API's families are not covered by that
+test, which sees only the hub's exposition; the reading above is the only
+check on them. No rule was evaluated against a Prometheus.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

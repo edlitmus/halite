@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The first dropped event or failed compile now reaches its alert
+
+The hub exports every drop reason of `halite_events_dropped_total` and the
+`compile_failed` result of `halite_orch_runs_total` at 0 from startup, as
+it already did for the evidence anchors. Before, the first of either was
+a series born at 1, and `increase()` over it is empty, so the alert on it
+missed the one event it existed for. A beacon's first drop is still
+missed, because beacon names are not known in advance; the alert's comment
+says so.
+
 ### Alerts for evidence-anchor conflicts and failures
 
 `docs/metrics.md` has two new rules: `HaliteEvidenceConflict`, for a node
