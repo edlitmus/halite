@@ -20835,9 +20835,12 @@ It logs one error, counts nothing, and runs jobs with no record without
 either evidence alert firing. `halite-node doctor` and the startup log
 are what show it.
 
-The corrected rule has **not** been put into the LAN Prometheus. The
-`halite-rules.yml` loaded there earlier the same day still holds the
-inert form, and replacing it was left to the operator.
+The corrected rule was put into the LAN Prometheus afterwards, at the
+operator's say-so: the earlier `halite-rules.yml` kept as a timestamped
+`.bak`, the file replaced, `promtool check config` on the host (valid, 26
+halite rules), a reload through the rc script, and the API then showed the
+corrected expression with all 26 rules healthy and inactive. Between the
+first load and this one the production Prometheus carried the inert form.
 
 **Not covered:**
 - The fix is shown on synthetic series. It has not been seen on a real
