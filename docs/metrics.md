@@ -1067,8 +1067,9 @@ failed to write:
 
       - alert: HaliteNodeEvidenceStopped
         expr: |
-          increase(halite_node_jobs_total[1h]) > 0
-          and increase(halite_node_evidence_records_total[1h]) == 0
+          sum by (instance) (increase(halite_node_jobs_total[1h])) > 0
+          and on (instance)
+          sum by (instance) (increase(halite_node_evidence_records_total[1h])) == 0
         for: 30m
         labels: {severity: critical}
         annotations:
@@ -1083,7 +1084,25 @@ attempted. What contradicts it is another series that is still moving —
 jobs are being run, and no records are appearing — which is alerting on
 an absence rather than on a badness.
 
-`reason!="replayed"` on the second one is deliberate: a replayed job is
+The two sides are summed to `instance` and joined with `on (instance)`
+because `and` otherwise matches on every label, and the jobs series
+carries `fun` and `result` where the records series carries `kind`: the
+sides never matched, and the rule as first written could not fire even for
+a node whose record had stopped (DIVERGENCE 5.236).
+
+**This rule is silent on a node that has no `halite_node_evidence_records_total`
+series at all, and that is a decision, not an oversight.** The series is
+created by the first record written, so a node with `evidence: false` never
+has one, and the rule does not fire on it: such a node keeps no record by
+the operator's choice, and a critical alert on a choice would be ignored
+within a day. The cost is the other node with no series, one whose evidence
+log failed to open at startup. It logs an error once, counts nothing, and
+runs jobs with no record without either evidence alert firing;
+`halite-node doctor` and the startup log are what show it, and the alerts
+do not. Declaring the series at 0 would close that and make the rule fire
+on the first kind of node too.
+
+`reason!="replayed"` on `HaliteNodeJobsRefused` is deliberate: a replayed job is
 the guard of SPEC 6.3 doing its work, and a hub retrying a delivery is
 the ordinary cause. The other three reasons are not.
 
