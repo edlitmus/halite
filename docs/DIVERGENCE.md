@@ -20387,7 +20387,8 @@ accepted line, is the guarantee.
   signature. It does not check that the receipt names this node; a real
   hub signs only for the certificate's node, so only a fake hub could
   exercise that check.
-- A receipt arriving after `stopEvidence` closes the log.
+- A receipt arriving after `stopEvidence` closes the log. (Run, and was a
+  defect: 5.237.)
 - A partial last line left by a hub crash, which stops that node's
   reports until it is fixed by hand. (Closed by 5.234.)
 - A compromised node can grow its own anchor file with one fsync per
@@ -20854,6 +20855,57 @@ first load and this one the production Prometheus carried the inert form.
   carries only the scrape's own labels and the sides do match. That is
   from reading the code; it was not run through `promtool test`.
 - The open-failure case is a cost accepted, not a case tested.
+
+### 5.237 A receipt that arrived as the agent stopped paged as a lost record
+
+5.229 listed "a receipt arriving after `stopEvidence` closes the log" as
+not covered, in the exculpatory direction: nothing said what it did. It
+was run, by stopping the log from inside the client's `Observe` hook,
+which fires after the hub has answered and before `AnchorEvidence`
+returns -- the exact interleaving, not a sleep that usually lands there.
+
+`Log.Close` sets the file to nil, and `Append` wrote to it. The write
+failed with `invalid argument`, `recordEvidence` logged an error ("an
+evidence record could not be written") and `halite_node_evidence_failures_total`
+read 1 after a clean stop. That counter is what `HaliteNodeEvidenceNotWritten`
+pages on, as critical. Any shutdown that landed between a response and
+the append would have paged.
+
+- `Append` on a closed log now answers `nodeevidence.ErrClosed` and
+  touches nothing: not the head, not the count of records declared lost.
+- `recordEvidence` treats `ErrClosed` as benign **for a receipt only**,
+  with a debug line. The head the receipt vouches for is already in the
+  chain and already on the hub, and the next run's first report is
+  answered with a later receipt.
+- Any other kind arriving after the close is still counted and logged as
+  lost, now with a message that says why. A job's result that does is a
+  job with no entry, which is what the counter is for.
+
+Three tests, each broken on purpose. The reproduction failed before the
+change (the error logged, the counter at 1) and passes after. Excusing
+every kind instead of receipts fails
+`TestAJobRecordAfterTheLogClosesIsStillALostRecord`; removing the
+`ErrClosed` return fails `TestAppendAfterCloseIsRefusedAndChangesNothing`
+with the old `invalid argument`.
+
+One thing the first version of the test got wrong, and it is the reason
+for a line in it: a node without `metrics_listen` keeps no registry, so
+the counter assertion passed whatever the node did. The test now sets one
+and requires the family to be in the exposition before it trusts a
+missing failure.
+
+**Not covered:**
+- The receipt that is dropped is for the last head before the stop. The
+  hub holds that line; the chain does not hold its receipt. A hub that
+  later removed that one line would not be contradicted by a receipt for
+  it, only by the receipt for a later head, which the next run files. The
+  window is one head wide and was not tested.
+- Only the receipt path was changed. Other records filed by goroutines
+  that outlive `stopEvidence` -- a job finishing during shutdown -- still
+  count as lost, deliberately, and were not examined for how often that
+  happens.
+- Run on Linux only; not on a real agent being stopped by a service
+  manager.
 
 ## 6. Everything else not started
 

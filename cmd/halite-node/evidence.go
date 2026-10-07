@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,6 +111,22 @@ func (n *node) recordEvidence(kind string, detail map[string]string) {
 		return
 	}
 	if err := log.Append(kind, detail); err != nil {
+		if kind == nodeevidence.KindAnchorReceipt && errors.Is(err, nodeevidence.ErrClosed) {
+			// A report that was in flight when the agent stopped: the hub
+			// answered, and the chain was closed before the receipt was
+			// filed. Not a lost record. The receipt vouches for a head
+			// that is already in the chain and already on the hub, and
+			// the next run's first report is answered with a later
+			// receipt that covers it. Counting it would page
+			// HaliteNodeEvidenceNotWritten on a clean shutdown.
+			//
+			// Only receipts. A job's result arriving after the close is
+			// a job with no entry, which is exactly what the counter is
+			// for, and it still takes this function's other path.
+			n.log.Debug("an anchor receipt arrived after the evidence log closed; it is not filed",
+				"component", "evidence", "seq", detail[nodeevidence.ReceiptAnchoredSeq])
+			return
+		}
 		n.log.Error("an evidence record could not be written",
 			"component", "evidence", "kind", kind, "error", err.Error())
 		n.metrics.countEvidenceFailure()
