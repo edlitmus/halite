@@ -420,3 +420,158 @@ func TestANodeOverItsAnchorRateIsRefusedAndNothingIsWritten(t *testing.T) {
 		t.Errorf("the refusal is not counted:\n%s", out.String())
 	}
 }
+
+// restartAnchors replaces the lab's store with a fresh one over the same
+// directory, which is what a hub restarting is to the store, and
+// collects what it warns.
+func (l *lab) restartAnchors(t *testing.T, dir string) *[]string {
+	t.Helper()
+	fresh, err := OpenAnchorStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var warned []string
+	fresh.Warn = func(msg string, _ ...any) { warned = append(warned, msg) }
+	l.server.Anchors = fresh
+	return &warned
+}
+
+// A hub that stopped part-way through appending leaves a last line with
+// no newline, and no receipt was sent for it. The next report after the
+// restart is answered, the fragment is gone, and the hub says so. Before
+// DIVERGENCE 5.234 every report from the node failed on the fragment
+// until somebody edited the file by hand.
+func TestATornLastAnchorLineIsDroppedOnLoad(t *testing.T) {
+	l := newLab(t)
+	dir := l.withAnchors(t)
+	node := l.enrolled(t, "web1.example")
+	ctx := context.Background()
+	if _, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 9, Hash: headA}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "web1.example.jsonl")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"seq":12,"hash":"sha256:fedc`); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	warned := l.restartAnchors(t, dir)
+	if _, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 12, Hash: headB}); err != nil {
+		t.Fatalf("the first report after a torn append was refused: %v", err)
+	}
+	lines := anchorLines(t, dir, "web1.example")
+	if len(lines) != 2 || lines[0].Seq != 9 || lines[1].Seq != 12 ||
+		lines[1].Result != nodeevidence.AnchorAccepted {
+		t.Fatalf("after the repair the file holds %+v", lines)
+	}
+	if len(*warned) != 1 || !strings.Contains((*warned)[0], "incomplete") {
+		t.Errorf("the repair was not said, or said wrongly: %q", *warned)
+	}
+}
+
+// A last line that is whole and lacks only its newline is a head the
+// node really reported, and is kept: the next report of the same head
+// is the idempotent repeat, answered with the receipt on that line, and
+// a lower one is a conflict against it.
+func TestAWholeLastAnchorLineMissingItsNewlineIsKept(t *testing.T) {
+	l := newLab(t)
+	dir := l.withAnchors(t)
+	node := l.enrolled(t, "web1.example")
+	ctx := context.Background()
+	first, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 9, Hash: headA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "web1.example.jsonl")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, bytes.TrimSuffix(raw, []byte("\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	warned := l.restartAnchors(t, dir)
+	again, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 9, Hash: headA})
+	if err != nil {
+		t.Fatalf("the same head after the repair was refused: %v", err)
+	}
+	if again.Signature != first.Signature {
+		t.Error("the kept line's receipt was not the one answered; the line was not kept")
+	}
+	if _, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 4, Hash: headB}); err == nil {
+		t.Error("a lower head was accepted, so the kept line is not the record's top")
+	}
+	repaired, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(repaired, raw) {
+		t.Errorf("the kept line was not terminated in place:\n%s", repaired)
+	}
+	if len(*warned) != 1 || !strings.Contains((*warned)[0], "kept") {
+		t.Errorf("the repair was not said, or said wrongly: %q", *warned)
+	}
+}
+
+// Only the shape a crash leaves is repaired. A broken line that ends in
+// a newline is damage or an edit, and the node's reports are still
+// refused until somebody looks.
+func TestABrokenAnchorLineInTheMiddleIsStillRefused(t *testing.T) {
+	l := newLab(t)
+	dir := l.withAnchors(t)
+	node := l.enrolled(t, "web1.example")
+	ctx := context.Background()
+	path := filepath.Join(dir, "web1.example.jsonl")
+	if err := os.WriteFile(path, []byte("{\"seq\":9,\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l.restartAnchors(t, dir)
+	_, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 12, Hash: headB})
+	if err == nil {
+		t.Fatal("a report was accepted over a broken line")
+	}
+	if !strings.Contains(err.Error(), "could not record this head") {
+		t.Errorf("refused with %v", err)
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != "{\"seq\":9,\n" {
+		t.Errorf("the broken file was changed: %q", raw)
+	}
+}
+
+// An append that fails part-way on a running hub -- a full disk -- is
+// cut back. The hub only repairs a file when it first reads it, so
+// without this the next report would be appended after the fragment and
+// the file would hold a broken line in the middle for good.
+func TestAFailedAnchorAppendIsCutBack(t *testing.T) {
+	l := newLab(t)
+	dir := l.withAnchors(t)
+	node := l.enrolled(t, "web1.example")
+	ctx := context.Background()
+	if _, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 9, Hash: headA}); err != nil {
+		t.Fatal(err)
+	}
+
+	real := appendWrite
+	appendWrite = func(f *os.File, b []byte) (int, error) {
+		n, _ := f.Write(b[:len(b)/2])
+		return n, errors.New("no space left on device")
+	}
+	_, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 10, Hash: headB})
+	appendWrite = real
+	if err == nil {
+		t.Fatal("a report whose append failed was answered as accepted")
+	}
+
+	if _, err := node.AnchorEvidence(ctx, transport.EvidenceAnchorRequest{Seq: 11, Hash: headB}); err != nil {
+		t.Fatalf("the report after a failed append was refused: %v", err)
+	}
+	lines := anchorLines(t, dir, "web1.example")
+	if len(lines) != 2 || lines[0].Seq != 9 || lines[1].Seq != 11 {
+		t.Fatalf("after a failed append the file holds %+v", lines)
+	}
+}

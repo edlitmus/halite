@@ -78,6 +78,15 @@ func ReadAnchors(r io.Reader) ([]Anchor, error) {
 			if len(trimmed) > 0 {
 				var a Anchor
 				if err := json.Unmarshal(trimmed, &a); err != nil {
+					if line[len(line)-1] != '\n' {
+						// The one shape a hub stopping mid-append leaves.
+						// Still refused here: this reads a file as it was
+						// handed over, and the hub, which sent no receipt
+						// for the line, is what removes it.
+						return nil, fmt.Errorf("line %d is incomplete: a hub stopped while writing it and "+
+							"sent no receipt for it. The hub removes it the next time this node reports; "+
+							"take a copy of the file after that", lineNo)
+					}
 					return nil, fmt.Errorf("line %d is not an anchor record: %w", lineNo, err)
 				}
 				switch a.Result {

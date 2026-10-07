@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A hub that crashed mid-write no longer locks a node out of evidence anchoring
+
+If the hub stopped while appending to a node's evidence-anchor file, that
+node's head reports were refused until somebody edited the file by hand.
+The hub now drops the unfinished last line when it next reads the file
+(or keeps it, if it was whole and only lacked its newline) and logs a
+warning. A failed append on a running hub, such as a full disk, is also
+cut back. A broken line anywhere else in the file is still refused.
+
 ### Logins are throttled per name, and password checks are bounded
 
 `halite-api` now throttles `POST /v1/login`, which needs no credentials
