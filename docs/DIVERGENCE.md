@@ -20724,21 +20724,44 @@ rule expressions run without error and none returns a series. That
 cannot tell quiet from absent, so what the live hub exports was read
 too:
 
-- The hub on that host is built from `54ad8b8` (#209, 2 October), 32
-  commits behind `main` and before the anchor work (#233). It exports no
-  `halite_hub_evidence_anchors_total`, `halite_events_dropped_total` or
-  `halite_orch_runs_total` at all, so none of the zero-start changes here
-  is live, and `HaliteEvidenceConflict` cannot fire there until it is
-  redeployed.
+- The hub on that host was then built from `54ad8b8` (#209, 2 October),
+  32 commits behind `main` and before the anchor work (#233). It exported
+  no `halite_hub_evidence_anchors_total`, `halite_events_dropped_total`
+  or `halite_orch_runs_total` at all, so none of the zero-start changes
+  was live.
 - `halite_reactor_dropped_total` and `halite_pillar_failures_total`,
   unlabelled, read 0 live: the claim above that an unlabelled counter is
-  exported at 0 is now seen on a real hub and not only in the registry's
+  exported at 0 was seen on a real hub and not only in the registry's
   tests.
 
+**Then the hub was rebuilt** (by the operator, the same day) at
+`0.12.0-776-g54d8c68f98ad`, the merge of #243. On the live scrape:
+`halite_hub_evidence_anchors_total` read `accepted` 1 and `conflict`,
+`failed` and `rate_limited` 0; all four reasons of
+`halite_events_dropped_total` read 0; and
+`halite_orch_runs_total{result="compile_failed"}` read 0. The zero-start
+series are seen on a real scrape, not only in the exposition text. Only
+one anchor had been accepted: the nodes are probably not on the new build,
+which was not checked.
+
+**The rules were then loaded** into that Prometheus, with the operator's
+say-so: `docs/metrics.md`'s alerting blocks, as
+`/usr/local/etc/halite-rules.yml` and a `rule_files` entry, after a
+timestamped backup of `prometheus.yml` beside the existing ones, a
+`promtool check config` on the host (valid, 26 halite rules and the one
+existing TLS rule), and a reload through the rc script. Afterwards the
+API lists 26 halite rules, all healthy and all inactive.
+
 **Not covered:**
-- No rule was loaded into that Prometheus, so none has been seen to fire
-  or stay quiet there as a rule; only the expressions were evaluated.
-- The new zero series are not live: the hub needs redeploying first.
+- No rule has been seen to fire. Inactive on a healthy fleet is what is
+  expected, and is also what a rule that cannot fire looks like; a
+  conflict was not provoked on a production hub to tell them apart.
+- That Prometheus has no Alertmanager (its `alertmanagers` target is
+  commented out), so a firing rule is visible there and notifies nobody.
+- Some node-side series reach it through the `node_exporter` job on
+  `localhost:9100` (`halite_node_returns_dropped_total` is there), but
+  `halite_node_jobs_total` and `halite_node_evidence_records_total` are
+  not, so `HaliteNodeEvidenceStopped` is loaded with nothing to read.
 - No dashboard panel.
 
 #### 5.235, swept: the other alerts
