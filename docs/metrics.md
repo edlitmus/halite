@@ -793,7 +793,7 @@ every estate — which is checked by a test.
 
 The rows: fleet health, certificates and enrollment, jobs, states and
 orchestration, pillar, events and reactions, the file server,
-authentication and policy, the hub's own service metrics, the API's,
+authentication and policy, evidence anchors, the hub's own service metrics, the API's,
 two collapsed rows for the node agents and for relays, and the build
 row. Every panel
 carries a description saying what a reading means — hover the title.
