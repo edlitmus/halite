@@ -20715,11 +20715,30 @@ series: one that does not exist until its first sample is 1 produced no
 alert at the eighth minute, and one exported at 0 first did. That is the
 mechanism above shown on the real rule engine, not on real data.
 
+**Corrected, same day:** the paragraph above first said the Prometheus on
+the LAN scrapes no halite target. That was wrong, from reading a
+truncated `up` result. It has had a `halite` job against the production
+`halite-api` since 30 August, and the target is up. Evaluated there with
+read-only instant queries (its configuration and rules untouched): all 26
+rule expressions run without error and none returns a series. That
+cannot tell quiet from absent, so what the live hub exports was read
+too:
+
+- The hub on that host is built from `54ad8b8` (#209, 2 October), 32
+  commits behind `main` and before the anchor work (#233). It exports no
+  `halite_hub_evidence_anchors_total`, `halite_events_dropped_total` or
+  `halite_orch_runs_total` at all, so none of the zero-start changes here
+  is live, and `HaliteEvidenceConflict` cannot fire there until it is
+  redeployed.
+- `halite_reactor_dropped_total` and `halite_pillar_failures_total`,
+  unlabelled, read 0 live: the claim above that an unlabelled counter is
+  exported at 0 is now seen on a real hub and not only in the registry's
+  tests.
+
 **Not covered:**
-- The rules were not evaluated against live halite data: the Prometheus
-  on the LAN does not scrape halite at all (no `job="halite"` target and
-  no `halite_*` series), and nothing was changed there.
-- The zero series was shown in the exposition text only, not scraped.
+- No rule was loaded into that Prometheus, so none has been seen to fire
+  or stay quiet there as a rule; only the expressions were evaluated.
+- The new zero series are not live: the hub needs redeploying first.
 - No dashboard panel.
 
 #### 5.235, swept: the other alerts
