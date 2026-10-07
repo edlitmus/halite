@@ -20743,7 +20743,9 @@ too:
 `halite_orch_runs_total{result="compile_failed"}` read 0. The zero-start
 series are seen on a real scrape, not only in the exposition text. Only
 one anchor had been accepted: the nodes are probably not on the new build,
-which was not checked.
+which was not checked. (Later the same day beastie's own node was scraped
+and carried one `anchor.receipt` record, which fits that one accepted
+anchor being its own; the other nodes were still not looked at.)
 
 **The rules were then loaded** into that Prometheus, with the operator's
 say-so: `docs/metrics.md`'s alerting blocks, as
@@ -20759,10 +20761,23 @@ API lists 26 halite rules, all healthy and all inactive.
   conflict was not provoked on a production hub to tell them apart.
 - That Prometheus has no Alertmanager (its `alertmanagers` target is
   commented out), so a firing rule is visible there and notifies nobody.
-- Some node-side series reach it through the `node_exporter` job on
-  `localhost:9100` (`halite_node_returns_dropped_total` is there), but
-  `halite_node_jobs_total` and `halite_node_evidence_records_total` are
-  not, so `HaliteNodeEvidenceStopped` is loaded with nothing to read.
+- Node series reached it only through the `node_exporter` job on
+  `localhost:9100`, and those are a frozen file: `/var/tmp/node_exporter/halite.prom`,
+  last written on 4 September by something outside this repository. They
+  say nothing about the node today.
+- **That changed later the same day.** The operator turned the node's
+  metrics listener on (beastie, `:4512`, a serving certificate from the
+  enrollment CA) and a `halite-nodes` job was added to that Prometheus:
+  the public enrollment CA certificate copied beside the config, a
+  timestamped backup, `promtool check config` valid, and a restart. The
+  target is up and reads live: `halite_node_connected` 1, evidence
+  records `node.start`, `config` and `anchor.receipt` one each,
+  `halite_node_evidence_failures_total` 0, nothing dropped. 26 halite
+  rules still healthy and inactive. `halite_node_jobs_total` is absent
+  because that node had run no job since it started, so
+  `HaliteNodeEvidenceStopped` still has nothing on its jobs side, now for
+  a reason that is not a gap in the scraping. The frozen textfile is still
+  there beside the live series and was left alone.
 - No dashboard panel.
 
 #### 5.235, swept: the other alerts
@@ -20845,9 +20860,11 @@ first load and this one the production Prometheus carried the inert form.
 
 **Not covered:**
 - The fix is shown on synthetic series. It has not been seen on a real
-  node: that Prometheus does not receive `halite_node_jobs_total` or
-  `halite_node_evidence_records_total` (5.235), so the rule still has
-  nothing real to read there.
+  node. Since the node scrape job was added (5.235) the node's
+  `halite_node_evidence_records_total` is live, but
+  `halite_node_jobs_total` stays absent until that node runs a job, and
+  the rule firing needs records to stop while jobs run, which was not
+  provoked on a production node.
 - Other rules were checked for the same shape by reading. The one other
   `and` between two families is `HaliteRelaySpoolGrowing`
   (`halite_relay_spool_entries > 0 and halite_relay_upstream_connected ==
