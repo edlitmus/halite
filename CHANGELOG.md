@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The "node evidence stopped" alert could not fire
+
+`HaliteNodeEvidenceStopped` in `docs/metrics.md` joined two series that
+share no labels, so it never matched anything, including a node whose
+evidence record had stopped. The rule is corrected; copy it again if you
+took the old one. It is still silent on a node with no evidence-record
+series at all (evidence turned off, or a log that failed to open at
+startup, which `halite-node doctor` reports), and the docs now say that is
+a decision and what it costs.
+
 ### The first dropped event or failed compile now reaches its alert
 
 The hub exports every drop reason of `halite_events_dropped_total` and the

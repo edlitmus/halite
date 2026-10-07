@@ -20805,6 +20805,53 @@ test, which sees only the hub's exposition; the reading above is the only
 check on them. `promtool check rules` accepts every rule (see 5.235); no
 rule was evaluated against live halite data.
 
+### 5.236 The evidence-stopped alert could not fire
+
+`HaliteNodeEvidenceStopped` was written, documented as "the shape that
+matters" and loaded into the LAN Prometheus (5.235) without anyone
+having seen it fire. Deciding what it should do on a node with evidence
+off meant testing it, and `promtool test rules` showed that with a
+records series that exists and has stopped moving, **it did not fire**.
+
+`increase(jobs) > 0 and increase(records) == 0` matches the two sides on
+every label except the name. The jobs series carries `fun` and `result`;
+the records series carries `kind`. No pair of series has the same labels,
+so `and` is always empty, and the rule was inert in exactly the case it
+exists for. It is now
+`sum by (instance) (...) > 0 and on (instance) sum by (instance) (...) == 0`.
+Four `promtool test` cases hold it: no records series (silent), records
+stopped with two functions running (fires), records still moving
+(silent), and two nodes of which only the stopped one fires. The first
+form failed the second case.
+
+**The decision, from the operator: leave it silent** on a node with no
+records series. The series is created by the first record written
+(`cmd/halite-node/evidence.go`, after a successful `Append`), so a node
+with `evidence: false` never has one. A sum over an absent series is
+absent, so the corrected rule keeps that silence, and no series is
+declared at 0. The cost, written into `docs/metrics.md` beside the rule:
+a node whose evidence log failed to open at startup is in the same state.
+It logs one error, counts nothing, and runs jobs with no record without
+either evidence alert firing. `halite-node doctor` and the startup log
+are what show it.
+
+The corrected rule has **not** been put into the LAN Prometheus. The
+`halite-rules.yml` loaded there earlier the same day still holds the
+inert form, and replacing it was left to the operator.
+
+**Not covered:**
+- The fix is shown on synthetic series. It has not been seen on a real
+  node: that Prometheus does not receive `halite_node_jobs_total` or
+  `halite_node_evidence_records_total` (5.235), so the rule still has
+  nothing real to read there.
+- Other rules were checked for the same shape by reading. The one other
+  `and` between two families is `HaliteRelaySpoolGrowing`
+  (`halite_relay_spool_entries > 0 and halite_relay_upstream_connected ==
+  1`); both are unlabelled gauges (`internal/relay/metrics.go`), so each
+  carries only the scrape's own labels and the sides do match. That is
+  from reading the code; it was not run through `promtool test`.
+- The open-failure case is a cost accepted, not a case tested.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
