@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +65,13 @@ type AnchorStore struct {
 	// the defaults. See Allow.
 	Rate  float64
 	Burst int
+
+	// Warn, when set, is told when a node's file is repaired on load:
+	// an incomplete last line dropped, or a complete one given the
+	// newline it was missing. Optional so that the store can be used
+	// without a logger, as `halite-hub evidence anchors` and the tests
+	// do; serve sets it.
+	Warn func(msg string, kv ...any)
 
 	mu    sync.Mutex
 	nodes map[string]*nodeAnchors
@@ -218,6 +226,9 @@ func (a *AnchorStore) Record(nodeID string, seq uint64, hash string, now time.Ti
 		}
 	}
 	if !n.loaded {
+		if err := a.repairTail(nodeID, path); err != nil {
+			return nil, err
+		}
 		anchors, err := readAnchorFile(path)
 		if err != nil {
 			return nil, err
@@ -279,12 +290,108 @@ func (a *AnchorStore) Record(nodeID string, seq uint64, hash string, now time.Ti
 	return &line, nil
 }
 
+// repairTail makes a node's file end on a whole line before it is read,
+// which is the state a hub that stopped mid-append leaves it in.
+//
+// appendAnchor is one write and nothing is answered until it has been
+// fsynced, so a last line with no newline is a line no receipt was ever
+// sent for. Two cases, and neither loses anything acknowledged:
+//
+//   - The tail does not parse. It is the front of a line whose write
+//     never finished, and it is truncated away -- what
+//     nodeevidence.Log.recover does to the current segment of a chain,
+//     for the same reason. The node's next report carries a head at
+//     least as high and is answered then.
+//   - The tail parses as a whole anchor and only the newline is
+//     missing. It is kept and terminated: the head on it is one the
+//     node really did report, and a complete record is not this
+//     function's to throw away.
+//
+// Before this, readAnchorFile refused the file -- correctly for a line
+// in the middle, which is damage or an edit -- and so refused every
+// report the node made until somebody edited the file by hand
+// (DIVERGENCE 5.229's "not covered"). A broken line that does end in a
+// newline is still refused: only the one shape a crash produces is
+// repaired, and only at the end.
+func (a *AnchorStore) repairTail(nodeID, path string) error {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) || len(raw) == 0 || raw[len(raw)-1] == '\n' {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("the evidence anchors at %s: %w", path, err)
+	}
+	start := bytes.LastIndexByte(raw, '\n') + 1
+	tail := raw[start:]
+	if whole, err := nodeevidence.ReadAnchors(bytes.NewReader(tail)); err == nil && len(whole) == 1 {
+		f, err := fileperm.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return fmt.Errorf("repairing the evidence anchors at %s: %w", path, err)
+		}
+		_, werr := f.Write([]byte{'\n'})
+		serr := f.Sync()
+		if cerr := f.Close(); werr == nil && serr == nil {
+			werr = cerr
+		}
+		if werr == nil {
+			werr = serr
+		}
+		if werr != nil {
+			return fmt.Errorf("repairing the evidence anchors at %s: %w", path, werr)
+		}
+		a.warn("the last evidence anchor line for a node was missing its newline, "+
+			"from a hub that stopped while writing it; the line was whole and is kept",
+			"node_id", nodeID, "path", path, "seq", whole[0].Seq)
+		return nil
+	}
+	if err := truncateSync(path, int64(start)); err != nil {
+		return fmt.Errorf("repairing the evidence anchors at %s: %w", path, err)
+	}
+	a.warn("dropped an incomplete last line from a node's evidence anchors, "+
+		"left by a hub that stopped while writing it; no receipt was issued for it",
+		"node_id", nodeID, "path", path, "bytes", len(tail))
+	return nil
+}
+
+func (a *AnchorStore) warn(msg string, kv ...any) {
+	if a.Warn != nil {
+		a.Warn(msg, kv...)
+	}
+}
+
+// truncateSync cuts a file to size and waits for that to reach the disk,
+// so that a repair is not undone by the same power loss that made it
+// necessary.
+func truncateSync(path string, size int64) error {
+	f, err := fileperm.OpenFile(path, os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(size); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // appendAnchor writes one line and waits for it to reach the disk.
 //
 // Synchronous for the reason nodeevidence.Log.Append is: the receipt
 // goes back to the node the moment this returns, and a receipt for a
 // line still in the page cache when the hub loses power is a receipt the
 // hub's own file then contradicts.
+//
+// A write or flush that fails cuts the file back to where it was. The
+// hub is still running, so repairTail -- which runs only when a node's
+// file is first read -- would not see the partial line, and the next
+// report would be appended after it: a broken line in the middle of the
+// file, which every reader refuses and nothing repairs. Nothing is
+// answered for a line that failed, so taking it back loses nothing
+// acknowledged.
 func appendAnchor(path string, line nodeevidence.Anchor) error {
 	raw, err := json.Marshal(line)
 	if err != nil {
@@ -294,17 +401,34 @@ func appendAnchor(path string, line nodeevidence.Anchor) error {
 	if err != nil {
 		return fmt.Errorf("opening the evidence anchors: %w", err)
 	}
-	// One write, so that a crash leaves at most one partial line.
-	if _, err := f.Write(append(raw, '\n')); err != nil {
+	info, err := f.Stat()
+	if err != nil {
 		f.Close()
-		return fmt.Errorf("appending to the evidence anchors: %w", err)
+		return fmt.Errorf("reading the evidence anchors: %w", err)
+	}
+	undo := func(cause error) error {
+		if terr := f.Truncate(info.Size()); terr != nil {
+			cause = fmt.Errorf("%w; and cutting the partial line back failed too: %v", cause, terr)
+		} else if serr := f.Sync(); serr != nil {
+			cause = fmt.Errorf("%w; and flushing the cut failed too: %v", cause, serr)
+		}
+		f.Close()
+		return cause
+	}
+	// One write, so that a crash leaves at most one partial line.
+	if _, err := appendWrite(f, append(raw, '\n')); err != nil {
+		return undo(fmt.Errorf("appending to the evidence anchors: %w", err))
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
-		return fmt.Errorf("flushing the evidence anchors: %w", err)
+		return undo(fmt.Errorf("flushing the evidence anchors: %w", err))
 	}
 	return f.Close()
 }
+
+// appendWrite is the one write appendAnchor makes, a variable so that a
+// test can make it fail part-way, which a real disk does only when it is
+// full.
+var appendWrite = func(f *os.File, b []byte) (int, error) { return f.Write(b) }
 
 var errNoAnchors = errors.New("this hub keeps no evidence anchors")
 

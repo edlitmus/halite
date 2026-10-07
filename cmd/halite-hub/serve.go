@@ -239,6 +239,9 @@ func runServe(args *cli.Args) int {
 	}
 	anchors.Rate = h.cfg.Float("evidence_anchor_rate", hub.DefaultAnchorRate)
 	anchors.Burst = int(h.cfg.Int("evidence_anchor_burst", hub.DefaultAnchorBurst))
+	anchors.Warn = func(msg string, kv ...any) {
+		h.log.Warn(msg, append([]any{"component", "evidence"}, kv...)...)
+	}
 
 	groups, err := nodegroupsFrom(h.cfg)
 	if err != nil {

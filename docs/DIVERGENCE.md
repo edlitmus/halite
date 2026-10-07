@@ -20389,7 +20389,7 @@ accepted line, is the guarantee.
   exercise that check.
 - A receipt arriving after `stopEvidence` closes the log.
 - A partial last line left by a hub crash, which stops that node's
-  reports until it is fixed by hand.
+  reports until it is fixed by hand. (Closed by 5.234.)
 - A compromised node can grow its own anchor file with one fsync per
   report; there is no rate limit.
 - No alert rule or dashboard panel was added for the conflict metric.
@@ -20628,6 +20628,51 @@ the step. So a step back of *d* refuses for about *d*, then the bucket
 recovers. Nothing here changes that.
 
 **Not covered:** only run on macOS.
+
+### 5.234 A hub that stopped mid-append locked its node out of anchoring
+
+5.229 listed, among what it did not cover, "a partial last line left by
+a hub crash, which stops that node's reports until it is fixed by
+hand". That was an undemonstrated claim in the exculpatory direction, so
+it was run: a node's file ending in `{"seq":12,"hash":"sha256:fedc` made
+`readAnchorFile` refuse the file, and so every report the node made,
+until somebody edited it.
+
+`appendAnchor` is one write followed by an fsync, and nothing is
+answered before the fsync returns, so a last line with no newline is a
+line no receipt was sent for. `AnchorStore.repairTail` now runs when a
+node's file is first read:
+
+- a tail that does not parse is truncated away, as
+  `nodeevidence.Log.recover` does to a chain's current segment, and
+  the hub logs a warning saying so;
+- a tail that parses as a whole anchor and only lacks its newline is
+  kept and terminated, because the head on it is one the node really
+  reported;
+- a broken line that *does* end in a newline is still refused. That is
+  damage or an edit, not a crash, and is left for somebody to look at.
+
+A second path needed closing for the same reason. `repairTail` runs only
+when a file is first read, so a failed append on a *running* hub (a full
+disk) would leave a fragment that the next report was appended after: a
+broken line in the middle, which nothing repairs. `appendAnchor` now cuts
+the file back to its prior size when the write or the fsync fails.
+
+`nodeevidence.ReadAnchors`, which reads a file somebody handed over,
+still refuses an incomplete last line but now says what it is and that
+the hub removes it, rather than "not an anchor record".
+
+Breaking it on purpose: with the cut-back truncating to the wrong size
+(a sparse terabyte past the end), `TestAFailedAnchorAppendIsCutBack`
+did not pass; it hung until the test binary's timeout killed it
+(629 s) rather than failing on an assertion. With the correct size it
+passes. The torn-tail tests were not separately broken.
+
+**Not covered:**
+- Run on Linux only, by `go test`; not against a real hub and node in
+  the lab, and not on a disk that is actually full: the failed append is
+  simulated by a write that stops half way.
+- A crash between the truncate and its fsync is not simulated.
 
 ## 6. Everything else not started
 
