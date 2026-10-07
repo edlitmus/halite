@@ -959,6 +959,8 @@ groups:
 
       # A node's beacon queue is bounded, and what it discards never
       # reaches the hub except as the overflow event this counts.
+      # A beacon's first drop is not seen: its series is born at 1, and
+      # beacon names are not known in advance to start them at 0.
       - alert: HaliteBeaconEventsDropped
         expr: increase(halite_beacon_dropped_total[10m]) > 0
         labels: {severity: warning}
