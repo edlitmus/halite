@@ -21284,6 +21284,21 @@ stranger than it was.
   previous page failed there, not that this one works there.
 - Only run on macOS.
 
+#### 5.242, run on the fleet
+
+On 2026-10-08 the owner reported that the corrected page, on nodes built
+from `9bc142a` or later, "has been run on the fleet and works as
+expected". That is the Linux run the entry above lacked: the earlier
+failure was on a Linux node.
+
+The owner then said the run covered FreeBSD and Ubuntu Linux nodes.
+So the state found its pki directory from the node on both layouts:
+`/usr/local/etc/halite/pki` on FreeBSD, the tier 1 platform, and
+`/etc/halite/pki` on Ubuntu, where 5.242's failure was seen.
+
+This is the owner's report. The output was not seen here, and versions
+and host counts were not given.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
