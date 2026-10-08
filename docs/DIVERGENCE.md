@@ -21291,10 +21291,13 @@ from `9bc142a` or later, "has been run on the fleet and works as
 expected". That is the Linux run the entry above lacked: the earlier
 failure was on a Linux node.
 
-This is the owner's report. The output was not seen here, and the
-report does not say which hosts or platforms the run covered. If the
-FreeBSD nodes were among them, the `/usr/local/etc/halite/pki` default
-was exercised there too.
+The owner then said the run covered FreeBSD and Ubuntu Linux nodes.
+So the state found its pki directory from the node on both layouts:
+`/usr/local/etc/halite/pki` on FreeBSD, the tier 1 platform, and
+`/etc/halite/pki` on Ubuntu, where 5.242's failure was seen.
+
+This is the owner's report. The output was not seen here, and versions
+and host counts were not given.
 
 ## 6. Everything else not started
 
