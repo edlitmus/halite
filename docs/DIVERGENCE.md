@@ -21186,6 +21186,31 @@ a state argument.
 **Not covered:** only run on macOS, with `halite-node --local`, not
 through a hub serving the pillar.
 
+#### 5.241, corrected
+
+The entry above said CI's Linux runners "use `/tmp` and run them". That
+was written before anybody looked. No leg runs `go test -v`, and a skip
+prints nothing, so #254's green CI could not show whether the GPG pass
+had run or skipped. The sentence was the same kind of claim the entry
+was correcting.
+
+The Ubuntu leg now has a step, "the GPG pillar tests ran rather than
+skipped". It runs `TestDecryptedPillarNeverReachesTheRun` and
+`TestTheDocumentedMetricsCertificateStateConverges` with `-v`, fails on
+any `--- SKIP`, and requires four passes: the two tests and both of the
+second one's subtests. The step was extracted from the workflow and run
+on macOS:
+- under the default `TMPDIR`, the tests skip and the step exits 1 with
+  its message;
+- under `TMPDIR=/tmp/hx`, it exits 0 with four passes.
+
+Whether they run on the Ubuntu runner is what this change's own CI run
+shows, and it is recorded only after that run.
+
+It showed they run. In #255's CI, the step on `ubuntu-24.04` printed
+four `--- PASS` lines and no `--- SKIP`: both tests, and both of the
+second test's subtests, including the GPG one.
+
 ### 5.242 `config.get` answered None for every default
 
 The state in `docs/metrics.md`, as fixed in 5.241, named its directory

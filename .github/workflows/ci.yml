@@ -231,6 +231,30 @@ jobs:
         if: runner.os == 'Linux'
         run: make test
 
+      # The two tests that decrypt GPG pillar skip when no throwaway key
+      # can be made, and no leg runs `go test -v`, so a skip here would
+      # print nothing and the suite would read as green. On macOS they
+      # skip as a matter of course: its default TMPDIR is too long for
+      # the gpg-agent socket. This is the leg where they are expected to
+      # run, so it is where a skip fails. DIVERGENCE 5.241.
+      - name: the GPG pillar tests ran rather than skipped
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: 0
+        run: |
+          set -eu
+          status=0
+          out=$(go test -count=1 -v \
+            -run 'TestDecryptedPillarNeverReachesTheRun|TestTheDocumentedMetricsCertificateStateConverges' \
+            ./cmd/halite-node 2>&1) || status=$?
+          printf '%s\n' "$out"
+          test "$status" -eq 0
+          if printf '%s\n' "$out" | grep -q -- '--- SKIP'; then
+            echo "a GPG pillar test skipped on Linux; see the reason above" >&2
+            exit 1
+          fi
+          test "$(printf '%s\n' "$out" | grep -c -- '--- PASS')" -eq 4
+
       # The same recipe, spelled out, because GNU make on Windows runs
       # recipes through cmd.exe unless it finds a POSIX sh, and this
       # Makefile's recipes are sh. Provisioning one is more moving parts
