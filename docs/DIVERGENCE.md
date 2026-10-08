@@ -21299,6 +21299,74 @@ So the state found its pki directory from the node on both layouts:
 This is the owner's report. The output was not seen here, and versions
 and host counts were not given.
 
+### 5.243 The metrics page named files it never made, and emptied the token
+
+The owner noticed that `docs/metrics.md`'s `halite-nodes` scrape job read
+`ca_file: /usr/local/etc/prometheus/halite-nodes-ca.crt`, and nothing on
+the page made that file. Reading the whole page for consistency found
+five more problems.
+
+1. **Three files named and never made.** `halite-nodes-ca.crt`, and the
+   job's `cert_file` and `key_file` (`scraper.crt`, `scraper.key`). The
+   scraper's certificate is made by `keys operator create prometheus`,
+   but into halite's pki directory, which the page itself explains
+   Prometheus cannot read. A scrape pool naming a missing file never
+   builds, so it registers no target and every alert goes quiet. The
+   page now copies all three with `install`, as root on the hub. It says
+   which CA `halite-nodes-ca.crt` is: the enrollment CA's `ca.crt` for
+   certificates issued on the hub, `metrics-ca.crt` for ones the tree
+   manages.
+2. **A wrong statement about which CA.** The hub-issued route said
+   Prometheus would verify the node "with the same `ca.crt` it already
+   needs". The `halite` job trusts `api.crt`, and the page says so
+   twice. Prometheus held no `ca.crt` until this job.
+3. **Two platforms' paths in one section.** The API setup used
+   `/etc/prometheus/...` (Linux) for the password, the login's
+   `--cacert`, the token and both scrape settings. Then it used
+   `/usr/local/etc/prometheus/...` (FreeBSD) for the copies, the check
+   and `curl`, and ended by saying "the paths shown are FreeBSD's".
+   Following it literally put the token where the scrape job did not
+   look. It is FreeBSD's paths throughout now, with the Linux equivalents
+   said once at the start.
+4. **The token emptied by its own setup.** Step 3 logged in and wrote
+   `halite.token`. Step 4 then ran
+   `install -o prometheus ... /dev/null .../halite.token`, which replaces
+   the file with an empty one, and only then made the
+   `halite-api-ca.crt` that step 3's login had already used. Done in the
+   order written, Prometheus was left with an empty token. The copies now
+   come first, in step 3, and the token is written into the file
+   `install` made. The page says why that order matters.
+5. **A rule the page asked for and did not contain.** The node section
+   said `absent(up{job="halite-nodes"})` belongs in the rules, and the
+   node rules held no such rule. The text before them also said "five
+   more" over six. `HaliteNodeScrapeMissing` (absent) and
+   `HaliteNodeScrapeDown` (`== 0`) are added, and the text says eight.
+
+Two smaller additions. The hub-issued pair is now said to go to the
+`metrics_tls_cert` and `metrics_tls_key` paths, with the copies in
+`/tmp` removed afterwards. And the tree-managed certificate names only
+the node ID, so `targets` must use it.
+
+`TestEveryFilePrometheusReadsIsMadeOnThePage` reads every
+`ca_file`, `cert_file`, `key_file` and `credentials_file` in the page's
+YAML and requires each path in a shell block on the page. On main's page
+it failed on exactly the three files of finding 1, and it passes now. It
+does not check order, so it would not have caught finding 4, and it does
+not check platform consistency, which is finding 3. Every YAML block on
+the page parses, checked with PyYAML.
+
+**Not covered:**
+- The two new rules were not run through `promtool check rules`: it is
+  not installed on the machine this was done on. They are the two
+  existing `halite` scrape rules with the job name changed.
+- None of the page was re-run end to end against a Prometheus. That
+  includes the reordered steps 3 and 4: the order is right by reading,
+  not by measurement.
+- The Linux paths were checked only against
+  `internal/config/paths.go`'s table for halite's own files.
+  `/etc/prometheus/` is the page's existing statement and was not
+  checked on a Linux Prometheus here.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -107,12 +107,14 @@ and the [alerting rules](#alerting) below watch it for exactly this.
 A scraper is a machine identity, which is what local accounts are for —
 OIDC and LDAP are the operator path and there is nobody to log in here.
 Generate a password, keep it where the token will be generated from, and
-hash it:
+hash it. The paths on this page are FreeBSD's; a Linux host keeps
+Prometheus's files under `/etc/prometheus/` and halite's under
+`/etc/halite/` rather than `/usr/local/etc/...`.
 
 ```sh
-head -c 32 /dev/urandom | base64 > /etc/prometheus/halite.password
-chmod 600 /etc/prometheus/halite.password
-halite-api account hash < /etc/prometheus/halite.password
+head -c 32 /dev/urandom | base64 > /usr/local/etc/prometheus/halite.password
+chmod 600 /usr/local/etc/prometheus/halite.password
+halite-api account hash < /usr/local/etc/prometheus/halite.password
 ```
 
 `account hash` reads the password from standard input rather than from
@@ -171,17 +173,34 @@ is harmless for a scraper, which uses the token every scrape
 interval and never goes idle, but it does mean a token parked for an
 afternoon stops working.
 
+Give Prometheus its own copy of the certificate `halite-api` presents,
+and an empty token file it owns, before logging in. The login below
+reads the first and writes the second, and step 4 says why neither can
+live in halite's own directories:
+
+```sh
+install -o root -g wheel -m 0644 \
+    /usr/local/etc/halite/pki/api.crt \
+    /usr/local/etc/prometheus/halite-api-ca.crt
+install -o prometheus -g prometheus -m 0600 \
+    /dev/null /usr/local/etc/prometheus/halite.token
+```
+
+Made in that order, the token written next keeps the owner and mode
+`install` gave the file. Made the other way round, `install` from
+`/dev/null` empties a token that has just been written.
+
 Log in once and keep the token:
 
 ```sh
 token=$(curl -sS --fail-with-body \
-    --cacert /etc/prometheus/halite-api-ca.crt \
+    --cacert /usr/local/etc/prometheus/halite-api-ca.crt \
     -X POST https://api.example:4511/v1/login \
     -H 'Content-Type: application/json' \
     -d '{"username":"prometheus","password":"…"}' | jq -r '.token // empty')
 
 test -n "$token" || { echo "login failed" >&2; exit 1; }
-( umask 077; printf '%s\n' "$token" > /etc/prometheus/halite.token )
+( umask 077; printf '%s\n' "$token" > /usr/local/etc/prometheus/halite.token )
 ```
 
 Written in three steps on purpose. The obvious one-liner —
@@ -207,13 +226,13 @@ scrape_configs:
     metrics_path: /v1/metrics
     authorization:
       type: Bearer
-      credentials_file: /etc/prometheus/halite.token
+      credentials_file: /usr/local/etc/prometheus/halite.token
     tls_config:
       # The certificate halite-api presents, which is its own and not
       # the enrollment CA — see "The API's serving certificate" in
       # operations.md for where it comes from. For a self-signed one,
       # this is that same file.
-      ca_file: /etc/prometheus/halite-api-ca.crt
+      ca_file: /usr/local/etc/prometheus/halite-api-ca.crt
     static_configs:
       - targets: ['api.example:4511']
 ```
@@ -232,18 +251,9 @@ same answer for anyone else. Either way the directory has no execute
 bit for anyone but `halite`, so nothing
 else can open a file inside it however permissive the file itself looks.
 A `ca_file` under `pki/` fails for the scraper even though `root` and
-the operator can both read it perfectly well. Give Prometheus its own
-copies:
-
-```sh
-install -o root -g wheel -m 0644 \
-    /usr/local/etc/halite/pki/api.crt \
-    /usr/local/etc/prometheus/halite-api-ca.crt
-install -o prometheus -g prometheus -m 0600 \
-    /dev/null /usr/local/etc/prometheus/halite.token
-```
-
-and check it as that account rather than as yourself:
+the operator can both read it perfectly well. That is why step 3 gave
+Prometheus its own copies. Check them as that account rather than as
+yourself:
 
 ```sh
 su -m prometheus -c 'cat /usr/local/etc/prometheus/halite.token'
@@ -410,9 +420,13 @@ X509v3 Subject Alternative Name:
     DNS:node1.example, IP Address:10.0.0.11
 ```
 
-Then the pair goes to the node, the key mode 0600 and readable by the
-account the agent runs as, and Prometheus verifies it with the same
-`ca.crt` it already needs.
+Then the pair goes to the node, to the paths `metrics_tls_cert` and
+`metrics_tls_key` name (`<pki_dir>/metrics.crt` and `metrics.key` in the
+`node.yaml` above), the key mode 0600 and readable by the account the
+agent runs as. Remove the copies in `/tmp` once they are there.
+Prometheus verifies this certificate against the enrollment CA,
+`ca.crt`. That is not the file the `halite` job trusts, which is
+`api.crt`; see [Pointing Prometheus at the nodes](#pointing-prometheus-at-the-nodes).
 
 **`ext_key_usage` and `subject_alt_names` are both required in
 practice.** Without `serverAuth` Go refuses the certificate for serving
@@ -519,6 +533,9 @@ than the enrollment CA, and `metrics_client_ca` stays pointed at
 `ca.crt` — the two are different trust roots doing different jobs, and
 that is the arrangement, not a mistake.
 
+The certificate names the node ID and nothing else, so a node scraped
+by this route has to appear in `targets` under its node ID.
+
 Both certificate paths were run end to end against a node and a real
 Prometheus before being written down, but not this state's pillar form.
 As first published it did not compile, because the PEM was substituted
@@ -529,7 +546,33 @@ by `TestTheDocumentedMetricsCertificateStateConverges`.
 ### Pointing Prometheus at the nodes
 
 A second scrape job, because these are different targets with different
-certificates from the one `halite-api` presents:
+certificates from the one `halite-api` presents. It needs up to three
+files of its own, copied out of halite's directories for the reason
+given under [Point Prometheus at it](#4-point-prometheus-at-it). Run
+this as root where they were made, which is the hub for all three, and
+carry the results to the Prometheus host if that is a different
+machine:
+
+```sh
+# The CA that signed the nodes' serving certificates. The enrollment
+# CA when they were issued on the hub:
+install -o root -g wheel -m 0644 \
+    /usr/local/etc/halite/pki/ca.crt \
+    /usr/local/etc/prometheus/halite-nodes-ca.crt
+# ...or the metrics CA, when the tree manages them:
+#   /usr/local/etc/halite/pki/metrics-ca.crt instead of ca.crt
+
+# Only when the nodes set metrics_client_ca: the scraper's client
+# certificate, from `keys operator create prometheus` above.
+install -o root -g wheel -m 0644 \
+    /usr/local/etc/halite/pki/operator-prometheus.crt \
+    /usr/local/etc/prometheus/scraper.crt
+install -o prometheus -g prometheus -m 0600 \
+    /usr/local/etc/halite/pki/operator-prometheus.key \
+    /usr/local/etc/prometheus/scraper.key
+```
+
+Then the job:
 
 ```yaml
   - job_name: halite-nodes
@@ -1081,13 +1124,30 @@ you want to know about before the cap is reached:
           summary: "The relay is connected upstream and its spool is not draining"
 ```
 
-On an estate scraping its nodes, five more. These read the nodes'
-own job rather than the hub's, and they are the
-only place their subject appears at all — a return a node discarded
-never reached the hub to be counted there, and neither did a record it
-failed to write:
+On an estate scraping its nodes, eight more. The first two are the
+node scrape itself, for the reason given under
+[What is not fatal](#what-is-not-fatal): a node whose metrics
+certificate is missing or unreadable keeps running and serves nothing,
+so its target is down or never exists. The other six read the nodes'
+own job rather than the hub's, and they are the only place their
+subject appears at all — a return a node discarded never reached the
+hub to be counted there, and neither did a record it failed to write:
 
 ```yaml
+      - alert: HaliteNodeScrapeMissing
+        expr: absent(up{job="halite-nodes"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "No halite-nodes target exists; check prometheus.yml and the log"
+
+      - alert: HaliteNodeScrapeDown
+        expr: up{job="halite-nodes"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }} is not answering the node scrape"
+
       - alert: HaliteNodeReturnsDropped
         expr: increase(halite_node_returns_dropped_total[10m]) > 0
         labels: {severity: critical}
