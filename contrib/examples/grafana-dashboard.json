@@ -5917,6 +5917,71 @@
           ],
           "title": "Job duration, by function",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open. That failure is logged once and counted nowhere else, so every other evidence panel looks fine while jobs run with no record: this is the panel that shows it (HaliteNodeEvidenceNotKept alerts on it). A node with evidence turned off does not export the series, so it is missing here rather than 0.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 52
+          },
+          "id": 88,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "min(halite_node_evidence_log_open{job=\"$node_job\", instance=~\"$node_instance\"})",
+              "refId": "A",
+              "range": true
+            }
+          ],
+          "title": "Evidence log open",
+          "type": "stat"
         }
       ],
       "title": "Node agents",
@@ -6541,6 +6606,6 @@
   "timezone": "",
   "title": "halite",
   "uid": "halite-control-plane",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

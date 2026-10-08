@@ -135,6 +135,40 @@ func (n *node) recordEvidence(kind string, detail map[string]string) {
 	n.metrics.countEvidenceRecord(kind)
 }
 
+// registerEvidenceMetrics exports whether the chain is open, for a node
+// that is configured to keep one and for no other.
+//
+// The gauge is absent, not zero, on a node with `evidence: false`. That
+// is the point of registering it conditionally: 0 means "this node is
+// supposed to be keeping a record and is not", which is the one state no
+// other signal reports. A log that fails to open is logged once and
+// counts nothing, so halite_node_evidence_failures_total stays at zero,
+// and no record is attempted, so the records counter never moves: the
+// node runs jobs with no record and every evidence alert is quiet
+// (DIVERGENCE 5.236 named this as an accepted cost; 5.238 closes it). A
+// node that turned evidence off on purpose has nothing to report, and an
+// alert on 0 never sees it.
+//
+// It reads the state without opening anything. evidenceLog opens on
+// first use, and a scrape that created the directory would be a read with
+// a side effect.
+func (n *node) registerEvidenceMetrics() {
+	if n.evidence == nil || !n.evidenceOn() {
+		return
+	}
+	n.metrics.gauge("halite_node_evidence_log_open",
+		"1 when this node has its evidence chain open for writing; 0 when it is configured "+
+			"to keep one and is not, because the log failed to open. Absent when evidence is off.",
+		func() float64 {
+			n.evidence.mu.Lock()
+			defer n.evidence.mu.Unlock()
+			if n.evidence.log != nil {
+				return 1
+			}
+			return 0
+		})
+}
+
 // startEvidence opens the chain for an agent and writes what it is
 // starting with.
 //

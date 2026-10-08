@@ -381,6 +381,7 @@ func runConnect(args *cli.Args) int {
 	n.metrics.gauge("halite_node_return_queue_depth",
 		"Returns waiting to be posted to the hub.",
 		func() float64 { return float64(len(returns)) })
+	n.registerEvidenceMetrics()
 	metricsFailed := func(err error) {
 		// Warned rather than fatal, and named: a node that refused to
 		// start over its metrics certificate or a port already in use

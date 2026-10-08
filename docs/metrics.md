@@ -645,6 +645,7 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_schedule_runs_total` | counter | `name` | Scheduled jobs started, by schedule entry. |
 | `halite_node_evidence_records_total` | counter | `kind` | Records appended to the node's SPEC 25.7 chain: `job.accepted`, `job.refused`, `job.result`, `config`, `extension`, `node.start`, `node.stop`. |
 | `halite_node_evidence_failures_total` | counter | — | Evidence records that could not be written, which are jobs with no entry in the record. |
+| `halite_node_evidence_log_open` | gauge | — | 1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open, which is logged once and counted nowhere else. Absent when `evidence` is off, so 0 is never a choice. |
 | `halite_state_compile_duration_seconds` | histogram | — | Time to turn the tree into a low state. |
 | `halite_state_run_duration_seconds` | histogram | — | Time to apply it, not counting the line above. |
 | `halite_ext_invocations_total` | counter | `name` `result` | Extension calls: `succeeded`, `failed`, `timed_out`. |
@@ -702,6 +703,7 @@ queue that does not exist would read zero for ever:
 |---|---|
 | `halite_reactor_queue_depth` | `reactor:` has entries and the reactor is running |
 | `halite_beacon_queue_depth`, `halite_node_job_queue_depth`, `halite_node_return_queue_depth` | the node is the running agent, and for the first, has beacons |
+| `halite_node_evidence_log_open` | the node is the running agent and `evidence` is on, which it is by default |
 | `halite_relay_subordinates`, `halite_relay_upstream_connected`, `halite_relay_spool_entries`, `halite_relay_spool_dropped_total`, `halite_relay_returns_forwarded_total`, `halite_relay_events_forwarded_total` | `relay: true` |
 
 An alert against one of these on a hub that is not a relay never fires,
@@ -1074,6 +1076,18 @@ failed to write:
         labels: {severity: critical}
         annotations:
           summary: "{{ $labels.instance }} is running jobs and recording none of them"
+
+      # The node is configured to keep an evidence record and its log is
+      # not open: it failed to open at startup, said so once in the log,
+      # and counted nothing. Every other evidence alert is quiet for this
+      # node. The gauge does not exist on a node with `evidence: false`, so
+      # a node that chose to keep no record is never matched.
+      - alert: HaliteNodeEvidenceNotKept
+        expr: halite_node_evidence_log_open == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} is configured to keep an evidence record and is keeping none"
 ```
 
 The second evidence alert is the shape that matters, and it is the one
@@ -1095,12 +1109,21 @@ series at all, and that is a decision, not an oversight.** The series is
 created by the first record written, so a node with `evidence: false` never
 has one, and the rule does not fire on it: such a node keeps no record by
 the operator's choice, and a critical alert on a choice would be ignored
-within a day. The cost is the other node with no series, one whose evidence
-log failed to open at startup. It logs an error once, counts nothing, and
-runs jobs with no record without either evidence alert firing;
-`halite-node doctor` and the startup log are what show it, and the alerts
-do not. Declaring the series at 0 would close that and make the rule fire
-on the first kind of node too.
+within a day.
+
+The one node that is silent here by accident, a node whose evidence log
+failed to open at startup, is what `HaliteNodeEvidenceNotKept` above is
+for. That log failure is said once in the node's log and counts nothing, so
+neither this rule nor `HaliteNodeEvidenceNotWritten` could see it; the
+gauge `halite_node_evidence_log_open` reads 0 for exactly that node and is
+absent on one that turned evidence off. Between them, the two nodes that
+look the same to the records counter are told apart.
+
+This rule has a delay left in it: `halite_node_jobs_total` is labelled by
+function, so on a node that has just started it appears already at 1 and
+`increase()` cannot see the first job. The rule is blind until the second.
+That is the cost of a series whose labels cannot be listed in advance
+(DIVERGENCE 5.238).
 
 `reason!="replayed"` on `HaliteNodeJobsRefused` is deliberate: a replayed job is
 the guard of SPEC 6.3 doing its work, and a hub retrying a delivery is

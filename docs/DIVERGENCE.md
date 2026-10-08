@@ -20889,7 +20889,8 @@ first load and this one the production Prometheus carried the inert form.
   1`); both are unlabelled gauges (`internal/relay/metrics.go`), so each
   carries only the scrape's own labels and the sides do match. That is
   from reading the code; it was not run through `promtool test`.
-- The open-failure case is a cost accepted, not a case tested.
+- The open-failure case is a cost accepted, not a case tested. (Closed by
+  5.238, which gives that node its own signal.)
 
 ### 5.237 A receipt that arrived as the agent stopped paged as a lost record
 
@@ -20941,6 +20942,64 @@ missing failure.
   happens.
 - Run on Linux only; not on a real agent being stopped by a service
   manager.
+
+### 5.238 Designing the evidence-stopped alert
+
+5.236 made `HaliteNodeEvidenceStopped` able to fire and left two things
+open: it could not see the first job after a node restarted (5.235,
+swept; seen live in the same entry), and a node whose evidence log
+failed to open was silent to it by design. Both came from one choice, to
+detect "a record has quietly stopped" by comparing two counters that exist
+only after something has happened. Designing it again started from what
+the failure is.
+
+**The quiet failure is a log that never opened.** `evidenceLog` fails to
+open, `recordEvidence` logs one error and returns, and nothing is counted:
+`halite_node_evidence_failures_total` counts failed writes and none was
+attempted; `halite_node_evidence_records_total` has no series to move.
+Jobs run with no record and every evidence alert is quiet. The comparison
+of jobs against records was written for this and cannot see it, because
+with no series on either side there is nothing to compare.
+
+So the node now says it directly. `halite_node_evidence_log_open` is a
+gauge, **registered only when `evidence` is on**: 1 when the chain is
+open, 0 when the node is configured to keep one and the log did not open.
+`HaliteNodeEvidenceNotKept` alerts on `== 0`, `for: 5m`, critical. Absence
+is the operator's decision to keep no record, honoured by construction
+and not by a join that happens to come up empty. It needs no label match
+and has no first-event gap, since a gauge is exported from the start.
+It reads the log's state under the lock and opens nothing: a scrape that
+created the evidence directory would be a read with a side effect.
+
+Three tests, each broken on purpose. A node keeping its record exports 1;
+one whose `evidence_dir` is under a regular file (so `MkdirAll` fails
+whoever runs the test, where an unwritable directory passes as root)
+exports 0 **while `halite_node_evidence_failures_total` stays 0**, which is
+the silence; one with `evidence: false` exports nothing. Registering the
+gauge regardless of the setting fails the third; reporting 1 always fails
+the second. The rule has four `promtool test rules` cases (closed log
+fires, open is silent, no series is silent, two nodes of which only the
+closed one fires), and a copy of the rule with `== 1` fails them.
+
+**What was kept, and what was not changed.** The jobs-versus-records rule
+stays: it is the only thing watching a node whose log is open and whose
+call sites stopped recording, which a test per path guards and an alert
+does not. It still cannot see the first job after a restart, and that
+cannot be fixed the way the hub's were: `halite_node_jobs_total` is
+labelled by function, a set no one can list, so it cannot be declared at
+0. The docs say so beside the rule.
+
+The dashboard's node row gains "Evidence log open", red at 0.
+
+**Not covered:**
+- Not seen live. The gauge exists only in a node built from this change,
+  and beastie's node is older, so on the LAN Prometheus the new rule has
+  no series and is silent, which is what a rule with nothing to read does.
+- The failed-to-open path was exercised through a test node and
+  `startEvidence`, not a real `halite-node connect` with a bad directory.
+- A log that opens and later breaks (a disk that goes read-only) is the
+  failed-write path, which `HaliteNodeEvidenceNotWritten` covers and this
+  does not.
 
 ## 6. Everything else not started
 
