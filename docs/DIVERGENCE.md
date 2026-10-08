@@ -20778,6 +20778,24 @@ API lists 26 halite rules, all healthy and all inactive.
   `HaliteNodeEvidenceStopped` still has nothing on its jobs side, now for
   a reason that is not a gap in the scraping. The frozen textfile is still
   there beside the live series and was left alone.
+- **Then a job was run on it** (`test.ping`, to that node id only, through
+  the hub as the operator `ed`; the operator had given standing permission
+  for remote requests). The node answered `True`. On the next scrape
+  `halite_node_jobs_total{result="succeeded"}` was 1; the evidence records
+  gained `job.accepted` and `job.result` and a second `anchor.receipt`;
+  the hub's `accepted` anchors read 3 and the other results 0; and
+  `HaliteNodeEvidenceStopped` stayed inactive while the records moved,
+  which is the quiet half of the rule on real data. The firing half was
+  not provoked.
+- **And it showed the first-event gap on a real node.**
+  `sum by (instance) (increase(halite_node_jobs_total[1h]))` returned
+  nothing straight after that first job: the counter is labelled
+  (`fun`, `result`), so on a node that has just started it is born at 1 and
+  `increase()` has no earlier sample. `HaliteNodeEvidenceStopped` therefore
+  cannot see the first job a node runs after each restart, and stays silent
+  until the second. The labels are not a closed set, so the series cannot
+  be declared at 0 in advance as the hub's were; this is the cost 5.235,
+  swept had named for the node families, now seen rather than argued.
 - No dashboard panel.
 
 #### 5.235, swept: the other alerts
