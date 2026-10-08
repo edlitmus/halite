@@ -2,7 +2,7 @@ package runner
 
 import (
 	"fmt"
-	"sort"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -249,212 +249,10 @@ func (s Summary) String() string {
 	return strings.Join(parts, "  ")
 }
 
-// Nested renders the run the way `--out=nested` does: one block per state,
-// in run order, with changes indented beneath.
-//
-// Each state's block is drawn from this run's own return, by the same
-// code that draws the hub's view of it, so `halite-node state apply`
-// and `halite-hub run '*' state.apply` print a state the same way.
-// They did not: this drew its blocks from the in-memory results and
-// printed `Result: succeeded`, `failed` or `would change`, while the
-// hub printed Salt's `True`, `False` and `None`, and the two formatted
-// a duration differently. Two renderers of one thing had drifted, as
-// two copies do. DIVERGENCE 5.244.
-//
-// Only the summary is this run's own: it knows how many states a
-// requisite held back and how long the run took by the wall clock,
-// and a return carries neither.
+// Nested renders the run as `salt-call --local` prints it: Salt's
+// highstate output, under the host `local`. See Highstate.
 func (r *RunResult) Nested(colour bool) string {
-	var b strings.Builder
-	rows := nestedRows(&b, r.Returns())
-	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", r.Summarise())
-	// The whole rendering rather than each field, sparing only the
-	// identifiers it prints. See DIVERGENCE 5.109.
-	return r.Secrets.ScrubExcept(b.String(), rows.keep)
-}
-
-func writeChanges(b *strings.Builder, m *value.Map, indent string) {
-	for _, e := range m.Entries() {
-		key := value.KeyString(e.Key)
-		switch t := e.Val.(type) {
-		case *value.Map:
-			old, hasOld := t.Get("old")
-			nw, hasNew := t.Get("new")
-			if hasOld || hasNew {
-				fmt.Fprintf(b, "%s%s:\n", indent, key)
-				fmt.Fprintf(b, "%s    from: %s\n", indent, renderScalarAt(old, indent+"        "))
-				fmt.Fprintf(b, "%s      to: %s\n", indent, renderScalarAt(nw, indent+"        "))
-				continue
-			}
-			fmt.Fprintf(b, "%s%s:\n", indent, key)
-			writeChanges(b, t, indent+"    ")
-		default:
-			fmt.Fprintf(b, "%s%s: %s\n", indent, key, renderScalarAt(e.Val, indent+"    "))
-		}
-	}
-}
-
-// renderScalarAt renders a value, continuing a multi-line one under the
-// indent its key sits at. A fixed indent put the body of a diff to the
-// left of the key that introduced it.
-func renderScalarAt(v any, indent string) string {
-	switch t := v.(type) {
-	case nil:
-		return "(absent)"
-	case string:
-		if t == "" {
-			return `""`
-		}
-		if strings.Contains(t, "\n") {
-			lines := strings.Split(strings.TrimRight(t, "\n"), "\n")
-			if len(lines) > 6 {
-				lines = append(lines[:6], fmt.Sprintf("... %d more lines", len(lines)-6))
-			}
-			return "|\n" + indent + strings.Join(lines, "\n"+indent)
-		}
-		return t
-	case []any:
-		parts := make([]string, len(t))
-		for i, item := range t {
-			parts[i] = value.KeyString(item)
-		}
-		sort.Strings(parts)
-		return strings.Join(parts, ", ")
-	}
-	return value.KeyString(v)
-}
-
-// NestedFromReturns renders the wire form of a run the way Nested
-// renders a local one.
-//
-// An operator watching `halite-hub run '*' state.apply` and one
-// watching `halite-node state apply` are reading the same thing, and it
-// should look the same. The local renderer works from the compiled
-// chunks, which do not cross the wire; this one works from the return
-// schema of SPEC 9.4, which does.
-func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
-	if returns == nil {
-		return ""
-	}
-	var b strings.Builder
-	rows := nestedRows(&b, returns)
-	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", Summary{
-		Succeeded: rows.succeeded,
-		Changed:   rows.changed,
-		WouldHave: rows.unknown,
-		Failed:    rows.failed,
-		Total:     rows.total,
-		Duration:  time.Duration(rows.elapsedMS * float64(time.Millisecond)),
-	})
-	// Scrub is nil-safe, and on a nil set it still strips URL
-	// credentials. Calling it unconditionally is what makes that true
-	// here.
-	return secrets.ScrubExcept(b.String(), rows.keep)
-}
-
-// nestedCounts is what nestedRows saw, for a summary drawn from it.
-type nestedCounts struct {
-	succeeded, failed, changed, unknown, total int
-	elapsedMS                                  float64
-	// keep is the identifiers printed, spared from scrubbing: they are
-	// the schema, and the hub reads them to find the declaration in the
-	// tree. DIVERGENCE 5.109.
-	keep []string
-}
-
-// nestedRows writes one block per state of a return, in run order, the
-// way Salt's highstate outputter does. Both the node's own rendering
-// and the hub's go through it, so they cannot disagree about a state.
-func nestedRows(b *strings.Builder, returns *value.Map) nestedCounts {
-	type row struct {
-		key   string
-		entry *value.Map
-		order int64
-	}
-	var rows []row
-	for _, e := range returns.Entries() {
-		m, ok := e.Val.(*value.Map)
-		if !ok {
-			continue
-		}
-		order := int64(len(rows))
-		if v, ok := m.Get("__run_num__"); ok {
-			if n, ok := v.(int64); ok {
-				order = n
-			}
-		}
-		rows = append(rows, row{key: value.KeyString(e.Key), entry: m, order: order})
-	}
-	// Run order, which is the order the operator cares about and not
-	// necessarily the order the map arrived in.
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].order < rows[j].order })
-
-	var c nestedCounts
-	c.total = len(rows)
-	for _, r := range rows {
-		id, _ := r.entry.Get("__id__")
-		name, _ := r.entry.Get("name")
-		c.keep = append(c.keep, fmt.Sprint(scalarOr(id, r.key)), functionFromKey(r.key))
-		if sls, ok := r.entry.Get("__sls__"); ok {
-			c.keep = append(c.keep, fmt.Sprint(sls))
-		}
-		result, _ := r.entry.Get("result")
-		comment, _ := r.entry.Get("comment")
-		started, _ := r.entry.Get("start_time")
-		duration, _ := r.entry.Get("duration")
-
-		fmt.Fprintf(b, "----------\n")
-		fmt.Fprintf(b, "          ID: %v\n", scalarOr(id, r.key))
-		fmt.Fprintf(b, "    Function: %s\n", functionFromKey(r.key))
-		if fmt.Sprint(name) != fmt.Sprint(id) {
-			fmt.Fprintf(b, "        Name: %v\n", name)
-		}
-		fmt.Fprintf(b, "      Result: %s\n", resultWord(result))
-		fmt.Fprintf(b, "     Comment: %v\n", scalarOr(comment, ""))
-		if started != nil {
-			fmt.Fprintf(b, "     Started: %v\n", started)
-		}
-		if duration != nil {
-			fmt.Fprintf(b, "    Duration: %s ms\n", pyFloat(duration))
-			if ms, ok := duration.(float64); ok {
-				c.elapsedMS += ms
-			}
-		}
-		if changes, ok := r.entry.Get("changes"); ok {
-			if m, ok := changes.(*value.Map); ok && m.Len() > 0 {
-				b.WriteString("     Changes:\n")
-				writeChanges(b, m, "              ")
-				// A `None` result with changes is what a state *would*
-				// do, and counting it as a change would report a dry
-				// run as having done something.
-				if _, isBool := result.(bool); isBool {
-					c.changed++
-				}
-			}
-		}
-		if warnings, ok := r.entry.Get("warnings"); ok {
-			if list, ok := warnings.([]any); ok {
-				for _, w := range list {
-					fmt.Fprintf(b, "     Warning: %v\n", w)
-				}
-			}
-		}
-
-		switch result.(type) {
-		case bool:
-			if result.(bool) {
-				c.succeeded++
-			} else {
-				c.failed++
-			}
-		default:
-			// `None` is test mode: neither a success nor a failure, and
-			// counting it as either would misreport a dry run.
-			c.unknown++
-		}
-	}
-
-	return c
+	return Highstate("local", r.Returns(), r.Secrets)
 }
 
 // saltDuration is a state's duration as Salt's state.py computes it:
@@ -482,39 +280,24 @@ func pyFloat(v any) string {
 	if !ok {
 		return fmt.Sprint(v)
 	}
+	switch {
+	case math.IsNaN(f):
+		return "nan"
+	case math.IsInf(f, 1):
+		return "inf"
+	case math.IsInf(f, -1):
+		return "-inf"
+	}
+	// repr() switches to an exponent below 1e-4 and from 1e16 up, where
+	// Go's shortest form switches at 1e21 and from six digits.
+	if f != 0 {
+		if exp := math.Floor(math.Log10(math.Abs(f))); exp < -4 || exp >= 16 {
+			return strconv.FormatFloat(f, 'e', -1, 64)
+		}
+	}
 	out := strconv.FormatFloat(f, 'f', -1, 64)
-	if !strings.ContainsAny(out, ".eEnN") {
+	if !strings.Contains(out, ".") {
 		out += ".0"
 	}
 	return out
-}
-
-// functionFromKey reads the module and function out of the compound key
-// the return schema uses: `file_|-id_|-name_|-managed`.
-func functionFromKey(key string) string {
-	parts := strings.Split(key, "_|-")
-	if len(parts) < 4 {
-		return key
-	}
-	return parts[0] + "." + parts[len(parts)-1]
-}
-
-func resultWord(v any) string {
-	switch t := v.(type) {
-	case bool:
-		if t {
-			return "True"
-		}
-		return "False"
-	case nil:
-		return "None"
-	}
-	return fmt.Sprint(v)
-}
-
-func scalarOr(v any, fallback string) any {
-	if v == nil {
-		return fallback
-	}
-	return v
 }

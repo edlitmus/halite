@@ -23,6 +23,22 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### State runs print exactly as Salt's highstate output does
+
+`halite-node state ...` and `halite-hub run ... state.*` now print a
+state run as Salt's highstate outputter does, from one shared renderer:
+- the host first (`local:` on a node), with the blocks not indented
+  under it;
+- `Changes:` on every state, rendered as Salt renders it;
+- multi-line comments and warnings laid out as Salt lays them out;
+- Salt's summary block, `Summary for <host>` through `Total run time:`.
+
+Test mode counts `None` as succeeded, with `unchanged=N`, as Salt does.
+The old one-line summary is gone, and with it the node's count of states
+held back by a requisite. Scripts that parsed either output format need
+updating. CI checks the output against Salt's own outputter.
+DIVERGENCE 5.245.
+
 ### `halite-node` prints a state's result as Salt does
 
 `halite-node state apply`, `highstate` and `sls` printed

@@ -21432,6 +21432,87 @@ counts any state with changes. The owner raised only the result.
 3007.1's source, and the CI differential compiles trees rather than
 comparing output. Only run on macOS.
 
+#### 5.244, superseded
+
+The owner then asked for the summary to match Salt as well. 5.245 does
+that, and more: both renderers above are gone, replaced by one port of
+Salt's highstate outputter. This entry's "only the summary stays each
+one's own" is no longer true, because neither has a summary of its own.
+
+### 5.245 One highstate renderer, ported from Salt's
+
+After 5.244 the owner asked for the summary line to match Salt too.
+Reading Salt 3007.1's `salt/output/highstate.py` in full showed the
+summary was not the only difference:
+
+| | Salt | halite before |
+|---|---|---|
+| host | `local:` or `web1:` first, the blocks not indented under it | the node printed no host; the hub indented each block four spaces under the node's name |
+| `Changes:` | always printed, empty when there are none, and rendered by Salt's nested outputter at indent 14: `----------`, keys sorted, values beneath | printed only when there were changes, in halite's own `from:`/`to:` layout |
+| a comment over several lines | each line after the first indented 14 | not indented |
+| warnings | `Warnings:`, wrapped at 80, and counted in the summary | one `Warning:` line each, not counted |
+| summary | `Summary for <host>`, a rule, `Succeeded: N (unchanged=U, changed=C)`, `Failed:`, a rule, `Total states run:` and `Total run time:`, aligned on the widest count; test mode's `None` counted as succeeded, with `unchanged=` | one line, `Succeeded: N (changed=C)  Would change: U  Failed: …  Total: …  Duration: …` |
+
+`internal/runner/highstate.go` is now the only renderer. `Highstate`
+is a port of `_format_host`, and of `salt/output/nested.py` for the
+changes. `halite-node state ...` calls it with the host `local`, which
+is what `salt-call --local` prints. `halite-hub run ... state.*` calls it
+with each node's ID, with no extra indentation; `jobs show` keeps its own
+status line above it. The node's own summary, with the held-back count
+and the wall-clock duration, is gone. Salt's total run time is the sum
+of the states' durations, so halite's now is too. A state held back by
+a requisite now shows only in its own block.
+
+Not ported, because Salt's defaults leave it off or halite never
+produces it:
+- colour;
+- the terse, mixed, changes and filter `state_output` modes;
+- `state_compress_ids` and `state_output_pct`;
+- the recursive rendering of an orchestration's changes as nested
+  highstates.
+
+Warnings are wrapped on whitespace only, where Python's textwrap also
+breaks on hyphens.
+
+`TestHighstateMatchesSalt`, in `internal/saltdiff`, has Salt apply a tree
+covering every shape the outputter draws differently: changes, none, a
+name that is not the ID, a failure, a requisite held back, a multi-line
+comment and a long warning. Salt returns the result as JSON. That one
+return is rendered by Salt's own highstate outputter, from Salt's own
+Python, and by `Highstate` after `value.DecodeJSON`, which is how the
+hub reads a return. With identical input, timings included, the two
+must match byte for byte, for a real run and in test mode. It skips
+where Salt is absent, as on the machine this was written on, and runs in
+CI's `saltdiff` container.
+
+`TestTheNodeAndTheHubRenderAStateAlike` holds the shape where Salt is
+absent, as the name 5.244 cites. A real `halite-node state apply` of
+`docs/getting-started.md`'s tree printed the Salt form, and that page's
+two samples are taken from that run.
+
+**In CI**, Salt 3007.1 in the `saltdiff` container. The first run
+passed. That container runs `go test` without `-v`, where a skip and a
+pass look the same, so a commit appended ` BREAK-CHECK` to halite's
+`Failed:` line and was pushed to the same PR. The job then failed with
+the full side-by-side diff, for the real run and for test mode alike.
+In each, the one line that differed was the broken one. Every other
+line matched Salt's own outputter byte for byte:
+- the nested changes of `test.succeed_with_changes`;
+- the `Name:` line;
+- a held-back state's `One or more requisite failed`;
+- the two-line comment;
+- the warning, wrapped at "eighty" onto a second line;
+- `Succeeded: 5 (changed=1)`, and in test mode
+  `Succeeded: 5 (unchanged=1, changed=1)`;
+- `Warnings:  1`, `Total states run:     7` and `Total run time:`.
+
+The break was reverted in the next commit.
+
+**Not covered:** only Salt 3007.1, the container's default. The tree
+covers the shapes above. It has no list-valued or numeric changes, no
+`__parallel__` state, and no warning that needs a hyphen break, the
+place where the wrap is known to differ.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

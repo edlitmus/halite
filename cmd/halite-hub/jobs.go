@@ -144,7 +144,7 @@ func runJobs(args *cli.Args) int {
 				outcome = "FAILED"
 			}
 			fmt.Printf("%s: %s (retcode %d, %d ms)\n", r.NodeID, outcome, r.RetCode, r.DurationMS)
-			printReturn(r)
+			printReturn(r, false)
 		}
 		return 0
 

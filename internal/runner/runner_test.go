@@ -1165,19 +1165,19 @@ func TestCredentialsInAURLAreScrubbedWithNoKnownSecrets(t *testing.T) {
 			if got := out.Nested(false); strings.Contains(got, "hunter2sekrit") {
 				t.Errorf("Nested printed the credential:\n%s", got)
 			}
-			if got := NestedFromReturns(returns, tc.set); strings.Contains(got, "hunter2sekrit") {
-				t.Errorf("NestedFromReturns printed the credential:\n%s", got)
+			if got := Highstate("n", returns, tc.set); strings.Contains(got, "hunter2sekrit") {
+				t.Errorf("Highstate printed the credential:\n%s", got)
 			}
 		})
 	}
 }
 
-// The hub renders a node's return with `NestedFromReturns(m, nil)`: the
+// The hub renders a node's return with `Highstate(node, m, nil)`: the
 // map came off the wire, and the hub has no secret set for another
 // machine's pillar. A scrub that skips on a nil set prints whatever the
 // node sent, which is the whole argument for redacting at the sink —
 // this renderer must not depend on the sender having done it.
-func TestNestedFromReturnsScrubsURLsOffTheWire(t *testing.T) {
+func TestHighstateScrubsURLsOffTheWire(t *testing.T) {
 	const url = "https://deploy:hunter2sekrit@artifacts.example.com/vmop/agent.tgz"
 	returns := value.NewMap(1)
 	returns.Set("file_|-agent_|-/opt/agent.tgz_|-managed", value.MapOf(
@@ -1189,7 +1189,7 @@ func TestNestedFromReturnsScrubsURLsOffTheWire(t *testing.T) {
 		"changes", value.NewMap(0),
 	))
 
-	got := NestedFromReturns(returns, nil)
+	got := Highstate("n", returns, nil)
 	if strings.Contains(got, "hunter2sekrit") {
 		t.Errorf("the credential reached the operator's terminal:\n%s", got)
 	}
@@ -1309,9 +1309,9 @@ func TestTheReturnSchemaSurvivesRedaction(t *testing.T) {
 		!strings.Contains(got, "Function: probe.run") {
 		t.Errorf("Nested lost the identifiers:\n%s", got)
 	}
-	if got := NestedFromReturns(returns, out.Secrets); !strings.Contains(got, "ID: nginx_config") ||
+	if got := Highstate("n", returns, out.Secrets); !strings.Contains(got, "ID: nginx_config") ||
 		!strings.Contains(got, "Function: probe.run") {
-		t.Errorf("NestedFromReturns lost the identifiers:\n%s", got)
+		t.Errorf("Highstate lost the identifiers:\n%s", got)
 	}
 }
 
@@ -1389,17 +1389,14 @@ type runnerFunc func(exec.Command) (exec.Result, error)
 
 func (f runnerFunc) Run(_ context.Context, cmd exec.Command) (exec.Result, error) { return f(cmd) }
 
-// The node's rendering of its own run and the hub's rendering of the
-// return it sends are the same, state for state, and both say what Salt
-// says.
+// The node's rendering of its own run is Salt's highstate output under
+// the host `local`, as `salt-call --local` prints it, and says what Salt
+// says. That it is the same text Salt's own outputter makes from the
+// same return is TestHighstateMatchesSalt in internal/saltdiff, which
+// needs Salt; this holds the shape where Salt is absent.
 //
-// They were not. `halite-node state apply` printed `Result: succeeded`,
-// `failed` and `would change`, and a duration rounded to three places;
-// the hub printed `True`, `False`, `None` and the duration as it came.
-// The owner noticed running a highstate both ways. Salt 3007.1's
-// highstate outputter prints the result through str() -- True, False,
-// None -- and state.py makes the duration whole microseconds over
-// 1000.0. DIVERGENCE 5.244.
+// The node printed `Result: succeeded`, `failed` and `would change`,
+// and a one-line summary of its own (DIVERGENCE 5.244, 5.245).
 func TestTheNodeAndTheHubRenderAStateAlike(t *testing.T) {
 	sls := `
 ok:
@@ -1413,23 +1410,25 @@ held:
     - onchanges:
       - probe: failed
 `
-	blocks := func(s string) string { return s[:strings.Index(s, "\nSummary\n")] }
 	for _, test := range []bool{false, true} {
 		out, _ := compileAndRun(t, sls, func(r *Runner) { r.Ctx.Test = test })
 		local := out.Nested(false)
-		wire := NestedFromReturns(out.Returns(), nil)
-		if blocks(local) != blocks(wire) {
-			t.Errorf("test=%v: the node and the hub render the states differently.\nnode:\n%s\nhub:\n%s",
-				test, local, wire)
+		if local != Highstate("local", out.Returns(), nil) {
+			t.Errorf("test=%v: Nested is not Highstate(\"local\", Returns()):\n%s", test, local)
 		}
-		for _, banned := range []string{"Result: succeeded", "Result: failed", "Result: would change"} {
+		if !strings.HasPrefix(local, "local:\n----------\n          ID: ok\n") {
+			t.Errorf("test=%v: the output does not open as salt-call's does:\n%s", test, local)
+		}
+		for _, banned := range []string{"Result: succeeded", "Result: failed", "Result: would change", "Would change:"} {
 			if strings.Contains(local, banned) {
-				t.Errorf("test=%v: the node printed %q; Salt prints True, False or None:\n%s", test, banned, local)
+				t.Errorf("test=%v: the node printed %q, which Salt does not:\n%s", test, banned, local)
 			}
 		}
-		want := []string{"Result: True", "Result: False"}
+		want := []string{"Result: True", "Result: False", "\nSummary for local\n", "Total states run:", "Total run time:"}
 		if test {
-			want = []string{"Result: None"}
+			// Test mode's None counts as succeeded, with unchanged=N
+			// beside it, as Salt counts it.
+			want = []string{"Result: None", "(unchanged=1"}
 		}
 		for _, w := range want {
 			if !strings.Contains(local, w) {
