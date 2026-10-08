@@ -23,6 +23,22 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `docs/metrics.md`'s Prometheus setup is consistent
+
+- **Missing files:** the `halite-nodes` scrape job read three files the
+  page never made (`halite-nodes-ca.crt`, `scraper.crt`, `scraper.key`).
+  It now copies them out of halite's pki directory, and says which CA is
+  which for each certificate route.
+- **Empty token:** the API setup emptied its own token. Prometheus's
+  files are now made before the login that writes into them. **If you
+  followed the old order, check that `halite.token` is not empty.**
+- **Paths:** the API setup mixed Linux and FreeBSD paths. It now uses
+  FreeBSD's throughout, as it said it did.
+- **Rules:** the node alert rules gain the scrape-missing and
+  scrape-down rules the page said they needed.
+
+DIVERGENCE 5.243.
+
 ### `config.get` and `opts` now include the defaults
 
 `config.get`, `config.option`, `config.values` and the `opts` template
