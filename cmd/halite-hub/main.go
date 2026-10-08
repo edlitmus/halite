@@ -361,7 +361,7 @@ func runLint(args *cli.Args) int {
 			Env:    cfg.String("env", "base"),
 			Grains: value.NewMap(0),
 			Pillar: value.NewMap(0),
-			Config: cfg.Redacted(),
+			Config: cfg.Effective(config.Hub),
 			// Lint runs permissive on purpose: a tree is being checked
 			// for structure, and this run has neither the node's grains
 			// nor its pillar, so a strict undefined here would report a

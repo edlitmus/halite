@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `config.get` and `opts` now include the defaults
+
+`config.get`, `config.option`, `config.values` and the `opts` template
+variable used to see only what a configuration file set, so
+`config.get pki_dir` was None on most nodes. They now include every
+default the node or hub applies, typed (`hub_port` is the number 4510),
+with `pki_dir` and `policy` following `--root`. A tree that relied on
+None for an unset key now gets the default, as Salt's does.
+`docs/metrics.md`'s certificate state uses this to find the node's pki
+directory, which is `/etc/halite/pki` on Linux, rather than naming
+FreeBSD's. DIVERGENCE 5.242.
+
 ### The metrics-certificate state in `docs/metrics.md` now compiles
 
 The `x509.certificate_managed` example that signs a node's metrics

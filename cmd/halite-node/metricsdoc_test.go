@@ -49,9 +49,10 @@ func documentedMetricsCert(t *testing.T, encrypt bool) {
 	sls := string(doc[i:])
 	sls = sls[:strings.Index(sls, "```")]
 
-	pki := t.TempDir()
-	sls = strings.ReplaceAll(sls, "/usr/local/etc/halite/pki", pki)
-	caKey, caCert := filepath.Join(pki, "metrics-ca.key"), filepath.Join(pki, "metrics-ca.crt")
+	// The CA lives wherever its maker keeps it; only the pillar carries
+	// it to the node.
+	caDir := t.TempDir()
+	caKey, caCert := filepath.Join(caDir, "metrics-ca.key"), filepath.Join(caDir, "metrics-ca.crt")
 
 	// The CA is made as the page makes it.
 	for _, args := range [][]string{
@@ -76,6 +77,15 @@ func documentedMetricsCert(t *testing.T, encrypt bool) {
 	}
 
 	flags := tree(t, map[string]string{"metrics_cert.sls": sls})
+	// The state asks the node for pki_dir, which defaults to <root>/pki;
+	// an enrolled node has that directory, so make it as enrollment
+	// would. The block names no path of its own, so a test that passed
+	// with the files anywhere else would be testing something other
+	// than what the page prints. DIVERGENCE 5.242.
+	pki := filepath.Join(flags[slices.Index(flags, "--root")+1], "pki")
+	if err := os.Mkdir(pki, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	// tree points --pillar-root at an empty directory; fill it.
 	pillar := flags[slices.Index(flags, "--pillar-root")+1]
 	body := "metrics_ca:\n  cert: |\n" + indent(caCert) + "  key: |\n" + indent(caKey)

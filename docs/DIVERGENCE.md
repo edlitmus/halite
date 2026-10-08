@@ -21207,6 +21207,83 @@ on macOS:
 Whether they run on the Ubuntu runner is what this change's own CI run
 shows, and it is recorded only after that run.
 
+It showed they run. In #255's CI, the step on `ubuntu-24.04` printed
+four `--- PASS` lines and no `--- SKIP`: both tests, and both of the
+second test's subtests, including the GPG one.
+
+### 5.242 `config.get` answered None for every default
+
+The state in `docs/metrics.md`, as fixed in 5.241, named its directory
+as `/usr/local/etc/halite/pki`. The owner applied it on a Linux node,
+with the metrics CA's key GPG-encrypted in pillar. The decryption
+worked, and the key state failed:
+
+```
+The key could not be written: writing /usr/local/etc/halite/pki/metrics.key:
+open /usr/local/etc/halite/pki/.metrics.key.3126321956: no such file or directory
+```
+
+That is the FreeBSD path. A Linux node keeps its keys in
+`/etc/halite/pki`, and the page gave no hint that the path depends on
+the platform. The obvious repair was for the state to ask the node, and
+that showed the real defect: `config.get pki_dir` answered None on any
+node whose configuration file did not set `pki_dir`, which is nearly all
+of them.
+
+`config.get`, `config.option`, `config.values` and the `opts` template
+variable all read one map, built by `Config.Redacted`. That map holds
+only what the configuration files set. `internal/state/compile.go` and
+`internal/pillar/pillar.go` both describe the field as "the effective
+configuration, redacted". It was not effective, so the code and its own
+comment disagreed. Salt's `config.get` reads its opts, which carry every
+default, so a Salt tree asking for `pki_dir` gets the directory the
+machine actually uses, and here the same tree got None.
+
+`Config.Effective(role)` is now that map. It is `Redacted` plus, for
+every key the role recognises and the files do not set, the default
+from `Keys`, the table the loader and the generated docs already share:
+- A default is typed as the same text in a configuration file would be:
+  `hub_port` is 4510, the number; `evidence` is true; and
+  `tracing_sample_rate` is 0.1.
+- `pki_dir` and `policy` follow `--root`, as `PathUnderRoot` does.
+  `TestEveryRootRelativeKeyIsKnownToEffective` reads every
+  `PathUnderRoot` call in the tree and fails when the table of
+  root-relative keys disagrees with them. Removing `policy` from that
+  table failed it at both call sites.
+- Not filled in: a default that is a description, such as `timezone`'s
+  `<the node's local zone>`, because a tree would act on the text. An
+  empty default, so that `config.get`'s own `default` argument still
+  applies. A secret-bearing key.
+
+The node's contexts use `Effective(Node)`, and the hub's pillar
+compiler and `lint` use `Effective(Hub)`. Measured from the CLI:
+- `config.get pki_dir` gives `<root>/pki`, following `--root`;
+- `config.get hub_port` gives 4510 as a number;
+- `config.get timezone` stays null, and `default=UTC` gives `UTC`;
+- a `pki_dir` set in the file still wins.
+
+With `Effective` reduced to `Redacted`, the new tests failed.
+
+The page's state now begins
+`{% set pki = salt['config.get']('pki_dir') %}` and names no directory.
+`TestTheDocumentedMetricsCertificateStateConverges` now makes
+`<root>/pki`, as enrollment would, and looks for the files there. It
+passes with the key in plain pillar and with it GPG-encrypted.
+
+The state does not create the directory, and halite's x509 states have
+no `makedirs`. Salt's `x509_v2` documents one, off by default; that is
+from its documentation and was not run here. An enrolled node has the directory already. The error names
+the temporary file rather than the directory, which is why it read as
+stranger than it was.
+
+**Not covered:**
+- Any tree that read a recognised but unset key through `config.get` or
+  `opts` and relied on getting None now gets the default. That is
+  Salt's behaviour and the point of the change, but it is a change.
+- Not run on a Linux node. The owner's run is the evidence that the
+  previous page failed there, not that this one works there.
+- Only run on macOS.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

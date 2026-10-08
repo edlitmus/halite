@@ -468,19 +468,30 @@ writes the CA's key to a file on the node. They must go through
 `| json`. A PEM block is several lines, and substituted bare it puts its
 second line at the start of a YAML line, where the state no longer
 parses. `| json` writes it as one quoted string with its line breaks
-escaped. The state becomes:
+escaped.
+
+The state asks the node where its key material lives rather than naming
+a directory. That is `/usr/local/etc/halite/pki` on FreeBSD and
+`/etc/halite/pki` on Linux, and whatever `pki_dir` says where it is
+set. The state does not create the directory. An enrolled node already
+has it, because its own certificate is there. A path written for the
+other platform fails with `no such file or directory`, from the
+temporary file the key is written through first. Until DIVERGENCE 5.242,
+`config.get pki_dir` answered None on a node whose configuration did not
+set it, so this had to be a literal path. The state becomes:
 
 ```yaml
 # states/metrics_cert.sls
-/usr/local/etc/halite/pki/metrics.key:
+{% set pki = salt['config.get']('pki_dir') %}
+{{ pki }}/metrics.key:
   x509.private_key_managed:
     - algo: ec
     - keysize: 256
     - mode: '0600'
 
-/usr/local/etc/halite/pki/metrics.crt:
+{{ pki }}/metrics.crt:
   x509.certificate_managed:
-    - private_key: /usr/local/etc/halite/pki/metrics.key
+    - private_key: {{ pki }}/metrics.key
     - signing_cert: {{ pillar['metrics_ca']['cert'] | json }}
     - signing_private_key: {{ pillar['metrics_ca']['key'] | json }}
     - CN: {{ grains['id'] }}
@@ -492,7 +503,7 @@ escaped. The state becomes:
     - days_remaining: 30
     - mode: '0644'
     - require:
-        - x509: /usr/local/etc/halite/pki/metrics.key
+        - x509: {{ pki }}/metrics.key
 ```
 
 It converges. A second run reports the certificate already in place and

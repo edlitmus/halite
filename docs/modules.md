@@ -955,7 +955,7 @@ composer.version()
 
 #### `config.get`
 
-Return a setting, searching pillar, then grains, then the configuration.
+Return a setting, searching pillar, then grains, then the configuration with its defaults.
 
 ```
 config.get(key: string, default: any)
@@ -970,7 +970,7 @@ config.get(key: string, default: any)
 
 #### `config.option`
 
-Return a configuration setting.
+Return a configuration setting, or its default when nothing sets it.
 
 ```
 config.option(key: string, default: any)
@@ -985,7 +985,7 @@ config.option(key: string, default: any)
 
 #### `config.values`
 
-Return the effective configuration, with secrets redacted.
+Return the effective configuration, defaults included, with secrets redacted.
 
 ```
 config.values()

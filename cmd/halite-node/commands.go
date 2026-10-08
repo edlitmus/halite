@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/exec"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/redact"
@@ -233,7 +234,7 @@ func (n *node) stateCompiler(p *value.Map, jobID string) *state.Compiler {
 			JobID:            jobID,
 			Grains:           n.grains,
 			Pillar:           p,
-			ConfigValues:     n.cfg.Redacted(),
+			ConfigValues:     n.cfg.Effective(config.Node),
 			Undefined:        n.undef,
 			TopMergeStrategy: n.cfg.String("top_file_merging_strategy", "merge"),
 			StateAllowlist:   n.cfg.StringSlice("state_allowlist"),
@@ -523,7 +524,7 @@ func runLint(args *cli.Args) int {
 			NodeID:    n.nodeID,
 			Grains:    n.grains,
 			Pillar:    p,
-			Config:    n.cfg.Redacted(),
+			Config:    n.cfg.Effective(config.Node),
 			Loader:    n.files.Templates(n.env),
 			Undefined: n.undef,
 		})
