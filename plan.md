@@ -857,9 +857,9 @@ This section has moved further than any other since the last revision.
   **Not done:** no rule has been seen to fire on live data; that
   Prometheus has **no Alertmanager**, so a firing rule notifies nobody;
   beastie's node metrics certificate expires on 2027-01-05 and nothing
-  renews it; and the node's `halite_node_jobs_total` cannot be started at
-  0 because its `fun` label is open-ended, which leaves
-  `HaliteNodeEvidenceStopped` blind to the first job after a restart.
+  renews it; and `HaliteNodeEvidenceStopped` reads two counters that start
+  at 0 now (DIVERGENCE 5.239), but only a node built from that change has
+  them, and no node on the LAN is yet.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
 

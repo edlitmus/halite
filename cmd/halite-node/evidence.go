@@ -156,6 +156,12 @@ func (n *node) registerEvidenceMetrics() {
 	if n.evidence == nil || !n.evidenceOn() {
 		return
 	}
+	// Each kind at 0 from the start, so that the first record of a kind is
+	// an increase and not a series born at 1. Without it a node's first job
+	// ever writes job.accepted and job.result as new series, every kind's
+	// increase() reads 0, and HaliteNodeEvidenceStopped fires on a node that
+	// recorded the job correctly (DIVERGENCE 5.239).
+	n.metrics.declareEvidenceKinds(nodeevidence.Kinds)
 	n.metrics.gauge("halite_node_evidence_log_open",
 		"1 when this node has its evidence chain open for writing; 0 when it is configured "+
 			"to keep one and is not, because the log failed to open. Absent when evidence is off.",

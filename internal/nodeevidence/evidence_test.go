@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -551,5 +552,48 @@ func TestAppendAfterCloseIsRefusedAndChangesNothing(t *testing.T) {
 	if res := verify(t, dir); !res.OK() || res.Records != 2 || res.Lost != 0 {
 		t.Errorf("the chain after a refused append: ok=%v records=%d lost=%d %v",
 			res.OK(), res.Records, res.Lost, res.Breaks)
+	}
+}
+
+// Kinds is what a counter by kind is declared from, so a kind added as a
+// constant and left out of the list would be born at 1 and hidden from
+// increase() again, quietly. The list is held to the constants in the
+// source, because nothing else would notice: every test of the new kind
+// would still pass. DIVERGENCE 5.239.
+func TestKindsListsEveryKindConstant(t *testing.T) {
+	declared := map[string]bool{}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	constant := regexp.MustCompile(`(?m)^\s*(?:const\s+)?Kind[A-Za-z]+\s*=\s*"([^"]+)"`)
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range constant.FindAllStringSubmatch(string(body), -1) {
+			declared[m[1]] = true
+		}
+	}
+	if len(declared) < 6 {
+		t.Fatalf("found only %d Kind constants, so this check is reading the wrong thing: %v", len(declared), declared)
+	}
+	listed := map[string]bool{}
+	for _, k := range Kinds {
+		listed[k] = true
+	}
+	for k := range declared {
+		if !listed[k] {
+			t.Errorf("kind %q is a constant and is not in Kinds", k)
+		}
+	}
+	for k := range listed {
+		if !declared[k] {
+			t.Errorf("Kinds lists %q, which is no constant", k)
+		}
 	}
 }
