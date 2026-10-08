@@ -210,17 +210,27 @@ sudo halite-node state apply --local \
 ```
 
 ```
+local:
+----------
           ID: /etc/motd
     Function: file.managed
       Result: None
      Comment: /etc/motd would be created: its contents, its mode.
-     Changes:
-              diff: |
-                --- /etc/motd (current)
-                +++ /etc/motd (managed)
-                @@ -1,0 +1,3 @@
-                +This machine is managed by halite.
+     Started: 13:20:19.307232
+    Duration: 0.035 ms
+     Changes:   
+              ----------
+              diff:
+                  --- /etc/motd (current)
+                  +++ /etc/motd (managed)
+                  @@ -1,0 +1,3 @@
+                  +This machine is managed by halite.
+...
 ```
+
+It is Salt's highstate output, as `salt-call --local` prints it, down to
+the summary. In test mode the summary reads
+`Succeeded: 1 (unchanged=1, changed=1)`, which is how Salt counts it.
 
 That `None` is test mode's answer, as it is Salt's: the state would
 change something. It is a promise, not a guess. State modules are held to
@@ -242,10 +252,17 @@ sudo halite-node state apply --local \
     --pillar-root /srv/halite/pillar
 ```
 
-Run it again and nothing happens:
+Run it again and nothing happens. The state reports `Result: True` with
+nothing under `Changes:`, and the summary closes the run:
 
 ```
-Succeeded: 1  Failed: 0  Total: 1
+Summary for local
+------------
+Succeeded: 1
+Failed:    0
+------------
+Total states run:     1
+Total run time:   2.109 ms
 ```
 
 That is convergence, and it is the property everything else rests on. The

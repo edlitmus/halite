@@ -298,8 +298,7 @@ func gather(client *transport.Client, sub *transport.SubmitResponse, timeout tim
 		}
 	} else {
 		for _, r := range returns {
-			fmt.Printf("%s:\n", r.NodeID)
-			printReturn(r)
+			printReturn(r, true)
 		}
 	}
 
@@ -326,33 +325,26 @@ func gather(client *transport.Client, sub *transport.SubmitResponse, timeout tim
 	return 0
 }
 
-func printReturn(r *job.Return) {
+// printReturn prints one node's return. header says whether to name the
+// node above a return that is not a state run; a state run names its
+// host itself, as Salt's highstate output does.
+func printReturn(r *job.Return, header bool) {
 	decoded := decodeReturn(r)
 	// A state run comes back in the return schema of SPEC 9.4, and it
-	// is rendered by the same code that renders a local run: an
-	// operator reading `halite-hub run '*' state.apply` and one reading
-	// `halite-node state apply` should be reading the same thing.
+	// is rendered as Salt's highstate outputter renders it, by the code
+	// that renders `halite-node state apply`: an operator reading either
+	// is reading the same thing, and what Salt would print. The host
+	// line is part of that output. DIVERGENCE 5.245.
 	if m, ok := decoded.(*value.Map); ok && r.Out == "highstate" {
-		fmt.Print(indentBlock(runner.NestedFromReturns(m, nil), "    "))
+		fmt.Print(runner.Highstate(r.NodeID, m, nil))
 		return
+	}
+	if header {
+		fmt.Printf("%s:\n", r.NodeID)
 	}
 	if err := cli.Write(os.Stdout, decoded, cli.Nested, 4); err != nil {
 		cli.Fatalf("%v", err)
 	}
-}
-
-// indentBlock puts a node's output under its name.
-func indentBlock(text, indent string) string {
-	if text == "" {
-		return ""
-	}
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	for i, line := range lines {
-		if line != "" {
-			lines[i] = indent + line
-		}
-	}
-	return strings.Join(lines, "\n") + "\n"
 }
 
 // decodeReturn reads a node's payload back into the ordered model, so
