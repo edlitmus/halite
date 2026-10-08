@@ -21513,6 +21513,59 @@ covers the shapes above. It has no list-valued or numeric changes, no
 `__parallel__` state, and no warning that needs a hyphen break, the
 place where the wrap is known to differ.
 
+### 5.246 A missing directory was reported as a temporary file
+
+The owner's Linux run in 5.242 failed with:
+
+```
+The key could not be written: writing /usr/local/etc/halite/pki/metrics.key:
+open /usr/local/etc/halite/pki/.metrics.key.3126321956: no such file or directory
+```
+
+The directory was what was missing, and nothing said so. The name the
+error gave, `.metrics.key.3126321956`, was the temporary file
+`writeAtomic` creates beside its target, which nobody wrote.
+`file.managed` without `makedirs` failed the same way. The two x509
+states had no `makedirs` at all.
+
+From the Salt 3007.1 source, read, not run: `x509_v2`'s states take
+`makedirs` and `dir_mode` and pass them to `file.managed`, and
+`file.manage_file` then does one of two things:
+- **Without `makedirs`,** it fails with "Parent directory not present".
+- **With it,** it creates every missing level, owned by `user` and
+  `group`. The mode is `dir_mode` if given, otherwise the file's mode
+  with the execute bit added to each digit that is not zero, so 0600
+  makes 0700.
+
+`internal/builtin/parentdir.go`:
+- **`prepareParent`** runs before the write. A missing directory without
+  `makedirs` fails as `Parent directory not present: <directory>. Create
+  it first, or set makedirs: true.` In test mode too, since the real run
+  would fail.
+- **With `makedirs`,** it creates each missing level with Salt's mode,
+  through `fileperm`, so a private mode is private on Windows as well,
+  and sets the level's owner. The comment says which directory was
+  created, or in test mode would be, and with what mode.
+- **Both x509 states** take `makedirs` and `dir_mode`.
+- **`file.managed`** without `makedirs` now gives the same message.
+
+Its own `makedirs` is unchanged: its default `dir_mode` is still the
+0755 its signature documents, not Salt's derived mode, and it still sets
+no owner on the directories it creates.
+
+`TestAMissingDirectoryIsNamedAndNothingIsCreated`,
+`TestMakedirsCreatesTheDirectories` and `TestDirModeFollowsSaltsRule`
+cover it. They failed when `missingParent` never reported a missing
+directory, and again when the derived mode dropped the execute bits. In
+that second case a nested `makedirs` could not create its inner
+directory inside a 0600 outer one, which is why Salt's rule adds them. A
+real `halite-node state sls` gave the new message without `makedirs`
+and, with it, made two 0700 directories and the key.
+
+**Not covered:** only run on macOS, so ownership of created directories
+was not exercised as root. The x509 states have no evidence entry to
+update. `docs/metrics.md`'s sentence quoting the old error is updated.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

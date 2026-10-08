@@ -523,6 +523,12 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.False(fmt.Sprintf("The parent directories of %s could not be created: %v", path, err)), nil
 		}
 	}
+	// Without makedirs, a missing directory is said to be one rather
+	// than left to writeAtomic, whose error names the temporary file
+	// it tried to create beside the target. DIVERGENCE 5.246.
+	if dir, missing, err := missingParent(path); err == nil && missing {
+		return parentNotPresent(dir), nil
+	}
 
 	if contentsDiffer {
 		if backup := states.Str(args, "backup", ""); backup != "" && exists {
