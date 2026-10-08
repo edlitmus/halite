@@ -98,7 +98,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: SPEC 20.3's reference returners, `postgres` and `sqs`, are not built. `halite-ext-aws-secrets` (a pillar source) and `halite-ext-signer-local` (a signer) ship as worked examples of the extension model. |
 | 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD, Common Linux and SUSE rows of SPEC 15.3 ship entirely, and macOS lacks only `mac_assistive`, which is out of the build on purpose. **17 of SPEC 15.3's 65 platform modules, 3 of SPEC 15.2's core execution modules (one of them `state`, struck rather than missing) and 2 of SPEC 15.5's core state modules (`pro` and `win_wua`) remain.** Re-measured on 2026-10-02 from `TestPendingPlatformModulesMatchTheSpec` ("65 modules, 17 pending") and the ledger's audited 2.1 and 2.2 preambles (53 of 56, 44 of 46). The row had said 23, 6 and 7 from 2026-09-15, and 32, 18 and 14 before that, while §2.2 said 9 and 10 -- the same drift, twice. |
-| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Node evidence and detached job signing are built (§7 item 9). Outstanding: the scale harness the other eleven performance rows need; native packages and an SBOM, where the tarballs, manual pages and provenance are built (§3.6); an off-node anchor for the evidence head, and a hardware or KMS signer; the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Node evidence and detached job signing are built (§7 item 9). Outstanding: the scale harness the other eleven performance rows need; native packages and an SBOM, where the tarballs, manual pages and provenance are built (§3.6); a hardware or KMS signer (the evidence head has been anchored at the hub since DIVERGENCE 5.229); the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -859,8 +859,11 @@ other bullets stand as they were last verified.
 - ~~**Node-side evidence (25.7) does not exist.**~~ **Built** (DIVERGENCE
   5.127): `internal/nodeevidence` keeps the hash-chained record and
   `halite-node verify-evidence` checks it. It is the control that gives an
-  investigator a record a compromised hub cannot rewrite; what is left is
-  anchoring its head hash off the node (§7 item 9).
+  investigator a record a compromised hub cannot rewrite. Its head hash
+  has been anchored off the node since 5.229: the hub records each
+  reported head and signs a receipt the node files in its own chain, so a
+  node that rewrites what it had reported contradicts the hub's file
+  (§7 item 9).
 - ~~**Detached job signing (25.6) does not exist.**~~ **Built** (DIVERGENCE
   5.128): `internal/jobsign`, `halite-hub run --sign-key`, and
   `require_job_signature` by function class, with a bridged `signer`
@@ -1440,9 +1443,9 @@ unchanged.
    target *and* the node has to check that target against itself, which
    neither feature would have produced alone.
 
-   What is left of the threat is named in §7 item 9: nothing anchors an
-   evidence head hash off the node, and no hardware token or KMS has
-   produced a signature this build accepted.
+   What is left of the threat is named in §7 item 9: no hardware token or
+   KMS has produced a signature this build accepted. The evidence head
+   has been anchored at the hub since DIVERGENCE 5.229.
 5. **State functions that reject arguments Salt accepts.** Re-measured
    2026-09-15, because this row named several that have since been
    closed, and checked against the signatures again on 2026-10-02. What
@@ -2209,8 +2212,8 @@ unbuilt item here is number 7.
    cannot resolve — is refused rather than waved through.
 
    **What is left on this item**, and it is the same shape at both ends:
-   nothing anchors an evidence head hash off the node, and nothing has
-   produced a signature from a hardware token or a KMS. Orchestration is
+   ~~nothing anchors an evidence head hash off the node~~ (done, below),
+   and nothing has produced a signature from a hardware token or a KMS. Orchestration is
    not signed, and the bridged `signer` extension SPEC 25.6 mentions is
    not built. Those four are the remainder; the mechanism is in.
 
@@ -2242,11 +2245,22 @@ unbuilt item here is number 7.
    hub-held key that signs its own orchestration's steps would make
    `require_job_signature` pass mechanically without delivering the
    property signing exists for: a compromised hub could sign anything it
-   liked for itself. So what remains is the evidence-head anchor, and a
-   real hardware-token or KMS-backed signer behind the bridge that now
+   liked for itself. So what remains is ~~the evidence-head anchor, and~~
+   a real hardware-token or KMS-backed signer behind the bridge that now
    exists — which is also what orchestration signing needs, once the hub
    itself calls it per step rather than an operator calling it once per
    submission.
+
+   ~~The evidence-head anchor~~ is **done, 2026-10-06** (DIVERGENCE
+   5.229). A node reports its head to `POST /v1/evidence/anchor` when its
+   stream opens and after each job; the hub files it in
+   `<state_dir>/evidence-anchors/<node>.jsonl` and answers with a receipt
+   signed by the enrollment CA's key, which the node files in its own
+   chain. `halite-node verify-evidence --anchors` then catches a chain
+   rewritten after it was reported, and a hub that dropped a line it
+   signed for. Each node's reports are rate-limited at the hub (5.231).
+   It does not cover records written after the last accepted report, or
+   a node and hub compromised together.
 
    **Action for the hardware/KMS signer:** access to one real signer —
    a PIV/YubiKey with a P-256 or P-384 slot, or a cloud KMS (AWS KMS,
