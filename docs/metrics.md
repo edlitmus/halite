@@ -446,8 +446,29 @@ halite-node call x509.create_certificate \
     ca=true CN='halite metrics CA' days_valid=3650
 ```
 
-Put its key in pillar, GPG-encrypted like any other secret, and the
-state becomes:
+Put both in pillar as PEM text, the key GPG-encrypted like any other
+secret:
+
+```yaml
+# pillar/metrics_ca.sls
+metrics_ca:
+  cert: |
+    -----BEGIN CERTIFICATE-----
+    ...
+    -----END CERTIFICATE-----
+  key: |
+    -----BEGIN PRIVATE KEY-----
+    ...
+    -----END PRIVATE KEY-----
+```
+
+`signing_cert` and `signing_private_key` each take a path or the PEM
+text itself, so the pillar values go to the state directly. Nothing
+writes the CA's key to a file on the node. They must go through
+`| json`. A PEM block is several lines, and substituted bare it puts its
+second line at the start of a YAML line, where the state no longer
+parses. `| json` writes it as one quoted string with its line breaks
+escaped. The state becomes:
 
 ```yaml
 # states/metrics_cert.sls
@@ -460,8 +481,8 @@ state becomes:
 /usr/local/etc/halite/pki/metrics.crt:
   x509.certificate_managed:
     - private_key: /usr/local/etc/halite/pki/metrics.key
-    - signing_cert: {{ pillar['metrics_ca']['cert'] }}
-    - signing_private_key: {{ pillar['metrics_ca']['key'] }}
+    - signing_cert: {{ pillar['metrics_ca']['cert'] | json }}
+    - signing_private_key: {{ pillar['metrics_ca']['key'] | json }}
     - CN: {{ grains['id'] }}
     - subject_alt_names:
         - 'DNS:{{ grains['id'] }}'
@@ -488,7 +509,11 @@ than the enrollment CA, and `metrics_client_ca` stays pointed at
 that is the arrangement, not a mistake.
 
 Both certificate paths were run end to end against a node and a real
-Prometheus before being written down.
+Prometheus before being written down, but not this state's pillar form.
+As first published it did not compile, because the PEM was substituted
+without `| json` (DIVERGENCE 5.241). The block above is now taken from
+this page and applied twice, against a pillar holding a real metrics CA,
+by `TestTheDocumentedMetricsCertificateStateConverges`.
 
 ### Pointing Prometheus at the nodes
 
