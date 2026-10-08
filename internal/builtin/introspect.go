@@ -274,7 +274,7 @@ func registerConfigModule(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "config", Function: "get",
-				Doc: "Return a setting, searching pillar, then grains, then the configuration.",
+				Doc: "Return a setting, searching pillar, then grains, then the configuration with its defaults.",
 				Params: []signature.Param{
 					req("key", signature.String, "The colon-delimited path."),
 					opt("default", signature.Any, nil, "What to return when nothing has it."),
@@ -303,7 +303,7 @@ func registerConfigModule(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "config", Function: "option",
-				Doc: "Return a configuration setting.",
+				Doc: "Return a configuration setting, or its default when nothing sets it.",
 				Params: []signature.Param{
 					req("key", signature.String, "The colon-delimited path."),
 					opt("default", signature.Any, nil, "What to return when it is not set."),
@@ -318,7 +318,7 @@ func registerConfigModule(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "config", Function: "values",
-				Doc:      "Return the effective configuration, with secrets redacted.",
+				Doc:      "Return the effective configuration, defaults included, with secrets redacted.",
 				TestMode: signature.TestNotApplicable,
 				Section:  "15.2",
 			},

@@ -342,7 +342,7 @@ func runServe(args *cli.Args) int {
 			YAMLBool11:       h.cfg.OptionalBool("yaml_bool_11"),
 			Nondeterministic: h.cfg.String("random_seed", "deterministic") == "nondeterministic",
 			Registry:         builtin.New().Exec,
-			ConfigValues:     h.cfg.Redacted(),
+			ConfigValues:     h.cfg.Effective(config.Hub),
 			Ext:              extPillarSources(h, extensions),
 			OnSecret:         h.secrets.Add,
 		}

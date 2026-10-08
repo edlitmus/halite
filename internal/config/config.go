@@ -434,6 +434,82 @@ func (c *Config) Redacted() *value.Map {
 	return redact(value.Deep(c.Values).(*value.Map))
 }
 
+// Effective is Redacted with every default filled in: for each key the
+// role recognises and this configuration does not set, the value the
+// code applies when it reads that key. It is what `opts`, `config.get`,
+// `config.option` and `config.values` answer from.
+//
+// They answered from Redacted, which holds only what the file sets, so
+// `config.get pki_dir` on a node with no `pki_dir` line said None while
+// the node kept its keys in `<config root>/pki`. Salt's answers from its
+// opts, which carry every default, and a tree that asks a node where its
+// key material lives -- docs/metrics.md's certificate state is one --
+// needs the answer the node itself uses. DIVERGENCE 5.242.
+//
+// The defaults come from Keys, the table the loader and the generated
+// documentation already share. Two kinds of entry are not filled in:
+//   - a default that is a description rather than a value, written in
+//     angle brackets (`timezone` is "<the node's local zone>"), because
+//     a tree handed the description would act on it;
+//   - an empty default, so that `config.get`'s own `default` argument
+//     still applies to a key nothing sets.
+//
+// A key whose default sits under the configuration root follows the
+// root this configuration was loaded with, as PathUnderRoot does, so
+// `--root /opt/staging` reports staging's pki directory and not the
+// platform's.
+func (c *Config) Effective(role Role) *value.Map {
+	out := c.Redacted()
+	for _, k := range Keys {
+		if !k.appliesTo(role) || k.Default == "" || strings.HasPrefix(k.Default, "<") {
+			continue
+		}
+		if _, set := c.Get(k.Name); set {
+			continue
+		}
+		if isSecretKey(strings.ToLower(k.Name)) {
+			continue
+		}
+		if name, ok := rootRelative[k.Name]; ok {
+			out.Set(k.Name, filepath.Join(c.Root(), name))
+			continue
+		}
+		out.Set(k.Name, typedDefault(k.Default))
+	}
+	return out
+}
+
+// rootRelative names the keys whose default is a path under the
+// configuration root, and the name under it: the pairs every
+// PathUnderRoot call passes. TestEveryRootRelativeKeyIsKnownToEffective
+// holds the two together.
+var rootRelative = map[string]string{
+	"pki_dir": "pki",
+	"policy":  "policy.yaml",
+}
+
+// typedDefault reads a default from the key table as the loader would
+// read the same text written in a configuration file's YAML: "4510" is a
+// number and "true" a boolean, so a tree comparing `hub_port` with 4510
+// gets the answer it would get had the file set it.
+func typedDefault(s string) any {
+	switch s {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n
+	}
+	if strings.Contains(s, ".") {
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return f
+		}
+	}
+	return s
+}
+
 // secretKeyParts name a configuration key as secret-bearing when any of
 // them appears in it.
 var secretKeyParts = []string{
