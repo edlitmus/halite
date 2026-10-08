@@ -844,9 +844,10 @@ This section has moved further than any other since the last revision.
   `docs/metrics.md` holds 27 alert rules, accepted by `promtool` 2.55.1
   and held to the build by `TestEveryDocumentedMetricExists`; the example
   Grafana dashboard queries only registered families
-  (`TestDashboardQueriesNameRegisteredMetrics`) and, as of 2026-10-07,
-  has a panel for every documented family. That coverage was measured by
-  a script, **not held by a test**, so it can drift again. The rules were
+  (`TestDashboardQueriesNameRegisteredMetrics`) and
+  has a panel for every registered family, held by
+  `TestEveryRegisteredFamilyIsOnTheDashboard` (DIVERGENCE 5.240), which
+  found one the first sweep had missed. The rules were
   loaded into the Prometheus on the LAN that scrapes the production hub,
   API and beastie's node, and all 27 are healthy and inactive. Three have
   been run on `promtool test rules`, and that found two defects: an

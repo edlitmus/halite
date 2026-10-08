@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The example dashboard is checked against the metrics
+
+A new test fails when the build registers a metric family that no panel on
+`contrib/examples/grafana-dashboard.json` queries, so a new metric cannot
+land without its panel (or a written reason in the test). It found
+`halite_reactor_queue_depth` had none; the dashboard gains a "Reactor queue
+depth" stat and moves to version 6.
+
 ### The "evidence stopped" alert now sees a node's first job
 
 `HaliteNodeEvidenceStopped` could not count the first job a node ran

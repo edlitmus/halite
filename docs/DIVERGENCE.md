@@ -21063,16 +21063,70 @@ while the same job with nothing recorded fires.
 
 The dashboard's node row gains "Jobs accepted" (version 4 to 5).
 
+**Seen live, the next day.** The operator rebuilt beastie's node at
+`0.12.0-786-gefa266b2ac40` and the rules file on the LAN Prometheus was
+replaced with the one that reads the new counter (timestamped backup,
+`promtool check config` on the host, reload). Before any job:
+`halite_node_jobs_accepted_total` 0, `halite_node_evidence_log_open` 1, all
+eight record kinds exported. Then one `test.ping` to that node:
+`halite_node_jobs_accepted_total` went 0 to 1 and `increase()` of it over the
+hour read 1.009, with `job.accepted` and `job.result` at 1 and a second
+`anchor.receipt`. The function-labelled `halite_node_jobs_total{fun="test.ping"}`
+read 1 before the rebuild and 1 after: the new process counted the job from 0
+to 1, a value the series already held, so Prometheus saw **no change** and the
+old rule's input missed that job entirely. That is the gap, on a real node,
+and the new counter catching it. (`increase(halite_node_jobs_total)` did read
+1.03 over the same hour, but from someone's `cmd.run` jobs at 07:08 and 07:09,
+not from the ping; reading that number as the ping's would have hidden the
+point.) All 27 rules stayed healthy and inactive.
+
 **Not covered:**
-- Not live. The counter and the zero-start kinds exist only in a node built
-  from this; beastie's node is older, so on the LAN Prometheus the rule
-  still reads the old series until it is rebuilt, and the rules file there
-  should be updated with it, not before.
-- The restart behaviour is shown on synthetic series; nothing was run
-  against a real restart.
+- The rule has not been seen to fire on live data, and a record-less node
+  was not provoked on production.
+- The restart behaviour is shown on synthetic series. The rebuild was a real
+  restart, but no job followed it that would have tested the rule's hour of
+  silence.
 - The first-event gap is still open for every other labelled counter on
   the node that an alert reads: `halite_node_jobs_refused_total{reason}`
   and `halite_ext_timeouts_total{name}` (5.235, swept).
+
+### 5.240 The dashboard is held to the metrics by a test, and that found a gap
+
+The rule is that any metrics work updates the example Grafana dashboard in
+the same change. Until now that was something remembered, and the evidence
+was against it: eight families had no panel until a sweep by a script found
+them, two of them added the same day. A script run once is not a check.
+
+`TestEveryRegisteredFamilyIsOnTheDashboard` requires every family the build
+registers to be queried by some panel, histograms through `_bucket`, `_sum`
+and `_count`. Exceptions go in `notOnTheDashboard` with a reason, and the map
+starts empty; an entry is checked in three ways, so it cannot outlive its
+purpose: it must have a reason, name a family the build registers, and not
+name one that now has a panel.
+
+**The first version missed a gap, and the second found it.** It read the
+family tables of `docs/metrics.md` for the list, 74 rows, and passed. The
+build registers 84. Ten are not in a table row, and one of them,
+`halite_reactor_queue_depth`, has no panel: it is documented in prose, in the
+"appears only when" table. A check built on the documentation's layout could
+not see a family the layout did not hold. It now reads the registered
+families, which `TestEveryRegisteredMetricIsDocumented` already requires to be
+documented somewhere, so the two tests together cover the chain. The reactor
+queue panel is added (a stat in "Events and reactions", dashboard version 6);
+it shows no data on a hub with no reactor, which the panel says.
+
+Each guard broken on purpose: removing the reactor panel fails the test naming
+the family; an exemption for a family that has a panel fails it; an exemption
+with no reason, for a family the build does not register, fails it twice.
+
+**Not covered:**
+- The test checks that some panel queries a family, not that the panel is
+  right: a wrong unit, an unhelpful aggregation or a misleading title would
+  pass.
+- The dashboard still has not been imported into a Grafana from here, so
+  layout is unseen; the existing tests check overlaps and ids only.
+- A family judged not worth a panel is a judgement the author makes in the
+  change; the test only forces it to be written down.
 
 ## 6. Everything else not started
 

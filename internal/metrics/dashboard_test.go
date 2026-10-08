@@ -103,3 +103,78 @@ func collectQueries(panels []dashboardPanel) []string {
 	}
 	return out
 }
+
+// notOnTheDashboard names registered families that are deliberately not on
+// the example dashboard, each with the reason. It starts empty: the
+// judgement is "would an operator read this on a graph", and every family
+// registered so far is one they would. An entry is a decision, made in
+// the change that adds the family, and not a way to make this test pass.
+var notOnTheDashboard = map[string]string{}
+
+// TestEveryRegisteredFamilyIsOnTheDashboard holds the example dashboard to
+// the metrics this build exposes.
+//
+// TestDashboardQueriesNameRegisteredMetrics catches a panel over a family
+// that is not there. This is the other direction, and it was needed: eight
+// families, two of them the evidence ones added that same day, had no
+// panel, and what found them was a sweep by a script and not the change
+// that added the metrics. The rule is that metrics work updates the
+// dashboard in the same change; this is what makes the rule a failing
+// test instead of something remembered.
+//
+// Registered families and not the rows of docs/metrics.md, because the
+// first version read the tables and missed halite_reactor_queue_depth,
+// which is documented in prose; TestEveryRegisteredMetricIsDocumented
+// already requires every registered family to be documented somewhere, so
+// this one does not need to find the documentation.
+func TestEveryRegisteredFamilyIsOnTheDashboard(t *testing.T) {
+	registered := registeredFamilies(t)
+	if len(registered) < 60 {
+		t.Fatalf("found only %d registered families; this check has stopped checking", len(registered))
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contrib", "examples", "grafana-dashboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dash dashboardFile
+	if err := json.Unmarshal(raw, &dash); err != nil {
+		t.Fatal(err)
+	}
+	onDashboard := map[string]bool{}
+	named := regexp.MustCompile(`\bhalite_[a-z0-9_]+`)
+	for _, query := range collectQueries(dash.Panels) {
+		for _, name := range named.FindAllString(query, -1) {
+			// A histogram is queried through the series Prometheus
+			// derives from its family name.
+			onDashboard[strings.TrimSuffix(strings.TrimSuffix(
+				strings.TrimSuffix(name, "_bucket"), "_sum"), "_count")] = true
+		}
+	}
+
+	for family := range registered {
+		if onDashboard[family] {
+			continue
+		}
+		if why, ok := notOnTheDashboard[family]; ok {
+			t.Logf("%s is not on the dashboard, deliberately: %s", family, why)
+			continue
+		}
+		t.Errorf("%s is registered and has no panel on the example dashboard. Add one to "+
+			"contrib/examples/grafana-dashboard.json in this change (and bump its version), "+
+			"or name it in notOnTheDashboard with the reason an operator would never graph it", family)
+	}
+	for family, why := range notOnTheDashboard {
+		if why == "" {
+			t.Errorf("notOnTheDashboard[%s] has no reason", family)
+		}
+		if !registered[family] {
+			t.Errorf("notOnTheDashboard names %s, which this build does not register; "+
+				"remove the entry", family)
+		}
+		if onDashboard[family] {
+			t.Errorf("notOnTheDashboard names %s, which now has a panel; remove the entry", family)
+		}
+	}
+	t.Logf("%d registered families, %d queried by the dashboard", len(registered), len(onDashboard))
+}
