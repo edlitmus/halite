@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -439,4 +440,61 @@ func kindsOf(recs []nodeevidence.Record) []string {
 		out[i] = r.Kind
 	}
 	return out
+}
+
+// exposition is what a scrape of this node would return.
+func exposition(t *testing.T, n *node) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := n.metrics.registry.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+// A node that keeps a record says so, a node that is supposed to and
+// cannot says that, and a node that chose not to says nothing at all:
+// 0 is the alert, and absence is the choice. DIVERGENCE 5.238.
+func TestTheEvidenceLogOpenGaugeSaysKeptNotKeptAndOff(t *testing.T) {
+	t.Run("kept", func(t *testing.T) {
+		n := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\n")
+		n.startEvidence()
+		n.registerEvidenceMetrics()
+		if got := exposition(t, n); !strings.Contains(got, "halite_node_evidence_log_open 1") {
+			t.Errorf("a node keeping its record does not say so:\n%s", got)
+		}
+	})
+	t.Run("configured and failed to open", func(t *testing.T) {
+		// A parent that is a file, so MkdirAll fails whoever runs the
+		// test: a directory made unwritable would pass as root.
+		blocker := filepath.Join(t.TempDir(), "afile")
+		if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		n := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\nevidence_dir: "+filepath.Join(blocker, "evidence")+"\n")
+		n.startEvidence()
+		n.registerEvidenceMetrics()
+		got := exposition(t, n)
+		if !strings.Contains(got, "halite_node_evidence_log_open 0") {
+			t.Errorf("a node whose log failed to open does not say so:\n%s", got)
+		}
+		// The silence this gauge exists to end.
+		if strings.Contains(got, "halite_node_evidence_failures_total 1") {
+			t.Errorf("a log that never opened was counted as a failed write; "+
+				"the gauge is not the only signal and this test's premise is wrong:\n%s", got)
+		}
+	})
+	t.Run("evidence off", func(t *testing.T) {
+		n := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\nevidence: false\n")
+		n.startEvidence()
+		n.registerEvidenceMetrics()
+		got := exposition(t, n)
+		if !strings.Contains(got, "# TYPE halite_node_jobs_total") &&
+			!strings.Contains(got, "halite_node_connected") {
+			t.Fatalf("the exposition is not this node's, so absence proves nothing:\n%s", got)
+		}
+		if strings.Contains(got, "halite_node_evidence_log_open") {
+			t.Errorf("a node with evidence off exports the gauge, so the alert would fire on a choice:\n%s", got)
+		}
+	})
 }

@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A node says when its evidence log did not open
+
+If a node cannot open its evidence log at startup it logs one error and
+carries on running jobs with no record, and no metric moved: every
+evidence alert was quiet. The node now exports `halite_node_evidence_log_open`
+(1 or 0) when `evidence` is on, and `HaliteNodeEvidenceNotKept` in
+`docs/metrics.md` alerts on 0. A node with `evidence: false` exports no
+series, so nothing alerts on a choice. The dashboard's node row has a panel
+for it. Needs the new node build; older nodes simply have no series.
+
 ### A clean stop no longer pages "evidence record not written"
 
 If a node's agent stopped while an evidence-head report was in flight, the
