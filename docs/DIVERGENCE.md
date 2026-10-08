@@ -21490,8 +21490,28 @@ absent, as the name 5.244 cites. A real `halite-node state apply` of
 `docs/getting-started.md`'s tree printed the Salt form, and that page's
 two samples are taken from that run.
 
-**Not covered:** the result of `TestHighstateMatchesSalt` in CI is
-recorded below, once that run has happened.
+**In CI**, Salt 3007.1 in the `saltdiff` container. The first run
+passed. That container runs `go test` without `-v`, where a skip and a
+pass look the same, so a commit appended ` BREAK-CHECK` to halite's
+`Failed:` line and was pushed to the same PR. The job then failed with
+the full side-by-side diff, for the real run and for test mode alike.
+In each, the one line that differed was the broken one. Every other
+line matched Salt's own outputter byte for byte:
+- the nested changes of `test.succeed_with_changes`;
+- the `Name:` line;
+- a held-back state's `One or more requisite failed`;
+- the two-line comment;
+- the warning, wrapped at "eighty" onto a second line;
+- `Succeeded: 5 (changed=1)`, and in test mode
+  `Succeeded: 5 (unchanged=1, changed=1)`;
+- `Warnings:  1`, `Total states run:     7` and `Total run time:`.
+
+The break was reverted in the next commit.
+
+**Not covered:** only Salt 3007.1, the container's default. The tree
+covers the shapes above. It has no list-valued or numeric changes, no
+`__parallel__` state, and no warning that needs a hyphen break, the
+place where the wrap is known to differ.
 
 ## 6. Everything else not started
 
