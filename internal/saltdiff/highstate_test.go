@@ -118,7 +118,7 @@ func saltHighstate(t *testing.T, python string, raw []byte) string {
 	const script = `
 import json, sys
 import salt.config, salt.output
-opts = salt.config.minion_config(sys.argv[1])
+opts = salt.config.minion_config(sys.argv[1])  # lexicon:allow — Salt's own function
 opts["color"] = False
 sys.stdout.write(salt.output.out_format(json.load(sys.stdin), "highstate", opts) + "\n")
 `
