@@ -2704,12 +2704,73 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Events waiting in the reactor's worker queues. It is bounded: what does not fit is dropped and counted in Dropped, by reason, so a depth that stays high is the warning before a drop. The series exists only on a hub whose reactor has entries and is running, so a hub with no reactor shows no data here, not 0.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 98
+      },
+      "id": 90,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "halite_reactor_queue_depth{job=\"$job\", instance=~\"$instance\"}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "title": "Reactor queue depth",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 98
+        "y": 102
       },
       "id": 36,
       "panels": [],
@@ -2777,7 +2838,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 99
+        "y": 103
       },
       "id": 37,
       "options": {
@@ -2869,7 +2930,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 99
+        "y": 103
       },
       "id": 38,
       "options": {
@@ -2961,7 +3022,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 107
+        "y": 111
       },
       "id": 39,
       "options": {
@@ -3053,7 +3114,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 107
+        "y": 111
       },
       "id": 40,
       "options": {
@@ -3101,7 +3162,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 115
+        "y": 119
       },
       "id": 41,
       "panels": [],
@@ -3169,7 +3230,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 116
+        "y": 120
       },
       "id": 42,
       "options": {
@@ -3261,7 +3322,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 116
+        "y": 120
       },
       "id": 43,
       "options": {
@@ -3321,7 +3382,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 124
+        "y": 128
       },
       "id": 44,
       "options": {
@@ -3414,7 +3475,7 @@
         "h": 4,
         "w": 18,
         "x": 6,
-        "y": 124
+        "y": 128
       },
       "id": 45,
       "options": {
@@ -3462,7 +3523,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 128
+        "y": 132
       },
       "id": 80,
       "panels": [],
@@ -3502,7 +3563,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 129
+        "y": 133
       },
       "id": 81,
       "options": {
@@ -3595,7 +3656,7 @@
         "h": 8,
         "w": 18,
         "x": 6,
-        "y": 129
+        "y": 133
       },
       "id": 82,
       "options": {
@@ -3632,7 +3693,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 137
+        "y": 141
       },
       "id": 46,
       "panels": [],
@@ -3700,7 +3761,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 138
+        "y": 142
       },
       "id": 47,
       "options": {
@@ -3792,7 +3853,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 138
+        "y": 142
       },
       "id": 48,
       "options": {
@@ -3829,7 +3890,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 146
+        "y": 150
       },
       "id": 49,
       "panels": [],
@@ -3897,7 +3958,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 147
+        "y": 151
       },
       "id": 50,
       "options": {
@@ -3989,7 +4050,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 147
+        "y": 151
       },
       "id": 51,
       "options": {
@@ -4092,7 +4153,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 155
+        "y": 159
       },
       "id": 52,
       "options": {
@@ -4184,7 +4245,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 155
+        "y": 159
       },
       "id": 53,
       "options": {
@@ -4244,7 +4305,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 163
+        "y": 167
       },
       "id": 54,
       "options": {
@@ -4337,7 +4398,7 @@
         "h": 4,
         "w": 9,
         "x": 6,
-        "y": 163
+        "y": 167
       },
       "id": 55,
       "options": {
@@ -4440,7 +4501,7 @@
         "h": 4,
         "w": 9,
         "x": 15,
-        "y": 163
+        "y": 167
       },
       "id": 56,
       "options": {
@@ -4477,7 +4538,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 167
+        "y": 171
       },
       "id": 69,
       "panels": [
@@ -6085,7 +6146,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 168
+        "y": 172
       },
       "id": 75,
       "panels": [
@@ -6462,7 +6523,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 169
+        "y": 173
       },
       "id": 76,
       "panels": [],
@@ -6501,7 +6562,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 170
+        "y": 174
       },
       "id": 77,
       "options": {
@@ -6698,6 +6759,6 @@
   "timezone": "",
   "title": "halite",
   "uid": "halite-control-plane",
-  "version": 5,
+  "version": 6,
   "weekStart": ""
 }
