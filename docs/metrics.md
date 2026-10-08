@@ -487,10 +487,12 @@ escaped.
 The state asks the node where its key material lives rather than naming
 a directory. That is `/usr/local/etc/halite/pki` on FreeBSD and
 `/etc/halite/pki` on Linux, and whatever `pki_dir` says where it is
-set. The state does not create the directory. An enrolled node already
-has it, because its own certificate is there. A path written for the
-other platform fails with `no such file or directory`, from the
-temporary file the key is written through first. Until DIVERGENCE 5.242,
+set. The state does not create the directory unless it is given
+`makedirs: true`, and it does not need to: an enrolled node already has
+it, because its own certificate is there. A path written for the other
+platform fails with `Parent directory not present: <directory>`. Before
+DIVERGENCE 5.246 the same mistake failed with `no such file or
+directory`, naming the temporary file the key is written through first. Until DIVERGENCE 5.242,
 `config.get pki_dir` answered None on a node whose configuration did not
 set it, so this had to be a literal path. The state becomes:
 

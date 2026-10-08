@@ -37,6 +37,8 @@ func registerX509States(r *Registries) {
 					opt("new", signature.Bool, false, "Replace the key even when the existing one already matches."),
 					opt("user", signature.String, "", "The owner."),
 					opt("group", signature.String, "", "The group."),
+					opt("makedirs", signature.Bool, false, "Create the directory the file goes in, and any above it, when they are missing."),
+					opt("dir_mode", signature.Mode, "", "Mode for directories makedirs creates. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does: 0600 makes 0700."),
 				}, x509KeyParams()...),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
@@ -63,6 +65,8 @@ func registerX509States(r *Registries) {
 					opt("mode", signature.String, "0644", "The file mode."),
 					opt("user", signature.String, "", "The owner."),
 					opt("group", signature.String, "", "The group."),
+					opt("makedirs", signature.Bool, false, "Create the directory the file goes in, and any above it, when they are missing."),
+					opt("dir_mode", signature.Mode, "", "Mode for directories makedirs creates. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does: 0600 makes 0700."),
 				}, append(certExtensionParams(), subjectParams()...)...),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
@@ -128,9 +132,17 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 	if ownerDiffers && ownerChange != nil {
 		changes.Set("ownership", ownerChange)
 	}
+	mode, err := parseMode(states.Str(args, "mode", "0600"))
+	if err != nil {
+		return states.False(capitalizeFirst(err.Error()) + "."), nil
+	}
+	fail, made := prepareParent(c.Test, args, path, mode)
+	if fail != nil {
+		return *fail, nil
+	}
 	if c.Test {
 		return states.WouldChange(
-			fmt.Sprintf("A %s private key would be written to %s, because %s.", spec.describe(), path, reason),
+			fmt.Sprintf("A %s private key would be written to %s, because %s.%s", spec.describe(), path, reason, made),
 			changes), nil
 	}
 
@@ -142,10 +154,6 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 	if err != nil {
 		return states.False(fmt.Sprintf("The key could not be encoded: %v", err)), nil
 	}
-	mode, err := parseMode(states.Str(args, "mode", "0600"))
-	if err != nil {
-		return states.False(capitalizeFirst(err.Error()) + "."), nil
-	}
 	if err := writeAtomic(path, encoded, mode); err != nil {
 		return states.False(fmt.Sprintf("The key could not be written: %v", err)), nil
 	}
@@ -153,7 +161,7 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 		return states.False(fmt.Sprintf("The key was written but its ownership could not be set: %v", err)), nil
 	}
 	return states.Changed(
-		fmt.Sprintf("A %s private key was written to %s, because %s.", spec.describe(), path, reason),
+		fmt.Sprintf("A %s private key was written to %s, because %s.%s", spec.describe(), path, reason, made),
 		changes), nil
 }
 
@@ -216,15 +224,19 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 	if ownerDiffers && ownerChange != nil {
 		changes.Set("ownership", ownerChange)
 	}
-	if c.Test {
-		return states.WouldChange(
-			fmt.Sprintf("A certificate would be written to %s, because %s.", path, reason), changes), nil
-	}
-
 	mode, err := parseMode(states.Str(args, "mode", "0644"))
 	if err != nil {
 		return states.False(capitalizeFirst(err.Error()) + "."), nil
 	}
+	fail, made := prepareParent(c.Test, args, path, mode)
+	if fail != nil {
+		return *fail, nil
+	}
+	if c.Test {
+		return states.WouldChange(
+			fmt.Sprintf("A certificate would be written to %s, because %s.%s", path, reason, made), changes), nil
+	}
+
 	if _, err := createCertificate(args, path, mode); err != nil {
 		return states.False(fmt.Sprintf("The certificate could not be created: %v", err)), nil
 	}
@@ -232,7 +244,7 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 		return states.False(fmt.Sprintf("The certificate was written but its ownership could not be set: %v", err)), nil
 	}
 	return states.Changed(
-		fmt.Sprintf("A certificate was written to %s, because %s.", path, reason), changes), nil
+		fmt.Sprintf("A certificate was written to %s, because %s.%s", path, reason, made), changes), nil
 }
 
 // publicKeyMatches reports whether a certificate carries the public half

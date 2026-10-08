@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### x509 states take `makedirs`, and a missing directory says so
+
+`x509.private_key_managed` and `x509.certificate_managed` take
+`makedirs` and `dir_mode`, as Salt's do. Directories created get the
+file's mode plus execute bits (a key's 0600 makes 0700) unless
+`dir_mode` says otherwise. Without `makedirs`, a missing directory now
+fails as `Parent directory not present: <directory>`. Before, it failed
+with an error naming a temporary file. `file.managed` gives the same
+message. DIVERGENCE 5.246.
+
 ### State runs print exactly as Salt's highstate output does
 
 `halite-node state ...` and `halite-hub run ... state.*` now print a
