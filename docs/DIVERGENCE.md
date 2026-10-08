@@ -21367,6 +21367,71 @@ the page parses, checked with PyYAML.
   `/etc/prometheus/` is the page's existing statement and was not
   checked on a Linux Prometheus here.
 
+### 5.244 The node and the hub printed one state two ways
+
+The owner reported that a highstate run through the hub printed like
+Salt, and the same highstate run with `halite-node` did not,
+specifically the `Result` line.
+
+Two renderers in `internal/runner/schema.go` drew the same thing:
+- `Nested` drew from the run in memory, for `halite-node state ...`. It
+  printed `Result: succeeded`, `failed` or `would change`, and a
+  duration rounded to three places.
+- `NestedFromReturns` drew from the return the node sends, for
+  `halite-hub run ... state.*`. It printed `Result: True`, `False` or
+  `None`, and the duration as it arrived.
+
+The second's own comment said the two "should look the same". Nothing
+held them to it.
+
+**Salt.** Read from the Salt 3007.1 source, not run, since Salt is not
+installed on the machine this was done on:
+- `salt/output/highstate.py` prints `Result: {ret[result]!s}`, Python's
+  `str()` of the value, so `True`, `False` or `None`. It prints
+  `Duration: {duration} ms` from the same `str()`.
+- `salt/state.py` makes the duration
+  `(delta.seconds * 1000000 + delta.microseconds) / 1000.0`: whole
+  microseconds over 1000, so 293.725 µs is 0.293, and twelve
+  milliseconds prints as `12.0`.
+- The start time is `time().isoformat()`, which leaves the fraction off
+  when it is zero.
+
+Neither renderer's duration matched. The node printed `0.294` and the
+hub printed the owner's `0.293725`.
+
+**Now:**
+- `Nested` draws each state's block from the run's own `Returns()`,
+  through `nestedRows`, the code `NestedFromReturns` uses, so the two
+  cannot disagree about a state. Only the summary stays each one's own.
+  The node knows how many states a requisite held back and the run's
+  wall-clock time; a return carries neither.
+- The return's `duration` is computed as Salt computes it, and
+  `start_time` written as Salt writes it.
+- Both renderers print the duration as Python's `str()` would.
+
+`TestTheNodeAndTheHubRenderAStateAlike` renders one run both ways,
+covering a success, a failure, a state held back by a requisite, and
+the same run in test mode. It requires identical blocks and Salt's
+words. With the old `Nested` restored, it failed on both counts.
+`TestDurationsAndStartTimesAreWrittenAsSaltWritesThem` holds the
+formats. A real `halite-node state sls` printed `Result: None` in test
+mode and `True` and `False` for real, with `Duration: 25.702 ms`.
+
+`docs/getting-started.md` quoted `Result: would change` and now quotes
+`None`.
+
+**Not changed:** the summary line. Both renderers share halite's own,
+`Succeeded: 1 (changed=2)  Failed: 1  Total: 2  Duration: 72ms`, and
+it is not Salt's. Salt prints `Succeeded`, `Failed` and `Total states
+run` on separate lines, and in test mode counts a `None` result as
+succeeded with `unchanged=N`, where halite says `Would change: N`.
+`changed=` counting a failed state's changes does match Salt, which
+counts any state with changes. The owner raised only the result.
+
+**Not covered:** no Salt was run here. The comparison is with Salt
+3007.1's source, and the CI differential compiles trees rather than
+comparing output. Only run on macOS.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
