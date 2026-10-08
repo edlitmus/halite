@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The "evidence stopped" alert now sees a node's first job
+
+`HaliteNodeEvidenceStopped` could not count the first job a node ran
+after a restart, so a node that ran one job and then stopped recording was
+invisible. It now reads a new `halite_node_jobs_accepted_total`, which
+starts at 0, and every evidence record kind is exported at 0 on a node that
+keeps a record, so a node's first job ever, recorded correctly, does not
+raise it. The dashboard's node row has a "Jobs accepted" panel. Needs the
+new node build; copy the rule again if you took the old one.
+
 ### How to update the example Grafana dashboard
 
 `docs/metrics.md` now says to re-import the dashboard with Overwrite to

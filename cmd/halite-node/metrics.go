@@ -47,6 +47,7 @@ type nodeMetrics struct {
 	jobs         *metrics.Counter
 	jobDuration  *metrics.Histogram
 	jobsRefused  *metrics.Counter
+	jobsAccepted *metrics.Counter
 	returnsDrop  *metrics.Counter
 	stateCompile *metrics.Histogram
 	stateRun     *metrics.Histogram
@@ -103,6 +104,15 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 		"Jobs this node ran, by function and outcome.", "fun", "result")
 	m.jobDuration = r.Histogram("halite_node_job_duration_seconds",
 		"Time this node spent on one job, by function.", nil, "fun")
+	// Unlabelled on purpose, and the reason this family exists beside
+	// halite_node_jobs_total: that one is labelled by function, so on a
+	// node that has just started its first series is born at 1 and
+	// increase() cannot see it. An unlabelled counter is exported at 0
+	// from the start. HaliteNodeEvidenceStopped reads this one
+	// (DIVERGENCE 5.239).
+	m.jobsAccepted = r.Counter("halite_node_jobs_accepted_total",
+		"Jobs this node accepted to run: past the replay guard and the signature check, "+
+			"counted where the evidence record for the acceptance is written.")
 	m.jobsRefused = r.Counter("halite_node_jobs_refused_total",
 		"Jobs this node would not run, by why. SPEC 6.3's structured refusals.", "reason")
 	m.returnsDrop = r.Counter("halite_node_returns_dropped_total",
@@ -161,6 +171,15 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 // on reports whether anything is being recorded.
 func (m *nodeMetrics) on() bool { return m != nil && m.registry != nil }
 
+// countAccepted records a job that passed admission and is about to be
+// recorded as accepted. A job refused later, because the queue is full,
+// was still accepted first: the chain holds both records.
+func (m *nodeMetrics) countAccepted() {
+	if m.on() {
+		m.jobsAccepted.Inc()
+	}
+}
+
 // countJob records one finished job.
 func (m *nodeMetrics) countJob(ret *job.Return, took time.Duration) {
 	if !m.on() {
@@ -203,6 +222,18 @@ func (m *nodeMetrics) countDroppedReturn() {
 func (m *nodeMetrics) countEvidenceRecord(kind string) {
 	if m.on() {
 		m.evidenceRecords.With(kind).Inc()
+	}
+}
+
+// declareEvidenceKinds exports the record counter at 0 for each kind.
+// Called only for a node that keeps a record: on one that does not, the
+// absence of the series is how an alert tells a choice from a failure.
+func (m *nodeMetrics) declareEvidenceKinds(kinds []string) {
+	if !m.on() {
+		return
+	}
+	for _, kind := range kinds {
+		m.evidenceRecords.With(kind)
 	}
 }
 

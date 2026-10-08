@@ -20988,6 +20988,7 @@ does not. It still cannot see the first job after a restart, and that
 cannot be fixed the way the hub's were: `halite_node_jobs_total` is
 labelled by function, a set no one can list, so it cannot be declared at
 0. The docs say so beside the rule.
+(Fixed by a different route in 5.239: a new unlabelled counter.)
 
 The dashboard's node row gains "Evidence log open", red at 0.
 
@@ -21000,6 +21001,78 @@ The dashboard's node row gains "Evidence log open", red at 0.
 - A log that opens and later breaks (a disk that goes read-only) is the
   failed-write path, which `HaliteNodeEvidenceNotWritten` covers and this
   does not.
+
+### 5.239 Closing the first-job gap, and the false positive that closing it opened
+
+5.235 (swept) named it, 5.235 saw it live and 5.238 left it open:
+`HaliteNodeEvidenceStopped` read `halite_node_jobs_total`, labelled by
+function, which cannot be declared at 0 because no one can list the
+functions. The fix is a different counter, not a different declaration:
+`halite_node_jobs_accepted_total`, **unlabelled**, so it is exported at 0
+from the node's start, incremented in `executor.Offer` immediately before
+`recordJobAccepted`: past the replay guard and the signature check, and
+paired one to one with the `job.accepted` record. A job refused afterwards
+because the queue is full was accepted first, as the chain also says.
+
+**A correction to how I described the gap.** Earlier text says
+`increase()` "cannot see the first job" and that the live query "returned
+nothing straight after the first job". Both are loosely put. `increase()`
+over a series born at 1 and then rising does count the later jobs; what it
+loses is the first job's own contribution, so the invisible case is a node
+that runs exactly one job in the window and then stops recording. The empty
+result seen live was a single scrape sample. `promtool test rules` shows
+the exact case: with one job at minute 10 and records flat, the old form
+does not fire and the new one does.
+
+**Closing it opened the mirror image, and a test found it before a node
+did.** With the jobs side fixed, a node's *first job ever* writes
+`job.accepted` and `job.result` as series born at 1. Every kind's
+`increase()` is then 0, the records side reads "stopped", and the rule
+fired on a node that had recorded its job correctly, for about the hour
+until the series aged out of the window. `promtool` reproduced it. So the
+record kinds, which unlike function names are a closed set, are now
+exported at 0 too, **only on a node with `evidence` on**:
+`nodeevidence.Kinds`, declared from `registerEvidenceMetrics`. On a node
+with evidence off there is still no series, so the decision of 5.236 (silent
+on a choice) holds by construction.
+
+Two consequences, both intended. A node that is configured to keep a record
+and whose log failed to open now has the kinds at 0 and no records, so if it
+accepts jobs this rule fires for it as well as `HaliteNodeEvidenceNotKept`
+(5.238) -- two lines of defence for the same node. And after a restart
+`node.start` and `config` are written and the counters reset, so the
+records side reads "moving" while those are in the one-hour window.
+`promtool test rules` shows it: restart at minute 30 and a job at 40 that
+is never recorded, silent at minute 70; two such jobs, fires at 135 once the
+restart's records have aged out. That is conservative, and not a gap
+anyone chose.
+
+Tests, each broken on purpose. The counter exists at 0 before any job and
+counts one admitted job while a replay of it is refused and not counted;
+never incrementing, and incrementing before the guard, both fail it. Every
+kind is at 0 when evidence is on and none when it is off; dropping the
+declaration fails it. `TestKindsListsEveryKindConstant` reads the source for
+`Kind...` constants and holds `Kinds` to them, because a kind added later
+and left out of the list would be born at 1 again and nothing else would
+notice; a temporary constant `Kinds` omitted failed it by name. On
+`promtool test rules`: the old form is silent for one job after a restart
+with records stopped; the new form fires for that, fires while jobs keep
+arriving, and stays silent with records moving, with no records series, and
+with no jobs; and a node's first job ever, recorded correctly, is silent
+while the same job with nothing recorded fires.
+
+The dashboard's node row gains "Jobs accepted" (version 4 to 5).
+
+**Not covered:**
+- Not live. The counter and the zero-start kinds exist only in a node built
+  from this; beastie's node is older, so on the LAN Prometheus the rule
+  still reads the old series until it is rebuilt, and the rules file there
+  should be updated with it, not before.
+- The restart behaviour is shown on synthetic series; nothing was run
+  against a real restart.
+- The first-event gap is still open for every other labelled counter on
+  the node that an alert reads: `halite_node_jobs_refused_total{reason}`
+  and `halite_ext_timeouts_total{name}` (5.235, swept).
 
 ## 6. Everything else not started
 

@@ -332,6 +332,19 @@ func (l *Log) recover() error {
 	return nil
 }
 
+// Kinds lists every kind of record a chain holds, so that a counter by
+// kind can be declared at 0 for each before any is written. A labelled
+// counter's series is born at 1 on its first event and increase() cannot
+// see that event; the kinds are a closed set, unlike a function name, so
+// they can be named in advance. TestKindsListsEveryKindConstant holds
+// this to the constants.
+var Kinds = []string{
+	KindJobAccepted, KindJobRefused, KindJobResult,
+	KindConfig, KindExtension,
+	KindStart, KindStop,
+	KindAnchorReceipt,
+}
+
 // ErrClosed is what Append answers once Close has run. A caller that can
 // race a shutdown -- the anchor reporter, filing a receipt -- tells it
 // from a write that failed.

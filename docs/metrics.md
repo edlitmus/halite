@@ -643,9 +643,10 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_return_queue_depth` | gauge | — | Returns waiting to be posted. |
 | `halite_node_returns_dropped_total` | counter | — | Returns discarded because that queue was full. |
 | `halite_node_schedule_runs_total` | counter | `name` | Scheduled jobs started, by schedule entry. |
-| `halite_node_evidence_records_total` | counter | `kind` | Records appended to the node's SPEC 25.7 chain: `job.accepted`, `job.refused`, `job.result`, `config`, `extension`, `node.start`, `node.stop`. |
+| `halite_node_evidence_records_total` | counter | `kind` | Records appended to the node's SPEC 25.7 chain: `job.accepted`, `job.refused`, `job.result`, `config`, `extension`, `node.start`, `node.stop` and `anchor.receipt`. Each kind is exported at 0 from the start when `evidence` is on, and none when it is off. |
 | `halite_node_evidence_failures_total` | counter | — | Evidence records that could not be written, which are jobs with no entry in the record. |
 | `halite_node_evidence_log_open` | gauge | — | 1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open, which is logged once and counted nowhere else. Absent when `evidence` is off, so 0 is never a choice. |
+| `halite_node_jobs_accepted_total` | counter | — | Jobs this node accepted to run: past the replay guard and the signature check, counted where the evidence record for the acceptance is written. A job refused afterwards, because the queue is full, was accepted first. Unlabelled, so it is exported at 0 and `increase()` sees the first job; `halite_node_jobs_total` is the finished jobs, by function and outcome. |
 | `halite_state_compile_duration_seconds` | histogram | — | Time to turn the tree into a low state. |
 | `halite_state_run_duration_seconds` | histogram | — | Time to apply it, not counting the line above. |
 | `halite_ext_invocations_total` | counter | `name` `result` | Extension calls: `succeeded`, `failed`, `timed_out`. |
@@ -1078,7 +1079,7 @@ failed to write:
 
       - alert: HaliteNodeEvidenceStopped
         expr: |
-          sum by (instance) (increase(halite_node_jobs_total[1h])) > 0
+          sum by (instance) (increase(halite_node_jobs_accepted_total[1h])) > 0
           and on (instance)
           sum by (instance) (increase(halite_node_evidence_records_total[1h])) == 0
         for: 30m
@@ -1114,25 +1115,29 @@ sides never matched, and the rule as first written could not fire even for
 a node whose record had stopped (DIVERGENCE 5.236).
 
 **This rule is silent on a node that has no `halite_node_evidence_records_total`
-series at all, and that is a decision, not an oversight.** The series is
-created by the first record written, so a node with `evidence: false` never
-has one, and the rule does not fire on it: such a node keeps no record by
-the operator's choice, and a critical alert on a choice would be ignored
-within a day.
+series at all, and that is a decision, not an oversight.** A node that keeps
+a record exports every record kind at 0 from the start; a node with
+`evidence: false` exports none, so it has no series, and the rule does not
+fire on it: such a node keeps no record by the operator's choice, and a
+critical alert on a choice would be ignored within a day.
 
-The one node that is silent here by accident, a node whose evidence log
-failed to open at startup, is what `HaliteNodeEvidenceNotKept` above is
-for. That log failure is said once in the node's log and counts nothing, so
-neither this rule nor `HaliteNodeEvidenceNotWritten` could see it; the
-gauge `halite_node_evidence_log_open` reads 0 for exactly that node and is
-absent on one that turned evidence off. Between them, the two nodes that
-look the same to the records counter are told apart.
+A node that is configured to keep a record and whose log failed to open
+has the kinds at 0 and no records, so if it accepts jobs this rule fires
+for it too. The gauge `halite_node_evidence_log_open` and
+`HaliteNodeEvidenceNotKept` above report that same node sooner and say why,
+and neither this rule nor `HaliteNodeEvidenceNotWritten` could have seen it
+before they existed.
 
-This rule has a delay left in it: `halite_node_jobs_total` is labelled by
-function, so on a node that has just started it appears already at 1 and
-`increase()` cannot see the first job. The rule is blind until the second.
-That is the cost of a series whose labels cannot be listed in advance
-(DIVERGENCE 5.238).
+Both sides of the comparison are counters that start at 0. The jobs side
+reads `halite_node_jobs_accepted_total`, which is unlabelled. It used to
+read `halite_node_jobs_total`, labelled by function: on a node that has just
+started, a labelled counter's first series is born at 1, `increase()` of it
+does not count that first job, and a node that ran exactly one job and then
+stopped recording was invisible. The records side needed the same: a
+node's first job ever writes `job.accepted` and `job.result` as new series
+born at 1, every kind's `increase()` reads 0, and the rule fired on a node
+that had recorded the job correctly. The record kinds are a closed set,
+unlike function names, so each is exported at 0 (DIVERGENCE 5.239).
 
 `reason!="replayed"` on `HaliteNodeJobsRefused` is deliberate: a replayed job is
 the guard of SPEC 6.3 doing its work, and a hub retrying a delivery is

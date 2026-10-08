@@ -340,6 +340,7 @@ func (e *executor) Offer(j *job.Job) error {
 		e.node.metrics.countRefusal(err)
 		return err
 	}
+	e.node.metrics.countAccepted()
 	e.node.recordJobAccepted(j, signer)
 	select {
 	case e.queue <- j:

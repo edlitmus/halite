@@ -498,3 +498,24 @@ func TestTheEvidenceLogOpenGaugeSaysKeptNotKeptAndOff(t *testing.T) {
 		}
 	})
 }
+
+// Every kind of record is exported at 0 on a node that keeps one, and
+// none on a node that does not: absence is the choice, and the first
+// record of a kind must be an increase. DIVERGENCE 5.239.
+func TestEveryRecordKindStartsAtZeroWhenEvidenceIsOn(t *testing.T) {
+	on := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\n")
+	on.registerEvidenceMetrics()
+	got := exposition(t, on)
+	for _, kind := range nodeevidence.Kinds {
+		want := `halite_node_evidence_records_total{kind="` + kind + `"} 0`
+		if !strings.Contains(got, want) {
+			t.Errorf("%q is not exported at 0 before the first record:\n%s", want, got)
+		}
+	}
+
+	off := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\nevidence: false\n")
+	off.registerEvidenceMetrics()
+	if got := exposition(t, off); strings.Contains(got, "halite_node_evidence_records_total{") {
+		t.Errorf("a node with evidence off exports a record series, so absence no longer means a choice:\n%s", got)
+	}
+}

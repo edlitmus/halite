@@ -559,3 +559,35 @@ func write(t *testing.T, path string, body []byte, mode os.FileMode) {
 		t.Fatal(fmt.Errorf("writing %s: %w", path, err))
 	}
 }
+
+// The accepted counter exists at 0 before any job, counts a job that
+// passes admission, and does not count one the replay guard refuses.
+//
+// At 0 before the first job is the point: HaliteNodeEvidenceStopped
+// reads increase() of it, and increase() over a series that is born at 1
+// is empty, which is how the labelled halite_node_jobs_total hid the first
+// job after every restart. DIVERGENCE 5.239.
+func TestTheAcceptedCounterStartsAtZeroAndCountsOnlyAdmittedJobs(t *testing.T) {
+	n := nodeWithBrokenPillar(t)
+	n.metrics = nodeMetricsFor(t, "metrics_listen: '127.0.0.1:0'\n")
+
+	if body := expositionOf(t, n.metrics); !strings.Contains(body, "halite_node_jobs_accepted_total 0") {
+		t.Fatalf("the counter is not exported at 0 before any job:\n%s", body)
+	}
+
+	e := newExecutor(n, 4, func(*job.Return) {})
+	first := runnableJob(t, "20260908T101010101010")
+	if err := e.Offer(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Offer(first); err == nil {
+		t.Fatal("the guard admitted the same job twice, so this test does not reach the refusal it is about")
+	}
+	body := expositionOf(t, n.metrics)
+	if !strings.Contains(body, "halite_node_jobs_accepted_total 1") {
+		t.Errorf("one admitted job and one replay should read 1:\n%s", body)
+	}
+	if !strings.Contains(body, `halite_node_jobs_refused_total{reason="replayed"} 1`) {
+		t.Errorf("the replay was not counted as refused, so it never reached the guard:\n%s", body)
+	}
+}
