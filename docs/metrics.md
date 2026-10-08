@@ -778,6 +778,15 @@ is an importable Grafana dashboard over these families. In Grafana:
 **Dashboards → New → Import → Upload JSON file**, then pick the
 Prometheus that scrapes halite-api.
 
+**To pick up a newer version of the dashboard, import it again and
+choose Overwrite** when Grafana says the `uid` exists. Pasting the new JSON
+into an existing dashboard's JSON Model and saving can fail with
+`precondition failed: StorageError ... UID in precondition ... UID in object
+meta`, because the stored object has been replaced since the page loaded
+(seen once, on a Grafana whose version was not recorded; re-importing with
+Overwrite fixed it). Re-importing replaces the stored dashboard, so edits
+made in Grafana itself are lost: keep your own changes in a copy.
+
 It asks for one thing on import, the data source. Four variables at the
 top pick what you are looking at:
 

@@ -23,6 +23,12 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### How to update the example Grafana dashboard
+
+`docs/metrics.md` now says to re-import the dashboard with Overwrite to
+pick up a new version, and why editing the JSON Model in place can fail
+with a UID precondition error.
+
 ### A node says when its evidence log did not open
 
 If a node cannot open its evidence log at startup it logs one error and
