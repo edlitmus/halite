@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -136,9 +137,8 @@ func (s *StateResult) Return() *value.Map {
 	}
 	m.Set("changes", changes)
 	m.Set("comment", s.Result.Comment)
-	// Salt reports duration in milliseconds as a float.
-	m.Set("duration", float64(s.Duration)/float64(time.Millisecond))
-	m.Set("start_time", s.StartTime.Format("15:04:05.000000"))
+	m.Set("duration", saltDuration(s.Duration))
+	m.Set("start_time", saltStartTime(s.StartTime))
 
 	warnings := make([]any, len(s.Result.Warnings))
 	for i, w := range s.Result.Warnings {
@@ -251,39 +251,26 @@ func (s Summary) String() string {
 
 // Nested renders the run the way `--out=nested` does: one block per state,
 // in run order, with changes indented beneath.
+//
+// Each state's block is drawn from this run's own return, by the same
+// code that draws the hub's view of it, so `halite-node state apply`
+// and `halite-hub run '*' state.apply` print a state the same way.
+// They did not: this drew its blocks from the in-memory results and
+// printed `Result: succeeded`, `failed` or `would change`, while the
+// hub printed Salt's `True`, `False` and `None`, and the two formatted
+// a duration differently. Two renderers of one thing had drifted, as
+// two copies do. DIVERGENCE 5.244.
+//
+// Only the summary is this run's own: it knows how many states a
+// requisite held back and how long the run took by the wall clock,
+// and a return carries neither.
 func (r *RunResult) Nested(colour bool) string {
 	var b strings.Builder
-	// The identifiers this rendering prints, spared from scrubbing at
-	// the end. See DIVERGENCE 5.109.
-	var keep []string
-	for _, res := range r.Results {
-		ch := res.Chunk
-		keep = append(keep, ch.ID, ch.Func(), ch.SLS)
-		fmt.Fprintf(&b, "----------\n")
-		fmt.Fprintf(&b, "          ID: %s\n", ch.ID)
-		fmt.Fprintf(&b, "    Function: %s\n", ch.Func())
-		if ch.Name != ch.ID {
-			fmt.Fprintf(&b, "        Name: %s\n", ch.Name)
-		}
-		fmt.Fprintf(&b, "      Result: %s\n", res.Result.ResultString())
-		fmt.Fprintf(&b, "     Comment: %s\n", res.Result.Comment)
-		fmt.Fprintf(&b, "     Started: %s\n", res.StartTime.Format("15:04:05.000000"))
-		fmt.Fprintf(&b, "    Duration: %.3f ms\n", float64(res.Duration)/float64(time.Millisecond))
-		if res.Result.HasChanges() {
-			b.WriteString("     Changes:\n")
-			writeChanges(&b, res.Result.Changes, "              ")
-		}
-		for _, w := range res.Result.Warnings {
-			fmt.Fprintf(&b, "     Warning: %s\n", w)
-		}
-	}
+	rows := nestedRows(&b, r.Returns())
 	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", r.Summarise())
-	// The whole rendering rather than each field: a comment, a change, a
-	// warning, and whatever line is added to this function next all go
-	// through one call that nobody has to remember. The identifiers
-	// collected above are the only spans spared, and sparing them by
-	// span rather than by field keeps that property.
-	return r.Secrets.ScrubExcept(b.String(), keep)
+	// The whole rendering rather than each field, sparing only the
+	// identifiers it prints. See DIVERGENCE 5.109.
+	return r.Secrets.ScrubExcept(b.String(), rows.keep)
 }
 
 func writeChanges(b *strings.Builder, m *value.Map, indent string) {
@@ -349,6 +336,36 @@ func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
 	if returns == nil {
 		return ""
 	}
+	var b strings.Builder
+	rows := nestedRows(&b, returns)
+	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", Summary{
+		Succeeded: rows.succeeded,
+		Changed:   rows.changed,
+		WouldHave: rows.unknown,
+		Failed:    rows.failed,
+		Total:     rows.total,
+		Duration:  time.Duration(rows.elapsedMS * float64(time.Millisecond)),
+	})
+	// Scrub is nil-safe, and on a nil set it still strips URL
+	// credentials. Calling it unconditionally is what makes that true
+	// here.
+	return secrets.ScrubExcept(b.String(), rows.keep)
+}
+
+// nestedCounts is what nestedRows saw, for a summary drawn from it.
+type nestedCounts struct {
+	succeeded, failed, changed, unknown, total int
+	elapsedMS                                  float64
+	// keep is the identifiers printed, spared from scrubbing: they are
+	// the schema, and the hub reads them to find the declaration in the
+	// tree. DIVERGENCE 5.109.
+	keep []string
+}
+
+// nestedRows writes one block per state of a return, in run order, the
+// way Salt's highstate outputter does. Both the node's own rendering
+// and the hub's go through it, so they cannot disagree about a state.
+func nestedRows(b *strings.Builder, returns *value.Map) nestedCounts {
 	type row struct {
 		key   string
 		entry *value.Map
@@ -372,57 +389,53 @@ func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
 	// necessarily the order the map arrived in.
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].order < rows[j].order })
 
-	var b strings.Builder
-	// As in Nested: the identifiers this prints are the schema, and the
-	// hub reads them to find the declaration in the tree. 5.109.
-	var keep []string
-	succeeded, failed, changed, unknown := 0, 0, 0, 0
-	elapsedMS := 0.0
+	var c nestedCounts
+	c.total = len(rows)
 	for _, r := range rows {
 		id, _ := r.entry.Get("__id__")
 		name, _ := r.entry.Get("name")
-		keep = append(keep, fmt.Sprint(scalarOr(id, r.key)), functionFromKey(r.key))
+		c.keep = append(c.keep, fmt.Sprint(scalarOr(id, r.key)), functionFromKey(r.key))
 		if sls, ok := r.entry.Get("__sls__"); ok {
-			keep = append(keep, fmt.Sprint(sls))
+			c.keep = append(c.keep, fmt.Sprint(sls))
 		}
 		result, _ := r.entry.Get("result")
 		comment, _ := r.entry.Get("comment")
 		started, _ := r.entry.Get("start_time")
 		duration, _ := r.entry.Get("duration")
 
-		fmt.Fprintf(&b, "----------\n")
-		fmt.Fprintf(&b, "          ID: %v\n", scalarOr(id, r.key))
-		fmt.Fprintf(&b, "    Function: %s\n", functionFromKey(r.key))
+		fmt.Fprintf(b, "----------\n")
+		fmt.Fprintf(b, "          ID: %v\n", scalarOr(id, r.key))
+		fmt.Fprintf(b, "    Function: %s\n", functionFromKey(r.key))
 		if fmt.Sprint(name) != fmt.Sprint(id) {
-			fmt.Fprintf(&b, "        Name: %v\n", name)
+			fmt.Fprintf(b, "        Name: %v\n", name)
 		}
-		fmt.Fprintf(&b, "      Result: %s\n", resultWord(result))
-		fmt.Fprintf(&b, "     Comment: %v\n", scalarOr(comment, ""))
+		fmt.Fprintf(b, "      Result: %s\n", resultWord(result))
+		fmt.Fprintf(b, "     Comment: %v\n", scalarOr(comment, ""))
 		if started != nil {
-			fmt.Fprintf(&b, "     Started: %v\n", started)
+			fmt.Fprintf(b, "     Started: %v\n", started)
 		}
 		if duration != nil {
-			fmt.Fprintf(&b, "    Duration: %v ms\n", duration)
+			fmt.Fprintf(b, "    Duration: %s ms\n", pyFloat(duration))
 			if ms, ok := duration.(float64); ok {
-				elapsedMS += ms
+				c.elapsedMS += ms
 			}
 		}
 		if changes, ok := r.entry.Get("changes"); ok {
 			if m, ok := changes.(*value.Map); ok && m.Len() > 0 {
 				b.WriteString("     Changes:\n")
-				writeChanges(&b, m, "              ")
+				writeChanges(b, m, "              ")
 				// A `None` result with changes is what a state *would*
 				// do, and counting it as a change would report a dry
 				// run as having done something.
 				if _, isBool := result.(bool); isBool {
-					changed++
+					c.changed++
 				}
 			}
 		}
 		if warnings, ok := r.entry.Get("warnings"); ok {
 			if list, ok := warnings.([]any); ok {
 				for _, w := range list {
-					fmt.Fprintf(&b, "     Warning: %v\n", w)
+					fmt.Fprintf(b, "     Warning: %v\n", w)
 				}
 			}
 		}
@@ -430,30 +443,50 @@ func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
 		switch result.(type) {
 		case bool:
 			if result.(bool) {
-				succeeded++
+				c.succeeded++
 			} else {
-				failed++
+				c.failed++
 			}
 		default:
 			// `None` is test mode: neither a success nor a failure, and
 			// counting it as either would misreport a dry run.
-			unknown++
+			c.unknown++
 		}
 	}
 
-	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", Summary{
-		Succeeded: succeeded,
-		Changed:   changed,
-		WouldHave: unknown,
-		Failed:    failed,
-		Total:     len(rows),
-		Duration:  time.Duration(elapsedMS * float64(time.Millisecond)),
-	})
+	return c
+}
 
-	// Scrub is nil-safe, and on a nil set it still strips URL
-	// credentials. Calling it unconditionally is what makes that true
-	// here.
-	return secrets.ScrubExcept(b.String(), keep)
+// saltDuration is a state's duration as Salt's state.py computes it:
+// whole microseconds, divided by 1000.0. So 293.725µs is 0.293 and not
+// 0.293725, and a return from halite reads like one from Salt.
+func saltDuration(d time.Duration) float64 {
+	return float64(d.Microseconds()) / 1000.0
+}
+
+// saltStartTime is a state's start as Salt's `time().isoformat()`
+// writes it, which leaves the fraction off when it is zero.
+func saltStartTime(t time.Time) string {
+	if t.Nanosecond()/1000 == 0 {
+		return t.Format("15:04:05")
+	}
+	return t.Format("15:04:05.000000")
+}
+
+// pyFloat writes a duration as Salt's outputter does, through Python's
+// str(): the shortest form that reads back as the same number, with a
+// ".0" on a whole one -- 0.293, 12.0. A value that is not a float, from
+// a return some other writer made, is printed as it came.
+func pyFloat(v any) string {
+	f, ok := v.(float64)
+	if !ok {
+		return fmt.Sprint(v)
+	}
+	out := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.ContainsAny(out, ".eEnN") {
+		out += ".0"
+	}
+	return out
 }
 
 // functionFromKey reads the module and function out of the compound key

@@ -212,7 +212,7 @@ sudo halite-node state apply --local \
 ```
           ID: /etc/motd
     Function: file.managed
-      Result: would change
+      Result: None
      Comment: /etc/motd would be created: its contents, its mode.
      Changes:
               diff: |
@@ -222,7 +222,8 @@ sudo halite-node state apply --local \
                 +This machine is managed by halite.
 ```
 
-That `would change` is a promise, not a guess. State modules are held to
+That `None` is test mode's answer, as it is Salt's: the state would
+change something. It is a promise, not a guess. State modules are held to
 it by a shared conformance harness, SPEC 11.6: in test mode a state must
 make no change, return no result, and say what it would have done. Every
 state function has a case except the two listed, with reasons, in

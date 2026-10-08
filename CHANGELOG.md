@@ -23,6 +23,17 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `halite-node` prints a state's result as Salt does
+
+`halite-node state apply`, `highstate` and `sls` printed
+`Result: succeeded`, `failed` or `would change`, where the hub's view of
+the same run, and Salt, print `True`, `False` or `None`. They now
+print the same words, from the same code. Durations now follow Salt
+too: whole microseconds, written as Python writes a float (`0.293 ms`,
+`12.0 ms`). This applies on the node and in the hub's rendering, and
+in a return's `duration` field. Anything that matched the old words in
+the node's output needs updating. DIVERGENCE 5.244.
+
 ### `docs/metrics.md`'s Prometheus setup is consistent
 
 - **Missing files:** the `halite-nodes` scrape job read three files the

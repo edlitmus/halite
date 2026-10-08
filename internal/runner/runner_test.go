@@ -1388,3 +1388,77 @@ func TestADryRunDoesNotRunTheGenericCheckCmd(t *testing.T) {
 type runnerFunc func(exec.Command) (exec.Result, error)
 
 func (f runnerFunc) Run(_ context.Context, cmd exec.Command) (exec.Result, error) { return f(cmd) }
+
+// The node's rendering of its own run and the hub's rendering of the
+// return it sends are the same, state for state, and both say what Salt
+// says.
+//
+// They were not. `halite-node state apply` printed `Result: succeeded`,
+// `failed` and `would change`, and a duration rounded to three places;
+// the hub printed `True`, `False`, `None` and the duration as it came.
+// The owner noticed running a highstate both ways. Salt 3007.1's
+// highstate outputter prints the result through str() -- True, False,
+// None -- and state.py makes the duration whole microseconds over
+// 1000.0. DIVERGENCE 5.244.
+func TestTheNodeAndTheHubRenderAStateAlike(t *testing.T) {
+	sls := `
+ok:
+  probe.run:
+    - changes: true
+failed:
+  probe.run:
+    - fail: true
+held:
+  probe.run:
+    - onchanges:
+      - probe: failed
+`
+	blocks := func(s string) string { return s[:strings.Index(s, "\nSummary\n")] }
+	for _, test := range []bool{false, true} {
+		out, _ := compileAndRun(t, sls, func(r *Runner) { r.Ctx.Test = test })
+		local := out.Nested(false)
+		wire := NestedFromReturns(out.Returns(), nil)
+		if blocks(local) != blocks(wire) {
+			t.Errorf("test=%v: the node and the hub render the states differently.\nnode:\n%s\nhub:\n%s",
+				test, local, wire)
+		}
+		for _, banned := range []string{"Result: succeeded", "Result: failed", "Result: would change"} {
+			if strings.Contains(local, banned) {
+				t.Errorf("test=%v: the node printed %q; Salt prints True, False or None:\n%s", test, banned, local)
+			}
+		}
+		want := []string{"Result: True", "Result: False"}
+		if test {
+			want = []string{"Result: None"}
+		}
+		for _, w := range want {
+			if !strings.Contains(local, w) {
+				t.Errorf("test=%v: no %q in:\n%s", test, w, local)
+			}
+		}
+	}
+}
+
+func TestDurationsAndStartTimesAreWrittenAsSaltWritesThem(t *testing.T) {
+	for _, c := range []struct {
+		d    time.Duration
+		want string
+	}{
+		{293725 * time.Nanosecond, "0.293"}, // whole microseconds, not rounded
+		{12 * time.Millisecond, "12.0"},     // str(12.0)
+		{1500 * time.Microsecond, "1.5"},
+		{0, "0.0"},
+	} {
+		if got := pyFloat(saltDuration(c.d)); got != c.want {
+			t.Errorf("%v renders as %q, want %q", c.d, got, c.want)
+		}
+	}
+	at := time.Date(2026, 10, 8, 9, 4, 37, 992071000, time.UTC)
+	if got := saltStartTime(at); got != "09:04:37.992071" {
+		t.Errorf("start_time = %q", got)
+	}
+	// time().isoformat() leaves a zero fraction off.
+	if got := saltStartTime(at.Truncate(time.Second)); got != "09:04:37" {
+		t.Errorf("a whole-second start_time = %q, want 09:04:37", got)
+	}
+}
