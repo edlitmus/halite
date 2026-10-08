@@ -810,6 +810,15 @@ This section has moved further than any other since the last revision.
   extension counters and the beacon queue's drop paths. It is DIVERGENCE
   1.11 — a listener on a machine SPEC 6.1 says has none — and it is the
   right trade, but it is a divergence and should stay named as one.
+  **It needs a hub.** The listener is started only by `halite-node
+  connect`, which will not run until the node is enrolled, so a masterless
+  node (`state apply --local` from cron) has no endpoint at all and
+  `metrics_listen` there does nothing; the serving certificate is one the
+  operator supplies, since there is no plaintext mode. Three ways to serve
+  a hub-free node are open and none is decided: let the agent run
+  unenrolled, have the node make its own certificate (which loosens "you
+  supply it"), or write the exposition for a textfile collector (a
+  one-shot's counters start at zero, so it says little).
 - ~~**One trap survives and is worth repeating.**~~ **Closed with
   external pillar.** `halite_pillar_failures_total` is still a
   *different* metric from the spec's `halite_pillar_ext_failures_total{source}`,
@@ -831,6 +840,26 @@ This section has moved further than any other since the last revision.
   across a file transfer. **SPEC section 26 is complete.** DIVERGENCE
   5.34, including the two defects the wiring found and the one thing it
   does not establish — no collector has read a span this build made.
+- **Alerts and a dashboard ship, and they have been run.**
+  `docs/metrics.md` holds 27 alert rules, accepted by `promtool` 2.55.1
+  and held to the build by `TestEveryDocumentedMetricExists`; the example
+  Grafana dashboard queries only registered families
+  (`TestDashboardQueriesNameRegisteredMetrics`) and, as of 2026-10-07,
+  has a panel for every documented family. That coverage was measured by
+  a script, **not held by a test**, so it can drift again. The rules were
+  loaded into the Prometheus on the LAN that scrapes the production hub,
+  API and beastie's node, and all 27 are healthy and inactive. Three have
+  been run on `promtool test rules`, and that found two defects: an
+  `increase()` alert misses the first event of a labelled counter (the
+  hub now declares those series at 0, DIVERGENCE 5.235), and the
+  evidence-stopped rule joined two series with no labels in common, so it
+  could not fire (5.236, redesigned in 5.238).
+  **Not done:** no rule has been seen to fire on live data; that
+  Prometheus has **no Alertmanager**, so a firing rule notifies nobody;
+  beastie's node metrics certificate expires on 2027-01-05 and nothing
+  renews it; and the node's `halite_node_jobs_total` cannot be started at
+  0 because its `fun` label is open-ended, which leaves
+  `HaliteNodeEvidenceStopped` blind to the first job after a restart.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
 
@@ -2261,6 +2290,17 @@ unbuilt item here is number 7.
    signed for. Each node's reports are rate-limited at the hub (5.231).
    It does not cover records written after the last accepted report, or
    a node and hub compromised together.
+
+   Running it found four more things, each a ledger entry: a hub that
+   stopped mid-append left a torn last line that locked the node out
+   until the file was edited (5.234); the conflict alert would have missed
+   the first conflict (5.235); a receipt arriving as the agent stopped was
+   counted as a lost record, which pages `HaliteNodeEvidenceNotWritten`
+   on a clean shutdown (5.237); and a node whose evidence log failed to
+   open was silent to every evidence alert, which `halite_node_evidence_log_open`
+   and `HaliteNodeEvidenceNotKept` now report (5.238). Seen on the
+   production hub and beastie's node: anchors accepted, a receipt filed
+   after a real `test.ping`, no conflicts.
 
    **Action for the hardware/KMS signer:** access to one real signer —
    a PIV/YubiKey with a P-256 or P-384 slot, or a cloud KMS (AWS KMS,
