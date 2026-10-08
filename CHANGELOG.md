@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The metrics-certificate state in `docs/metrics.md` now compiles
+
+The `x509.certificate_managed` example that signs a node's metrics
+certificate from a CA kept in pillar substituted the PEM bare, which
+breaks the YAML on its second line. It now writes `| json` after each
+pillar value. Copy the corrected block if you used the old one. A test
+now applies the block exactly as the page prints it. DIVERGENCE 5.241.
+
 ### The example dashboard is checked against the metrics
 
 A new test fails when the build registers a metric family that no panel on

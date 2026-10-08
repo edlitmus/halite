@@ -21128,6 +21128,64 @@ with no reason, for a family the build does not register, fails it twice.
 - A family judged not worth a panel is a judgement the author makes in the
   change; the test only forces it to be written down.
 
+### 5.241 The metrics-certificate state in the docs did not compile
+
+`docs/metrics.md` shows an `x509.certificate_managed` state that signs a
+node's metrics serving certificate from a metrics CA kept in pillar. It
+substituted the CA's certificate and key bare:
+
+```yaml
+    - signing_cert: {{ pillar['metrics_ca']['cert'] }}
+```
+
+The owner asked whether the values had to be written to files first.
+Running the block as published, against a pillar holding a real metrics
+CA as YAML block scalars, failed before any state ran:
+
+```
+metrics_cert.sls:11: expected `:` after the mapping key "MIIBezCCASGg..."
+```
+
+A PEM block is several lines. Substituted bare, its second line starts
+a YAML line, and the mapping breaks.
+
+Files are not needed. `signing_cert` and `signing_private_key` take a
+path or the PEM text itself (`pemSource` in
+`internal/builtin/x509.go`). The page now writes both through `| json`,
+which emits one double-quoted YAML string with the line breaks escaped.
+Writing the values to files would also have left the CA's key on disk on
+every node. As fixed, the first run wrote the key and the certificate,
+the second changed nothing, and `openssl verify` accepted the
+certificate against the metrics CA, with `serverAuth` and the node's SAN.
+
+The page said "both certificate paths were run end to end" before being
+written down. The hub-side path had been, but the pillar form had not,
+or it would not have compiled. That sentence now says so.
+`TestTheDocumentedMetricsCertificateStateConverges` in `cmd/halite-node`
+reads the block from the page rather than copying it, makes the CA with
+the page's commands, and applies the state twice. It requires exit 0
+with two changes, then exit 2 with none, and a certificate that verifies
+against the metrics CA for serving. With the page put back as it was,
+the test failed with the same compile error.
+
+The test runs a second time with the CA's key GPG-encrypted in pillar,
+as the page tells an operator to keep it. Decrypted pillar values are
+handled apart from the rest, since they are redacted from every output,
+so the plain run alone said nothing about the encrypted one. It
+converges the same way, and fails the same way with the page reverted.
+On macOS that pass, and the older `TestDecryptedPillarNeverReachesTheRun`
+too, skip unless `TMPDIR` is short. Under the default `/var/folders/...`
+temporary directory the gpg-agent socket path is longer than a Unix
+socket allows, and generating the key fails. Both ran and passed with
+`TMPDIR=/tmp/hx`. CI's Linux runners use `/tmp` and run them.
+
+A search of the other docs for a pillar value substituted bare found
+only a single-line password, which illustrates an expression and is not
+a state argument.
+
+**Not covered:** only run on macOS, with `halite-node --local`, not
+through a hub serving the pillar.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
