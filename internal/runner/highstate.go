@@ -162,7 +162,7 @@ func Highstate(host string, returns *value.Map, secrets *redact.Set) string {
 	if len(stats) > 0 {
 		succeeded += " (" + strings.Join(stats, ", ") + ")"
 	}
-	lines = append(lines, succeeded, field("Failed", counts["False"]))
+	lines = append(lines, succeeded, field("Failed", counts["False"])+" BREAK-CHECK")
 	if counts["warnings"] > 0 {
 		lines = append(lines, field("Warnings", counts["warnings"]))
 	}
