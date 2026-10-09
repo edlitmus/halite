@@ -62,6 +62,7 @@ func TestHighstateMatchesSalt(t *testing.T) {
 		if !ok {
 			t.Fatalf("Salt's return for %v is not a map: %s", e.Key, raw)
 		}
+		requireShapes(t, test, returns)
 		got := runner.Highstate(value.KeyString(e.Key), returns, nil)
 
 		if got != want {
@@ -159,4 +160,51 @@ func lineDiff(want, got string) string {
 		}
 	}
 	return b.String()
+}
+
+// requireShapes fails unless Salt's return holds the shapes the tree is
+// there to exercise. Matching Salt's outputter on a return that lacked
+// them -- a module.run this release refused, say, which renders as a
+// failure on both sides just the same -- would pass while showing nothing
+// about lists, nested maps, numbers or parallel states. DIVERGENCE 5.265.
+func requireShapes(t *testing.T, test bool, returns *value.Map) {
+	t.Helper()
+	var parallel, list, number bool
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case []any:
+			list = true
+			for _, i := range x {
+				walk(i)
+			}
+		case *value.Map:
+			for _, e := range x.Entries() {
+				walk(e.Val)
+			}
+		case int64, float64:
+			number = true
+		}
+	}
+	for _, e := range returns.Entries() {
+		ret, ok := e.Val.(*value.Map)
+		if !ok {
+			continue
+		}
+		if ret.Has("__parallel__") {
+			parallel = true
+		}
+		if ch, ok := ret.Get("changes"); ok {
+			walk(ch)
+		}
+	}
+	// Test mode predicts and does not run, so a cmd.run or module.run
+	// there reports no changes to hold numbers or lists.
+	if !parallel {
+		t.Errorf("test=%v: no state in Salt's return carries __parallel__", test)
+	}
+	if !test && (!list || !number) {
+		t.Errorf("test=%v: Salt's changes held a list: %v, a number: %v; the tree is there to show both",
+			test, list, number)
+	}
 }

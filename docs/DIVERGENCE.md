@@ -22624,6 +22624,70 @@ bound is what makes it irrelevant.
 
 
 
+### 5.265 The Salt differential ran against one Salt release
+
+CI's `saltdiff` job ran `make saltdiff`, which pins Salt 3007.1, and
+nothing else. The deviation table names behaviour that differs between
+3006, 3007 and 3008. `TestHighstateMatchesSalt` (5.245) holds halite's
+highstate output to Salt's own outputter, so it said nothing about the
+two releases estates still run beside 3007. Its tree also had no
+changes holding numbers, lists or nested maps, and no parallel states,
+whose durations the summary adds by a separate rule.
+
+The job is now a matrix over **3006.28, 3007.1 and 3008.3**: 3007.1 as
+pinned, and the newest of 3006 and 3008, read from the onedir
+repository's listing. The outputter tree gains `cmd.run` (numbers in
+`pid` and `retcode`), `module.run` of `test.arg` (lists, a nested list,
+a float, a nested map with a boolean) and two `parallel: True` states.
+
+A matching rendering alone would not show that coverage. A release that
+refused the `module.run` would render as a failure on both sides, match,
+and pass. So the test now requires that Salt's return holds a
+`__parallel__` state and, outside test mode, a list and a number in some
+state's changes. A local probe with a return lacking them failed it, and
+one holding them passed.
+
+All three releases passed with that requirement in place. So for each
+of them, Salt's return held all four shapes, and halite's rendering
+matched Salt's own outputter byte for byte, in a real run and in test
+mode. No deviation row was needed.
+
+**Not covered:** the releases between these. Hyphen-breaking in warning
+wraps, the one place the renderer is known to differ (5.245), is still
+not exercised.
+
+### 5.266 show_lowstate left out every runner option
+
+While writing the example tree (5.262), its `creates`, `onlyif` and
+`unless` gates did not appear in `halite-node state show_lowstate`, so
+its gated states read as unconditional. The compiler takes the runner
+options out of a chunk's module arguments to act on them: `unless`,
+`onlyif`, `creates`, `check_cmd`, `retry`, `parallel`, `order`,
+`failhard`, the `reload_*` three, `runas`, `runas_password`, `umask`,
+`timeout`, `fire_event` and `aggregate`. `renderLow` printed only what
+was left. Salt's low chunk carries them beside the module's arguments.
+
+The chunk now keeps the options as written, in `OptionArgs`, beside
+`Opts`, which is what the runner acts on. `show_lowstate` prints them,
+and each chunk that `names` expands into carries them too.
+`runas_password` prints as `**********`. Salt prints it as written; it
+is the one option that is a secret, and a lowstate is something people
+paste.
+
+`TestShowLowstateCarriesTheRunnerOptions` requires `unless`, `onlyif`,
+`creates`, `retry` and the masked password on a chunk, and `creates` on
+both chunks `names` expanded into. It fails with the rendering switched
+off. The differential compares the compiler's chunks, not this
+rendering, so it is unaffected.
+
+Checking `names` found a separate defect, noted here and not fixed.
+Arguments given to one name alone (`- names: [- echo a: [- unless: …]]`)
+all go into the module's arguments in `applyPerNameArgs`. A per-name
+`unless` therefore fails to compile ("argument `unless` is not a
+parameter of this function"), where Salt treats it as an option.
+
+**Not covered:** only run on macOS.
+
 ### 5.267 makedirs made every directory 0755, whatever the file's mode
 
 `file.managed` with `makedirs: true` created the missing directories as
