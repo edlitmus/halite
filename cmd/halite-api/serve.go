@@ -17,6 +17,7 @@ import (
 	"github.com/edlitmus/halite/internal/api"
 	"github.com/edlitmus/halite/internal/apitoken"
 	"github.com/edlitmus/halite/internal/builtin"
+	"github.com/edlitmus/halite/internal/certreload"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	hlog "github.com/edlitmus/halite/internal/log"
@@ -72,9 +73,9 @@ func runServe(args *cli.Args) int {
 		OIDC:          s.oidcProvider(),
 		LDAP:          s.ldapClient(),
 	}
-	pair := servingCertificate(s, args)
+	certs := servingCertificate(s, args)
 	addr := args.Flag("listen", s.cfg.String("listen", ":4511"))
-	ln, err := api.Listen(addr, pair)
+	ln, err := api.Listen(addr, certs.GetCertificate)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -287,18 +288,26 @@ func hubClient(s *service, args *cli.Args) (*transport.Client, error) {
 }
 
 // servingCertificate is what the API presents to its own clients.
-func servingCertificate(s *service, args *cli.Args) tls.Certificate {
+// servingCertificate loads the API's certificate and keeps serving it
+// from disk: a certificate renewed in place, as a certificate state does,
+// is presented from the next connection on, without a restart. It used to
+// be loaded once here and served for the life of the process, the defect
+// the node's metrics listener had (DIVERGENCE 5.248, 5.250). A certificate
+// that cannot be used at startup is still fatal, as before.
+func servingCertificate(s *service, args *cli.Args) *certreload.Reloader {
 	certPath := args.Flag("tls-cert", s.cfg.String("tls_cert", ""))
 	keyPath := args.Flag("tls-key", s.cfg.String("tls_key", ""))
 	if certPath == "" || keyPath == "" {
 		cli.Fatalf("this service needs a serving certificate; set `tls_cert` and `tls_key`, " +
 			"or pass --tls-cert and --tls-key")
 	}
-	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	certs, err := certreload.New(certPath, keyPath,
+		func(msg string, kv ...any) { s.log.Info(msg, kv...) },
+		func(msg string, kv ...any) { s.log.Warn(msg, kv...) })
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	return pair
+	return certs
 }
 
 // pruneTokens drops expired records once they are past the retention
