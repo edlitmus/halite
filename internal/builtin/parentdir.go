@@ -136,7 +136,7 @@ func prepareParent(test bool, args *value.Map, path string, fileMode os.FileMode
 // They made every missing directory 0755 and owned by whoever ran the
 // state, whatever the file's mode: a key written with `mode: '0600'` and
 // `makedirs: true` landed in a directory anyone could list, which Salt's
-// rule would have made 0700. DIVERGENCE 5.267.
+// rule would have made 0700. DIVERGENCE 5.269.
 func makedirsFileState(args *value.Map, path string) error {
 	dir, missing, err := missingParent(path)
 	if err != nil || !missing {
