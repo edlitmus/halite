@@ -68,8 +68,15 @@ func TestTheHubRenewsItsOwnCertificate(t *testing.T) {
 		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 		return cmd
 	}
+	// An interrupt where there is one, so the hub shuts down as it would
+	// under its service manager. Windows has none to send to another
+	// process -- Signal(os.Interrupt) returns an error there -- and
+	// waiting after a signal that was never delivered waited for the
+	// test's own timeout, ten minutes later.
 	stop := func(cmd *exec.Cmd) {
-		_ = cmd.Process.Signal(os.Interrupt)
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+			_ = cmd.Process.Kill()
+		}
 		_ = cmd.Wait()
 	}
 	// serial is the certificate the hub presents now, waiting for it to
