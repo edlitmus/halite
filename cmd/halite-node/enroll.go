@@ -23,6 +23,7 @@ import (
 	"github.com/edlitmus/halite/internal/job"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/renewal"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
@@ -240,13 +241,7 @@ func nodeKey(files pki.Files, args *cli.Args, force bool) (crypto.Signer, error)
 }
 
 func writeIdentity(files pki.Files, got *transport.Enrollment) error {
-	if err := files.WriteCertPEM(pki.NodeCertFile, got.CertPEM); err != nil {
-		return err
-	}
-	if len(got.CAPEM) > 0 {
-		return files.WriteCertPEM(pki.CACertFile, got.CAPEM)
-	}
-	return nil
+	return renewal.WriteIdentity(files, got)
 }
 
 func pinNodeID(args *cli.Args, nodeID string) error {

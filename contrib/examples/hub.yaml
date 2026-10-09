@@ -136,8 +136,11 @@ metrics: true
 # client (SPEC 5.3). Use one for a segment that cannot reach the main
 # hub, or one whose returns must survive the link between them.
 #
-# The relay enrols with its upstream as an ordinary node first, and the
-# upstream's policy must grant its node certificate `relay.proxy`.
+# The relay enrols with its upstream as an ordinary node first, into
+# relay_pki_dir, and the upstream's policy must grant its node
+# certificate `relay.proxy`. That certificate is the relay's identity
+# upstream -- there is no node_id here -- and the relay renews it itself.
+# docs/operations.md, "Relays", has the steps.
 # Nodes behind it enrol with the relay; the upstream holds no key for
 # them. See docs/operations.md, and DIVERGENCE 1.8 and 1.9 for what a
 # relay deliberately does not forward.
