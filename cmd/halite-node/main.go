@@ -12,7 +12,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -484,69 +483,12 @@ func resolveNodeID(args *cli.Args, cfg *config.Config) string {
 // starting, so the lookups get a short deadline and the hostname is the
 // answer when it expires. The resolved identity is pinned at enrollment
 // anyway, so this runs once on a node's first start and never again.
+//
+// The lookup is grains.FQDN, the one the fqdn grain and the hub's
+// certificate names use too, so a node is named what its fqdn grain
+// says. DIVERGENCE 5.271.
 func nodeFQDN(host string) string {
-	if host == "" || strings.Contains(host, ".") {
-		return host // already qualified, or nothing to work with
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	return resolveFQDN(ctx, net.DefaultResolver, host)
-}
-
-// fqdnResolver is the part of *net.Resolver this needs, so a test can say
-// what the network answers instead of depending on the machine it runs
-// on.
-type fqdnResolver interface {
-	LookupCNAME(ctx context.Context, host string) (string, error)
-	LookupHost(ctx context.Context, host string) ([]string, error)
-	LookupAddr(ctx context.Context, addr string) ([]string, error)
-}
-
-func resolveFQDN(ctx context.Context, r fqdnResolver, host string) string {
-	// The canonical name is the direct question and usually answers it.
-	if cname, err := r.LookupCNAME(ctx, host); err == nil {
-		if name := qualifiedName(cname); name != "" {
-			return name
-		}
-	}
-	// Otherwise the way Salt gets there: forward, then back. Reverse
-	// resolution is what socket.getfqdn uses, and it answers on hosts
-	// where the canonical name does not.
-	addrs, err := r.LookupHost(ctx, host)
-	if err != nil {
-		return host
-	}
-	for _, addr := range addrs {
-		names, err := r.LookupAddr(ctx, addr)
-		if err != nil {
-			continue
-		}
-		for _, n := range names {
-			if name := qualifiedName(n); name != "" {
-				return name
-			}
-		}
-	}
-	return host
-}
-
-// qualifiedName returns a name that carries a domain, or "". The trailing
-// dot of a DNS name is not part of an identity, and a loopback name is
-// not an identity at all -- Salt filters the same set, because a node
-// that called itself localhost.localdomain would collide with every
-// other node that did.
-func qualifiedName(name string) string {
-	name = strings.TrimSuffix(strings.TrimSpace(name), ".")
-	if !strings.Contains(name, ".") {
-		return ""
-	}
-	lower := strings.ToLower(name)
-	for _, bad := range []string{"localhost", "ip6-", "ipv6-"} {
-		if strings.HasPrefix(lower, bad) {
-			return ""
-		}
-	}
-	return name
+	return grains.FQDN(host)
 }
 
 // applyNodeIDModifiers is Salt's `minion_id_lowercase` and lexicon:allow

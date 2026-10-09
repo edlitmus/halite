@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### One fully qualified name: the `fqdn` grain follows Salt's rule
+
+The node's identity, the `fqdn` grain and the hub's certificate names
+now come from one lookup, with Salt's rule: the canonical name, then any
+name with a domain from reverse lookup. **On a host whose address
+reverses to a name that does not begin with its hostname, the `fqdn` and
+`domain` grains change** to that name, as Salt reports them. Targets on
+`fqdn` may match differently there. Enrolled node IDs do not change.
+DIVERGENCE 5.271.
+
 ### A signing tool for releases, with the key in AWS KMS
 
 SPEC 4.3's detached signature per artifact was deferred on where a

@@ -22,6 +22,7 @@ import (
 	"github.com/edlitmus/halite/internal/eventbus"
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
@@ -850,23 +851,13 @@ func (h *hubContext) withCA(pair tls.Certificate, err error) (tls.Certificate, e
 	return pair, nil
 }
 
-// lookupCNAME is the resolver serverNames asks, so a test can be a
-// resolver that never answers.
-var lookupCNAME = net.DefaultResolver.LookupCNAME
-
-// hostLookupTimeout bounds serverNames' question to DNS, the same two
-// seconds a node gives the lookup of its own name (nodeFQDN).
-//
-// It had no bound. Every `serve` asks for the hostname's canonical name
-// before it can issue its certificate and listen, and with no deadline
-// the hub waited for as long as the resolver did: 9.3 seconds on the
-// development Mac, whose hostname no search domain resolves, and
-// multiples of the resolver's own timeouts when DNS is unreachable --
-// which is when the control plane most needs to start. Past the
-// deadline the hub issues for the names it already has: localhost, the
-// loopback addresses, the hostname and the listen address, and `--names`
-// for anything else. DIVERGENCE 5.264.
-const hostLookupTimeout = 2 * time.Second
+// hostFQDN is the lookup serverNames uses for this host's qualified
+// name: grains.FQDN, the one a node's identity and its fqdn grain use, so
+// the hub's certificate names this machine as its own node and grain do.
+// It asked for the canonical name alone (DIVERGENCE 5.271), and with no
+// deadline until 5.264; grains.FQDN gives up after two seconds. A
+// variable so a test can stand in for DNS.
+var hostFQDN = grains.FQDN
 
 // serverNames is what a node may dial this hub by. A name missing from
 // here is a handshake failure at the node, so the default is generous
@@ -889,11 +880,7 @@ func serverNames(args *cli.Args, listen string) []string {
 	add("::1")
 	if host, err := os.Hostname(); err == nil {
 		add(host)
-		ctx, cancel := context.WithTimeout(context.Background(), hostLookupTimeout)
-		if fqdn, err := lookupCNAME(ctx, host); err == nil {
-			add(strings.TrimSuffix(fqdn, "."))
-		}
-		cancel()
+		add(hostFQDN(host))
 	}
 	if host, _, err := net.SplitHostPort(listen); err == nil && host != "0.0.0.0" && host != "::" {
 		add(host)
