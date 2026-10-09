@@ -99,7 +99,7 @@ Common flags:
   --legacy-arg-parse   read every argument as YAML, as Salt does, and log
                        each coercion; SPEC section 9.2
   --reveal             print pillar values rather than masking them; pillar
-                       output is masked by default, as Salt's is
+                       output masks decrypted and secrets-manager values
 
 State subcommands:
   apply [sls...]       apply the highstate, or the named SLS files

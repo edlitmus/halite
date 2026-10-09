@@ -414,7 +414,7 @@ func runPillar(args *cli.Args) int {
 	}
 	switch sub {
 	case "items":
-		n.out(value.MapOf(n.nodeID, maskPillar(p, reveal)))
+		n.out(value.MapOf(n.nodeID, maskPillar(p, reveal, n.secrets)))
 	case "get":
 		if len(args.Positional) != 2 {
 			cli.Fatalf("pillar get takes exactly one key; use `pillar item` for several")
@@ -423,77 +423,78 @@ func runPillar(args *cli.Args) int {
 		if !ok {
 			v = ""
 		}
-		n.out(value.MapOf(n.nodeID, maskPillar(v, reveal)))
+		n.out(value.MapOf(n.nodeID, maskPillar(v, reveal, n.secrets)))
 	case "item":
 		if len(args.Positional) < 2 {
 			cli.Usagef("pillar item needs a key")
 		}
-		n.out(value.MapOf(n.nodeID, maskPillar(traverseAll(p, args.Positional[1:]), reveal)))
+		n.out(value.MapOf(n.nodeID, maskPillar(traverseAll(p, args.Positional[1:]), reveal, n.secrets)))
 	default:
 		cli.Fatalf("pillar has no subcommand %q; try items, item, or get", sub)
 	}
 	return 0
 }
 
-// maskPillar redacts the pillar on its way to the screen, which is what
-// Salt does and what this did not.
+// maskPillar redacts the secrets in a pillar on its way to the screen.
 //
 // `pillar items` is the command an operator reaches for while debugging,
-// and it printed every secret the tree carries in clear -- to the
+// and it once printed every secret the tree carries in clear -- to the
 // terminal, and to whatever scrollback, CI log or ticket the output was
-// pasted into afterwards. Running it against a real estate's pillar is
-// how this was found: sixteen live credentials, against Salt's sixteen
-// `**********`.
+// pasted into afterwards (DIVERGENCE 5.88).
 //
-// The rule is Salt's, from `salt/utils/secret.py`'s `serial`, which is
-// applied at exactly these boundaries -- `pillar.items`, `pillar.item`,
-// `pillar.get`: **every non-empty string leaf is replaced**, and
-// numbers, booleans, nulls and empty strings pass through. Keys are
-// never touched. That keeps the shape of the tree, which is most of what
-// the command is for: a state that cannot find `foxpass:api_key` is
-// debugged by seeing the key exist, not by reading it.
+// What is masked is what the redactor holds: the values the hub decrypted
+// compiling this pillar and the strings an external pillar source such
+// as the AWS Secrets Manager extension returned, which the hub names in
+// its answer, or that this node decrypted compiling the pillar itself. A
+// leaf that is one of them, whole, becomes `**********`, however short;
+// a longer string with one inside it has that part replaced, so a
+// connection string built from a password keeps its host. Every other
+// value prints as it is. Keys are never touched, and nor are numbers,
+// booleans and nulls.
 //
-// Salt has no way to unmask. `--reveal` is this build's, because the
-// remaining reason to run the command is to check a value, and an
-// operator who cannot will reach for something worse -- a `cmd.run` that
-// echoes it, or the pillar file itself. Asking for it is the point: it
-// makes the disclosure deliberate and greppable in shell history, where
-// masking-by-default makes the safe path the default one.
+// It used to replace *every* non-empty string, which 5.88 took to be
+// Salt's rule. On an estate whose pillar is mostly addresses, host names
+// and paths, with a handful of gpg-encrypted credentials, that made the
+// command useless for the thing it is run for -- checking what a state
+// will see -- and pushed operators to `--reveal`, which prints the
+// credentials too. DIVERGENCE 5.256.
 //
-// Note this is a display boundary and nothing else. The redactor still
-// learns every value, so anything that reaches a log is scrubbed there
-// as before; and a template still renders against the real pillar,
-// exactly as Salt's contextvar arranges.
-func maskPillar(v any, reveal bool) any {
+// A hub too old to name its secrets leaves the node unable to tell, and
+// then every value is held (seedPillarSecrets), so every string is masked
+// as before. That is the safe side of not knowing.
+//
+// `--reveal` still prints everything, and having to ask for it is still
+// the point. This is a display boundary and nothing else: a template
+// still renders against the real pillar.
+func maskPillar(v any, reveal bool, secrets *redact.Set) any {
 	if reveal {
 		return v
 	}
-	return maskValue(v)
+	return maskValue(v, secrets)
 }
 
-func maskValue(v any) any {
+func maskValue(v any, secrets *redact.Set) any {
 	switch t := v.(type) {
 	case string:
-		if t == "" {
-			return t
+		if secrets.Holds(t) {
+			return redact.Placeholder
 		}
-		return redact.Placeholder
+		return secrets.Scrub(t)
 	case *value.Map:
 		out := value.NewMap(t.Len())
 		for _, e := range t.Entries() {
-			out.Set(e.Key, maskValue(e.Val))
+			out.Set(e.Key, maskValue(e.Val, secrets))
 		}
 		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, item := range t {
-			out[i] = maskValue(item)
+			out[i] = maskValue(item, secrets)
 		}
 		return out
 	default:
 		// Numbers, booleans and nulls carry no secret on their own and
-		// are what a tree branches on, so they are left alone. Salt
-		// passes them through for the same reason.
+		// are what a tree branches on, so they are left alone.
 		return v
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
@@ -303,5 +304,42 @@ func TestThePillarResponseNamesOnlyWhatTheHubDecrypted(t *testing.T) {
 	}
 	if res.Secrets == nil || len(*res.Secrets) != 0 {
 		t.Errorf("a pillar with nothing encrypted should name an empty list, got %v", res.Secrets)
+	}
+}
+
+// secretsSource stands in for the AWS Secrets Manager extension: an
+// external source whose every value is a secret.
+type secretsSource struct{}
+
+func (secretsSource) Name() string   { return "aws_secrets" }
+func (secretsSource) FailSoft() bool { return false }
+func (secretsSource) Pillar(context.Context, pillar.ExtRequest) (*value.Map, error) {
+	return value.MapOf("aws_secrets", value.MapOf(
+		"smtp", value.MapOf("password", "from-secrets-manager", "port", int64(587)))), nil
+}
+
+// What an external pillar source returns is named to the node as secret,
+// beside what the hub decrypted. It was not: the hub collected the list
+// from the compile's OnSecret, and the sources told only the hub's own
+// redactor, so a node masking exactly what it was told masked none of
+// what Secrets Manager returned. DIVERGENCE 5.256.
+func TestThePillarResponseNamesWhatAnExternalSourceReturned(t *testing.T) {
+	l := newLab(t).withPillar(t, map[string]string{
+		"top.sls":    "base:\n  '*':\n    - common\n",
+		"common.sls": "relay: mail.example\n",
+	})
+	l.server.Pillar.Ext = []pillar.ExtSource{secretsSource{}}
+	web := l.enrolled(t, "web1.example")
+	res, err := web.Pillar(context.Background(), transport.PillarRequest{
+		NodeID: "web1.example", Env: "base", Grains: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Secrets == nil {
+		t.Fatal("the hub named no secrets, so the node will mask every pillar value")
+	}
+	if got := strings.Join(*res.Secrets, ","); got != "from-secrets-manager" {
+		t.Errorf("the hub named %q; want the one value Secrets Manager returned, and not the plain relay", got)
 	}
 }
