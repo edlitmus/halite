@@ -63,11 +63,13 @@ credentials, and `make release-pubkey` prints the key's public half. The
 tool refuses to sign a set whose files do not match the manifest, one
 already signed, or one whose KMS key is not the committed public key.
 
-**No release is signed yet.** No key exists, so no public key is
-committed and `release.yml` is unchanged. The client has been run against
-a fake written from the API reference, not against KMS;
-`TestLiveKMSSignsADigestThisBuildVerifies` is the run that would change
-that, and needs a real key.
+**No release is signed yet.** The key exists, as `alias/halite-release`,
+and its public half is committed as `contrib/keys/halite-release.pub`;
+`release.yml` is unchanged. The client has been run against the real
+key: `TestLiveKMSSignsADigestThisBuildVerifies` had KMS sign a digest
+that this build and OpenSSL both verified, and `make release-pubkey`
+matched the committed key byte for byte. Signing a real release has not
+been run.
 
 ### Options and requisites given to one name under `names` work
 
