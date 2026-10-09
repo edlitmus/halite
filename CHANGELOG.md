@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The metrics-certificate page no longer points Prometheus at the wrong CA
+
+`docs/metrics.md` gave the enrollment CA as the CA for Prometheus to trust
+when scraping nodes, with the metrics CA only as a comment; with
+certificates from the documented state, every node target fails with
+`certificate signed by unknown authority`. The page now gives both, says
+which goes with which, and also covers Linux's `pki_dir` paths, node IDs
+that do not resolve from the Prometheus host, and key ownership.
+
 ### x509 states take `makedirs`, and a missing directory says so
 
 `x509.private_key_managed` and `x509.certificate_managed` take
