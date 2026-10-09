@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A node serves its renewed metrics certificate without a restart
+
+A node's metrics endpoint loaded its certificate once, at startup, so a
+certificate renewed by the documented state was never served until the
+agent restarted, and the old one would have expired under it. The endpoint
+now picks up a replaced certificate on the next connection, keeps serving
+the previous one if the new pair will not load, and says so in the log.
+
 ### The metrics-certificate page no longer points Prometheus at the wrong CA
 
 `docs/metrics.md` gave the enrollment CA as the CA for Prometheus to trust

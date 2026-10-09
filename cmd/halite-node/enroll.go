@@ -391,6 +391,8 @@ func runConnect(args *cli.Args) int {
 		n.log.Warn("the metrics endpoint is not serving",
 			"listen", n.metrics.listen, "error", err.Error())
 	}
+	n.metrics.info = func(msg string, kv ...any) { n.log.Info(msg, kv...) }
+	n.metrics.warn = func(msg string, kv ...any) { n.log.Warn(msg, kv...) }
 	go n.metrics.serve(ctx, metricsFailed, func(addr string) {
 		n.log.Info("metrics listening", "address", addr,
 			"client_certificate_required", n.metrics.requiresClientCert())

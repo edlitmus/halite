@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/config"
@@ -43,6 +44,10 @@ type nodeMetrics struct {
 	// operator typed, and reading it at construction would report it
 	// through whatever logger existed then.
 	certFile, keyFile, clientCAFile string
+	// info and warn are the agent's logger, for what the listener has to
+	// say after it has started: a certificate replaced on disk and picked
+	// up, or replaced with one it cannot load. Nil outside the agent.
+	info, warn func(msg string, kv ...any)
 
 	jobs         *metrics.Counter
 	jobDuration  *metrics.Histogram
@@ -359,12 +364,16 @@ func (m *nodeMetrics) serverTLS() (*tls.Config, error) {
 			"and metrics_tls_key are not; there is no plaintext metrics endpoint",
 			m.listen)
 	}
-	pair, err := tls.LoadX509KeyPair(m.certFile, m.keyFile)
+	// Loaded once here, so that a certificate that cannot be used is
+	// reported when the agent starts, as before; served through the
+	// reloader, so that one replaced on disk afterwards is served from the
+	// next connection on. DIVERGENCE 5.248.
+	certs, err := newCertReloader(m.certFile, m.keyFile, m.info, m.warn)
 	if err != nil {
 		return nil, fmt.Errorf("the metrics certificate: %w", err)
 	}
 	out := &tls.Config{
-		Certificates: []tls.Certificate{pair},
+		GetCertificate: certs.get,
 		// 1.3 only, as everywhere else here: what talks to this is a
 		// scraper, so there is nothing to be compatible with.
 		MinVersion: tls.VersionTLS13,
@@ -389,6 +398,107 @@ func (m *nodeMetrics) serverTLS() (*tls.Config, error) {
 	out.ClientCAs = pool
 	out.ClientAuth = tls.RequireAndVerifyClientCert
 	return out, nil
+}
+
+// certReloader serves the metrics certificate from disk and reads it
+// again when either file changes.
+//
+// Without it the listener loaded the pair once, at startup, and served it
+// for the life of the agent. The certificate state renews the files 30
+// days before they expire (docs/metrics.md), so a renewal wrote a new
+// certificate that a running agent never served, and the endpoint went on
+// presenting the old one until it expired and every scrape failed -- on
+// every node, about ninety days after the state first ran, unless the
+// agent happened to be restarted in between. DIVERGENCE 5.248.
+//
+// It checks on every handshake, which for a scrape target is one every
+// interval: two stat calls, and a read only when something moved. A change
+// is a different file (the state writes through a temporary file and a
+// rename), a different modification time, or a different size.
+//
+// A pair that will not load -- the key replaced and its certificate not
+// yet, or a file somebody truncated -- is not served. The previous pair
+// is, and the failure is said once until it changes or clears, and the
+// files are tried again on the next connection. A listener that went
+// dark because a renewal was half written would turn a routine renewal
+// into an outage.
+type certReloader struct {
+	certFile, keyFile string
+	info, warn        func(msg string, kv ...any)
+
+	mu                sync.Mutex
+	pair              *tls.Certificate
+	certStat, keyStat os.FileInfo
+	lastProblem       string
+}
+
+func newCertReloader(certFile, keyFile string, info, warn func(string, ...any)) (*certReloader, error) {
+	r := &certReloader{certFile: certFile, keyFile: keyFile, info: info, warn: warn}
+	certStat, keyStat, err := r.stat()
+	if err != nil {
+		return nil, err
+	}
+	pair, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	r.pair, r.certStat, r.keyStat = &pair, certStat, keyStat
+	return r, nil
+}
+
+func (r *certReloader) stat() (os.FileInfo, os.FileInfo, error) {
+	certStat, err := os.Stat(r.certFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	keyStat, err := os.Stat(r.keyFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	return certStat, keyStat, nil
+}
+
+func sameFileState(a, b os.FileInfo) bool {
+	return os.SameFile(a, b) && a.ModTime().Equal(b.ModTime()) && a.Size() == b.Size()
+}
+
+func (r *certReloader) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	certStat, keyStat, err := r.stat()
+	if err != nil {
+		r.problem(err)
+		return r.pair, nil
+	}
+	if sameFileState(certStat, r.certStat) && sameFileState(keyStat, r.keyStat) {
+		return r.pair, nil
+	}
+	pair, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
+	if err != nil {
+		r.problem(err)
+		return r.pair, nil
+	}
+	r.pair, r.certStat, r.keyStat, r.lastProblem = &pair, certStat, keyStat, ""
+	if r.info != nil {
+		kv := []any{"cert", r.certFile}
+		if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil {
+			kv = append(kv, "not_after", leaf.NotAfter.UTC().Format(time.RFC3339))
+		}
+		r.info("the metrics certificate changed on disk and is now being served", kv...)
+	}
+	return r.pair, nil
+}
+
+// problem says a failure once, until it changes or clears.
+func (r *certReloader) problem(err error) {
+	if err.Error() == r.lastProblem {
+		return
+	}
+	r.lastProblem = err.Error()
+	if r.warn != nil {
+		r.warn("the metrics certificate on disk cannot be loaded; the previous one is still being served",
+			"cert", r.certFile, "error", err.Error())
+	}
 }
 
 // handler answers `/v1/metrics` and nothing else.

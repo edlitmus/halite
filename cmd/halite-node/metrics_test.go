@@ -591,3 +591,126 @@ func TestTheAcceptedCounterStartsAtZeroAndCountsOnlyAdmittedJobs(t *testing.T) {
 		t.Errorf("the replay was not counted as refused, so it never reached the guard:\n%s", body)
 	}
 }
+
+// servedSerial makes a fresh TLS connection to the endpoint and answers
+// with the serial of the certificate it presented. A fresh connection each
+// time, because the point is what a new handshake gets.
+func servedSerial(t *testing.T, ca *testCA, addr string) string {
+	t.Helper()
+	pool := x509.NewCertPool()
+	pool.AddCert(ca.cert)
+	conn, err := tls.Dial("tcp", addr, &tls.Config{RootCAs: pool, ServerName: "localhost", MinVersion: tls.VersionTLS13})
+	if err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+	defer conn.Close()
+	return conn.ConnectionState().PeerCertificates[0].SerialNumber.String()
+}
+
+func serialOf(t *testing.T, certFile string) string {
+	t.Helper()
+	raw, err := os.ReadFile(certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(raw)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert.SerialNumber.String()
+}
+
+// moveInto replaces dst with src by rename, which is how the certificate
+// state writes a file.
+func moveInto(t *testing.T, src, dst string) {
+	t.Helper()
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A certificate renewed on disk is served from the next connection, with
+// no restart: in place, and by rename, which is what the state does.
+// Before, the listener served the pair it loaded at startup for as long as
+// the agent ran, so a renewal reached no scraper. DIVERGENCE 5.248.
+func TestARenewedMetricsCertificateIsServedWithoutARestart(t *testing.T) {
+	ca := newTestCA(t)
+	dir := t.TempDir()
+	certFile, keyFile := ca.serving(t, dir, "node")
+	m := nodeMetricsFor(t, "metrics_listen: '127.0.0.1:0'\n"+
+		"metrics_tls_cert: "+certFile+"\nmetrics_tls_key: "+keyFile+"\n")
+	var said []string
+	m.info = func(msg string, _ ...any) { said = append(said, msg) }
+	addr := serveForTest(t, m)
+
+	first := serialOf(t, certFile)
+	if got := servedSerial(t, ca, addr); got != first {
+		t.Fatalf("served %s, the file holds %s", got, first)
+	}
+
+	// In place: the same files written over.
+	ca.serving(t, dir, "node")
+	second := serialOf(t, certFile)
+	if got := servedSerial(t, ca, addr); got != second {
+		t.Errorf("after an in-place renewal the endpoint served %s, not the new %s (the old was %s)", got, second, first)
+	}
+
+	// By rename, as the state writes.
+	staged := t.TempDir()
+	newCert, newKey := ca.serving(t, staged, "node")
+	third := serialOf(t, newCert)
+	moveInto(t, newKey, keyFile)
+	moveInto(t, newCert, certFile)
+	if got := servedSerial(t, ca, addr); got != third {
+		t.Errorf("after a renewal by rename the endpoint served %s, not the new %s", got, third)
+	}
+	if len(said) < 2 {
+		t.Errorf("a reload was not said: %q", said)
+	}
+}
+
+// A replacement that will not load is not served, and neither is nothing:
+// the previous pair goes on being served, the failure is said once however
+// many handshakes meet it, and a good pair written afterwards is picked up.
+// The key arriving before its certificate is the ordinary case of this.
+func TestAnUnloadableReplacementKeepsThePreviousCertificate(t *testing.T) {
+	ca := newTestCA(t)
+	dir := t.TempDir()
+	certFile, keyFile := ca.serving(t, dir, "node")
+	m := nodeMetricsFor(t, "metrics_listen: '127.0.0.1:0'\n"+
+		"metrics_tls_cert: "+certFile+"\nmetrics_tls_key: "+keyFile+"\n")
+	var warned []string
+	m.warn = func(msg string, _ ...any) { warned = append(warned, msg) }
+	addr := serveForTest(t, m)
+	first := serialOf(t, certFile)
+
+	// The key first, on its own: the pair no longer matches.
+	staged := t.TempDir()
+	newCert, newKey := ca.serving(t, staged, "node")
+	moveInto(t, newKey, keyFile)
+	for i := 0; i < 3; i++ {
+		if got := servedSerial(t, ca, addr); got != first {
+			t.Fatalf("with the key replaced and not its certificate, the endpoint served %s, not the previous %s", got, first)
+		}
+	}
+	if len(warned) != 1 {
+		t.Errorf("a mismatched pair met three times was said %d times: %q", len(warned), warned)
+	}
+
+	// Then its certificate: the new pair is served.
+	want := serialOf(t, newCert)
+	moveInto(t, newCert, certFile)
+	if got := servedSerial(t, ca, addr); got != want {
+		t.Errorf("once the certificate arrived the endpoint served %s, not %s", got, want)
+	}
+
+	// A file that is not a certificate at all: the last good pair stays.
+	write(t, certFile, []byte("not a certificate\n"), 0o644)
+	if got := servedSerial(t, ca, addr); got != want {
+		t.Errorf("with a garbage certificate on disk the endpoint served %s, not the last good %s", got, want)
+	}
+	if len(warned) != 2 {
+		t.Errorf("a second, different failure was not said: %q", warned)
+	}
+}
