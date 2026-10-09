@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Options and requisites given to one name under `names` work
+
+`unless`, `onlyif`, `require` and the other options and requisites
+given to a single entry under `names` are now that name's, as in Salt.
+Before, they were passed to the module and the state failed to compile.
+A per-name `require_in` and its kind are refused with an explanation.
+DIVERGENCE 5.270.
+
 ### Agentless targets get the same pillar as enrolled nodes
 
 `halite-hub ssh` compiled a roster target's pillar with a compiler of its
@@ -55,7 +63,7 @@ The directories `file.managed`, `file.serialize` and `file.copy` create with
 makes `0700`) unless `dir_mode` says otherwise, and the state's `user`
 and `group`. Before, they were always `0755` and owned by whoever ran
 the state. `file.serialize` and `file.copy` gain `dir_mode` and a clear
-error for a missing directory. DIVERGENCE 5.267.
+error for a missing directory. DIVERGENCE 5.269.
 
 ### Relays renew their own upstream certificate
 
