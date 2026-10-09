@@ -10,7 +10,14 @@
 # Asking a developer to install Salt on the machine they work on is how a
 # gate stays skipped: it is a Python application with a long dependency
 # list and a habit of conflicting with a system Python.
-FROM golang:1.25-bookworm
+#
+# The base comes from mirror.gcr.io, Google's public mirror of Docker
+# Hub's official images, and not from Docker Hub itself. Since the gate
+# runs against three Salt releases at once (DIVERGENCE 5.265), three jobs
+# pull it together without logging in, and Docker Hub answered GitHub's
+# runners with 429 Too Many Requests: the gate failed in six seconds,
+# twice running, having tested nothing. DIVERGENCE 5.272.
+FROM mirror.gcr.io/library/golang:1.25-bookworm
 
 # The Salt major to compare against. SPEC 31's deviation table records
 # which version each difference was observed under — 3006 and 3008

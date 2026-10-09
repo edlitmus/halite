@@ -22914,6 +22914,28 @@ Loading the pair once, the old behaviour, fails it with the old serial.
   estate's tree is not yet re-issuing the certificate. That is a change
   to the salt tree, made alongside this one.
 - The example tree's re-issue state has still not been applied anywhere.
+### 5.272 The three-release Salt gate tripped Docker Hub's rate limit
+
+After 5.265 ran the Salt differential against three releases at once,
+the `salt differential` jobs for Salt 3007.1 and 3008.3 on #290 failed
+in six seconds, twice, a rerun included. Each failed before building anything:
+`429 Too Many Requests` from `registry-1.docker.io`, on the HEAD request
+for `golang:1.25-bookworm`. Three jobs pull the base image together,
+anonymously, from GitHub's shared runner addresses, and Docker Hub
+limits anonymous pulls by address. The gate failed having tested
+nothing, which looked like a red Salt comparison.
+
+The image now builds `FROM mirror.gcr.io/library/golang:1.25-bookworm`.
+That is Google's public mirror of Docker Hub's official images, and it
+answered 200 for that tag when asked here. The bytes are the same
+official image; the registry is not the one rate-limiting.
+
+**Not covered:** whether the mirror's own limits hold for three jobs on
+every change is for CI to show. If it fails the same way, the next step
+is logging in to a registry, which needs a credential this project does
+not hold in CI.
+
+
 
 
 
