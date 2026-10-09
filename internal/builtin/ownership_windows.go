@@ -64,6 +64,10 @@ func plannedOwnership(path string, exists bool, wantUser, wantGroup string) (*va
 	return changes, true, nil
 }
 
+// keepOwnership is a no-op here: ownership is win_dacl's, which is not in
+// this build.
+func keepOwnership(string, os.FileInfo) error { return nil }
+
 func applyOwnership(path, wantUser, wantGroup string) error {
 	if wantGroup != "" {
 		return groupRefusal(wantGroup)

@@ -564,14 +564,29 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 		if err := writeAtomic(path, want, writeMode); err != nil {
 			return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
 		}
+		// The write put a new file in place, owned by whoever ran it.
+		// Give it the replaced file's owner, as the mode just was, and
+		// let a requested user or group below override that. Before
+		// DIVERGENCE 5.253 neither happened: ownership was compared with
+		// the old file, which was right, so the new file kept root and
+		// a service lost read access to its own configuration.
+		if exists {
+			if err := keepOwnership(path, info); err != nil {
+				modeWarnings = append(modeWarnings, fmt.Sprintf(
+					"%s was rewritten and its previous owner could not be kept: %v", path, err))
+			}
+		}
 	} else if modeDiffers {
 		if err := applyMode(path, wantMode); err != nil {
 			return states.False(fmt.Sprintf("The mode of %s could not be set: %v", path, err)), nil
 		}
 	}
 
-	if ownerDiffers {
-		if err := applyOwnership(path, states.Str(args, "user", ""), states.Str(args, "group", "")); err != nil {
+	// Applied when it differed, and after any rewrite whatever it was
+	// before: the file that was compared is not the file now in place.
+	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
+	if ownerDiffers || (contentsDiffer && (wantUser != "" || wantGroup != "")) {
+		if err := applyOwnership(path, wantUser, wantGroup); err != nil {
 			return states.False(fmt.Sprintf("The ownership of %s could not be set: %v", path, err)), nil
 		}
 	}
