@@ -22,6 +22,7 @@ type failingSource struct {
 
 func (f failingSource) Name() string   { return f.name }
 func (f failingSource) FailSoft() bool { return f.soft }
+func (f failingSource) Secret() bool   { return true }
 func (f failingSource) Pillar(context.Context, pillar.ExtRequest) (*value.Map, error) {
 	return nil, errors.New("the secret store did not answer")
 }

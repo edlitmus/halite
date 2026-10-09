@@ -182,8 +182,9 @@ login would never shrink.
 
 Requested data is a separate matter. `halite-node pillar items`, `item`
 and `get` mask the secrets in what they print — every value the `gpg`
-renderer decrypted, and every value an external pillar source such as
-AWS Secrets Manager returned — as `db_password: **********`, and print
+renderer decrypted, and every value an external pillar source returned
+unless that source is configured `secret: false` — as
+`db_password: **********`, and print
 everything else as it is. A value that only contains a secret, such as a
 connection string built from a password, has that part replaced.
 `--reveal` prints the secrets too. That masking is a choice made for the

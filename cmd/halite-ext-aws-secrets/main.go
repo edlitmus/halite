@@ -39,12 +39,15 @@
 // # Configuration
 //
 // Everything comes from the `ext_pillar` block, which the hub hands
-// over untouched. The hub holds no `aws_secrets_*` settings of its own:
+// over untouched but for its own two keys, `fail` and `secret`. Every
+// value this returns is masked wherever it would print: the hub refuses
+// `secret: false` on this source (DIVERGENCE 5.257). The hub holds no `aws_secrets_*` settings of its own:
 // a host that kept an extension's schema would be a second place for it
 // to drift.
 //
 //	ext_pillar:
 //	  - aws_secrets_manager:
+//	      secret: true
 //	      region: us-east-1
 //	      secrets:
 //	        - name: database.creds

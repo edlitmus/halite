@@ -162,7 +162,16 @@ metrics: true
 # The list keeps Salt's shape: one mapping per source, the key naming
 # it, the value being that source's own configuration. The hub does not
 # read that value; it hands it to the extension, which is the only thing
-# that knows its schema. The one key the hub does read is `fail`.
+# that knows its schema. The two keys the hub does read are `fail` and
+# `secret`.
+#
+# `secret` says whether what a source returns is masked: in state
+# comments and changes, in the hub's and nodes' logs, and in
+# `halite-node pillar items`. It is true unless a source says
+# `secret: false`, which is for a source of ordinary data -- an
+# inventory, a CMDB -- whose host names and addresses should print.
+# `aws_secrets_manager` returns credentials and nothing else, so it is
+# always secret, and `secret: false` on it stops the hub from starting.
 #
 # `aws_secrets_manager` is the reference extension in this tree. It
 # lands everything under `pillar['aws_secrets']`, parses a JSON secret
@@ -173,6 +182,9 @@ metrics: true
 #
 # ext_pillar:
 #   - aws_secrets_manager:
+#       # Always true for this source; written out so that nobody
+#       # copying this block for another source forgets it exists.
+#       secret: true
 #       region: us-east-1
 #       partition: aws
 #       cache_ttl: 5m

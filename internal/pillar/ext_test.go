@@ -18,12 +18,15 @@ type fakeExt struct {
 	// fail is what it fails with.
 	fail error
 	soft bool
+	// plain is `secret: false`.
+	plain bool
 	// saw records the pillar it was handed.
 	saw *value.Map
 }
 
 func (f *fakeExt) Name() string   { return f.name }
 func (f *fakeExt) FailSoft() bool { return f.soft }
+func (f *fakeExt) Secret() bool   { return !f.plain }
 
 func (f *fakeExt) Pillar(_ context.Context, req ExtRequest) (*value.Map, error) {
 	f.saw = req.Pillar
