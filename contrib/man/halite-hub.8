@@ -77,7 +77,7 @@ Reads the file directly, so it works with the hub stopped.
 Print the Prometheus exposition.
 .It Cm ssh Ar target Ar function Op Ar args ...
 Run on a machine with no agent, by pushing the binary over SSH.
-.It Cm extensions Ar list Ns | Ns Ar sync Ns | Ns Ar run Ns | Ns Ar verify
+.It Cm extensions Ar list Ns | Ns Ar sync Ns | Ns Ar run Ns | Ns Ar verify Ns | Ns Ar key Ns | Ns Ar sign
 The signed extensions this hub runs, which are the external pillar
 sources of the specification's section 12.7 and nothing else on a hub.
 .Cm list
@@ -88,6 +88,18 @@ fetches bundles from
 in the tree into the cache.
 Synchronization fetches and does not load, so publishing an extension
 cannot change a running hub: restart it to pick one up.
+.Cm key create Ar name
+makes an Ed25519 signing key in
+.Pa pki_dir
+and prints the
+.Ic extension_trust_keys
+line;
+.Cm sign Ar dir
+signs a bundle with it and, with
+.Fl -publish Ar tree ,
+copies it to
+.Pa _ext/<name>/<version>/ .
+Run these on the machine that signs, not on the hub.
 .Pp
 .Cm run Ar path Op Ar function
 starts an extension where it lies, with no bundle, no signature, no

@@ -1,7 +1,9 @@
 // Command extbundle signs an extension bundle.
 //
 // For the lab and for whoever publishes an extension: it digests a
-// directory, writes the manifest, and signs the Merkle root.
+// directory, writes the manifest, and signs the Merkle root. It is a
+// thin front on extension.SignBundle, which `halite-hub extensions sign`
+// uses too; unlike that command it generates the key the first time.
 package main
 
 import (
@@ -12,7 +14,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileperm"
@@ -37,28 +38,16 @@ func main() {
 
 	// Before the key: a bundle that is going to be refused should not
 	// leave a freshly generated signing key behind it.
-	target, err := executablePlatform(filepath.Join(*dir, *exe), *platform)
+	_, err := extension.ExecutablePlatform(filepath.Join(*dir, *exe), *platform)
 	check(err)
 
 	private, public := loadOrCreateKey(*keyFile)
 
-	manifest, err := extension.Build(*dir, extension.Manifest{
-		Name: *name, Version: *version, Kind: *kind,
-		Executables: map[string]string{
-			target: *exe,
-		},
-		Declares: splitDeclares(*declares),
+	root, err := extension.SignBundle(extension.SignOptions{
+		Dir: *dir, Name: *name, Version: *version, Kind: *kind, Exe: *exe,
+		Platform: *platform, Declares: extension.SplitDeclares(*declares), Key: private,
 	})
 	check(err)
-
-	raw, err := manifest.Encode()
-	check(err)
-	check(fileperm.WriteFile(filepath.Join(*dir, extension.ManifestName), raw, 0o644))
-
-	root, err := extension.MerkleRoot(manifest.Files)
-	check(err)
-	check(os.WriteFile(filepath.Join(*dir, extension.SignatureName),
-		extension.Sign(private, root), 0o644))
 
 	fmt.Println("trust_key:", extension.FormatTrustKey("lab", public))
 	fmt.Printf("root: %x\n", root)
@@ -66,12 +55,10 @@ func main() {
 
 func loadOrCreateKey(path string) (ed25519.PrivateKey, ed25519.PublicKey) {
 	if path != "" {
-		raw, err := os.ReadFile(path)
-		if err == nil {
-			decoded, err := base64.StdEncoding.DecodeString(string(raw))
-			check(err)
-			private := ed25519.PrivateKey(decoded)
+		if private, err := extension.LoadSigningKey(path); err == nil {
 			return private, private.Public().(ed25519.PublicKey)
+		} else if !os.IsNotExist(err) {
+			check(err)
 		}
 	}
 	public, private, err := ed25519.GenerateKey(rand.Reader)
@@ -80,25 +67,6 @@ func loadOrCreateKey(path string) (ed25519.PrivateKey, ed25519.PublicKey) {
 		check(fileperm.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(private)), 0o600))
 	}
 	return private, public
-}
-
-// splitDeclares reads `-declares network,root`.
-//
-// On a comma, as the flag's own help says. This used to use
-// filepath.SplitList, which splits on the operating system's path list
-// separator -- so `network,root` was one declaration named
-// "network,root" on every platform, and the colon form it did accept on
-// unix was silently one declaration on Windows. A declaration that does
-// not parse is a permission the sandbox never grants, which shows up as
-// an extension that cannot reach the network for no stated reason.
-func splitDeclares(v string) []string {
-	var out []string
-	for _, part := range strings.Split(v, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
 }
 
 func check(err error) {

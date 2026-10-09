@@ -23,6 +23,20 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `halite-hub extensions key create` and `extensions sign`
+
+Extensions can be signed with the shipped binary instead of
+`go run ./tools/extbundle` from a source checkout:
+- `extensions key create <name>` makes the key and prints the
+  `extension_trust_keys` line.
+- `extensions sign <dir> --name … --exe … --key <name>` signs the bundle,
+  prints the `extension_pins` entry, and with `--publish <tree>` places
+  it under `_ext/<name>/<version>/`.
+
+Both refuse to replace a key or a published version, and `sign` refuses
+a missing key instead of making one. Run them on a machine other than
+the hub. DIVERGENCE 5.260.
+
 ### A hub with `ext_pillar` and no `pillar_roots` refuses to start
 
 A hub with no pillar roots compiles no pillar, so its external pillar

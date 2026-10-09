@@ -16,6 +16,9 @@ Usage:
   halite-hub extensions sync                 fetch _ext/ from the tree into the cache
   halite-hub extensions run <path> [<fn>]    run one straight from a path, for writing it
   halite-hub extensions verify <path>        check one against the protocol
+  halite-hub extensions key create <name>    make a key to sign extensions with
+  halite-hub extensions sign <dir> --name <n> --exe <file> --key <k>
+                                             sign a bundle, and optionally publish it
 
 Synchronization fetches and does not load. What this hub runs does not
 change until it is restarted, so publishing an extension into the tree
@@ -35,6 +38,27 @@ it should honour -- and reports each rule by name with what happened and
 why the rule is there. It is what an extension written in another
 language has to be checked against, because the host is written to run
 extensions rather than to diagnose them.
+
+key create writes <pki_dir>/extension-<name>.key, readable by its owner
+alone, refuses to replace one, and prints the extension_trust_keys line
+the hub and the nodes need. sign signs the executable in <dir> with a
+key named that way, or with --key <path>, writing manifest.json and
+manifest.sig beside it, and prints the extension_pins entry to add.
+Neither opens the hub's state: run them on a machine that is not the
+hub, because a hub holding the key verifies its own signatures.
+
+Flags for sign:
+  --name <name>      the extension's name
+  --exe <file>       the executable, relative to <dir>
+  --key <name|path>  the signing key: a name from key create, or a path
+  --ext-version <v>  the extension's version, default 1.0.0
+  --kind <kind>      module, pillar, returner, ...; default module
+  --declares <list>  what it needs, comma separated: network, root
+  --platform <os/arch>  checked against the executable; read from it when absent
+  --publish <tree>   copy the signed bundle to <tree>/_ext/<name>/<version>/,
+                     which must not exist yet
+Flags for key create:
+  --out <path>       write the key here instead
 
 Flags for run and verify:
   --kwargs <json>    keyword arguments for the call
@@ -89,6 +113,10 @@ func runExtensions(args *cli.Args) int {
 	// the log file -- as root, usually, in a directory the hub's account
 	// has to write. DIVERGENCE 5.220 did this for keys and jobs.
 	switch sub {
+	case "key":
+		return extensionsKeyCreate(args)
+	case "sign":
+		return extensionsSign(args)
 	case "list":
 		return extensionsList(openHubForConfig(args))
 	case "sync":
