@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-api serves a renewed certificate without a restart
+
+`halite-api` loaded its serving certificate once at startup, so a
+certificate renewed on disk was not served until the process restarted.
+It now picks up a replaced `tls_cert`/`tls_key` on the next connection, as
+a node's metrics endpoint already does, and keeps serving the previous
+pair if the new one will not load.
+
 ### `x509.certificate_managed` reissues when what it asks for changes
 
 A change to a certificate state's subject, `subject_alt_names`, key usage or

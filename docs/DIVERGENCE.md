@@ -21748,6 +21748,40 @@ page's own block twice, still passes.
   be reissued once on the first run under this build; that was reasoned
   about, not tested.
 
+### 5.250 halite-api served the certificate it started with, too
+
+5.248 fixed the node's metrics listener and named the same shape in
+`halite-api`: `servingCertificate` loaded the pair once and `api.Listen` was
+handed it, so a certificate renewed on disk -- by ACME, by a certificate
+state, by hand -- was not served until the process restarted, and expired
+under it otherwise.
+
+The reloader 5.248 wrote is now `internal/certreload`, one package both
+use. A copy in each would be two implementations that must agree, and the
+first version of this one had a Windows-only bug (5.248) that a copy would
+have kept. `api.Listen` takes a `GetCertificate` function, and `halite-api`
+passes a `certreload.Reloader` logging through its own logger. A
+certificate that cannot be used at startup is still fatal, as before. The
+node's metrics listener uses the same package and its tests are unchanged.
+
+Tests, broken on purpose: `internal/certreload` has its own (a pair replaced
+in place and by rename is served from the next connection; a mismatched
+pair keeps the previous one and is said once; missing files at startup are
+an error), which fail when the reload is skipped. The API's port is tested
+through `api.Listen` itself: a renewal on disk is what the next connection
+is presented, and the port still refuses TLS 1.2; making `Listen` pin the
+first certificate, which is the old behaviour, fails it. `-race` clean,
+Windows vet clean.
+
+**Not covered:**
+- Not run on beastie's API yet; it needs a rebuild. Its certificate there
+  is not renewed by anything today.
+- `servingCertificate` itself, the wiring in `cmd/halite-api`, is not unit
+  tested; the test drives `api.Listen` with a reloader, which is what that
+  wiring builds.
+- The relay's client certificate (`cmd/halite-hub/relay.go`) is still
+  loaded once. It was not in this change.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

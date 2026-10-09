@@ -429,12 +429,16 @@ func (s *Server) schema(w http.ResponseWriter, r *http.Request, token *apitoken.
 }
 
 // Listen opens the API's port with TLS 1.3 only, per SPEC 22.3.
-func Listen(addr string, cert tls.Certificate) (net.Listener, error) {
+//
+// The certificate is asked for on each handshake rather than fixed here,
+// so that one renewed on disk is served without a restart: halite-api
+// passes a certreload.Reloader (DIVERGENCE 5.250).
+func Listen(addr string, getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
 	if addr == "" {
 		addr = ":4511"
 	}
 	ln, err := tls.Listen("tcp", addr, &tls.Config{
-		Certificates: []tls.Certificate{cert},
+		GetCertificate: getCertificate,
 		// 1.3 only. Everything that talks to this is a program or a
 		// current browser, so there is nothing to be compatible with
 		// and nothing to gain by offering less.

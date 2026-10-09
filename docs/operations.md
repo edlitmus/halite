@@ -878,7 +878,13 @@ authority that also issues node identities, which is a much larger thing
 to trust than a web server needs.
 
 So it comes from wherever the rest of your HTTPS certificates come from:
-an internal CA, ACME, or the estate's own tooling. For a lab, or a first
+an internal CA, ACME, or the estate's own tooling. **Renewing it needs no
+restart.** `halite-api` reads the two files on each new connection and
+serves a replaced pair from then on; a pair that will not load (the key
+written before its certificate) leaves the previous one in service and is
+logged once. So an ACME client or a certificate state can renew it in
+place. Before DIVERGENCE 5.250 the pair was loaded once at startup, and a
+renewed certificate was not served until the process was restarted. For a lab, or a first
 run, self-signed is enough:
 
 ```sh
