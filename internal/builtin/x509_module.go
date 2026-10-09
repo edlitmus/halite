@@ -396,17 +396,17 @@ func publicKeyOf(source string) (crypto.PublicKey, error) {
 // state wrote nowhere and returned the PEM to a caller that discarded it,
 // so the certificate was created afresh on every run and never appeared
 // on disk. An empty path returns the PEM.
-func createCertificate(args *value.Map, path string, mode os.FileMode) (any, error) {
-	subjectPub, subjectKey, err := resolveSubjectKey(args)
-	if err != nil {
-		return nil, err
-	}
-
-	days := states.Int(args, "days_valid", defaultCertDays)
-	if days <= 0 {
-		return nil, fmt.Errorf("days_valid must be positive, found %d", days)
-	}
-
+// requestedTemplate is the certificate the arguments ask for, without the
+// parts that differ on every issue: serial, validity and key identifier.
+//
+// createCertificate builds what it signs from this, and certificate_managed
+// compares an existing certificate against it, so the question "is the
+// certificate on disk the one this state describes?" and the act of making
+// it so read the arguments the same way. Before DIVERGENCE 5.249 the state
+// answered the question from the key, the signer and the expiry alone, and
+// a change to the names or usages a tree asked for was never applied to a
+// certificate that already existed.
+func requestedTemplate(args *value.Map) (*x509.Certificate, error) {
 	// The SANs a tree gives as a list, plus the ones it gives as Salt's
 	// single `subjectAltName` string. Both are read, because a tree that
 	// came from Salt writes the second and one written for this build
@@ -457,11 +457,6 @@ func createCertificate(args *value.Map, path string, mode os.FileMode) (any, err
 		extUsage = append(extUsage, e...)
 	}
 
-	serial, err := serialNumber()
-	if err != nil {
-		return nil, err
-	}
-
 	isCA := states.Bool(args, "ca", false)
 	pathLen, hasPathLen := 0, false
 	if s := states.Str(args, "basicConstraints", ""); s != "" {
@@ -486,15 +481,8 @@ func createCertificate(args *value.Map, path string, mode os.FileMode) (any, err
 		}
 	}
 
-	now := time.Now()
 	tmpl := &x509.Certificate{
-		SerialNumber: serial,
-		Subject:      buildSubject(args),
-		// One minute of backdating, because a node whose clock is a few
-		// seconds ahead of the CA's would otherwise reject a certificate
-		// the moment it is issued.
-		NotBefore:             now.Add(-time.Minute),
-		NotAfter:              now.Add(time.Duration(days) * 24 * time.Hour),
+		Subject:               buildSubject(args),
 		KeyUsage:              usage,
 		ExtKeyUsage:           extUsage,
 		BasicConstraintsValid: true,
@@ -518,6 +506,35 @@ func createCertificate(args *value.Map, path string, mode os.FileMode) (any, err
 		tmpl.MaxPathLen = 0
 		tmpl.MaxPathLenZero = true
 	}
+	return tmpl, nil
+}
+
+func createCertificate(args *value.Map, path string, mode os.FileMode) (any, error) {
+	subjectPub, subjectKey, err := resolveSubjectKey(args)
+	if err != nil {
+		return nil, err
+	}
+
+	days := states.Int(args, "days_valid", defaultCertDays)
+	if days <= 0 {
+		return nil, fmt.Errorf("days_valid must be positive, found %d", days)
+	}
+
+	tmpl, err := requestedTemplate(args)
+	if err != nil {
+		return nil, err
+	}
+	serial, err := serialNumber()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	tmpl.SerialNumber = serial
+	// One minute of backdating, because a node whose clock is a few
+	// seconds ahead of the CA's would otherwise reject a certificate the
+	// moment it is issued.
+	tmpl.NotBefore = now.Add(-time.Minute)
+	tmpl.NotAfter = now.Add(time.Duration(days) * 24 * time.Hour)
 
 	if ski := states.Str(args, "subjectKeyIdentifier", ""); ski != "" {
 		if strings.Contains(strings.ToLower(ski), "critical") {

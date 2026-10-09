@@ -6,8 +6,11 @@ import (
 	"crypto/ed25519"
 	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -49,7 +52,7 @@ func registerX509States(r *Registries) {
 		states.Module{
 			Sig: signature.Signature{
 				Module: "x509", Function: "certificate_managed",
-				Doc: "Ensure a certificate exists, is signed by the expected CA, and is not close to expiry.",
+				Doc: "Ensure a certificate exists, is signed by the expected CA, carries the subject, names and usages asked for, and is not close to expiry.",
 				Params: append([]signature.Param{
 					req("name", signature.Path, "Where the certificate lives."),
 					opt("private_key", signature.String, "", "The subject's key, as a path or PEM."),
@@ -189,6 +192,8 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 			reason = fmt.Sprintf("it expires in under %d days, on %s", window, old)
 		case !signerMatches(existing, args):
 			reason = "it was not signed by the configured CA"
+		default:
+			reason = requestedDiffers(existing, args)
 		}
 	}
 
@@ -245,6 +250,83 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 	}
 	return states.Changed(
 		fmt.Sprintf("A certificate was written to %s, because %s.%s", path, reason, made), changes), nil
+}
+
+// requestedDiffers says how an existing certificate differs from the one
+// the arguments ask for, or "" when it does not: its subject, its subject
+// alternative names, its key usage and extended key usage, and whether it
+// is a CA and with what path length. What it asks for is requestedTemplate,
+// the same thing createCertificate signs, so a certificate this state has
+// just written always compares equal to its own arguments and a second run
+// changes nothing.
+//
+// Not the validity. Every issue has its own dates, and a certificate whose
+// days_valid differed from the tree's would be reissued on every run; the
+// renewal window is what governs the dates. Arguments that do not parse are
+// not a difference here: the issue path reports them, as it always has.
+func requestedDiffers(have *x509.Certificate, args *value.Map) string {
+	want, err := requestedTemplate(args)
+	if err != nil {
+		return ""
+	}
+	if a, b := subjectFields(have.Subject), subjectFields(want.Subject); a != b {
+		return fmt.Sprintf("its subject is %s and the state asks for %s", a, b)
+	}
+	if a, b := sortedStrings(sanStrings(have)), sortedStrings(sanStrings(want)); strings.Join(a, ", ") != strings.Join(b, ", ") {
+		return fmt.Sprintf("its subject alternative names are [%s] and the state asks for [%s]",
+			strings.Join(a, ", "), strings.Join(b, ", "))
+	}
+	if have.KeyUsage != want.KeyUsage {
+		return fmt.Sprintf("its key usage is %d and the state asks for %d", have.KeyUsage, want.KeyUsage)
+	}
+	if a, b := sortedUsages(have.ExtKeyUsage), sortedUsages(want.ExtKeyUsage); a != b {
+		return fmt.Sprintf("its extended key usage is [%s] and the state asks for [%s]", a, b)
+	}
+	if have.IsCA != want.IsCA {
+		return fmt.Sprintf("it is%s a CA and the state asks for one that is%s", notIf(!have.IsCA), notIf(!want.IsCA))
+	}
+	if want.IsCA && (have.MaxPathLen != want.MaxPathLen || have.MaxPathLenZero != want.MaxPathLenZero) {
+		return fmt.Sprintf("its path length is %d and the state asks for %d", have.MaxPathLen, want.MaxPathLen)
+	}
+	return ""
+}
+
+func subjectFields(n pkix.Name) string {
+	return fmt.Sprintf("CN=%s C=%v O=%v OU=%v L=%v ST=%v",
+		n.CommonName, n.Country, n.Organization, n.OrganizationalUnit, n.Locality, n.Province)
+}
+
+func sortedStrings(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}
+
+func sortedUsages(in []x509.ExtKeyUsage) string {
+	names := make([]string, 0, len(in))
+	for _, u := range in {
+		names = append(names, extKeyUsageLabel(u))
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
+// extKeyUsageLabel names a usage the way a tree spells it, for a comment
+// an operator reads.
+func extKeyUsageLabel(u x509.ExtKeyUsage) string {
+	for name, v := range extKeyUsageNames {
+		if v == u && name == normaliseUsage(name) {
+			return name
+		}
+	}
+	return fmt.Sprintf("%d", int(u))
+}
+
+func notIf(b bool) string {
+	if b {
+		return " not"
+	}
+	return ""
 }
 
 // publicKeyMatches reports whether a certificate carries the public half

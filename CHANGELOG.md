@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `x509.certificate_managed` reissues when what it asks for changes
+
+A change to a certificate state's subject, `subject_alt_names`, key usage or
+extended key usage now reissues the certificate on the next run, saying what
+differs. Before, an existing certificate that matched its key and CA was
+left alone until it neared expiry, so an added name could take months to
+appear.
+
 ### A node serves its renewed metrics certificate without a restart
 
 A node's metrics endpoint loaded its certificate once, at startup, so a

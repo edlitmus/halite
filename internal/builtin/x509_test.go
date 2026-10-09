@@ -636,3 +636,114 @@ func TestTlsBitsReachesTheGeneratedKey(t *testing.T) {
 		t.Errorf("tls curve p384 produced %s", got)
 	}
 }
+
+// A certificate that exists, matches its key, is outside the renewal window
+// and was signed by the right CA was "already in place" whatever the state
+// asked it to say. A tree that added a name to subject_alt_names saw nothing
+// happen until the certificate came up for renewal, two months later for a
+// 90-day certificate. Now the requested names and usages are compared too.
+// DIVERGENCE 5.249.
+func TestCertificateManagedReissuesWhenWhatItAsksForChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		before []any
+		after  []any
+		reason string
+	}{
+		{"an address added to the names",
+			[]any{"subject_alt_names", []any{"DNS:mail.example"}},
+			[]any{"subject_alt_names", []any{"DNS:mail.example", "IP:10.1.2.3"}},
+			"subject alternative names"},
+		{"the common name",
+			[]any{"CN", "old.example"},
+			[]any{"CN", "new.example"},
+			"subject"},
+		{"an extended key usage added",
+			[]any{"ext_key_usage", []any{"serverAuth"}},
+			[]any{"ext_key_usage", []any{"serverAuth", "clientAuth"}},
+			"extended key usage"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := New()
+			dir := t.TempDir()
+			key := filepath.Join(dir, "key.pem")
+			cert := filepath.Join(dir, "cert.pem")
+			args := func(extra []any) *value.Map {
+				m := value.MapOf("name", cert, "private_key", key, "CN", "x.example",
+					"days_valid", int64(90), "days_remaining", int64(30))
+				for i := 0; i+1 < len(extra); i += 2 {
+					m.Set(extra[i].(string), extra[i+1])
+				}
+				return m
+			}
+			r.States.Call(newCtx(false), "x509.private_key_managed", value.MapOf("name", key, "algo", "ec"))
+			if res, _ := r.States.Call(newCtx(false), "x509.certificate_managed", args(tc.before)); !res.HasChanges() {
+				t.Fatalf("the first run did not issue: %+v", res)
+			}
+
+			// Unchanged arguments: nothing, as before.
+			if res, _ := r.States.Call(newCtx(false), "x509.certificate_managed", args(tc.before)); res.HasChanges() {
+				t.Fatalf("unchanged arguments reissued: %s", res.Comment)
+			}
+
+			// Test mode says it would reissue, and why.
+			res, _ := r.States.Call(newCtx(true), "x509.certificate_managed", args(tc.after))
+			if res.Result != nil || !strings.Contains(res.Comment, tc.reason) {
+				t.Fatalf("test mode on a changed request: %+v", res)
+			}
+
+			res, _ = r.States.Call(newCtx(false), "x509.certificate_managed", args(tc.after))
+			if !res.HasChanges() || !strings.Contains(res.Comment, tc.reason) {
+				t.Fatalf("a changed request was not reissued, or not said: %+v", res)
+			}
+
+			// And it converges: the new certificate is what was asked for.
+			before, _ := os.ReadFile(cert)
+			if res, _ := r.States.Call(newCtx(false), "x509.certificate_managed", args(tc.after)); res.HasChanges() {
+				t.Errorf("the reissued certificate does not satisfy its own arguments, so the state "+
+					"would reissue on every run: %s", res.Comment)
+			}
+			if after, _ := os.ReadFile(cert); string(before) != string(after) {
+				t.Error("the converged run rewrote the certificate")
+			}
+		})
+	}
+}
+
+// Salt's single-string spellings reach the template by another path than
+// the list arguments, so a certificate written from them has to compare
+// equal to them too, or a tree carried over from Salt would reissue its
+// certificate on every highstate.
+func TestCertificateManagedWithSaltsStringFormsConverges(t *testing.T) {
+	r := New()
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key.pem")
+	cert := filepath.Join(dir, "cert.pem")
+	args := func() *value.Map {
+		return value.MapOf("name", cert, "private_key", key, "CN", "web.example",
+			"subjectAltName", "DNS:web.example, IP:10.1.2.3, email:ops@example.com",
+			"keyUsage", "critical, digitalSignature, keyEncipherment",
+			"extendedKeyUsage", "serverAuth, clientAuth",
+			"days_valid", int64(90), "days_remaining", int64(30))
+	}
+	r.States.Call(newCtx(false), "x509.private_key_managed", value.MapOf("name", key, "algo", "ec"))
+	if res, _ := r.States.Call(newCtx(false), "x509.certificate_managed", args()); !res.HasChanges() {
+		t.Fatalf("the first run did not issue: %+v", res)
+	}
+	if res, _ := r.States.Call(newCtx(false), "x509.certificate_managed", args()); res.HasChanges() {
+		t.Errorf("a certificate from Salt's string forms is reissued on the next run: %s", res.Comment)
+	}
+
+	// A CA with Salt's basicConstraints converges as well.
+	caKey := filepath.Join(dir, "ca.key")
+	caCert := filepath.Join(dir, "ca.crt")
+	caArgs := func() *value.Map {
+		return value.MapOf("name", caCert, "private_key", caKey, "CN", "a CA",
+			"basicConstraints", "critical, CA:true, pathlen:1", "days_valid", int64(365))
+	}
+	r.States.Call(newCtx(false), "x509.private_key_managed", value.MapOf("name", caKey, "algo", "ec"))
+	r.States.Call(newCtx(false), "x509.certificate_managed", caArgs())
+	if res, _ := r.States.Call(newCtx(false), "x509.certificate_managed", caArgs()); res.HasChanges() {
+		t.Errorf("a CA from basicConstraints is reissued on the next run: %s", res.Comment)
+	}
+}

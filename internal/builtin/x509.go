@@ -391,7 +391,25 @@ func certFields(c *x509.Certificate) *value.Map {
 	m.Set("public_key_algorithm", c.PublicKeyAlgorithm.String())
 	m.Set("self_signed", c.Subject.String() == c.Issuer.String())
 
-	names := make([]any, 0, len(c.DNSNames)+len(c.IPAddresses)+len(c.EmailAddresses))
+	sans := sanStrings(c)
+	names := make([]any, 0, len(sans))
+	for _, n := range sans {
+		names = append(names, n)
+	}
+	m.Set("subject_alt_names", names)
+
+	// The fingerprint is what an operator compares by eye, so it is
+	// rendered the way every other tool renders it.
+	m.Set("sha256_fingerprint", fingerprint(c.Raw))
+	m.Set("days_remaining", int64(time.Until(c.NotAfter)/(24*time.Hour)))
+	return m
+}
+
+// sanStrings is a certificate's subject alternative names in the form a
+// tree writes them, DNS: then IP: then email: then URI:. read_certificate
+// prints them this way and certificate_managed compares them this way.
+func sanStrings(c *x509.Certificate) []string {
+	names := make([]string, 0, len(c.DNSNames)+len(c.IPAddresses)+len(c.EmailAddresses)+len(c.URIs))
 	for _, d := range c.DNSNames {
 		names = append(names, "DNS:"+d)
 	}
@@ -404,13 +422,7 @@ func certFields(c *x509.Certificate) *value.Map {
 	for _, u := range c.URIs {
 		names = append(names, "URI:"+u.String())
 	}
-	m.Set("subject_alt_names", names)
-
-	// The fingerprint is what an operator compares by eye, so it is
-	// rendered the way every other tool renders it.
-	m.Set("sha256_fingerprint", fingerprint(c.Raw))
-	m.Set("days_remaining", int64(time.Until(c.NotAfter)/(24*time.Hour)))
-	return m
+	return names
 }
 
 func fingerprint(der []byte) string {

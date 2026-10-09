@@ -551,7 +551,11 @@ applies this block as an unprivileged user, and a change of owner to root
 would fail there.
 
 It converges. A second run reports the certificate already in place and
-changes nothing; a run inside the renewal window reissues and says so:
+changes nothing; a run inside the renewal window reissues and says so, and
+so does a run after the state's subject, names or usages have changed,
+naming what differs. Until DIVERGENCE 5.249 a changed name waited for the
+renewal window: a certificate that matched its key and its CA was "already
+in place" whatever it said.
 
 ```
 Comment: A certificate was written to /usr/local/etc/halite/pki/metrics.crt,
@@ -583,7 +587,8 @@ and neither has yet been seen to bring a target up:
   firewall admitting only the Prometheus host.
 
 Adding the reachable address to `subject_alt_names` and targeting that
-address also works for TLS, and was not run here.
+address also works for TLS; it is the route this estate is taking for its
+mail server, not yet seen through.
 
 Both certificate paths were run end to end against a node and a real
 Prometheus before being written down, but not this state's pillar form.
