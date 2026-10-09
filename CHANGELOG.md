@@ -23,6 +23,27 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A signing tool for releases, with the key in AWS KMS
+
+SPEC 4.3's detached signature per artifact was deferred on where a
+signing key would live. `tools/relsign` signs `dist/SHA256SUMS` and
+every artifact it lists with an asymmetric KMS key, through a client in
+`internal/awskms` that speaks the two calls it needs with SigV4 and no
+SDK. The key never leaves KMS; each signature is a CloudTrail record. The
+signatures are DER beside their files, so an operator with nothing but
+the public key checks one with `openssl dgst -sha256 -verify`.
+
+`make release-sign` signs, `make release-verify` checks a set without
+credentials, and `make release-pubkey` prints the key's public half. The
+tool refuses to sign a set whose files do not match the manifest, one
+already signed, or one whose KMS key is not the committed public key.
+
+**No release is signed yet.** No key exists, so no public key is
+committed and `release.yml` is unchanged. The client has been run against
+a fake written from the API reference, not against KMS;
+`TestLiveKMSSignsADigestThisBuildVerifies` is the run that would change
+that, and needs a real key.
+
 ### Options and requisites given to one name under `names` work
 
 `unless`, `onlyif`, `require` and the other options and requisites
