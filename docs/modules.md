@@ -12842,7 +12842,7 @@ win_task.present(name: string, command: string = , arguments: string = , working
 
 #### `x509.certificate_managed`
 
-Ensure a certificate exists, is signed by the expected CA, and is not close to expiry.
+Ensure a certificate exists, is signed by the expected CA, carries the subject, names and usages asked for, and is not close to expiry.
 
 ```
 x509.certificate_managed(name: path, private_key: string = , public_key: string = , signing_cert: string = , signing_private_key: string = , days_valid: int = 365, days_remaining: int = 30, ca: bool = false, key_usage: list, ext_key_usage: list, mode: string = 0644, user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , basicConstraints: string = , keyUsage: string = , extendedKeyUsage: string = , subjectKeyIdentifier: string = , subjectAltName: string = , CN: string = , O: string = , OU: string = , C: string = , ST: string = , L: string = , subject_alt_names: list)

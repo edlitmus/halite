@@ -21686,6 +21686,52 @@ every handshake, each fail it. `-race` clean.
   certificate (`cmd/halite-hub/relay.go`). Neither is renewed by a state in
   this estate today; neither was changed.
 
+### 5.249 A changed name never reached a certificate that already existed
+
+`x509.certificate_managed` decided whether a certificate was in place from
+four things: the file exists, it carries the configured key, it was signed
+by the configured CA, and it is outside the renewal window. Nothing it was
+asked to say was compared. A tree that added a name to `subject_alt_names`,
+or changed the common name or the extended key usage, saw "already in
+place" until the certificate came up for renewal: two months for the
+90-day metrics certificate in `docs/metrics.md`. Found when an estate added
+its mail server's ZeroTier address to that state so Prometheus could reach
+it by address, by reading the state before applying it; nothing had been
+applied.
+
+The question and the act now read the arguments the same way.
+`requestedTemplate` builds the certificate the arguments ask for, without
+the parts that differ on every issue (serial, dates, key identifier), and
+`createCertificate` signs from it while `requestedDiffers` compares an
+existing certificate against it: subject, subject alternative names (the
+list and Salt's `subjectAltName` string both), key usage, extended key
+usage, and CA with its path length. The reissue says what differs. The
+state's description says so too, and `docs/modules.md` is regenerated.
+
+Not the validity. Each issue has its own dates, so comparing them would
+reissue on every run; the renewal window governs dates. Arguments that do
+not parse are not a difference: the issue path reports them, as before.
+
+Tests, each guard broken on purpose. Adding an address, changing the
+common name and adding an extended key usage each reissue, in test mode and
+for real, with the difference named; unchanged arguments do not; and the
+reissued certificate is converged on the next run, file untouched. Without
+the comparison the three fail. Comparing dates as well fails it as
+reissuing on every run. Salt's single-string forms (`subjectAltName`,
+`keyUsage`, `extendedKeyUsage`, and `basicConstraints` on a CA) converge
+on a second run; comparing the SANs from the list argument alone, which is
+the two-paths mistake this guards against, fails that test.
+`TestTheDocumentedMetricsCertificateStateConverges`, which applies the
+page's own block twice, still passes.
+
+**Not covered:**
+- Not run on a node yet; it needs a rebuild, and the mail rollout is where
+  it will be seen.
+- A certificate issued by another tool with a different but equivalent
+  key usage bit set, or extra extensions this build does not compare, may
+  be reissued once on the first run under this build; that was reasoned
+  about, not tested.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
