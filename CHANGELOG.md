@@ -48,6 +48,15 @@ gated state read as unconditional. They are now printed as written, as
 Salt's low chunk carries them, with `runas_password` masked.
 DIVERGENCE 5.266.
 
+### `makedirs` follows the file's mode, as Salt's does
+
+The directories `file.managed`, `file.serialize` and `file.copy` create with
+`makedirs: true` now take the file's mode plus execute bits (`0600`
+makes `0700`) unless `dir_mode` says otherwise, and the state's `user`
+and `group`. Before, they were always `0755` and owned by whoever ran
+the state. `file.serialize` and `file.copy` gain `dir_mode` and a clear
+error for a missing directory. DIVERGENCE 5.267.
+
 ### Relays renew their own upstream certificate
 
 A relay's certificate for its upstream was never renewed, so the relay

@@ -135,3 +135,72 @@ func selfSignKey(t *testing.T) string {
 	}
 	return path
 }
+
+// file.managed and file.serialize give the directories makedirs creates
+// the file's mode plus the execute bits, as Salt's file.manage_file does,
+// where they made every one 0755: a 0600 key went into a directory anyone
+// could list. 0755 when there is no mode; dir_mode overrides both.
+// file.serialize, which had no dir_mode and no word for a missing
+// directory, now has both. DIVERGENCE 5.267.
+func TestMakedirsInFileStatesFollowsTheFileMode(t *testing.T) {
+	r := New()
+	perm := func(p string) os.FileMode {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return info.Mode().Perm()
+	}
+	call := func(fn string, args *value.Map) {
+		t.Helper()
+		res, err := r.States.Call(newCtx(false), fn, args)
+		if err != nil || !res.Succeeded() {
+			t.Fatalf("%s: %+v %v", fn, res, err)
+		}
+	}
+
+	private := filepath.Join(t.TempDir(), "a", "b")
+	call("file.managed", value.MapOf("name", filepath.Join(private, "key"), "contents", "x",
+		"mode", "0600", "makedirs", true))
+	plain := filepath.Join(t.TempDir(), "plain")
+	call("file.managed", value.MapOf("name", filepath.Join(plain, "f"), "contents", "x", "makedirs", true))
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	call("file.managed", value.MapOf("name", filepath.Join(explicit, "f"), "contents", "x",
+		"mode", "0600", "dir_mode", "0750", "makedirs", true))
+	serialized := filepath.Join(t.TempDir(), "conf")
+	call("file.serialize", value.MapOf("name", filepath.Join(serialized, "c.yaml"),
+		"dataset", value.MapOf("a", int64(1)), "serializer", "yaml", "mode", "0640", "makedirs", true))
+
+	source := filepath.Join(t.TempDir(), "source")
+	if err := os.WriteFile(source, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	copied := filepath.Join(t.TempDir(), "copied")
+	call("file.copy", value.MapOf("name", filepath.Join(copied, "f"), "source", source,
+		"mode", "0600", "makedirs", true))
+
+	if runtime.GOOS != "windows" {
+		for _, c := range []struct {
+			dir  string
+			want os.FileMode
+		}{
+			{private, 0o700}, {filepath.Dir(private), 0o700},
+			{plain, 0o755}, {explicit, 0o750}, {serialized, 0o750}, {copied, 0o700},
+		} {
+			if got := perm(c.dir); got != c.want {
+				t.Errorf("%s: mode %04o, want %04o", c.dir, got, c.want)
+			}
+		}
+	}
+
+	// Without makedirs, file.serialize says which directory is missing.
+	missing := filepath.Join(t.TempDir(), "nowhere")
+	res, err := r.States.Call(newCtx(false), "file.serialize", value.MapOf(
+		"name", filepath.Join(missing, "c.yaml"), "dataset", value.MapOf("a", int64(1)), "serializer", "yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed() || !strings.Contains(res.Comment, "Parent directory not present: "+missing) {
+		t.Errorf("file.serialize without makedirs: %+v", res)
+	}
+}
