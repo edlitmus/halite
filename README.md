@@ -80,6 +80,7 @@ create: put the tree in a directory you own and pass that to
 | [Configuration reference](docs/configuration.md) | Every setting, grouped by topic and explained, generated from the code. |
 | [Module reference](docs/modules.md) | Every function this build ships, generated from the code. |
 | [Evidence](docs/evidence.md) | What has been run against a real tool and what has not, per module, generated from the code. |
+| [Releasing](docs/releasing.md) | What a tag does, how to check a download, and how a release is signed. |
 | [DIVERGENCE.md](docs/DIVERGENCE.md) | What is not built, what differs from the spec, and every test layer's real state. |
 
 The three generated pages come from `tools/gendocs` and are checked
@@ -429,8 +430,12 @@ checked with:
 
 On a `v*` tag, it then publishes the release: one archive per platform,
 holding the licence, the binaries, the example configuration, the
-manual pages and the evidence report, and SHA256SUMS. The archives are pinned the way the binaries are, so the
-two builders agree on them too.
+manual pages and the evidence report, and SHA256SUMS. The archives are
+pinned the way the binaries are, so the two builders agree on them too.
+[Releasing](docs/releasing.md) walks through it, and through the
+detached signatures of SPEC 4.3, which `tools/relsign` makes with a key
+held in AWS KMS: the tool exists, the key does not yet, and no release
+is signed.
 
 `make check` runs the specification's own build rules as tests: the
 lexicon policy of section 2.3, the dependency allowlist of section 4.2,
