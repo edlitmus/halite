@@ -1,0 +1,20 @@
+{#-
+  Where halite keeps things on this platform, and what its services are
+  called. FreeBSD is tier 1 (SPEC 27.1); everything else here is laid out
+  as Linux is. internal/config/paths.go is the authority.
+-#}
+{%- if grains['kernel'] == 'FreeBSD' %}
+{%-   set halite = {
+        'conf': '/usr/local/etc/halite',
+        'state': '/var/db',
+        'group': 'wheel',
+        'service': {'hub': 'halite_hub', 'api': 'halite_api', 'node': 'halite_node'},
+      } %}
+{%- else %}
+{%-   set halite = {
+        'conf': '/etc/halite',
+        'state': '/var/lib',
+        'group': 'root',
+        'service': {'hub': 'halite-hub', 'api': 'halite-api', 'node': 'halite-node'},
+      } %}
+{%- endif %}
