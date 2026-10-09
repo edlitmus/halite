@@ -296,6 +296,12 @@ func hubFileServerCheck(cfg *config.Config) doctor.Check {
 // moves the discovery to where an operator is already looking.
 func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 	env := cfg.String("pillarenv", cfg.String("env", "base"))
+	// Before the roots: a hub with external sources and no roots is
+	// one whose sources never run, and `serve` refuses to start on it.
+	// DIVERGENCE 5.258.
+	if err := extPillarWithoutRoots(cfg); err != nil {
+		return doctor.PillarCompiles(err, 0)
+	}
 	roots := cfg.StringSlice("pillar_roots:" + env)
 	if len(roots) == 0 {
 		return doctor.PillarCompiles(nil, 0)

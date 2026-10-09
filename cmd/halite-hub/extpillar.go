@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/extpillar"
 	"github.com/edlitmus/halite/internal/pillar"
@@ -66,6 +69,42 @@ func extPillarSources(h *hubContext, runtime *extension.Runtime) []pillar.ExtSou
 			"section", "12.7")
 	}
 	return sources
+}
+
+// extPillarWithoutRoots reports a configuration that names external
+// pillar sources and no `pillar_roots`.
+//
+// The hub compiles pillar only when it has roots; without them it tells a
+// node that asks that it compiles none, and the node compiles its own. The
+// sources are run as part of that compile and nowhere else, so on a hub
+// with no roots `ext_pillar` was never read at all -- not parsed, not
+// loaded, not refused. A source the configuration named, misspelt or
+// misconfigured, started without complaint, and every node went without
+// what it held. Found by a startup test of `secret: false` that ran until
+// it was killed. DIVERGENCE 5.258.
+//
+// Refused rather than made to work. Compiling a pillar of external
+// sources alone would make this hub start answering pillar requests it
+// declines today, and every node of it stop compiling its own -- a change
+// to the whole estate's pillar, made by a setting that reads as adding a
+// source. A tree that wants only external pillar gives the hub a pillar
+// root with a top file that lists nothing.
+func extPillarWithoutRoots(cfg *config.Config) error {
+	if len(cfg.Roots("pillar_roots")) > 0 {
+		return nil
+	}
+	raw, ok := cfg.Get("ext_pillar")
+	if !ok || raw == nil {
+		return nil
+	}
+	if list, ok := raw.([]any); ok && len(list) == 0 {
+		return nil
+	}
+	return fmt.Errorf("`ext_pillar` names external pillar sources and `pillar_roots` is not set. " +
+		"This hub compiles pillar only from its pillar roots, so without them it compiles none, " +
+		"never runs those sources, and its nodes compile their own pillar without them. " +
+		"Set `pillar_roots` -- a root holding a top.sls that lists nothing is enough for a " +
+		"pillar of external sources alone -- or remove `ext_pillar`")
 }
 
 // provides reports whether a loaded extension declared a function at

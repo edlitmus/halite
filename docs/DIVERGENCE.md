@@ -22144,6 +22144,50 @@ Not changed here.
 - The refusal keys on the name `aws_secrets_manager` only. Another
   extension that fetches credentials is protected by the default alone.
 
+### 5.258 A hub with no pillar roots ignored its external pillar sources
+
+Found while showing 5.257 on a built hub. A configuration with
+`aws_secrets_manager: {secret: false}` was meant to be refused at startup,
+and instead the hub ran until it was killed. `serve` builds its pillar
+options, external sources included, only inside `if pillar_roots is set`.
+Without roots the hub compiles no pillar: it tells a node that asks so,
+and the node compiles its own. So `ext_pillar` was never parsed, its
+extensions never loaded, and nothing said so. A source the configuration
+named started without complaint, misspelt or misconfigured, and every node
+went without what it held. The project refuses a missing source at startup
+for exactly that reason (SPEC 12.7), and the refusal never ran.
+
+`serve` now refuses to start when `ext_pillar` names a source and
+`pillar_roots` is empty, and says how to fix it. `halite-hub doctor`
+reports the same thing as a failed pillar compilation, from the same
+function (`extPillarWithoutRoots`), so the two cannot disagree. An empty
+`ext_pillar: []` names nothing and is allowed.
+
+Refused rather than made to work. Compiling a pillar of external sources
+alone would make a rootless hub start answering pillar requests it
+declines today, and its nodes would stop compiling their own. That is a
+change to the whole estate's pillar, made by a setting that reads as
+adding one source. A tree that wants only external pillar gives the hub a
+root with a top file that lists nothing.
+
+Seen with a built `halite-hub` on Linux, using the configuration that
+found it, less its `pillar_roots`. `serve` exits 1 with the refusal, and
+`doctor` reports "fail pillar compilation" with the same text. This
+estate's hub has no `ext_pillar`, so it is unaffected.
+
+Test, broken on purpose: the refusal, and doctor's failure, for sources
+without roots. Allowed: roots with sources, roots alone, neither, and an
+empty list. Making the function never refuse fails the first.
+
+**Not covered:**
+- Agentless runs (`halite-hub ssh`) compile a target's pillar on the hub
+  without external sources at all (`compileRosterPillarSecrets`), even
+  with roots, so a roster target never receives what `ext_pillar` holds.
+  That is the same shape, a compile path that does not read `ext_pillar`,
+  in a second place. Not changed here.
+- Doctor's remedy line under a failed pillar compilation still points at
+  `halite-node pillar items`, which is the wrong advice for this failure.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

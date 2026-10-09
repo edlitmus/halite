@@ -367,7 +367,10 @@ extension behind it stops the hub at startup rather than quietly
 compiling a pillar without it.
 
 Sources run after the top file, in the order listed, each seeing what
-the ones before it produced. A source that fails fails the whole
+the ones before it produced. They run as part of the hub's pillar
+compile, so the hub needs `pillar_roots`; with `ext_pillar` set and none,
+it refuses to start. A root holding a `top.sls` that lists nothing is
+enough for a pillar of external sources alone. A source that fails fails the whole
 compilation; `fail: ignore` inside a source's own block is the exception
 for one that is genuinely optional.
 

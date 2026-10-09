@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A hub with `ext_pillar` and no `pillar_roots` refuses to start
+
+A hub with no pillar roots compiles no pillar, so its external pillar
+sources never ran and nothing said so: a misconfigured source started
+without complaint. `halite-hub serve` now refuses that configuration and
+`halite-hub doctor` reports it. A root whose top file lists nothing is
+enough for a pillar of external sources alone.
+
 ### An external pillar source can be marked as not secret
 
 Every value an external pillar source returned was masked. A source's
