@@ -43,6 +43,7 @@ func TestTheHubRenewsItsOwnCertificate(t *testing.T) {
 	}
 
 	var logs []string
+	files := map[*exec.Cmd]*os.File{}
 	t.Cleanup(func() {
 		if t.Failed() {
 			for _, l := range logs {
@@ -65,7 +66,11 @@ func TestTheHubRenewsItsOwnCertificate(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+		// Closed once the hub has exited: Windows will not delete a file
+		// that is still open, and the temporary directory's cleanup
+		// failed on this log when it was left open.
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait(); _ = logFile.Close() })
+		files[cmd] = logFile
 		return cmd
 	}
 	// An interrupt where there is one, so the hub shuts down as it would
@@ -78,6 +83,7 @@ func TestTheHubRenewsItsOwnCertificate(t *testing.T) {
 			_ = cmd.Process.Kill()
 		}
 		_ = cmd.Wait()
+		_ = files[cmd].Close()
 	}
 	// serial is the certificate the hub presents now, waiting for it to
 	// be listening.
