@@ -869,6 +869,24 @@ func (h *hubContext) withCA(pair tls.Certificate, err error) (tls.Certificate, e
 	return pair, nil
 }
 
+// lookupCNAME is the resolver serverNames asks, so a test can be a
+// resolver that never answers.
+var lookupCNAME = net.DefaultResolver.LookupCNAME
+
+// hostLookupTimeout bounds serverNames' question to DNS, the same two
+// seconds a node gives the lookup of its own name (nodeFQDN).
+//
+// It had no bound. Every `serve` asks for the hostname's canonical name
+// before it can issue its certificate and listen, and with no deadline
+// the hub waited for as long as the resolver did: 9.3 seconds on the
+// development Mac, whose hostname no search domain resolves, and
+// multiples of the resolver's own timeouts when DNS is unreachable --
+// which is when the control plane most needs to start. Past the
+// deadline the hub issues for the names it already has: localhost, the
+// loopback addresses, the hostname and the listen address, and `--names`
+// for anything else. DIVERGENCE 5.263.
+const hostLookupTimeout = 2 * time.Second
+
 // serverNames is what a node may dial this hub by. A name missing from
 // here is a handshake failure at the node, so the default is generous
 // about the local machine and the operator adds the rest.
@@ -890,9 +908,11 @@ func serverNames(args *cli.Args, listen string) []string {
 	add("::1")
 	if host, err := os.Hostname(); err == nil {
 		add(host)
-		if fqdn, err := net.LookupCNAME(host); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), hostLookupTimeout)
+		if fqdn, err := lookupCNAME(ctx, host); err == nil {
 			add(strings.TrimSuffix(fqdn, "."))
 		}
+		cancel()
 	}
 	if host, _, err := net.SplitHostPort(listen); err == nil && host != "0.0.0.0" && host != "::" {
 		add(host)
