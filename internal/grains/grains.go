@@ -130,18 +130,37 @@ func shortHost(h string) string {
 	return h
 }
 
+// hostResolver is the part of *net.Resolver resolveFQDN asks, so a test
+// can be a resolver that never answers.
+type hostResolver interface {
+	LookupHost(ctx context.Context, host string) ([]string, error)
+	LookupAddr(ctx context.Context, addr string) ([]string, error)
+}
+
+var fqdnResolver hostResolver = net.DefaultResolver
+
+// fqdnLookupTimeout bounds the lookups behind the fqdn grain, all of
+// them together, at the two seconds a node gives the lookup of its own
+// name. They had no bound, and grains are collected by every node
+// command: on a host whose DNS was unreachable, a cron-driven highstate
+// waited on the resolver before it began. Past the deadline the grain is
+// the hostname, as it is when the lookups fail. DIVERGENCE 5.264.
+const fqdnLookupTimeout = 2 * time.Second
+
 // resolveFQDN finds the fully qualified name without requiring a working
 // reverse lookup, because a node with no PTR record still has a name.
 func resolveFQDN(host string) string {
 	if strings.Contains(host, ".") {
 		return host
 	}
-	addrs, err := net.LookupHost(host)
+	ctx, cancel := context.WithTimeout(context.Background(), fqdnLookupTimeout)
+	defer cancel()
+	addrs, err := fqdnResolver.LookupHost(ctx, host)
 	if err != nil {
 		return host
 	}
 	for _, addr := range addrs {
-		names, err := net.LookupAddr(addr)
+		names, err := fqdnResolver.LookupAddr(ctx, addr)
 		if err != nil {
 			continue
 		}

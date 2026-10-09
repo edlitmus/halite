@@ -34,6 +34,14 @@ The relay setup guide in `docs/operations.md` is rewritten. Followed as
 written, the old one did not produce a relay that started, and could
 rename the host's own node.
 
+### The hub and the `fqdn` grain no longer wait on DNS
+
+`halite-hub serve` looked up its hostname's canonical name with no time
+limit before it would listen: 9.3 seconds on a host whose name does not
+resolve, and longer with DNS down. The `fqdn` grain, collected by every
+node command, did the same. Both now give up after two seconds and use
+the names they already have. DIVERGENCE 5.264.
+
 ### See what a template rendered
 
 A YAML error in a templated SLS or pillar file now shows the rendered

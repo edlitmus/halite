@@ -22573,6 +22573,56 @@ Tests, each broken on purpose:
   says once that the new one cannot be loaded. This was not provoked;
   neither run showed it.
 - `halite-api`'s operator certificate is still loaded once (5.254).
+### 5.264 The hub would not start until DNS answered
+
+5.259's end-to-end test stalled for over ten seconds between the hub
+creating its CA and issuing its certificate, and passed only with
+`--names`. The cause was inferred then and is measured here.
+`serverNames` asks for the hostname's canonical name with
+`net.LookupCNAME`, which has no deadline, before every `serve` can
+issue its certificate and listen. A fresh lookup of the development
+Mac's hostname, which none of its three search domains resolves on any
+of its three nameservers, took **9.3 seconds** to fail. A second took
+half a second, the failure having been cached. With DNS unreachable the
+wait is the resolver's timeouts multiplied over search domains and
+nameservers, and that is when a control plane most needs to start.
+
+The `fqdn` grain had the same lookup without a bound
+(`grains.resolveFQDN`: forward, then reverse), and every node command
+collects grains. A cron-driven highstate on a host with no working DNS
+waited on the resolver before it began.
+
+Both are now bounded at two seconds, the budget the node already gave
+its own name in `nodeFQDN`. Past it, the hub issues for the names it
+already has: localhost, the loopback addresses, the hostname, the listen
+address, and `--names`. The grain is the hostname, as when the lookups
+fail. The grain's matching rule is unchanged, because targeting reads
+it.
+
+`TestServerNamesDoNotWaitForDNS` and `TestTheFQDNGrainDoesNotWaitForDNS`
+each use a resolver that never answers. Each requires its lookup to
+carry a deadline and to return within the bound with its fallback. With
+the deadline removed, both hung until a 20-second test timeout killed
+them. A real `serve` without `--names` went from creating its CA to
+listening in 1.2 seconds.
+
+Three answers to "what is this host's fully qualified name" remain, and
+they do not agree in method:
+- the node's identity: CNAME, then forward and reverse, any qualified
+  name;
+- the `fqdn` grain: forward and reverse, and only a name that begins
+  with the hostname;
+- the hub: CNAME only.
+
+Making them one is a change to what a node is called and to what
+targeting matches, so it is noted, not done.
+
+**Not covered:** a cold lookup could not be reproduced on demand, so the
+9.3 seconds comes from one measurement. Only run on macOS. The
+resolver's behaviour with DNS truly unreachable was not reproduced; the
+bound is what makes it irrelevant.
+
+
 
 ## 6. Everything else not started
 
