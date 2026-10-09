@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Secrets are masked in the keys of a state's changes too
+
+A state that keys its changes by data, such as `host.present` by address,
+could print a secret in full in the changes while masking it in the
+comment. Keys below a return's own fields are now scrubbed like values,
+and two that mask to the same text are both kept.
+
 ### Only encrypted pillar values are masked, and agentless runs mask them too
 
 A node fetching its pillar from the hub masked every pillar value, so a
