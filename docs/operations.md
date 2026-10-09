@@ -835,6 +835,25 @@ relay_event_tags:
 There is no `node_id` here: a hub does not read one, and its identity
 upstream is the certificate in `relay_pki_dir`.
 
+**Nothing renews that certificate by itself.** A node's `connect` renews
+its own at half its life, but the relay runs `halite-hub serve`, which
+does not, so the relay's identity expires 90 days after it enrolled
+unless `halite-node renew` is run for it with the configuration it
+enrolled with. Run it daily; before the halfway point it changes nothing
+and exits 0:
+
+```
+17 3 * * * root /usr/local/bin/halite-node renew --config /usr/local/etc/halite/relay-upstream.yaml
+```
+
+The running relay picks the renewed certificate up by itself: the
+upstream ends its stream when it renews, and the relay reconnects on the
+new certificate at its next retry, about ten seconds later, logging "the
+client certificate changed on disk and is now being presented". A relay
+on a build before DIVERGENCE 5.254 does not: it goes on presenting the
+certificate the upstream has just revoked and is refused until its hub is
+restarted, so restart it after each renewal.
+
 Nodes behind the relay enrol with the relay, not with the upstream, and
 their keys are accepted there. The upstream never holds a key for them —
 `keys list` upstream shows the relay alone — but `manage.up` and

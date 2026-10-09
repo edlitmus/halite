@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A relay picks up its renewed certificate without a restart
+
+A relay loaded its certificate for the upstream once, at startup. The
+upstream revokes the old serial when it renews one, so renewing a relay's
+identity with `halite-node renew` locked it out of its upstream until its
+hub was restarted. It now reads the certificate from disk again and
+reconnects on the renewed one. Nothing renews a relay's identity by
+itself yet; the operations guide gives the daily `renew` line.
+
 ### `file.managed` keeps a file's owner when it rewrites it
 
 When `file.managed` changed a file's contents, the new file was owned by

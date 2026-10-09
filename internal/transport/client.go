@@ -15,8 +15,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/certreload"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/tracing"
 )
@@ -37,6 +39,29 @@ type Client struct {
 	CA *x509.Certificate
 	// Cert is the node's own, absent before enrollment.
 	Cert *tls.Certificate
+	// CertFiles, when set, is where Cert comes from: it is read again
+	// before every request, and a pair that has changed replaces Cert
+	// and the connections opened with the old one.
+	//
+	// For a client that lives as long as its process. A node builds a
+	// fresh Client whenever it reconnects, so a renewal reaches it
+	// without this; a relay built one at startup and used it for the
+	// life of the hub, and that is a worse defect on the client side
+	// than on a server's (DIVERGENCE 5.248, 5.250). The upstream
+	// revokes the old serial in the same breath as it issues the new
+	// one, so a relay renewed by `halite-node renew --pki-dir` went on
+	// presenting a certificate that had just been revoked, and was
+	// refused until somebody restarted it. DIVERGENCE 5.254.
+	//
+	// The connections as well as the certificate, because an HTTP/2
+	// connection outlives the handshake that opened it: a new tls.Config
+	// over the old pool would go on sending requests down a connection
+	// authenticated as the revoked serial, which the hub refuses per
+	// request (authenticated, in internal/hub). A new transport
+	// guarantees a new handshake; the old one's idle connections are
+	// closed, and one in use -- the subscribe stream -- ends when the
+	// hub ends it, which it does when it renews.
+	CertFiles *certreload.Reloader
 	// ServerName overrides the name checked in the hub's certificate,
 	// for the case where the hub is reached by an address.
 	ServerName string
@@ -53,6 +78,7 @@ type Client struct {
 	// that does decides what the numbers are called.
 	Observe func(route string, status int, took time.Duration)
 
+	mu   sync.Mutex
 	http *http.Client
 }
 
@@ -99,6 +125,16 @@ func (c *Client) serverName() (string, error) {
 }
 
 func (c *Client) client() (*http.Client, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.CertFiles != nil {
+		if pair := c.CertFiles.Load(); pair != c.Cert {
+			if c.http != nil {
+				c.http.CloseIdleConnections()
+			}
+			c.Cert, c.http = pair, nil
+		}
+	}
 	if c.http != nil {
 		return c.http, nil
 	}
@@ -148,6 +184,16 @@ func (c *Client) client() (*http.Client, error) {
 // pass through here.
 type tracePropagating struct{ next http.RoundTripper }
 
+// CloseIdleConnections passes through to the transport underneath.
+// http.Client.CloseIdleConnections looks for this method on its
+// RoundTripper and does nothing when it is absent, which this wrapper
+// would otherwise make it.
+func (t tracePropagating) CloseIdleConnections() {
+	if c, ok := t.next.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
+}
+
 func (t tracePropagating) RoundTrip(req *http.Request) (*http.Response, error) {
 	if span := tracing.SpanFrom(req.Context()); span != nil {
 		// Cloned, because RoundTrip must not modify the request it is
@@ -163,7 +209,11 @@ func (t tracePropagating) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // Reset drops the cached HTTP client, so that a certificate collected
 // or renewed takes effect on the next request.
-func (c *Client) Reset() { c.http = nil }
+func (c *Client) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.http = nil
+}
 
 func (c *Client) url(path string) string {
 	return c.HubURL + path
