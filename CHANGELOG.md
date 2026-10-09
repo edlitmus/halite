@@ -35,6 +35,21 @@ rendered state, pillar, orchestration and reactor file, which is what
 Salt shows at debug without the module loading around it. In the
 console format a multi-line value prints as an indented block.
 
+### Example states and pillar with which halite manages itself
+
+`contrib/examples/tree/` holds states and pillar for running halite's
+own estate:
+- every node writes its own `node.yaml` and schedule;
+- the hub host keeps `hub.yaml`, `policy.yaml` and `api.yaml`, and
+  renews the API's serving certificate (from an API CA) and its operator
+  certificate daily;
+- a signer node, never the hub, signs extensions and publishes them into
+  the tree.
+
+A test compiles it for every role on FreeBSD and Linux and loads
+everything it writes. It has not been applied on a real estate; its
+README lists what has not been run. Release archives now include the
+whole of `contrib/examples`, subdirectories included. DIVERGENCE 5.262.
 ### `halite-hub extensions key create` and `extensions sign`
 
 Extensions can be signed with the shipped binary instead of

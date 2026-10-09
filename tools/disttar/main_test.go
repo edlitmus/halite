@@ -37,6 +37,8 @@ func fixture(t *testing.T) options {
 	}
 	write(filepath.Join(root, "ex", "node.yaml"), "node: {}\n", 0o600)
 	write(filepath.Join(root, "ex", "hub.yaml"), "hub: {}\n", 0o666)
+	// A tree of example states, which ships with its directories.
+	write(filepath.Join(root, "ex", "tree", "states", "top.sls"), "base: {}\n", 0o600)
 	write(filepath.Join(root, "man", "halite-node.8"), ".Dd\n", 0o600)
 	write(filepath.Join(root, "LICENSE"), "BSD 2-Clause License\n", 0o600)
 	write(filepath.Join(root, "evidence.md"), "# What has been demonstrated\n", 0o600)
@@ -131,6 +133,7 @@ func TestTheTarballIsPinned(t *testing.T) {
 		top, top + "EVIDENCE.md", top + "LICENSE",
 		top + "bin/", top + "bin/halite-hub", top + "bin/halite-node",
 		top + "examples/", top + "examples/hub.yaml", top + "examples/node.yaml",
+		top + "examples/tree/", top + "examples/tree/states/", top + "examples/tree/states/top.sls",
 		top + "man/", top + "man/man8/", top + "man/man8/halite-node.8",
 	}
 	if strings.Join(names, "\n") != strings.Join(wantNames, "\n") {

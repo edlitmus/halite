@@ -22399,6 +22399,82 @@ sandbox. Each fails.
 - Agentless (`halite-hub ssh`) pillar compiles and the hub's `doctor`
   are not wired to `OnRendered`. Nor are managed-file templates, which
   are file contents rather than SLS.
+### 5.262 A tree halite manages itself with, held to compiling
+
+The owner asked for example states and pillar with which halite-hub,
+halite-api and halite-node configure and manage themselves, including
+scheduled certificate renewal and signing custom extensions on the
+hub. Mapping what that needed found four things missing or unsafe:
+- The hub never renewed its own certificate (5.259).
+- Signing needed a source checkout (5.260).
+- Nothing schedules on the hub; scheduled jobs exist only inside a
+  running `halite-node connect`.
+- Signing on the hub would have the hub verify its own signatures, which
+  `docs/extensions.md` already warned against.
+
+The owner chose fixes for the first two, a node agent on the hub host
+for the third, and a separate signer node for the fourth.
+
+`contrib/examples/tree/` holds `states/` and `pillar/`:
+- **`halite.node`, on every node:** writes `node.yaml`, schedule
+  included, with `file.serialize` from `halite:node:config`, and restarts
+  the agent later, from outside it, when the file changes.
+- **`halite.hub` and `halite.api`, on the hub host:** write `hub.yaml`,
+  `policy.yaml` and `api.yaml`, and restart the service when one changes,
+  since neither reloads.
+- **`halite.certs`, daily on the hub host:**
+  - makes a ten-year API CA once;
+  - renews halite-api's serving certificate from it, 30 days before
+    expiry, which halite-api re-reads without a restart;
+  - re-issues the API's operator certificate a week before expiry, as
+    `halite`, and restarts the API, which loads that certificate only at
+    startup.
+- **`halite.signer`, hourly on the signer:** makes the signing key once,
+  signs each extension pillar lists once its executable arrives, and
+  pushes the checkout the hub serves through gitfs.
+
+The hub host's node has its own `pki_dir` and `state_dir`. Sharing the
+hub's would mix its key material with the CA's, and a node that finds
+the hub's `ca.crt` treats it as pinned.
+
+The API CA is a departure from `docs/operations.md`'s quickest route.
+A self-signed serving certificate is a new certificate for every client
+to trust at each renewal; a CA the clients trust makes renewal invisible
+to them.
+
+`TestTheExampleTreeCompilesForEveryRole` covers the tree:
+- it compiles each role's highstate, and `halite.certs` and
+  `halite.signer` alone, with the kernel grain set to FreeBSD and to
+  Linux;
+- it requires the states each role should have;
+- it requires every serialized file under that platform's config root;
+- it loads every `node.yaml`, `hub.yaml` and `api.yaml` with the
+  program's own loader and requires no warning, and loads the policy the
+  same way;
+- it parses every node's schedule, since a schedule that does not parse
+  stops the agent from starting.
+
+Three breaks each failed it: a misspelled hub setting in pillar, an
+unparseable cron expression, and Linux's config root in the map's
+FreeBSD branch.
+
+`tools/disttar` copied only the top level of `contrib/examples`, so the
+tree would have shipped as nothing. The examples now descend, the man
+pages do not, and the pinned archive test lists a nested file. It failed
+with descent turned off.
+
+`show_lowstate` does not print `unless`, `onlyif` or `creates`, which the
+compiler keeps as gates. Salt's does, so a reader of this tree's
+lowstate cannot see them. Noted, not changed.
+
+**Not covered:** the test compiles and applies nothing, and the tree's
+README lists what has not been run:
+- the deferred node restart (`daemon(8)`, `systemd-run --on-active`);
+- the services restarting on a change;
+- the operator certificate re-issued as `halite`;
+- the signer's push and the hub serving it through gitfs;
+- a hub host enrolled to itself.
+
 
 
 ## 6. Everything else not started

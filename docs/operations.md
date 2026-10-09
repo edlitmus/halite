@@ -1166,6 +1166,15 @@ account file, are in
 the program it is written for, so none of them can teach a setting that
 does not exist.
 
+[`contrib/examples/tree/`](../contrib/examples/tree/README.md) goes
+further: states and pillar with which halite manages itself. Every node
+writes its own `node.yaml` and schedule; the hub host keeps the hub's
+and the API's configuration and policy, and renews the API's
+certificates daily; a signer node, never the hub, signs extensions and
+publishes them into the tree. A test compiles it for every role, as
+FreeBSD and as Linux, and loads everything it would write. It does not
+apply it, and its README lists what has not been run.
+
 Create the account, then let the build do the rest:
 
 ```sh
