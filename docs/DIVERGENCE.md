@@ -21833,6 +21833,36 @@ on the hub, the node, transport and `halite-hub`.
 - The other half of the asymmetry, a secret printed in full as a map key
   in a state's changes, is a separate change.
 
+### 5.252 A secret used as a key in a state's changes printed in full
+
+The other half of 5.251. Return scrubbing (`internal/runner/schema.go`)
+treated the top level of a state's return as schema -- `comment`,
+`changes`, `result` -- and walked into nested maps with the same rule, so
+the keys *inside* `changes` were never looked at, although there they are
+data. A state that keys its changes by what it changed (`host.present` by
+the address, `file.managed` by a path) put that value in a key, and a
+secret in that position printed in full while the same value was masked
+in the comment. Seen on the estate with an address that was, in fact, not
+secret (5.251's over-masking); a real secret in the same position would
+have printed.
+
+Below the return's own fields, keys are now scrubbed like values. The
+top-level fields are left alone, as before. Two keys that scrub to the
+same text keep both entries, the later one numbered ("********** (2)"):
+silently losing one would report less than happened. The results
+themselves are untouched, because `onchanges` and `prereq` compare
+changes; only what is rendered and returned is scrubbed.
+
+The test keys a probe state's changes by two secrets and a plain name.
+Both secrets are masked in the structured return and the plain key
+survives; leaving keys unscrubbed fails it, and so does letting the
+second masked key overwrite the first. The printed output was already
+masked by a scrub of the rendered text; the structured return, which is
+what a returner ships, was not. `-race` clean.
+
+**Not covered:**
+- Not run on the fleet; needs a rebuild of the nodes.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

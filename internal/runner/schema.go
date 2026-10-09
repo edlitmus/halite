@@ -75,28 +75,64 @@ func scrubReturn(secrets *redact.Set, m *value.Map) *value.Map {
 			}
 			continue
 		}
-		switch t := e.Val.(type) {
-		case string:
-			m.Set(e.Key, secrets.Scrub(t))
-		case *value.Map:
-			m.Set(e.Key, scrubReturn(secrets, t))
-		case []any:
-			out := make([]any, len(t))
-			for i, item := range t {
-				if sub, ok := item.(*value.Map); ok {
-					out[i] = scrubReturn(secrets, sub)
-					continue
-				}
-				if str, ok := item.(string); ok {
-					out[i] = secrets.Scrub(str)
-					continue
-				}
-				out[i] = item
-			}
-			m.Set(e.Key, out)
+		switch e.Val.(type) {
+		case string, *value.Map, []any:
+			m.Set(e.Key, scrubData(secrets, e.Val))
 		}
 	}
 	return m
+}
+
+// scrubData removes known secrets from a value inside a return: the
+// strings, and the keys of every mapping.
+//
+// Keys too, because below the return's own fields a key is data. A state
+// that keys its changes by what it changed -- host.present by the
+// address, file.managed by a path -- put that value in a key, and a key
+// was never scrubbed: a secret there printed in full while the same
+// value in the comment was masked. DIVERGENCE 5.252.
+//
+// A new mapping rather than the one given, so that a key that changes
+// can take its place in the same order. Two keys that scrub to the same
+// text keep both entries, the later numbered: a mapping that silently
+// lost one would report less than happened.
+func scrubData(secrets *redact.Set, v any) any {
+	switch t := v.(type) {
+	case string:
+		return secrets.Scrub(t)
+	case *value.Map:
+		out := value.NewMap(t.Len())
+		for _, e := range t.Entries() {
+			key := e.Key
+			if s, ok := key.(string); ok {
+				if scrubbed := secrets.Scrub(s); scrubbed != s {
+					key = unusedKey(out, scrubbed)
+				}
+			}
+			out.SetAt(key, scrubData(secrets, e.Val), e.KeyPos, e.ValPos)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = scrubData(secrets, item)
+		}
+		return out
+	}
+	return v
+}
+
+// unusedKey is key, or key with " (2)", " (3)"... when out already has it.
+func unusedKey(out *value.Map, key string) string {
+	if _, taken := out.Get(key); !taken {
+		return key
+	}
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s (%d)", key, n)
+		if _, taken := out.Get(candidate); !taken {
+			return candidate
+		}
+	}
 }
 
 // schemaField names the return fields that address the declaration

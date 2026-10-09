@@ -44,6 +44,9 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 			Params: []signature.Param{
 				{Name: "name", Type: signature.String},
 				{Name: "changes", Type: signature.Bool, Default: false},
+				// Keys for the changes, in place of "scripted": a state
+				// such as host.present keys its changes by data.
+				{Name: "changes_keys", Type: signature.List},
 				{Name: "fail", Type: signature.Bool, Default: false},
 				{Name: "watch_marker", Type: signature.String},
 			},
@@ -79,6 +82,12 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 			return states.True("This state was scripted to change nothing."), nil
 		}
 		ch := value.MapOf("scripted", states.Change("before", "after"))
+		if keys := states.Strings(args, "changes_keys"); len(keys) > 0 {
+			ch = value.NewMap(len(keys))
+			for _, k := range keys {
+				ch.Set(k, states.Change("before", "after"))
+			}
+		}
 		if c.Test {
 			return states.WouldChange("This state would change something.", ch), nil
 		}
@@ -1459,5 +1468,50 @@ func TestDurationsAndStartTimesAreWrittenAsSaltWritesThem(t *testing.T) {
 	// time().isoformat() leaves a zero fraction off.
 	if got := saltStartTime(at.Truncate(time.Second)); got != "09:04:37" {
 		t.Errorf("a whole-second start_time = %q, want 09:04:37", got)
+	}
+}
+
+// A secret used as a key in a state's changes is masked like one in a
+// value. host.present keys its changes by the address and file.managed by
+// the path, and a key was never scrubbed: on the estate an address printed
+// in full in the changes while the same value was masked in the comment.
+// Two secrets that scrub to the same text keep two entries. DIVERGENCE
+// 5.252.
+func TestASecretUsedAsAKeyInChangesIsScrubbed(t *testing.T) {
+	secrets := redact.New()
+	secrets.Add("s3cret-host-key")
+	secrets.Add("other-s3cret-key")
+
+	out, _ := compileAndRun(t, `
+keyed:
+  probe.run:
+    - changes: true
+    - changes_keys:
+        - s3cret-host-key
+        - other-s3cret-key
+        - plain.example
+`)
+	out.Secrets = secrets
+
+	nested := out.Nested(false)
+	rendered := yaml.Encode(out.Returns(), yaml.EncodeOptions{})
+	for name, text := range map[string]string{"nested output": nested, "structured return": rendered} {
+		for _, secret := range []string{"s3cret-host-key", "other-s3cret-key"} {
+			if strings.Contains(text, secret) {
+				t.Errorf("a secret used as a changes key reached the %s:\n%s", name, text)
+			}
+		}
+		if !strings.Contains(text, "plain.example") {
+			t.Errorf("a plain changes key was lost from the %s:\n%s", name, text)
+		}
+	}
+	if !strings.Contains(rendered, redact.Placeholder+" (2)") {
+		t.Errorf("two secret keys collapsed into one entry:\n%s", rendered)
+	}
+
+	// The result itself keeps its keys, for the requisites that compare
+	// changes.
+	if _, ok := out.Results[0].Result.Changes.Get("s3cret-host-key"); !ok {
+		t.Error("the result's own changes should be intact for the requisite logic")
 	}
 }
