@@ -126,3 +126,32 @@ func prepareParent(test bool, args *value.Map, path string, fileMode os.FileMode
 	}
 	return nil, fmt.Sprintf(" %s was created, mode %04o.", dir, mode)
 }
+
+// makedirsFileState is `makedirs` for file.managed and file.serialize,
+// which Salt both writes through file.manage_file: create the missing
+// directories above path with dir_mode, or with the file's mode plus the
+// execute bits when there is a mode and no dir_mode, or 0755 when there is
+// neither -- and owned as user and group say.
+//
+// They made every missing directory 0755 and owned by whoever ran the
+// state, whatever the file's mode: a key written with `mode: '0600'` and
+// `makedirs: true` landed in a directory anyone could list, which Salt's
+// rule would have made 0700. DIVERGENCE 5.267.
+func makedirsFileState(args *value.Map, path string) error {
+	dir, missing, err := missingParent(path)
+	if err != nil || !missing {
+		return err
+	}
+	mode := os.FileMode(0o755)
+	switch {
+	case states.Str(args, "dir_mode", "") != "":
+		if mode, err = dirModeFor(args, 0); err != nil {
+			return fmt.Errorf("the dir_mode for %s is invalid: %w", path, err)
+		}
+	case states.Str(args, "mode", "") != "":
+		if file, perr := parseMode(states.Str(args, "mode", "")); perr == nil {
+			mode, _ = dirModeFor(args, file)
+		}
+	}
+	return makeParents(dir, mode, states.Str(args, "user", ""), states.Str(args, "group", ""))
+}

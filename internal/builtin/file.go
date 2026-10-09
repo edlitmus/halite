@@ -200,7 +200,7 @@ func registerFileStates(r *Registries) {
 		opt("user", signature.String, "", "Owner."),
 		opt("group", signature.String, "", "Group."),
 		opt("makedirs", signature.Bool, false, "Create the parent directories if they are missing."),
-		opt("dir_mode", signature.Mode, "", "Mode for directories created by makedirs. Empty uses 0755."),
+		opt("dir_mode", signature.Mode, "", "Mode for directories created by makedirs. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does (0600 makes 0700), and 0755 when there is no mode."),
 		opt("create", signature.Bool, true, "Create the file if it does not exist."),
 		opt("replace", signature.Bool, true, "Rewrite the file when its contents differ."),
 		opt("backup", signature.String, "", "Keep a copy of the previous contents. `node` keeps "+
@@ -515,11 +515,7 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if states.Bool(args, "makedirs", false) {
-		dirMode, err := parseMode(states.Str(args, "dir_mode", "0755"))
-		if err != nil {
-			return states.False(fmt.Sprintf("The dir_mode for %s is invalid: %v", path, err)), nil
-		}
-		if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
+		if err := makedirsFileState(args, path); err != nil {
 			return states.False(fmt.Sprintf("The parent directories of %s could not be created: %v", path, err)), nil
 		}
 	}

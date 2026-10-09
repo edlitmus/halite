@@ -3,7 +3,6 @@ package builtin
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -41,6 +40,7 @@ func registerFileSerialize(r *Registries) {
 				opt("user", signature.String, "", "The owner."),
 				opt("group", signature.String, "", "The group."),
 				opt("makedirs", signature.Bool, false, "Create the parent directory."),
+				opt("dir_mode", signature.Mode, "", "Mode for directories created by makedirs. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does (0600 makes 0700), and 0755 when there is no mode."),
 				opt("create", signature.Bool, true,
 					"Write the file when it does not exist. False updates only what is there."),
 			}, checkCmdParams()...),
@@ -124,10 +124,12 @@ func fileSerialize(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if states.Bool(args, "makedirs", false) {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return states.False(fmt.Sprintf("%s could not be created: %v",
-				filepath.Dir(path), err)), nil
+		if err := makedirsFileState(args, path); err != nil {
+			return states.False(fmt.Sprintf("The parent directories of %s could not be created: %v", path, err)), nil
 		}
+	}
+	if dir, missing, err := missingParent(path); err == nil && missing {
+		return parentNotPresent(dir), nil
 	}
 	mode := modeOrDefault(states.Str(args, "mode", ""), 0o644)
 	if err := writeAtomic(path, want, mode); err != nil {

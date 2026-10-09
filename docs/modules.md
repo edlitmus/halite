@@ -10600,7 +10600,7 @@ file.comment(name: path, regex: string, char: string = #, backup: string = )
 Ensure a file is a copy of another.
 
 ```
-file.copy(name: path, source: path, mode: mode = , makedirs: bool = false)
+file.copy(name: path, source: path, mode: mode = , makedirs: bool = false, dir_mode: mode = )
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10609,6 +10609,7 @@ file.copy(name: path, source: path, mode: mode = , makedirs: bool = false)
 | `source` | path | *required* | The file to copy from. |
 | `mode` | mode | `` | The mode of the copy. |
 | `makedirs` | bool | `false` | Create the parent directories. |
+| `dir_mode` | mode | `` | Mode for directories created by makedirs. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does (0600 makes 0700), and 0755 when there is no mode. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
@@ -10681,7 +10682,7 @@ file.managed(name: path, source: string = , source_hash: string = , skip_verify:
 | `user` | string | `` | Owner. |
 | `group` | string | `` | Group. |
 | `makedirs` | bool | `false` | Create the parent directories if they are missing. |
-| `dir_mode` | mode | `` | Mode for directories created by makedirs. Empty uses 0755. |
+| `dir_mode` | mode | `` | Mode for directories created by makedirs. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does (0600 makes 0700), and 0755 when there is no mode. |
 | `create` | bool | `true` | Create the file if it does not exist. |
 | `replace` | bool | `true` | Rewrite the file when its contents differ. |
 | `backup` | string | `` | Keep a copy of the previous contents. `node` keeps a timestamped one in the cache, which `file.list_backups` enumerates, and Salt's own spelling of that value is accepted beside it. Anything else is a suffix written beside the file. |
@@ -10782,7 +10783,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 Write a data structure to a file as JSON or YAML.
 
 ```
-file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer: string = , formatter: string = , merge_if_exists: bool = false, mode: string = , user: string = , group: string = , makedirs: bool = false, create: bool = true, check_cmd: any, tmp_dir: path, tmp_ext: string)
+file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer: string = , formatter: string = , merge_if_exists: bool = false, mode: string = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, check_cmd: any, tmp_dir: path, tmp_ext: string)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10797,6 +10798,7 @@ file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer
 | `user` | string | `` | The owner. |
 | `group` | string | `` | The group. |
 | `makedirs` | bool | `false` | Create the parent directory. |
+| `dir_mode` | mode | `` | Mode for directories created by makedirs. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does (0600 makes 0700), and 0755 when there is no mode. |
 | `create` | bool | `true` | Write the file when it does not exist. False updates only what is there. |
 | `check_cmd` | any | — | Validate the contents before installing them. The path of a temporary file holding what would be written is appended to each command, and the file is installed only if every command exits 0. |
 | `tmp_dir` | path | — | Directory for the temporary file check_cmd is given. For a checker that is confined to a directory by an AppArmor or SELinux policy. |

@@ -22624,6 +22624,53 @@ bound is what makes it irrelevant.
 
 
 
+### 5.267 makedirs made every directory 0755, whatever the file's mode
+
+`file.managed` with `makedirs: true` created the missing directories as
+`dir_mode`, defaulting to 0755, and owned by whoever ran the state.
+`file.serialize` used 0755 with no `dir_mode` at all. Salt writes both
+through `file.manage_file` (read in the 3007.1 source for 5.246, not
+run). When `dir_mode` is not given and the file has a mode, Salt gives
+each created directory that mode with the execute bit added to every
+digit that is not zero, and it owns them as `user` and `group` say. So
+a key written with `mode: '0600'` and `makedirs: true` went into a
+directory anyone could list, where Salt would have made it 0700.
+
+`makedirsFileState` does it as Salt does:
+- `dir_mode` if given; otherwise the file's mode by that rule; otherwise
+  0755;
+- each missing level created through `makeParents`, which 5.246 wrote
+  for the x509 states, so each goes through `fileperm` and gets the
+  state's `user` and `group`.
+
+`file.serialize` gains `dir_mode`, and without `makedirs` it now fails
+as `Parent directory not present: <directory>`, as `file.managed` has
+since 5.246. Before, it failed on the temporary file it could not
+create.
+
+`TestMakedirsInFileStatesFollowsTheFileMode` covers:
+- 0600 making two nested 0700 directories;
+- no mode making 0755;
+- `dir_mode: '0750'` winning over a 0600 file;
+- `file.serialize` deriving 0750 from 0640;
+- `file.copy` deriving 0700 from 0600;
+- the message for a missing directory.
+
+It failed with the old fixed 0755, and again with the new
+missing-directory check in `file.serialize` removed.
+
+`file.copy` does the same in Salt's `copy_`, and so it does here now. It
+gains `dir_mode` and the missing-directory message too; it had made 0755
+regardless of the copy's mode. Its first draft of this entry left it
+out, and said Salt gave `file.directory` and `file.symlink` "`dir_mode`
+alone". Rereading the source showed `copy_` deriving the mode, and
+`symlink` passing the link's own `mode` as the directory mode.
+`file.directory` and `file.symlink` are unchanged here: halite's symlink
+has no `mode`, and `file.directory` documents its 0755 default.
+
+**Not covered:** ownership of the directories created was not exercised
+as root. Only run on macOS.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

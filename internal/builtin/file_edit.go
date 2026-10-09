@@ -356,6 +356,7 @@ func registerFileEditStates(r *Registries) {
 					req("source", signature.Path, "The file to copy from."),
 					opt("mode", signature.Mode, "", "The mode of the copy."),
 					opt("makedirs", signature.Bool, false, "Create the parent directories."),
+					opt("dir_mode", signature.Mode, "", "Mode for directories created by makedirs. Empty takes the file's mode with the execute bit added to each digit that is not zero, as Salt does (0600 makes 0700), and 0755 when there is no mode."),
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
@@ -912,9 +913,12 @@ func fileCopyState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.WouldChange(fmt.Sprintf("%s would be copied from %s.", dst, src), changes), nil
 	}
 	if states.Bool(args, "makedirs", false) {
-		if err := os.MkdirAll(dirOf(dst), 0o755); err != nil {
+		if err := makedirsFileState(args, dst); err != nil {
 			return states.False(fmt.Sprintf("The parent directories of %s could not be created: %v", dst, err)), nil
 		}
+	}
+	if dir, missing, err := missingParent(dst); err == nil && missing {
+		return parentNotPresent(dir), nil
 	}
 	mode := os.FileMode(0o644)
 	if m := states.Str(args, "mode", ""); m != "" {
