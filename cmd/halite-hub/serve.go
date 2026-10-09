@@ -317,6 +317,9 @@ func runServe(args *cli.Args) int {
 	// Hub-side pillar. Without pillar_roots the hub compiles none and
 	// says so to a node that asks, rather than answering with an empty
 	// pillar that looks like a successful compilation of nothing.
+	if err := extPillarWithoutRoots(h.cfg); err != nil {
+		cli.Fatalf("%v", err)
+	}
 	var pillarOpts *hub.PillarOptions
 	if roots := h.cfg.Roots("pillar_roots"); len(roots) > 0 {
 		if err := checkRootsAreNotTheHubsOwn(h, roots); err != nil {
