@@ -76,7 +76,7 @@ The directories `file.managed`, `file.serialize` and `file.copy` create with
 makes `0700`) unless `dir_mode` says otherwise, and the state's `user`
 and `group`. Before, they were always `0755` and owned by whoever ran
 the state. `file.serialize` and `file.copy` gain `dir_mode` and a clear
-error for a missing directory. DIVERGENCE 5.267.
+error for a missing directory. DIVERGENCE 5.269.
 
 ### Relays renew their own upstream certificate
 

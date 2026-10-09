@@ -22780,7 +22780,7 @@ Deciding by `needsTree` again fails the first three.
 
 
 
-### 5.267 makedirs made every directory 0755, whatever the file's mode
+### 5.269 makedirs made every directory 0755, whatever the file's mode
 
 `file.managed` with `makedirs: true` created the missing directories as
 `dir_mode`, defaulting to 0755, and owned by whoever ran the state.
@@ -22826,6 +22826,19 @@ has no `mode`, and `file.directory` documents its 0755 default.
 
 **Not covered:** ownership of the directories created was not exercised
 as root. Only run on macOS.
+
+#### 5.269, renumbered
+
+This section merged as 5.267, beside the 5.267 that #284 had merged a
+moment earlier, for agentless pillar. Each pull request passed the
+ledger audit against the main it last saw, and both merged. Main then
+held two sections numbered 5.267, out of order, and the audit failed
+there and on every branch cut from it. This one was the later in the
+file, so it was renumbered. Its PR (#285) and commit cite it as 5.267,
+and they mean this. The four citations it added (here, the CHANGELOG,
+`parentdir.go` and `parentdir_test.go`) were changed by hand, line by
+line. The other 5.267's citations were left alone; `ledger renumber`
+cannot tell them apart once both are on main.
 
 ## 6. Everything else not started
 

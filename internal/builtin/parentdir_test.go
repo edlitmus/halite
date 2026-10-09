@@ -141,7 +141,7 @@ func selfSignKey(t *testing.T) string {
 // where they made every one 0755: a 0600 key went into a directory anyone
 // could list. 0755 when there is no mode; dir_mode overrides both.
 // file.serialize, which had no dir_mode and no word for a missing
-// directory, now has both. DIVERGENCE 5.267.
+// directory, now has both. DIVERGENCE 5.269.
 func TestMakedirsInFileStatesFollowsTheFileMode(t *testing.T) {
 	r := New()
 	perm := func(p string) os.FileMode {
