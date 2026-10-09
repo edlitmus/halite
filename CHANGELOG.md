@@ -54,6 +54,14 @@ a fake written from the API reference, not against KMS;
 `TestLiveKMSSignsADigestThisBuildVerifies` is the run that would change
 that, and needs a real key.
 
+### Options and requisites given to one name under `names` work
+
+`unless`, `onlyif`, `require` and the other options and requisites
+given to a single entry under `names` are now that name's, as in Salt.
+Before, they were passed to the module and the state failed to compile.
+A per-name `require_in` and its kind are refused with an explanation.
+DIVERGENCE 5.270.
+
 ### Agentless targets get the same pillar as enrolled nodes
 
 `halite-hub ssh` compiled a roster target's pillar with a compiler of its
