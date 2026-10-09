@@ -61,7 +61,9 @@ func TestAgentlessPillarUsesTheHubsKeyringAndRedactor(t *testing.T) {
 		}
 	}
 	write("top.sls", "base:\n  '*':\n    - secrets\n")
-	write("secrets.sls", "#!yaml|gpg\ntoken: |\n    "+armoredFor(t, gpg, secret, "    ")+"\n")
+	// A plain value beside the encrypted one, in the same gpg-rendered
+	// file: it is data, and the target must not be told to mask it.
+	write("secrets.sls", "#!yaml|gpg\naddress: 10.11.12.13\ntoken: |\n    "+armoredFor(t, gpg, secret, "    ")+"\n")
 	if err := os.WriteFile(filepath.Join(root, "hub.yaml"), []byte(
 		"pillar_roots:\n  base:\n    - "+pillarRoot+"\ngpg_home: "+home+"\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -70,7 +72,7 @@ func TestAgentlessPillarUsesTheHubsKeyringAndRedactor(t *testing.T) {
 	args := &cli.Args{Flags: map[string]string{"root": root}}
 	h := openHubForConfig(args)
 
-	got, err := inlinePillar(h, roster.Target{ID: "agentless.example.invalid"}, args)
+	got, secrets, err := inlinePillar(h, roster.Target{ID: "agentless.example.invalid"}, args)
 	if err != nil {
 		t.Fatalf("inlinePillar: %v", err)
 	}
@@ -86,5 +88,10 @@ func TestAgentlessPillarUsesTheHubsKeyringAndRedactor(t *testing.T) {
 	// fail visibly: a callback that is never called raises nothing.
 	if scrubbed := h.secrets.Scrub("saw " + secret); strings.Contains(scrubbed, secret) {
 		t.Errorf("the decrypted value never reached the hub's redactor: %q", scrubbed)
+	}
+	// And the target is told exactly that one, and not the plain value
+	// beside it. DIVERGENCE 5.251.
+	if len(secrets) != 1 || secrets[0] != secret {
+		t.Errorf("the target is told to redact %q; want only the decrypted value", secrets)
 	}
 }

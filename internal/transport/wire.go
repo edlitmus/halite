@@ -449,6 +449,17 @@ type PillarResponse struct {
 	Env    string          `json:"env"`
 	SLS    []string        `json:"sls,omitempty"`
 	Pillar json.RawMessage `json:"pillar"`
+	// Secrets are the values the hub decrypted while compiling this
+	// pillar, and the strings an external pillar source returned: the
+	// values SPEC 26.1 has the redactor seeded with, and no others.
+	//
+	// A pointer so that absent and empty differ. Absent is a hub older
+	// than this field, and the node then treats every pillar value as
+	// secret, as it always did; empty is a hub that decrypted nothing.
+	// Before DIVERGENCE 5.251 the node had no way to tell which values
+	// had been encrypted, masked them all, and printed an IP address or
+	// a host name as asterisks in every comment it appeared in.
+	Secrets *[]string `json:"secrets,omitempty"`
 }
 
 // EventRequest is POST /v1/event: a node putting something on the

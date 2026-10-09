@@ -298,12 +298,15 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 		if len(files) > 0 {
 			req["files"] = files
 		}
-		pillar, err := inlinePillar(h, t, args)
+		pillar, secrets, err := inlinePillar(h, t, args)
 		if err != nil {
 			return nil, err
 		}
 		if pillar != nil {
 			req["pillar"] = pillar
+			// What to redact on the target: the values decrypted here,
+			// and no others. DIVERGENCE 5.251.
+			req["secrets"] = secrets
 		}
 	}
 	return json.Marshal(req)
@@ -361,25 +364,41 @@ func inlineTree(h *hubContext, args *cli.Args) (map[string]string, error) {
 // Per target, against the grains the roster attached, so two targets
 // get different pillar exactly as two enrolled nodes do — and neither
 // receives the other's.
-func inlinePillar(h *hubContext, t roster.Target, args *cli.Args) (json.RawMessage, error) {
+func inlinePillar(h *hubContext, t roster.Target, args *cli.Args) (json.RawMessage, []string, error) {
 	if len(h.cfg.Roots("pillar_roots")) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-	compiled, err := compileRosterPillar(h, t, args.Flag("env", h.cfg.String("env", "base")))
+	compiled, secrets, err := compileRosterPillarSecrets(h, t, args.Flag("env", h.cfg.String("env", "base")))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	encoded, err := value.EncodeJSON(compiled, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return json.RawMessage(encoded), nil
+	return json.RawMessage(encoded), secrets, nil
 }
 
 // compileRosterPillar is one roster target's pillar, compiled on the
 // hub. One function for what the target is sent and what it is targeted
 // by, so the two cannot come to disagree about which pillar it has.
 func compileRosterPillar(h *hubContext, t roster.Target, env string) (*value.Map, error) {
+	compiled, _, err := compileRosterPillarSecrets(h, t, env)
+	return compiled, err
+}
+
+// compileRosterPillarSecrets is compileRosterPillar, and the values the
+// compile decrypted besides, which the target is told to redact.
+func compileRosterPillarSecrets(h *hubContext, t roster.Target, env string) (*value.Map, []string, error) {
+	secrets := []string{}
+	seen := map[string]bool{}
+	onSecret := func(v string) {
+		h.secrets.Add(v)
+		if !seen[v] {
+			seen[v] = true
+			secrets = append(secrets, v)
+		}
+	}
 	roots := h.cfg.Roots("pillar_roots")
 	grains := t.Grains
 	if grains == nil {
@@ -396,14 +415,14 @@ func compileRosterPillar(h *hubContext, t roster.Target, env string) (*value.Map
 			// decrypts reach this process's own output unhidden.
 			// DIVERGENCE 5.110.
 			GPG:      gpgOptionsFor(h.cfg),
-			OnSecret: h.secrets.Add,
+			OnSecret: onSecret,
 		},
 	}
 	compiled := compiler.Compile()
 	if err := compiled.Err(); err != nil {
-		return nil, fmt.Errorf("compiling pillar for %s: %w", t.ID, err)
+		return nil, nil, fmt.Errorf("compiling pillar for %s: %w", t.ID, err)
 	}
-	return compiled.Pillar, nil
+	return compiled.Pillar, secrets, nil
 }
 
 // runAcross runs against every target, bounded.

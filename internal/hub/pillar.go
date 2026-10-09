@@ -90,7 +90,7 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 	}
 
 	started := s.now()
-	compiled, err := s.compilePillar(nodeID, env, grains)
+	compiled, secrets, err := s.compilePillar(nodeID, env, grains)
 	observeSeconds(s.m().pillarCompile, s.now().Sub(started))
 	if err != nil {
 		s.m().pillarFailure.Inc()
@@ -113,20 +113,36 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 	s.info("pillar compiled", "node_id", nodeID, "env", env,
 		"sls", len(compiled.SLS), "keys", compiled.Pillar.Len())
 	transport.WriteJSON(w, http.StatusOK, transport.PillarResponse{
-		NodeID: nodeID,
-		Env:    env,
-		SLS:    compiled.SLS,
-		Pillar: encoded,
+		NodeID:  nodeID,
+		Env:     env,
+		SLS:     compiled.SLS,
+		Pillar:  encoded,
+		Secrets: &secrets,
 	})
 }
 
-// compilePillar assembles one node's pillar from the hub's roots.
-func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.Compiled, error) {
+// compilePillar assembles one node's pillar from the hub's roots, and
+// answers with the values the compile decrypted besides: what the node is
+// told to redact. The hub's own redactor still hears each of them first.
+func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.Compiled, []string, error) {
 	s.pillarCompiles.Add(1)
 	opts := s.Pillar
+	cfg := pillarConfigFor(opts, nodeID, env, grains)
+	secrets := []string{}
+	seen := map[string]bool{}
+	hubs := cfg.OnSecret
+	cfg.OnSecret = func(v string) {
+		if hubs != nil {
+			hubs(v)
+		}
+		if !seen[v] {
+			seen[v] = true
+			secrets = append(secrets, v)
+		}
+	}
 	c := &pillar.Compiler{
 		Loader: opts.Roots,
-		Config: pillarConfigFor(opts, nodeID, env, grains),
+		Config: cfg,
 	}
 	out := c.Compile()
 	for _, w := range out.Warnings {
@@ -146,9 +162,9 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 		s.m().pillarExtFail.With(name).Inc()
 	}
 	if err := out.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	return out, secrets, nil
 }
 
 // pillarConfigFor turns the hub's options into the compiler's

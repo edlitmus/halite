@@ -45,6 +45,10 @@ type OneshotRequest struct {
 	// Pillar is compiled on the hub and sent inline, so the target
 	// needs no pillar tree and no access to one.
 	Pillar json.RawMessage `json:"pillar,omitempty"`
+	// Secrets are the values the hub decrypted compiling Pillar, as in
+	// transport.PillarResponse. Absent from a hub older than the field,
+	// and then every pillar value is treated as secret. DIVERGENCE 5.251.
+	Secrets *[]string `json:"secrets,omitempty"`
 	// Files are the state tree entries this job needs, sent inline for
 	// a small payload. SPEC 21.1.
 	Files map[string]string `json:"files,omitempty"`
@@ -162,6 +166,11 @@ func applyOneshotContent(n *node, req OneshotRequest) error {
 			return fmt.Errorf("the pillar is not a mapping")
 		}
 		pillar = sent
+		// Seeded before anything runs. This path installed the pillar
+		// the hub pushed and told the redactor nothing, so a decrypted
+		// value was printable in an agentless run's output. DIVERGENCE
+		// 5.251.
+		n.seedPillarSecrets(pillar, req.Secrets)
 	}
 	n.hubPillar = func(string) (*value.Map, error) { return pillar, nil }
 	if len(req.Grains) > 0 {

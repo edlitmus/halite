@@ -456,7 +456,8 @@ func (c *RunnerContext) compilePillarFor() (*pillar.Compiled, error) {
 	if env == "" {
 		env = "base"
 	}
-	return c.Server.compilePillar(node, env, grains)
+	compiled, _, err := c.Server.compilePillar(node, env, grains)
+	return compiled, err
 }
 
 // eventData reads the `data` argument as the payload map.

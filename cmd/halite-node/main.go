@@ -869,6 +869,28 @@ func buildLogger(args *cli.Args, cfg *config.Config, secrets *redact.Set) (*hlog
 	}, "node", secrets)
 }
 
+// seedPillarSecrets teaches the redactor the secrets in a pillar the hub
+// sent, before anything can print one.
+//
+// The hub names them: the values it decrypted compiling this pillar, and
+// what external pillar sources returned (SPEC 26.1). Only those are
+// masked. A hub that names none -- one older than the list -- leaves the
+// node unable to tell, and then every value is treated as secret, as it
+// always was; over-masking an address is the safe side of that line.
+// Before DIVERGENCE 5.251 that was every hub: an IP address or host name
+// in a pillar file that happened to be rendered with `gpg` became
+// asterisks in every comment it appeared in, while the same value as a
+// key in a state's changes printed in full.
+func (n *node) seedPillarSecrets(pillar *value.Map, named *[]string) {
+	if named == nil {
+		n.secrets.AddTree(pillar)
+		return
+	}
+	for _, v := range *named {
+		n.secrets.Add(v)
+	}
+}
+
 // seedConfiguredSecrets records the values of the settings whose names
 // say they hold one. The key-name rule already exists for what a
 // template sees as `opts`; this makes the same values unprintable.

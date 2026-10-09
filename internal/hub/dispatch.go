@@ -430,7 +430,7 @@ func (s *Server) targetPillar(matcher *target.Matcher, env string) (
 				}
 				return nil
 			}
-			compiled, err := s.compilePillar(id, env, node.Grains)
+			compiled, _, err := s.compilePillar(id, env, node.Grains)
 			if err != nil {
 				*failed = fmt.Errorf("compiling the pillar of %s: %w", id, err)
 				return nil

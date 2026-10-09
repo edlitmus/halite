@@ -790,9 +790,7 @@ func (n *node) useHubPillar(client *transport.Client) {
 		if !ok {
 			return nil, fmt.Errorf("the pillar the hub sent is not a mapping")
 		}
-		// Every value in it may be a secret, so the redactor learns
-		// them all before anything can print one.
-		n.secrets.AddTree(m)
+		n.seedPillarSecrets(m, res.Secrets)
 		return m, nil
 	}
 }
