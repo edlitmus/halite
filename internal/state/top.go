@@ -63,6 +63,9 @@ func (c *Compiler) resolveTop() (map[string][]string, Diags) {
 		found = append(found, env)
 
 		res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, TopName, filePath))
+		if c.Config.OnRendered != nil && res.Text != "" {
+			c.Config.OnRendered(filePath, TopName, res.Pipeline, res.Text)
+		}
 		if err != nil {
 			diags.Add(value.Pos{File: filePath}, TopName, "", "%v", err)
 			continue

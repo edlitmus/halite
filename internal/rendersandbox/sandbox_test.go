@@ -447,3 +447,21 @@ func TestAManagedFileTemplateRendersInTheChild(t *testing.T) {
 		t.Fatal("the file template rendered in this process")
 	}
 }
+
+// A YAML error's window of rendered lines crosses the boundary: the child
+// sends an error as text, and the window is part of that text, so a
+// sandboxed render fails with the same help as an in-process one.
+// DIVERGENCE 5.261.
+func TestTheRenderedWindowSurvivesTheCrossing(t *testing.T) {
+	s := newTestSandbox(t)
+	src := []byte("{% for u in ['alice', 'bob'] %}\nuser_{{ u }}:\n  user.present:\n    - name: {{ u }}\n  - shell: /bin/sh\n{% endfor %}\n")
+	_, err := s.Render(src, render.Options{File: "users.sls"})
+	if err == nil {
+		t.Fatal("the broken file rendered")
+	}
+	for _, want := range []string{"rendered output around line 5", "    - name: alice", "(line 4)"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the sandboxed error lacks %q:\n%v", want, err)
+		}
+	}
+}

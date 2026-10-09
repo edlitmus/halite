@@ -199,3 +199,25 @@ func TestConsoleKeepsACallSiteFieldItWouldElideAsAFixedOne(t *testing.T) {
 		t.Errorf("a node repeats its own identity on every line: %q", buf.String())
 	}
 }
+
+// A value of several lines is printed after the line as an indented
+// block, so that a rendered file at debug level reads as a file and
+// cannot be mistaken for the records after it. DIVERGENCE 5.261.
+func TestConsolePrintsAMultiLineValueAsABlock(t *testing.T) {
+	var out strings.Builder
+	l, _ := New(Options{Level: Debug, Format: Console, Stderr: &out})
+	fixed(l)
+	l.Debug("rendered", "sls", "web", "rendered", "web:\n  pkg.installed: []\n")
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("want the record line, a header and two indented lines, got:\n%s", out.String())
+	}
+	if !strings.HasPrefix(lines[0], "debug: rendered") || strings.Contains(lines[0], "rendered=") ||
+		!strings.Contains(lines[0], "sls=web") {
+		t.Errorf("the record line is %q", lines[0])
+	}
+	if lines[1] != "  rendered:" || lines[2] != "    web:" || lines[3] != "      pkg.installed: []" {
+		t.Errorf("the block is %q", lines[1:])
+	}
+}

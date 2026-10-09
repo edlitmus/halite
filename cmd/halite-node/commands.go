@@ -243,8 +243,18 @@ func (n *node) stateCompiler(p *value.Map, jobID string) *state.Compiler {
 			GPG:              n.gpgOptions(),
 			OnSecret:         n.secrets.Add,
 			Renderer:         n.defaultRenderer(),
+			OnRendered:       n.logRendered,
 		},
 	}
+}
+
+// logRendered logs a file's rendered output at debug level: what Salt
+// prints for every SLS and pillar file at debug, without the module
+// loading it prints around them. Through the logger, so the redactor
+// scrubs a pillar value a template interpolated. DIVERGENCE 5.261.
+func (n *node) logRendered(file, sls string, pipeline []string, text string) {
+	n.log.Debug("rendered", "file", file, "sls", sls,
+		"pipeline", strings.Join(pipeline, "|"), "rendered", text)
 }
 
 // applyStates runs the compiled low state and prints the result.
@@ -536,12 +546,24 @@ func runLint(args *cli.Args) int {
 			fmt.Println(n.secrets.Scrub(w.String()))
 			problems++
 		}
+		// The rendered output, or the template around the error, after
+		// the result line: what Salt shows at debug level in among its
+		// module loading, here only for the file asked about. Scrubbed,
+		// because rendering a pillar-reading template puts its values in
+		// the text. DIVERGENCE 5.261.
+		explained := render.Explain(src, path, res, err, args.Bool("rendered", false))
 		if err != nil {
 			fmt.Println(n.secrets.Scrub(err.Error()))
+			if explained != "" {
+				fmt.Println(n.secrets.Scrub(explained))
+			}
 			problems++
 			continue
 		}
 		fmt.Printf("%s: renders and parses; pipeline %s\n", path, strings.Join(res.Pipeline, "|"))
+		if explained != "" {
+			fmt.Println(n.secrets.Scrub(explained))
+		}
 	}
 	if problems > 0 {
 		return 1

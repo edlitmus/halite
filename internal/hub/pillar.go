@@ -47,6 +47,10 @@ type PillarOptions struct {
 	// receives, which covers the node's output and says nothing about
 	// the hub's. DIVERGENCE 5.110.
 	OnSecret func(string)
+	// OnRendered receives each pillar file's rendered output, with the
+	// node it was compiled for: a debug log of what the templates
+	// produced, as Salt prints at debug level. DIVERGENCE 5.261.
+	OnRendered func(nodeID, file, sls string, pipeline []string, text string)
 }
 
 // pillarRequest is POST /v1/pillar: the node sends its grains and the
@@ -208,9 +212,21 @@ func pillarConfigFor(opts *PillarOptions, nodeID, env string, grains *value.Map)
 		TemplateOptions:  opts.TemplateOptions,
 		Ext:              opts.Ext,
 		OnSecret:         opts.OnSecret,
+		OnRendered:       renderedFor(opts.OnRendered, nodeID),
 		// Never Local: this is the hub's tree, and SPEC 12.1
 		// reserves that flag for a development compilation from a
 		// local root.
 		Local: false,
+	}
+}
+
+// renderedFor binds a hub-wide OnRendered to the node being compiled for,
+// because on the hub "which node" is the first question about any pillar.
+func renderedFor(hook func(nodeID, file, sls string, pipeline []string, text string), nodeID string) func(file, sls string, pipeline []string, text string) {
+	if hook == nil {
+		return nil
+	}
+	return func(file, sls string, pipeline []string, text string) {
+		hook(nodeID, file, sls, pipeline, text)
 	}
 }

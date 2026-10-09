@@ -98,6 +98,12 @@ func (s *Server) renderReaction(path string, e *eventbus.Event) (*value.Map, err
 	for _, w := range res.Warnings {
 		s.warn(w.String(), "component", "reactor", "file", name)
 	}
+	// What the reaction rendered to, for the event that triggered it, at
+	// debug level. DIVERGENCE 5.261.
+	if s.Log != nil && res.Text != "" {
+		s.Log.Debug("rendered", "component", "reactor", "file", name, "tag", e.Tag,
+			"pipeline", strings.Join(res.Pipeline, "|"), "rendered", res.Text)
+	}
 	if err != nil {
 		return nil, err
 	}

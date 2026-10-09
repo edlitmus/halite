@@ -337,3 +337,14 @@ func TestParseOutKeepsAReportOutOfTheFormatVocabulary(t *testing.T) {
 		t.Errorf(`ParseOut("summary", "xml") = %v, %v; an unknown format must error`, own, err)
 	}
 }
+
+// `lint --rendered bad.sls` read the file as the flag's value, and
+// `pillar --reveal get key` would take `get`. DIVERGENCE 5.261.
+func TestRenderedAndRevealTakeNoValue(t *testing.T) {
+	for _, flag := range []string{"rendered", "reveal"} {
+		a := parse(t, "--"+flag, "bad.sls")
+		if !a.Bool(flag, false) || len(a.Positional) != 1 || a.Positional[0] != "bad.sls" {
+			t.Errorf("--%s bad.sls: set=%v positional=%v", flag, a.Bool(flag, false), a.Positional)
+		}
+	}
+}

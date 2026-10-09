@@ -248,8 +248,25 @@ func consoleLine(rec map[string]any, fixed map[string]any) string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	// A value of several lines -- a file's rendered output at debug
+	// level -- goes after the line as an indented block, rather than
+	// inline, where its first line would sit after `rendered=` and the
+	// rest would start at column one, indistinguishable from the next
+	// record. DIVERGENCE 5.261. The JSON format is unchanged: there it is
+	// one escaped string, and one record is still one line.
+	var blocks []string
 	for _, k := range keys {
+		if text, ok := rec[k].(string); ok && strings.Contains(text, "\n") {
+			blocks = append(blocks, k)
+			continue
+		}
 		fmt.Fprintf(&b, " %s=%v", k, rec[k])
+	}
+	for _, k := range blocks {
+		fmt.Fprintf(&b, "\n  %s:", k)
+		for _, line := range strings.Split(strings.TrimRight(rec[k].(string), "\n"), "\n") {
+			b.WriteString("\n    " + line)
+		}
 	}
 	return b.String()
 }
