@@ -22934,6 +22934,54 @@ official image; the registry is not the one rate-limiting.
 every change is for CI to show. If it fails the same way, the next step
 is logging in to a registry, which needs a credential this project does
 not hold in CI.
+### 5.273 Three answers to "what is this host called"
+
+5.264 found three lookups of this host's fully qualified name, and they
+differed in method:
+- **the node's identity** (`nodeFQDN`, SPEC 7.2 step 5): the canonical
+  name, then forward and reverse, and any name with a domain that is not
+  a loopback or IPv6 placeholder;
+- **the `fqdn` grain** (`grains.resolveFQDN`): forward and reverse only,
+  and a reverse name only if it began with the hostname;
+- **the hub's certificate names** (`serverNames`): the canonical name
+  alone.
+
+On a host whose address reverses to a name that is not its own, such as
+a cloud machine `web1` whose PTR is `ip-10-0-0-5.ec2.internal`, the node
+enrolled under the PTR name while its `fqdn` grain said `web1`.
+
+The owner chose the node's rule, which is Salt's: `socket.getfqdn` takes
+the canonical name and then the first name with a domain, and Salt uses
+it for the `fqdn` grain and the default node ID. `grains.FQDN` is now the
+one lookup:
+- the node's identity, the grain and the hub all call it;
+- it keeps 5.264's two-second bound over all its lookups together;
+- the node's `resolveFQDN` and `qualifiedName` moved into it, as
+  `ResolveFQDN` and `QualifiedName`.
+
+**What changes for an operator:** the `fqdn` and `domain` grains on a
+host whose PTR name does not begin with its hostname. They now report
+the PTR name, as Salt does, so a target or a template that matched the
+old value on such a host changes what it matches. Node IDs already
+enrolled are pinned and do not move. The hub's certificate now also
+carries a reverse name it can be dialled by.
+
+Tests:
+- `TestTheFQDNGrainFollowsSaltsRule` gives the PTR case to `FQDN`, and
+  to the grain through this machine's own hostname. It failed with the
+  grain's old prefix rule put back.
+- `TestServerNamesUseTheSharedFQDN` failed with the hub not calling the
+  shared lookup.
+- `TestTheFQDNGrainDoesNotWaitForDNS` and `TestServerNamesDoNotWaitForDNS`
+  keep 5.264's bound, now over the canonical-name lookup too, and the
+  hub's now goes through the real lookup with DNS replaced
+  (`grains.UseResolver`).
+- The node's table test of `ResolveFQDN` moved unchanged.
+
+**Not covered:** no real host with a foreign PTR name was used; the cases
+are a fake resolver's. Only run on macOS.
+
+
 
 
 
