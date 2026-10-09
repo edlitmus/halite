@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `file.managed` keeps a file's owner when it rewrites it
+
+When `file.managed` changed a file's contents, the new file was owned by
+whoever ran the write, so a file a service reads through its group could
+become unreadable to it, even with `user` and `group` set in the state.
+It now keeps the replaced file's owner and applies a requested one after
+the rewrite.
+
 ### Secrets are masked in the keys of a state's changes too
 
 A state that keys its changes by data, such as `host.present` by address,

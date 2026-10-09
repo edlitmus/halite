@@ -69,6 +69,18 @@ func plannedOwnership(path string, exists bool, wantUser, wantGroup string) (*va
 	return states.Change(current, ownerLabel(wantUser, wantGroup)), true, nil
 }
 
+// keepOwnership gives path the owner and group that `was` had. file.managed
+// replaces a file through a temporary file and a rename, so the new file
+// belongs to whoever ran the write; this puts the replaced file's owner
+// back, as Salt's in-place write never lost it. DIVERGENCE 5.253.
+func keepOwnership(path string, was os.FileInfo) error {
+	st, ok := was.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil
+	}
+	return os.Lchown(path, int(st.Uid), int(st.Gid))
+}
+
 // applyOwnership sets the owner and group of a path.
 func applyOwnership(path, wantUser, wantGroup string) error {
 	uid, gid, err := resolveOwner(wantUser, wantGroup)

@@ -21863,6 +21863,54 @@ what a returner ships, was not. `-race` clean.
 **Not covered:**
 - Not run on the fleet; needs a rebuild of the nodes.
 
+### 5.253 file.managed gave a rewritten file to root, and Alertmanager lost its config
+
+Moving Alertmanager's configuration into the estate's salt tree, the first
+real apply rewrote `alertmanager.yml` (0640, `root:alertmanager`) and
+`smtp_password` (0400, `alertmanager:alertmanager`) with new contents, and
+both came out `root:wheel`. The modes were right; the owners were not.
+The state's own reload then failed in Alertmanager's log with
+`Loading configuration file failed ... permission denied`, and since
+Alertmanager reads its SMTP password at each send, the next alert email
+would have failed. The owners were restored by hand within a minute, a
+reload succeeded, and a test alert was delivered.
+
+`file.managed` compared the requested `user` and `group` with the file
+that was there, found them right, and planned nothing. It then wrote the
+contents through a temporary file and a rename, so the file now in place
+was a new one, owned by whoever ran the write. Nothing compared that one.
+The mode was carried across the rename; the owner never was, so a file
+whose state names no owner lost it on every rewrite as well -- Salt writes
+in place and keeps it.
+
+After a rewrite the replaced file's owner and group are now put back
+(`keepOwnership`), as the mode is, and a requested `user` or `group` is
+applied after any rewrite whatever the old file had. If the old owner
+cannot be restored -- an unprivileged run replacing another account's
+file -- the state warns rather than fails, which is no worse than before.
+
+Two tests, run without root by moving a file into one of the test
+account's supplementary groups. A requested group survives a rewrite of a
+file that already had it, which is the estate's case; a file with no owner
+requested keeps its group through a rewrite. Restoring `main`'s behaviour
+(neither keeping nor re-applying) fails both, the first exactly as on the
+estate: "after a rewrite the file's group is 1000; the state asks for sudo
+(27)". Removing only the keep fails the second; removing only the
+re-apply fails neither, because keeping the owner already restores it --
+the re-apply is the second guard for when the keep cannot. They skip, and
+say why, on an account with no supplementary group. Vet clean on Linux,
+FreeBSD, macOS and Windows.
+
+**Not covered:**
+- Not run on the estate yet; beastie needs a rebuild before its states
+  rewrite another owned file. Until then a content change to
+  `alertmanager.yml` or `smtp_password` from the tree would repeat this.
+- The x509 states replace files the same way and apply a requested owner
+  afterwards; with no owner requested they do not keep the old one. Not
+  changed here.
+- As root, which is how the estate runs, the owner change is a plain
+  `chown`; the tests exercise only the group, as an unprivileged account.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

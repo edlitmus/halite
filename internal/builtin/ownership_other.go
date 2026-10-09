@@ -25,6 +25,9 @@ func plannedOwnership(path string, exists bool, wantUser, wantGroup string) (*va
 	return nil, false, fmt.Errorf("user and group are managed by win_dacl on this platform, which is not in this build")
 }
 
+// keepOwnership is a no-op where there is no Unix ownership to keep.
+func keepOwnership(string, os.FileInfo) error { return nil }
+
 func applyOwnership(path, wantUser, wantGroup string) error {
 	if wantUser == "" && wantGroup == "" {
 		return nil
