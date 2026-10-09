@@ -79,7 +79,7 @@ func newAnchorLab(t *testing.T, nodeID string) *anchorLab {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, err := hub.Listen("127.0.0.1:0", tls.Certificate{Certificate: [][]byte{hubDER}, PrivateKey: hubKey},
+	ln, err := hub.Listen("127.0.0.1:0", hub.NewServingCert(tls.Certificate{Certificate: [][]byte{hubDER}, PrivateKey: hubKey}),
 		ca.Cert, transport.NewDenylist())
 	if err != nil {
 		t.Fatal(err)

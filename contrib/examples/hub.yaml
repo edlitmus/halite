@@ -22,7 +22,8 @@ state_dir: /var/db/halite
 # SPEC section 7.3.
 enrollment_mode: manual
 
-# Issued certificates last this long; a node renews at half of it.
+# Issued certificates last this long. A node renews at half of it, and so
+# does the hub's own serving certificate, without a restart.
 certificate_lifetime: 2160h
 # ecdsa-p256 by default. ecdsa-p384 for a longer key.
 key_algorithm: ecdsa-p256

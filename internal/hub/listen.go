@@ -18,11 +18,17 @@ import (
 //
 // Separate from Serve so that a caller -- a test, or a `serve` that
 // wants to report the address it actually got -- can see the listener.
-func Listen(addr string, cert tls.Certificate, ca *x509.Certificate, denied *transport.Denylist) (net.Listener, error) {
+//
+// The certificate is served through cert, which the hub's renewal can
+// replace while the listener is open; see ServingCert.
+func Listen(addr string, cert *ServingCert, ca *x509.Certificate, denied *transport.Denylist) (net.Listener, error) {
 	if addr == "" {
 		addr = fmt.Sprintf(":%d", transport.DefaultPort)
 	}
-	ln, err := tls.Listen("tcp", addr, transport.ServerConfig(cert, ca, denied))
+	cfg := transport.ServerConfig(*cert.Load(), ca, denied)
+	cfg.Certificates = nil
+	cfg.GetCertificate = cert.GetCertificate
+	ln, err := tls.Listen("tcp", addr, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("listening on %s: %w", addr, err)
 	}
