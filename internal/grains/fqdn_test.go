@@ -84,7 +84,7 @@ func (f fakeResolver) LookupAddr(_ context.Context, a string) ([]string, error) 
 // its hostname is called by that name, as socket.getfqdn calls it. The
 // grain took only a reverse name beginning with the hostname, so on such
 // a host it said web1 while the node enrolled as the PTR name.
-// DIVERGENCE 5.271.
+// DIVERGENCE 5.273.
 func TestTheFQDNGrainFollowsSaltsRule(t *testing.T) {
 	defer func(orig Resolver) { fqdnResolver = orig }(fqdnResolver)
 	fqdnResolver = fakeResolver{

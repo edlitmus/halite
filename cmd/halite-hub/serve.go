@@ -854,7 +854,7 @@ func (h *hubContext) withCA(pair tls.Certificate, err error) (tls.Certificate, e
 // hostFQDN is the lookup serverNames uses for this host's qualified
 // name: grains.FQDN, the one a node's identity and its fqdn grain use, so
 // the hub's certificate names this machine as its own node and grain do.
-// It asked for the canonical name alone (DIVERGENCE 5.271), and with no
+// It asked for the canonical name alone (DIVERGENCE 5.273), and with no
 // deadline until 5.264; grains.FQDN gives up after two seconds. A
 // variable so a test can stand in for DNS.
 var hostFQDN = grains.FQDN

@@ -15,7 +15,7 @@ import (
 // The hub issues its certificate for this host's qualified name as
 // grains.FQDN finds it -- the name a node on this machine enrols as and
 // its fqdn grain reports -- beside the names it always has. It asked for
-// the canonical name alone, by a third rule (DIVERGENCE 5.271). That the
+// the canonical name alone, by a third rule (DIVERGENCE 5.273). That the
 // lookup does not wait on DNS is TestServerNamesDoNotWaitForDNS below.
 func TestServerNamesUseTheSharedFQDN(t *testing.T) {
 	host, _ := os.Hostname()

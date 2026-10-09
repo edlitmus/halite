@@ -486,7 +486,7 @@ func resolveNodeID(args *cli.Args, cfg *config.Config) string {
 //
 // The lookup is grains.FQDN, the one the fqdn grain and the hub's
 // certificate names use too, so a node is named what its fqdn grain
-// says. DIVERGENCE 5.271.
+// says. DIVERGENCE 5.273.
 func nodeFQDN(host string) string {
 	return grains.FQDN(host)
 }

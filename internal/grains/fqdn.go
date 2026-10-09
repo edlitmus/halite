@@ -20,7 +20,7 @@ import (
 // grain said another. The owner chose the node's rule, which is Salt's:
 // socket.getfqdn, which Salt uses for both the fqdn grain and the
 // default minion id, takes the canonical name and then the first name // lexicon:allow — Salt's own term
-// with a domain. DIVERGENCE 5.271.
+// with a domain. DIVERGENCE 5.273.
 
 // Resolver is the part of *net.Resolver the lookup needs, so a test can
 // say what the network answers instead of depending on the machine it
