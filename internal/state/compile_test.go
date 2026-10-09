@@ -1022,3 +1022,26 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+// Each file's rendered output reaches OnRendered, the one that failed to
+// parse included: that is the file whose output an operator needs to
+// see. DIVERGENCE 5.261.
+func TestOnRenderedSeesEachFileIncludingTheBrokenOne(t *testing.T) {
+	files := map[string]string{
+		"base|web":    "include:\n  - broken\n{% set p = 'nginx' %}\nweb:\n  pkg.installed:\n    - name: {{ p }}\n",
+		"base|broken": "{% for i in [1] %}\nx{{ i }}:\n  pkg.installed: []\n bad: indent\n{% endfor %}\n",
+	}
+	seen := map[string]string{}
+	out := compileWith(t, files, Config{OnRendered: func(file, sls string, pipeline []string, text string) {
+		seen[sls] = text
+	}}, "web")
+	if out.Err() == nil {
+		t.Fatal("the broken file compiled")
+	}
+	if !strings.Contains(seen["web"], "- name: nginx") {
+		t.Errorf("web's rendered output = %q", seen["web"])
+	}
+	if !strings.Contains(seen["broken"], "x1:") {
+		t.Errorf("the broken file's rendered output never arrived: %q", seen["broken"])
+	}
+}

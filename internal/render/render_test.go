@@ -1,6 +1,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -308,5 +309,70 @@ func TestRandomSeedSurvivesTheJob(t *testing.T) {
 	}
 	if !differed {
 		t.Error("random_seed: nondeterministic produced the seeded value twenty times running")
+	}
+}
+
+// A YAML error after the template stage shows the rendered lines around
+// it, numbered and marked, each with the template line it came from: the
+// line a YAML error names is often not the line that is wrong, and the
+// lines above it only exist in the rendered output. DIVERGENCE 5.261.
+func TestAYAMLErrorShowsTheRenderedLinesAroundIt(t *testing.T) {
+	src := "{% for u in ['alice', 'bob'] %}\nuser_{{ u }}:\n  user.present:\n    - name: {{ u }}\n  - shell: /bin/sh\n{% endfor %}\n"
+	_, err := Render([]byte(src), Options{File: "users.sls"})
+	var re *Error
+	if !errors.As(err, &re) {
+		t.Fatalf("want a render error, got %T: %v", err, err)
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"rendered output around line 5",
+		">", "  - shell: /bin/sh",
+		"user_alice:", "    - name: alice", // the lines above it
+		"(line 4)", // a rendered line names its template line
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the message lacks %q:\n%s", want, msg)
+		}
+	}
+	marked := ""
+	for _, line := range strings.Split(re.Context, "\n") {
+		if strings.HasPrefix(line, "> ") {
+			marked = line
+		}
+	}
+	if !strings.Contains(marked, " 5 ") || !strings.Contains(marked, "- shell") {
+		t.Errorf("the marked line is %q; want rendered line 5, the shell line", marked)
+	}
+	// Three either side, and no further: the window is a window.
+	if n := len(strings.Split(re.Context, "\n")); n != 7 {
+		t.Errorf("the window has %d lines, want 7:\n%s", n, re.Context)
+	}
+}
+
+// A template that does not render has no rendered output, so lint shows
+// the template source around where it stopped; and `--rendered` shows a
+// file's whole output, numbered.
+func TestExplainShowsTheSourceOrTheWholeOutput(t *testing.T) {
+	bad := []byte("a: 1\nb: {{ 1 +\nc: 3\n")
+	res, err := Render(bad, Options{File: "bad.sls"})
+	if err == nil {
+		t.Fatal("expected a template error")
+	}
+	got := Explain(bad, "bad.sls", res, err, false)
+	if !strings.Contains(got, "template source around the error") || !strings.Contains(got, "b: {{ 1 +") {
+		t.Errorf("a template error should show its source:\n%s", got)
+	}
+
+	good := []byte("{% set n = 2 %}\nx: {{ n }}\n")
+	res, err = Render(good, Options{File: "good.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Explain(good, "good.sls", res, nil, false); got != "" {
+		t.Errorf("a clean file without --rendered should add nothing, got:\n%s", got)
+	}
+	got = Explain(good, "good.sls", res, nil, true)
+	if !strings.Contains(got, "rendered output of good.sls") || !strings.Contains(got, "| x: 2") {
+		t.Errorf("--rendered should show the output:\n%s", got)
 	}
 }

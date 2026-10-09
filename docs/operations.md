@@ -152,6 +152,48 @@ nothing.
 `log_level_file` is accepted and not read: the file sink takes
 `log_level`, on all three.
 
+### Seeing what a template rendered
+
+At `debug`, every file the template engine renders is logged as one
+`rendered` record carrying its whole output: each state SLS and the
+state top file on a node, each pillar file and the pillar top file on
+whichever side compiles pillar (the hub logs `node_id` with it), and
+orchestration and reactor files on the hub. That is what Salt prints at
+debug level, without the module loading around it. In the console
+format the output follows the line as an indented block:
+
+```sh
+halite-node state show_highstate --log-level debug --log-fmt console 2>&1 | less
+```
+
+```
+debug: rendered file=/srv/salt/state/users.sls pipeline=jinja|yaml sls=users
+  rendered:
+    user_alice:
+      user.present:
+    ...
+```
+
+In JSON it is the `rendered` field, one escaped string. The record goes
+through the redactor like any other, so a decrypted value a template
+interpolated is masked. A file whose render failed in the render sandbox
+(`render_sandbox`) brings back its error and no output, so it is not
+logged; the error carries the rendered lines around the fault.
+
+A YAML error in a templated file shows those lines wherever it is
+reported, in a state run, a pillar compile, or `lint`: three lines either
+side of the failing one, numbered, the failing one marked `>`, each with
+the line of the template that produced it. A loop's output is usually
+where an indentation error comes from, and it only exists rendered.
+
+`lint --rendered` (on `halite-hub` and `halite-node`) prints each file's
+whole rendered output the same way, whether or not it parsed, and a
+template that does not render at all shows its source around the line
+the engine stopped at. The node's `lint` renders with the node's own
+grains and pillar; the hub's renders with none, and without the tree's
+file roots, so a template that imports from the tree or reads a grain
+renders differently there.
+
 ### Choosing the output
 
 `--out` chooses how a command's result is rendered. For `halite-node`,

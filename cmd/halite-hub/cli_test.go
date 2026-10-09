@@ -686,3 +686,24 @@ func TestDoctorRunsWithItsOwnDefaults(t *testing.T) {
 		t.Errorf("`--out xml` was accepted:\n%s", bad.stdout+bad.stderr)
 	}
 }
+
+// `lint` shows the rendered lines around a YAML error, and `--rendered`
+// the whole of each file's output; `--rendered` takes no value, so the
+// path after it is still a path. DIVERGENCE 5.261.
+func TestLintShowsWhatTheTemplateRendered(t *testing.T) {
+	tree := salttree(t, map[string]string{
+		"bad.sls":  "{% for u in ['alice', 'bob'] %}\nuser_{{ u }}:\n  user.present:\n    - name: {{ u }}\n  - shell: /bin/sh\n{% endfor %}\n",
+		"good.sls": "{% set n = 2 %}\nx: {{ n }}\n",
+	})
+	got := run(t, "lint", "--root", tree, filepath.Join(tree, "bad.sls"))
+	if got.code != 1 || !strings.Contains(got.stdout, "rendered output around line 5") ||
+		!strings.Contains(got.stdout, "    - name: alice") {
+		t.Errorf("a YAML error should show the rendered lines around it: %+v", got)
+	}
+
+	got = run(t, "lint", "--root", tree, "--rendered", filepath.Join(tree, "good.sls"))
+	if got.code != 0 || !strings.Contains(got.stdout, "renders and parses") ||
+		!strings.Contains(got.stdout, "| x: 2") {
+		t.Errorf("--rendered should print the output of a clean file: %+v", got)
+	}
+}

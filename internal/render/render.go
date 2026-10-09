@@ -11,9 +11,11 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/template"
@@ -137,6 +139,11 @@ type Result struct {
 	Pipeline []string
 	// Warnings are lint-level findings that did not stop the render.
 	Warnings []Warning
+	// Template is the template stage's result, when there was one: the
+	// line map from Text back to the file written, for showing the one
+	// beside the other. Nil when the render ran in the sandbox, which
+	// does not carry it across.
+	Template *template.Result
 }
 
 // Warning is a diagnostic that did not stop the render.
@@ -286,6 +293,7 @@ func RunStages(body string, stages []string, opts Options) (Result, error) {
 			}
 			rendered = out
 			current = out.Output
+			res.Template = out
 
 		case "yaml":
 			res.Text = current
@@ -532,9 +540,71 @@ func translateError(err error, rendered *template.Result, renderedText, file str
 		SourceCol:    pos.Col,
 		RenderedLine: ye.Pos.Line,
 		RenderedText: renderedLine,
+		Context:      RenderedWindow(renderedText, rendered, ye.Pos.Line, ContextLines),
 		Msg:          ye.Msg,
 		Cause:        err,
 	}
+}
+
+// ContextLines is how many rendered lines an error shows either side of
+// the one it is about.
+//
+// One line was not enough. The line a YAML error names is often not the
+// line that is wrong: an indentation error is reported on the first line
+// that does not fit, and what made it not fit -- a loop that emitted one
+// level too deep, a macro whose output carries its own indentation -- is
+// the lines above it, which only exist in the rendered output. Salt shows
+// the whole rendered file at debug level for this reason, and buries it
+// in module loading; three lines either side is usually the whole of the
+// story, and `lint --rendered` prints the rest. DIVERGENCE 5.261.
+const ContextLines = 3
+
+// RenderedWindow is the rendered output around one line, numbered, with
+// the line marked and each line's position in the template beside it, so
+// that a line a loop produced can be told from the line it came from.
+// rendered may be nil, for a file with no template stage, and then the
+// template column is left out.
+func RenderedWindow(text string, rendered *template.Result, line, around int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if line < 1 || line > len(lines) {
+		return ""
+	}
+	first, last := line-around, line+around
+	if first < 1 {
+		first = 1
+	}
+	if last > len(lines) {
+		last = len(lines)
+	}
+	return numberLines(lines, first, last, line, rendered)
+}
+
+// NumberedText is the whole of a rendered output, numbered as
+// RenderedWindow numbers a part of it, for `lint --rendered`.
+func NumberedText(text string, rendered *template.Result) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	return numberLines(lines, 1, len(lines), 0, rendered)
+}
+
+func numberLines(lines []string, first, last, mark int, rendered *template.Result) string {
+	width := len(strconv.Itoa(last))
+	var b strings.Builder
+	for n := first; n <= last; n++ {
+		marker := "  "
+		if n == mark {
+			marker = "> "
+		}
+		if rendered == nil {
+			fmt.Fprintf(&b, "%s%*d | %s\n", marker, width, n, lines[n-1])
+			continue
+		}
+		source := ""
+		if pos, ok := rendered.MapLine(n); ok {
+			source = fmt.Sprintf(" (line %d)", pos.Line)
+		}
+		fmt.Fprintf(&b, "%s%*d%-12s| %s\n", marker, width, n, source, lines[n-1])
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func translateWarning(w yaml.Warning, rendered *template.Result, file string) Warning {
@@ -556,14 +626,25 @@ type Error struct {
 	SourceCol    int
 	RenderedLine int
 	RenderedText string
-	Msg          string
-	Cause        error
+	// Context is the rendered output around RenderedLine, numbered and
+	// marked (RenderedWindow). Part of the message, so that it reaches
+	// wherever the error does -- a state's comment, a log line, the
+	// render sandbox's answer, which carries an error as text.
+	Context string
+	Msg     string
+	Cause   error
 }
 
 func (e *Error) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s:%d: %s", e.File, e.SourceLine, e.Msg)
-	if e.RenderedText != "" {
+	switch {
+	case e.Context != "":
+		fmt.Fprintf(&b, "\n  rendered output around line %d, with the template line each came from:", e.RenderedLine)
+		for _, line := range strings.Split(e.Context, "\n") {
+			b.WriteString("\n    " + line)
+		}
+	case e.RenderedText != "":
 		fmt.Fprintf(&b, "\n  rendered line %d was: %s", e.RenderedLine, e.RenderedText)
 	}
 	return b.String()
@@ -605,4 +686,67 @@ func Template(src []byte, opts Options) (string, []Warning, error) {
 		return "", res.Warnings, err
 	}
 	return out.Output, res.Warnings, nil
+}
+
+// SourceWindow is the template source around a template error, numbered
+// and marked, or "" when err is not one or names another file -- an
+// error inside an imported file is that file's, and src is not.
+//
+// A template that does not render has no rendered output to show, so what
+// helps is the line the engine stopped at with the lines around it, which
+// an editor shows too but a terminal with only the message does not.
+func SourceWindow(src []byte, file string, err error) string {
+	var te *template.Error
+	if !errors.As(err, &te) || te.Pos.Line == 0 {
+		return ""
+	}
+	if te.Pos.File != "" && te.Pos.File != file {
+		return ""
+	}
+	_, body := ParsePipelineWith(string(src), nil)
+	offset := strings.Count(string(src), "\n") - strings.Count(body, "\n")
+	lines := strings.Split(strings.TrimRight(string(src), "\n"), "\n")
+	line := te.Pos.Line + offset
+	if line > len(lines) {
+		line = len(lines)
+	}
+	first, last := line-ContextLines, line+ContextLines
+	if first < 1 {
+		first = 1
+	}
+	if last > len(lines) {
+		last = len(lines)
+	}
+	return numberLines(lines, first, last, line, nil)
+}
+
+// Explain is what `lint` prints after a file's result line, for the
+// operator who has to work out what went wrong: the whole rendered output
+// when all is set (`--rendered`), and the template source around a
+// template error, which has no rendered output to show. A YAML error
+// after the template stage carries its own window in its message
+// (Error.Context), so it is not repeated here. Both lints call this, so
+// that the hub's and the node's say the same thing. DIVERGENCE 5.261.
+func Explain(src []byte, file string, res Result, err error, all bool) string {
+	var b strings.Builder
+	if all {
+		if res.Text != "" {
+			fmt.Fprintf(&b, "  rendered output of %s (pipeline %s), with the template line each came from:\n",
+				file, strings.Join(res.Pipeline, "|"))
+			indent(&b, NumberedText(res.Text, res.Template))
+		} else if err != nil {
+			fmt.Fprintf(&b, "  %s did not render, so there is no rendered output to show\n", file)
+		}
+	}
+	if w := SourceWindow(src, file, err); w != "" {
+		fmt.Fprintf(&b, "  template source around the error:\n")
+		indent(&b, w)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func indent(b *strings.Builder, block string) {
+	for _, line := range strings.Split(block, "\n") {
+		b.WriteString("    " + line + "\n")
+	}
 }

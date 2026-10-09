@@ -351,6 +351,13 @@ func runServe(args *cli.Args) int {
 			ConfigValues:     h.cfg.Effective(config.Hub),
 			Ext:              extPillarSources(h, extensions),
 			OnSecret:         h.secrets.Add,
+			// Each pillar file's rendered output, at debug level, for
+			// the node it was compiled for. The logger's redactor
+			// scrubs it like any other record. DIVERGENCE 5.261.
+			OnRendered: func(nodeID, file, sls string, pipeline []string, text string) {
+				h.log.Debug("rendered", "node_id", nodeID, "file", file, "sls", sls,
+					"pipeline", strings.Join(pipeline, "|"), "rendered", text)
+			},
 		}
 		// A setting that parses and does nothing is indistinguishable
 		// from one that works, until the thing it was meant to change

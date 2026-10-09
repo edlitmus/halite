@@ -441,7 +441,13 @@ difference:
 
 ```sh
 halite-hub lint /srv/salt/state/plex.sls
+halite-hub lint --rendered /srv/salt/state/plex.sls   # and print what it rendered to
 ```
+
+A YAML error shows the rendered lines around it, each with the template
+line it came from. Where Salt shows rendered SLS at `-l debug`, halite
+logs them at `--log-level debug` without the module loading around them;
+`docs/operations.md` has the detail.
 
 ## Step 5: apply for real, on that one machine
 
