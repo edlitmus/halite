@@ -29,7 +29,9 @@ The state of the rebuild, by what it means rather than by commit.
 own that ran no external pillar sources and ignored most of the hub's
 pillar settings, so a target never received Secrets Manager values and a
 pillar file calling `salt[...]` did not compile for it. It now compiles
-exactly as the hub does for an enrolled node.
+exactly as the hub does for an enrolled node. `pillar.items`,
+`pillar.get` and `config.get` over `ssh` are now sent the target's
+pillar too; they answered `{}` or their default.
 
 ### The Salt differential runs against Salt 3006, 3007 and 3008
 

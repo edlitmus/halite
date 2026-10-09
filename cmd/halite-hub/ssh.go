@@ -298,6 +298,8 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 		if len(files) > 0 {
 			req["files"] = files
 		}
+	}
+	if needsPillar(fun) {
 		pillar, secrets, err := inlinePillar(h, t, args)
 		if err != nil {
 			return nil, err
@@ -316,6 +318,23 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 // tree sent with it.
 func needsTree(fun string) bool {
 	return strings.HasPrefix(fun, "state.")
+}
+
+// needsPillar reports whether a function reads the target's pillar, and
+// so needs it sent: everything that compiles state, and the execution
+// functions that read pillar -- `pillar.*` and `config.get`, which falls
+// through to pillar.
+//
+// It was needsTree, so `halite-hub ssh web1 pillar.items` sent no pillar
+// and answered `{}`, and `pillar.get` gave its default, on a hub whose
+// pillar the same target's states read without trouble (DIVERGENCE
+// 5.268). Not every function: a target is sent its pillar only when it
+// will read it, because compiling it runs the external sources -- a
+// Secrets Manager fetch per target -- and puts the target's secrets on
+// the wire, neither of which a `cmd.run` needs. A new execution function
+// that reads pillar belongs on this list.
+func needsPillar(fun string) bool {
+	return needsTree(fun) || strings.HasPrefix(fun, "pillar.") || fun == "config.get"
 }
 
 // MaxInlineTree bounds what is sent with one job.
@@ -409,7 +428,7 @@ func compileRosterPillarSecrets(h *hubContext, t roster.Target, env string) (*va
 	// enrolled node with these grains would be sent, external sources
 	// included. Agentless pillar is compiled here, so it is decrypted
 	// here, and the redactor hears every secret first. DIVERGENCE 5.110,
-	// 5.265.
+	// 5.267.
 	compiled, secrets := hub.CompilePillar(opts, t.ID, env, grains)
 	for _, w := range compiled.Warnings {
 		h.log.Warn(w.String(), "component", "pillar", "node_id", t.ID)

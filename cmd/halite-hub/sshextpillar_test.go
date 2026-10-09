@@ -60,7 +60,7 @@ func installAWSExtension(t *testing.T) string {
 // included. The agentless path built its own compiler with neither the
 // sources nor the `salt` dispatcher, so a target never received what
 // Secrets Manager held, and a pillar file calling `salt['grains.get']`
-// did not compile for it at all. DIVERGENCE 5.265.
+// did not compile for it at all. DIVERGENCE 5.267.
 func TestAgentlessPillarIsTheHubsPillar(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")
@@ -135,5 +135,47 @@ ext_pillar:
 	}
 	if scrubbed := h.secrets.Scrub(secret); strings.Contains(scrubbed, secret) {
 		t.Error("the hub's own redactor never heard the Secrets Manager value")
+	}
+}
+
+// A function that reads pillar is sent it, and one that does not is not:
+// `pillar.items` over ssh answered `{}`, because pillar went only with
+// state functions. DIVERGENCE 5.268.
+func TestAgentlessPillarFunctionsAreSentThePillar(t *testing.T) {
+	root := t.TempDir()
+	pillarRoot := filepath.Join(root, "pillar")
+	if err := os.MkdirAll(pillarRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"top.sls":    "base:\n  '*':\n    - common\n",
+		"common.sls": "relay: mail.example\n",
+	} {
+		if err := os.WriteFile(filepath.Join(pillarRoot, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "hub.yaml"), []byte(
+		"pillar_roots:\n  base:\n    - "+pillarRoot+"\nfile_roots:\n  base:\n    - "+pillarRoot+
+			"\nstate_dir: "+filepath.Join(root, "state")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := &cli.Args{Flags: map[string]string{"root": root}}
+	h := openHubForConfig(args)
+	t.Cleanup(h.closeAgentlessPillar)
+
+	target := roster.Target{ID: "web1.example"}
+	for fun, want := range map[string]bool{
+		"pillar.items": true, "pillar.get": true, "config.get": true, "state.apply": true,
+		"cmd.run": false, "test.ping": false,
+	} {
+		body, err := sshRequest(h, target, "1", fun, nil, nil, args)
+		if err != nil {
+			t.Fatalf("%s: %v", fun, err)
+		}
+		got := strings.Contains(string(body), "mail.example")
+		if got != want {
+			t.Errorf("%s: pillar sent = %v, want %v", fun, got, want)
+		}
 	}
 }

@@ -165,7 +165,7 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 // dispatcher, the default merge strategy and renderer whatever the hub
 // said -- so a roster target could be sent a different pillar from an
 // enrolled node with the same grains, and none of what `ext_pillar`
-// held. DIVERGENCE 5.265.
+// held. DIVERGENCE 5.267.
 func CompilePillar(opts *PillarOptions, nodeID, env string, grains *value.Map) (*pillar.Compiled, []string) {
 	cfg := pillarConfigFor(opts, nodeID, env, grains)
 	secrets := []string{}

@@ -24,7 +24,7 @@ import (
 // and no check that the roots are not the hub's own key material -- so a
 // roster target could be sent a different pillar from an enrolled node
 // with the same grains, and never what `ext_pillar` held. DIVERGENCE
-// 5.265.
+// 5.267.
 //
 // extensions is the runtime the external sources run in; their warm-up,
 // and a refusal of a source that is not installed, happen here.

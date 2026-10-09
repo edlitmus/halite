@@ -22685,8 +22685,7 @@ all go into the module's arguments in `applyPerNameArgs`. A per-name
 parameter of this function"), where Salt treats it as an option.
 
 **Not covered:** only run on macOS.
-
-### 5.265 Agentless pillar was compiled by a second compiler, without ext_pillar
+### 5.267 Agentless pillar was compiled by a second compiler, without ext_pillar
 
 `halite-hub ssh` compiles a roster target's pillar on the hub and sends it
 with the job (SPEC 21.1). It did so with a compiler of its own, built from
@@ -22744,6 +22743,42 @@ sources fails it on all three Secrets Manager checks.
   `internal/extpillar` has the signed chain end to end.
 - `halite-hub doctor`'s pillar check still builds its own compiler, and
   does not run external sources.
+### 5.268 `halite-hub ssh target pillar.items` answered `{}`
+
+Found while showing 5.267 live. An agentless target is sent its pillar
+with the job, and it was sent only with `state.*` functions, because the
+same test (`needsTree`) decided both the state tree and the pillar.
+`pillar.items` over `ssh` therefore answered `{}`, and `pillar.get` and
+`config.get` gave their defaults, for a target whose states read the same
+pillar without trouble.
+
+`needsPillar` now decides the pillar on its own: `state.*`, `pillar.*` and
+`config.get`, which falls through to pillar. Those are every execution
+function that reads pillar, by a search of `PillarOrErr` in the builtins;
+the others that read it are states. Pillar is not sent with every
+function, as an enrolled node can always fetch its own. Compiling it runs
+the external sources, a Secrets Manager fetch per target, and puts the
+target's secrets on the wire, and a `cmd.run` needs neither. A new
+execution function that reads pillar has to be added to the list.
+
+Seen with this machine as a roster target, as in 5.267:
+`halite-hub ssh selftest pillar.items` answered `{"selftest":{}}` on
+main's build. This build answered with the roster grain's `role` and the
+Secrets Manager password. The password prints in full, as it does from
+`pillar.items` on an enrolled node: module output is requested data, and
+only `halite-node pillar` masks it (5.256).
+
+Test, broken on purpose: `pillar.items`, `pillar.get`, `config.get` and
+`state.apply` are sent the pillar, and `cmd.run` and `test.ping` are not.
+Deciding by `needsTree` again fails the first three.
+
+**Not covered:**
+- The list is by hand. Nothing fails when a new execution function that
+  reads pillar is not added to it.
+
+
+
+
 
 ## 6. Everything else not started
 
