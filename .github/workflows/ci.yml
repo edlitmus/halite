@@ -516,14 +516,25 @@ jobs:
   # where Salt is absent, which is every machine this project is
   # developed on -- so the primary correctness gate was green by not
   # running. The container is what makes it a command.
+  #
+  # Against three Salt releases, not one. The deviation table already
+  # names behaviour that differs between 3006, 3007 and 3008, and the
+  # highstate outputter test holds halite's rendering to Salt's own, so a
+  # gate run against one release says nothing about the other two that
+  # estates still run. 3007.1 stays as it was pinned; 3006 and 3008 are
+  # the newest of each. DIVERGENCE 5.265.
   saltdiff:
-    name: salt differential
+    name: salt differential (${{ matrix.salt }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        salt: ['3006.28', '3007.1', '3008.3']
     steps:
       - uses: actions/checkout@v7
-      - run: make saltdiff
+      - run: make saltdiff SALT_VERSION=${{ matrix.salt }}
 
   # Two builds of the same source on one machine, from two paths.
   #
