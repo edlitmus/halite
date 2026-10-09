@@ -110,6 +110,7 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
 	fleetcheck fleetcheck-image fleetcheck-rocky9 fleetcheck-alma8 fleetcheck-leap16 dist \
+	release-sign release-verify release-pubkey \
 	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
 
 all: build
@@ -522,8 +523,11 @@ cross: make-supports-bang
 # 48 binaries and 16 archives. Stale archives go first: SHA256SUMS sums
 # everything in dist/, and an archive left from another version would be
 # a line in this one's manifest.
+# Stale signatures go too: they are made after the manifest, over it
+# (release-sign below), and one left from another signing would otherwise
+# be summed into this manifest as if it were an artifact.
 dist: cross
-	@rm -f dist/halite-*.tar.gz dist/halite-*.zip
+	@rm -f dist/halite-*.tar.gz dist/halite-*.zip dist/*.sig
 	@env $(RELEASE_ENV) go run ./tools/disttar -dist dist \
 		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
 		-targets "$(TARGETS)" -binaries "$(BINARIES)"
@@ -534,6 +538,36 @@ dist: cross
 		sha256 -r *; \
 	fi | awk '{ printf "%s  %s\n", $$1, $$2 }' | LC_ALL=C sort > SHA256SUMS
 	@echo "dist/SHA256SUMS: `wc -l < dist/SHA256SUMS | tr -d ' '` artifacts"
+
+# SPEC 4.3's detached signature per artifact, with a key held in AWS KMS.
+#
+# Run by an operator, after a tag's release.yml has held dist/SHA256SUMS
+# equal across two builders and attested it -- not by the workflow. The
+# attestation already says "this workflow built it"; the one thing a
+# signature can add is that a person with the key looked first, and a
+# key the workflow could use would make the two say the same thing.
+# tools/relsign carries the reasoning and the refusals: it signs nothing
+# until every file matches its line and the KMS key is the one in
+# RELEASE_PUB, because a release signed with any other key is one nobody
+# can verify.
+#
+# RELEASE_KEY is a KMS key id, alias or ARN; the region is AWS_REGION or
+# the ARN's. Credentials come from the environment -- on a workstation,
+# `aws configure export-credentials --format env` after `aws sso login`.
+# release-pubkey prints the key's public half, which is how RELEASE_PUB
+# is made once, when the key is; release-verify needs no credentials
+# and is what to run on a downloaded set.
+RELEASE_KEY ?= alias/halite-release
+RELEASE_PUB ?= contrib/keys/halite-release.pub
+
+release-sign:
+	@env $(DEV_ENV) go run ./tools/relsign sign -dist dist -key "$(RELEASE_KEY)" -pub "$(RELEASE_PUB)"
+
+release-verify:
+	@env $(DEV_ENV) go run ./tools/relsign verify -dist dist -pub "$(RELEASE_PUB)"
+
+release-pubkey:
+	@env $(DEV_ENV) go run ./tools/relsign pubkey -key "$(RELEASE_KEY)"
 
 # Installation. The paths follow the platform the way the binaries do,
 # and internal/config's TestTheMakefileInstallsWhereTheBinariesLook holds
