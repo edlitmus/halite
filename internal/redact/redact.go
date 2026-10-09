@@ -81,6 +81,13 @@ func URLCredentials(text string) string {
 type Set struct {
 	mu     sync.RWMutex
 	values []string
+	// short holds the secrets too short to scrub from text, for Holds
+	// alone. A five-character password cannot be replaced wherever it
+	// appears in a message without replacing every word that resembles
+	// it, but `halite-node pillar items` printing it in full when it is
+	// a whole pillar value is a different thing, and it is still a
+	// secret there.
+	short map[string]bool
 }
 
 // New returns an empty set.
@@ -90,11 +97,18 @@ func New() *Set { return &Set{} }
 // so is one already held.
 func (s *Set) Add(v string) {
 	v = strings.TrimSpace(v)
-	if len(v) < minLength {
+	if v == "" {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(v) < minLength {
+		if s.short == nil {
+			s.short = map[string]bool{}
+		}
+		s.short[v] = true
+		return
+	}
 	for _, existing := range s.values {
 		if existing == v {
 			return
@@ -172,6 +186,29 @@ func (s *Set) Scrub(text string) string {
 		}
 	}
 	return text
+}
+
+// Holds reports whether v, whole, is a recorded secret -- including one
+// too short for Scrub to remove from text.
+func (s *Set) Holds(v string) bool {
+	if s == nil {
+		return false
+	}
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.short[v] {
+		return true
+	}
+	for _, existing := range s.values {
+		if existing == v {
+			return true
+		}
+	}
+	return false
 }
 
 // ScrubValue scrubs the strings inside a parsed value, leaving its shape

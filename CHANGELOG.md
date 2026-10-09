@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `halite-node pillar` masks only the secrets
+
+`halite-node pillar items`, `item` and `get` replaced every string value
+with `**********`, so addresses, host names and paths could only be read
+with `--reveal`, which prints the credentials too. They now mask only
+what was gpg-encrypted or came from an external pillar source such as
+AWS Secrets Manager. Values from an external source were also missing
+from the list of secrets a hub sends its nodes, so a node masked none of
+them in state output; they are now included.
+
 ### A relay picks up its renewed certificate without a restart
 
 A relay loaded its certificate for the upstream once, at startup. The

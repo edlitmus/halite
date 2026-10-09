@@ -180,10 +180,16 @@ webhook's `secret` or `secret_file`. The bearer tokens it issues are
 not added: no record carries one, and a set that grew by one entry per
 login would never shrink.
 
-Requested data is a separate matter. `halite-node pillar items` masks
-values by default, as Salt's does — `db_password: **********` — and
-`--reveal` prints them. That masking is a choice made for the command's
-output, not the log redaction described here.
+Requested data is a separate matter. `halite-node pillar items`, `item`
+and `get` mask the secrets in what they print — every value the `gpg`
+renderer decrypted, and every value an external pillar source such as
+AWS Secrets Manager returned — as `db_password: **********`, and print
+everything else as it is. A value that only contains a secret, such as a
+connection string built from a password, has that part replaced.
+`--reveal` prints the secrets too. That masking is a choice made for the
+command's output, not the log redaction described here. A node talking
+to a hub older than DIVERGENCE 5.251 cannot tell which values are
+secret, and masks every string.
 
 A value shorter than six characters is not scrubbed. It cannot be
 removed from text without removing everything that resembles it — a

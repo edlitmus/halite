@@ -22012,6 +22012,75 @@ clean.
   there was not checked.
 
 
+### 5.256 `pillar items` masked every value, and missed Secrets Manager's
+
+Two defects in how a node decides what in its pillar is secret, found when
+the estate's operator reported that pillar output masked everything.
+
+**`halite-node pillar items` masked every string.** `item` and `get` did
+too. 5.88 made them replace every non-empty string leaf with `**********`,
+on the reading that this was Salt's rule (`salt/utils/secret.py`). Nobody
+here has checked that against Salt's source. The one comparison 5.88 made
+was on a pillar that was mostly AWS Secrets Manager values, where "every
+string" and "every secret" are nearly the same set. On this estate they
+are not. On system76-pc the installed build (0.12.0-804) printed all 36
+string leaves of the node's pillar as asterisks: the roles in the hosts
+table, interface names, the ZeroTier addresses. The command is run to
+check what a state will see, so the only way left to read an address was
+`--reveal`, which prints the credentials as well.
+
+The display now masks what the node's redactor holds. A leaf that is a
+held secret, whole, is replaced, however short. A longer string with one
+inside it has that part scrubbed. Everything else prints. The redactor
+holds what the hub named as secret (5.251), or what this node decrypted
+compiling its own pillar. A hub too old to name any leaves the node
+holding every value, and then every string is masked as before. To mask
+a short secret whole, `redact.Set` now remembers values under its
+six-character floor for `Holds` alone. `Scrub` still leaves them in text,
+for the reason `minLength` gives.
+
+**Secrets Manager's values never reached the node's list.** 5.251's
+`PillarResponse.Secrets` says it carries "the strings an external pillar
+source returned". It carried none. The hub collects the list from the
+compile's `OnSecret`, and `extpillar.Bridged` offered its strings only to
+the callback it was built with: the hub's own redactor
+(`cmd/halite-hub/extpillar.go`). So since 5.251, a node fetching from a
+hub with `ext_pillar` configured masked nothing that Secrets Manager
+returned, in state output or anywhere else. Before 5.251 it masked
+everything, which covered them. The compiler now hands every string an
+external source returns to the compile's `OnSecret` (`mergeExt`). The
+bridge still tells the hub's redactor directly, which is harmless
+duplication. This estate's hub has no `ext_pillar`, so nothing here was
+exposed by it.
+
+Seen, with this build's `halite-node` on system76-pc, as root, against
+beastie's hub (0.12.0-806): `pillar items` masked 8 leaves and printed 28.
+The 8 are exactly the eight PGP blocks in the four pillar files that node
+is assigned (`zerotier`, `hosts`, `halite_metrics_cert`, `users`), and
+no other. The values themselves were not printed while checking: only
+counts and key paths.
+
+Tests, broken on purpose:
+- The display masks a held secret and a short held secret whole, scrubs
+  one inside a DSN, and prints an address, a host name and a list's plain
+  item. With every value held it masks every string. Restoring the
+  mask-everything rule fails the first test on the address, the host
+  name, the DSN and the list.
+- A hub with an external source that stands in for Secrets Manager names
+  its value in the response, and not the plain value beside it. Removing
+  the compiler's offer fails that: "the hub named """.
+
+**Not covered:**
+- Not run against a hub with a real `ext_pillar`. The Secrets Manager
+  half is shown only by the stand-in source.
+- Every external pillar source is treated as secret, not only Secrets
+  Manager. No other source exists in this estate. A source that returns
+  plain data would have it masked, and telling sources apart would need a
+  per-source setting.
+- What Salt's `pillar.items` actually prints was not checked. Making
+  `--reveal` the default was not considered: the display still masks what
+  is known to be secret.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
