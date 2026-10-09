@@ -1,6 +1,8 @@
 # Every shape the highstate outputter draws differently: changes, none,
 # a name that is not the ID, a failure, a requisite that held a state
-# back, a comment over several lines, and a warning long enough to wrap.
+# back, a comment over several lines, a warning long enough to wrap,
+# changes holding numbers, lists and nested maps, and states run in
+# parallel, whose durations the summary adds differently.
 changed:
   test.succeed_with_changes: []
 
@@ -32,3 +34,27 @@ warned:
     - changes: False
     - result: True
     - warnings: "a warning long enough that the outputter has to wrap it at eighty columns, which it does on whitespace"
+
+numbers:
+  cmd.run:
+    - name: 'echo one; echo two'
+
+nested:
+  module.run:
+    - test.arg:
+      - 1
+      - 2.5
+      - [a, b]
+      - first: [x, y]
+        second:
+          inner: true
+
+parallel one:
+  cmd.run:
+    - name: 'sleep 0.2'
+    - parallel: True
+
+parallel two:
+  cmd.run:
+    - name: 'sleep 0.1'
+    - parallel: True
