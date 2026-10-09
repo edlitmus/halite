@@ -456,8 +456,8 @@ with. Issue on the hub, ship the result.
 For an estate that would rather not copy files around, the same two
 functions have state forms, and `days_remaining` renews before expiry.
 A running agent serves a renewed certificate from the next connection on,
-without a restart: it checks the two files on each handshake and reads
-them again when either has changed. A pair that will not load (the key
+without a restart: it reads the two files on each handshake and loads them
+again when either differs from the pair it is serving. A pair that will not load (the key
 written and its certificate not yet) leaves the previous one in service
 and is said once in the log. Until DIVERGENCE 5.248 the listener served
 the pair it loaded at startup for as long as it ran, so a renewal reached

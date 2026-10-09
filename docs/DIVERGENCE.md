@@ -21648,9 +21648,20 @@ expiry.
 
 The listener now serves through `GetCertificate`. Startup still loads the
 pair, so a certificate that cannot be used is reported then, as before.
-On each handshake the reloader stats both files and reads them again when
-either is a different file (the state writes through a rename), or has a
-different modification time or size. A pair that will not load is not
+On each handshake the reloader reads both files and compares them with
+the bytes of the pair it last loaded: two reads of about a kilobyte per
+scrape.
+
+**The first version compared metadata, and the CI's Windows leg failed
+it.** It reloaded when either file was a different file, or had a
+different modification time or size. On Windows a key replaced by rename
+passed all three: `os.SameFile` resolves a stored `os.Stat` result from
+its path when it is asked, so the old and new files compare as the same
+file, and a key of the same length written a few milliseconds later
+carried the same timestamp. The unloadable-replacement test saw the
+change go unnoticed ("said 0 times"). Linux and FreeBSD passed because
+the rename changes the inode. Comparing contents does not depend on what
+a filesystem records. A pair that will not load is not
 served and neither is nothing: the previous pair stays in service, the
 failure is said once until it changes or clears, and the files are tried
 again on the next connection. The ordinary case is the key written a
@@ -21658,7 +21669,7 @@ moment before its certificate. A reload is logged with the new
 certificate's expiry.
 
 Two tests against a real listener and real handshakes, each guard broken
-on purpose. A certificate renewed in place, and then by rename, is served
+on purpose, on the content comparison as well as the first version. A certificate renewed in place, and then by rename, is served
 from the next connection; with the reload skipped, the old serial came
 back both times. With the key replaced and not its certificate, three
 handshakes get the previous certificate and the failure is said once;

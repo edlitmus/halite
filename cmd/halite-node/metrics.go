@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -411,10 +412,16 @@ func (m *nodeMetrics) serverTLS() (*tls.Config, error) {
 // every node, about ninety days after the state first ran, unless the
 // agent happened to be restarted in between. DIVERGENCE 5.248.
 //
-// It checks on every handshake, which for a scrape target is one every
-// interval: two stat calls, and a read only when something moved. A change
-// is a different file (the state writes through a temporary file and a
-// rename), a different modification time, or a different size.
+// It reads both files on every handshake and compares them with the bytes
+// of the pair it last loaded; for a scrape target that is two reads of
+// about a kilobyte each interval. The contents and not the file's metadata,
+// because the metadata was not enough: the first version compared
+// identity, modification time and size, and on Windows a key replaced by
+// rename passed all three -- os.SameFile resolves a stored os.Stat result
+// from its path when it is asked, so the old and new files are "the same
+// file", and a key of the same length written a few milliseconds later can
+// carry the same timestamp. Linux and FreeBSD caught it through the inode;
+// the CI's Windows leg did not.
 //
 // A pair that will not load -- the key replaced and its certificate not
 // yet, or a file somebody truncated -- is not served. The previous pair
@@ -426,59 +433,55 @@ type certReloader struct {
 	certFile, keyFile string
 	info, warn        func(msg string, kv ...any)
 
-	mu                sync.Mutex
-	pair              *tls.Certificate
-	certStat, keyStat os.FileInfo
-	lastProblem       string
+	mu              sync.Mutex
+	pair            *tls.Certificate
+	certPEM, keyPEM []byte
+	lastProblem     string
 }
 
 func newCertReloader(certFile, keyFile string, info, warn func(string, ...any)) (*certReloader, error) {
 	r := &certReloader{certFile: certFile, keyFile: keyFile, info: info, warn: warn}
-	certStat, keyStat, err := r.stat()
+	certPEM, keyPEM, err := r.read()
 	if err != nil {
 		return nil, err
 	}
-	pair, err := tls.LoadX509KeyPair(certFile, keyFile)
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, err
 	}
-	r.pair, r.certStat, r.keyStat = &pair, certStat, keyStat
+	r.pair, r.certPEM, r.keyPEM = &pair, certPEM, keyPEM
 	return r, nil
 }
 
-func (r *certReloader) stat() (os.FileInfo, os.FileInfo, error) {
-	certStat, err := os.Stat(r.certFile)
+func (r *certReloader) read() ([]byte, []byte, error) {
+	certPEM, err := os.ReadFile(r.certFile)
 	if err != nil {
 		return nil, nil, err
 	}
-	keyStat, err := os.Stat(r.keyFile)
+	keyPEM, err := os.ReadFile(r.keyFile)
 	if err != nil {
 		return nil, nil, err
 	}
-	return certStat, keyStat, nil
-}
-
-func sameFileState(a, b os.FileInfo) bool {
-	return os.SameFile(a, b) && a.ModTime().Equal(b.ModTime()) && a.Size() == b.Size()
+	return certPEM, keyPEM, nil
 }
 
 func (r *certReloader) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	certStat, keyStat, err := r.stat()
+	certPEM, keyPEM, err := r.read()
 	if err != nil {
 		r.problem(err)
 		return r.pair, nil
 	}
-	if sameFileState(certStat, r.certStat) && sameFileState(keyStat, r.keyStat) {
+	if bytes.Equal(certPEM, r.certPEM) && bytes.Equal(keyPEM, r.keyPEM) {
 		return r.pair, nil
 	}
-	pair, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		r.problem(err)
 		return r.pair, nil
 	}
-	r.pair, r.certStat, r.keyStat, r.lastProblem = &pair, certStat, keyStat, ""
+	r.pair, r.certPEM, r.keyPEM, r.lastProblem = &pair, certPEM, keyPEM, ""
 	if r.info != nil {
 		kv := []any{"cert", r.certFile}
 		if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil {
