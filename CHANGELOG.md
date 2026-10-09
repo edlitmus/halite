@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-api picks up a re-issued operator certificate without a restart
+
+halite-api loaded its operator certificate to the hub once, at startup.
+Re-issuing it with `halite-hub keys operator create` therefore did
+nothing until the API was restarted, and an API left running was refused
+by the hub once its first certificate expired, 30 days after issue by
+default. It now reads the certificate again before each request.
+
 ### A signing tool for releases, with the key in AWS KMS
 
 SPEC 4.3's detached signature per artifact was deferred on where a

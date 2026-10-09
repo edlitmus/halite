@@ -1030,6 +1030,29 @@ and `x509.private_key_managed` are in the [module
 reference](modules.md), so the API's own certificate can be a state in
 the tree like anything else, renewed on a schedule.
 
+### The API's certificate to the hub
+
+The other certificate `halite-api` holds is its operator certificate to
+the hub, `operator-<api_operator>.crt` in `pki_dir`, which
+`halite-hub keys operator create api` issued. It lasts 30 days unless
+`--lifetime` said otherwise, and nothing renews it: an operator
+certificate has no renewal, so it is issued again, in place, with the
+same command, run as the account that owns the key material. Do it before
+it expires, from a schedule or a state; `contrib/examples/tree`'s
+`halite.certs` does it a week ahead.
+
+**A re-issue needs no restart.** `halite-api` reads the pair again before
+each request to the hub and presents a new one from the next request on.
+A re-issue does not revoke the previous certificate, so nothing in flight
+is refused. Before DIVERGENCE 5.271 the pair was loaded once at startup,
+so a re-issue changed nothing until `halite-api` was restarted, and an
+API left running was refused by the hub once its original certificate
+expired.
+
+```sh
+openssl x509 -noout -enddate -in /usr/local/etc/halite/pki/operator-api.crt
+```
+
 ## Metrics
 
 Every component records Prometheus metrics. On by default;

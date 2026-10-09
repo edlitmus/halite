@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -256,7 +255,27 @@ func hubClient(s *service, args *cli.Args) (*transport.Client, error) {
 
 	certPath := args.Flag("cert", files.Path(pki.OperatorCertFile(name)))
 	keyPath := args.Flag("key", files.Path("operator-"+name+".key"))
-	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	// Read from disk again before every request (transport CertFiles),
+	// not loaded once. An operator certificate has no renewal: it is
+	// issued again with `keys operator create`, in place, and the API
+	// went on presenting the one it started with until that expired --
+	// 30 days by default -- and was refused by the hub from then on, so
+	// re-issuing it also meant restarting the API. Now the next request
+	// after a re-issue presents the new one, on a new connection.
+	// DIVERGENCE 5.254 named this; 5.271 is the change. The old
+	// certificate is not revoked by a re-issue, so a request in flight
+	// across the change is not refused either.
+	logInfo := func(msg string, kv ...any) {
+		if s.log != nil {
+			s.log.Info(msg, kv...)
+		}
+	}
+	logWarn := func(msg string, kv ...any) {
+		if s.log != nil {
+			s.log.Warn(msg, kv...)
+		}
+	}
+	certs, err := certreload.NewClient(certPath, keyPath, logInfo, logWarn)
 	if err != nil {
 		return nil, fmt.Errorf("this service has no usable operator certificate at %s; "+
 			"`halite-hub keys operator create %s` makes one: %w", certPath, name, err)
@@ -281,7 +300,7 @@ func hubClient(s *service, args *cli.Args) (*transport.Client, error) {
 	return &transport.Client{
 		HubURL:     url,
 		CA:         ca,
-		Cert:       &pair,
+		CertFiles:  certs,
 		ServerName: args.Flag("server-name", ""),
 		Timeout:    30 * time.Second,
 	}, nil

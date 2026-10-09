@@ -22,7 +22,7 @@ into your own tree and change the IDs and the values.
 | each node's identity | the node, at half its life (SPEC 7.4) |
 | the hub's own serving certificate | the hub, at half its life, served without a restart |
 | halite-api's serving certificate | `halite.certs`, 30 days before expiry, from an API CA the same state makes once; halite-api reads it again without a restart |
-| halite-api's operator certificate to the hub | `halite.certs`, a week before expiry; it restarts halite-api, which loads that certificate only at startup |
+| halite-api's operator certificate to the hub | `halite.certs`, a week before expiry; halite-api reads it again without a restart |
 | the enrollment CA | nothing. It lasts ten years and there is no rotation yet; `halite-hub doctor` warns 30 days before. |
 
 Clients of the API -- Prometheus, an operator's `curl` -- trust
@@ -96,7 +96,7 @@ service manager. **Not run by this project:**
   agent's own job would stop the job with it; whether these two escape
   the agent as intended has not been seen.
 - **The hub and the API restarting on a change,** the operator
-  certificate re-issued as `halite` and the API restarted for it, and
+  certificate re-issued as `halite` and picked up by the running API, and
   the API CA and serving certificate on a real hub host.
 - **The signer's push**, and the hub serving what it pushed through
   gitfs. The credentials are yours to arrange.
