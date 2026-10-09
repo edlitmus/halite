@@ -22826,6 +22826,46 @@ has no `mode`, and `file.directory` documents its 0755 default.
 
 **Not covered:** ownership of the directories created was not exercised
 as root. Only run on macOS.
+### 5.270 A name's own arguments all went to the module
+
+5.266 recorded this. `applyPerNameArgs` put every argument given to one
+name under `names` into the module's arguments. Salt merges a names
+entry's keys into that name's low chunk (`live.update()` in state.py),
+so a per-name `unless` is a gate and a per-name `require` a requisite.
+Here a per-name `unless` failed to compile, as "argument `unless` is not
+a parameter of this function", and a per-name `require` would have done
+the same.
+
+A name's own arguments now override the declaration's, as the update
+does, and are sorted the way the declaration's are:
+- options become that chunk's options, parsed from the merged set, and
+  show in `show_lowstate`;
+- forward requisites become its requisites, replacing the declaration's
+  as the override does;
+- everything else goes to the module, as before.
+
+A reverse requisite (`require_in` and its kind) attaches to another
+declaration and is resolved per declaration, not per chunk. It is
+refused with the reason and the alternative: put it on the declaration,
+or a forward one on the other state.
+
+Run for real:
+- `echo gated` with its own `unless: 'true'` was skipped while its
+  siblings ran;
+- `echo after last`, with its own `require` on a state declared after
+  it, ran after that state, and its siblings did not move;
+- a per-name `require_in` failed to compile with the new message.
+
+`TestPerNameArgumentsAreOptionsAndRequisites` holds all three, and that
+a declaration-level `unless: 'false'` still applies to the names that do
+not override it. It failed with every key sent to the module, and again
+with the per-name requisites not collected.
+
+**Not covered:** only run on macOS. The differential's `names` corpus
+tree has no per-name options or requisites, so Salt has not been run
+against these cases.
+
+
 
 #### 5.269, renumbered
 

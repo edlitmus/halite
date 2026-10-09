@@ -227,7 +227,7 @@ func buildChunksForFunc(d *Decl, f *FuncDecl, diags *Diags) []*Chunk {
 			}
 			e := t.Entries()[0]
 			c.Name = value.KeyString(e.Key)
-			applyPerNameArgs(c, e.Val, d, diags)
+			applyPerNameArgs(c, f, e.Val, d, diags)
 		default:
 			c.Name = value.KeyString(n)
 		}
@@ -249,13 +249,14 @@ func buildChunksForFunc(d *Decl, f *FuncDecl, diags *Diags) []*Chunk {
 // On `file.managed` that meant the expanded chunks had no `source` at
 // all, so a tree that copies seven scripts into place would have written
 // seven empty files.
-func applyPerNameArgs(c *Chunk, v any, d *Decl, diags *Diags) {
+func applyPerNameArgs(c *Chunk, f *FuncDecl, v any, d *Decl, diags *Diags) {
+	own := value.NewMap(0)
 	switch sub := v.(type) {
 	case nil:
 		// `- name:` with nothing under it is the name alone.
 	case *value.Map:
 		for _, se := range sub.Entries() {
-			c.Args.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
+			own.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
 		}
 	case []any:
 		for _, item := range sub {
@@ -266,13 +267,68 @@ func applyPerNameArgs(c *Chunk, v any, d *Decl, diags *Diags) {
 				continue
 			}
 			for _, se := range m.Entries() {
-				c.Args.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
+				own.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
 			}
 		}
 	default:
 		diags.Add(c.Pos, d.SLS, d.ID,
 			"a names entry's arguments must be a mapping or a list of them, found %s", value.TypeName(v))
 	}
+	if own.Len() == 0 {
+		return
+	}
+
+	// A name's own arguments override the declaration's, as Salt's
+	// live.update() does. Options and requisites among them are options
+	// and requisites for that name: they went to the module before,
+	// so a per-name `unless` failed to compile as "not a parameter of
+	// this function" where Salt runs it as a gate. DIVERGENCE 5.270.
+	merged := &FuncDecl{State: f.State, Fun: f.Fun, Flags: f.Flags, Pos: f.Pos, Args: value.NewMap(f.Args.Len())}
+	for _, e := range f.Args.Entries() {
+		merged.Args.SetAt(e.Key, e.Val, e.KeyPos, e.ValPos)
+	}
+	options, requisites := false, false
+	for _, se := range own.Entries() {
+		name := value.KeyString(se.Key)
+		merged.Args.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
+		switch {
+		case name == "names":
+			diags.Add(c.Pos, d.SLS, d.ID, "a names entry cannot carry `names` of its own")
+		case IsRequisiteArg(name) && !isForwardReq(name):
+			// A reverse requisite attaches this chunk to another
+			// declaration, which is resolved per declaration rather than
+			// per chunk; it is refused here rather than handed to the
+			// module as an argument it does not have.
+			diags.Add(c.Pos, d.SLS, d.ID,
+				"`%s` cannot be given to one name; put it on the declaration, or a `%s` on the other state",
+				name, forwardOf(name))
+		case IsRequisiteArg(name):
+			requisites = true
+		case optionNames[name]:
+			options = true
+			c.OptionArgs.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
+		default:
+			c.Args.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
+		}
+	}
+	if options {
+		c.Opts = parseOptions(merged, d, diags)
+	}
+	if requisites {
+		c.Reqs = collectRequisites(merged, d, diags)
+	}
+}
+
+// isForwardReq reports whether a requisite argument points forward
+// (`require`) rather than in reverse (`require_in`).
+func isForwardReq(name string) bool {
+	_, ok := forwardReqs[name]
+	return ok
+}
+
+// forwardOf is the forward requisite a reverse one stands for.
+func forwardOf(name string) string {
+	return strings.TrimSuffix(name, "_in")
 }
 
 func extractNames(args *value.Map, d *Decl, diags *Diags) []any {
