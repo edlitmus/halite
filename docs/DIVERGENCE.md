@@ -22284,7 +22284,15 @@ are the shipped commands:
   and `manifest.sig` beside the executable and prints the root and the
   `extension_pins` entry.
 - **`--publish`** copies the bundle to `_ext/<name>/<version>/` under
-  the tree, through one rename, and refuses a version already there.
+  the tree. It claims the directory with one `Mkdir`, which refuses a
+  version already there. It then writes each file through `atomicfile`,
+  the signature last, so a sync that runs in between finds a bundle that
+  does not verify, and refuses it. The first version staged a temporary
+  directory and renamed it into place, and two of `internal/atomicfile`'s
+  audits failed it in CI: one rules out temporary-file-and-rename
+  helpers outside that package, the other `os.Rename`, which fails on
+  Windows while anything has the destination open. Neither audit had
+  been run locally.
 - **The version flag is `--ext-version`.** `--version` is the flag every
   command reads as "print your version", which takes no value. The first
   run of this command signed a bundle at version `true`.

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileperm"
@@ -117,9 +119,12 @@ func extensionsSign(args *cli.Args) int {
 // the manifest and the signature -- to <tree>/_ext/<name>/<version>/,
 // where `extensions sync` and a node's sync look for it.
 //
-// Into a directory of its own that must not already exist: a version is
-// published once, and a bundle copied over another leaves a mixture that
-// matches neither signature.
+// The version's directory is claimed with one Mkdir, which fails if it
+// already exists: a version is published once, and a bundle copied over
+// another leaves a mixture that matches neither signature. Each file is
+// then written through atomicfile, the executable first and the
+// signature last, so a sync that runs in between finds a bundle that does
+// not verify and refuses it, rather than one that runs.
 func publishBundle(dir, tree, name, version string) (string, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, extension.ManifestName))
 	if err != nil {
@@ -130,44 +135,36 @@ func publishBundle(dir, tree, name, version string) (string, error) {
 		return "", err
 	}
 	dest := filepath.Join(tree, extension.ExtPrefix, name, version)
-	if _, err := os.Stat(dest); err == nil {
-		return "", fmt.Errorf("%s already exists; a published version is never replaced, so sign a new one", dest)
-	}
 	if err := fileperm.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
 	}
-	staging, err := os.MkdirTemp(filepath.Dir(dest), "."+version+".")
-	if err != nil {
+	if err := os.Mkdir(dest, 0o755); os.IsExist(err) {
+		return "", fmt.Errorf("%s already exists; a published version is never replaced, so sign a new one", dest)
+	} else if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(staging)
-	files := []string{extension.ManifestName, extension.SignatureName}
+	payload := make([]string, 0, len(manifest.Files))
 	for rel := range manifest.Files {
-		files = append(files, rel)
+		payload = append(payload, rel)
 	}
-	for _, f := range files {
-		info, err := os.Stat(filepath.Join(dir, f))
+	sort.Strings(payload)
+	for _, f := range append(payload, extension.ManifestName, extension.SignatureName) {
+		src := filepath.Join(dir, f)
+		info, err := os.Stat(src)
 		if err != nil {
 			return "", err
 		}
-		body, err := os.ReadFile(filepath.Join(dir, f))
+		body, err := os.ReadFile(src)
 		if err != nil {
 			return "", err
 		}
-		target := filepath.Join(staging, f)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		target := filepath.Join(dest, f)
+		if err := fileperm.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(target, body, info.Mode().Perm()); err != nil {
+		if err := atomicfile.Write(target, body, info.Mode().Perm()); err != nil {
 			return "", err
 		}
-	}
-	// One rename, so a sync never sees half a version.
-	if err := os.Chmod(staging, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.Rename(staging, dest); err != nil {
-		return "", err
 	}
 	return dest, nil
 }
