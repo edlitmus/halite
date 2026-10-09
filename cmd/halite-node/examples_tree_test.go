@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,7 +98,10 @@ func TestTheExampleTreeCompilesForEveryRole(t *testing.T) {
 func checkWrittenConfig(t *testing.T, label, conf string, chunk map[string]any) {
 	t.Helper()
 	name, _ := chunk["name"].(string)
-	if filepath.Dir(name) != conf {
+	// A path on the machine the tree manages, so slash-separated
+	// whatever this test runs on: filepath would turn it into
+	// backslashes on Windows and compare it with a slash path.
+	if path.Dir(name) != conf {
 		t.Errorf("%s: %s is not under this platform's config root %s", label, name, conf)
 	}
 	body, err := json.Marshal(chunk["dataset"])
@@ -105,14 +109,14 @@ func checkWrittenConfig(t *testing.T, label, conf string, chunk map[string]any) 
 		t.Fatal(err)
 	}
 	// JSON is YAML, so the loaders read it as they would the file.
-	path := filepath.Join(t.TempDir(), filepath.Base(name))
-	if err := os.WriteFile(path, body, 0o644); err != nil {
+	file := filepath.Join(t.TempDir(), path.Base(name))
+	if err := os.WriteFile(file, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var role config.Role
-	switch filepath.Base(name) {
+	switch path.Base(name) {
 	case "policy.yaml":
-		_, warnings, err := policy.Load(body, path)
+		_, warnings, err := policy.Load(body, file)
 		if err != nil || len(warnings) > 0 {
 			t.Errorf("%s: the policy it writes does not load cleanly: %v %v", label, err, warnings)
 		}
@@ -127,7 +131,7 @@ func checkWrittenConfig(t *testing.T, label, conf string, chunk map[string]any) 
 		t.Errorf("%s: serializes %s, which this test does not know how to check", label, name)
 		return
 	}
-	loaded, err := config.Load(role, config.LoadOptions{Path: path, DropInDir: t.TempDir()})
+	loaded, err := config.Load(role, config.LoadOptions{Path: file, DropInDir: t.TempDir()})
 	if err != nil {
 		t.Errorf("%s: %s does not load: %v", label, name, err)
 		return

@@ -122,7 +122,7 @@ func newLab(t *testing.T) *lab {
 		PingInterval: 20 * time.Millisecond,
 	}
 
-	ln, err := Listen("127.0.0.1:0", pair, ca.Cert, denied)
+	ln, err := Listen("127.0.0.1:0", NewServingCert(pair), ca.Cert, denied)
 	if err != nil {
 		t.Fatal(err)
 	}

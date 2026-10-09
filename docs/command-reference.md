@@ -1704,13 +1704,23 @@ has the same pair of commands for its own cache:
 |---|---|---|
 | `salt-run saltutil.sync_all` on the master | `halite-hub extensions sync` | works | <!-- lexicon:allow -->
 | no equivalent | `halite-hub extensions list` | works |
+| no equivalent | `halite-hub extensions key create <name>` | works |
+| no equivalent | `halite-hub extensions sign <dir> --name <n> --exe <file> --key <k>` | works |
 
 ```sh
 halite-hub extensions sync          # fetch _ext/ from the tree
 halite-hub extensions list          # what is installed, and what it provides
 halite-hub extensions run <path>    # run one straight from a path, while writing it
 halite-hub extensions verify <path> # check one against the protocol
+halite-hub extensions key create <name>   # a key to sign extensions with
+halite-hub extensions sign <dir> --name <n> --exe <file> --key <name> [--publish <tree>]
 ```
+
+`key create` and `sign` are for the machine that signs, which should not
+be the hub: a hub holding the key verifies its own signatures. Neither
+opens the hub's state, so they run anywhere the binary is installed.
+`sign` refuses a key that does not exist rather than making one, and
+`--publish` refuses to replace a version already in the tree.
 
 `sync` prints the Merkle root of anything it fetched, which is what goes
 into `extension_pins`. `list` starts each extension, so it reports the

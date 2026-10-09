@@ -38,6 +38,29 @@ A test compiles it for every role on FreeBSD and Linux and loads
 everything it writes. It has not been applied on a real estate; its
 README lists what has not been run. Release archives now include the
 whole of `contrib/examples`, subdirectories included. DIVERGENCE 5.261.
+### `halite-hub extensions key create` and `extensions sign`
+
+Extensions can be signed with the shipped binary instead of
+`go run ./tools/extbundle` from a source checkout:
+- `extensions key create <name>` makes the key and prints the
+  `extension_trust_keys` line.
+- `extensions sign <dir> --name … --exe … --key <name>` signs the bundle,
+  prints the `extension_pins` entry, and with `--publish <tree>` places
+  it under `_ext/<name>/<version>/`.
+
+Both refuse to replace a key or a published version, and `sign` refuses
+a missing key instead of making one. Run them on a machine other than
+the hub. DIVERGENCE 5.260.
+### The hub renews its own certificate
+
+`halite-hub` used to issue its serving certificate again only once it
+had expired, and only at startup. A hub running past
+`certificate_lifetime` (90 days by default) served an expired
+certificate, and every node failed to connect until it was restarted.
+It now renews at half the certificate's life, at startup and while
+running, and serves the new one without a restart, as nodes already do.
+**A hub that has run for close to 90 days should be checked:**
+`halite-hub doctor` warns 30 days before expiry. DIVERGENCE 5.259.
 
 ### A hub with `ext_pillar` and no `pillar_roots` refuses to start
 

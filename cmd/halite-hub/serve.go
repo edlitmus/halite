@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -189,10 +190,12 @@ func runServe(args *cli.Args) int {
 	h := openHub(args, true)
 	listen := args.Flag("listen", h.cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort)))
 
-	pair, err := servingCertificate(h, args, listen)
+	names := serverNames(args, listen)
+	pair, err := servingCertificate(h, names, time.Now())
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	serving := hub.NewServingCert(pair)
 
 	n, err := h.auth.LoadDenylist()
 	if err != nil {
@@ -446,7 +449,7 @@ func runServe(args *cli.Args) int {
 		}
 	}
 
-	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
+	ln, err := hub.Listen(listen, serving, h.auth.CA.Cert, h.denied)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -472,6 +475,9 @@ func runServe(args *cli.Args) int {
 	// it -- rather than leaving a goroutine delivering into a store
 	// that is being shut down. `jobs resume` picks it up afterwards.
 	server.Context = ctx
+	// The hub's own certificate, renewed at half its life and served
+	// without a restart, as a node's is. DIVERGENCE 5.259.
+	go h.keepServingRenewed(ctx, serving, names)
 	// The operator command line is a separate process, so the running
 	// hub follows the key store rather than being told.
 	go server.Reconcile(ctx, 2*time.Second)
@@ -737,23 +743,46 @@ func maintain(ctx context.Context, h *hubContext, server *hub.Server, jobs *job.
 }
 
 // servingCertificate loads the hub's own certificate, issuing one if
-// there is none or if the one on disk has expired.
+// there is none or if the one on disk is past half its life.
+//
+// It used to issue only when the one on disk had already expired, which
+// together with loading it once made the hub's certificate the one in
+// the estate nothing renewed: a hub that ran past day 90 served an
+// expired certificate until it was restarted, and a restart before then
+// changed nothing. It now renews at SPEC 7.4's halfway point, the rule
+// nodes renew by, at startup and from keepServingRenewed while it runs.
+// DIVERGENCE 5.259.
 //
 // The hub's serving key and the CA key are separate, per SPEC 7.5.
-func servingCertificate(h *hubContext, args *cli.Args, listen string) (tls.Certificate, error) {
-	names := serverNames(args, listen)
+func servingCertificate(h *hubContext, names []string, now time.Time) (tls.Certificate, error) {
 	if h.files.Exists(pki.HubCertFile) && h.files.Exists(pki.HubKeyFile) {
 		cert, err := h.files.ReadCert(pki.HubCertFile)
 		if err != nil {
 			return tls.Certificate{}, err
 		}
-		if time.Now().Before(cert.NotAfter) {
+		if !pki.DueForRenewal(cert, now) {
 			return h.withCA(h.files.KeyPair(pki.HubCertFile, pki.HubKeyFile))
 		}
-		h.log.Warn("the hub's certificate has expired; issuing another",
-			"not_after", cert.NotAfter.UTC().Format(time.RFC3339))
+		if now.Before(cert.NotAfter) {
+			h.log.Info("the hub's certificate is past half its life; renewing it",
+				"not_after", cert.NotAfter.UTC().Format(time.RFC3339))
+		} else {
+			h.log.Warn("the hub's certificate has expired; issuing another",
+				"not_after", cert.NotAfter.UTC().Format(time.RFC3339))
+		}
 	}
+	return issueServingCertificate(h, names)
+}
 
+// issueServingCertificate issues the hub a certificate for names, under
+// the key it already has, or a new one when there is none.
+//
+// The key is kept across renewals, as it was across the re-issue that
+// followed an expiry. A node rotates its key at every renewal; the hub
+// does not, because hub.key and hub.crt are two files written one after
+// the other, and a new key written beside an old certificate is a pair
+// the next start cannot load.
+func issueServingCertificate(h *hubContext, names []string) (tls.Certificate, error) {
 	key, err := h.files.ReadKey(pki.HubKeyFile)
 	if err != nil {
 		alg, _ := pki.ParseKeyAlgorithm(h.cfg.String("key_algorithm", string(pki.ECDSAP256)))
@@ -774,6 +803,44 @@ func servingCertificate(h *hubContext, args *cli.Args, listen string) (tls.Certi
 	}
 	h.log.Info("issued the hub's serving certificate", "names", strings.Join(names, ","))
 	return h.withCA(h.files.KeyPair(pki.HubCertFile, pki.HubKeyFile))
+}
+
+// keepServingRenewed renews the hub's certificate for as long as the hub
+// runs: it looks every twentieth of the certificate's life, between ten
+// seconds and an hour, and renews once half the life has passed, as a
+// node's agent does. The new pair is served to the next handshake;
+// connections already open keep theirs.
+//
+// A failure is logged and tried again at the next check, never fatal:
+// the certificate it failed to replace still works until it expires,
+// and `doctor` warns thirty days before that.
+func (h *hubContext) keepServingRenewed(ctx context.Context, serving *hub.ServingCert, names []string) {
+	for {
+		every := time.Hour
+		if leaf, err := x509.ParseCertificate(serving.Load().Certificate[0]); err == nil {
+			every = pki.RenewalCheckEvery(leaf)
+			if pki.DueForRenewal(leaf, time.Now()) {
+				pair, err := issueServingCertificate(h, names)
+				if err != nil {
+					h.log.Warn("renewing the hub's certificate failed; trying again at the next check",
+						"not_after", leaf.NotAfter.UTC().Format(time.RFC3339),
+						"next_check", every.String(), "error", err.Error())
+				} else {
+					serving.Store(pair)
+					if fresh, err := x509.ParseCertificate(pair.Certificate[0]); err == nil {
+						every = pki.RenewalCheckEvery(fresh)
+						h.log.Info("renewed the hub's certificate",
+							"not_after", fresh.NotAfter.UTC().Format(time.RFC3339))
+					}
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		}
+	}
 }
 
 // withCA appends the enrollment CA to the chain the hub presents.

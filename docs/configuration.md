@@ -260,7 +260,7 @@ how long it lasts. There is no auto-accept in any of them.
 
 Issued certificate lifetime; renewal happens at half of it.
 
-A node renews at half of this, so a shorter lifetime means more renewals and a smaller window for a stolen key. Renewal is automatic and needs no operator, so this can be short.
+A node renews at half of this, and so does the hub's own serving certificate, which the running hub replaces without a restart. A shorter lifetime means more renewals and a smaller window for a stolen key. Renewal is automatic and needs no operator, so this can be short.
 
 ### `enrollment_mode`
 

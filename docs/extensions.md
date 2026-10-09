@@ -268,8 +268,26 @@ refuses and writes nothing. Two cases need it:
 A universal (fat) Mach-O file is refused: bundle each architecture's
 thin binary separately.
 
-**2. Bundle and sign.** `-key` names the signing key and generates one
-the first time, so the key and the signature come from one command.
+**2. Bundle and sign.** With the shipped binary, on the machine that
+signs -- not the hub; see below:
+
+```sh
+halite-hub extensions key create release        # once; prints the trust line
+halite-hub extensions sign ./build \
+  --name aws_secrets_manager --ext-version 1.0.0 --kind pillar \
+  --exe aws-secrets --declares network --key release \
+  --publish /srv/halite/states                  # optional: step 4 as well
+```
+
+`key create` writes `<pki_dir>/extension-release.key` and refuses to
+replace one. `sign` refuses a key that does not exist, rather than
+making one nobody trusts, and prints the root and the `extension_pins`
+entry. `--publish` copies the bundle to `_ext/<name>/<version>/` under
+the tree and refuses a version that is already there.
+
+From a source checkout, `tools/extbundle` does the same, and `-key`
+generates the key the first time, so the key and the signature come
+from one command:
 
 ```sh
 go run ./tools/extbundle \

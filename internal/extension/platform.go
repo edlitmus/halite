@@ -1,4 +1,4 @@
-package main
+package extension
 
 import (
 	"bytes"
@@ -11,15 +11,13 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"github.com/edlitmus/halite/internal/extension"
 )
 
-// executablePlatform answers with the `<goos>/<goarch>` key the manifest
+// ExecutablePlatform answers with the `<goos>/<goarch>` key the manifest
 // should file the executable under, read from the executable itself.
 //
 // It used to be runtime.GOOS/GOARCH: the platform of the machine running
-// extbundle, not of the binary it was bundling. Those agree only when
+// the bundler, not of the binary it was bundling. Those agree only when
 // the author bundles on the platform the extension is for, which is the
 // one thing cross-compiling exists to avoid -- so a linux/amd64 binary
 // bundled on a Mac went out labelled darwin/arm64, a Linux host refused
@@ -47,7 +45,7 @@ import (
 // the host -- falling back to the host is the defect.
 //
 // override is the -platform flag: empty, or `goos/goarch`.
-func executablePlatform(path, override string) (string, error) {
+func ExecutablePlatform(path, override string) (string, error) {
 	var wantOS, wantArch string
 	if override != "" {
 		var err error
@@ -79,7 +77,7 @@ func executablePlatform(path, override string) (string, error) {
 	hdr, err := readHeader(path)
 	if err != nil {
 		return "", fmt.Errorf("cannot tell what platform %s is for: %v; "+
-			"extbundle reads the platform from an ELF, Mach-O or PE header "+
+			"halite reads the platform from an ELF, Mach-O or PE header "+
 			"and will not guess it", path, err)
 	}
 
@@ -118,7 +116,7 @@ func executablePlatform(path, override string) (string, error) {
 		}
 		if goos != "" && wantOS != goos {
 			return "", fmt.Errorf("-platform %s does not match %s, which is built for %s",
-				override, path, extension.Platform(goos, hdr.arch))
+				override, path, Platform(goos, hdr.arch))
 		}
 		return override, nil
 	}
@@ -127,7 +125,7 @@ func executablePlatform(path, override string) (string, error) {
 			"and its ELF header (OSABI %d) does not say -- Linux and illumos both write 0 there; "+
 			"name it with -platform goos/goarch", path, hdr.osabi)
 	}
-	return extension.Platform(goos, hdr.arch), nil
+	return Platform(goos, hdr.arch), nil
 }
 
 // splitPlatform checks the -platform flag's shape. Only the shape: the
@@ -166,7 +164,7 @@ func readHeader(path string) (header, error) {
 		case macho.CpuArm64:
 			arch = "arm64"
 		default:
-			return header{}, fmt.Errorf("Mach-O cpu type %v is not one extbundle maps to a GOARCH", f.Cpu)
+			return header{}, fmt.Errorf("Mach-O cpu type %v is not one halite maps to a GOARCH", f.Cpu)
 		}
 		return header{format: "Mach-O", os: "darwin", arch: arch}, nil
 	}
@@ -191,7 +189,7 @@ func readHeader(path string) (header, error) {
 		case pe.IMAGE_FILE_MACHINE_ARMNT:
 			arch = "arm"
 		default:
-			return header{}, fmt.Errorf("PE machine type %#x is not one extbundle maps to a GOARCH", f.Machine)
+			return header{}, fmt.Errorf("PE machine type %#x is not one halite maps to a GOARCH", f.Machine)
 		}
 		return header{format: "PE", os: "windows", arch: arch}, nil
 	}
@@ -224,7 +222,7 @@ func elfArch(f *elf.File) (string, error) {
 	case f.Machine == elf.EM_LOONGARCH && is64:
 		return "loong64", nil
 	}
-	return "", fmt.Errorf("ELF machine %v (%v) is not one extbundle maps to a GOARCH", f.Machine, f.Class)
+	return "", fmt.Errorf("ELF machine %v (%v) is not one halite maps to a GOARCH", f.Machine, f.Class)
 }
 
 // elfOS is what the ELF header alone says about the operating system,

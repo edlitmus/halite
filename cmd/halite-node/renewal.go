@@ -142,20 +142,9 @@ func pruneRenewedKeys(files pki.Files, keep string) ([]string, error) {
 }
 
 // renewalCheckEvery is how often the connect loop looks at the
-// certificate: a twentieth of its life, between ten seconds and an hour.
-// An hour is ample for the 90-day default, whose renewal falls due on
-// day 45; scaling down with the lifetime is what lets a hub configured
-// with a short `certificate_lifetime` -- a test, or an estate that wants
-// one -- still get renewals in time, without a setting of its own.
+// certificate; see pki.RenewalCheckEvery, which the hub uses too.
 func renewalCheckEvery(cert *x509.Certificate) time.Duration {
-	every := cert.NotAfter.Sub(cert.NotBefore) / 20
-	switch {
-	case every < 10*time.Second:
-		return 10 * time.Second
-	case every > time.Hour:
-		return time.Hour
-	}
-	return every
+	return pki.RenewalCheckEvery(cert)
 }
 
 // keepRenewed is the renewal SPEC 7.4 says needs no operator. It used to

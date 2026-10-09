@@ -1083,7 +1083,7 @@ Linux and macOS, `%PROGRAMDATA%\Halite` on Windows. `<state dir>` is
 
 | Setting | Path | Needs |
 |---|---|---|
-| `pki_dir` | `<config root>/pki` | **read/write**, 0700 — it creates the enrollment CA here on first run, and its own serving certificate |
+| `pki_dir` | `<config root>/pki` | **read/write**, 0700 — it creates the enrollment CA here on first run, and its own serving certificate, which it renews here at half its life while running |
 | `state_dir` | `<state dir>` | **read/write**, 0700 — keys, the job cache, the event bus, the mine, orchestration |
 | `cache_dir` | `<cache dir>` | **read/write**, 0700 — cached node data, gitfs mirrors, s3 objects |
 | `policy` | `<config root>/policy.yaml` | read |
