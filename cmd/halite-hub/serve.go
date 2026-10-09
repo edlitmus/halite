@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/job"
@@ -32,9 +34,7 @@ import (
 	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/target"
-	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/transport"
-	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 )
 
@@ -55,6 +55,14 @@ type hubContext struct {
 	// hub compiles can seed it: a hub that decrypts a value and then
 	// logs it has redacted nothing. DIVERGENCE 5.110.
 	secrets *redact.Set
+
+	// The agentless path's pillar options, built the first time a roster
+	// target needs its pillar (agentlessPillar), with the extension
+	// runtime its external sources run in, which runSSH closes.
+	agentlessOnce    sync.Once
+	agentlessOpts    *hub.PillarOptions
+	agentlessErr     error
+	agentlessRuntime *extension.Runtime
 }
 
 // openHub loads configuration and key material. create says whether an
@@ -320,45 +328,11 @@ func runServe(args *cli.Args) int {
 	// Hub-side pillar. Without pillar_roots the hub compiles none and
 	// says so to a node that asks, rather than answering with an empty
 	// pillar that looks like a successful compilation of nothing.
-	if err := extPillarWithoutRoots(h.cfg); err != nil {
+	pillarOpts, err := h.pillarOptions(extensions)
+	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	var pillarOpts *hub.PillarOptions
-	if roots := h.cfg.Roots("pillar_roots"); len(roots) > 0 {
-		if err := checkRootsAreNotTheHubsOwn(h, roots); err != nil {
-			cli.Fatalf("%v", err)
-		}
-		strategy, ok := value.ParseStrategy(h.cfg.String("pillar_source_merging_strategy", "smart"))
-		if !ok {
-			cli.Fatalf("pillar_source_merging_strategy %q is not a strategy; try smart, recurse, aggregate, or overwrite",
-				h.cfg.String("pillar_source_merging_strategy", ""))
-		}
-		undefined := template.Strict
-		if h.cfg.String("undefined", "strict") == "permissive" {
-			undefined = template.Permissive
-		}
-		pillarOpts = &hub.PillarOptions{
-			Roots:            fileserver.NewRoots(roots),
-			TrustedGrains:    h.cfg.StringSlice("pillar_trusted_grains"),
-			Strategy:         strategy,
-			MergeLists:       h.cfg.Bool("pillar_merge_lists", false),
-			Undefined:        undefined,
-			GPG:              gpgOptionsFor(h.cfg),
-			Renderer:         strings.Split(h.cfg.String("renderer", "jinja|yaml"), "|"),
-			YAMLBool11:       h.cfg.OptionalBool("yaml_bool_11"),
-			Nondeterministic: h.cfg.String("random_seed", "deterministic") == "nondeterministic",
-			Registry:         builtin.New().Exec,
-			ConfigValues:     h.cfg.Effective(config.Hub),
-			Ext:              extPillarSources(h, extensions),
-			OnSecret:         h.secrets.Add,
-			// Each pillar file's rendered output, at debug level, for
-			// the node it was compiled for. The logger's redactor
-			// scrubs it like any other record. DIVERGENCE 5.261.
-			OnRendered: func(nodeID, file, sls string, pipeline []string, text string) {
-				h.log.Debug("rendered", "node_id", nodeID, "file", file, "sls", sls,
-					"pipeline", strings.Join(pipeline, "|"), "rendered", text)
-			},
-		}
+	if pillarOpts != nil {
 		// A setting that parses and does nothing is indistinguishable
 		// from one that works, until the thing it was meant to change
 		// does not change. SPEC 4.1 accepts the key; saying so is what
@@ -633,9 +607,16 @@ func gpgOptionsFor(cfg *config.Config) render.GPGOptions {
 // refusal at startup is the only place to catch it, because everything
 // afterwards looks like it is working.
 func checkRootsAreNotTheHubsOwn(h *hubContext, roots map[string][]string) error {
+	// The open store's directory when there is one; a context opened for
+	// its configuration alone has none, and then the directory a hub
+	// opens its store from, which is the same one.
+	keys := keysDir(h.cfg)
+	if h.store != nil {
+		keys = h.store.Dir()
+	}
 	private := map[string]string{
 		"the key material": h.files.Dir,
-		"the key store":    h.store.Dir(),
+		"the key store":    keys,
 		"durable state":    h.cfg.String("state_dir", config.DefaultStateDir),
 		"the cache":        h.cfg.String("cache_dir", config.DefaultCacheDir),
 	}
