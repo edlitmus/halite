@@ -315,6 +315,17 @@ metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
 metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
 ```
 
+**Those are FreeBSD's paths.** `pki_dir` is `/etc/halite/pki` on Linux,
+and the certificate state below writes to `pki_dir`, so a Linux node
+names `/etc/halite/pki/metrics.crt` and `/etc/halite/pki/metrics.key`
+here. A path for the other platform is easy to miss because it is not
+fatal: the agent logs `the metrics endpoint is not serving` with
+`the metrics certificate: open /usr/local/etc/halite/pki/metrics.crt: no
+such file or directory` once at startup, runs on without a listener, and
+Prometheus reports the target as `connection refused`. That is how an
+Ubuntu node in this estate's own fleet was found on 2026-10-08, with a
+`node.yaml` copied from a FreeBSD one.
+
 **Only the agent serves it.** A one-shot `halite-node call` or
 `state apply` is a fresh process whose counters start at zero and whose
 lifetime is a second; there is nothing for a scraper to reach and
@@ -522,6 +533,16 @@ set it, so this had to be a literal path. The state becomes:
         - x509: {{ pki }}/metrics.key
 ```
 
+**It sets the mode and not the owner.** A key file that already exists
+keeps the owner it has, so one made earlier by hand under a login
+account stays that account's, at mode 0600: in this estate two of four
+nodes had their metrics key owned by a login user when the state first
+ran. Both x509 states take `user` and `group`; add them for your
+platform (`group: wheel` on FreeBSD, `group: root` on Linux) if that
+matters to you. They are left out above because the page's own test
+applies this block as an unprivileged user, and a change of owner to root
+would fail there.
+
 It converges. A second run reports the certificate already in place and
 changes nothing; a run inside the renewal window reissues and says so:
 
@@ -537,6 +558,25 @@ that is the arrangement, not a mistake.
 
 The certificate names the node ID and nothing else, so a node scraped
 by this route has to appear in `targets` under its node ID.
+
+**And the Prometheus host has to resolve that name to an address the
+node listens on.** Neither is guaranteed. A node ID can have no DNS
+record at all, and a node can listen only on a private address
+(`metrics_listen: '10.0.0.11:4512'`) while its name resolves to a public
+one; Prometheus reports `no such host` for the first and a timeout for
+the second. Two ways out. This estate is taking the first for one node,
+and neither has yet been seen to bring a target up:
+
+- An `/etc/hosts` entry for the node ID on the Prometheus host, managed
+  from the tree with `host.present`. Only when nothing else on that host
+  uses the name: the entry moves every connection to it, not only the
+  scrape. A mail server's name, used by the host's own mail relay and by
+  an external probe, is the case where it must not be done.
+- A listener on an address the name already resolves to, with the
+  firewall admitting only the Prometheus host.
+
+Adding the reachable address to `subject_alt_names` and targeting that
+address also works for TLS, and was not run here.
 
 Both certificate paths were run end to end against a node and a real
 Prometheus before being written down, but not this state's pillar form.
@@ -555,15 +595,33 @@ this as root where they were made, which is the hub for all three, and
 carry the results to the Prometheus host if that is a different
 machine:
 
+**`halite-nodes-ca.crt` is whichever CA signed the nodes' serving
+certificates, and the two routes above use different ones.** Get this
+wrong and every node target fails with `x509: certificate signed by
+unknown authority`, which names no file. Run exactly one of these:
+
 ```sh
-# The CA that signed the nodes' serving certificates. The enrollment
-# CA when they were issued on the hub:
+# Certificates from the state above (the tree manages them): the
+# metrics CA.
+install -o root -g wheel -m 0644 \
+    /usr/local/etc/halite/pki/metrics-ca.crt \
+    /usr/local/etc/prometheus/halite-nodes-ca.crt
+
+# Certificates issued on the hub and copied out: the enrollment CA.
 install -o root -g wheel -m 0644 \
     /usr/local/etc/halite/pki/ca.crt \
     /usr/local/etc/prometheus/halite-nodes-ca.crt
-# ...or the metrics CA, when the tree manages them:
-#   /usr/local/etc/halite/pki/metrics-ca.crt instead of ca.crt
+```
 
+This page used to give the enrollment CA as the line to run and the
+metrics CA as a comment after it, and an estate following the state
+above copied the enrollment CA: all four node targets failed until it
+was replaced (2026-10-08). `openssl verify -CAfile halite-nodes-ca.crt`
+against a node's certificate says which one you have.
+
+The client certificate, when the nodes need one:
+
+```sh
 # Only when the nodes set metrics_client_ca: the scraper's client
 # certificate, from `keys operator create prometheus` above.
 install -o root -g wheel -m 0644 \

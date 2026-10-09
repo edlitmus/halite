@@ -113,6 +113,11 @@ returner: local
 # metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
 # metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
 #
+# Those are FreeBSD's paths: on Linux they are /etc/halite/pki/metrics.crt
+# and .key. A path for the other platform is not fatal -- the agent logs
+# "the metrics endpoint is not serving" once and runs with no listener --
+# so check the log after setting these.
+#
 # And, to refuse a scraper that presents no certificate of its own. The
 # enrollment CA is the obvious one, so the scraper carries what
 # `halite-hub keys operator create prometheus --lifetime 8760h`

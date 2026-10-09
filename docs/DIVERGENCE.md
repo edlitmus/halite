@@ -21566,6 +21566,61 @@ and, with it, made two 0700 directories and the key.
 was not exercised as root. The x509 states have no evidence entry to
 update. `docs/metrics.md`'s sentence quoting the old error is updated.
 
+### 5.247 Four ways the metrics-certificate page led a real estate wrong
+
+The owner applied `docs/metrics.md`'s tree-managed certificate state to
+the whole fleet (four nodes: three FreeBSD, one Ubuntu) and reported that
+it might not be right. It was right: on every node the certificate is
+issued by the metrics CA, carries `serverAuth`, names the node ID and
+matches its key, and all four share one issuing key ID, the one in the
+hub's `metrics-ca.crt`. Checked through the hub with read-only commands.
+Yet every `halite-nodes` target in the LAN Prometheus was down, for four
+different reasons, and the page had a hand in all of them.
+
+- **The wrong CA at Prometheus.** The page's copy step gave the
+  enrollment CA as the line to run and the metrics CA as a comment after
+  it. The estate copied the enrollment CA, and every node failed with
+  `certificate signed by unknown authority`. The step now gives both as
+  alternatives, says which goes with which route, and says how to tell
+  with `openssl verify`. Fixed on the LAN Prometheus too: its
+  `halite-nodes` job trusts the metrics CA and presents the scraper's
+  client certificate, which beastie needs because it sets
+  `metrics_client_ca` (timestamped backups, `promtool check config`,
+  reload). Beastie's target came up.
+- **FreeBSD paths on Linux.** The page's `node.yaml` uses
+  `/usr/local/etc/halite/pki`, and the Ubuntu node's configuration did
+  too, while the state writes to `pki_dir`, `/etc/halite/pki` there. The
+  agent logged `the metrics certificate: open
+  /usr/local/etc/halite/pki/metrics.crt: no such file or directory` once at
+  startup and served nothing. The page and `contrib/examples/node-with-hub.yaml`
+  now say so. The node's configuration is not yet corrected: the change was
+  handed to the owner.
+- **A node ID that does not resolve, or resolves elsewhere.** The page
+  said a node must be targeted by its node ID, and stopped there.
+  `r720.edlitmus.info` has no DNS record (`no such host`), and mail
+  listens only on its ZeroTier address while its name resolves to its
+  public one (a timeout). The page now says the Prometheus host must
+  resolve the name to an address the node listens on, and gives two ways
+  out, with the warning that an `/etc/hosts` entry moves every connection
+  to that name. For mail it must not be done: the Prometheus host relays
+  its own mail through that name and probes it from outside. r720 is
+  being given an entry from the estate's hosts pillar (a PR on the salt
+  tree, not yet applied); mail is undecided.
+- **Key ownership.** The state sets a mode and no owner, so an existing
+  key keeps its owner: two of four keys belonged to login accounts, at
+  0600. The page says so and names the `user` and `group` arguments. They
+  are not added to the documented block, because
+  `TestTheDocumentedMetricsCertificateStateConverges` applies that block as
+  an unprivileged user; it still passes.
+
+**Not covered:**
+- No node other than beastie has been seen scraped: system76-pc waits on
+  its configuration, r720 on the salt PR, mail on a decision.
+- Why two keys belonged to login accounts was not established; a key made
+  by hand before the state first ran is a guess.
+- The SAN route (add the reachable address to `subject_alt_names`) is in
+  the page as unrun.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
