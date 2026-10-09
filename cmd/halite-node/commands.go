@@ -346,6 +346,20 @@ func renderLow(out *state.Compiled) []any {
 			}
 			m.Set(e.Key, e.Val)
 		}
+		// The runner options as written -- unless, onlyif, creates,
+		// retry and the rest -- as Salt's low chunk carries them. A
+		// gated state that read as unconditional here was the reason.
+		// The password the state runs as is the one never shown.
+		// DIVERGENCE 5.266.
+		if ch.OptionArgs != nil {
+			for _, e := range ch.OptionArgs.Entries() {
+				if value.KeyString(e.Key) == "runas_password" {
+					m.Set(e.Key, "**********")
+					continue
+				}
+				m.Set(e.Key, e.Val)
+			}
+		}
 		if len(ch.Reqs) > 0 {
 			reqs := make([]any, 0, len(ch.Reqs))
 			for _, req := range ch.Reqs {
