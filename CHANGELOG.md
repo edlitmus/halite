@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The Salt differential runs against Salt 3006, 3007 and 3008
+
+CI compares halite with Salt 3006.28, 3007.1 and 3008.3, not 3007.1
+alone. That includes the check that state-run output matches Salt's
+byte for byte, now also covering changes that hold numbers, lists and
+nested maps, and parallel states. All three releases match.
+DIVERGENCE 5.265.
+
 ### `show_lowstate` shows `unless`, `onlyif`, `creates` and the other options
 
 `halite-node state show_lowstate` left out every runner option, so a

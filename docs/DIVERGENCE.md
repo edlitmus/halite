@@ -22624,6 +22624,38 @@ bound is what makes it irrelevant.
 
 
 
+### 5.265 The Salt differential ran against one Salt release
+
+CI's `saltdiff` job ran `make saltdiff`, which pins Salt 3007.1, and
+nothing else. The deviation table names behaviour that differs between
+3006, 3007 and 3008. `TestHighstateMatchesSalt` (5.245) holds halite's
+highstate output to Salt's own outputter, so it said nothing about the
+two releases estates still run beside 3007. Its tree also had no
+changes holding numbers, lists or nested maps, and no parallel states,
+whose durations the summary adds by a separate rule.
+
+The job is now a matrix over **3006.28, 3007.1 and 3008.3**: 3007.1 as
+pinned, and the newest of 3006 and 3008, read from the onedir
+repository's listing. The outputter tree gains `cmd.run` (numbers in
+`pid` and `retcode`), `module.run` of `test.arg` (lists, a nested list,
+a float, a nested map with a boolean) and two `parallel: True` states.
+
+A matching rendering alone would not show that coverage. A release that
+refused the `module.run` would render as a failure on both sides, match,
+and pass. So the test now requires that Salt's return holds a
+`__parallel__` state and, outside test mode, a list and a number in some
+state's changes. A local probe with a return lacking them failed it, and
+one holding them passed.
+
+All three releases passed with that requirement in place. So for each
+of them, Salt's return held all four shapes, and halite's rendering
+matched Salt's own outputter byte for byte, in a real run and in test
+mode. No deviation row was needed.
+
+**Not covered:** the releases between these. Hyphen-breaking in warning
+wraps, the one place the renderer is known to differ (5.245), is still
+not exercised.
+
 ### 5.266 show_lowstate left out every runner option
 
 While writing the example tree (5.262), its `creates`, `onlyif` and
