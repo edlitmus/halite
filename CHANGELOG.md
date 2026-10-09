@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Agentless targets get the same pillar as enrolled nodes
+
+`halite-hub ssh` compiled a roster target's pillar with a compiler of its
+own that ran no external pillar sources and ignored most of the hub's
+pillar settings, so a target never received Secrets Manager values and a
+pillar file calling `salt[...]` did not compile for it. It now compiles
+exactly as the hub does for an enrolled node. `pillar.items`,
+`pillar.get` and `config.get` over `ssh` are now sent the target's
+pillar too; they answered `{}` or their default.
+
 ### The Salt differential runs against Salt 3006, 3007 and 3008
 
 CI compares halite with Salt 3006.28, 3007.1 and 3008.3, not 3007.1

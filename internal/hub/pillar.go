@@ -130,25 +130,7 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 // told to redact. The hub's own redactor still hears each of them first.
 func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.Compiled, []string, error) {
 	s.pillarCompiles.Add(1)
-	opts := s.Pillar
-	cfg := pillarConfigFor(opts, nodeID, env, grains)
-	secrets := []string{}
-	seen := map[string]bool{}
-	hubs := cfg.OnSecret
-	cfg.OnSecret = func(v string) {
-		if hubs != nil {
-			hubs(v)
-		}
-		if !seen[v] {
-			seen[v] = true
-			secrets = append(secrets, v)
-		}
-	}
-	c := &pillar.Compiler{
-		Loader: opts.Roots,
-		Config: cfg,
-	}
-	out := c.Compile()
+	out, secrets := CompilePillar(s.Pillar, nodeID, env, grains)
 	for _, w := range out.Warnings {
 		s.warn(w.String(), "component", "pillar", "node_id", nodeID)
 	}
@@ -169,6 +151,40 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 		return nil, nil, err
 	}
 	return out, secrets, nil
+}
+
+// CompilePillar compiles one node's pillar with the hub's options, and
+// answers with the values that are secret besides -- what the compile
+// decrypted and what a secret external source returned -- which the node
+// is told to redact. opts.OnSecret still hears each of them first.
+//
+// The one compilation, for every caller that compiles a pillar on the
+// hub's behalf: the server for an enrolled node, and `halite-hub ssh` for
+// a roster target. The agentless path built its own compiler with a
+// subset of the options -- no external pillar sources, no `salt`
+// dispatcher, the default merge strategy and renderer whatever the hub
+// said -- so a roster target could be sent a different pillar from an
+// enrolled node with the same grains, and none of what `ext_pillar`
+// held. DIVERGENCE 5.267.
+func CompilePillar(opts *PillarOptions, nodeID, env string, grains *value.Map) (*pillar.Compiled, []string) {
+	cfg := pillarConfigFor(opts, nodeID, env, grains)
+	secrets := []string{}
+	seen := map[string]bool{}
+	hubs := cfg.OnSecret
+	cfg.OnSecret = func(v string) {
+		if hubs != nil {
+			hubs(v)
+		}
+		if !seen[v] {
+			seen[v] = true
+			secrets = append(secrets, v)
+		}
+	}
+	c := &pillar.Compiler{
+		Loader: opts.Roots,
+		Config: cfg,
+	}
+	return c.Compile(), secrets
 }
 
 // pillarConfigFor turns the hub's options into the compiler's

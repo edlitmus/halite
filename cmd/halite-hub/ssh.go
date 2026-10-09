@@ -16,7 +16,6 @@ import (
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/job"
-	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/roster"
 	"github.com/edlitmus/halite/internal/sshexec"
 	"github.com/edlitmus/halite/internal/target"
@@ -53,6 +52,7 @@ func runSSH(args *cli.Args) int {
 	}
 
 	h := openHub(args, false)
+	defer h.closeAgentlessPillar()
 	targets, err := sshTargets(h, args, kind, expression)
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -298,6 +298,8 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 		if len(files) > 0 {
 			req["files"] = files
 		}
+	}
+	if needsPillar(fun) {
 		pillar, secrets, err := inlinePillar(h, t, args)
 		if err != nil {
 			return nil, err
@@ -316,6 +318,23 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 // tree sent with it.
 func needsTree(fun string) bool {
 	return strings.HasPrefix(fun, "state.")
+}
+
+// needsPillar reports whether a function reads the target's pillar, and
+// so needs it sent: everything that compiles state, and the execution
+// functions that read pillar -- `pillar.*` and `config.get`, which falls
+// through to pillar.
+//
+// It was needsTree, so `halite-hub ssh web1 pillar.items` sent no pillar
+// and answered `{}`, and `pillar.get` gave its default, on a hub whose
+// pillar the same target's states read without trouble (DIVERGENCE
+// 5.268). Not every function: a target is sent its pillar only when it
+// will read it, because compiling it runs the external sources -- a
+// Secrets Manager fetch per target -- and puts the target's secrets on
+// the wire, neither of which a `cmd.run` needs. A new execution function
+// that reads pillar belongs on this list.
+func needsPillar(fun string) bool {
+	return needsTree(fun) || strings.HasPrefix(fun, "pillar.") || fun == "config.get"
 }
 
 // MaxInlineTree bounds what is sent with one job.
@@ -365,7 +384,11 @@ func inlineTree(h *hubContext, args *cli.Args) (map[string]string, error) {
 // get different pillar exactly as two enrolled nodes do — and neither
 // receives the other's.
 func inlinePillar(h *hubContext, t roster.Target, args *cli.Args) (json.RawMessage, []string, error) {
-	if len(h.cfg.Roots("pillar_roots")) == 0 {
+	opts, err := h.agentlessPillar()
+	if err != nil {
+		return nil, nil, err
+	}
+	if opts == nil {
 		return nil, nil, nil
 	}
 	compiled, secrets, err := compileRosterPillarSecrets(h, t, args.Flag("env", h.cfg.String("env", "base")))
@@ -390,39 +413,50 @@ func compileRosterPillar(h *hubContext, t roster.Target, env string) (*value.Map
 // compileRosterPillarSecrets is compileRosterPillar, and the values the
 // compile decrypted besides, which the target is told to redact.
 func compileRosterPillarSecrets(h *hubContext, t roster.Target, env string) (*value.Map, []string, error) {
-	secrets := []string{}
-	seen := map[string]bool{}
-	onSecret := func(v string) {
-		h.secrets.Add(v)
-		if !seen[v] {
-			seen[v] = true
-			secrets = append(secrets, v)
-		}
+	opts, err := h.agentlessPillar()
+	if err != nil {
+		return nil, nil, err
 	}
-	roots := h.cfg.Roots("pillar_roots")
+	if opts == nil {
+		return nil, nil, fmt.Errorf("compiling pillar for %s: this hub has no pillar_roots", t.ID)
+	}
 	grains := t.Grains
 	if grains == nil {
 		grains = value.NewMap(0)
 	}
-	compiler := &pillar.Compiler{
-		Loader: fileserver.NewRoots(roots),
-		Config: pillar.Config{
-			NodeID: t.ID, Env: env, Grains: grains,
-			TrustedGrains: h.cfg.StringSlice("pillar_trusted_grains"),
-			// Agentless pillar is compiled here, so it is decrypted
-			// here: without the hub's keyring an encrypted pillar fails
-			// to compile, and without the redactor the values it
-			// decrypts reach this process's own output unhidden.
-			// DIVERGENCE 5.110.
-			GPG:      gpgOptionsFor(h.cfg),
-			OnSecret: onSecret,
-		},
+	// The hub's own compilation, with the hub's own options: what an
+	// enrolled node with these grains would be sent, external sources
+	// included. Agentless pillar is compiled here, so it is decrypted
+	// here, and the redactor hears every secret first. DIVERGENCE 5.110,
+	// 5.267.
+	compiled, secrets := hub.CompilePillar(opts, t.ID, env, grains)
+	for _, w := range compiled.Warnings {
+		h.log.Warn(w.String(), "component", "pillar", "node_id", t.ID)
 	}
-	compiled := compiler.Compile()
 	if err := compiled.Err(); err != nil {
 		return nil, nil, fmt.Errorf("compiling pillar for %s: %w", t.ID, err)
 	}
 	return compiled.Pillar, secrets, nil
+}
+
+// agentlessPillar is this hub's pillar options for a roster target, built
+// once and only when a target first needs its pillar: the external
+// sources start their extensions when the options are built, and a
+// `halite-hub ssh cmd.run` that sends no pillar should not start any.
+// nil when the hub has no pillar roots.
+func (h *hubContext) agentlessPillar() (*hub.PillarOptions, error) {
+	h.agentlessOnce.Do(func() {
+		h.agentlessRuntime = h.openExtensions()
+		h.agentlessOpts, h.agentlessErr = h.pillarOptions(h.agentlessRuntime)
+	})
+	return h.agentlessOpts, h.agentlessErr
+}
+
+// closeAgentlessPillar stops the extensions agentlessPillar started.
+func (h *hubContext) closeAgentlessPillar() {
+	if h.agentlessRuntime != nil {
+		h.agentlessRuntime.Close()
+	}
 }
 
 // runAcross runs against every target, bounded.

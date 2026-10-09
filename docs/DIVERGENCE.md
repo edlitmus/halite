@@ -22622,8 +22622,6 @@ targeting matches, so it is noted, not done.
 resolver's behaviour with DNS truly unreachable was not reproduced; the
 bound is what makes it irrelevant.
 
-
-
 ### 5.265 The Salt differential ran against one Salt release
 
 CI's `saltdiff` job ran `make saltdiff`, which pins Salt 3007.1, and
@@ -22687,6 +22685,100 @@ all go into the module's arguments in `applyPerNameArgs`. A per-name
 parameter of this function"), where Salt treats it as an option.
 
 **Not covered:** only run on macOS.
+### 5.267 Agentless pillar was compiled by a second compiler, without ext_pillar
+
+`halite-hub ssh` compiles a roster target's pillar on the hub and sends it
+with the job (SPEC 21.1). It did so with a compiler of its own, built from
+the pillar roots, the hub's keyring and the trusted grains, and nothing
+else. Everything else the hub's configuration said about pillar was
+missing. External pillar sources were missing, so a roster target never
+received what `ext_pillar` held. So was the `salt` dispatcher, so a pillar
+file calling `salt['grains.get']` did not compile for a target at all. So
+were `pillar_source_merging_strategy`, `pillar_merge_lists`, `undefined`,
+`renderer`, `yaml_bool_11`, `random_seed` and `opts`, and the check that a
+pillar root does not hold the hub's own key material. A roster target could
+be sent a different pillar from an enrolled node with the same grains. Left
+open by 5.258, where the operator asked for it.
+
+There is now one compilation. `hub.CompilePillar` is the server's
+compile, collecting the secrets a node is told to mask, exported.
+`hubContext.pillarOptions` builds its options from the configuration and
+is what `serve` and `ssh` both use, so the two cannot drift. `ssh` builds
+them once per command, the first time a target needs its pillar: the
+external sources start their extensions then, and a command that sends
+no pillar starts none. It closes them when the command ends. The
+`ext_pillar`-without-roots refusal (5.258) is part of building the
+options, so it applies to `ssh` as well. Agentless pillar warnings go to
+the hub's log with the target named, as the server's do.
+
+`checkRootsAreNotTheHubsOwn` read the key store's directory from
+`h.store`, which a context opened for its configuration alone does not
+have. It now uses `keysDir`, the directory the store is opened from, when
+there is no store. Running it on the agentless path found that, through
+the existing gpg test.
+
+Seen on Linux, with this machine as a roster target over real `ssh`. The
+hub had the shipped Secrets Manager extension, a local stand-in for AWS,
+and a state whose name carried `role` and the Secrets Manager password
+from pillar:
+- With a pillar file that calls `salt['grains.get']`, main's build failed
+  the run: "salt[grains.get] is undefined". This build sent
+  `role=database` from the roster grains.
+- With a plain pillar file, main's build sent `db_password=MISSING`. This
+  build sent `db_password=**********`, the value arriving and masked on
+  the target as a secret.
+- No extension process was left running after either run.
+
+Test, broken on purpose: the real extension, built and installed, run by
+the agentless path against a fake AWS. The target's pillar holds the
+Secrets Manager value, and `role` from `salt['grains.get']` and the
+roster grains. The target is told to mask exactly that value, and the
+hub's redactor knows it. Dropping the sources and the dispatcher from the
+agentless compile fails it on the `salt[...]` call. Dropping only the
+sources fails it on all three Secrets Manager checks.
+
+**Not covered:**
+- Not run on FreeBSD, and nothing in this estate runs agentless.
+- The extension ran unsigned in the test and the live run;
+  `internal/extpillar` has the signed chain end to end.
+- `halite-hub doctor`'s pillar check still builds its own compiler, and
+  does not run external sources.
+### 5.268 `halite-hub ssh target pillar.items` answered `{}`
+
+Found while showing 5.267 live. An agentless target is sent its pillar
+with the job, and it was sent only with `state.*` functions, because the
+same test (`needsTree`) decided both the state tree and the pillar.
+`pillar.items` over `ssh` therefore answered `{}`, and `pillar.get` and
+`config.get` gave their defaults, for a target whose states read the same
+pillar without trouble.
+
+`needsPillar` now decides the pillar on its own: `state.*`, `pillar.*` and
+`config.get`, which falls through to pillar. Those are every execution
+function that reads pillar, by a search of `PillarOrErr` in the builtins;
+the others that read it are states. Pillar is not sent with every
+function, as an enrolled node can always fetch its own. Compiling it runs
+the external sources, a Secrets Manager fetch per target, and puts the
+target's secrets on the wire, and a `cmd.run` needs neither. A new
+execution function that reads pillar has to be added to the list.
+
+Seen with this machine as a roster target, as in 5.267:
+`halite-hub ssh selftest pillar.items` answered `{"selftest":{}}` on
+main's build. This build answered with the roster grain's `role` and the
+Secrets Manager password. The password prints in full, as it does from
+`pillar.items` on an enrolled node: module output is requested data, and
+only `halite-node pillar` masks it (5.256).
+
+Test, broken on purpose: `pillar.items`, `pillar.get`, `config.get` and
+`state.apply` are sent the pillar, and `cmd.run` and `test.ping` are not.
+Deciding by `needsTree` again fails the first three.
+
+**Not covered:**
+- The list is by hand. Nothing fails when a new execution function that
+  reads pillar is not added to it.
+
+
+
+
 
 ## 6. Everything else not started
 

@@ -956,7 +956,10 @@ transfer. `--clean` removes it before and after.
 Pillar and the state tree are compiled on the hub and sent with the job,
 so a target holds no tree, no pillar, and no other target's secrets. The
 target uses what the hub sent and only that — never a local tree that a
-previous configuration system left behind.
+previous configuration system left behind. The tree goes with `state.*`
+functions; the pillar goes with those, `pillar.*` and `config.get`, and
+is compiled exactly as the hub compiles an enrolled node's, external
+pillar sources included. Other functions are sent neither.
 
 A pillar target (`-I`, `-J`, `I@`/`J@` in `-C`) is matched against that
 same pillar, compiled from the grains the roster entry attaches. A
