@@ -32,6 +32,14 @@ hub was restarted. It now reads the certificate from disk again and
 reconnects on the renewed one. Nothing renews a relay's identity by
 itself yet; the operations guide gives the daily `renew` line.
 
+### The x509 states keep a certificate's owner when they renew it
+
+`x509.certificate_managed` and `x509.private_key_managed` gave a file they
+rewrote to the account that ran them unless the state named an owner, so
+a certificate whose group was set some other way lost it at every
+renewal. They now keep the replaced file's owner, and a requested one
+still wins.
+
 ### `file.managed` keeps a file's owner when it rewrites it
 
 When `file.managed` changed a file's contents, the new file was owned by
