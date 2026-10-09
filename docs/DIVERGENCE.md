@@ -21625,9 +21625,17 @@ resolved `r720.edlitmus.info` to the ZeroTier address and
 came up. beastie, r720 and system76-pc all read `up` 1 and
 `halite_node_evidence_log_open` 1.
 
+**And then mail, by the SAN route.** Its ZeroTier address was added to
+the certificate state from the hosts pillar (edlitmus/salt#4); the rebuilt
+node reissued the certificate on the next apply (5.249) and served it
+without a restart (5.248); and the Prometheus job scrapes it at
+`172.29.69.32:4512` with an `instance` label of `mail.edlitmus.info:4512`, so
+the dashboards and alerts keep the name. All four node targets read `up` 1.
+
 **Not covered:**
-- mail is still down: its node listens only on its ZeroTier address, and
-  its name is deliberately not remapped.
+- Beastie's node, hub and API were not rebuilt with the others and still
+  run 0.12.0-794; its node needs 5.248 before its metrics certificate is
+  renewed in early December.
 - Why two keys belonged to login accounts was not established; a key made
   by hand before the state first ran is a guess.
 - The SAN route (add the reachable address to `subject_alt_names`) is in
@@ -21679,8 +21687,12 @@ Failing the handshake instead of serving the previous pair, and warning on
 every handshake, each fail it. `-race` clean.
 
 **Not covered:**
-- Not run on a node yet: it needs a rebuild, and the rollout of mail's
-  ZeroTier address is where it will be seen.
+- Seen once, on mail (FreeBSD, 0.12.0-799): before the state ran, the
+  listener served serial `609E29C5...` naming the DNS name only, agent PID
+  29451; after it, the same PID served `DBD26577...` naming
+  `IP Address:172.29.69.32` as well, and the node logged "the metrics
+  certificate changed on disk and is now being served" with the new expiry.
+  Not seen on Linux, and the unloadable-pair path was not provoked on a node.
 - The same load-once shape is in `halite-api`'s serving certificate
   (`servingCertificate` in `cmd/halite-api/serve.go`) and the relay's client
   certificate (`cmd/halite-hub/relay.go`). Neither is renewed by a state in
@@ -21725,8 +21737,12 @@ the two-paths mistake this guards against, fails that test.
 page's own block twice, still passes.
 
 **Not covered:**
-- Not run on a node yet; it needs a rebuild, and the mail rollout is where
-  it will be seen.
+- Seen once, on mail (0.12.0-799): `test=true` reported "A certificate
+  would be written ... because its subject alternative names are
+  [DNS:mail.edlitmus.info] and the state asks for [DNS:mail.edlitmus.info,
+  IP:...]", the real run wrote it, and a third run reported it already in
+  place. The address prints masked in the comment (the value comes from a
+  `gpg`-rendered pillar file); that was noticed and not investigated.
 - A certificate issued by another tool with a different but equivalent
   key usage bit set, or extra extensions this build does not compare, may
   be reissued once on the first run under this build; that was reasoned

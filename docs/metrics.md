@@ -587,8 +587,16 @@ and neither has yet been seen to bring a target up:
   firewall admitting only the Prometheus host.
 
 Adding the reachable address to `subject_alt_names` and targeting that
-address also works for TLS; it is the route this estate is taking for its
-mail server, not yet seen through.
+address also works for TLS. This estate's mail server is scraped that
+way: its address added to the state's `subject_alt_names`, the target
+written as the address, and an `instance` label of the node ID so graphs
+and alerts keep the name:
+
+```yaml
+      - targets: ['10.0.0.11:4512']
+        labels:
+          instance: 'mail.example:4512'
+```
 
 Both certificate paths were run end to end against a node and a real
 Prometheus before being written down, but not this state's pillar form.
