@@ -60,7 +60,7 @@ parallel two:
     - parallel: True
 
 # A warning Python's textwrap breaks inside its hyphenated words, which a
-# wrap on whitespace alone does not (DIVERGENCE 5.272).
+# wrap on whitespace alone does not (DIVERGENCE 5.274).
 hyphenated warning:
   test.configurable_test_state:
     - changes: False

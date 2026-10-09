@@ -12,7 +12,7 @@ import (
 // testdata/textwrap.json were made by Python's textwrap itself, not
 // written from its documentation: hyphenated words, numeric ranges that
 // do not break, an em-dash, long words with and without hyphens,
-// whitespace of every kind, and non-ASCII letters. DIVERGENCE 5.272.
+// whitespace of every kind, and non-ASCII letters. DIVERGENCE 5.274.
 func TestFillMatchesPythonsTextwrap(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "textwrap.json"))
 	if err != nil {

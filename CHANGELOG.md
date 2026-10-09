@@ -23,12 +23,30 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-api picks up a re-issued operator certificate without a restart
+
+halite-api loaded its operator certificate to the hub once, at startup.
+Re-issuing it with `halite-hub keys operator create` therefore did
+nothing until the API was restarted, and an API left running was refused
+by the hub once its first certificate expired, 30 days after issue by
+default. It now reads the certificate again before each request.
+
+### One fully qualified name: the `fqdn` grain follows Salt's rule
+
+The node's identity, the `fqdn` grain and the hub's certificate names
+now come from one lookup, with Salt's rule: the canonical name, then any
+name with a domain from reverse lookup. **On a host whose address
+reverses to a name that does not begin with its hostname, the `fqdn` and
+`domain` grains change** to that name, as Salt reports them. Targets on
+`fqdn` may match differently there. Enrolled node IDs do not change.
+DIVERGENCE 5.273.
+
 ### Warnings in state output wrap as Salt's do
 
 A state's warnings are now wrapped exactly as Salt wraps them, by a port
 of Python's `textwrap`: a hyphenated word breaks across lines, and a
 word too long for a line breaks at its last hyphen. The output already
-matched Salt everywhere else. DIVERGENCE 5.272.
+matched Salt everywhere else. DIVERGENCE 5.274.
 
 ### A signing tool for releases, with the key in AWS KMS
 

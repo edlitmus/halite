@@ -10,6 +10,8 @@ import (
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+
+	"github.com/edlitmus/halite/internal/grains"
 )
 
 // fakeResolver says what the network answers, so these assert the rule
@@ -100,7 +102,7 @@ func TestResolveFQDN(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := resolveFQDN(context.Background(), tc.r, "web1"); got != tc.want {
+			if got := grains.ResolveFQDN(context.Background(), tc.r, "web1"); got != tc.want {
 				t.Errorf("resolveFQDN = %q, want %q", got, tc.want)
 			}
 		})

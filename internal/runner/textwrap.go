@@ -18,7 +18,7 @@ import (
 // whitespace character made a space), split into chunks by wordsep_re,
 // and the chunks packed greedily into lines. The expected outputs in
 // testdata/textwrap.json were made by Python's textwrap itself.
-// DIVERGENCE 5.272.
+// DIVERGENCE 5.274.
 func pyFill(text string, width int, initial, subsequent string) string {
 	chunks := pySplit(pyMunge(text))
 	return strings.Join(pyWrapChunks(chunks, width, initial, subsequent), "\n")

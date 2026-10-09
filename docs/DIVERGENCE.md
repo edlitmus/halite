@@ -22879,8 +22879,108 @@ and they mean this. The four citations it added (here, the CHANGELOG,
 `parentdir.go` and `parentdir_test.go`) were changed by hand, line by
 line. The other 5.267's citations were left alone; `ledger renumber`
 cannot tell them apart once both are on main.
+### 5.271 halite-api presented the operator certificate it started with
 
-### 5.272 Warnings wrapped on whitespace, where Salt's break at hyphens
+5.254 named this and left it. `hubClient` in `cmd/halite-api/serve.go`
+loaded the API's operator certificate to the hub once, at startup.
+Operator certificates last 30 days by default and have no renewal: one
+is issued again, in place, with `keys operator create`. So a re-issue
+changed nothing until `halite-api` was restarted, and an API left running
+past its certificate's expiry was refused by the hub. Its whole surface
+(jobs, runners, events) would then stop, while it went on answering its
+own clients. `contrib/examples/tree` (5.262) had worked around it, with
+a state that re-issues the certificate and restarts the API. On the
+estate's beastie the API's certificate runs out on 2026-12-26, and
+nothing there renews it.
+
+The client now reads the pair through `certreload.NewClient`
+(`transport.Client.CertFiles`, 5.254), the relay's mechanism. The pair is
+read again before each request, and a changed one replaces the
+certificate and the connections opened with it. A re-issue does not
+revoke the previous certificate, so a request already in flight is not
+refused. `doctor` builds the same client, with no logger, and the log
+hooks allow for that. The example tree's state no longer restarts the
+API, and its README and `docs/operations.md` say how the certificate is
+re-issued and that the running API picks it up.
+
+Test, broken on purpose: a real TLS hub endpoint answers health with the
+serial of the client certificate it was presented. The client
+`hubClient` builds presents the operator certificate, then, after the
+pair is issued again on disk, the new one, with no new client built.
+Loading the pair once, the old behaviour, fails it with the old serial.
+
+**Not covered:**
+- Not run on beastie or on FreeBSD; it needs a rebuild there. The
+  estate's tree is not yet re-issuing the certificate. That is a change
+  to the salt tree, made alongside this one.
+- The example tree's re-issue state has still not been applied anywhere.
+### 5.272 The three-release Salt gate tripped Docker Hub's rate limit
+
+After 5.265 ran the Salt differential against three releases at once,
+the `salt differential` jobs for Salt 3007.1 and 3008.3 on #290 failed
+in six seconds, twice, a rerun included. Each failed before building anything:
+`429 Too Many Requests` from `registry-1.docker.io`, on the HEAD request
+for `golang:1.25-bookworm`. Three jobs pull the base image together,
+anonymously, from GitHub's shared runner addresses, and Docker Hub
+limits anonymous pulls by address. The gate failed having tested
+nothing, which looked like a red Salt comparison.
+
+The image now builds `FROM mirror.gcr.io/library/golang:1.25-bookworm`.
+That is Google's public mirror of Docker Hub's official images, and it
+answered 200 for that tag when asked here. The bytes are the same
+official image; the registry is not the one rate-limiting.
+
+**Not covered:** whether the mirror's own limits hold for three jobs on
+every change is for CI to show. If it fails the same way, the next step
+is logging in to a registry, which needs a credential this project does
+not hold in CI.
+### 5.273 Three answers to "what is this host called"
+
+5.264 found three lookups of this host's fully qualified name, and they
+differed in method:
+- **the node's identity** (`nodeFQDN`, SPEC 7.2 step 5): the canonical
+  name, then forward and reverse, and any name with a domain that is not
+  a loopback or IPv6 placeholder;
+- **the `fqdn` grain** (`grains.resolveFQDN`): forward and reverse only,
+  and a reverse name only if it began with the hostname;
+- **the hub's certificate names** (`serverNames`): the canonical name
+  alone.
+
+On a host whose address reverses to a name that is not its own, such as
+a cloud machine `web1` whose PTR is `ip-10-0-0-5.ec2.internal`, the node
+enrolled under the PTR name while its `fqdn` grain said `web1`.
+
+The owner chose the node's rule, which is Salt's: `socket.getfqdn` takes
+the canonical name and then the first name with a domain, and Salt uses
+it for the `fqdn` grain and the default node ID. `grains.FQDN` is now the
+one lookup:
+- the node's identity, the grain and the hub all call it;
+- it keeps 5.264's two-second bound over all its lookups together;
+- the node's `resolveFQDN` and `qualifiedName` moved into it, as
+  `ResolveFQDN` and `QualifiedName`.
+
+**What changes for an operator:** the `fqdn` and `domain` grains on a
+host whose PTR name does not begin with its hostname. They now report
+the PTR name, as Salt does, so a target or a template that matched the
+old value on such a host changes what it matches. Node IDs already
+enrolled are pinned and do not move. The hub's certificate now also
+carries a reverse name it can be dialled by.
+
+Tests:
+- `TestTheFQDNGrainFollowsSaltsRule` gives the PTR case to `FQDN`, and
+  to the grain through this machine's own hostname. It failed with the
+  grain's old prefix rule put back.
+- `TestServerNamesUseTheSharedFQDN` failed with the hub not calling the
+  shared lookup.
+- `TestTheFQDNGrainDoesNotWaitForDNS` and `TestServerNamesDoNotWaitForDNS`
+  keep 5.264's bound, now over the canonical-name lookup too, and the
+  hub's now goes through the real lookup with DNS replaced
+  (`grains.UseResolver`).
+- The node's table test of `ResolveFQDN` moved unchanged.
+
+**Not covered:** no real host with a foreign PTR name was used; the cases
+are a fake resolver's. Only run on macOS.
+### 5.274 Warnings wrapped on whitespace, where Salt's break at hyphens
 
 5.245 ported Salt's highstate outputter and named one place it knowingly
 differed. Salt wraps a state's warnings with Python's `textwrap.fill`,
@@ -22920,6 +23020,14 @@ covers it too, against the Python each onedir build bundles.
 **Not covered:** the fixtures came from one Python. `wordsep_re` and
 `_wrap_chunks` have not changed since Python 3.7. Only run on macOS
 here; CI runs the Salt comparison.
+
+
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
