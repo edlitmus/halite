@@ -72,6 +72,16 @@ type Config struct {
 	// OnSecret receives every decrypted value, for the redactor of
 	// SPEC 26.1.
 	OnSecret func(string)
+	// OnRendered receives each file's rendered output -- the text the
+	// template stage produced, before it was parsed -- including when the
+	// parse then failed. For a debug log: Salt prints every rendered SLS
+	// and pillar file at debug level, which is how an operator sees
+	// whether a template produced what they meant, and this had no way
+	// to show it short of `lint`. Not called when the render ran in the
+	// sandbox and failed, which brings back the error and no text; the
+	// error carries the rendered lines around the fault itself.
+	// DIVERGENCE 5.261.
+	OnRendered func(file, sls string, pipeline []string, text string)
 	// Renderer is the default pipeline of SPEC section 10.
 	Renderer []string
 
@@ -208,6 +218,7 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 	}
 
 	res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, state.TopName, path, nil))
+	c.rendered(path, state.TopName, res)
 	out.Warnings = append(out.Warnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: path}, state.TopName, "", "%v", err)
@@ -391,6 +402,7 @@ func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]boo
 	// `salt['pillar.get']` inside pillar rendering resolves against the
 	// partially built tree in declaration order. SPEC section 10.2.7.
 	res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, name, path, out.Pillar))
+	c.rendered(path, name, res)
 	out.Warnings = append(out.Warnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: path}, name, "", "%v", err)
@@ -525,6 +537,14 @@ func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) rend
 		GPG:              c.Config.GPG,
 		OnSecret:         c.Config.OnSecret,
 		Renderer:         c.Config.Renderer,
+	}
+}
+
+// rendered hands a file's rendered output to OnRendered, if anything
+// asked for it.
+func (c *Compiler) rendered(path, sls string, res render.Result) {
+	if c.Config.OnRendered != nil && res.Text != "" {
+		c.Config.OnRendered(path, sls, res.Pipeline, res.Text)
 	}
 }
 

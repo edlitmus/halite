@@ -100,6 +100,8 @@ Common flags:
                        each coercion; SPEC section 9.2
   --reveal             print pillar values rather than masking them; pillar
                        output masks decrypted and secrets-manager values
+  --rendered           with lint, print each file's rendered output,
+                       numbered, with the template line each came from
 
 State subcommands:
   apply [sls...]       apply the highstate, or the named SLS files
@@ -714,6 +716,7 @@ func (n *node) compileLocalPillar() (*value.Map, error) {
 			GPG:           n.gpgOptions(),
 			OnSecret:      n.secrets.Add,
 			Renderer:      n.defaultRenderer(),
+			OnRendered:    n.logRendered,
 			// SPEC 25.4, the same child the state compiler uses.
 			Engine: n.renderEngine(),
 			// Both are switches SPEC names and nothing read: 10.1.3's

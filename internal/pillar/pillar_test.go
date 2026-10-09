@@ -654,3 +654,21 @@ func TestANodegroupOfTrustedGrainsIsPermittedAndFiledAsOne(t *testing.T) {
 		t.Errorf("a delivery decided by a grain is filed as %q", out.Audit[0].Basis)
 	}
 }
+
+// The pillar top file and each pillar file reach OnRendered, rendered.
+// DIVERGENCE 5.261.
+func TestOnRenderedSeesThePillarTopAndFiles(t *testing.T) {
+	seen := map[string]string{}
+	mustCompile(t, map[string]string{
+		"base|top":    "base:\n  '*':\n    - common\n",
+		"base|common": "{% set port = 5432 %}\ndb_port: {{ port }}\n",
+	}, Config{OnRendered: func(file, sls string, pipeline []string, text string) {
+		seen[sls] = text
+	}})
+	if !strings.Contains(seen["top"], "- common") {
+		t.Errorf("the top file's rendered output = %q", seen["top"])
+	}
+	if !strings.Contains(seen["common"], "db_port: 5432") {
+		t.Errorf("common's rendered output = %q", seen["common"])
+	}
+}

@@ -130,6 +130,10 @@ event flags:
   --from <position>    latest (default), earliest, or an offset
   --once               read what is there and stop, rather than following
 
+lint flags:
+  --rendered           print each file's rendered output, numbered, with the
+                       template line each line came from
+
 migrate flags:
   --pillar-root <dir>  audit a separate pillar tree with pillar rules
   --salt-config <path> also translate a Salt configuration file, repeatable
@@ -372,12 +376,24 @@ func runLint(args *cli.Args) int {
 			fmt.Println(secrets.Scrub(w.String()))
 			problems++
 		}
+		// The rendered output, or the template around the error, after
+		// the result line: what Salt shows at debug level in among its
+		// module loading, here only for the file asked about. Scrubbed,
+		// because rendering a pillar-reading template puts its values in
+		// the text. DIVERGENCE 5.261.
+		explained := render.Explain(src, path, res, err, args.Bool("rendered", false))
 		if err != nil {
 			fmt.Println(secrets.Scrub(err.Error()))
+			if explained != "" {
+				fmt.Println(secrets.Scrub(explained))
+			}
 			problems++
 			continue
 		}
 		fmt.Printf("%s: renders and parses; pipeline %s\n", path, strings.Join(res.Pipeline, "|"))
+		if explained != "" {
+			fmt.Println(secrets.Scrub(explained))
+		}
 	}
 	if problems > 0 {
 		return 1

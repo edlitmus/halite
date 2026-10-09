@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### See what a template rendered
+
+A YAML error in a templated SLS or pillar file now shows the rendered
+lines around it: three either side, numbered, with the template line
+each came from. It used to show the one line. `halite-hub lint
+--rendered` and `halite-node lint --rendered` print each file's whole
+rendered output, and a template that does not render shows its source
+around the error. At `--log-level debug` the node and hub log every
+rendered state, pillar, orchestration and reactor file, which is what
+Salt shows at debug without the module loading around it. In the
+console format a multi-line value prints as an indented block.
+
 ### Example states and pillar with which halite manages itself
 
 `contrib/examples/tree/` holds states and pillar for running halite's
@@ -37,7 +49,7 @@ own estate:
 A test compiles it for every role on FreeBSD and Linux and loads
 everything it writes. It has not been applied on a real estate; its
 README lists what has not been run. Release archives now include the
-whole of `contrib/examples`, subdirectories included. DIVERGENCE 5.261.
+whole of `contrib/examples`, subdirectories included. DIVERGENCE 5.262.
 ### `halite-hub extensions key create` and `extensions sign`
 
 Extensions can be signed with the shipped binary instead of

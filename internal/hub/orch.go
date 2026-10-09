@@ -198,6 +198,14 @@ func (s *Server) compileOrchestration(req OrchRequest, env string, jid job.ID, r
 			Nodegroups: s.nodegroups(),
 			Test:       req.Test,
 			GPG:        render.GPGOptions{},
+			// What each orchestration file rendered to, at debug level,
+			// as a node logs its states'. DIVERGENCE 5.261.
+			OnRendered: func(file, sls string, pipeline []string, text string) {
+				if s.Log != nil {
+					s.Log.Debug("rendered", "file", file, "sls", sls,
+						"pipeline", strings.Join(pipeline, "|"), "rendered", text)
+				}
+			},
 		},
 	}
 	return c.CompileSLS(req.SLS)

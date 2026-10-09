@@ -71,6 +71,10 @@ var BoolFlags = map[string]bool{
 	"version": true, "diff": true, "progress": true, "force": true,
 	"async": true, "verbose": true, "require-match": true, "fresh": true,
 	"clean": true, "no-color": true, "failhard": true,
+	// `lint --rendered bad.sls` read the file as the flag's value and
+	// then said lint needed a path; `pillar --reveal get key` would take
+	// `get` the same way. DIVERGENCE 5.261.
+	"rendered": true, "reveal": true,
 }
 
 // Parse splits an argument vector.

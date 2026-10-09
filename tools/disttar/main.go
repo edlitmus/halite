@@ -176,7 +176,7 @@ func sharedEntries(examples, man, license, evidence string) ([]entry, error) {
 	//
 	// The examples descend: contrib/examples/tree is a state and pillar
 	// tree, and it shipped as nothing at all while this read one level
-	// (DIVERGENCE 5.261). The manual pages do not, and a directory there
+	// (DIVERGENCE 5.262). The manual pages do not, and a directory there
 	// is not one of them.
 	var files func(dir, into string, deep bool) (int, error)
 	files = func(dir, into string, deep bool) (int, error) {

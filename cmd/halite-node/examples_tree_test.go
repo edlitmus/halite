@@ -30,7 +30,7 @@ import (
 // /etc or /usr/local/etc and drives a service manager, which a test run as
 // a user on a developer's machine cannot do, and the restart and
 // publication steps have not been run by this project. The tree's
-// README says so, state by state. DIVERGENCE 5.261.
+// README says so, state by state. DIVERGENCE 5.262.
 func TestTheExampleTreeCompilesForEveryRole(t *testing.T) {
 	tree := filepath.Join("..", "..", "contrib", "examples", "tree")
 	states, pillar := filepath.Join(tree, "states"), filepath.Join(tree, "pillar")

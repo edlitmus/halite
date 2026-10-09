@@ -22261,8 +22261,6 @@ went away. That a hub's start waits on DNS is noted here, not changed.
   certificate's connection. Nothing here checks that it reconnects
   cleanly once that certificate expires.
 
-
-
 ### 5.260 Signing an extension needed the source tree and a Go toolchain
 
 The only way to sign an extension bundle was `go run ./tools/extbundle`.
@@ -22324,7 +22322,84 @@ the hub to nodes and not back, so `--publish` writes into a tree on the
 signing machine, and getting that tree to the hub is the estate's own
 step (a git push, with the hub serving the tree through gitfs).
 
-### 5.261 A tree halite manages itself with, held to compiling
+### 5.261 Nothing showed what a template rendered to
+
+Asked for by the estate's operator. When a templated SLS or pillar file
+fails, the question is whether the template produced what was meant. Salt
+answers it at debug level by printing every rendered file, among a great
+deal of module loading. Here the answer was one line. A YAML error named
+the template line and quoted the single rendered line it failed on (SPEC
+10.1.4), `lint` printed that and nothing more, and no log level showed a
+rendered file at all. The rendered line is often not the one at fault. An
+indentation error is reported on the first line that does not fit, and
+what made it not fit is usually the lines above it. In a loop or a
+macro's output, those lines exist only rendered.
+
+Four changes:
+
+- **The error carries a window.** `render.Error` has `Context`: three
+  rendered lines either side of the failing one, numbered, the failing
+  one marked `>`, each beside the template line it came from
+  (`RenderedWindow`, through the template's source map). It is part of
+  the message, so it reaches everything that reports the error: a state
+  run's compile failure, a pillar compile, `lint`. It also crosses the
+  render sandbox, which carries an error as text: a test renders the
+  broken file in a real child process, and the error that comes back
+  carries the window.
+- **`lint --rendered`**, on both programs, prints each file's whole
+  rendered output numbered the same way, whether or not it parsed.
+  `render.Result.Template` carries the line map for it. A template that
+  does not render at all has no output, so `lint` shows its source
+  around where the engine stopped (`SourceWindow`). Both lints print
+  through one function, `render.Explain`, and through the redactor.
+  `rendered` and `reveal` are now boolean flags. `lint --rendered
+  bad.sls` read the path as the flag's value and then said lint needed a
+  path, and `pillar --reveal get key` would have taken `get` the same
+  way.
+- **At debug level every rendered file is logged**, as one `rendered`
+  record carrying its output. `state.Config` and `pillar.Config` have
+  `OnRendered`, called for each SLS, each top file, and the file whose
+  parse then failed. The node wires it for states and pillar. The hub
+  wires it for pillar, with the node it compiled for (`PillarOptions`),
+  and for orchestration. Reactor files are logged where they render.
+- **The console format prints a multi-line value as an indented block**
+  after the line, rather than inline, where it ran into the records
+  after it. JSON is unchanged: one escaped string, one record per line.
+
+Seen, on Linux, with built binaries:
+- `halite-hub lint` on a looped SLS whose second-level key was
+  mis-indented showed rendered lines 2 to 8, line 7 marked as coming from
+  template line 2, the `{% for %}`.
+- `halite-hub lint --rendered` printed the whole output of a clean file.
+- `halite-node lint --local --rendered` rendered a state against the
+  node's own pillar, a user list from pillar, and showed both the window
+  and the whole output.
+- `halite-node state show_highstate --local --log-level debug --log-fmt
+  console` logged the pillar top, a pillar file and a state SLS as
+  indented blocks.
+- `state apply --local` on the broken file failed with the window in its
+  compile error.
+
+Tests, each broken on purpose: the window (dropping it from the
+message), `--rendered` and the source window (`Explain` ignoring the
+flag), the state and pillar hooks (not calling them), the two boolean
+flags (removing them from `BoolFlags`), the console block (printing
+inline), the hub's `lint` end to end, and the window through the
+sandbox. Each fails.
+
+**Not covered:**
+- The hub's `lint` renders with no grains, no pillar and no loader for
+  the tree, so a template that imports `map.jinja` or reads a grain does
+  not render there as it does on a node. That was true before and is now
+  written down in `docs/operations.md`.
+- A sandboxed render that fails brings back its error and no text, so
+  the failed file is not logged at debug. Its error still carries the
+  window. The sandbox ran unprivileged, as the test suite runs it, not
+  as `render_sandbox` runs it under a dropped account.
+- Agentless (`halite-hub ssh`) pillar compiles and the hub's `doctor`
+  are not wired to `OnRendered`. Nor are managed-file templates, which
+  are file contents rather than SLS.
+### 5.262 A tree halite manages itself with, held to compiling
 
 The owner asked for example states and pillar with which halite-hub,
 halite-api and halite-node configure and manage themselves, including
@@ -22399,6 +22474,8 @@ README lists what has not been run:
 - the operator certificate re-issued as `halite`;
 - the signer's push and the hub serving it through gitfs;
 - a hub host enrolled to itself.
+
+
 
 ## 6. Everything else not started
 

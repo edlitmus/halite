@@ -54,6 +54,16 @@ type Config struct {
 	Undefined template.UndefinedMode
 	// OnUndefined reports each permissive resolution.
 	OnUndefined func(name string, pos template.Pos)
+	// OnRendered receives each file's rendered output -- the text the
+	// template stage produced, before it was parsed -- including when the
+	// parse then failed. For a debug log: Salt prints every rendered SLS
+	// and pillar file at debug level, which is how an operator sees
+	// whether a template produced what they meant, and this had no way
+	// to show it short of `lint`. Not called when the render ran in the
+	// sandbox and failed, which brings back the error and no text; the
+	// error carries the rendered lines around the fault itself.
+	// DIVERGENCE 5.261.
+	OnRendered func(file, sls string, pipeline []string, text string)
 
 	// YAMLBool11 enables YAML 1.1's extra boolean spellings.
 	YAMLBool11 *bool
@@ -227,6 +237,9 @@ func (c *Compiler) loadSLS(out *Compiled, env, name string, seen map[string]bool
 	}
 
 	res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, name, filePath))
+	if c.Config.OnRendered != nil && res.Text != "" {
+		c.Config.OnRendered(filePath, name, res.Pipeline, res.Text)
+	}
 	out.RenderWarnings = append(out.RenderWarnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: filePath}, name, "", "%v", err)
