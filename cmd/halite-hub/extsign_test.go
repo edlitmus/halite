@@ -5,9 +5,19 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+// exeName is the test executable's name: Windows starts only a file
+// with an executable extension, and the signer refuses one without.
+func exeName() string {
+	if runtime.GOOS == "windows" {
+		return "hello.exe"
+	}
+	return "hello"
+}
 
 // `extensions key create` and `extensions sign` make a bundle a hub
 // accepts when it trusts the key and pins the root, and refuses when it
@@ -22,7 +32,7 @@ func TestASignedBundleIsAcceptedOnlyByTheKeyItWasSignedWith(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(build, "hello"), self, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(build, exeName()), self, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -39,7 +49,7 @@ func TestASignedBundleIsAcceptedOnlyByTheKeyItWasSignedWith(t *testing.T) {
 	}
 	release, other := trust("release"), trust("other")
 
-	got := run(t, "extensions", "sign", build, "--name", "hello", "--exe", "hello",
+	got := run(t, "extensions", "sign", build, "--name", "hello", "--exe", exeName(),
 		"--ext-version", "2.1.0", "--key", "release", "--root", signer, "--publish", tree)
 	if got.code != 0 {
 		t.Fatalf("sign: %+v", got)
@@ -49,7 +59,7 @@ func TestASignedBundleIsAcceptedOnlyByTheKeyItWasSignedWith(t *testing.T) {
 		t.Fatalf("sign printed no root:\n%s", got.stdout)
 	}
 	published := filepath.Join(tree, "_ext", "hello", "2.1.0")
-	for _, f := range []string{"hello", "manifest.json", "manifest.sig"} {
+	for _, f := range []string{exeName(), "manifest.json", "manifest.sig"} {
 		if _, err := os.Stat(filepath.Join(published, f)); err != nil {
 			t.Errorf("the published bundle has no %s: %v", f, err)
 		}
@@ -82,7 +92,7 @@ func TestASignedBundleIsAcceptedOnlyByTheKeyItWasSignedWith(t *testing.T) {
 func TestSigningRefusesWhatItShould(t *testing.T) {
 	signer, build, tree := t.TempDir(), t.TempDir(), t.TempDir()
 	self, _ := os.ReadFile(os.Args[0])
-	if err := os.WriteFile(filepath.Join(build, "hello"), self, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(build, exeName()), self, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if got := run(t, "extensions", "key", "create", "release", "--root", signer); got.code != 0 {
@@ -95,7 +105,7 @@ func TestSigningRefusesWhatItShould(t *testing.T) {
 		t.Errorf("key create replaced an existing key: %+v", got)
 	}
 	// A missing key is an error, not a new key nobody trusts.
-	if got := run(t, "extensions", "sign", build, "--name", "hello", "--exe", "hello",
+	if got := run(t, "extensions", "sign", build, "--name", "hello", "--exe", exeName(),
 		"--key", "nosuch", "--root", signer); got.code == 0 ||
 		!strings.Contains(got.stderr, "extensions key create nosuch") {
 		t.Errorf("sign with a missing key: %+v", got)
@@ -105,7 +115,7 @@ func TestSigningRefusesWhatItShould(t *testing.T) {
 	}
 	// A published version is never replaced.
 	sign := func() result {
-		return run(t, "extensions", "sign", build, "--name", "hello", "--exe", "hello",
+		return run(t, "extensions", "sign", build, "--name", "hello", "--exe", exeName(),
 			"--key", "release", "--root", signer, "--publish", tree)
 	}
 	if got := sign(); got.code != 0 {
