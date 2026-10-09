@@ -182,7 +182,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"certificate_lifetime": {
 		Group:  "Enrollment and certificates",
-		Detail: "A node renews at half of this, so a shorter lifetime means more renewals and a smaller window for a stolen key. Renewal is automatic and needs no operator, so this can be short.",
+		Detail: "A node renews at half of this, and so does the hub's own serving certificate, which the running hub replaces without a restart. A shorter lifetime means more renewals and a smaller window for a stolen key. Renewal is automatic and needs no operator, so this can be short.",
 	},
 	"key_algorithm": {
 		Group:  "Enrollment and certificates",

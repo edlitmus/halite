@@ -292,13 +292,10 @@ func runRenew(args *cli.Args) int {
 	return 0
 }
 
-// needsRenewal is the halfway point of SPEC 7.4.
+// needsRenewal is the halfway point of SPEC 7.4, the rule the hub
+// renews its own certificate by too.
 func needsRenewal(cert *x509.Certificate) bool {
-	life := cert.NotAfter.Sub(cert.NotBefore)
-	if life <= 0 {
-		return true
-	}
-	return !time.Now().Before(cert.NotBefore.Add(life / 2))
+	return pki.DueForRenewal(cert, time.Now())
 }
 
 // runConnect opens the subscribe stream and stays on it.

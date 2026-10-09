@@ -23,6 +23,17 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The hub renews its own certificate
+
+`halite-hub` used to issue its serving certificate again only once it
+had expired, and only at startup. A hub running past
+`certificate_lifetime` (90 days by default) served an expired
+certificate, and every node failed to connect until it was restarted.
+It now renews at half the certificate's life, at startup and while
+running, and serves the new one without a restart, as nodes already do.
+**A hub that has run for close to 90 days should be checked:**
+`halite-hub doctor` warns 30 days before expiry. DIVERGENCE 5.259.
+
 ### A hub with `ext_pillar` and no `pillar_roots` refuses to start
 
 A hub with no pillar roots compiles no pillar, so its external pillar
