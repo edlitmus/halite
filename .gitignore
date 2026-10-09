@@ -20,6 +20,9 @@ cover.out
 /ledger
 /gendocs
 /extbundle
+# And `go build ./tools/relsign`, whose 9 MB output reached a PR branch
+# once before this line existed.
+/relsign
 
 # migrate reports: they quote a real tree's file paths and service names,
 # which belong to whoever owns that estate and not in this repository.

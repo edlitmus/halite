@@ -62,7 +62,12 @@ gh attestation verify halite-0.1.0-linux-amd64.tar.gz --repo edlitmus/halite
 ```
 
 And, once a release carries them, the detached signatures, which need
-nothing but the public key and an `openssl`:
+nothing but the public key and an `openssl`. The public key is
+[`contrib/keys/halite-release.pub`](../contrib/keys/halite-release.pub)
+in this repository, fingerprint
+`SHA256:08e094d12f866d2d29fe0fd68b700baf97dfad2d3beb626c3c4007e679110f8f`
+(the SHA-256 of its DER form,
+`openssl pkey -pubin -in halite-release.pub -outform DER | sha256sum`):
 
 ```sh
 openssl dgst -sha256 -verify halite-release.pub -signature SHA256SUMS.sig SHA256SUMS
@@ -75,11 +80,17 @@ are for a site that fetched one archive and not the manifest.
 
 ## Signing a release
 
-**No release is signed yet, and no key exists.** What follows is the
-tool and the procedure. The procedure has not been run, because its first
-step is a key that has not been created, and nothing here claims
-otherwise. When it has been run, this section will say which release,
-with which key, and what was not covered.
+**No release is signed yet.** This project's key exists in AWS KMS as
+`alias/halite-release`, and its public half is committed as
+`contrib/keys/halite-release.pub` (P-256, fingerprint above). The
+procedure below has been run as far as signing one digest with that key
+(see the end of this page), and not on a release.
+
+Everything here works with any key: `RELEASE_KEY` names the KMS key (an
+id, `alias/<name>`, or an ARN) and `RELEASE_PUB` the public key file it
+must match, and the region comes from `AWS_REGION`. An operator signing
+their own builds sets those three and keeps their own public key file;
+the names used below are this project's defaults.
 
 ### Why the key is in KMS, and why a person signs
 
@@ -137,7 +148,7 @@ Credentials come from the environment. On a workstation that is
 
 ```sh
 eval "$(aws configure export-credentials --format env)"
-export AWS_REGION=us-east-1       # the key's region
+export AWS_REGION=<region>        # the key's region; KMS keys are regional
 ```
 
 The set to sign is the full `dist/` the attestation names, not the
@@ -189,11 +200,21 @@ reference, which holds it to the documentation and not to the service.
 to `openssl`, with a real key:
 
 ```sh
-HALITE_KMS_LIVE=1 HALITE_KMS_KEY=alias/halite-release AWS_REGION=us-east-1 \
+HALITE_KMS_LIVE=1 HALITE_KMS_KEY=<key id, alias or ARN> AWS_REGION=<region> \
     go test -count=1 -v -run TestLiveKMS ./internal/awskms
 ```
 
 It makes one billed `Sign` call per run. It is not in the fleet
-workflow, which carries no AWS credentials, and it has not yet been run.
-Until it has, this page describes the tool as written rather than as
-demonstrated.
+workflow, which carries no AWS credentials.
+
+It has been run against this project's key: KMS signed a digest, and
+both this build and OpenSSL verified the signature, and `make
+release-pubkey` printed a file byte-identical to the committed one.
+The client reads credentials from the environment, a container's
+credentials, or an instance role, and not from `~/.aws/credentials`;
+with the AWS CLI, `aws configure export-credentials --format env`
+puts them where it looks.
+
+**Not covered:** `make release-sign` and `make release-verify` over a
+real `dist/` -- the whole procedure above, on a release -- have not been
+run, so no release is signed. Credentials from SSO were not tried.

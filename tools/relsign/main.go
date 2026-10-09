@@ -9,8 +9,8 @@
 // attestation does not is that a person with the key looked first. Three
 // subcommands:
 //
-//	relsign pubkey -key alias/halite-release -region us-east-1 > halite-release.pub
-//	relsign sign   -dist dist -key alias/halite-release -region us-east-1 -pub halite-release.pub
+//	relsign pubkey -key alias/halite-release -region <region> > halite-release.pub
+//	relsign sign   -dist dist -key alias/halite-release -region <region> -pub halite-release.pub
 //	relsign verify -dist dist -pub halite-release.pub
 //
 // # What is signed
