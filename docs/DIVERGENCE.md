@@ -21974,6 +21974,44 @@ the old serial on the old connection, which is the estate-shaped half.
   goes on working until the old one expires (30 days by default) and then
   needs a restart. Not changed here.
 
+### 5.255 The x509 states gave a renewed certificate to whoever renewed it
+
+5.253 fixed `file.managed` and named the same shape in the x509 states.
+`x509.certificate_managed` and `x509.private_key_managed` write through a
+temporary file and a rename, so the file they put in place belongs to the
+account that ran them, and they then applied only a `user` or `group` the
+state named. A certificate or key whose owner was set any other way -- by
+hand, or by a file state beside it -- went to root at its next reissue.
+For the 90-day metrics certificate `docs/metrics.md` describes, that is
+every couple of months, and a key that a service reads as itself would
+then be unreadable to it. The estate's `halite_metrics_cert` state names no
+owner for either file; its nodes run as root, so it has not bitten there.
+
+Both states now put the replaced file's owner and group back after the
+write (`keepReplacedOwner`, through the `keepOwnership` 5.253 added) and
+then apply a requested one, which wins. If the old owner cannot be put
+back -- an unprivileged run replacing another account's file -- the state
+warns rather than fails, as `file.managed` does.
+
+Test, broken on purpose: a key and a certificate moved into one of the test
+account's supplementary groups keep that group when the certificate is
+reissued for a changed name and the key regenerated as another algorithm.
+Skipping the keep fails both: "a reissue with no owner requested moved the
+certificate from group 27 to 1000", and the same for the key. `-race`
+clean.
+
+**Not covered:**
+- Not run as root, which is how the estate runs these; the test moves only
+  the group, as an unprivileged account. Not run on FreeBSD or on the
+  estate.
+- A reissue through the renewal window, rather than a changed name, was
+  not provoked; both reach the same write.
+- The x509 *execution* functions that write a file (`create_private_key`,
+  `create_csr`, `create_certificate` with `path`) still replace it the old
+  way. Nothing in the estate calls them with a path, and what Salt does
+  there was not checked.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

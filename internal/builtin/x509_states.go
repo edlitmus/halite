@@ -157,15 +157,17 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 	if err != nil {
 		return states.False(fmt.Sprintf("The key could not be encoded: %v", err)), nil
 	}
+	was := replacing(path)
 	if err := writeAtomic(path, encoded, mode); err != nil {
 		return states.False(fmt.Sprintf("The key could not be written: %v", err)), nil
 	}
+	warnings := keepReplacedOwner(path, was)
 	if err := applyOwnership(path, wantUser, wantGroup); err != nil {
 		return states.False(fmt.Sprintf("The key was written but its ownership could not be set: %v", err)), nil
 	}
-	return states.Changed(
+	return withWarnings(states.Changed(
 		fmt.Sprintf("A %s private key was written to %s, because %s.%s", spec.describe(), path, reason, made),
-		changes), nil
+		changes), warnings), nil
 }
 
 func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error) {
@@ -242,14 +244,52 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 			fmt.Sprintf("A certificate would be written to %s, because %s.%s", path, reason, made), changes), nil
 	}
 
+	was := replacing(path)
 	if _, err := createCertificate(args, path, mode); err != nil {
 		return states.False(fmt.Sprintf("The certificate could not be created: %v", err)), nil
 	}
+	warnings := keepReplacedOwner(path, was)
 	if err := applyOwnership(path, wantUser, wantGroup); err != nil {
 		return states.False(fmt.Sprintf("The certificate was written but its ownership could not be set: %v", err)), nil
 	}
-	return states.Changed(
-		fmt.Sprintf("A certificate was written to %s, because %s.%s", path, reason, made), changes), nil
+	return withWarnings(states.Changed(
+		fmt.Sprintf("A certificate was written to %s, because %s.%s", path, reason, made), changes), warnings), nil
+}
+
+// replacing is the file a rewrite is about to replace, or nil when there
+// is none, for keepReplacedOwner.
+func replacing(path string) os.FileInfo {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil
+	}
+	return info
+}
+
+// keepReplacedOwner gives a key or certificate that has just been
+// rewritten the owner and group of the file it replaced, before any owner
+// the state asks for is applied.
+//
+// Both states write through a temporary file and a rename, so the new
+// file belongs to whoever ran the write, and only a requested `user` or
+// `group` was ever put back. A certificate whose owner was set some other
+// way -- by hand, or by a file state beside it -- went to root at its next
+// renewal, every couple of months for the 90-day certificates
+// docs/metrics.md describes, and a key a service reads as itself would
+// then be unreadable to it. file.managed had the same defect and the same
+// fix (DIVERGENCE 5.253); this is 5.255.
+//
+// A warning rather than a failure when it cannot be done, as there: an
+// unprivileged run replacing another account's file is no worse off than
+// before, and the certificate it wrote is still the one asked for.
+func keepReplacedOwner(path string, was os.FileInfo) []string {
+	if was == nil {
+		return nil
+	}
+	if err := keepOwnership(path, was); err != nil {
+		return []string{fmt.Sprintf("%s was rewritten and its previous owner could not be kept: %v", path, err)}
+	}
+	return nil
 }
 
 // requestedDiffers says how an existing certificate differs from the one
