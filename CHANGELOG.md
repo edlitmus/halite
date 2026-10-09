@@ -36,6 +36,16 @@ Extensions can be signed with the shipped binary instead of
 Both refuse to replace a key or a published version, and `sign` refuses
 a missing key instead of making one. Run them on a machine other than
 the hub. DIVERGENCE 5.260.
+### The hub renews its own certificate
+
+`halite-hub` used to issue its serving certificate again only once it
+had expired, and only at startup. A hub running past
+`certificate_lifetime` (90 days by default) served an expired
+certificate, and every node failed to connect until it was restarted.
+It now renews at half the certificate's life, at startup and while
+running, and serves the new one without a restart, as nodes already do.
+**A hub that has run for close to 90 days should be checked:**
+`halite-hub doctor` warns 30 days before expiry. DIVERGENCE 5.259.
 
 ### A hub with `ext_pillar` and no `pillar_roots` refuses to start
 
