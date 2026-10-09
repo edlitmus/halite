@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/certreload"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/eventbus"
@@ -107,7 +107,14 @@ func relayUpstream(h *hubContext, args *cli.Args, upstream string) *transport.Cl
 	files := pki.Files{Dir: dir}
 	certPath := args.Flag("upstream-cert", files.Path(pki.NodeCertFile))
 	keyPath := args.Flag("upstream-key", files.Path(pki.NodeKeyFile))
-	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	// Read from disk again before every request, not loaded once: the
+	// certificate is renewed in place by `halite-node renew --pki-dir`,
+	// and the upstream revokes the old serial as it issues the new one,
+	// so a relay holding the pair it started with is refused from the
+	// moment it is renewed until it is restarted. DIVERGENCE 5.254.
+	certs, err := certreload.NewClient(certPath, keyPath,
+		func(msg string, kv ...any) { h.log.Info(msg, append(kv, "component", "relay")...) },
+		func(msg string, kv ...any) { h.log.Warn(msg, append(kv, "component", "relay")...) })
 	if err != nil {
 		cli.Fatalf("relay: this relay has no certificate for its upstream at %s; "+
 			"enrol it with `halite-node enroll --pki-dir %s`: %v", certPath, dir, err)
@@ -126,7 +133,7 @@ func relayUpstream(h *hubContext, args *cli.Args, upstream string) *transport.Cl
 		}
 	}
 	return &transport.Client{
-		HubURL: url, CA: ca, Cert: &pair,
+		HubURL: url, CA: ca, CertFiles: certs,
 		ServerName: args.Flag("upstream-server-name", h.cfg.String("relay_server_name", "")),
 		Timeout:    h.cfg.Duration("relay_timeout", 60*time.Second),
 	}

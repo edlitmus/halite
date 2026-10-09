@@ -21911,6 +21911,69 @@ FreeBSD, macOS and Windows.
 - As root, which is how the estate runs, the owner change is a plain
   `chown`; the tests exercise only the group, as an unprivileged account.
 
+### 5.254 A renewed relay was locked out of its upstream until restarted
+
+5.248 and 5.250 named the relay's client certificate as the third place the
+load-once shape lived and left it. On a client it is worse than on a
+server. A server that keeps its old certificate works until that
+certificate expires; a relay that keeps its old one stops at once, because
+the upstream revokes the old serial in the same request that issues the
+new one (`renew` in `internal/hub/server.go`). Renewing the relay's
+identity the documented way, `halite-node renew` against the configuration
+it enrolled with, locked it out of its upstream until somebody restarted
+its hub.
+
+Seen, before the fix, with a throwaway upstream hub and relay on loopback
+(Linux, built from `6faa922`): after `halite-node renew --force`, the relay
+reconnected every ten seconds and was refused each time with
+`/v1/subscribe: this node's enrollment is revoked: superseded by a
+renewal`, and its spool stayed unannounced. The upstream logged "a revoked
+node is still connected" at each attempt: the relay was not handshaking
+again at all, but reusing its pooled HTTP/2 connection, which the hub
+refuses per request.
+
+So the fix is two things, and the second is the one that is easy to
+miss. `transport.Client` has `CertFiles`, a `certreload.Reloader` read
+again before each request; a pair that has changed replaces the
+certificate *and* the HTTP client, so the next request is a new
+connection, and the old client's idle connections are closed. A new
+`tls.Config` over the old pool would have gone on authenticating as the
+revoked serial. `tracePropagating` now passes `CloseIdleConnections`
+through, without which `http.Client.CloseIdleConnections` silently did
+nothing on these clients. The relay builds its upstream client with it
+(`certreload.NewClient`, which logs "the client certificate changed on disk
+and is now being presented").
+
+Seen after the fix, with the same two hubs: after the renewal the upstream
+ended the relay's stream, the relay reconnected at its next retry ten
+seconds later, logged the new certificate's expiry, and the upstream logged
+"relay connected" with no refusal.
+
+Test, broken on purpose two ways: a client built once against a real TLS
+server, whose handler answers with the serial of the connection the
+request arrived on, presents a renewal on disk from the next request on a
+new connection, keeps its connection while nothing changes, and says the
+change once. Skipping the reload fails it; reloading into a new
+`tls.Config` while keeping the pooled connection fails it too, presenting
+the old serial on the old connection, which is the estate-shaped half.
+`-race` clean.
+
+**Not covered:**
+- No relay runs in this estate, so this has not been seen on one, nor on
+  FreeBSD.
+- Nothing renews a relay's identity by itself. `halite-node connect`
+  renews a node's at half its life, but a relay runs `halite-hub serve`,
+  which does not, so its certificate expires 90 days after enrolment
+  unless `halite-node renew` is run for it. `docs/operations.md` now says
+  so and gives the cron line; making the relay renew itself is not in
+  this change.
+- `halite-api`'s operator certificate for the hub (`hubClient` in
+  `cmd/halite-api/serve.go`) is loaded once in the same way. It is not the
+  same outage: an operator certificate is replaced by running `keys
+  operator create` again, which does not revoke the old one, so the API
+  goes on working until the old one expires (30 days by default) and then
+  needs a restart. Not changed here.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

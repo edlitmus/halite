@@ -6,10 +6,11 @@
 // process that loaded the pair once at startup goes on presenting the old
 // certificate until it expires, and then every client fails. The node's
 // metrics listener had that defect (DIVERGENCE 5.248) and so did
-// halite-api's serving certificate (DIVERGENCE 5.250); this is the one
-// implementation both use, so that the two do not drift apart -- the first
-// version of it had a Windows-only bug that only one copy would have been
-// fixed in.
+// halite-api's serving certificate (DIVERGENCE 5.250), and a relay's
+// client certificate for its upstream had it on the other side of the
+// handshake; this is the one implementation all three use, so that they do
+// not drift apart -- the first version of it had a Windows-only bug that
+// only one copy would have been fixed in.
 package certreload
 
 import (
@@ -52,6 +53,9 @@ import (
 type Reloader struct {
 	certFile, keyFile string
 	info, warn        func(msg string, kv ...any)
+	// what and verb are how the log lines name the certificate and what
+	// is done with it: a server serves one, a client presents one.
+	what, verb string
 
 	mu              sync.Mutex
 	pair            *tls.Certificate
@@ -59,8 +63,22 @@ type Reloader struct {
 	lastProblem     string
 }
 
+// New is a Reloader for a server's certificate: GetCertificate.
 func New(certFile, keyFile string, info, warn func(string, ...any)) (*Reloader, error) {
-	r := &Reloader{certFile: certFile, keyFile: keyFile, info: info, warn: warn}
+	return load(&Reloader{certFile: certFile, keyFile: keyFile, info: info, warn: warn,
+		what: "serving certificate", verb: "served"})
+}
+
+// NewClient is a Reloader for the certificate a client presents: Load,
+// whose caller decides when to ask, because a client that has a
+// connection open goes on being the identity it opened it with whatever
+// is on disk (see transport.Client.CertFiles).
+func NewClient(certFile, keyFile string, info, warn func(string, ...any)) (*Reloader, error) {
+	return load(&Reloader{certFile: certFile, keyFile: keyFile, info: info, warn: warn,
+		what: "client certificate", verb: "presented"})
+}
+
+func load(r *Reloader) (*Reloader, error) {
 	certPEM, keyPEM, err := r.read()
 	if err != nil {
 		return nil, err
@@ -87,20 +105,27 @@ func (r *Reloader) read() ([]byte, []byte, error) {
 
 // GetCertificate is tls.Config.GetCertificate.
 func (r *Reloader) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return r.Load(), nil
+}
+
+// Load is the pair on disk if it has changed and loads, and the previous
+// one otherwise. The pointer changes exactly when the pair does, so a
+// caller can tell a renewal by comparing it with the last one it had.
+func (r *Reloader) Load() *tls.Certificate {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	certPEM, keyPEM, err := r.read()
 	if err != nil {
 		r.problem(err)
-		return r.pair, nil
+		return r.pair
 	}
 	if bytes.Equal(certPEM, r.certPEM) && bytes.Equal(keyPEM, r.keyPEM) {
-		return r.pair, nil
+		return r.pair
 	}
 	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		r.problem(err)
-		return r.pair, nil
+		return r.pair
 	}
 	r.pair, r.certPEM, r.keyPEM, r.lastProblem = &pair, certPEM, keyPEM, ""
 	if r.info != nil {
@@ -108,9 +133,9 @@ func (r *Reloader) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error
 		if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil {
 			kv = append(kv, "not_after", leaf.NotAfter.UTC().Format(time.RFC3339))
 		}
-		r.info("the serving certificate changed on disk and is now being served", kv...)
+		r.info("the "+r.what+" changed on disk and is now being "+r.verb, kv...)
 	}
-	return r.pair, nil
+	return r.pair
 }
 
 // problem says a failure once, until it changes or clears.
@@ -120,7 +145,7 @@ func (r *Reloader) problem(err error) {
 	}
 	r.lastProblem = err.Error()
 	if r.warn != nil {
-		r.warn("the serving certificate on disk cannot be loaded; the previous one is still being served",
+		r.warn("the "+r.what+" on disk cannot be loaded; the previous one is still being "+r.verb,
 			"cert", r.certFile, "error", err.Error())
 	}
 }
