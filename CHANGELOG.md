@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Warnings in state output wrap as Salt's do
+
+A state's warnings are now wrapped exactly as Salt wraps them, by a port
+of Python's `textwrap`: a hyphenated word breaks across lines, and a
+word too long for a line breaks at its last hyphen. The output already
+matched Salt everywhere else. DIVERGENCE 5.272.
+
 ### A signing tool for releases, with the key in AWS KMS
 
 SPEC 4.3's detached signature per artifact was deferred on where a

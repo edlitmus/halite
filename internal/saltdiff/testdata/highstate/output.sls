@@ -58,3 +58,11 @@ parallel two:
   cmd.run:
     - name: 'sleep 0.1'
     - parallel: True
+
+# A warning Python's textwrap breaks inside its hyphenated words, which a
+# wrap on whitespace alone does not (DIVERGENCE 5.272).
+hyphenated warning:
+  test.configurable_test_state:
+    - changes: False
+    - result: True
+    - warnings: "the state-of-the-art well-known self-signed certificate was re-issued for the long-running hub-and-spoke deployment"
