@@ -41,6 +41,13 @@ reverses to a name that does not begin with its hostname, the `fqdn` and
 `fqdn` may match differently there. Enrolled node IDs do not change.
 DIVERGENCE 5.273.
 
+### Warnings in state output wrap as Salt's do
+
+A state's warnings are now wrapped exactly as Salt wraps them, by a port
+of Python's `textwrap`: a hyphenated word breaks across lines, and a
+word too long for a line breaks at its last hyphen. The output already
+matched Salt everywhere else. DIVERGENCE 5.274.
+
 ### A signing tool for releases, with the key in AWS KMS
 
 SPEC 4.3's detached signature per artifact was deferred on where a

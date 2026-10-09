@@ -22980,6 +22980,48 @@ Tests:
 
 **Not covered:** no real host with a foreign PTR name was used; the cases
 are a fake resolver's. Only run on macOS.
+### 5.274 Warnings wrapped on whitespace, where Salt's break at hyphens
+
+5.245 ported Salt's highstate outputter and named one place it knowingly
+differed. Salt wraps a state's warnings with Python's `textwrap.fill`,
+which breaks inside a hyphenated word (`re-` at the end of one line,
+`issued` at the start of the next) and breaks a word too long for a line
+at its last hyphen. The renderer wrapped on whitespace only.
+
+`pyFill` (`internal/runner/textwrap.go`) ports TextWrapper's own steps,
+not an approximation of their result:
+- **`_munge_whitespace`:** `expandtabs(8)`, then each of Python's six
+  ASCII whitespace characters becomes a space.
+- **`wordsep_re.split`:** whitespace runs; em-dashes (`--` and longer)
+  between word characters; and words cut after a hyphen that has two
+  letters, or letter-hyphen-letter, behind it and a letter, possibly
+  across one more hyphen, ahead. Go's regexp has no lookaround, so the
+  alternatives are tried by hand, in the pattern's order, at each
+  position. So `10-20` does not break and `co-operate` does.
+- **`_wrap_chunks`:** greedy packing, whitespace dropped at line ends
+  and at line starts after the first, and a long chunk broken at its
+  last hyphen within the room left, or at the room left. Lengths are
+  counted in characters, as Python's `len` counts them.
+
+`TestFillMatchesPythonsTextwrap` holds `pyFill` to outputs made by
+Python 3.14.8's `textwrap.fill` with Salt's arguments: 12 chosen cases
+and 400 generated from seed 5272, mixing hyphenated words, numeric
+ranges, dash runs, punctuation, long words, tabs, newlines and
+non-ASCII letters. All 412 matched on the first run. Three breaks each
+failed it:
+- no breaking inside hyphenated words: 261 of the 400 differ;
+- no breaking a long word at its hyphen: 1 of 400;
+- no em-dash chunks: 18 of 400.
+
+The highstate comparison tree gains a warning whose Python wrap breaks
+`re-issued`. So CI's comparison with real Salt 3006, 3007 and 3008 now
+covers it too, against the Python each onedir build bundles.
+
+**Not covered:** the fixtures came from one Python. `wordsep_re` and
+`_wrap_chunks` have not changed since Python 3.7. Only run on macOS
+here; CI runs the Salt comparison.
+
+
 
 
 

@@ -28,8 +28,8 @@ import (
 // never produces it: colour; the terse, mixed, changes and filter
 // `state_output` modes; `state_compress_ids`; `state_output_pct`; and
 // the recursive rendering of an orchestration's changes as nested
-// highstates. Warnings are wrapped at 80 columns on whitespace only,
-// where Python's textwrap also breaks on hyphens.
+// highstates. Warnings are wrapped by a port of Python's textwrap
+// (pyFill), hyphens included.
 //
 // The identifiers it prints are spared from scrubbing, as everywhere a
 // run is rendered: they are the schema, and the hub reads them to find
@@ -134,7 +134,9 @@ func Highstate(host string, returns *value.Map, secrets *redact.Set) string {
 			} else {
 				text = append(text, pyStr(w))
 			}
-			lines = append(lines, "    Warnings: "+strings.TrimLeft(wrap(strings.Join(text, "\n"), 80, 14), " "))
+			pad := strings.Repeat(" ", 14)
+			lines = append(lines, "    Warnings: "+
+				strings.TrimLeft(pyFill(strings.Join(text, "\n"), 80, pad, pad), " \t\n\r\x0b\x0c"))
 		}
 	}
 
@@ -371,37 +373,4 @@ func padLeft(s string, width int) string {
 		return s
 	}
 	return strings.Repeat(" ", width-len(s)) + s
-}
-
-// wrap is textwrap.fill with Salt's arguments: every whitespace run is
-// one space, lines of at most width columns, each indented by indent,
-// and a word longer than a line broken across lines.
-func wrap(s string, width, indent int) string {
-	pad := strings.Repeat(" ", indent)
-	room := width - indent
-	var lines []string
-	line := ""
-	for _, word := range strings.Fields(s) {
-		for len(word) > room {
-			if line != "" {
-				lines = append(lines, pad+line)
-				line = ""
-			}
-			lines = append(lines, pad+word[:room])
-			word = word[room:]
-		}
-		switch {
-		case line == "":
-			line = word
-		case len(line)+1+len(word) <= room:
-			line += " " + word
-		default:
-			lines = append(lines, pad+line)
-			line = word
-		}
-	}
-	if line != "" {
-		lines = append(lines, pad+line)
-	}
-	return strings.Join(lines, "\n")
 }
