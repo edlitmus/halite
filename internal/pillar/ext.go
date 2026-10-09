@@ -82,10 +82,37 @@ func (c *Compiler) mergeExt(out *Compiled) {
 		if contributed == nil || contributed.Len() == 0 {
 			continue
 		}
+		// Everything an external source returns is secret, as
+		// extpillar.Bridged already treats it -- but that told only the
+		// hub's own redactor, through the callback it was built with.
+		// The list of secrets a hub sends a node with its pillar is
+		// collected from this compile's OnSecret, so it carried what the
+		// hub decrypted and none of what AWS Secrets Manager returned,
+		// and a node told which values to mask masked none of those.
+		// DIVERGENCE 5.256.
+		if c.Config.OnSecret != nil {
+			offerStrings(contributed, c.Config.OnSecret)
+		}
 		out.Pillar = value.Merge(out.Pillar, contributed, value.MergeOpts{
 			Strategy:   c.Config.Strategy,
 			MergeLists: c.Config.MergeLists,
 		}).(*value.Map)
 		out.Ext = append(out.Ext, src.Name())
+	}
+}
+
+// offerStrings hands every string leaf of v to onSecret.
+func offerStrings(v any, onSecret func(string)) {
+	switch t := v.(type) {
+	case *value.Map:
+		for _, e := range t.Entries() {
+			offerStrings(e.Val, onSecret)
+		}
+	case []any:
+		for _, item := range t {
+			offerStrings(item, onSecret)
+		}
+	case string:
+		onSecret(t)
 	}
 }
