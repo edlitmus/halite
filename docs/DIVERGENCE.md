@@ -21782,6 +21782,57 @@ Windows vet clean.
 - The relay's client certificate (`cmd/halite-hub/relay.go`) is still
   loaded once. It was not in this change.
 
+### 5.251 A node masked every pillar value, and an agentless run masked none
+
+SPEC 26.1 seeds the redactor with "every decrypted pillar value". A node
+fetching its pillar from the hub seeded it with **every** pillar value
+(`n.secrets.AddTree` over the whole pillar, `cmd/halite-node/enroll.go`),
+because the hub sent the compiled pillar and nothing saying which values
+had been encrypted. So any plain value -- an address, a host name, a path
+-- became `**********` in every comment that mentioned it. Seen on the
+estate: `host.present` printed "/etc/hosts would map ********** to
+r720.edlitmus.info" for a ZeroTier address that sat, unencrypted, in a
+pillar file rendered with `gpg`; `x509.certificate_managed` masked the
+same kind of address in its reason.
+
+The hub already knew. The compiler offers each value the `gpg` renderer
+decrypts, and each string an external pillar source returns, to
+`OnSecret`; the hub used it for its own redactor and the node-local
+compile used it for the node's. Only the hub-to-node path lost it.
+
+Now `/v1/pillar` answers with `secrets`: the values that compile
+decrypted, deduplicated, and nothing else. The node masks exactly those.
+The field is a pointer so absent and empty differ: a hub older than it
+sends none, and the node then masks every value as before, which is the
+safe direction for a fleet mid-upgrade; a hub that decrypted nothing
+sends an empty list. The values were already in the same response, over
+the same mTLS connection, so the list exposes nothing new.
+
+**The agentless path masked nothing at all.** `halite-hub ssh` compiles
+the target's pillar on the hub and pushes it with the job, and
+`applyOneshotContent` installed it without telling the redactor anything,
+so a decrypted value was printable in an agentless run's own output on
+the target. The push now carries the same list and the target seeds it
+(or, from an older hub, everything).
+
+Tests, each broken on purpose. Through a real `/v1/pillar` request, with
+the renderer's stand-in gpg: a `gpg`-rendered file with a plain address
+and an encrypted token names only the token, and a pillar with nothing
+encrypted names an empty list; sending no list, and listing the plain
+address too, each fail it. The agentless test runs real GnuPG with a
+throwaway key, and now also requires the target to be told exactly the
+decrypted value; collecting nothing fails it. On the node, a named token is
+masked and a plain address is not, and with no list both are masked;
+ignoring the list fails it. The agentless run's pushed secret is masked
+and its plain value is not; dropping the seeding fails it. `-race` clean
+on the hub, the node, transport and `halite-hub`.
+
+**Not covered:**
+- Not run on the fleet; the hub and nodes need rebuilding, and a hub must
+  be newer than this for its nodes to stop masking plain values.
+- The other half of the asymmetry, a secret printed in full as a map key
+  in a state's changes, is a separate change.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

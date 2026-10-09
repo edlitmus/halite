@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -236,5 +239,69 @@ func TestThePillarOptionsReachTheCompiler(t *testing.T) {
 	// The hub never compiles as though it were a node's own tree.
 	if cfg.Local {
 		t.Error("the hub compiled as Local")
+	}
+}
+
+// buildGPGStandIn compiles the renderer's stand-in gpg, which copies its
+// input to its output: a "decryption" that hands back the block itself.
+// Enough to see which values the hub reports as decrypted without a
+// keyring, which is what this file's tests are about.
+func buildGPGStandIn(t *testing.T) string {
+	t.Helper()
+	name := "gpg-stand-in"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	path := filepath.Join(t.TempDir(), name)
+	build := exec.Command("go", "build", "-o", path, "../render/testdata/gpgstandin")
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		t.Fatalf("building the stand-in gpg: %v", err)
+	}
+	return path
+}
+
+// The node is told which pillar values to redact: what the hub decrypted,
+// and not the plain values beside them in the same gpg-rendered file. A
+// pillar with nothing encrypted is answered with an empty list, not with
+// none, because none is what an older hub sends and makes the node mask
+// every value. DIVERGENCE 5.251.
+func TestThePillarResponseNamesOnlyWhatTheHubDecrypted(t *testing.T) {
+	const armor = "-----BEGIN PGP MESSAGE-----\n    c3RhbmQtaW4=\n    -----END PGP MESSAGE-----"
+	l := newLab(t).withPillar(t, map[string]string{
+		"top.sls":   "base:\n  'web*':\n    - hosts\n  'db*':\n    - plain\n",
+		"hosts.sls": "#!yaml|gpg\naddress: 10.11.12.13\ntoken: |\n    " + armor + "\n",
+		"plain.sls": "address: 10.11.12.14\n",
+	})
+	l.server.Pillar.GPG = render.GPGOptions{Binary: buildGPGStandIn(t)}
+
+	web := l.enrolled(t, "web1.example")
+	res, err := web.Pillar(context.Background(), transport.PillarRequest{
+		NodeID: "web1.example", Env: "base", Grains: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Secrets == nil {
+		t.Fatal("the hub named no secrets, so the node will mask every pillar value")
+	}
+	if len(*res.Secrets) != 1 || !strings.Contains((*res.Secrets)[0], "BEGIN PGP MESSAGE") {
+		t.Errorf("the hub named %q; want the one decrypted value", *res.Secrets)
+	}
+	for _, v := range *res.Secrets {
+		if strings.Contains(v, "10.11.12.13") {
+			t.Errorf("a plain value was named as a secret: %q", v)
+		}
+	}
+
+	db := l.enrolled(t, "db1.example")
+	res, err = db.Pillar(context.Background(), transport.PillarRequest{
+		NodeID: "db1.example", Env: "base", Grains: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Secrets == nil || len(*res.Secrets) != 0 {
+		t.Errorf("a pillar with nothing encrypted should name an empty list, got %v", res.Secrets)
 	}
 }

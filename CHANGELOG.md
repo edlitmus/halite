@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Only encrypted pillar values are masked, and agentless runs mask them too
+
+A node fetching its pillar from the hub masked every pillar value, so a
+plain address or host name showed as `**********` in state comments. The
+hub now tells the node which values it decrypted, and only those are
+masked; a hub older than this keeps the old behaviour. `halite-hub ssh`
+targets, which masked nothing from their pushed pillar, now mask the
+decrypted values too.
+
 ### halite-api serves a renewed certificate without a restart
 
 `halite-api` loaded its serving certificate once at startup, so a
