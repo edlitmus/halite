@@ -884,7 +884,7 @@ var lookupCNAME = net.DefaultResolver.LookupCNAME
 // which is when the control plane most needs to start. Past the
 // deadline the hub issues for the names it already has: localhost, the
 // loopback addresses, the hostname and the listen address, and `--names`
-// for anything else. DIVERGENCE 5.263.
+// for anything else. DIVERGENCE 5.264.
 const hostLookupTimeout = 2 * time.Second
 
 // serverNames is what a node may dial this hub by. A name missing from

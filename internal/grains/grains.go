@@ -144,7 +144,7 @@ var fqdnResolver hostResolver = net.DefaultResolver
 // name. They had no bound, and grains are collected by every node
 // command: on a host whose DNS was unreachable, a cron-driven highstate
 // waited on the resolver before it began. Past the deadline the grain is
-// the hostname, as it is when the lookups fail. DIVERGENCE 5.263.
+// the hostname, as it is when the lookups fail. DIVERGENCE 5.264.
 const fqdnLookupTimeout = 2 * time.Second
 
 // resolveFQDN finds the fully qualified name without requiring a working

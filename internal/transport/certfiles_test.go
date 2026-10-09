@@ -98,3 +98,33 @@ func TestARenewedClientCertificateIsPresentedOnANewConnection(t *testing.T) {
 		t.Errorf("the renewal should be said once, was said %d times: %q", len(changed), changed)
 	}
 }
+
+// Renew works on a client whose certificate comes from CertFiles before
+// it has made any other request. It checked Cert, which such a client
+// has not loaded until its first request, and refused to renew with
+// "renewal needs the certificate being renewed" -- and a relay's renewal
+// can be its first request. DIVERGENCE 5.263.
+func TestRenewLoadsACertificateFromFiles(t *testing.T) {
+	var presented string
+	f := newFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		presented = pki.SerialString(r.TLS.PeerCertificates[0])
+		WriteJSON(w, http.StatusOK, EnrollResponse{NodeID: "relay1.example", Cert: "renewed"})
+	}))
+	dir := t.TempDir()
+	certPath, keyPath := filepath.Join(dir, "node.crt"), filepath.Join(dir, "node.key")
+	serial := f.writeNodePair(t, "relay1.example", certPath, keyPath)
+	certs, err := certreload.NewClient(certPath, keyPath, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{HubURL: f.url, CA: f.ca.Cert, ServerName: "localhost", CertFiles: certs}
+
+	key, _ := pki.GenerateKey(pki.ECDSAP256)
+	got, err := client.Renew(context.Background(), key, "relay1.example")
+	if err != nil {
+		t.Fatalf("a file-backed client could not renew before its first request: %v", err)
+	}
+	if string(got.CertPEM) != "renewed" || presented != serial {
+		t.Errorf("renewal got %q presenting %s, want the hub's answer presenting %s", got.CertPEM, presented, serial)
+	}
+}

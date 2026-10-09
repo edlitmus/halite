@@ -465,6 +465,12 @@ func (c *Client) Enroll(ctx context.Context, key crypto.Signer, nodeID, token st
 // Renew presents a new request on an authenticated connection. SPEC
 // 7.4: no operator, no token.
 func (c *Client) Renew(ctx context.Context, key crypto.Signer, nodeID string) (*Enrollment, error) {
+	// A client whose certificate comes from CertFiles has none until its
+	// first request loads it, and a relay's renewal can be that first
+	// request; asking for the HTTP client loads it.
+	if _, err := c.client(); err != nil {
+		return nil, err
+	}
 	if c.Cert == nil {
 		return nil, fmt.Errorf("renewal needs the certificate being renewed")
 	}

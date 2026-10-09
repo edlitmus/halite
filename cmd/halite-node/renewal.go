@@ -4,13 +4,11 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/renewal"
 )
 
 // lockIdentity takes identityMu and returns its release. A node built
@@ -45,100 +43,17 @@ func (n *node) renewIdentity(args *cli.Args, alg pki.KeyAlgorithm) (*x509.Certif
 	// they were rewritten would present the serial just denied.
 	defer n.lockIdentity()()
 
-	if alg == "" {
-		current, err := files.ReadKey(pki.NodeKeyFile)
-		if err != nil {
-			return nil, "", err
-		}
-		if alg, err = pki.AlgorithmOf(current); err != nil {
-			return nil, "", err
-		}
-	}
-	// A new key at every renewal, so that a stolen one has the bounded
-	// life SPEC 7.4 promises rather than a bounded certificate over a
-	// permanent key.
-	key, err := pki.GenerateKey(alg)
+	got, err := renewal.Identity(context.Background(), client, files, n.nodeID, alg)
 	if err != nil {
-		return nil, "", err
+		return nil, got.Aside, err
 	}
-	got, err := client.Renew(context.Background(), key, n.nodeID)
-	if err != nil {
-		return nil, "", err
-	}
-	// The key is written only once the hub has issued against it: a
-	// node that replaced its key and then failed to get a certificate
-	// would have locked itself out.
-	aside, err := setRenewedKeyAside(files, time.Now())
-	if err != nil {
-		return nil, "", err
-	}
-	if err := files.WriteKey(pki.NodeKeyFile, key); err != nil {
-		return nil, aside, err
-	}
-	if err := writeIdentity(files, got); err != nil {
-		return nil, aside, err
-	}
-	fresh, err := files.ReadCert(pki.NodeCertFile)
-	if err != nil {
-		return nil, aside, err
-	}
-	// Only now, with the new key and its certificate both written and
-	// read back: until then an earlier key is still the way back.
-	if removed, err := pruneRenewedKeys(files, aside); err != nil {
+	if got.PruneErr != nil {
 		n.log.Warn("could not remove a key an earlier renewal set aside",
-			"error", err.Error(), "removed", len(removed))
-	} else if len(removed) > 0 {
-		n.log.Info("removed keys earlier renewals set aside", "count", len(removed))
+			"error", got.PruneErr.Error(), "removed", len(got.Pruned))
+	} else if len(got.Pruned) > 0 {
+		n.log.Info("removed keys earlier renewals set aside", "count", len(got.Pruned))
 	}
-	return fresh, aside, nil
-}
-
-// renewedKeyPrefix names a key a renewal moved aside, as opposed to one
-// `enroll --force` did. They used to share `node.key.<time>`, and
-// nothing pruned either, so a node collected a private key for every
-// renewal -- one every 45 days on the default lifetime -- each for a
-// certificate the hub had already revoked (DIVERGENCE 5.222). Only the
-// renewal's are pruned: a key an operator moved aside by re-enrolling
-// was a decision, and may be the one copy of an identity they meant to
-// keep.
-const renewedKeyPrefix = pki.NodeKeyFile + ".renewed."
-
-// setRenewedKeyAside moves the current key to node.key.renewed.<UTC time>
-// and returns where.
-func setRenewedKeyAside(files pki.Files, now time.Time) (string, error) {
-	aside := files.Path(renewedKeyPrefix + now.UTC().Format("20060102T150405"))
-	if err := atomicfile.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
-		return "", err
-	}
-	return aside, nil
-}
-
-// pruneRenewedKeys removes every key an earlier renewal set aside, keeping
-// keep -- the one this renewal just made, which is the way back if the
-// new identity turns out to be bad. A key named the old way, before
-// renewals were told apart from re-enrollments, is left alone: it cannot
-// be told which it was.
-func pruneRenewedKeys(files pki.Files, keep string) ([]string, error) {
-	entries, err := os.ReadDir(files.Dir)
-	if err != nil {
-		return nil, err
-	}
-	var removed []string
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasPrefix(name, renewedKeyPrefix) {
-			continue
-		}
-		path := files.Path(name)
-		if path == keep {
-			continue
-		}
-		if err := os.Remove(path); err != nil {
-			return removed, err
-		}
-		removed = append(removed, path)
-	}
-	return removed, nil
+	return got.Cert, got.Aside, nil
 }
 
 // renewalCheckEvery is how often the connect loop looks at the
@@ -175,33 +90,10 @@ func (n *node) keepRenewed(ctx context.Context, args *cli.Args) {
 }
 
 // runRenewals is keepRenewed's loop with the two things it touches
-// passed in, so a test can drive the schedule without a hub.
+// passed in, so a test can drive the schedule without a hub. The loop is
+// renewal.Loop, which a relay's upstream identity runs too.
 func (n *node) runRenewals(ctx context.Context,
 	current func() (*x509.Certificate, error),
 	renew func() (*x509.Certificate, error)) {
-	for {
-		every := time.Hour
-		cert, err := current()
-		switch {
-		case err != nil:
-			n.log.Warn("could not read this node's certificate to see whether it is due for renewal",
-				"component", "pki", "error", err.Error())
-		case needsRenewal(cert):
-			every = renewalCheckEvery(cert)
-			if fresh, err := renew(); err != nil {
-				n.log.Warn("renewing this node's certificate failed; trying again at the next check",
-					"component", "pki", "expires", cert.NotAfter.UTC().Format(time.RFC3339),
-					"next_check", every.String(), "error", err.Error())
-			} else {
-				every = renewalCheckEvery(fresh)
-			}
-		default:
-			every = renewalCheckEvery(cert)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(every):
-		}
-	}
+	renewal.Loop(ctx, "this node's", current, renew, n.log.Warn)
 }

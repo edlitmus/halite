@@ -24,7 +24,7 @@ func (r silentResolver) LookupAddr(ctx context.Context, _ string) ([]string, err
 // The fqdn grain does not wait on a resolver that never answers: past
 // fqdnLookupTimeout it is the hostname, as when the lookups fail. Every
 // node command collects grains, and the lookups had no deadline.
-// DIVERGENCE 5.263.
+// DIVERGENCE 5.264.
 func TestTheFQDNGrainDoesNotWaitForDNS(t *testing.T) {
 	defer func(orig hostResolver) { fqdnResolver = orig }(fqdnResolver)
 	fqdnResolver = silentResolver{t}

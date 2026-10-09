@@ -22477,7 +22477,103 @@ README lists what has not been run:
 
 
 
-### 5.263 The hub would not start until DNS answered
+### 5.263 A relay never renewed itself, and the guide to setting one up did not work
+
+5.254 made a relay present a renewed upstream certificate without a
+restart, and left two things open. The operator asked for both.
+
+**Nothing renewed a relay's identity.** A node's `connect` renews its
+certificate at half its life (5.195). A relay runs `halite-hub serve`,
+which renewed nothing, so its upstream certificate expired 90 days after
+enrolment. From then on the relay was refused upstream and its whole
+segment went dark, unless somebody had a cron line running
+`halite-node renew` for it. The relay now renews it itself
+(`keepRelayRenewed`): a new key, the upstream's certificate for it, both
+written to `relay_pki_dir`, the old key set aside. The upstream ends the
+relay's stream as it renews, and the relay reconnects on the new pair,
+which its client reads from disk (5.254).
+
+It is the node's renewal, not a copy. The sequence (new key, `Renew`, set
+the old key aside, write the key and then the certificate, read it back,
+prune earlier set-aside keys) and the check loop moved from
+`cmd/halite-node` to `internal/renewal`, and both programs call it. The
+node's behaviour and messages are unchanged, except that the loop names
+whose certificate it means ("this node's", "this relay's upstream"). A
+hub that is a relay logs about two certificates, and #276 added the
+hub's own. `transport.Client.Renew` checked `Cert`, which a client
+reading its certificate from `CertFiles` has not loaded until its first
+request, so a relay renewing before any other request was refused with
+"renewal needs the certificate being renewed". It now loads first. A
+pair given with `--upstream-cert` or `--upstream-key` outside
+`relay_pki_dir` is not renewed, and the relay says so at startup: a
+renewal writes to the directory, and would replace a pair the relay is
+not presenting.
+
+**The setup guide did not produce a working relay.** Followed literally:
+- The relay hub's configuration had no `node_id`, as the guide said, and
+  the relay refused to start without one ("a relay needs `node_id`").
+  Given one, the configuration loader warned that the key "is not
+  recognised and was ignored" while the relay went on reading it. The
+  relay now takes its identity from its certificate, which is what the
+  guide already said it was, and is what the upstream authenticates and
+  its policy binds.
+- The enrolment ran `halite-node enroll --config relay-upstream.yaml`
+  and never said what that file holds: the upstream as `hub`, the
+  relay's `node_id`, and a `pki_dir` that is the relay hub's
+  `relay_pki_dir`.
+- It used the default config root. `enroll` pins the identity it
+  enrolled with in `<root>/node_id`, and a node without `node_id` in its
+  configuration reads its identity from that file. So enrolling a relay
+  under the default root, on a host whose own node had not pinned yet,
+  renamed that node to the relay. Seen as written: the run below wrote
+  `relay1.example` to `<root>/node_id`. The guide now gives the
+  enrolment its own `--root`.
+- It did not say that the first `enroll` leaves the request pending and
+  must be run again after `keys accept`, or given `--wait`.
+- It did not say that the upstream reads `accept_relays` and its policy
+  only at startup, and has no reload. Editing the policy on a running
+  upstream changed nothing, as seen in the run below.
+- It said nothing renews the certificate and gave a cron line. That is
+  now true only of a build before this one.
+
+`docs/operations.md` "Relays" is rewritten from the run below. The
+`relay_pki_dir` reference and the example configuration say where the
+identity comes from and that it is renewed.
+
+Seen with built binaries on Linux, following the rewritten guide with
+throwaway hubs on loopback and an upstream issuing 2-minute
+certificates:
+- The relay started with no `node_id`, named itself `relay1.example`
+  from its certificate, and connected.
+- Twice, about a minute after each issue, it logged "renewed this
+  relay's upstream certificate". The upstream logged "certificate
+  renewed" and ended the stream, and the relay reconnected on the new
+  serial with no refusal and no warning. After the second renewal only
+  that renewal's set-aside key remained.
+- A node enrolled with the relay. The upstream's `keys list` showed the
+  relay alone. `test.ping` submitted upstream came back `True` from the
+  node, and `manage.up` upstream listed both.
+- After the upstream was restarted, the relay reconnected by itself.
+
+Tests, each broken on purpose:
+- A file-backed client renews before its first request. Removing the
+  load fails it with the message above.
+- The relay's identity is its certificate's, and a key outside the
+  directory is not renewable. Calling every pair renewable fails it.
+- The node's existing loop tests now drive `renewal.Loop`. Making it
+  never renew fails them.
+- The key-aside and prune test moved with the code.
+
+**Not covered:**
+- Only on Linux and only on loopback. Not on FreeBSD, and no relay runs
+  in this estate.
+- The relay's renewal holds no lock against its own reconnects, as the
+  node's does. A reconnect between the key and certificate writes would
+  find a mismatched pair; the client then keeps the previous pair and
+  says once that the new one cannot be loaded. This was not provoked;
+  neither run showed it.
+- `halite-api`'s operator certificate is still loaded once (5.254).
+### 5.264 The hub would not start until DNS answered
 
 5.259's end-to-end test stalled for over ten seconds between the hub
 creating its CA and issuing its certificate, and passed only with
@@ -22525,6 +22621,8 @@ targeting matches, so it is noted, not done.
 9.3 seconds comes from one measurement. Only run on macOS. The
 resolver's behaviour with DNS truly unreachable was not reproduced; the
 bound is what makes it irrelevant.
+
+
 
 ## 6. Everything else not started
 

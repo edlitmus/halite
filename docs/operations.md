@@ -839,21 +839,18 @@ as a single client (SPEC 5.3). Use one for a segment that cannot reach
 the main hub directly, or one whose returns must survive the link
 between them going down.
 
-The relay enrols with its upstream as an ordinary node, so set it up in
-that order:
+The relay enrols with its upstream as an ordinary node, then runs as a
+hub. Set it up in this order.
 
-```sh
-# On the upstream hub: accept relays, and grant this one the right.
-accept_relays: true          # in the hub configuration
+**1. On the upstream hub**, accept relays, and grant this one the right
+to proxy. In the hub configuration:
 
-# On the relay: enrol with the upstream, then run as a relay.
-halite-node enroll --config /usr/local/etc/halite/relay-upstream.yaml \
-    --hub-fingerprint 'ab:cd:...'
-halite-hub keys accept relay1.example    # on the upstream
+```yaml
+accept_relays: true
 ```
 
-And in the upstream's policy, a role holding `relay.proxy` and a binding
-for the relay's node certificate:
+and in its policy, a role holding `relay.proxy` and a binding for the
+relay's node certificate:
 
 ```yaml
 roles:
@@ -864,44 +861,86 @@ bindings:
     roles: ['relay']
 ```
 
+A hub reads both only when it starts (there is no reload), so restart
+the upstream. Then
 `halite-hub policy test 'node:relay1.example' '*' relay.proxy --runner`
-on the upstream should answer `allowed by role "relay" rule 0`. A rule
-that names its principal inside the role — `principals:` beside
-`runners:` — loads without complaint and grants nothing; the principal
-belongs in `bindings`.
+there should answer `allowed by role "relay" rule 0`. A rule that names
+its principal inside the role — `principals:` beside `runners:` — loads
+without complaint and grants nothing; the principal belongs in
+`bindings`.
 
-The relay's own hub configuration then names the upstream:
+**2. On the relay, enrol with the upstream.** The enrolment is
+`halite-node`'s, with a configuration of its own whose `pki_dir` is where
+the relay hub will look for the certificate:
+
+```yaml
+# /usr/local/etc/halite/relay/node.yaml
+hub: hub.example                          # the upstream
+node_id: relay1.example                   # the name the binding above names
+pki_dir: /var/db/halite/relay-pki         # the relay hub's relay_pki_dir
+```
+
+```sh
+halite-node enroll --root /usr/local/etc/halite/relay \
+    --config /usr/local/etc/halite/relay/node.yaml \
+    --hub-fingerprint 'ab:cd:...'         # `halite-hub keys fingerprint` on the upstream
+halite-hub keys accept relay1.example     # on the upstream
+halite-node enroll --root /usr/local/etc/halite/relay \
+    --config /usr/local/etc/halite/relay/node.yaml   # again, to collect the certificate
+```
+
+The first `enroll` leaves the request pending and says so; the second,
+after `keys accept`, writes `node.crt` beside the key. `--wait` on the
+first does both in one command.
+
+Give the enrolment its own `--root`, as above, and its own `node_id`.
+`enroll` pins the identity it enrolled with in `<root>/node_id`, and a
+node with no `node_id` in its configuration reads its identity from that
+file: enrolling the relay under the default root, on a host whose own
+node has not pinned an identity yet, would make that node call itself
+`relay1.example`. Without a `node_id`, the relay's identity would be the
+host's name, which is the name the host's own node goes by.
+
+**3. Run the relay.** Its hub configuration names the upstream and the
+directory it enrolled into:
 
 ```yaml
 relay: true
 relay_upstream: hub.example
-relay_pki_dir: /var/db/halite/relay-pki      # what it enrolled with
+relay_pki_dir: /var/db/halite/relay-pki      # the enrolment's pki_dir
 relay_spool_dir: /var/db/halite/relay-spool  # returns during an outage
 relay_event_tags:
     - halite/job/**                          # empty forwards nothing
 ```
 
-There is no `node_id` here: a hub does not read one, and its identity
-upstream is the certificate in `relay_pki_dir`.
+If `relay_upstream` is an address rather than a name in the upstream's
+certificate, set `relay_server_name` to one that is.
 
-**Nothing renews that certificate by itself.** A node's `connect` renews
-its own at half its life, but the relay runs `halite-hub serve`, which
-does not, so the relay's identity expires 90 days after it enrolled
-unless `halite-node renew` is run for it with the configuration it
-enrolled with. Run it daily; before the halfway point it changes nothing
-and exits 0:
+There is no `node_id` here: a hub does not read one. The relay's identity
+upstream is the one its certificate in `relay_pki_dir` names, and its
+startup line says it (`relay starting ... relay=relay1.example`). A build
+before DIVERGENCE 5.263 refused to start without `node_id`, and warned
+that the setting was not recognised when it was given; on one of those,
+set it to the certificate's name and ignore the warning.
 
-```
-17 3 * * * root /usr/local/bin/halite-node renew --config /usr/local/etc/halite/relay-upstream.yaml
-```
+**The relay renews that certificate itself**, at half its life, as a
+node's `connect` renews a node's: a new key, the upstream's certificate
+for it, both written to `relay_pki_dir`, the previous key kept beside
+them as `node.key.renewed.<UTC time>`. The upstream ends the relay's
+stream as it renews, and the relay reconnects on the new certificate at
+its next retry, about ten seconds later. The log says
+"renewed this relay's upstream certificate", then "the client certificate
+changed on disk and is now being presented". A failure is logged at
+warning level and tried again at the next check; the certificate keeps
+working until it expires.
 
-The running relay picks the renewed certificate up by itself: the
-upstream ends its stream when it renews, and the relay reconnects on the
-new certificate at its next retry, about ten seconds later, logging "the
-client certificate changed on disk and is now being presented". A relay
-on a build before DIVERGENCE 5.254 does not: it goes on presenting the
-certificate the upstream has just revoked and is refused until its hub is
-restarted, so restart it after each renewal.
+A relay whose certificate was given with `--upstream-cert` or
+`--upstream-key` rather than `relay_pki_dir` is not renewed, and says so
+at startup: a renewal writes to the directory. On a build before
+DIVERGENCE 5.263 nothing renews it either; run `halite-node renew` with
+the enrolment's `--root` and `--config` daily from cron — before the
+halfway point it changes nothing and exits 0 — and, before 5.254,
+restart the relay after each renewal.
 
 Nodes behind the relay enrol with the relay, not with the upstream, and
 their keys are accepted there. The upstream never holds a key for them —

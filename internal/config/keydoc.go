@@ -446,7 +446,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"relay_pki_dir": {
 		Group:  "Relays",
-		Detail: "The key material this relay enrolled with upstream, which is separate from the CA it issues its own nodes' certificates from. Two identities in two directories: a relay is a client above and an authority below.",
+		Detail: "The key material this relay enrolled with upstream, which is separate from the CA it issues its own nodes' certificates from. Two identities in two directories: a relay is a client above and an authority below. The certificate here is the relay's identity upstream, so a hub reads no `node_id`, and the relay renews it at half its life, writing the new key and certificate back to this directory.",
 	},
 	"relay_server_name": {
 		Group:  "Relays",

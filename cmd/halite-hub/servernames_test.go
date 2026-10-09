@@ -14,7 +14,7 @@ import (
 // and no longer, and the hub then issues for the names it already has.
 // The lookup had no deadline, and an unresolvable hostname cost 9.3
 // seconds on the development Mac before the hub could listen.
-// DIVERGENCE 5.263.
+// DIVERGENCE 5.264.
 func TestServerNamesDoNotWaitForDNS(t *testing.T) {
 	asked := false
 	defer func(orig func(context.Context, string) (string, error)) { lookupCNAME = orig }(lookupCNAME)
