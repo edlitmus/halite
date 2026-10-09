@@ -354,6 +354,7 @@ server".
 # hub.yaml
 ext_pillar:
   - aws_secrets_manager:
+      secret: true
       region: us-east-1
       secrets:
         - name: database.creds
@@ -369,6 +370,15 @@ Sources run after the top file, in the order listed, each seeing what
 the ones before it produced. A source that fails fails the whole
 compilation; `fail: ignore` inside a source's own block is the exception
 for one that is genuinely optional.
+
+What a source returns is masked wherever it would print — state comments
+and changes, the hub's and nodes' logs, `halite-node pillar items` —
+because the hub cannot tell which of its values are credentials. A
+source of ordinary data, such as an inventory whose host names and
+addresses should be readable, says `secret: false` in its block. Like
+`fail`, `secret` is the hub's and is not passed to the extension. It is
+refused on `aws_secrets_manager`, which returns credentials and nothing
+else, so that source is secret however it is configured.
 
 ## Writing one without Go
 

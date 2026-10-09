@@ -165,3 +165,60 @@ func TestOrderIsPreserved(t *testing.T) {
 		t.Errorf("order is %v", names)
 	}
 }
+
+// `secret` is read and stripped like `fail`, in both block shapes, and a
+// source that says nothing is secret. DIVERGENCE 5.257.
+func TestSecretIsReadAndStripped(t *testing.T) {
+	specs, err := parseYAML(t, `
+ext_pillar:
+  - inventory:
+      secret: false
+      url: https://cmdb.example
+  - listed:
+      - secret: false
+      - path: /srv/x
+  - vault:
+      mount: kv
+`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !specs[0].Plain || !specs[1].Plain {
+		t.Errorf("`secret: false` did not take: %+v", specs[:2])
+	}
+	if specs[2].Plain {
+		t.Error("a source that says nothing should be secret")
+	}
+	if block := specs[0].Config.(*value.Map); block.Has("secret") || !block.Has("url") {
+		t.Errorf("the mapping block handed over is %v", block)
+	}
+	if list := specs[1].Config.([]any); len(list) != 1 {
+		t.Errorf("the `secret` entry was passed through: %v", list)
+	}
+}
+
+// `secret` takes a boolean, and a typo is refused rather than read as
+// one way or the other.
+func TestSecretMustBeABoolean(t *testing.T) {
+	_, err := parseYAML(t, "ext_pillar:\n  - vault:\n      secret: maybe\n", false)
+	if err == nil || !strings.Contains(err.Error(), "true or false") {
+		t.Errorf("secret: maybe gave %v", err)
+	}
+}
+
+// Secrets Manager returns credentials and nothing else, so it cannot be
+// configured plain, in either shape, while saying so explicitly is fine.
+func TestAWSSecretsManagerCannotBeConfiguredPlain(t *testing.T) {
+	for _, src := range []string{
+		"ext_pillar:\n  - aws_secrets_manager:\n      secret: false\n      region: us-east-1\n",
+		"ext_pillar:\n  - aws_secrets_manager:\n      - secret: false\n      - name: k\n",
+	} {
+		if _, err := parseYAML(t, src, false); err == nil || !strings.Contains(err.Error(), "refused") {
+			t.Errorf("aws_secrets_manager with secret: false was accepted: %v\n%s", err, src)
+		}
+	}
+	specs, err := parseYAML(t, "ext_pillar:\n  - aws_secrets_manager:\n      secret: true\n", false)
+	if err != nil || specs[0].Plain {
+		t.Errorf("secret: true on aws_secrets_manager: %+v %v", specs, err)
+	}
+}

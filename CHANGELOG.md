@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### An external pillar source can be marked as not secret
+
+Every value an external pillar source returned was masked. A source's
+block in `ext_pillar` now takes `secret: false` for a source of ordinary
+data, whose values then print like the rest of the pillar. It defaults to
+true. `aws_secrets_manager` is always secret, and `secret: false` on it
+stops the hub from starting.
+
 ### `halite-node pillar` masks only the secrets
 
 `halite-node pillar items`, `item` and `get` replaced every string value

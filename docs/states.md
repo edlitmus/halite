@@ -287,6 +287,7 @@ install it or write another.
 # on the hub
 ext_pillar:
   - aws_secrets_manager:
+      secret: true
       region: us-east-1
       secrets:
         - name: database.creds
@@ -318,6 +319,11 @@ pillar, because the run proceeds with it and the state cannot tell an
 absent secret from one that failed to arrive. Set `ext_pillar_fail:
 ignore`, or `- fail: ignore` inside one source's block, only where the
 source is genuinely optional.
+
+Everything this source returns is masked in output, as any secret is,
+and `secret: false` in its block is refused: it returns credentials and
+nothing else. Another external source can be marked `secret: false` when
+what it returns is ordinary data.
 
 A source name this build does not have is refused when the hub starts.
 

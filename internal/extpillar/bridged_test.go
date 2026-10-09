@@ -175,6 +175,44 @@ func TestAnUnloadedExtensionIsAnError(t *testing.T) {
 	}
 }
 
+// A source configured `secret: false` offers nothing to the redactor:
+// what it returns is ordinary data. DIVERGENCE 5.257.
+func TestAPlainSourceOffersNothing(t *testing.T) {
+	f := &fakeCaller{reply: `{"host":"cmdb.example","addr":"10.1.2.3"}`}
+	var offered []string
+	src := source(f)
+	src.Plain = true
+	src.OnSecret = func(v string) { offered = append(offered, v) }
+	if _, err := src.Pillar(context.Background(), pillar.ExtRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(offered) != 0 {
+		t.Errorf("a plain source offered %v", offered)
+	}
+	if src.Secret() {
+		t.Error("a plain source reports itself secret")
+	}
+}
+
+// And Sources carries the setting from the configuration to the source.
+func TestSourcesCarryThePlainSetting(t *testing.T) {
+	rt := &extension.Runtime{PoolSize: 1}
+	t.Cleanup(rt.Close)
+	if err := rt.Add(&extension.Bundle{
+		Dir:      t.TempDir(),
+		Manifest: &extension.Manifest{Name: "inventory", Version: "1.0.0", Kind: "pillar"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := Sources([]Spec{{Name: "inventory", Plain: true}}, rt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sources[0].Secret() {
+		t.Error("`secret: false` in the configuration did not reach the source")
+	}
+}
+
 // Every source `Sources` builds carries the callback it was given.
 //
 // The hub passed nil here for as long as external pillar has existed,

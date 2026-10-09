@@ -37,6 +37,12 @@ type ExtSource interface {
 	// FailSoft reports whether a failure is a warning rather than an
 	// error, which is `ext_pillar_fail: ignore` for this source.
 	FailSoft() bool
+	// Secret reports whether what this source returns is masked in
+	// output: its strings are handed to OnSecret, and so reach the hub's
+	// redactor and the list of secrets a node is told to mask. It is the
+	// source's `secret` setting, true unless configured otherwise.
+	// DIVERGENCE 5.257.
+	Secret() bool
 }
 
 // mergeExt runs the configured external sources and merges what they
@@ -82,15 +88,20 @@ func (c *Compiler) mergeExt(out *Compiled) {
 		if contributed == nil || contributed.Len() == 0 {
 			continue
 		}
-		// Everything an external source returns is secret, as
-		// extpillar.Bridged already treats it -- but that told only the
-		// hub's own redactor, through the callback it was built with.
+		// What a secret source returns is secret, as extpillar.Bridged
+		// already treats it -- but that told only the hub's own
+		// redactor, through the callback it was built with.
 		// The list of secrets a hub sends a node with its pillar is
 		// collected from this compile's OnSecret, so it carried what the
 		// hub decrypted and none of what AWS Secrets Manager returned,
 		// and a node told which values to mask masked none of those.
 		// DIVERGENCE 5.256.
-		if c.Config.OnSecret != nil {
+		//
+		// A source configured `secret: false` returns ordinary data,
+		// and offering it would mask its addresses and names wherever
+		// they appear, which is the over-masking 5.256 removed for the
+		// rest of the pillar. 5.257.
+		if c.Config.OnSecret != nil && src.Secret() {
 			offerStrings(contributed, c.Config.OnSecret)
 		}
 		out.Pillar = value.Merge(out.Pillar, contributed, value.MergeOpts{

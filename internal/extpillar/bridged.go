@@ -48,6 +48,8 @@ type Bridged struct {
 	Config any
 	// Ignore is `fail: ignore` for this source.
 	Ignore bool
+	// Plain is `secret: false` for this source. See Spec.Plain.
+	Plain bool
 	// OnSecret receives every string the source returns, for the
 	// redactor of SPEC 26.1.
 	OnSecret func(string)
@@ -58,6 +60,10 @@ func (b *Bridged) Name() string { return b.SourceName }
 
 // FailSoft reports `ext_pillar_fail: ignore`.
 func (b *Bridged) FailSoft() bool { return b.Ignore }
+
+// Secret reports whether what this source returns is masked: true
+// unless it was configured `secret: false`.
+func (b *Bridged) Secret() bool { return !b.Plain }
 
 // request is what the extension is handed.
 //
@@ -114,13 +120,14 @@ func (b *Bridged) Pillar(ctx context.Context, req pillar.ExtRequest) (*value.Map
 			b.SourceName, value.TypeName(decoded))
 	}
 
-	// Everything an external pillar source returns is treated as
-	// secret. The hub cannot tell which of a source's values are
-	// credentials -- only the source knows, and it is out of process --
-	// so the safe reading is that a value which arrived on the pillar
-	// path is pillar. Over-redacting a log is recoverable; printing a
-	// password is not.
-	if b.OnSecret != nil {
+	// Everything a secret source returns is treated as secret. The hub
+	// cannot tell which of a source's values are credentials -- only the
+	// source knows, and it is out of process -- so the safe reading is
+	// that every one is, and that is the default. A source whose
+	// configuration says `secret: false` returns ordinary data, and is
+	// taken at its word (DIVERGENCE 5.257); `aws_secrets_manager` cannot
+	// be configured so (AlwaysSecret).
+	if b.OnSecret != nil && b.Secret() {
 		offerStrings(out, b.OnSecret)
 	}
 	return out, nil
@@ -181,6 +188,7 @@ func Sources(specs []Spec, runtime *extension.Runtime, onSecret func(string)) ([
 			Ext:        loaded,
 			Config:     spec.Config,
 			Ignore:     spec.Ignore,
+			Plain:      spec.Plain,
 			OnSecret:   onSecret,
 		})
 	}

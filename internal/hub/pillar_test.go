@@ -313,6 +313,7 @@ type secretsSource struct{}
 
 func (secretsSource) Name() string   { return "aws_secrets" }
 func (secretsSource) FailSoft() bool { return false }
+func (secretsSource) Secret() bool   { return true }
 func (secretsSource) Pillar(context.Context, pillar.ExtRequest) (*value.Map, error) {
 	return value.MapOf("aws_secrets", value.MapOf(
 		"smtp", value.MapOf("password", "from-secrets-manager", "port", int64(587)))), nil
@@ -341,5 +342,39 @@ func TestThePillarResponseNamesWhatAnExternalSourceReturned(t *testing.T) {
 	}
 	if got := strings.Join(*res.Secrets, ","); got != "from-secrets-manager" {
 		t.Errorf("the hub named %q; want the one value Secrets Manager returned, and not the plain relay", got)
+	}
+}
+
+// plainSource stands in for an inventory: an external source configured
+// `secret: false`, whose values are ordinary data.
+type plainSource struct{}
+
+func (plainSource) Name() string   { return "inventory" }
+func (plainSource) FailSoft() bool { return false }
+func (plainSource) Secret() bool   { return false }
+func (plainSource) Pillar(context.Context, pillar.ExtRequest) (*value.Map, error) {
+	return value.MapOf("inventory", value.MapOf("rack", "row-4-rack-2")), nil
+}
+
+// A source configured `secret: false` is not named to the node, while a
+// secret one beside it still is. DIVERGENCE 5.257.
+func TestAPlainExternalSourceIsNotNamedAsSecret(t *testing.T) {
+	l := newLab(t).withPillar(t, map[string]string{
+		"top.sls":    "base:\n  '*':\n    - common\n",
+		"common.sls": "relay: mail.example\n",
+	})
+	l.server.Pillar.Ext = []pillar.ExtSource{plainSource{}, secretsSource{}}
+	web := l.enrolled(t, "web1.example")
+	res, err := web.Pillar(context.Background(), transport.PillarRequest{
+		NodeID: "web1.example", Env: "base", Grains: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Secrets == nil {
+		t.Fatal("the hub named no secrets")
+	}
+	if got := strings.Join(*res.Secrets, ","); got != "from-secrets-manager" {
+		t.Errorf("the hub named %q; want only the secret source's value", got)
 	}
 }

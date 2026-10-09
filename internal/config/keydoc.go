@@ -234,7 +234,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"ext_pillar": {
 		Group:  "The tree: states and pillar",
-		Detail: "External pillar sources, as a list of single-key mappings in Salt's own shape. A source is compiled in rather than loaded from a Python file on the file server; `aws_secrets_manager` is the one this build ships, and a name it does not know is refused at startup rather than contributing nothing in silence. Sources run after the top file, in the order listed, and each sees what the ones before it produced.",
+		Detail: "External pillar sources, as a list of single-key mappings in Salt's own shape. A source is compiled in rather than loaded from a Python file on the file server; `aws_secrets_manager` is the one this build ships, and a name it does not know is refused at startup rather than contributing nothing in silence. Sources run after the top file, in the order listed, and each sees what the ones before it produced. Two keys in a source's block are the hub's and are not passed to the extension: `fail` (`hard` or `ignore`) and `secret`. `secret` is true unless set false, and says the source's values are masked in state output, logs and `halite-node pillar items`; `secret: false` is for a source of ordinary data, and is refused on `aws_secrets_manager`, which returns only credentials.",
 	},
 	"ext_pillar_fail": {
 		Group:  "The tree: states and pillar",

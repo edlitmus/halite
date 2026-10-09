@@ -22081,6 +22081,69 @@ Tests, broken on purpose:
   `--reveal` the default was not considered: the display still masks what
   is known to be secret.
 
+### 5.257 An external pillar source can be configured as plain data
+
+5.256 made `halite-node pillar items` mask only what is secret, and left
+one rule coarse: every external pillar source counted as secret. That is
+right for `aws_secrets_manager`, the only source this project ships, and
+wrong for a source of ordinary data. An inventory or a CMDB would have its
+host names and addresses masked in every state comment and every `pillar
+items` it appeared in. That is the over-masking 5.256 removed everywhere
+else. The estate's operator asked for it to be a per-source decision.
+
+A source's block now takes `secret: true|false`, read and stripped by the
+hub as `fail` is, from either block shape, so the extension never sees it.
+It defaults to true, the safe side, and is `Spec.Plain` inside so that a
+`Spec` written without it is secret too. `pillar.ExtSource` has a
+`Secret()` method, and the compiler offers a source's strings to
+`OnSecret` only when it returns true (`mergeExt`). That one callback feeds
+the hub's redactor and the list a node is told to mask, so the two cannot
+disagree. `extpillar.Bridged` gates its own offering on the same method.
+`secret` takes a boolean; `secret: maybe` stops the hub with an error
+rather than being read either way.
+
+`aws_secrets_manager` cannot be configured plain. Everything it returns is
+a credential, so `secret: false` on it is refused when the hub starts, in
+either block shape, rather than obeyed (`AlwaysSecret`). Keying on the name
+is sound because a source is a signed extension pinned by name. The
+example configuration, the extension's own documentation, `docs/states.md`
+and `docs/extensions.md` now write `secret: true` on it explicitly, so a
+block copied from them for another source shows the setting exists. The
+hub's startup line for each source now says `secret`.
+
+Tests, each broken on purpose:
+- Parsing: `secret: false` is read in the mapping and list forms and
+  stripped, a source with no setting is secret, a non-boolean is refused,
+  and `aws_secrets_manager` with `secret: false` is refused in both forms
+  while `secret: true` is accepted. Ignoring the parsed value fails the
+  first and the AWS test. Removing the refusal fails the AWS test.
+- Hub: with a plain source and a stand-in Secrets Manager source side by
+  side, the node is told only the Secrets Manager value. Offering
+  regardless of the setting fails it: "the hub named
+  "row-4-rack-2,from-secrets-manager"".
+- The bridge offers nothing for a plain source, and `Sources` carries the
+  setting from the configuration to the source.
+
+Seen with a built `halite-hub serve` on Linux, against a throwaway
+configuration with `pillar_roots`. `secret: false` on
+`aws_secrets_manager` exits 1 with the refusal. `secret: true` gets past
+parsing and stops at the next check, that no such extension is installed,
+which is expected on a machine without it.
+
+That run first found something else: with no `pillar_roots`, `serve`
+never reads `ext_pillar` at all. The same configuration with
+`secret: false` ran without complaint until it was killed. A hub with
+`ext_pillar` and no pillar roots ignores its sources and says nothing.
+Not changed here.
+
+**Not covered:**
+- No hub in this estate has `ext_pillar`, so the setting has not been seen
+  on one. The hub that ran `aws_secrets_manager` against real AWS (5.88)
+  is not this estate's. Its configuration was not checked, and it needs
+  no change, because the default is secret.
+- The refusal keys on the name `aws_secrets_manager` only. Another
+  extension that fetches credentials is protected by the default alone.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
