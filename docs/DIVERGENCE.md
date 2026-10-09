@@ -22263,6 +22263,67 @@ went away. That a hub's start waits on DNS is noted here, not changed.
 
 
 
+### 5.260 Signing an extension needed the source tree and a Go toolchain
+
+The only way to sign an extension bundle was `go run ./tools/extbundle`.
+That needs a checkout of this repository and a Go toolchain on the
+machine that signs, so signing could not be a job an estate ran for
+itself, which the owner asked the example tree to show. `extbundle`
+also generated a key whenever the one it was given was missing, so a
+mistyped path signed a bundle with a key no node trusted, and said so
+only in the trust line it printed.
+
+`halite-hub extensions key create <name>` and `halite-hub extensions
+sign <dir> --name <n> --exe <file> --key <name|path> [--publish <tree>]`
+are the shipped commands:
+- **key create** writes `<pki_dir>/extension-<name>.key`, readable by
+  its owner alone. It refuses to replace an existing key, because
+  everything signed with the old one would stop verifying. It prints the
+  `extension_trust_keys` line.
+- **sign** refuses a key that does not exist. It writes `manifest.json`
+  and `manifest.sig` beside the executable and prints the root and the
+  `extension_pins` entry.
+- **`--publish`** copies the bundle to `_ext/<name>/<version>/` under
+  the tree. It claims the directory with one `Mkdir`, which refuses a
+  version already there. It then writes each file through `atomicfile`,
+  the signature last, so a sync that runs in between finds a bundle that
+  does not verify, and refuses it. The first version staged a temporary
+  directory and renamed it into place, and two of `internal/atomicfile`'s
+  audits failed it in CI: one rules out temporary-file-and-rename
+  helpers outside that package, the other `os.Rename`, which fails on
+  Windows while anything has the destination open. Neither audit had
+  been run locally.
+- **The version flag is `--ext-version`.** `--version` is the flag every
+  command reads as "print your version", which takes no value. The first
+  run of this command signed a bundle at version `true`.
+
+Neither opens the hub's state, so both run on any machine with the
+binary installed. The guide's rule stands: the signing machine should
+not be the hub, and the example tree gives it a node of its own.
+
+`internal/extension` now holds `SignBundle`, the key functions, and the
+platform reading moved from `tools/extbundle/platform.go`.
+`tools/extbundle` is a thin front on them that keeps its lab behaviour,
+and its existing tests pass unchanged.
+
+`TestASignedBundleIsAcceptedOnlyByTheKeyItWasSignedWith` signs and
+publishes a real Go executable. A hub that trusts the key and pins the
+root fetches it; a hub that trusts another key refuses it with "does not
+verify". `TestSigningRefusesWhatItShould` covers the three refusals.
+Three breaks each failed them:
+- signing with a random key instead of the loaded one;
+- `key create` allowed to overwrite;
+- `--publish` allowed to replace.
+
+By hand, the same round trip with `halite-ext-signer-local` showed
+`fetched hello 1.0.0` and then `refused … does not verify`.
+
+**Not covered:** only run on macOS. The signer node has no route to
+deliver a bundle to a hub on another machine. halite moves files from
+the hub to nodes and not back, so `--publish` writes into a tree on the
+signing machine, and getting that tree to the hub is the estate's own
+step (a git push, with the hub serving the tree through gitfs).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
