@@ -69,10 +69,11 @@ halite api serving certificate:
       - x509: halite api ca
 
 # The API's own certificate to the hub, which `api_operator` names. It is
-# an operator certificate, there is no renew command for one, and halite-api
-# loads it once at startup: so it is issued again a week before it
-# expires, as the account halite runs as so the files are its own, and
-# the API is restarted to present it.
+# an operator certificate, and there is no renew command for one, so it is
+# issued again a week before it expires, as the account halite runs as so
+# the files are its own. halite-api reads it again before each request to
+# the hub and presents the new one without a restart (DIVERGENCE 5.271);
+# on a build before that, add `watch_in: [service: halite api service]`.
 halite api operator certificate:
   cmd.run:
     - name: >-
@@ -83,5 +84,3 @@ halite api operator certificate:
     - unless: >-
         openssl x509 -noout -checkend {{ api['operator_renew_seconds'] }}
         -in {{ pki }}/operator-{{ api['config']['api_operator'] }}.crt
-    - watch_in:
-      - service: halite api service

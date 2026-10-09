@@ -22879,6 +22879,43 @@ and they mean this. The four citations it added (here, the CHANGELOG,
 `parentdir.go` and `parentdir_test.go`) were changed by hand, line by
 line. The other 5.267's citations were left alone; `ledger renumber`
 cannot tell them apart once both are on main.
+### 5.271 halite-api presented the operator certificate it started with
+
+5.254 named this and left it. `hubClient` in `cmd/halite-api/serve.go`
+loaded the API's operator certificate to the hub once, at startup.
+Operator certificates last 30 days by default and have no renewal: one
+is issued again, in place, with `keys operator create`. So a re-issue
+changed nothing until `halite-api` was restarted, and an API left running
+past its certificate's expiry was refused by the hub. Its whole surface
+(jobs, runners, events) would then stop, while it went on answering its
+own clients. `contrib/examples/tree` (5.262) had worked around it, with
+a state that re-issues the certificate and restarts the API. On the
+estate's beastie the API's certificate runs out on 2026-12-26, and
+nothing there renews it.
+
+The client now reads the pair through `certreload.NewClient`
+(`transport.Client.CertFiles`, 5.254), the relay's mechanism. The pair is
+read again before each request, and a changed one replaces the
+certificate and the connections opened with it. A re-issue does not
+revoke the previous certificate, so a request already in flight is not
+refused. `doctor` builds the same client, with no logger, and the log
+hooks allow for that. The example tree's state no longer restarts the
+API, and its README and `docs/operations.md` say how the certificate is
+re-issued and that the running API picks it up.
+
+Test, broken on purpose: a real TLS hub endpoint answers health with the
+serial of the client certificate it was presented. The client
+`hubClient` builds presents the operator certificate, then, after the
+pair is issued again on disk, the new one, with no new client built.
+Loading the pair once, the old behaviour, fails it with the old serial.
+
+**Not covered:**
+- Not run on beastie or on FreeBSD; it needs a rebuild there. The
+  estate's tree is not yet re-issuing the certificate. That is a change
+  to the salt tree, made alongside this one.
+- The example tree's re-issue state has still not been applied anywhere.
+
+
 
 ## 6. Everything else not started
 
