@@ -31,6 +31,13 @@ type Chunk struct {
 	Reqs []Req
 	// Opts are the per-state options of SPEC section 11.7.
 	Opts Options
+	// OptionArgs are those options as the tree wrote them, kept for
+	// show_lowstate. Opts is what the runner acts on; this is what an
+	// operator reads, and Salt's low chunk carries them beside the module
+	// arguments. Without it, show_lowstate printed no `unless`, `onlyif`
+	// or `creates` at all, so a gated state read as unconditional.
+	// DIVERGENCE 5.266.
+	OptionArgs *value.Map
 	// DeclOrder is the position of the owning declaration in the high
 	// state, which is the tiebreak for unconstrained states.
 	DeclOrder int
@@ -149,9 +156,10 @@ func buildChunksForFunc(d *Decl, f *FuncDecl, diags *Diags) []*Chunk {
 	base := &Chunk{
 		ID: d.ID, SLS: d.SLS, Env: d.Env,
 		State: f.State, Fun: f.Fun,
-		Args:      value.NewMap(f.Args.Len()),
-		DeclOrder: d.Order,
-		Pos:       f.Pos,
+		Args:       value.NewMap(f.Args.Len()),
+		OptionArgs: value.NewMap(0),
+		DeclOrder:  d.Order,
+		Pos:        f.Pos,
 	}
 
 	names := extractNames(f.Args, d, diags)
@@ -179,6 +187,7 @@ func buildChunksForFunc(d *Decl, f *FuncDecl, diags *Diags) []*Chunk {
 		case IsRequisiteArg(name):
 			continue
 		case optionNames[name]:
+			base.OptionArgs.SetAt(e.Key, e.Val, e.KeyPos, e.ValPos)
 			continue
 		default:
 			base.Args.SetAt(e.Key, e.Val, e.KeyPos, e.ValPos)
@@ -199,11 +208,12 @@ func buildChunksForFunc(d *Decl, f *FuncDecl, diags *Diags) []*Chunk {
 		c := &Chunk{
 			ID: d.ID, SLS: d.SLS, Env: d.Env,
 			State: f.State, Fun: f.Fun,
-			Args:      value.Deep(base.Args).(*value.Map),
-			Opts:      base.Opts,
-			DeclOrder: d.Order,
-			SeqOrder:  i,
-			Pos:       f.Pos,
+			Args:       value.Deep(base.Args).(*value.Map),
+			Opts:       base.Opts,
+			OptionArgs: value.Deep(base.OptionArgs).(*value.Map),
+			DeclOrder:  d.Order,
+			SeqOrder:   i,
+			Pos:        f.Pos,
 		}
 		c.Reqs = make([]Req, len(base.Reqs))
 		copy(c.Reqs, base.Reqs)

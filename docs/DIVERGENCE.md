@@ -22624,6 +22624,38 @@ bound is what makes it irrelevant.
 
 
 
+### 5.266 show_lowstate left out every runner option
+
+While writing the example tree (5.262), its `creates`, `onlyif` and
+`unless` gates did not appear in `halite-node state show_lowstate`, so
+its gated states read as unconditional. The compiler takes the runner
+options out of a chunk's module arguments to act on them: `unless`,
+`onlyif`, `creates`, `check_cmd`, `retry`, `parallel`, `order`,
+`failhard`, the `reload_*` three, `runas`, `runas_password`, `umask`,
+`timeout`, `fire_event` and `aggregate`. `renderLow` printed only what
+was left. Salt's low chunk carries them beside the module's arguments.
+
+The chunk now keeps the options as written, in `OptionArgs`, beside
+`Opts`, which is what the runner acts on. `show_lowstate` prints them,
+and each chunk that `names` expands into carries them too.
+`runas_password` prints as `**********`. Salt prints it as written; it
+is the one option that is a secret, and a lowstate is something people
+paste.
+
+`TestShowLowstateCarriesTheRunnerOptions` requires `unless`, `onlyif`,
+`creates`, `retry` and the masked password on a chunk, and `creates` on
+both chunks `names` expanded into. It fails with the rendering switched
+off. The differential compares the compiler's chunks, not this
+rendering, so it is unaffected.
+
+Checking `names` found a separate defect, noted here and not fixed.
+Arguments given to one name alone (`- names: [- echo a: [- unless: …]]`)
+all go into the module's arguments in `applyPerNameArgs`. A per-name
+`unless` therefore fails to compile ("argument `unless` is not a
+parameter of this function"), where Salt treats it as an option.
+
+**Not covered:** only run on macOS.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

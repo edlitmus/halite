@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `show_lowstate` shows `unless`, `onlyif`, `creates` and the other options
+
+`halite-node state show_lowstate` left out every runner option, so a
+gated state read as unconditional. They are now printed as written, as
+Salt's low chunk carries them, with `runas_password` masked.
+DIVERGENCE 5.266.
+
 ### Relays renew their own upstream certificate
 
 A relay's certificate for its upstream was never renewed, so the relay
