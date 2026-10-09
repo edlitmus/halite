@@ -21613,9 +21613,21 @@ different reasons, and the page had a hand in all of them.
   `TestTheDocumentedMetricsCertificateStateConverges` applies that block as
   an unprivileged user; it still passes.
 
+**Then three of four were scraped, the same day.** The owner corrected
+system76-pc's `node.yaml` paths. r720 got its entry from the estate's
+hosts pillar: edlitmus/salt#3 added each node's ZeroTier address and an
+opt-in `etc_hosts: true`, and a `halite_metrics_hosts` state that writes the
+opted-in names with `host.present`, run on beastie only. Applied with
+`test=true` first (one change: the existing `r720` line gains
+`r720.edlitmus.info`), then for real, then again (no change). Beastie then
+resolved `r720.edlitmus.info` to the ZeroTier address and
+`mail.edlitmus.info` still to its public ones, and the next scrape of r720
+came up. beastie, r720 and system76-pc all read `up` 1 and
+`halite_node_evidence_log_open` 1.
+
 **Not covered:**
-- No node other than beastie has been seen scraped: system76-pc waits on
-  its configuration, r720 on the salt PR, mail on a decision.
+- mail is still down: its node listens only on its ZeroTier address, and
+  its name is deliberately not remapped.
 - Why two keys belonged to login accounts was not established; a key made
   by hand before the state first ran is a guess.
 - The SAN route (add the reachable address to `subject_alt_names`) is in
