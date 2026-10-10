@@ -280,10 +280,15 @@ jobs:
   # exercised without minting a tag.
   #
   # v0.* and any tag with a suffix (v1.0.0-rc1) are marked pre-release:
-  # CHANGELOG.md says 1.0.0 is SPEC 32's phase 6. The detached signatures
-  # of SPEC 4.3 are added by an operator after this job publishes
-  # (docs/releasing.md), so the notes say how to check them, not that
-  # they are there.
+  # CHANGELOG.md says 1.0.0 is SPEC 32's phase 6.
+  #
+  # The release is created as a draft. The detached signatures of SPEC
+  # 4.3 are made by an operator with a key no runner holds, after this
+  # job, and a release published here would be public and unsigned until
+  # they arrived -- v0.1.0 was, for a while. A draft is visible only to
+  # the repository's maintainers; `make release-publish` makes it public,
+  # and only once every archive, SBOM and the manifest carry a signature
+  # that verifies (docs/releasing.md, DIVERGENCE 5.278).
   publish:
     name: publish the release
     needs: attest
@@ -329,9 +334,10 @@ jobs:
 
           The provenance is keyless SLSA, signed by this repository's release
           workflow through Sigstore. Detached signatures, SHA256SUMS.sig and one
-          .sig per archive and per SBOM, are added after publication with the release key,
-          contrib/keys/halite-release.pub in the repository; a release without them
-          has not been signed yet. Check them with nothing but openssl:
+          .sig per archive and per SBOM, are made with the release key,
+          contrib/keys/halite-release.pub in the repository, and the release is
+          published only once they are all here and verify. Check them with
+          nothing but openssl:
 
               openssl dgst -sha256 -verify halite-release.pub -signature SHA256SUMS.sig SHA256SUMS
 
@@ -348,11 +354,11 @@ jobs:
           prerelease=""
           case "$TAG" in v0.*|*-*) prerelease="--prerelease" ;; esac
           if [ "$IS_TAG" != "true" ]; then
-            echo "not a tag ($GITHUB_REF): a tag would publish, with $prerelease:"
+            echo "not a tag ($GITHUB_REF): a tag would create a draft release, with $prerelease:"
             ls -1 dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/SHA256SUMS
             cat notes.md
             exit 0
           fi
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
             --title "halite ${version}" --notes-file notes.md $prerelease \
             dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/SHA256SUMS

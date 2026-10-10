@@ -23200,6 +23200,69 @@ epoch is refused. Leaving out the dependencies fails it, naming
 - An SBOM is per archive, not per bare binary. The bare binaries are not
   release assets, and each is described inside its archive's document.
 
+### 5.278 A release was public before it was signed
+
+5.275 recorded it: `release.yml` published each release live, and the
+detached signatures came afterwards, from an operator with a key no
+runner holds. In between, the release was public and unsigned. v0.1.0
+was public for a while with no signature, and its notes said so until
+they were corrected. Nothing stopped a release being published with a
+signature missing, wrong, or never added.
+
+`release.yml` now creates the release as a draft (`gh release create
+--draft`). Only the repository's maintainers can see a draft. The tag is
+public already, since pushing it is what starts the workflow; what the
+draft keeps private is the release and its downloads.
+
+`make release-publish TAG=...` is the only step that makes it public. It:
+1. refuses a release that is not a draft;
+2. downloads the draft as GitHub holds it;
+3. runs a new `relsign verify -published` over it, which requires:
+   - every archive and SBOM in the manifest to be present, match its
+     line, and carry a signature that verifies against the committed key;
+   - the manifest to be signed;
+   - nothing in the release that the manifest does not list;
+4. only then runs `gh release edit --draft=false`.
+
+The bare binaries are in the manifest and not in a release, so their
+absence is not a problem; an archive's or an SBOM's is.
+
+Which files a release carries is now named once. `relsign`'s
+`publishedPatterns` lists them, and
+`TestThePublishedSetIsWhatTheWorkflowUploads` holds that list to the
+globs on `release.yml`'s `gh release create`. A file the workflow
+uploaded and the check did not cover would be published unchecked.
+
+Seen on 2026-10-10 against the real repository, with a throwaway draft
+on a tag that was never created. It carried v0.1.0's archives and
+`SHA256SUMS` from a workstation's `dist/`.
+- With no signatures, `make release-publish` refused with each missing
+  signature named, and the release stayed a draft.
+- With the signatures uploaded, the download and `verify -published`
+  passed, over 16 published artifacts. The publish step itself was not
+  run, so the draft was never made public.
+- With an unsummed file attached, it refused again ("in the release and
+  not in the manifest").
+- The draft was deleted. `git ls-remote --tags` shows no tag from it.
+
+Tests, broken on purpose:
+- A downloaded release verifies without its bare binaries, while the
+  full check still wants them.
+- Six faults are each refused: an unsigned archive, an unsigned SBOM, a
+  missing archive, a file nobody summed, an altered archive, and an
+  unsigned manifest. So is a manifest with nothing a release carries.
+- Skipping the signature check, skipping the stray-file check, and
+  dropping the SBOM pattern each fail them.
+
+**Not covered:**
+- No real tag has gone through the draft path yet. The next release is
+  the first, and `gh release edit --draft=false` on a real release has
+  not been run.
+- The gate checks what was signed, not who may run it. Any maintainer
+  can publish a draft through GitHub's interface without the gate.
+  Branch-protection-like rules for releases are a repository setting,
+  not something this repository enforces.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

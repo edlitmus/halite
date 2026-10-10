@@ -373,3 +373,125 @@ func TestSignNeedsThePublicKeyFile(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// release lays out a signed dist/ the way a GitHub release holds it once
+// downloaded: the archives, SBOMs, SHA256SUMS and their signatures, and
+// not the bare binaries or the public key.
+func release(t *testing.T) (string, string, *localSigner) {
+	t.Helper()
+	s := newLocalSigner(t)
+	files := map[string]string{
+		"halite-node-linux-amd64":             "node",
+		"halite-0.1.0-linux-amd64.tar.gz":     "archive",
+		"halite-0.1.0-linux-amd64.cdx.json":   "sbom",
+		"halite-0.1.0-windows-amd64.zip":      "zip",
+		"halite-0.1.0-windows-amd64.cdx.json": "sbom2",
+	}
+	dist := makeDist(t, files)
+	pub := s.pubFile(t, t.TempDir())
+	if err := sign(context.Background(), dist, pub, s, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"halite-node-linux-amd64", "halite-node-linux-amd64.sig"} {
+		if err := os.Remove(filepath.Join(dist, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dist, pub, s
+}
+
+// A downloaded release verifies as published without its bare binaries,
+// which a release does not carry. DIVERGENCE 5.278.
+func TestAPublishedReleaseVerifiesWithoutTheBareBinaries(t *testing.T) {
+	dist, pub, _ := release(t)
+	var out bytes.Buffer
+	if err := verifyPublished(dist, pub, &out); err != nil {
+		t.Fatalf("a correctly signed release was refused: %v", err)
+	}
+	if !strings.Contains(out.String(), "4 published artifacts") {
+		t.Errorf("the summary is %q", out.String())
+	}
+	// The full check still wants them, so the two modes differ only in that.
+	if err := verify(dist, pub, &bytes.Buffer{}); err == nil {
+		t.Error("the full check accepted a set missing a bare binary")
+	}
+}
+
+// Every way a release could go public unsigned or wrong is refused, and
+// a draft stays a draft: an archive or SBOM without its signature, an
+// archive missing, a file nobody summed, a manifest whose signature is
+// not over it, and a manifest with nothing a release carries.
+func TestAPublishedReleaseIsRefusedForEachFault(t *testing.T) {
+	for name, fault := range map[string]func(t *testing.T, dist string){
+		"an unsigned archive": func(t *testing.T, dist string) {
+			os.Remove(filepath.Join(dist, "halite-0.1.0-linux-amd64.tar.gz.sig"))
+		},
+		"an unsigned SBOM": func(t *testing.T, dist string) {
+			os.Remove(filepath.Join(dist, "halite-0.1.0-windows-amd64.cdx.json.sig"))
+		},
+		"a missing archive": func(t *testing.T, dist string) {
+			os.Remove(filepath.Join(dist, "halite-0.1.0-windows-amd64.zip"))
+		},
+		"a file nobody summed": func(t *testing.T, dist string) {
+			os.WriteFile(filepath.Join(dist, "halite-0.1.0-extra.tar.gz"), []byte("x"), 0o644)
+		},
+		"an altered archive": func(t *testing.T, dist string) {
+			os.WriteFile(filepath.Join(dist, "halite-0.1.0-linux-amd64.tar.gz"), []byte("changed"), 0o644)
+		},
+		"an unsigned manifest": func(t *testing.T, dist string) {
+			os.Remove(filepath.Join(dist, manifestName+".sig"))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dist, pub, _ := release(t)
+			fault(t, dist)
+			if err := verifyPublished(dist, pub, &bytes.Buffer{}); err == nil {
+				t.Errorf("%s was accepted", name)
+			}
+		})
+	}
+	s := newLocalSigner(t)
+	dist := makeDist(t, map[string]string{"halite-node-linux-amd64": "node"})
+	pub := s.pubFile(t, t.TempDir())
+	if err := sign(context.Background(), dist, pub, s, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(dist, "halite-node-linux-amd64"))
+	os.Remove(filepath.Join(dist, "halite-node-linux-amd64.sig"))
+	if err := verifyPublished(dist, pub, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "no archive or SBOM") {
+		t.Errorf("a manifest with nothing a release carries gave %v", err)
+	}
+}
+
+// What `-published` checks is what release.yml uploads. The publish job's
+// `gh release create` line names its files by glob; a glob there that is
+// not in publishedPatterns would be a file published unchecked.
+func TestThePublishedSetIsWhatTheWorkflowUploads(t *testing.T) {
+	raw, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var globs []string
+	lines := strings.Split(string(raw), "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, "gh release create") {
+			continue
+		}
+		for _, l := range lines[i:] {
+			for _, f := range strings.Fields(l) {
+				if strings.HasPrefix(f, "dist/") && f != "dist/"+manifestName {
+					globs = append(globs, strings.TrimPrefix(f, "dist/"))
+				}
+			}
+			if !strings.HasSuffix(strings.TrimSpace(l), "\\") {
+				break
+			}
+		}
+	}
+	if len(globs) == 0 {
+		t.Fatal("found no files on release.yml's `gh release create`; this check has stopped checking")
+	}
+	if strings.Join(sortedStrings(globs), " ") != strings.Join(sortedStrings(publishedPatterns), " ") {
+		t.Errorf("release.yml uploads %v; relsign verify -published checks %v", globs, publishedPatterns)
+	}
+}
