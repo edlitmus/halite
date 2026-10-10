@@ -65,7 +65,7 @@ And, once a release carries them, the detached signatures, which need
 nothing but the public key and an `openssl`. The public key is
 [`contrib/keys/halite-release.pub`](../contrib/keys/halite-release.pub)
 in this repository, fingerprint
-`SHA256:08e094d12f866d2d29fe0fd68b700baf97dfad2d3beb626c3c4007e679110f8f`
+`SHA256:7d7ba7ce8588637565d3c76770e3ff3f51f106b029f1b901287b4c8c16000a2b`
 (the SHA-256 of its DER form,
 `openssl pkey -pubin -in halite-release.pub -outform DER | sha256sum`):
 
@@ -83,8 +83,9 @@ are for a site that fetched one archive and not the manifest.
 **No release is signed yet.** This project's key exists in AWS KMS as
 `alias/halite-release`, and its public half is committed as
 `contrib/keys/halite-release.pub` (P-256, fingerprint above). The
-procedure below has been run as far as signing one digest with that key
-(see the end of this page), and not on a release.
+procedure below has been run as far as signing a local build with that
+key (see the end of this page), and not on a release: no tag has been
+pushed, so no release exists to sign.
 
 Everything here works with any key: `RELEASE_KEY` names the KMS key (an
 id, `alias/<name>`, or an ARN) and `RELEASE_PUB` the public key file it
@@ -143,13 +144,46 @@ committed one is a release nobody can check.
 
 ### Signing one release
 
-Credentials come from the environment. On a workstation that is
-`aws sso login`, then:
+A signature is added to a release that already exists, over the files
+the workflow built and attested for it. So the order is: tag, let
+`release.yml` publish, download what it built, sign that, upload the
+signatures. A `dist/` from a local `make dist` is not something to sign
+for upload: its names come from `git describe`, so on a commit with no
+tag of its own they read like `halite-0.12.0-827-g29e75b4f0153-...`,
+with `-dirty` added for a tree with uncommitted changes, and no release
+carries files with those names. Build locally only as the third builder
+described below, on the tagged commit, with a clean tree.
+
+**1. Tag, from a clean `main` that matches `origin/main`.** Run
+`make check` and `make release-gate` first; the workflow runs the gate
+and stops if it fails. Then push that one tag:
 
 ```sh
-eval "$(aws configure export-credentials --format env)"
-export AWS_REGION=<region>        # the key's region; KMS keys are regional
+git tag -a v0.1.0 -m 'halite 0.1.0'
+git push origin v0.1.0
 ```
+
+Push the tag by name, not with `git push --tags`, which pushes every
+tag the clone holds. A clone of this repository made before the rewrite
+holds the proof of concept's tags, `v0.7.0` to `v0.12.0`, which are not
+on GitHub; `git describe` reads them, which is where a version like
+`0.12.0-827` comes from, and pushing them would publish them.
+
+**2. Let the workflow publish.** The tag starts `release.yml`; find the
+run and wait for all five jobs:
+
+```sh
+gh run list --repo edlitmus/halite --workflow release.yml --limit 3
+gh run watch <run id> --repo edlitmus/halite
+gh release view v0.1.0 --repo edlitmus/halite
+```
+
+Until `gh release view` answers, there is no release to upload to, and
+`gh release upload` says `release not found`. A `v0.*` tag publishes a
+pre-release.
+
+**3. Download what it built**, into an empty `dist/`: `release-sign`
+refuses a directory that already holds a `.sig`.
 
 The set to sign is the full `dist/` the attestation names, not the
 release's assets: `SHA256SUMS` lists the 48 bare binaries as well as the
@@ -158,6 +192,7 @@ Within three days of the run, the first builder's `dist/` is a workflow
 artifact:
 
 ```sh
+rm -rf dist
 gh run download <run id> --repo edlitmus/halite -n dist-ubuntu-24.04 -D dist
 gh attestation verify dist/halite-0.1.0-linux-amd64.tar.gz --repo edlitmus/halite
 ```
@@ -171,7 +206,15 @@ against the manifest in the release. Whether a Mac reproduces the two
 Linux builders' digests byte for byte has not been demonstrated, and on
 a Mac `make` must be `bmake` or `gmake`.
 
-Then:
+**4. Sign, check, upload**, naming the tag the release was published
+under. Credentials come from the environment, from whatever identity
+the key's policy lets sign (an SSO login, an assumed role); with the
+AWS CLI:
+
+```sh
+eval "$(aws configure export-credentials --format env)"
+export AWS_REGION=<region>        # the key's region; KMS keys are regional
+```
 
 ```sh
 make release-sign
@@ -207,14 +250,21 @@ HALITE_KMS_LIVE=1 HALITE_KMS_KEY=<key id, alias or ARN> AWS_REGION=<region> \
 It makes one billed `Sign` call per run. It is not in the fleet
 workflow, which carries no AWS credentials.
 
-It has been run against this project's key: KMS signed a digest, and
-both this build and OpenSSL verified the signature, and `make
-release-pubkey` printed a file byte-identical to the committed one.
+It has been run against this project's first key: KMS signed a digest,
+and both this build and OpenSSL verified the signature, and `make
+release-pubkey` printed a file byte-identical to the committed one. That
+key was replaced, before any release was signed with it, by one whose
+policy does not involve the account's root user, so there is no old
+public key to keep. With the current key, `make release-sign` -- which
+holds the KMS key to the committed public key before it signs -- and
+`make release-verify` have been run over a local `make dist`, which is
+not a release's `dist/`.
 The client reads credentials from the environment, a container's
 credentials, or an instance role, and not from `~/.aws/credentials`;
 with the AWS CLI, `aws configure export-credentials --format env`
 puts them where it looks.
 
-**Not covered:** `make release-sign` and `make release-verify` over a
-real `dist/` -- the whole procedure above, on a release -- have not been
-run, so no release is signed. Credentials from SSO were not tried.
+**Not covered:** the procedure above on a published release -- a tag
+pushed, `release.yml` publishing, its `dist/` signed and the signatures
+uploaded -- has not been run, so no release is signed. The `publish` job
+has never run on a tag. Credentials from SSO were not tried.
