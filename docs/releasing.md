@@ -278,8 +278,13 @@ signature verify under `openssl` with the committed key; and
 `gh attestation verify` finds one SLSA v1 attestation over all 64
 artifacts, signed by `release.yml` at `refs/tags/v0.1.0`.
 
-**Not covered:** v0.1.0 was uploaded with `dist/*.sig`, before the
-command above was narrowed, so it also carries the 48 bare binaries'
-signatures with no file beside them. The release is published live and
-signed afterwards, so it existed unsigned for a while. Credentials from
-SSO were not tried.
+v0.1.0 was first uploaded with `dist/*.sig`, before the command above
+was narrowed; the 48 bare binaries' signatures that put on it were
+deleted the same day, and its notes, written before it was signed and
+saying it had no detached signature, were corrected to the text the
+workflow now writes. Downloaded again afterwards, it holds 34 assets --
+16 archives, `SHA256SUMS`, and 17 signatures -- and every signature
+verifies.
+
+**Not covered:** the release is published live and signed afterwards,
+so it existed unsigned for a while. Credentials from SSO were not tried.
