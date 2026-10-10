@@ -98,7 +98,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: SPEC 20.3's reference returners, `postgres` and `sqs`, are not built. `halite-ext-aws-secrets` (a pillar source) and `halite-ext-signer-local` (a signer) ship as worked examples of the extension model. |
 | 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD, Common Linux and SUSE rows of SPEC 15.3 ship entirely, and macOS lacks only `mac_assistive`, which is out of the build on purpose. **17 of SPEC 15.3's 65 platform modules, 3 of SPEC 15.2's core execution modules (one of them `state`, struck rather than missing) and 2 of SPEC 15.5's core state modules (`pro` and `win_wua`) remain.** Re-measured on 2026-10-02 from `TestPendingPlatformModulesMatchTheSpec` ("65 modules, 17 pending") and the ledger's audited 2.1 and 2.2 preambles (53 of 56, 44 of 46). The row had said 23, 6 and 7 from 2026-09-15, and 32, 18 and 14 before that, while §2.2 said 9 and 10 -- the same drift, twice. |
-| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Node evidence and detached job signing are built (§7 item 9). Outstanding: the scale harness the other eleven performance rows need; native packages and an SBOM, where the tarballs, manual pages, provenance and detached release signatures are built (§3.6; v0.1.0 is the first signed release); orchestration signing, which needs a design decision before code (the KMS job signer, `halite-ext-signer-kms`, ships: DIVERGENCE 5.276); the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Node evidence and detached job signing are built (§7 item 9). Outstanding: the scale harness the other eleven performance rows need; native packages, where the tarballs, manual pages, SBOMs, provenance and detached release signatures are built (§3.6; v0.1.0 is the first signed release); orchestration signing, which needs a design decision before code (the KMS job signer, `halite-ext-signer-kms`, ships: DIVERGENCE 5.276); the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -1176,7 +1176,9 @@ unblocks rather than by how hard it is.
    done 2026-10-10:* `tools/relsign` signs every artifact and the manifest
    with a key held in AWS KMS, by an operator after the workflow
    publishes (docs/releasing.md), and v0.1.0 is the first release signed
-   that way. The SBOM is unwritten. SPEC 4.3 requires all three per
+   that way. *SBOM done 2026-10-10:* `tools/sbom` writes a CycloneDX
+   document per archive from what each shipped binary's build information
+   says linked (DIVERGENCE 5.277). SPEC 4.3 requires all three per
    artifact, and doing them *now* rather than after the artifact kinds
    multiply means each later kind inherits the machinery instead of
    retrofitting it. The SBOM is specified as CycloneDX generated from

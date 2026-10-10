@@ -520,15 +520,19 @@ cross: make-supports-bang
 # dist is cross, then the per-platform release archives of SPEC 27.2
 # (tools/disttar: binaries, example configuration and manual pages, every
 # time, owner, mode and order pinned), then SHA256SUMS over all of it --
-# 48 binaries and 16 archives. Stale archives go first: SHA256SUMS sums
-# everything in dist/, and an archive left from another version would be
-# a line in this one's manifest.
+# 48 binaries, 16 archives, and one SBOM per archive (tools/sbom:
+# CycloneDX, from what each shipped binary says linked into it). Stale
+# archives and SBOMs go first: SHA256SUMS sums everything in dist/, and
+# one left from another version would be a line in this one's manifest.
 # Stale signatures go too: they are made after the manifest, over it
 # (release-sign below), and one left from another signing would otherwise
 # be summed into this manifest as if it were an artifact.
 dist: cross
-	@rm -f dist/halite-*.tar.gz dist/halite-*.zip dist/*.sig
+	@rm -f dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/*.sig
 	@env $(RELEASE_ENV) go run ./tools/disttar -dist dist \
+		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
+		-targets "$(TARGETS)" -binaries "$(BINARIES)"
+	@env $(RELEASE_ENV) go run ./tools/sbom -dist dist \
 		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
 		-targets "$(TARGETS)" -binaries "$(BINARIES)"
 	@cd dist && rm -f SHA256SUMS && \

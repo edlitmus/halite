@@ -239,7 +239,9 @@ The detached signature per artifact is made after publication, by an operator, w
 key held in AWS KMS (decided 2026-10-09): a long-lived key does not belong on a hosted runner, and
 in KMS it never leaves the service. Its public half is committed in the repository, and the
 signatures are DER, checkable with nothing but `openssl`. `docs/releasing.md` is the procedure.
-v0.1.0 (2026-10-10) is the first release that carries them.
+v0.1.0 (2026-10-10) is the first release that carries them. The SBOM is `tools/sbom`'s, one
+CycloneDX document per archive from the build information of the binaries it carries, written
+before the manifest so that the attestation and the signatures cover it.
 
 ### 4.4 What the policy costs
 

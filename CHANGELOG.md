@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An SBOM for every release archive
+
+Each release archive now has a CycloneDX SBOM beside it,
+`halite-<version>-<os>-<arch>.cdx.json`. It is taken from the shipped
+binaries themselves, the modules, toolchain and build settings `go
+version -m` reports, rather than from the source tree. It is in
+`SHA256SUMS`, so the release's attestation and signatures cover it.
+
 ### Sign jobs with a key held in AWS KMS
 
 `halite-ext-signer-kms` is a signer extension for `halite-hub run

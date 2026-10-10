@@ -23141,6 +23141,65 @@ Tests, broken on purpose:
 - No hardware-token signer. Credentials from SSO, and a role assumed
   from an instance, were not tried.
 
+### 5.277 Each release archive has an SBOM, taken from what linked
+
+SPEC 4.3 asks for three things per artifact. A signature and an
+attestation existed (5.275); the SBOM did not, and plan.md called it
+unwritten. SPEC is specific about it: "CycloneDX generated from `go
+version -m` output on the shipped binary, not from the source tree.
+What linked, not what was declared."
+
+`tools/sbom` writes one CycloneDX 1.5 document per release archive,
+`halite-<version>-<os>-<arch>.cdx.json`. Each document:
+- names the archive and each of its three binaries by SHA-256;
+- lists the modules linked into each binary as components, with package
+  URLs and dependencies;
+- records the toolchain and build settings as properties.
+
+All of it comes from `debug/buildinfo`, which is what `go version -m`
+reads, applied to the bare binaries disttar packs. So a module that is
+required and never linked is absent. On Linux the binaries link nothing
+but halite itself; on Windows they link `golang.org/x/sys`. That is
+"what linked" showing.
+
+Two of its choices are deliberate:
+- **The main module is given the release's version.** What Go records
+  for it is a pseudo-version derived from the nearest tag in the clone:
+  in a pre-rewrite clone, the proof of concept's `v0.12.0`, giving
+  `v0.12.1-0.<time>-<commit>`. Go's value is kept as the binary's
+  `golang:mainversion` property.
+- **Deterministic**, because two builders must agree. The timestamp is
+  `SOURCE_DATE_EPOCH`, refused when absent rather than taken from the
+  clock. The serial number is a UUID derived from the archive's digest.
+  Every list is sorted.
+
+`make dist` writes the documents before `SHA256SUMS`, so the manifest,
+the attestation and `release-sign` cover them. The publish job ships
+them, the upload command sends their signatures, and the compare job
+now expects 80 artifacts rather than 64, so a release missing its SBOMs
+fails there.
+
+Seen on Linux: a full `make dist` wrote 16 documents and an 80-line
+`SHA256SUMS`, and a second `make dist` produced an identical
+`SHA256SUMS`, SBOMs included. A sample records Go 1.26.6,
+`CGO_ENABLED=0` and `-trimpath` for each of its three binaries.
+
+Test, broken on purpose: for a Windows `halite-node` cross-compiled
+here, the SBOM's modules are exactly those `go version -m` prints,
+`golang.org/x/sys` included. Two runs write the same bytes, and a missing
+epoch is refused. Leaving out the dependencies fails it, naming
+`golang.org/x/sys@v0.47.0`.
+
+**Not covered:**
+- Not yet run by `release.yml` on its two builders: the next tag is the
+  first run, and the compare job is where a non-deterministic document
+  would show.
+- The documents have not been checked by an independent CycloneDX
+  validator; they are held to the 1.5 field names by reading, not by a
+  schema check.
+- An SBOM is per archive, not per bare binary. The bare binaries are not
+  release assets, and each is described inside its archive's document.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
