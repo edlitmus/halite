@@ -196,11 +196,12 @@ jobs:
           a=digests-ubuntu-24.04.txt
           b=digests-ubuntu-22.04.txt
           # Sixteen targets in SPEC 27.1's list, three binaries each,
-          # and one release archive per target (tools/disttar). It was
-          # 68 until darwin/amd64 left the list (DIVERGENCE 5.193); left
-          # at 68, every correct release would fail here, since `-lt`
-          # is the check.
-          expected=64
+          # one release archive per target (tools/disttar), and one SBOM
+          # per archive (tools/sbom). It was 68 until darwin/amd64 left
+          # the list (DIVERGENCE 5.193), and 64 until the SBOMs; left
+          # lower, a release missing its SBOMs would pass here, since
+          # `-lt` is the check.
+          expected=80
           for f in "$a" "$b"; do
             test -s "$f" || { echo "$f is missing or empty"; exit 1; }
             n=$(wc -l < "$f")
@@ -304,6 +305,7 @@ jobs:
           cmp dist/SHA256SUMS digests-ubuntu-24.04.txt
           cd dist && sha256sum -c --quiet SHA256SUMS
           ls halite-*.tar.gz halite-*.zip | wc -l | xargs echo "archives:"
+          ls halite-*.cdx.json | wc -l | xargs echo "SBOMs:"
       - name: publish, on a tag
         env:
           GH_TOKEN: ${{ github.token }}
@@ -315,7 +317,8 @@ jobs:
           cat > notes.md <<NOTES
           halite ${version}, for SPEC 27.1's sixteen platforms: one archive per
           platform (the BSD 2-Clause licence, binaries, example configuration,
-          manual pages), and SHA256SUMS.
+          manual pages), a CycloneDX SBOM per archive, taken from what linked
+          into the shipped binaries, and SHA256SUMS.
 
           Every archive and binary here was built twice, on two different runners,
           and published only because the two builds were byte-identical. Check a
@@ -326,7 +329,7 @@ jobs:
 
           The provenance is keyless SLSA, signed by this repository's release
           workflow through Sigstore. Detached signatures, SHA256SUMS.sig and one
-          .sig per archive, are added after publication with the release key,
+          .sig per archive and per SBOM, are added after publication with the release key,
           contrib/keys/halite-release.pub in the repository; a release without them
           has not been signed yet. Check them with nothing but openssl:
 
@@ -346,10 +349,10 @@ jobs:
           case "$TAG" in v0.*|*-*) prerelease="--prerelease" ;; esac
           if [ "$IS_TAG" != "true" ]; then
             echo "not a tag ($GITHUB_REF): a tag would publish, with $prerelease:"
-            ls -1 dist/halite-*.tar.gz dist/halite-*.zip dist/SHA256SUMS
+            ls -1 dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/SHA256SUMS
             cat notes.md
             exit 0
           fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "halite ${version}" --notes-file notes.md $prerelease \
-            dist/halite-*.tar.gz dist/halite-*.zip dist/SHA256SUMS
+            dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/SHA256SUMS

@@ -19,11 +19,12 @@ precondition of the next.
    `ubuntu-24.04` and `ubuntu-22.04`, with the pinned toolchain, vendored
    and offline. Each cross-compiles the three binaries for every platform
    in SPEC 27.1, assembles one archive per platform with `tools/disttar`,
-   and writes `dist/SHA256SUMS` over the lot: 64 lines, 48 binaries and 16
-   archives. Each builder's `dist/` is kept as a workflow artifact for
+   writes a CycloneDX SBOM per archive with `tools/sbom`, and writes
+   `dist/SHA256SUMS` over the lot: 80 lines, 48 binaries, 16 archives and
+   16 SBOMs. Each builder's `dist/` is kept as a workflow artifact for
    three days.
 3. **Compare.** The two manifests must be byte-identical, and each must
-   list at least 64 artifacts so that two empty manifests cannot agree.
+   list at least 80 artifacts so that two empty manifests cannot agree.
    This is the reproducibility property SPEC 4.3 asks for, and the one
    thing a single machine cannot prove about itself.
 4. **Attest.** Keyless SLSA build provenance, signed through Sigstore
@@ -77,6 +78,18 @@ openssl dgst -sha256 -verify halite-release.pub -signature halite-0.1.0-linux-am
 The manifest's signature covers every line in it, so checking it and
 then running `sha256sum -c` checks every file; the per-file signatures
 are for a site that fetched one archive and not the manifest.
+
+What is inside an archive is in its SBOM,
+`halite-<version>-<os>-<arch>.cdx.json` (CycloneDX 1.5, SPEC 4.3). It is
+taken from the shipped binaries rather than from the source tree -- the
+module list, toolchain and build settings `go version -m` prints for
+each of the archive's three binaries -- and it names the archive and
+each binary by SHA-256. It is in `SHA256SUMS`, so the attestation and the
+signatures cover it like everything else:
+
+```sh
+jq -r '.components[] | select(.type == "library") | .purl' halite-0.1.0-linux-amd64.cdx.json
+```
 
 ## Signing a release
 
@@ -184,7 +197,8 @@ refuses a directory that already holds a `.sig`.
 
 The set to sign is the full `dist/` the attestation names, not the
 release's assets: `SHA256SUMS` lists the 48 bare binaries as well as the
-16 archives, and the tool signs what the manifest lists or nothing.
+16 archives and their SBOMs, and the tool signs what the manifest lists
+or nothing.
 Within three days of the run, the first builder's `dist/` is a workflow
 artifact:
 
@@ -223,11 +237,11 @@ export AWS_REGION=<region>        # the key's region; KMS keys are regional
 make release-sign
 make release-verify
 gh release upload v0.1.0 dist/SHA256SUMS.sig dist/*.tar.gz.sig dist/*.zip.sig \
-    --repo edlitmus/halite
+    dist/*.cdx.json.sig --repo edlitmus/halite
 ```
 
-Upload the signatures of what the release publishes -- the manifest and
-the archives -- and not `dist/*.sig`. `release-sign` signs every line of
+Upload the signatures of what the release publishes -- the manifest, the
+archives and their SBOMs -- and not `dist/*.sig`. `release-sign` signs every line of
 the manifest, the 48 bare binaries included, because it signs what the
 manifest lists or nothing; but the release does not carry the bare
 binaries, so their signatures there would sit beside nothing.
