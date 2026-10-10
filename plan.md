@@ -1040,7 +1040,9 @@ other bullets stand as they were last verified.
   keeps the binaries for three days as a workflow artifact. *And
   2026-09-25 again:* on a `v*` tag its `publish` job now creates the
   GitHub release, with the per-platform archives and SHA256SUMS (§3.6
-  item 2). No tag has been pushed, so it has not published one. The rest of this bullet, as written: it does not publish anything: SPEC 27.2's
+  item 2). *And 2026-10-10:* `v0.1.0` was tagged, and the job published
+  it, as a pre-release; an operator then added the detached signatures
+  (docs/releasing.md). The rest of this bullet, as written: it does not publish anything: SPEC 27.2's
   artifacts do not exist to publish (§3.5's first bullet is unchanged),
   so `release.yml` proves the build is reproducible and stops there. It
   runs on GitHub-hosted runners, which is a dependency SPEC does not

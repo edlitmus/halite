@@ -434,8 +434,8 @@ manual pages and the evidence report, and SHA256SUMS. The archives are
 pinned the way the binaries are, so the two builders agree on them too.
 [Releasing](docs/releasing.md) walks through it, and through the
 detached signatures of SPEC 4.3, which `tools/relsign` makes with a key
-held in AWS KMS: the tool and the key exist, the public key is
-`contrib/keys/halite-release.pub`, and no release is signed yet.
+held in AWS KMS, with the public key in `contrib/keys/halite-release.pub`.
+v0.1.0 is the first release, and the first signed one.
 
 `make check` runs the specification's own build rules as tests: the
 lexicon policy of section 2.3, the dependency allowlist of section 4.2,

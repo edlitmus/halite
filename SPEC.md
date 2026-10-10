@@ -232,10 +232,14 @@ third-party code never shares an address space with the agent.
 the release workflow signs an SLSA build provenance attestation through Sigstore with its own
 GitHub OIDC identity, for exactly the digests its two builders agreed on, so no long-lived key
 exists to keep or lose. The attestation names the source commit, the workflow and the runner. It
-does **not** yet name the toolchain digest. The detached signature per artifact is deferred. It
-waits on a decision about where a signing key lives, and a long-lived key does not belong on a
-hosted runner. Keyless verification needs Sigstore's public trust root, which is fetched online or
-carried into an air-gapped site.
+does **not** yet name the toolchain digest. Keyless verification needs Sigstore's public trust
+root, which is fetched online or carried into an air-gapped site.
+
+The detached signature per artifact is made after publication, by an operator, with an asymmetric
+key held in AWS KMS (decided 2026-10-09): a long-lived key does not belong on a hosted runner, and
+in KMS it never leaves the service. Its public half is committed in the repository, and the
+signatures are DER, checkable with nothing but `openssl`. `docs/releasing.md` is the procedure.
+v0.1.0 (2026-10-10) is the first release that carries them.
 
 ### 4.4 What the policy costs
 

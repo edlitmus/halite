@@ -80,12 +80,9 @@ are for a site that fetched one archive and not the manifest.
 
 ## Signing a release
 
-**No release is signed yet.** This project's key exists in AWS KMS as
-`alias/halite-release`, and its public half is committed as
-`contrib/keys/halite-release.pub` (P-256, fingerprint above). The
-procedure below has been run as far as signing a local build with that
-key (see the end of this page), and not on a release: no tag has been
-pushed, so no release exists to sign.
+**v0.1.0 is the first signed release** (2026-10-10). This project's key
+is in AWS KMS as `alias/halite-release`, and its public half is committed
+as `contrib/keys/halite-release.pub` (P-256, fingerprint above).
 
 Everything here works with any key: `RELEASE_KEY` names the KMS key (an
 id, `alias/<name>`, or an ARN) and `RELEASE_PUB` the public key file it
@@ -219,8 +216,15 @@ export AWS_REGION=<region>        # the key's region; KMS keys are regional
 ```sh
 make release-sign
 make release-verify
-gh release upload v0.1.0 dist/*.sig --repo edlitmus/halite
+gh release upload v0.1.0 dist/SHA256SUMS.sig dist/*.tar.gz.sig dist/*.zip.sig \
+    --repo edlitmus/halite
 ```
+
+Upload the signatures of what the release publishes -- the manifest and
+the archives -- and not `dist/*.sig`. `release-sign` signs every line of
+the manifest, the 48 bare binaries included, because it signs what the
+manifest lists or nothing; but the release does not carry the bare
+binaries, so their signatures there would sit beside nothing.
 
 `release-sign` checks, before its first call to KMS, that every file
 matches its line in the manifest, that no `.sig` exists yet, and that the
@@ -264,7 +268,18 @@ credentials, or an instance role, and not from `~/.aws/credentials`;
 with the AWS CLI, `aws configure export-credentials --format env`
 puts them where it looks.
 
-**Not covered:** the procedure above on a published release -- a tag
-pushed, `release.yml` publishing, its `dist/` signed and the signatures
-uploaded -- has not been run, so no release is signed. The `publish` job
-has never run on a tag. Credentials from SSO were not tried.
+The whole procedure has been run once, for v0.1.0 on 2026-10-10: the
+tag pushed by name, `release.yml` publishing a pre-release from commit
+`e8d2560`, the first builder's `dist/` downloaded, signed with the
+current key, checked with `release-verify`, and the signatures uploaded.
+Checked afterwards from the release itself, downloaded fresh: all 16
+archives match `SHA256SUMS`; `SHA256SUMS.sig` and every archive's
+signature verify under `openssl` with the committed key; and
+`gh attestation verify` finds one SLSA v1 attestation over all 64
+artifacts, signed by `release.yml` at `refs/tags/v0.1.0`.
+
+**Not covered:** v0.1.0 was uploaded with `dist/*.sig`, before the
+command above was narrowed, so it also carries the 48 bare binaries'
+signatures with no file beside them. The release is published live and
+signed afterwards, so it existed unsigned for a while. Credentials from
+SSO were not tried.

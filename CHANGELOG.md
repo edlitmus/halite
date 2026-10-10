@@ -7,21 +7,28 @@ and carrying its code forward would have meant carrying its assumptions
 too. None of it remains, so its changelog has gone with it. `git log`
 before `3aec717` is where that history lives if it is ever wanted.
 
-Nothing here is released yet. Phases 0, 1, and 2 of the delivery plan in
-SPEC section 32 are complete: a node that manages its own tree, and a
-fleet driven from a hub. Phases 3 and 4 are complete too — the runners,
-orchestration, reactors, beacons, the scheduler, the mine, the API, and
-the extension model.
+Phases 0, 1, and 2 of the delivery plan in SPEC section 32 are
+complete: a node that manages its own tree, and a fleet driven from a
+hub. Phases 3 and 4 are complete too — the runners, orchestration,
+reactors, beacons, the scheduler, the mine, the API, and the extension
+model.
 
-**The first tag will be `v0.1.0`** — decided 2026-09-25. The numbering
+**The first release is `v0.1.0`**, tagged 2026-10-10. The numbering
 starts again from the rewrite rather than resuming the proof of concept's,
-which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
-`release.yml`, so the first tag is marked as one without anybody asking.
+which reached 0.12.0 before it was deleted (decided 2026-09-25). `v0.*`
+is a pre-release in `release.yml`, so it is marked as one.
 **1.0.0 still waits on SPEC section 32's phase 6 exit criteria.**
 
 ## Unreleased
 
-The state of the rebuild, by what it means rather than by commit.
+Nothing since 0.1.0.
+
+## 0.1.0 — 2026-10-10
+
+The first release of the rewrite, a pre-release: every change below,
+which is the state of the rebuild by what it means rather than by
+commit. Its archives and `SHA256SUMS` carry keyless SLSA provenance and
+detached signatures made with the key in `contrib/keys/halite-release.pub`.
 
 ### halite-api picks up a re-issued operator certificate without a restart
 
@@ -63,9 +70,10 @@ credentials, and `make release-pubkey` prints the key's public half. The
 tool refuses to sign a set whose files do not match the manifest, one
 already signed, or one whose KMS key is not the committed public key.
 
-**No release is signed yet.** The key exists, as `alias/halite-release`,
-and its public half is committed as `contrib/keys/halite-release.pub`;
-`release.yml` is unchanged. The client has been run against the real
+The key is `alias/halite-release`, its public half committed as
+`contrib/keys/halite-release.pub`, and 0.1.0 is signed with it;
+`release.yml` is unchanged, and the signatures are added after it
+publishes. The client has been run against the real
 key: `TestLiveKMSSignsADigestThisBuildVerifies` had KMS sign a digest
 that this build and OpenSSL both verified, and `make release-pubkey`
 matched the committed key byte for byte. Signing a real release has not
@@ -1614,7 +1622,7 @@ On a `v*` tag, `release.yml` publishes a GitHub release with the
 archives and `SHA256SUMS`, after the release gate, the two-builder
 comparison and the attestation have passed. It first checks that every
 file matches the compared manifest. `v0.*` and suffixed tags are marked
-pre-release. No tag has been pushed yet.
+pre-release. 0.1.0 is the first it published.
 
 ### Builds from a Mac's default `make` now refuse instead of being stamped blank
 
