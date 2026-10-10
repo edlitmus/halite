@@ -221,9 +221,10 @@ jobs:
   #
   # Keyless: the attestation is signed through Sigstore with this
   # workflow's own OIDC identity, so there is no long-lived key to keep or
-  # to lose. That is the choice for now (SPEC 4.3, decided 2026-09-25); a
-  # detached signature per artifact, which SPEC 4.3 also asks for, waits on
-  # where a signing key would live, and no key belongs on a hosted runner.
+  # to lose (SPEC 4.3, decided 2026-09-25). The detached signature per
+  # artifact, which SPEC 4.3 also asks for, is not made here: no key belongs
+  # on a hosted runner, so an operator makes it after `publish`, with a key
+  # held in AWS KMS (docs/releasing.md, `make release-sign`).
   #
   # It attests the *manifest*, not files. `subject-checksums` takes the
   # SHA256SUMS the compare job has just held equal across both builders,

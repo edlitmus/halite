@@ -1645,8 +1645,9 @@ after the release gate passes. On a downloaded binary from that run:
 
     gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite
 
-The binaries are kept for three days as a workflow artifact. No release
-is published yet, and detached signatures are still to come (SPEC 4.3).
+The binaries are kept for three days as a workflow artifact. (0.1.0 is
+the first release published this way, and it carries the detached
+signatures of SPEC 4.3 as well; see the signing entry above.)
 
 ### `group.present`'s `members` works on FreeBSD and macOS
 

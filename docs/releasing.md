@@ -194,6 +194,12 @@ gh run download <run id> --repo edlitmus/halite -n dist-ubuntu-24.04 -D dist
 gh attestation verify dist/halite-0.1.0-linux-amd64.tar.gz --repo edlitmus/halite
 ```
 
+`gh attestation` needs GitHub CLI 2.49 or later. Ubuntu 24.04's own
+package is 2.45, and Ubuntu Pro's esm-apps repository pins it above
+GitHub's, so installing from cli.github.com needs a pin to take effect:
+`Package: gh`, `Pin: origin cli.github.com`, `Pin-Priority: 600` in a
+file under `/etc/apt/preferences.d/`.
+
 The second line is the operator's own check that what was downloaded is
 what was attested; do it for more than one file if you like, since
 every digest in the manifest is a subject of the same attestation. The
