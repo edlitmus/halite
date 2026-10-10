@@ -23082,6 +23082,65 @@ been used, so none is kept.
 - Credentials from SSO were not tried. Nothing but a workstation with
   exported credentials has signed.
 
+### 5.276 A job signer whose key never leaves AWS KMS
+
+SPEC 25.6 names the signer for an estate "where hub compromise must not
+equal fleet compromise": "a bridged `signer` extension backed by a KMS".
+The bridge (5.170) and its reference extension existed, but that
+extension's key is a local PEM file. It proves the protocol, not the
+property, and plan.md §7 item 9 left a real signer as an action waiting
+on access to one.
+
+`cmd/halite-ext-signer-kms` is that signer. It speaks the protocol
+`halite-ext-signer-local` does, so `--sign-extension` and
+`internal/extsigner` take it without change. Its key half is
+`internal/awskms`, the client release signing built (5.275), which
+verifies every signature against the key's own public half before
+returning it. It names its key with `HALITE_EXT_SIGNER_KMS_KEY` and asks
+KMS for it at startup, so a key that does not exist, cannot sign, or is
+on P-384 stops the submission there, naming why. A digest that is not 32
+bytes is refused before it is sent.
+
+Naming a key is now one function, `awskms.NewClient`, shared with
+`tools/relsign`. It takes an id, an alias or an ARN; the region comes
+from the argument, `AWS_REGION`, or the ARN. It also honours the AWS
+SDKs' `AWS_ENDPOINT_URL_KMS` and `AWS_ENDPOINT_URL`, which is how the
+tests point the real binary at a fake service.
+
+The job key is its own, `alias/halite-jobs`, and not the release key.
+A job's signed digest is the SHA-256 of its payload, so a release-key
+signature over one would also be a valid release signature for a file
+holding exactly those bytes. The payload's `halite-job-v1` prefix
+narrows that, and a separate key closes it.
+
+Seen on Linux, 2026-10-10, against a real `ECC_NIST_P256` key in
+us-west-2, with an IAM user's credentials rather than the account's root:
+- `TestLiveKMSJobSignature`: KMS signed a job digest through the binary
+  and the bridge, and `jobsign.Verify` accepted it.
+- A throwaway hub and node with `require_job_signature: true`. The
+  node's `job_signer_keys` line was built with the documented `aws kms
+  get-public-key ... --query PublicKey --output text`, and the node
+  reported one trusted key. An unsigned `test.ping` was refused ("the
+  job carries no signature"). The same `test.ping` with
+  `--sign-extension ./halite-ext-signer-kms` ran and answered `True`.
+
+Tests, broken on purpose:
+- The handler signs and reports its key, and refuses a 48-byte digest,
+  a missing one and an unknown function.
+- The real binary, over the real bridge, against a fake KMS, signs a job
+  digest that `jobsign.Verify` accepts. Flipping a bit of the digest
+  before signing fails it.
+- Startup refuses a P-384 key and a missing one. With
+  `AWS_ENDPOINT_URL_KMS` ignored, the binary goes to real AWS and is
+  refused there.
+
+**Not covered:**
+- Orchestration steps are still not signed. That needs the design
+  decision §7 item 9 records (a live call per step, or a pre-approved
+  plan) before it needs code.
+- No hardware-token signer. Credentials from SSO, and a role assumed
+  from an instance, were not tried.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

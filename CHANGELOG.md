@@ -21,7 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-Nothing since 0.1.0.
+### Sign jobs with a key held in AWS KMS
+
+`halite-ext-signer-kms` is a signer extension for `halite-hub run
+--sign-extension` whose key never leaves AWS KMS. Neither the hub nor
+the machine submitting a job holds anything that can sign one, and
+every signature is a CloudTrail record. Name the key with
+`HALITE_EXT_SIGNER_KMS_KEY`; `docs/operations.md` gives the line for a
+node's `job_signer_keys`.
 
 ## 0.1.0 — 2026-10-10
 

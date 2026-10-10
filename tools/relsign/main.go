@@ -121,29 +121,11 @@ func (k *kmsFlags) client() (*awskms.Client, error) {
 	if k.key == "" {
 		return nil, errors.New("-key is required")
 	}
-	region, partition := k.region, k.partition
-	if region == "" {
-		region = os.Getenv("AWS_REGION")
+	c, err := awskms.NewClient(k.key, k.region, k.partition)
+	if err != nil {
+		return nil, fmt.Errorf("%w (or give -region)", err)
 	}
-	if partition == "" {
-		partition = os.Getenv("AWS_PARTITION")
-	}
-	if strings.HasPrefix(k.key, "arn:") {
-		// arn:<partition>:kms:<region>:<account>:key/<id>
-		parts := strings.Split(k.key, ":")
-		if len(parts) >= 6 {
-			if region == "" {
-				region = parts[3]
-			}
-			if partition == "" {
-				partition = parts[1]
-			}
-		}
-	}
-	if region == "" {
-		return nil, errors.New("no region: give -region, set AWS_REGION, or name the key by ARN")
-	}
-	return &awskms.Client{KeyID: k.key, Region: region, Partition: partition}, nil
+	return c, nil
 }
 
 func pubkeyCmd(ctx context.Context, args []string, out, log io.Writer) error {
