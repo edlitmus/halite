@@ -23029,6 +23029,59 @@ here; CI runs the Salt comparison.
 
 
 
+### 5.275 The first signed release, and what the release page left out
+
+SPEC 4.3's detached signature per artifact is done. v0.1.0, the first
+release of the rewrite, was tagged on 2026-10-10. `release.yml` published
+it as a pre-release from `e8d2560`, and the operator signed it afterwards
+with `tools/relsign` and a P-256 key held in AWS KMS. The public half is
+`contrib/keys/halite-release.pub`. Checked from the release itself,
+downloaded fresh:
+- all 16 archives match `SHA256SUMS`;
+- `SHA256SUMS.sig` and every archive's signature verify under `openssl`
+  with the committed key;
+- `gh attestation verify` finds one SLSA v1 attestation over the 64
+  artifacts, signed by `release.yml` at `refs/tags/v0.1.0`.
+
+Doing it for the first time found four things wrong, all in the prose
+around the tool rather than in the tool:
+
+- **The release page skipped from the key to the signature.**
+  `docs/releasing.md` never said that a release exists only once a `v*`
+  tag is pushed and the workflow publishes it, or that the `dist/` to
+  sign is that run's artifact. The operator built locally and signed, and
+  `gh release upload v0.12.0-827` answered `release not found`. The
+  version came from `git describe` reading the proof of concept's tags
+  (`v0.7.0`–`v0.12.0`), which a pre-rewrite clone still holds and which
+  are not on GitHub, and the build was `-dirty`. The page now numbers the
+  steps, and says to push the tag by name, since `git push --tags` would
+  publish those old tags (#294).
+- **The upload command uploaded too much.** `gh release upload ...
+  dist/*.sig` put the 48 bare binaries' signatures on a release that does
+  not carry the binaries. They were deleted from v0.1.0, and the command
+  now names the manifest's and the archives' signatures (#295).
+- **The workflow's notes said there was no signature.** The template
+  wrote "There is no detached signature yet (SPEC 4.3)" into every
+  release, so v0.1.0 said it was unsigned once it was signed. The
+  template now says how to check the signatures, and v0.1.0's notes were
+  corrected (#295).
+- **The documented check needs a newer `gh` than Ubuntu ships.** `gh
+  attestation` arrived in GitHub CLI 2.49. Ubuntu 24.04's package is
+  2.45, and with Ubuntu Pro its esm-apps copy is pinned at priority 510,
+  above GitHub's own repository at 500, so installing from cli.github.com
+  kept installing 2.45 until `gh` was pinned higher.
+
+The first key was replaced before anything was signed with it, by one
+whose policy does not involve the account's root user. No public key had
+been used, so none is kept.
+
+**Not covered:**
+- The release is published live and signed afterwards, so it exists
+  unsigned for a while. A workflow that publishes a draft for
+  `release-sign` to finish is not built.
+- Credentials from SSO were not tried. Nothing but a workstation with
+  exported credentials has signed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
