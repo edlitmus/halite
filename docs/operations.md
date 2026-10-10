@@ -1404,6 +1404,37 @@ functions — `sign` a digest, report `public_key` — against a different
 `handle`. `--sign-key` and `--sign-extension` name two different
 signers and refuse together.
 
+**A signer whose key never leaves AWS KMS.** `halite-ext-signer-kms`
+signs with an asymmetric key in KMS, so neither the hub nor the machine
+running `halite-hub run` holds anything that can sign: what an operator
+holds is permission to ask for a signature, and every signature is a
+CloudTrail record. The key is `ECC_NIST_P256` with usage `SIGN_VERIFY`;
+give it its own alias, not the release key's, and a policy that grants
+`kms:Sign` to the operators who submit jobs.
+
+```sh
+export HALITE_EXT_SIGNER_KMS_KEY=alias/halite-jobs   # an id, alias or ARN
+export AWS_REGION=<region>                          # unless the key is an ARN
+halite-hub run '*' state.apply --sign-extension ./halite-ext-signer-kms
+```
+
+Credentials come from the environment, a container's credentials, or an
+instance role; with the AWS CLI, `eval "$(aws configure
+export-credentials --format env)"` puts a profile's where it looks.
+`AWS_ENDPOINT_URL_KMS` names a KMS-compatible service instead of AWS.
+The extension asks KMS for the key when it starts, so a key that does
+not exist, cannot sign, or is on another curve stops the submission
+before anything is sent.
+
+A node accepts the signatures once the key's public half is in its
+`job_signer_keys`, as `<name> <base64 DER>`. KMS hands out exactly that
+DER, base64-encoded, so the line is:
+
+```sh
+echo "halite-jobs $(aws kms get-public-key --key-id alias/halite-jobs \
+    --region <region> --query PublicKey --output text)"
+```
+
 **What the requirement can say.** `true` for every job, `false` for none,
 or a list of function classes — `arbitrary_code`, `state`, `mutating`.
 SPEC 25.6 recommends `[arbitrary_code, state]`. A setting this build

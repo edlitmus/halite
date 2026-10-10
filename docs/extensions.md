@@ -11,7 +11,7 @@ a JSON protocol over stdio, packaged as a signed bundle, delivered
 through the same file server, verified on every load, pinned by digest,
 and run out of process in a sandbox.
 
-There are three complete ones in this repository.
+There are four complete ones in this repository.
 [`cmd/halite-ext-aws-secrets`](../cmd/halite-ext-aws-secrets) is the AWS
 Secrets Manager external pillar in Go — the same job
 `_pillar/aws_secrets_manager.py` does in a Salt tree, and what this page
@@ -31,7 +31,11 @@ signed `_ext/` cache the other two go through. Signing a job needs a key
 the hub does not have, so a signer has nothing to gain from the trust
 model built for code the fleet distributes to itself — it is invoked the
 way an operator invokes any program they already trust, by naming its
-path. See [Operations](operations.md#signing-a-job).
+path. Its key is a local file, so it proves the protocol rather than the
+property; the fourth,
+[`cmd/halite-ext-signer-kms`](../cmd/halite-ext-signer-kms), is the same
+two functions with the key held in AWS KMS, which is the signer SPEC
+25.6 names. See [Operations](operations.md#signing-a-job).
 
 ## The Go package
 

@@ -63,6 +63,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -389,4 +390,46 @@ func (c *Client) Sign(ctx context.Context, digest [sha256.Size]byte) ([]byte, er
 			pub.ARN)
 	}
 	return der, nil
+}
+
+// NewClient is a client for key -- an id, `alias/<name>`, or either one's
+// ARN -- with the region and partition taken from the arguments, then
+// from AWS_REGION and AWS_PARTITION, then from the ARN.
+//
+// The endpoint follows the AWS SDKs' own variables, AWS_ENDPOINT_URL_KMS
+// and then AWS_ENDPOINT_URL, so a KMS-compatible service or a test's fake
+// is named the way every other AWS tool names it.
+//
+// One function for every caller that names a key: `tools/relsign` and
+// `halite-ext-signer-kms` read a key the same way, and two copies of
+// this would be two answers to "which region is this key in".
+func NewClient(key, region, partition string) (*Client, error) {
+	if key == "" {
+		return nil, errors.New("no KMS key named")
+	}
+	if region == "" {
+		region = os.Getenv("AWS_REGION")
+	}
+	if partition == "" {
+		partition = os.Getenv("AWS_PARTITION")
+	}
+	if strings.HasPrefix(key, "arn:") {
+		// arn:<partition>:kms:<region>:<account>:key/<id>
+		if parts := strings.Split(key, ":"); len(parts) >= 6 {
+			if region == "" {
+				region = parts[3]
+			}
+			if partition == "" {
+				partition = parts[1]
+			}
+		}
+	}
+	if region == "" {
+		return nil, errors.New("no region: set AWS_REGION, or name the key by ARN")
+	}
+	endpoint := os.Getenv("AWS_ENDPOINT_URL_KMS")
+	if endpoint == "" {
+		endpoint = os.Getenv("AWS_ENDPOINT_URL")
+	}
+	return &Client{KeyID: key, Region: region, Partition: partition, Endpoint: endpoint}, nil
 }

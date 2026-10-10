@@ -98,7 +98,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: SPEC 20.3's reference returners, `postgres` and `sqs`, are not built. `halite-ext-aws-secrets` (a pillar source) and `halite-ext-signer-local` (a signer) ship as worked examples of the extension model. |
 | 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD, Common Linux and SUSE rows of SPEC 15.3 ship entirely, and macOS lacks only `mac_assistive`, which is out of the build on purpose. **17 of SPEC 15.3's 65 platform modules, 3 of SPEC 15.2's core execution modules (one of them `state`, struck rather than missing) and 2 of SPEC 15.5's core state modules (`pro` and `win_wua`) remain.** Re-measured on 2026-10-02 from `TestPendingPlatformModulesMatchTheSpec` ("65 modules, 17 pending") and the ledger's audited 2.1 and 2.2 preambles (53 of 56, 44 of 46). The row had said 23, 6 and 7 from 2026-09-15, and 32, 18 and 14 before that, while §2.2 said 9 and 10 -- the same drift, twice. |
-| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Node evidence and detached job signing are built (§7 item 9). Outstanding: the scale harness the other eleven performance rows need; native packages and an SBOM, where the tarballs, manual pages, provenance and detached release signatures are built (§3.6; v0.1.0 is the first signed release); a hardware or KMS signer (the evidence head has been anchored at the hub since DIVERGENCE 5.229); the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Node evidence and detached job signing are built (§7 item 9). Outstanding: the scale harness the other eleven performance rows need; native packages and an SBOM, where the tarballs, manual pages, provenance and detached release signatures are built (§3.6; v0.1.0 is the first signed release); orchestration signing, which needs a design decision before code (the KMS job signer, `halite-ext-signer-kms`, ships: DIVERGENCE 5.276); the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -2322,13 +2322,14 @@ unbuilt item here is number 7.
    `public_key` against that service instead of a local PEM file
    — `internal/extsigner.Bridged` and `--sign-extension` need no change
    at all, since they already speak the generic protocol.
-   *Updated 2026-10-10:* for AWS KMS the service half now exists.
-   Release signing built `internal/awskms` (`Sign` and `GetPublicKey`
-   over SigV4, no SDK, under the dependency allowlist) and has run it
-   against a real P-256 key, so `halite-ext-signer-kms` is a thin
-   `handle` over that client. It needs its own key, with a policy that
-   lets the operators who submit jobs call `Sign`, rather than the
-   release key. **Example**
+   ~~This action~~ is **done for AWS KMS, 2026-10-10** (DIVERGENCE
+   5.276): `cmd/halite-ext-signer-kms` is a `handle` over
+   `internal/awskms`, the client release signing built, with its own key
+   (`alias/halite-jobs`), not the release key. A node with
+   `require_job_signature` and that key's public half in
+   `job_signer_keys` refused an unsigned `test.ping` and ran the one the
+   extension signed through KMS. A PIV/YubiKey signer is still unwritten,
+   and needed only by an estate that wants one. **Example**
    once one exists:
 
    ```sh
