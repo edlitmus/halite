@@ -278,8 +278,10 @@ jobs:
   # exercised without minting a tag.
   #
   # v0.* and any tag with a suffix (v1.0.0-rc1) are marked pre-release:
-  # CHANGELOG.md says 1.0.0 is SPEC 32's phase 6, and the artifacts carry
-  # provenance but no detached signature yet (SPEC 4.3).
+  # CHANGELOG.md says 1.0.0 is SPEC 32's phase 6. The detached signatures
+  # of SPEC 4.3 are added by an operator after this job publishes
+  # (docs/releasing.md), so the notes say how to check them, not that
+  # they are there.
   publish:
     name: publish the release
     needs: attest
@@ -322,7 +324,13 @@ jobs:
               gh attestation verify halite-${version}-linux-amd64.tar.gz --repo ${GITHUB_REPOSITORY}
 
           The provenance is keyless SLSA, signed by this repository's release
-          workflow through Sigstore. There is no detached signature yet (SPEC 4.3).
+          workflow through Sigstore. Detached signatures, SHA256SUMS.sig and one
+          .sig per archive, are added after publication with the release key,
+          contrib/keys/halite-release.pub in the repository; a release without them
+          has not been signed yet. Check them with nothing but openssl:
+
+              openssl dgst -sha256 -verify halite-release.pub -signature SHA256SUMS.sig SHA256SUMS
+
           SHA256SUMS also lists the bare binaries, which are inside the archives.
           Changes are in CHANGELOG.md.
 
