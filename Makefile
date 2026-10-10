@@ -110,7 +110,7 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
 	fleetcheck fleetcheck-image fleetcheck-rocky9 fleetcheck-alma8 fleetcheck-leap16 dist \
-	release-sign release-verify release-pubkey \
+	release-sign release-verify release-pubkey release-publish \
 	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
 
 all: build
@@ -572,6 +572,29 @@ release-verify:
 
 release-pubkey:
 	@env $(DEV_ENV) go run ./tools/relsign pubkey -key "$(RELEASE_KEY)"
+
+# release-publish makes a draft release public, and only once the release
+# as GitHub holds it verifies: downloaded fresh, every archive and SBOM
+# present, matching SHA256SUMS, and signed, the manifest signed, nothing
+# in it the manifest does not list (`relsign verify -published`).
+# release.yml creates the release as a draft for this, so that a release
+# is never public before it is signed. TAG names it: make release-publish
+# TAG=v0.2.0. DIVERGENCE 5.278.
+RELEASE_REPO ?= edlitmus/halite
+
+release-publish:
+	@test -n "$(TAG)" || { echo "release-publish: TAG is required, e.g. make release-publish TAG=v0.2.0" >&2; exit 2; }
+	@draft=`gh release view "$(TAG)" --repo "$(RELEASE_REPO)" --json isDraft -q .isDraft` || exit 1; \
+	if [ "$$draft" != "true" ]; then \
+		echo "release-publish: $(TAG) is not a draft; it is already public" >&2; exit 1; \
+	fi; \
+	dir=`mktemp -d` || exit 1; \
+	trap 'rm -rf "$$dir"' EXIT; \
+	gh release download "$(TAG)" --repo "$(RELEASE_REPO)" -D "$$dir" || exit 1; \
+	env $(DEV_ENV) go run ./tools/relsign verify -published -dist "$$dir" -pub "$(RELEASE_PUB)" || { \
+		echo "release-publish: $(TAG) stays a draft" >&2; exit 1; }; \
+	gh release edit "$(TAG)" --repo "$(RELEASE_REPO)" --draft=false && \
+	echo "release-publish: $(TAG) is public"
 
 # Installation. The paths follow the platform the way the binaries do,
 # and internal/config's TestTheMakefileInstallsWhereTheBinariesLook holds

@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A release stays a draft until it is signed
+
+`release.yml` now creates each release as a draft, visible only to
+maintainers. `make release-publish TAG=...` makes it public, and only
+once every archive, SBOM and the manifest in the release as GitHub holds
+it carry a signature that verifies against the committed key. A release
+is no longer public before it is signed, as v0.1.0 was for a while.
+
 ### An SBOM for every release archive
 
 Each release archive now has a CycloneDX SBOM beside it,

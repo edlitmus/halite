@@ -31,10 +31,13 @@ precondition of the next.
    with the workflow's own GitHub identity, over exactly the digests the
    two builders agreed on. There is no long-lived key anywhere in this
    step. The gate must have passed for this job to run at all.
-5. **Publish.** The archives and `SHA256SUMS` from the first builder are
-   checked against the compared manifest once more, then
-   `gh release create` publishes them. A `v0.*` tag, or any tag with a
-   suffix such as `-rc1`, is marked a pre-release.
+5. **Publish, as a draft.** The archives, SBOMs and `SHA256SUMS` from the
+   first builder are checked against the compared manifest once more,
+   then `gh release create --draft` uploads them. A draft is visible
+   only to the repository's maintainers; it becomes public when an
+   operator has signed it and `make release-publish` has checked the
+   signatures (below). A `v0.*` tag, or any tag with a suffix such as
+   `-rc1`, is marked a pre-release.
 
 A manual run of the workflow, from the Actions tab, does everything but
 publish. It is how the build and the compare are exercised without
@@ -179,8 +182,8 @@ holds the proof of concept's tags, `v0.7.0` to `v0.12.0`, which are not
 on GitHub; `git describe` reads them, which is where a version like
 `0.12.0-827` comes from, and pushing them would publish them.
 
-**2. Let the workflow publish.** The tag starts `release.yml`; find the
-run and wait for all five jobs:
+**2. Let the workflow build the draft.** The tag starts `release.yml`;
+find the run and wait for all five jobs:
 
 ```sh
 gh run list --repo edlitmus/halite --workflow release.yml --limit 3
@@ -189,8 +192,9 @@ gh release view v0.1.0 --repo edlitmus/halite
 ```
 
 Until `gh release view` answers, there is no release to upload to, and
-`gh release upload` says `release not found`. A `v0.*` tag publishes a
-pre-release.
+`gh release upload` says `release not found`. It answers with a draft:
+nobody outside the repository's maintainers can see it yet. A `v0.*`
+tag makes a pre-release.
 
 **3. Download what it built**, into an empty `dist/`: `release-sign`
 refuses a directory that already holds a `.sig`.
@@ -223,8 +227,7 @@ against the manifest in the release. Whether a Mac reproduces the two
 Linux builders' digests byte for byte has not been demonstrated, and on
 a Mac `make` must be `bmake` or `gmake`.
 
-**4. Sign, check, upload**, naming the tag the release was published
-under. Credentials come from the environment, from whatever identity
+**4. Sign, check, upload** to the draft, naming its tag. Credentials come from the environment, from whatever identity
 the key's policy lets sign (an SSO login, an assumed role); with the
 AWS CLI:
 
@@ -254,10 +257,22 @@ key before writing it, and writes `<name>.sig` beside each file, DER.
 `release-verify` reads the set back with the public key and no
 credentials, and lists every problem rather than the first.
 
-Today the release is published live by the workflow and the signatures
-are added afterwards, so there is a window in which a release exists
-unsigned. Having the workflow publish a draft that `release-sign`
-finishes is the next change, and not this one.
+**5. Publish.** The release becomes public only through the gate:
+
+```sh
+make release-publish TAG=v0.1.0
+```
+
+It refuses a release that is not a draft, downloads the draft as GitHub
+holds it into a temporary directory, and runs `relsign verify
+-published` over it. Every archive and SBOM in the manifest must be
+there, match its line and carry a signature that verifies against the
+committed key; the manifest must be signed; and nothing may be in the
+release that the manifest does not list. Only then does it make the
+release public. Anything wrong leaves it a draft and says what. Before
+DIVERGENCE 5.278 the workflow published the release live and the
+signatures followed, so a release was public and unsigned in between;
+v0.1.0 was.
 
 ### What is and is not covered
 
@@ -306,5 +321,7 @@ workflow now writes. Downloaded again afterwards, it holds 34 assets --
 16 archives, `SHA256SUMS`, and 17 signatures -- and every signature
 verifies.
 
-**Not covered:** the release is published live and signed afterwards,
-so it existed unsigned for a while. Credentials from SSO were not tried.
+**Not covered:** v0.1.0 was published live and signed afterwards, so it
+existed unsigned for a while; releases after it are drafts until
+`release-publish` (5.278), and that path has not yet run on a real tag.
+Credentials from SSO were not tried.

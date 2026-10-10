@@ -66,6 +66,24 @@ import (
 // manifestName is what `make dist` writes and release.yml publishes.
 const manifestName = "SHA256SUMS"
 
+// publishedPatterns are the manifest entries a GitHub release carries:
+// the archives and their SBOMs. The bare binaries are in the manifest and
+// not in the release. release.yml's publish job uploads by these same
+// globs, and TestThePublishedSetIsWhatTheWorkflowUploads holds the two
+// together, because a release that carried a file this list did not name
+// would be published with that file unchecked.
+var publishedPatterns = []string{"halite-*.tar.gz", "halite-*.zip", "halite-*.cdx.json"}
+
+// published reports whether a manifest entry is one a release carries.
+func published(name string) bool {
+	for _, p := range publishedPatterns {
+		if ok, _ := filepath.Match(p, name); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -99,6 +117,7 @@ func usage() {
 		"  relsign pubkey -key <id|alias|arn> [-region r]            print the key's public half as PEM\n"+
 		"  relsign sign   -dist dist -key <id|alias|arn> -pub file   sign every artifact in dist/SHA256SUMS, and the manifest\n"+
 		"  relsign verify -dist dist -pub file                       check every artifact and signature in dist/\n"+
+		"  relsign verify -published -dist dir -pub file             check a downloaded release: its archives, SBOMs and signatures\n"+
 		"\n"+
 		"The region is -region, else AWS_REGION, else the region in an ARN key.\n"+
 		"Credentials are AWS_ACCESS_KEY_ID and friends in the environment, an\n"+
@@ -249,13 +268,86 @@ func verifyCmd(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	dist := fs.String("dist", "dist", "the directory holding SHA256SUMS, the artifacts and the .sig files")
 	pubFile := fs.String("pub", "", "the public key, PEM")
+	pub := fs.Bool("published", false, "check a release as published: the archives and SBOMs, not the bare binaries")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *pubFile == "" {
 		return errors.New("-pub is required")
 	}
+	if *pub {
+		return verifyPublished(*dist, *pubFile, out)
+	}
 	return verify(*dist, *pubFile, out)
+}
+
+// verifyPublished checks a release as GitHub serves it, downloaded into
+// dist: the manifest and its signature, and every manifest entry a
+// release carries (publishedPatterns), each present, matching its line,
+// and signed. The bare binaries are in the manifest and not in a
+// release, so their absence is not a problem; an archive's or an SBOM's
+// is. A file in dist that the manifest does not list is a problem too: a
+// release carrying something nobody summed is not the release that was
+// built.
+//
+// It is the gate `make release-publish` runs before a draft is made
+// public, so that a release is never public unsigned, and never public
+// with a signature missing or wrong. DIVERGENCE 5.278.
+func verifyPublished(dist, pubFile string, out io.Writer) error {
+	pub, err := readPublicKeyFile(pubFile)
+	if err != nil {
+		return err
+	}
+	entries, manifest, err := readManifest(dist)
+	if err != nil {
+		return err
+	}
+	var problems []string
+	if err := verifyOne(dist, manifestName, sha256.Sum256(manifest), pub.Key); err != nil {
+		problems = append(problems, err.Error())
+	}
+	listed := map[string]bool{}
+	checked := 0
+	for _, e := range entries {
+		listed[e.name] = true
+		if !published(e.name) {
+			continue
+		}
+		checked++
+		sum, err := fileDigest(filepath.Join(dist, e.name))
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: in the manifest and not in the release: %v", e.name, err))
+			continue
+		}
+		if sum != e.digest {
+			problems = append(problems, fmt.Sprintf("%s: digest %x, manifest says %x", e.name, sum, e.digest))
+			continue
+		}
+		if err := verifyOne(dist, e.name, e.digest, pub.Key); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+	if checked == 0 {
+		problems = append(problems, "the manifest lists no archive or SBOM; there is nothing a release would carry")
+	}
+	files, err := os.ReadDir(dist)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		name := strings.TrimSuffix(f.Name(), ".sig")
+		if name == manifestName || listed[name] {
+			continue
+		}
+		problems = append(problems, fmt.Sprintf("%s: in the release and not in the manifest", f.Name()))
+	}
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		return fmt.Errorf("%d problem(s) in %s:\n  %s", len(problems), dist, strings.Join(problems, "\n  "))
+	}
+	fmt.Fprintf(out, "%s and the %d published artifacts in %s verify against %s (%s)\n",
+		manifestName, checked, dist, pubFile, pub.Fingerprint())
+	return nil
 }
 
 // verify checks the manifest's signature, then every file against its
