@@ -23263,6 +23263,67 @@ Tests, broken on purpose:
   Branch-protection-like rules for releases are a repository setting,
   not something this repository enforces.
 
+### 5.279 The scale harness exists, and has been run once, at 200 nodes
+
+5.57 left eleven of SPEC 30's thirteen rows tracked rather than measured,
+most of them waiting on "the simulated node harness". `tools/simfleet`
+is that harness, and `make simfleet` builds it into `bin/simfleet`. It is
+not in `BINARIES`: it is a measuring tool, and the release archives do
+not carry it.
+
+What is real in it: the hub is the real `halite-hub serve`; each
+simulated node holds an identity the hub's own CA issued through
+`keystore.Authority`, and its own mutual-TLS stream through
+`transport.Client`. What is simulated is the work: `test.ping` answers
+`true`, anything else answers an empty success, at once. By default each
+return opens a new client, as `postReturns` in `halite-node` does, so the
+hub sees the connection load a real fleet would give it; `-reuse-client`
+files returns on one connection per node, to put a number on the
+difference.
+
+**What has been run, and it is not a measurement.** One 200-node run on a
+Linux development workstation, with the hub on loopback and the fleet on
+the same machine: 200 of 200 connected in 522 ms; a `test.ping` was
+returned by 200 of 200 (p95 225 ms); a `state.apply` dispatch reached
+200 of 200 (last 43 ms); no return errors. That shows the mechanism
+works. It is two orders of magnitude under the targets, on a host that is
+not a 16-core hub, and nothing in it is a SPEC 30 result. The rows in
+`internal/perf` still say they are waiting, and that is right: the
+harness now exists, and nobody has yet run it at the size the rows name.
+
+**Two defects, one of each kind.**
+
+*Found by running it.* `setup` was not re-runnable. Growing a fleet from
+200 identities to 2,000 generated a new key for `sim-00001`, and the hub
+refused it as "already known by a different key", correctly: a rebuilt
+node has to be deleted first. `setup` now keeps any identity whose
+certificate is already on disk. That fix has **not** been re-run, and has
+not been broken on purpose to watch it fail; the run that would have
+shown it was stopped because the host was unsuitable.
+
+*Found by CI.* The harness first wrote its private keys and directories
+with `os.WriteFile` 0600 and `os.MkdirAll` 0700, which restrict nothing
+on Windows; `TestNothingElseCreatesAPrivateFileWithTheStandardLibrary`
+failed the test, race and FIPS jobs on every platform until it went
+through `internal/fileperm` (the same finding as 5.161, in a tool that
+was a day old).
+
+**Not verified**, and the reason a run at scale is still owed:
+
+- Anything above 200 nodes: the connection ramp, hub resident memory, and
+  file descriptor and ephemeral port limits.
+- Hub memory at all. The 200-node run was given the wrong `-hub-pid`
+  (`pgrep -f` matched the shell that ran it), so no resident-memory line
+  was printed.
+- Job attribution in `measure`. Any job that arrives while measuring is
+  timed as the measured one, because a node can answer before `Submit`
+  returns the jid. That holds while one job is in flight and not otherwise.
+- The cost of a connection per return against `-reuse-client`.
+- FreeBSD, which carries about 80% of production. The `ps`-based RSS read
+  is written to answer there, and has only run on Linux.
+
+`plan.md` 3.1a has the steps for a suitable host.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

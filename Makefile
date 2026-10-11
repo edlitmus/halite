@@ -105,7 +105,7 @@ TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 	linux/riscv64 linux/ppc64le linux/s390x
 TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
-.PHONY: all make-supports-bang build test chaos perf perf-bench race vet cover check release release-gate cross clean tidy vendor policy fmt \
+.PHONY: all make-supports-bang build test chaos perf perf-bench simfleet race vet cover check release release-gate cross clean tidy vendor policy fmt \
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
@@ -294,6 +294,21 @@ perf:
 # perf-bench is the raw measurement, for comparing two revisions.
 perf-bench:
 	@env $(DEV_ENV) go test -count=1 -run XXX -bench . -benchmem ./internal/perf/
+
+# simfleet builds the simulated node harness of SPEC 30 into bin/simfleet.
+#
+# It is a target of its own and not one of BINARIES, deliberately: it is a
+# measuring tool, not part of the product, so `make build`, `make release`
+# and the archives do not carry it. Building it here does not run it. A
+# run at scale wants a hub host that matches SPEC 30's "one 16-core hub"
+# and a separate machine for the fleet, because a fleet on the hub's own
+# machine takes CPU from the thing being measured; the usage is in the
+# header of tools/simfleet/main.go, and plan.md 3.1a says what has and has
+# not been run.
+simfleet: make-supports-bang
+	@mkdir -p bin
+	@echo "building bin/simfleet"
+	@env $(DEV_ENV) go build $(BUILDFLAGS) -o bin/simfleet ./tools/simfleet
 
 vet:
 	@env $(DEV_ENV) go vet ./...

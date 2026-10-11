@@ -853,12 +853,10 @@ can drive it from elsewhere):
    same change that records it, and regenerate whatever the generated
    docs and `internal/perf` need. Rows the harness cannot reach (5,000
    events/second, node idle memory) stay recorded as unmeasured.
-6. Then land the harness itself: a `make` target (BSD make, `!=`, no
-   `$(shell)`), a DIVERGENCE entry (`go run ./tools/ledger next` for the
-   number), a CHANGELOG line, and the audits (`go test -count=1
-   ./internal/specaudit ./internal/docsaudit ./internal/perf`). It is
-   currently an untracked directory on branch `feat/scale-harness` with
-   no commit.
+6. The harness itself is landed: `make simfleet` builds `bin/simfleet`,
+   and DIVERGENCE 5.279 records what it is, the one 200-node run and what
+   that run did not cover. What remains is to put the real results in the
+   same entry, as a subsection, when there are any.
 
 ### 3.2 The observability trio (SPEC 26): metrics are nearly done
 
