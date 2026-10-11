@@ -56,6 +56,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/pki"
@@ -109,7 +110,7 @@ func setupCmd(args []string) error {
 		return err
 	}
 	for _, d := range []string{"pki", "state", "cache", "fleet"} {
-		if err := os.MkdirAll(filepath.Join(abs, d), 0o700); err != nil {
+		if err := fileperm.MkdirAll(filepath.Join(abs, d), 0o700); err != nil {
 			return err
 		}
 	}
@@ -223,7 +224,7 @@ func writePair(base string, certPEM []byte, key crypto.Signer) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(base+".key", keyPEM, 0o600); err != nil {
+	if err := fileperm.WriteFile(base+".key", keyPEM, 0o600); err != nil {
 		return err
 	}
 	return os.WriteFile(base+".crt", certPEM, 0o644)
