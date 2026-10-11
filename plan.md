@@ -793,6 +793,73 @@ events/second, hub memory under 4 GiB, node memory under 40 MiB idle.
 Each is tracked with what it waits on, which is a different thing from
 being measured.
 
+#### 3.1a The simulated node harness: written, smoke-tested, not yet used
+
+`tools/simfleet` is the harness those eleven rows wait on. It builds under
+the vendored flags and has been run once, at **200 nodes on a development
+workstation**, against a real `halite-hub serve` on loopback. That run
+shows only that the mechanism works: all 200 connected in 522 ms, a
+`test.ping` returned from 200 of 200 (p95 225 ms) and a `state.apply`
+dispatch reached 200 of 200 (last 43 ms), with no return errors. It is
+not a measurement of any SPEC 30 row, and nothing here should be quoted
+as one: 200 nodes is two orders of magnitude under the targets, and the
+hub and the fleet shared one machine that is not a 16-core hub host.
+
+What was found by running it, and is fixed in the working tree: `setup`
+was not re-runnable. Growing a fleet from 200 to 2,000 identities
+regenerated a key for `sim-00001`, which the hub correctly refused as
+"already known by a different key". `setup` now keeps any identity whose
+certificate is already on disk. **That fix has not itself been re-run**:
+the run that would have shown it was stopped when the host turned out to
+be unsuitable. It should be broken on purpose (revert the skip, grow a
+fleet, watch the refusal) before it is believed.
+
+What was not verified:
+
+- Anything above 200 nodes. Connection ramp, hub resident memory, file
+  descriptor and ephemeral-port limits are all untested.
+- Hub memory. The 200-node run was given the wrong hub PID, so no
+  resident-memory line was printed. `-hub-pid` must be the `halite-hub`
+  process, not a `pgrep -f` match, which also matches the shell that ran it.
+- The jid attribution in `measure`. Any job arriving during the window is
+  timed as the measured one, because a node can answer before `Submit`
+  returns the jid. That is sound only while one job is in flight.
+- The default of a new TLS connection per return (as `halite-node` does)
+  against `-reuse-client`; the cost difference has not been measured.
+- FreeBSD, which is tier 1 and about 80% of production. The `ps`-based
+  RSS reading is written to answer on both, but has only run on Linux.
+
+Next steps, for a host that is suitable (the SPEC row says "one 16-core
+hub", so the hub host should be that, with the fleet on a separate
+machine; `-hub` and `-root` exist so that a copy of the `setup` directory
+can drive it from elsewhere):
+
+1. Raise the file descriptor limit on both hosts and check the ephemeral
+   port range on the fleet host; 20,000 streams plus returns will meet
+   both.
+2. `simfleet setup -root DIR -n 20000` on one host (identity issue is
+   2.4 s per 200 on a workstation; expect minutes), copy `DIR` to the
+   fleet host, start the hub with `--names` covering the address the
+   fleet will dial, and pass the real `halite-hub` PID as `-hub-pid` when
+   the hub is on the same machine as the harness. When it is not, read
+   hub RSS on the hub host by hand and say so.
+3. Step the fleet up (2,000, 5,000, 10,000, 20,000) rather than going
+   straight to the target, and keep every step's output; a long run's
+   output must survive it, so do not pipe it through `tail`.
+4. Run `-ping` and `-apply` at each step, then `-ping -reuse-client` once
+   at the top, to put a number on the per-return connection cost.
+5. Record each result as the SPEC 30 row's own measurement with the
+   machine, core count, versions and what the run did not cover, in the
+   same change that records it, and regenerate whatever the generated
+   docs and `internal/perf` need. Rows the harness cannot reach (5,000
+   events/second, node idle memory) stay recorded as unmeasured.
+6. Then land the harness itself: a `make` target (BSD make, `!=`, no
+   `$(shell)`), a DIVERGENCE entry (`go run ./tools/ledger next` for the
+   number), a CHANGELOG line, and the audits (`go test -count=1
+   ./internal/specaudit ./internal/docsaudit ./internal/perf`). It is
+   currently an untracked directory on branch `feat/scale-harness` with
+   no commit.
+
 ### 3.2 The observability trio (SPEC 26): metrics are nearly done
 
 This section has moved further than any other since the last revision.
