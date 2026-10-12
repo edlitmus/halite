@@ -264,6 +264,9 @@ credentials, and lists every problem rather than the first.
 make release-publish TAG=v0.1.0
 ```
 
+(The commands in this section name v0.1.0 because that is the release they
+were first written against; use the tag you pushed.)
+
 It refuses a release that is not a draft, downloads the draft as GitHub
 holds it into a temporary directory, and runs `relsign verify
 -published` over it. Every archive and SBOM in the manifest must be
@@ -322,7 +325,26 @@ workflow now writes. Downloaded again afterwards, it holds 34 assets --
 16 archives, `SHA256SUMS`, and 17 signatures -- and every signature
 verifies.
 
-**Not covered:** v0.1.0 was published live and signed afterwards, so it
-existed unsigned for a while; releases after it are drafts until
-`release-publish` (5.278), and that path has not yet run on a real tag.
-Credentials from SSO were not tried.
+v0.1.1 (2026-10-12) is the first release to go through the draft path of
+5.278, and the first to carry the FIPS archives and `service/` and
+`handbook/` in its archives. It was dry-run first by a manual run of the
+workflow on the same commit (nothing published). The tag was then pushed
+by name, `release.yml` created a pre-release **draft** with 37 assets (18
+archives, 18 SBOMs, `SHA256SUMS`), and the first builder's `dist/` was
+downloaded from the run: its manifest was byte-identical to the draft's,
+all 90 files matched their lines, and `gh attestation verify` passed on
+one archive. `release-sign` then signed all 91 entries with the current
+key, `release-verify` passed, and the 37 signatures for the files the
+release carries (not the bare binaries') were uploaded, making 74
+assets. `make release-publish TAG=v0.1.1` downloaded the draft fresh,
+verified its 36 archives and SBOMs and the manifest, and made it public
+(`gh release edit --draft=false`, the step 5.278 had not run). From the
+public URLs with no authentication, `SHA256SUMS`, its signature and one
+archive's signature verified under `openssl` with the committed key.
+
+**Not covered:** the credentials were a static key and secret in the
+environment, so SSO and an assumed role were still not tried.
+`gh attestation verify` was run on one archive of the 90, not all of
+them; the contents of the other 17 archives were not opened, and no
+`-fips` binary has run on a host in kernel FIPS mode. The gate checks
+what was signed, not who may run it (5.278).
