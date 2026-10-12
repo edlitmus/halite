@@ -1,0 +1,98 @@
+.\" halite-policy(5)
+.\"
+.\" The example policy quoted in the Handbook's chapter 26 is held to the
+.\" decisions that chapter states by a test in cmd/halite-hub.
+.Dd October 11, 2026
+.Dt HALITE-POLICY 5
+.Os
+.Sh NAME
+.Nm policy.yaml
+.Nd who may do what to which machines
+.Sh DESCRIPTION
+.Pa policy.yaml
+is read from the configuration directory (the
+.Cm policy
+setting of
+.Pa hub.yaml
+changes where) by
+.Xr halite-hub 8
+and by
+.Xr halite-api 8 .
+Authorization is deny by default: a principal bound to no role may do
+nothing, and a missing file means every job is refused.
+.Pp
+The file has two parts.
+.Bl -tag -width "bindings"
+.It Cm roles
+named lists of rules.
+A rule has a
+.Cm target
+pattern and the
+.Cm functions
+permitted against it, together, and a request must match one rule entirely.
+A rule for runners has
+.Cm runners
+in place of both.
+.It Cm bindings
+attach roles to principals, which may be patterns.
+.El
+.Sh ARGUMENT LIMITS
+A rule may carry
+.Cm args ,
+keyed by function:
+.Bl -tag -width "allow_sls" -compact
+.It Cm allow_sls , Cm deny_sls
+which SLS files a state run may name.
+.It Cm allow_mods
+which orchestrations a runner may run.
+.It Cm deny_kwargs
+keyword arguments that may not be passed, such as
+.Ql pillar .
+.El
+.Sh PRINCIPALS
+.Bl -tag -width "reactor:name" -compact
+.It Li cert:CN=name
+an operator identified by a client certificate.
+.It Li node:id
+a node, matched by pattern.
+.It Li reactor:name
+a reaction.
+.It Li local:name
+a local account.
+.El
+.Sh FUNCTIONS NO WILDCARD GRANTS
+A wildcard in
+.Cm functions
+does not grant the functions that run arbitrary code, such as
+.Ql cmd.run .
+They must be named in a role.
+.Xr halite-hub 8 Ns 's
+.Ic policy show
+lists them for the running build.
+.Sh EXAMPLE
+.Bd -literal -offset indent
+roles:
+  webops:
+    - target: 'web*.prod'
+      functions: ['state.apply', 'service.*']
+      args:
+        'state.apply':
+          allow_sls: ['webserver.*']
+          deny_kwargs: ['pillar']
+bindings:
+  - principal: 'cert:CN=alice'
+    roles: ['webops']
+.Ed
+.Pp
+A policy is checked before it matters with
+.Dl halite-hub policy test cert:CN=alice web1.prod state.apply webserver.nginx
+which exits 1 on a denial.
+.Sh NOTES
+The hub and the API read the file only when they start.
+After a change, restart both.
+.Sh SEE ALSO
+.Xr halite 7 ,
+.Xr halite-hub 8 ,
+.Xr halite-api 8
+.Pp
+The Handbook, chapter 26.

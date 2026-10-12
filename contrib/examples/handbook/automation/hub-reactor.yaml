@@ -1,0 +1,14 @@
+# The reactor: section of hub.yaml.
+reactor:
+  # The Salt-shaped form: a tag glob and the reaction files it runs.
+  - 'halite/node/*/start':
+      - /etc/halite/reactor/node-started.sls
+
+  # The form that carries the controls and the identity.
+  - tag: 'halite/beacon/*/filechanges/**'
+    sls:
+      - /etc/halite/reactor/config-changed.sls
+    principal: 'reactor:watch'
+    debounce: 5s
+    dedupe_window: 30s
+    rate_limit: 600/m

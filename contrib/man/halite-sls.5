@@ -1,0 +1,114 @@
+.\" halite-sls(5)
+.\"
+.\" mdoc, like the section 8 pages. Every statement here is one the
+.\" Handbook demonstrates against a running lab; chapters 5 and 6 carry
+.\" the worked examples and the observed output.
+.Dd October 11, 2026
+.Dt HALITE-SLS 5
+.Os
+.Sh NAME
+.Nm SLS
+.Nd the file format in which halite states are written
+.Sh DESCRIPTION
+An
+.Nm
+file is YAML describing the state a machine should be in.
+A tree of them is applied by
+.Xr halite-node 8
+and served by
+.Xr halite-hub 8 .
+Applying a tree twice changes nothing the second time; this is what is meant
+by idempotent, and every state function is expected to behave so.
+.Pp
+An SLS file is rendered as a template first (Jinja), then parsed as YAML.
+.Sh DECLARATIONS
+A declaration is a mapping from an
+.Em ID
+to a single
+.Em module.function
+whose value is a list of one-key mappings, the arguments:
+.Bd -literal -offset indent
+nginx_conf:
+  file.managed:
+    - name: /etc/nginx/nginx.conf
+    - source: salt://webserver/files/nginx.conf
+    - mode: '0644'
+    - require:
+      - pkg: nginx
+.Ed
+.Pp
+The ID must be unique across the whole compiled tree, not only the file.
+The argument
+.Ar name
+defaults to the ID.
+A function with no arguments is written
+.Ql pkg.installed: []
+or bare as
+.Ql pkg.installed .
+.Pp
+.Ar names
+expands one declaration into one state per name; any other argument applies to
+all of them.
+.Sh YAML CAUTIONS
+.Bl -bullet -compact
+.It
+Indent with spaces.
+A tab is an error.
+.It
+A repeated key in one mapping is an error.
+.It
+.Ql mode: 0644
+is the number 420 and is refused; write
+.Ql mode: '0644' .
+.It
+.Ql yes ,
+.Ql no ,
+.Ql on
+and
+.Ql off
+are booleans.
+They are accepted, because existing trees depend on it, and each use is
+reported as a warning with its file and line.
+.El
+.Sh REQUISITES
+Order follows the order written unless a requisite says otherwise.
+.Bl -tag -width "onchanges" -compact
+.It Cm require
+after the target, and only if it succeeded.
+.It Cm watch
+.Cm require ,
+and also react if the target changed.
+.It Cm onchanges
+run only if the target reported changes.
+.It Cm onfail
+run only if the target failed.
+.It Cm prereq
+run before the target, and only if the target would change.
+.It Cm use
+inherit the target's arguments.
+.It Cm listen
+like
+.Cm watch ,
+but the reaction is deferred to the end of the run.
+.El
+.Pp
+Each has an
+.Ql _in
+form written from the other side, and most an
+.Ql _any
+form satisfied by any one target.
+A requisite names its target as
+.Ql module: id .
+.Sh TOP FILE
+.Pa top.sls
+maps environments and targets to the SLS files that apply to them.
+The pillar has its own
+.Pa top.sls .
+.Sh SEE ALSO
+.Xr halite 7 ,
+.Xr halite-node 8 ,
+.Xr halite-hub 8
+.Pp
+The Handbook, chapters 4 to 7, in the
+.Pa handbook/
+directory of a release archive.

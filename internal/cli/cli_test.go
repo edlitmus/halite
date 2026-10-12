@@ -280,6 +280,22 @@ func TestTxtIsOneLinePerTopLevelKey(t *testing.T) {
 	}
 }
 
+// A nested value on a txt line is JSON, not the Go value behind it.
+//
+// `halite-node state apply --out txt` printed each state's return as
+// `&{[{__id__ web { 0 0} { 0 0}} ...] map[s__id__:0 ...]}`: renderScalar
+// formats a type it does not know with %v, and txt hands it the whole
+// return. Found by running the command while documenting it, which no
+// test had done: the existing test passed it only booleans.
+func TestTxtPrintsANestedValueAsJSON(t *testing.T) {
+	v := value.MapOf("web1", value.MapOf("ok", true, "n", int64(2)), "web2", []any{"a", "b"})
+	out := render(t, v, Txt)
+	want := "web1: {\"ok\":true,\"n\":2}\nweb2: [\"a\",\"b\"]\n"
+	if out != want {
+		t.Errorf("txt = %q, want %q", out, want)
+	}
+}
+
 func TestJSONOutputIsMachineReadable(t *testing.T) {
 	out := render(t, value.MapOf("b", int64(2), "a", int64(1)), JSON)
 	if strings.TrimSpace(out) != `{"b":2,"a":1}` {

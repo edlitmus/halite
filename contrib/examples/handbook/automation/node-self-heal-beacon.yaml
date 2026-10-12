@@ -1,0 +1,13 @@
+# node.yaml: watch the file a state owns, and report only when it changes.
+#
+# onchangeonly turns the beacon's readings into "this file changed";
+# without it the beacon reports the file every interval.
+# disable_during_state_run keeps the repair itself, which rewrites the file,
+# from being reported as a fresh change while it is happening.
+beacons:
+  filechanges:
+    - files:
+        - /tmp/halite-lab/web1.lab/motd
+    - interval: 2
+    - onchangeonly: True
+    - disable_during_state_run: True

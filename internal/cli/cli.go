@@ -265,11 +265,30 @@ func writeTxt(w io.Writer, v any) error {
 		return err
 	}
 	for _, e := range m.Entries() {
-		if _, err := fmt.Fprintf(w, "%s: %s\n", value.KeyString(e.Key), renderScalar(e.Val)); err != nil {
+		if _, err := fmt.Fprintf(w, "%s: %s\n", value.KeyString(e.Key), txtValue(e.Val)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// txtValue renders what one line of --out=txt holds.
+//
+// A scalar prints as it does everywhere. A mapping or a list does not
+// have a one-line form of its own, and it used to fall through to
+// renderScalar, which formats an unknown type with %v: a state run's
+// return printed as `&{[{__id__ ...} {__sls__ ...}] map[s__id__:0 ...]}`,
+// the Go struct behind the value, with a pointer in it. Compact JSON is
+// the form that is one line, round-trips, and that a person can read.
+func txtValue(v any) string {
+	switch v.(type) {
+	case *value.Map, []any:
+		b, err := value.EncodeJSON(v, 0)
+		if err == nil {
+			return string(b)
+		}
+	}
+	return renderScalar(v)
 }
 
 // writeNested renders the tree the way `--out=nested` does.

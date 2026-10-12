@@ -23324,6 +23324,48 @@ was a day old).
 
 `plan.md` 3.1a has the steps for a suitable host.
 
+### 5.280 The Handbook, built from the code and shipped in every release
+
+Until now the documentation was a dozen hand-written guides and four
+generated references, with nothing that taught Salt's ideas to a reader who
+had never met them, no runbooks, and no index. `docs/handbook/` is a book:
+72 chapters in parts (orientation, describing machines, acting on the
+fleet, automation, security, runbooks, reference, the code, appendices),
+rendered to HTML by `tools/handbook` and carried in every release archive
+under `handbook/`, with `make dist` depending on `make handbook` so no
+archive is made without the documentation of the commit it was built from.
+
+**What keeps it true**, as checks rather than intentions
+(`internal/docsaudit/handbook_test.go`, `internal/handbook`):
+
+- every code block that quotes an example is compared byte for byte with
+  the file under `contrib/examples/handbook`, and those files are run:
+  `cmd/halite-node/handbook_examples_test.go` applies the playground
+  (exit 0, then 2), compiles the web-server tree for Debian, RedHat and
+  FreeBSD and checks the requisites outcomes;
+  `cmd/halite-hub/handbook_policy_test.go` holds the chapter 26 policy to
+  its quoted decisions; `internal/hub/handbook_examples_test.go` runs the
+  orchestrations and reactions on the hub. Each was broken on purpose and
+  failed.
+- the code chapters and the CLI reference are generated (`go run
+  ./tools/handbook gen`), the index is built from the registries of the
+  build, every command, beacon, runner, requisite and event tag must be
+  covered, and the HTML build is reproducible.
+- links, chapter-number references and the four runbook headings are
+  checked.
+
+**Defects found by writing it against a lab** (a hub, three nodes, the API,
+a webhook receiver): `--out txt` printed a nested value as a Go map, and
+the `cert_info` beacon never passed its `certificate` argument. Both are
+fixed with tests. The lab also showed the loop breaker, deduplication and
+`filechanges` behaving differently from what the first drafts said; the
+chapters were corrected to what was observed.
+
+**Not verified**: installation as root, FreeBSD, cloud-init, the cron and
+mail drift report, deferred-restart upgrades, and a whole bootstrap over
+ssh. The chapters say so where they describe them. Chapters 60 and 61 are
+written last and are the only ones that describe the toolchain itself.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

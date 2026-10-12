@@ -1,0 +1,57 @@
+.Dd October 11, 2026
+.Dt HALITE 7
+.Os
+.Sh NAME
+.Nm halite
+.Nd configuration management and remote execution for a fleet
+.Sh DESCRIPTION
+.Nm
+is a hub, a node agent and an HTTP API.
+The hub holds the state tree, the pillar data and the policy, and is the
+certificate authority for the fleet.
+A node runs on every managed machine and keeps a mutually authenticated
+connection to the hub.
+The API exposes the hub to scripts and other systems.
+.Pp
+There are three programs:
+.Bl -tag -width "halite-node" -compact
+.It Xr halite-hub 8
+the hub.
+.It Xr halite-node 8
+the node agent, which also applies state locally with
+.Fl Fl local .
+.It Xr halite-api 8
+the HTTP API.
+.El
+.Sh CONCEPTS
+.Bl -tag -width "pillar"
+.It state
+A declaration of how a machine should be, written in an SLS file.
+Applying it makes the machine match; applying it again changes nothing,
+and that is what idempotent means here.
+.It grain
+A fact a node reports about itself, such as its operating system.
+.It pillar
+Data the hub gives to the nodes selected for it, and to no others.
+.It beacon
+A watcher on a node that turns a local condition into an event.
+.It reactor
+A rule on the hub that turns an event into work.
+.El
+.Sh FILES
+.Bl -tag -width "/etc/halite/hub.yaml" -compact
+.It Pa /etc/halite
+configuration on Linux; on FreeBSD,
+.Pa /usr/local/etc/halite .
+.El
+.Sh SEE ALSO
+.Xr halite-sls 5 ,
+.Xr halite-policy 5 ,
+.Xr halite-hub 8 ,
+.Xr halite-node 8 ,
+.Xr halite-api 8
+.Pp
+The Handbook, in the
+.Pa handbook/
+directory of a release archive, is the complete documentation; begin
+with its first chapter.

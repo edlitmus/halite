@@ -1,0 +1,14 @@
+user {{ run_as }};
+worker_processes {{ worker_processes }};
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include {{ salt['pillar.get']('nginx:lookup:conf_dir', '/etc/nginx') }}/sites/*.conf;
+    server {
+        listen {{ port }};
+        location /healthz { return 200 "ok\n"; }
+    }
+}

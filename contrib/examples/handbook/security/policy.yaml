@@ -1,0 +1,50 @@
+# A policy for a small estate: who may do what, to which machines.
+#
+# One file, one grammar, deny by default. A rule names a TARGET and the
+# FUNCTIONS permitted against it together, and a request must match one rule
+# entirely. A principal bound to no role may do nothing.
+#
+# `halite-hub policy test <principal> <target> <function> [args]` evaluates a
+# request against this file and exits 1 on a denial; the handbook's chapter on
+# authorization shows each decision below, and a test checks them.
+roles:
+  webops:
+    - target: 'web*.prod'
+      functions:
+        - 'state.apply'
+        - 'service.*'
+        - 'pkg.installed'
+      args:
+        'state.apply':
+          allow_sls: ['webserver.*']
+          deny_kwargs: ['pillar']
+    - target: 'web*.prod'
+      functions: ['test.ping', 'grains.items']
+
+  readonly:
+    - target: '*'
+      functions: ['test.ping', 'grains.*', 'sys.*', 'state.show_*']
+
+  everything-but:
+    - target: '*'
+      functions: ['*']
+
+  deployer:
+    - runners: ['state.orchestrate']
+      args:
+        'state.orchestrate':
+          allow_mods: ['deploy.*']
+
+  lb_peer:
+    - target: 'web*'
+      functions: ['ips']
+
+bindings:
+  - principal: 'cert:CN=alice'
+    roles: ['webops', 'readonly']
+  - principal: 'cert:CN=carol'
+    roles: ['everything-but']
+  - principal: 'cert:CN=ci-pipeline'
+    roles: ['deployer']
+  - principal: 'node:lb*.prod'
+    roles: ['lb_peer']

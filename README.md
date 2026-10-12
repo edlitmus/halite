@@ -32,7 +32,7 @@ tar -xzf halite-$v-$p.tar.gz
 sudo install -m 0755 halite-$v-$p/bin/halite-node /usr/local/bin/
 ```
 
-No release has been tagged yet. Until one is, build from source:
+To build from source instead:
 
 ```sh
 make build        # on a Mac, gmake or bmake; see Building below
@@ -69,6 +69,7 @@ create: put the tree in a directory you own and pass that to
 
 | | |
 |---|---|
+| [The Handbook](docs/handbook/README.md) | The complete documentation: concepts, runbooks, reference and the code. Built to HTML for every release. |
 | [Getting started](docs/getting-started.md) | Install, a first tree, a first apply. |
 | [Writing states](docs/states.md) | Declarations, requisites, templates, pillar. |
 | [Operations](docs/operations.md) | Scheduling, service files, exit codes, logging. |
