@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### FIPS builds are part of the release
+
+Each release now carries `halite-<version>-linux-amd64-fips.tar.gz` and
+`…-linux-arm64-fips.tar.gz` (SPEC 27.4), with SBOMs, checksums, provenance and
+signatures like every other archive. They were defined and buildable but never
+published. The Handbook's install chapter now says which release layout holds
+`service/` and `handbook/` (every release after v0.1.0, not v0.1.0 itself).
+See DIVERGENCE 5.282.
+
 ### The release manifest no longer lists itself
 
 About one `make dist` in a hundred wrote a `SHA256SUMS` containing a line for

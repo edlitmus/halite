@@ -116,3 +116,47 @@ func TestTheSBOMRefusesTheClock(t *testing.T) {
 		t.Errorf("no epoch gave %v", err)
 	}
 }
+
+// A -fips archive (SPEC 27.4) gets its own document, naming the -fips
+// binaries it carries. Reading halite-node-windows-amd64.exe for it, or
+// naming the document after the ordinary archive, would describe the wrong
+// bytes, which is the one thing an SBOM must not do.
+func TestAFipsArchiveGetsADocumentOfItsOwn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a binary")
+	}
+	dir, target := buildDist(t)
+	body, err := os.ReadFile(filepath.Join(dir, "halite-node-windows-amd64.exe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The stand-in for `make fips-cross`: the same program under the -fips name.
+	if err := os.WriteFile(filepath.Join(dir, "halite-node-fips-windows-amd64.exe"), body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "halite-0.0.1-windows-amd64-fips.zip"), []byte("a fips archive"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	made, err := run(options{dist: dir, version: "0.0.1", epoch: "1760000000", targets: target,
+		binaries: "halite-node", fipsTargets: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(made, " ") != "halite-0.0.1-windows-amd64.cdx.json halite-0.0.1-windows-amd64-fips.cdx.json" {
+		t.Fatalf("made %v", made)
+	}
+	doc, _ := os.ReadFile(filepath.Join(dir, "halite-0.0.1-windows-amd64-fips.cdx.json"))
+	if !strings.Contains(string(doc), "halite-node-fips.exe") {
+		t.Errorf("the FIPS document does not name the FIPS binary:\n%s", doc)
+	}
+
+	// And the binary missing is an error that names the step, not a quiet
+	// omission of the variant.
+	if err := os.Remove(filepath.Join(dir, "halite-node-fips-windows-amd64.exe")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(options{dist: dir, version: "0.0.1", epoch: "1760000000", targets: target,
+		binaries: "halite-node", fipsTargets: target}); err == nil {
+		t.Error("a missing -fips binary was not an error")
+	}
+}

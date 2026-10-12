@@ -23391,6 +23391,43 @@ shown by a run that happens to pass.
 absence of the race on FreeBSD and macOS, whose shells and `sha256` were not
 run; 0 of 1000 is a bound on this host's shell only.
 
+### 5.282 Two release claims that the release did not meet: service files, and FIPS
+
+Reported by the maintainer after the Handbook merged.
+
+**The service files.** Chapter 30 told the reader to copy
+`service/systemd/halite-hub.service` and `service/rc.d/halite_hub` from the
+unpacked archive. The first Handbook change did add `service/` (and
+`handbook/`) to what `make dist` produces, but the only published release,
+v0.1.0, was built before that: listing its linux-amd64 archive shows `bin`,
+`examples` and `man`. The chapter described the next release as if it were the
+current one. It now says which layout belongs to which release and where to get
+the files from v0.1.0, and `TestTheInstallChapterListsWhatTheArchiveHolds`
+compares the chapter's `ls` listing with what `disttar` writes (it fails when
+`handbook/` is removed from the listing, which is how it was checked).
+
+**FIPS.** SPEC 27.4 defines a `-fips` artifact set, `make fips-cross` builds it
+for linux/amd64 and linux/arm64, `make install-fips` installs it, and
+`internal/doctor` tells the operator to build it with `make fips-cross`, but
+`make dist` never called it. No release had ever contained a FIPS binary, and
+the handbook and SPEC read as though they did. `dist` now depends on
+`fips-cross`; `tools/disttar` writes
+`halite-<version>-linux-<arch>-fips.tar.gz` (same contents, `bin/` holding the
+`-fips` binaries) and `tools/sbom` a document for each, so both are in
+`SHA256SUMS`, attested and signed like every other archive. They are separate
+archives rather than extra files in the ordinary ones so that taking the wrong
+file cannot install a FIPS binary. Each of the new tests was broken on purpose
+and failed.
+
+Built here with `make dist`: 90 manifest lines, 54 binaries, 18 archives and 18
+SBOMs; unpacked, each `-fips` binary reports `fips mode on, module v1.0.0,
+self-tests passed`, and the node binary equals the one `make fips-cross` wrote.
+
+**Not verified**: the release workflow with the new archives (two builders, the
+attestation and signing over 90 lines); that the FIPS binaries pass their tests
+on a host in kernel FIPS mode (`make fips-test` runs the suite with the module,
+which is not the same); and arm64, which was cross-built and never run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

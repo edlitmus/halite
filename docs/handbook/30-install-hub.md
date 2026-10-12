@@ -80,6 +80,18 @@ ls
 EVIDENCE.md  LICENSE  bin/  examples/  handbook/  man/  service/
 ```
 
+That is the layout of every release after v0.1.0. **v0.1.0 itself holds only
+`bin/`, `examples/` and `man/man8/`** (checked by listing the published
+archive): it was built before the handbook and the service files were added to
+the archives. With it, take the service files from `contrib/systemd/` and
+`contrib/rc.d/` in a checkout of the `v0.1.0` tag (or `make install-service`
+there), and read the handbook from the checkout's `docs/handbook/`.
+
+Releases also publish a separate `halite-$v-linux-amd64-fips.tar.gz` (and
+`linux-arm64`) holding the `-fips` binaries; see
+[chapter 28](28-hardening.md#fips-builds). You do not need it unless your
+estate requires FIPS 140-3.
+
 ### 2. Create the account
 
 The hub never needs root.

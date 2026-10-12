@@ -322,8 +322,14 @@ jobs:
           cat > notes.md <<NOTES
           halite ${version}, for SPEC 27.1's sixteen platforms: one archive per
           platform (the BSD 2-Clause licence, binaries, example configuration,
-          manual pages), a CycloneDX SBOM per archive, taken from what linked
-          into the shipped binaries, and SHA256SUMS.
+          manual pages, service files and the HTML Handbook), a CycloneDX SBOM
+          per archive, taken from what linked into the shipped binaries, and
+          SHA256SUMS.
+
+          FIPS 140-3 builds (SPEC 27.4) are separate archives,
+          halite-${version}-linux-amd64-fips.tar.gz and ...-linux-arm64-fips.tar.gz,
+          each with its own SBOM. Only the Linux pair exists; nobody has assessed
+          the module on the other platforms.
 
           Every archive and binary here was built twice, on two different runners,
           and published only because the two builds were byte-identical. Check a
