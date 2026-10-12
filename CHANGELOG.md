@@ -19,7 +19,7 @@ which reached 0.12.0 before it was deleted (decided 2026-09-25). `v0.*`
 is a pre-release in `release.yml`, so it is marked as one.
 **1.0.0 still waits on SPEC section 32's phase 6 exit criteria.**
 
-## 0.1.1 — 2026-10-12
+## Unreleased
 
 ### Pillar with no `pillarenv` is every environment's, as in Salt
 
@@ -33,6 +33,8 @@ heading naming an environment `pillar_roots` does not serve is now an error
 rather than a file read from the wrong environment. The `pillar.show_pillar`
 and `pillar.show_top` runners take `pillarenv`. A tree with one pillar
 environment is unaffected. DIVERGENCE 5.283.
+
+## 0.1.1 — 2026-10-12
 
 ### FIPS builds are part of the release
 
