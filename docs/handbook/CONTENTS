@@ -1,0 +1,104 @@
+# The halite Handbook: what is in it, and in what order.
+#
+# One `part` line per part, then the chapters of that part, as paths relative
+# to docs/handbook. A path may climb out of the directory: the pages written
+# before the handbook are chapters of it, not copies. A chapter that is not
+# listed here is an orphan and fails the build. A part whose title begins
+# "Appendix" is not numbered.
+#
+# Files called gen-*.md are generated (go run ./tools/handbook gen); never
+# edit them.
+
+part Orientation
+01-what-is-halite.md
+02-concepts.md
+03-guided-tour.md
+
+part Describing machines
+04-idempotency.md
+05-states.md
+06-requisites.md
+07-templates.md
+08-grains.md
+09-pillar.md
+10-top-and-files.md
+11-modules.md
+
+part Acting on the fleet
+12-hub-and-nodes.md
+13-targeting.md
+14-remote-execution.md
+15-jobs.md
+16-fleet-operations.md
+17-agentless.md
+
+part Automation
+18-events.md
+19-beacons.md
+20-reactors.md
+21-orchestration.md
+22-runners-and-mine.md
+23-scheduler-and-returners.md
+24-scenarios.md
+
+part Security and identity
+25-trust-and-identity.md
+26-authorization.md
+27-http-api.md
+28-hardening.md
+29-extensions.md
+
+part Runbooks
+30-install-hub.md
+31-install-nodes.md
+32-install-api.md
+33-configuration.md
+34-monitoring.md
+35-backup-and-recovery.md
+36-upgrades.md
+37-certificates.md
+38-scaling.md
+39-troubleshooting.md
+40-incidents.md
+41-migrating.md
+
+part Reference
+gen-cli.md
+../configuration.md
+../modules.md
+45-event-reference.md
+46-returns-and-exit-codes.md
+../metrics.md
+../evidence.md
+../command-reference.md
+
+part The code
+50-code-overview.md
+51-life-of-a-job.md
+52-life-of-a-highstate.md
+gen-code-language.md
+gen-code-control-plane.md
+gen-code-extensions.md
+gen-code-platform.md
+gen-code-programs.md
+gen-code-audits.md
+59-testing-and-evidence.md
+60-how-the-handbook-is-built.md
+61-contributing.md
+
+part Appendix A: Glossary
+98-glossary.md
+
+part Appendix B: The original guides
+../getting-started.md
+../states.md
+../operations.md
+../extensions.md
+../from-salt.md
+../migrating-from-salt.md
+../releasing.md
+
+part Appendix C: The specification, the ledger and the changelog
+../../SPEC.md
+../DIVERGENCE.md
+../../CHANGELOG.md

@@ -1,0 +1,5 @@
+{% set common = salt['grains.filter_by']({
+    'Debian':  {'packages': ['curl', 'vim-tiny'], 'admin_groups': ['sudo']},
+    'RedHat':  {'packages': ['curl', 'vim-minimal'], 'admin_groups': ['wheel']},
+    'FreeBSD': {'packages': ['curl', 'vim-tiny'], 'admin_groups': ['wheel']},
+}, grain='os_family') %}

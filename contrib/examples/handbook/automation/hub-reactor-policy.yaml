@@ -1,0 +1,12 @@
+# The policy a reactor needs. A reaction is authorized as its principal,
+# exactly like a person, so nothing runs until a role says it may.
+roles:
+  watch:
+    - target: '*'
+      functions:
+        - 'cmd.run'
+    - runners: ['event.send']
+
+bindings:
+  - principal: 'reactor:watch'
+    roles: ['watch']

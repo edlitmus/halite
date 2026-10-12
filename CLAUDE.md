@@ -62,6 +62,7 @@ less.
 |---|---|
 | `internal/specaudit` | SPEC's module lists, totals and worked examples against the registry; the DIVERGENCE ledger's numbering, ordering and citations |
 | `internal/docsaudit` | the generated docs against the code, and counts quoted in prose |
+| `internal/docsaudit` (handbook) | `docs/handbook`: links, chapter numbers, runbook sections, quoted examples byte-for-byte, generated chapters, command/beacon/runner/requisite/event-tag coverage, reproducible HTML |
 | `internal/buildpolicy` | the toolchain pin, the dependency allowlist, build flags, workflow/`go.mod` agreement |
 | `internal/policy` | the lexicon, sandbox limits on shipped extensions |
 

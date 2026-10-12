@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The Handbook
+
+`docs/handbook/` is a book: introductions that assume no knowledge of
+Salt, chapters on states, grains, pillar and idempotency, remote
+execution, orchestration, reactors and beacons with worked examples,
+runbooks for installation, configuration, monitoring, backup, upgrades
+and incidents, a reference with an index, and the code itself. It is built
+to HTML by `make handbook` and carried in every release archive under
+`handbook/`; the archives also now carry `service/` (rc.d scripts and systemd units)
+and `man/man7`, where a new `halite(7)` overview page lives, beside
+`man/man8`. Two bugs found while writing it are fixed:
+`--out txt` now prints a nested value as JSON, and the `cert_info` beacon
+now passes its `certificate` argument. See DIVERGENCE 5.280.
+
 ### A release stays a draft until it is signed
 
 `release.yml` now creates each release as a draft, visible only to

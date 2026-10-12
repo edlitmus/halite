@@ -1,0 +1,15 @@
+# The self-healing reaction may apply one named SLS, and nothing else, to
+# any node. It cannot run a command, apply a different file, or pass pillar.
+roles:
+  heal:
+    - target: '*'
+      functions:
+        - 'state.apply'
+      args:
+        'state.apply':
+          allow_sls: ['playground']
+          deny_kwargs: ['pillar']
+
+bindings:
+  - principal: 'reactor:heal'
+    roles: ['heal']

@@ -1,0 +1,15 @@
+# hub.yaml: the reactor entry for self-healing. The beacon on the node that
+# feeds it (filechanges, with onchangeonly and disable_during_state_run) is
+# in chapter 24.
+#
+# `debounce` collapses the burst of events one edit can cause into a single
+# repair, run once the burst has gone quiet. It is the right control here:
+# `dedupe_window` would let the FIRST event through and drop the rest, so an
+# edit made a few seconds after another could be dropped with nothing
+# arriving later to repair it.
+reactor:
+  - tag: 'halite/beacon/*/filechanges/tmp/halite-lab/*/motd'
+    sls:
+      - /etc/halite/reactor/self-heal.sls
+    principal: 'reactor:heal'
+    debounce: 3s
