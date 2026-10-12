@@ -60,7 +60,11 @@ func main() {
 	flag.StringVar(&o.targets, "targets", "", "space-separated GOOS/GOARCH pairs")
 	flag.StringVar(&o.binaries, "binaries", "", "space-separated binary names")
 	flag.StringVar(&o.examples, "examples", "contrib/examples", "example configuration to include")
-	flag.StringVar(&o.man, "man", "contrib/man", "manual pages to include, as man8")
+	flag.StringVar(&o.man, "man", "contrib/man", "manual pages to include, each filed under man/man<N> by its suffix")
+	flag.StringVar(&o.handbook, "handbook", "build/handbook",
+		"the built HTML handbook (tools/handbook build), carried whole under handbook/")
+	flag.StringVar(&o.rcd, "rcd", "contrib/rc.d", "rc.d scripts, carried under service/rc.d")
+	flag.StringVar(&o.systemd, "systemd", "contrib/systemd", "systemd units, carried under service/systemd")
 	flag.StringVar(&o.license, "license", "LICENSE", "the licence, copied to the top of every archive")
 	flag.StringVar(&o.evidence, "evidence", "docs/evidence.md",
 		"the generated evidence report, carried in every archive")
@@ -77,6 +81,7 @@ func main() {
 
 type options struct {
 	dist, version, epoch, targets, binaries, examples, man, license, evidence string
+	handbook, rcd, systemd                                                    string
 }
 
 // entry is one file in an archive: where it goes, what it holds, and its
@@ -113,7 +118,7 @@ func run(o options) ([]string, error) {
 		return nil, errors.New("-targets and -binaries are both required")
 	}
 
-	shared, err := sharedEntries(o.examples, o.man, o.license, o.evidence)
+	shared, err := sharedEntries(o)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +173,8 @@ func run(o options) ([]string, error) {
 // The licence is required, not optional: an archive is a copy of the
 // software handed to somebody, and the BSD licence's first condition is
 // that a redistribution in binary form carries its text.
-func sharedEntries(examples, man, license, evidence string) ([]entry, error) {
+func sharedEntries(o options) ([]entry, error) {
+	examples, man, license, evidence := o.examples, o.man, o.license, o.evidence
 	var out []entry
 	// files collects the regular files under dir, descending into its
 	// directories when deep is set, in the order os.ReadDir gives, which
@@ -242,7 +248,49 @@ func sharedEntries(examples, man, license, evidence string) ([]entry, error) {
 	if err := add(examples, "examples", true); err != nil {
 		return nil, err
 	}
-	if err := add(man, "man/man8", false); err != nil {
+	// The manual pages are filed by the section their suffix names, which
+	// is where man(1) looks: halite-hub.8 under man8, a file format under
+	// man5, an overview under man7. A suffix that is none of those is
+	// refused, because a page in the wrong directory is one nobody finds.
+	pages, err := os.ReadDir(man)
+	if err != nil {
+		return nil, err
+	}
+	nman := 0
+	for _, f := range pages {
+		if !f.Type().IsRegular() {
+			continue
+		}
+		sec := strings.TrimPrefix(filepath.Ext(f.Name()), ".")
+		if sec != "5" && sec != "7" && sec != "8" {
+			return nil, fmt.Errorf("%s: a manual page in %s ends in .5, .7 or .8, and %q ends in %q", f.Name(), man, f.Name(), sec)
+		}
+		body, err := os.ReadFile(filepath.Join(man, f.Name()))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, entry{path: "man/man" + sec + "/" + f.Name(), body: body, mode: 0o644})
+		nman++
+	}
+	if nman == 0 {
+		return nil, fmt.Errorf("%s holds no manual pages; an archive without them is not the one SPEC 27.2 describes", man)
+	}
+
+	// The handbook is the documentation of this release, built from this
+	// commit's sources; a release whose archive lacks it, or carries the
+	// previous one, is documentation that has drifted from the code, which is
+	// what building it in the release is there to prevent. An unbuilt
+	// handbook is therefore an error, not an omission.
+	if err := add(o.handbook, "handbook", true); err != nil {
+		return nil, fmt.Errorf("%w; run `make handbook` first", err)
+	}
+	// The service files are in the archive so that an installation from a
+	// tarball is not an installation without them: the chapter on
+	// installing says to copy from service/.
+	if err := add(o.rcd, "service/rc.d", true); err != nil {
+		return nil, err
+	}
+	if err := add(o.systemd, "service/systemd", true); err != nil {
 		return nil, err
 	}
 	return out, nil

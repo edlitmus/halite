@@ -106,7 +106,7 @@ TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
 .PHONY: all make-supports-bang build test chaos perf perf-bench simfleet race vet cover check release release-gate cross clean tidy vendor policy fmt \
-	install install-service install-man \
+	install install-service install-man handbook \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
 	fleetcheck fleetcheck-image fleetcheck-rocky9 fleetcheck-alma8 fleetcheck-leap16 dist \
@@ -532,6 +532,17 @@ cross: make-supports-bang
 # -r` separates with one space and GNU's `sha256sum` with two, and awk
 # normalises both to two rather than this depending on which host cut the
 # release.
+# handbook builds the HTML edition of docs/handbook into build/handbook:
+# every code block that quotes an example is compared to the file it quotes
+# and every link resolved first (tools/handbook check), and the build is
+# stamped with the version and commit, so the handbook in an archive says
+# which release it documents. dist depends on it, so no release is made
+# without the documentation of the code it was built from.
+handbook: make-supports-bang
+	@env $(DEV_ENV) go run ./tools/handbook check
+	@rm -rf build/handbook
+	@env $(DEV_ENV) go run ./tools/handbook build -out build/handbook -version "$(VERSION)" -commit "$(COMMIT)"
+
 # dist is cross, then the per-platform release archives of SPEC 27.2
 # (tools/disttar: binaries, example configuration and manual pages, every
 # time, owner, mode and order pinned), then SHA256SUMS over all of it --
@@ -542,7 +553,7 @@ cross: make-supports-bang
 # Stale signatures go too: they are made after the manifest, over it
 # (release-sign below), and one left from another signing would otherwise
 # be summed into this manifest as if it were an artifact.
-dist: cross
+dist: cross handbook
 	@rm -f dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/*.sig
 	@env $(RELEASE_ENV) go run ./tools/disttar -dist dist \
 		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
@@ -797,6 +808,14 @@ install-man: make-supports-bang
 			echo "  $(MANDIR)/$$b.8"; \
 			install -m 0644 contrib/man/$$b.8 "$(MANDIR)/$$b.8" || exit 1; \
 		done; \
+		for sec in 5 7; do \
+			for f in contrib/man/*.$$sec; do \
+				test -f "$$f" || continue; \
+				install -d -m 0755 "$(MANDIR)/../man$$sec" || exit 1; \
+				echo "  $(MANDIR)/../man$$sec/`basename $$f`"; \
+				install -m 0644 "$$f" "$(MANDIR)/../man$$sec/" || exit 1; \
+			done; \
+		done; \
 	else \
 		echo "  ! cannot write $(MANDIR); the manual pages were not installed" >&2; \
 		echo "  ! set MANDIR, or install contrib/man/*.8 by hand" >&2; \
@@ -830,7 +849,7 @@ install-fips: make-supports-bang
 	@echo "  halite_hub_fips=YES (and _node, _api, _highstate) in rc.conf"
 
 clean:
-	rm -rf bin dist cover.out
+	rm -rf bin dist build cover.out
 
 # ---- SPEC section 31's differential gate ----
 #
