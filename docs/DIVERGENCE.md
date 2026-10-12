@@ -23428,6 +23428,17 @@ attestation and signing over 90 lines); that the FIPS binaries pass their tests
 on a host in kernel FIPS mode (`make fips-test` runs the suite with the module,
 which is not the same); and arm64, which was cross-built and never run.
 
+#### 5.278, the draft path run on a real tag
+
+v0.1.1 (2026-10-12) went through it: dry run by manual dispatch, then the
+tag, a draft of 37 assets, signatures for the 37 files a release carries,
+and `make release-publish TAG=v0.1.1`, which verified the freshly
+downloaded draft and ran `gh release edit --draft=false`. That closes the
+first item of 5.278's "Not covered": a real tag has gone through the draft
+path, and the publish step has run on a real release. The second item (the
+gate checks what was signed, not who may run it) stands, and
+`docs/releasing.md` has the rest, including what this run did not cover.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
