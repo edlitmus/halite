@@ -94,7 +94,7 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 	}
 
 	started := s.now()
-	compiled, secrets, err := s.compilePillar(nodeID, env, grains)
+	compiled, secrets, err := s.compilePillar(nodeID, env, req.AllEnvs, grains)
 	observeSeconds(s.m().pillarCompile, s.now().Sub(started))
 	if err != nil {
 		s.m().pillarFailure.Inc()
@@ -128,9 +128,9 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 // compilePillar assembles one node's pillar from the hub's roots, and
 // answers with the values the compile decrypted besides: what the node is
 // told to redact. The hub's own redactor still hears each of them first.
-func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.Compiled, []string, error) {
+func (s *Server) compilePillar(nodeID, env string, all bool, grains *value.Map) (*pillar.Compiled, []string, error) {
 	s.pillarCompiles.Add(1)
-	out, secrets := CompilePillar(s.Pillar, nodeID, env, grains)
+	out, secrets := CompilePillar(s.Pillar, nodeID, env, all, grains)
 	for _, w := range out.Warnings {
 		s.warn(w.String(), "component", "pillar", "node_id", nodeID)
 	}
@@ -166,8 +166,13 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 // said -- so a roster target could be sent a different pillar from an
 // enrolled node with the same grains, and none of what `ext_pillar`
 // held. DIVERGENCE 5.267.
-func CompilePillar(opts *PillarOptions, nodeID, env string, grains *value.Map) (*pillar.Compiled, []string) {
+//
+// all is a node with no `pillarenv`: every environment's pillar, merged,
+// as Salt compiles it, with env only the environment the node runs in.
+// DIVERGENCE 5.283.
+func CompilePillar(opts *PillarOptions, nodeID, env string, all bool, grains *value.Map) (*pillar.Compiled, []string) {
 	cfg := pillarConfigFor(opts, nodeID, env, grains)
+	cfg.AllEnvs = all
 	secrets := []string{}
 	seen := map[string]bool{}
 	hubs := cfg.OnSecret

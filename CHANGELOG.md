@@ -21,6 +21,19 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Pillar with no `pillarenv` is every environment's, as in Salt
+
+With `pillarenv` unset, a node's pillar now merges every environment in
+`pillar_roots`: each environment's top file is read, and each file it lists is
+read from the environment whose heading lists it. It used to be the node's
+`env` alone, so a second pillar repository served as its own environment
+reached no node outside it. With `pillarenv` set, only that environment's top
+file and only entries under its own heading count, as in Salt. A top file
+heading naming an environment `pillar_roots` does not serve is now an error
+rather than a file read from the wrong environment. The `pillar.show_pillar`
+and `pillar.show_top` runners take `pillarenv`. A tree with one pillar
+environment is unaffected. DIVERGENCE 5.283.
+
 ### FIPS builds are part of the release
 
 Each release now carries `halite-<version>-linux-amd64-fips.tar.gz` and

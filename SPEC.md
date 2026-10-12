@@ -1170,6 +1170,13 @@ supported within pillar SLS.
 Multiple roots for one environment are searched in order, and the first file found wins, matching
 Salt's file server behaviour.
 
+With `pillarenv` unset, a node's pillar is every environment's: each environment's top file is read,
+the entries are merged (a later file's entry for the same environment heading and target replaces an
+earlier one), and each SLS is rendered from the environment whose heading lists it. Environments are
+read `base` first and the rest sorted. With `pillarenv` set, only that environment's top file is read
+and only the entries under its own heading count. A heading naming an environment `pillar_roots`
+does not serve is an error. Both are Salt's behaviour.
+
 ### 12.3 Merge strategies
 
 `pillar_source_merging_strategy`, with Salt's four strategies and Salt's semantics:
