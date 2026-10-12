@@ -226,3 +226,132 @@ func TestItRefusesWhatWouldMakeAnArchiveWrong(t *testing.T) {
 		t.Errorf("a missing evidence report: %v", err)
 	}
 }
+
+// The FIPS set (SPEC 27.4) is a separate archive whose bin/ holds the -fips
+// binaries, and the ordinary archive holds none: a -fips binary beside its
+// ordinary twin is one cp from the wrong one being installed, which is what
+// publishing them separately is for. Each is also checked for the files
+// every archive carries.
+func TestFipsBinariesShipInTheirOwnArchive(t *testing.T) {
+	o := fixture(t)
+	write := func(name string) {
+		if err := os.WriteFile(filepath.Join(o.dist, name), []byte("FIPS ELF "+name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("halite-node-fips-linux-amd64")
+	write("halite-hub-fips-linux-amd64")
+	o.fipsTargets = "linux/amd64"
+
+	made, err := run(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(made, " ") != "halite-0.13.0-linux-amd64.tar.gz halite-0.13.0-windows-arm64.zip halite-0.13.0-linux-amd64-fips.tar.gz" {
+		t.Fatalf("made %v", made)
+	}
+	names := func(archive string) string {
+		f, err := os.Open(filepath.Join(o.dist, archive))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := tar.NewReader(gz)
+		var out []string
+		for {
+			h, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, h.Name)
+		}
+		return strings.Join(out, "\n")
+	}
+	fips := names("halite-0.13.0-linux-amd64-fips.tar.gz")
+	top := "halite-0.13.0-linux-amd64-fips/"
+	for _, want := range []string{top + "bin/halite-node-fips", top + "bin/halite-hub-fips", top + "LICENSE", top + "EVIDENCE.md", top + "service/rc.d/halite_hub"} {
+		if !strings.Contains(fips, want) {
+			t.Errorf("the FIPS archive lacks %s:\n%s", want, fips)
+		}
+	}
+	if strings.Contains(fips, "bin/halite-node\n") || strings.HasSuffix(fips, "bin/halite-node") {
+		t.Errorf("the FIPS archive carries the ordinary binary:\n%s", fips)
+	}
+	if plain := names("halite-0.13.0-linux-amd64.tar.gz"); strings.Contains(plain, "-fips") && strings.Contains(plain, "bin/halite-node-fips") {
+		t.Errorf("the ordinary archive carries a FIPS binary:\n%s", plain)
+	}
+
+	// A FIPS target whose binaries were never built is an error naming the
+	// step, not an archive quietly without them.
+	o.fipsTargets = "linux/arm64"
+	if _, err := run(o); err == nil || !strings.Contains(err.Error(), "make fips-cross") {
+		t.Errorf("a missing -fips binary: %v", err)
+	}
+}
+
+// Chapter 30 of the handbook shows what `ls` prints inside an unpacked
+// archive, and tells the reader to copy from service/. It said so for an
+// archive that did not exist yet: the first published release held only
+// bin/, examples/ and man/, and the chapter was written against what the
+// Makefile was going to do. The listing is checked here against what this
+// tool actually puts at the top of an archive.
+func TestTheInstallChapterListsWhatTheArchiveHolds(t *testing.T) {
+	src, err := os.ReadFile("../../docs/handbook/30-install-hub.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	lines := strings.Split(string(src), "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(l, "EVIDENCE.md ") && i > 0 && lines[i-1] == "```" {
+			for _, f := range strings.Fields(l) {
+				listed = append(listed, strings.TrimSuffix(f, "/"))
+			}
+		}
+	}
+	if len(listed) == 0 {
+		t.Fatal("chapter 30 no longer shows the archive's listing; update this test with it")
+	}
+
+	o := fixture(t)
+	if _, err := run(o); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(filepath.Join(o.dist, "halite-0.13.0-linux-amd64.tar.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gz, _ := gzip.NewReader(f)
+	tr := tar.NewReader(gz)
+	top := map[string]bool{}
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		parts := strings.Split(strings.TrimSuffix(h.Name, "/"), "/")
+		if len(parts) > 1 {
+			top[parts[1]] = true
+		}
+	}
+	var have []string
+	for n := range top {
+		have = append(have, n)
+	}
+	sort.Strings(have)
+	sort.Strings(listed)
+	if strings.Join(have, " ") != strings.Join(listed, " ") {
+		t.Errorf("chapter 30 lists %v; an archive holds %v", listed, have)
+	}
+}

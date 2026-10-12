@@ -546,7 +546,9 @@ handbook: make-supports-bang
 # dist is cross, then the per-platform release archives of SPEC 27.2
 # (tools/disttar: binaries, example configuration and manual pages, every
 # time, owner, mode and order pinned), then SHA256SUMS over all of it --
-# 48 binaries, 16 archives, and one SBOM per archive (tools/sbom:
+# 54 binaries (48, plus the 6 of the Linux -fips set, SPEC 27.4), 18
+# archives (the -fips ones are archives of their own, so that no one
+# installs a FIPS binary by taking the wrong file), and one SBOM per archive (tools/sbom:
 # CycloneDX, from what each shipped binary says linked into it). Stale
 # archives and SBOMs go first: SHA256SUMS sums everything in dist/, and
 # one left from another version would be a line in this one's manifest.
@@ -559,14 +561,14 @@ handbook: make-supports-bang
 # created before `*` in its first stage was expanded, and the manifest then
 # listed itself with the hash of an empty file (about 1 run in 100 here;
 # DIVERGENCE 5.281). `*` does not match a dot file, and the rename is atomic.
-dist: cross handbook
+dist: cross fips-cross handbook
 	@rm -f dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/*.sig
 	@env $(RELEASE_ENV) go run ./tools/disttar -dist dist \
 		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
-		-targets "$(TARGETS)" -binaries "$(BINARIES)"
+		-targets "$(TARGETS)" -binaries "$(BINARIES)" -fips-targets "$(FIPS_TARGETS)"
 	@env $(RELEASE_ENV) go run ./tools/sbom -dist dist \
 		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
-		-targets "$(TARGETS)" -binaries "$(BINARIES)"
+		-targets "$(TARGETS)" -binaries "$(BINARIES)" -fips-targets "$(FIPS_TARGETS)"
 	@cd dist && rm -f SHA256SUMS .SHA256SUMS.tmp && \
 	if command -v sha256sum >/dev/null 2>&1; then \
 		sha256sum *; \

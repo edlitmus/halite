@@ -42,7 +42,7 @@ import (
 )
 
 type options struct {
-	dist, version, epoch, targets, binaries string
+	dist, version, epoch, targets, binaries, fipsTargets string
 }
 
 func main() {
@@ -52,6 +52,7 @@ func main() {
 	flag.StringVar(&o.epoch, "epoch", "", "SOURCE_DATE_EPOCH, in seconds; the documents' timestamp")
 	flag.StringVar(&o.targets, "targets", "", "space-separated GOOS/GOARCH pairs")
 	flag.StringVar(&o.binaries, "binaries", "", "space-separated binary names")
+	flag.StringVar(&o.fipsTargets, "fips-targets", "", "space-separated GOOS/GOARCH pairs that also have a -fips archive")
 	flag.Parse()
 	made, err := run(o)
 	if err != nil {
@@ -75,13 +76,23 @@ func run(o options) ([]string, error) {
 		return nil, errors.New("-targets and -binaries are both required")
 	}
 
-	var made []string
+	type variant struct{ target, suffix string }
+	var variants []variant
 	for _, t := range targets {
+		variants = append(variants, variant{t, ""})
+	}
+	for _, t := range strings.Fields(o.fipsTargets) {
+		variants = append(variants, variant{t, "-fips"})
+	}
+
+	var made []string
+	for _, v := range variants {
+		t := v.target
 		goos, goarch, ok := strings.Cut(t, "/")
 		if !ok {
 			return nil, fmt.Errorf("target %q is not GOOS/GOARCH", t)
 		}
-		archive := fmt.Sprintf("halite-%s-%s-%s.tar.gz", o.version, goos, goarch)
+		archive := fmt.Sprintf("halite-%s-%s-%s%s.tar.gz", o.version, goos, goarch, v.suffix)
 		ext := ""
 		if goos == "windows" {
 			archive = strings.TrimSuffix(archive, ".tar.gz") + ".zip"
@@ -93,8 +104,8 @@ func run(o options) ([]string, error) {
 		}
 		var bins []binary
 		for _, b := range binaries {
-			path := filepath.Join(o.dist, fmt.Sprintf("%s-%s-%s%s", b, goos, goarch, ext))
-			bin, err := readBinary(path, b+ext)
+			path := filepath.Join(o.dist, fmt.Sprintf("%s%s-%s-%s%s", b, v.suffix, goos, goarch, ext))
+			bin, err := readBinary(path, b+v.suffix+ext)
 			if err != nil {
 				return nil, err
 			}

@@ -18,10 +18,11 @@ precondition of the next.
 2. **Two builders.** `make dist` runs on two different runner images,
    `ubuntu-24.04` and `ubuntu-22.04`, with the pinned toolchain, vendored
    and offline. Each cross-compiles the three binaries for every platform
-   in SPEC 27.1, assembles one archive per platform with `tools/disttar`,
-   writes a CycloneDX SBOM per archive with `tools/sbom`, and writes
-   `dist/SHA256SUMS` over the lot: 80 lines, 48 binaries, 16 archives and
-   16 SBOMs. Each builder's `dist/` is kept as a workflow artifact for
+   in SPEC 27.1 and the `-fips` binaries for the two Linux FIPS targets
+   (SPEC 27.4), assembles one archive per platform and one `-fips` archive
+   per FIPS target with `tools/disttar`, writes a CycloneDX SBOM per archive
+   with `tools/sbom`, and writes `dist/SHA256SUMS` over the lot: 90 lines,
+   54 binaries, 18 archives and 18 SBOMs. Each builder's `dist/` is kept as a workflow artifact for
    three days.
 3. **Compare.** The two manifests must be byte-identical, and each must
    list at least 80 artifacts so that two empty manifests cannot agree.
@@ -200,8 +201,8 @@ tag makes a pre-release.
 refuses a directory that already holds a `.sig`.
 
 The set to sign is the full `dist/` the attestation names, not the
-release's assets: `SHA256SUMS` lists the 48 bare binaries as well as the
-16 archives and their SBOMs, and the tool signs what the manifest lists
+release's assets: `SHA256SUMS` lists the 54 bare binaries as well as the
+18 archives and their SBOMs, and the tool signs what the manifest lists
 or nothing.
 Within three days of the run, the first builder's `dist/` is a workflow
 artifact:

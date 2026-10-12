@@ -247,6 +247,15 @@ binary's, and a mismatch is a `doctor` warning. The FIPS set is Linux only
 binaries, and the systemd drop-ins that enforce the mode are installed
 separately because they change what a unit runs.
 
+Each release publishes the set as its own archives,
+`halite-<version>-linux-amd64-fips.tar.gz` and `…-linux-arm64-fips.tar.gz`,
+for releases after v0.1.0 (which has none). Inside, `bin/` holds
+`halite-hub-fips`, `halite-node-fips` and `halite-api-fips`, and
+`service/systemd/fips/` holds the drop-ins. They are separate archives and not
+extra files in the ordinary ones so that nobody gets a FIPS binary by copying
+the wrong file. Ask the binary, not its name:
+`halite-node-fips version` must report the module and `self-tests passed`.
+
 ## Secrets: where they are and are not
 
 - **In pillar, encrypted or fetched** ([chapter 9](09-pillar.md)): on the hub,

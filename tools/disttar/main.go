@@ -59,6 +59,8 @@ func main() {
 	flag.StringVar(&o.epoch, "epoch", "", "SOURCE_DATE_EPOCH, in seconds; every entry is given this time")
 	flag.StringVar(&o.targets, "targets", "", "space-separated GOOS/GOARCH pairs")
 	flag.StringVar(&o.binaries, "binaries", "", "space-separated binary names")
+	flag.StringVar(&o.fipsTargets, "fips-targets", "",
+		"space-separated GOOS/GOARCH pairs that also get a -fips archive (SPEC 27.4); empty means none")
 	flag.StringVar(&o.examples, "examples", "contrib/examples", "example configuration to include")
 	flag.StringVar(&o.man, "man", "contrib/man", "manual pages to include, each filed under man/man<N> by its suffix")
 	flag.StringVar(&o.handbook, "handbook", "build/handbook",
@@ -80,8 +82,8 @@ func main() {
 }
 
 type options struct {
-	dist, version, epoch, targets, binaries, examples, man, license, evidence string
-	handbook, rcd, systemd                                                    string
+	dist, version, epoch, targets, binaries, examples, man, license, evidence, fipsTargets string
+	handbook, rcd, systemd                                                                 string
 }
 
 // entry is one file in an archive: where it goes, what it holds, and its
@@ -123,25 +125,43 @@ func run(o options) ([]string, error) {
 		return nil, err
 	}
 
-	var made []string
+	// An archive is a platform and a variant. The ordinary one carries
+	// bin/halite-hub; the FIPS one (SPEC 27.4, Linux only) is a separate
+	// archive whose bin/ holds halite-hub-fips, the name `make install-fips`
+	// and the service drop-ins expect. It is not folded into the ordinary
+	// archive: the whole point of the -fips set is that nobody gets one by
+	// accident, and a binary beside its non-FIPS twin is one `cp` from that.
+	type variant struct {
+		target, suffix string
+	}
+	var variants []variant
 	for _, t := range targets {
+		variants = append(variants, variant{t, ""})
+	}
+	for _, t := range strings.Fields(o.fipsTargets) {
+		variants = append(variants, variant{t, "-fips"})
+	}
+
+	var made []string
+	for _, v := range variants {
+		t := v.target
 		goos, goarch, ok := strings.Cut(t, "/")
 		if !ok {
 			return nil, fmt.Errorf("target %q is not GOOS/GOARCH", t)
 		}
-		top := fmt.Sprintf("halite-%s-%s-%s", o.version, goos, goarch)
+		top := fmt.Sprintf("halite-%s-%s-%s%s", o.version, goos, goarch, v.suffix)
 		entries := append([]entry(nil), shared...)
 		for _, b := range binaries {
 			ext := ""
 			if goos == "windows" {
 				ext = ".exe"
 			}
-			src := filepath.Join(o.dist, fmt.Sprintf("%s-%s-%s%s", b, goos, goarch, ext))
+			src := filepath.Join(o.dist, fmt.Sprintf("%s%s-%s-%s%s", b, v.suffix, goos, goarch, ext))
 			body, err := os.ReadFile(src)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w; run make cross first", src, err)
+				return nil, fmt.Errorf("%s: %w; run make %s first", src, err, map[string]string{"": "cross", "-fips": "fips-cross"}[v.suffix])
 			}
-			entries = append(entries, entry{path: "bin/" + b + ext, body: body, mode: 0o755})
+			entries = append(entries, entry{path: "bin/" + b + v.suffix + ext, body: body, mode: 0o755})
 		}
 		for i := range entries {
 			entries[i].path = top + "/" + entries[i].path
@@ -149,6 +169,7 @@ func run(o options) ([]string, error) {
 		sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
 
 		var buf bytes.Buffer
+		var err error
 		name := top + ".tar.gz"
 		if goos == "windows" {
 			name = top + ".zip"
