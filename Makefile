@@ -553,6 +553,12 @@ handbook: make-supports-bang
 # Stale signatures go too: they are made after the manifest, over it
 # (release-sign below), and one left from another signing would otherwise
 # be summed into this manifest as if it were an artifact.
+#
+# The manifest is written to a dot file and renamed: a pipeline's stages
+# start together, so with `> SHA256SUMS` as its last stage the file could be
+# created before `*` in its first stage was expanded, and the manifest then
+# listed itself with the hash of an empty file (about 1 run in 100 here;
+# DIVERGENCE 5.281). `*` does not match a dot file, and the rename is atomic.
 dist: cross handbook
 	@rm -f dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/*.sig
 	@env $(RELEASE_ENV) go run ./tools/disttar -dist dist \
@@ -561,12 +567,13 @@ dist: cross handbook
 	@env $(RELEASE_ENV) go run ./tools/sbom -dist dist \
 		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
 		-targets "$(TARGETS)" -binaries "$(BINARIES)"
-	@cd dist && rm -f SHA256SUMS && \
+	@cd dist && rm -f SHA256SUMS .SHA256SUMS.tmp && \
 	if command -v sha256sum >/dev/null 2>&1; then \
 		sha256sum *; \
 	else \
 		sha256 -r *; \
-	fi | awk '{ printf "%s  %s\n", $$1, $$2 }' | LC_ALL=C sort > SHA256SUMS
+	fi | awk '{ printf "%s  %s\n", $$1, $$2 }' | LC_ALL=C sort > .SHA256SUMS.tmp && \
+	mv .SHA256SUMS.tmp SHA256SUMS
 	@echo "dist/SHA256SUMS: `wc -l < dist/SHA256SUMS | tr -d ' '` artifacts"
 
 # SPEC 4.3's detached signature per artifact, with a key held in AWS KMS.

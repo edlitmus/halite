@@ -23366,6 +23366,31 @@ mail drift report, deferred-restart upgrades, and a whole bootstrap over
 ssh. The chapters say so where they describe them. Chapters 60 and 61 are
 written last and are the only ones that describe the toolchain itself.
 
+### 5.281 The release manifest could list itself
+
+`make dist` wrote `SHA256SUMS` with `sha256sum * | awk | sort > SHA256SUMS`.
+The stages of a pipeline start together, so the shell sometimes created
+`SHA256SUMS` before `*` was expanded, and the manifest then carried a line
+for itself with the hash of an empty file. Found while checking the first
+archive that contained the handbook: of two consecutive runs on this host
+one had the extra line (74 lines against 73), and the other 73 were
+identical. Measured in isolation, the bare pipeline did it in 2 of 200 runs.
+
+Nothing had noticed because it is rare: the release workflow compares two
+builders' manifests, and would have reported one release in about a hundred
+as "the builds differ" with no way to reproduce it. `tools/relsign` would
+also have been asked to verify a file against a line for itself.
+
+The recipe now writes `.SHA256SUMS.tmp`, which `*` does not match, and
+renames it. The same loop on that form listed it in 0 of 1000 runs.
+`TestTheManifestIsNotWrittenWhereItsOwnGlobCanSeeIt` holds the Makefile to
+the shape; it fails on the old recipe. It reads text, since a race cannot be
+shown by a run that happens to pass.
+
+**Not verified**: the release workflow itself with the change, and the
+absence of the race on FreeBSD and macOS, whose shells and `sha256` were not
+run; 0 of 1000 is a bound on this host's shell only.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

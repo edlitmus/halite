@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The release manifest no longer lists itself
+
+About one `make dist` in a hundred wrote a `SHA256SUMS` containing a line for
+`SHA256SUMS`. The manifest is now written to a temporary name and renamed.
+See DIVERGENCE 5.281.
+
 ### The Handbook
 
 `docs/handbook/` is a book: introductions that assume no knowledge of
