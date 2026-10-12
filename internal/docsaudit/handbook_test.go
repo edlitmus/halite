@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -60,6 +61,15 @@ func TestTheHandbooksGeneratedChaptersAreCurrent(t *testing.T) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		// The CLI reference is the programs' own `help`, and help prints the
+		// platform's default paths (/etc/halite on Linux, /usr/local/etc/halite
+		// on FreeBSD, C:\ProgramData\Halite on Windows). The committed page is
+		// the Linux one, so it is compared only where it can be reproduced;
+		// the Linux legs of CI hold it for the rest. Found when the first CI
+		// run failed on FreeBSD and Windows with a one-line path difference.
+		if name == "docs/handbook/gen-cli.md" && runtime.GOOS != "linux" {
+			continue
+		}
 		got, err := os.ReadFile(filepath.Join(root, name))
 		if err != nil {
 			t.Errorf("%s: %v\nrun: go run ./tools/handbook gen", name, err)
