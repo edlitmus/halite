@@ -318,7 +318,9 @@ func certInfo(c *exec.Context, in *Instance) ([]Event, error) {
 	var out []Event
 	for _, path := range paths {
 		args := value.NewMap(2)
-		args.Set("path", path)
+		// `certificate`, not `path`: x509.expires takes either a PEM or a
+		// path under that one name, and has no parameter called path.
+		args.Set("certificate", path)
 		args.Set("days", days)
 		expiring, err := c.Call("x509.expires", args)
 		if err != nil {
