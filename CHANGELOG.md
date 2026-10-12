@@ -19,7 +19,7 @@ which reached 0.12.0 before it was deleted (decided 2026-09-25). `v0.*`
 is a pre-release in `release.yml`, so it is marked as one.
 **1.0.0 still waits on SPEC section 32's phase 6 exit criteria.**
 
-## Unreleased
+## 0.1.1 — 2026-10-12
 
 ### FIPS builds are part of the release
 

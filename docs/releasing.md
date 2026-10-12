@@ -168,8 +168,11 @@ with `-dirty` added for a tree with uncommitted changes, and no release
 carries files with those names. Build locally only as the third builder
 described below, on the tagged commit, with a clean tree.
 
-**1. Tag, from a clean `main` that matches `origin/main`.** Run
-`make check` and `make release-gate` first; the workflow runs the gate
+**1. Tag, from a clean `main` that matches `origin/main`.** First rename
+`CHANGELOG.md`'s `## Unreleased` heading to `## <version> — <date>` in a
+commit on `main`, so that the tagged commit's changelog says what the tag
+is (v0.1.1 was tagged with its entries still under "Unreleased"; the heading
+was fixed afterwards). Run `make check` and `make release-gate` first; the workflow runs the gate
 and stops if it fails. Then push that one tag:
 
 ```sh
