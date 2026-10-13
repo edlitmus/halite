@@ -122,7 +122,17 @@ func TestTheTokenDirectoryBelongsToTheStoreWhenRootCreatesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := [2]int{os.Geteuid(), os.Getegid()} // the parent's owner: this test's user
+	// The parent's owner, read from the parent and not assumed to be this
+	// process's own uid and gid: on the BSDs a new directory takes its
+	// parent's group (/tmp is wheel), so the first CI run on FreeBSD, where
+	// the temporary directory's gid is 0 and the test user's is 1001, failed
+	// on an expectation that was about Linux.
+	var want [2]int
+	if info, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	} else if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		want = [2]int{int(st.Uid), int(st.Gid)}
+	}
 	tokens := filepath.Join(dir, "keys", "tokens")
 	if got, ok := l.calls[tokens]; !ok || got != want {
 		t.Errorf("the token directory was not handed to %v: chown calls %v", want, l.calls)
