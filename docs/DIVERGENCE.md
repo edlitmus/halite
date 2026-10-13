@@ -23517,6 +23517,59 @@ reverted, and was fixed with `tofu init` (instances kept billing for about two
 minutes); `vc2-1c-2gb` was refused once in `ewr` ("plan is not available") and
 accepted on the retry.
 
+### 5.284 The Linux install runbooks, run on Linux as root: one more wrong step
+
+Issue #308's Linux half, after 5.283's FreeBSD half. On 2026-10-13 two lab rows
+were raised, `ubuntu2604` (Ubuntu 26.04.1 LTS, kernel 7.0.0-38) as the hub and
+API, and `debian13` (Debian 13 trixie, kernel 6.12.111) as a node, both amd64
+with Go 1.26.6 from the bootstrap. Everything was run as root from the published
+v0.1.1 `linux-amd64` archive (checksum and `openssl` signature verified on the
+host; `gh attestation verify` was not available there): `useradd --system`, the
+install, `hub.yaml`, the `--names` drop-in, `systemctl enable --now`, the
+operator, `doctor`, the Verify commands, a node under the shipped unit, the API
+under its unit, then both hosts rebooted. The lab was destroyed afterwards
+(checked against Vultr's API: 0 instances, 0 firewall groups).
+
+What held, as chapters 30 to 32 say: the sandboxed units start (`ProtectSystem=strict`
+with `ReadWritePaths=/etc/halite/pki` is enough); the first-start log lines
+match chapter 30; `doctor` gave `7 pass, 1 skip` on the hub and `4 pass` on the
+API; `manage.status` and `test.ping` saw the node; the playground state changed
+3 things, then none (`halite-hub run` exit `0` both times, as chapter 46 says;
+local `0` then `2`); a one-function API role got `200` inside it and `403` with
+the role named outside it; hub, API and node all came back after a reboot with
+only the tunnel restored, and the node's log showed it retrying while the hub
+was away.
+
+**The wrong step (chapter 31, token enrolment).** The chapter showed
+`halite-hub keys token create …` with no account. Run as root, it created
+`state_dir/keys/tokens` as `root:root 0700` inside the `halite`-owned `keys`
+directory, and the hub, as `halite`, then refused every token enrolment with
+`reading the token store at …/keys/tokens: open …: permission denied`. The node
+printed only `enrollment refused; the hub's log says why`, and, because a
+refused request still leaves a pending one, the nodes appeared under `pending`
+as though no token had been presented. The chapter now says `sudo -u halite`,
+shows the failure, and lists the reasons the hub gives for the other refusals
+(CIDR, name scope, spent token). Re-run correctly: the CIDR-scoped token was
+refused (`admits 10.0.0.0/8, and this request came from [::1]`), a token
+presented by a name outside its scope was refused, a good one enrolled `web3`
+and was `spent (1 of 1 uses)`, and reusing it was refused (`is spent`);
+`keys token revoke` and `keys delete` worked. Not fixed in the code: the CLI
+could create the store with the owner of its parent directory, or the hub could
+say so at start, which is a separate change (#317).
+
+Also learned: a refused enrolment leaves a pending record under that name and
+key, so retrying with a fresh key is refused (`already known by a different key
+… delete the record first`) until `keys delete`; and `doctor` without `--config`
+names the configuration directory on Linux as on FreeBSD (the chapter's heading
+was a file).
+
+**Not verified**: `make install` from a source checkout; any other
+distribution; SELinux or AppArmor; token enrolment with a hyphen-first token;
+LDAP, OIDC, TOTP; and the network path between hosts, since the lab opens only
+SSH and the node reached the hub through two SSH tunnels (TLS, pinning and
+enrolment were end to end; the CIDR test saw the tunnel's `::1`, which is why it
+could only be shown refusing).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
