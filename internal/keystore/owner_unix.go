@@ -7,6 +7,18 @@ import (
 	"syscall"
 )
 
+// geteuid and chown are variables so that the one thing here that needs
+// root, handing ownership to someone else, can be exercised by a test that
+// is not root. The root-only tests in this package skip everywhere a
+// developer or the CI runner is an ordinary user, which was every run until
+// this seam: the code that makes `keys accept` work as root had no test that
+// ever ran, and the token store's directory was missed for that reason.
+// DIVERGENCE 5.285.
+var (
+	geteuid = os.Geteuid
+	chown   = os.Chown
+)
+
 // inheritOwner gives a file the ownership of the directory holding it,
 // when this process is root and the directory belongs to someone else.
 //
@@ -20,7 +32,7 @@ import (
 // Only downward: a process that is not root cannot change ownership, and
 // a directory this process already owns needs nothing done.
 func inheritOwner(path, dir string) error {
-	if os.Geteuid() != 0 {
+	if geteuid() != 0 {
 		return nil
 	}
 	info, err := os.Stat(dir)
@@ -31,8 +43,8 @@ func inheritOwner(path, dir string) error {
 	if !ok {
 		return nil
 	}
-	if int(st.Uid) == os.Geteuid() && int(st.Gid) == os.Getegid() {
+	if int(st.Uid) == geteuid() && int(st.Gid) == os.Getegid() {
 		return nil
 	}
-	return os.Chown(path, int(st.Uid), int(st.Gid))
+	return chown(path, int(st.Uid), int(st.Gid))
 }

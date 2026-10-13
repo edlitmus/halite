@@ -180,8 +180,19 @@ token store at /var/lib/halite/keys/tokens: open …: permission denied`. The
 fix is to create tokens as `halite` (after removing the root-owned `tokens`
 directory and restarting the hub), and the tokens that root made are lost, so
 make new ones. `accept`, `list` and `delete` worked when run as root in the same session
-(the records they touch were created by the hub); why only the token store
-differed was not investigated.
+because the store already handed its *files* to the directory's owner; the
+token store's *directory* was the one thing it did not.
+
+That is fixed on `main` (DIVERGENCE 5.285, #317) and will be in the release
+after v0.1.1: `keys token create` run as root now makes the directory, and any
+parent it has to make, belong to the account that owns the one above, and puts
+a wrongly owned `tokens` directory right the next time root mints a token (tokens
+root made *before* are files root owns and are not changed, so make new ones).
+The hub also warns at start in token mode when it cannot read the store (`the
+token store cannot be read, so no token will be accepted`, with a `chown`
+hint). With v0.1.1 and earlier, keep to `sudo -u halite`. Running it as the hub's
+account is still the right habit: it is the one place the file's owner is not a
+decision anyone has to remember.
 
 **3. Give the node the token and let it enrol**, with the fingerprint still
 required:

@@ -23570,6 +23570,42 @@ SSH and the node reached the hub through two SSH tunnels (TLS, pinning and
 enrolment were end to end; the CIDR test saw the tunnel's `::1`, which is why it
 could only be shown refusing).
 
+### 5.285 The token store's directory is handed to the hub's account (#317)
+
+5.284 found that `halite-hub keys token create` run as root made
+`state_dir/keys/tokens` as `root:root 0700` inside the hub account's `keys`,
+and that the hub then refused every token enrolment. The chapter was corrected;
+this is the code. The store already gave each *file* the owner of its
+directory when root wrote it (`inheritOwner`, which is why `keys accept` works
+as root), and that was the trap: a directory created wrongly made every file in
+it wrong too.
+
+`mkdirOwned` now makes the store directory, the token directory and any
+parents they need, each owned by whoever owns the directory above it
+(outermost first), and does the same for an existing directory when root
+touches it, so stores already broken are put right on the next mint. Tokens
+root had already written stay root's, until something rewrites them; use and
+revoke do. `halite-hub serve` in token mode now also checks that the store can
+be read, and warns with the reason and a `chown` hint, so the failure is in the
+log of the process that has it and not one refused node at a time.
+
+Tested three ways, each broken on purpose. Two tests stand in for root through a
+seam (`geteuid`, `chown`) and so run for any user and in CI: the old
+`os.MkdirAll` in `MintToken` fails the first and second, the old `Open` fails
+the first. The existing root-only test of `inheritOwner` skips for any user who
+is not root, as it did in every local run I made (I did not check what the CI
+jobs, some of which run as root, did with it); run as real root (the compiled test binary under `sudo`) it passes, and the new
+real-root test fails against the old code with exactly the lab's picture:
+`tokens` and the token file both `0:0`, the hub account `65534:65534`. The
+start-up warning was seen from the real binary against an unreadable store in
+token mode, and not in manual mode.
+
+**Not verified**: a real hub account on a real host (the lab was not raised for
+this; the root run used uid 65534 in a temp directory); Windows and other
+platforms without uids, where `inheritOwner` is a no-op by design; the node's
+own message, which still says only "the hub's log says why" (the hub's log now
+says why at start, which is as far as this goes).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

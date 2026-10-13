@@ -115,10 +115,59 @@ func Open(dir string) (*Store, error) {
 	}
 	// 0700: the requests are not secret, but who has asked to join is
 	// not public either.
-	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
+	if err := mkdirOwned(dir); err != nil {
 		return nil, fmt.Errorf("creating the key store: %w", err)
 	}
 	return &Store{dir: dir}, nil
+}
+
+// mkdirOwned creates dir and any parents it is missing, each belonging to
+// the account that owns the directory above it, and sets right a dir that
+// an earlier run left owned by someone else.
+//
+// Files in the store already take their directory's owner (inheritOwner),
+// which is correct, and is exactly what made a directory created wrongly
+// into a trap: `halite-hub keys token create` run as root made
+// state_dir/keys/tokens as root:root 0700 inside the hub account's `keys`,
+// every token file written into it then inherited root, and the hub could
+// read none of them. Every token enrolment was refused with `permission
+// denied` in the hub's log and nothing at all on the node. #317, DIVERGENCE
+// 5.285.
+//
+// Parents are handled outermost first so each takes its owner from a parent
+// that is already right. It changes nothing unless this process is root and
+// the parent belongs to someone else.
+func mkdirOwned(dir string) error {
+	var made []string
+	for d := dir; ; d = filepath.Dir(d) {
+		if _, err := os.Stat(d); err == nil {
+			break
+		}
+		made = append(made, d)
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	for i := len(made) - 1; i >= 0; i-- {
+		if err := inheritOwner(made[i], filepath.Dir(made[i])); err != nil {
+			return err
+		}
+	}
+	if len(made) == 0 {
+		return inheritOwner(dir, filepath.Dir(dir))
+	}
+	return nil
+}
+
+// CheckTokens reports whether the token store can be read in full, which is
+// what the hub needs before it can admit a node with a token. It returns nil
+// when there are no tokens yet.
+func (s *Store) CheckTokens() error {
+	_, err := s.ListTokens()
+	return err
 }
 
 // Dir is where the store lives, for a message that names it.
