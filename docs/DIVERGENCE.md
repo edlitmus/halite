@@ -23439,6 +23439,84 @@ path, and the publish step has run on a real release. The second item (the
 gate checks what was signed, not who may run it) stands, and
 `docs/releasing.md` has the rest, including what this run did not cover.
 
+### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
+
+Issue #308 asked for the Handbook's install chapters to be run on a fresh host
+as root. On 2026-10-13 two Vultr instances were raised from the lab
+(`contrib/tofu`, `freebsd14` and `freebsd15`), `make lab-facts` reporting
+FreeBSD 14.5-RELEASE-p1 and 15.1-RELEASE-p4, amd64, both 1 vCPU / 2 GB, root's
+shell `/bin/sh`. Everything below was done as root from the published v0.1.1
+`freebsd-amd64` archive (checksum and `openssl` signature verified on the
+host): `pw useradd`, the install, `hub.yaml`, the rc.d script, first start, the
+operator and policy, `doctor`, a node on the other host, a state, the API, a
+reboot. Chapters 30 to 32 have what was run and what was not. The lab was then
+destroyed (`make lab-down`; checked against Vultr's API: 0 instances, 0
+firewall groups).
+
+**1. `halite_hub_flags` never worked (a defect in the shipped scripts).**
+Chapter 30 step 5 says `sysrc halite_hub_flags='--names hub.example.com,hub'`.
+On the host, `service halite_hub start` failed: `daemon: unrecognized option
+--names`, then `daemon(8)`'s usage. `rc.subr` runs `$command $rc_flags
+$command_args`, and `rc_flags` is the value of `${name}_flags`; `command` is
+`/usr/sbin/daemon`, so the flags went to `daemon`, and the scripts also repeated
+the variable in `command_args`. With the variable unset the hub started, which
+is how every earlier run had it. `halite_api` and `halite_node` have the same
+shape. The scripts now copy the value to `${name}_args`, empty `${name}_flags`
+before `rc.subr` reads it, and use `_args` in `command_args`. On the host the
+process was `halite-hub serve --config … --names …` with the flags once;
+`start`, `restart`, `stop` and `status` behaved, and the hub came up from
+`rc.conf` after a reboot. `TestRcScriptsKeepTheirFlagsAwayFromDaemon` reads the
+scripts and fails on all three old ones. It is the same family as the
+`${name}_program` bug (it reads, not runs, `rc.subr`). `halite_node` was not
+run with flags set, only read; `halite_api` and `halite_node` were run with the
+flags empty. `halite_highstate` has its own `start_cmd` and is not affected.
+
+**2. A wrong claim of the Handbook's own (chapter 37).** It said restarting the
+hub with `--names` issues a fresh serving certificate. It does not: the
+certificate is issued when there is none or it is past half its life
+(`servingCertificate`, `cmd/halite-hub/serve.go`), and on the host the names
+stayed as they were across restarts until `hub.crt` was removed. Chapters 30 and
+37 now say so.
+
+**3. `--names` replaces the defaults.** After `--names hub.example.com,hub` the
+chapter's next check, `halite-hub runner manage.status`, failed: `certificate is
+valid for hub.example.com, hub, not localhost`. Chapter 30 now lists `localhost`
+and `127.0.0.1`.
+
+**4. The `policy:` line in chapter 30's example `hub.yaml`** was
+`/etc/halite/policy.yaml`. On FreeBSD `keys operator create --admin` made the
+certificate and then printed `mkdir /etc/halite: permission denied`, writing no
+policy. The line is removed; the default put the policy beside `hub.yaml`.
+
+**5. The `openssl s_client` check in chapter 30 shows no certificate.** The hub
+ends the handshake of a client that does not offer ALPN `halite/1`; one that
+offers only that is refused too (`no application protocol`), because the hub
+negotiates `h2`. `-alpn halite/1,h2` works, and showed the right names.
+
+Smaller: FreeBSD 14.5 and 15.1 have `sha256sum` in the base system (the chapter
+said coreutils); `doctor` on FreeBSD skips the FIPS line and, without
+`--config`, names the directory; the second `halite-hub keys operator create`
+(for the API) makes commands demand `--as`; `halite-node enroll` writes JSON log
+lines to stderr before its block.
+
+What ran and held: a node on 14.5 enrolled by fingerprint, appeared as `up`,
+answered `test.ping` and applied the playground state (changes, then none, then
+repair of a hand edit); local runs exited 0 then 2; the API passed `doctor`,
+`readyz`, login, `POST /v1/run` and `GET /v1/nodes`.
+
+**Not verified**: a fresh Linux host as root; the hub on 14.5 (the node was);
+token enrolment; cloud-init (Vultr's BSD images do not run it); the cron and
+mail drift report; deferred-restart upgrades; a node surviving a reboot; a role
+tried from outside its limits through the API; LDAP, OIDC, TOTP. The two hosts
+could not reach each other (the lab opens only SSH), so the node reached the hub
+through two SSH tunnels: TLS, pinning and enrolment were end to end, the network
+path was not. An earlier tunnel on a port already held by an unrelated
+`halite-hub` on the workstation was closed before any traffic used it. Along the
+way: the first `make lab-down` failed because the provider lock file had been
+reverted, and was fixed with `tofu init` (instances kept billing for about two
+minutes); `vc2-1c-2gb` was refused once in `ewr` ("plan is not available") and
+accepted on the retry.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

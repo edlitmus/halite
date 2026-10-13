@@ -19,6 +19,18 @@ which reached 0.12.0 before it was deleted (decided 2026-09-25). `v0.*`
 is a pre-release in `release.yml`, so it is marked as one.
 **1.0.0 still waits on SPEC section 32's phase 6 exit criteria.**
 
+## Unreleased
+
+### FreeBSD: `halite_hub_flags`, `halite_api_flags` and `halite_node_flags` work
+
+Setting any of them made `service … start` fail with `daemon: unrecognized
+option`, because `rc.subr` passed the value to `daemon(8)`. The rc.d scripts now
+keep it for the program. This was found by running the install chapters on
+FreeBSD 14.5 and 15.1; with v0.1.1, install the corrected script from the
+repository before setting the variable. The Handbook's chapters 30 to 32 and 37
+were corrected from the same run (the hub certificate is not reissued by a
+restart; `--names` replaces the default names). See DIVERGENCE 5.283.
+
 ## 0.1.1 — 2026-10-12
 
 ### FIPS builds are part of the release
