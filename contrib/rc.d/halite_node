@@ -48,6 +48,16 @@ load_rc_config $name
 : ${halite_node_config="/usr/local/etc/halite/node.yaml"}
 : ${halite_node_flags=""}
 : ${halite_node_user="root"}
+# rc.subr runs `$command $rc_flags $command_args`, and rc_flags is the value
+# of ${name}_flags. Here `command` is daemon(8), so an operator's
+# halite_node_flags="--names hub.example.com" was handed to daemon, which
+# stopped with "unrecognized option", and the same value was also repeated at
+# the end of command_args. The documented knob therefore never worked: it
+# only "worked" while empty. The operator's value is moved to halite_node_args,
+# which only command_args reads, and the variable rc.subr reads is emptied.
+# The knob keeps its name and its meaning. DIVERGENCE 5.283.
+halite_node_args="${halite_node_flags}"
+halite_node_flags=""
 # The FIPS deployment of SPEC 27.4. Setting halite_node_fips="YES" in
 # rc.conf runs the -fips artifact with FIPS mode stated rather than
 # inherited, so a GODEBUG in the environment cannot quietly turn it off.
@@ -78,7 +88,7 @@ logfile="/var/log/halite/node.log"
 
 command="/usr/sbin/daemon"
 command_args="-c -f -p ${pidfile} -o ${logfile} \
-	${halite_node_env:+env ${halite_node_env}} ${halite_node_binary} connect --config ${halite_node_config} ${halite_node_flags}"
+	${halite_node_env:+env ${halite_node_env}} ${halite_node_binary} connect --config ${halite_node_config} ${halite_node_args}"
 
 required_files="${halite_node_config}"
 start_precmd="halite_node_prestart"

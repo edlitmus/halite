@@ -23439,7 +23439,173 @@ path, and the publish step has run on a real release. The second item (the
 gate checks what was signed, not who may run it) stands, and
 `docs/releasing.md` has the rest, including what this run did not cover.
 
-### 5.283 An unset `pillarenv` compiled one environment, where Salt merges every one
+### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
+
+Issue #308 asked for the Handbook's install chapters to be run on a fresh host
+as root. On 2026-10-13 two Vultr instances were raised from the lab
+(`contrib/tofu`, `freebsd14` and `freebsd15`), `make lab-facts` reporting
+FreeBSD 14.5-RELEASE-p1 and 15.1-RELEASE-p4, amd64, both 1 vCPU / 2 GB, root's
+shell `/bin/sh`. Everything below was done as root from the published v0.1.1
+`freebsd-amd64` archive (checksum and `openssl` signature verified on the
+host): `pw useradd`, the install, `hub.yaml`, the rc.d script, first start, the
+operator and policy, `doctor`, a node on the other host, a state, the API, a
+reboot. Chapters 30 to 32 have what was run and what was not. The lab was then
+destroyed (`make lab-down`; checked against Vultr's API: 0 instances, 0
+firewall groups).
+
+**1. `halite_hub_flags` never worked (a defect in the shipped scripts).**
+Chapter 30 step 5 says `sysrc halite_hub_flags='--names hub.example.com,hub'`.
+On the host, `service halite_hub start` failed: `daemon: unrecognized option
+--names`, then `daemon(8)`'s usage. `rc.subr` runs `$command $rc_flags
+$command_args`, and `rc_flags` is the value of `${name}_flags`; `command` is
+`/usr/sbin/daemon`, so the flags went to `daemon`, and the scripts also repeated
+the variable in `command_args`. With the variable unset the hub started, which
+is how every earlier run had it. `halite_api` and `halite_node` have the same
+shape. The scripts now copy the value to `${name}_args`, empty `${name}_flags`
+before `rc.subr` reads it, and use `_args` in `command_args`. On the host the
+process was `halite-hub serve --config … --names …` with the flags once;
+`start`, `restart`, `stop` and `status` behaved, and the hub came up from
+`rc.conf` after a reboot. `TestRcScriptsKeepTheirFlagsAwayFromDaemon` reads the
+scripts and fails on all three old ones. It is the same family as the
+`${name}_program` bug (it reads, not runs, `rc.subr`). `halite_node` was not
+run with flags set, only read; `halite_api` and `halite_node` were run with the
+flags empty. `halite_highstate` has its own `start_cmd` and is not affected.
+
+**2. A wrong claim of the Handbook's own (chapter 37).** It said restarting the
+hub with `--names` issues a fresh serving certificate. It does not: the
+certificate is issued when there is none or it is past half its life
+(`servingCertificate`, `cmd/halite-hub/serve.go`), and on the host the names
+stayed as they were across restarts until `hub.crt` was removed. Chapters 30 and
+37 now say so.
+
+**3. `--names` replaces the defaults.** After `--names hub.example.com,hub` the
+chapter's next check, `halite-hub runner manage.status`, failed: `certificate is
+valid for hub.example.com, hub, not localhost`. Chapter 30 now lists `localhost`
+and `127.0.0.1`.
+
+**4. The `policy:` line in chapter 30's example `hub.yaml`** was
+`/etc/halite/policy.yaml`. On FreeBSD `keys operator create --admin` made the
+certificate and then printed `mkdir /etc/halite: permission denied`, writing no
+policy. The line is removed; the default put the policy beside `hub.yaml`.
+
+**5. The `openssl s_client` check in chapter 30 shows no certificate.** The hub
+ends the handshake of a client that does not offer ALPN `halite/1`; one that
+offers only that is refused too (`no application protocol`), because the hub
+negotiates `h2`. `-alpn halite/1,h2` works, and showed the right names.
+
+Smaller: FreeBSD 14.5 and 15.1 have `sha256sum` in the base system (the chapter
+said coreutils); `doctor` on FreeBSD skips the FIPS line and, without
+`--config`, names the directory; the second `halite-hub keys operator create`
+(for the API) makes commands demand `--as`; `halite-node enroll` writes JSON log
+lines to stderr before its block.
+
+What ran and held: a node on 14.5 enrolled by fingerprint, appeared as `up`,
+answered `test.ping` and applied the playground state (changes, then none, then
+repair of a hand edit); local runs exited 0 then 2; the API passed `doctor`,
+`readyz`, login, `POST /v1/run` and `GET /v1/nodes`.
+
+**Not verified**: a fresh Linux host as root; the hub on 14.5 (the node was);
+token enrolment; cloud-init (Vultr's BSD images do not run it); the cron and
+mail drift report; deferred-restart upgrades; a node surviving a reboot; a role
+tried from outside its limits through the API; LDAP, OIDC, TOTP. The two hosts
+could not reach each other (the lab opens only SSH), so the node reached the hub
+through two SSH tunnels: TLS, pinning and enrolment were end to end, the network
+path was not. An earlier tunnel on a port already held by an unrelated
+`halite-hub` on the workstation was closed before any traffic used it. Along the
+way: the first `make lab-down` failed because the provider lock file had been
+reverted, and was fixed with `tofu init` (instances kept billing for about two
+minutes); `vc2-1c-2gb` was refused once in `ewr` ("plan is not available") and
+accepted on the retry.
+
+### 5.284 The Linux install runbooks, run on Linux as root: one more wrong step
+
+Issue #308's Linux half, after 5.283's FreeBSD half. On 2026-10-13 two lab rows
+were raised, `ubuntu2604` (Ubuntu 26.04.1 LTS, kernel 7.0.0-38) as the hub and
+API, and `debian13` (Debian 13 trixie, kernel 6.12.111) as a node, both amd64
+with Go 1.26.6 from the bootstrap. Everything was run as root from the published
+v0.1.1 `linux-amd64` archive (checksum and `openssl` signature verified on the
+host; `gh attestation verify` was not available there): `useradd --system`, the
+install, `hub.yaml`, the `--names` drop-in, `systemctl enable --now`, the
+operator, `doctor`, the Verify commands, a node under the shipped unit, the API
+under its unit, then both hosts rebooted. The lab was destroyed afterwards
+(checked against Vultr's API: 0 instances, 0 firewall groups).
+
+What held, as chapters 30 to 32 say: the sandboxed units start (`ProtectSystem=strict`
+with `ReadWritePaths=/etc/halite/pki` is enough); the first-start log lines
+match chapter 30; `doctor` gave `7 pass, 1 skip` on the hub and `4 pass` on the
+API; `manage.status` and `test.ping` saw the node; the playground state changed
+3 things, then none (`halite-hub run` exit `0` both times, as chapter 46 says;
+local `0` then `2`); a one-function API role got `200` inside it and `403` with
+the role named outside it; hub, API and node all came back after a reboot with
+only the tunnel restored, and the node's log showed it retrying while the hub
+was away.
+
+**The wrong step (chapter 31, token enrolment).** The chapter showed
+`halite-hub keys token create …` with no account. Run as root, it created
+`state_dir/keys/tokens` as `root:root 0700` inside the `halite`-owned `keys`
+directory, and the hub, as `halite`, then refused every token enrolment with
+`reading the token store at …/keys/tokens: open …: permission denied`. The node
+printed only `enrollment refused; the hub's log says why`, and, because a
+refused request still leaves a pending one, the nodes appeared under `pending`
+as though no token had been presented. The chapter now says `sudo -u halite`,
+shows the failure, and lists the reasons the hub gives for the other refusals
+(CIDR, name scope, spent token). Re-run correctly: the CIDR-scoped token was
+refused (`admits 10.0.0.0/8, and this request came from [::1]`), a token
+presented by a name outside its scope was refused, a good one enrolled `web3`
+and was `spent (1 of 1 uses)`, and reusing it was refused (`is spent`);
+`keys token revoke` and `keys delete` worked. Not fixed in the code: the CLI
+could create the store with the owner of its parent directory, or the hub could
+say so at start, which is a separate change (#317).
+
+Also learned: a refused enrolment leaves a pending record under that name and
+key, so retrying with a fresh key is refused (`already known by a different key
+… delete the record first`) until `keys delete`; and `doctor` without `--config`
+names the configuration directory on Linux as on FreeBSD (the chapter's heading
+was a file).
+
+**Not verified**: `make install` from a source checkout; any other
+distribution; SELinux or AppArmor; token enrolment with a hyphen-first token;
+LDAP, OIDC, TOTP; and the network path between hosts, since the lab opens only
+SSH and the node reached the hub through two SSH tunnels (TLS, pinning and
+enrolment were end to end; the CIDR test saw the tunnel's `::1`, which is why it
+could only be shown refusing).
+
+### 5.285 The token store's directory is handed to the hub's account (#317)
+
+5.284 found that `halite-hub keys token create` run as root made
+`state_dir/keys/tokens` as `root:root 0700` inside the hub account's `keys`,
+and that the hub then refused every token enrolment. The chapter was corrected;
+this is the code. The store already gave each *file* the owner of its
+directory when root wrote it (`inheritOwner`, which is why `keys accept` works
+as root), and that was the trap: a directory created wrongly made every file in
+it wrong too.
+
+`mkdirOwned` now makes the store directory, the token directory and any
+parents they need, each owned by whoever owns the directory above it
+(outermost first), and does the same for an existing directory when root
+touches it, so stores already broken are put right on the next mint. Tokens
+root had already written stay root's, until something rewrites them; use and
+revoke do. `halite-hub serve` in token mode now also checks that the store can
+be read, and warns with the reason and a `chown` hint, so the failure is in the
+log of the process that has it and not one refused node at a time.
+
+Tested three ways, each broken on purpose. Two tests stand in for root through a
+seam (`geteuid`, `chown`) and so run for any user and in CI: the old
+`os.MkdirAll` in `MintToken` fails the first and second, the old `Open` fails
+the first. The existing root-only test of `inheritOwner` skips for any user who
+is not root, as it did in every local run I made (I did not check what the CI
+jobs, some of which run as root, did with it); run as real root (the compiled test binary under `sudo`) it passes, and the new
+real-root test fails against the old code with exactly the lab's picture:
+`tokens` and the token file both `0:0`, the hub account `65534:65534`. The
+start-up warning was seen from the real binary against an unreadable store in
+token mode, and not in manual mode.
+
+**Not verified**: a real hub account on a real host (the lab was not raised for
+this; the root run used uid 65534 in a temp directory); Windows and other
+platforms without uids, where `inheritOwner` is a no-op by design; the node's
+own message, which still says only "the hub's log says why" (the hub's log now
+says why at start, which is as far as this goes).
+### 5.286 An unset `pillarenv` compiled one environment, where Salt merges every one
 
 Found by pointing the hub module at a reference stack whose pillar lives in two
 repositories, served as `base` and `ref`: no node in `base` received anything
@@ -23500,6 +23666,8 @@ matrix runs it against 3006, 3007 and 3008. The pillar package's new tests
 were each broken on purpose and failed: reading one top file; counting every
 heading with `pillarenv` set; reading every file from one environment; allowing
 an unserved heading.
+
+
 
 ## 6. Everything else not started
 

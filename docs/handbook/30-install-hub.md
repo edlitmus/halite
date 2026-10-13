@@ -14,12 +14,19 @@ from a directory you control, one working operator, and a green
 > **What has and has not been run.** The configuration, the CA creation, the
 > operator and policy bootstrap, the enrolment of nodes, and every
 > verification command in this runbook were run against a hub on a Linux
-> workstation as an unprivileged user. `make install`, the account creation
-> and the service files need root and a clean machine: they follow the
-> project's install target and unit files, which are checked by tests, but
-> this runbook's steps 2, 3 and 5 were not re-run as root on a fresh host
-> while it was written. A first install on a spare machine is the right way
-> to find that out.
+> workstation as an unprivileged user. **On FreeBSD** the whole runbook was
+> then run as root on two fresh Vultr instances, FreeBSD 14.5-RELEASE-p1 and
+> 15.1-RELEASE-p4 (amd64), from the published v0.1.1 `freebsd-amd64` archive:
+> the account, the install, the rc.d script, first start, the operator and
+> policy, `doctor`, a node on the other host, and a reboot. That run is why
+> steps 1, 4 and 5 say what they say below, and it found a bug in the rc.d
+> scripts (step 5). **On Linux** the runbook was then run as root on Ubuntu
+> 26.04.1 LTS (kernel 7.0.0-38), again from the v0.1.1 archive: `useradd`, the
+> install, the `--names` drop-in, `systemctl enable --now`, the operator, `doctor`
+> (`7 pass, 1 skip`), the checks, a reboot, and a node on Debian 13 and the API
+> against it. **Not run:** `make install` from a source checkout, hosts older
+> than those named, SELinux or AppArmor profiles, and the hub on FreeBSD 14.5
+> (only the node was).
 
 ## Before you start
 
@@ -67,8 +74,9 @@ The first checks the file against the manifest. The second checks the
 provenance (that this workflow built it from this repository). The third
 checks the maintainers' detached signature, using the public key from the
 repository (`contrib/keys/halite-release.pub`, fingerprint in
-`docs/releasing.md`). On FreeBSD use `sha256 -c` or `sha256sum` from the
-`coreutils` package. Do not skip this on the machine that holds your CA.
+`docs/releasing.md`). FreeBSD 14.5 and 15.1 have `sha256sum` in the base system
+(`/sbin/sha256sum`) and the command above works unchanged there; `sha256 -c`
+also works, and `openssl` is in the base too. Do not skip this on the machine that holds your CA.
 
 ```sh
 tar -xzf halite-$v-$p.tar.gz
@@ -143,15 +151,18 @@ file_roots:
 pillar_roots:
   base:
     - /srv/halite/pillar
-policy: /etc/halite/policy.yaml
 enrollment_mode: manual
 job_cache_retention: 720h
 event_retention: 720h
 metrics: true
 ```
 
-(`pki_dir`, `state_dir` and `cache_dir` have correct platform defaults: do
-not set them unless you are relocating something.) Then make the tree
+(`pki_dir`, `state_dir`, `cache_dir` and `policy` have correct platform
+defaults, the last being `policy.yaml` beside `hub.yaml`: do not set them
+unless you are relocating something. An earlier version of this page set
+`policy: /etc/halite/policy.yaml`; pasted into a FreeBSD file it made `keys
+operator create --admin` print `mkdir /etc/halite: permission denied` after
+it had made the certificate, and write no policy.) Then make the tree
 directories the hub reads:
 
 ```sh
@@ -179,7 +190,7 @@ flag of `serve`:
 sudo systemctl edit halite-hub
 #   [Service]
 #   ExecStart=
-#   ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml --names hub.example.com,hub
+#   ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml --names hub.example.com,hub,localhost,127.0.0.1
 
 # FreeBSD
 sudo sysrc halite_hub_flags='--names hub.example.com,hub'
@@ -187,6 +198,38 @@ sudo sysrc halite_hub_flags='--names hub.example.com,hub'
 
 A name missing here is a handshake failure on the node, with a message about
 the certificate, not about this step.
+
+(`systemctl edit` opens an editor; non-interactively it writes
+`/etc/systemd/system/halite-hub.service.d/override.conf` with exactly those
+three lines, which is what the Linux run used. The unit's sandbox
+(`ProtectSystem=strict`, `ReadWritePaths=/etc/halite/pki`) let the hub start,
+create its CA and certificate, and serve; the log lines matched the ones shown
+in step 6.)
+
+Three things about `--names`, the first two seen on both platforms and the
+third on FreeBSD:
+
+- **It replaces the defaults, it does not add to them.** With
+  `--names hub.example.com,hub` the certificate was valid for those two names
+  only, and the next command, `halite-hub runner manage.status` (which dials
+  `localhost`), failed with `certificate is valid for hub.example.com, hub,
+  not localhost`. List every name, including `localhost,127.0.0.1` and the
+  host name if anything dials it: `--names hub.example.com,hub,localhost,127.0.0.1`.
+- **It is read when the certificate is issued**, which is the first start, or
+  later when the certificate is past half its life. Restarting with different
+  names changed nothing: the certificate on disk was kept. To change the names,
+  stop the hub, remove `pki_dir/hub.crt` (the key is kept), and start it; the
+  new certificate chains to the same CA, so no node changes.
+- **On FreeBSD, in v0.1.1, `halite_hub_flags` did not work.** `service
+  halite_hub start` failed with `daemon: unrecognized option --names` and the
+  usage text of `daemon(8)`, because `rc.subr` hands `halite_hub_flags` to the
+  command it wraps, which is `daemon`. The same is true of `halite_api_flags`
+  and `halite_node_flags`. It is fixed on `main` (DIVERGENCE 5.283) and in
+  releases after v0.1.1; with v0.1.1, install `contrib/rc.d/halite_hub` from
+  `main` over the archive's copy before setting the variable. The fixed script
+  was run on the lab: the process was `halite-hub serve --config … --names
+  hub.example.com,hub,localhost,127.0.0.1` with the flags once, and `start`,
+  `restart` and `stop` all behaved, including after a reboot.
 
 ### 6. Install the service and start it
 
@@ -279,6 +322,13 @@ halite-hub doctor — /etc/halite/hub.yaml
   7 pass, 1 skip
 ```
 
+Without `--config` the heading names the configuration *directory*
+(`/etc/halite`, or `/usr/local/etc/halite` on FreeBSD) and not `hub.yaml`; pass
+`--config /etc/halite/hub.yaml` to see the file named. On Linux the totals were
+`7 pass, 1 skip`. On FreeBSD the output differs once more: the FIPS line is
+`skip  FIPS mode consistency  freebsd has no kernel FIPS mode, and this is not a
+FIPS build`, giving `6 pass, 2 skip`.
+
 Then check the three claims you care about:
 
 ```sh
@@ -291,8 +341,16 @@ From a **different** machine, check the port is reachable and the certificate
 names match (this is the call a node's first contact makes):
 
 ```sh
-openssl s_client -connect hub.example.com:4510 -servername hub.example.com </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName
+openssl s_client -connect hub.example.com:4510 -servername hub.example.com -alpn halite/1,h2 </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName
 ```
+
+`-alpn halite/1,h2` is required. The hub ends the handshake of any client that
+does not offer `halite/1` (its log says `peer … does not speak halite/1`), and
+it negotiates `h2`, so a client offering only `halite/1` is refused too
+(`no application protocol`). Without the option `openssl` prints no certificate
+and `x509` reports `Could not read certificate from <stdin>`. A line from the
+lab, through a tunnel: `subject=CN = halite hub`, then `DNS:hub.example.com,
+DNS:hub, DNS:localhost, IP Address:127.0.0.1`.
 
 and confirm `hub.example.com` is in the names. Finally enrol a first node
 ([chapter 31](31-install-nodes.md)) before you consider the hub done: a
@@ -307,7 +365,8 @@ hub no node has joined is untested.
 | `configuration key "…" is not recognised and was ignored` | A typo, or a setting for another program | Check [the reference](../configuration.md); it says which program reads which |
 | Every command: `this hub has no policy, so nothing is authorized` | No `policy.yaml`, or the hub started before you made it | Step 7, then restart the hub |
 | `halite-hub run` says the certificate is not accepted | The operator certificate expired, or was issued by a different CA | `keys operator create` again as the hub's account |
-| A node cannot connect: certificate error naming a host | The node dialled a name not on the hub's certificate | Add the name with `--names` (step 5) and restart |
+| A node cannot connect: certificate error naming a host | The node dialled a name not on the hub's certificate | Add the name with `--names`, remove `pki_dir/hub.crt`, restart (step 5); a restart alone keeps the old certificate |
+| FreeBSD: `service halite_hub start` prints `daemon: unrecognized option` | `halite_hub_flags` is set and the script is from v0.1.1 or earlier | Use the corrected `contrib/rc.d/halite_hub` (step 5) |
 | Nothing listens on 4510 | Firewall, or another service has the port | `listen:` in `hub.yaml`, or free the port |
 | `doctor` warns about the pillar | A pillar file does not compile | Run `halite-node pillar items --local --pillar-root …` against it |
 

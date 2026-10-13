@@ -767,7 +767,7 @@ func TestPillarEnvAndRenderer(t *testing.T) {
 	// Its top file lists v under `prod:`, the heading Salt counts when
 	// `pillarenv` is prod. Under `base:`, as this was written, Salt
 	// delivers nothing from it with pillarenv set; halite read it
-	// anyway, from prod. DIVERGENCE 5.283.
+	// anyway, from prod. DIVERGENCE 5.286.
 	prod := dir("pil-prod", map[string]string{
 		"top.sls": "prod:\n  '*':\n    - v\n", "v.sls": "which: from-prod\n",
 	})

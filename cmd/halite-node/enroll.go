@@ -695,7 +695,7 @@ func (h hubEvents) Send(tag string, data map[string]any) error {
 // pillarRequest is what this node asks the hub for. all is `pillarenv`
 // unset: every environment's pillar, merged, with env only the one the
 // node runs in. One function for the probe and every later fetch, so the
-// two cannot ask for different pillars. DIVERGENCE 5.283.
+// two cannot ask for different pillars. DIVERGENCE 5.286.
 func (n *node) pillarRequest(env string, all bool, grains json.RawMessage) transport.PillarRequest {
 	return transport.PillarRequest{NodeID: n.nodeID, Env: env, AllEnvs: all, Grains: grains}
 }

@@ -21,6 +21,24 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `keys token create` as root no longer makes a token store the hub cannot read
+
+Run as root, it made `keys/tokens` owned by root inside the hub account's
+directory, and the hub then refused every token enrolment (`permission denied`
+in its log, nothing on the node). The directory now takes the owner of the one
+above, a wrongly owned one is put right on the next mint, and `serve` warns at
+start in token mode if it cannot read the store. See DIVERGENCE 5.285 (#317).
+
+### FreeBSD: `halite_hub_flags`, `halite_api_flags` and `halite_node_flags` work
+
+Setting any of them made `service … start` fail with `daemon: unrecognized
+option`, because `rc.subr` passed the value to `daemon(8)`. The rc.d scripts now
+keep it for the program. This was found by running the install chapters on
+FreeBSD 14.5 and 15.1; with v0.1.1, install the corrected script from the
+repository before setting the variable. The Handbook's chapters 30 to 32 and 37
+were corrected from the same run (the hub certificate is not reissued by a
+restart; `--names` replaces the default names). See DIVERGENCE 5.283.
+
 ### Pillar with no `pillarenv` is every environment's, as in Salt
 
 With `pillarenv` unset, a node's pillar now merges every environment in
@@ -32,7 +50,7 @@ file and only entries under its own heading count, as in Salt. A top file
 heading naming an environment `pillar_roots` does not serve is now an error
 rather than a file read from the wrong environment. The `pillar.show_pillar`
 and `pillar.show_top` runners take `pillarenv`. A tree with one pillar
-environment is unaffected. DIVERGENCE 5.283.
+environment is unaffected. DIVERGENCE 5.286.
 
 ## 0.1.1 — 2026-10-12
 

@@ -15,7 +15,7 @@ import (
 
 // A node with no pillarenv asks for every environment's pillar with
 // all_envs, and the hub merges them; a node that names one, or a node
-// older than the field, gets that environment alone. DIVERGENCE 5.283.
+// older than the field, gets that environment alone. DIVERGENCE 5.286.
 func TestAPillarRequestForAllEnvironmentsMergesThem(t *testing.T) {
 	l := newLab(t)
 	roots := map[string][]string{}

@@ -206,7 +206,7 @@ type node struct {
 	// pillarAll is `pillarenv` left unset, by flag and by configuration:
 	// the pillar is then every environment's, merged, as Salt compiles
 	// it, and pillarEnv is only the environment the node runs in.
-	// DIVERGENCE 5.283.
+	// DIVERGENCE 5.286.
 	pillarAll bool
 	test      bool
 	format    cli.Format

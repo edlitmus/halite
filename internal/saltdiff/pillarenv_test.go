@@ -72,7 +72,7 @@ var pillarEnvCases = []pillarEnvCase{
 }
 
 // TestPillarEnvironmentsMatchSalt compiles each case with Salt and with
-// halite and requires the same pillar. DIVERGENCE 5.284.
+// halite and requires the same pillar. DIVERGENCE 5.286.
 func TestPillarEnvironmentsMatchSalt(t *testing.T) {
 	saltcall := saltCall(t)
 	for _, c := range pillarEnvCases {

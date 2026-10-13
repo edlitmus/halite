@@ -459,7 +459,7 @@ func (c *RunnerContext) compilePillarFor() (*pillar.Compiled, error) {
 		env = "base"
 	}
 	// As a node with no `pillarenv` receives it, every environment
-	// merged, unless the caller names one. DIVERGENCE 5.283.
+	// merged, unless the caller names one. DIVERGENCE 5.286.
 	all := true
 	if pe := c.arg("pillarenv"); pe != "" {
 		env, all = pe, false

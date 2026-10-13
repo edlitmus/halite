@@ -7,7 +7,7 @@ import (
 
 // A node with no pillarenv asks the hub for every environment's pillar;
 // one that names an environment asks for that one. The probe and every
-// later fetch build their request here. DIVERGENCE 5.283.
+// later fetch build their request here. DIVERGENCE 5.286.
 func TestTheNodeAsksForEveryEnvironmentWithoutAPillarenv(t *testing.T) {
 	n := &node{nodeID: "web1.example"}
 	grains := json.RawMessage(`{}`)

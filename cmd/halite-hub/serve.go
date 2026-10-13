@@ -197,6 +197,20 @@ func buildLogger(args *cli.Args, cfg *config.Config, secrets *redact.Set) (*hlog
 // runServe is the control plane of SPEC section 6.
 func runServe(args *cli.Args) int {
 	h := openHub(args, true)
+	// In token mode every enrolment depends on reading the token store, and
+	// when it cannot be read the hub refuses each one with the reason in its
+	// own log and none on the node. That is how it failed after a root-run
+	// `keys token create` left the store owned by root. Say so at start,
+	// where the person who just edited the file is looking. A warning and
+	// not a refusal to start: the rest of the hub works, and the fix is a
+	// chown away. #317.
+	if h.auth.Mode == keystore.ModeToken {
+		if err := h.store.CheckTokens(); err != nil {
+			h.log.Warn("enrollment_mode is token and the token store cannot be read, so no token will be accepted",
+				"error", err.Error(),
+				"fix", "make the store belong to the account the hub runs as: chown -R <that account> "+filepath.Join(keysDir(h.cfg), "tokens"))
+		}
+	}
 	listen := args.Flag("listen", h.cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort)))
 
 	names := serverNames(args, listen)

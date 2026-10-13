@@ -169,7 +169,7 @@ func (s *Server) compilePillar(nodeID, env string, all bool, grains *value.Map) 
 //
 // all is a node with no `pillarenv`: every environment's pillar, merged,
 // as Salt compiles it, with env only the environment the node runs in.
-// DIVERGENCE 5.283.
+// DIVERGENCE 5.286.
 func CompilePillar(opts *PillarOptions, nodeID, env string, all bool, grains *value.Map) (*pillar.Compiled, []string) {
 	cfg := pillarConfigFor(opts, nodeID, env, grains)
 	cfg.AllEnvs = all
