@@ -5,6 +5,7 @@ package keystore
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -80,5 +81,157 @@ func TestAnOrdinaryWriteDoesNotChangeOwnership(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("the record is mode %v, want 0600", info.Mode().Perm())
+	}
+}
+
+// chownLog stands in for chown, and for root: it records who the process
+// asked to hand each path to, so what only root can do is checked by a test
+// that is not root.
+type chownLog struct{ calls map[string][2]int }
+
+func fakeRoot(t *testing.T) *chownLog {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, where the store's real owner is root; the real-root test covers this")
+	}
+	l := &chownLog{calls: map[string][2]int{}}
+	oldE, oldC := geteuid, chown
+	geteuid = func() int { return 0 }
+	chown = func(path string, uid, gid int) error {
+		l.calls[path] = [2]int{uid, gid}
+		return nil
+	}
+	t.Cleanup(func() { geteuid, chown = oldE, oldC })
+	return l
+}
+
+// `halite-hub keys token create` run as root made state_dir/keys/tokens as
+// root:root, inside the hub account's keys directory, and every token written
+// into it took that owner from it: the hub read none of them, and every
+// token enrolment was refused with nothing on the node but "the hub's log
+// says why". The directory has to be handed to the account that owns its
+// parent, the way the files in it already were. #317, DIVERGENCE 5.285.
+func TestTheTokenDirectoryBelongsToTheStoreWhenRootCreatesIt(t *testing.T) {
+	l := fakeRoot(t)
+	dir := t.TempDir()
+	s, err := Open(filepath.Join(dir, "keys"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := s.MintToken(TokenOptions{TTL: time.Hour}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The parent's owner, read from the parent and not assumed to be this
+	// process's own uid and gid: on the BSDs a new directory takes its
+	// parent's group (/tmp is wheel), so the first CI run on FreeBSD, where
+	// the temporary directory's gid is 0 and the test user's is 1001, failed
+	// on an expectation that was about Linux.
+	var want [2]int
+	if info, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	} else if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		want = [2]int{int(st.Uid), int(st.Gid)}
+	}
+	tokens := filepath.Join(dir, "keys", "tokens")
+	if got, ok := l.calls[tokens]; !ok || got != want {
+		t.Errorf("the token directory was not handed to %v: chown calls %v", want, l.calls)
+	}
+	if got, ok := l.calls[filepath.Join(dir, "keys")]; !ok || got != want {
+		t.Errorf("the store directory was not handed to its parent's owner: %v", l.calls)
+	}
+	var file string
+	for p := range l.calls {
+		if filepath.Dir(p) == tokens {
+			file = p
+		}
+	}
+	if file == "" {
+		t.Errorf("the token %s was written without being handed on: %v", tok.ID, l.calls)
+	}
+}
+
+// A tokens directory an earlier run left owned by root is put right the next
+// time root touches it, so the fix reaches stores that are already wrong.
+func TestAWronglyOwnedTokenDirectoryIsPutRight(t *testing.T) {
+	l := fakeRoot(t)
+	dir := t.TempDir()
+	keys := filepath.Join(dir, "keys")
+	if err := os.MkdirAll(filepath.Join(keys, "tokens"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.MintToken(TokenOptions{TTL: time.Hour}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := l.calls[filepath.Join(keys, "tokens")]; !ok {
+		t.Errorf("an existing tokens directory was not put right: %v", l.calls)
+	}
+}
+
+// The same, for real: only root can hand a file to someone else, so this
+// runs where it can (`sudo ./keystore.test -test.run RealRoot`).
+func TestRealRootLeavesTheTokenStoreToItsOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("only root can change a file's owner, which is the case under test")
+	}
+	dir := t.TempDir()
+	const uid, gid = 65534, 65534
+	if err := os.Chown(dir, uid, gid); err != nil {
+		t.Skipf("cannot chown the state directory: %v", err)
+	}
+	s, err := Open(filepath.Join(dir, "keys"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := s.MintToken(TokenOptions{TTL: time.Hour}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{
+		filepath.Join(dir, "keys"),
+		filepath.Join(dir, "keys", "tokens"),
+		filepath.Join(dir, "keys", "tokens", tok.ID+".json"),
+	} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st, ok := info.Sys().(*syscall.Stat_t); ok && (int(st.Uid) != uid || int(st.Gid) != gid) {
+			t.Errorf("%s belongs to %d:%d; the hub account is %d:%d and cannot read it", p, st.Uid, st.Gid, uid, gid)
+		}
+	}
+}
+
+// What the hub checks at start in token mode: a store it cannot read is
+// reported, with the reason, rather than discovered one refused node at a time.
+func TestAnUnreadableTokenStoreIsReported(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything, so the case cannot be made")
+	}
+	s, err := Open(filepath.Join(t.TempDir(), "keys"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CheckTokens(); err != nil {
+		t.Fatalf("an empty store: %v", err)
+	}
+	if _, _, err := s.MintToken(TokenOptions{TTL: time.Hour}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CheckTokens(); err != nil {
+		t.Fatalf("a readable store: %v", err)
+	}
+	tokens := filepath.Join(s.Dir(), "tokens")
+	if err := os.Chmod(tokens, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(tokens, 0o700) })
+	err = s.CheckTokens()
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("an unreadable store gave %v; want permission denied named", err)
 	}
 }

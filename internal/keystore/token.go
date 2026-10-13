@@ -17,7 +17,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/target"
 )
@@ -156,7 +155,7 @@ func (s *Store) MintToken(opts TokenOptions, now time.Time) (*Token, string, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := fileperm.MkdirAll(s.tokenDir(), 0o700); err != nil {
+	if err := mkdirOwned(s.tokenDir()); err != nil {
 		return nil, "", fmt.Errorf("creating the token store: %w", err)
 	}
 	if err := s.putToken(tok); err != nil {

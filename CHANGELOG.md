@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `keys token create` as root no longer makes a token store the hub cannot read
+
+Run as root, it made `keys/tokens` owned by root inside the hub account's
+directory, and the hub then refused every token enrolment (`permission denied`
+in its log, nothing on the node). The directory now takes the owner of the one
+above, a wrongly owned one is put right on the next mint, and `serve` warns at
+start in token mode if it cannot read the store. See DIVERGENCE 5.285 (#317).
+
 ### FreeBSD: `halite_hub_flags`, `halite_api_flags` and `halite_node_flags` work
 
 Setting any of them made `service … start` fail with `daemon: unrecognized
