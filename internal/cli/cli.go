@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
@@ -415,13 +416,63 @@ func IntFlag(a *Args, name string, def, min int) int {
 	return n
 }
 
-// Fatalf prints an error and exits non-zero. The message goes to stderr so
-// that a caller piping the output gets only the data.
+// ExitConfig is the exit status of a service that stopped at startup on
+// a fault in its configuration or its key material: sysexits(3)'s
+// EX_CONFIG, which systemd also knows by that name.
+//
+// It exists so that a service manager can tell "do not restart this"
+// from "try again". `halite-hub serve` exited 1 for both: for an
+// `ext_pillar` source with no extension behind it, and for a listen
+// address the host had not been given yet. The hub's unit restarted on
+// 1, as it must for the second, so a hub with the first restarted every
+// five seconds -- 427 times on one host before anybody looked, each one
+// the same three lines in the journal. A unit cannot prevent restart on
+// 1 without also preventing it on the second, so the two have to be
+// different numbers. DIVERGENCE 5.286.
+//
+// Not 1, which halite-hub run and halite-node use to mean a node or a
+// state failed, and not 64, which is a command line that was not
+// understood.
+const ExitConfig = 78
+
+// fatalStatus is what Fatalf exits with: 1, or ExitConfig while a service
+// is reading its configuration (ConfigFaults). Atomic because the
+// service has goroutines running by the time it switches back.
+var fatalStatus atomic.Int32
+
+func init() { fatalStatus.Store(1) }
+
+// ConfigFaults makes Fatalf exit ExitConfig, until the function it
+// returns is called, which puts it back to 1.
+//
+// For a service's startup, where nearly every Fatalf is a setting that
+// will not parse, a file of key material that will not load, or a
+// directory the service may not write -- none of which a restart can
+// change -- and they are spread through helpers that other subcommands
+// share. Marking the phase rather than each call site keeps `keys` and
+// `jobs` exiting 1 as documented, and means a check added to startup
+// later is classified without anyone remembering to. The cost is the
+// other way round: a startup failure a restart could fix has to say so,
+// with Exitf, or it stops the unit.
+func ConfigFaults() (done func()) {
+	fatalStatus.Store(ExitConfig)
+	return func() { fatalStatus.Store(1) }
+}
+
+// Fatalf prints an error and exits non-zero: 1, or ExitConfig inside
+// ConfigFaults. The message goes to stderr so that a caller piping the
+// output gets only the data.
 func Fatalf(format string, args ...any) {
+	Exitf(int(fatalStatus.Load()), format, args...)
+}
+
+// Exitf is Fatalf with the status chosen by the caller, for the failure
+// that has to be told apart from those around it.
+func Exitf(status int, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if Redact != nil {
 		msg = Redact(msg)
 	}
 	fmt.Fprintln(os.Stderr, "halite: "+msg)
-	os.Exit(1)
+	os.Exit(status)
 }

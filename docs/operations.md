@@ -60,6 +60,7 @@ commands exit 0 on success.
 | 2 | The run succeeded and nothing needed changing. |
 | 1 | A state failed, or the command could not run. |
 | 64 | The program did not understand its command line — no subcommand, one that does not exist, a flag the subcommand does not take, an operand it needs left out, or a number that is not one. sysexits' `EX_USAGE`, from `halite-node`, `halite-hub` and `halite-api` alike; it used to be 2, the same as a converged run, and an unknown flag exited 1, the same as a failed state. |
+| 78 | `halite-hub serve` stopped at start-up on its configuration or key material, and a restart would not help. sysexits' `EX_CONFIG`. The hub's unit does not restart on it; see [the hub's unit](#systemd). |
 
 **Treat 2 as success.** A monitor that does not will alert on every
 machine that was already correct, which is nearly all of them nearly all
@@ -363,7 +364,17 @@ restart cannot fix — this node's enrollment was revoked, or `hub_tries`
 was reached — and the node's unit carries `RestartPreventExitStatus=1`
 so that stops the unit and leaves the reason in the journal. The API's
 unit carries it too, for the certificate and configuration errors
-`serve` exits 1 on; the hub's does not.
+`serve` exits 1 on.
+
+The hub's unit stops on 78 instead. `halite-hub serve` exits 78
+(sysexits' `EX_CONFIG`) for a fault it finds before it is serving: a
+setting that does not parse, an `ext_pillar` source with no extension
+installed, key material that does not load, or a state or cache
+directory it may not write. It exits 1 for a listen address that is not
+on the host yet, for a port that is still held, and for a failure while
+it is serving. A restart fixes those, so the unit restarts on 1. Before
+this change, the unit restarted on every exit, and one hub with a
+missing extension was restarted 427 times. See DIVERGENCE 5.286.
 
 The agent runs the jobs that arrive on that stream, and compiles them
 against the tree and the pillar the hub serves.
