@@ -28,6 +28,16 @@ load_rc_config $name
 : ${halite_api_config="/usr/local/etc/halite/api.yaml"}
 : ${halite_api_flags=""}
 : ${halite_api_user="halite"}
+# rc.subr runs `$command $rc_flags $command_args`, and rc_flags is the value
+# of ${name}_flags. Here `command` is daemon(8), so an operator's
+# halite_api_flags="--names hub.example.com" was handed to daemon, which
+# stopped with "unrecognized option", and the same value was also repeated at
+# the end of command_args. The documented knob therefore never worked: it
+# only "worked" while empty. The operator's value is moved to halite_api_args,
+# which only command_args reads, and the variable rc.subr reads is emptied.
+# The knob keeps its name and its meaning. DIVERGENCE 5.283.
+halite_api_args="${halite_api_flags}"
+halite_api_flags=""
 # The FIPS deployment of SPEC 27.4. Setting halite_api_fips="YES" in
 # rc.conf runs the -fips artifact with FIPS mode stated rather than
 # inherited, so a GODEBUG in the environment cannot quietly turn it off.
@@ -55,7 +65,7 @@ logfile="/var/log/halite/api.log"
 
 command="/usr/sbin/daemon"
 command_args="-c -f -p ${pidfile} -o ${logfile} \
-	${halite_api_env:+env ${halite_api_env}} ${halite_api_binary} serve --config ${halite_api_config} ${halite_api_flags}"
+	${halite_api_env:+env ${halite_api_env}} ${halite_api_binary} serve --config ${halite_api_config} ${halite_api_args}"
 
 required_files="${halite_api_config}"
 start_precmd="halite_api_prestart"

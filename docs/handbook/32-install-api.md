@@ -12,6 +12,15 @@ drive the fleet, within limits you set.
 can log in and run one narrow command, and a policy in which the API's own
 authority is bounded.
 
+> **What has and has not been run.** Every step below was run as root on
+> FreeBSD 15.1-RELEASE-p4, from the published v0.1.1 archive: the `api`
+> operator, the policy role and binding, a self-signed serving certificate, an
+> account hash, `api.yaml`, the rc.d script, `halite-api doctor` (`3 pass, 1
+> skip`), `/v1/readyz` (`ready`), a login, `POST /v1/run` of `status.uptime`
+> (answered by a node), `GET /v1/nodes`, and a reboot, after which the hub and
+> the API both came back. **Not run:** a narrow role tried from outside its
+> limits (the test account held `administrator`), LDAP, OIDC, TOTP, and Linux.
+
 ## Before you start
 
 - A **working hub** and an operator ([chapter 30](30-install-hub.md)).
@@ -50,6 +59,11 @@ cert      /etc/halite/pki/operator-api.crt
 key       /etc/halite/pki/operator-api.key
 expires   2026-11-10T19:18:15Z
 ```
+
+From now on the `pki_dir` holds two operator certificates, and `halite-hub`
+commands that used to find "the" operator refuse to guess: `halite: there are 2
+operator certificates in … (api, ed); say which with --as`. Add `--as ed`
+(chapter 14). The API's own certificate is not one you type commands with.
 
 It lasts 30 days unless you pass `--lifetime`, **and nothing renews it**:
 re-issue it with the same command before it expires

@@ -128,9 +128,16 @@ If any of yours are that old, upgrade them
 ### 3. The hub's serving certificate
 
 The hub renews it at half its life, replaces it in memory, and keeps serving
-without a restart. If its **names** must change (a new DNS alias), restart with
-`--names` listing every name nodes dial; it issues a fresh certificate that
-chains to the same CA, so no node changes.
+without a restart. If its **names** must change (a new DNS alias), stop the hub, remove
+`pki_dir/hub.crt` (keep `hub.key`), and start it with `--names` listing every
+name nodes dial, `localhost` and `127.0.0.1` included: `--names` replaces the
+default names, it does not add to them. It issues a fresh certificate that
+chains to the same CA, so no node changes. **Restarting with new `--names` and
+leaving `hub.crt` in place changes nothing**: the certificate is only issued
+when there is none or it is past half its life (`servingCertificate` in
+`cmd/halite-hub/serve.go`, seen on a FreeBSD host: the old names stayed until
+the file was removed). Check with `openssl x509 -in pki_dir/hub.crt -noout
+-ext subjectAltName`.
 
 ### 4. Operator certificates
 

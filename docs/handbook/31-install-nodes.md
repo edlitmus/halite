@@ -11,6 +11,18 @@ first state.
 **You will end with** a connected node that appears in `manage.status`,
 answers `test.ping`, and has applied (or rehearsed) its highstate.
 
+> **What has and has not been run.** Manual enrolment, the rc.d script (which
+> enrols if there is no certificate) and a first state were run on FreeBSD
+> 14.5-RELEASE-p1 as root, against a hub on FreeBSD 15.1, from the published
+> v0.1.1 archive. The two hosts could not reach each other's port 4510 (the
+> lab's firewall opens only SSH), so the node dialled `localhost:4510` through
+> two SSH tunnels to the hub; the TLS, the pinned fingerprint and the
+> enrolment were end to end, the network path was not. The node showed in
+> `manage.status` as `up`, answered `test.ping`, applied the playground state
+> (first run changed things, the second changed nothing, a hand edit was
+> repaired), and exited `0` then `2` on the local runs. **Not run:** token
+> enrolment, a node on Linux as root, systemd, and a node surviving a reboot.
+
 ## Before you start
 
 You need:
@@ -77,6 +89,12 @@ the request is waiting for an operator to accept it.
 on the hub: halite-hub keys accept web1.prod.example.com
 run this again, or pass --wait, once it has been accepted.
 ```
+
+Before that block the agent writes a few JSON log lines to standard error
+(`fetched the hub CA and matched the pinned fingerprint`, and so on); on a
+terminal they are interleaved with it. If you start the rc.d script after
+enrolling by hand, its own enrol step prints `this node already holds a
+certificate … --force starts again from a new key` and carries on: harmless.
 
 Exit status `2` means *pending*: neither success nor failure. The node made its
 private key (in `pki_dir`, mode `0600`; it never leaves) and sent a request.

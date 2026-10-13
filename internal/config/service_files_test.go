@@ -193,3 +193,46 @@ func TestTheMakefileInstallsWhereTheBinariesLook(t *testing.T) {
 		}
 	}
 }
+
+// rc.subr runs `$command $rc_flags $command_args`, and rc_flags is the value
+// of ${name}_flags. In these scripts `command` is /usr/sbin/daemon, so a
+// script that documents ${name}_flags as "extra arguments to the program"
+// and does not take the variable away from rc.subr hands the operator's
+// flags to daemon(8). It stops with `daemon: unrecognized option --names`
+// and its usage text; the same value was also repeated at the end of
+// command_args, which is the only place it was meant to go. Found by setting
+// halite_hub_flags='--names …' on a FreeBSD 15.1 host, as handbook chapter
+// 30 says to; it only ever worked while empty, which is how every test and
+// every earlier lab run left it. DIVERGENCE 5.283.
+//
+// This reads the scripts, since rc.subr is not here to run. The shape it
+// holds them to is the one that was run on the host: the operator's value is
+// copied to ${name}_args, the variable rc.subr reads is emptied, and
+// command_args uses ${name}_args.
+func TestRcScriptsKeepTheirFlagsAwayFromDaemon(t *testing.T) {
+	checked := 0
+	for path, body := range readServiceFiles(t) {
+		if !strings.Contains(path, "rc.d") || !strings.Contains(body, `command="/usr/sbin/daemon"`) {
+			continue
+		}
+		checked++
+		name := filepath.Base(path)
+		args := regexp.MustCompile(`(?s)\ncommand_args="(.*?)"\n`).FindString(body)
+		if args == "" {
+			t.Errorf("%s runs daemon(8) and has no command_args", path)
+			continue
+		}
+		if strings.Contains(args, name+"_flags") {
+			t.Errorf("%s puts ${%s_flags} in command_args, where rc.subr will also pass it to daemon(8)", path, name)
+		}
+		if !strings.Contains(args, name+"_args") {
+			t.Errorf("%s does not pass ${%s_args} to the program", path, name)
+		}
+		if !strings.Contains(body, name+`_args="${`+name+`_flags}"`) || !strings.Contains(body, "\n"+name+`_flags=""`) {
+			t.Errorf("%s does not move %s_flags to %s_args and empty it before rc.subr reads it", path, name, name)
+		}
+	}
+	if checked < 3 {
+		t.Fatalf("only %d daemon-wrapped rc.d scripts were checked; this has stopped checking", checked)
+	}
+}
