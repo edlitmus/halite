@@ -20,9 +20,13 @@ from a directory you control, one working operator, and a green
 > the account, the install, the rc.d script, first start, the operator and
 > policy, `doctor`, a node on the other host, and a reboot. That run is why
 > steps 1, 4 and 5 say what they say below, and it found a bug in the rc.d
-> scripts (step 5). **Not run:** a fresh *Linux* host as root (`make install`,
-> `useradd`, the systemd unit), and the hub on 14.5 (only the node was; the
-> hub ran on 15.1).
+> scripts (step 5). **On Linux** the runbook was then run as root on Ubuntu
+> 26.04.1 LTS (kernel 7.0.0-38), again from the v0.1.1 archive: `useradd`, the
+> install, the `--names` drop-in, `systemctl enable --now`, the operator, `doctor`
+> (`7 pass, 1 skip`), the checks, a reboot, and a node on Debian 13 and the API
+> against it. **Not run:** `make install` from a source checkout, hosts older
+> than those named, SELinux or AppArmor profiles, and the hub on FreeBSD 14.5
+> (only the node was).
 
 ## Before you start
 
@@ -186,7 +190,7 @@ flag of `serve`:
 sudo systemctl edit halite-hub
 #   [Service]
 #   ExecStart=
-#   ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml --names hub.example.com,hub
+#   ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml --names hub.example.com,hub,localhost,127.0.0.1
 
 # FreeBSD
 sudo sysrc halite_hub_flags='--names hub.example.com,hub'
@@ -195,7 +199,15 @@ sudo sysrc halite_hub_flags='--names hub.example.com,hub'
 A name missing here is a handshake failure on the node, with a message about
 the certificate, not about this step.
 
-Three things about `--names`, each seen on the FreeBSD hosts:
+(`systemctl edit` opens an editor; non-interactively it writes
+`/etc/systemd/system/halite-hub.service.d/override.conf` with exactly those
+three lines, which is what the Linux run used. The unit's sandbox
+(`ProtectSystem=strict`, `ReadWritePaths=/etc/halite/pki`) let the hub start,
+create its CA and certificate, and serve; the log lines matched the ones shown
+in step 6.)
+
+Three things about `--names`, the first two seen on both platforms and the
+third on FreeBSD:
 
 - **It replaces the defaults, it does not add to them.** With
   `--names hub.example.com,hub` the certificate was valid for those two names
@@ -310,11 +322,12 @@ halite-hub doctor — /etc/halite/hub.yaml
   7 pass, 1 skip
 ```
 
-On FreeBSD the output differs in two places: the FIPS line is `skip  FIPS mode
-consistency  freebsd has no kernel FIPS mode, and this is not a FIPS build`, and
-without `--config` the heading names the configuration *directory*
-(`/usr/local/etc/halite`) and not `hub.yaml`. The totals there were `6 pass, 2
-skip`.
+Without `--config` the heading names the configuration *directory*
+(`/etc/halite`, or `/usr/local/etc/halite` on FreeBSD) and not `hub.yaml`; pass
+`--config /etc/halite/hub.yaml` to see the file named. On Linux the totals were
+`7 pass, 1 skip`. On FreeBSD the output differs once more: the FIPS line is
+`skip  FIPS mode consistency  freebsd has no kernel FIPS mode, and this is not a
+FIPS build`, giving `6 pass, 2 skip`.
 
 Then check the three claims you care about:
 

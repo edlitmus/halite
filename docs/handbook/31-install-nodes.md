@@ -20,8 +20,15 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > enrolment were end to end, the network path was not. The node showed in
 > `manage.status` as `up`, answered `test.ping`, applied the playground state
 > (first run changed things, the second changed nothing, a hand edit was
-> repaired), and exited `0` then `2` on the local runs. **Not run:** token
-> enrolment, a node on Linux as root, systemd, and a node surviving a reboot.
+> repaired), and exited `0` then `2` on the local runs. **On Linux**, a node on
+> Debian 13 (kernel 6.12.111) was enrolled the same way against an Ubuntu 26.04
+> hub and started under the shipped systemd unit; it applied the same state
+> (`changed=3`, then nothing), exited `0` then `2` locally, and after both
+> hosts were rebooted with nothing touched but the tunnel, the node retried
+> and came back `up`. **Token enrolment** was run there too, with its refusals
+> (below). **Not run:** a node on any other distribution, a token with a
+> hyphen first (the recorded bug), and enrolment over a real network between
+> the hosts.
 
 ## Before you start
 
@@ -147,10 +154,11 @@ tokens**, which are single-use, short-lived, scoped and recorded.
 restart it. (In the default `manual` mode a token is ignored, silently, and the
 node simply waits for a human.)
 
-**2. Per node, mint a token**, as narrow as you can:
+**2. Per node, mint a token**, as narrow as you can, **as the hub's account**
+(`sudo -u halite`, as in chapter 30 step 7), and not as root:
 
 ```sh
-halite-hub keys token create --ttl 1h --nodes 'web*.prod.example.com' --cidr 10.0.0.0/8
+sudo -u halite halite-hub keys token create --ttl 1h --nodes 'web*.prod.example.com' --cidr 10.0.0.0/8
 ```
 ```
 token   vh9exVfcVbIBGlTzLZKNPdVqqlMqYkvW613SUZjaQCE
@@ -161,6 +169,19 @@ nodes   web*.prod.example.com
 
 The hub stores only a digest: this is the only time the token is shown.
 ```
+
+**Why "as the hub's account" matters, from a run that did it wrong.** The token
+store is a directory, `state_dir/keys/tokens`. Created by `halite-hub keys token
+create` run as root, it was `root:root 0700` inside a directory owned by
+`halite`, and the hub, running as `halite`, could not read it. Every enrolment
+with a token was then refused. The node saw only `halite: /v1/enroll:
+enrollment refused; the hub's log says why`; the hub's log said `reading the
+token store at /var/lib/halite/keys/tokens: open …: permission denied`. The
+fix is to create tokens as `halite` (after removing the root-owned `tokens`
+directory and restarting the hub), and the tokens that root made are lost, so
+make new ones. `accept`, `list` and `delete` worked when run as root in the same session
+(the records they touch were created by the hub); why only the token store
+differed was not investigated.
 
 **3. Give the node the token and let it enrol**, with the fingerprint still
 required:
@@ -176,7 +197,26 @@ hub         https://hub.example.com:4510
 enrolled: /etc/halite/pki/node.crt
 ```
 
-and start the agent. **Write the token as `--token=SECRET`**: a token is random
+and start the agent. What the hub did with each kind of bad request, seen on
+the Linux hosts (the node always prints the same line, `enrollment refused; the
+hub's log says why`; these are the log's reasons):
+
+| Request | Hub log |
+|---|---|
+| a token made with `--cidr 10.0.0.0/8`, from elsewhere | `bootstrap token … admits 10.0.0.0/8, and this request came from [::1]:58010` (the address is the one *the hub sees*; behind a tunnel or a proxy it is theirs) |
+| a token made with `--nodes 'web*.lab.example.com'`, presented by `db1.lab.example.com` | `bootstrap token … admits web*.lab.example.com, and this node is db1.lab.example.com` |
+| a token already used | `bootstrap token … is spent (1 of 1 uses)` |
+| a token revoked | `keys token list` shows `revoked`; enrolling with a revoked token was not tried |
+
+A refused request is not forgotten: **it leaves a pending request** under that
+node name with that key (`keys list` shows it under *pending*). Retrying the
+same name with a *new* key is then refused with `web2.lab.example.com is already
+known by a different key … delete the record first if the node was rebuilt`.
+Remove it with `halite-hub keys delete web2.lab.example.com` and retry. A good
+token with a fresh name enrolled at once, and `keys token list` then showed
+`spent (1 of 1 uses)` and `admitted web3.lab.example.com`.
+
+**Write the token as `--token=SECRET`**: a token is random
 base64 and can begin with `-`, and `--token -abc…` is then taken for a flag
 (this was seen: `--BLy… is not a flag of halite-node enroll`). The FreeBSD rc
 script passes the token with a space, so if you use `halite_node_token`

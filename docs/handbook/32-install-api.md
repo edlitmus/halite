@@ -18,8 +18,13 @@ authority is bounded.
 > account hash, `api.yaml`, the rc.d script, `halite-api doctor` (`3 pass, 1
 > skip`), `/v1/readyz` (`ready`), a login, `POST /v1/run` of `status.uptime`
 > (answered by a node), `GET /v1/nodes`, and a reboot, after which the hub and
-> the API both came back. **Not run:** a narrow role tried from outside its
-> limits (the test account held `administrator`), LDAP, OIDC, TOTP, and Linux.
+> the API both came back. **On Linux** (Ubuntu 26.04, the shipped
+> `halite-api.service`) the same steps ran, and the check this chapter asks for
+> was made: an account bound to a one-function role got `200` for
+> `status.uptime`, and `403` with `no rule in [readonly] permits cmd.run against
+> "web*"` for `cmd.run` and for `test.ping`, and a wrong password got `401 those
+> credentials were not accepted`; after a reboot `readyz` answered `ready`.
+> **Not run:** LDAP, OIDC and TOTP, and a role map for a directory group.
 
 ## Before you start
 
