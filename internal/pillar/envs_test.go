@@ -24,7 +24,7 @@ func compileEnvs(t *testing.T, envs []string, files map[string]string, cfg Confi
 }
 
 // A tree whose pillar lives in two repositories, served as `base` and
-// `ref`, each with its own top file. DIVERGENCE 5.286.
+// `ref`, each with its own top file. DIVERGENCE 5.288.
 var twoEnvTree = map[string]string{
 	"base|top":    "base:\n  '*':\n    - common\n",
 	"base|common": "common_key: from-base\n",

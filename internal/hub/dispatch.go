@@ -431,7 +431,7 @@ func (s *Server) targetPillar(matcher *target.Matcher, env string) (
 				return nil
 			}
 			// Every environment's pillar, which is what a node with no
-			// `pillarenv` receives (DIVERGENCE 5.286). The hub does not
+			// `pillarenv` receives (DIVERGENCE 5.288). The hub does not
 			// hold a node's own configuration, so a node that sets one is
 			// targeted against more pillar than it receives; before, it
 			// was targeted against the job's environment, which was the

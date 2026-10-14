@@ -297,7 +297,7 @@ func hubFileServerCheck(cfg *config.Config) doctor.Check {
 func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 	env := cfg.String("pillarenv", cfg.String("env", "base"))
 	// With no pillarenv a node is sent every environment's pillar,
-	// merged, so that is what is compiled here. DIVERGENCE 5.286.
+	// merged, so that is what is compiled here. DIVERGENCE 5.288.
 	all := cfg.String("pillarenv", "") == ""
 	// Before the roots: a hub with external sources and no roots is
 	// one whose sources never run, and `serve` refuses to start on it.

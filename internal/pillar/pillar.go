@@ -44,7 +44,7 @@ type Config struct {
 	// Without it only Env's top file is read, and only the entries under
 	// Env's own heading count -- Salt's behaviour with `pillarenv` set.
 	//
-	// Before DIVERGENCE 5.286 there was only the second, and an unset
+	// Before DIVERGENCE 5.288 there was only the second, and an unset
 	// `pillarenv` meant "the node's env": a tree with a `ref` pillar
 	// repository beside `base` delivered it to no node in `base`, and
 	// every SLS a top file listed was read from one environment whatever

@@ -443,7 +443,7 @@ type PillarRequest struct {
 	// AllEnvs asks for every environment's pillar, merged: the node has
 	// no `pillarenv`, and Env is only the environment it runs in. A hub
 	// older than the field ignores it and compiles Env alone, which is
-	// what every node asked for before it. DIVERGENCE 5.286.
+	// what every node asked for before it. DIVERGENCE 5.288.
 	AllEnvs bool            `json:"all_envs,omitempty"`
 	Grains  json.RawMessage `json:"grains,omitempty"`
 }
