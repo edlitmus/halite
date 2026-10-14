@@ -33,7 +33,7 @@ address is not on the host yet, when the port is still held, and when the hub
 fails while it is serving, and the unit restarts on those. A script or monitor
 that expected 1 from a hub that would not start will now see 78. Install the new
 unit file with the new binary: the old unit restarts on 78, as it did on 1. See
-DIVERGENCE 5.286.
+DIVERGENCE 5.287.
 
 ### An alert now names the node that is not connected
 

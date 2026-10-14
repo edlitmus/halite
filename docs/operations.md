@@ -374,7 +374,7 @@ directory it may not write. It exits 1 for a listen address that is not
 on the host yet, for a port that is still held, and for a failure while
 it is serving. A restart fixes those, so the unit restarts on 1. Before
 this change, the unit restarted on every exit, and one hub with a
-missing extension was restarted 427 times. See DIVERGENCE 5.286.
+missing extension was restarted 427 times. See DIVERGENCE 5.287.
 
 The agent runs the jobs that arrive on that stream, and compiles them
 against the tree and the pillar the hub serves.

@@ -23632,7 +23632,7 @@ Prometheus or delivered through Alertmanager, and the live rules are in the
 salt tree (edlitmus/salt), not here, so beastie does not have this until it is
 added there. I did not break it on purpose against a node that is up but
 disconnected.
-### 5.286 The hub's unit restarted a hub that could not start, 427 times
+### 5.287 The hub's unit restarted a hub that could not start, 427 times
 
 On a real v0.1.1 hub (2026-10-12, Ubuntu 22.04 arm64, the FIPS build),
 `hub.yaml` named `aws_secrets_manager` under `ext_pillar` and no extension
@@ -23738,6 +23738,7 @@ cannot drift apart again. Each was broken on purpose and each failed:
   unit on both, so an API whose address is late at boot stays down.
 - **The node was not audited.** No one has checked whether `halite-node
   connect` exits 1 for anything transient.
+
 
 ## 6. Everything else not started
 

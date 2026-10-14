@@ -428,7 +428,7 @@ func IntFlag(a *Args, name string, def, min int) int {
 // five seconds -- 427 times on one host before anybody looked, each one
 // the same three lines in the journal. A unit cannot prevent restart on
 // 1 without also preventing it on the second, so the two have to be
-// different numbers. DIVERGENCE 5.286.
+// different numbers. DIVERGENCE 5.287.
 //
 // Not 1, which halite-hub run and halite-node use to mean a node or a
 // state failed, and not 64, which is a command line that was not
