@@ -26,7 +26,9 @@ Package cli holds what the three binaries share: argument parsing in Salt's conv
 **Exports.**
 
 - `Args` (type): Args is a parsed command line: the flags, the positional arguments, and the key=value pairs.
-- `Fatalf` (func): Fatalf prints an error and exits non-zero.
+- `ConfigFaults` (func): ConfigFaults makes Fatalf exit ExitConfig, until the function it returns is called, which puts it back to 1.
+- `Exitf` (func): Exitf is Fatalf with the status chosen by the caller, for the failure that has to be told apart from those around it.
+- `Fatalf` (func): Fatalf prints an error and exits non-zero: 1, or ExitConfig inside ConfigFaults.
 - `FlagNames` (func): FlagNames reports the flags a usage text documents.
 - `Format` (type): Format names an output rendering.
 - `IntFlag` (func): IntFlag reads a whole-number flag: def when it is not given, and otherwise a number no smaller than min, or a usage error.

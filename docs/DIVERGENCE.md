@@ -23669,6 +23669,140 @@ an unserved heading.
 
 
 
+
+### 5.286 `HaliteNodesAbsent` could not say which node
+
+The alert was `halite_hub_keys_accepted - halite_hub_nodes_connected > 0`: two
+unlabelled totals, so the page read "1 enrolled nodes are not connected" and
+the operator had to go and diff the key list against the connection list. The
+hub exports no per-node series, so no annotation on that rule could name
+anyone. Added `HaliteNodeDisconnected` in `docs/metrics.md`, which reads each
+node's own `halite_node_connected{job="halite-nodes"}` and names it through
+`$labels.instance`; a node that is down altogether is already named by
+`HaliteNodeScrapeDown`. The aggregate stays, because it is the only rule that
+sees an enrolled node nobody scrapes, and its summary now says it is an
+aggregate and points at the two that name.
+
+The `job` matcher is load-bearing, not tidiness: the production Prometheus
+holds a frozen textfile series `halite_node_connected{job="node_exporter",
+instance="localhost:9100"} 0` (read from its API), which an unscoped rule would
+fire on for good.
+
+**Verified**: the block passes `promtool check rules` (20 rules); the live
+Prometheus' `halite_node_connected` was read, and the four `halite-nodes`
+targets are 1. **Not verified**: the rule has not been evaluated by that
+Prometheus or delivered through Alertmanager, and the live rules are in the
+salt tree (edlitmus/salt), not here, so beastie does not have this until it is
+added there. I did not break it on purpose against a node that is up but
+disconnected.
+### 5.287 The hub's unit restarted a hub that could not start, 427 times
+
+On a real v0.1.1 hub (2026-10-12, Ubuntu 22.04 arm64, the FIPS build),
+`hub.yaml` named `aws_secrets_manager` under `ext_pillar` and no extension
+of that name was installed. `halite-hub serve` refused to start, which is
+what 12.7 asks of it, and exited 1. `halite-hub.service` had
+`Restart=on-failure` and `RestartSec=5s` and, unlike the API's and the
+node's units, no `RestartPreventExitStatus=`. So systemd started it again
+every five seconds, 427 times and counting when it was looked at, and
+the journal held the same lines 427 times over.
+
+The obvious fix was the other units' line, `RestartPreventExitStatus=1`.
+It would have been wrong, so this entry first records what `serve`
+actually exits 1 for. Every `cli.Fatalf` reachable from `runServe` was
+read: `openHub`, `gitBackend`/`s3Backend` and their readers, the
+extension and `ext_pillar` set-up, `pillarOptions`, `loadPolicy`, the
+stores, `eventReturner`, `startRelay`/`relayUpstream`, and the
+`return 1` after `Serve`. Nearly all of them are configuration or key
+material. The exceptions are these:
+
+- **The listener.** `hub.Listen` fails with `EADDRNOTAVAIL` when `listen`
+  names an address that DHCP or a secondary interface has not brought up
+  yet, which is a boot race that `After=network-online.target` narrows and
+  does not close. It fails with `EADDRINUSE` while a previous process
+  still holds the port, and with a DNS error when `listen` names a host
+  and the resolver is not up. A restart fixes all three.
+- **`Serve` returning an error** while the hub is running. A restart is
+  the right answer to that too.
+
+These were checked and are *not* exits: the gitfs and s3 first fetch,
+which only warns (so neither an unreachable remote nor missing AWS
+credentials stops the hub), the serving certificate's host-name lookup
+(`grains.FQDN`, which gives up after two seconds), and the returners,
+which connect lazily on the first event and not when they are built.
+
+So exit 1 means two things, and a unit cannot stop on one without
+stopping on the other. They are now two numbers:
+
+- **`cli.ExitConfig`, 78**, sysexits' `EX_CONFIG`, for a fault the hub
+  hits before it is serving. `runServe` marks that phase with
+  `cli.ConfigFaults()`, and `cli.Fatalf` exits 78 inside it. Marking the
+  phase, rather than changing about forty call sites, keeps `keys`,
+  `jobs` and the other subcommands that share those helpers on the
+  documented 1. It also means that a check added to start-up later is
+  classified without anybody remembering to.
+- **1** for the listener failures above (`listenMayRecover`, with
+  `cli.Exitf(1, …)`), and for `Serve` failing once the phase is over.
+
+The unit has `RestartPreventExitStatus=78`, not 1.
+
+**A decision, recorded as one.** A state or cache directory that cannot
+be opened at start-up is inside the phase, so it exits 78 and stops the
+unit. Every failure seen at that point has been the account or the
+sandbox: 5.217's token store, the hub unit's missing `CacheDirectory=`,
+and #317's root-owned token directory. A restart changes none of them. A
+filesystem that returns `EIO` or `ESTALE` at that moment (an NFS or EFS
+`state_dir` partway through a remount) now stops the unit too, when a
+restart might have recovered. That was judged the lesser cost, because
+one stops the hub with the reason in the journal, and the other fills
+the journal. It was a judgement, made without a reproduction of either.
+An EFS that is *not mounted at all* does not reach this question. The
+directories exist underneath the mount point, so they open, and the hub
+starts on empty state. That is a separate hazard, not fixed here; the
+unit has no `RequiresMountsFor=`.
+
+**rc.d is unaffected.** `contrib/rc.d/halite_hub` runs `serve` under
+`daemon(8)` without `-r`, so FreeBSD never restarted the hub on any exit
+status and had no loop to stop. The same is true of the API's and the
+node's rc.d scripts.
+
+**How it is tested.** `cmd/halite-hub/serve_exit_test.go` runs a real
+`serve`, re-executed from the test binary, against each of these:
+
+- the fault from the real hub (`ext_pillar` with no extension, checked by
+  its message);
+- a listen address with no port;
+- a `key_algorithm` that does not parse.
+
+Each must exit 78. A loopback port held by the test, and `192.0.2.1`
+(TEST-NET-1, on no host), must each exit 1 at the listener. A third test
+reads `halite-hub.service` and requires `Restart=on-failure`, `78` in
+`RestartPreventExitStatus=`, and *not* `1`, so the unit and the program
+cannot drift apart again. Each was broken on purpose and each failed:
+
+- without `ConfigFaults` the three configuration cases exited 1;
+- with the listener always fatal, both listener cases exited 78;
+- the unit without the directive failed, and the unit with `=1` failed.
+
+**Not verified.**
+
+- **Not run under systemd.** No unit was started under a real service
+  manager for this change. That `RestartPreventExitStatus=78` stops the
+  unit, and that `Restart=on-failure` still restarts on 1, comes from
+  `systemd.service(5)`, not from a run. The hub from the report was not
+  re-run either.
+- **macOS only.** The tests ran on macOS (Darwin 25.6), not on Linux or
+  FreeBSD. CI runs them on all four platforms.
+- **Windows.** `listenMayRecover` matches Unix errnos. On Windows a busy
+  port is a WSA error code, so it exits 78, and the listener test skips
+  there.
+- **The API has the mirror-image defect, and it is not fixed here.**
+  `halite-api serve` exits 1 when its listener fails and when serving
+  fails while it runs. Its unit's `RestartPreventExitStatus=1` stops the
+  unit on both, so an API whose address is late at boot stays down.
+- **The node was not audited.** No one has checked whether `halite-node
+  connect` exits 1 for anything transient.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
