@@ -23606,6 +23606,33 @@ platforms without uids, where `inheritOwner` is a no-op by design; the node's
 own message, which still says only "the hub's log says why" (the hub's log now
 says why at start, which is as far as this goes).
 
+
+### 5.286 `HaliteNodesAbsent` could not say which node
+
+The alert was `halite_hub_keys_accepted - halite_hub_nodes_connected > 0`: two
+unlabelled totals, so the page read "1 enrolled nodes are not connected" and
+the operator had to go and diff the key list against the connection list. The
+hub exports no per-node series, so no annotation on that rule could name
+anyone. Added `HaliteNodeDisconnected` in `docs/metrics.md`, which reads each
+node's own `halite_node_connected{job="halite-nodes"}` and names it through
+`$labels.instance`; a node that is down altogether is already named by
+`HaliteNodeScrapeDown`. The aggregate stays, because it is the only rule that
+sees an enrolled node nobody scrapes, and its summary now says it is an
+aggregate and points at the two that name.
+
+The `job` matcher is load-bearing, not tidiness: the production Prometheus
+holds a frozen textfile series `halite_node_connected{job="node_exporter",
+instance="localhost:9100"} 0` (read from its API), which an unscoped rule would
+fire on for good.
+
+**Verified**: the block passes `promtool check rules` (20 rules); the live
+Prometheus' `halite_node_connected` was read, and the four `halite-nodes`
+targets are 1. **Not verified**: the rule has not been evaluated by that
+Prometheus or delivered through Alertmanager, and the live rules are in the
+salt tree (edlitmus/salt), not here, so beastie does not have this until it is
+added there. I did not break it on purpose against a node that is up but
+disconnected.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

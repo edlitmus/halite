@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An alert now names the node that is not connected
+
+`HaliteNodesAbsent` only counts, so it could not say which node. The new
+`HaliteNodeDisconnected` rule (docs/metrics.md) names it by `instance`. See
+DIVERGENCE 5.286.
+
 ### `keys token create` as root no longer makes a token store the hub cannot read
 
 Run as root, it made `keys/tokens` owned by root inside the hub account's
