@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The hub's systemd unit no longer restarts a hub that cannot start
+
+`halite-hub serve` now exits 78 (sysexits' `EX_CONFIG`) when it stops at
+start-up on its configuration or key material, such as an `ext_pillar` source
+with no extension installed, a setting that does not parse, or a state directory
+it may not write. `halite-hub.service` has `RestartPreventExitStatus=78`, so the
+unit stops and the reason stays in the journal. Before this, it restarted every
+five seconds; one hub restarted 427 times. `serve` still exits 1 when the listen
+address is not on the host yet, when the port is still held, and when the hub
+fails while it is serving, and the unit restarts on those. A script or monitor
+that expected 1 from a hub that would not start will now see 78. Install the new
+unit file with the new binary: the old unit restarts on 78, as it did on 1. See
+DIVERGENCE 5.287.
+
 ### An alert now names the node that is not connected
 
 `HaliteNodesAbsent` only counts, so it could not say which node. The new

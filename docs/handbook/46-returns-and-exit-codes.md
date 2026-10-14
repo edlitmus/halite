@@ -2,7 +2,7 @@
 
 <!-- abstract: The shapes halite returns, and every exit status a command uses, in one place for scripts and monitors. -->
 <!-- kind: reference -->
-<!-- index: exit codes; exit status; return schema; halite.ret/1; halite.job/1; halite.event/1; halite.evidence/1; state return; result; changes; comment; retcode; sysexits; EX_USAGE; 64 -->
+<!-- index: exit codes; exit status; return schema; halite.ret/1; halite.job/1; halite.event/1; halite.evidence/1; state return; result; changes; comment; retcode; sysexits; EX_USAGE; 64; EX_CONFIG; 78; RestartPreventExitStatus -->
 
 A script that drives halite should never need to parse prose to learn what
 happened. This chapter is the contract: the exit status of each command, and
@@ -25,6 +25,7 @@ the structure of what comes back.
 | `halite-hub migrate` | No finding at or above `--fail-on` | At least one | | | Usage error |
 | `halite-hub extensions verify` | Every rule passed (skips do not fail) | A rule failed | | | Usage error |
 | `halite-hub keys …`, `jobs …` | Success | Failure | | | Usage error |
+| `halite-hub serve` | Stopped by a signal | The listen address is not on the host yet, the port is still held, or the hub failed while serving. A restart may fix it. **`78`** instead for a configuration fault (see the notes) | | | Usage error |
 
 Notes:
 
@@ -41,6 +42,14 @@ Notes:
   question is only whether every node succeeded.
 - **`1` versus `3`** on `halite-hub run`: "it said no" and "it said nothing" call
   for different actions.
+- **`78` is sysexits' `EX_CONFIG`**, and only `halite-hub serve` uses it. It
+  means that the hub stopped at start-up on its configuration or key material:
+  a setting that does not parse, an `ext_pillar` source with no extension
+  installed, key material that does not load, or a directory it may not write.
+  A restart does not fix any of these, so the hub's unit carries
+  `RestartPreventExitStatus=78` and restarts on `1`. Before this, the unit
+  restarted on every exit, and one hub was restarted 427 times on a missing
+  extension.
 - An agent (`halite-node connect`) that exits `1` by itself has hit one of two
   things a restart cannot fix: its enrolment was revoked, or `hub_tries` was
   reached. The unit files carry `RestartPreventExitStatus=1` for it.

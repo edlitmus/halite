@@ -196,6 +196,20 @@ func buildLogger(args *cli.Args, cfg *config.Config, secrets *redact.Set) (*hlog
 
 // runServe is the control plane of SPEC section 6.
 func runServe(args *cli.Args) int {
+	// Until the hub is serving, a fatal error is a fault in its
+	// configuration or key material, and exits cli.ExitConfig so that the
+	// unit's RestartPreventExitStatus= stops it rather than restarting it
+	// every five seconds into the same error. The one startup failure a
+	// restart can fix, a listen address that is not there yet, says so
+	// below. DIVERGENCE 5.287.
+	//
+	// That includes a state or cache directory that cannot be opened.
+	// Each one that has been seen to fail here was the account or the
+	// sandbox (5.217, #317, the unit's CacheDirectory=), and a restart
+	// changes neither. A filesystem that returns EIO at that moment stops
+	// the unit too, which is the price of not reading errno at eleven
+	// call sites in four packages.
+	startupOver := cli.ConfigFaults()
 	h := openHub(args, true)
 	// In token mode every enrolment depends on reading the token store, and
 	// when it cannot be read the hub refuses each one with the reason in its
@@ -447,6 +461,9 @@ func runServe(args *cli.Args) int {
 
 	ln, err := hub.Listen(listen, serving, h.auth.CA.Cert, h.denied)
 	if err != nil {
+		if listenMayRecover(err) {
+			cli.Exitf(1, "%v", err)
+		}
 		cli.Fatalf("%v", err)
 	}
 
@@ -541,12 +558,40 @@ func runServe(args *cli.Args) int {
 	}
 	go maintain(ctx, h, server, jobs, bus)
 
+	// From here a failure is the running hub's, and a restart is the
+	// right answer to it.
+	startupOver()
 	if err := server.Serve(ctx, ln); err != nil {
 		h.log.Error("the hub stopped", "error", err.Error())
 		return 1
 	}
 	h.log.Info("the hub stopped")
 	return 0
+}
+
+// listenMayRecover reports whether the hub's listener failed for a reason
+// that a restart a few seconds later can fix, and so exits 1 rather than
+// cli.ExitConfig.
+//
+// Three: the address is not on this host yet (EADDRNOTAVAIL), which is
+// a `listen` naming an address that DHCP or a secondary interface has
+// not brought up when the unit starts; the port is still held
+// (EADDRINUSE), by a previous hub that has not finished exiting or by a
+// process that will let it go; and a host name in `listen` that did not
+// resolve, because the resolver is network too. Anything else -- a port
+// below 1024 for an account without the capability, an address that
+// does not parse -- is what the operator wrote, and stays wrong however
+// often it is retried.
+//
+// The errno comparisons match on Unix only. On Windows the socket error
+// is a WSA code that syscall.EADDRINUSE is not, so there a busy port is
+// classed with the configuration faults; nothing on Windows reads the
+// distinction.
+func listenMayRecover(err error) bool {
+	var dns *net.DNSError
+	return errors.Is(err, syscall.EADDRNOTAVAIL) ||
+		errors.Is(err, syscall.EADDRINUSE) ||
+		errors.As(err, &dns)
 }
 
 // loadPolicy reads the RBAC file of SPEC 23.5.

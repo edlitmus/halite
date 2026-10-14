@@ -14,6 +14,18 @@ ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml
 # Changing configuration is a restart.
 Restart=on-failure
 RestartSec=5s
+# `serve` exits 78 (sysexits' EX_CONFIG) for the things a restart cannot
+# fix: a setting that will not parse, an `ext_pillar` source with no
+# extension installed, key material that will not load, a state or cache
+# directory it may not write. Restarting on those is a loop that fills
+# the journal and tells the operator nothing -- one hub restarted 427
+# times on a missing extension -- so 78 stops the unit and leaves the
+# message where it can be read.
+#
+# Not 1, as the API's and the node's units use: the hub exits 1 for a
+# listen address that is not on the host yet or a port still held, and
+# for a failure while it is serving, and a restart is the fix for those.
+RestartPreventExitStatus=78
 
 # The hub serves files, compiles pillar, and holds the enrollment CA. It
 # changes nothing about the host it runs on, so unlike the node it can
