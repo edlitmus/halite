@@ -1480,6 +1480,16 @@ against the node's own pillar, and if that pillar does not compile the
 job is refused with the compiler's error, whichever way the target would
 have gone: an empty pillar is what `not I@role:db` matches.
 
+**A signed job runs once.** A node keeps the identifier of every signed
+job it accepts in `<state_dir>/signed-jobs`, written and synced before
+the job is queued and kept until a day after the job's expiry (for ever,
+for one signed with no expiry), so neither a restart nor any number of
+other jobs lets a hub deliver the same signed job twice. The nonce does
+not enter into it: the hub chooses the nonce, and the signature covers
+the identifier. If that file cannot be read or written, signed jobs are
+refused with the reason; unsigned jobs are unaffected. Deleting it
+re-opens every signed job still within its expiry, so leave it alone.
+
 ### What is signed
 
 For a signer that is not this program — a CI job, a KMS, a hardware

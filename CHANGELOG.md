@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A signed job can no longer be replayed to a node
+
+A node now keeps the identifier of every signed job it accepts in
+`<state_dir>/signed-jobs`, synced before the job runs and kept until a
+day after the job's expiry, and refuses that identifier again whatever
+nonce it arrives with. Before, a hub could replay a signed job after the
+node restarted, or after sending it a few thousand other jobs, or by
+giving it a new nonce. Jobs refused for their signature no longer take
+places in the replay cache. If the file cannot be read or written, signed
+jobs are refused and say why; do not delete it. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

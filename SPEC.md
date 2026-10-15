@@ -414,6 +414,13 @@ operator from replaying an old job, so jobs carry their own guarantees:
 A node refuses a job whose `jid` it has already executed, whose `nonce` it has already seen, or
 whose `expires` has passed, and returns a structured refusal rather than dropping it silently.
 
+For a signed job (section 25.6) the replay cache is keyed by `jid`, which the signature covers,
+rather than by `nonce`, which the hub chooses; it is written to the node's state directory before
+the job is queued, kept until the job's expiry has passed, and never evicted by count. An in-memory
+cache bounded by count protects against a hub that redelivers by accident, not against one that
+means to: it is emptied by a restart and flushed by a few thousand other jobs, and only a signed
+job is one a hub cannot simply mint again.
+
 Optionally, and recommended for regulated estates, jobs are **detached-signed** by an operator key
 distinct from the hub's TLS key (section 25.6). The node verifies the signature before execution.
 This means hub compromise alone does not yield fleet-wide code execution, which is not true of

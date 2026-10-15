@@ -41,9 +41,18 @@ func (r *Refusal) Is(target error) bool { return target == ErrRefused }
 //
 // Bounded, because a cache that grows with every job is a node that
 // runs out of memory after a long enough uptime, and unbounded caches
-// are how that happens quietly. The oldest entry is evicted; a replay
-// older than the window is possible in theory and is bounded in
-// practice by the job's own expiry, which is the shorter of the two.
+// are how that happens quietly. The oldest entry is evicted.
+//
+// What it defends against is a hub redelivering a job by accident -- a
+// reconnect that resends, a resumed batch -- and nothing more. It used to
+// say a replay older than its window was "bounded in practice by the
+// job's own expiry", and that was not true (DIVERGENCE 5.290): it is in
+// memory, so a restart empties it whatever the expiry says; it is
+// evicted by count, and the hub decides the count, so a few thousand
+// junk jobs push any entry out well inside an expiry; and a job with no
+// expiry is never bounded at all. For an unsigned job that does not
+// matter, because a hub that wants to run one again can mint a new one.
+// For a signed job it does, and SignedReplay is the cache for those.
 type Guard struct {
 	mu    sync.Mutex
 	size  int
@@ -78,6 +87,21 @@ func (g *Guard) now() time.Time {
 // 6.3 names, in that order, so the message says the most useful thing
 // first.
 func (g *Guard) Admit(j *Job) error {
+	return g.check(j, true)
+}
+
+// Check is Admit without the recording: it reports whether a job would be
+// refused, and leaves the cache as it was.
+//
+// For a node that has more to check before it will accept a job. A job
+// refused afterwards -- for a signature that does not verify, say -- must
+// not have taken a place in the cache, because places are what a hub
+// evicts a real job's entry with.
+func (g *Guard) Check(j *Job) error {
+	return g.check(j, false)
+}
+
+func (g *Guard) check(j *Job, record bool) error {
 	if j == nil || j.JID == "" {
 		return &Refusal{Reason: ReasonMalforme, Detail: "the job carries no identifier"}
 	}
@@ -106,8 +130,10 @@ func (g *Guard) Admit(j *Job) error {
 			}
 		}
 	}
-	g.record("jid:" + string(j.JID))
-	g.record("nonce:" + j.Nonce)
+	if record {
+		g.record("jid:" + string(j.JID))
+		g.record("nonce:" + j.Nonce)
+	}
 	return nil
 }
 
