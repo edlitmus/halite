@@ -36,6 +36,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -68,7 +69,22 @@ type Payload struct {
 // signs, so that a signature over an extension bundle, a token or a state
 // tree can never be replayed as a signature over a job. The same
 // reasoning as internal/extension's, and the same shape.
-const domain = "halite-job-v1\x00"
+//
+// It is v2 because v1 was ambiguous, and the version is in the signed
+// bytes so that a v1 signature cannot verify as a v2 one by accident.
+// v1 wrote a keyword argument's value as bare text, so the boolean `true`
+// and the string `"true"` were the same bytes, and so were the list
+// `["a","b"]` and the string `["a","b"]`, and `nil` and `"null"`. A node
+// honours a dry run only as the boolean, so a hub could turn a signed
+// `test: true` into `test: "true"` and the signature still verified on a
+// job that then ran for real. DIVERGENCE 5.290.
+const domain = "halite-job-v2\x00"
+
+// domainV1 is the format this build no longer accepts. It is kept only so
+// that Verify can say *why* an old signature fails -- "signed in the v1
+// format; re-sign it" is something an operator can act on in the middle
+// of an upgrade, and "does not verify" is not. Nothing ever accepts it.
+const domainV1 = "halite-job-v1\x00"
 
 // Canonical is the byte string a signature is computed over.
 //
@@ -84,6 +100,16 @@ const domain = "halite-job-v1\x00"
 // last one changes the encoding. Keyword arguments are sorted by name,
 // because a map has no order and the two ends of this must agree.
 //
+// # Keyword values carry their type
+//
+// Each keyword argument's value is written by `typed`: a tag naming its
+// type, then its content. The tags are distinct words, a string and a
+// number carry a length, and a list or a mapping carries its count, so
+// no value of one type can be spelled as a value of another and no
+// container can be re-cut. That is the whole difference from v1, which
+// wrote a value's text and lost its type -- and its type is what decides,
+// on a node, whether `test` means a dry run.
+//
 // # Numbers
 //
 // A number is written by value and not by the text it arrived as, so that
@@ -91,7 +117,9 @@ const domain = "halite-job-v1\x00"
 // An integer goes through int64, which is what keeps SPEC 6.4's promise
 // that a 64-bit integer survives — encoding it through float64 would lose
 // the last digits of a large one and produce a signature that does not
-// verify against the job that was sent.
+// verify against the job that was sent. Integral and fractional numbers
+// share one tag: JSON has one number type, and `1` and `1.0` are the same
+// JSON value, so distinguishing them would only make signatures fail.
 //
 // # Why it is written down here
 //
@@ -100,8 +128,20 @@ const domain = "halite-job-v1\x00"
 // these bytes. The rule above is the interface, and docs/operations.md
 // states it for that reader.
 func Canonical(p Payload) []byte {
+	return canonical(p, domain, typed)
+}
+
+// canonicalV1 is the old encoding, for Verify's diagnosis and nothing
+// else.
+func canonicalV1(p Payload) []byte {
+	return canonical(p, domainV1, func(b *strings.Builder, v any) {
+		field(b, "value", scalarV1(v))
+	})
+}
+
+func canonical(p Payload, dom string, value func(*strings.Builder, any)) []byte {
 	var b strings.Builder
-	b.WriteString(domain)
+	b.WriteString(dom)
 	field(&b, "jid", p.JID)
 	field(&b, "target", p.Target)
 	field(&b, "target_kind", p.TargetKind)
@@ -118,7 +158,7 @@ func Canonical(p Payload) []byte {
 	fmt.Fprintf(&b, "kwargc:%d;", len(keys))
 	for _, k := range keys {
 		field(&b, "kwarg", k)
-		field(&b, "value", scalar(p.Kwarg[k]))
+		value(&b, p.Kwarg[k])
 	}
 	field(&b, "env", p.Env)
 	expires := ""
@@ -126,6 +166,10 @@ func Canonical(p Payload) []byte {
 		// UTC and nanoseconds, which is how the job record and the wire
 		// both spell an expiry. A signature over a local-time rendering
 		// would verify in one timezone and not in another.
+		//
+		// A zero expiry still encodes, as the empty value, so that
+		// Digest has an answer for every payload; Sign and Verify are
+		// what refuse one.
 		expires = p.Expires.UTC().Format(time.RFC3339Nano)
 	}
 	field(&b, "expires", expires)
@@ -136,12 +180,62 @@ func field(b *strings.Builder, name, value string) {
 	fmt.Fprintf(b, "%s:%d:%s;", name, len(value), value)
 }
 
-// scalar renders one keyword argument's value.
+// typed writes one value with its type, recursively:
 //
-// Structured values go through `encoding/json`, which sorts the keys of a
-// map, so a nested mapping is as stable as a flat one. Numbers inside it
-// are normalised first, for the reason Canonical gives.
-func scalar(v any) string {
+//	null;
+//	bool:true;  bool:false;
+//	num:<len>:<decimal>;
+//	str:<len>:<bytes>;
+//	list:<n>;   then n values
+//	map:<n>;    then n of  key:<len>:<name>;  and a value, sorted by name
+//
+// The node only ever holds what `encoding/json` decoded -- nil, bool,
+// json.Number or float64, string, []any and map[string]any -- and the
+// signer holds the same, because it signs what WireValues gave back. The
+// other integer types are here for a caller building a Payload by hand.
+func typed(b *strings.Builder, v any) {
+	switch t := v.(type) {
+	case nil:
+		b.WriteString("null;")
+	case bool:
+		fmt.Fprintf(b, "bool:%t;", t)
+	case json.Number, int, int64, uint64, float64, float32:
+		field(b, "num", number(t))
+	case string:
+		field(b, "str", t)
+	case []any:
+		fmt.Fprintf(b, "list:%d;", len(t))
+		for _, item := range t {
+			typed(b, item)
+		}
+	case []string:
+		fmt.Fprintf(b, "list:%d;", len(t))
+		for _, item := range t {
+			field(b, "str", item)
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		fmt.Fprintf(b, "map:%d;", len(keys))
+		for _, k := range keys {
+			field(b, "key", k)
+			typed(b, t[k])
+		}
+	default:
+		// A type JSON cannot have produced. The node never holds one, so
+		// a signature over it can only fail to verify, never verify
+		// something else; the Go type is in the bytes so two such
+		// values of different types at least do not collide.
+		field(b, "unencodable", fmt.Sprintf("%T", v))
+	}
+}
+
+// scalarV1 is v1's rendering of a keyword value, kept only for
+// canonicalV1: bare text, which is the ambiguity v2 exists to remove.
+func scalarV1(v any) string {
 	switch t := v.(type) {
 	case nil:
 		return "null"
@@ -155,10 +249,6 @@ func scalar(v any) string {
 	normalised := normalise(v)
 	encoded, err := json.Marshal(normalised)
 	if err != nil {
-		// A value that will not encode cannot be signed over usefully,
-		// and rendering it with %v would make two different values
-		// encode alike. The Go type is in the text so that a refusal
-		// downstream says something.
 		return fmt.Sprintf("unencodable:%T", v)
 	}
 	return string(encoded)
@@ -200,7 +290,7 @@ func formatFloat(f float64) string {
 
 // normalise replaces every number inside a structure with its canonical
 // form, recursively, so that json.Marshal writes the same bytes whichever
-// decoder produced the values.
+// decoder produced the values. v1 only.
 func normalise(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
@@ -360,6 +450,9 @@ func Sign(key *ecdsa.PrivateKey, p Payload) (string, error) {
 	if err := checkCurve(key.Curve); err != nil {
 		return "", err
 	}
+	if p.Expires.IsZero() {
+		return "", ErrNoExpiry
+	}
 	digest := Digest(p)
 	der, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
 	if err != nil {
@@ -367,6 +460,17 @@ func Sign(key *ecdsa.PrivateKey, p Payload) (string, error) {
 	}
 	return base64.StdEncoding.EncodeToString(der), nil
 }
+
+// ErrNoExpiry is the refusal of a signature without an expiry, on either
+// side. SPEC 6.3 lets a node refuse a job past its expiry, and a job
+// without one is never past it: a signature over it would authorise that
+// one thing for ever, to whoever holds a copy.
+var ErrNoExpiry = errors.New("a signed job must carry an expiry, and this one carries none")
+
+// ErrOldFormat is a signature made over the v1 encoding, which this build
+// refuses because v1 could not tell a boolean from a string.
+var ErrOldFormat = errors.New("the job is signed in the v1 format, which this node refuses because it " +
+	"cannot tell `true` from `\"true\"`; re-sign it with a current halite-hub")
 
 // Verify checks a signature against every trusted key and answers with
 // the name of the one that verified.
@@ -383,6 +487,12 @@ func Verify(keys []SignerKey, p Payload, signature string) (string, error) {
 	if strings.TrimSpace(signature) == "" {
 		return "", fmt.Errorf("the job carries no signature")
 	}
+	if p.Expires.IsZero() {
+		// Before the signature is even decoded: whatever it says, it
+		// is a permanent authorisation, and that is refused whoever
+		// signed it.
+		return "", ErrNoExpiry
+	}
 	der, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
 		return "", fmt.Errorf("the job's signature is not base64: %w", err)
@@ -391,6 +501,16 @@ func Verify(keys []SignerKey, p Payload, signature string) (string, error) {
 	for _, key := range keys {
 		if ecdsa.VerifyASN1(key.Key, digest[:], der) {
 			return key.Name, nil
+		}
+	}
+	// Diagnosis only: the job is refused either way. A signature that
+	// verifies over the v1 bytes was made by a trusted key with a signer
+	// older than this node, and the operator needs to be told to re-sign
+	// rather than left to suspect the key.
+	old := sha256.Sum256(canonicalV1(p))
+	for _, key := range keys {
+		if ecdsa.VerifyASN1(key.Key, old[:], der) {
+			return "", fmt.Errorf("%w (it verifies against %s's key in that format)", ErrOldFormat, key.Name)
 		}
 	}
 	return "", fmt.Errorf("the signature does not verify against any of this node's %d trusted signer key(s)",

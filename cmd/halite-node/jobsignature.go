@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/job"
@@ -212,6 +213,9 @@ func (n *node) checkJobSignature(j *job.Job) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("this node requires a signature for %s (%s): %w", j.Fun, why, err)
 	}
+	if err := n.boundedSignedExpiry(j, time.Now()); err != nil {
+		return "", err
+	}
 	if err := n.matchesSignedTarget(j); err != nil {
 		return "", err
 	}
@@ -219,6 +223,50 @@ func (n *node) checkJobSignature(j *job.Job) (string, error) {
 	// record: it is what this node worked out, not something the hub
 	// sent, and the evidence record says so by recording it separately.
 	return signer, nil
+}
+
+// DefaultSignatureMaxTTL is how far ahead a signed job's expiry may lie
+// when it arrives, unless `job_signature_max_ttl` says otherwise.
+//
+// An hour: four times the fifteen minutes `halite-hub run --sign-key`
+// signs for by default (job.DefaultTTL), and the same as the longest
+// lifetime the hub itself ever gives a job unasked, a queued one's
+// (hub.QueuedTTL). Every job signed with the defaults fits with room to
+// spare, and an operator who signs with a longer `--ttl` raises this on
+// the nodes that should honour it, deliberately.
+const DefaultSignatureMaxTTL = time.Hour
+
+// signatureExpirySkew is the clock difference tolerated between the
+// signer and this node before an expiry counts as too far ahead. A
+// minute, which is what `doctor`'s clock check tolerates for the same
+// reason: nothing this decides turns on less.
+const signatureExpirySkew = time.Minute
+
+// boundedSignedExpiry refuses a signed job whose expiry is further off
+// than this node allows.
+//
+// Verify has already refused one with no expiry at all. This is the other
+// half: an expiry a decade away is a permanent authorisation spelt
+// differently, and a hub holding one can deliver it whenever suits it.
+// The bound is also what keeps the set of signed jobs a node must
+// remember to refuse a replay finite (DIVERGENCE 5.290).
+//
+// Measured against the time the job arrives, so a job that waited in a
+// queue for an offline node is judged on what it has left, not on what
+// it was signed for.
+func (n *node) boundedSignedExpiry(j *job.Job, now time.Time) error {
+	limit := n.cfg.Duration("job_signature_max_ttl", DefaultSignatureMaxTTL)
+	if limit <= 0 {
+		limit = DefaultSignatureMaxTTL
+	}
+	if ahead := j.Expires.Sub(now); ahead > limit+signatureExpirySkew {
+		return fmt.Errorf(
+			"this job's signature verifies and authorises it until %s, %s from now, and this node "+
+				"accepts a signed job for at most %s (`job_signature_max_ttl`); sign it with a "+
+				"shorter --ttl, or raise the setting on the nodes that should accept it",
+			j.Expires.UTC().Format(time.RFC3339), ahead.Round(time.Second), limit)
+	}
+	return nil
 }
 
 // matchesSignedTarget checks that this node is one the signature

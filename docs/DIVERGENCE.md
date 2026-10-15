@@ -23929,6 +23929,126 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 A signed dry run could be turned into a real run, and a signature need not expire
+
+**Found by** a security review (M-04), and reproduced before anything was
+changed. Three things together.
+
+**The encoding lost the type of a keyword argument.** `jobsign.Canonical`
+wrote a keyword argument's value as bare text: a string as itself, a
+boolean as `true`/`false`, `nil` as `null`, and a list or a mapping as its
+JSON. So the boolean `true` and the string `"true"` were the same bytes,
+and so were `["a","b"]` and the string `["a","b"]`, and `nil` and
+`"null"`. All three pairs were checked to produce identical canonical
+bytes.
+
+**The node honours a dry run only as a boolean.** `--test` reaches a node
+as nothing but the keyword argument `test` (`job.WireKwargs`), and
+`executeJob` read it as `j.Kwarg["test"].(bool)`, ignoring the failure.
+`runFunction` drops the key before calling the module. So a hub that
+replaced a signed `"test": true` with `"test": "true"` had a job whose
+signature verified and which ran for real. That is the compromised-hub
+case SPEC 25.6 exists for, and it turned an operator's signed dry run
+into the change they had decided not to make yet.
+
+**A signature need not expire.** `Canonical` signed an empty expiry,
+`Verify` and the node's `checkJobSignature` accepted one, and `Expired`
+treats a zero expiry as never. The honest hub refuses a signed submission
+without an expiry (`identify`), and `halite-hub run` always sets one, but
+the node is the check that does not trust the hub, and an external signer
+building these bytes itself need not set one. Nor was there any bound on
+how far off it could be. Either way a signature was a standing
+authorisation that a hub could hold and deliver whenever it chose.
+
+**The change.**
+
+- **A new format, `halite-job-v2`.** Every keyword value is written with
+  its type, recursively: `null;`, `bool:true;`, `num:<len>:<n>;`,
+  `str:<len>:<s>;`, `list:<n>;` and `map:<n>;` followed by their
+  elements, map keys sorted. Tags are distinct, strings and numbers carry
+  a length and containers a count, so no value of one type spells a value
+  of another and nothing can be re-cut. Numbers still encode by value
+  (`1`, `1.0`, `json.Number("1")` agree), because JSON has one number type
+  and distinguishing them would only make honest signatures fail. The
+  rest of the encoding is unchanged. `docs/operations.md` states it for an
+  external signer, and a test pins it byte for byte.
+- **v1 is refused.** A v1 signature is ambiguous by construction, and
+  accepting it alongside v2 would keep the hole open for as long as it was
+  accepted, since the attacker chooses which job to relay. `Verify` keeps
+  the v1 encoder only to diagnose: a signature that verifies over the v1
+  bytes is refused with `ErrOldFormat`, naming the key and saying to
+  re-sign, instead of "does not verify", which would send an operator to
+  look at the key.
+- **An expiry is required, and bounded.** `Sign` and `Verify` refuse a
+  zero expiry (`ErrNoExpiry`). The node refuses a signed job whose expiry
+  is more than `job_signature_max_ttl` ahead of it when the job arrives,
+  plus a minute of clock difference (`doctor`'s clock tolerance, for the
+  same reason). The default is an hour: four times the fifteen minutes
+  `run --sign-key` signs for without `--ttl`, and the lifetime the hub
+  gives a queued job (`hub.QueuedTTL`). It is a new node setting, because
+  an estate that signs with a longer `--ttl` must be able to say so. It is
+  measured on arrival, so a job that waited in the hub's queue is judged
+  on what it has left.
+- **A non-boolean `test` is refused.** `jobTestFlag` refuses `"true"`,
+  `"yes"`, `1` or anything else that is not a boolean, both in `Offer`
+  (before the acceptance record, so it is recorded as refused) and in
+  `executeJob` (for a schedule and agentless mode, which do not come
+  through `Offer`). Refused rather than coerced: `"false"` is as likely as
+  `"true"`, and a wrong guess runs the job for real. This applies to
+  unsigned jobs too.
+
+**Who has to do what.** Hubs, operators' `halite-hub` binaries, any CI or
+KMS signer that builds the bytes itself, and nodes must move together. A
+node on this build refuses every v1 signature; a node on the old build
+refuses every v2 one. Nothing persistent is signed except the hub's job
+records. A signed job still queued on the hub for an offline node, or in
+a batch not yet delivered, when the nodes are upgraded is refused on
+delivery with the v1 message, and has to be re-submitted. It would have
+expired within its TTL anyway. A scheduled job whose `test` is not a
+boolean, which used to run for real, now fails.
+
+**How it is tested.** `internal/jobsign/typed_test.go`: eleven pairs of
+values of different types encode differently; a signed `test: true`
+changed to `"true"`, `"True"`, `1` or `[true]` does not verify; the
+encoding is pinned against the documented example; a v1 signature is
+refused with `ErrOldFormat`; `Sign` and `Verify` refuse a zero expiry.
+`cmd/halite-node/jobsign_format_test.go` drives `acceptJob`: a signed
+dry run tampered to a string is refused; a signed job with no expiry, one
+a year away and one just past the bound are refused, and ones at fifteen
+minutes and at the bound are accepted; `job_signature_max_ttl: 5m`
+refuses a fifteen-minute job; a non-boolean `test` is refused by `Offer`
+and fails in `executeJob`, and both booleans still run. The signer tests
+in `internal/extsigner` and `cmd/halite-ext-signer-kms` now give their
+payloads an expiry, and the second payload in the bridged end-to-end test
+shares the first's, so that its refusal is still the target's and not the
+missing expiry's.
+
+Each was broken on purpose and watched failing:
+
+- `Canonical` writing values the v1 way under the v2 domain: six of the
+  type pairs, the tamper test, the pinned encoding and the node's tamper
+  test failed.
+- `Verify`'s expiry check disabled: the `jobsign` and node no-expiry tests
+  failed.
+- The v1 diagnosis disabled: the `ErrOldFormat` test failed.
+- The node's bound disabled: the year-away, past-the-bound and
+  configured-bound cases failed.
+- `jobTestFlag` accepting a non-boolean as false: both `test` tests failed.
+
+**Not verified.**
+
+- **No live hub and node.** Nothing here ran a signed job through a real
+  hub to a real node; the tests drive the node's `acceptJob` and the
+  package directly. The format change is exercised end to end only
+  through `openssl` (`TestOpenSSLVerifiesWhatThisPackageSigns` and its
+  reverse, which now run over v2 bytes) and the in-process bridged signer.
+- **`TestLiveKMSJobSignature` was edited and not run**: it needs a KMS key.
+- **FreeBSD.** Run on macOS (Darwin 25.6) only. Nothing here is
+  platform-specific, and CI runs the suite on all four.
+- **Replay.** The bound is what makes the set of signed jobs a node has to
+  remember finite; the replay guard itself is a separate defect and a
+  separate change.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

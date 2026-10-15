@@ -238,6 +238,7 @@ var Keys = []Key{
 	{"job_queue_depth", nodeOnly, "16", "How many jobs may wait before the node refuses more.", "9.6"},
 	{"require_job_signature", nodeOnly, "false", "Refuse a job without a valid detached operator signature: true, false, or a list of function classes.", "25.6"},
 	{"job_signer_keys", nodeOnly, "", "Public keys whose detached job signatures this node accepts.", "25.6"},
+	{"job_signature_max_ttl", nodeOnly, "1h", "How far ahead a signed job's expiry may lie when it arrives.", "25.6"},
 	{"evidence", nodeOnly, "true", "Keep the append-only, hash-chained local record of what this node accepted.", "25.7"},
 	{"evidence_dir", nodeOnly, "", "Where that record lives; empty is <state_dir>/evidence.", "25.7"},
 	{"evidence_max_bytes", nodeOnly, "67108864", "Seal the current chain segment once it reaches this size.", "25.7"},

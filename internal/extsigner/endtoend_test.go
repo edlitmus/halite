@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/bridge"
@@ -71,7 +72,7 @@ func TestSignerExtensionSignsAndVerifiesForReal(t *testing.T) {
 	}
 
 	payload := jobsign.Payload{JID: "20260929000000000000", Target: "web*", TargetKind: "glob",
-		Fun: "test.ping", Env: "base"}
+		Fun: "test.ping", Env: "base", Expires: time.Now().Add(time.Minute)}
 	digest := jobsign.Digest(payload)
 
 	sig, err := signer.Sign(ctx, digest)
@@ -100,7 +101,7 @@ func TestSignerExtensionSignsAndVerifiesForReal(t *testing.T) {
 	// is the property the whole bridge exists to carry across a process
 	// boundary intact.
 	other := jobsign.Payload{JID: payload.JID, Target: "db*", TargetKind: "glob",
-		Fun: "test.ping", Env: "base"}
+		Fun: "test.ping", Env: "base", Expires: payload.Expires}
 	if _, err := jobsign.Verify([]jobsign.SignerKey{{Name: "bridged", Key: pub}}, other,
 		base64.StdEncoding.EncodeToString(sig)); err == nil {
 		t.Error("a signature over one target verified against a different one")

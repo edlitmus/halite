@@ -78,7 +78,11 @@ against any of this node's 1 trusted signer key(s)
 
 What is signed, so that the signature says *where* as well as *what*: the
 job ID, the target and its kind, the function, every argument in order,
-the keyword arguments sorted by name, the environment, and the expiry.
+the keyword arguments sorted by name and each written with its type (so
+`true` and `"true"` sign differently, and a hub cannot turn a signed dry
+run into a real one), the environment, and the expiry. A node refuses a
+signed job with no expiry, or one further off than `job_signature_max_ttl`
+(an hour by default) when it arrives.
 A node also checks that **it matches the signed target**: sign by node ID,
 glob, grain, pillar, list, regex or CIDR (anything a node can evaluate about
 itself). A nodegroup is resolved from the hub's configuration, which a node
