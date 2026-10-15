@@ -1206,6 +1206,7 @@ This specification treats it as a design requirement.
 | `pillar_trusted_grains` | An allowlist of grain names usable in pillar top targeting. Default: `id`, `os`, `os_family`, `osrelease`, `kernel`, `cpuarch`, `virtual`, `fips_mode`. Custom grains are excluded by default. |
 | Hub-authoritative attributes | The hub maintains per-node attributes set by an operator or by the enrollment attestation, exposed to pillar targeting under `node:` rather than `grain:`. `node:role:database` cannot be forged by the node. |
 | `-I` and `-J` targeting in pillar top | Rejected. Pillar cannot target on pillar. |
+| `-S` (ipcidr) targeting in pillar top | Rejected. It reads the `ipv4` and `ipv6` grains, which the node reports, and which are not trusted; adding them to the allowlist would not make them so. |
 | Audit | Every pillar compilation records which top entries matched and on what basis, so that an unexpected secret delivery is reconstructable. |
 
 Migration is explicit: a tree that targets pillar on a custom grain keeps working if that grain is

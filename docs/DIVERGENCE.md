@@ -23929,6 +23929,83 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 `not S@10.0.0.0/8` delivered a pillar to every host inside 10/8
+
+Found by a security review, and reproduced here before anything was
+changed. The same shape as 5.136, with a kind the check had no case for.
+
+A pillar top expression is evaluated against `targetNode()`: the node ID,
+the trusted grains, and the hub-authoritative `node:` attributes. The
+default trusted grains do not include `ipv4` or `ipv6`. `S@` (and
+`- match: ipcidr`, which compiles to the same kind) reads exactly those two
+grains (`anyAddress` in `internal/target/target.go`). And
+`checkTargetIsPermitted` switched on `Pillar`, `PillarRegex`, `Grain` and
+`GrainRegex`; a `Subnet` term fell through with the basis `"glob"`.
+
+So a subnet term in a pillar top file was false on every node, and its
+negation true on every node:
+
+```yaml
+base:
+  'not S@10.0.0.0/8':   # "everything outside the private range"
+    - secret
+```
+
+Reproduced with `TestASubnetTargetIsRefused` on unmodified `main`: a node
+with `ipv4: [10.0.5.9]` received `password: hunter2` through the plain
+negation, through `G@os:Ubuntu and not S@10.0.0.0/8`, and through a
+nodegroup defined as `not S@10.0.0.0/8`. The positive forms (`S@10.0.0.0/8`,
+`S@10.0.5.9`, `- match: ipcidr`, a nodegroup of `S@10.0.0.0/8`) matched
+nothing and said nothing -- quieter, and still wrong. None of the seven
+was reported.
+
+#### Why it is refused rather than allowlisted
+
+For an untrusted grain the answer is `pillar_trusted_grains`: an operator
+who has decided a grain is trustworthy says so. That is no answer here.
+The addresses are reported by the node, which can claim any it likes, so
+adding `ipv4` and `ipv6` to the allowlist would make the term evaluate --
+on data the node chose. There is no allowlist escape because there is no
+deliberate decision that makes the term sound. The refusal says what to
+use instead: the node ID, or a hub-authoritative attribute under `node:`.
+
+#### The switch now ends in a refusal
+
+The cases are explicit for every kind a term can have: `Glob`, `List` and
+`Regex` read the node ID, which the hub authenticated; `Grain` and
+`GrainRegex` are judged against the allowlist; `Pillar`, `PillarRegex` and
+`Subnet` are refused. Anything else -- a kind added to `internal/target`
+later -- is refused with its name, rather than falling through to
+"permitted, basis glob". A missing case is not neutral in this function,
+for the reason this section exists: an unread term is false, and its
+negation is true.
+
+`Matcher.Terms()` records a leaf where it is compiled, so the check sees a
+term under `not`, inside parentheses and inside an expanded nodegroup alike;
+the test covers all three.
+
+#### What a top file using it will see
+
+A pillar top file with `S@` or `- match: ipcidr` now fails to compile,
+naming the expression. That is a change in behaviour for a tree that used
+the positive form, which delivered nothing before and fails now; the
+failure is the point, since "delivered nothing, silently" is what the
+negative form's twin looked like.
+
+**Tests, and breaking them.** `TestASubnetTargetIsRefused` runs seven
+spellings against a node at 10.0.5.9, and asserts each is refused, that
+the refusal names `S@`, `node:` and 12.4, and that nothing was delivered;
+and that a `G@os:Ubuntu` target beside them still delivers. Before the fix
+all seven failed, three of them with the secret delivered. With the
+`Subnet` case made permissive, the same three delivered again. With the
+case deleted, the default refusal caught every spelling, and the test
+failed on the message, which does not say what to use instead.
+
+**Not verified.** Not run against a hub and a real node: the evidence is
+the compiler's unit test, with grains supplied by the test. No pillar tree
+in the estate was searched for `S@` or `ipcidr` in a pillar top file, so
+whether any operator meets the new refusal is unknown.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

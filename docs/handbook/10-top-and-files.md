@@ -82,8 +82,8 @@ regex, `I@` pillar, `J@` pillar regex, `L@` list, `S@` subnet, `E@` regex
 on the ID, `N@` nodegroup. A bare word is a glob on the ID. The full
 grammar and all the examples are in [chapter 13](13-targeting.md); a
 top-file target accepts exactly what a command-line target does, with one
-exception: **pillar top files may not target on pillar or untrusted
-grains** ([chapter 9](09-pillar.md)).
+exception: **pillar top files may not target on pillar, untrusted
+grains or an address** ([chapter 9](09-pillar.md)).
 
 ### Check what a node would get
 

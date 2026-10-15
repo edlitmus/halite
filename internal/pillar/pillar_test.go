@@ -672,3 +672,62 @@ func TestOnRenderedSeesThePillarTopAndFiles(t *testing.T) {
 		t.Errorf("common's rendered output = %q", seen["common"])
 	}
 }
+
+// A subnet term is refused in a pillar top file, plain or negated, spelled
+// with S@ or as `- match: ipcidr`, directly or inside a nodegroup.
+//
+// `S@` reads the ipv4 and ipv6 grains, which the node reports about
+// itself, and which are not in the trusted set a pillar target is
+// evaluated against. So the term is false on every node, and its negation
+// is true on every node: `not S@10.0.0.0/8`, written to deliver a pillar
+// only to hosts outside 10/8, delivered it to 10.0.5.9 as well. Trusting
+// the address grains would not fix it, because a node that controls its
+// own grains controls them too. The same shape as DIVERGENCE 5.136, with
+// a kind the check had no case for. DIVERGENCE 5.290.
+func TestASubnetTargetIsRefused(t *testing.T) {
+	inside := Config{
+		NodeID:     "web1.prod",
+		Grains:     value.MapOf("os", "Ubuntu", "ipv4", []any{"10.0.5.9"}),
+		Nodegroups: target.Nodegroups{"outside": "not S@10.0.0.0/8", "inside": "S@10.0.0.0/8"},
+	}
+	for _, tc := range []struct{ name, top string }{
+		{"negated", "base:\n  'not S@10.0.0.0/8':\n    - secret\n"},
+		{"plain", "base:\n  'S@10.0.0.0/8':\n    - secret\n"},
+		{"address", "base:\n  'S@10.0.5.9':\n    - secret\n"},
+		{"in a compound", "base:\n  'G@os:Ubuntu and not S@10.0.0.0/8':\n    - secret\n"},
+		{"match directive", "base:\n  '10.0.0.0/8':\n    - match: ipcidr\n    - secret\n"},
+		{"negated nodegroup", "base:\n  'N@outside':\n    - secret\n"},
+		{"nodegroup", "base:\n  'N@inside':\n    - secret\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := compile(t, map[string]string{
+				"base|top":    tc.top,
+				"base|secret": "password: hunter2\n",
+			}, inside)
+			// Delivery first, so that a failure says which of the two
+			// went wrong: a permitted term, or a permitted term that
+			// also delivered.
+			if _, ok := value.Traverse(out.Pillar, "password", ":"); ok {
+				t.Error("the pillar was delivered to a node inside 10/8")
+			}
+			err := out.Err()
+			if err == nil {
+				t.Fatal("a subnet target was permitted in a pillar top file")
+			}
+			for _, want := range []string{"S@", "node:", "12.4"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal should mention %q: %v", want, err)
+				}
+			}
+		})
+	}
+
+	// A trusted-grain target beside it is unaffected.
+	ok := mustCompile(t, map[string]string{
+		"base|top":    "base:\n  'G@os:Ubuntu':\n    - secret\n",
+		"base|secret": "password: hunter2\n",
+	}, inside)
+	if got := get(t, ok, "password"); got != "hunter2" {
+		t.Errorf("password = %#v", got)
+	}
+}

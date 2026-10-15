@@ -375,8 +375,20 @@ func (c *Compiler) readTop(out *Compiled, env string) *value.Map {
 }
 
 // checkTargetIsPermitted refuses a pillar top expression that targets on
-// pillar, and reports which grains an expression relies on so that an
-// untrusted one can be refused by name.
+// pillar or on an address, and reports which grains an expression relies
+// on so that an untrusted one can be refused by name.
+//
+// It judges matcher.Terms(), which records every leaf where it was
+// compiled -- under a `not`, inside parentheses, and inside an expanded
+// nodegroup alike -- so a term cannot be hidden by where it is written.
+// What it cannot do is judge a kind it has no case for, and a missing case
+// is not neutral: a pillar target is evaluated against the trusted grains
+// alone, so a term that reads anything else is false on every node and its
+// negation true on every node. That is how `not S@10.0.0.0/8` delivered a
+// pillar to every host inside 10/8 (DIVERGENCE 5.290), and why the switch
+// below ends in a refusal rather than falling through to "glob": a kind
+// added to internal/target later fails loudly here until somebody decides
+// what it consults.
 func (c *Compiler) checkTargetIsPermitted(expr string, matcher *target.Matcher) (string, error) {
 	trusted := map[string]bool{}
 	for _, g := range c.trusted() {
@@ -387,6 +399,24 @@ func (c *Compiler) checkTargetIsPermitted(expr string, matcher *target.Matcher) 
 	basis := "glob"
 	for _, term := range matcher.Terms() {
 		switch term.Kind {
+		case target.Glob, target.List, target.Regex:
+			// The node ID, which the hub authenticated: a node cannot
+			// claim another's.
+
+		case target.Subnet:
+			// S@ (and `- match: ipcidr`) reads the ipv4 and ipv6 grains.
+			// They are not in the trusted set, so the term is false on
+			// every node and `not S@...` true on every node; and adding
+			// them to pillar_trusted_grains would not make the term
+			// sound, because they are reported by the node, which can
+			// claim any address it likes. There is no allowlist answer,
+			// so there is no allowlist escape: it is refused outright.
+			// DIVERGENCE 5.290.
+			return "", fmt.Errorf(
+				"pillar top expression %q targets on an address (S@ or match: ipcidr), which is read from the ipv4 and ipv6 grains "+
+					"a node reports about itself; target the node ID, or a hub-authoritative attribute under node: (SPEC section 12.4)",
+				expr)
+
 		case target.Pillar, target.PillarRegex:
 			// Pillar cannot target on pillar: it does not exist yet, and
 			// pretending it does produces an ordering-dependent result.
@@ -403,6 +433,11 @@ func (c *Compiler) checkTargetIsPermitted(expr string, matcher *target.Matcher) 
 			if !trusted[term.Key] {
 				untrusted = append(untrusted, term.Key)
 			}
+
+		default:
+			return "", fmt.Errorf(
+				"pillar top expression %q uses a term of kind %s, which pillar targeting does not know to be safe (SPEC section 12.4)",
+				expr, term.Kind)
 		}
 	}
 
