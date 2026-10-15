@@ -23929,6 +23929,92 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 The toolchain was a Go with ten standard-library advisories
+
+The pin was `toolchain go1.26.6`. The external audit of edlitmus/halite#321
+(section 1.2) found ten Go standard-library advisories that affect it. Six
+are on the hub's server paths: HTTP/2 in `net/http`, ECH in `crypto/tls`,
+and `net/textproto`. All ten are fixed in go1.26.9. The pin is now
+`toolchain go1.27.2`. The advisory list is the audit's. It was not
+re-derived here, and `make vuln` was not run.
+
+**The `go` directive stays at `1.26.0`.** It is a floor, not the pin
+(SPEC 4.3, `TestGoModPinsTheToolchain`), and
+`TestGoModFloorMatchesTheSpec` holds it to SPEC 4.1's "Go 1.26 or
+later". Raising it would be a SPEC change that nothing here needs. It
+also decides the default GODEBUG settings. A hub built at this commit
+records `DefaultGODEBUG=tracebacklabels=0,x509sslcertoverrideplatform=0`
+(`go version -m`). So the two settings Go 1.27 changed keep their 1.26
+behaviour.
+
+**Every place that names the pin moved with it.** `go.mod`; the
+`go-version` of eleven setup-go steps in `ci.yml`, `fleet.yml` and
+`release.yml`; `FROM golang:1.27.2-bookworm` in `contrib/docker/fleet`
+and the two `contrib/docker/fleet-rpm` images; and `go_version`,
+`go_sha256` and `go_sha256_freebsd` in `contrib/tofu/variables.tf`.
+`internal/buildpolicy` holds the first three to `go.mod`. Nothing holds
+the lab's, so its checksums were taken from
+`https://go.dev/dl/?mode=json&include=all` for the two tarballs the
+bootstraps fetch: `go1.27.2.linux-amd64.tar.gz` is `ecbadb99…045fe5`
+and `go1.27.2.freebsd-amd64.tar.gz` is `3baf61ee…1eded`. The same
+extraction, run for go1.26.6, gave the two digests that were already
+pinned. Docker Hub's tag metadata lists `golang:1.27.2-bookworm` as
+active for amd64 and arm64. No image was pulled.
+
+The remaining mentions of 1.26.6 in `.gitattributes`, the setup-go
+comments, `plan.md`, `contrib/tofu/README.md` and this ledger record
+what happened on that toolchain at the time. They are still true and
+were left unchanged.
+
+**One behaviour change was found, in `value.DecodeJSON`.** Go 1.27 turns
+on the `jsonv2` experiment by default, and that does not depend on the
+`go` directive. `encoding/json`'s `Decoder.Token` now refuses nesting
+deeper than 10,000. On the 1.26 path only `Unmarshal` had that limit.
+`DecodeJSON` walks tokens recursively and had no limit of its own.
+Measured on go1.27.2 (darwin/arm64), with a throwaway test that was not
+committed:
+
+| Input | default | `GOEXPERIMENT=nojsonv2` |
+|---|---|---|
+| 10,000 nested arrays | decodes | decodes |
+| 10,001 nested arrays | `exceeded max depth` | decodes |
+
+This makes the decoder bounded where it was not, and nothing in the
+suite depends on deeper input. It was not made into a test. A test that
+asserts the limit is a test of the standard library, and the limit
+belongs to the toolchain, not to halite. If halite should have a limit
+of its own, that is a separate change.
+
+**What was run.** All on darwin/arm64 with go1.27.2,
+`GOTOOLCHAIN=local`, `GOFLAGS=-mod=vendor`, `GOPROXY=off` and
+`GOMAXPROCS=2`:
+
+- `go build ./...`, `go vet ./...` (no findings from 1.27's analyzers),
+  `gofmt -l` (clean), and `go mod verify`.
+- `make check`: `fmt-check`, `vet`, `build-all` (every target in
+  `TARGETS`, built and vetted), `test`, `race`, `policy` and
+  `fips-test` with `GOFIPS140=v1.0.0`. Exit 0. go1.27.2 still carries
+  the v1.0.0 module.
+- `bmake repro`: all three binaries were byte-identical from two paths.
+
+`vendor/modules.txt` and `go.sum` did not change.
+`golang.org/x/sys` v0.47.0 builds on every target above.
+
+**Not verified.**
+
+- **No CI run on this change at the time of writing.** Linux, Windows
+  and the FreeBSD VM legs of `ci.yml`, and `fleet.yml`'s live legs, were
+  not run locally. The tests ran on macOS only.
+- **The lab bootstrap was not run with the new checksums.** No instance
+  was raised. The digests are go.dev's. No tarball was downloaded and
+  hashed here.
+- **The Docker images were not built.** That `golang:1.27.2-bookworm`
+  exists was read from Docker Hub's metadata.
+- **Release builders.** The two-builder comparison in `release.yml` was
+  not run. Only `repro`, on one machine, was run.
+- **The advisories themselves.** No advisory was reproduced against
+  go1.26.6, or shown to be absent on go1.27.2.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
