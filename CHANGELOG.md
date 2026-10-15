@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### pf keeps firewall rules in the order they were declared
+
+The pf provider sorted the `halite` anchor alphabetically every time it
+changed it, so every deny sat above every allow. Every rule is `quick`,
+and pf stops at the first rule that matches. So an allow inside a wider
+deny, such as ssh from one host in a denied /8, never matched. New rules
+are now appended in the order the states run, and rules already loaded
+keep their place, as ufw does. An anchor loaded by an earlier build keeps
+the sorted order: flush it (`pfctl -a halite -F rules`) and apply the
+states again to get the declared order. While it is empty its denies do
+not apply either. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

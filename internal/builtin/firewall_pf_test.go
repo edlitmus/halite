@@ -98,9 +98,9 @@ func TestAPFRuleRendersTheWayPFPrintsItBack(t *testing.T) {
 //
 // pf is last-match-wins and this module's shape is first-match-wins.
 // Without `quick` a later rule in the anchor silently overrides an
-// earlier one, and since the anchor is rewritten and sorted on every
-// change, which rule won would depend on alphabetical order — which is
-// not a thing anybody writing `firewall.allowed` is thinking about.
+// earlier one. With it, the earlier rule wins — so the anchor's order is
+// precedence, and Apply keeps the declared order rather than sorting
+// (DIVERGENCE 5.290; firewall_pf_order_test.go).
 func TestEveryPFRuleIsQuick(t *testing.T) {
 	for _, r := range []firewallRule{
 		{Action: "allow", Port: "22"},
