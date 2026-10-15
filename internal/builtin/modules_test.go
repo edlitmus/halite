@@ -1326,4 +1326,16 @@ func TestFileLineMatchIsARegexSearch(t *testing.T) {
 			t.Errorf("file = %q", got)
 		}
 	})
+
+	t.Run("delete with nothing to match is refused, not a wiped file", func(t *testing.T) {
+		const body = "a\nb\n"
+		path := writeFile(t, filepath.Join(dir, "empty"), body)
+		res := run(t, r, "file.line", value.MapOf("name", path, "mode", "absent"), false)
+		if res.Succeeded() {
+			t.Errorf("an absent with no match and no content must fail: %s", res.Comment)
+		}
+		if got := readFile(t, path); got != body {
+			t.Errorf("file = %q", got)
+		}
+	})
 }

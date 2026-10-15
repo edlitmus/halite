@@ -34,6 +34,16 @@ func fileLine(c *exec.Context, args *value.Map) (states.Result, error) {
 	if content == "" && mode != "absent" && mode != "delete" {
 		return states.False("file.line needs content unless its mode is absent or delete."), nil
 	}
+	// An empty pattern is a search that every line satisfies, so a
+	// delete with neither match nor content used to empty the file. Salt
+	// treats the empty pattern as "nothing to find" and does nothing; a
+	// state that reports success for a delete it could not have meant is
+	// the worse of the two, so it is refused instead.
+	if match == "" && (mode == "absent" || mode == "delete") {
+		return states.False("file.line in mode " + mode +
+			" needs match or content: an empty pattern would match every line."), nil
+	}
+
 	// Every pattern is compiled before anything is read for a decision,
 	// as Salt does, so a bad `before` fails the state even on a run where
 	// `match` would have been enough. A pattern that does not compile is

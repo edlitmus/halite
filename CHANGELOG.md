@@ -35,7 +35,7 @@ including a `content` used as the default `match`, such as `*.* @loghost` —
 now fails the state instead of being compared as text; a `match` with
 surrounding whitespace no longer matches the trimmed line. `mode: absent` or
 `delete` with neither `match` nor `content` deleted every line of the file;
-it now deletes nothing, as in Salt. Run the highstate with `test=True` first if your tree uses
+it now fails. Run the highstate with `test=True` first if your tree uses
 `file.line`. See DIVERGENCE 5.290.
 
 ### The API's systemd unit now restarts an API whose listener was early

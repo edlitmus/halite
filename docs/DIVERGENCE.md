@@ -23985,9 +23985,11 @@ What a tree sees change:
 - The trimmed-equality half is gone: a `match` with leading or trailing
   whitespace the line lacks no longer matches it. Salt never had it.
 - `mode: absent` or `delete` with neither `match` nor `content` used to
-  delete **every line in the file**, because an empty substring is in every
-  line. An empty pattern is now "not given", as in Salt, so it deletes
-  nothing.
+  delete **every line in the file** (an empty substring is in every line;
+  `TestFileLineMatchIsARegexSearch` watched the old code leave the file
+  empty). It now fails the state. Salt does nothing in that case and says
+  nothing; refusing is the louder of the two choices and the one this
+  project prefers.
 
 Not changed, and different from Salt, recorded here rather than fixed:
 halite's `ensure` with a `match` and no `before`/`after` replaces every
@@ -24004,8 +24006,9 @@ case run three times (a change on run 1 only, and the file is `Port 22` /
 `PermitRootLogin no` after every run), `^Port\b` leaving `GatewayPorts`
 alone, an unanchored `Port` reaching it, `$` and `\s`, a literal with
 parentheses, an anchored `after`, invalid and unsupported patterns for
-`match` and `before`, and a `content` standing in for `match`. With the
-old `file_line.go` restored it failed eight of its ten cases (the unanchored and literal cases pass on both, as they should); with
+`match` and `before`, a `content` standing in for `match`, and the empty
+delete. With the old `file_line.go` restored it failed nine of its eleven
+cases (the unanchored and literal cases pass on both, as they should); with
 the plain-text half removed from the new matcher, the literal case failed.
 
 Not verified: no real sshd read the result, no real Salt was run against
