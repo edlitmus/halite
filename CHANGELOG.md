@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### gitfs signature verification checks the commit it serves
+
+With `gitfs_verify_signatures: true`, a branch was verified by its short
+name and served by its commit id. git reads an ambiguous short name as
+the tag, and the mirror fetches every tag, so a tag pointing at an old
+signed commit could get an unsigned branch tip of the same name served.
+gitfs now verifies the exact object it serves. A branch whose name
+begins with a dash is no longer refused for being read as a git option.
+A hub upgraded to this release may stop serving a branch it served
+before, if that branch's tip was not signed; the refusal is logged and
+counted as a signature refusal. See DIVERGENCE 5.292.
+
 ### A target nested more than 100 levels deep is now an error
 
 A compound target with more than 100 levels of `(` and `not` is now
