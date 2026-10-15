@@ -12097,6 +12097,20 @@ never produce an existing repository. The `check_cmd` finding in the same
 review is in `internal/runner` rather than in a module, and is outside
 what this audit looks at. Neither is contradicted here.
 
+#### "Holds all 248" was not true (5.290)
+
+The audit did not hold all 248. It judged the few it reached on the
+machine it ran on, and put everything else in one bucket labelled
+"withheld or unreached". Twenty-two functions that claimed `reliable`
+and acted under a dry run were in that bucket: `service.mask` and
+`unmask`, nine `file.*` functions, eight `beacons.*` functions and three
+`x509.create_*` functions. Twelve more (`pro.*`, `dnf_module.*` and the
+two `dnsutil` hosts functions) also acted and were never looked at,
+because they declare `unreliable`. The static half also passed any function that called
+`errors.New`, because it followed that name into this package's own
+`New()`. Every function above is fixed, and the audit that missed them is
+rebuilt. See 5.290.
+
 ### 5.136 A nodegroup carried an untrusted grain past SPEC 12.4
 
 Found by a code review running in a parallel session, verified here, and
@@ -23928,6 +23942,191 @@ The hub's 5.287 tests pass with the function moved.
   from the code, not run.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
+
+### 5.290 Thirty-four functions acted under `--test`, and the audit for it could not see them
+
+5.135 built `TestEveryMutatingFunctionHonoursItsTestModeClaim` and said
+that it held all 248 mutating functions that claim `reliable`. A review
+found three families that changed the system under a dry run. Rebuilding
+the audit so that it could see them found two more. All five are fixed.
+
+**What acted under a dry run.** Each item was reproduced with `Test`
+set before it was fixed. The `beacons` and `x509` items were found and
+reproduced in this change. The first three were reproduced by the
+review, and again here by the rebuilt audit with each fix removed.
+
+- **`service.mask` and `service.unmask`** masked the unit. The service
+  module's other mutating functions (`simple()`, `force_reload`) check
+  `c.Test`. `maskModule` did not, and it declared no `Privileges`
+  either. It now answers `true` under a dry run, as `service.start`
+  does, and declares `root`.
+- **`file.chmod`, `chown`, `chgrp`, `mkdir`, `makedirs`, `rmdir`,
+  `move`, `hardlink`, `truncate`** all declared `reliable` and none read
+  `c.Test`. `makeDirs` was not even given the context. Each now runs
+  its own refusals (the path exists, the names resolve, the directory is
+  empty, the link name is free) and returns what the real call returns,
+  without the change. `chown` and `chgrp` ask through `plannedOwnership`,
+  the helper `file.managed` already uses in test mode.
+- **`beacons.add`, `modify`, `delete`, `enable`, `disable`,
+  `enable_beacon`, `disable_beacon`, `reset`** called the running beacon
+  engine. Under `--test`, `beacons.reset` removed every beacon from the
+  node. This is the pattern 5.130 fixed in `schedule`, one file over,
+  and `beacons.save` in the same file already checked. They now answer
+  in `schedule`'s shape: `would_add`, `would_reset`, and so on.
+- **`x509.create_private_key`, `create_csr`, `create_certificate`**
+  wrote their file when given a `path`. A dry run of
+  `create_private_key` over a node's real key replaced the key. Each now
+  runs everything up to the write and returns the path.
+- **`pro.attach`, `detach`, `enable`, `disable`, the six `dnf_module`
+  mutators, `dnsutil.hosts_append` and `hosts_remove`** ran their
+  command or wrote their file under a direct `--test` exec call. All of
+  them declared `unreliable`. Inside a state run, `module.run` answers
+  for test mode before it calls any execution function, so the exposure
+  was a direct call. That holds for every family above. Whether a
+  template that calls one of them while a `--test` run renders it is
+  exposed was not checked. The direct call to `pro.detach` detached the node, and only the
+  original contract token can reattach it.
+
+**What `unreliable` now means for these.** 5.135 and plan.md section 6
+record that `unreliable` is used for two things: "cannot predict" and
+"acts anyway". This entry does not settle that question. Each function
+was decided on its own:
+
+- **`dnsutil.hosts_append` and `hosts_remove` are now `reliable`.**
+  Every step before the write is a read, so the line they would add,
+  and whether a removal changes the file, are known exactly. They now
+  return that answer and skip the write.
+- **`pro.*` and `dnf_module.*` stay `unreliable` and run nothing.**
+  What `pro enable` or a stream switch would change is decided by the
+  client and the repositories. No prediction of it has been run and
+  watched to come true. So under a dry run they return the command they
+  would have run (the `pro attach` token is redacted) and claim no
+  change. That is the documented meaning of `unreliable`. After this
+  change, the ten `cmd.*` functions are the only mutating functions
+  whose code never reads `Test`. They are in a closed list with the
+  reason.
+
+**Why the audit could not see them.**
+
+- **Arguments that named nothing.** The dynamic half called each
+  function once, with every path set to a file that did not exist. So
+  `chmod`, `truncate`, `rmdir`, `move` and `hardlink` failed on the
+  missing path before they acted. The snapshot ignored directories, so
+  `mkdir` and `makedirs` were not seen even when they acted. The audit
+  filled required parameters only, so `x509.create_*` never got a path
+  and returned PEM. A function that failed early looked the same as a
+  function that withheld the change. Both went into one "quiet" bucket
+  that the audit did not judge.
+- **No provider, no engine.** On a host with no init system that can
+  mask, `service.mask` refused before it acted. On a systemd host it
+  goes over D-Bus and bypasses the `RecordingRunner`. The context had no
+  beacon engine or schedule attached, so every `beacons.*` and
+  `schedule.*` function refused.
+- **A filter.** The audit skips every function that does not claim
+  `reliable`, by design, so `pro.*`, `dnf_module.*` and the `dnsutil`
+  pair were never called. `pro` and `dnf_module` are also gated to
+  Linux.
+- **The static half could not name helper-built registrations.** It
+  found a registration by reading the `Module:` and `Function:` string
+  literals. `maskModule(r, "mask", …)`, `dnf_module`'s `mutating(…)`,
+  `selinux`'s `mutate(…)`, `beacons`' `sig("add", …)` and `file`'s
+  `edit("touch", …)` have a variable where the name goes, so those
+  functions were not in its map. For a violator that did not matter,
+  because the check only excused functions. But it could not excuse a
+  correct one either.
+- **The static half followed `errors.New` into `builtin.New()`.** It
+  followed every identifier that had the name of a package-level
+  function, including the selected name in a selector. `New()` registers
+  every module, so it contains a `Test` reference. Any function whose
+  call chain built an error with `errors.New` was therefore "reading
+  Test". `pro.detach` passed this way: `proToolPresent` calls
+  `errors.New`. This was found when removing the `pro` fix did not fail
+  the new check.
+
+**The rebuilt audit.**
+
+- **`TestEveryMutatingFunctionReachesTheTestFlag`**
+  (`internal/builtin/testmode_reach_test.go`) is new. It takes each
+  mutating function's `Fn` from the registry through a new
+  `exec.Registry.Func`. The runtime gives the file and line where that
+  code starts, closures inside helpers included. The test finds that
+  code in the parsed package and requires a `.Test` reference in it, or
+  in the package functions it calls. Wrappers that receive their work
+  as an argument (`withBeacons(func…)`, `maskModule(…, func…)`,
+  `edit(…, fileTouch)`) are matched to their call sites, and the code
+  passed in is checked. It does not depend on the platform, so
+  `pro.detach` is checked on a Mac. It applies to `unreliable` functions
+  too. The only exemptions are a closed list, `actsUnderTestByDesign`
+  (the ten `cmd.*` functions), and each entry on it must declare
+  `unreliable`. An entry that stops being true fails the test, and so
+  does a stale entry.
+- **The dynamic half calls each function in four worlds:** every path
+  an existing file with mode 0600, every path an empty directory, the
+  first path a file and the rest free, and every path free one level
+  down. Optional path parameters are filled as well as required ones.
+  The context has recording engines: a service provider that can mask,
+  placed in front of the real providers, a beacon engine, a schedule, a
+  mine, and `SaveConfig`/`ReloadConfig`. Each records a call as an
+  action. The snapshot records directories, modes and contents.
+- **The quiet bucket is split and checked.** "Answered without acting"
+  (no error in some world) is judged. "Refused in every world" is not,
+  and `auditMustReach` names 23 functions that need no tool and no
+  platform. If one of them falls into the refused bucket, the test
+  fails. `service.mask` and `unmask` are not in that list on Windows,
+  where the platform's own provider is chosen first.
+- On this Mac, the old harness judged **4 of 291** and put 287 in one
+  bucket. The new one judges **112 of 291** (6 acted, 106 answered) and
+  reports 179 as unreached. The static check finds the code of all 322
+  mutating functions. 312 of them reach `Test` and 10 are on the list.
+
+**Broken on purpose.** Each fix was removed in turn, the two audits were
+run, and the fix was restored:
+
+- **`maskModule`'s test branch removed:** both audits failed on
+  `service.mask` and `service.unmask`. The dynamic audit showed `service
+  mask <dir>/name` in all four worlds.
+- **`file_more.go` restored from `main`:** the static audit failed on
+  all nine. The dynamic audit failed on seven: `chmod`, `hardlink`,
+  `makedirs`, `mkdir`, `move`, `rmdir`, `truncate`. It does not see
+  `chown` and `chgrp`, because as a normal user the only owner it can
+  set is the current one, which changes nothing.
+- **`proRun`'s test branch removed and `dnf_module.go` restored:** the
+  static audit failed on all ten. This only happened after the
+  `errors.New` correction. Before it, this break passed. The dynamic
+  audit cannot reach them on a Mac.
+- **The `hosts.go` test branches removed, and `beacons.go` and
+  `x509_module.go` restored:** both audits failed on all eight
+  `beacons` functions and both `dnsutil` functions. The static audit
+  failed on all three `x509` functions. The dynamic audit failed on
+  `create_private_key` only, because its synthesised `private_key` for
+  the other two is not a key.
+- **The recording service provider removed:** `auditMustReach` failed
+  on `service.mask` and `service.unmask`.
+
+With the `errors.New` correction in place and every fix restored, no
+other function failed the static check. So no other function had passed
+5.135's static read only because of the collision.
+
+**Not verified.**
+
+- **No systemd, no root, macOS only.** Every run was on macOS (Darwin
+  25.6) as a normal user. No `systemctl mask` or `pro` client was run in
+  either mode, and no D-Bus masking path was run. The `pro` and
+  `dnf_module` test branches were not executed: their signatures are
+  gated to Linux, so only the static check holds them. CI runs the suite
+  on Linux, FreeBSD and Windows, and none of those runs was observed for
+  this change.
+- **The dry-run answers are not compared with the real ones.**
+  `file.chmod` under `--test` returns the path. That is what the real
+  call returns, but no test says that the two agree on every refusal.
+  For example, a dry-run `rmdir` refuses a non-empty directory with its
+  own message, while the real call reports the operating system's
+  error.
+- **The static check proves a read, not a guard.** A function that reads
+  `Test` to word a message and then acts passes the static check. Only
+  the dynamic audit catches that, and only on functions it reaches.
+- **State functions are not in the new static check.** 5.135's state
+  differential is unchanged.
 
 ## 6. Everything else not started
 
