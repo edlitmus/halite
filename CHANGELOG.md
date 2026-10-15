@@ -21,6 +21,22 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `mdadm.create` now refuses a member holding a filesystem or partition table
+
+Without `force`, `mdadm.create` checked members only for an md
+superblock, then ran `mdadm --create --run`, and `--run` stops mdadm
+asking before it writes over a filesystem it found. A member holding
+ext4, XFS, LVM, ZFS or just a partition table was overwritten, although
+the `force` documentation said it would be refused. `create` now runs
+`wipefs --no-act` on every member and spare first and refuses, naming
+the device and the signature, if anything is listed. It also refuses
+when a member cannot be probed: `mdadm --examine` or `wipefs` fails, or
+`wipefs` is not installed. Before, an `--examine` error let the create
+go ahead. With `force` the create runs as before, and the comment says
+what it overwrote. A state or script that created arrays over formatted
+disks without `force` will now fail; pass `force` if that is intended.
+Not yet run on a real machine. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

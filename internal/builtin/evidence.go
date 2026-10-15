@@ -435,7 +435,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"to refuse (DIVERGENCE 5.53). The `--detail` parser is written to mdadm's `Label : Value` header and its " +
 		"member table, checked against real degraded output (a removed slot, a faulty member). Not covered: " +
 		"`grow` (a reshape is too slow for a test), `assemble --scan` (it reads every superblock on the host), " +
-		"RAID levels other than 1, and metadata 0.90"},
+		"RAID levels other than 1, metadata 0.90, and the `wipefs` signature probe `create` runs on every member " +
+		"before it writes (DIVERGENCE 5.290): written and tested against synthetic output only, and its live test " +
+		"(a member holding real ext4 refused) has not yet run on any machine"},
 	"modprobe": {Level: exec.Hardware, Note: "driven against a real kernel on Ubuntu 24.04: `list`, `info` and " +
 		"`is_denylisted` read against whatever this host's kernel already has loaded, and the mutating half " +
 		"loaded and unloaded `netdevsim`, the kernel's own simulated networking device for testing (it creates " +

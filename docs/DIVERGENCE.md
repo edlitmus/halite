@@ -5430,6 +5430,13 @@ superblock. It needs root and the loop driver, so it is gated behind
 `HALITE_SYSTEM_LIVE=1` and runs in the fleet workflow's linux leg, the
 same as `lvm` and `quota`. `evidence.go` records `mdadm` `hardware`.
 
+#### The filesystem refusal the code comment claimed did not exist
+
+The package comment and the `force` doc claimed more than this section
+does: a refusal of a member mdadm "flags as holding a filesystem". There
+was none, and an `--examine` error passed. 5.290 adds a `wipefs` probe
+and makes every probe failure a refusal.
+
 **`destroy` is the one function here whose purpose is data loss** (5.75).
 It stops the array and zeroes its members' superblocks, matching Salt's
 `raid.destroy`, including the guard that matters: the members are read
@@ -23928,6 +23935,111 @@ The hub's 5.287 tests pass with the function moved.
   from the code, not run.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
+
+### 5.290 `mdadm.create` would overwrite a filesystem it said it refused
+
+The package comment in `mdadm.go` and the `force` parameter's doc both
+said `create` refuses, without `force`, a member "that mdadm itself
+flags as holding a filesystem". Nothing checked that. The only guard
+before `mdadm --create` was the one 5.53 describes: `mdadm --examine` on
+each member, refusing an md superblock. `--examine` knows md superblocks
+and nothing else, so a disk holding ext4, XFS, an LVM PV, a ZFS vdev or
+only a partition table answered "No md superblock detected" and passed.
+Then `--run` was always on the command line. mdadm's own Create does
+notice a filesystem or partition table on a member and asks "Continue
+creating array?", and the manual's `-R`/`--run` entry says the option
+suppresses that question. So the one party that had looked was told not
+to ask. The guard also failed open: an `--examine` error other than "No
+md superblock detected" (a busy device, one that could not be opened)
+was `continue`. 5.53 itself described only the superblock refusal and
+was accurate; the code comment overclaimed. Found by audit (H-17), by
+reading the code path, not by losing a disk.
+
+**The fix.** Each member and spare now gets two probes before anything is
+written, with or without `force`:
+
+- `mdadm --examine --export` as before, for the md superblock;
+- `wipefs --no-act --noheadings --output TYPE,OFFSET <dev>`, which lists
+  every signature libblkid recognises: filesystems, partition tables,
+  LVM, ZFS, swap, LUKS, other RAID members.
+
+Without `force`, a superblock, any line from `wipefs`, or **any probe
+that did not give a clean answer** refuses the create, naming the
+device and what was found: an `--examine` error, `wipefs` exiting
+non-zero, `wipefs` failing to start, and `wipefs` absent from the node.
+With `force` the create runs as before, and the comment now says what
+it overrode ("force overrode: /dev/sdb holds signatures (ext4 0x438)"),
+or which device it could not check.
+
+**Why `wipefs` and not `blkid -p`.** Both are util-linux over libblkid.
+`wipefs`'s manual gives exit 0 with nothing listed for an empty device
+and non-zero for one it cannot probe, which is the split this needs.
+`blkid -p` documents exit 2 for "nothing identified"; whether a device
+it cannot open also exits 2 was not established, and if so "empty" and
+"unreadable" would differ only in stderr text. The output is read only
+for "empty or not": every non-blank line is a signature and is quoted
+back, never parsed for meaning. A layout that differs between versions
+can therefore only refuse more, not pass a signature.
+
+**Why `--run` stays.** Without it mdadm's question is read from this
+process's stdin, which `exec` leaves as /dev/null. mdadm also asks that
+question for things that are not a danger: the RAID1 note that metadata
+at the start may not suit a boot device. Dropping `--run` would trade a
+silent overwrite for a create that cannot run unattended. So the
+question is asked by the module first, and `--run` reaches mdadm only
+when every device probed clean, or `force` was given. What mdadm does
+with an EOF answer was not run here; that reasoning is from the
+manual and from memory of its source, not demonstrated.
+
+**Fixtures: synthetic.** No captured `wipefs` output exists in this
+repository. The strings in `mdadm_test.go` (`ext4 0x438`, a `gpt`/`PMBR`
+pair, a `wipefs: error: ... probing initialization failed` line) are
+written to the documented shape and say so in the test. The module
+reads only empty or not, which limits what a wrong guess can cost, but
+they are not evidence. A Linux lab run (`contrib/tofu`, or the fleet
+linux leg) must capture, as root, on a loop device:
+
+1. `wipefs --no-act --noheadings --output TYPE,OFFSET` on a freshly
+   truncated file: its exit code and that stdout is empty;
+2. the same after `mkfs.ext4 -F`, and after `sgdisk -o` (or `parted
+   mklabel gpt`): exit code and stdout;
+3. the same on an md member (expect `linux_raid_member`);
+4. the same on a path that does not exist, and on a device held open
+   exclusively: exit code and stderr;
+5. that every one of the flags is accepted by the util-linux on each
+   distribution the lab raises (`--output` arrived in 2.29, from
+   memory of the changelog; that version boundary is not established
+   either).
+
+`TestLiveMdadmCreateRefusesAMemberHoldingAFilesystem` does 1 and 2 (ext4
+only) and logs the raw output as `capture:` lines. It also proves the
+refusal against a real mkfs and a real mdadm. The existing live tests
+now go through the probe on clean loop devices too, so a flag that a
+real `wipefs` rejects would fail them.
+
+**Tests.** `TestMdadmCreateRefusesAMemberHoldingAFilesystem` (ext4 and a
+partition table: refused, the device and the signature named, no
+`--create` run), `TestMdadmCreateRefusesWhatItCouldNotProbe` (examine
+error, `wipefs` non-zero, `wipefs` failing to start, no `wipefs`: each
+refused), `TestMdadmCreateRunsOverCleanMembers` (both members probed,
+one `--create --run`), `TestMdadmForcedCreateSaysWhatItOverrode`. Each
+was watched failing against a broken fix: with the old `continue`
+restored, the could-not-probe test failed; with the `wipefs` probe
+removed, all four failed; with the force note dropped, the force test
+failed.
+
+#### What was not verified
+
+- **No Linux run.** This was written and tested on macOS (Darwin 25.6),
+  which has no mdadm, wipefs or mkfs. The new live test was seen to skip
+  there and nowhere was it seen to run.
+- **No real `wipefs` output.** See the capture list above.
+- **mdadm's behaviour without `--run` and with stdin at /dev/null** was
+  reasoned, not run.
+- **The evidence level is unchanged** at `hardware`, because the paths
+  it was raised for (superblock and existing-array refusals, the
+  mutating functions) are still the paths that ran. The note now says
+  the signature probe has not.
 
 ## 6. Everything else not started
 

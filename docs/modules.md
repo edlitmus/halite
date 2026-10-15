@@ -5356,7 +5356,7 @@ mdadm.assemble(device: path = , devices: list, uuid: string = , scan: bool = fal
 
 #### `mdadm.create`
 
-Create a new array. Refuses a device that is already an array, or a member that already holds one, without force.
+Create a new array. Without force, refuses a member or spare that carries an md superblock or any signature `wipefs` lists (a filesystem, a partition table, an LVM or ZFS member), or that could not be probed.
 
 ```
 mdadm.create(device: path, level: string, devices: list, spares: list, metadata: string = , name: string = , chunk: string = , assume_clean: bool = false, force: bool = false)
@@ -5372,7 +5372,7 @@ mdadm.create(device: path, level: string, devices: list, spares: list, metadata:
 | `name` | string | `` | A name for the array, stored in the superblock. |
 | `chunk` | string | `` | Chunk size, such as 512K. For striped levels. |
 | `assume_clean` | bool | `false` | Skip the initial resync. Only safe on devices known to be zeroed or when the data is disposable. |
-| `force` | bool | `false` | Overwrite an existing md superblock or a detected filesystem on a member. |
+| `force` | bool | `false` | Create even over a member whose `mdadm --examine` finds an md superblock, on which `wipefs` lists a signature, or which could not be probed. Whatever was found is named in the comment. |
 
 *changes the system · honours `--test` · SPEC section 15.3*
 

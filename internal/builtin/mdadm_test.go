@@ -496,3 +496,181 @@ func TestDroppingTheConfEntryWithNoConfigAtAll(t *testing.T) {
 		t.Errorf("a missing file = %v, %v; want false, nil", dropped, err)
 	}
 }
+
+// ---- create: what is already on the members (DIVERGENCE 5.290) ----
+//
+// **Every wipefs output below is SYNTHETIC.** No captured `wipefs` output
+// exists in this repository yet; these strings are written to the shape
+// `--noheadings --output TYPE,OFFSET` is documented to print, and the
+// module deliberately reads only "empty or not" from it, so a column
+// layout that turns out different cannot make a found signature pass.
+// The "No md superblock detected" stderr is the substring the module has
+// matched since 5.53; the line around it is written here, not captured.
+// DIVERGENCE 5.290 lists what a lab run must capture to replace them.
+
+const (
+	mdadmTestNoArray    = "mdadm: cannot open /dev/md0: No such file or directory"
+	mdadmTestNoSuper    = "mdadm: No md superblock detected on %s."
+	mdadmTestWipefsExt4 = "ext4 0x438\n" // synthetic
+	mdadmTestWipefsGPT  = "gpt  0x200\nPMBR 0x1fe\n"
+)
+
+func mdadmGuardCtx(probe map[string]exec.Result) *exec.Context {
+	resp := map[string]exec.Result{
+		(exec.Command{Argv: []string{"mdadm", "--detail", "/dev/md0"}}).String(): {Code: 1, Stderr: mdadmTestNoArray},
+	}
+	for _, dev := range []string{"/dev/sda", "/dev/sdb"} {
+		resp[(exec.Command{Argv: []string{"mdadm", "--examine", "--export", dev}}).String()] =
+			exec.Result{Code: 1, Stderr: strings.Replace(mdadmTestNoSuper, "%s", dev, 1)}
+	}
+	for dev, r := range probe {
+		resp[mdadmWipefsKey(dev)] = r
+	}
+	return mdadmCtx(resp)
+}
+
+func mdadmWipefsKey(dev string) string {
+	return (exec.Command{Argv: []string{"wipefs", "--no-act", "--noheadings", "--output", "TYPE,OFFSET", dev}}).String()
+}
+
+func mdadmRanCreate(c *exec.Context) bool {
+	for _, ran := range c.Runner.(*exec.RecordingRunner).RanCommands() {
+		if strings.Contains(ran, "--create") {
+			return true
+		}
+	}
+	return false
+}
+
+func mdadmCreateArgs(extra ...any) *value.Map {
+	m := value.MapOf("device", "/dev/md0", "level", "1", "devices", []any{"/dev/sda", "/dev/sdb"})
+	for i := 0; i+1 < len(extra); i += 2 {
+		m.Set(extra[i].(string), extra[i+1])
+	}
+	return m
+}
+
+// A member mdadm --examine calls clean but which holds a filesystem, or a
+// partition table, is refused -- this is the case 5.290 was about: before
+// it, "No md superblock detected" was the whole check and `--run` told
+// mdadm not to ask about the ext4 it had found.
+func TestMdadmCreateRefusesAMemberHoldingAFilesystem(t *testing.T) {
+	for name, out := range map[string]string{"ext4": mdadmTestWipefsExt4, "partition table": mdadmTestWipefsGPT} {
+		t.Run(name, func(t *testing.T) {
+			c := mdadmGuardCtx(map[string]exec.Result{
+				"/dev/sda": {},
+				"/dev/sdb": {Stdout: out},
+			})
+			_, err := mdadmCreateFn(c, mdadmCreateArgs())
+			if err == nil {
+				t.Fatal("create over a member holding signatures was allowed without force")
+			}
+			if !strings.Contains(err.Error(), "/dev/sdb") || !strings.Contains(err.Error(), strings.Fields(out)[0]) {
+				t.Errorf("the refusal does not say which device or what was found: %v", err)
+			}
+			if mdadmRanCreate(c) {
+				t.Error("mdadm --create ran despite the refusal")
+			}
+		})
+	}
+}
+
+// Any probe that does not give a clean answer refuses. Before 5.290 an
+// examine error was `continue` -- the guard failed open.
+func TestMdadmCreateRefusesWhatItCouldNotProbe(t *testing.T) {
+	examineSda := (exec.Command{Argv: []string{"mdadm", "--examine", "--export", "/dev/sda"}}).String()
+	cases := map[string]func(c *exec.Context){
+		"examine errors": func(c *exec.Context) {
+			c.Runner.(*exec.RecordingRunner).Responses[examineSda] =
+				exec.Result{Code: 1, Stderr: "mdadm: cannot open /dev/sda: Device or resource busy"}
+		},
+		"wipefs exits non-zero": func(c *exec.Context) {
+			c.Runner.(*exec.RecordingRunner).Responses[mdadmWipefsKey("/dev/sda")] =
+				exec.Result{Code: 1, Stderr: "wipefs: error: /dev/sda: probing initialization failed"}
+		},
+		"wipefs cannot be started": func(c *exec.Context) {
+			r := c.Runner.(*exec.RecordingRunner)
+			r.Errors = map[string]error{mdadmWipefsKey("/dev/sda"): os.ErrPermission}
+		},
+		"no wipefs on the node": func(c *exec.Context) {
+			c.Lookup = func(name string) string {
+				if name == "wipefs" {
+					return ""
+				}
+				return "/usr/sbin/" + name
+			}
+		},
+	}
+	for name, breakIt := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := mdadmGuardCtx(map[string]exec.Result{"/dev/sda": {}, "/dev/sdb": {}})
+			breakIt(c)
+			_, err := mdadmCreateFn(c, mdadmCreateArgs())
+			if err == nil {
+				t.Fatal("create went ahead over a member that could not be probed")
+			}
+			if !strings.Contains(err.Error(), "/dev/sda") || !strings.Contains(err.Error(), "could not be checked") {
+				t.Errorf("the refusal does not say what could not be checked: %v", err)
+			}
+			if mdadmRanCreate(c) {
+				t.Error("mdadm --create ran despite the refusal")
+			}
+		})
+	}
+}
+
+// Clean members: both probes run for every member and spare, and then
+// --create runs with --run.
+func TestMdadmCreateRunsOverCleanMembers(t *testing.T) {
+	c := mdadmGuardCtx(map[string]exec.Result{"/dev/sda": {}, "/dev/sdb": {}})
+	out, err := mdadmCreateFn(c, mdadmCreateArgs())
+	if err != nil {
+		t.Fatalf("create over clean members: %v", err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != true {
+		t.Errorf("create reported no change: %v", out)
+	}
+	if cm, _ := out.(*value.Map).GetString("comment"); strings.Contains(cm.(string), "force") {
+		t.Errorf("a create with nothing overridden mentions force: %v", cm)
+	}
+	ran := c.Runner.(*exec.RecordingRunner).RanCommands()
+	var probed, created int
+	for _, r := range ran {
+		if strings.HasPrefix(r, "wipefs ") {
+			probed++
+		}
+		if strings.Contains(r, "--create") {
+			created++
+			if !strings.Contains(r, "--run") {
+				t.Errorf("create ran without --run: %s", r)
+			}
+		}
+	}
+	if probed != 2 || created != 1 {
+		t.Errorf("ran %d probes and %d creates, want 2 and 1:\n%s", probed, created, strings.Join(ran, "\n"))
+	}
+}
+
+// With force the create goes ahead over a found signature, and the
+// comment names what was overwritten.
+func TestMdadmForcedCreateSaysWhatItOverrode(t *testing.T) {
+	c := mdadmGuardCtx(map[string]exec.Result{
+		"/dev/sda": {},
+		"/dev/sdb": {Stdout: mdadmTestWipefsExt4},
+	})
+	out, err := mdadmCreateFn(c, mdadmCreateArgs("force", true))
+	if err != nil {
+		t.Fatalf("forced create: %v", err)
+	}
+	if !mdadmRanCreate(c) {
+		t.Fatal("a forced create did not run mdadm --create")
+	}
+	cm, _ := out.(*value.Map).GetString("comment")
+	s, _ := cm.(string)
+	if !strings.Contains(s, "force overrode") || !strings.Contains(s, "/dev/sdb") || !strings.Contains(s, "ext4") {
+		t.Errorf("the comment does not say what force overrode: %q", s)
+	}
+	if strings.Contains(s, "/dev/sda holds") {
+		t.Errorf("the comment names a clean member as overridden: %q", s)
+	}
+}

@@ -50,12 +50,33 @@ var MdadmConfPaths = []string{"/etc/mdadm/mdadm.conf", "/etc/mdadm.conf"}
 //
 // # What `create` will not do without `force`
 //
-// `mdadm --create` overwrites whatever is on the member devices. This
-// module refuses a device that already hosts an array, and refuses a
-// member that already carries an md superblock (`--examine` succeeds)
-// or that mdadm itself flags as holding a filesystem, unless the call
-// passes `force`. `--run` is always passed so mdadm does not stop on
-// its interactive prompt.
+// `mdadm --create` overwrites whatever is on the member devices. Without
+// `force` this module refuses:
+//
+//   - an array device that is already an assembled array (that one is a
+//     no-change, not an error: the array is there);
+//   - a member or spare whose `mdadm --examine` finds an md superblock;
+//   - a member or spare on which `wipefs` lists *any* signature -- a
+//     filesystem, a partition table, an LVM or ZFS member, swap, LUKS,
+//     another RAID member -- see mdadmProbeSignatures;
+//   - a member or spare that could not be probed at all. Either check
+//     failing for any reason other than a clean "nothing here" is a
+//     refusal, not a pass: an unread disk is not an empty one.
+//
+// `--run` is still passed, and that is only sound *because* of the probe
+// above. mdadm's own Create looks for a filesystem or partition table on
+// each member and asks "Continue creating array?"; `--run` suppresses
+// that question and answers it yes. Without `--run` the question would
+// be read from this process's stdin, which is /dev/null, so it would be
+// answered by EOF -- and mdadm asks the same question for things that are
+// not a danger at all (the RAID1 "metadata at the start and may not be
+// suitable as a boot device" note), so dropping `--run` would trade a
+// silent overwrite for a create that cannot run unattended. So the
+// question mdadm would have asked is asked here first, by a probe whose
+// answer this module reads, and `--run` only reaches mdadm once it has
+// said "nothing here" for every device, or the caller passed `force`.
+// DIVERGENCE 5.290 is how the old wording here claimed a filesystem check
+// that did not exist.
 func registerMdadm(r *Registries) {
 	r.Exec.Add(
 		exec.Module{
@@ -136,7 +157,8 @@ func registerMdadm(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "mdadm", Function: "create",
-				Doc: "Create a new array. Refuses a device that is already an array, or a member that already holds one, without force.",
+				Doc: "Create a new array. Without force, refuses a member or spare that carries an md superblock or any " +
+					"signature `wipefs` lists (a filesystem, a partition table, an LVM or ZFS member), or that could not be probed.",
 				Params: []signature.Param{
 					req("device", signature.Path, "The array device to create, such as /dev/md0."),
 					req("level", signature.String, "The RAID level: 0, 1, 4, 5, 6, 10, or a name like raid1."),
@@ -146,7 +168,8 @@ func registerMdadm(r *Registries) {
 					opt("name", signature.String, "", "A name for the array, stored in the superblock."),
 					opt("chunk", signature.String, "", "Chunk size, such as 512K. For striped levels."),
 					opt("assume_clean", signature.Bool, false, "Skip the initial resync. Only safe on devices known to be zeroed or when the data is disposable."),
-					opt("force", signature.Bool, false, "Overwrite an existing md superblock or a detected filesystem on a member."),
+					opt("force", signature.Bool, false, "Create even over a member whose `mdadm --examine` finds an md superblock, "+
+						"on which `wipefs` lists a signature, or which could not be probed. Whatever was found is named in the comment."),
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
@@ -1012,21 +1035,33 @@ func mdadmCreateFn(c *exec.Context, args *value.Map) (any, error) {
 	if mdadmArrayExists(c, opts.Device) {
 		return mdadmMutateResult(c, false, fmt.Sprintf("%s is already an assembled array.", opts.Device), nil), nil
 	}
-	// A member that already carries an md superblock is refused unless
-	// force -- creating over it would abandon whatever array it was part
-	// of.
-	if !opts.Force {
-		for _, dev := range append(append([]string{}, opts.Devices...), opts.Spares...) {
-			ex, err := mdadmExamineFn(c, value.MapOf("device", dev))
-			if err != nil {
-				continue
+	// Every member and spare is probed before anything is written. Without
+	// force, anything found -- or any probe that could not give a clean
+	// answer -- is a refusal. With force the same probes run, so that the
+	// comment can say what was overwritten rather than leaving the
+	// operator to find out from the data that is no longer there.
+	var overridden []string
+	for _, dev := range append(append([]string{}, opts.Devices...), opts.Spares...) {
+		found, err := mdadmMemberInUse(c, dev)
+		if err != nil {
+			if !opts.Force {
+				return nil, fmt.Errorf("%s could not be checked for existing data, so nothing was created: %w. "+
+					"Pass force to create over it unchecked", dev, err)
 			}
-			if has, _ := ex.(*value.Map).GetString("has_superblock"); has == true {
-				return nil, fmt.Errorf(
-					"%s already carries an md superblock; it may belong to another array. "+
-						"Pass force to overwrite it", dev)
-			}
+			overridden = append(overridden, fmt.Sprintf("%s was not checked (%v)", dev, err))
+			continue
 		}
+		if found == "" {
+			continue
+		}
+		if !opts.Force {
+			return nil, fmt.Errorf("%s already %s, so nothing was created. Pass force to overwrite it", dev, found)
+		}
+		overridden = append(overridden, dev+" "+found)
+	}
+	forceNote := ""
+	if len(overridden) > 0 {
+		forceNote = " force overrode: " + strings.Join(overridden, "; ") + "."
 	}
 
 	levelName := mdadmLevelName(opts.Level)
@@ -1034,13 +1069,97 @@ func mdadmCreateFn(c *exec.Context, args *value.Map) (any, error) {
 		"level", levelName, "devices", opts.Devices)))
 	if c.Test {
 		return mdadmMutateResult(c, true, fmt.Sprintf(
-			"Array %s would be created as %s across %s.", opts.Device, levelName, strings.Join(opts.Devices, ", ")), change), nil
+			"Array %s would be created as %s across %s.%s", opts.Device, levelName, strings.Join(opts.Devices, ", "),
+			forceNote), change), nil
 	}
 	if _, err := mdadmRun(c, argv); err != nil {
 		return nil, err
 	}
 	return mdadmMutateResult(c, true, fmt.Sprintf(
-		"Array %s was created as %s across %s.", opts.Device, levelName, strings.Join(opts.Devices, ", ")), change), nil
+		"Array %s was created as %s across %s.%s", opts.Device, levelName, strings.Join(opts.Devices, ", "),
+		forceNote), change), nil
+}
+
+// mdadmMemberInUse reports what, if anything, already lives on a
+// prospective member: "" for nothing, a phrase such as "carries an md
+// superblock" or "holds signatures: ext4 0x438" otherwise, and an error
+// when it could not be told.
+//
+// The md superblock is asked of mdadm first, because that refusal has
+// the most useful thing to say (it may be another array's member). It is
+// not enough on its own: `--examine` knows md superblocks and nothing
+// else, so a disk holding ext4, XFS, an LVM PV, a ZFS vdev or just a
+// partition table answers "No md superblock detected" and, before 5.290,
+// went straight on to a `--create --run` that wrote over it.
+func mdadmMemberInUse(c *exec.Context, dev string) (string, error) {
+	ex, err := mdadmExamineFn(c, value.MapOf("device", dev))
+	if err != nil {
+		return "", err
+	}
+	if has, _ := ex.(*value.Map).GetString("has_superblock"); has == true {
+		return "carries an md superblock; it may belong to another array", nil
+	}
+	sigs, err := mdadmProbeSignatures(c, dev)
+	if err != nil {
+		return "", err
+	}
+	if len(sigs) > 0 {
+		return "holds signatures (" + strings.Join(sigs, ", ") + ")", nil
+	}
+	return "", nil
+}
+
+// mdadmProbeSignatures lists the on-disk signatures `wipefs` finds on a
+// device, one string per signature.
+//
+// # Why wipefs, and not blkid
+//
+// Both are util-linux and both use libblkid. `wipefs` is used because the
+// contract its manual describes separates the two answers this needs
+// separated: exit 0 with nothing listed for a device with no signatures,
+// non-zero when the device could not be opened or probed. `blkid -p`
+// documents exit 2 for "nothing identified", and whether a device it
+// could not open also lands on 2 was not established -- if it does,
+// "empty" and "unreadable" would differ only in stderr text. Neither
+// contract has yet been watched on a real machine for this (5.290). `wipefs`
+// without `-a`/`-o` only lists; `--no-act` is passed as well so that no
+// later edit adding an erase option can make this probe write.
+//
+// # How the output is read: by whether there is any
+//
+// `--noheadings --output TYPE,OFFSET` prints one line per signature. The
+// only decision made from it is "empty or not", so a column layout that
+// differs between util-linux versions cannot turn a found signature into
+// a clean answer: every non-blank line is reported as a signature, and a
+// line this does not understand refuses the create rather than passing
+// it. The lines are only quoted back to the operator, never parsed for
+// meaning.
+//
+// No output of a real wipefs is held as a fixture yet: the tests use
+// output written to this shape and say so, and DIVERGENCE 5.290 lists
+// what a lab run has to capture.
+func mdadmProbeSignatures(c *exec.Context, dev string) ([]string, error) {
+	if c.Which("wipefs") == "" {
+		return nil, errors.New("this node has no `wipefs` (util-linux) to look for an existing filesystem or " +
+			"partition table")
+	}
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"wipefs", "--no-act", "--noheadings", "--output", "TYPE,OFFSET", dev},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("wipefs could not be run: %w", err)
+	}
+	if res.Code != 0 {
+		return nil, fmt.Errorf("`wipefs %s` exited %d: %s", dev, res.Code, firstLine(strings.TrimSpace(res.Stderr+res.Stdout)))
+	}
+	var sigs []string
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		if f := strings.Join(strings.Fields(line), " "); f != "" {
+			sigs = append(sigs, f)
+		}
+	}
+	return sigs, nil
 }
 
 // mdadmLevelName renders a level for a message: a bare number gains the
