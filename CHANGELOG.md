@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `cpan.module_version` no longer runs a module name as Perl
+
+`cpan.module_version` put the module name into the Perl program it ran.
+A name such as `Carp;BEGIN{...}` ran that code as root, from a function
+that a read-only grant reaches. The name must now be a Perl package
+name, such as `JSON::PP`. Any other name is refused with an error, and
+nothing runs. A valid name gives the same version as before. See
+DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

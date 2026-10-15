@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -353,7 +354,7 @@ func registerCpan(r *Registries) {
 				Doc: "Return the installed version of a Perl module, or the empty string. " +
 					"`cpan.version` reports the tool's own version.",
 				Params: []signature.Param{
-					req("module", signature.String, "The module name."),
+					req("module", signature.String, "The module name, such as `JSON::PP`. A name that is not a Perl package name is refused."),
 				},
 				TestMode: signature.TestNotApplicable,
 				Section:  "15.4",
@@ -362,8 +363,11 @@ func registerCpan(r *Registries) {
 				// perl answers this directly and cheaply; `cpan -D` starts
 				// a session and reaches the network.
 				mod := states.Str(args, "module", "")
+				if err := checkPerlModuleName(mod); err != nil {
+					return nil, err
+				}
 				res, err := c.Run(exec.Command{
-					Argv:           []string{"perl", "-M" + mod, "-e", "print $" + mod + "::VERSION"},
+					Argv:           perlModuleVersionArgv(mod),
 					IgnoreExitCode: true,
 				})
 				if err != nil || res.Code != 0 {
@@ -373,6 +377,45 @@ func registerCpan(r *Registries) {
 			},
 		},
 	)
+}
+
+// perlModuleName is the Perl package-name grammar this build accepts:
+// identifiers of ASCII letters, digits and underscores, not starting with
+// a digit, joined by `::`. It is narrower than perl's own -- the old `'`
+// separator, a leading `::`, and Unicode identifiers are all refused --
+// and every module on CPAN is named inside it.
+var perlModuleName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$`)
+
+// checkPerlModuleName refuses a name that is not a Perl package name.
+//
+// cpan.module_version used to build `perl -M<name> -e 'print $<name>::VERSION'`,
+// so the name was Perl source twice over. `Carp;BEGIN{print "INJECTED\n"}`
+// ran its BEGIN block, as root, from a function declared non-mutating and
+// not arbitrary_code -- a read-only grant was a root shell. DIVERGENCE 5.290.
+//
+// A refusal is an error rather than the empty string the function returns
+// for a module that is not installed: "not installed" would be a claim about
+// the machine, and nothing was asked of it.
+func checkPerlModuleName(name string) error {
+	if !perlModuleName.MatchString(name) {
+		return fmt.Errorf("%q is not a Perl module name; a name is identifiers joined by ::, such as JSON::PP", name)
+	}
+	return nil
+}
+
+// perlModuleVersionArgv asks perl for a module's $VERSION with the name as
+// an argument rather than as source. The validation above is what stops
+// an injection; this is the second wall, so that a name which ever gets
+// past it is data perl reads from @ARGV and not code perl compiles. It also
+// uses require rather than -M, which would call the module's import.
+//
+// Checked against perl 5.44.0 on macOS: for Carp, JSON::PP, List::Util and
+// CPAN it prints what `perl -M<name> -e 'print $<name>::VERSION'` printed,
+// and for a module that is not installed it exits 2, as -M did.
+func perlModuleVersionArgv(name string) []string {
+	return []string{"perl", "-e",
+		`no strict "refs"; my $m = shift; (my $f = $m) =~ s{::}{/}g; require "$f.pm"; print ${"${m}::VERSION"}`,
+		"--", name}
 }
 
 // ---- maven ----
