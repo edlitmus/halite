@@ -23801,6 +23801,134 @@ an unserved heading.
 
 
 
+### 5.289 The API's unit stopped an API that a restart would have fixed
+
+The mirror image of 5.287. `halite-api serve` exited 1 for every failure:
+a configuration it could not use, and a listener that was only early.
+`halite-api.service` has `Restart=on-failure` and carried
+`RestartPreventExitStatus=1`, so it stopped on both. An API whose
+`listen` named an address that DHCP or a secondary interface had not
+brought up at boot exited once and stayed down. So did one whose port a
+previous process still held, and one whose `Serve` failed while it was
+running. Nobody reported this from a host. 5.287 found it by reading the
+API's unit next to the hub's.
+
+**What `serve` exits for.** As 5.287 did for the hub, every exit
+reachable from `runServe` was read before the unit was changed:
+
+- `setup`: the configuration does not load, or the log does not open.
+- `apitoken.Open`: the token store under `state_dir` cannot be made or
+  opened.
+- `loadAccounts`, `loadPolicy`: the file exists and cannot be read or
+  does not parse. (A missing file is a warning, not an exit.)
+- `hubClient`: no operator certificate, no CA, no `hub`. It reads files
+  only. The hub is not contacted at start-up.
+- `loadHooks`: the hooks block does not parse, or a `secret_file` is
+  refused.
+- `oidcProvider`, `ldapClient`, `roleMap`, and their `_file` secrets:
+  settings that do not validate. `oidc.New` does not fetch the
+  discovery document (that waits for the first login), and `ldap.New`
+  does not dial (that waits for the first bind).
+- `servingCertificate`: no `tls_cert`/`tls_key`, or a pair that does not
+  load.
+- `api.Listen`: the listener.
+- The `return 1` after `srv.Serve`, while it is running.
+- `main`: a command line that does not parse exits 64, as before.
+
+The goroutines `serve` starts (`pruneTokens`, the certificate reloaders)
+log and do not exit. So the only network that `serve` touches before it
+is serving is its own listener. A hub, an identity provider or a
+directory that is down at boot is not a start-up failure at all.
+
+**The change** is 5.287's, applied to the API. `runServe` calls
+`cli.ConfigFaults()` first and ends the phase just before `srv.Serve`.
+Every `cli.Fatalf` above exits 78 inside the phase. The listener exits 1
+through `cli.Exitf` when `cli.ListenMayRecover` says that a restart can
+fix it (`EADDRNOTAVAIL`, `EADDRINUSE`, a DNS error), and 78 otherwise. A
+failure while it is serving returns 1. The unit now carries
+`RestartPreventExitStatus=78`.
+
+`listenMayRecover` was the hub's private function. It has moved to
+`internal/cli` as `ListenMayRecover`, and both services call it, so that
+they cannot come to disagree about which listener failures a restart
+fixes. 5.287's text names it by its old name.
+
+The same 5.287 judgement holds here: a token store that cannot be opened
+at start-up exits 78. Every failure of it that has been seen was the
+account or the sandbox (5.217, the unit's `StateDirectory=`), which a
+restart does not change. An NFS `state_dir` that returns `EIO` at that
+moment now stops the unit. Before, it also stopped the unit, on 1, so
+nothing became worse there.
+
+**The node was audited too, and was not changed.** 5.287 left open
+whether `halite-node connect` exits 1 for anything transient. Its unit
+stops on 1. Its exits were read:
+
+- The reconnect loop returns 1 only on `errRevoked`, which only an
+  explicit revocation message from the hub produces, and on `hub_tries`
+  reached. Both are deliberate. An unreachable hub, a refused handshake
+  and a stream that ends are logged and retried with backoff.
+- Start-up `cli.Fatalf`s (`setup`, not enrolled, `startBeacons`,
+  `startSchedule`, `openReturner`, `signerKeys`, extension pins) are
+  configuration. The returners connect lazily (5.287 checked this for
+  the hub's, and it is the same package).
+- **One open item.** `hubClient` runs again on every reconnect and in
+  the goroutines that talk to the hub (grains refresh, anchoring,
+  returns). It calls `cli.Fatalf` if the pinned CA or the node's own key
+  pair cannot be read. This exits 1 while the node is running, and the
+  unit stops. It is a local file fault, not the network. Renewal and
+  the key-pair read both hold the identity lock, and renewal does not
+  rewrite the CA, which is read before the lock is taken. So no
+  transient path to it is known. But it is a third way for a running node to exit
+  1, and chapter 12 of the handbook says there are two. It was not
+  reproduced, and it was not changed.
+- `hubClient` fetches the CA over the network (`transport.FetchCA`) only
+  when none is pinned and `hub_ca_file` is not set. That is a node that
+  has not enrolled, and `connect` refuses it in any case.
+
+**How it is tested.** `cmd/halite-api/serve_exit_test.go` runs a real
+`serve`, re-executed from the test binary, on a fixture with a CA, an
+operator certificate, a serving certificate and a hub at TEST-NET-1 that
+is never contacted. These must exit 78, each checked by its message:
+
+- no serving certificate;
+- no `hub`;
+- a hook with `auth: rot13`;
+- an `oidc_issuer` with no `oidc_role_map`;
+- a listen address with no port.
+
+A held loopback port and `192.0.2.1` must each exit 1 at the listener. A
+third test reads `halite-api.service` and requires `Restart=on-failure`,
+`78` in `RestartPreventExitStatus=`, and not `1`. Each was broken on
+purpose, and each failed:
+
+- With the previous `serve.go` and unit restored, all five configuration
+  cases exited 1 and the unit test failed. The two listener cases passed,
+  because the old code also exited 1 there. The fault was the unit.
+- With `ConfigFaults` removed, all five configuration cases exited 1.
+- With the listener always fatal, both listener cases exited 78.
+- With the unit's `RestartPreventExitStatus=` line removed, the unit test
+  failed.
+
+The hub's 5.287 tests pass with the function moved.
+
+**Not verified.**
+
+- **Not run under systemd.** No unit was started under a real service
+  manager for this change. That `=78` stops the unit and that 1 restarts
+  it comes from `systemd.service(5)`, not from a run.
+  `TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir` starts the
+  shipped unit under a real systemd, but it runs `token list` with
+  `Restart=no`, so it does not test this. It was not run either.
+- **macOS only.** The tests ran on macOS (Darwin 25.6), not on Linux or
+  FreeBSD. CI runs them on all four platforms. On Windows the listener
+  test skips, for the reason 5.287 gives.
+- **A failure while serving.** No test makes `srv.Serve` return an error
+  that is not `http.ErrServerClosed`. That this path returns 1 was read
+  from the code, not run.
+- **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
+  hub. It never restarted on any status, so it is unchanged.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

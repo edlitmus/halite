@@ -22,7 +22,7 @@ RestartSec=5s
 # times on a missing extension -- so 78 stops the unit and leaves the
 # message where it can be read.
 #
-# Not 1, as the API's and the node's units use: the hub exits 1 for a
+# Not 1, as the node's unit uses: the hub exits 1 for a
 # listen address that is not on the host yet or a port still held, and
 # for a failure while it is serving, and a restart is the fix for those.
 RestartPreventExitStatus=78

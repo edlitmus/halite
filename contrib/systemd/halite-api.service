@@ -17,12 +17,18 @@ ExecStart=/usr/local/bin/halite-api serve --config /etc/halite/api.yaml
 # Changing configuration is a restart.
 Restart=on-failure
 RestartSec=5s
-# `serve` exits 1 for the things a restart cannot fix: no operator
-# certificate, no serving certificate, a hooks block that will not parse.
+# `serve` exits 78 (sysexits' EX_CONFIG) for the things a restart cannot
+# fix: no operator certificate, no serving certificate, a hooks block or
+# a role map that will not parse, a token store it may not write.
 # Restarting on those is a loop that fills the journal and tells the
-# operator nothing, so exit 1 stops the unit and leaves the message where
-# it can be read.
-RestartPreventExitStatus=1
+# operator nothing, so 78 stops the unit and leaves the message where it
+# can be read.
+#
+# Not 1, which this unit used to name: `serve` exits 1 for a listen
+# address that is not on the host yet, a port still held, and a failure
+# while it is serving, and a restart is the fix for those. With =1 an API
+# whose address came up late at boot stayed down. DIVERGENCE 5.289.
+RestartPreventExitStatus=78
 
 # The API talks to the hub and to HTTP clients and touches nothing else,
 # so it takes the same sandbox as the hub.
