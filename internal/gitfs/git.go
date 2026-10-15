@@ -228,7 +228,7 @@ func (o *Options) verify(ctx context.Context, dir string, remote Remote, ref Ref
 	// has (`--mirror`, `fetch --tags`) whatever gitfs_ref_types says,
 	// so anybody who can push a tag called `production` at an old
 	// signed commit could have that commit verified while an unsigned
-	// tip on the branch `production` was served (DIVERGENCE 5.290).
+	// tip on the branch `production` was served (DIVERGENCE 5.292).
 	// A full object id has no such reading.
 	//
 	// And `--` before it, because the argument came from the remote.
