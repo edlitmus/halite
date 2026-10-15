@@ -252,19 +252,29 @@ func (p *Provider) get(ctx context.Context, endpoint string, headers map[string]
 // SPEC 13.4 requires: an ARN or an endpoint built for the commercial
 // partition is wrong in GovCloud and in China, and wrong in a way that
 // fails at the worst time.
-func (p *Provider) stsEndpoint() string {
+//
+// The region goes through ServiceURL, which refuses anything that is
+// not a region name before it becomes part of a host. Here the region
+// is the operator's configuration rather than a node's, so this is the
+// cheaper half of DIVERGENCE 5.290 -- but a signed STS call is the one
+// that carries the long-lived key's signature, and the place a region
+// becomes a host is where it is checked, whoever supplied it. An
+// unknown partition keeps its old meaning (the commercial suffix), so
+// the other callers of this provider see no change in what they reach.
+func (p *Provider) stsEndpoint() (string, error) {
 	region := p.Region
 	if region == "" {
 		region = "us-east-1"
 	}
-	switch p.Partition {
-	case "aws-cn":
-		return "https://sts." + region + ".amazonaws.com.cn"
-	case "aws-us-gov":
-		return "https://sts." + region + ".amazonaws.com"
-	default:
-		return "https://sts." + region + ".amazonaws.com"
+	suffix := "amazonaws.com"
+	if p.Partition == "aws-cn" {
+		suffix = "amazonaws.com.cn"
 	}
+	u, err := ServiceURL("sts", region, suffix)
+	if err != nil {
+		return "", fmt.Errorf("the sts endpoint: %w", err)
+	}
+	return u.String(), nil
 }
 
 // assumeRoleResult is the shape both STS calls answer with.
@@ -319,7 +329,11 @@ func (p *Provider) assumeRole(ctx context.Context, base Credentials) (Credential
 	form.Set("RoleArn", p.RoleARN)
 	form.Set("RoleSessionName", p.sessionName())
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.stsEndpoint(),
+	endpoint, err := p.stsEndpoint()
+	if err != nil {
+		return Credentials{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
 		strings.NewReader(form.Encode()))
 	if err != nil {
 		return Credentials{}, err
@@ -346,7 +360,11 @@ func (p *Provider) assumeWithWebIdentity(ctx context.Context) (Credentials, erro
 	form.Set("RoleSessionName", p.sessionName())
 	form.Set("WebIdentityToken", strings.TrimSpace(string(token)))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.stsEndpoint(),
+	endpoint, err := p.stsEndpoint()
+	if err != nil {
+		return Credentials{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
 		strings.NewReader(form.Encode()))
 	if err != nil {
 		return Credentials{}, err

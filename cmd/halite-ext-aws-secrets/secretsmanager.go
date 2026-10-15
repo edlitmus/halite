@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -61,20 +62,43 @@ func (c *secretsClient) client() *http.Client {
 	return &http.Client{Timeout: timeout}
 }
 
-// host is the endpoint for a region.
+// endpoint is the URL a GetSecretValue for a region is posted to.
 //
 // Built from the partition rather than hardcoded to `amazonaws.com`: an
 // endpoint built for the commercial partition is wrong in GovCloud and
 // in China, and this estate runs in GovCloud.
-func (c *secretsClient) host(region string) string {
+//
+// And built as a URL, from a region that has been checked, rather than
+// by concatenation. It was `"https://secretsmanager." + region + "." +
+// suffix`, and the region could be a node's own `region` grain, so a
+// node reporting `x@evil.example/` had the hub post a SigV4-signed
+// request -- access key ID in the Authorization header, session token
+// in X-Amz-Security-Token -- to evil.example, and put whatever came
+// back into that node's pillar (DIVERGENCE 5.290). Whoever supplied the
+// region, this is where it becomes part of a host, so this is where it
+// is checked: awsauth.ServiceURL refuses anything that is not a region
+// name and then confirms the URL parses back to exactly the host meant.
+//
+// The region is checked when an endpoint is configured too. It is not
+// in the host then, but it is in the signature's credential scope, and
+// a value that is not a region has no business there either.
+func (c *secretsClient) endpoint(region string) (*url.URL, error) {
 	if c.Endpoint != "" {
-		return strings.TrimSuffix(c.Endpoint, "/")
+		if err := awsauth.ValidRegion(region); err != nil {
+			return nil, err
+		}
+		u, err := url.Parse(strings.TrimSuffix(c.Endpoint, "/") + "/")
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return nil, fmt.Errorf("the configured endpoint %s is not an http(s) URL",
+				awsauth.Bounded(c.Endpoint))
+		}
+		return u, nil
 	}
-	suffix := "amazonaws.com"
-	if c.Partition == "aws-cn" {
-		suffix = "amazonaws.com.cn"
+	suffix, err := awsauth.PartitionSuffix(c.Partition)
+	if err != nil {
+		return nil, err
 	}
-	return "https://secretsmanager." + region + "." + suffix
+	return awsauth.ServiceURL("secretsmanager", region, suffix)
 }
 
 // secretValue is the part of the GetSecretValue response that is used.
@@ -96,6 +120,15 @@ type apiError struct {
 // secretID is a name or an ARN; the service accepts both, which is why
 // the configuration does not need to say which it was given.
 func (c *secretsClient) GetSecretValue(ctx context.Context, secretID, region, stage string) (string, error) {
+	// The endpoint first, before credentials are resolved: a region
+	// that cannot be one is refused before anything is fetched, signed
+	// or sent, including from the metadata service or STS.
+	u, err := c.endpoint(region)
+	if err != nil {
+		return "", err
+	}
+	endpoint := strings.TrimSuffix(u.String(), "/")
+
 	creds, err := c.Provider.Retrieve(ctx)
 	if err != nil {
 		return "", fmt.Errorf("resolving AWS credentials: %w", err)
@@ -110,8 +143,7 @@ func (c *secretsClient) GetSecretValue(ctx context.Context, secretID, region, st
 		return "", err
 	}
 
-	endpoint := c.host(region)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
