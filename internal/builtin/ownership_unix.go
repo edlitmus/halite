@@ -161,3 +161,18 @@ func legacyHash(data []byte, algorithm string) (string, error) {
 	}
 	return "", fmt.Errorf("unsupported legacy hash %q", algorithm)
 }
+
+// applyOwnershipIn is applyOwnership for a name inside an os.Root, so the
+// chown cannot be steered outside it by a symlinked directory on the way.
+// archive.extracted runs it as root over names an archive chose, under a
+// destination that it is about to hand to `user:` -- the account that can
+// swap a directory for a link between any check and the chown. The root
+// resolves each component at the moment of the call, and Lchown does not
+// follow the last one. DIVERGENCE 5.290.
+func applyOwnershipIn(root *os.Root, name, wantUser, wantGroup string) error {
+	uid, gid, err := resolveOwner(wantUser, wantGroup)
+	if err != nil {
+		return err
+	}
+	return root.Lchown(name, uid, gid)
+}

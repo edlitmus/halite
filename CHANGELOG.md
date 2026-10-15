@@ -21,6 +21,23 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An archive can no longer write or delete outside its destination
+
+`archive.extracted` and `archive.extract` checked each entry's name and
+each symlink's target as text, then wrote by path. An archive whose own
+symlinks were each "inside" by name could chain them to write a file
+above the destination, or to delete a file outside it and leave a
+symlink in its place, even with `overwrite` unset. The ownership pass
+for `user:`/`group:` could be steered the same way, and so could a
+symlink already on disk under the destination. Every write, directory,
+removal, symlink and `chown` now goes through an `os.Root` on the
+destination, so a symlink is followed only while it stays inside. An
+extraction that would leave is refused and names the entry. A symlink
+entry now honours `overwrite`, as a file does: with it unset, an
+existing symlink is left alone where it used to be replaced. Archives
+whose links stay inside, such as `libfoo.so -> libfoo.so.1`, extract
+as before. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

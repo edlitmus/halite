@@ -4,12 +4,15 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -21,7 +24,9 @@ import (
 // Extraction is the dangerous half, and it is done with archive/tar and
 // archive/zip rather than by shelling out to tar, so that the containment
 // check is ours: an entry named ../../etc/passwd, or a symlink pointing
-// outside the destination, is refused by name. That is the same property
+// outside the destination, is refused by name -- and every write then goes
+// through an os.Root on the destination, so a symlink that is inside by
+// name but outside on disk is refused too (DIVERGENCE 5.290). That is the same property
 // SPEC section 13.5 requires of the file server, applied to an archive.
 func registerArchive(r *Registries) {
 	r.Exec.Add(
@@ -165,13 +170,33 @@ const maxArchiveEntry = 1 << 30
 
 // extractArchive writes an archive's contents into dest, refusing any
 // entry that would land outside it.
+//
+// Every write, mkdir, remove, and symlink goes through an os.Root opened
+// on the destination, not through a path. The name check in
+// containedEntry is lexical, and an archive is a sequence of operations
+// on a disk, not a list of names: `a/b -> ..` and then `a/b/L -> ../..`
+// are each lexically inside the destination, and together make `L/x` a
+// path two levels above it. The extractor that checked names and then
+// wrote paths wrote there, and removed a file outside the destination to
+// put a symlink in its place, overwrite or no. The root resolves each
+// component at the moment of the operation and refuses one that leaves,
+// so a link already on disk -- planted by the account the destination was
+// handed to, or left by an older run -- cannot steer a write either.
+// DIVERGENCE 5.290.
 func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) {
 	absDest, err := filepath.Abs(dest)
 	if err != nil {
 		return nil, err
 	}
+	root, err := openExtractRoot(absDest, dryRun)
+	if err != nil {
+		return nil, err
+	}
+	if root != nil {
+		defer root.Close()
+	}
 	if isZip(src) {
-		return extractZip(src, absDest, overwrite, dryRun)
+		return extractZip(src, absDest, root, overwrite, dryRun)
 	}
 
 	f, tr, closers, err := openTar(src)
@@ -180,7 +205,7 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 	}
 	defer closeAll(f, closers)
 
-	var written []string
+	var written, links []string
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -193,12 +218,13 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 		if err != nil {
 			return written, err
 		}
+		rel := relEntry(absDest, target)
 
 		switch h.Typeflag {
 		case tar.TypeDir:
 			if !dryRun {
-				if err := os.MkdirAll(target, os.FileMode(h.Mode).Perm()|0o700); err != nil {
-					return written, err
+				if err := root.MkdirAll(rel, os.FileMode(h.Mode).Perm()|0o700); err != nil {
+					return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
 				}
 			}
 			written = append(written, h.Name)
@@ -206,19 +232,43 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 		case tar.TypeSymlink:
 			// A symlink is only written when its target stays inside the
 			// destination. A link to /etc/shadow inside an archive is how
-			// a later file write escapes.
+			// a later file write escapes. This lexical check is the early,
+			// readable refusal that a dry run can also make; the one that
+			// holds is linkStaysInside below, after the link exists, because
+			// what `../..` means depends on what its parent turned out to be.
 			if _, err := containedEntry(absDest, resolveLinkTarget(h.Name, h.Linkname)); err != nil {
 				return written, fmt.Errorf("archive entry %q links outside the destination: %w", h.Name, err)
 			}
-			if !dryRun {
-				if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-					return written, err
-				}
-				os.Remove(target)
-				if err := os.Symlink(h.Linkname, target); err != nil {
-					return written, err
+			exists, err := entryExists(root, rel)
+			if err != nil {
+				return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
+			}
+			// overwrite governs a symlink as it governs a file. It used to
+			// be removed unconditionally, which is how an archive with
+			// overwrite unset deleted a file it had steered itself to.
+			if exists && !overwrite {
+				continue
+			}
+			if dryRun {
+				written = append(written, h.Name)
+				continue
+			}
+			if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+				return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
+			}
+			if exists {
+				if err := root.Remove(rel); err != nil {
+					return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
 				}
 			}
+			if err := root.Symlink(h.Linkname, rel); err != nil {
+				return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
+			}
+			if err := linkStaysInside(root, rel); err != nil {
+				_ = root.Remove(rel)
+				return written, fmt.Errorf("archive entry %q links outside the destination: %w", h.Name, err)
+			}
+			links = append(links, rel)
 			written = append(written, h.Name)
 
 		case tar.TypeReg:
@@ -226,7 +276,11 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 				return written, fmt.Errorf("archive entry %q is %d bytes, past the %d byte limit", h.Name, h.Size, maxArchiveEntry)
 			}
 			if !overwrite {
-				if _, err := os.Lstat(target); err == nil {
+				exists, err := entryExists(root, rel)
+				if err != nil {
+					return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
+				}
+				if exists {
 					continue
 				}
 			}
@@ -234,8 +288,8 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 				written = append(written, h.Name)
 				continue
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return written, err
+			if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+				return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
 			}
 			data, err := io.ReadAll(io.LimitReader(tr, maxArchiveEntry+1))
 			if err != nil {
@@ -248,22 +302,94 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 			if mode == 0 {
 				mode = 0o644
 			}
-			if err := writeAtomic(target, data, mode); err != nil {
-				return written, err
+			if err := atomicfile.WriteIn(root, rel, data, mode); err != nil {
+				return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
 			}
 			written = append(written, h.Name)
 
 		default:
-			// Device nodes, fifos, and the rest are skipped rather than
-			// created: a state tree has no business shipping one, and
-			// creating one from an archive is a privilege question.
+			// Device nodes, fifos, hard links, and the rest are skipped
+			// rather than created: a state tree has no business shipping
+			// one, and creating one from an archive is a privilege
+			// question. A hard link in particular is never made, so its
+			// Linkname is never resolved against anything.
 			continue
+		}
+	}
+	// A link that dangled when it was made can resolve outside once a
+	// later entry has supplied the rest of its path, so every link this
+	// run made is checked again against the finished tree.
+	for _, rel := range links {
+		if err := linkStaysInside(root, rel); err != nil {
+			_ = root.Remove(rel)
+			return written, fmt.Errorf("archive entry %q links outside the destination: %w", filepath.ToSlash(rel), err)
 		}
 	}
 	return written, nil
 }
 
-func extractZip(src, absDest string, overwrite, dryRun bool) ([]string, error) {
+// openExtractRoot opens the destination as an os.Root.
+//
+// A dry run does not create the destination, and a destination that does
+// not exist has nothing in it, so it gets no root and entryExists reports
+// every entry as missing. A real run creates it first, as the path-based
+// extractor did implicitly through its MkdirAll of each parent.
+func openExtractRoot(absDest string, dryRun bool) (*os.Root, error) {
+	if dryRun {
+		root, err := os.OpenRoot(absDest)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return root, err
+	}
+	if err := os.MkdirAll(absDest, 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenRoot(absDest)
+}
+
+// relEntry is a contained target expressed relative to the destination,
+// which is the form an os.Root takes.
+func relEntry(absDest, target string) string {
+	rel, err := filepath.Rel(absDest, target)
+	if err != nil {
+		return "."
+	}
+	return rel
+}
+
+// entryExists reports whether something is already at rel, without
+// following rel itself. An error that is not "it is not there" -- which
+// is what a parent that is a symlink out of the root produces -- is
+// returned rather than read as absent, because absent means "write it".
+func entryExists(root *os.Root, rel string) (bool, error) {
+	if root == nil {
+		return false, nil
+	}
+	_, err := root.Lstat(rel)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
+// linkStaysInside resolves the symlink at rel the way the kernel will,
+// through whatever is on disk now, and refuses it if that leaves the
+// root. A link that does not resolve to anything yet is allowed: an
+// archive may ship a link before its target, and the final pass in
+// extractArchive checks it again once the target could exist.
+func linkStaysInside(root *os.Root, rel string) error {
+	_, err := root.Stat(rel)
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+func extractZip(src, absDest string, root *os.Root, overwrite, dryRun bool) ([]string, error) {
 	zr, err := zip.OpenReader(src)
 	if err != nil {
 		return nil, err
@@ -276,17 +402,22 @@ func extractZip(src, absDest string, overwrite, dryRun bool) ([]string, error) {
 		if err != nil {
 			return written, err
 		}
+		rel := relEntry(absDest, target)
 		if zf.FileInfo().IsDir() {
 			if !dryRun {
-				if err := os.MkdirAll(target, 0o755); err != nil {
-					return written, err
+				if err := root.MkdirAll(rel, 0o755); err != nil {
+					return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)
 				}
 			}
 			written = append(written, zf.Name)
 			continue
 		}
 		if !overwrite {
-			if _, err := os.Lstat(target); err == nil {
+			exists, err := entryExists(root, rel)
+			if err != nil {
+				return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)
+			}
+			if exists {
 				continue
 			}
 		}
@@ -306,15 +437,15 @@ func extractZip(src, absDest string, overwrite, dryRun bool) ([]string, error) {
 		if int64(len(data)) > maxArchiveEntry {
 			return written, fmt.Errorf("archive entry %q exceeds the %d byte limit", zf.Name, maxArchiveEntry)
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return written, err
+		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+			return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)
 		}
 		mode := zf.Mode().Perm()
 		if mode == 0 {
 			mode = 0o644
 		}
-		if err := writeAtomic(target, data, mode); err != nil {
-			return written, err
+		if err := atomicfile.WriteIn(root, rel, data, mode); err != nil {
+			return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)
 		}
 		written = append(written, zf.Name)
 	}
@@ -323,6 +454,10 @@ func extractZip(src, absDest string, overwrite, dryRun bool) ([]string, error) {
 
 // containedEntry resolves an archive entry name against the destination
 // and refuses anything that escapes it.
+//
+// It is lexical, and so it is the first check rather than the one that
+// holds: it cannot know that a directory on the way is a symlink. The
+// os.Root every caller then operates through is what knows that.
 func containedEntry(absDest, name string) (string, error) {
 	if filepath.IsAbs(name) || strings.HasPrefix(name, "/") {
 		return "", fmt.Errorf("archive entry %q is an absolute path", name)
@@ -408,12 +543,23 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("The archive %s could not be read: %v", source, err)), nil
 	}
 	missing := make([]string, 0, len(planned))
+	destRoot, err := openExtractRoot(mustAbs(dest), true)
+	if err != nil {
+		return states.False(fmt.Sprintf("%s could not be opened: %v", dest, err)), nil
+	}
+	if destRoot != nil {
+		defer destRoot.Close()
+	}
 	for _, name := range planned {
 		target, err := containedEntry(mustAbs(dest), name)
 		if err != nil {
 			return states.False(fmt.Sprintf("%v", err)), nil
 		}
-		if _, err := os.Lstat(target); err != nil {
+		exists, err := entryExists(destRoot, relEntry(mustAbs(dest), target))
+		if err != nil {
+			return states.False(fmt.Sprintf("The archive entry %q cannot be checked under %s: %v", name, dest, err)), nil
+		}
+		if !exists {
 			missing = append(missing, name)
 		}
 	}
@@ -490,12 +636,32 @@ func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wan
 	if wantUser == "" && wantGroup == "" {
 		return 0, nil
 	}
+	// Through the root, for the reason extractArchive is: the names are
+	// the archive's, and this runs as root, so a directory on the way that
+	// is a symlink out of the destination would hand whatever it points at
+	// to `user:`. DIVERGENCE 5.290.
+	root, err := openExtractRoot(mustAbs(dest), true)
+	if err != nil || root == nil {
+		return 0, err
+	}
+	defer root.Close()
 	fixed := 0
 	for _, name := range entries {
 		target, err := containedEntry(mustAbs(dest), name)
 		if err != nil {
 			return fixed, err
 		}
+		rel := relEntry(mustAbs(dest), target)
+		exists, err := entryExists(root, rel)
+		if err != nil {
+			return fixed, fmt.Errorf("archive entry %q: %w", name, err)
+		}
+		if !exists {
+			continue
+		}
+		// plannedOwnership reads by path; that read is only trusted
+		// because the root has just resolved the same name inside the
+		// destination, and the change itself is made through the root.
 		_, differs, err := plannedOwnership(target, true, wantUser, wantGroup)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -510,7 +676,7 @@ func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wan
 		if c.Test {
 			continue
 		}
-		if err := applyOwnership(target, wantUser, wantGroup); err != nil {
+		if err := applyOwnershipIn(root, rel, wantUser, wantGroup); err != nil {
 			return fixed, err
 		}
 	}

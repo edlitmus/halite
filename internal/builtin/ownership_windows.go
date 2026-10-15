@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -106,4 +107,16 @@ func legacyHash(data []byte, algorithm string) (string, error) {
 		return hex.EncodeToString(sum[:]), nil
 	}
 	return "", fmt.Errorf("unsupported legacy hash %q", algorithm)
+}
+
+// applyOwnershipIn is applyOwnership for a name inside an os.Root. There
+// is no root-relative form of what applyOwnership does here, so the name
+// is checked against the root first and then set by path. That leaves the
+// window between the two that the unix version closes; it is recorded in
+// DIVERGENCE 5.290 rather than claimed closed.
+func applyOwnershipIn(root *os.Root, name, wantUser, wantGroup string) error {
+	if _, err := root.Lstat(name); err != nil {
+		return err
+	}
+	return applyOwnership(filepath.Join(root.Name(), name), wantUser, wantGroup)
 }
