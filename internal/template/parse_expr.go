@@ -39,8 +39,10 @@ package template
 // The other side of the bound is the stack. A Go stack overflow kills
 // the process, so the limit has to be far below where that happens, and
 // TestHostileTemplatesDoNotOverflowTheStack holds it there: an
-// expression at this limit parses and renders on a 4 MiB stack, where
-// the default is 1 GiB.
+// expression at this limit, inside 99 nested statements, parses and
+// renders on a 32 MiB stack, where the default is 1 GiB. It needed
+// between 3 and 4 MiB on darwin/arm64, and more than 4 under -race on
+// windows/amd64.
 const maxExprDepth = 1000
 
 // nest counts one level of the expression parser's recursion. Every cycle

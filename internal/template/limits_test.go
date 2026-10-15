@@ -162,10 +162,23 @@ func TestStatementNestingLimitEdge(t *testing.T) {
 
 const stackHelperEnv = "HALITE_TEMPLATE_STACK_HELPER"
 
+// childStack is the stack the child runs with. It has two jobs that pull
+// in opposite directions. It must be small enough that every hostile
+// shape below overflowed it on the old code: each did at 4, 16 and 32
+// MiB, and `elses` survived 64 MiB, so it is no larger than 32. And it
+// must be large enough that the tallest legal template renders with
+// room to spare on every platform CI runs: at-limit-ifs needed between 3
+// and 4 MiB on darwin/arm64, with and without -race, and overflowed 4
+// MiB under -race on windows-2022/amd64. The first version of this test
+// used 4 MiB and failed there. 32 MiB is eight times what that run is
+// known to have exceeded, and a 32nd of the 1 GiB a goroutine may grow
+// to by default.
+const childStack = 32 << 20
+
 // hostileTemplates are templates the old code could not survive with a
-// 4 MiB stack. Each is under two megabytes of source. ok means the fixed
-// code must parse and render it; otherwise it must refuse it with an
-// ordinary error.
+// childStack stack. Each is under two megabytes of source. ok means the
+// fixed code must parse and render it; otherwise it must refuse it with
+// an ordinary error.
 var hostileTemplates = map[string]struct {
 	src func() string
 	ok  bool
@@ -179,9 +192,8 @@ var hostileTemplates = map[string]struct {
 	"filters":  {src: func() string { return "{{ " + exprShapes["filter-chain"](200_000) + " }}" }},
 	"elses":    {src: func() string { return "{{ " + exprShapes["cond-else"](100_000) + " }}" }},
 	"nestedif": {src: func() string { return strings.Repeat("{% if 1 %}", 100_000) + strings.Repeat("{% endif %}", 100_000) }},
-	// The tallest expressions the limits allow must still render on the
-	// small stack, which is what makes the limit a safe one: 4 MiB is a
-	// 256th of what a goroutine may grow to by default.
+	// The tallest templates the limits allow must still render on the
+	// small stack, which is what makes the limits safe ones.
 	"at-limit-chain":   {src: func() string { return "{{ " + exprShapes["plus-chain"](maxExprDepth) + " }}" }, ok: true},
 	"at-limit-parens":  {src: func() string { return "{{ " + exprShapes["parens"](maxExprDepth) + " }}" }, ok: true},
 	"at-limit-filters": {src: func() string { return "{{ " + exprShapes["filter-chain"](maxExprDepth) + " }}" }, ok: true},
@@ -200,7 +212,7 @@ func TestTemplateStackHelper(t *testing.T) {
 	if !ok {
 		t.Fatalf("no template %q", name)
 	}
-	debug.SetMaxStack(4 << 20)
+	debug.SetMaxStack(childStack)
 	src := h.src()
 	env := NewEnvironment(nil, DefaultOptions())
 	res, err := env.RenderString(src, "t.sls", nil)

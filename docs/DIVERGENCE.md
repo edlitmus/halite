@@ -24004,8 +24004,17 @@ lacking one of them, which is most templates, lexed in quadratic time.
   `not` or `-`, and 328 chained filters, all under 1,000. A `~` chain is
   the exception: Jinja flattens it and accepted 20,000 terms. Here one
   past 999 `~` is refused. That is a divergence, recorded here and not
-  expected to matter. On the other side, an expression at the limit
-  parses and renders on the 4 MiB stack.
+  expected to matter. On the other side, an expression at the limit,
+  inside 99 nested `if`, parses and renders on a 32 MiB stack. It needed
+  between 3 and 4 MiB on darwin/arm64, with and without `-race`, and
+  more than 4 MiB under `-race` on CI's windows-2022/amd64, where the
+  first version of the test, at 4 MiB, overflowed. Every hostile shape
+  was rerun on the old code with the stack at 16 and 32 MiB and still
+  overflowed. At 64 MiB, 100,000 `else` did not, which is why the test
+  stops at 32. On darwin/arm64 the default 1 GiB stack is about 250
+  times what that template needs. The margin on windows/amd64 under
+  `-race` is not known: it needed more than 4 MiB, and whether 32 is
+  enough there is for the next CI run to show.
 - *Allocations* are checked before they are made, against `MaxOutput`
   for one string and `MaxIterations` for one list, with products checked
   by division: `indent` (the pad times the lines it lands on, so a wide
@@ -24071,7 +24080,7 @@ does not bound.
 
 **Not verified.** Nothing here was run on FreeBSD, or anywhere but
 darwin/arm64 with go1.27.2 and the pinned go1.26.6. The stack figures
-come from 4 MiB children, not the default stack. No real Salt tree was
+come from 4 to 32 MiB children, not the default stack. No real Salt tree was
 rendered through the new limits to check that none is refused. The
 template corpus and the package tests pass, and that is the evidence
 that nothing ordinary is refused.
