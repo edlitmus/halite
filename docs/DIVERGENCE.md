@@ -11120,6 +11120,20 @@ whole test binary down and loses every other test's result at the moment
 something is broken. The count is asserted before the index now. A break
 that fails in the wrong way is worth as much as the break itself.
 
+#### 5.127, corrected: the staging directory was not discarded
+
+"Not demonstrated" above says `halite-node oneshot` runs a job *"on a
+machine whose staging directory is discarded afterwards"*. That was not
+true of the directory it meant. An agentless `state.*` run writes the
+hub's state and template files into a `halite-oneshot-*` directory under
+the target's temporary directory, and nothing removed it -- not the
+oneshot, not the node's `main`, and not `halite-hub ssh`, whose
+`rm -rf` covers only `thin_dir` and only under `--clean`. Every such run
+left one behind. 5.290 removes it. The conclusion the sentence was
+supporting still holds for its own reason: a oneshot has no node
+directory of its own to keep an evidence chain in, and the hub's record
+is the only one.
+
 ### 5.128 Detached job signing, and the two things a signature has to say
 
 plan.md §7 item 9's second half, and SPEC 25.6: an operator or a CI
@@ -23928,6 +23942,107 @@ The hub's 5.287 tests pass with the function moved.
   from the code, not run.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
+
+### 5.290 An agentless run left the hub's state tree on the target
+
+`halite-node oneshot` -- what `halite-hub ssh` runs on a target -- makes
+a `halite-oneshot-*` directory with `os.MkdirTemp` for any `state.*` job
+or any job that carries files, and writes into it the state and template
+files the hub sent, `0600` in a `0700` directory. Nothing removed it.
+Every agentless state run left one in the target's temporary directory:
+until reboot on a host that clears `/tmp` at boot, and for good on one
+that does not. FreeBSD clears it only when `clear_tmp_enable` is set in
+`rc.conf`, and `rc.conf(5)` gives `NO` as the default -- read from the
+manual, not checked on a host in this estate.
+5.127 had said the staging directory was discarded afterwards; it is
+corrected there.
+
+The files are `0600` and owned by whoever the run was, so this was
+disclosure only to that account and root. What it did do was keep a copy
+of a tree the operator had every reason to think lived only on the hub,
+one directory per run, indefinitely.
+
+**The fix.** `applyOneshotContent` returns the tree it made, and the
+oneshot removes it on every way out of the run:
+
+- **Normally, before the return is written.** The order is the point,
+  not a detail. A hub that has gone away -- a timeout, an operator's
+  Ctrl-C -- leaves the target's stdout a broken pipe. sshd sends no
+  signal to a command it started without a terminal, so the job runs to
+  the end, and then the write of the frame raises SIGPIPE, which kills a
+  Go program writing to fd 1, and a process killed by a signal runs no
+  defers. Removing the tree after the write would have left it on
+  exactly that path.
+- **A `defer`, as the backstop** for a panic in the oneshot itself.
+  `executeJob` already recovers a module's panic into a failed return.
+- **Before returning an error** when a file the hub sent cannot be
+  written, which happens after the directory exists.
+- **On SIGINT, SIGTERM and SIGHUP**, caught for the length of the run:
+  the tree is removed and the process exits `128+n`, the status the
+  signal itself would have produced. The job is abandoned mid-step,
+  as it was before; a state reading the tree in the instant between the
+  removal and the exit gets a missing file, and nothing reports it,
+  because nothing is written after a signal.
+
+Nothing reads the tree after `executeJob` returns, and that was read
+before the removal was placed: the job runs synchronously, rendering and
+file sources included; `cmd.script` copies its source to a file of its
+own and removes that; and the one thing that outlives a job, `cmd.run`
+with `bg: true`, is handed a command line, not a path into the tree.
+
+**What still leaves a tree behind**: SIGKILL, the machine losing power,
+and a signal arriving in the moment between the directory being made
+and the handler being installed, while the hub's files are being
+written. No sweep of old `halite-oneshot-*` directories was added; a
+directory left by a previous binary stays until the operator or the
+platform removes it.
+
+#### What was run
+
+`cmd/halite-node/oneshot_test.go` runs `runOneshot` in-process with a
+temporary root it owns: a `state.apply` whose `file.managed` takes its
+source from the tree (so the tree is shown in use, then gone), a failing
+state, a file path that leaves the tree, and the signal watcher with a
+signal delivered on a channel. The successful run also looks at the
+disk at the moment the frame is written, through a hook.
+
+Each removal was broken on purpose and watched to fail:
+
+- With no removal at all, the success and failure tests both failed,
+  naming the directory left behind.
+- With only the `defer` -- the removal after the write -- the
+  at-the-frame check failed and nothing else did, which is the SIGPIPE
+  path above.
+- Without the removal on the write error, that test failed.
+- Without the removal in the signal handler, the signal test failed.
+
+**The real binary, on macOS (Darwin 25.6, arm64)**, built from this
+change and from `main` and run as `halite-node oneshot` with `TMPDIR`
+pointed at an empty directory and a job on stdin:
+
+| | `main` | this change |
+|---|---|---|
+| a state that succeeds, exit 0 | tree left | removed |
+| SIGTERM during a `cmd.run: sleep 5`, exit 143 | tree left | removed |
+| stdout closed before the job ended, exit 141 (SIGPIPE) | tree left | removed |
+
+The exit statuses are the same from both binaries, which is what
+catching the signals was meant to keep.
+
+#### Not verified
+
+- **Not run on FreeBSD or Linux**, and not through `halite-hub ssh` to
+  a real target: the runs above were the binary invoked directly on a
+  Mac. FreeBSD is where a left tree is most likely to outlive a reboot,
+  and nothing here was run there, nor was any FreeBSD host's
+  `clear_tmp_enable` looked at. CI runs the unit tests on all four platforms.
+- **Not under `sudo`.** A `sudo -n` run relays SIGTERM and SIGHUP to its
+  child, so the handler should see them; that was read, not run.
+- **The `defer` itself** is not tested: no test makes the oneshot
+  panic outside `executeJob`, which recovers its own.
+- **Windows** catches `os.Interrupt` only in practice; the other two
+  signals are never delivered there. The tree is still removed on every
+  path that is not a signal.
 
 ## 6. Everything else not started
 

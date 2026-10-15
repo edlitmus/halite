@@ -21,6 +21,19 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An agentless state run no longer leaves the hub's state tree on the target
+
+`halite-node oneshot`, which `halite-hub ssh` runs on a target, wrote the
+state and template files the hub sent into a `halite-oneshot-*` directory
+in the target's temporary directory and never removed it, so every
+agentless `state.*` run left one behind, for good on a host that does
+not clear `/tmp` at boot. It is now removed when the run
+ends: on success, on failure, when the hub has gone away, and on SIGINT,
+SIGTERM or SIGHUP. A run killed with SIGKILL still leaves its directory.
+Directories left by earlier runs are not swept; remove
+`$TMPDIR/halite-oneshot-*` (usually `/tmp`) on agentless targets by hand.
+See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
