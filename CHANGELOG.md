@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The API's systemd unit now restarts an API whose listener was early
+
+`halite-api.service` stopped on exit status 1, and `halite-api serve`
+exited 1 for every failure. So an API whose listen address was not on the
+host yet at boot, or whose port was still held, stopped and stayed down,
+as did one that failed while serving. `serve` now makes the same split as
+the hub. It exits 78 (`EX_CONFIG`) when it stops at start-up on its
+configuration, its certificates or its token store, and 1 for those
+listener failures and for a failure while it is serving. The unit has
+`RestartPreventExitStatus=78` in place of `=1`, so it restarts on 1 and
+stops on 78. A script or monitor that expected 1 from an API that would
+not start will now see 78. Install the new unit file with the new binary:
+the old unit restarts on 78 every five seconds. See DIVERGENCE 5.287.
+
 ### The hub's systemd unit no longer restarts a hub that cannot start
 
 `halite-hub serve` now exits 78 (sysexits' `EX_CONFIG`) when it stops at

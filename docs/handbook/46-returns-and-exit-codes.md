@@ -26,6 +26,7 @@ the structure of what comes back.
 | `halite-hub extensions verify` | Every rule passed (skips do not fail) | A rule failed | | | Usage error |
 | `halite-hub keys …`, `jobs …` | Success | Failure | | | Usage error |
 | `halite-hub serve` | Stopped by a signal | The listen address is not on the host yet, the port is still held, or the hub failed while serving. A restart may fix it. **`78`** instead for a configuration fault (see the notes) | | | Usage error |
+| `halite-api serve` | Stopped by a signal | The listen address is not on the host yet, the port is still held, or the API failed while serving. A restart may fix it. **`78`** instead for a configuration fault (see the notes) | | | Usage error |
 
 Notes:
 
@@ -42,17 +43,19 @@ Notes:
   question is only whether every node succeeded.
 - **`1` versus `3`** on `halite-hub run`: "it said no" and "it said nothing" call
   for different actions.
-- **`78` is sysexits' `EX_CONFIG`**, and only `halite-hub serve` uses it. It
-  means that the hub stopped at start-up on its configuration or key material:
-  a setting that does not parse, an `ext_pillar` source with no extension
-  installed, key material that does not load, or a directory it may not write.
-  A restart does not fix any of these, so the hub's unit carries
-  `RestartPreventExitStatus=78` and restarts on `1`. Before this, the unit
-  restarted on every exit, and one hub was restarted 427 times on a missing
-  extension.
+- **`78` is sysexits' `EX_CONFIG`**, and only `halite-hub serve` and
+  `halite-api serve` use it. It means that the service stopped at start-up on
+  its configuration or key material: a setting that does not parse, an
+  `ext_pillar` source with no extension installed, a certificate or key that
+  does not load, or a directory it may not write. A restart does not fix any of
+  these, so both units carry `RestartPreventExitStatus=78` and restart on `1`.
+  Before this, the hub's unit restarted on every exit, and one hub was
+  restarted 427 times on a missing extension. The API's unit did the opposite:
+  it stopped on `1`, so an API whose listen address came up late at boot stayed
+  down.
 - An agent (`halite-node connect`) that exits `1` by itself has hit one of two
   things a restart cannot fix: its enrolment was revoked, or `hub_tries` was
-  reached. The unit files carry `RestartPreventExitStatus=1` for it.
+  reached. The node's unit carries `RestartPreventExitStatus=1` for it.
 
 ## Structures
 

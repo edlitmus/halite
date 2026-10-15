@@ -92,7 +92,7 @@ func TestServeExitsConfigForAFaultARestartCannotFix(t *testing.T) {
 // The listener failures a restart fixes exit 1, which the unit restarts.
 func TestServeExitsOneForAListenerThatMayComeRight(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("listenMayRecover reads Unix errnos; on Windows these are configuration faults")
+		t.Skip("cli.ListenMayRecover reads Unix errnos; on Windows these are configuration faults")
 	}
 	t.Run("the port is still held", func(t *testing.T) {
 		held, err := net.Listen("tcp", "127.0.0.1:0")

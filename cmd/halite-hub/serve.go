@@ -461,7 +461,7 @@ func runServe(args *cli.Args) int {
 
 	ln, err := hub.Listen(listen, serving, h.auth.CA.Cert, h.denied)
 	if err != nil {
-		if listenMayRecover(err) {
+		if cli.ListenMayRecover(err) {
 			cli.Exitf(1, "%v", err)
 		}
 		cli.Fatalf("%v", err)
@@ -567,31 +567,6 @@ func runServe(args *cli.Args) int {
 	}
 	h.log.Info("the hub stopped")
 	return 0
-}
-
-// listenMayRecover reports whether the hub's listener failed for a reason
-// that a restart a few seconds later can fix, and so exits 1 rather than
-// cli.ExitConfig.
-//
-// Three: the address is not on this host yet (EADDRNOTAVAIL), which is
-// a `listen` naming an address that DHCP or a secondary interface has
-// not brought up when the unit starts; the port is still held
-// (EADDRINUSE), by a previous hub that has not finished exiting or by a
-// process that will let it go; and a host name in `listen` that did not
-// resolve, because the resolver is network too. Anything else -- a port
-// below 1024 for an account without the capability, an address that
-// does not parse -- is what the operator wrote, and stays wrong however
-// often it is retried.
-//
-// The errno comparisons match on Unix only. On Windows the socket error
-// is a WSA code that syscall.EADDRINUSE is not, so there a busy port is
-// classed with the configuration faults; nothing on Windows reads the
-// distinction.
-func listenMayRecover(err error) bool {
-	var dns *net.DNSError
-	return errors.Is(err, syscall.EADDRNOTAVAIL) ||
-		errors.Is(err, syscall.EADDRINUSE) ||
-		errors.As(err, &dns)
 }
 
 // loadPolicy reads the RBAC file of SPEC 23.5.

@@ -40,6 +40,21 @@ type service struct {
 
 // runServe starts the HTTP API of SPEC section 22.
 func runServe(args *cli.Args) int {
+	// Until the API is serving, a fatal error is a fault in its
+	// configuration, its certificates or its state directory, and exits
+	// cli.ExitConfig, which the unit's RestartPreventExitStatus= stops
+	// on. The one start-up failure a restart can fix, a listener whose
+	// address is not there yet, says so below and exits 1, which the unit
+	// restarts. Both used to exit 1, and the unit stopped on 1, so an API
+	// whose listen address came up late at boot stayed down. DIVERGENCE
+	// 5.287, the mirror of the hub's 5.286.
+	//
+	// Nothing in this phase talks to the network: the hub is not asked
+	// anything until a request needs it, OIDC discovery waits for the
+	// first login, and the LDAP directory for the first bind. So a hub,
+	// an identity provider or a directory that is down at boot is not a
+	// start-up failure at all, and none of them is classified here.
+	startupOver := cli.ConfigFaults()
 	s := setup(args)
 
 	tokens, err := apitoken.Open(
@@ -76,6 +91,9 @@ func runServe(args *cli.Args) int {
 	addr := args.Flag("listen", s.cfg.String("listen", ":4511"))
 	ln, err := api.Listen(addr, certs.GetCertificate)
 	if err != nil {
+		if cli.ListenMayRecover(err) {
+			cli.Exitf(1, "%v", err)
+		}
 		cli.Fatalf("%v", err)
 	}
 
@@ -104,6 +122,10 @@ func runServe(args *cli.Args) int {
 	// housekeeping of every token ever issued.
 	go pruneTokens(ctx, s, tokens)
 
+	// From here a failure is the running API's, and a restart is the
+	// right answer to it: the `return 1` below, which the unit used to
+	// stop on.
+	startupOver()
 	srv := server.Serve(ln)
 	go func() {
 		<-ctx.Done()

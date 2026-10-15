@@ -21,7 +21,7 @@ Import path `github.com/edlitmus/halite/internal/cli`.
 
 Package cli holds what the three binaries share: argument parsing in Salt's conventions, output formatting, and the local execution context.
 
-**Files:** `cli.go`, `flags.go`; with tests.
+**Files:** `cli.go`, `flags.go`, `listen.go`; with tests.
 
 **Exports.**
 
@@ -32,6 +32,7 @@ Package cli holds what the three binaries share: argument parsing in Salt's conv
 - `FlagNames` (func): FlagNames reports the flags a usage text documents.
 - `Format` (type): Format names an output rendering.
 - `IntFlag` (func): IntFlag reads a whole-number flag: def when it is not given, and otherwise a number no smaller than min, or a usage error.
+- `ListenMayRecover` (func): ListenMayRecover reports whether a service's listener failed for a reason that a restart a few seconds later can fix, and so should exit 1 (with Exitf) rather than ExitConfig.
 - `Parse` (func): Parse splits an argument vector.
 - `ParseFormat` (func): ParseFormat reads an --out value.
 - `ParseOut` (func): ParseOut reads an `--out` value for a command that prints a report it formats itself when the operator asks for nothing.

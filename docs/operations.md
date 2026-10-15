@@ -60,7 +60,7 @@ commands exit 0 on success.
 | 2 | The run succeeded and nothing needed changing. |
 | 1 | A state failed, or the command could not run. |
 | 64 | The program did not understand its command line — no subcommand, one that does not exist, a flag the subcommand does not take, an operand it needs left out, or a number that is not one. sysexits' `EX_USAGE`, from `halite-node`, `halite-hub` and `halite-api` alike; it used to be 2, the same as a converged run, and an unknown flag exited 1, the same as a failed state. |
-| 78 | `halite-hub serve` stopped at start-up on its configuration or key material, and a restart would not help. sysexits' `EX_CONFIG`. The hub's unit does not restart on it; see [the hub's unit](#systemd). |
+| 78 | `halite-hub serve` or `halite-api serve` stopped at start-up on its configuration or key material, and a restart would not help. sysexits' `EX_CONFIG`. Neither service's unit restarts on it; see [the hub's unit](#systemd). |
 
 **Treat 2 as success.** A monitor that does not will alert on every
 machine that was already correct, which is nearly all of them nearly all
@@ -362,11 +362,9 @@ of the unit file only; the unit has not been run under systemd.
 unreachable hub is not a unit failure. It exits 1 for the two things a
 restart cannot fix — this node's enrollment was revoked, or `hub_tries`
 was reached — and the node's unit carries `RestartPreventExitStatus=1`
-so that stops the unit and leaves the reason in the journal. The API's
-unit carries it too, for the certificate and configuration errors
-`serve` exits 1 on.
+so that stops the unit and leaves the reason in the journal.
 
-The hub's unit stops on 78 instead. `halite-hub serve` exits 78
+The hub's and the API's units stop on 78 instead. `halite-hub serve` exits 78
 (sysexits' `EX_CONFIG`) for a fault it finds before it is serving: a
 setting that does not parse, an `ext_pillar` source with no extension
 installed, key material that does not load, or a state or cache
@@ -375,6 +373,18 @@ on the host yet, for a port that is still held, and for a failure while
 it is serving. A restart fixes those, so the unit restarts on 1. Before
 this change, the unit restarted on every exit, and one hub with a
 missing extension was restarted 427 times. See DIVERGENCE 5.286.
+
+`halite-api serve` makes the same split. It exits 78 for a fault it
+finds before it is serving: a setting or a role map that does not
+parse, an operator or serving certificate that does not load, or a
+token store it may not write. It exits 1 for a listen address that is
+not on the host yet, a port that is still held, and a failure while it
+is serving, and the unit restarts on those. The API's unit used to stop
+on 1, for both kinds, so an API whose listen address came up late at
+boot stayed down until somebody started it. A hub, an identity provider
+or a directory that is down when the API starts is not a start-up
+failure: the API asks none of them anything until a request needs it.
+See DIVERGENCE 5.287.
 
 The agent runs the jobs that arrive on that stream, and compiles them
 against the tree and the pillar the hub serves.

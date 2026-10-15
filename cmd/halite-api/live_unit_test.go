@@ -21,7 +21,11 @@ import (
 // /var/lib/halite-api writable, while the API's default token store is
 // /var/lib/halite/tokens: a service on the default could not create it,
 // and `serve` exited 1, which the unit's RestartPreventExitStatus=1 then
-// left stopped. internal/config's unit-paths test reads the unit against
+// left stopped. (It now exits 78, cli.ExitConfig, and the unit stops on
+// that instead, because it restarts on 1: DIVERGENCE 5.287. The verdict
+// here does not read the status, only whether the run succeeded, and the
+// run below is `token list`, which exits 1 for this as it always did.)
+// internal/config's unit-paths test reads the unit against
 // systemd.exec(5); this is the half that test says it cannot do, which is
 // to have systemd actually start it.
 //
