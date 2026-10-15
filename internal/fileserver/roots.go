@@ -198,16 +198,32 @@ func within(root, p string) bool {
 	return strings.HasPrefix(p, root+string(filepath.Separator))
 }
 
+// ignored is the one test of file_ignore_glob and file_ignore_regex, and
+// both Resolve (serving) and List (listing) call it with the same
+// relative path, so a file cannot be hidden from one and shown by the
+// other. gitfs and s3fs trees are served through these same Roots, so
+// it is their hide rule too.
+//
+// A glob is matched with Salt's fnmatch, against the path relative to
+// the root -- which is what Salt's roots backend matches when it lists
+// -- and, as halite always has, against the base name, so `*.swp`
+// written by somebody thinking of a name rather than a path still hides
+// a nested one. DIVERGENCE 5.290.
+//
+// Salt's own serving path, find_file, matches the glob against the
+// absolute path under the root instead, so a relative glob such as
+// `secrets/*` hides a file from Salt's listing but not from a
+// `cp.get_file` of it. That is a disagreement inside Salt, and it is
+// deliberately not reproduced: matching the absolute path here would
+// also make the cache directories gitfs and s3fs serve from part of
+// what an operator's glob is matched against.
 func (r *Roots) ignored(clean string) bool {
+	rel := strings.TrimPrefix(clean, "/")
 	for _, g := range r.IgnoreGlobs {
-		if ok, err := path.Match(g, strings.TrimPrefix(clean, "/")); err == nil && ok {
-			return true
-		}
-		if ok, err := path.Match(g, path.Base(clean)); err == nil && ok {
+		if fnmatch(g, rel) || fnmatch(g, path.Base(clean)) {
 			return true
 		}
 	}
-	rel := strings.TrimPrefix(clean, "/")
 	for _, re := range r.IgnoreRegexes {
 		if re.MatchString(rel) {
 			return true

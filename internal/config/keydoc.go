@@ -326,7 +326,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"file_ignore_glob": {
 		Group:  "The file server",
-		Detail: "The same, as globs, which is usually the readable form.",
+		Detail: "The same, as globs, which is usually the readable form. They are Salt's fnmatch globs, matched against the path relative to the root and against the base name: `*` and `?` match `/` too, so `secrets/*` hides everything below `secrets/`, not only its first level. Sets are `[abc]` and `[!abc]`.",
 	},
 	"gitfs_remotes": {
 		Group:  "The git file server",
