@@ -21,6 +21,24 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Agentless mode no longer runs a cached binary another account could have planted
+
+Before running the cached `halite-node` on a target, and before copying a new
+one, `halite-hub ssh` now checks who could have written it. The binary,
+`thin_dir`, and every directory above `thin_dir` must be owned by root or by
+the account it connects as, and no other account may write to them. A parent
+such as `/var/tmp` may be writable by others if it is sticky. Before this, a
+file with the right name was enough. The default `thin_dir` is under
+`/var/tmp`, and the name is the published build's digest, so any account on a
+target could put a binary there that the next run with `sudo: true` executed
+as root. The default `thin_dir` is unchanged. Three things an operator may now
+see: a run that refuses a target, naming the path and why; a `thin_dir` that
+you own but others may write to is refused instead of being quietly changed to
+mode 700; a relative `thin_dir` is refused. If another account made
+`/var/tmp/halite-thin`, find out why before you remove it. The copy is now
+staged under a random name, so two roster entries for one host no longer fail
+on each other's staging file. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

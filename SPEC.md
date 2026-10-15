@@ -1951,7 +1951,10 @@ it has a static binary to work with.
 4. Send the job as JSON on stdin, execute in a one-shot local mode, receive the return as JSON on
    stdout with a framed delimiter that separates it from any stray target output.
 5. Cache the binary on the target under `/var/tmp/halite-thin/<version>-<digest>` so that
-   subsequent runs skip the transfer, and remove it on `--clean`.
+   subsequent runs skip the transfer, and remove it on `--clean`. A cached binary is executed only
+   when nobody but root and the connecting account could have written it: it, the cache directory,
+   and every directory above that are owned by one of the two and writable by no other account,
+   except that a parent may be a sticky directory such as `/var/tmp`. Anything else is refused.
 
 Pillar and file server content are compiled on the hub and sent inline with the job, or fetched by
 the pushed binary through a reverse tunnel that the `ssh` invocation sets up. Inline is the default

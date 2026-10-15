@@ -152,7 +152,7 @@ func TestATargetThatWillNotExecuteIsToldWhy(t *testing.T) {
 	o := &Options{SSH: fakeSSH(t, 126, "/var/tmp/halite-thin/.halite-probe: Permission denied")}
 	target := roster.Target{ID: "web1.example", Host: "web1.example", ThinDir: "/var/tmp/halite-thin"}
 
-	err := o.prepare(context.Background(), target, target.ThinDir)
+	_, err := o.prepare(context.Background(), target, target.ThinDir)
 	if err == nil {
 		t.Fatal("a target that refused to run the probe was accepted")
 	}
@@ -170,7 +170,7 @@ func TestATargetThatCouldNotBeReachedIsNotDiagnosed(t *testing.T) {
 	o := &Options{SSH: filepath.Join(t.TempDir(), "no-such-ssh")}
 	target := roster.Target{ID: "web1.example", Host: "web1.example", ThinDir: "/var/tmp/halite-thin"}
 
-	err := o.prepare(context.Background(), target, target.ThinDir)
+	_, err := o.prepare(context.Background(), target, target.ThinDir)
 	if err == nil {
 		t.Fatal("a target whose ssh does not exist was accepted")
 	}
@@ -196,7 +196,7 @@ func TestTheEarlierFailuresKeepTheirOwnMessages(t *testing.T) {
 		{2, "nothing could be written", "noexec"},
 	} {
 		o := &Options{SSH: fakeSSH(t, tc.status, "mkdir: Permission denied")}
-		err := o.prepare(context.Background(), target, target.ThinDir)
+		_, err := o.prepare(context.Background(), target, target.ThinDir)
 		if err == nil {
 			t.Fatalf("status %d was accepted", tc.status)
 		}

@@ -23929,6 +23929,154 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 A binary another account planted in `thin_dir` was run as root
+
+Found by audit (H-07), by reading the code, and confirmed by a test
+before it was fixed. It was not seen on a target.
+
+**The defect.** An agentless run asked the target
+`test -x <thin_dir>/<digest>`. On a yes it did not push, and ran that
+file, as root when the roster says `sudo: true`. Nothing checked who
+owned the file or the directory, and nothing hashed the file. The default
+`thin_dir` is `/var/tmp/halite-thin`, and every account may create
+entries in `/var/tmp`. The digest is the SHA-256 of a published,
+reproducible build, so anybody can compute the name. So any account on a
+target could make `/var/tmp/halite-thin`, put an executable in it under
+the next release's digest, and the next agentless run would execute it
+as root. `prepare` did `mkdir -p` and `chmod 700`, and as root both
+succeed on a directory another account made, which stays that account's.
+The staging name `<digest>.partial` was predictable too.
+
+The real-`sshd` run recorded in 5.13 says "an unsafe
+`thin_dir` was refused by name". That was `shellSafe`, which checks the
+characters in the path. It never checked who could write to it.
+
+**The fix** (`internal/sshexec`). A cached binary is run only if nobody
+but root and the connecting account could have written it or any
+directory above it:
+
+- the binary is a regular file, owned by root or the connecting account,
+  with no group or other write bit and no ACL;
+- `thin_dir` is a directory with the same properties. Sticky does not
+  excuse it, because in a sticky directory anybody can still add a file;
+- every directory above it is owned by root or the connecting account,
+  and has no group or other write bit unless it is sticky. Sticky is what
+  makes `/var/tmp` itself acceptable: only an entry's owner may rename or
+  remove it there. A non-sticky parent with an ACL is refused too;
+- this holds for the path as written and for the physical path that
+  `cd -P` reaches. Symbolic links cannot simply be refused, because
+  FreeBSD's `/home` and macOS's `/var` are links.
+
+The connecting account is trusted because it already has that power: with
+`sudo` it can become root, and without it the binary runs as that account.
+
+The check runs on every run, in the same ssh session as the cache lookup,
+and again in `prepare` before anything is copied. `prepare` checks the
+owner before its `chmod 700`, so a run as root does not change the mode of
+another account's directory before it refuses it. A `thin_dir` owned by
+the connecting account that others may write to is now refused, where
+`prepare` used to `chmod` it. Ownership says who made it, not who has
+written into it since. The staging file is now made by `mktemp`, so two
+runs against one machine no longer share a name. The handbook's tip about
+duplicate roster entries described that collision, and it has been
+rewritten. `thin_dir` must now be absolute and is checked by `shellSafe`
+before anything reaches the target, not only when the job is invoked.
+
+**Why ownership and not a hash.** A hash taken in one ssh session and an
+`exec` in the next leave a gap. If the directory is writable by another
+account, the file can be replaced inside that gap, and the hash is then
+about a file that is gone. Ownership closes the gap by construction: if no
+other account can write anywhere on the path, nobody can win the race. The
+cached binary is still hashed, in the check script, at no extra round
+trip. A mismatch is treated as absent and the binary is replaced, because
+a corrupted binary should not run either. The hash is not what makes this
+safe.
+
+**Why the default did not move.** Salt's default is under `/var/tmp` too:
+`/var/tmp/.<user>_<id>_salt` in `salt/client/ssh/__init__.py`, read in the
+3006.28 source. Its shim refuses a directory whose owner is not the
+running user or whose mode is not 0700 (`ssh_py_shim.py`,
+`need_deployment`). That was read, not run. A root-owned default would
+need `scp` to write as root, which it cannot. A default in the account's
+home would be a relative path, and `sudo` resolves that against a working
+directory its policy may change. What is left is a denial of service:
+another account can make `/var/tmp/halite-thin` first, and agentless runs
+on that machine stop. The refusal names the path, the owner's uid and the
+`thin_dir` setting. That is the right failure, because another account
+doing this is worth an operator knowing about.
+
+**Portability.** The script is POSIX sh. The owner and mode come from
+`ls -ldn`: field 1 is the mode string and field 3 the numeric owner on
+GNU, BSD and busybox. `stat` is `-c` on Linux and `-f` on the BSDs. A `+`
+after the mode marks an ACL on all three. SELinux's `.` and macOS's `@`
+are not refused. `dirname`, `cd -P`, `pwd -P` and `id -u` are POSIX.
+`mktemp` is not POSIX, and is on Linux, FreeBSD and macOS. The digest
+falls back through `sha256sum`, `sha256 -q` and `shasum -a 256`.
+
+**How it is tested.** `internal/sshexec/trust_test.go` runs whole `Run`s
+with ssh and scp replaced by stand-ins that run the real scripts through a
+real `/bin/sh` on the test machine. A planted executable that leaves a
+mark when it runs is put at the cached name. It must not run, and each
+case must be refused for its own reason: a world-writable, a
+group-writable and a sticky world-writable `thin_dir`; a group-writable
+and a world-writable binary; a binary that is a link; a `thin_dir` that
+is a link to a writable directory; a world-writable non-sticky parent.
+Other tests: an `id` on the path that answers uid 4242 makes the test's
+own files read as another account's, and that is refused with and without
+a binary present; a sticky world-writable parent is accepted; a new
+`thin_dir` is made 0700; a cached binary whose content is not its digest
+is replaced and not run; a binary root really owns is trusted; a relative
+`thin_dir` is refused before ssh runs; three concurrent runs against one
+directory all succeed; two `prepare`s give two different staging names.
+
+Each part was broken on purpose and the tests failed:
+
+- with the old `test -x` check restored, the planted binary ran in every
+  case (`return "{\"from\":\"planted\"}"`), and four tests failed;
+- with parents not checked for writers, the non-sticky parent case
+  failed;
+- with the sticky excuse changed, the sticky-parent test failed;
+- without the physical-path walk, the link-to-a-writable-directory case
+  failed;
+- without the owner comparison, the other-account test failed;
+- with a fixed staging name, the staging-name test failed;
+- with the digest ignored, the replaced-binary test failed.
+
+The whole package also passed with the target shell set to `dash`,
+`ksh` and `bash --posix` (`HALITE_TEST_TARGET_SH`). Under `zsh`, which
+does not split words as POSIX sh does, it fails closed: the check refuses.
+No target's `/bin/sh` is zsh.
+
+The two `noexec` tests in `live_noexec_linux_test.go` now run only the
+probe half of the script (`probeScript`). They run inside an unprivileged
+user namespace, where `/` and every other directory owned by the host's
+root show as the overflow uid, and the trust check correctly refuses
+them.
+
+**Not verified.**
+
+- **No real target.** Nothing was run over a real ssh connection, and no
+  `sudo` was involved. The stand-in ssh runs the scripts locally as the
+  test's own account.
+- **No real foreign owner and no root.** The tests did not run as root,
+  so no directory belonged to another account, and the case that matters
+  most, a run as root meeting another account's directory, was not run.
+  It was simulated with mode bits and with a fake `id`. The owner check
+  before `chmod` (so root does not change the mode of another account's
+  directory) has no test.
+- **macOS only.** The tests ran on macOS (Darwin 25.6), whose `ls`,
+  `dirname` and `mktemp` come from FreeBSD. They did not run on Linux or
+  FreeBSD. CI runs this package on both. The Linux-only `noexec` tests
+  were not run, because they need Linux.
+- **ACLs** were not exercised. That a `+` marks one comes from the
+  three platforms' `ls` documentation, not from a run.
+- **A target with none of the three digest tools** now gets the cached
+  binary replaced on every run and then refused by `remoteDigest`. That
+  was read from the code, not run.
+- **Related defects, not fixed here.** M-14: ssh option injection
+  through a roster's `host` or `user`. M-28: the temporary tree a
+  `oneshot` run makes is never removed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
