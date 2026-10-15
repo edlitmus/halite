@@ -171,17 +171,12 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 			continue
 		}
 
-		if gate, held := r.evaluateGates(ch); held {
-			sr.Skipped = true
-			sr.Result = gate
-			sr.Duration = r.Now().Sub(sr.StartTime)
-			out.Results = append(out.Results, sr)
-			continue
-		}
-
-		sr.Result = r.execute(ch, decision.watchFired)
+		sr.Result, sr.Skipped = r.runChunk(ch, decision.watchFired)
 		sr.Duration = r.Now().Sub(sr.StartTime)
 		out.Results = append(out.Results, sr)
+		if sr.Skipped {
+			continue
+		}
 
 		if sr.Result.Failed() && r.failHardFor(ch) {
 			out.Aborted = true
@@ -422,6 +417,26 @@ func mustGet(m *value.Map, key string) any {
 	return v
 }
 
+// runChunk is how a chunk runs once its requisites have let it: its own
+// gates (`creates`, `unless`, `onlyif`) first, and then execute, which
+// binds its runas and umask, bounds each attempt by its timeout, retries
+// it and runs its check_cmd. It reports held when a gate skipped it.
+//
+// It is the one path for the main pass, a watch reaction and a listen
+// reaction alike, and that is the point of it. The listen reaction had a
+// path of its own -- `CallWatch` on the shared context -- and so ran with
+// none of the above: a listened `cmd.run` with `runas: deploy` ran as
+// root, an `onlyif: nginx -t` fired unguarded, and a state skipped in the
+// main pass by `creates:` ran its mod_watch at the end anyway. Salt's
+// call_listen copies the whole low chunk, drops only the requisite keys,
+// and sends it through call(), which applies all of them. DIVERGENCE 5.290.
+func (r *Runner) runChunk(ch *state.Chunk, watchFired bool) (res states.Result, held bool) {
+	if gate, held := r.evaluateGates(ch); held {
+		return gate, true
+	}
+	return r.execute(ch, watchFired), false
+}
+
 // execute runs one chunk, applying the retry loop and the check_cmd.
 func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 	// SPEC 26.3's span per state, under the job's.
@@ -602,15 +617,18 @@ func (r *Runner) runListeners(chunks []*state.Chunk, results []*StateResult, out
 			continue
 		}
 		sr := &StateResult{Chunk: ch, RunNum: len(out.Results), StartTime: r.Now()}
-		res, err := r.States.CallWatch(r.Ctx, ch.Func(), ch.Args)
-		if err != nil {
-			res = states.False(fmt.Sprintf("The listen reaction raised an error: %v", err))
-		}
+		// Through runChunk, as a watch reaction runs, so that the
+		// reaction has the chunk's gates, account, umask, timeout, retry
+		// and check_cmd. The requisites are not evaluated again: they
+		// were the main pass's, and Salt drops them from the listener's
+		// copy of the chunk for the same reason.
+		res, held := r.runChunk(ch, true)
 		if res.Name == "" {
 			res.Name = ch.Name
 		}
 		res.Comment = "Listening reaction, run at the end of the state run. " + res.Comment
 		sr.Result = res
+		sr.Skipped = held
 		sr.Duration = r.Now().Sub(sr.StartTime)
 		out.Results = append(out.Results, sr)
 		_ = i

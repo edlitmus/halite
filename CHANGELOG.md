@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `listen` reactions now honour their state's guards and account
+
+A `listen` reaction ran at the end of the run without its state's
+`creates`, `unless`, `onlyif`, `runas`, `umask`, `timeout`, `retry` or
+`check_cmd`. It now runs exactly as a `watch` reaction does. A listened
+`cmd.run` with `runas` that has been running as root will run as that
+account. A reaction whose `onlyif` fails, whose `unless` succeeds, or
+whose `creates` path exists is now skipped, where before it ran. See
+DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
