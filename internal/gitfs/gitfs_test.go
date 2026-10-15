@@ -261,7 +261,7 @@ func TestAFailedUpdateLeavesTheServedTreeInPlace(t *testing.T) {
 		t.Errorf("a failed update emptied the file server: %v", after)
 	}
 	// The path alone is not the tree: a root that names a directory
-	// the sweep has removed serves nothing (DIVERGENCE 5.290).
+	// the sweep has removed serves nothing (DIVERGENCE 5.293).
 	requireServedFile(t, after, "base", "top.sls", "base: {}\n")
 }
 
@@ -282,7 +282,7 @@ func requireServedFile(t *testing.T, roots map[string][]string, env, path, body 
 }
 
 // A remote that is reachable and whose every ref is refused keeps the
-// last good tree (SPEC 13.3, DIVERGENCE 5.290). The sweep ran on that
+// last good tree (SPEC 13.3, DIVERGENCE 5.293). The sweep ran on that
 // path too and deleted the directory the kept root pointed at, so
 // Roots() still named tree A and tree A's files were gone. A symlink is
 // the easy real trigger: git commits one, materialise refuses it.
@@ -484,13 +484,7 @@ func TestAnUnknownRefTypeIsRefused(t *testing.T) {
 // is "git agrees this is signed by a key we trust" and a stand-in for
 // either half would prove nothing.
 func TestASignedRefIsServedAndAnUntrustedOneIsNot(t *testing.T) {
-	if _, err := exec.LookPath("gpg"); err != nil {
-		t.Skip("gpg is not installed")
-	}
-	keyring := t.TempDir()
-	if err := os.Chmod(keyring, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	keyring := gpgHome(t)
 	keyID := generateKey(t, keyring)
 
 	r := newRepo(t)
@@ -527,6 +521,144 @@ func TestASignedRefIsServedAndAnUntrustedOneIsNot(t *testing.T) {
 	if envs := other.Envs(); len(envs) != 0 {
 		t.Errorf("an untrusted ref is served as %v", envs)
 	}
+}
+
+// A branch is verified at the commit that is served, not at whatever
+// its short name resolves to.
+//
+// The attack, built for real: an old commit that a trusted key signed,
+// a lightweight tag `production` pointing at it, and a branch
+// `production` whose tip is a commit nobody signed. git resolves the
+// short name `production` to the tag first (`git rev-parse production`
+// warns that it is ambiguous and prints the tag's commit), and the
+// mirror holds the tag even though only branches are served, because
+// `--mirror` and `fetch --tags` bring every tag. Verifying the name
+// therefore checked the signed commit while the unsigned tip was
+// archived and served. Anybody who could push a branch and a tag could
+// put any tree on the estate past gitfs_verify_signatures.
+//
+// Real GnuPG and real `git verify-commit`, for the reason the test
+// above gives. If gpg cannot make a key here the test skips and says
+// so, and a skip is not a pass.
+func TestABranchIsVerifiedAtTheCommitServedNotAtATagOfTheSameName(t *testing.T) {
+	keyring := gpgHome(t)
+	keyID := generateKey(t, keyring)
+
+	r := newRepo(t)
+	r.git("config", "user.signingkey", keyID)
+	r.git("config", "gpg.program", "gpg")
+	r.write("top.sls", "base: {}\n")
+	r.write("payload.sls", "signed: true\n")
+	r.git("add", "-A")
+	signedCommit(t, r, keyring, "signed")
+	signed := strings.TrimSpace(r.git("rev-parse", "HEAD"))
+
+	r.git("tag", "production", signed)
+	r.git("checkout", "--quiet", "-b", "production")
+	r.write("payload.sls", "signed: false\n")
+	r.commit("not signed")
+	unsigned := strings.TrimSpace(r.git("rev-parse", "refs/heads/production"))
+	r.git("checkout", "--quiet", "main")
+
+	// The precondition the attack rests on, checked rather than
+	// assumed: the short name really does resolve to the signed commit.
+	if got := strings.TrimSpace(r.git("rev-parse", "--quiet", "production")); got != signed {
+		t.Fatalf("`production` resolves to %s, not the tag's %s; the scenario does not hold on this git", got, signed)
+	}
+
+	b := backendFor(t, r, func(o *Options) {
+		o.VerifySignatures = true
+		o.Keyring = keyring
+	})
+	// main verifies and is served, so Update reports no total failure;
+	// production must not be served.
+	_ = b.Update(context.Background())
+
+	if envs := strings.Join(b.Envs(), ","); envs != "base" {
+		t.Errorf("served environments are %q, want only base: an unsigned branch tip was served", envs)
+	}
+	for _, root := range b.Roots()["production"] {
+		if strings.Contains(root, unsigned) {
+			t.Errorf("the unsigned commit %s is served from %s", unsigned, root)
+		}
+	}
+	refused := false
+	for _, state := range b.State() {
+		if _, ok := state.Refused["production"]; ok {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Errorf("production was not refused: %+v", b.State())
+	}
+}
+
+// A branch whose name begins with a dash is verified as a commit, not
+// read by git as an option.
+//
+// `git branch` refuses such a name, but `update-ref` makes one and a
+// push carries it, so it is a name the remote controls. Passed as the
+// argument to `verify-commit`, `-dashed` was "unknown switch `d'" and
+// the branch was refused although its commit is signed; a name chosen
+// to be an option git accepts would have been worse. The commit is
+// signed, so being served is the evidence that git was asked about the
+// commit.
+func TestABranchNamedLikeAnOptionIsVerifiedAsACommit(t *testing.T) {
+	keyring := gpgHome(t)
+	keyID := generateKey(t, keyring)
+
+	r := newRepo(t)
+	r.git("config", "user.signingkey", keyID)
+	r.git("config", "gpg.program", "gpg")
+	r.write("top.sls", "base: {}\n")
+	r.git("add", "-A")
+	signedCommit(t, r, keyring, "signed")
+	r.git("update-ref", "refs/heads/-dashed", "HEAD")
+
+	b := backendFor(t, r, func(o *Options) {
+		o.VerifySignatures = true
+		o.Keyring = keyring
+	})
+	if err := b.Update(context.Background()); err != nil {
+		t.Errorf("update: %v", err)
+	}
+	if envs := strings.Join(b.Envs(), ","); envs != "base,dashed" {
+		t.Errorf("served environments are %q, want base,dashed", envs)
+	}
+}
+
+// gpgHome makes a GnuPG home that gpg-agent can use, and stops the
+// agent afterwards.
+//
+// Not t.TempDir() on its own: gpg-agent puts its socket in the home,
+// and a unix socket's path is limited to about a hundred bytes. On
+// macOS t.TempDir() is under /var/folders/… and with the test's name
+// in it the socket path is too long, so key generation failed with
+// "can't connect to the gpg-agent: File name too long" and every
+// signed-path test here skipped on a Mac. A short directory under
+// /tmp is used where there is one.
+func gpgHome(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("gpg"); err != nil {
+		t.Skip("gpg is not installed")
+	}
+	parent := ""
+	if info, err := os.Stat("/tmp"); err == nil && info.IsDir() {
+		parent = "/tmp"
+	}
+	home, err := os.MkdirTemp(parent, "hgfs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		// The agent generateKey started outlives the test otherwise.
+		_ = exec.Command("gpgconf", "--homedir", home, "--kill", "all").Run()
+		_ = os.RemoveAll(home)
+	})
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return home
 }
 
 // generateKey makes a signing key in its own GnuPG home and returns its
@@ -631,5 +763,22 @@ func TestAUNCPathIsRefusedUnlessInsecure(t *testing.T) {
 	}
 	if err := checkURL(Remote{URL: `\\server\share\states`, Insecure: true}); err != nil {
 		t.Errorf("insecure should accept it: %v", err)
+	}
+}
+
+// Only a full, lower-case object id is passed on to git as one.
+func TestIsObjectID(t *testing.T) {
+	for in, want := range map[string]bool{
+		strings.Repeat("a", 40):       true,
+		strings.Repeat("0", 64):       true,
+		strings.Repeat("a", 39):       false,
+		strings.Repeat("A", 40):       false,
+		"-" + strings.Repeat("a", 39): false,
+		strings.Repeat("g", 40):       false,
+		"":                            false,
+	} {
+		if got := isObjectID(in); got != want {
+			t.Errorf("isObjectID(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

@@ -223,7 +223,7 @@ func (b *Backend) Refusals() map[string]int {
 // directory while the refs that resolved are none. Keyed on the refs,
 // the sweep deleted that directory and left the file server listing a
 // root with no files in it, which is the empty estate the kept tree
-// was there to prevent (DIVERGENCE 5.290). Keyed on what is served,
+// was there to prevent (DIVERGENCE 5.293). Keyed on what is served,
 // the sweep and the decision about what to serve cannot disagree,
 // because the second is the input to the first.
 func (b *Backend) sweep(remote Remote, served map[string]bool) {

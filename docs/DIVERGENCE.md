@@ -23929,7 +23929,277 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
-### 5.290 gitfs kept the last good tree's path and swept away its files
+### 5.290 The toolchain was a Go with ten standard-library advisories
+
+The pin was `toolchain go1.26.6`. The external audit of edlitmus/halite#321
+(section 1.2) found ten Go standard-library advisories that affect it. Six
+are on the hub's server paths: HTTP/2 in `net/http`, ECH in `crypto/tls`,
+and `net/textproto`. All ten are fixed in go1.26.9. The pin is now
+`toolchain go1.27.2`. The advisory list is the audit's. It was not
+re-derived here, and `make vuln` was not run.
+
+**The `go` directive stays at `1.26.0`.** It is a floor, not the pin
+(SPEC 4.3, `TestGoModPinsTheToolchain`), and
+`TestGoModFloorMatchesTheSpec` holds it to SPEC 4.1's "Go 1.26 or
+later". Raising it would be a SPEC change that nothing here needs. It
+also decides the default GODEBUG settings. A hub built at this commit
+records `DefaultGODEBUG=tracebacklabels=0,x509sslcertoverrideplatform=0`
+(`go version -m`). So the two settings Go 1.27 changed keep their 1.26
+behaviour.
+
+**Every place that names the pin moved with it.** `go.mod`; the
+`go-version` of eleven setup-go steps in `ci.yml`, `fleet.yml` and
+`release.yml`; `FROM golang:1.27.2-bookworm` in `contrib/docker/fleet`
+and the two `contrib/docker/fleet-rpm` images; and `go_version`,
+`go_sha256` and `go_sha256_freebsd` in `contrib/tofu/variables.tf`.
+`internal/buildpolicy` holds the first three to `go.mod`. Nothing holds
+the lab's, so its checksums were taken from
+`https://go.dev/dl/?mode=json&include=all` for the two tarballs the
+bootstraps fetch: `go1.27.2.linux-amd64.tar.gz` is `ecbadb99…045fe5`
+and `go1.27.2.freebsd-amd64.tar.gz` is `3baf61ee…1eded`. The same
+extraction, run for go1.26.6, gave the two digests that were already
+pinned. Docker Hub's tag metadata lists `golang:1.27.2-bookworm` as
+active for amd64 and arm64. No image was pulled.
+
+The remaining mentions of 1.26.6 in `.gitattributes`, the setup-go
+comments, `plan.md`, `contrib/tofu/README.md` and this ledger record
+what happened on that toolchain at the time. They are still true and
+were left unchanged.
+
+**One behaviour change was found, in `value.DecodeJSON`.** Go 1.27 turns
+on the `jsonv2` experiment by default, and that does not depend on the
+`go` directive. `encoding/json`'s `Decoder.Token` now refuses nesting
+deeper than 10,000. On the 1.26 path only `Unmarshal` had that limit.
+`DecodeJSON` walks tokens recursively and had no limit of its own.
+Measured on go1.27.2 (darwin/arm64), with a throwaway test that was not
+committed:
+
+| Input | default | `GOEXPERIMENT=nojsonv2` |
+|---|---|---|
+| 10,000 nested arrays | decodes | decodes |
+| 10,001 nested arrays | `exceeded max depth` | decodes |
+
+This makes the decoder bounded where it was not, and nothing in the
+suite depends on deeper input. It was not made into a test. A test that
+asserts the limit is a test of the standard library, and the limit
+belongs to the toolchain, not to halite. If halite should have a limit
+of its own, that is a separate change.
+
+**What was run.** All on darwin/arm64 with go1.27.2,
+`GOTOOLCHAIN=local`, `GOFLAGS=-mod=vendor`, `GOPROXY=off` and
+`GOMAXPROCS=2`:
+
+- `go build ./...`, `go vet ./...` (no findings from 1.27's analyzers),
+  `gofmt -l` (clean), and `go mod verify`.
+- `make check`: `fmt-check`, `vet`, `build-all` (every target in
+  `TARGETS`, built and vetted), `test`, `race`, `policy` and
+  `fips-test` with `GOFIPS140=v1.0.0`. Exit 0. go1.27.2 still carries
+  the v1.0.0 module.
+- `bmake repro`: all three binaries were byte-identical from two paths.
+
+`vendor/modules.txt` and `go.sum` did not change.
+`golang.org/x/sys` v0.47.0 builds on every target above.
+
+**Not verified.**
+
+- **No CI run on this change at the time of writing.** Linux, Windows
+  and the FreeBSD VM legs of `ci.yml`, and `fleet.yml`'s live legs, were
+  not run locally. The tests ran on macOS only.
+- **The lab bootstrap was not run with the new checksums.** No instance
+  was raised. The digests are go.dev's. No tarball was downloaded and
+  hashed here.
+- **The Docker images were not built.** That `golang:1.27.2-bookworm`
+  exists was read from Docker Hub's metadata.
+- **Release builders.** The two-builder comparison in `release.yml` was
+  not run. Only `repro`, on one machine, was run.
+- **The advisories themselves.** No advisory was reproduced against
+  go1.26.6, or shown to be absent on go1.27.2.
+### 5.291 A deeply nested target expression ended the hub
+
+Audit H-12. The compound parser in `internal/target/compound.go` is
+recursive descent, `parseOr` to `parseAnd` to `parseNot` to
+`parsePrimary` and back to `parseOr` on every `(`, and `parseNot` calls
+itself on every `not`. Nothing bounded either. The only depth limit in
+the package was `resolveNodegroup`'s ten levels of `N@`. A Go stack
+overflow is `fatal error: stack overflow`, not a panic, and `net/http`
+cannot recover it. So one request whose target was enough `(` ended the
+hub, and every job in flight with it. The hub calls `target.Compile`
+in `hub.Dispatch` (`internal/hub/dispatch.go`), the mine
+(`internal/hub/mine.go`) and the nodegroup runner
+(`internal/hub/runners_fleet.go`). The audit also names the reactors,
+which were not traced for this entry. The API bounds a body at `max_body`, 64 MiB by default, and
+nothing smaller bounds a target. The caller needs a role whose target
+covers the expression, which `*` does.
+
+**The second half was not in the audit.** `or` and `and` chains are a
+loop in the parser, so they looked safe. But the loop built
+`((a or b) or c) or …` as one closure inside the next, and `Match`
+recursed once per term. So a long flat target did not crash at
+compile. It crashed at match, against the first node.
+
+**Measured**, darwin/arm64, go1.27.2, with `debug.SetMaxStack(4 << 20)`
+in a child process, on the code before the change:
+
+- `(` × n, then `x`, then `)` × n: 10,000 parsed and 15,000 overflowed.
+  That is some 300 to 400 bytes a level. The audit's own figure, from a
+  32 MiB stack, was about 170 bytes; the platform and the measurement
+  differ, and either way a few megabytes of `(` exceeds the default
+  1 GiB stack.
+- `nomatch or ` × n: 25,000 evaluated and 30,000 overflowed in `Match`,
+  some 150 bytes a term. Extrapolated, not run: a few tens of megabytes
+  of `a or a or …` at the default stack. That is inside the 64 MiB body.
+- 200,000 `(`, 200,000 `not`, and 200,000-term `or` and `and` chains
+  all ended the child with `fatal error: stack overflow`.
+
+**The change.** Two parts.
+
+- `maxCompoundDepth = 100` bounds nesting. Each `(` and each `not` is
+  one level. Past the bound, `Compile` returns an ordinary `*Error` with
+  the column of the token that went over: *"the expression nests deeper
+  than 100 levels of `(` and `not`"*. 100 is far above what anyone
+  writes. A fully nested nodegroup costs eleven levels: ten references,
+  each wrapped in one pair of parentheses by `resolveNodegroup`, and the
+  root. 100 is also far below the stack a level costs.
+- `or` and `and` chains are now `anyNode` and `allNode`, a slice that
+  `Match` walks in a loop. The order of evaluation and the
+  short-circuit are left to right, as before. The tree is now as deep as
+  the nesting, and the bound covers that.
+
+An `N@` term inside a compound is parsed by a fresh parser from depth 0,
+not from the enclosing depth. `ValidateNodegroups` checks a group at
+depth 0 when it loads. If use counted from the enclosing depth, a group
+that passed at load could fail at use: two paths that must agree. The
+expansion has no `N@` left in it, so the fresh parser never starts
+another. The worst case is twice the bound.
+
+**Length is not capped, on purpose.** A cap was considered at
+`target.Compile` and at the API. After the change, length costs time and
+memory in a straight line and no stack. A long target is what a list of
+node names looks like, and a large estate has long ones. A cap would
+refuse a valid target, and no crash is behind it. The API's `max_body`
+already bounds the memory. `TestLongFlatTargetsStillCompile` holds a
+5,001-term `or` of `L@` names.
+
+**Other recursion in `internal/target`**, checked with 200,000 `(` under
+a 4 MiB stack: `E@`, `P@`, `J@` go to Go's `regexp`, which refuses that
+with its own nesting error. `G@`, `I@`, glob, list and `S@` do not
+recurse on the expression. A 200,000-segment `G@` key was compiled and
+matched. `resolveNodegroup` was already bounded at ten. Nothing else was
+changed.
+
+**Tests.** `internal/target/depth_test.go`.
+`TestHostileTargetsDoNotOverflowTheStack` runs the four shapes above in
+a child with a 4 MiB stack. `TestCompoundNestingLimitEdge` holds both
+sides of the bound, for `(`, `not` and both mixed. Each was broken on
+purpose and seen to fail:
+
+- The old `compound.go`: all four shapes overflowed.
+- The bound disabled: `parens` and `nots` overflowed. The edge test
+  failed for all three shapes.
+- `>=` changed to `>`: the edge test failed for all three shapes.
+- The nested closures restored for `or` and `and`: `or-chain` and
+  `and-chain` overflowed.
+
+**Not verified.** No hub or API was run. The crash was reproduced in
+`internal/target` and not through a request. That the request path
+reaches `Compile` is from the audit and from reading `dispatch.go`. The
+node compiles a job's target again in `cmd/halite-node/jobsignature.go`.
+That path shares the same code and the same bound, but a test was not
+run there. The figures above are from one Mac and were not taken on
+FreeBSD or Linux.
+### 5.292 gitfs verified a branch by its name and served it by its commit
+
+With `gitfs_verify_signatures: true`, `verify` ran
+`git verify-commit --raw <name>`, where the name was the short one
+(`production`, not `refs/heads/production`). What was then archived and
+served was the object id `for-each-ref` had printed for the branch. Those
+are two paths that must agree, and they did not. git resolves an
+ambiguous short name to the tag before the branch, and the mirror holds
+every tag the remote has, because it is made with `clone --mirror` and
+kept with `fetch --tags`, whatever `gitfs_ref_types` says is served.
+
+So the control could be walked past by anybody who could push a branch
+and a tag, without a trusted key: tag an old commit that a trusted key
+signed as `production`, push an unsigned tip to the branch `production`.
+The tag's commit was verified and the branch's tip was served. Found by
+audit (H-19) and reproduced before it was changed: `git rev-parse
+production` in such a repository warns that the name is ambiguous and
+prints the tag's commit.
+
+**The change.** `verify` passes the object id that is served
+(`ref.Commit`), after `--`. A full object id has no ambiguous reading,
+and it is the same string that names the tree directory and that
+`materialise` hands to `git archive`, so what is checked and what is
+served are now one value rather than two that happened to agree. For a
+tag the object id is the tag object's, so `verify-tag` still checks the
+tag's own signature. `refs` now drops, with a warning, any line whose
+object id is not forty or sixty-four lower-case hex digits, so that
+nothing else reaches those arguments.
+
+**Remote-controlled names in argv** (audit L-engine-9). The other way a
+name reached git as an argument was the same call: a branch named
+`-dashed`, which `git branch` refuses but `update-ref` makes and a push
+carries, was read by `verify-commit` as options (`unknown switch 'd'`)
+and refused although its commit was signed. It now never reaches argv.
+`clone --mirror` gained `--` before the URL too. The URL is the
+operator's, not the remote's, and `checkURL` admits only `https://`,
+`ssh://`, `file://`, an absolute path, scp style, or anything with
+`insecure: true`, which is the case `--` covers. The other git calls in
+the package take no remote-controlled name: `fetch` names `origin`,
+`for-each-ref` takes fixed patterns, and `archive` takes the object id.
+That `verify-commit`, `verify-tag` and `clone` accept `--` there was
+checked by hand on git 2.56.0 only. No minimum git version is stated in
+SPEC 13.3; all three parse their options with git's common parser, which
+treats `--` as the end of options.
+
+**How it is tested,** with real git and real GnuPG, in
+`internal/gitfs/gitfs_test.go`:
+
+- `TestABranchIsVerifiedAtTheCommitServedNotAtATagOfTheSameName` builds
+  the attack: a signed commit on `main`, a lightweight tag `production`
+  on it, and a branch `production` with an unsigned commit on top. It
+  first checks that `git rev-parse production` gives the signed commit,
+  so the scenario is shown rather than assumed. Then `main` must be
+  served (a real signature verified against a real keyring) and
+  `production` must be refused and its unsigned commit not served.
+- `TestABranchNamedLikeAnOptionIsVerifiedAsACommit`: a branch
+  `-dashed` at a signed commit must be served as `dashed`.
+- `TestIsObjectID`, for the new filter.
+
+Both were broken on purpose by putting `ref.Name` back in place of
+`"--", ref.Commit`. The first failed with `production` served from
+`trees/<the unsigned commit>` and nothing refused. The second failed with
+`unknown switch 'd'` and only `base` served. Both passed again when it
+was restored.
+
+**A skip that had hidden the signed path on a Mac.** The existing
+`TestASignedRefIsServedAndAnUntrustedOneIsNot` skipped on macOS: its
+GnuPG home was `t.TempDir()`, under `/var/folders/…` with the test's
+name in it, and gpg-agent's socket path in it was too long ("can't
+connect to the gpg-agent: File name too long"), so no key was made. A
+skip says so, but it reads as green. The tests now make the home with a
+short name under `/tmp` where there is one, and stop the agent after.
+On this Mac all three signed tests ran and passed rather than skipping.
+
+**Not verified.**
+
+- **Not run through a hub or in the lab.** No hub served a repository
+  with this change; the tests drive `Backend.Update` directly against a
+  local repository. SHA-256 repositories were not tried; the
+  sixty-four-digit case is from git's documentation of the object
+  format, not a capture.
+- **macOS only** (Darwin 25.6, git 2.56.0, Homebrew GnuPG). CI runs the
+  package on Linux, FreeBSD and Windows. Whether gpg can make a key
+  there, or those legs skip the signed tests, was not checked.
+- **`clone --` with a URL beginning with a dash** has no test. It was
+  run by hand on git 2.56.0 with an ordinary path only.
+- **Not fixed here:** the sweep after an update deletes every tree no
+  current ref points at, including the trees of a remote whose refs were
+  all refused, while `Update` keeps serving the previous roots. A hub
+  that starts refusing a ref after this change can therefore keep
+  pointing at a tree directory that is gone. That is audit M-49 and is a
+  separate change.
+### 5.293 gitfs kept the last good tree's path and swept away its files
 
 `Update` keeps the last good tree when a reachable remote serves
 nothing: every ref refused, by a signature or by `materialise`. That is
@@ -24004,6 +24274,8 @@ here; they reach the same `len(result.Refs) == 0` path as the symlink.
 No hub was run: this is the backend under `go test` on macOS. The
 existing window between the sweep removing a replaced tree and the
 hub's file server switching to the new roots is unchanged.
+
+
 
 ## 6. Everything else not started
 
