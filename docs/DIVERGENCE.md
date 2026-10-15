@@ -24009,11 +24009,34 @@ Each part was broken on purpose and its tests failed. A no-op
 tests ("the node is accepted after a revocation: the renewal undid
 it"). Without the two stickiness checks, `TestRevokedIsSticky` failed.
 
-**Not verified.** No live hub has run this. The tests ran on macOS
-(darwin/arm64) only. `flock` on FreeBSD, Linux and the BSDs,
-`LockFileEx` on Windows, and `fcntl` on Solaris compile (`go vet` for
-each target) and have not been run. FreeBSD is the one that matters
-most. Nothing measured the cost of the extra open and lock per write.
+**What CI showed** (PR #338, run 38776340940). This was the first
+time the lock ran anywhere but macOS. `internal/keystore` passed on
+`test (ubuntu-24.04)`, `race (ubuntu-24.04)`, `test (freebsd)` (a
+FreeBSD 15.1-RELEASE amd64 VM), `test (windows-2022)` (running as an
+unprivileged account) and `fips-test`. These runs included the
+four race tests and the test that re-runs the binary as a second
+process. That is `flock` on Linux and FreeBSD and `LockFileEx` on
+Windows, each excluding a second Store and a second process. The test
+has no skip path, so "ok" there means it ran.
+
+Every one of those legs failed anyway, on something else.
+`internal/fileperm`'s audit refused `openLock`:
+
+    internal/keystore/keystore.go:191 openLock calls os.OpenFile with mode 0600, which denies group and other
+
+On Windows, a 0600 passed to `os.OpenFile` sets the read-only
+attribute. It is not an access control decision. The lock file is now
+opened through `fileperm.OpenFile`, which applies the mode as an ACL
+there. The first local run checked `internal/keystore` and the audits
+named in this repository's notes, but not `internal/fileperm`, so the
+miss reached CI. With `os.OpenFile` restored, the audit fails locally
+too.
+
+**Not verified.** No live hub has run this. That includes a FreeBSD
+hub with `halite-hub keys revoke` run beside it: the CI VM ran the
+tests, not a hub. `flock` on OpenBSD and NetBSD and `fcntl` on Solaris
+are compiled only (`go vet` for each target). Nothing measured the
+cost of the extra open and lock per write.
 The hub writes the store on enrollment and renewal, not per request, so
 the cost should be small, but that is not measured.
 

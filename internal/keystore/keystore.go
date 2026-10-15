@@ -186,9 +186,14 @@ func (s *Store) tryLocked() (bool, error) {
 // DIVERGENCE 5.285): `keys revoke` run as root is quite likely to be
 // the first writer, and a root-owned 0600 lock file would make every
 // write the hub's own account tried afterwards fail at the open.
+//
+// Through fileperm.OpenFile rather than os.OpenFile, so that 0600 is
+// carried out as an ACL on Windows rather than becoming the read-only
+// attribute; internal/fileperm's audit refused the os.OpenFile this
+// first shipped with, on every CI leg.
 func (s *Store) openLock() (*os.File, error) {
 	path := filepath.Join(s.dir, lockName)
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := fileperm.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("opening the key store's lock at %s: %w", path, err)
 	}
