@@ -44,7 +44,7 @@ type parser struct {
 // recursively, so nesting is stack. A Go stack overflow is a fatal error
 // rather than a panic: nothing recovers it, net/http included, so before
 // this bound one deeply nested target from one API caller ended the hub
-// (DIVERGENCE 5.290). Measured on darwin/arm64 with go1.27.2 and the
+// (DIVERGENCE 5.291). Measured on darwin/arm64 with go1.27.2 and the
 // stack capped at 4 MiB, 10,000 `(` parsed and 15,000 overflowed: some
 // 300 to 400 bytes a level, so a few megabytes of `(` would exhaust the
 // default 1 GiB stack, well inside the API's 64 MiB body limit.

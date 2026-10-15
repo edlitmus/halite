@@ -15,7 +15,7 @@ import (
 // The compound parser and the tree it builds were both recursive with
 // nothing bounding the recursion but the input. A Go stack overflow is a
 // fatal error, not a panic: net/http cannot recover it, so one target
-// expression from one API caller killed the hub (DIVERGENCE 5.290).
+// expression from one API caller killed the hub (DIVERGENCE 5.291).
 //
 // These tests drive the hostile shapes in a child process with a small
 // stack, because the failure being guarded against ends the process that

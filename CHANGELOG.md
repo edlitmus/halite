@@ -30,7 +30,23 @@ end the hub. A long `or` chain could also end it, the first time it was
 matched. That chain is still accepted and now evaluates in a loop. No
 real target comes near 100 levels. A nodegroup at the deepest nesting
 that is allowed uses eleven. Long targets are not capped. See DIVERGENCE
-5.290.
+5.291.
+
+### Built with Go 1.27.2, off a Go with ten standard-library advisories
+
+halite was pinned to Go 1.26.6. An external audit (edlitmus/halite#321,
+section 1.2) found ten Go standard-library advisories that affect it. Six
+are on the hub's server paths: HTTP/2 in `net/http`, ECH in `crypto/tls`,
+and `net/textproto`. All are fixed in Go 1.26.9. The pin is now
+`toolchain go1.27.2`. The `go 1.26.0` floor is unchanged, so SPEC 4.1
+still says Go 1.26 or later.
+
+One behaviour change comes with it. Go 1.27 builds `encoding/json` on its
+v2 implementation by default, and that refuses a JSON document nested more
+than 10,000 levels deep. halite's JSON decoder used to accept any depth. It
+now refuses such a document with `exceeded max depth`. The test suite
+passes under 1.27.2, so none of its inputs nests that deep; production
+input was not surveyed. See DIVERGENCE 5.290.
 
 ### The API's systemd unit now restarts an API whose listener was early
 
