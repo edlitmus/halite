@@ -430,7 +430,13 @@ func (s *Server) targetPillar(matcher *target.Matcher, env string) (
 				}
 				return nil
 			}
-			compiled, _, err := s.compilePillar(id, env, node.Grains)
+			// Every environment's pillar, which is what a node with no
+			// `pillarenv` receives (DIVERGENCE 5.288). The hub does not
+			// hold a node's own configuration, so a node that sets one is
+			// targeted against more pillar than it receives; before, it
+			// was targeted against the job's environment, which was the
+			// same guess for the default that no longer holds.
+			compiled, _, err := s.compilePillar(id, env, true, node.Grains)
 			if err != nil {
 				*failed = fmt.Errorf("compiling the pillar of %s: %w", id, err)
 				return nil

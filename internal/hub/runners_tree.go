@@ -22,6 +22,8 @@ func registerPillarRunner(r *Runners) {
 	nodeAndEnv := []signature.Param{
 		runnerArg("node", signature.String, "The node identifier."),
 		runnerOpt("env", signature.String, "", "The environment, default the hub's."),
+		runnerOpt("pillarenv", signature.String, "",
+			"One pillar environment alone. Unset, every environment's pillar is merged, as a node with no pillarenv receives it."),
 	}
 
 	r.Add(
@@ -456,7 +458,13 @@ func (c *RunnerContext) compilePillarFor() (*pillar.Compiled, error) {
 	if env == "" {
 		env = "base"
 	}
-	compiled, _, err := c.Server.compilePillar(node, env, grains)
+	// As a node with no `pillarenv` receives it, every environment
+	// merged, unless the caller names one. DIVERGENCE 5.288.
+	all := true
+	if pe := c.arg("pillarenv"); pe != "" {
+		env, all = pe, false
+	}
+	compiled, _, err := c.Server.compilePillar(node, env, all, grains)
 	return compiled, err
 }
 

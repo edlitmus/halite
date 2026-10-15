@@ -367,7 +367,7 @@ func TestCheckingASignedTargetCompilesPillarOnlyWhenItIsRead(t *testing.T) {
 	calls := 0
 	n, key := signedNode(t, "true")
 	n.grains.Set("os", "FreeBSD")
-	n.hubPillar = func(string) (*value.Map, error) {
+	n.hubPillar = func(string, bool) (*value.Map, error) {
 		calls++
 		p := value.NewMap(1)
 		p.Set("role", "web")
@@ -413,7 +413,7 @@ func TestASignedPillarTargetIsRefusedWhenThisNodesPillarWillNotCompile(t *testin
 	n, key := signedNode(t, "true")
 	n.grains.Set("os", "FreeBSD")
 	calls := 0
-	n.hubPillar = func(string) (*value.Map, error) {
+	n.hubPillar = func(string, bool) (*value.Map, error) {
 		calls++
 		return nil, errors.New("rendering top.sls: unexpected end of template")
 	}

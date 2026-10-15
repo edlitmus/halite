@@ -376,9 +376,9 @@ The allowlist of grains a pillar top file may target on. A node controls its own
 
 *`halite-node`, `halite-hub` · no default · SPEC section 12.2*
 
-The pillar environment, defaulting to env.
+The one pillar environment; unset, every environment's pillar is merged.
 
-Lets pillar come from a different environment than states. Leaving it unset — pillar following `env` — is what most estates want; setting it is how a test environment reads production pillar by accident.
+Unset, a node's pillar merges every environment in `pillar_roots`, each file read from the environment whose top-file heading lists it, as Salt does. Set, only that environment's top file and only entries under its own heading count -- which is how a tree keeps pillar in one environment while states move between several, and how a test environment reads production pillar by accident.
 
 ### `render_sandbox`
 

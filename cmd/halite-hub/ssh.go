@@ -429,7 +429,15 @@ func compileRosterPillarSecrets(h *hubContext, t roster.Target, env string) (*va
 	// included. Agentless pillar is compiled here, so it is decrypted
 	// here, and the redactor hears every secret first. DIVERGENCE 5.110,
 	// 5.267.
-	compiled, secrets := hub.CompilePillar(opts, t.ID, env, grains)
+	// A roster target has no configuration of its own, so the hub's
+	// `pillarenv` stands in for one: set, that environment alone; unset,
+	// every environment merged, as Salt compiles a pillar with none.
+	// DIVERGENCE 5.288.
+	all := true
+	if pe := h.cfg.String("pillarenv", ""); pe != "" {
+		env, all = pe, false
+	}
+	compiled, secrets := hub.CompilePillar(opts, t.ID, env, all, grains)
 	for _, w := range compiled.Warnings {
 		h.log.Warn(w.String(), "component", "pillar", "node_id", t.ID)
 	}

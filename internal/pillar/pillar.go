@@ -33,9 +33,25 @@ var TrustedGrains = []string{
 // Config controls a compilation.
 type Config struct {
 	// Env is the pillar environment. Empty means "base".
-	Env    string
-	NodeID string
-	JobID  string
+	//
+	// With AllEnvs it is not a choice of pillar at all, only the
+	// environment the node is running in.
+	Env string
+	// AllEnvs compiles the pillar of every environment the loader
+	// serves, which is what Salt does when `pillarenv` is unset: each
+	// environment's top file is read, the entries are merged, and each
+	// SLS is rendered from the environment whose heading it sits under.
+	// Without it only Env's top file is read, and only the entries under
+	// Env's own heading count -- Salt's behaviour with `pillarenv` set.
+	//
+	// Before DIVERGENCE 5.288 there was only the second, and an unset
+	// `pillarenv` meant "the node's env": a tree with a `ref` pillar
+	// repository beside `base` delivered it to no node in `base`, and
+	// every SLS a top file listed was read from one environment whatever
+	// heading it sat under.
+	AllEnvs bool
+	NodeID  string
+	JobID   string
 
 	// Grains are the node's grains. Only the trusted subset reaches
 	// targeting; the whole set reaches templates, because a template that
@@ -164,11 +180,11 @@ func (c *Compiler) trusted() []string {
 func (c *Compiler) Compile() *Compiled {
 	out := &Compiled{Pillar: value.NewMap(32)}
 
-	matched, optional := c.resolveTop(out)
-	env := c.env()
 	seen := map[string]bool{}
-	for _, name := range matched {
-		c.mergeSLS(out, env, name, seen, nil, optional[name])
+	for _, m := range c.resolveTops(out) {
+		for _, name := range m.names {
+			c.mergeSLS(out, m.env, name, seen, nil, m.optional[name])
+		}
 	}
 	// After the tree, so that an external source sees what the tree
 	// produced and wins over it where they collide -- which is what a
@@ -198,23 +214,146 @@ func (c *Compiler) targetNode() target.Node {
 	return target.Node{ID: c.Config.NodeID, Grains: trusted}
 }
 
-// resolveTop reads the pillar top file and returns the matched SLS names.
-// resolveTop returns the SLS names this node matches, and the subset of
-// them declared under an `ignore_missing: true` target. Salt honours that
-// directive in a pillar top file and not in a state top file, so this is
-// the only place it applies.
-func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
-	env := c.env()
+// topMatch is what one environment's heading delivers to this node: the
+// SLS names, in the order the top files listed them, and the subset
+// declared under an `ignore_missing: true` target.
+type topMatch struct {
+	env      string
+	names    []string
+	optional map[string]bool
+}
+
+// topEnvs are the environments whose top files are read.
+//
+// With AllEnvs that is every environment the loader serves, `base` first
+// and the rest sorted (Loader.Envs). Salt gathers them into a Python set,
+// so the order it reads them in -- which decides whose entry wins when
+// two top files name the same environment and target -- varies between
+// runs; this one does not.
+func (c *Compiler) topEnvs() []string {
+	if c.Config.AllEnvs {
+		return c.Loader.Envs()
+	}
+	return []string{c.env()}
+}
+
+// resolveTops reads the pillar top files and returns what each
+// environment's heading delivers to this node, in the order the headings
+// first appear.
+//
+// Salt's merge_tops: every top file's entries are gathered under the
+// environment heading they sit in, and a later file's entry for the same
+// heading and target replaces an earlier one. With AllEnvs off only Env's
+// own heading counts (Salt's top_matches with `pillarenv` set); the rest
+// are not read from Env as they used to be, which rendered a file listed
+// under `ref:` out of `base`. ignore_missing is honoured here and not in
+// a state top file, as Salt does.
+func (c *Compiler) resolveTops(out *Compiled) []topMatch {
+	type entry struct {
+		env, expr string
+		val       any
+		valPos    value.Pos
+		keyPos    value.Pos
+	}
+	var order []string // heading|target, in first-appearance order
+	entries := map[string]entry{}
+	for _, topFileEnv := range c.topEnvs() {
+		top := c.readTop(out, topFileEnv)
+		if top == nil {
+			continue
+		}
+		for _, envEntry := range top.Entries() {
+			heading := value.KeyString(envEntry.Key)
+			targets, ok := envEntry.Val.(*value.Map)
+			if !ok {
+				out.Diags.Add(envEntry.ValPos, state.TopName, "",
+					"the %q environment in the pillar top file must hold a mapping of target expressions", heading)
+				continue
+			}
+			if !c.Config.AllEnvs && heading != c.env() {
+				continue
+			}
+			for _, te := range targets.Entries() {
+				expr := value.KeyString(te.Key)
+				k := heading + "|" + expr
+				if _, dup := entries[k]; !dup {
+					order = append(order, k)
+				}
+				entries[k] = entry{env: heading, expr: expr, val: te.Val, valPos: te.ValPos, keyPos: te.KeyPos}
+			}
+		}
+	}
+
+	served := map[string]bool{}
+	for _, e := range c.Loader.Envs() {
+		served[e] = true
+	}
+	node := c.targetNode()
+	var matches []topMatch
+	index := map[string]int{}
+	for _, k := range order {
+		e := entries[k]
+		// Compiled before it is judged, and judged on what it compiled
+		// to.
+		//
+		// The other order is what let a nodegroup carry an untrusted
+		// grain past SPEC 12.4: the check read the expression's text and
+		// the expansion happened afterwards, inside the compiler. An
+		// expression that does not compile is reported as that, which is
+		// also the right answer -- there is nothing to judge about terms
+		// nobody could parse. DIVERGENCE 5.136.
+		matcher, err := state.CompileTopTarget(e.expr, e.val, c.Config.Nodegroups)
+		if err != nil {
+			out.Diags.Add(e.keyPos, state.TopName, "", "%v", err)
+			continue
+		}
+		basis, err := c.checkTargetIsPermitted(e.expr, matcher)
+		if err != nil {
+			out.Diags.Add(e.keyPos, state.TopName, "", "%v", err)
+			continue
+		}
+		if !matcher.Match(node) {
+			continue
+		}
+		names, ignoreMissing := topSLSNames(e.val, e.valPos, &out.Diags)
+		if !served[e.env] {
+			// Salt: "No matching pillar environment for environment ...
+			// found". Reading the files from another environment instead
+			// is what this used to do, silently.
+			out.Diags.Add(e.keyPos, state.TopName, "",
+				"the pillar top file delivers %s from environment %q, which pillar_roots does not serve",
+				strings.Join(names, ", "), e.env)
+			continue
+		}
+		i, ok := index[e.env]
+		if !ok {
+			i = len(matches)
+			index[e.env] = i
+			matches = append(matches, topMatch{env: e.env, optional: map[string]bool{}})
+		}
+		matches[i].names = appendUnique(matches[i].names, names)
+		if ignoreMissing {
+			for _, n := range names {
+				matches[i].optional[n] = true
+			}
+		}
+		out.Audit = append(out.Audit, AuditEntry{Env: e.env, Target: e.expr, Basis: basis, SLS: names})
+	}
+	return matches
+}
+
+// readTop renders one environment's pillar top file. A missing one is
+// nil without a diagnostic: a pillar tree with no top file delivers
+// nothing, which is a legitimate configuration rather than an error.
+func (c *Compiler) readTop(out *Compiled, env string) *value.Map {
 	src, path, err := c.Loader.Source(env, state.TopName)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
-			// A pillar tree with no top file delivers nothing, which is a
-			// legitimate configuration rather than an error.
-			return nil, nil
+			return nil
 		}
 		out.Diags.Add(value.Pos{File: state.TopName}, state.TopName, "",
 			"reading the pillar top file for %q: %v", env, err)
-		return nil, nil
+		return nil
 	}
 
 	res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, state.TopName, path, nil))
@@ -222,65 +361,17 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 	out.Warnings = append(out.Warnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: path}, state.TopName, "", "%v", err)
-		return nil, nil
+		return nil
 	}
-
-	optional := map[string]bool{}
 	top, ok := res.Value.(*value.Map)
 	if !ok {
-		if res.Value == nil {
-			return nil, nil
+		if res.Value != nil {
+			out.Diags.Add(value.Pos{File: path}, state.TopName, "",
+				"a pillar top file must hold a mapping of environments, found %s", value.TypeName(res.Value))
 		}
-		out.Diags.Add(value.Pos{File: path}, state.TopName, "",
-			"a pillar top file must hold a mapping of environments, found %s", value.TypeName(res.Value))
-		return nil, nil
+		return nil
 	}
-
-	node := c.targetNode()
-	var matched []string
-	for _, envEntry := range top.Entries() {
-		topEnv := value.KeyString(envEntry.Key)
-		targets, ok := envEntry.Val.(*value.Map)
-		if !ok {
-			out.Diags.Add(envEntry.ValPos, state.TopName, "",
-				"the %q environment in the pillar top file must hold a mapping of target expressions", topEnv)
-			continue
-		}
-		for _, te := range targets.Entries() {
-			expr := value.KeyString(te.Key)
-			// Compiled before it is judged, and judged on what it
-			// compiled to.
-			//
-			// The other order is what let a nodegroup carry an untrusted
-			// grain past SPEC 12.4: the check read the expression's text
-			// and the expansion happened afterwards, inside the compiler.
-			// An expression that does not compile is reported as that,
-			// which is also the right answer -- there is nothing to judge
-			// about terms nobody could parse. DIVERGENCE 5.136.
-			matcher, err := state.CompileTopTarget(expr, te.Val, c.Config.Nodegroups)
-			if err != nil {
-				out.Diags.Add(te.KeyPos, state.TopName, "", "%v", err)
-				continue
-			}
-			basis, err := c.checkTargetIsPermitted(expr, matcher)
-			if err != nil {
-				out.Diags.Add(te.KeyPos, state.TopName, "", "%v", err)
-				continue
-			}
-			if !matcher.Match(node) {
-				continue
-			}
-			names, ignoreMissing := topSLSNames(te.Val, te.ValPos, &out.Diags)
-			matched = appendUnique(matched, names)
-			if ignoreMissing {
-				for _, n := range names {
-					optional[n] = true
-				}
-			}
-			out.Audit = append(out.Audit, AuditEntry{Env: topEnv, Target: expr, Basis: basis, SLS: names})
-		}
-	}
-	return matched, optional
+	return top
 }
 
 // checkTargetIsPermitted refuses a pillar top expression that targets on

@@ -377,7 +377,12 @@ Avoid putting unrelated data at the root, where two files can collide.
 
 **Per-environment pillar.** Use environments (`base`, `prod`) with
 different `pillar_roots`, or target on a trusted grain/ID, instead of
-branching on environment names inside states.
+branching on environment names inside states. With `pillarenv` unset a
+node gets every environment's pillar merged, each file read from the
+environment whose heading in a top file lists it; list a `prod` file under
+`prod:`, not `base:`. Set `pillarenv` to give a node one environment's
+pillar alone. If two environments set the same key, the one later in the
+order (`base` first, then the rest sorted) wins; better not to rely on it.
 
 **Secrets in one place.** Keep every secret in files named so that nobody
 grants access by accident, encrypted or in the secrets manager, and put

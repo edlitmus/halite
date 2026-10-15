@@ -23605,8 +23605,6 @@ this; the root run used uid 65534 in a temp directory); Windows and other
 platforms without uids, where `inheritOwner` is a no-op by design; the node's
 own message, which still says only "the hub's log says why" (the hub's log now
 says why at start, which is as far as this goes).
-
-
 ### 5.286 `HaliteNodesAbsent` could not say which node
 
 The alert was `halite_hub_keys_accepted - halite_hub_nodes_connected > 0`: two
@@ -23738,6 +23736,69 @@ cannot drift apart again. Each was broken on purpose and each failed:
   unit on both, so an API whose address is late at boot stays down.
 - **The node was not audited.** No one has checked whether `halite-node
   connect` exits 1 for anything transient.
+### 5.288 An unset `pillarenv` compiled one environment, where Salt merges every one
+
+Found by pointing the hub module at a reference stack whose pillar lives in two
+repositories, served as `base` and `ref`: no node in `base` received anything
+from `ref`. On v0.1.1, `halite-node pillar items --local` gave base's keys,
+`--env ref` gave ref's and lost base's, and `state show_top` merged both
+environments' state top files. States merged; pillar did not.
+
+Salt's pillar compiler, `get_tops` in `salt/pillar/__init__.py` (read at
+v3006.9 and v3007.1), takes the top file of **every** environment in
+`pillar_roots` when `pillarenv` is unset, merges them (`merge_tops`: a later
+file's entry for the same heading and target replaces an earlier one), and
+renders each SLS from the environment whose heading lists it
+(`render_pillar`). With `pillarenv` set it reads that environment's top file
+and counts only the entries under that environment's own heading
+(`top_matches`). halite did neither: an unset `pillarenv` meant "the node's
+`env`", which is Salt's opt-in `pillarenv_from_saltenv`, and every SLS a top
+file listed was read from that one environment whatever heading it sat under,
+so a `ref:` entry in base's top file was looked for in base.
+
+Now `pillar.Config.AllEnvs` is set wherever `pillarenv` is unset -- the node's
+local compile, the hub's compile for a node (a new `all_envs` field on the
+pillar request, which an older hub ignores, compiling `env` alone as before),
+the agentless path, pillar targeting, the `pillar` runner (which gains
+`pillarenv`) and `halite-hub doctor` -- and the compiler follows Salt: every
+environment's top file, merged; each SLS from its heading's environment; a
+heading naming an environment `pillar_roots` does not serve is an error, as
+Salt's "No matching pillar environment" is, where it used to read the file from
+the wrong environment. With `pillarenv` set, other headings are not this
+compilation's.
+
+What a tree sees change: with more than one pillar environment and no
+`pillarenv`, a node gets all of them; a non-base pillar top file that lists
+its entries under `base:` delivers them from base, and nothing at all under an
+explicit `pillarenv` (Salt's behaviour; `TestPillarEnvAndRenderer`'s prod
+fixture was written that way and now uses `prod:`). A tree with one pillar
+environment is unchanged.
+
+Two choices where Salt is not one thing. Salt gathers the environments into a
+Python set, so the order its top files are read in, and the winner when two
+environments set the same key, varies between runs; halite reads `base` first
+and the rest sorted, every time. And `pillar_source_merging_strategy: none`,
+which narrows Salt's unset case to the node's own environment, is not a
+strategy halite accepts, so there is nothing to narrow.
+
+Two that are not closed. The hub does not hold a node's configuration, so pillar
+targeting (`I@`) compiles the merged pillar for every node; a node that sets
+its own `pillarenv` is targeted against more than it receives. Before, it was
+targeted against the job's environment, the same guess for the old default.
+And `env_allowlist`/`env_denylist` are not applied to the environments a merged
+pillar reads: they govern which environment a run may name, and a merged pillar
+names none.
+
+`TestPillarEnvironmentsMatchSalt` (internal/saltdiff) compiles four cases with
+Salt and halite and requires the same pillar: unset with two environments; set;
+a top file with two headings; a set `pillarenv` whose top file uses another
+heading. It skips without `salt-call`, so it was not run here; CI's saltdiff
+matrix runs it against 3006, 3007 and 3008. The pillar package's new tests
+were each broken on purpose and failed: reading one top file; counting every
+heading with `pillarenv` set; reading every file from one environment; allowing
+an unserved heading.
+
+
 
 
 ## 6. Everything else not started
