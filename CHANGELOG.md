@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `netplan.managed` no longer reports a refused document converged on the next run
+
+When `netplan generate` refused the document, the state failed and left
+the file in /etc/netplan. The next run found the file equal to the
+declaration and reported True without validating it, and the next boot
+read it. A failed `apply: true` was not retried for the same reason. The
+state now puts the file back as it was (or removes it) on either failure
+and renders the tree again, so the next run fails again or tries the
+apply again. A file left refused by an earlier build still reads as
+converged; `netplan.generate` on each Ubuntu node finds one. See
+DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
