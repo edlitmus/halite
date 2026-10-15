@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `timezone` refuses a zone name that is not one
+
+`timezone.set_zone` and `timezone.system` now refuse a name outside the tz
+database's grammar: components of letters, digits, `_`, `+` and `-`
+separated by single slashes, with no `.` or `..`, no leading `/` and no
+leading `-`. They do this in test mode too. On FreeBSD, and on Linux
+without systemd, the zone file must also resolve to a regular file
+inside `/usr/share/zoneinfo`. Before this, `set_zone timezone=../secret`
+copied that file into `/etc/localtime` at 0644 on FreeBSD and recorded
+`../secret` in `/var/db/zoneinfo`; on Linux it pointed `/etc/localtime`
+at the file. Real names, such as `Etc/GMT+5` or
+`America/Argentina/Buenos_Aires`, are unaffected. Windows names are
+unaffected. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
