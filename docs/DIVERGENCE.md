@@ -23929,6 +23929,95 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 `hostname.system` reported a short name converged on a request for the qualified one
+
+Audit item M-39, reproduced before it was changed. `sameHostname`
+compared a node's name with the name a state asked for, and it treated
+`web1` and `web1.example.com` as the same name **in both directions**. So
+a state that asked for `web1.example.com` on a node that had `web1`
+reported "The hostname is already web1.example.com" and changed nothing.
+That was true for both halves: the running name, and the boot-time
+record on each platform (rc.conf `hostname=` on FreeBSD, /etc/hostname
+on Linux, scutil's HostName on macOS). The estate names its nodes by
+the qualified name (5.94), so this was the move a tree is most likely
+to ask for.
+
+The symmetry was deliberate. `TestAShortNameAndAQualifiedOneAreTheSameNode`
+asserted both directions, with this argument: a node configured with
+the qualified name and running the short one should not be rewritten
+on every run. Its other case was a state that names `web1` on a node
+that has `web1.example`. That state has got what it asked for, and to
+strip the domain on every run would be worse than doing nothing.
+
+**The change.** The comparison is now one-way. In both places it is
+used, the first argument is what the node has (the running name, or
+the boot-time record) and the second is what the state asked for. The
+names match if they are equal, ignoring case, or if the state asked for
+a name with no domain and the node has that name with a domain. A node
+that has `web1.example.com` satisfies `web1`. A node that has `web1`
+does not satisfy `web1.example.com`. Two different domains are still
+two different names.
+
+The second case the test was written for still holds. The first one
+does not need the symmetry if a node that is given the qualified name
+keeps it. Then the state sets the name once, and the next run matches
+exactly. That is what `hostnamectl`, hostname(1) and `scutil` are
+documented to do. It has not been watched with a qualified name (see
+below). If some platform answers with the short name after the
+qualified one was set, the state reports a change on every run there.
+That is loud. The old rule was silent.
+
+**How it is tested.** `hostname_fqdn_test.go` runs `hostname.system` in
+test mode on each platform's own boot-time record, from the existing
+`hostnameFixture`: `sysrc -n hostname` on FreeBSD, scutil's HostName on
+macOS (the set answer, as captured on a macOS 15.7.9 runner), and a
+redirected /etc/hostname elsewhere. The running name comes from
+`osHostname`, a new variable over `os.Hostname`, so that the test does
+not rename the machine. Nothing is set.
+
+- A node that has `web1` in both halves, asked for `web1.example.com`:
+  both halves change.
+- Only the half that does not have the domain changes, in each order.
+- A node that has `web1.example.com`, asked for `web1`: nothing changes.
+  The same when only the boot-time record has the domain.
+- A move from one domain to another changes both halves.
+
+The deliberate test now asserts `have web1, want web1.example` and
+`have web1, want web1.example.com` are different. Its comment records
+why the reverse direction was dropped.
+
+Each was broken on purpose:
+
+- With the symmetric `sameHostname` restored, the first two new tests
+  and the deliberate test failed. Every half that should have changed
+  reported no change, which is M-39.
+- With the short-form match removed altogether, the "leaves a qualified
+  node alone" test and the deliberate test failed. So the case that the
+  old test was for is still held by a test.
+
+**Not verified.**
+
+- **Run on macOS only** (Darwin 25.6). On a Mac, `persistentHostname`
+  takes the scutil branch, so the FreeBSD `sysrc` branch and the
+  /etc/hostname branch of the new tests ran only as code that was
+  compiled. CI runs them on FreeBSD and Linux. FreeBSD is tier 1, and
+  its leg is the one to check.
+- **A qualified name has not been set on a real machine.** The live
+  rename (`TestLiveHostnameRenamesTheMachineAndPutsItBack`) uses
+  `halite-live-probe`, which has no dot. That the kernel then answers
+  with the whole name is from the documentation of `hostnamectl`,
+  hostname(1) and `scutil`, not from a run. The evidence note for
+  `hostname` is unchanged.
+- **A Linux name longer than 64 characters.** The kernel limit is 64,
+  and a valid qualified name can be up to 253. What the running name is
+  after such a name is set was not checked. Under the new rule, the
+  state would report a change on every run there.
+- `TestLiveHostnameStateConvergesOnTheNameTheMachineHas` asks for the
+  running name. On a machine whose running name has a domain that its
+  boot-time record does not have, the state now changes the boot-time
+  record, where before it did not. Which CI machines are like that has
+  not been checked. The live tests were not run for this change.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
