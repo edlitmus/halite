@@ -23944,7 +23944,7 @@ characters, `/` included. With `file_ignore_glob: [secrets/*, */er/*]`:
 - `secrets/deep/b.txt` was served and listed.
 - `secrets/deep/er/c.txt` was served and listed.
 
-A hide rule copied from a Salt master hid less on halite, and nothing
+A hide rule copied from a Salt tree hid less on halite, and nothing
 said so. The difference goes in the dangerous direction: files that the
 operator meant to hide were served.
 
@@ -24035,7 +24035,7 @@ and it was not made here.
 
 **Not verified.**
 
-- No real Salt master was run with these globs. Salt's behaviour comes
+- No real Salt file server was run with these globs. Salt's behaviour comes
   from reading `is_file_ignored` and the roots backend, and from running
   Python's `fnmatch` itself.
 - The fixture comes from CPython 3.15.0. The same generator was run on
