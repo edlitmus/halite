@@ -2,7 +2,9 @@ package builtin
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -422,12 +424,164 @@ func (r firewallRule) validate() error {
 	if r.Direction != "" && r.Direction != "in" && r.Direction != "out" {
 		return fmt.Errorf("%q is not a direction; it takes in or out", r.Direction)
 	}
+	// The values below reach another program's grammar: pf reads a rule
+	// as a line of pf.conf from `pfctl -f -`, and ufw reads them as argv.
+	// They used to be checked for nothing, so `from: "10.0.0.1 \n pass
+	// out quick all"` rendered a second pf rule nobody declared
+	// (DIVERGENCE 5.291). So each is held to the shape its parameter
+	// documents rather than to "anything without a newline": a
+	// blocklist of pf's syntax characters would have to be complete to
+	// be worth anything, and an allowlist only has to be right.
+	if err := validateFirewallAddress("from", r.From); err != nil {
+		return err
+	}
+	if err := validateFirewallAddress("to", r.To); err != nil {
+		return err
+	}
+	if r.Port != "" {
+		if err := validateFirewallPort(r.Port); err != nil {
+			return err
+		}
+	}
+	// A comment is free text and pf does not write it at all, but ufw
+	// takes it as an argument and stores it; a line break has no
+	// business in either.
+	if strings.IndexFunc(r.Comment, unicode.IsControl) >= 0 {
+		return fmt.Errorf("the comment %q contains a control character", r.Comment)
+	}
 	// A rule with nothing in it would be "allow everything", which is
 	// not something to write by accident.
 	if r.Port == "" && r.From == "" && r.To == "" {
 		return fmt.Errorf("a rule needs at least a port or an address; one with neither permits everything")
 	}
 	return nil
+}
+
+// validateFirewallAddress holds an address to what the parameter says it
+// is: "an address or network", or empty or `any` for anywhere.
+//
+// Accepted: an IPv4 or IPv6 address, a network in CIDR form, `any`, and
+// a pf table written `<name>` — the last because a table is how pf
+// spells "these addresses", and refusing it would push an operator
+// towards writing the list into the rule. ufw has no tables and refuses
+// one itself.
+//
+// Refused, deliberately: host names, interface names, negation (`!`)
+// and lists (`{ a, b }`). pf would take all of them, and the renderer
+// used to pass them through, but none is what the parameter documents,
+// a host name is resolved once at load time and then printed back as an
+// address that no longer matches the rule (DIVERGENCE 5.31's identity),
+// and the characters a list or a negation needs are exactly the pf
+// syntax that a value must not be able to carry. An IPv6 zone is refused
+// for the same reason: `%` is not something pf reads there.
+//
+// net/netip rather than a pattern, so that `10.0.0.256` and `::g` are
+// refused for being what they are, not for a character.
+func validateFirewallAddress(field, a string) error {
+	if strings.IndexFunc(a, unicode.IsControl) >= 0 {
+		return fmt.Errorf("`%s` %q contains a control character; it takes one address or network", field, a)
+	}
+	a = strings.TrimSpace(a)
+	if a == "" || strings.EqualFold(a, "any") {
+		return nil
+	}
+	if strings.HasPrefix(a, "<") && strings.HasSuffix(a, ">") {
+		if pfTableName(a[1 : len(a)-1]) {
+			return nil
+		}
+		return fmt.Errorf("`%s` %q is not a pf table name: it takes letters, digits, `_` and `-`, "+
+			"at most 31 of them", field, a)
+	}
+	if addr, err := netip.ParseAddr(a); err == nil && addr.Zone() == "" {
+		return nil
+	}
+	if _, err := netip.ParsePrefix(a); err == nil {
+		return nil
+	}
+	return fmt.Errorf("`%s` %q is not an address this module writes: it takes an IPv4 or IPv6 "+
+		"address, a network such as 10.0.0.0/8, `any`, or a pf table as `<name>`", field, a)
+}
+
+// pfTableName is the subset of pf's table names this accepts: pf allows
+// 31 characters (PF_TABLE_NAME_SIZE less its terminator), and the
+// characters are held to the ones a name needs so that `>` and
+// everything after it cannot be smuggled in.
+func pfTableName(name string) bool {
+	if name == "" || len(name) > 31 {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validateFirewallPort holds a port to what the parameter says it is: a
+// port, a range such as 6000:6007, or a comma-separated list of either —
+// and, because both providers take one, a service name such as `ssh`.
+//
+// Digits are checked as digits rather than through strconv, which takes
+// `+22`; a leading sign, like a leading `-`, is a value ufw would read
+// as something other than a port.
+func validateFirewallPort(p string) error {
+	if strings.IndexFunc(p, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) }) >= 0 {
+		return fmt.Errorf("port %q contains white space or a control character; "+
+			"it takes a port, a range such as 6000:6007, or a list such as 80,443", p)
+	}
+	for _, entry := range strings.Split(p, ",") {
+		if entry == "" {
+			return fmt.Errorf("port %q has an empty entry in its list", p)
+		}
+		if lo, hi, isRange := strings.Cut(entry, ":"); isRange {
+			l, lok := firewallPortNumber(lo)
+			h, hok := firewallPortNumber(hi)
+			if !lok || !hok || l > h {
+				return fmt.Errorf("port %q: %q is not a range of ports, low:high between 1 and 65535", p, entry)
+			}
+			continue
+		}
+		if _, ok := firewallPortNumber(entry); ok || firewallServiceName(entry) {
+			continue
+		}
+		return fmt.Errorf("port %q: %q is not a port between 1 and 65535 or a service name", p, entry)
+	}
+	return nil
+}
+
+func firewallPortNumber(s string) (int, bool) {
+	if s == "" || len(s) > 5 {
+		return 0, false
+	}
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, n >= 1 && n <= 65535
+}
+
+// firewallServiceName is the shape RFC 6335 gives a service name: up to
+// 15 letters, digits and hyphens, starting with a letter, with no hyphen
+// at either end.
+func firewallServiceName(s string) bool {
+	if s == "" || len(s) > 15 || s[len(s)-1] == '-' {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case (r >= '0' && r <= '9' || r == '-') && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // describe renders a rule for a comment or a change set.

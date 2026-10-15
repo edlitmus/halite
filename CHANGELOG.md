@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `firewall` refuses a value that is not one address, port or comment
+
+A newline in `from` or `to` put a second rule into pf's `halite` anchor.
+`from`, `to`, `port` and `comment` are now checked before any provider
+runs. `from` and `to` take an IPv4 or IPv6 address or network, `any`, or
+a pf table as `<name>`. `port` takes a port, a range, a service name, or
+a list of these. **States that used a host name, an interface name, `!`,
+a `{ }` list or an IPv6 zone in `from`/`to`, or port 0, now fail** and
+change nothing. pf accepted those before. ufw gets the same check. See
+DIVERGENCE 5.291.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

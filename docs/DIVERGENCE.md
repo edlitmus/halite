@@ -23929,6 +23929,106 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.291 A firewall value could carry a second pf rule
+
+`firewall.allowed` with
+
+	from: "10.0.0.1 \n pass out quick all"
+
+loaded two rules into the `halite` anchor: the one declared, and
+`pass out quick all`. Found by reading, in the issue 321 audit (M-37),
+and reproduced against the provider with a recording runner. It was not
+seen on a host.
+
+Three things lined up. `pfAddress` only trimmed the value.
+`firewallRule.validate` checked the action, protocol and direction and
+that the rule was not empty, and nothing in `from`, `to` or `comment`.
+`loadAnchor` joins the rules with a newline and feeds them to
+`pfctl -a halite -f -`, so a newline in a value is the start of a new
+rule. `port` was safer by accident: `pfPort` refused white space.
+
+This is the pair shape again. The parameter's documentation ("an
+address or network") and the renderer that passed anything through were
+two things that should have said the same thing, and only one of them
+was checked by anyone. The value comes from an SLS file or pillar, so
+whoever could write it could already write a state. But a pillar value
+built from something else (an inventory, a form, another system) could
+open the firewall from a field that was meant to hold one address.
+
+**What is accepted now.** The values are held to what the parameters
+document, by an allowlist and not by a list of pf's special characters.
+A blocklist would have to be complete to be worth anything. An allowlist
+only has to be right.
+
+- `from`, `to`: an IPv4 or IPv6 address or a CIDR network, parsed with
+  `net/netip`; `any`; or a pf table, `<name>`, with letters, digits, `_`
+  and `-`, at most 31.
+- `port`: a port 1 to 65535, a range `low:high`, a service name (RFC 6335
+  shape), or a comma-separated list of these. Digits are checked as
+  digits, because `strconv.Atoi` takes `+22`.
+- `comment`: no control characters. pf does not write it. ufw takes it as
+  an argument.
+
+The check is in `firewallRule.validate`, which both providers' states and
+functions call before the provider sees the rule, so ufw is covered by
+the same refusal. `pfAddress` and `pfPort` check again, because
+`pfProvider.Apply` can be reached without `validate`. `loadAnchor`
+refuses a rule with a line break, whatever built it. That last check is
+on line breaks only, not every control character, because the rules
+already in the anchor come back through it as pf printed them.
+
+**Refused now, and accepted before** (operator-visible): host names,
+interface names, negation (`!`), lists (`{ a, b }`) and IPv6 zones in
+`from`/`to`, and port 0. pf takes all of these. None is what the
+parameter documents. A host name is also resolved once at load time and
+printed back by pf as an address, so it would not have matched itself
+under 5.31's comparison. That last point was read from pf.conf(5) and
+not seen on a host.
+
+**ufw and iptables, for leading `-`.** The audit said ufw takes a
+leading `-` through argv. ufw's `from`, `to` and `port` go through the
+same `validate`, so a value starting with `-` is now refused before ufw
+runs. Whether ufw would have read one as an option was not tested: no
+ufw ran here. A `comment` that starts with `-` is still accepted. It is
+the value after the word `comment`, and nothing here shows that ufw
+reads it as an option. `iptables` was not changed. It does not use
+`firewallRule`. Every value it takes follows its flag in argv (`-s`,
+`--dport`), and its `rule` and `extra` parameters are raw iptables text
+by design, so anybody who can set a value can already write any rule.
+
+**How it is tested.** `firewall_values_test.go`:
+
+- 27 values that are not one address, one port or one comment, from the
+  audit's newline to pf syntax, a leading `-`, `+22`, port 0 and
+  `fe80::1%em0`. `validate` refuses each. `pfProvider.Apply` refuses
+  each that pf writes, and no `pfctl` runs, not even the read.
+- `loadAnchor` refuses a rule with `\n` or `\r` in it and runs nothing.
+- IPv4, IPv6, both as networks, `any`, `<bastions>`, a range, a list
+  with a range, `ssh`, 65535 and a value with spaces round it render
+  exactly as before. A ufw argv with an IPv6 network, a range and a
+  comment is unchanged.
+
+Each guard was broken on purpose. With `pfAddress` and `pfPort` back to
+their old checks, 20 of the pf cases were accepted. The newline cases
+were still refused, by `loadAnchor`, but only after `pfctl` had read the
+anchor. With that guard also removed, the audit's value was loaded, with
+`pfctl -a halite -f -` run: the original defect. With `validate` back to
+its old checks, the `validate` test failed. With the `loadAnchor` guard
+removed, its test failed.
+
+**Not verified.**
+
+- **No pf or ufw ran.** All of this is against a recording runner. That
+  pf would have loaded the second line as a rule is from pf.conf(5) and
+  the shape of `loadAnchor`, not a run.
+- **Hosts.** It is not known whether any state in the fleet uses a host
+  name, an interface or a list in `from`/`to`. Such a state now fails
+  with a message that names what is accepted, and does not change the
+  firewall.
+- **The table name rule** (31 characters, `[A-Za-z0-9_-]`) is a
+  conservative subset of what pf takes. It is not taken from pf's
+  source.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

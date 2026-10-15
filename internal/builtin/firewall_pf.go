@@ -245,7 +245,23 @@ func (pfProvider) anchorRules(c *exec.Context) ([]string, error) {
 }
 
 // loadAnchor replaces the anchor's rules with these.
+//
+// Each rule has to be one line, because the body is pf.conf text and a
+// line break is where pf starts reading the next rule. pfRule refuses
+// values that could carry one; this is the check at the boundary itself,
+// so that whatever the next way of building a rule is, a rule that is
+// really two is refused here rather than loaded (DIVERGENCE 5.291).
 func (pfProvider) loadAnchor(c *exec.Context, rules []string) error {
+	for _, rule := range rules {
+		// Line breaks only, and not every control character: the rules
+		// already in the anchor come back through here as pf printed
+		// them, and a check stricter than the boundary needs would
+		// refuse to rewrite an anchor over a character that is not one.
+		if strings.ContainsAny(rule, "\n\r\x00") {
+			return fmt.Errorf("refusing to load %q into the %s anchor: a rule is one line, "+
+				"and this one has a line break in it", rule, PFAnchor)
+		}
+	}
 	body := ""
 	if len(rules) > 0 {
 		body = strings.Join(rules, "\n") + "\n"
@@ -385,8 +401,16 @@ func pfRule(r firewallRule) (string, error) {
 		b.WriteString(" proto " + proto)
 	}
 
-	b.WriteString(" from " + pfAddress(r.From))
-	b.WriteString(" to " + pfAddress(r.To))
+	from, err := pfAddress("from", r.From)
+	if err != nil {
+		return "", err
+	}
+	to, err := pfAddress("to", r.To)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(" from " + from)
+	b.WriteString(" to " + to)
 
 	if r.Port != "" {
 		port, err := pfPort(r.Port)
@@ -440,11 +464,20 @@ func normalizePFRule(rule string) string {
 }
 
 // pfAddress writes an address the way pf does, with `any` for empty.
-func pfAddress(a string) string {
-	if a = strings.TrimSpace(a); a == "" || strings.EqualFold(a, "any") {
-		return "any"
+//
+// It checks the value again although `firewallRule.validate` already
+// has, because this is the last place before the text becomes a line of
+// pf.conf, and Apply is reachable without validate — the tests reach it
+// that way, and so would the next caller. It used to only trim, so a
+// value with a newline in it rendered a second rule (DIVERGENCE 5.291).
+func pfAddress(field, a string) (string, error) {
+	if err := validateFirewallAddress(field, a); err != nil {
+		return "", err
 	}
-	return a
+	if a = strings.TrimSpace(a); a == "" || strings.EqualFold(a, "any") {
+		return "any", nil
+	}
+	return a, nil
 }
 
 // pfPort renders a port, a range, or a list.
@@ -457,6 +490,9 @@ func pfPort(p string) (string, error) {
 	p = strings.TrimSpace(p)
 	if strings.ContainsAny(p, " \t\n") {
 		return "", fmt.Errorf("%q is not a port, a range or a list", p)
+	}
+	if err := validateFirewallPort(p); err != nil {
+		return "", err
 	}
 	if !strings.Contains(p, ",") {
 		return p, nil
