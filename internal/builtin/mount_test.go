@@ -356,6 +356,13 @@ func TestMountedConvergesAgainstTheKernelsOwnTable(t *testing.T) {
 // mountFixture returns a node whose running mount table is the one given
 // and whose fstab is a file of its own, so that no test can mount
 // anything on the machine it runs on.
+//
+// The `mount` output it builds is synthetic, and the callers above give
+// it a running device of UUID=2222, which no running table prints: the
+// kernel names the node mount(8) resolved the tag to. Those tests are
+// about options and the table, and they pass the comparison only
+// because the two strings are equal. The device comparison itself is
+// tested in mount_identity_test.go (DIVERGENCE 5.290).
 func mountFixture(t *testing.T, active map[string]any) (*exec.Context, string) {
 	t.Helper()
 	// The states are declared for the platforms with a mount table, and

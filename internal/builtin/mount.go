@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -890,8 +891,20 @@ func mountMounted(c *exec.Context, args *value.Map) (states.Result, error) {
 		default:
 			haveDev := states.Str(active, "device", "")
 			haveType := states.Str(active, "fstype", "")
+			same := sameDevice(haveDev, want.Device)
+			if same == deviceUndecided {
+				// Nothing is changed and nothing is written: see
+				// sameDevice for why a mismatch that cannot be resolved
+				// is a failure rather than a remount.
+				return states.False(fmt.Sprintf(
+					"%s is mounted from %s, and the declaration says %s; neither name could be "+
+						"resolved to a device node on this host, so whether they are the same "+
+						"device is unknown. Nothing was remounted. Declare the device the way the "+
+						"running table names it, or check that the name exists.",
+					want.Point, haveDev, want.Device)), nil
+			}
 			switch {
-			case haveDev != want.Device:
+			case same == deviceDiffers:
 				changes.Set("device", states.Change(haveDev, want.Device))
 				actions = append(actions, "remounted from a different device")
 				remount = true
@@ -949,6 +962,158 @@ func mountMounted(c *exec.Context, args *value.Map) (states.Result, error) {
 		want.Point, strings.Join(actions, ", and ")), changes), nil
 }
 
+// ---- device identity ----
+
+// DevRoot is prefixed to every device path the identity check stats, so
+// that a test can lay out a /dev of its own -- a by-uuid directory of
+// relative symlinks, the way udev makes them -- instead of reading the
+// machine's. Empty means the real root.
+var DevRoot = ""
+
+// deviceMatch is the answer to "is the running mount the declared
+// device?", which has three answers and not two.
+type deviceMatch int
+
+const (
+	deviceSame deviceMatch = iota
+	deviceDiffers
+	deviceUndecided
+)
+
+// deviceTagLinks maps the fstab tags util-linux accepts to the udev
+// directory that names a device by them. These four are the ones
+// 60-persistent-storage.rules makes links for, and the ones mount(8)
+// documents for the device field.
+var deviceTagLinks = []struct{ tag, dir string }{
+	{"UUID=", "/dev/disk/by-uuid/"},
+	{"LABEL=", "/dev/disk/by-label/"},
+	{"PARTUUID=", "/dev/disk/by-partuuid/"},
+	{"PARTLABEL=", "/dev/disk/by-partlabel/"},
+}
+
+// sameDevice decides whether the device the running table names (have)
+// is the device a declaration names (want).
+//
+// The two are not spelled alike, and comparing them as strings was the
+// defect: on Linux the kernel's table names the node mount(8) resolved,
+// /dev/nvme0n1p2, while the declaration says UUID=..., LABEL=..., or a
+// /dev/disk/by-* link -- the form this module's own parameter
+// documentation advertises. Every run then reported "remounted from a
+// different device", ran `mount -o remount` and fired every onchanges
+// and watch hanging off the state, for ever.
+//
+// So both sides are reduced to the file they reach: a tag becomes the
+// udev link that names it, a path is followed through its symlinks, and
+// the two are the same device when os.SameFile says they are the same
+// node. That is the comparison udev's own layout supports -- every
+// by-* name, and /dev/mapper/<name>, is a symlink to the one /dev node
+// -- and it is the one a test can build in a temporary directory.
+// Comparing stat's Rdev was considered, and it would also equate two
+// separately mknod'd nodes for the same device; nothing here has seen
+// such a pair on a machine this manages, and a temporary directory
+// cannot hold a device node without root, so it would be a branch no
+// test had run. It was left out rather than shipped unrun.
+//
+// When either side cannot be resolved the answer is undecided, and the
+// state fails rather than remounts. The old behaviour -- remount on any
+// string difference -- is exactly the loop being fixed, and a remount
+// on Linux does not change the source device anyway, so it would not
+// even be the right action if the devices did differ. A loud failure
+// that names both spellings is something an operator can act on once;
+// a silent remount every highstate is not. The cases that land here are
+// a tag whose link does not exist (a typo; a host with no udev; a
+// FreeBSD or macOS host, which has no /dev/disk/by-*), and a running
+// table naming a node that is not in /dev, such as /dev/root.
+//
+// Names that are not paths and not tags -- tmpfs, server:/export,
+// zroot/ROOT/default -- are names, not aliases of a node, and are still
+// compared as strings.
+//
+// FreeBSD is not resolved here, and it was not tested. Its label
+// providers (/dev/gpt/<label>, /dev/ufsid/..., /dev/label/...,
+// /dev/diskid/...) are GEOM providers of their own in devfs rather than
+// symlinks, so os.SameFile reports them different from the partition
+// they label. If the running table names one and the declaration the
+// other, this still reports a different device, as before. What a
+// FreeBSD lab run must capture before that can be handled is in
+// DIVERGENCE 5.290.
+func sameDevice(have, want string) deviceMatch {
+	if have == want {
+		return deviceSame
+	}
+	hp, hok := devicePath(have)
+	wp, wok := devicePath(want)
+	if !hok || !wok {
+		// At least one side is a name such as tmpfs rather than a node,
+		// and the strings differ: no resolution would make them agree.
+		return deviceDiffers
+	}
+	hi, herr := os.Stat(hp)
+	wi, werr := os.Stat(wp)
+	if herr != nil || werr != nil {
+		return deviceUndecided
+	}
+	if os.SameFile(hi, wi) {
+		return deviceSame
+	}
+	return deviceDiffers
+}
+
+// devicePath turns a device field into the path to stat for it: a tag
+// into its udev link, an absolute path into itself, each under DevRoot.
+// It reports false for anything else.
+func devicePath(s string) (string, bool) {
+	for _, t := range deviceTagLinks {
+		if v, ok := strings.CutPrefix(s, t.tag); ok {
+			// libblkid accepts the value quoted, as UUID="...".
+			if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+				v = v[1 : len(v)-1]
+			}
+			if v == "" {
+				return "", false
+			}
+			return DevRoot + t.dir + encodeDevnodeName(v), true
+		}
+	}
+	if strings.HasPrefix(s, "/") {
+		return DevRoot + s, true
+	}
+	return "", false
+}
+
+// encodeDevnodeName spells a label the way udev spells it in a
+// /dev/disk/by-* link name: ASCII letters and digits and the characters
+// #+-.:=@_ are kept, a valid multi-byte UTF-8 sequence is kept whole,
+// and every other byte -- a space, a slash, a backslash -- becomes
+// \xHH in lower-case hex. A label "my data" is linked as my\x20data.
+//
+// That rule is read from the source (libblkid's blkid_encode_string,
+// which udev's blkid builtin uses for ID_FS_LABEL_ENC and
+// ID_FS_UUID_ENC, and systemd's encode_devnode_name, which is the same
+// rule), not captured from a machine. DIVERGENCE 5.290 records that.
+func encodeDevnodeName(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c >= 0x80 {
+			r, n := utf8.DecodeRuneInString(s[i:])
+			if r != utf8.RuneError && n > 1 {
+				b.WriteString(s[i : i+n])
+				i += n
+				continue
+			}
+		}
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			strings.IndexByte("#+-.:=@_", c) >= 0 {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, `\x%02x`, c)
+		}
+		i++
+	}
+	return b.String()
+}
+
 // testingContext is a context in test mode, used to ask setFstab what it
 // would do without letting it do it. The state's own context cannot be
 // used for that: on a real run it would write the table before the
@@ -978,7 +1143,16 @@ func mountUnmounted(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	changes := value.NewMap(2)
 	var actions []string
-	if active != nil && (device == "" || states.Str(active, "device", "") == device) {
+	// A device given here is a filter, and it is matched by identity for
+	// the same reason mount.mounted matches by identity: the running
+	// table names the resolved node, and a filter of UUID=... compared as
+	// a string never matched it, so the state said nothing was mounted
+	// while something was. An undecided match is still no match -- an
+	// unmount is not undone by the next run -- which keeps the old,
+	// cautious answer where nothing better can be known.
+	matches := active != nil && (device == "" ||
+		sameDevice(states.Str(active, "device", ""), device) == deviceSame)
+	if matches {
 		changes.Set("umount", states.Change(states.Str(active, "device", ""), nil))
 		actions = append(actions, "unmounted")
 	}
@@ -1001,7 +1175,7 @@ func mountUnmounted(c *exec.Context, args *value.Map) (states.Result, error) {
 			point, strings.Join(actions, ", and ")), changes), nil
 	}
 
-	if active != nil && (device == "" || states.Str(active, "device", "") == device) {
+	if matches {
 		if err := umountFilesystem(c, point, states.Bool(args, "force", false)); err != nil {
 			return states.False(fmt.Sprintf("%s could not be unmounted: %v", point, err)), nil
 		}
