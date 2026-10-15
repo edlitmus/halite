@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -209,7 +210,16 @@ func TestArchiveZipIsNotWrittenThroughAPlantedSymlink(t *testing.T) {
 // supplies its path: `x -> p/..` is lexically the destination, and is its
 // parent once `p -> .` exists. Only the pass over the finished tree sees
 // it.
+//
+// Unix only, because the escape is. Windows cleans a path lexically before
+// it resolves anything -- os/root_windows.go: "on Windows the path
+// `a\..\b` is exactly equivalent to `b` alone, even if `a` does not
+// exist" -- so there `p\..` is the destination and this link is inside.
+// CI's windows-2022 leg kept the link, which is the right answer there.
 func TestArchiveDanglingLinkIsCheckedOnceItsTargetExists(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows resolves `p\\..` lexically, so `x -> p/..` does not leave the destination there")
+	}
 	base, dest := nestedDest(t)
 	archive := filepath.Join(base, "late.tar")
 	makeOrderedTar(t, archive,

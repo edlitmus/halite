@@ -1,13 +1,12 @@
 package atomicfile
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
-	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"strconv"
 )
 
 // WriteIn is Write for a name inside an os.Root: every component of name
@@ -32,7 +31,9 @@ import (
 // that it is not a seventh copy (TestNothingElseWritesThroughATempFileAndARename).
 // The temporary file is made by hand because os.CreateTemp takes a
 // directory path, which is the thing that must not be resolved outside
-// the root.
+// the root. Its suffix comes from crypto/rand, as SPEC section 25.3
+// requires of everything but the template seed (TestNoMathRand); O_EXCL
+// is what makes a collision harmless either way.
 //
 // The rename replaces whatever is at name, including a symlink, rather
 // than writing through it: rename(2) does not follow its last component.
@@ -44,7 +45,7 @@ func WriteIn(root *os.Root, name string, data []byte, mode os.FileMode) error {
 		err     error
 	)
 	for range 10000 {
-		tmpName = filepath.Join(dir, "."+base+"."+strconv.FormatUint(uint64(rand.Uint32()), 10))
+		tmpName = filepath.Join(dir, "."+base+"."+rand.Text())
 		tmp, err = root.OpenFile(tmpName, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 		if err == nil || !errors.Is(err, fs.ErrExist) {
 			break

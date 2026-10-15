@@ -23991,7 +23991,11 @@ an archive that ships `current -> lib` and then `current/x`, and
   every link the run made is checked again once the run has finished,
   because `x -> p/..` is lexically the destination and is its parent
   once a later `p -> .` exists
-  (`TestArchiveDanglingLinkIsCheckedOnceItsTargetExists`).
+  (`TestArchiveDanglingLinkIsCheckedOnceItsTargetExists`). That is a
+  unix escape only. Windows cleans `p\..` lexically before it resolves
+  anything, as `os/root_windows.go` documents, so there the link is the
+  destination itself. CI's windows-2022 leg showed it: the link was kept,
+  correctly, and the test now skips on Windows and says why.
 - "Does this entry exist?" (for `overwrite`, and for the state's
   "what is missing") is `root.Lstat`. An error that is not "it is not
   there" is a refusal, not "absent, so write it".
