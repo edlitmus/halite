@@ -23929,6 +23929,85 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 A background command ignored `runas` and ran as root
+
+`cmd.run` with `bg: true` and `runas: deploy` started the command as the
+node's own account -- root -- and reported that it had started. So did
+`cmd.run_bg` with `runas`. Nothing in the result said the account had
+been dropped. Found by reading `OSRunner.Run`, then reproduced:
+`OSRunner.Run` with `RunAs: "no-such-user"` returned an error in the
+foreground and a pid with `Background: true`.
+
+**Two paths, each with its own reason.**
+
+- `OSRunner.Run` applied the umask, the directory, the environment and
+  stdin, then took the `Background` branch to `startAndRelease`, and
+  only after it called `applyCredential`. The background child was built
+  from everything but the account. The `Background` field's own comment
+  says it lives on the command so that the interpreter, the umask and
+  the environment are decided in one place; the account was the one it
+  missed.
+- `cmd.run_bg` did not use `Background` at all. `runInBackground` built
+  its own `os/exec.Cmd` -- written before the runner could start a
+  process without waiting -- and never read `runas`, though its
+  signature declares it. It also never read the context's `RunAs` and
+  `Umask`, the per-state options of SPEC 11.7.
+
+Salt's `_run` (`salt/modules/cmdmod.py`) treats `bg` as "do not wait and
+ignore the exit code" and then goes on to the same `runas` handling as a
+foreground command, including `User '...' is not available` for an
+unknown account. That was read, not run.
+
+**The change.** `applyCredential` moves above the `Background` branch, so
+the background child is built from the same four things as the
+foreground one: umask, directory, environment, account. What stays below
+the branch -- `confineTree`, `WaitDelay`, the output pipes, the timeout
+-- is about waiting for the child, which a background command does not
+do (`cmd.run` already refuses `bg` with `timeout`). `stdin` is still
+dropped for a background child, as before, by `startAndRelease`.
+
+`runInBackground` now builds an `exec.Command` with `Background: true`,
+`runas`, `cwd` and `env`, and hands it to the runner. There is one
+implementation of starting a child, not two. A side effect: without
+`env`, `cmd.run_bg` now gets the runner's default environment (its
+`DefaultEnv`, else `CleanEnv`) rather than always `CleanEnv`, which is
+what `cmd.run` gets.
+
+**How it is tested.**
+
+- `TestRunAsRefusesAnUnknownAccountInTheBackgroundToo`
+  (`internal/exec`): `runas: halite-no-such-account` must fail, naming
+  the account, with and without `Background`.
+- `TestRunAsReachesABackgroundChild` (`internal/exec`, unix): an
+  unprivileged process cannot switch to any account, even its own,
+  because the switch calls `setgroups(2)`. So `runas` set to the current
+  user must fail with "operation not permitted" in both modes. The
+  foreground half is the control. It skips as root.
+- `TestCmdRunBgHonoursRunAs` (`internal/builtin`): `cmd.run_bg` with an
+  unknown account fails, and under a recorder the command carries
+  `RunAs`, `Dir` and `Background`.
+- `TestCmdRunBackgroundHonoursRunAs` (`internal/builtin`): `cmd.run` with
+  `bg: true` and the context's `RunAs` (where the compiler puts a state's
+  `runas`) set to an unknown account fails, naming it.
+
+Each fix was broken on purpose. With the old `exec.go`, both `internal/exec`
+tests failed on their background half (each returned a pid) and both
+`internal/builtin` tests failed (the old `runInBackground` and the old
+runner each started the program). With the old `cmd_more.go` alone,
+`TestCmdRunBgHonoursRunAs` failed and the others passed.
+
+**Not verified.**
+
+- **No privilege drop was observed.** The tests ran unprivileged on
+  macOS (Darwin 25.6). They prove that the credential reaches the child's
+  start; they do not watch a background process run as another account.
+  That needs root, and was not run.
+- **Not run on Linux or FreeBSD.** CI runs the unit tests on all four
+  platforms. The setgroups refusal the second test leans on is the
+  kernel's on each unix; it was seen only on macOS here.
+- **Windows** refuses every `runas` (`credential_windows.go`), and now
+  refuses it for a background command too. Not run on Windows.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

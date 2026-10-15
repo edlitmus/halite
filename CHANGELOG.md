@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A background command now runs as its `runas` account
+
+`cmd.run` with `bg: true` and `cmd.run_bg` ignored `runas`, and started
+the command as the node's own account, which is root. They now switch
+account as a foreground command does. A state that has been starting a
+background command as root with `runas` set will start it as that
+account from now on, and one whose `runas` names an account the node does
+not have now fails instead of starting it. Without `env`, `cmd.run_bg`
+now uses the same default environment as `cmd.run`. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
