@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // SignedReplay is the node's record of every signed job it has accepted,
@@ -166,7 +169,10 @@ func (s *SignedReplay) load() error {
 	}
 	s.loaded = true
 	s.seen = map[ID]time.Time{}
-	data, err := os.ReadFile(s.path)
+	// atomicfile.Read, because on Windows an open that races rewrite's
+	// rename fails with a sharing violation rather than reading either
+	// file.
+	data, err := atomicfile.Read(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -249,10 +255,13 @@ func (s *SignedReplay) append(jid ID, expires time.Time) error {
 			return err
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+	// fileperm rather than os: the record is a list of what this node
+	// has run, and on Windows a mode is the read-only attribute and no
+	// access control at all.
+	if err := fileperm.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(s.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	f, err := fileperm.OpenFile(s.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
@@ -271,38 +280,20 @@ func (s *SignedReplay) append(jid ID, expires time.Time) error {
 	return nil
 }
 
-// rewrite replaces the file with the live entries: written beside it,
-// synced, and renamed over it, so that a crash leaves the old file or the
-// new one and never half of either. Called with the lock held.
+// rewrite replaces the file with the live entries, through atomicfile, so
+// that a crash leaves the old file or the new one and never half of
+// either -- and so that the temporary file is private on Windows, the
+// rename is retried there while a reader holds the destination, and the
+// directory is synced afterwards. Called with the lock held.
 func (s *SignedReplay) rewrite() error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".signed-jobs-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
 	var b strings.Builder
 	for jid, expires := range s.seen {
 		b.WriteString(formatSignedReplayLine(jid, expires))
 	}
-	if _, err := tmp.WriteString(b.String()); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), s.path); err != nil {
+	if err := atomicfile.Write(s.path, []byte(b.String()), 0o600); err != nil {
 		return err
 	}
 	s.lines = len(s.seen)

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 func signedJob(t *testing.T, at time.Time, ttl time.Duration) *Job {
@@ -55,10 +57,12 @@ func TestASignedJidIsRememberedAcrossARestart(t *testing.T) {
 	if err := restarted.Admit(j); !isReplay(err) {
 		t.Fatalf("after a restart the same signed job gave %v, want a replay", err)
 	}
-	if info, err := os.Stat(path); err != nil {
+	// fileperm.Others rather than the mode bits: on Windows the mode is
+	// the read-only attribute and says nothing about who can read it.
+	if others, err := fileperm.Others(path); err != nil {
 		t.Fatal(err)
-	} else if info.Mode().Perm()&0o077 != 0 {
-		t.Errorf("the record is %v, readable by others", info.Mode().Perm())
+	} else if len(others) > 0 {
+		t.Errorf("the record is readable beyond its owner: %v", others)
 	}
 }
 

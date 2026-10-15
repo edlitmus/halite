@@ -24037,12 +24037,18 @@ Each was broken on purpose and watched failing:
   the tests drive `acceptJob` and `Offer` in-process. A real restart, with
   the systemd or rc.d unit, was simulated by a new executor on the same
   state directory.
-- **FreeBSD.** Run on macOS (Darwin 25.6) only. The file handling is
-  `os.OpenFile`/`Sync`/`Rename` and nothing platform-specific, but its
-  sync cost was measured only on macOS, where Go's `Sync` is `F_FULLFSYNC`
-  and about three thousand appends took forty seconds, some
-13 ms each. That is a cost per
-  signed job, not per job.
+- **FreeBSD.** Run locally on macOS (Darwin 25.6) only. The first push
+  wrote the file with `os.MkdirAll`, `os.OpenFile` and a hand-rolled
+  temp-file-and-`os.Rename`. CI failed it on every platform on the
+  repository's own audits (`TestNothingElseCreatesAPrivateFileWithTheStandardLibrary`,
+  `TestNothingElseRenamesWithTheStandardLibrary`,
+  `TestNothingElseWritesThroughATempFileAndARename`), and on Windows the
+  0600 file came back `-rw-rw-rw-`, because a mode there is the read-only
+  attribute and not access control. It now goes through `fileperm` and
+  `atomicfile`, and the test asks `fileperm.Others` rather than reading
+  mode bits. Sync cost was measured only on macOS, where Go's `Sync` is
+  `F_FULLFSYNC`: about three thousand appends took forty seconds, some
+  13 ms each. That is a cost per signed job, not per job.
 - **A filesystem that lies about sync** would lose the last line on a
   power cut and reopen that one job. Not tested.
 
