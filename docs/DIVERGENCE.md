@@ -7956,6 +7956,37 @@ and the suite would have agreed. It is asserted directly now, in both
 directions, and `shell: false` is asserted beside the two opt-ins so
 that the path form cannot quietly turn the shell on for everybody.
 
+#### The same defect on Windows, found by 5.290's test (2026-10-15)
+
+`isPackage` tested the loader's file path for the suffix `/init.sls`.
+`fileserver.Roots` reports an OS path, and on Windows that path is
+separated by `\`. So on a Windows node every `init.sls` read from local
+roots was taken for a flat file, and its relative includes resolved
+one level too high. That is this section's defect again, on one
+platform.
+
+The unit tests for `isPackage` used only `/` paths, so they could not
+see it. CI's Windows legs (`test` and `race` on windows-2022) found it
+on PR #340, the first time a relative include ran through a real
+`Roots` tree (`TestCanonicalNamesAndRelativeIncludesStillCompile` in
+5.290). The log line was:
+
+    web did not compile: ... app: sls "app" was not found in environment "base"
+
+`web/init.sls` includes `.app`, which is `web.app`. It looked for `app`.
+
+`isPackage` now compares `filepath.Base(filePath)` with `init.sls`.
+`filepath.Base` splits on `\` and `/` on Windows and on `/` elsewhere,
+so it also covers `fileserver.Remote`, which reports a `halite://` URI.
+`TestIsPackageIsAboutInitSLS` now has URI cases, and
+`TestIsPackageOnWindowsPaths` has `\` cases. The second test skips
+outside Windows, because there a backslash is part of a file name.
+
+**Not verified locally.** The development machine is macOS, so neither
+the failure nor the fix was run here on Windows. Only CI's Windows legs
+show it. The failing run is the evidence for the defect, and the next
+run on the PR is the evidence for the fix.
+
 ### 5.85 A conformance harness, and what it found
 
 5.80 and 5.81 left the same thing open, and `docs/extensions.md` said so

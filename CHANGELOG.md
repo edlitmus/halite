@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### On Windows, a relative include in an `init.sls` resolved one level too high
+
+On a Windows node, an `init.sls` read from local roots was treated as a
+flat file. So `include: - .app` in `web/init.sls` looked for `app`, not
+`web.app`. It now resolves to `web.app`, as on other platforms. See
+DIVERGENCE 5.84.
+
 ### `state_denylist` can no longer be bypassed by spelling an SLS name differently
 
 The node's `state_denylist` matched an SLS name as written, but the file
