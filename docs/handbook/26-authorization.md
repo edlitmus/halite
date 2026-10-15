@@ -83,11 +83,13 @@ to `local:<name>`; using both for one person is how a grant ends up
 somewhere nobody looks. TOTP (RFC 6238) can be added per account.
 
 Logins are throttled in two ways. Password checks in flight are bounded, and
-a login past that is refused with `503`. And a failed login holds its name,
-whether or not an account by that name exists, to a window refused with
-`429` and `Retry-After`, doubling from one second to fifteen minutes and
-cleared by a success. It is a backoff and not a lockout, because a lockout
-lets anybody who knows the break-glass account's name keep its owner out.
+a login past that is refused with `503`. A failed login holds its name *from
+that address*, whether or not an account by that name exists, to a window
+refused with `429` and `Retry-After`, doubling from one second to fifteen
+minutes and cleared by a success. Somebody guessing from elsewhere keeps only
+themselves out, never the account's owner. And one address's failures across
+all names share a budget of thirty, draining one every thirty seconds. The
+address is the connection's peer, so behind a proxy everybody shares one.
 Every failure returns the same message, so the response is no oracle for
 which accounts exist (the log says which it was).
 
