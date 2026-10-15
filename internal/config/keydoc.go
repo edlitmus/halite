@@ -258,7 +258,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"state_denylist": {
 		Group:  "State runs",
-		Detail: "Applied after the allowlist, for carving one dangerous SLS out of a permitted set.",
+		Detail: "Applied after the allowlist, for carving one dangerous SLS out of a permitted set. A name is matched in its one dotted spelling (`secret.x`); `secret/x`, `secret..x` and other spellings of it are refused before either list is consulted, so a denied SLS cannot be reached by writing it differently.",
 	},
 	"startup_states": {
 		Group:  "State runs",

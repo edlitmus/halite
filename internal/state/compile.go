@@ -218,6 +218,17 @@ func (c *Compiler) loadSLS(out *Compiled, env, name string, seen map[string]bool
 	if seen[key] {
 		return
 	}
+	// The name is checked for its one spelling before the lists see it,
+	// because the lists match text and the loader matches files: a
+	// spelling the loader folds onto `secret.x` and the denylist does
+	// not is a way round the denylist. Every way a name reaches this
+	// point -- state.sls arguments, the top file, include: after a
+	// relative include has been resolved -- passes here. DIVERGENCE
+	// 5.290.
+	if _, err := CanonicalSLS(name); err != nil {
+		out.Diags.Add(value.Pos{File: name}, name, "", "%v", err)
+		return
+	}
 	if !c.allowedSLS(name) {
 		out.Diags.Add(value.Pos{File: name}, name, "",
 			"sls %q is excluded by state_allowlist or state_denylist", name)

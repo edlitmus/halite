@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `state_denylist` can no longer be bypassed by spelling an SLS name differently
+
+The node's `state_denylist` matched an SLS name as written, but the file
+server loaded `secret.x`, `secret..x`, `secret/x`, `.secret.x` and
+`secret/./x` as the same file. So `state_denylist: [secret.x]` refused
+only the first spelling. An SLS name must now be written in its one
+dotted form: non-empty components separated by single dots, with no `/`
+or `\`. Any other spelling is an error, in a `state.sls` or
+`state.apply` argument, a top file entry or an `include:`. The error
+gives the dotted spelling. A script or tree that wrote `web/nginx` for
+`web.nginx` must change. Relative includes (`include: - .foo`) are not
+affected. The hub's role policy (`deny_sls`, `allow_sls`) has the same
+weakness and is not changed yet. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

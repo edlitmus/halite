@@ -23929,6 +23929,135 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 `state_denylist` refused one spelling of an SLS name, and the loader accepted five
+
+Review finding M-54, reproduced for the compiler before it was changed.
+
+The compiler's `state_allowlist` and `state_denylist` matched the SLS
+name as it was written, with `path.Match`. The file server's loader
+(`slsCandidates`, then `Resolve`) turned every `.` into `/` and cleaned
+the path. So these names all loaded `secret/x.sls`:
+
+- `secret.x`
+- `secret..x`
+- `secret/x`
+- `.secret.x`
+- `secret/./x`
+
+and also `/secret/x` and `secret\x`. With `state_denylist: [secret.x]`,
+only the first was refused. A `state.sls` argument, a top file entry or
+an `include:` in any of the other spellings ran the states the denylist
+names. The allowlist direction failed closed, because a strange
+spelling matched no allow pattern, so only the denylist leaked.
+
+Salt accepts all of these spellings as well: `fileclient.get_state`
+replaces dots with slashes and the file server joins the result. But
+Salt has no state denylist, so there the looseness gets round nothing.
+Here it does.
+
+**The pair.** The denylist and the loader are two paths that must agree
+on what a name means. They did not.
+
+**The change.** There is now one definition, `state.CanonicalSLS`
+(`internal/state/slsname.go`). A name is canonical when it is not empty,
+every dot-separated component is not empty, and it holds no `/` or `\`.
+That refuses a leading or trailing dot, `..`, a `.` component and any
+path separator. Three places call it:
+
+- `Compiler.loadSLS`, before the allowlist and the denylist. Every
+  name reaches the compiler through `loadSLS`: `state.sls` and
+  `state.apply` arguments (`CompileSLS`, which the node and the hub's
+  orchestration both call), top file entries (`CompileHighstate`) and
+  `include:`.
+- `fileserver.Roots.Source` and `fileserver.Remote.Source`, so that a
+  loader cannot fold a spelling that the compiler did not see.
+
+A non-canonical name is refused, not rewritten. The error gives the
+canonical spelling. Rewriting would make the denylist correct, but it
+would leave several spellings that work, and the next check written
+against the raw name would have the same hole.
+
+**Relative includes still work.** `include: - .foo` is Salt syntax
+(`salt/state.py`, the `inc_sls.startswith(".")` branch), and it is not
+refused. `resolveRelative` (5.84) turns it into the absolute name while
+the including file is parsed. That happens before the name reaches
+`loadSLS`, so before this check and before the denylist. A denylist
+entry for `secret.x` refuses `.x` written inside `secret.y`, and the
+test checks this. A relative include that resolves to a non-canonical
+name (`..secret..x` in a flat file resolves to `secret..x`) is refused.
+
+**`extend:` and `exclude:`** do not load an SLS. `extend` names state
+IDs. `exclude: - sls:` removes the states of a name that was loaded. All
+loaded names are now canonical, so an `exclude` in another spelling
+matches nothing. It did not match before either. That was not changed.
+
+**How it is tested.**
+`internal/fileserver/slsname_test.go` runs the real compiler against
+the real `Roots` on a temporary tree. The state package's in-memory
+loader is keyed on the name as written. It cannot fold spellings, and
+that is why the hole could not be seen in those tests.
+
+- Each of the eight spellings above, as a `state.sls` argument under
+  `state_denylist: [secret.x]`, is an error and declares nothing from
+  `secret/x.sls`.
+- An `include:` of `secret..x`, of `secret/x`, and the relative
+  `..secret..x` is refused in the same way.
+- A top file entry `secret/x` is refused.
+- A relative include of `.x` inside `secret.y` is refused by the
+  denylist as `secret.x`.
+- `ok`, `web` (an `init.sls` with the relative include `.app`) and
+  `web.nginx` (a flat file with `.app`) still compile, under the
+  denylist and under `state_allowlist: [web*]`.
+- `Roots.Source` refuses the spellings on its own.
+
+`internal/state/slsname_test.go` tests `CanonicalSLS` itself. It also
+runs the compiler with a loader that folds spellings as a file server
+does but checks nothing, so that the compiler's own check is tested
+without the file server's check behind it.
+
+**Broken on purpose.**
+
+- With `CanonicalSLS` made to accept everything, the bypass came back:
+  `state.sls secret..x`, `secret/x`, `.secret.x`, `secret/./x`,
+  `/secret/x` and `secret\x` each declared `secret_x` under the
+  denylist, and so did all three include files. Four tests failed.
+- With only the `loadSLS` check removed, the file server tests still
+  passed, because `Roots.Source` refused the names.
+  `TestTheCompilerRefusesANonCanonicalNameWhateverTheLoader` failed on
+  four spellings.
+- With only the `Roots.Source` check removed,
+  `TestRootsSourceRefusesANonCanonicalName` failed.
+
+**Not changed: the hub's policy has the same shape.** The role rules
+`deny_sls` and `allow_sls` in `internal/policy/policy.go` (`checkArgs`)
+match each argument of `state.sls` and `state.apply` with `path.Match`,
+as written. So `deny_sls: [secret.x]` does not refuse `state.sls
+secret/x`. That file is being rewritten on another branch, so it was
+not edited here. The follow-up is: in `checkArgs`, when `DenySLS` or
+`AllowSLS` is set, call `state.CanonicalSLS` on each argument, refuse
+the request if an argument is not canonical, and match only canonical
+names against the lists. Salt's `state.sls` also takes `a,b`. Neither
+the node nor the policy splits on commas today (the node looks for one
+SLS named `a,b`; this was read from the code, not run), so a comma is not a way round
+today. If the node ever learns to split, the policy must split in the
+same place, before it canonicalises. A test should repeat the spellings in this section
+against a role with `deny_sls`. Until that lands, `deny_sls` is
+bypassable in the same way, but the node's own `state_denylist` now
+refuses the run.
+
+**Not verified.**
+
+- No real Salt was run. Salt's spelling behaviour comes from reading
+  `fileclient.get_state` and the include branch of `salt/state.py`.
+- No real tree was compiled. If a tree or a script calls `state.sls`
+  with a slash (`web/nginx`), it now fails with the error that gives
+  the dotted spelling. Nobody has checked the estate's trees or the
+  shared-state tree for such names.
+- Template includes (`{% include 'secret/x.sls' %}`) read a file by
+  path. They never went through `state_denylist`, and they still do
+  not. This change is about SLS names only.
+- The tests ran on macOS (Darwin 25.6) only.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

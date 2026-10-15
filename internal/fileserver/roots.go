@@ -240,7 +240,16 @@ func slsCandidates(sls string) []string {
 
 // Source implements state.Loader: it resolves a dotted SLS name to its
 // bytes.
+//
+// It refuses a name that is not in its one spelling, as the compiler
+// does before its state_denylist sees it. Both sides call
+// state.CanonicalSLS, so the loader cannot come to fold a spelling the
+// denylist was never shown: the compiler and the loader are the pair
+// that disagreed in DIVERGENCE 5.290.
 func (r *Roots) Source(env, sls string) ([]byte, string, error) {
+	if _, err := state.CanonicalSLS(sls); err != nil {
+		return nil, "", err
+	}
 	for _, candidate := range slsCandidates(sls) {
 		b, full, err := r.Read(env, candidate)
 		if err == nil {
