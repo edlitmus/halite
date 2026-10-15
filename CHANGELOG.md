@@ -21,6 +21,21 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A package name that begins with `-` is refused
+
+Every `pkg` provider put the names and versions it was given straight
+into the package manager's argv. A name such as
+`-oDpkg::Pre-Invoke::=<command>` was read by apt-get as its own `-o`
+option, which ran the command as root. dnf's `--setopt=` works the same
+way. `pkg.installed`, `pkg.latest`, `pkg.removed`, `pkg.purged` and every
+`pkg` execution function that takes a name now refuse it before they run
+anything, in a dry run too. They refuse an empty name, a name or pinned
+version that begins with `-`, and one that holds whitespace or a control
+character. FreeBSD origins (`www/nginx`), flavours (`py311-foo@py311`),
+`name:arch`, `+` and dots are unchanged. A state that named such a
+package now fails, saying why, where before the package manager took it
+as an option. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

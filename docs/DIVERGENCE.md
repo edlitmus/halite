@@ -23929,6 +23929,95 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 A package name could be a package manager's option, run as root
+
+Audit M-32. Every `pkg` provider builds `tool verb [options] name...`,
+and nothing checked the names or versions on the way in. With a recording
+runner, `pkg.installed` with `pkgs: ["-oDpkg::Pre-Invoke::=touch
+/tmp/pwned", curl]` made the apt provider run
+
+    apt-get install -y -q -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef "-oDpkg::Pre-Invoke::=touch /tmp/pwned" curl
+
+and report success. apt-get reads that element as its own `-o`, which
+sets a dpkg hook, and the node runs as root. There is no shell in that
+path; the injection is into the package manager's option parser. The
+same element reached `dnf install`, `zypper install --name`, `pkg
+install` and `pkg lock`, `apk add`, `brew install` and `choco install`
+unchanged, and dnf's `--setopt=` and `--installroot=` are the same door.
+Names come from SLS, pillar and templates, so whoever can write any of
+those could run a command as root on every node that applies it.
+
+Two paths that should have agreed did not. `dnf_module` refuses a leading
+`-` with a regex for this exact reason ("these specs arrive from pillar
+and templates"), and `chattr` puts `--` before its operand. The main
+`pkg` path did neither.
+
+**The fix.** `pkgValidateName` and `pkgValidateVersion` (`pkg.go`) refuse
+an empty name, a leading `-`, and any whitespace, control character (NUL
+included) or Unicode format character. `packageSpecs` applies them, so
+`pkg.installed`, `pkg.latest`, `pkg.removed`, `pkg.purged`, `pkg.install`
+and `pkg.remove` are covered. `pkg.purge`, `pkg.hold`, `pkg.unhold`,
+`pkg.latest_version`, `pkg.available_version`, `pkg.file_list`,
+`pkg.file_dict`, `pkg.info_installed` and `pkg.download` apply them
+directly. `compareFreeBSD` checks both versions, because `pkg version -t a
+b` gives each one its own argv element. The check runs before the
+provider is asked anything, in a dry run too, so a refused call runs no
+command at all.
+
+It is deliberately not one positive grammar. The managers do not share
+one, and a Debian-strict rule would refuse `www/nginx`,
+`py311-foo@py311`, `openssl@3`, `@group`, `name.arch` and `Git.Install`.
+A per-manager grammar would be a claim about each manager that nobody here
+has measured. Refusing what is dangerous, or what no name can hold,
+needs no measurement. It does not refuse manager features that look like
+names: dnf paths and URLs, apt's `name-` and `name/release`. Those are not
+option injection.
+
+**No `--` was added**, to any provider. That `apt-get`, `dnf`, `pkg(8)`,
+`apk` and `zypper` each accept `--` before operands is not shown by
+anything in this repository, and none of those tools was on the machine
+this was written on. zypper's argv is also held byte-for-byte to captured
+fixtures (`testdata/zypper/leap16/*.argv`), and apt's, dnf's and pkgng's
+install paths are `hardware`; changing their argv without a run would
+turn a demonstrated path into an assumed one. The validator is the guard.
+Adding `--` is a follow-up for a lab run, one tool at a time.
+
+**Tests** (`pkg_name_injection_test.go`, recording runner, provider chosen
+by `Lookup`):
+
+- Twenty-one calls carry payloads in `name`, `pkgs`, a `pkgs` mapping's
+  version, or `version`. The payloads are the apt hook, `--setopt=`, a
+  newline and a NUL. Each runs through the registry on apt, zypper, dnf,
+  pkgng, apk, brew and choco, dry and wet. Each must be refused with
+  "refused" in its message, and run nothing.
+- Every `pkg.*` exec or state function with a `name` or `pkgs` parameter
+  must be in that list. The exceptions are `pkg.version` and
+  `pkg.upgrade_available`, whose names never reach argv. The test checks
+  that too, on every provider.
+- `libstdc++6`, `python3.11`, `nginx:amd64`, `www/nginx` and
+  `py311-foo@py311` produce the whole expected install argv on apt, dnf,
+  pkgng, apk and zypper. Pinned versions with an epoch and `~` are still
+  joined as `name=v` (apt) and `name-v` (dnf).
+
+Broken on purpose, each one watched fail and restored. With the name
+check a no-op, the injection test failed on all seven providers and
+printed the original `apt-get install ... "-oDpkg::Pre-Invoke::=..."`
+argv, and the same element in `dnf install`, `zypper install --name`,
+`apk add` and `pkg lock`. With the version check a no-op, the version
+cases and the FreeBSD comparison failed. With the check removed from
+`hold`/`unhold` alone, those two failed. With `pkg.hold` dropped from the
+list, the coverage test failed. With the check made too strict (refusing
+`/@:+`), the legitimate-name tests failed.
+
+**Not verified.** No real package manager was run. Everything above is
+argv observed through a recording runner on macOS, so nothing here shows
+that each tool reads the payload as an option. That is shown for apt by
+the original report, and for the others by their option syntax. Not run
+on FreeBSD. `dnf_module` keeps its own narrower regex, which is not
+edited here; making it share `pkgValidateName` is a follow-up. Other
+modules that pass package names to a tool (`pip`, `npm`, `gem`, `pkgrepo`
+and so on) were not looked at.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
