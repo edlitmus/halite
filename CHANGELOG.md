@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A target nested more than 100 levels deep is now an error
+
+A compound target with more than 100 levels of `(` and `not` is now
+refused when it compiles, with the column where it went over. Before,
+deep enough nesting overflowed the hub's stack, and one request could
+end the hub. A long `or` chain could also end it, the first time it was
+matched. That chain is still accepted and now evaluates in a loop. No
+real target comes near 100 levels. A nodegroup at the deepest nesting
+that is allowed uses eleven. Long targets are not capped. See DIVERGENCE
+5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

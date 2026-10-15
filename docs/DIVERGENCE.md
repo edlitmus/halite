@@ -23929,6 +23929,100 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 A deeply nested target expression ended the hub
+
+Audit H-12. The compound parser in `internal/target/compound.go` is
+recursive descent, `parseOr` to `parseAnd` to `parseNot` to
+`parsePrimary` and back to `parseOr` on every `(`, and `parseNot` calls
+itself on every `not`. Nothing bounded either. The only depth limit in
+the package was `resolveNodegroup`'s ten levels of `N@`. A Go stack
+overflow is `fatal error: stack overflow`, not a panic, and `net/http`
+cannot recover it. So one request whose target was enough `(` ended the
+hub, and every job in flight with it. The hub calls `target.Compile`
+in `hub.Dispatch` (`internal/hub/dispatch.go`), the mine
+(`internal/hub/mine.go`) and the nodegroup runner
+(`internal/hub/runners_fleet.go`). The audit also names the reactors,
+which were not traced for this entry. The API bounds a body at `max_body`, 64 MiB by default, and
+nothing smaller bounds a target. The caller needs a role whose target
+covers the expression, which `*` does.
+
+**The second half was not in the audit.** `or` and `and` chains are a
+loop in the parser, so they looked safe. But the loop built
+`((a or b) or c) or …` as one closure inside the next, and `Match`
+recursed once per term. So a long flat target did not crash at
+compile. It crashed at match, against the first node.
+
+**Measured**, darwin/arm64, go1.27.2, with `debug.SetMaxStack(4 << 20)`
+in a child process, on the code before the change:
+
+- `(` × n, then `x`, then `)` × n: 10,000 parsed and 15,000 overflowed.
+  That is some 300 to 400 bytes a level. The audit's own figure, from a
+  32 MiB stack, was about 170 bytes; the platform and the measurement
+  differ, and either way a few megabytes of `(` exceeds the default
+  1 GiB stack.
+- `nomatch or ` × n: 25,000 evaluated and 30,000 overflowed in `Match`,
+  some 150 bytes a term. Extrapolated, not run: a few tens of megabytes
+  of `a or a or …` at the default stack. That is inside the 64 MiB body.
+- 200,000 `(`, 200,000 `not`, and 200,000-term `or` and `and` chains
+  all ended the child with `fatal error: stack overflow`.
+
+**The change.** Two parts.
+
+- `maxCompoundDepth = 100` bounds nesting. Each `(` and each `not` is
+  one level. Past the bound, `Compile` returns an ordinary `*Error` with
+  the column of the token that went over: *"the expression nests deeper
+  than 100 levels of `(` and `not`"*. 100 is far above what anyone
+  writes. A fully nested nodegroup costs eleven levels: ten references,
+  each wrapped in one pair of parentheses by `resolveNodegroup`, and the
+  root. 100 is also far below the stack a level costs.
+- `or` and `and` chains are now `anyNode` and `allNode`, a slice that
+  `Match` walks in a loop. The order of evaluation and the
+  short-circuit are left to right, as before. The tree is now as deep as
+  the nesting, and the bound covers that.
+
+An `N@` term inside a compound is parsed by a fresh parser from depth 0,
+not from the enclosing depth. `ValidateNodegroups` checks a group at
+depth 0 when it loads. If use counted from the enclosing depth, a group
+that passed at load could fail at use: two paths that must agree. The
+expansion has no `N@` left in it, so the fresh parser never starts
+another. The worst case is twice the bound.
+
+**Length is not capped, on purpose.** A cap was considered at
+`target.Compile` and at the API. After the change, length costs time and
+memory in a straight line and no stack. A long target is what a list of
+node names looks like, and a large estate has long ones. A cap would
+refuse a valid target, and no crash is behind it. The API's `max_body`
+already bounds the memory. `TestLongFlatTargetsStillCompile` holds a
+5,001-term `or` of `L@` names.
+
+**Other recursion in `internal/target`**, checked with 200,000 `(` under
+a 4 MiB stack: `E@`, `P@`, `J@` go to Go's `regexp`, which refuses that
+with its own nesting error. `G@`, `I@`, glob, list and `S@` do not
+recurse on the expression. A 200,000-segment `G@` key was compiled and
+matched. `resolveNodegroup` was already bounded at ten. Nothing else was
+changed.
+
+**Tests.** `internal/target/depth_test.go`.
+`TestHostileTargetsDoNotOverflowTheStack` runs the four shapes above in
+a child with a 4 MiB stack. `TestCompoundNestingLimitEdge` holds both
+sides of the bound, for `(`, `not` and both mixed. Each was broken on
+purpose and seen to fail:
+
+- The old `compound.go`: all four shapes overflowed.
+- The bound disabled: `parens` and `nots` overflowed. The edge test
+  failed for all three shapes.
+- `>=` changed to `>`: the edge test failed for all three shapes.
+- The nested closures restored for `or` and `and`: `or-chain` and
+  `and-chain` overflowed.
+
+**Not verified.** No hub or API was run. The crash was reproduced in
+`internal/target` and not through a request. That the request path
+reaches `Compile` is from the audit and from reading `dispatch.go`. The
+node compiles a job's target again in `cmd/halite-node/jobsignature.go`.
+That path shares the same code and the same bound, but a test was not
+run there. The figures above are from one Mac and were not taken on
+FreeBSD or Linux.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

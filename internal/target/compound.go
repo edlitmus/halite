@@ -32,6 +32,90 @@ type parser struct {
 	toks   []compoundToken
 	i      int
 	groups Nodegroups
+	// depth is how many `(` and `not` enclose the token being parsed.
+	// See maxCompoundDepth.
+	depth int
+}
+
+// maxCompoundDepth bounds how deeply an expression may nest, counting
+// each `(` and each `not` as one level.
+//
+// The parser is recursive descent and the tree it builds is evaluated
+// recursively, so nesting is stack. A Go stack overflow is a fatal error
+// rather than a panic: nothing recovers it, net/http included, so before
+// this bound one deeply nested target from one API caller ended the hub
+// (DIVERGENCE 5.290). Measured on darwin/arm64 with go1.27.2 and the
+// stack capped at 4 MiB, 10,000 `(` parsed and 15,000 overflowed: some
+// 300 to 400 bytes a level, so a few megabytes of `(` would exhaust the
+// default 1 GiB stack, well inside the API's 64 MiB body limit.
+//
+// 100 is chosen as far above anything a person writes and far below
+// anything that costs stack. A hand-written target nests a handful of
+// levels. Nodegroup expansion wraps each reference in one pair of
+// parentheses and references nest at most ten deep (resolveNodegroup),
+// so a fully nested nodegroup costs eleven. At 100 levels the parser
+// uses some tens of kilobytes of stack.
+//
+// An N@ term inside a compound is parsed by a fresh parser at depth 0
+// (compileTerm), not at the enclosing depth. That is deliberate: a
+// nodegroup is checked once at load by ValidateNodegroups, at depth 0,
+// and if use counted from the enclosing depth a group that passed at
+// load could fail at use. The stack stays bounded: the expansion has no
+// N@ left in it, so the fresh parser never starts another, and the worst
+// case is twice the bound.
+//
+// Length is deliberately not bounded here. A flat chain of `or` and
+// `and` is a loop in the parser and a slice in the tree (anyNode,
+// allNode), so its cost is linear in time and memory and costs no stack;
+// a long target is a list of node names, which a large estate legitimately
+// has, and refusing it would be refusing a valid target for no crash
+// behind it.
+const maxCompoundDepth = 100
+
+// enter records one more level of nesting at t, refusing it past the
+// bound. Every caller pairs it with leave.
+func (p *parser) enter(t compoundToken) error {
+	if p.depth >= maxCompoundDepth {
+		return &Error{Expr: p.src, Col: t.col, Msg: fmt.Sprintf("the expression nests deeper than %d levels of `(` and `not`", maxCompoundDepth)}
+	}
+	p.depth++
+	return nil
+}
+
+func (p *parser) leave() { p.depth-- }
+
+// anyNode and allNode are an `or` chain and an `and` chain as a list
+// rather than as one closure inside the next.
+//
+// They used to be nested closures, ((a or b) or c) or ..., which the
+// parser built in a loop and so never looked recursive, but Match then
+// recursed once per term. With the stack capped at 4 MiB a chain of
+// 25,000 terms evaluated and one of 30,000 overflowed, some 150 bytes a
+// term, which puts the default 1 GiB stack at a few tens of megabytes of
+// `a or a or ...`: inside the API's 64 MiB body limit, and a crash at
+// match time rather than parse time. The tree is now as deep as the
+// expression's nesting, which maxCompoundDepth bounds. Evaluation order
+// and short-circuiting are left to right, as before.
+type anyNode []node
+
+func (a anyNode) match(n Node) bool {
+	for _, x := range a {
+		if x.match(n) {
+			return true
+		}
+	}
+	return false
+}
+
+type allNode []node
+
+func (a allNode) match(n Node) bool {
+	for _, x := range a {
+		if !x.match(n) {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *parser) parse() (node, error) {
@@ -106,55 +190,64 @@ func (p *parser) peek() (compoundToken, bool) {
 }
 
 func (p *parser) parseOr() (node, error) {
-	left, err := p.parseAnd()
+	first, err := p.parseAnd()
 	if err != nil {
 		return nil, err
 	}
+	terms := anyNode{first}
 	for {
 		t, ok := p.peek()
 		if !ok || !strings.EqualFold(t.text, "or") {
-			return left, nil
+			break
 		}
 		p.i++
 		right, err := p.parseAnd()
 		if err != nil {
 			return nil, err
 		}
-		l, r := left, right
-		left = funcNode(func(n Node) bool { return l.match(n) || r.match(n) })
+		terms = append(terms, right)
 	}
+	if len(terms) == 1 {
+		return first, nil
+	}
+	return terms, nil
 }
 
 func (p *parser) parseAnd() (node, error) {
-	left, err := p.parseNot()
+	first, err := p.parseNot()
 	if err != nil {
 		return nil, err
 	}
+	terms := allNode{first}
 	for {
 		t, ok := p.peek()
-		if !ok {
-			return left, nil
-		}
 		// Salt writes `and not x` as two words; both spellings reach the
 		// same tree because `not` is handled by parseNot.
-		if !strings.EqualFold(t.text, "and") {
-			return left, nil
+		if !ok || !strings.EqualFold(t.text, "and") {
+			break
 		}
 		p.i++
 		right, err := p.parseNot()
 		if err != nil {
 			return nil, err
 		}
-		l, r := left, right
-		left = funcNode(func(n Node) bool { return l.match(n) && r.match(n) })
+		terms = append(terms, right)
 	}
+	if len(terms) == 1 {
+		return first, nil
+	}
+	return terms, nil
 }
 
 func (p *parser) parseNot() (node, error) {
 	t, ok := p.peek()
 	if ok && strings.EqualFold(t.text, "not") {
+		if err := p.enter(t); err != nil {
+			return nil, err
+		}
 		p.i++
 		inner, err := p.parseNot()
+		p.leave()
 		if err != nil {
 			return nil, err
 		}
@@ -176,8 +269,12 @@ func (p *parser) parsePrimary() (node, error) {
 
 	switch {
 	case t.text == "(":
+		if err := p.enter(t); err != nil {
+			return nil, err
+		}
 		p.i++
 		inner, err := p.parseOr()
+		p.leave()
 		if err != nil {
 			return nil, err
 		}
