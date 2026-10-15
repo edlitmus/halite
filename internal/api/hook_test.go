@@ -1,15 +1,21 @@
 package api
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/metrics"
+	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
 )
@@ -58,7 +64,7 @@ func TestAHookWithoutAuthenticationWillNotLoad(t *testing.T) {
 		"hmac with no secret":  "hooks:\n  a:\n    auth: hmac\n",
 		"token with no secret": "hooks:\n  a:\n    auth: token\n",
 		"an unknown method":    "hooks:\n  a:\n    auth: none\n    secret: x\n",
-		"an unknown setting":   "hooks:\n  a:\n    auth: mtls\n    nonsense: 1\n",
+		"an unknown setting":   "hooks:\n  a:\n    auth: token\n    secret: x\n    nonsense: 1\n",
 		"not a mapping":        "hooks:\n  - a\n",
 	}
 	for name, src := range cases {
@@ -338,5 +344,188 @@ func TestADeliveryThatFailedDownstreamCanBeRetried(t *testing.T) {
 	res, _ = l.deliver(t, "deploy", body, stamp, signature)
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a replay after a successful delivery answered %d", res.StatusCode)
+	}
+}
+
+// `auth: mtls` could never succeed -- the API asks no client for a
+// certificate -- and would have accepted any certificate if it had. It is
+// refused when the configuration loads, saying why. DIVERGENCE 5.290.
+func TestAnMTLSHookIsRefusedAtLoad(t *testing.T) {
+	_, err := parseHooksErr("hooks:\n  deploy:\n    auth: mtls\n")
+	if err == nil {
+		t.Fatal("an mtls hook loaded, and no delivery to it can ever authenticate")
+	}
+	for _, want := range []string{"hook deploy", "auth: mtls", "client certificates", "hmac", "token"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+}
+
+// gatedHub is a hub whose first event.send waits for the test to let it
+// go, so a second delivery can be sent while the first is provably in
+// the middle of being delivered. Every later call answers at once.
+type gatedHub struct {
+	mu      sync.Mutex
+	sends   int
+	arrived chan struct{}
+	release chan struct{}
+	server  *httptest.Server
+}
+
+func newGatedHub(t *testing.T) *gatedHub {
+	t.Helper()
+	g := &gatedHub{arrived: make(chan struct{}), release: make(chan struct{})}
+	g.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != transport.PathRunners {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		g.mu.Lock()
+		g.sends++
+		first := g.sends == 1
+		g.mu.Unlock()
+		if first {
+			close(g.arrived)
+			<-g.release
+		}
+		writeJSON(w, http.StatusOK, transport.RunnerResponse{
+			JID: "20261015T000000.000001", Fun: "event.send", Success: true,
+			Return: json.RawMessage(`true`),
+		})
+	}))
+	t.Cleanup(g.server.Close)
+	return g
+}
+
+func (g *gatedHub) count() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.sends
+}
+
+// Two copies of one signed delivery, the second arriving while the first
+// is being put on the bus. The check that a signature had not been
+// delivered and the record that it had were either side of the call to
+// the hub, so both copies passed and the event was delivered twice.
+// DIVERGENCE 5.290.
+func TestTwoCopiesOfOneDeliveryReachTheBusOnce(t *testing.T) {
+	l := newLab(t)
+	l.server.Metrics = metrics.NewRegistry()
+	l.server.Hooks = NewHooks(parseHooks(t, hmacHook))
+	hub := newGatedHub(t)
+	l.server.Hub = &transport.Client{
+		HubURL: hub.server.URL, CA: hub.server.Certificate(),
+		ServerName: "127.0.0.1", Timeout: 10 * time.Second,
+	}
+
+	body := `{"version":"1.2"}`
+	stamp := time.Now().UTC().Format(time.RFC3339)
+	signature := sign("s3cret", stamp, body)
+
+	first := make(chan int, 1)
+	go func() {
+		res, _ := l.deliver(t, "deploy", body, stamp, signature)
+		first <- res.StatusCode
+	}()
+	// The first copy is inside the hub call now, and stays there until
+	// released.
+	<-hub.arrived
+
+	res, out := l.deliver(t, "deploy", body, stamp, signature)
+	close(hub.release)
+	if code := <-first; code != http.StatusAccepted {
+		t.Errorf("the first copy answered %d", code)
+	}
+	if res.StatusCode != http.StatusConflict {
+		t.Errorf("the copy sent while the first was in flight answered %d: %s", res.StatusCode, out)
+	}
+	if got := hub.count(); got != 1 {
+		t.Errorf("one delivery reached the bus %d times", got)
+	}
+
+	// And once it has landed, it is a replay like any other.
+	res, out = l.deliver(t, "deploy", body, stamp, signature)
+	if res.StatusCode != http.StatusUnauthorized || !strings.Contains(out, "already been accepted") {
+		t.Errorf("a copy after the delivery landed answered %d: %s", res.StatusCode, out)
+	}
+	if got := hub.count(); got != 1 {
+		t.Errorf("one delivery reached the bus %d times", got)
+	}
+}
+
+// A caller holding no secret could spend a hook's whole rate limit,
+// because the limit was taken before authentication from one bucket per
+// path: the real sender's deliveries were then refused with 429. The
+// clock is fixed, so no bucket refills during the test. DIVERGENCE 5.290.
+func TestAnAnonymousFloodDoesNotSpendTheSendersAllowance(t *testing.T) {
+	l, hub := hookLab(t, "hooks:\n  deploy:\n    auth: hmac\n    secret: s3cret\n    rate_limit: 2\n")
+	now := time.Now().UTC().Truncate(time.Second)
+	l.server.Now = func() time.Time { return now }
+	stamp := now.Format(time.RFC3339)
+
+	for i := 0; i < 20; i++ {
+		res, out := l.deliver(t, "deploy", `{"flood":true}`, stamp, "not-a-signature")
+		if res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("anonymous delivery %d answered %d: %s", i, res.StatusCode, out)
+		}
+	}
+
+	// The sender's allowance is untouched: both of its burst go through.
+	for i, body := range []string{`{"n":1}`, `{"n":2}`} {
+		res, out := l.deliver(t, "deploy", body, stamp, sign("s3cret", stamp, body))
+		if res.StatusCode != http.StatusAccepted {
+			t.Fatalf("signed delivery %d after the flood answered %d: %s", i, res.StatusCode, out)
+		}
+	}
+	sent := 0
+	for _, call := range hub.seen {
+		if strings.Contains(call.body, "event.send") {
+			sent++
+		}
+	}
+	if sent != 2 {
+		t.Errorf("%d deliveries reached the bus, want the two signed ones", sent)
+	}
+
+	// The limit still holds for the sender itself, and a delivery it
+	// turned away is not consumed: the same signature goes through once
+	// the bucket has refilled.
+	body := `{"n":3}`
+	signature := sign("s3cret", stamp, body)
+	res, _ := l.deliver(t, "deploy", body, stamp, signature)
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("a third signed delivery in the same instant answered %d", res.StatusCode)
+	}
+	now = now.Add(time.Second)
+	res, out := l.deliver(t, "deploy", body, stamp, signature)
+	if res.StatusCode != http.StatusAccepted {
+		t.Errorf("the rate-limited delivery, retried, answered %d: %s", res.StatusCode, out)
+	}
+}
+
+// Refusals are logged while the hook's refusal bucket has room, and not
+// after: a caller holding no secret can make as many as it likes, and a
+// warning for each would let it fill the log. The clock is fixed, so the
+// bucket of two does not refill.
+func TestRefusalsAreLoggedAtTheHooksRate(t *testing.T) {
+	l, _ := hookLab(t, "hooks:\n  deploy:\n    auth: hmac\n    secret: s3cret\n    rate_limit: 2\n")
+	var out bytes.Buffer
+	logger, err := log.New(log.Options{Level: log.Info, Stderr: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.server.Log = logger
+	now := time.Now().UTC().Truncate(time.Second)
+	l.server.Now = func() time.Time { return now }
+	stamp := now.Format(time.RFC3339)
+
+	for i := 0; i < 10; i++ {
+		if res, _ := l.deliver(t, "deploy", `{}`, stamp, "not-a-signature"); res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("anonymous delivery %d answered %d", i, res.StatusCode)
+		}
+	}
+	if got := strings.Count(out.String(), "hook delivery refused"); got != 2 {
+		t.Errorf("ten refusals wrote %d warnings, want the bucket's two:\n%s", got, out.String())
 	}
 }

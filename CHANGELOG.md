@@ -21,6 +21,25 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Webhooks: one delivery once, a sender an anonymous caller cannot starve, and no `auth: mtls`
+
+Three changes to `/v1/hook/{path}`. Two copies of one signed delivery
+arriving together were both put on the bus; the second is now refused
+with `409 Conflict` while the first is in flight, and as a replay once it
+has landed. A delivery that fails downstream can still be retried with
+the same signature. The `rate_limit` used to be taken before
+authentication from one bucket per path, so requests without the secret
+could use up the sender's allowance and its deliveries got `429`; it now
+counts only deliveries that authenticated, and refusals are logged at
+that rate rather than once each. **`auth: mtls` is now refused when the
+API loads its configuration**, and `halite-api serve` exits 78 on it: the
+API never asked clients for a certificate, so no delivery to such a hook
+could authenticate, and the check would have accepted any certificate if
+one had been sent. Change such a hook to `hmac` or `token`. A new
+`result` value appears on `halite_api_hook_deliveries_total`: `in_flight`,
+and refused replays are counted as `replayed` instead of
+`unauthenticated`. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

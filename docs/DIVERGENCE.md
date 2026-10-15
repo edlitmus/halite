@@ -23929,6 +23929,124 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 Webhook ingress: a delivery twice, a sender starved, and an `mtls` that could not work
+
+Three defects in `/v1/hook/{path}` (SPEC 22.2), found by reading
+`internal/api/hook.go` against what the ledger and the handbook said of
+it. None was reported from a host.
+
+**One signed delivery could reach the bus twice.** The handler asked
+`alreadySeen` whether a signature had been delivered, called the hub,
+and only then called `remember`. Two copies of one delivery arriving
+together -- a sender that retries on a slow answer does exactly this --
+both passed the check before either was recorded, and both became
+events. A reaction that deploys would deploy twice.
+
+The record was after the delivery for a reason, and the reason holds:
+a delivery that fails downstream is one the sender retries with the
+same signature, and refusing that retry as a replay loses the event
+(5.13's table, and the handbook's chapter 27). So the fix keeps it. A signature is now **reserved** -- checked
+against the delivered ones and the in-flight ones, and claimed, in one
+step under the lock -- before the hub is called. If the delivery lands,
+the reservation becomes the record. If it does not -- the hub is
+unreachable, the hub refuses, the rate limit turns it away, or the
+handler panics -- a deferred release gives the signature back, and the
+sender's retry is accepted. A copy that arrives while the first is in
+flight is refused with `409 Conflict`, not `401`, because it is not an
+authentication failure and a sender should not page somebody over it.
+
+**An anonymous caller could starve the real sender.** The rate limit
+was the first thing the handler did, from one token bucket per path,
+before anything was authenticated. At the default of ten a second, ten
+requests from anybody who knew the path took the allowance, and the
+sender's signed deliveries were refused with `429`. The limit now
+applies after authentication, to authenticated deliveries only.
+Refusals -- a bad signature, no token, a replay -- are counted against a
+second bucket per path at the same rate, and that bucket decides only
+whether the refusal is **logged**: a caller without the secret could
+otherwise write a warning per request into the API's log.
+
+What it does *not* bound is the work. Every unauthenticated request is
+still read, up to `max_body`, and checked, because nothing short of
+checking tells a forgery from the sender. A limit in front of that,
+keyed by the remote address, was considered and not added: behind a
+reverse proxy every request has the proxy's address, and that limit
+would starve the sender again in exactly the deployment that most
+needs it. The body limit and the server's read timeout are what bound
+an anonymous flood's cost.
+
+**`auth: mtls` could never succeed, and would have accepted anything.**
+The method checked that `r.TLS.PeerCertificates` was not empty. The
+API's listener does not request client certificates -- operators
+authenticate with tokens -- so it was always empty and every delivery
+to an `mtls` hook was refused. 6.1a called the mode "implemented and
+refused when no client certificate is presented, but never exercised",
+which reads as untested and probably fine; in fact no certificate could
+be presented. And "fixing" it by requesting certificates would have
+opened it: there was no CA to verify against and no identity to match,
+so any certificate from anywhere would have authenticated.
+
+Making it real means requesting client certificates on the listener --
+for every connection, because the handshake is over before the path is
+known, which changes what every browser and API client is asked -- plus
+a CA and an identity per hook. That is a design change with a SPEC
+section behind it. Refusing it is the smaller honest one: `auth: mtls`
+is now an error when the configuration loads, saying why and naming
+`hmac` and `token`. SPEC 22.2 still lists mutual TLS among the methods;
+this build does not keep that promise, and says so at load rather than
+by refusing every delivery.
+
+#### What was run
+
+All of it in `internal/api/hook_test.go`, against the API's real handler
+over HTTP with the hub a TLS test server, and `-race`:
+
+- **Two copies at once**: a hub that holds the first `event.send` until
+  released. The second copy is sent after the first has provably
+  reached the hub, so the interleaving is fixed rather than hoped for.
+  The second answers `409`, the hub sees one call, and a third copy
+  after the first lands answers `401` as a replay.
+- **A flood of twenty unsigned deliveries** against `rate_limit: 2` on a
+  fixed clock, all `401`; then both of the sender's burst go through,
+  only those two reach the hub, a third is `429`, and that same third
+  delivery is accepted once the clock moves a second -- the reservation
+  having been released on the `429`.
+- **Ten refusals write two warnings**, the refusal bucket's burst.
+- **`auth: mtls` does not load**, and `cmd/halite-api`'s exit test runs
+  a real `serve` on a configuration with one and sees it exit 78.
+- The existing test that a delivery the hub refused can be retried with
+  the same signature still passes.
+
+Each was broken on purpose and watched to fail:
+
+- Checking without reserving: the second copy answered `202` and the
+  hub saw the delivery twice.
+- The rate limit moved back in front of authentication: the third
+  anonymous request answered `429`.
+- The reservation never released: the downstream-retry test and the
+  rate-limited retry both answered `409`.
+- Every refusal logged: ten warnings instead of two.
+- `mtls` accepted again: the load test failed, and the `serve` exit
+  test **hung** until the test timeout rather than failing, because
+  `serve` started serving -- and left the serving child running after
+  the test binary gave up; it was found with `pgrep` and stopped. A
+  break that fails by hanging is a weaker witness than one that fails
+  cleanly, and the load test is the one that names the fault.
+
+#### Not verified
+
+- **No real sender**: no GitHub, GitLab or other webhook source was
+  pointed at a running API. Everything above is the handler under
+  `httptest`, plus one `serve` started from the test binary.
+- **macOS only** (Darwin 25.6). CI runs the tests on all four platforms.
+- **The cost of a flood** was reasoned about, not measured: no load was
+  generated, so how many unauthenticated deliveries a second an API can
+  check before the sender's are delayed is not known.
+- **The reservation is per process.** Two `halite-api` processes behind
+  one address each keep their own, as they each kept their own nonce
+  cache before; a copy that reaches each is delivered twice. Unchanged
+  by this, and not new.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -24526,9 +24644,13 @@ What is **not** built in the API:
 - ~~**Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.~~
   Built: `doctor` (SPEC 26.4) ships, see 5.30, and tracing ships with it, see
   5.34. **Section 26 is complete.**
-- **`mtls` hook authentication.** The mode is implemented and refused
+- ~~**`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been
-  exercised against a real sender.
+  exercised against a real sender.~~ That was exculpatory: the API never
+  asks a client for a certificate, so none could be presented and no
+  delivery to an `mtls` hook could succeed; and the check was only that
+  one was present, so asking would have let any certificate through.
+  `auth: mtls` is refused at load now. See 5.290.
 
 Phase 5 is part built — gitfs, s3fs, the agentless path, relays and the
 FIPS artifact set are in, and 6.1b says what each covers. What is
