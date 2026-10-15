@@ -364,15 +364,15 @@ restart cannot fix — this node's enrollment was revoked, or `hub_tries`
 was reached — and the node's unit carries `RestartPreventExitStatus=1`
 so that stops the unit and leaves the reason in the journal.
 
-The hub's and the API's units stop on 78 instead. `halite-hub serve` exits 78
-(sysexits' `EX_CONFIG`) for a fault it finds before it is serving: a
+The hub's and the API's units stop on 78 instead. `halite-hub serve`
+exits 78 (sysexits' `EX_CONFIG`) for a fault it finds before it is serving: a
 setting that does not parse, an `ext_pillar` source with no extension
 installed, key material that does not load, or a state or cache
 directory it may not write. It exits 1 for a listen address that is not
 on the host yet, for a port that is still held, and for a failure while
 it is serving. A restart fixes those, so the unit restarts on 1. Before
 this change, the unit restarted on every exit, and one hub with a
-missing extension was restarted 427 times. See DIVERGENCE 5.286.
+missing extension was restarted 427 times. See DIVERGENCE 5.287.
 
 `halite-api serve` makes the same split. It exits 78 for a fault it
 finds before it is serving: a setting or a role map that does not
@@ -384,7 +384,7 @@ on 1, for both kinds, so an API whose listen address came up late at
 boot stayed down until somebody started it. A hub, an identity provider
 or a directory that is down when the API starts is not a start-up
 failure: the API asks none of them anything until a request needs it.
-See DIVERGENCE 5.287.
+See DIVERGENCE 5.289.
 
 The agent runs the jobs that arrive on that stream, and compiles them
 against the tree and the pillar the hub serves.

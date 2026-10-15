@@ -24,7 +24,7 @@ import (
 // on ExitConfig and restart on 1. It was the hub's own until the API was
 // found exiting 1 for the same three failures under a unit that stopped
 // on 1, so that an API whose address came up late stayed down
-// (DIVERGENCE 5.286, 5.287). One function, so that the two services
+// (DIVERGENCE 5.287, 5.289). One function, so that the two services
 // cannot come to disagree about what a restart fixes.
 //
 // The errno comparisons match on Unix only. On Windows the socket error

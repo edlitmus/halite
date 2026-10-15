@@ -69,7 +69,7 @@ var Keys = []Key{
 	{"file_roots", nodeHub, "", "Environment to an ordered list of state directories.", "13.1"},
 	{"pillar_roots", nodeHub, "", "Environment to an ordered list of pillar directories.", "12.2"},
 	{"env", all, "base", "The default environment. saltenv is a permanent alias.", "13.1"},
-	{"pillarenv", nodeHub, "", "The pillar environment, defaulting to env.", "12.2"},
+	{"pillarenv", nodeHub, "", "The one pillar environment; unset, every environment's pillar is merged.", "12.2"},
 	{"env_allowlist", nodeHub, "", "Environments a run may use.", "28.3"},
 	{"env_denylist", nodeHub, "", "Environments a run may not use.", "28.3"},
 	{"top_file_merging_strategy", nodeHub, "merge", "merge, same, or merge_all.", "11.2"},

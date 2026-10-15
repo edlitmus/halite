@@ -692,6 +692,14 @@ func (h hubEvents) Send(tag string, data map[string]any) error {
 
 // useHubPillar points pillar compilation at the hub.
 //
+// pillarRequest is what this node asks the hub for. all is `pillarenv`
+// unset: every environment's pillar, merged, with env only the one the
+// node runs in. One function for the probe and every later fetch, so the
+// two cannot ask for different pillars. DIVERGENCE 5.288.
+func (n *node) pillarRequest(env string, all bool, grains json.RawMessage) transport.PillarRequest {
+	return transport.PillarRequest{NodeID: n.nodeID, Env: env, AllEnvs: all, Grains: grains}
+}
+
 // A hub that compiles no pillar leaves the node on its own roots: an
 // estate migrating one piece at a time should not lose its pillar the
 // moment it enrols.
@@ -701,9 +709,7 @@ func (n *node) useHubPillar(client *transport.Client) {
 		n.log.Warn("could not encode grains for the hub", "error", err.Error())
 		return
 	}
-	probe, err := client.Pillar(context.Background(), transport.PillarRequest{
-		NodeID: n.nodeID, Env: n.pillarEnv, Grains: grains,
-	})
+	probe, err := client.Pillar(context.Background(), n.pillarRequest(n.pillarEnv, n.pillarAll, grains))
 	if err != nil {
 		if transport.CodeOf(err) == transport.CodeNoPillar {
 			// The hub does not do pillar. Falling back to this node's
@@ -750,13 +756,11 @@ func (n *node) useHubPillar(client *transport.Client) {
 	// that has fallen back to its own roots should say so, and should
 	// not say so once a minute for ever.
 	var saidNoPillar sync.Once
-	n.hubPillar = func(env string) (*value.Map, error) {
+	n.hubPillar = func(env string, all bool) (*value.Map, error) {
 		// Asked again for every run rather than cached: pillar is
 		// where an operator changes a value expecting the next
 		// highstate to use it, and a cache would mean it does not.
-		res, err := client.Pillar(context.Background(), transport.PillarRequest{
-			NodeID: n.nodeID, Env: env, Grains: grains,
-		})
+		res, err := client.Pillar(context.Background(), n.pillarRequest(env, all, grains))
 		if err != nil {
 			if transport.CodeOf(err) == transport.CodeNoPillar {
 				// The answer the probe would have acted on, arriving

@@ -23605,8 +23605,32 @@ this; the root run used uid 65534 in a temp directory); Windows and other
 platforms without uids, where `inheritOwner` is a no-op by design; the node's
 own message, which still says only "the hub's log says why" (the hub's log now
 says why at start, which is as far as this goes).
+### 5.286 `HaliteNodesAbsent` could not say which node
 
-### 5.286 The hub's unit restarted a hub that could not start, 427 times
+The alert was `halite_hub_keys_accepted - halite_hub_nodes_connected > 0`: two
+unlabelled totals, so the page read "1 enrolled nodes are not connected" and
+the operator had to go and diff the key list against the connection list. The
+hub exports no per-node series, so no annotation on that rule could name
+anyone. Added `HaliteNodeDisconnected` in `docs/metrics.md`, which reads each
+node's own `halite_node_connected{job="halite-nodes"}` and names it through
+`$labels.instance`; a node that is down altogether is already named by
+`HaliteNodeScrapeDown`. The aggregate stays, because it is the only rule that
+sees an enrolled node nobody scrapes, and its summary now says it is an
+aggregate and points at the two that name.
+
+The `job` matcher is load-bearing, not tidiness: the production Prometheus
+holds a frozen textfile series `halite_node_connected{job="node_exporter",
+instance="localhost:9100"} 0` (read from its API), which an unscoped rule would
+fire on for good.
+
+**Verified**: the block passes `promtool check rules` (20 rules); the live
+Prometheus' `halite_node_connected` was read, and the four `halite-nodes`
+targets are 1. **Not verified**: the rule has not been evaluated by that
+Prometheus or delivered through Alertmanager, and the live rules are in the
+salt tree (edlitmus/salt), not here, so beastie does not have this until it is
+added there. I did not break it on purpose against a node that is up but
+disconnected.
+### 5.287 The hub's unit restarted a hub that could not start, 427 times
 
 On a real v0.1.1 hub (2026-10-12, Ubuntu 22.04 arm64, the FIPS build),
 `hub.yaml` named `aws_secrets_manager` under `ext_pillar` and no extension
@@ -23712,20 +23736,84 @@ cannot drift apart again. Each was broken on purpose and each failed:
   unit on both, so an API whose address is late at boot stays down.
 - **The node was not audited.** No one has checked whether `halite-node
   connect` exits 1 for anything transient.
+### 5.288 An unset `pillarenv` compiled one environment, where Salt merges every one
 
-### 5.287 The API's unit stopped an API that a restart would have fixed
+Found by pointing the hub module at a reference stack whose pillar lives in two
+repositories, served as `base` and `ref`: no node in `base` received anything
+from `ref`. On v0.1.1, `halite-node pillar items --local` gave base's keys,
+`--env ref` gave ref's and lost base's, and `state show_top` merged both
+environments' state top files. States merged; pillar did not.
 
-The mirror image of 5.286. `halite-api serve` exited 1 for every failure:
+Salt's pillar compiler, `get_tops` in `salt/pillar/__init__.py` (read at
+v3006.9 and v3007.1), takes the top file of **every** environment in
+`pillar_roots` when `pillarenv` is unset, merges them (`merge_tops`: a later
+file's entry for the same heading and target replaces an earlier one), and
+renders each SLS from the environment whose heading lists it
+(`render_pillar`). With `pillarenv` set it reads that environment's top file
+and counts only the entries under that environment's own heading
+(`top_matches`). halite did neither: an unset `pillarenv` meant "the node's
+`env`", which is Salt's opt-in `pillarenv_from_saltenv`, and every SLS a top
+file listed was read from that one environment whatever heading it sat under,
+so a `ref:` entry in base's top file was looked for in base.
+
+Now `pillar.Config.AllEnvs` is set wherever `pillarenv` is unset -- the node's
+local compile, the hub's compile for a node (a new `all_envs` field on the
+pillar request, which an older hub ignores, compiling `env` alone as before),
+the agentless path, pillar targeting, the `pillar` runner (which gains
+`pillarenv`) and `halite-hub doctor` -- and the compiler follows Salt: every
+environment's top file, merged; each SLS from its heading's environment; a
+heading naming an environment `pillar_roots` does not serve is an error, as
+Salt's "No matching pillar environment" is, where it used to read the file from
+the wrong environment. With `pillarenv` set, other headings are not this
+compilation's.
+
+What a tree sees change: with more than one pillar environment and no
+`pillarenv`, a node gets all of them; a non-base pillar top file that lists
+its entries under `base:` delivers them from base, and nothing at all under an
+explicit `pillarenv` (Salt's behaviour; `TestPillarEnvAndRenderer`'s prod
+fixture was written that way and now uses `prod:`). A tree with one pillar
+environment is unchanged.
+
+Two choices where Salt is not one thing. Salt gathers the environments into a
+Python set, so the order its top files are read in, and the winner when two
+environments set the same key, varies between runs; halite reads `base` first
+and the rest sorted, every time. And `pillar_source_merging_strategy: none`,
+which narrows Salt's unset case to the node's own environment, is not a
+strategy halite accepts, so there is nothing to narrow.
+
+Two that are not closed. The hub does not hold a node's configuration, so pillar
+targeting (`I@`) compiles the merged pillar for every node; a node that sets
+its own `pillarenv` is targeted against more than it receives. Before, it was
+targeted against the job's environment, the same guess for the old default.
+And `env_allowlist`/`env_denylist` are not applied to the environments a merged
+pillar reads: they govern which environment a run may name, and a merged pillar
+names none.
+
+`TestPillarEnvironmentsMatchSalt` (internal/saltdiff) compiles four cases with
+Salt and halite and requires the same pillar: unset with two environments; set;
+a top file with two headings; a set `pillarenv` whose top file uses another
+heading. It skips without `salt-call`, so it was not run here; CI's saltdiff
+matrix runs it against 3006, 3007 and 3008. The pillar package's new tests
+were each broken on purpose and failed: reading one top file; counting every
+heading with `pillarenv` set; reading every file from one environment; allowing
+an unserved heading.
+
+
+
+
+### 5.289 The API's unit stopped an API that a restart would have fixed
+
+The mirror image of 5.287. `halite-api serve` exited 1 for every failure:
 a configuration it could not use, and a listener that was only early.
 `halite-api.service` has `Restart=on-failure` and carried
 `RestartPreventExitStatus=1`, so it stopped on both. An API whose
 `listen` named an address that DHCP or a secondary interface had not
 brought up at boot exited once and stayed down. So did one whose port a
 previous process still held, and one whose `Serve` failed while it was
-running. Nobody reported this from a host. 5.286 found it by reading the
+running. Nobody reported this from a host. 5.287 found it by reading the
 API's unit next to the hub's.
 
-**What `serve` exits for.** As 5.286 did for the hub, every exit
+**What `serve` exits for.** As 5.287 did for the hub, every exit
 reachable from `runServe` was read before the unit was changed:
 
 - `setup`: the configuration does not load, or the log does not open.
@@ -23752,7 +23840,7 @@ log and do not exit. So the only network that `serve` touches before it
 is serving is its own listener. A hub, an identity provider or a
 directory that is down at boot is not a start-up failure at all.
 
-**The change** is 5.286's, applied to the API. `runServe` calls
+**The change** is 5.287's, applied to the API. `runServe` calls
 `cli.ConfigFaults()` first and ends the phase just before `srv.Serve`.
 Every `cli.Fatalf` above exits 78 inside the phase. The listener exits 1
 through `cli.Exitf` when `cli.ListenMayRecover` says that a restart can
@@ -23763,16 +23851,16 @@ failure while it is serving returns 1. The unit now carries
 `listenMayRecover` was the hub's private function. It has moved to
 `internal/cli` as `ListenMayRecover`, and both services call it, so that
 they cannot come to disagree about which listener failures a restart
-fixes. 5.286's text names it by its old name.
+fixes. 5.287's text names it by its old name.
 
-The same 5.286 judgement holds here: a token store that cannot be opened
+The same 5.287 judgement holds here: a token store that cannot be opened
 at start-up exits 78. Every failure of it that has been seen was the
 account or the sandbox (5.217, the unit's `StateDirectory=`), which a
 restart does not change. An NFS `state_dir` that returns `EIO` at that
 moment now stops the unit. Before, it also stopped the unit, on 1, so
 nothing became worse there.
 
-**The node was audited too, and was not changed.** 5.286 left open
+**The node was audited too, and was not changed.** 5.287 left open
 whether `halite-node connect` exits 1 for anything transient. Its unit
 stops on 1. Its exits were read:
 
@@ -23782,7 +23870,7 @@ stops on 1. Its exits were read:
   and a stream that ends are logged and retried with backoff.
 - Start-up `cli.Fatalf`s (`setup`, not enrolled, `startBeacons`,
   `startSchedule`, `openReturner`, `signerKeys`, extension pins) are
-  configuration. The returners connect lazily (5.286 checked this for
+  configuration. The returners connect lazily (5.287 checked this for
   the hub's, and it is the same package).
 - **One open item.** `hubClient` runs again on every reconnect and in
   the goroutines that talk to the hub (grains refresh, anchoring,
@@ -23822,7 +23910,7 @@ purpose, and each failed:
 - With the unit's `RestartPreventExitStatus=` line removed, the unit test
   failed.
 
-The hub's 5.286 tests pass with the function moved.
+The hub's 5.287 tests pass with the function moved.
 
 **Not verified.**
 
@@ -23834,7 +23922,7 @@ The hub's 5.286 tests pass with the function moved.
   `Restart=no`, so it does not test this. It was not run either.
 - **macOS only.** The tests ran on macOS (Darwin 25.6), not on Linux or
   FreeBSD. CI runs them on all four platforms. On Windows the listener
-  test skips, for the reason 5.286 gives.
+  test skips, for the reason 5.287 gives.
 - **A failure while serving.** No test makes `srv.Serve` return an error
   that is not `http.ErrServerClosed`. That this path returns 1 was read
   from the code, not run.

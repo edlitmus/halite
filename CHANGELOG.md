@@ -33,7 +33,7 @@ listener failures and for a failure while it is serving. The unit has
 `RestartPreventExitStatus=78` in place of `=1`, so it restarts on 1 and
 stops on 78. A script or monitor that expected 1 from an API that would
 not start will now see 78. Install the new unit file with the new binary:
-the old unit restarts on 78 every five seconds. See DIVERGENCE 5.287.
+the old unit restarts on 78 every five seconds. See DIVERGENCE 5.289.
 
 ### The hub's systemd unit no longer restarts a hub that cannot start
 
@@ -47,6 +47,12 @@ address is not on the host yet, when the port is still held, and when the hub
 fails while it is serving, and the unit restarts on those. A script or monitor
 that expected 1 from a hub that would not start will now see 78. Install the new
 unit file with the new binary: the old unit restarts on 78, as it did on 1. See
+DIVERGENCE 5.287.
+
+### An alert now names the node that is not connected
+
+`HaliteNodesAbsent` only counts, so it could not say which node. The new
+`HaliteNodeDisconnected` rule (docs/metrics.md) names it by `instance`. See
 DIVERGENCE 5.286.
 
 ### `keys token create` as root no longer makes a token store the hub cannot read
@@ -66,6 +72,19 @@ FreeBSD 14.5 and 15.1; with v0.1.1, install the corrected script from the
 repository before setting the variable. The Handbook's chapters 30 to 32 and 37
 were corrected from the same run (the hub certificate is not reissued by a
 restart; `--names` replaces the default names). See DIVERGENCE 5.283.
+
+### Pillar with no `pillarenv` is every environment's, as in Salt
+
+With `pillarenv` unset, a node's pillar now merges every environment in
+`pillar_roots`: each environment's top file is read, and each file it lists is
+read from the environment whose heading lists it. It used to be the node's
+`env` alone, so a second pillar repository served as its own environment
+reached no node outside it. With `pillarenv` set, only that environment's top
+file and only entries under its own heading count, as in Salt. A top file
+heading naming an environment `pillar_roots` does not serve is now an error
+rather than a file read from the wrong environment. The `pillar.show_pillar`
+and `pillar.show_top` runners take `pillarenv`. A tree with one pillar
+environment is unaffected. DIVERGENCE 5.288.
 
 ## 0.1.1 — 2026-10-12
 

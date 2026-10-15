@@ -47,7 +47,7 @@ func runServe(args *cli.Args) int {
 	// address is not there yet, says so below and exits 1, which the unit
 	// restarts. Both used to exit 1, and the unit stopped on 1, so an API
 	// whose listen address came up late at boot stayed down. DIVERGENCE
-	// 5.287, the mirror of the hub's 5.286.
+	// 5.289, the mirror of the hub's 5.287.
 	//
 	// Nothing in this phase talks to the network: the hub is not asked
 	// anything until a request needs it, OIDC discovery waits for the

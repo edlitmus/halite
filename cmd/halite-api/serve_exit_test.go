@@ -19,13 +19,13 @@ import (
 // status, and the API's unit stops on the first and restarts on the
 // second.
 //
-// The mirror of the hub's defect (DIVERGENCE 5.286), the other way round.
+// The mirror of the hub's defect (DIVERGENCE 5.287), the other way round.
 // `serve` exited 1 for both kinds, and the unit carried
 // RestartPreventExitStatus=1, so it stopped on both: an API whose
 // `listen` named an address that was not up yet at boot, or whose port a
 // previous process still held, exited once and stayed down until
 // somebody started it, and so did one that failed while serving.
-// DIVERGENCE 5.287.
+// DIVERGENCE 5.289.
 //
 // Each case is a real `serve`, re-executed from this test binary, on a
 // configuration that fails in exactly one way.

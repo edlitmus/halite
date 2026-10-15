@@ -172,7 +172,7 @@ func applyOneshotContent(n *node, req OneshotRequest) error {
 		// 5.251.
 		n.seedPillarSecrets(pillar, req.Secrets)
 	}
-	n.hubPillar = func(string) (*value.Map, error) { return pillar, nil }
+	n.hubPillar = func(string, bool) (*value.Map, error) { return pillar, nil }
 	if len(req.Grains) > 0 {
 		decoded, err := value.DecodeJSON(req.Grains)
 		if err != nil {

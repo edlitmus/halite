@@ -1059,7 +1059,7 @@ groups:
         for: 15m
         labels: {severity: warning}
         annotations:
-          summary: "{{ $value }} enrolled nodes are not connected"
+          summary: "{{ $value }} enrolled nodes are not connected (aggregate; HaliteNodeDisconnected and HaliteNodeScrapeDown name them)"
 
       # A rate rather than a total: a rise is either a role somebody
       # got wrong or somebody trying.
@@ -1204,11 +1204,11 @@ you want to know about before the cap is reached:
           summary: "The relay is connected upstream and its spool is not draining"
 ```
 
-On an estate scraping its nodes, eight more. The first two are the
+On an estate scraping its nodes, nine more. The first two are the
 node scrape itself, for the reason given under
 [What is not fatal](#what-is-not-fatal): a node whose metrics
 certificate is missing or unreadable keeps running and serves nothing,
-so its target is down or never exists. The other six read the nodes'
+so its target is down or never exists. The other seven read the nodes'
 own job rather than the hub's, and they are the only place their
 subject appears at all — a return a node discarded never reached the
 hub to be counted there, and neither did a record it failed to write:
@@ -1227,6 +1227,18 @@ hub to be counted there, and neither did a record it failed to write:
         labels: {severity: warning}
         annotations:
           summary: "{{ $labels.instance }} is not answering the node scrape"
+
+      # The hub's HaliteNodesAbsent above is a subtraction of two
+      # totals and cannot say which node is missing; this one reads each
+      # node's own view of its stream, so the page names the machine. A
+      # node that is down altogether serves nothing and is named by
+      # HaliteNodeScrapeDown instead.
+      - alert: HaliteNodeDisconnected
+        expr: halite_node_connected{job="halite-nodes"} == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }} is running but not connected to the hub"
 
       - alert: HaliteNodeReturnsDropped
         expr: increase(halite_node_returns_dropped_total[10m]) > 0

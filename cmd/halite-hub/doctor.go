@@ -296,14 +296,20 @@ func hubFileServerCheck(cfg *config.Config) doctor.Check {
 // moves the discovery to where an operator is already looking.
 func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 	env := cfg.String("pillarenv", cfg.String("env", "base"))
+	// With no pillarenv a node is sent every environment's pillar,
+	// merged, so that is what is compiled here. DIVERGENCE 5.288.
+	all := cfg.String("pillarenv", "") == ""
 	// Before the roots: a hub with external sources and no roots is
 	// one whose sources never run, and `serve` refuses to start on it.
 	// DIVERGENCE 5.258.
 	if err := extPillarWithoutRoots(cfg); err != nil {
 		return doctor.PillarCompiles(err, 0)
 	}
-	roots := cfg.StringSlice("pillar_roots:" + env)
-	if len(roots) == 0 {
+	roots := map[string][]string{env: cfg.StringSlice("pillar_roots:" + env)}
+	if all {
+		roots = cfg.Roots("pillar_roots")
+	}
+	if len(roots) == 0 || len(roots[env]) == 0 && !all {
 		return doctor.PillarCompiles(nil, 0)
 	}
 	// Compiled for a node with no grains, which reaches the top file and
@@ -316,7 +322,7 @@ func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 	strategy, _ := value.ParseStrategy(cfg.String("pillar_source_merging_strategy", "smart"))
 	registry := builtin.New().Exec
 	c := &pillar.Compiler{
-		Loader: fileserver.NewRoots(map[string][]string{env: roots}),
+		Loader: fileserver.NewRoots(roots),
 		Config: pillar.Config{
 			// The same dispatcher the hub uses when it compiles pillar
 			// for a real node. Without it `salt['grains.get']` is
@@ -337,9 +343,10 @@ func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 					},
 				}
 			},
-			Env:    env,
-			NodeID: "halite-hub-doctor",
-			Grains: value.NewMap(0),
+			Env:     env,
+			AllEnvs: all,
+			NodeID:  "halite-hub-doctor",
+			Grains:  value.NewMap(0),
 			// The allowlist this hub actually serves with. Judging the
 			// tree against SPEC 12.4's default instead would report
 			// targeting as unsafe on an estate that has deliberately

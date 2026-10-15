@@ -201,7 +201,7 @@ func runServe(args *cli.Args) int {
 	// unit's RestartPreventExitStatus= stops it rather than restarting it
 	// every five seconds into the same error. The one startup failure a
 	// restart can fix, a listen address that is not there yet, says so
-	// below. DIVERGENCE 5.286.
+	// below. DIVERGENCE 5.287.
 	//
 	// That includes a state or cache directory that cannot be opened.
 	// Each one that has been seen to fail here was the account or the

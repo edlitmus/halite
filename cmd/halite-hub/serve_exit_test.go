@@ -25,7 +25,7 @@ import (
 // lines in the journal. The unit could not simply add
 // RestartPreventExitStatus=1, because the hub also exits 1 for a listen
 // address that is not on the host yet, and that one a restart fixes.
-// DIVERGENCE 5.286.
+// DIVERGENCE 5.287.
 //
 // Each case is a real `serve`, re-executed from this test binary, on a
 // configuration that fails in exactly one way.

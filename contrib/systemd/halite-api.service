@@ -27,7 +27,7 @@ RestartSec=5s
 # Not 1, which this unit used to name: `serve` exits 1 for a listen
 # address that is not on the host yet, a port still held, and a failure
 # while it is serving, and a restart is the fix for those. With =1 an API
-# whose address came up late at boot stayed down. DIVERGENCE 5.287.
+# whose address came up late at boot stayed down. DIVERGENCE 5.289.
 RestartPreventExitStatus=78
 
 # The API talks to the hub and to HTTP clients and touches nothing else,

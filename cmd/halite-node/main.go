@@ -203,6 +203,11 @@ type node struct {
 	// defaults to env but need not equal it: SPEC 12.2 lets a tree hold
 	// its pillar in one environment while states move between several.
 	pillarEnv string
+	// pillarAll is `pillarenv` left unset, by flag and by configuration:
+	// the pillar is then every environment's, merged, as Salt compiles
+	// it, and pillarEnv is only the environment the node runs in.
+	// DIVERGENCE 5.288.
+	pillarAll bool
 	test      bool
 	format    cli.Format
 	indent    int
@@ -230,7 +235,7 @@ type node struct {
 	// hubPillar asks the hub to compile this node's pillar. Nil for a
 	// node working from its own roots, which is what `--local` and a
 	// node with no hub do.
-	hubPillar func(env string) (*value.Map, error)
+	hubPillar func(env string, all bool) (*value.Map, error)
 	// events forwards an event to the hub's bus. Nil for a node with
 	// no hub, and `event.send` says so rather than reporting a success
 	// nobody received.
@@ -387,6 +392,7 @@ func setup(args *cli.Args) *node {
 	// a tree holding its pillar in one environment while its states
 	// moved between several got the states' environment for both.
 	n.pillarEnv = args.Flag("pillarenv", cfg.String("pillarenv", n.env))
+	n.pillarAll = args.Flag("pillarenv", cfg.String("pillarenv", "")) == ""
 	if err := checkEnvPermitted(cfg, n.pillarEnv); err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -626,7 +632,7 @@ func (n *node) compilePillarOrErr() (*value.Map, error) {
 	// the compilation there so that the node holds none of it and
 	// cannot read another node's.
 	if n.hubPillar != nil {
-		return n.hubPillar(n.pillarEnv)
+		return n.hubPillar(n.pillarEnv, n.pillarAll)
 	}
 	return n.compileLocalPillar()
 }
@@ -648,6 +654,7 @@ func (n *node) compileLocalPillar() (*value.Map, error) {
 				return exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.pillarContext(partial)}
 			},
 			Env:           n.pillarEnv,
+			AllEnvs:       n.pillarAll,
 			NodeID:        n.nodeID,
 			Grains:        n.grains,
 			ConfigValues:  n.cfg.Effective(config.Node),

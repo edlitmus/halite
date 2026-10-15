@@ -438,9 +438,14 @@ type JobStatus struct {
 // The grains go up because the top file targets on them; the identity
 // does not, because the certificate carries it.
 type PillarRequest struct {
-	NodeID string          `json:"node_id,omitempty"`
-	Env    string          `json:"env,omitempty"`
-	Grains json.RawMessage `json:"grains,omitempty"`
+	NodeID string `json:"node_id,omitempty"`
+	Env    string `json:"env,omitempty"`
+	// AllEnvs asks for every environment's pillar, merged: the node has
+	// no `pillarenv`, and Env is only the environment it runs in. A hub
+	// older than the field ignores it and compiles Env alone, which is
+	// what every node asked for before it. DIVERGENCE 5.288.
+	AllEnvs bool            `json:"all_envs,omitempty"`
+	Grains  json.RawMessage `json:"grains,omitempty"`
 }
 
 // PillarResponse is the compiled pillar, already encoded.

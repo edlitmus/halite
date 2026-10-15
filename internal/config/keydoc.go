@@ -202,7 +202,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"pillarenv": {
 		Group:  "The tree: states and pillar",
-		Detail: "Lets pillar come from a different environment than states. Leaving it unset — pillar following `env` — is what most estates want; setting it is how a test environment reads production pillar by accident.",
+		Detail: "Unset, a node's pillar merges every environment in `pillar_roots`, each file read from the environment whose top-file heading lists it, as Salt does. Set, only that environment's top file and only entries under its own heading count -- which is how a tree keeps pillar in one environment while states move between several, and how a test environment reads production pillar by accident.",
 	},
 	"env_allowlist": {
 		Group:  "The tree: states and pillar",
