@@ -43,6 +43,15 @@ author could not do.
 | M-50 pillar `S@` targets | #334 | |
 | M-54 SLS name spellings (state half) | #340 | |
 | M-55 `file_ignore_glob` fnmatch | #342 | |
+| M-08, M-09 login backoff by (source, name) | #352 | |
+| M-10 login timing, equal work | #353 | |
+| M-38 pf anchor order | #354 | |
+| M-37 firewall value validation | #355 | a grep of the FreeBSD trees for host names in `from`/`to` |
+| M-36 netplan refused file | #356 | |
+| M-39 hostname short vs FQDN | #357 | |
+| M-28 agentless `oneshot` tree | #358 | |
+| M-16 webhook ingress (`auth: mtls` now refused) | #359 | |
+| Section 1.2 toolchain (go1.27.2) | #360 | |
 
 Not yet started: H-02 (extension manifest signing; a format decision),
 and the Medium findings not listed above.
