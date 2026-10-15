@@ -21,6 +21,36 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A template can no longer end the hub or node that renders it
+
+A template could overflow the Go stack or ask for more memory than
+exists. Both end the process, not just the render, and the hub compiles
+pillar in its own process. Deep nesting did it: some hundreds of
+thousands of `(` or `not`, or one long `1 + 1 + ... + 1`. So did a
+builtin asked for a huge result, such as `indent(width=...)`, `[1] * n`,
+`range` across the whole int64 range, or `batch(n, fill)`. Five more
+inputs panicked out of the renderer, among them `indent(width=-1)` and
+`'abc'.zfill()`. Lexing a long template took time quadratic in its length.
+
+- A statement nested deeper than `MaxDepth` (100) is now a parse error.
+  Before, it was a render error, and only on the branch taken.
+- An expression nested deeper than 1,000 levels is now a parse error.
+  Jinja itself stops at well under that for everything except a `~`
+  chain.
+- One string a builtin builds may be no larger than `MaxOutput`, and
+  one list may hold no more items than `MaxIterations`. Both are checked
+  before the value is built.
+- Negative counts follow Python: `'ab' * -1` is empty and
+  `indent(width=-1)` is no indent.
+- `truncate` with a length shorter than its end string is an error, as
+  it is in Jinja. Before, it returned `...`.
+- `cidr_subnets` gives the right subnets for IPv6 splits past 64 bits.
+- `value.DecodeJSON` refuses nesting past `encoding/json`'s own 10,000.
+- Any panic left in the engine becomes a render error that names itself
+  as a halite defect.
+
+See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

@@ -15,6 +15,14 @@ type parser struct {
 	// A macro body starts at zero, because a macro called from a loop is
 	// not lexically inside it and Jinja does not let it break out.
 	loops int
+	// blocks counts the statements enclosing the one being parsed, and
+	// exprs the expression parser's own recursion. Both are bounded
+	// because the parser and every walk of the tree it builds are
+	// recursive, and a Go stack overflow is a fatal error rather than a
+	// panic: nothing above this package can catch it, and the hub
+	// compiles pillar in its own process (DIVERGENCE 5.290).
+	blocks int
+	exprs  int
 }
 
 // parseTemplate turns a token stream into a body of statements.
@@ -26,6 +34,15 @@ func parseTemplate(toks []token, file string, opts Options) ([]Node, error) {
 	}
 	if end != "" {
 		return nil, errorf(p.peek().pos, "unexpected {%% %s %%}", end)
+	}
+	// The parser's recursion is bounded as it goes, but the height of
+	// the tree it builds is not the same thing: `1 + 1 + ... + 1` is
+	// parsed by a loop, without recursing, into a left-leaning chain as
+	// tall as it is long, and every walk of the tree (the renderer, the
+	// filter chain, migrate's walkers) recurses down it. So the tree is
+	// measured once it exists.
+	if err := checkExprHeight(body, maxExprDepth); err != nil {
+		return nil, err
 	}
 	return body, nil
 }
@@ -146,6 +163,16 @@ func (p *parser) endTag() error {
 
 func (p *parser) parseStatement() (Node, error) {
 	start := p.peek().pos
+	// Statement nesting takes the render's own limit. renderNode already
+	// refuses to render deeper than MaxDepth, counting itself, so a
+	// statement nested past it could never have rendered through that
+	// branch; refusing it here only moves the error to where `lint` sees
+	// it. A statement is counted including itself, as renderNode counts.
+	p.blocks++
+	defer func() { p.blocks-- }()
+	if p.blocks > p.opts.MaxDepth {
+		return nil, errorf(start, "statements nest deeper than %d levels", p.opts.MaxDepth)
+	}
 	p.i++ // {%
 	nameTok, err := p.expect(tokName, "")
 	if err != nil {

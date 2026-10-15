@@ -12,12 +12,15 @@ import (
 // string and dict methods heavily — `.split('.')`, `.startswith(...)`,
 // `.get('key', default)` — so the common ones are implemented rather than
 // left to filters.
-func method(obj any, name string) (Callable, bool) {
+//
+// maxBytes is the render's MaxOutput, which bounds the one method that
+// builds a string from a number, zfill.
+func method(obj any, name string, maxBytes int64) (Callable, bool) {
 	obj = untuple(obj)
 
 	switch t := obj.(type) {
 	case string:
-		if fn, ok := stringMethod(t, name); ok {
+		if fn, ok := stringMethod(t, name, maxBytes); ok {
 			return fn, true
 		}
 	case *value.Map:
@@ -193,7 +196,7 @@ func listMethod(l []any, name string) (Callable, bool) {
 	return nil, false
 }
 
-func stringMethod(s, name string) (Callable, bool) {
+func stringMethod(s, name string, maxBytes int64) (Callable, bool) {
 	simple := func(fn func(string) string) (Callable, bool) {
 		return funcValue{name, func([]any, map[string]any) (any, error) { return fn(s), nil }}, true
 	}
@@ -359,12 +362,22 @@ func stringMethod(s, name string) (Callable, bool) {
 
 	case "zfill":
 		return funcValue{name, func(args []any, _ map[string]any) (any, error) {
+			// The count is checked before args[0] is read: 'abc'.zfill()
+			// indexed an empty slice and panicked.
+			if len(args) != 1 {
+				return nil, fmt.Errorf("zfill() takes an integer")
+			}
 			n, ok := asInt(args[0])
-			if len(args) != 1 || !ok {
+			if !ok {
 				return nil, fmt.Errorf("zfill() takes an integer")
 			}
 			if int64(len(s)) >= n {
 				return s, nil
+			}
+			// A width is refused before it is built if the result would
+			// be larger than a render may write.
+			if n > maxBytes {
+				return nil, fmt.Errorf("zfill() would exceed the %d byte output limit", maxBytes)
 			}
 			return strings.Repeat("0", int(n)-len(s)) + s, nil
 		}}, true
