@@ -23929,6 +23929,99 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 gitfs verified a branch by its name and served it by its commit
+
+With `gitfs_verify_signatures: true`, `verify` ran
+`git verify-commit --raw <name>`, where the name was the short one
+(`production`, not `refs/heads/production`). What was then archived and
+served was the object id `for-each-ref` had printed for the branch. Those
+are two paths that must agree, and they did not. git resolves an
+ambiguous short name to the tag before the branch, and the mirror holds
+every tag the remote has, because it is made with `clone --mirror` and
+kept with `fetch --tags`, whatever `gitfs_ref_types` says is served.
+
+So the control could be walked past by anybody who could push a branch
+and a tag, without a trusted key: tag an old commit that a trusted key
+signed as `production`, push an unsigned tip to the branch `production`.
+The tag's commit was verified and the branch's tip was served. Found by
+audit (H-19) and reproduced before it was changed: `git rev-parse
+production` in such a repository warns that the name is ambiguous and
+prints the tag's commit.
+
+**The change.** `verify` passes the object id that is served
+(`ref.Commit`), after `--`. A full object id has no ambiguous reading,
+and it is the same string that names the tree directory and that
+`materialise` hands to `git archive`, so what is checked and what is
+served are now one value rather than two that happened to agree. For a
+tag the object id is the tag object's, so `verify-tag` still checks the
+tag's own signature. `refs` now drops, with a warning, any line whose
+object id is not forty or sixty-four lower-case hex digits, so that
+nothing else reaches those arguments.
+
+**Remote-controlled names in argv** (audit L-engine-9). The other way a
+name reached git as an argument was the same call: a branch named
+`-dashed`, which `git branch` refuses but `update-ref` makes and a push
+carries, was read by `verify-commit` as options (`unknown switch 'd'`)
+and refused although its commit was signed. It now never reaches argv.
+`clone --mirror` gained `--` before the URL too. The URL is the
+operator's, not the remote's, and `checkURL` admits only `https://`,
+`ssh://`, `file://`, an absolute path, scp style, or anything with
+`insecure: true`, which is the case `--` covers. The other git calls in
+the package take no remote-controlled name: `fetch` names `origin`,
+`for-each-ref` takes fixed patterns, and `archive` takes the object id.
+That `verify-commit`, `verify-tag` and `clone` accept `--` there was
+checked by hand on git 2.56.0 only. No minimum git version is stated in
+SPEC 13.3; all three parse their options with git's common parser, which
+treats `--` as the end of options.
+
+**How it is tested,** with real git and real GnuPG, in
+`internal/gitfs/gitfs_test.go`:
+
+- `TestABranchIsVerifiedAtTheCommitServedNotAtATagOfTheSameName` builds
+  the attack: a signed commit on `main`, a lightweight tag `production`
+  on it, and a branch `production` with an unsigned commit on top. It
+  first checks that `git rev-parse production` gives the signed commit,
+  so the scenario is shown rather than assumed. Then `main` must be
+  served (a real signature verified against a real keyring) and
+  `production` must be refused and its unsigned commit not served.
+- `TestABranchNamedLikeAnOptionIsVerifiedAsACommit`: a branch
+  `-dashed` at a signed commit must be served as `dashed`.
+- `TestIsObjectID`, for the new filter.
+
+Both were broken on purpose by putting `ref.Name` back in place of
+`"--", ref.Commit`. The first failed with `production` served from
+`trees/<the unsigned commit>` and nothing refused. The second failed with
+`unknown switch 'd'` and only `base` served. Both passed again when it
+was restored.
+
+**A skip that had hidden the signed path on a Mac.** The existing
+`TestASignedRefIsServedAndAnUntrustedOneIsNot` skipped on macOS: its
+GnuPG home was `t.TempDir()`, under `/var/folders/…` with the test's
+name in it, and gpg-agent's socket path in it was too long ("can't
+connect to the gpg-agent: File name too long"), so no key was made. A
+skip says so, but it reads as green. The tests now make the home with a
+short name under `/tmp` where there is one, and stop the agent after.
+On this Mac all three signed tests ran and passed rather than skipping.
+
+**Not verified.**
+
+- **Not run through a hub or in the lab.** No hub served a repository
+  with this change; the tests drive `Backend.Update` directly against a
+  local repository. SHA-256 repositories were not tried; the
+  sixty-four-digit case is from git's documentation of the object
+  format, not a capture.
+- **macOS only** (Darwin 25.6, git 2.56.0, Homebrew GnuPG). CI runs the
+  package on Linux, FreeBSD and Windows. Whether gpg can make a key
+  there, or those legs skip the signed tests, was not checked.
+- **`clone --` with a URL beginning with a dash** has no test. It was
+  run by hand on git 2.56.0 with an ordinary path only.
+- **Not fixed here:** the sweep after an update deletes every tree no
+  current ref points at, including the trees of a remote whose refs were
+  all refused, while `Update` keeps serving the previous roots. A hub
+  that starts refusing a ref after this change can therefore keep
+  pointing at a tree directory that is gone. That is audit M-49 and is a
+  separate change.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

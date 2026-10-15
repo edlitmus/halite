@@ -84,7 +84,12 @@ func (o *Options) mirror(ctx context.Context, remote Remote) (string, error) {
 		// remote ref into the local namespace, which is what makes
 		// `for-each-ref` below see branches and tags without a second
 		// configuration step.
-		if _, err := o.run(ctx, o.CacheDir, "clone", "--mirror", "--quiet", remote.URL, dir); err != nil {
+		//
+		// `--` before the URL so that nothing in it can be read as an
+		// option. checkURL refuses most of what could start with a dash,
+		// and the URL is the operator's rather than the remote's, but
+		// the argv should not depend on either being true.
+		if _, err := o.run(ctx, o.CacheDir, "clone", "--mirror", "--quiet", "--", remote.URL, dir); err != nil {
 			// A failed clone leaves a directory behind that the next
 			// run would mistake for a mirror.
 			_ = os.RemoveAll(dir)
@@ -141,6 +146,15 @@ func (o *Options) refs(ctx context.Context, dir string, remote Remote) ([]Ref, e
 			continue
 		}
 		full, commit := fields[0], fields[1]
+		if !isObjectID(commit) {
+			// for-each-ref printed something that is not a full object
+			// id. Both `verify` and `materialise` pass it to git as an
+			// argument and name a directory after it, so it must be
+			// nothing else.
+			o.log("warn", "a git ref has no usable object id",
+				"remote", remote.label(), "ref", full)
+			continue
+		}
 		name, isTag := shortRef(full)
 		if name == "" {
 			continue
@@ -157,6 +171,20 @@ func (o *Options) refs(ctx context.Context, dir string, remote Remote) ([]Ref, e
 		refs = append(refs, Ref{Name: name, Env: env, Commit: commit, Tag: isTag})
 	}
 	return refs, nil
+}
+
+// isObjectID reports whether s is a full object id: forty hex digits
+// for SHA-1, sixty-four for SHA-256, lower case as git prints them.
+func isObjectID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func shortRef(full string) (string, bool) {
@@ -192,7 +220,21 @@ func (o *Options) verify(ctx context.Context, dir string, remote Remote, ref Ref
 	}
 	opts := *o
 	opts.Env = append(append([]string(nil), o.Env...), "GNUPGHOME="+o.Keyring)
-	if _, err := opts.run(ctx, dir, command, "--raw", ref.Name); err != nil {
+	// The object id, never the name. What is served is ref.Commit — it
+	// names the tree directory and it is what `materialise` archives —
+	// so it is the only thing whose signature means anything. The name
+	// is git's to resolve, and git resolves an ambiguous short name to
+	// the tag before the branch: a mirror holds every tag the remote
+	// has (`--mirror`, `fetch --tags`) whatever gitfs_ref_types says,
+	// so anybody who can push a tag called `production` at an old
+	// signed commit could have that commit verified while an unsigned
+	// tip on the branch `production` was served (DIVERGENCE 5.290).
+	// A full object id has no such reading.
+	//
+	// And `--` before it, because the argument came from the remote.
+	// An object id cannot begin with a dash, but the guard costs
+	// nothing and does not depend on that remaining what is passed.
+	if _, err := opts.run(ctx, dir, command, "--raw", "--", ref.Commit); err != nil {
 		return fmt.Errorf("%s %s is not signed by a key this estate trusts: %w",
 			remote.label(), ref.Name, err)
 	}
