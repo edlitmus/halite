@@ -24053,6 +24053,23 @@ user namespace, where `/` and every other directory owned by the host's
 root show as the overflow uid, and the trust check correctly refuses
 them.
 
+**What CI found on the first push.** The concurrent-runs test passed on
+the Mac it was written on, and failed in CI on Linux, FreeBSD and macOS.
+The staging file had a random name, but the `noexec` probe still had the
+fixed name `.halite-probe`, so one run removed it or was writing it while
+another ran it. The CI logs showed `chmod: cannot access
+'.../halite-thin/.halite-probe': No such file or directory` (ubuntu-24.04,
+fips-test), `/bin/sh: cannot open .../.halite-probe: No such file or
+directory` (FreeBSD, macOS race), and on Linux `.halite-probe: Text file
+busy`. The probe is now made by `mktemp` too. `TestTheProbeNameIsNotFixed`
+does not depend on timing: it puts a directory at the old name first.
+With the fixed name restored, it failed with `.halite-probe: Is a
+directory`. The concurrent test now runs six runs at once, not three, and
+it passed 10 times in a row locally. That shows the race is less likely
+to slip through unseen, not that it is gone. Until CI ran, the claim
+earlier in this section that concurrent runs no longer collide was
+untrue.
+
 **Not verified.**
 
 - **No real target.** Nothing was run over a real ssh connection, and no

@@ -383,13 +383,13 @@ func TestARelativeThinDirIsRefusedBeforeConnecting(t *testing.T) {
 	}
 }
 
-// Two runs against one machine used to stage under the same
+// Two runs against one machine used to stage, and probe, under the same
 // `<digest>.partial`, and one failed when the other renamed it first
 // (handbook chapter 17). Each now stages under a name of its own.
 func TestConcurrentRunsAgainstOneMachineBothSucceed(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "halite-thin")
 	var wg sync.WaitGroup
-	results := make([]Result, 3)
+	results := make([]Result, 6)
 	for i := range results {
 		h := newHarness(t, dir)
 		wg.Add(1)
@@ -403,6 +403,22 @@ func TestConcurrentRunsAgainstOneMachineBothSucceed(t *testing.T) {
 		if r.Err != nil {
 			t.Errorf("run %d: %v", i, r.Err)
 		}
+	}
+}
+
+// The probe's name is not fixed either. The old fixed name is taken
+// here by something that cannot be written over, which is how a second
+// run used to find it mid-way through another's; the old script exited
+// 2 on it. This is the deterministic half of the concurrent test above,
+// which passed locally and failed in CI on timing.
+func TestTheProbeNameIsNotFixed(t *testing.T) {
+	dir := mkdir(t, filepath.Join(t.TempDir(), "halite-thin"), 0o700)
+	if err := os.Mkdir(filepath.Join(dir, ".halite-probe"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, dir)
+	if _, err := h.o.prepare(context.Background(), h.target, dir); err != nil {
+		t.Fatalf("a taken `.halite-probe` stopped the run: %v", err)
 	}
 }
 

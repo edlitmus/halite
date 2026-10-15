@@ -80,8 +80,8 @@ func TestThePrepareScriptMakesTheDirectoryAndProvesItRuns(t *testing.T) {
 
 	// The probe is removed whatever happened, so a run leaves nothing
 	// behind in a directory an operator may be watching.
-	if _, err := os.Stat(filepath.Join(dir, ".halite-probe")); !os.IsNotExist(err) {
-		t.Errorf("the probe file is still there: %v", err)
+	if left, _ := filepath.Glob(filepath.Join(dir, ".probe.*")); len(left) != 0 {
+		t.Errorf("the probe file is still there: %v", left)
 	}
 }
 
@@ -114,14 +114,17 @@ func TestThePrepareScriptSeparatesItsFailures(t *testing.T) {
 	// directory the caller owns *repairs* it, so a staging directory
 	// whose permissions are wrong and whose owner is the caller is not
 	// a failure at all. It is a failure when the directory belongs to
-	// somebody else, which cannot be arranged here without root -- so
-	// the write is blocked instead by the probe's own name already
-	// being taken by something that cannot be written over.
+	// somebody else, which cannot be arranged here without root. The
+	// probe used to have a fixed name, and this test blocked it by
+	// taking that name first; the probe is now made by `mktemp`, which
+	// is the point of DIVERGENCE 5.290, so the half of the script after
+	// the `chmod` is run on its own against a directory it may not write.
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, ".halite-probe"), 0o700); err != nil {
-		t.Fatalf("blocking the probe name: %v", err)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("making a read-only directory: %v", err)
 	}
-	if _, code := runScript(t, prepareScript(dir)); code != 2 {
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if _, code := runScript(t, probeScript(dir)); code != 2 {
 		t.Errorf("a directory that cannot hold the probe exited %d, want 2", code)
 	}
 }

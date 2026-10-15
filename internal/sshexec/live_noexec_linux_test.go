@@ -141,8 +141,8 @@ func TestANoexecStagingDirectoryIsRefusedByTheProbe(t *testing.T) {
 
 	// The probe is removed whatever happened, even on the filesystem
 	// that refused to run it.
-	if _, err := os.Stat(filepath.Join(dir, ".halite-probe")); !os.IsNotExist(err) {
-		t.Errorf("the probe file was left behind on a noexec mount: %v", err)
+	if left, _ := filepath.Glob(filepath.Join(dir, ".probe.*")); len(left) != 0 {
+		t.Errorf("the probe file was left behind on a noexec mount: %v", left)
 	}
 }
 

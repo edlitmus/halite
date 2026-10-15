@@ -530,14 +530,23 @@ func prepareScript(dir string) string {
 // from in there it cannot tell who owns it. That refusal is tested
 // elsewhere; what those tests are for is the probe.
 func probeScript(dir string) string {
-	probe := shellQuote(dir + "/.halite-probe")
+	// The probe is made by `mktemp` as well, for the same reason as the
+	// staging file: two runs against one machine used to share the name
+	// `.halite-probe`, and one removed it, or was writing it, while the
+	// other ran it. CI found that on its first run of the concurrent
+	// test, on Linux, FreeBSD and macOS alike: "chmod: cannot access
+	// '.../.halite-probe': No such file or directory" and, on Linux,
+	// "Text file busy" (DIVERGENCE 5.290).
+	//
 	// Written as one script over stdin, because a target's login shell
 	// is not always POSIX and this is already how everything else here
 	// reaches it. `rm` runs whatever happened, so a refused probe does
 	// not leave a file behind.
-	return "printf '#!/bin/sh\\nexit 0\\n' > " + probe + " && chmod 700 " + probe + " || exit 2\n" +
-		probe + "; status=$?\n" +
-		"rm -f " + probe + "\n" +
+	return "halite_probe=$(mktemp " + shellQuote(dir+"/.probe.XXXXXXXX") + ") || exit 2\n" +
+		"printf '#!/bin/sh\\nexit 0\\n' > \"$halite_probe\" && chmod 700 \"$halite_probe\" || " +
+		"{ rm -f \"$halite_probe\"; exit 2; }\n" +
+		"\"$halite_probe\"; status=$?\n" +
+		"rm -f \"$halite_probe\"\n" +
 		"[ $status -eq 0 ] || exit $status\n" +
 		"halite_staging=$(mktemp " + shellQuote(dir+"/.partial.XXXXXXXX") + ") || exit 2\n" +
 		"echo staging $halite_staging\n"
