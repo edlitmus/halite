@@ -183,6 +183,18 @@ that may restart `web*.prod` services cannot restart `db*` ones, and cannot
 `cmd.run` anything, whatever the operator types. Rules are never
 combined across to make a larger grant.
 
+A rule's `target` is a glob over node IDs, and a request is checked by the
+**kind** of target it uses:
+
+- **A glob** is covered if it is one node ID inside the rule's target, or
+  exactly the rule's target.
+- **A list** (`-L`) is covered if every node in it is inside the rule's
+  target.
+- **Any other kind** (compound, nodegroup, pcre, grain, pillar, subnet) is
+  covered only by `target: '*'`. Which nodes such an expression reaches
+  depends on the fleet when the job is sent, not on the text. An operator
+  with a scoped role names the nodes as a list instead.
+
 Function names are **patterns**: `service.*` is every function of the
 `service` module, `state.show_*` the inspection functions, `*` everything
 (with an important exception, below). A missing field matches nothing;
@@ -270,7 +282,9 @@ can be tested in CI. Each of these was run against the policy above:
 | `node:lb1.prod web1.prod pillar.items` | denied: no rule in [lb_peer] permits pillar.items against "web1.prod" |
 
 `--runner` evaluates the function as a hub runner and `--kwarg k=v` supplies
-an argument. A test suite for your policy is a shell script of these lines
+an argument. `--target-kind` reads the target as the kind a job would be sent
+with (`L`, `C`, `E`, `G`, … or `list`, `compound`, …). Without it, the target
+is a glob. A test suite for your policy is a shell script of these lines
 with the expected exit status: write it when you write the policy and run
 it on every change.
 

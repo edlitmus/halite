@@ -23929,6 +23929,148 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 A scoped role reached any node by naming a list, a compound or a pcre
+
+Audit H-01, reproduced before it was fixed. The policy decided whether a
+rule's target covered a request's target by comparing two strings, and
+the request carried no target kind. A request target with no `*?[` was
+taken to be one node ID and matched against the rule's glob with
+`path.Match`, whose `*` matches commas, spaces and `|`. Dispatch then
+compiled the same string under the kind the request named. So a role
+for `web*.prod` was allowed, and dispatched to db1.prod, for each of:
+
+- `web1.prod,db1.prod` as a list (`-L`);
+- `web1.prod or db1.prod` as a compound;
+- `web1.prod and not G@x:y or db1.prod` as a compound;
+- `web1.prod|db1.prod` as a pcre.
+
+A pcre that looks like one node ID was wider than it looks as well:
+`web1.prod` as a pcre matches `web1Xprod`, since `.` is any character.
+
+**The pair.** This is the commonest shape here: two paths that must
+agree, one reading the target as a glob and one reading it as what it
+was. The audit named the API (`authorize.go` built the question without
+the kind; `execute.go` forwarded `tgt_type`). The hub's own check in
+`jobs.go` had the same gap, so an operator submitting straight to the
+hub did not need the API. So did the mine read in `mine.go`, `DispatchAs`
+(which every runner, orchestration step and reactor reaction that
+dispatches on a principal's behalf goes through), job resume and kill,
+which are authorized as the recorded job, and the reactor's dry-run
+`wouldAuthorize`.
+
+**A second route** was `POST /v1/nodes/{id}/state`. It submits the path
+segment as a list, so `/v1/nodes/web1.prod,db1.prod/state` was two nodes
+through an endpoint that names one. A `%2C` reaches the handler as a
+comma.
+
+**The change.**
+
+- `policy.Request` carries `TargetKind`, in the flag form `Dispatch`
+  takes, and every site above passes the value it dispatches with. In
+  the hub, `policyRequestFor` takes the kind as an argument. In the API,
+  jobs are asked through `jobRequestFor`, which also takes it as an
+  argument, so it cannot be left out by mistake. The hub and the API
+  call the same `policy.AuthorizeAs`, so they make the same decision.
+- **glob**: as before. The asked string is treated as one node only if
+  it passes `pki.ValidateNodeID` (letters, digits, `.-_`), which is the
+  alphabet a node can enrol under. Before, the test was "contains no
+  `*?[`". A glob request that is not a node ID is now covered only by
+  rule-text equality or by `*`. As a glob, `web1.prod,db1.prod` matched
+  nothing, so this refuses nothing that ever ran.
+- **list**: each element, split by `target.ListIDs`, must be a valid node
+  ID inside the rule's glob. `ListIDs` is the function dispatch now
+  splits with too, so the two cannot disagree about trimming or empty
+  elements. An empty list is refused.
+- **every other kind** (compound, nodegroup, pcre, grain, grain_pcre,
+  pillar, pillar_pcre, ipcidr) is covered only by a rule whose target is
+  `*`. An unknown kind is refused before any rule is read.
+- The node test of `literalCovered` uses `target.MatchGlob`, the function
+  dispatch matches node IDs with. `VisibleNode` (the event filter) uses
+  it too.
+- The API refuses an `{id}` segment that is not a valid node ID with
+  400, before it asks the policy. This applies to `GET /v1/nodes/{id}`
+  too.
+- `halite-hub policy test` takes `--target-kind`, so that a policy test
+  in CI can ask the question the hub asks.
+
+**Why not resolve the target and check each node.** The hub can resolve
+a compound target to its nodes (`resolve`). It could check each node
+against the rule's glob, and a scoped operator could then keep compound
+targets. That was not done. The API authorizes before it forwards and
+has no fleet to resolve against. A hub-only resolution would make the
+two checks give different answers, which is the defect being fixed. And
+whether an expression stays inside a glob depends on grains and pillar
+at the moment of dispatch, which is not a question about two strings. A
+list is the form that says exactly which nodes, and that form is now
+authorized element by element.
+
+**What an operator sees.** A principal whose roles are scoped (a target
+other than `*`) is now refused for a compound, nodegroup, pcre, grain,
+pillar or subnet target. Before, such a request was allowed when its
+text happened to match the rule's glob as a literal, or exactly equalled
+the rule's target. A list is refused if any element is outside the
+grant. The refusal names the kind: `no rule in [webops] permits
+service.restart against compound target "web1.prod"`. A `*` role is
+unchanged. A mine read by a scoped `node:` principal with a compound
+target is refused in the same way. One more change: a mine read with an
+unknown `target_kind` used to fall back to glob, and is now refused.
+
+**How it is tested.**
+
+- `internal/policy`: `TestATargetIsAuthorizedAsTheKindItIsDispatchedUnder`
+  is a table of 40 rows: glob, list, compound, nodegroup, pcre, grain,
+  grain_pcre, pillar, pillar_pcre and ipcidr against `web*.prod`, an
+  unknown kind, and a `*` rule against every kind.
+  `TestADenialNamesTheTargetKind` checks the message.
+- `internal/api`: a run through `/v1/run` with `tgt_type` and
+  `expr_form`, checking that a refused run never reaches the stub hub,
+  and that an allowed one is forwarded under the kind it was authorized
+  as. A `*` role still runs each kind. `/v1/nodes/{id}/state` with `,`,
+  `%2C`, `%20`, a trailing comma and `*` returns 400 under a scoped
+  policy and under an estate-wide one, and nothing reaches the hub.
+- `internal/hub`: a real hub and operator certificates. Direct submission
+  of each escalation is refused. A list inside the grant reaches its two
+  nodes. A `*` role's compound reaches both. A scoped operator cannot
+  kill an estate-wide operator's list job. `DispatchAs` and the mine
+  read are refused for list, compound and pcre, including a node-shaped
+  `web1.example` as compound or pcre.
+
+Each was broken on purpose, and each failed:
+
+- With the old `targetCovered` restored (no kind, no `*?[`), 15 policy
+  rows failed. Every API escalation row returned 200 and reached the
+  hub. In the hub, each escalation was dispatched to db1.example, the
+  kill was allowed, `DispatchAs` dispatched, and the mine read returned
+  db1's data.
+- With the API's node-ID check removed, the estate-wide policy let
+  `web1.example,db1.example` (and `%2C`) reach the hub as a list. Under
+  the scoped policy the request was refused with 403, by the policy
+  half.
+- With the API dropping the kind, `web1,web2` as a list was refused, and
+  `web1` as a compound or pcre was allowed.
+- With the hub's `jobs.go` dropping the kind, a list inside the grant
+  was refused and `web1.example` as a pcre was dispatched. With
+  `DispatchAs` and the mine read dropping it, `web1.example` was
+  dispatched as a compound and read as a pcre.
+
+**Not verified.**
+
+- **No live hub and API together.** The API tests use a stub hub. The
+  hub tests use a real hub with operator certificates, but not the API
+  in front of it. No real estate was run against.
+- **The reactor's `wouldAuthorize`** (the dry run `reactor.test`
+  reports) now passes the reaction's kind, and `L` for a caller
+  reaction. No test checks its output. The reaction itself dispatches
+  through `DispatchAs`, which is tested.
+- **Resume** is authorized as the recorded job's kind, as kill is. Only
+  kill is tested. A job recorded before `target_kind` existed has an
+  empty kind and is judged as a glob.
+- **`mine.get` the runner** reads by the runner grant alone and is not
+  scoped by target. That is the existing design (a `runners:` grant),
+  not this defect, and it was not changed.
+- **macOS only.** The tests ran on macOS (Darwin 25.6). CI runs them on
+  the other platforms.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

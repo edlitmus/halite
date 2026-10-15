@@ -22,6 +22,9 @@ var policyUsage = `halite-hub policy — the RBAC of SPEC section 23.5
 
 policy flags:
   --runner             evaluate the function as a runner rather than a job
+  --target-kind <k>    read the target as this kind (L, C, G, E, ... or
+                       list, compound, ...), as the job would be sent;
+                       the default is a glob
   --kwarg <k=v>        an argument to include, repeatable as a comma list
 `
 
@@ -111,13 +114,18 @@ func runPolicy(args *cli.Args) int {
 				kwargs[k] = v
 			}
 		}
+		// The kind is part of the question: `web1.prod,db1.prod` is one
+		// string to a glob and two nodes to a list, and a test that
+		// could only ask the glob question would say "denied" about a
+		// request the hub decides differently. DIVERGENCE 5.290.
 		req := policy.Request{
-			Principal: args.Positional[1],
-			Target:    args.Positional[2],
-			Fun:       args.Positional[3],
-			Arg:       args.Positional[4:],
-			Kwarg:     kwargs,
-			Runner:    args.Bool("runner", false),
+			Principal:  args.Positional[1],
+			Target:     args.Positional[2],
+			TargetKind: args.Flag("target-kind", ""),
+			Fun:        args.Positional[3],
+			Arg:        args.Positional[4:],
+			Kwarg:      kwargs,
+			Runner:     args.Bool("runner", false),
 		}
 		decision := loaded.Authorize(req)
 		fmt.Println(decision.String())

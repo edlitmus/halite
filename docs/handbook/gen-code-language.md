@@ -451,6 +451,7 @@ The same matchers evaluate a top file, which is why this package is shared by th
 - `Error` (type): Error is an unparseable or unusable expression.
 - `Kind` (type): Kind names a target type.
 - `KindFromFlag` (func): KindFromFlag resolves a CLI flag letter to a kind.
+- `ListIDs` (func): ListIDs splits a list target, flag -L, into the node IDs it names: comma-separated, each trimmed, empty elements dropped.
 - `MatchGlob` (func): MatchGlob reports whether a node ID matches a glob, by the same rule the fleet is targeted with.
 - `Matcher` (type): Matcher is a compiled target expression.
 - `Node` (type): Node is everything a matcher may read about one node.

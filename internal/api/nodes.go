@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/apitoken"
+	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -62,6 +63,17 @@ func (s *Server) nodeDetail(w http.ResponseWriter, r *http.Request, token *apito
 		writeError(w, http.StatusBadRequest, "that is not a node identifier")
 		return
 	}
+	// The segment is one node, so it is held to what a node may enrol
+	// as. `/state` submits it as a list target, and a list splits on
+	// commas: `/v1/nodes/web1.prod,db1.prod/state` was two nodes through
+	// an endpoint that says it is one. The policy now authorizes each
+	// element of a list, which closes the escalation; refusing the
+	// segment here is the other half, so the endpoint means what its
+	// path says whatever the policy grants. DIVERGENCE 5.290.
+	if err := pki.ValidateNodeID(id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	switch {
 	case action == "" && r.Method == http.MethodGet:
@@ -102,13 +114,15 @@ func (s *Server) applyState(w http.ResponseWriter, r *http.Request, token *apito
 			return
 		}
 	}
-	if !s.authorize(w, token, requestFor("state.apply", id, req.SLS, nil, false)) {
+	// One kind, named once, for the question and for the job.
+	const kind = "L"
+	if !s.authorize(w, token, jobRequestFor("state.apply", id, kind, req.SLS, nil)) {
 		return
 	}
 
 	res, err := s.Hub.Submit(r.Context(), transport.SubmitRequest{
 		Target:     id,
-		TargetKind: "L",
+		TargetKind: kind,
 		Fun:        "state.apply",
 		Arg:        req.SLS,
 		Env:        req.Env,

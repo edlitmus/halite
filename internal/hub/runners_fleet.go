@@ -391,7 +391,7 @@ func (c *RunnerContext) dispatch(sub Submission) (*job.Job, error) {
 // narrower permission into the wider one.
 func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) {
 	decision := s.Policy.Authorize(
-		policyRequestFor(principal, sub.Fun, sub.Target, sub.Arg, sub.Kwarg, false))
+		policyRequestFor(principal, sub.Fun, sub.Target, sub.TargetKind, sub.Arg, sub.Kwarg, false))
 	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("a job dispatched on a principal's behalf was refused by policy",
@@ -406,14 +406,20 @@ func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) 
 
 // policyRequestFor builds one authorization question, so that asking it
 // and answering it use the same shape.
-func policyRequestFor(principal, fun, target string, arg []string, kwarg map[string]any, runner bool) policy.Request {
+//
+// kind is the target kind in the flag form Dispatch takes, and must be
+// the same value the job is dispatched with: a policy that judged the
+// target as one kind while Dispatch compiled it as another authorized a
+// different set of nodes from the one the job reached. DIVERGENCE 5.290.
+func policyRequestFor(principal, fun, target, kind string, arg []string, kwarg map[string]any, runner bool) policy.Request {
 	return policy.Request{
-		Principal: principal,
-		Target:    target,
-		Fun:       fun,
-		Arg:       arg,
-		Kwarg:     kwarg,
-		Runner:    runner,
+		Principal:  principal,
+		Target:     target,
+		TargetKind: kind,
+		Fun:        fun,
+		Arg:        arg,
+		Kwarg:      kwarg,
+		Runner:     runner,
 	}
 }
 

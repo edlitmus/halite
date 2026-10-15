@@ -21,6 +21,42 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A scoped role is now authorized by the kind of target it asks for
+
+**Security fix.** A role scoped to part of the estate, such as `target:
+'web*.prod'`, could reach any node. The policy judged a request's
+target string as a glob, without its kind, and the hub then sent the
+job under the kind the request named. `web1.prod,db1.prod` as a list,
+`web1.prod or db1.prod` as a compound and `web1.prod|db1.prod` as a pcre
+were all allowed, and all reached db1.prod. This was true through the
+API, through submission straight to the hub, through runners,
+orchestration and reactions that send jobs, and through mine reads.
+`POST /v1/nodes/{id}/state` with a comma in `{id}` reached several nodes
+too.
+
+What changes for an operator whose role names a target other than `*`:
+
+- A **list** target is allowed only if every node in it is inside the
+  role's target. Use a list to name several nodes.
+- A **compound, nodegroup, pcre, grain, grain_pcre, pillar, pillar_pcre
+  or ipcidr** target is now refused. Before, it was allowed when its
+  text looked like a node inside the grant. To keep using these kinds,
+  the role needs `target: '*'`. Otherwise, name the nodes as a list or a
+  glob.
+- A **glob** is unchanged, except that a string which is not a valid
+  node ID (one with a comma, a space or `|`, for example) now matches
+  only a rule whose target is that exact text, or `*`. As a glob, such a
+  string matched no node.
+- `/v1/nodes/{id}` and `/v1/nodes/{id}/state` return 400 for an `{id}`
+  that is not a valid node ID.
+- A mine read with an unknown `target_kind` is refused. Before, it was
+  read as a glob.
+
+A role with `target: '*'` is not affected. `halite-hub policy test`
+takes `--target-kind` (`L`, `C`, `E`, … or `list`, `compound`, …), so a
+policy test can ask the same question the hub asks. Restart the hub and
+`halite-api` together: each checks the policy. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

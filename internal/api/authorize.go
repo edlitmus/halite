@@ -43,7 +43,8 @@ func (s *Server) authorize(w http.ResponseWriter, token *apitoken.Token, req pol
 	return false
 }
 
-// requestFor builds one authorization question.
+// requestFor builds one authorization question about a runner, or
+// about anything else that names no fleet target.
 func requestFor(fun, target string, arg []string, kwarg map[string]any, runner bool) policy.Request {
 	return policy.Request{
 		Target: target,
@@ -52,6 +53,20 @@ func requestFor(fun, target string, arg []string, kwarg map[string]any, runner b
 		Kwarg:  kwarg,
 		Runner: runner,
 	}
+}
+
+// jobRequestFor builds the authorization question for a fleet job.
+//
+// kind is the target kind the request will be forwarded to the hub
+// with, and has to be: the policy reads `web1.prod,db1.prod` as one
+// node-shaped string under glob and as two nodes under list, and an API
+// that authorized the first and forwarded the second let a `web*.prod`
+// role reach db1.prod. Taking the kind as a required argument, rather
+// than a field someone may forget to set, is the point. DIVERGENCE 5.290.
+func jobRequestFor(fun, target, kind string, arg []string, kwarg map[string]any) policy.Request {
+	req := requestFor(fun, target, arg, kwarg, false)
+	req.TargetKind = kind
+	return req
 }
 
 // errUnknownClient names the client types SPEC 22.1 preserves from
