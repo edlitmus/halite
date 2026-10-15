@@ -2,7 +2,9 @@ package builtin
 
 import (
 	"fmt"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -169,6 +171,199 @@ func parseTabPairs(out string) *value.Map {
 	return m
 }
 
+// zfsArg renders a declared property value the way zfs and zpool read
+// it on their command lines.
+//
+// The one case that is not value.KeyString is a boolean, and it is the
+// commonest one. YAML 1.1 is this project's default (SPEC, and
+// internal/yaml's bool11), so the spelling every ZFS tutorial uses —
+// `atime: off`, `compression: on`, `autotrim: on` — arrives here as a Go
+// bool, and KeyString renders that as "false"/"true". zfs does not take
+// those for an on|off property, and `zfs get` never prints them, so the
+// state compared "false" against "off", called it a difference every
+// run, and asked `zfs set atime=false` to fix it (DIVERGENCE 5.290).
+// Salt avoids the same trap in salt.utils.zfs.to_bool, which turns
+// True/False into "on"/"off" before a command is built; this mirrors it.
+//
+// Salt also has a yes|no flavour (to_bool_alt). No property zfs or zpool
+// lets anybody *set* takes yes|no — `mounted` and `defer_destroy` are the
+// read-only ones that print it — so a declared boolean is always on|off
+// here, and a declared "yes"/"no" string is passed through as written.
+func zfsArg(v any) string {
+	if b, ok := v.(bool); ok {
+		if b {
+			return "on"
+		}
+		return "off"
+	}
+	return value.KeyString(v)
+}
+
+// zfsSizeProperties are the properties whose value is a number of bytes,
+// which `zfs get -p` prints exactly and a person writes as `10G`. Without
+// this the state compared "10G" against "10737418240", found them
+// different every run, and set the quota again every run.
+//
+// The list is the settable `<size>`-valued properties of zfs(8)/zfsprops(7)
+// plus recordsize and volblocksize, which Salt's probe types as strings
+// (their VALUES column reads "512 to 1M, power of 2", not "<size>") but
+// which take and print a byte count all the same. The per-user, per-group
+// and per-project quotas are matched by prefix in zfsIsSizeProperty.
+// Anything not named here is compared as the exact string, which is what
+// it was before; that can only fail to converge, never set a value the
+// declaration did not ask for.
+var zfsSizeProperties = map[string]bool{
+	"quota":                true,
+	"refquota":             true,
+	"reservation":          true,
+	"refreservation":       true,
+	"recordsize":           true,
+	"volsize":              true,
+	"volblocksize":         true,
+	"special_small_blocks": true,
+}
+
+// zfsNoneIsZero are the size properties `zfs get -p` prints as 0 when
+// they are unset, where the human output and the declaration say "none".
+// With -p, libzfs prints the raw integer for these rather than the word
+// (the word is the non-literal branch of zfs_prop_get). That is read from
+// the OpenZFS source and has not been captured on a machine here — see
+// DIVERGENCE 5.290 for what a lab run needs to check.
+var zfsNoneIsZero = map[string]bool{
+	"quota":          true,
+	"refquota":       true,
+	"reservation":    true,
+	"refreservation": true,
+}
+
+func zfsIsSizeProperty(name string) bool {
+	if zfsSizeProperties[name] {
+		return true
+	}
+	for _, p := range []string{"userquota@", "groupquota@", "projectquota@"} {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// zfsNoneMeansZero adds the per-user, per-group and per-project quotas to
+// zfsNoneIsZero; their literal branch in libzfs prints the integer too.
+func zfsNoneMeansZero(name string) bool {
+	return zfsNoneIsZero[name] || strings.Contains(name, "quota@")
+}
+
+// zfsSizeUnits is salt.utils.zfs's zfs_size, in order: K is 1024^1.
+const zfsSizeUnits = "KMGTPE"
+
+// zfsParseSize reads a size the way salt.utils.zfs.from_size does: a
+// whole or decimal number, then one of K M G T P E in either case with an
+// optional B, each a power of 1024 (re_zfs_size,
+// `^(\d+|\d+(?=\d*)\.\d+)([KkMmGgTtPpEe][Bb]?)$`), or a bare integer of
+// bytes, which is what `zfs get -p` prints. Salt keeps a decimal result
+// that is not a whole number of bytes as a float, which then never equals
+// anything zfs reads back; here such a value is not parsed at all and
+// falls back to the exact string comparison, rather than guessing at how
+// libzfs rounds it. Spellings libzfs accepts beyond Salt's grammar (a
+// bare `B`, `KiB`, `Z`) are left unparsed the same way, for the same
+// reason: nobody has watched what they read back as.
+func zfsParseSize(s string) (uint64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	if n, err := strconv.ParseUint(s, 10, 64); err == nil {
+		return n, true
+	}
+	num := s
+	if len(num) >= 2 && (num[len(num)-1] == 'B' || num[len(num)-1] == 'b') {
+		num = num[:len(num)-1]
+	}
+	if num == "" {
+		return 0, false
+	}
+	shift := strings.IndexByte(zfsSizeUnits, upperASCII(num[len(num)-1]))
+	if shift < 0 {
+		return 0, false
+	}
+	num = num[:len(num)-1]
+	if !zfsSizeNumber(num) {
+		return 0, false
+	}
+	mult := uint64(1) << (10 * uint(shift+1))
+	if whole, err := strconv.ParseUint(num, 10, 64); err == nil {
+		if whole > ^uint64(0)/mult {
+			return 0, false
+		}
+		return whole * mult, true
+	}
+	// A decimal, which Salt accepts (`1.5G`): taken only when it comes to
+	// a whole number of bytes. Multiplying by a power of two is exact in
+	// a float64, so the only rounding is in parsing the decimal itself;
+	// a fraction with more digits than a float64 holds (seventeen or so)
+	// can round onto a whole number, and is then read as that number.
+	f, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0, false
+	}
+	bytes := f * float64(mult)
+	if bytes != math.Trunc(bytes) || bytes >= math.Ldexp(1, 64) {
+		return 0, false
+	}
+	return uint64(bytes), true
+}
+
+// zfsSizeNumber is the numeric half of Salt's re_zfs_size: digits, or
+// digits, a point and digits.
+func zfsSizeNumber(s string) bool {
+	whole, frac, dot := strings.Cut(s, ".")
+	if whole == "" || !allDigits(whole) {
+		return false
+	}
+	return !dot || (frac != "" && allDigits(frac))
+}
+
+func allDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func upperASCII(b byte) byte {
+	if b >= 'a' && b <= 'z' {
+		return b - ('a' - 'A')
+	}
+	return b
+}
+
+// zfsSameValue reports whether a declared property value is what
+// `zfs get -H -p` / `zpool get -H -p` printed for it. Both sides go
+// through the same normalisation, so a value read back as "none" on a
+// version that prints it compares equal to a declared 0 as well.
+func zfsSameValue(name string, declared, current any) bool {
+	want, have := zfsArg(declared), zfsArg(current)
+	if want == have {
+		return true
+	}
+	if !zfsIsSizeProperty(name) {
+		return false
+	}
+	w, wok := zfsSizeOrNone(name, want)
+	h, hok := zfsSizeOrNone(name, have)
+	return wok && hok && w == h
+}
+
+func zfsSizeOrNone(name, s string) (uint64, bool) {
+	if strings.EqualFold(strings.TrimSpace(s), "none") {
+		return 0, zfsNoneMeansZero(name)
+	}
+	return zfsParseSize(s)
+}
+
 func zfsFilesystemPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	dataset := states.Str(args, "name", "")
 	if dataset == "" {
@@ -192,9 +387,8 @@ func zfsFilesystemPresent(c *exec.Context, args *value.Map) (states.Result, erro
 		have := parseTabPairs(current.Stdout)
 		for _, e := range props.Entries() {
 			name := value.KeyString(e.Key)
-			want := value.KeyString(e.Val)
-			if cur, ok := have.Get(name); !ok || value.KeyString(cur) != want {
-				changes.Set(name, states.Change(cur, want))
+			if cur, ok := have.Get(name); !ok || !zfsSameValue(name, e.Val, cur) {
+				changes.Set(name, states.Change(cur, zfsArg(e.Val)))
 			}
 		}
 	}
@@ -217,7 +411,7 @@ func zfsFilesystemPresent(c *exec.Context, args *value.Map) (states.Result, erro
 		}
 		for _, name := range sortedPropertyNames(props) {
 			v, _ := props.Get(name)
-			argv = append(argv, "-o", name+"="+value.KeyString(v))
+			argv = append(argv, "-o", name+"="+zfsArg(v))
 		}
 		argv = append(argv, dataset)
 		if _, err := c.Run(exec.Command{Argv: argv}); err != nil {
@@ -232,7 +426,7 @@ func zfsFilesystemPresent(c *exec.Context, args *value.Map) (states.Result, erro
 		if !ok {
 			continue
 		}
-		if _, err := c.Run(exec.Command{Argv: []string{"zfs", "set", name + "=" + value.KeyString(v), dataset}}); err != nil {
+		if _, err := c.Run(exec.Command{Argv: []string{"zfs", "set", name + "=" + zfsArg(v), dataset}}); err != nil {
 			return states.False(fmt.Sprintf("The property %s of %s could not be set: %v", name, dataset, err)), nil
 		}
 	}

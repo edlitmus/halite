@@ -21,6 +21,24 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### ZFS states compare `off` and `10G` the way zfs reads them back
+
+`zfs.filesystem_present` and `zpool.present` compared each declared
+property with `zfs get -p`/`zpool get -p` output as plain strings. An
+unquoted `atime: off` or `autotrim: on` is a YAML boolean, which was
+compared and passed to zfs as `false`/`true`, so the state reported a
+change every run and ran `zfs set atime=false` (or `zfs create -o
+atime=false`, `zpool set`, `zpool create -o`/`-O`). A size such as
+`quota: 10G` or `recordsize: 128K` never equalled the byte count `-p`
+prints, and `quota: none` never equalled `0`, so those were set again
+every run. Booleans now go to zfs, and are compared, as `on`/`off`, as
+Salt does; the size properties are compared in bytes, with Salt's
+1024-based `K`/`M`/`G`/`T`/`P`/`E` suffixes, and `none` equals `0` for
+the quotas and reservations. Other properties are compared as written,
+as before. A run of these states should now report no change where it
+used to report one every time. Not yet run against a real zfs: see
+DIVERGENCE 5.290 for what is unverified.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
