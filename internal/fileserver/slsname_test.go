@@ -16,7 +16,7 @@ import (
 // slashes and cleaned the result. So a denylist entry for `secret.x`
 // refused `secret.x` and nothing else, while `secret..x`, `secret/x`,
 // `.secret.x` and `secret/./x` all loaded `secret/x.sls`. DIVERGENCE
-// 5.290.
+// 5.294.
 //
 // These tests run the real compiler against the real Roots on a real
 // directory, because the in-memory loader the state package's tests use

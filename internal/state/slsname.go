@@ -42,7 +42,7 @@ import (
 // It is exported so the hub's policy (deny_sls/allow_sls in
 // internal/policy) can apply the same definition to the arguments of
 // state.sls and state.apply, which today it matches as written.
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.294.
 func CanonicalSLS(name string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("an SLS name may not be empty")

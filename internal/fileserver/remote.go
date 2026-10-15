@@ -122,7 +122,7 @@ func (r *Remote) Envs() []string {
 // Source implements state.Loader: a dotted SLS name to its bytes.
 //
 // A non-canonical name is refused before it is fetched, as Roots.Source
-// does. DIVERGENCE 5.290.
+// does. DIVERGENCE 5.294.
 func (r *Remote) Source(env, sls string) ([]byte, string, error) {
 	if _, err := state.CanonicalSLS(sls); err != nil {
 		return nil, "", err

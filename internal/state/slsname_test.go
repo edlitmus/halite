@@ -9,7 +9,7 @@ import (
 	"github.com/edlitmus/halite/internal/template"
 )
 
-// CanonicalSLS is the one spelling. DIVERGENCE 5.290.
+// CanonicalSLS is the one spelling. DIVERGENCE 5.294.
 func TestCanonicalSLS(t *testing.T) {
 	for _, ok := range []string{"top", "secret.x", "web.nginx.app", "a-b.c_d", "x1.2"} {
 		if got, err := CanonicalSLS(ok); err != nil || got != ok {

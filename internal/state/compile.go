@@ -224,7 +224,7 @@ func (c *Compiler) loadSLS(out *Compiled, env, name string, seen map[string]bool
 	// not is a way round the denylist. Every way a name reaches this
 	// point -- state.sls arguments, the top file, include: after a
 	// relative include has been resolved -- passes here. DIVERGENCE
-	// 5.290.
+	// 5.294.
 	if _, err := CanonicalSLS(name); err != nil {
 		out.Diags.Add(value.Pos{File: name}, name, "", "%v", err)
 		return
