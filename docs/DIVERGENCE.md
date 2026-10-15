@@ -23929,6 +23929,90 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 `file.line` compared `match` as a substring, so `^PermitRootLogin` never matched
+
+Audit finding H-08. `file.line`'s `match`, `before` and `after` were
+compared as plain text: a line matched when it contained the value, or
+equalled it once both were trimmed. SPEC section 10.4's table says
+`file.line` patterns are RE2 by default, and the comment on the matcher
+claimed the substring test was "the comparison Salt uses" and that it made
+`match: '^PermitRootLogin'` work. Neither was true. Measured before the
+fix: `mode: ensure`, `match: '^PermitRootLogin'`, `content:
+'PermitRootLogin no'` against `Port 22` / `PermitRootLogin yes`, run three
+times, reported a change on every run and appended another
+`PermitRootLogin no` each time, and the `yes` line stayed first. sshd takes
+the first value it reads for a keyword, so the state reported that root
+login was off on a host where it was still on.
+
+Salt's matcher is `_regex_to_static` in `salt/modules/file.py` (read at
+f37cdcd1c9 in `~/saltstack`, not run): every one of `match`, `before` and
+`after` is compiled with `re.compile(p, re.DOTALL)` up front, and a line is
+kept when the pattern *searches* it or occurs in it as plain text
+(`compiled.search(line) or line.count(p)`). A pattern that does not compile
+raises. An empty or missing pattern is "not given", not the pattern that
+matches every line. The same expression run in plain Python 3 `re` (no
+Salt import, which needs dependencies this Mac does not have) gave:
+`^PermitRootLogin` finds the `yes` line; `Port` finds `Port 22` *and*
+`GatewayPorts no`; `^Port\b` finds only `Port 22`; `allow(all)` finds the
+line `allow(all)` only through the plain-text half; `PermitRootLogin [yes`
+and `(` raise.
+
+halite now does the same, in `linePattern` (`internal/builtin/file_line.go`):
+RE2 search through `regexcompat` with DOTALL, or a plain fragment, for all
+three arguments, compiled before anything is decided. A pattern that does
+not compile, or that uses a construct RE2 lacks, fails the state naming the
+argument, and the file is not touched. The execution function `file.line`
+is the state's own implementation (`registerFileEditAsExec`), so it changed
+with it.
+
+What a tree sees change:
+
+- An anchored or otherwise regex-shaped `match`, `before` or `after` now
+  matches the lines it says. This is the fix.
+- An **unanchored** value is a search, as it was a substring before:
+  `match: Port` still matches `GatewayPorts`. Unchanged, and Salt's.
+- A value with regex metacharacters that is meant literally still matches
+  where it occurs as written, through the plain-text half; it may now *also*
+  match lines its regex reading finds (`a.b` matches `axb`). That is Salt's
+  behaviour.
+- A value that is not a valid RE2 pattern (`[yes`, a leading `*`, a
+  lookahead) now fails the state where it used to be compared as text. When
+  `match` is unset it defaults to `content`, so a `content` like `*.*
+  @loghost` with no `match` fails too. Salt fails on the same `content`
+  when neither `before` nor `after` is given; with one of them given, Salt
+  never compiles `content` and halite does, so there halite fails where
+  Salt would not.
+- The trimmed-equality half is gone: a `match` with leading or trailing
+  whitespace the line lacks no longer matches it. Salt never had it.
+- `mode: absent` or `delete` with neither `match` nor `content` used to
+  delete **every line in the file**, because an empty substring is in every
+  line. An empty pattern is now "not given", as in Salt, so it deletes
+  nothing.
+
+Not changed, and different from Salt, recorded here rather than fixed:
+halite's `ensure` with a `match` and no `before`/`after` replaces every
+matching line, or appends; the source read above raises "Unable to ensure
+line without knowing where to put it" for that case. halite's `replace`
+rewrites every matching line where Salt rewrites the first; halite's
+`delete` removes every matching line where Salt removes the lines equal to
+the first match; and `before`/`after` take the first match where Salt
+requires exactly one. Each of those is a tree-visible difference of its
+own and needs its own entry if it is changed.
+
+`TestFileLineMatchIsARegexSearch` (internal/builtin) holds it: the sshd
+case run three times (a change on run 1 only, and the file is `Port 22` /
+`PermitRootLogin no` after every run), `^Port\b` leaving `GatewayPorts`
+alone, an unanchored `Port` reaching it, `$` and `\s`, a literal with
+parentheses, an anchored `after`, invalid and unsupported patterns for
+`match` and `before`, and a `content` standing in for `match`. With the
+old `file_line.go` restored it failed eight of its ten cases (the unanchored and literal cases pass on both, as they should); with
+the plain-text half removed from the new matcher, the literal case failed.
+
+Not verified: no real sshd read the result, no real Salt was run against
+these cases (the Salt behaviour above is from reading its source and from
+re-running its matcher expression in plain Python), and it ran on macOS
+only. `file`'s evidence level is unchanged.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

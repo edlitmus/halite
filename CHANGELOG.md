@@ -21,6 +21,23 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `file.line` now treats `match`, `before` and `after` as regular expressions
+
+They were compared as plain text, so `match: '^PermitRootLogin'` never
+matched: `mode: ensure` appended another `PermitRootLogin no` on every run
+and left the original `PermitRootLogin yes`, the line sshd honours, first.
+As in Salt, each value is now searched in each line as an RE2 pattern, and a
+line where it appears as plain text matches too. What can change on a tree
+upgraded to this: an anchored or regex-shaped value now matches the lines it
+says; a value with metacharacters can also match lines its regex reading
+finds (`a.b` matches `axb`); a value that is not a valid RE2 pattern —
+including a `content` used as the default `match`, such as `*.* @loghost` —
+now fails the state instead of being compared as text; a `match` with
+surrounding whitespace no longer matches the trimmed line. `mode: absent` or
+`delete` with neither `match` nor `content` deleted every line of the file;
+it now deletes nothing, as in Salt. Run the highstate with `test=True` first if your tree uses
+`file.line`. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

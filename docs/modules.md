@@ -2085,11 +2085,11 @@ file.line(path: path, content: string = , match: string = , mode: string = , loc
 |---|---|---|---|
 | `path` | path | *required* | The file to edit. |
 | `content` | string | `` | The line. |
-| `match` | string | `` | The line to act on; defaults to `content`. |
+| `match` | string | `` | An RE2 pattern searched in each line (a plain fragment also matches); defaults to `content`. |
 | `mode` | string | `` | ensure, replace, delete, insert, or prepend. |
 | `location` | string | `` | start or end, for insert. |
-| `before` | string | `` | Insert before the line matching this. |
-| `after` | string | `` | Insert after the line matching this. |
+| `before` | string | `` | Insert before the first line this RE2 pattern (or plain fragment) matches. |
+| `after` | string | `` | Insert after the first line this RE2 pattern (or plain fragment) matches. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
@@ -10648,10 +10648,10 @@ file.line(name: path, content: string = , mode: string = ensure, match: string =
 | `name` | path | — | The file to edit. Defaults to the state ID. |
 | `content` | string | `` | The line. |
 | `mode` | string | `ensure` | What to do: ensure, absent, replace, insert, or delete. |
-| `match` | string | `` | The existing line to act on; defaults to content. |
+| `match` | string | `` | An RE2 pattern searched in each line (a plain fragment also matches) to find the line to act on; defaults to content. |
 | `location` | string | `` | Where to insert: start or end. |
-| `before` | string | `` | Insert before the first line matching this. |
-| `after` | string | `` | Insert after the first line matching this. |
+| `before` | string | `` | Insert before the first line this RE2 pattern (or plain fragment) matches. |
+| `after` | string | `` | Insert after the first line this RE2 pattern (or plain fragment) matches. |
 | `indent` | bool | `true` | Match the indentation of the surrounding line. |
 | `backup` | string | `` | Keep a copy with this suffix. |
 | `show_changes` | bool | `true` | Include a unified diff. |
