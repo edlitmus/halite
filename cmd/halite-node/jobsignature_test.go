@@ -467,3 +467,30 @@ func TestASignedPillarTargetIsRefusedWhenThisNodesPillarWillNotCompile(t *testin
 		t.Errorf("a target decided by its grain term compiled pillar %d time(s)", calls)
 	}
 }
+
+// Every execution function that runs code the caller supplies is refused
+// unsigned under `require_job_signature: [arbitrary_code]`.
+//
+// The node decides the class from the execution registry alone. Four
+// functions that run caller-supplied code did not declare it there —
+// `cmd.script`, `cmd.script_retcode`, `cmd.exec_code` and `cmd.run_bg` —
+// so each ran unsigned on a node configured to refuse exactly that. The
+// hub did not show it for `cmd.script`, because it merges the state
+// module of the same name, which did declare it. DIVERGENCE 5.290.
+func TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode(t *testing.T) {
+	for i, fun := range []string{
+		"cmd.run", "cmd.shell", "cmd.script", "cmd.script_retcode", "cmd.exec_code", "cmd.run_bg",
+	} {
+		n, _ := signedNode(t, "[arbitrary_code]")
+		msg := jobMessage(t, fmt.Sprintf("20261015T0800000000%02d", i))
+		msg.Fun = fun
+		n.acceptJob(msg)
+		if n.executor.Depth() != 0 {
+			t.Errorf("an unsigned %s was accepted under a requirement that names arbitrary_code", fun)
+			continue
+		}
+		if refusal := lastRefusal(t, n); !strings.Contains(refusal, "arbitrary_code") {
+			t.Errorf("%s was refused, but not for its class: %s", fun, refusal)
+		}
+	}
+}

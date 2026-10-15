@@ -75,9 +75,16 @@ func registerCmdMore(r *Registries) {
 					opt("timeout", signature.Duration, nil, "How long it may run."),
 					opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
 				},
-				Mutates:  true,
-				TestMode: signature.TestUnreliable,
-				Section:  "15.2",
+				Mutates: true,
+				// It runs whatever script the caller names, which is the
+				// definition of SPEC 23.5's class. The state module of the
+				// same name always declared it; this one did not, and the
+				// node computes `require_job_signature: [arbitrary_code]`
+				// from the execution registry alone, so an unsigned
+				// `cmd.script` ran there. See DIVERGENCE 5.290.
+				ArbitraryCode: true,
+				TestMode:      signature.TestUnreliable,
+				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return runScript(c, args, true)
@@ -95,9 +102,13 @@ func registerCmdMore(r *Registries) {
 					opt("runas", signature.String, "", "Account to run as."),
 					opt("timeout", signature.Duration, nil, "How long it may run."),
 				},
-				Mutates:  true,
-				TestMode: signature.TestUnreliable,
-				Section:  "15.2",
+				Mutates: true,
+				// cmd.script under another name: the same runScript, only
+				// the return value differs. Leaving it unmarked is leaving
+				// cmd.script granted by wildcard (DIVERGENCE 5.290).
+				ArbitraryCode: true,
+				TestMode:      signature.TestUnreliable,
+				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				out, err := runScript(c, args, false)
@@ -121,9 +132,13 @@ func registerCmdMore(r *Registries) {
 					opt("runas", signature.String, "", "Account to run as."),
 					opt("timeout", signature.Duration, nil, "How long it may run."),
 				},
-				Mutates:  true,
-				TestMode: signature.TestUnreliable,
-				Section:  "15.2",
+				Mutates: true,
+				// The caller supplies the code and the interpreter. There is
+				// no plainer case of arbitrary code in the module library,
+				// and a wildcard was granting it (DIVERGENCE 5.290).
+				ArbitraryCode: true,
+				TestMode:      signature.TestUnreliable,
+				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				lang := states.Str(args, "lang", "")
@@ -165,9 +180,13 @@ func registerCmdMore(r *Registries) {
 					opt("runas", signature.String, "", "Account to run as."),
 					opt("env", signature.Map, nil, "Environment, replacing the clean default."),
 				},
-				Mutates:  true,
-				TestMode: signature.TestUnreliable,
-				Section:  "15.2",
+				Mutates: true,
+				// cmd.run without waiting: the caller names the program and
+				// its arguments. A role refused cmd.run got the same thing,
+				// detached, by asking for this (DIVERGENCE 5.290).
+				ArbitraryCode: true,
+				TestMode:      signature.TestUnreliable,
+				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return runInBackground(c, args)

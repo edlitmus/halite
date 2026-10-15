@@ -80,3 +80,40 @@ func TestTheHandbookPolicyDecidesWhatChapterTwentySixSays(t *testing.T) {
 		})
 	}
 }
+
+// Chapter 26 quotes `policy show`'s "never granted by a wildcard" line and
+// says it is that command's output for this build. It was not: the four
+// functions DIVERGENCE 5.290 marked were missing from the page, and nothing
+// compared the two. The quoted names are read out of the chapter and held to
+// arbitraryCodeFunctions, which is what `policy show` prints.
+func TestChapterTwentySixListsWhatPolicyShowPrints(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "docs", "handbook", "26-authorization.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const lead = "never granted by a wildcard: "
+	text := string(src)
+	start := strings.Index(text, lead)
+	if start < 0 {
+		t.Fatalf("chapter 26 no longer quotes the %q line; this check has stopped checking", lead)
+	}
+	block := text[start+len(lead):]
+	block = block[:strings.Index(block, "```")]
+	quoted := map[string]bool{}
+	for _, name := range strings.Split(block, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			quoted[name] = true
+		}
+	}
+	shipped := arbitraryCodeFunctions()
+	for name := range shipped {
+		if !quoted[name] {
+			t.Errorf("policy show prints %s and chapter 26 does not list it", name)
+		}
+	}
+	for name := range quoted {
+		if !shipped[name] {
+			t.Errorf("chapter 26 lists %s and policy show does not print it", name)
+		}
+	}
+}
