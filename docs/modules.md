@@ -1472,7 +1472,7 @@ dnsutil.hosts_append(hostsfile: path = , ip_addr: string, entries: any)
 | `ip_addr` | string | *required* | The address. |
 | `entries` | any | *required* | The names, comma separated as Salt takes them, or as a list. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · honours `--test` · SPEC section 15.2*
 
 #### `dnsutil.hosts_remove`
 
@@ -1487,7 +1487,7 @@ dnsutil.hosts_remove(hostsfile: path = , entries: any)
 | `hostsfile` | path | `` | The file to write. Defaults to the system's. |
 | `entries` | any | *required* | The names, comma separated as Salt takes them, or as a list. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · honours `--test` · SPEC section 15.2*
 
 #### `dnsutil.parse_hosts`
 
