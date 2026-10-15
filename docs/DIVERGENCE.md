@@ -23929,6 +23929,66 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 A request in flight could un-revoke an API token
+
+Found by review, not reported from a host. `apitoken.Store.Redeem` runs
+on every authenticated API request. It read every token record, found
+the one the secret matched, set `LastUsed`, and wrote the whole record
+back. `Revoke` is a separate read-modify-write of the same file, and it
+runs from two places: `halite-api token revoke`, which is a separate
+process, and a logout inside the API. There was no lock in either
+process and none between them. So a revocation that landed after a
+Redeem had read the record and before it wrote it was overwritten by
+Redeem's stale copy, which said `Revoked` false. The token worked again,
+the revocation's own output said it had succeeded, and nothing logged
+the reversal. The window is one request wide, but the hot path is every
+request a busy token makes, which is the token most worth revoking.
+
+**The change** removes the read-modify-write from the hot path instead
+of locking around it. Redeem no longer writes the record at all. The
+idle clock goes to its own file, `<id>.last_used`, which holds one
+RFC 3339 timestamp, and `Get` folds it back into `LastUsed` (the later
+of the two, so a record written before this change keeps its value).
+After `Issue`, the only writer of a record is `Revoke`, and the only
+thing `Revoke` writes is `Revoked` true. No interleaving of any number
+of processes can turn that back. A lock was considered and not chosen:
+the repository has no file-lock helper, `make build-all` builds the API
+for every target including Windows, where `flock` does not exist, and a
+lock protects only as long as every writer in
+every process takes it. The rule here is enforced by there being nothing
+left that could write `false`. `Prune` removes the clock with its
+record.
+
+The worst a lost update to the clock can now do is move a token's idle
+expiry by the width of two concurrent requests.
+
+**What is proven.** `internal/apitoken/race_test.go` uses two `Store`s
+on one directory, as the API and the CLI are, and an unexported hook
+that runs inside the window: in Redeem between the read and the clock
+write, and in Revoke between its read and its write. Revocation holds in
+both orders, and the idle clock that Redeem wrote in the second order
+survives. A third test checks that Redeem leaves the record's bytes
+unchanged. With Redeem's old `put` put back, all of them fail, the first
+with "the redeem in flight wrote the token back unrevoked".
+
+**Linearisation, stated rather than implied.** A Redeem that read the
+record before a revocation landed still succeeds. It began before the
+token was withdrawn, and the request it authenticates is concurrent with
+the revocation. Every Redeem that starts after `Revoke` has returned is
+refused.
+
+**Not verified.** Nothing here has run against a live API. The hook
+tests are in-process with two stores, not two processes. No FreeBSD or
+Windows run has been made. On Windows the per-request rename now goes to
+the `.last_used` file instead of the record, and `atomicfile` already
+retries on that platform, but no Windows API has been seen under load.
+
+**Left alone.** Redeem still lists and parses every token file in the
+store on every request, to find the one whose digest matches (M-07 in
+the review that found this). That is a cost that grows with the store.
+It is not a correctness defect, and it has its own fix (an index by
+digest) that is not this one.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
