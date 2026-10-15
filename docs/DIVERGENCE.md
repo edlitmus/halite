@@ -4603,6 +4603,17 @@ only reads. The release gate is unchanged -- `service` was never on it
 there because a GitHub runner has systemd and the probe unit confines
 nothing.
 
+#### 5.39, corrected: the fallback boundary rested on the same name
+
+"The fallback boundary" above says a D-Bus error, if retried on the
+shell, "fails the same way with a worse message". That held only while
+both paths named the same unit, and for a dotted name they did not. The
+binding gave `.service` only to names with no dot, so `php8.2-fpm` went
+to the Manager bare and was refused, where `systemctl`, which mangles the
+name itself, would have started `php8.2-fpm.service`. A mutation does
+not fall back after an error that came back, so it failed. A read does
+fall back, so it worked. See 5.290.
+
 ### 5.40 `pkg`: five more functions, apt
 
 §3 had `pkg` at 18 of SPEC 15.2's 26. Five of the eight absent were
@@ -23928,6 +23939,84 @@ The hub's 5.287 tests pass with the function moved.
   from the code, not run.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
+
+### 5.290 A dotted unit name was sent to systemd without `.service`
+
+Audit finding H-14. `withServiceSuffix` decided whether a name already had
+a unit type by whether it contained a dot. `php8.2-fpm`, the PHP-FPM unit
+on Debian and Ubuntu, contains one, so the systemd provider passed it to
+`StartUnit`, `EnableUnitFiles` and the rest as it stood. The auditor ran
+the same calls with `busctl` against a real systemd 258 and recorded
+two refusals: `StartUnit "php8.2-fpm"` answered "Unit name php8.2-fpm is
+not valid.", and `EnableUnitFiles` answered "File php8.2-fpm: Invalid
+argument". That observation is the auditor's. It was not reproduced for
+this change; the machine it was made on has no systemd.
+
+The pair that disagreed was the two paths of one provider. `systemctl`
+mangles a name itself: a name that does not end in a unit type gets
+`.service`. The Manager's methods do no mangling. The reads (`Status`,
+`Enabled`, `Masked`) fall through to `systemctl` on a D-Bus error, so
+`service.running: php8.2-fpm` read the unit's state correctly. The
+mutations (start, stop, restart, reload, enable, disable, mask, unmask)
+do not fall back once the bus answered, by the rule in 5.39. So every
+start and enable of the unit failed after a read that had worked. 5.39
+gave a reason that rule was safe ("fails the same way with a worse
+message"), and that reason was wrong for this case. The subsection
+"5.39, corrected" records that.
+
+**The change.** A name keeps its form only when the part after its last
+dot is a systemd unit type. Any other name gets `.service`. The types
+are the eleven in systemd's `UnitType` enum (`src/basic/unit-def.c`,
+and systemd.unit(5)): `service`, `socket`, `device`, `mount`,
+`automount`, `swap`, `target`, `path`, `timer`, `slice`, `scope`. Salt's
+`_canonical_unit_name` (`modules/systemd_service.py`) does the same with
+the first nine. It lacks `slice` and `scope`, and it tests `endswith`
+without the dot, so it would take `fooservice` as typed. halite keeps
+all eleven and tests the dotted suffix. The list was taken from
+systemd's documentation as remembered, not read from a checkout or
+from a running systemd. `systemctl -t help` on a real host prints it,
+and should be compared.
+
+The `systemctl` fallback now also gets the canonical name. Before, it
+got the raw name and relied on `systemctl`'s own mangling to agree with
+the binding. Now both paths are given one string, from one function.
+`Start` through `Unmask`, `Status` and `Enabled` all do this; mask and
+unmask get it through the shared `systemctl` helper. One argv was not
+changed: the `systemctl is-enabled` fallback inside `Masked`, in
+`service_more.go`, which another branch is editing. It still passes the
+raw name and depends on `systemctl` mangling it. That is a read, and
+`systemctl` is the thing that mangles, so it works as before. It should
+be changed when that branch lands.
+
+**What the tests hold.** `TestWithServiceSuffix` gives the mapping:
+`php8.2-fpm` to `php8.2-fpm.service`, `nginx` to `nginx.service`,
+`foo.socket` and `bar.timer` and the other nine types unchanged, and
+`foo.socket.d` and `org.example.daemon` given `.service`.
+`TestSystemdProviderDottedNameOverDBus` uses the recording backend: every
+mutating verb and every read of `php8.2-fpm` reaches it as
+`php8.2-fpm.service`, and nothing is run on the shell.
+`TestSystemdProviderDottedNameFallbackAgrees` takes the bus away and
+checks that the `systemctl` argv carries the same names. The fixtures
+are names and argv only. No captured systemd output exists in the repo
+for this, and none was written from documentation.
+
+The fix was broken three ways, and the tests failed each time. With
+the old dot rule back, the mapping test and both provider tests failed.
+With the name left raw in the `systemctl` helper only, the two
+fallback tests failed. With `slice` and `scope` taken out of the list,
+the mapping test failed on `user.slice` and `session-1.scope`. Each
+change was then put back.
+
+**Not verified.** Nothing here ran against a real systemd. The 5.39 live
+test drives a probe unit whose name has no dot, so it does not cover
+this. A live run should use the Ubuntu 24.04 host or a lab Linux host,
+as root with `HALITE_SYSTEM_LIVE=1`. It should install a throwaway unit
+with a dot in its name, for example `halite-probe1.2.service` in
+`/run/systemd/system`. Then it should call `service.start`,
+`service.enable`, `service.mask` and `service.unmask` with the name
+`halite-probe1.2`, both over D-Bus and with the dial forced to fail, and
+check each step with `systemctl show -p ActiveState,UnitFileState`. It
+should also check that `systemctl -t help` lists the eleven types above.
 
 ## 6. Everything else not started
 

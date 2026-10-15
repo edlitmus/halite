@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `service` starts and enables systemd units whose names contain a dot
+
+On systemd, a unit name with a dot in it, such as `php8.2-fpm`, was sent
+to systemd's D-Bus API without `.service`. systemd refused it. The state
+read the unit's status correctly, then every start, stop, restart,
+reload, enable, disable, mask and unmask of it failed. A name now gets
+`.service` unless it ends in one of systemd's unit types (`.socket`,
+`.timer`, `.slice` and the rest). The `systemctl` fallback gets the same
+name. This has not yet been run against a real systemd. See DIVERGENCE
+5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
