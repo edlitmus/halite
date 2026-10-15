@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### gitfs no longer deletes the tree it keeps serving
+
+When every ref of a reachable remote was refused (a commit adding a
+symlink, a blob too large to unpack, a signature that did not verify),
+gitfs kept serving the last good tree, as documented, and then its cache
+sweep deleted that tree's files. The file server listed the environment
+and served nothing from it. The sweep now keeps every tree that is
+being served. (DIVERGENCE 5.290)
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`

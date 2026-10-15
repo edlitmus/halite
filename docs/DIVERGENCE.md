@@ -23929,6 +23929,82 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
+### 5.290 gitfs kept the last good tree's path and swept away its files
+
+`Update` keeps the last good tree when a reachable remote serves
+nothing: every ref refused, by a signature or by `materialise`. That is
+what 13.3, the paragraph on it in this ledger and the command reference
+all promise. But the sweep that stops the cache growing ran in the same
+loop, before that decision, keyed on the refs this update had resolved.
+On the kept-tree path those are none, so it removed every tree under the
+remote, the one `b.roots` still pointed at included. `Roots()` went on
+naming tree A, and tree A had no files in it. The estate got the empty
+file server the kept tree exists to prevent, with nothing in `Roots()`
+or the report to say so.
+
+The audit (M-49) found it with real git. A commit that adds a symlink
+is the easy trigger: git commits one and `materialise` refuses it. A
+blob too large to unpack does the same. So does a signature refused on
+a remote's only branch.
+
+**Why the existing test did not see it.**
+`TestAFailedUpdateLeavesTheServedTreeInPlace` compared the root's path
+string, not the files under it. It also drives the other failure: a
+remote that has vanished fails at `mirror`, which `continue`s before
+the sweep. So it never ran the path that deleted anything. It now reads
+`top.sls` from the kept root as well. It still passes against the old
+code, because that path never swept; it is not the test for this fix.
+
+**The change.** The sweep runs after the decision about what is
+served, and its live set is the directories in `b.roots` after that
+decision, not this update's refs. The two inputs disagreed exactly when
+the tree was kept. Now the decision is the sweep's input, so they cannot
+disagree. Skipping the sweep when roots are not replaced was the other
+option. It fixes this case but leaves two lists of "what is live" that
+must agree, which is the shape of the defect.
+
+**What was demonstrated.**
+`TestARefusedCommitLeavesTheServedTreesFilesInPlace` drives real git:
+a good commit, then a commit adding a symlink. It checks that the
+refusal is a `materialise` one, that `Roots()` still names the first
+tree, and that its `top.sls` reads back with the first commit's body,
+after the refused update and after a second one. Run against the old
+`backend.go` it fails with `top.sls: no such file or directory` under
+the listed root. Run with the new structure but the live set taken from
+this update's `roots` rather than `b.roots`, it fails the same way.
+`TestOldTreesAreSweptAway` still passes, so the sweep still removes
+what is not served.
+
+**Two things this does not change, both found while checking it.**
+They were run with real git in a throwaway test, which is not
+committed.
+
+- *Some refs of a remote refused.* One branch of two gets a symlink
+  commit. The roots are replaced, the refused branch's environment
+  drops out entirely, and `Update` returns nil. The refusal is in
+  `State()` and in the refusal counter. Not changed: 13.3 says a ref
+  that fails verification is not served, and the kept-tree promise
+  here and in the command reference is made per remote ("a remote
+  whose refs are all refused"). Whether a withdrawn key on one branch
+  should keep that branch's last good tree is a decision, not a defect,
+  and it is not made here.
+- *Two remotes, one unreachable.* The other remote serves, so the roots
+  are replaced, and the unreachable remote's environment stops being
+  served. That contradicts `Update`'s own comment ("it does not clear
+  what it was already serving") and the paragraph above saying a
+  remote that fails leaves its last tree in place. That is a separate
+  defect and is left for its own change. The sweep does not run for an
+  unreachable remote, so its trees are still on disk; they are just not
+  listed. A reachable remote whose refs are all refused, next to one
+  that serves, has its trees swept. That agrees with `Roots()`, which no
+  longer lists them.
+
+**Not verified.** The 2 GB blob and signature triggers were not run
+here; they reach the same `len(result.Refs) == 0` path as the symlink.
+No hub was run: this is the backend under `go test` on macOS. The
+existing window between the sweep removing a replaced tree and the
+hub's file server switching to the new roots is unchanged.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -260,6 +260,68 @@ func TestAFailedUpdateLeavesTheServedTreeInPlace(t *testing.T) {
 	if len(after["base"]) == 0 || after["base"][0] != before["base"][0] {
 		t.Errorf("a failed update emptied the file server: %v", after)
 	}
+	// The path alone is not the tree: a root that names a directory
+	// the sweep has removed serves nothing (DIVERGENCE 5.290).
+	requireServedFile(t, after, "base", "top.sls", "base: {}\n")
+}
+
+// requireServedFile fails unless the first root of env holds path with
+// body — the files, not just a directory name in Roots().
+func requireServedFile(t *testing.T, roots map[string][]string, env, path, body string) {
+	t.Helper()
+	if len(roots[env]) == 0 {
+		t.Fatalf("nothing is served for %s: %v", env, roots)
+	}
+	got, err := os.ReadFile(filepath.Join(roots[env][0], path))
+	if err != nil {
+		t.Fatalf("the %s root is listed and its %s is not there: %v", env, path, err)
+	}
+	if string(got) != body {
+		t.Errorf("the %s root serves %s as %q, want %q", env, path, got, body)
+	}
+}
+
+// A remote that is reachable and whose every ref is refused keeps the
+// last good tree (SPEC 13.3, DIVERGENCE 5.290). The sweep ran on that
+// path too and deleted the directory the kept root pointed at, so
+// Roots() still named tree A and tree A's files were gone. A symlink is
+// the easy real trigger: git commits one, materialise refuses it.
+func TestARefusedCommitLeavesTheServedTreesFilesInPlace(t *testing.T) {
+	r := newRepo(t)
+	r.write("top.sls", "base: {}\n")
+	r.commit("initial")
+
+	b := backendFor(t, r, nil)
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	before := b.Roots()
+	requireServedFile(t, before, "base", "top.sls", "base: {}\n")
+
+	if err := os.Symlink("top.sls", filepath.Join(r.dir, "link.sls")); err != nil {
+		t.Skipf("this filesystem cannot make a symlink: %v", err)
+	}
+	r.write("top.sls", "base: {'*': [web]}\n")
+	r.commit("a symlink the served tree may not carry")
+
+	if err := b.Update(context.Background()); err == nil {
+		t.Fatal("an update whose only ref was refused reported success")
+	}
+	if got := b.Refusals()[RefusedMaterialise]; got != 1 {
+		t.Fatalf("the symlink commit was not refused by materialise: %v", b.Refusals())
+	}
+	after := b.Roots()
+	if len(after["base"]) == 0 || after["base"][0] != before["base"][0] {
+		t.Fatalf("the refused commit replaced the served tree: %v -> %v", before, after)
+	}
+	requireServedFile(t, after, "base", "top.sls", "base: {}\n")
+
+	// And the kept tree is not swept on the update after that either,
+	// while the remote is still refused.
+	if err := b.Update(context.Background()); err == nil {
+		t.Fatal("a second refused update reported success")
+	}
+	requireServedFile(t, b.Roots(), "base", "top.sls", "base: {}\n")
 }
 
 // The cache must not grow with every push.
