@@ -152,10 +152,25 @@ func (a *Authority) Enroll(req Request) (*Result, error) {
 	}
 	now := a.now()
 
-	rec, err := a.Store.Get(nodeID)
+	// One critical section from the read to the write, spending the
+	// token inside it, so that an operator's decision on this node from
+	// another process lands wholly before or wholly after.
+	var res *Result
+	err = a.Store.locked(func() error {
+		var err error
+		res, err = a.enroll(nodeID, fingerprint, csr, req, now)
+		return err
+	})
+	return res, err
+}
+
+// enroll is Enroll's decision, run under the store's lock.
+func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequest, req Request, now time.Time) (*Result, error) {
+	rec, err := a.Store.get(nodeID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
+	a.Store.inWindow("enroll", nodeID)
 
 	if rec != nil {
 		// A different key presenting an established name is the attack
@@ -194,7 +209,7 @@ func (a *Authority) Enroll(req Request) (*Result, error) {
 	}
 
 	if a.Mode == ModeToken && req.Token != "" {
-		tok, spendErr := a.Store.SpendToken(req.Token, nodeID, req.RemoteAddr, now)
+		tok, spendErr := a.Store.spendToken(req.Token, nodeID, req.RemoteAddr, now)
 		if spendErr == nil {
 			rec.Source = SourceToken
 			rec.TokenID = tok.ID
@@ -203,13 +218,13 @@ func (a *Authority) Enroll(req Request) (*Result, error) {
 		// The request is still recorded as pending, so that a failed
 		// automatic enrollment leaves something for an operator to
 		// accept by hand rather than vanishing.
-		if err := a.Store.Put(rec); err != nil {
+		if err := a.Store.put(rec); err != nil {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%w: %v", ErrRefused, spendErr)
 	}
 
-	if err := a.Store.Put(rec); err != nil {
+	if err := a.Store.put(rec); err != nil {
 		return nil, err
 	}
 	return &Result{NodeID: nodeID, State: Pending, Fingerprint: fingerprint}, ErrPending
@@ -227,7 +242,16 @@ func (a *Authority) accepted(rec *Record) *Result {
 }
 
 // issue signs and stores. It is the only place a certificate is made.
+//
+// The caller holds the store's lock and read rec under it, so rec is
+// what is on disk now. A revoked record is refused here as well as by
+// every caller: revocation is the one decision that must never be
+// undone by a later one, and this is the last point at which a new
+// serial could be minted for it. DIVERGENCE 5.290.
 func (a *Authority) issue(rec *Record, csr *x509.CertificateRequest, now time.Time) (*Result, error) {
+	if rec.State == Revoked {
+		return nil, fmt.Errorf("%w: %s was revoked (%s)", ErrRefused, rec.NodeID, rec.Reason)
+	}
 	der, err := a.CA.IssueNode(csr, rec.NodeID, a.lifetime())
 	if err != nil {
 		return nil, err
@@ -247,7 +271,7 @@ func (a *Authority) issue(rec *Record, csr *x509.CertificateRequest, now time.Ti
 	rec.NotAfter = cert.NotAfter
 	rec.Reason = ""
 	rec.Updated = now
-	if err := a.Store.Put(rec); err != nil {
+	if err := a.Store.put(rec); err != nil {
 		return nil, err
 	}
 	return &Result{
@@ -269,69 +293,103 @@ func (a *Authority) bundle() []byte {
 // Accept issues to a pending request. This is what an operator runs
 // after comparing the fingerprint out of band.
 func (a *Authority) Accept(nodeID string) (*Record, error) {
-	rec, err := a.Store.Get(nodeID)
-	if err != nil {
-		return nil, err
-	}
-	now := a.now()
-	switch rec.Status(now) {
-	case Accepted:
-		return rec, nil
-	case Revoked:
-		return nil, fmt.Errorf("%s was revoked (%s); delete the record to let it enrol again", nodeID, rec.Reason)
-	}
-	if rec.CSR == "" {
-		return nil, fmt.Errorf("%s has no certificate request on file to accept", nodeID)
-	}
-	csr, err := pki.DecodeCSR([]byte(rec.CSR))
-	if err != nil {
-		return nil, fmt.Errorf("the stored request for %s: %w", nodeID, err)
-	}
-	if _, err := a.issue(rec, csr, now); err != nil {
-		return nil, err
-	}
-	return rec, nil
+	var out *Record
+	err := a.Store.locked(func() error {
+		rec, err := a.Store.get(nodeID)
+		if err != nil {
+			return err
+		}
+		a.Store.inWindow("accept", nodeID)
+		now := a.now()
+		switch rec.Status(now) {
+		case Accepted:
+			out = rec
+			return nil
+		case Revoked:
+			return fmt.Errorf("%s was revoked (%s); delete the record to let it enrol again", nodeID, rec.Reason)
+		}
+		if rec.CSR == "" {
+			return fmt.Errorf("%s has no certificate request on file to accept", nodeID)
+		}
+		csr, err := pki.DecodeCSR([]byte(rec.CSR))
+		if err != nil {
+			return fmt.Errorf("the stored request for %s: %w", nodeID, err)
+		}
+		if _, err := a.issue(rec, csr, now); err != nil {
+			return err
+		}
+		out = rec
+		return nil
+	})
+	return out, err
 }
 
 // Reject refuses a request and keeps it, for the audit.
+//
+// A revoked node is refused too. Rejected is a weaker word for the same
+// outcome to the node, but not to the hub: LoadDenylist puts only
+// revoked serials back on the denylist at start-up, so rejecting a
+// revoked record would quietly let its certificate back in at the next
+// restart. Revoked is sticky; delete is the way out of it.
 func (a *Authority) Reject(nodeID, reason string) (*Record, error) {
-	rec, err := a.Store.Get(nodeID)
-	if err != nil {
-		return nil, err
-	}
-	if rec.Status(a.now()) == Accepted {
-		return nil, fmt.Errorf("%s is accepted; revoke it rather than rejecting it, so the serial reaches the denylist", nodeID)
-	}
-	rec.State = Rejected
-	rec.Reason = reason
-	rec.Updated = a.now()
-	if err := a.Store.Put(rec); err != nil {
-		return nil, err
-	}
-	return rec, nil
+	var out *Record
+	err := a.Store.locked(func() error {
+		rec, err := a.Store.get(nodeID)
+		if err != nil {
+			return err
+		}
+		a.Store.inWindow("reject", nodeID)
+		switch rec.Status(a.now()) {
+		case Accepted:
+			return fmt.Errorf("%s is accepted; revoke it rather than rejecting it, so the serial reaches the denylist", nodeID)
+		case Revoked:
+			return fmt.Errorf("%s was revoked (%s); it stays revoked, so that its serial stays on the denylist", nodeID, rec.Reason)
+		}
+		rec.State = Rejected
+		rec.Reason = reason
+		rec.Updated = a.now()
+		if err := a.Store.put(rec); err != nil {
+			return err
+		}
+		out = rec
+		return nil
+	})
+	return out, err
 }
 
 // Revoke withdraws an acceptance. The serial reaches the handshake
 // denylist before the record is written, so the window in which a
 // revoked certificate still works is not one that involves a disk.
+//
+// The serial is the one on disk under the store's lock, so it is the
+// node's current certificate and not one a renewal has just replaced.
+// Before DIVERGENCE 5.290 a renewal from the hub could write between
+// this read and this write -- or after it -- and leave the node accepted
+// with a fresh serial that nothing had denylisted.
 func (a *Authority) Revoke(nodeID, reason string) (*Record, error) {
-	rec, err := a.Store.Get(nodeID)
-	if err != nil {
-		return nil, err
-	}
-	if rec.Serial == "" {
-		return nil, fmt.Errorf("%s holds no certificate to revoke", nodeID)
-	}
-	if a.Revoker != nil {
-		a.Revoker.Revoke(rec.Serial, reason)
-	}
-	rec.State = Revoked
-	rec.Reason = reason
-	rec.Updated = a.now()
-	if err := a.Store.Put(rec); err != nil {
-		return nil, err
-	}
-	return rec, nil
+	var out *Record
+	err := a.Store.locked(func() error {
+		rec, err := a.Store.get(nodeID)
+		if err != nil {
+			return err
+		}
+		if rec.Serial == "" {
+			return fmt.Errorf("%s holds no certificate to revoke", nodeID)
+		}
+		a.Store.inWindow("revoke", nodeID)
+		if a.Revoker != nil {
+			a.Revoker.Revoke(rec.Serial, reason)
+		}
+		rec.State = Revoked
+		rec.Reason = reason
+		rec.Updated = a.now()
+		if err := a.Store.put(rec); err != nil {
+			return err
+		}
+		out = rec
+		return nil
+	})
+	return out, err
 }
 
 // Renew reissues to a node that already holds a valid certificate,
@@ -340,6 +398,12 @@ func (a *Authority) Revoke(nodeID, reason string) (*Record, error) {
 //
 // The caller passes the certificate the peer authenticated with, not
 // one from the request body.
+//
+// The check that the record is still accepted and the write of the new
+// serial are one critical section, against the CLI as well as the hub's
+// own goroutines, so a revocation lands wholly before it (and the renewal
+// is refused) or wholly after it (and revokes the new serial).
+// DIVERGENCE 5.290.
 func (a *Authority) Renew(peer *x509.Certificate, csrPEM []byte) (*Result, error) {
 	nodeID, err := pki.NodeIDFromCert(peer)
 	if err != nil {
@@ -358,24 +422,30 @@ func (a *Authority) Renew(peer *x509.Certificate, csrPEM []byte) (*Result, error
 	if asked != nodeID {
 		return nil, fmt.Errorf("%w: %s asked to renew as %s", ErrRefused, nodeID, asked)
 	}
-	rec, err := a.Store.Get(nodeID)
-	if err != nil {
-		return nil, err
-	}
-	if rec.State != Accepted {
-		return nil, fmt.Errorf("%w: %s is %s", ErrRefused, nodeID, rec.State)
-	}
-	if rec.Serial != pki.SerialString(peer) {
-		return nil, fmt.Errorf("%w: %s presented serial %s and the hub issued %s",
-			ErrRefused, nodeID, pki.SerialString(peer), rec.Serial)
-	}
 	fingerprint, err := pki.FingerprintCSR(csr)
 	if err != nil {
 		return nil, err
 	}
-	rec.Fingerprint = fingerprint
-	rec.CSR = string(pki.EncodeCSR(csr.Raw))
-	return a.issue(rec, csr, a.now())
+	var res *Result
+	err = a.Store.locked(func() error {
+		rec, err := a.Store.get(nodeID)
+		if err != nil {
+			return err
+		}
+		a.Store.inWindow("renew", nodeID)
+		if rec.State != Accepted {
+			return fmt.Errorf("%w: %s is %s", ErrRefused, nodeID, rec.State)
+		}
+		if rec.Serial != pki.SerialString(peer) {
+			return fmt.Errorf("%w: %s presented serial %s and the hub issued %s",
+				ErrRefused, nodeID, pki.SerialString(peer), rec.Serial)
+		}
+		rec.Fingerprint = fingerprint
+		rec.CSR = string(pki.EncodeCSR(csr.Raw))
+		res, err = a.issue(rec, csr, a.now())
+		return err
+	})
+	return res, err
 }
 
 // LoadDenylist puts every revoked serial on the handshake denylist. A

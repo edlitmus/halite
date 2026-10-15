@@ -429,7 +429,7 @@ Package keystore is the hub's record of who has asked to join and who has been l
 
 One JSON file per node, named for the node, written atomically. A directory rather than a database because the thing an operator does at three in the morning is read it, and because a key store that cannot be recovered with \`cat\` is a key store that gets recovered by guessing.
 
-**Files:** `authority.go`, `keystore.go`, `owner_other.go`, `owner_unix.go`, `token.go`; with tests.
+**Files:** `authority.go`, `keystore.go`, `lock_fcntl.go`, `lock_flock.go`, `lock_other.go`, `lock_windows.go`, `owner_other.go`, `owner_unix.go`, `token.go`; with tests.
 
 **Exports.**
 

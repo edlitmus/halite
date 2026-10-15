@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A node renewing at the moment it is revoked now stays revoked
+
+`halite-hub keys revoke` writes the key store from the operator's shell,
+while the hub renews certificates in its own process, and nothing kept
+the two apart. A renewal that overlapped a revocation could leave the
+node accepted, or revoked with a new certificate that nothing had
+denylisted. The same race let `keys token revoke` be undone by an
+enrollment that was spending that token. Every change to the key store
+now holds an OS lock on a new file, `.lock`, in the store's directory,
+so the hub and the CLI take turns. A revoked node also can no longer be
+rejected or renewed. Before, rejecting a revoked node took its serial
+off the denylist at the next hub restart. Delete the record to enrol it
+again. See DIVERGENCE 5.290.
+
 ### The API's systemd unit now restarts an API whose listener was early
 
 `halite-api.service` stopped on exit status 1, and `halite-api serve`
