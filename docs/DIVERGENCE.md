@@ -28681,9 +28681,15 @@ case deleted, the default refusal caught every spelling, and the test
 failed on the message, which does not say what to use instead.
 
 **Not verified.** Not run against a hub and a real node: the evidence is
-the compiler's unit test, with grains supplied by the test. No pillar tree
-in the estate was searched for `S@` or `ipcidr` in a pillar top file, so
-whether any operator meets the new refusal is unknown.
+the compiler's unit test, with grains supplied by the test.
+
+**The estate, searched since** (2026-10-16, before merge). The production
+hub on beastie has one pillar source, `pillar_roots: base:
+/usr/local/etc/halite/pillar`, and no gitfs or `ext_pillar`. That
+directory holds no files at all, so no top file there meets the new
+refusal. No other hub's pillar tree was searched. `internal/pillar` and
+`internal/target` passed natively on FreeBSD 15.1 (beastie) under
+`-race`, and on Linux after the merge with main.
 
 
 
