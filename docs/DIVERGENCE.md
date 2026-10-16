@@ -26447,6 +26447,140 @@ come from 4 to 32 MiB children, not the default stack. No real Salt tree was
 rendered through the new limits to check that none is refused. The
 template corpus and the package tests pass, and that is the evidence
 that nothing ordinary is refused.
+### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
+
+**What was wrong.** `mount.mounted` decided whether the mounted
+filesystem was the declared one by comparing the running table's device
+field with the declaration's as strings. On Linux the kernel's table
+names the node `mount(8)` resolved the tag to, `/dev/nvme0n1p2`, and the
+declaration says `UUID=…`, `LABEL=…` or a `/dev/disk/by-*` link — the
+form the module's own `device` parameter documents. So the two never
+agreed. Every run reported "remounted from a different device", ran
+`mount -o remount,<opts> UUID=… <point>`, and fired every `onchanges`
+and `watch` on the state. `remount,defaults` could also reset options
+the filesystem had been mounted with. `mount.unmounted` had the same
+comparison for its `device` filter, the other way round: a filter of
+`UUID=…` never matched, so the state said "Nothing is mounted" while the
+filesystem was mounted. Found by audit (H-15), by reading the code; it
+was not seen on a host.
+
+The existing tests did not catch it because their running table was
+invented: `mount_test.go`'s fixture gives the running device as
+`UUID=2222`, which no running table prints. Those fixtures are
+synthetic, and are now marked as such. They test options and the fstab,
+and pass the device comparison only because the strings are equal.
+
+**The fix.** Both sides are reduced to the file they reach, and two
+names are the same device when `os.SameFile` says they are the same
+node:
+
+- `UUID=`, `LABEL=`, `PARTUUID=` and `PARTLABEL=` (quoted or not) become
+  `/dev/disk/by-uuid|by-label|by-partuuid|by-partlabel/<value>`. The
+  value is escaped the way udev names the link: ASCII letters and
+  digits and `#+-.:=@_` are kept, a valid multi-byte UTF-8 sequence is
+  kept, and any other byte is `\xHH` in lower-case hex, so `my data` is
+  `my\x20data`.
+- An absolute path is used as it is. `os.Stat` follows the links, so
+  `/dev/mapper/vg0-data → ../dm-0` and `by-uuid/… → ../../dm-0` match.
+- A name that is not a path or a tag (`tmpfs`, `server:/export`,
+  `zroot/ROOT/default`) is still compared as a string.
+
+`stat`'s `Rdev` was considered as the identity instead. It would also
+match two separate device nodes for the same device. No such pair has
+been seen on a host this manages, and a test cannot make a device node
+without root, so that branch would never have run. It was left out.
+
+**An unresolvable mismatch is a failure, not a remount.** When the
+strings differ and either name does not resolve (a tag with no link — a
+typo, a host without udev, any FreeBSD or macOS host; or a table entry
+such as `/dev/root` that is not in `/dev`), the state returns `False`,
+names both spellings, and changes nothing: no remount and no fstab
+write. Remounting on that difference is the loop being fixed. Also, a
+Linux remount does not change the source device, so a remount was the
+wrong action even when the devices did differ. A failure the operator
+sees once is better than a silent remount on every highstate.
+
+A device that resolves to a different node is still reported as a
+different device and remounted, as before. That remount does not change
+the device on Linux either, so that path probably does not converge. It
+was not changed here and is not tested on a host.
+
+**FreeBSD is not handled, and nothing was captured there.** FreeBSD's
+fstab has no `UUID=` syntax. Its label providers (`/dev/gpt/<label>`,
+`/dev/gptid/…`, `/dev/ufsid/…`, `/dev/label/…`, `/dev/diskid/…`) are
+GEOM providers in devfs, not symlinks, so `os.SameFile` reports them
+different from the partition they label. If the running table names one
+and the declaration the other, the state still reports a different
+device. Whether that happens depends on what the running table prints,
+and that is not known. It is believed that FreeBSD records the name
+given to `mount`, so a filesystem mounted from fstab as `/dev/gpt/data`
+is listed as `/dev/gpt/data`, but no capture shows it. The repo has no
+captured FreeBSD `mount` line with a label device. A FreeBSD lab run
+must capture, as root, on 14 and 15:
+
+1. `mount`, `mount -p`, `glabel status`, `gpart show -l -p` and
+   `ls -l /dev/gpt /dev/gptid /dev/ufsid /dev/label /dev/diskid`, on a
+   host whose root is mounted by a GPT label.
+2. A memory disk with a GPT partition labelled `halitetest` and a UFS
+   filesystem, mounted once as `/dev/gpt/halitetest` and once as
+   `/dev/md0p1`, with `mount` and `mount -p` after each, to see which
+   name the table keeps. Do the same for a `glabel label` and a
+   `/dev/ufsid/…` name.
+3. `stat -f '%d %i %Z' /dev/gpt/halitetest /dev/md0p1`, to see whether
+   two names for one provider share an inode or a device number in
+   devfs.
+4. The result of `mount -u -o <opts>` and `mount -o remount,<opts>` on
+   that filesystem (M-44: `remount` and `defaults` are Linux-only, and
+   are known to be rejected by macOS `mount`).
+
+The fix for FreeBSD probably maps a label to its provider with
+`glabel status` or `geom -p`. That should be written from that capture,
+not from this note.
+
+**Tests.** `internal/builtin/mount_identity_test.go`. Each test builds a
+`/dev` in a temporary directory, with relative symlinks laid out as udev
+lays them out, under a new `DevRoot` variable. The kernel's table is a
+file. **Every running-table line in those tests is synthetic**, and so
+are the device names, UUIDs and labels. The tests cover:
+
+- `UUID=` against the node: no change, nothing run.
+- `UUID=` against a `/dev/mapper` name for the same `dm-0`: no change.
+- `LABEL=my data/2`, quoted and unquoted, against `my\x20data\x2f2`.
+- The encoding, case by case.
+- A UUID of another node: still a device change.
+- A UUID with no link: `False`, no changes, nothing run, no fstab
+  written.
+- Names compared as names, and `/dev/root` against a real node:
+  undecided.
+- `mount.unmounted` with a `UUID=` filter: unmounts.
+
+Each part was broken on purpose and the tests failed:
+
+- With the string compare back: six tests failed.
+- Without the label escaping: the label test failed.
+- With an undecided match remounting: the unresolvable test failed.
+- With `mount.unmounted` back to the string filter: its test failed.
+
+**Not verified.**
+
+- **Nothing was mounted.** The module's evidence stays `Captured`.
+- **No Linux host was used.** That `/proc/self/mounts` names the
+  resolved node for a `UUID=` mount, and for LVM the `/dev/mapper` name,
+  is from util-linux and kernel behaviour as understood. It was not
+  captured for this change.
+- **The udev escaping is from source, not a capture.** It was read from
+  libblkid's `blkid_encode_string` and systemd's `encode_devnode_name`.
+  No label with a space was made and its link listed. Also not checked:
+  a tag whose case differs from the link (a FAT `UUID=abcd-1234`
+  against `ABCD-1234`). It is undecided here, and `mount(8)` may still
+  find it through blkid's cache.
+- **FreeBSD and macOS were not run.** See above.
+- **Loop and bind mounts were not addressed.** On Linux the running
+  table names the loop device or the underlying device, not the image
+  file or source directory that was declared. Both resolve, to
+  different files, so they are still reported as different devices.
+- The tests ran on macOS (Darwin 25.6) only. CI runs them on Linux and
+  FreeBSD.
 
 
 

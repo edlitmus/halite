@@ -21,6 +21,22 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `mount.mounted` no longer remounts a filesystem declared by UUID or label
+
+A filesystem declared with `device: UUID=…`, `LABEL=…`, `PARTUUID=…`,
+`PARTLABEL=…` or a `/dev/disk/by-*` path was reported as "remounted from
+a different device" on every run. The state ran `mount -o remount` and
+fired its `onchanges` and `watch` each time, because the kernel's table
+names the resolved node, such as `/dev/nvme0n1p2`. Both names are now
+resolved through udev's `/dev/disk/by-*` links and compared as the node
+they reach. When either name cannot be resolved and the two differ, the
+state now **fails** and names both, and does not remount. Before, it
+remounted. `mount.unmounted` with a `UUID=` `device` filter now finds
+the filesystem. Before, it said nothing was mounted. FreeBSD label
+devices (`/dev/gpt/…` against `/dev/ada0p2`) are not handled yet. Not
+run on a host. See DIVERGENCE 5.313.
+
+
 ### A template can no longer end the hub or node that renders it
 
 A template could overflow the Go stack or ask for more memory than
