@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 21 | 34: 3 mentioned and explicitly left, 1 half done, 30 not started |
+| Medium (55) | 22 | 33: 3 mentioned and explicitly left, 1 half done, 29 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -63,6 +63,7 @@ not do. Each has been checked to see whether it happened.
 | M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-32 package name injection | #331 | | |
+| M-33 pkgng/apk pins | #375 | `pkg.installed` checks every provider's pin after installing | **done** on beastie (5.334). **Not done**: apk still drops the pin from its argv, so a pinned apk package now fails rather than converging; nothing here runs Alpine |
 | M-36 netplan refused file | #356 | | |
 | M-37 firewall value validation | #355 | | **done**: beastie's hub serves no firewall states, so no `from`/`to` there meets the new refusal. pf parsed every accepted form (`pfctl -n`). Other hubs' trees not searched |
 | M-38 pf anchor order | #354 | | |
@@ -102,13 +103,12 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (30).** Ordered by area. FreeBSD is tier 1 and
-carries about 80% of production, so the four marked FreeBSD come first
+**Medium, not started (29).** Ordered by area. FreeBSD is tier 1 and
+carries about 80% of production, so the three marked FreeBSD come first
 when choosing.
 
 | ID | Finding | Revised |
 |---|---|---|
-| M-33 | pkgng/apk ignore pins | Medium (FreeBSD) |
 | M-43 | FreeBSD rcvar not `<name>_enable` | Medium, leaning higher (FreeBSD) |
 | M-44 | BSD remount and `defaults` in fstab | Medium if FreeBSD rejects `defaults` (FreeBSD) |
 | M-35 | fstab without fstype | Medium (FreeBSD and Linux) |
