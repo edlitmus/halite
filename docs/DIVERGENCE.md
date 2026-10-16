@@ -25567,6 +25567,22 @@ account and 132 ms for the unknown name.
   unknown name takes the same time. That file is being changed by
   another branch, so it is left to whichever of the two lands second.
 - Only run on macOS.
+
+#### 5.305, the `loginlimit.go` header
+
+The header of `loginLimit` (`internal/api/loginlimit.go`) now says what
+`account.Verify` does. A failed login runs PBKDF2 at the account's own
+count. That is `DefaultIterations` for a hash written by default and
+never less than `MinIterations`. A name with no account runs at
+`DefaultIterations`, so it costs what a default-hashed account costs,
+and an account at another count is still distinguishable. The guessing
+rate it gives is now a range, seven to twenty a second per core, from
+this section's 133 ms and 5.232's 50 ms. Those are the two figures
+already measured. Nothing was measured again.
+
+Only a comment changed. No code changed and no test covers it, so there
+was nothing to break on purpose. The claims in it were checked by reading
+`unknownAccount` and `Verify` in `internal/account/account.go`.
 ### 5.306 A binary another account planted in `thin_dir` was run as root
 
 Found by audit (H-07), by reading the code, and confirmed by a test

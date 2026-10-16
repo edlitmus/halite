@@ -14,12 +14,23 @@ import (
 //
 // The endpoint takes no credential before the password, because it is
 // how somebody with no token gets one. Every failed local login runs a
-// PBKDF2-HMAC-SHA-512 at the enforced minimum of 210,000 iterations --
-// measured at 50 ms of CPU on the development Mac -- and runs it for an
-// unknown name as well, so that the two take the same time. Nothing
-// bounded either. So a caller could guess at any account about twenty
-// times a second per core, and enough callers at once could fill every
-// core with hashing and starve the rest of the service. SPEC 25.1's
+// PBKDF2-HMAC-SHA-512 at the account's own iteration count, which is
+// account.DefaultIterations (600,000) for every hash written by default
+// and never less than account.MinIterations (210,000). A name with no
+// account runs it too, at DefaultIterations, so that it costs what a
+// default-hashed account costs; an account hashed at another count still
+// takes its own time (DIVERGENCE 5.305). Until this comment was
+// corrected it said every check ran at 210,000 and that an unknown name
+// took the same time as a real one. 5.305 measured the opposite: 47 ms
+// for a name with no account, 135 ms for a wrong password against a
+// default hash.
+//
+// So one check costs from about 50 ms (5.232's figure, at 210,000) to
+// about 133 ms (5.305's, at the default) on the development Mac, and
+// nothing bounded either. A caller could guess at an account between
+// seven and twenty times a second per core, and enough callers at once
+// could fill every core with hashing and starve the rest of the
+// service. SPEC 25.1's
 // "unauthenticated network attacker" row named the hub's port, where
 // mutual TLS stops one before any application code; it said nothing
 // about this one. DIVERGENCE 5.232.
