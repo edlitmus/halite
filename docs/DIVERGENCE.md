@@ -27070,6 +27070,144 @@ catching the signals was meant to keep.
   signals are never delivered there. The tree is still removed on every
   path that is not a signal.
 
+### 5.319 One stalled `dnf install` in the rocky9 leg cost two test binaries and the job
+
+The fleet's `rpm (rocky9, …)` leg failed three times in a day the same
+way: the PR runs for #349 and #355 on 2026-10-15 (Fleet runs 38776869080
+and 38780643553) and main's scheduled run at dbc1b5d on 2026-10-16
+(38874376490). Each logged
+
+    before: []; older kernel for the test 5.14.0-687.56.1.el9_8, newest 5.14.0-687.57.1.el9_8
+
+and then nothing for 29m38s, until `go test -timeout 30m` panicked. The
+goroutine dump put the test in `runEnv` at the line that ran
+`dnf install -y -q kernel-5.14.0-687.56.1.el9_8.x86_64`, waiting on the
+child with its stdout pipe still open. run.sh then started the
+conformance harness, whose `pkg.installed` sat for another fourteen
+minutes until the job's 45-minute timeout cancelled the leg. The earlier
+merging work had treated it as a known flake and re-run it.
+
+**Where the thirty minutes went, as far as the logs can say.** All in
+that one dnf command. Every other measured thing was the same in the
+failing and the passing runs: the same `rockylinux/rockylinux:9` digest
+(`sha256:8101994123cf…`), the same seventeen packages in the image build,
+dnf 4.14.0, the same kernel versions offered, and the dnf tests just
+before running at the same speed (`TestLiveDnfModuleInstallAndRemove`
+3.5-4.1s failing, 4.7s passing; BaseOS metadata at 27-64 MB/s failing,
+17 MB/s passing). A passing run on the same image an hour and a half
+earlier (38864128442) did that install and the module's `upgrade`
+together in 89s, and the whole test in 99s. So nothing deterministic
+separated the runs; only the time did.
+
+What the logs **cannot** say is which half of the install stopped:
+the download from a mirror, or the scriptlets that run depmod and
+dracut. `runEnv` collects a command's output with `CombinedOutput` and
+prints it only when the command returns, and this one never did. A
+stalled mirror is the likelier of the two -- dnf's own `minrate` is 1000
+bytes a second, which a mirror can trickle above for a day, and the
+same scriptlets finished in every other run, inside the 89s the install
+and upgrade took together -- but that is
+inference, not something any of these logs shows.
+
+**Why the second hang.** `go test` exits on its timeout without
+killing what the test started, so the dnf was orphaned in the container
+still holding dnf's lock, and the harness's dnf waited on it. One stall
+took the module tests, the conformance tests, and the job.
+
+**The fix, in the test** (`live_kernelpkg_rpm_test.go`; the module is
+unchanged):
+
+- **Every dnf the test runs, the module's included, runs under a
+  limit** -- 4 minutes for a download, 5 for an install or the module's
+  `upgrade` and `remove`, 2 for the quick ones, 4 for each put-back
+  command. It runs through `exec.OSRunner`, the runner the module uses,
+  which puts the child in its own process group and kills the group
+  when the context ends. The module's calls get the limit through
+  `exec.Context.Ctx`. Each limit is also held under the binary's own
+  deadline, less room for the put-back, so the limits cannot add up to
+  the thirty minutes they exist to stop.
+- **Before a kill, the test prints what is running and what dnf last
+  logged**: every process in the container with its parent, its
+  `wchan` and its command line (from /proc, since the image need not
+  have `ps`), and the last forty lines of `dnf.librepo.log`, `dnf.log`
+  and `dnf.rpm.log`. The next stall is the only evidence there will be
+  of which half it was, and this is what makes it say.
+- **The download is a step of its own.** Each kernel is fetched with
+  `install --downloadonly --setopt=minrate=200k`, then the older one is
+  installed with `-C`, from the cache alone, and the newer one is in the
+  cache before the module's `upgrade` runs. So a stalled mirror and a
+  stalled install fail under different names, and each step's time is
+  logged in a passing run too.
+- **A download that runs out its time is tried once more.** A new dnf
+  asks for the mirror list again rather than staying on the transfer that
+  stalled. One that fails outright is not retried.
+
+With this, a stall like the three above fails the test within minutes,
+naming the step, and the conformance harness after it runs against an
+unlocked dnf.
+
+#### What was run
+
+There is no EL host or container on the machine this was written on,
+so the Fleet legs on the PR are the evidence for the EL side.
+
+**On this change's Fleet run (38910442774, commit 47e8a53)** both EL
+legs ran the test, rather than skipping it, and passed. Every expected
+test passed and none skipped. The step times:
+
+| step | rocky9 (dnf 4.14.0) | alma8 (dnf 4.7.0) |
+|---|---|---|
+| download the older kernel | 64.6s | 8.6s |
+| install it from the cache | 39.2s | 53.2s |
+| download the newer kernel | 2.1s | 2.2s |
+| `kernelpkg.upgrade` | 26.7s | 13.3s |
+| `kernelpkg.remove` | 3.2s | 3.3s |
+| whole test | 140.35s | 89.29s |
+
+The first download fetched whatever the kernel needed besides itself.
+The second, at about two seconds on both, found that already
+installed. On rocky9 the first download was the slowest step, and seven
+times alma8's for the same kind of transaction. That is one sample, from
+one mirror on one run, not a measure of the stall. The installs from
+the cache took 39-53s, so the scriptlets are not seconds either. Every
+step was far inside its limit.
+
+`kpStep` and `kpDNF` were run on macOS (Darwin 25.6, arm64) from a
+scratch test that was not kept. A `sh -c "sleep 301 & sleep 302; wait"`
+under a two-second limit came back in 2.00s with an error naming the
+step and the limit, and `pgrep` found neither sleep afterwards; a `true`
+under the same limit passed and logged its time. Broken on purpose, with
+the `cancel()` in the timer removed and the sleeps cut to 15s and 16s,
+the step took the full 16s and the sleeps outlived it, and the scratch
+test failed on both counts. The same run with `-timeout 2m` refused to
+start the step at all, because two minutes is less than the put-back's
+reserve -- the deadline guard. The /proc listing printed nothing there,
+since macOS has no /proc.
+
+#### Not verified
+
+- **What the stall was.** This change makes the next one say; it does
+  not show that any of the three was a mirror.
+- **That `minrate` and a second attempt get past a stalled mirror.**
+  That librepo abandons a transfer below `minrate` for `timeout` seconds
+  and fails over to the next mirror is from dnf.conf(5) and librepo's
+  behaviour as documented, not something seen here. If the stall is in
+  a scriptlet, the leg still goes red, in minutes rather than
+  forty-five, with the process list saying where.
+- **That the module's `upgrade` installs from the cache** the test
+  filled, rather than downloading again. dnf uses a package already in
+  its cache; the upgrade's logged time on the leg is what will show it.
+- **That killing dnf frees the lock** for the conformance harness.
+  dnf's lock records a pid, and a dead pid is a stale lock, but no
+  killed dnf was watched being followed by another one.
+- **The reads.** The `list_installed`, `latest_available` and
+  `upgrade_available` calls, and the `capture` of `remove --assumeno`,
+  still run without a limit. They read repository metadata the earlier
+  tests have already fetched, and none of them is where the three runs
+  stopped.
+- **alma8 under a stall.** Its leg ran the new test green (above) but
+  never failed the old way, so no limit has ever fired on either leg.
+
 
 
 
