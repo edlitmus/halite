@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -393,12 +394,39 @@ func pkgInstalled(c *exec.Context, args *value.Map) (states.Result, error) {
 	// The change set is rebuilt from what is actually installed now, so a
 	// package manager that pulled a different version than asked reports
 	// the version it really installed.
+	//
+	// And a pin is checked against it, with the same versionSatisfies the
+	// decision to install used. Without this, a provider that installed
+	// some other version than the pin -- pkgng and apk both did, because
+	// neither put the pin on the command line (issue 321, M-33) -- reported
+	// success, and the next run saw the same mismatch and "changed" it
+	// again, for ever. A state that cannot reach its pin has failed, and
+	// says which version it got instead. The two checks being one function
+	// is the point: an install that the next run would redo is exactly one
+	// that this check refuses.
 	after, err := p.ListPkgs(c)
 	if err == nil {
+		var unmet []string
 		for _, name := range missing {
 			cur, _ := after.Get(name)
 			old, _ := installed.Get(name)
 			changes.Set(name, states.Change(value.KeyString(old), value.KeyString(cur)))
+			if want, pinned := versions[name]; pinned {
+				got := value.KeyString(cur)
+				if cur == nil {
+					got = "nothing"
+				}
+				if !versionSatisfies(c, got, want, allowUpdates) {
+					unmet = append(unmet, fmt.Sprintf("%s is pinned to %s and %s is installed", name, want, got))
+				}
+			}
+		}
+		if len(unmet) > 0 {
+			sort.Strings(unmet)
+			res := states.False(fmt.Sprintf("The package manager did not install the pinned version: %s.",
+				strings.Join(unmet, "; ")))
+			res.Changes = changes
+			return res, nil
 		}
 	}
 	return states.Changed(

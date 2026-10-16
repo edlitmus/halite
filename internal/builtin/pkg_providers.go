@@ -251,7 +251,29 @@ func (pkgngProvider) Install(c *exec.Context, names []string, versions map[strin
 			return fmt.Errorf("pkg update: %w", err)
 		}
 	}
-	argv := append([]string{"pkg", "install", "-y", "-q"}, names...)
+	// A pin is spelled `name-version`, which is how pkg(8) itself names a
+	// package (`pkg query %n-%v`). This used to pass the bare name and
+	// drop the pin, so a tree pinning `nginx: 1.24.0` installed whatever
+	// the repository offered and called that success (issue 321, M-33).
+	//
+	// Measured with pkg 2.8.4 on FreeBSD 15.1-RELEASE (beastie): `pkg
+	// install tree-2.3.2` installs the repository's 2.3.2, and `pkg install
+	// tree-1.0.0`, which the repository does not carry, exits 1 with "No
+	// packages available to install matching 'tree-1.0.0'". The second is
+	// the answer a pin the repository cannot meet deserves.
+	//
+	// A wildcard goes as the bare name, as it does for apt and dnf: pkg
+	// matches `tree-2*` only under `-g`, and `-g` would apply to every
+	// operand on the line, turning an exact name beside it into a glob.
+	// pkgInstalled checks what was installed against the prefix afterwards.
+	argv := []string{"pkg", "install", "-y", "-q"}
+	for _, n := range names {
+		if v, ok := versions[n]; ok && v != "" && !strings.HasSuffix(v, "*") {
+			argv = append(argv, n+"-"+v)
+			continue
+		}
+		argv = append(argv, n)
+	}
 	_, err := c.Run(exec.Command{Argv: argv, Env: append(exec.CleanEnv(), "ASSUME_ALWAYS_YES=YES")})
 	return err
 }
