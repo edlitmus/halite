@@ -40,35 +40,61 @@ func TestAnInvalidHostnameIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 	}
 }
 
-// A node configured with a fully qualified name and running the short
-// one is not a node to rewrite on every run.
+// A node that has a fully qualified name satisfies a state naming the
+// short one -- and **only that way round** (DIVERGENCE 5.317).
 //
-// `hostname` returns whatever was set, and the two halves are set by
-// different tools that disagree about whether the domain belongs. A
-// state naming `web1` against a node running `web1.example` has got what
-// it asked for.
+// The first argument is what the node has (its running name, or the
+// name it is configured to boot with) and the second what the state
+// asked for.
+//
+// `hostname` returns whatever was set, and the estate configures nodes
+// with the fully qualified name. A state naming `web1` against a node
+// that has `web1.example` has got what it asked for, and rewriting the
+// node to drop its domain on every run would be worse than doing
+// nothing. That is the case this test was written to keep, and it still
+// holds.
+//
+// This used to assert the reverse as well -- `sameHostname("web1",
+// "web1.example")` true -- on the argument that a node configured with
+// the qualified name and running the short one should not be rewritten
+// every run. The symmetry is what made a state asking for
+// `web1.example` on a node that had `web1` report converged and change
+// nothing, on every platform: the rc.conf `hostname=`, /etc/hostname and
+// scutil's HostName all stayed short. The argument does not need the
+// symmetry if a node that is given the qualified name keeps it: then the
+// state sets it once and the next run matches exactly. That is what
+// hostnamectl, hostname(1) and scutil are documented to do, and it is
+// **not yet watched** -- the live rename (live_system_test.go) uses a
+// name with no dot. If some platform answers with the short name after
+// the qualified one was set, the state reports a change on every run
+// there, which is loud, where the old rule was silent.
 func TestAShortNameAndAQualifiedOneAreTheSameNode(t *testing.T) {
 	same := [][2]string{
 		{"web1", "web1"},
 		{"web1.example", "web1"},
-		{"web1", "web1.example"},
 		{"WEB1", "web1"},
+		{"web1.Example", "WEB1"},
 	}
 	for _, p := range same {
 		if !sameHostname(p[0], p[1]) {
-			t.Errorf("sameHostname(%q, %q) = false, want true", p[0], p[1])
+			t.Errorf("sameHostname(have %q, want %q) = false, want true", p[0], p[1])
 		}
 	}
 	// But two different domains are two different names: matching those
-	// would make the state unable to move a node between them.
+	// would make the state unable to move a node between them. And a node
+	// that has only the short name has not got the qualified one a state
+	// asked for.
 	differ := [][2]string{
 		{"web1.example", "web1.internal"},
 		{"web1", "web2"},
 		{"", "web1"},
+		{"web1", "web1.example"},
+		{"web1", "web1.example.com"},
+		{"web1.example", "web1.example.com"},
 	}
 	for _, p := range differ {
 		if sameHostname(p[0], p[1]) {
-			t.Errorf("sameHostname(%q, %q) = true, want false", p[0], p[1])
+			t.Errorf("sameHostname(have %q, want %q) = true, want false", p[0], p[1])
 		}
 	}
 }

@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `hostname.system` now sets a qualified name on a node that has the short one
+
+A state asking for `web1.example.com` on a node that had `web1` reported
+the name as already set and changed nothing, in the running name and in
+the boot-time record (rc.conf on FreeBSD, /etc/hostname, scutil's
+HostName). Now it sets both. A state asking for `web1` on a node that has
+`web1.example.com` still reports converged and leaves the domain alone.
+Expect a change on the first run wherever a state names a qualified name
+that a node does not have yet. See DIVERGENCE 5.317.
+
+
 ### `netplan.managed` no longer reports a refused document converged on the next run
 
 When `netplan generate` refused the document, the state failed and left
