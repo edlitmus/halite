@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A revoked API token can no longer be brought back by a request in flight
+
+Every authenticated API request rewrote its token's record to move the
+idle clock. A revocation, by `halite-api token revoke` or a logout, that
+landed between that request's read and its write was overwritten, and
+the token worked again. A request no longer writes the record. The idle
+clock is kept in a separate `<id>.last_used` file beside it in the token
+store, and `halite-api token prune` removes it with its token. Nothing
+needs to change on upgrade: a record's own `last_used` is still read
+until the new file exists. See DIVERGENCE 5.303.
+
+
 ### `listen` reactions now honour their state's guards and account
 
 A `listen` reaction ran at the end of the run without its state's
