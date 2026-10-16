@@ -476,7 +476,7 @@ func TestASignedPillarTargetIsRefusedWhenThisNodesPillarWillNotCompile(t *testin
 // `cmd.script`, `cmd.script_retcode`, `cmd.exec_code` and `cmd.run_bg` —
 // so each ran unsigned on a node configured to refuse exactly that. The
 // hub did not show it for `cmd.script`, because it merges the state
-// module of the same name, which did declare it. DIVERGENCE 5.290.
+// module of the same name, which did declare it. DIVERGENCE 5.297.
 func TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode(t *testing.T) {
 	for i, fun := range []string{
 		"cmd.run", "cmd.shell", "cmd.script", "cmd.script_retcode", "cmd.exec_code", "cmd.run_bg",

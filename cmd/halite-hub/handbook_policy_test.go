@@ -83,7 +83,7 @@ func TestTheHandbookPolicyDecidesWhatChapterTwentySixSays(t *testing.T) {
 
 // Chapter 26 quotes `policy show`'s "never granted by a wildcard" line and
 // says it is that command's output for this build. It was not: the four
-// functions DIVERGENCE 5.290 marked were missing from the page, and nothing
+// functions DIVERGENCE 5.297 marked were missing from the page, and nothing
 // compared the two. The quoted names are read out of the chapter and held to
 // arbitraryCodeFunctions, which is what `policy show` prints.
 func TestChapterTwentySixListsWhatPolicyShowPrints(t *testing.T) {

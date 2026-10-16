@@ -264,10 +264,11 @@ The compiler reproduces Salt's semantics including the parts that are surprising
 
 One departure is worth stating up front: every error is collected and reported together. Salt reports the first and stops, which makes fixing a large tree an iterative grind. SPEC section 11.2 step 10.
 
-**Files:** `compile.go`, `diag.go`, `highstate.go`, `lowstate.go`, `order.go`, `requisite.go`, `top.go`; with tests.
+**Files:** `compile.go`, `diag.go`, `highstate.go`, `lowstate.go`, `order.go`, `requisite.go`, `slsname.go`, `top.go`; with tests.
 
 **Exports.**
 
+- `CanonicalSLS` (func): CanonicalSLS is the one definition of what an SLS name may look like, and every path that turns a name into a file, or decides whether a name may be loaded, goes through it.
 - `Chunk` (type): Chunk is one executable unit of the low state: a single state module function with its resolved arguments.
 - `CompileTopTarget` (func): CompileTopTarget builds the matcher for one top file entry, honouring the `- match: grain` directive Salt allows as the first list item.
 - `Compiled` (type): Compiled is the result of a compilation.
@@ -451,6 +452,7 @@ The same matchers evaluate a top file, which is why this package is shared by th
 - `Error` (type): Error is an unparseable or unusable expression.
 - `Kind` (type): Kind names a target type.
 - `KindFromFlag` (func): KindFromFlag resolves a CLI flag letter to a kind.
+- `ListIDs` (func): ListIDs splits a list target, flag -L, into the node IDs it names: comma-separated, each trimmed, empty elements dropped.
 - `MatchGlob` (func): MatchGlob reports whether a node ID matches a glob, by the same rule the fleet is targeted with.
 - `Matcher` (type): Matcher is a compiled target expression.
 - `Node` (type): Node is everything a matcher may read about one node.

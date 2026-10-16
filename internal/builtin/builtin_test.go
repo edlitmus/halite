@@ -918,7 +918,7 @@ func TestArbitraryCodeIsMarked(t *testing.T) {
 // node read it as an ordinary mutating function. That was the blind
 // spot, and three more code-running functions (`cmd.script_retcode`,
 // `cmd.exec_code`, `cmd.run_bg`) sat in it because no list named them.
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.297.
 //
 // So there are three rules here, and only the first is a list:
 //

@@ -122,7 +122,7 @@ func TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard(t *testing.T) {
 // not for `cmd.script`: the state module declared arbitrary_code and the
 // execution function did not, so the hub refused it to a wildcard while
 // the node ran it unsigned, and TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard
-// passed because it asked the hub. DIVERGENCE 5.290.
+// passed because it asked the hub. DIVERGENCE 5.297.
 //
 // This does not change the hub's computation: with the twin rule held in
 // internal/builtin the merge adds no execution name the execution
