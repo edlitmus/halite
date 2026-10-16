@@ -21,7 +21,7 @@ import (
 func DecodeJSON(b []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
-	v, err := decodeValue(dec)
+	v, err := decodeValue(dec, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -33,13 +33,26 @@ func DecodeJSON(b []byte) (any, error) {
 	return v, nil
 }
 
-func decodeValue(dec *json.Decoder) (any, error) {
+// maxJSONDepth bounds how deeply DecodeJSON follows nested arrays and
+// objects. decodeValue recurses once per level, and the streaming
+// Decoder.Token it reads from keeps its own stack on the heap with no
+// limit, so nothing else stopped a document of a few megabytes of `[`
+// from recursing until the Go stack overflowed, which ends the process
+// rather than failing the decode. The number is encoding/json's own
+// maxNestingDepth, which json.Unmarshal enforces, so this refuses nothing
+// the standard decoder would have accepted.
+const maxJSONDepth = 10000
+
+func decodeValue(dec *json.Decoder, depth int) (any, error) {
 	tok, err := dec.Token()
 	if err != nil {
 		return nil, err
 	}
 	switch t := tok.(type) {
 	case json.Delim:
+		if depth >= maxJSONDepth {
+			return nil, fmt.Errorf("JSON nests deeper than %d levels", maxJSONDepth)
+		}
 		switch t {
 		case '{':
 			m := NewMap(4)
@@ -52,7 +65,7 @@ func decodeValue(dec *json.Decoder) (any, error) {
 				if !ok {
 					return nil, fmt.Errorf("object key is not a string")
 				}
-				v, err := decodeValue(dec)
+				v, err := decodeValue(dec, depth+1)
 				if err != nil {
 					return nil, err
 				}
@@ -68,7 +81,7 @@ func decodeValue(dec *json.Decoder) (any, error) {
 		case '[':
 			out := []any{}
 			for dec.More() {
-				v, err := decodeValue(dec)
+				v, err := decodeValue(dec, depth+1)
 				if err != nil {
 					return nil, err
 				}

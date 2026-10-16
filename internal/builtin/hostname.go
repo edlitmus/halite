@@ -142,10 +142,15 @@ func hostnameSystem(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("This node's persistent hostname could not be read: %v", err)), nil
 	}
 
-	// The running name is compared on its short form. `hostname` returns
-	// whatever was set, which on a node configured with a fully
-	// qualified name is the whole thing, and a state naming the short
-	// form should not fight one that named the long one.
+	// Both halves are what the node has, and `want` is what was asked
+	// for, and sameHostname is not symmetric (DIVERGENCE 5.317): a node
+	// that has `web1.example` satisfies a state asking for `web1`, and a
+	// node that has `web1` does not satisfy one asking for
+	// `web1.example`. `hostname` returns whatever was set, which on a
+	// node configured with a fully qualified name is the whole thing, so
+	// a state naming the short form does not fight one that named the
+	// long one -- but a state naming the long one is asking for the
+	// domain, and a node without it has not got what it asked for.
 	runningMatches := sameHostname(running, want)
 	persistentMatches := sameHostname(persistent, want)
 	if runningMatches && persistentMatches {
@@ -180,9 +185,13 @@ func describeHostnameChange(runningOK, persistentOK bool, where string) string {
 	return "running and " + where
 }
 
+// osHostname is os.Hostname, as a variable so a test can say what the
+// kernel answers without renaming the machine it runs on.
+var osHostname = os.Hostname
+
 // runningHostname is the name the kernel answers with.
 func runningHostname() (string, error) {
-	name, err := os.Hostname()
+	name, err := osHostname()
 	if err != nil {
 		return "", err
 	}
@@ -389,13 +398,23 @@ func darwinSetHostname(c *exec.Context, want string) error {
 	return err
 }
 
-// sameHostname compares a configured name against a running one.
+// sameHostname says whether a node that has the name `have` -- running,
+// or configured to boot with -- already has the name `want` a state
+// asked for.
 //
-// Case-insensitively, because DNS is, and on the short form when one
-// side carries a domain and the other does not: a node configured as
-// `web1.example` running as `web1` is the same node, and a state that
-// rewrote it every run over that would be worse than one that did
-// nothing.
+// Case-insensitively, because DNS is. And on the short form **only in
+// one direction**: `have` may carry a domain that `want` leaves off. A
+// node configured as `web1.example` satisfies a state naming `web1`,
+// because that state did not ask for a domain and rewriting the node to
+// drop one every run would be worse than doing nothing. The reverse is
+// not the same: a state naming `web1.example` on a node that has `web1`
+// is asking for the domain, and treating the two as equal made that
+// state report converged and change nothing -- on FreeBSD's rc.conf, on
+// /etc/hostname and on scutil's HostName alike (DIVERGENCE 5.317).
+//
+// Two different domains are two different names, in both directions:
+// matching them would leave the state unable to move a node between
+// them.
 func sameHostname(have, want string) bool {
 	if have == "" || want == "" {
 		return have == want
@@ -403,8 +422,7 @@ func sameHostname(have, want string) bool {
 	if strings.EqualFold(have, want) {
 		return true
 	}
-	return strings.EqualFold(shortHostname(have), shortHostname(want)) &&
-		(!strings.Contains(have, ".") || !strings.Contains(want, "."))
+	return !strings.Contains(want, ".") && strings.EqualFold(shortHostname(have), want)
 }
 
 func shortHostname(name string) string {

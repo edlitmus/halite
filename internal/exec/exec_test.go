@@ -376,6 +376,28 @@ func TestRunAsRefusesAnUnknownAccount(t *testing.T) {
 	}
 }
 
+// A background command is refused an unknown account exactly as a
+// foreground one is. The account switch sat after the background branch,
+// so the foreground half of this failed and the background half returned
+// a pid: `bg: true` turned `runas` into a no-op, and the process ran as
+// whoever the node runs as -- root, on every node in the estate.
+func TestRunAsRefusesAnUnknownAccountInTheBackgroundToo(t *testing.T) {
+	r := &OSRunner{}
+	for _, bg := range []bool{false, true} {
+		cmd := helperCommand("echo")
+		cmd.RunAs = "halite-no-such-account"
+		cmd.Background = bg
+		res, err := r.Run(context.Background(), cmd)
+		if err == nil {
+			t.Errorf("background=%v: an unknown account was accepted and the command started (stdout %q)", bg, res.Stdout)
+			continue
+		}
+		if !strings.Contains(err.Error(), "halite-no-such-account") {
+			t.Errorf("background=%v: the error should name the account: %v", bg, err)
+		}
+	}
+}
+
 // ---- registry ----
 
 func testRegistry(t *testing.T) *Registry {

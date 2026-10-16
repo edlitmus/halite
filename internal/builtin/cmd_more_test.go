@@ -182,6 +182,58 @@ func TestCmdRunBgReturnsAPid(t *testing.T) {
 	}
 }
 
+// cmd.run_bg declares `runas` and used to ignore it: it built its own
+// os/exec.Cmd and never read the argument, so the program started as
+// root and a pid came back. It goes through the runner now, and an
+// unknown account is refused here as it is by cmd.run.
+func TestCmdRunBgHonoursRunAs(t *testing.T) {
+	r := New()
+	name, args := trueProgram()
+	out, err := r.Exec.Call(realCtx(t), "cmd.run_bg", value.MapOf(
+		"name", name, "args", args, "runas", "halite-no-such-account"))
+	if err == nil {
+		t.Fatalf("an unknown account was accepted and the program started: %#v", out)
+	}
+	if !strings.Contains(err.Error(), "halite-no-such-account") {
+		t.Errorf("the error should name the account: %v", err)
+	}
+
+	// Under a recorder the account is visible on the command that would
+	// have run, so the hand-off is checked without a real account.
+	rec := newCtx(false)
+	if _, err := r.Exec.Call(rec, "cmd.run_bg", value.MapOf(
+		"name", "/bin/true", "runas", "deploy", "cwd", "/srv")); err != nil {
+		t.Fatal(err)
+	}
+	ran := rec.Runner.(*exec.RecordingRunner).Ran
+	if len(ran) != 1 {
+		t.Fatalf("the recorder should have seen one command: %v", ran)
+	}
+	if ran[0].RunAs != "deploy" || !ran[0].Background || ran[0].Dir != "/srv" {
+		t.Errorf("the command lost its account, directory or background flag: %+v", ran[0])
+	}
+}
+
+// cmd.run with bg and an account set by the state's `runas` -- which the
+// compiler moves out of the arguments and onto the context -- is refused
+// an unknown account rather than started as root.
+func TestCmdRunBackgroundHonoursRunAs(t *testing.T) {
+	r := New()
+	c := realCtx(t)
+	c.RunAs = "halite-no-such-account"
+	name, args := trueProgram()
+	res, err := r.States.Call(c, "cmd.run", value.MapOf("name", name, "args", args, "bg", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() {
+		t.Fatalf("bg with an unknown runas succeeded: %q %v", res.Comment, res.Changes)
+	}
+	if !strings.Contains(res.Comment, "halite-no-such-account") {
+		t.Errorf("the failure should name the account: %q", res.Comment)
+	}
+}
+
 func TestServiceKnownIgnoresTheSystemdSuffix(t *testing.T) {
 	names := []string{"nginx.service", "sshd", "cron.service"}
 	for _, want := range []string{"nginx", "nginx.service", "sshd", "sshd.service", "cron"} {
