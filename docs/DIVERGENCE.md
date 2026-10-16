@@ -26581,6 +26581,102 @@ Each part was broken on purpose and the tests failed:
   different files, so they are still reported as different devices.
 - The tests ran on macOS (Darwin 25.6) only. CI runs them on Linux and
   FreeBSD.
+### 5.314 A time zone name was a path, and `../secret` was one
+
+Found by a security review, and reproduced here before anything was
+changed.
+
+`linkZone` installs a zone by hand -- on FreeBSD always, and on a Linux
+without a running systemd -- and it built the source path as
+`filepath.Join(zoneinfoDir, want)` with nothing checked but that the
+result existed and was not a directory. `timezone.set_zone` checked only
+that the name was not empty. `timezone.system` checked the name against
+`listZones`, which does refuse a path, but only on a node whose tree it
+could read; when the listing failed the check was skipped.
+
+So `timezone.set_zone timezone=../secret` on FreeBSD:
+
+- copied `/usr/share/secret`'s contents into `/etc/localtime` at 0644,
+  whatever the source's mode was, so a 0600 file became world-readable
+  (the review's reproduction; the tests here assert the refusal and that
+  nothing was written, not the mode);
+- wrote `../secret` into `/var/db/zoneinfo`, which `tzsetup -r` reads
+  back to reinstall the zone.
+
+On Linux without `timedatectl` it pointed `/etc/localtime` at the file.
+An absolute name did not escape: `filepath.Join` does not let a leading
+`/` reset the path, so `/x/secret` named `zoneinfo/x/secret`. It was still
+accepted by `set_zone` and handed to whichever tool or file it reached,
+and in the pre-fix run on macOS (through the test's stand-in for
+`systemsetup`) it moved `/etc/localtime`. Test mode said `../secret` would
+be set.
+
+Reproduced on unmodified `main` by the tests below, with a temporary tree:
+every traversal spelling was accepted by `linkZone` on both the `freebsd`
+and `linux` branches, and `set_zone` accepted `../secret` and an absolute
+path in test mode and, on the real run, moved `/etc/localtime`.
+
+#### The fix is three checks, each of which catches something on its own
+
+1. **A grammar**, `checkZoneName`: components of ASCII letters, digits,
+   `_`, `+` and `-`, separated by single slashes, none empty, none
+   starting with `-`, at most 128 bytes. That rules out `.`, `..`, a
+   leading or trailing slash and an empty component by construction. It
+   is wider than the tz project's rules for *new* names, because the
+   legacy names break those: `Etc/GMT+5`, `Etc/GMT-14`, `EST5EDT`,
+   `America/Argentina/ComodRivadavia`. A leading `-` is refused because
+   every tool a name reaches would take it for an option. No zone name
+   has a dot, which `zoneinfoNames` already relied on.
+2. **Containment after resolution**, `zoneFile`: the joined path and the
+   tree's root are both resolved, and the resolved file must be inside
+   the resolved root and a regular file. Links are not refused for being
+   links -- Alpine and recent Debian ship `US/Pacific` and the rest of
+   `backward` as relative links, and on macOS the root itself is one --
+   only for leaving the tree. `/etc/localtime` is still linked to the
+   joined path, not the resolved one, because `zoneFromPath` reads the
+   name back from the link target.
+3. **The callers check too**: `set_zone` before test mode, so test mode
+   does not promise what the real run must refuse, and `timezone.system`
+   before `listZones`, so the refusal does not depend on the tree being
+   readable. Windows is exempt: its names are registry key names with
+   spaces (`Pacific Standard Time`), never joined to a path, and judged by
+   `tzutil`.
+
+`linkZone` checks for itself (through `zoneFile`) as well as relying on
+its callers, because it is the function that writes.
+
+**Tests, and breaking them.** `TestLinkZoneRefusesANameOutsideTheTree`
+runs thirteen names on both branches and asserts each is refused with
+`/etc/localtime` unchanged (the copy's contents, or the link's target) and
+`/var/db/zoneinfo` not created. `TestLinkZoneAcceptsRealNames` installs
+`America/Argentina/Buenos_Aires`, `Etc/GMT+5`, `Etc/GMT-14`, `UTC`,
+`EST5EDT`, `America/Port-au-Prince`, `posix/Europe/Berlin` and a
+`US/Pacific` that is a relative link, on both branches, and checks the
+installed contents and the name record. `TestSetZoneRefusesANameThatIsAPath`
+covers `set_zone` in both modes and the state. `TestZoneNameGrammar` is
+the table.
+
+- With the grammar disabled, `Etc/../UTC`, `./UTC`, `Etc//UTC` and
+  `Etc/UTC/` were accepted on both branches and the `set_zone` and grammar
+  tests failed. `../secret` was still refused, by containment -- which is
+  the second layer doing its job.
+- With containment disabled, a link in the tree pointing at the secret,
+  and a directory link pointing out of the tree, were both accepted on
+  both branches.
+- With the check in `set_zone` removed, the `set_zone` test failed.
+
+The grammar was also run, once and not committed, over every name
+`zoneinfoNames` returns from this Mac's real tree (macOS 26.7.1, 598
+names, reached through the `/usr/share/zoneinfo` link): none refused, and
+`zoneFile` resolved every one.
+
+**Not verified.** Not run on FreeBSD, and not as root: the tests point the
+module at a temporary tree, so no real `/etc/localtime` or
+`/var/db/zoneinfo` was written, and `tzsetup -r` was not run to see what
+it makes of the record. The grammar was checked against macOS's tree
+only; FreeBSD's and Linux distributions' trees, including their `posix/`
+and `right/` copies, were not walked. The `timezone` evidence level is
+unchanged: this narrows what it accepts and adds no new run.
 
 
 
