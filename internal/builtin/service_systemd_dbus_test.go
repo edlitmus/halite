@@ -150,8 +150,8 @@ func TestSystemdProviderListsOverDBus(t *testing.T) {
 func TestSystemdProviderFallsBackToSystemctl(t *testing.T) {
 	useSystemd(t, nil) // bus unreachable
 	c, runner := serviceCtx(t, map[string]exec.Result{
-		"systemctl is-active --quiet cron": {Code: 0},
-		"systemctl is-enabled cron":        {Stdout: "enabled\n"},
+		"systemctl is-active --quiet cron.service": {Code: 0},
+		"systemctl is-enabled cron.service":        {Stdout: "enabled\n"},
 	})
 	p := systemdProvider{}
 
@@ -169,7 +169,7 @@ func TestSystemdProviderFallsBackToSystemctl(t *testing.T) {
 	}
 
 	ran := strings.Join(runner.RanCommands(), "\n")
-	for _, want := range []string{"systemctl start cron", "systemctl enable cron"} {
+	for _, want := range []string{"systemctl start cron.service", "systemctl enable cron.service"} {
 		if !strings.Contains(ran, want) {
 			t.Errorf("fallback did not run %q; ran:\n%s", want, ran)
 		}
@@ -181,7 +181,7 @@ func TestSystemdProviderFallsBackToSystemctl(t *testing.T) {
 func TestSystemdProviderReadErrorFallsThrough(t *testing.T) {
 	useSystemd(t, &fakeSystemd{readErr: errors.New("org.freedesktop.systemd1.NoSuchUnit")})
 	c, runner := serviceCtx(t, map[string]exec.Result{
-		"systemctl is-active --quiet cron": {Code: 3},
+		"systemctl is-active --quiet cron.service": {Code: 3},
 	})
 
 	running, err := systemdProvider{}.Status(c, "cron")

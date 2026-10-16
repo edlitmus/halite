@@ -3629,6 +3629,10 @@ skipping the anchor-reference check.
 
 `jail` remains the FreeBSD row's one genuine absence.
 
+**Corrected by 5.315.** The `quick` paragraph above is wrong for rules
+that overlap. `quick` makes the anchor's order decisive, not irrelevant,
+and the sort it describes put every `block` above every `pass`.
+
 ### 5.32 `jail`, written against what `pf` cost
 
 `jail` was the FreeBSD row's last absence, and it was written the day
@@ -4527,6 +4531,15 @@ documented platform defect with a reproduction (5.37), not an untried
 path; `snap` still wants snapd and the network together, and the
 network is what 5.35's rule refuses.
 
+#### Later: the file left on disk read as converged on the next run (5.316)
+
+"The file is left on disk" above was true, and the test said so on
+purpose. What neither looked at was the run after. The state compared
+bytes, found the refused file equal to the declaration, and reported
+True without asking netplan again. A failed `apply: true` went the same
+way. The state now puts the directory back as it was on either failure.
+5.316 has the detail.
+
 ### 5.39 `service`: systemd over its own D-Bus API
 
 SPEC 15.2: systemd "is spoken to over its D-Bus API where available,
@@ -4602,6 +4615,17 @@ only reads. The release gate is unchanged -- `service` was never on it
 -- and the CI `linux` leg gains the live `service` test for free, safe
 there because a GitHub runner has systemd and the probe unit confines
 nothing.
+
+#### 5.39, corrected: the fallback boundary rested on the same name
+
+"The fallback boundary" above says a D-Bus error, if retried on the
+shell, "fails the same way with a worse message". That held only while
+both paths named the same unit, and for a dotted name they did not. The
+binding gave `.service` only to names with no dot, so `php8.2-fpm` went
+to the Manager bare and was refused, where `systemctl`, which mangles the
+name itself, would have started `php8.2-fpm.service`. A mutation does
+not fall back after an error that came back, so it failed. A read does
+fall back, so it worked. See 5.309.
 
 ### 5.40 `pkg`: five more functions, apt
 
@@ -5429,6 +5453,13 @@ refuse both an existing array and a member that already carries a
 superblock. It needs root and the loop driver, so it is gated behind
 `HALITE_SYSTEM_LIVE=1` and runs in the fleet workflow's linux leg, the
 same as `lvm` and `quota`. `evidence.go` records `mdadm` `hardware`.
+
+#### The filesystem refusal the code comment claimed did not exist
+
+The package comment and the `force` doc claimed more than this section
+does: a refusal of a member mdadm "flags as holding a filesystem". There
+was none, and an `--examine` error passed. 5.310 adds a `wipefs` probe
+and makes every probe failure a refusal.
 
 **`destroy` is the one function here whose purpose is data loss** (5.75).
 It stops the array and zeroes its members' superblocks, matching Salt's
@@ -7955,6 +7986,37 @@ own whatever the setting says. So the default could have been anything
 and the suite would have agreed. It is asserted directly now, in both
 directions, and `shell: false` is asserted beside the two opt-ins so
 that the path form cannot quietly turn the shell on for everybody.
+
+#### The same defect on Windows, found by 5.294's test (2026-10-15)
+
+`isPackage` tested the loader's file path for the suffix `/init.sls`.
+`fileserver.Roots` reports an OS path, and on Windows that path is
+separated by `\`. So on a Windows node every `init.sls` read from local
+roots was taken for a flat file, and its relative includes resolved
+one level too high. That is this section's defect again, on one
+platform.
+
+The unit tests for `isPackage` used only `/` paths, so they could not
+see it. CI's Windows legs (`test` and `race` on windows-2022) found it
+on PR #340, the first time a relative include ran through a real
+`Roots` tree (`TestCanonicalNamesAndRelativeIncludesStillCompile` in
+5.294). The log line was:
+
+    web did not compile: ... app: sls "app" was not found in environment "base"
+
+`web/init.sls` includes `.app`, which is `web.app`. It looked for `app`.
+
+`isPackage` now compares `filepath.Base(filePath)` with `init.sls`.
+`filepath.Base` splits on `\` and `/` on Windows and on `/` elsewhere,
+so it also covers `fileserver.Remote`, which reports a `halite://` URI.
+`TestIsPackageIsAboutInitSLS` now has URI cases, and
+`TestIsPackageOnWindowsPaths` has `\` cases. The second test skips
+outside Windows, because there a backslash is part of a file name.
+
+**Not verified locally.** The development machine is macOS, so neither
+the failure nor the fix was run here on Windows. Only CI's Windows legs
+show it. The failing run is the evidence for the defect, and the next
+run on the PR is the evidence for the fix.
 
 ### 5.85 A conformance harness, and what it found
 
@@ -11120,6 +11182,20 @@ whole test binary down and loses every other test's result at the moment
 something is broken. The count is asserted before the index now. A break
 that fails in the wrong way is worth as much as the break itself.
 
+#### 5.127, corrected: the staging directory was not discarded
+
+"Not demonstrated" above says `halite-node oneshot` runs a job *"on a
+machine whose staging directory is discarded afterwards"*. That was not
+true of the directory it meant. An agentless `state.*` run writes the
+hub's state and template files into a `halite-oneshot-*` directory under
+the target's temporary directory, and nothing removed it -- not the
+oneshot, not the node's `main`, and not `halite-hub ssh`, whose
+`rm -rf` covers only `thin_dir` and only under `--clean`. Every such run
+left one behind. 5.318 removes it. The conclusion the sentence was
+supporting still holds for its own reason: a oneshot has no node
+directory of its own to keep an evidence chain in, and the hub's record
+is the only one.
+
 ### 5.128 Detached job signing, and the two things a signature has to say
 
 plan.md §7 item 9's second half, and SPEC 25.6: an operator or a CI
@@ -12096,6 +12172,20 @@ this audit cannot speak to that path at all, because synthesised arguments
 never produce an existing repository. The `check_cmd` finding in the same
 review is in `internal/runner` rather than in a module, and is outside
 what this audit looks at. Neither is contradicted here.
+
+#### "Holds all 248" was not true (5.308)
+
+The audit did not hold all 248. It judged the few it reached on the
+machine it ran on, and put everything else in one bucket labelled
+"withheld or unreached". Twenty-two functions that claimed `reliable`
+and acted under a dry run were in that bucket: `service.mask` and
+`unmask`, nine `file.*` functions, eight `beacons.*` functions and three
+`x509.create_*` functions. Twelve more (`pro.*`, `dnf_module.*` and the
+two `dnsutil` hosts functions) also acted and were never looked at,
+because they declare `unreliable`. The static half also passed any function that called
+`errors.New`, because it followed that name into this package's own
+`New()`. Every function above is fixed, and the audit that missed them is
+rebuilt. See 5.308.
 
 ### 5.136 A nodegroup carried an untrusted grain past SPEC 12.4
 
@@ -20585,6 +20675,17 @@ true, as do the command reference and the metric's values.
   keyed by address.
 - Only run on macOS.
 
+#### 5.232, corrected: "a backoff, not a lockout" was a lockout
+
+The reason given above for a backoff, that a lockout lets anybody who
+knows the break-glass account's name keep its owner out, was true of
+the design and false of the code. The window was keyed by the name
+alone and checked before the password, so one failure each time it
+opened kept the name refused for everybody. 5.304 has the measurement
+and the change: the backoff is now keyed by source and name, and a
+per-source budget covers the spray across names that the list above
+admitted was not held.
+
 
 ### 5.233 Three copies of one token bucket, and one never tested
 
@@ -23929,7 +24030,4667 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
-### 5.290 A signed dry run could be turned into a real run, and a signature need not expire
+### 5.290 The toolchain was a Go with ten standard-library advisories
+
+The pin was `toolchain go1.26.6`. The external audit of edlitmus/halite#321
+(section 1.2) found ten Go standard-library advisories that affect it. Six
+are on the hub's server paths: HTTP/2 in `net/http`, ECH in `crypto/tls`,
+and `net/textproto`. All ten are fixed in go1.26.9. The pin is now
+`toolchain go1.27.2`. The advisory list is the audit's. It was not
+re-derived here, and `make vuln` was not run.
+
+**The `go` directive stays at `1.26.0`.** It is a floor, not the pin
+(SPEC 4.3, `TestGoModPinsTheToolchain`), and
+`TestGoModFloorMatchesTheSpec` holds it to SPEC 4.1's "Go 1.26 or
+later". Raising it would be a SPEC change that nothing here needs. It
+also decides the default GODEBUG settings. A hub built at this commit
+records `DefaultGODEBUG=tracebacklabels=0,x509sslcertoverrideplatform=0`
+(`go version -m`). So the two settings Go 1.27 changed keep their 1.26
+behaviour.
+
+**Every place that names the pin moved with it.** `go.mod`; the
+`go-version` of eleven setup-go steps in `ci.yml`, `fleet.yml` and
+`release.yml`; `FROM golang:1.27.2-bookworm` in `contrib/docker/fleet`
+and the two `contrib/docker/fleet-rpm` images; and `go_version`,
+`go_sha256` and `go_sha256_freebsd` in `contrib/tofu/variables.tf`.
+`internal/buildpolicy` holds the first three to `go.mod`. Nothing holds
+the lab's, so its checksums were taken from
+`https://go.dev/dl/?mode=json&include=all` for the two tarballs the
+bootstraps fetch: `go1.27.2.linux-amd64.tar.gz` is `ecbadb99…045fe5`
+and `go1.27.2.freebsd-amd64.tar.gz` is `3baf61ee…1eded`. The same
+extraction, run for go1.26.6, gave the two digests that were already
+pinned. Docker Hub's tag metadata lists `golang:1.27.2-bookworm` as
+active for amd64 and arm64. No image was pulled.
+
+The remaining mentions of 1.26.6 in `.gitattributes`, the setup-go
+comments, `plan.md`, `contrib/tofu/README.md` and this ledger record
+what happened on that toolchain at the time. They are still true and
+were left unchanged.
+
+**One behaviour change was found, in `value.DecodeJSON`.** Go 1.27 turns
+on the `jsonv2` experiment by default, and that does not depend on the
+`go` directive. `encoding/json`'s `Decoder.Token` now refuses nesting
+deeper than 10,000. On the 1.26 path only `Unmarshal` had that limit.
+`DecodeJSON` walks tokens recursively and had no limit of its own.
+Measured on go1.27.2 (darwin/arm64), with a throwaway test that was not
+committed:
+
+| Input | default | `GOEXPERIMENT=nojsonv2` |
+|---|---|---|
+| 10,000 nested arrays | decodes | decodes |
+| 10,001 nested arrays | `exceeded max depth` | decodes |
+
+This makes the decoder bounded where it was not, and nothing in the
+suite depends on deeper input. It was not made into a test. A test that
+asserts the limit is a test of the standard library, and the limit
+belongs to the toolchain, not to halite. If halite should have a limit
+of its own, that is a separate change.
+
+**What was run.** All on darwin/arm64 with go1.27.2,
+`GOTOOLCHAIN=local`, `GOFLAGS=-mod=vendor`, `GOPROXY=off` and
+`GOMAXPROCS=2`:
+
+- `go build ./...`, `go vet ./...` (no findings from 1.27's analyzers),
+  `gofmt -l` (clean), and `go mod verify`.
+- `make check`: `fmt-check`, `vet`, `build-all` (every target in
+  `TARGETS`, built and vetted), `test`, `race`, `policy` and
+  `fips-test` with `GOFIPS140=v1.0.0`. Exit 0. go1.27.2 still carries
+  the v1.0.0 module.
+- `bmake repro`: all three binaries were byte-identical from two paths.
+
+`vendor/modules.txt` and `go.sum` did not change.
+`golang.org/x/sys` v0.47.0 builds on every target above.
+
+**Not verified.**
+
+- **No CI run on this change at the time of writing.** Linux, Windows
+  and the FreeBSD VM legs of `ci.yml`, and `fleet.yml`'s live legs, were
+  not run locally. The tests ran on macOS only.
+- **The lab bootstrap was not run with the new checksums.** No instance
+  was raised. The digests are go.dev's. No tarball was downloaded and
+  hashed here.
+- **The Docker images were not built.** That `golang:1.27.2-bookworm`
+  exists was read from Docker Hub's metadata.
+- **Release builders.** The two-builder comparison in `release.yml` was
+  not run. Only `repro`, on one machine, was run.
+- **The advisories themselves.** No advisory was reproduced against
+  go1.26.6, or shown to be absent on go1.27.2.
+### 5.291 A deeply nested target expression ended the hub
+
+Audit H-12. The compound parser in `internal/target/compound.go` is
+recursive descent, `parseOr` to `parseAnd` to `parseNot` to
+`parsePrimary` and back to `parseOr` on every `(`, and `parseNot` calls
+itself on every `not`. Nothing bounded either. The only depth limit in
+the package was `resolveNodegroup`'s ten levels of `N@`. A Go stack
+overflow is `fatal error: stack overflow`, not a panic, and `net/http`
+cannot recover it. So one request whose target was enough `(` ended the
+hub, and every job in flight with it. The hub calls `target.Compile`
+in `hub.Dispatch` (`internal/hub/dispatch.go`), the mine
+(`internal/hub/mine.go`) and the nodegroup runner
+(`internal/hub/runners_fleet.go`). The audit also names the reactors,
+which were not traced for this entry. The API bounds a body at `max_body`, 64 MiB by default, and
+nothing smaller bounds a target. The caller needs a role whose target
+covers the expression, which `*` does.
+
+**The second half was not in the audit.** `or` and `and` chains are a
+loop in the parser, so they looked safe. But the loop built
+`((a or b) or c) or …` as one closure inside the next, and `Match`
+recursed once per term. So a long flat target did not crash at
+compile. It crashed at match, against the first node.
+
+**Measured**, darwin/arm64, go1.27.2, with `debug.SetMaxStack(4 << 20)`
+in a child process, on the code before the change:
+
+- `(` × n, then `x`, then `)` × n: 10,000 parsed and 15,000 overflowed.
+  That is some 300 to 400 bytes a level. The audit's own figure, from a
+  32 MiB stack, was about 170 bytes; the platform and the measurement
+  differ, and either way a few megabytes of `(` exceeds the default
+  1 GiB stack.
+- `nomatch or ` × n: 25,000 evaluated and 30,000 overflowed in `Match`,
+  some 150 bytes a term. Extrapolated, not run: a few tens of megabytes
+  of `a or a or …` at the default stack. That is inside the 64 MiB body.
+- 200,000 `(`, 200,000 `not`, and 200,000-term `or` and `and` chains
+  all ended the child with `fatal error: stack overflow`.
+
+**The change.** Two parts.
+
+- `maxCompoundDepth = 100` bounds nesting. Each `(` and each `not` is
+  one level. Past the bound, `Compile` returns an ordinary `*Error` with
+  the column of the token that went over: *"the expression nests deeper
+  than 100 levels of `(` and `not`"*. 100 is far above what anyone
+  writes. A fully nested nodegroup costs eleven levels: ten references,
+  each wrapped in one pair of parentheses by `resolveNodegroup`, and the
+  root. 100 is also far below the stack a level costs.
+- `or` and `and` chains are now `anyNode` and `allNode`, a slice that
+  `Match` walks in a loop. The order of evaluation and the
+  short-circuit are left to right, as before. The tree is now as deep as
+  the nesting, and the bound covers that.
+
+An `N@` term inside a compound is parsed by a fresh parser from depth 0,
+not from the enclosing depth. `ValidateNodegroups` checks a group at
+depth 0 when it loads. If use counted from the enclosing depth, a group
+that passed at load could fail at use: two paths that must agree. The
+expansion has no `N@` left in it, so the fresh parser never starts
+another. The worst case is twice the bound.
+
+**Length is not capped, on purpose.** A cap was considered at
+`target.Compile` and at the API. After the change, length costs time and
+memory in a straight line and no stack. A long target is what a list of
+node names looks like, and a large estate has long ones. A cap would
+refuse a valid target, and no crash is behind it. The API's `max_body`
+already bounds the memory. `TestLongFlatTargetsStillCompile` holds a
+5,001-term `or` of `L@` names.
+
+**Other recursion in `internal/target`**, checked with 200,000 `(` under
+a 4 MiB stack: `E@`, `P@`, `J@` go to Go's `regexp`, which refuses that
+with its own nesting error. `G@`, `I@`, glob, list and `S@` do not
+recurse on the expression. A 200,000-segment `G@` key was compiled and
+matched. `resolveNodegroup` was already bounded at ten. Nothing else was
+changed.
+
+**Tests.** `internal/target/depth_test.go`.
+`TestHostileTargetsDoNotOverflowTheStack` runs the four shapes above in
+a child with a 4 MiB stack. `TestCompoundNestingLimitEdge` holds both
+sides of the bound, for `(`, `not` and both mixed. Each was broken on
+purpose and seen to fail:
+
+- The old `compound.go`: all four shapes overflowed.
+- The bound disabled: `parens` and `nots` overflowed. The edge test
+  failed for all three shapes.
+- `>=` changed to `>`: the edge test failed for all three shapes.
+- The nested closures restored for `or` and `and`: `or-chain` and
+  `and-chain` overflowed.
+
+**Not verified.** No hub or API was run. The crash was reproduced in
+`internal/target` and not through a request. That the request path
+reaches `Compile` is from the audit and from reading `dispatch.go`. The
+node compiles a job's target again in `cmd/halite-node/jobsignature.go`.
+That path shares the same code and the same bound, but a test was not
+run there. The figures above are from one Mac and were not taken on
+FreeBSD or Linux.
+### 5.292 gitfs verified a branch by its name and served it by its commit
+
+With `gitfs_verify_signatures: true`, `verify` ran
+`git verify-commit --raw <name>`, where the name was the short one
+(`production`, not `refs/heads/production`). What was then archived and
+served was the object id `for-each-ref` had printed for the branch. Those
+are two paths that must agree, and they did not. git resolves an
+ambiguous short name to the tag before the branch, and the mirror holds
+every tag the remote has, because it is made with `clone --mirror` and
+kept with `fetch --tags`, whatever `gitfs_ref_types` says is served.
+
+So the control could be walked past by anybody who could push a branch
+and a tag, without a trusted key: tag an old commit that a trusted key
+signed as `production`, push an unsigned tip to the branch `production`.
+The tag's commit was verified and the branch's tip was served. Found by
+audit (H-19) and reproduced before it was changed: `git rev-parse
+production` in such a repository warns that the name is ambiguous and
+prints the tag's commit.
+
+**The change.** `verify` passes the object id that is served
+(`ref.Commit`), after `--`. A full object id has no ambiguous reading,
+and it is the same string that names the tree directory and that
+`materialise` hands to `git archive`, so what is checked and what is
+served are now one value rather than two that happened to agree. For a
+tag the object id is the tag object's, so `verify-tag` still checks the
+tag's own signature. `refs` now drops, with a warning, any line whose
+object id is not forty or sixty-four lower-case hex digits, so that
+nothing else reaches those arguments.
+
+**Remote-controlled names in argv** (audit L-engine-9). The other way a
+name reached git as an argument was the same call: a branch named
+`-dashed`, which `git branch` refuses but `update-ref` makes and a push
+carries, was read by `verify-commit` as options (`unknown switch 'd'`)
+and refused although its commit was signed. It now never reaches argv.
+`clone --mirror` gained `--` before the URL too. The URL is the
+operator's, not the remote's, and `checkURL` admits only `https://`,
+`ssh://`, `file://`, an absolute path, scp style, or anything with
+`insecure: true`, which is the case `--` covers. The other git calls in
+the package take no remote-controlled name: `fetch` names `origin`,
+`for-each-ref` takes fixed patterns, and `archive` takes the object id.
+That `verify-commit`, `verify-tag` and `clone` accept `--` there was
+checked by hand on git 2.56.0 only. No minimum git version is stated in
+SPEC 13.3; all three parse their options with git's common parser, which
+treats `--` as the end of options.
+
+**How it is tested,** with real git and real GnuPG, in
+`internal/gitfs/gitfs_test.go`:
+
+- `TestABranchIsVerifiedAtTheCommitServedNotAtATagOfTheSameName` builds
+  the attack: a signed commit on `main`, a lightweight tag `production`
+  on it, and a branch `production` with an unsigned commit on top. It
+  first checks that `git rev-parse production` gives the signed commit,
+  so the scenario is shown rather than assumed. Then `main` must be
+  served (a real signature verified against a real keyring) and
+  `production` must be refused and its unsigned commit not served.
+- `TestABranchNamedLikeAnOptionIsVerifiedAsACommit`: a branch
+  `-dashed` at a signed commit must be served as `dashed`.
+- `TestIsObjectID`, for the new filter.
+
+Both were broken on purpose by putting `ref.Name` back in place of
+`"--", ref.Commit`. The first failed with `production` served from
+`trees/<the unsigned commit>` and nothing refused. The second failed with
+`unknown switch 'd'` and only `base` served. Both passed again when it
+was restored.
+
+**A skip that had hidden the signed path on a Mac.** The existing
+`TestASignedRefIsServedAndAnUntrustedOneIsNot` skipped on macOS: its
+GnuPG home was `t.TempDir()`, under `/var/folders/…` with the test's
+name in it, and gpg-agent's socket path in it was too long ("can't
+connect to the gpg-agent: File name too long"), so no key was made. A
+skip says so, but it reads as green. The tests now make the home with a
+short name under `/tmp` where there is one, and stop the agent after.
+On this Mac all three signed tests ran and passed rather than skipping.
+
+**Not verified.**
+
+- **Not run through a hub or in the lab.** No hub served a repository
+  with this change; the tests drive `Backend.Update` directly against a
+  local repository. SHA-256 repositories were not tried; the
+  sixty-four-digit case is from git's documentation of the object
+  format, not a capture.
+- **macOS only** (Darwin 25.6, git 2.56.0, Homebrew GnuPG). CI runs the
+  package on Linux, FreeBSD and Windows. Whether gpg can make a key
+  there, or those legs skip the signed tests, was not checked.
+- **`clone --` with a URL beginning with a dash** has no test. It was
+  run by hand on git 2.56.0 with an ordinary path only.
+- **Not fixed here:** the sweep after an update deletes every tree no
+  current ref points at, including the trees of a remote whose refs were
+  all refused, while `Update` keeps serving the previous roots. A hub
+  that starts refusing a ref after this change can therefore keep
+  pointing at a tree directory that is gone. That is audit M-49 and is a
+  separate change.
+### 5.293 gitfs kept the last good tree's path and swept away its files
+
+`Update` keeps the last good tree when a reachable remote serves
+nothing: every ref refused, by a signature or by `materialise`. That is
+what 13.3, the paragraph on it in this ledger and the command reference
+all promise. But the sweep that stops the cache growing ran in the same
+loop, before that decision, keyed on the refs this update had resolved.
+On the kept-tree path those are none, so it removed every tree under the
+remote, the one `b.roots` still pointed at included. `Roots()` went on
+naming tree A, and tree A had no files in it. The estate got the empty
+file server the kept tree exists to prevent, with nothing in `Roots()`
+or the report to say so.
+
+The audit (M-49) found it with real git. A commit that adds a symlink
+is the easy trigger: git commits one and `materialise` refuses it. A
+blob too large to unpack does the same. So does a signature refused on
+a remote's only branch.
+
+**Why the existing test did not see it.**
+`TestAFailedUpdateLeavesTheServedTreeInPlace` compared the root's path
+string, not the files under it. It also drives the other failure: a
+remote that has vanished fails at `mirror`, which `continue`s before
+the sweep. So it never ran the path that deleted anything. It now reads
+`top.sls` from the kept root as well. It still passes against the old
+code, because that path never swept; it is not the test for this fix.
+
+**The change.** The sweep runs after the decision about what is
+served, and its live set is the directories in `b.roots` after that
+decision, not this update's refs. The two inputs disagreed exactly when
+the tree was kept. Now the decision is the sweep's input, so they cannot
+disagree. Skipping the sweep when roots are not replaced was the other
+option. It fixes this case but leaves two lists of "what is live" that
+must agree, which is the shape of the defect.
+
+**What was demonstrated.**
+`TestARefusedCommitLeavesTheServedTreesFilesInPlace` drives real git:
+a good commit, then a commit adding a symlink. It checks that the
+refusal is a `materialise` one, that `Roots()` still names the first
+tree, and that its `top.sls` reads back with the first commit's body,
+after the refused update and after a second one. Run against the old
+`backend.go` it fails with `top.sls: no such file or directory` under
+the listed root. Run with the new structure but the live set taken from
+this update's `roots` rather than `b.roots`, it fails the same way.
+`TestOldTreesAreSweptAway` still passes, so the sweep still removes
+what is not served.
+
+**Two things this does not change, both found while checking it.**
+They were run with real git in a throwaway test, which is not
+committed.
+
+- *Some refs of a remote refused.* One branch of two gets a symlink
+  commit. The roots are replaced, the refused branch's environment
+  drops out entirely, and `Update` returns nil. The refusal is in
+  `State()` and in the refusal counter. Not changed: 13.3 says a ref
+  that fails verification is not served, and the kept-tree promise
+  here and in the command reference is made per remote ("a remote
+  whose refs are all refused"). Whether a withdrawn key on one branch
+  should keep that branch's last good tree is a decision, not a defect,
+  and it is not made here.
+- *Two remotes, one unreachable.* The other remote serves, so the roots
+  are replaced, and the unreachable remote's environment stops being
+  served. That contradicts `Update`'s own comment ("it does not clear
+  what it was already serving") and the paragraph above saying a
+  remote that fails leaves its last tree in place. That is a separate
+  defect and is left for its own change. The sweep does not run for an
+  unreachable remote, so its trees are still on disk; they are just not
+  listed. A reachable remote whose refs are all refused, next to one
+  that serves, has its trees swept. That agrees with `Roots()`, which no
+  longer lists them.
+
+**Not verified.** The 2 GB blob and signature triggers were not run
+here; they reach the same `len(result.Refs) == 0` path as the symlink.
+No hub was run: this is the backend under `go test` on macOS. The
+existing window between the sweep removing a replaced tree and the
+hub's file server switching to the new roots is unchanged.
+### 5.294 `state_denylist` refused one spelling of an SLS name, and the loader accepted five
+
+Review finding M-54, reproduced for the compiler before it was changed.
+
+The compiler's `state_allowlist` and `state_denylist` matched the SLS
+name as it was written, with `path.Match`. The file server's loader
+(`slsCandidates`, then `Resolve`) turned every `.` into `/` and cleaned
+the path. So these names all loaded `secret/x.sls`:
+
+- `secret.x`
+- `secret..x`
+- `secret/x`
+- `.secret.x`
+- `secret/./x`
+
+and also `/secret/x` and `secret\x`. With `state_denylist: [secret.x]`,
+only the first was refused. A `state.sls` argument, a top file entry or
+an `include:` in any of the other spellings ran the states the denylist
+names. The allowlist direction failed closed, because a strange
+spelling matched no allow pattern, so only the denylist leaked.
+
+Salt accepts all of these spellings as well: `fileclient.get_state`
+replaces dots with slashes and the file server joins the result. But
+Salt has no state denylist, so there the looseness gets round nothing.
+Here it does.
+
+**The pair.** The denylist and the loader are two paths that must agree
+on what a name means. They did not.
+
+**The change.** There is now one definition, `state.CanonicalSLS`
+(`internal/state/slsname.go`). A name is canonical when it is not empty,
+every dot-separated component is not empty, and it holds no `/` or `\`.
+That refuses a leading or trailing dot, `..`, a `.` component and any
+path separator. Three places call it:
+
+- `Compiler.loadSLS`, before the allowlist and the denylist. Every
+  name reaches the compiler through `loadSLS`: `state.sls` and
+  `state.apply` arguments (`CompileSLS`, which the node and the hub's
+  orchestration both call), top file entries (`CompileHighstate`) and
+  `include:`.
+- `fileserver.Roots.Source` and `fileserver.Remote.Source`, so that a
+  loader cannot fold a spelling that the compiler did not see.
+
+A non-canonical name is refused, not rewritten. The error gives the
+canonical spelling. Rewriting would make the denylist correct, but it
+would leave several spellings that work, and the next check written
+against the raw name would have the same hole.
+
+**Relative includes still work.** `include: - .foo` is Salt syntax
+(`salt/state.py`, the `inc_sls.startswith(".")` branch), and it is not
+refused. `resolveRelative` (5.84) turns it into the absolute name while
+the including file is parsed. That happens before the name reaches
+`loadSLS`, so before this check and before the denylist. A denylist
+entry for `secret.x` refuses `.x` written inside `secret.y`, and the
+test checks this. A relative include that resolves to a non-canonical
+name (`..secret..x` in a flat file resolves to `secret..x`) is refused.
+
+**`extend:` and `exclude:`** do not load an SLS. `extend` names state
+IDs. `exclude: - sls:` removes the states of a name that was loaded. All
+loaded names are now canonical, so an `exclude` in another spelling
+matches nothing. It did not match before either. That was not changed.
+
+**How it is tested.**
+`internal/fileserver/slsname_test.go` runs the real compiler against
+the real `Roots` on a temporary tree. The state package's in-memory
+loader is keyed on the name as written. It cannot fold spellings, and
+that is why the hole could not be seen in those tests.
+
+- Each of the eight spellings above, as a `state.sls` argument under
+  `state_denylist: [secret.x]`, is an error and declares nothing from
+  `secret/x.sls`.
+- An `include:` of `secret..x`, of `secret/x`, and the relative
+  `..secret..x` is refused in the same way.
+- A top file entry `secret/x` is refused.
+- A relative include of `.x` inside `secret.y` is refused by the
+  denylist as `secret.x`.
+- `ok`, `web` (an `init.sls` with the relative include `.app`) and
+  `web.nginx` (a flat file with `.app`) still compile, under the
+  denylist and under `state_allowlist: [web*]`.
+- `Roots.Source` refuses the spellings on its own.
+
+`internal/state/slsname_test.go` tests `CanonicalSLS` itself. It also
+runs the compiler with a loader that folds spellings as a file server
+does but checks nothing, so that the compiler's own check is tested
+without the file server's check behind it.
+
+**Broken on purpose.**
+
+- With `CanonicalSLS` made to accept everything, the bypass came back:
+  `state.sls secret..x`, `secret/x`, `.secret.x`, `secret/./x`,
+  `/secret/x` and `secret\x` each declared `secret_x` under the
+  denylist, and so did all three include files. Four tests failed.
+- With only the `loadSLS` check removed, the file server tests still
+  passed, because `Roots.Source` refused the names.
+  `TestTheCompilerRefusesANonCanonicalNameWhateverTheLoader` failed on
+  four spellings.
+- With only the `Roots.Source` check removed,
+  `TestRootsSourceRefusesANonCanonicalName` failed.
+
+**Not changed: the hub's policy has the same shape.** The role rules
+`deny_sls` and `allow_sls` in `internal/policy/policy.go` (`checkArgs`)
+match each argument of `state.sls` and `state.apply` with `path.Match`,
+as written. So `deny_sls: [secret.x]` does not refuse `state.sls
+secret/x`. That file is being rewritten on another branch, so it was
+not edited here. The follow-up is: in `checkArgs`, when `DenySLS` or
+`AllowSLS` is set, call `state.CanonicalSLS` on each argument, refuse
+the request if an argument is not canonical, and match only canonical
+names against the lists. Salt's `state.sls` also takes `a,b`. Neither
+the node nor the policy splits on commas today (the node looks for one
+SLS named `a,b`; this was read from the code, not run), so a comma is not a way round
+today. If the node ever learns to split, the policy must split in the
+same place, before it canonicalises. A test should repeat the spellings in this section
+against a role with `deny_sls`. Until that lands, `deny_sls` is
+bypassable in the same way, but the node's own `state_denylist` now
+refuses the run.
+
+**Not verified.**
+
+- No real Salt was run. Salt's spelling behaviour comes from reading
+  `fileclient.get_state` and the include branch of `salt/state.py`.
+- No real tree was compiled. If a tree or a script calls `state.sls`
+  with a slash (`web/nginx`), it now fails with the error that gives
+  the dotted spelling. Nobody has checked the estate's trees or the
+  shared-state tree for such names.
+- Template includes (`{% include 'secret/x.sls' %}`) read a file by
+  path. They never went through `state_denylist`, and they still do
+  not. This change is about SLS names only.
+- The tests ran on macOS (Darwin 25.6) only.
+
+#### 5.294, the hub's policy follows the compiler
+
+The follow-up above is done. In `checkArgs`
+(`internal/policy/policy.go`), when a rule for the function has
+`deny_sls` or `allow_sls`, every argument goes through
+`state.CanonicalSLS` before either list is read. A request with a
+non-canonical argument is refused, and the reason gives the canonical
+spelling. Only canonical names are matched against the lists.
+
+Before this, the hub authorized, and logged as authorized,
+`state.sls secret/x` under `deny_sls: [secret.x]`. A node built after
+5.294 then refused the name when it compiled. A node built before 5.294
+ran it. So the hub's decision was wrong on its own, whatever the node
+did next.
+
+The refusal applies only to a function whose rule has one of the two
+lists. A role with no SLS constraint is not changed: the node still
+refuses the spelling, as above.
+
+**How it is tested.** `TestSLSConstraintsJudgeTheCanonicalName`
+(`internal/policy/policy_test.go`) gives a role `deny_sls: [secret.x,
+vault.*]` on `state.sls` and `allow_sls: [web.*]` on `state.apply`.
+
+- `secret.x`, `secret..x`, `secret/x`, `.secret.x`, `secret/./x`,
+  `secret.x.`, `/secret/x`, `secret\x` and `vault/db` are each refused
+  as an argument of `state.sls`, next to an allowed `ok`.
+- The reason for `secret/x` contains `"secret.x"`.
+- `ok`, `secrets.x` and `web.nginx` together are still allowed.
+- Under `allow_sls`, `web.nginx` is allowed. `web..nginx`, `web/nginx`,
+  `.web.nginx` and `web.nginx/` are refused. `web..nginx` matched
+  `web.*` before, because `path.Match` let `*` match `.nginx`.
+
+**Broken on purpose.** With the `CanonicalSLS` check disabled, the test
+failed ten times: all nine `deny_sls` spellings except `secret.x` itself
+were authorized, the reason no longer named the canonical spelling, and
+`state.apply web..nginx` was authorized under `allow_sls`.
+
+**Still open: M-01, `allow_sls` and a bare `state.apply`.** The audit
+(`docs/audits/2026-10-issue-321-triage.md`, M-01) found that
+`state.apply` with no arguments is authorized under `allow_sls`, because
+`checkArgs` only loops over the arguments there are. The node then runs
+the highstate (`runStateJob` in `cmd/halite-node/execute.go`). It was
+checked again here with the `webops` role of the package's example
+policy, and it is still allowed. It was not changed here. The fix is a
+decision, not a spelling. A role with `allow_sls` would lose the
+highstate, and that is a change an operator sees. It should have its own
+change and its own CHANGELOG entry.
+
+**Not changed: `allow_mods`.** `allow_mods` on `state.orchestrate` is
+matched the same way, as written. The hub's orchestration compiles the
+names with `CompileSLS` (`internal/hub/orch.go`), which refuses a
+non-canonical name, so the hub does not run one. But the policy still
+says such a name is authorized. That is a follow-up of the same shape.
+
+**Run through the command line.** `halite-hub policy test`, built from
+`main` (`dbc1b5d`) and from this change, was given a policy file with
+`deny_sls: [secret.x]` on `state.sls`. Built from `main`, it denied
+`secret.x` and printed `allowed by role "ops" rule 0` with exit 0 for
+`secret/x`, `secret..x`, `.secret.x` and `secret/./x`. Built from this
+change, it denied all five with exit 1, and each message gave the
+spelling `secret.x`. `ok` was allowed by both.
+
+**Not verified.** No hub served a job. The dispatch path calls the same
+`Authorize` as `policy test`, but that was read from the code, not run.
+No node received a job. Nobody has checked the estate's policy files for
+`allow_sls` or `deny_sls` patterns written for a non-canonical spelling,
+which would now match nothing. Everything ran on macOS (Darwin 25.6)
+only.
+### 5.295 `file_ignore_glob` hid only the first level of what it named
+
+Review finding M-55, reproduced before it was changed.
+
+`Roots.ignored` matched each `file_ignore_glob` pattern with Go's
+`path.Match`, against the path relative to the root and against the
+base name. In `path.Match`, `*` does not match `/`. Salt matches the
+setting with Python's `fnmatch.fnmatch` (`is_file_ignored` in
+`salt/fileserver/__init__.py`), and there `*` matches any run of
+characters, `/` included. With `file_ignore_glob: [secrets/*, */er/*]`:
+
+- `secrets/a.txt` was hidden.
+- `secrets/deep/b.txt` was served and listed.
+- `secrets/deep/er/c.txt` was served and listed.
+
+A hide rule copied from a Salt tree hid less on halite, and nothing
+said so. The difference goes in the dangerous direction: files that the
+operator meant to hide were served.
+
+Two smaller differences had the same cause:
+
+- `path.Match` treats `\` as an escape and `[^a]` as a negated set.
+  fnmatch treats `\` as a literal and `[^a]` as a set of `^` and `a`.
+  Its negated set is `[!a]`.
+- A `[` with no `]` is a literal in fnmatch. `path.Match` returns
+  `ErrBadPattern`, which `ignored` read as "no match". So a rule such
+  as `a[b` hid nothing.
+
+**The change.** `internal/fileserver/fnmatch.go` is a port of CPython's
+`fnmatch._translate` to an RE2 expression. It is `fnmatchcase`, which
+is case-sensitive. That is what `fnmatch.fnmatch` is on a POSIX host,
+because `os.path.normcase` does nothing there. `ignored` now calls it.
+It is still matched against the relative path and against the base
+name. The base name match is halite's own: Salt does not do it. It
+only hides more, and it was kept.
+
+**One function for every path.** `Resolve` (and so `Read` and the
+hub's file handler) and `List` (and so the manifest) both call
+`ignored` with the same relative path, so a file cannot be hidden from
+one and shown by the other. gitfs and s3fs trees are served through the
+same `Roots` (`fetchingBackends.update` puts their directories in its
+search path), so the rule applies to them too. Salt's gitfs does not
+call `is_file_ignored` at all in the checkout that was read, so on
+halite the rule covers more backends than on Salt. That was already
+true and is unchanged.
+
+**Salt is not consistent with itself, and this does not copy it.**
+Salt's roots backend calls `is_file_ignored` with two different paths.
+`file_list` gives it the path relative to the root. `find_file`, the
+serving path, gives it `os.path.join(root, path)`, the absolute path.
+An anchored glob such as `secrets/*` does not match
+`/srv/salt/secrets/a.txt`. So on Salt that rule hides the file from the
+listing and still serves it to `cp.get_file`. halite matches the
+relative path in both places. To match the absolute path as well would
+make the cache directories of gitfs and s3fs part of what an operator's
+glob is matched against.
+
+**How it is tested.**
+
+- `TestFnmatchAgreesWithCPython` holds `fnmatch` to 1,584
+  pattern-and-name pairs in `testdata/fnmatch_cpython.json`. The answers
+  were captured on 2026-10-15 by running `fnmatch.fnmatchcase` in
+  CPython 3.15.0 on macOS (`testdata/fnmatch_cpython.py` makes the
+  file). They were not written from the documentation. The table covers
+  `*` across `/`, `?`, sets, negated sets, `]` first in a set, ranges,
+  backward ranges (`[z-a]`, `[!z-a]`), a hyphen at either end, unclosed
+  `[`, backslashes and a newline in a name.
+- `TestIgnoreGlobsHideNestedFilesAsSaltDoes` is the reproduced case on
+  a real directory. Under `[secrets/*, */er/*]`, five nested files are
+  refused by `Resolve` and `Read` and left out of `List`, and four
+  files that no rule names (`public/er.txt`, `secretsfile.txt` among
+  them) are still served and listed.
+- `TestAnUnclosedBracketIsALiteral`: the rule `a[b` hides `a[b`.
+- The existing `TestIgnoreGlobs` (`*.swp`, at the top level and in a
+  subdirectory) still passes.
+
+**Broken on purpose.**
+
+- With `ignored` put back on `path.Match`,
+  `TestIgnoreGlobsHideNestedFilesAsSaltDoes` failed: it served, read
+  and listed `secrets/deep/b.txt`, `secrets/deep/er/c.txt` and
+  `public/x/er/e.txt`. That is the reported defect. The unclosed-bracket
+  test also failed.
+- With `*` translated to `[^/]*`, the CPython table failed on every
+  pair where `*` must cross `/`.
+- With set negation removed, the table failed on `[!abc]`.
+
+**Open, not changed: a symlink to a hidden file is served under its own
+name.** This was run, not only read. In a tree with
+`pub.txt -> secrets/a.txt` and `file_ignore_glob: [secrets/*]`:
+
+- With `fileserver_follow_symlinks: true`, `Read("pub.txt")` returns the
+  contents of `secrets/a.txt`.
+- With it false, the read is refused, but `List` still returns
+  `pub.txt`. That is a separate disagreement between listing and
+  serving.
+
+Salt does the same on the first point: `find_file` checks the link's
+own path, not its target. The rule hides names, not contents, and the
+key's own documentation says it is not a security control. To fix it,
+`Resolve` and `List` would both have to check the resolved target's
+path as well, and they would have to agree. That is a separate change,
+and it was not made here.
+
+**Not verified.**
+
+- No real Salt file server was run with these globs. Salt's behaviour comes
+  from reading `is_file_ignored` and the roots backend, and from running
+  Python's `fnmatch` itself.
+- The fixture comes from CPython 3.15.0. The same generator was run on
+  CPython 3.10.22, 3.12.15, 3.13.16 and 3.14.8 (Homebrew, macOS), and
+  each gave the same 1,584 answers. On CPython 3.9.6 (the macOS system
+  Python) every pair gave the same answer except the patterns with a
+  backward range (`[z-a]`, `[!z-a]`, `[z-ab-c]`), where 3.9 raises
+  `re.error` instead of treating the range as empty. halite follows
+  3.10 and later. Which Python the estate's Salt masters run was not
+  checked.
+- Case-insensitive matching, which is what `fnmatch.fnmatch` does on
+  Windows, was not implemented. A hub runs on Linux and FreeBSD.
+- No real hub was run, and no hide rule from the estate was checked
+  against its tree. A rule that now hides more than it used to will
+  hide it from nodes too: a nested file that a state still needs is
+  now refused.
+- The tests ran on macOS (Darwin 25.6) only.
+### 5.296 A scoped role reached any node by naming a list, a compound or a pcre
+
+Audit H-01, reproduced before it was fixed. The policy decided whether a
+rule's target covered a request's target by comparing two strings, and
+the request carried no target kind. A request target with no `*?[` was
+taken to be one node ID and matched against the rule's glob with
+`path.Match`, whose `*` matches commas, spaces and `|`. Dispatch then
+compiled the same string under the kind the request named. So a role
+for `web*.prod` was allowed, and dispatched to db1.prod, for each of:
+
+- `web1.prod,db1.prod` as a list (`-L`);
+- `web1.prod or db1.prod` as a compound;
+- `web1.prod and not G@x:y or db1.prod` as a compound;
+- `web1.prod|db1.prod` as a pcre.
+
+A pcre that looks like one node ID was wider than it looks as well:
+`web1.prod` as a pcre matches `web1Xprod`, since `.` is any character.
+
+**The pair.** This is the commonest shape here: two paths that must
+agree, one reading the target as a glob and one reading it as what it
+was. The audit named the API (`authorize.go` built the question without
+the kind; `execute.go` forwarded `tgt_type`). The hub's own check in
+`jobs.go` had the same gap, so an operator submitting straight to the
+hub did not need the API. So did the mine read in `mine.go`, `DispatchAs`
+(which every runner, orchestration step and reactor reaction that
+dispatches on a principal's behalf goes through), job resume and kill,
+which are authorized as the recorded job, and the reactor's dry-run
+`wouldAuthorize`.
+
+**A second route** was `POST /v1/nodes/{id}/state`. It submits the path
+segment as a list, so `/v1/nodes/web1.prod,db1.prod/state` was two nodes
+through an endpoint that names one. A `%2C` reaches the handler as a
+comma.
+
+**The change.**
+
+- `policy.Request` carries `TargetKind`, in the flag form `Dispatch`
+  takes, and every site above passes the value it dispatches with. In
+  the hub, `policyRequestFor` takes the kind as an argument. In the API,
+  jobs are asked through `jobRequestFor`, which also takes it as an
+  argument, so it cannot be left out by mistake. The hub and the API
+  call the same `policy.AuthorizeAs`, so they make the same decision.
+- **glob**: as before. The asked string is treated as one node only if
+  it passes `pki.ValidateNodeID` (letters, digits, `.-_`), which is the
+  alphabet a node can enrol under. Before, the test was "contains no
+  `*?[`". A glob request that is not a node ID is now covered only by
+  rule-text equality or by `*`. As a glob, `web1.prod,db1.prod` matched
+  nothing, so this refuses nothing that ever ran.
+- **list**: each element, split by `target.ListIDs`, must be a valid node
+  ID inside the rule's glob. `ListIDs` is the function dispatch now
+  splits with too, so the two cannot disagree about trimming or empty
+  elements. An empty list is refused.
+- **every other kind** (compound, nodegroup, pcre, grain, grain_pcre,
+  pillar, pillar_pcre, ipcidr) is covered only by a rule whose target is
+  `*`. An unknown kind is refused before any rule is read.
+- The node test of `literalCovered` uses `target.MatchGlob`, the function
+  dispatch matches node IDs with. `VisibleNode` (the event filter) uses
+  it too.
+- The API refuses an `{id}` segment that is not a valid node ID with
+  400, before it asks the policy. This applies to `GET /v1/nodes/{id}`
+  too.
+- `halite-hub policy test` takes `--target-kind`, so that a policy test
+  in CI can ask the question the hub asks.
+
+**Why not resolve the target and check each node.** The hub can resolve
+a compound target to its nodes (`resolve`). It could check each node
+against the rule's glob, and a scoped operator could then keep compound
+targets. That was not done. The API authorizes before it forwards and
+has no fleet to resolve against. A hub-only resolution would make the
+two checks give different answers, which is the defect being fixed. And
+whether an expression stays inside a glob depends on grains and pillar
+at the moment of dispatch, which is not a question about two strings. A
+list is the form that says exactly which nodes, and that form is now
+authorized element by element.
+
+**What an operator sees.** A principal whose roles are scoped (a target
+other than `*`) is now refused for a compound, nodegroup, pcre, grain,
+pillar or subnet target. Before, such a request was allowed when its
+text happened to match the rule's glob as a literal, or exactly equalled
+the rule's target. A list is refused if any element is outside the
+grant. The refusal names the kind: `no rule in [webops] permits
+service.restart against compound target "web1.prod"`. A `*` role is
+unchanged. A mine read by a scoped `node:` principal with a compound
+target is refused in the same way. One more change: a mine read with an
+unknown `target_kind` used to fall back to glob, and is now refused.
+
+**How it is tested.**
+
+- `internal/policy`: `TestATargetIsAuthorizedAsTheKindItIsDispatchedUnder`
+  is a table of 40 rows: glob, list, compound, nodegroup, pcre, grain,
+  grain_pcre, pillar, pillar_pcre and ipcidr against `web*.prod`, an
+  unknown kind, and a `*` rule against every kind.
+  `TestADenialNamesTheTargetKind` checks the message.
+- `internal/api`: a run through `/v1/run` with `tgt_type` and
+  `expr_form`, checking that a refused run never reaches the stub hub,
+  and that an allowed one is forwarded under the kind it was authorized
+  as. A `*` role still runs each kind. `/v1/nodes/{id}/state` with `,`,
+  `%2C`, `%20`, a trailing comma and `*` returns 400 under a scoped
+  policy and under an estate-wide one, and nothing reaches the hub.
+- `internal/hub`: a real hub and operator certificates. Direct submission
+  of each escalation is refused. A list inside the grant reaches its two
+  nodes. A `*` role's compound reaches both. A scoped operator cannot
+  kill an estate-wide operator's list job. `DispatchAs` and the mine
+  read are refused for list, compound and pcre, including a node-shaped
+  `web1.example` as compound or pcre.
+
+Each was broken on purpose, and each failed:
+
+- With the old `targetCovered` restored (no kind, no `*?[`), 15 policy
+  rows failed. Every API escalation row returned 200 and reached the
+  hub. In the hub, each escalation was dispatched to db1.example, the
+  kill was allowed, `DispatchAs` dispatched, and the mine read returned
+  db1's data.
+- With the API's node-ID check removed, the estate-wide policy let
+  `web1.example,db1.example` (and `%2C`) reach the hub as a list. Under
+  the scoped policy the request was refused with 403, by the policy
+  half.
+- With the API dropping the kind, `web1,web2` as a list was refused, and
+  `web1` as a compound or pcre was allowed.
+- With the hub's `jobs.go` dropping the kind, a list inside the grant
+  was refused and `web1.example` as a pcre was dispatched. With
+  `DispatchAs` and the mine read dropping it, `web1.example` was
+  dispatched as a compound and read as a pcre.
+
+**Not verified.**
+
+- **No live hub and API together.** The API tests use a stub hub. The
+  hub tests use a real hub with operator certificates, but not the API
+  in front of it. No real estate was run against.
+- **The reactor's `wouldAuthorize`** (the dry run `reactor.test`
+  reports) now passes the reaction's kind, and `L` for a caller
+  reaction. No test checks its output. The reaction itself dispatches
+  through `DispatchAs`, which is tested.
+- **Resume** is authorized as the recorded job's kind, as kill is. Only
+  kill is tested. A job recorded before `target_kind` existed has an
+  empty kind and is judged as a glob.
+- **`mine.get` the runner** reads by the runner grant alone and is not
+  scoped by target. That is the existing design (a `runners:` grant),
+  not this defect, and it was not changed.
+- **macOS only.** The tests ran on macOS (Darwin 25.6). CI runs them on
+  the other platforms.
+### 5.297 Four functions that run caller-supplied code were not arbitrary code
+
+SPEC 23.5 says a wildcard grant never includes a function marked
+`arbitrary_code`, and a node with `require_job_signature:
+[arbitrary_code]` refuses such a function unless the job is signed
+(SPEC 25.6). Both read the same field on the signature. Four execution
+functions in `internal/builtin/cmd_more.go` run code the caller supplies
+and did not set it:
+
+| Function | What it runs |
+|---|---|
+| `cmd.script` | A script the caller names, from `salt://` or a local path. |
+| `cmd.script_retcode` | The same script, through the same `runScript`. Only the return value differs. |
+| `cmd.exec_code` | Code the caller writes, under an interpreter the caller names. |
+| `cmd.run_bg` | The program the caller names, detached. It is `cmd.run` without the wait. |
+
+So `functions: ['*']` granted all four. A role that was deliberately
+refused `cmd.run` got the same power from any of them. On a node that
+required a signature for `arbitrary_code`, all four ran unsigned.
+
+**Why 5.16's check did not see it.** The hub's
+`arbitraryCodeFunctions` merges the execution and state registries by
+name. That is how it covers `module.run`, which is a state. The *state*
+`cmd.script` was marked, so the name `cmd.script` was in the hub's set.
+The hub refused it to a wildcard, and
+`TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard` passed. The node
+reads the execution registry alone
+(`cmd/halite-node/jobsignature.go`), and the *execution* `cmd.script`,
+which is what a job runs, was not marked. The two daemons disagreed
+about the one name the test checked. The other three are not in SPEC's
+list of six names, so no list held them.
+
+This is the pair problem. The hub and the node are two computations of
+one class, and only one of them was being tested.
+
+**The change.** The four functions now declare `arbitrary_code`. The
+hub's computation is not changed: it still merges, for `module.run`.
+Three tests now hold the two paths to the same answer:
+
+- `TestEveryFunctionThatRunsCallerCodeIsMarked` (`internal/builtin`)
+  reads the execution registry directly, which is the node's view. It
+  applies three rules. First, an explicit list (the cmd runners,
+  `cmd.shell`, the four above, `file.write`, `file.replace`). Second, a
+  state that declares `arbitrary_code` makes its execution twin declare
+  it. Third, every mutating function in the `cmd` module declares it,
+  so a new `cmd.*` function is covered without anyone adding it to a
+  list. The second and third rules each fail if they stop finding
+  anything to check.
+- `TestTheHubAndTheNodeAgreeOnArbitraryCode` (`cmd/halite-hub`) requires
+  that, for every execution function, the hub's merged set and the
+  execution registry give the same answer.
+- `TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode`
+  (`cmd/halite-node`) sends each function unsigned to a node that
+  requires `[arbitrary_code]`, and requires a refusal that names the
+  class.
+
+With `cmd_more.go` restored to the code before this change, all three
+failed. The builtin test named all four functions under the list rule
+and the `cmd` rule, and `cmd.script` under the twin rule. The node test
+accepted all four unsigned. The agreement test named `cmd.script`.
+`TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard` still passed,
+which is the blind spot shown directly.
+
+**The handbook had the same gap.** Chapter 26 quotes the "never
+granted by a wildcard" line of `halite-hub policy show` and says it is
+the output for this build. Nothing compared the two. After this change
+the page was three names short (the hub already had `cmd.script`). The
+line was replaced with the output of `policy show` run on
+`contrib/examples/policy.yaml` with this build.
+`TestChapterTwentySixListsWhatPolicyShowPrints` (`cmd/halite-hub`) now
+reads the names from the chapter and compares them with
+`arbitraryCodeFunctions`, in both directions. It failed with the old
+line restored (three names missing), and it failed with `test.ping`
+added to the line.
+
+**What operators see.** A role that granted these functions through a
+wildcard (`'*'`, `'cmd.*'`) no longer has them. A role that needs one
+must name it, as `break_glass` in `contrib/examples/policy.yaml` names
+`cmd.run`. A node that requires a signature for `arbitrary_code` now
+refuses these four unsigned.
+
+**Still open: the second tier.** These functions are not marked, and
+each one can make the machine run something the caller chose, later or
+indirectly. This change does not decide whether they are in the class:
+
+- `at.at` (a command line for `at(1)`);
+- `win_task.create` (a command for the Task Scheduler);
+- the `cron.present` state (a command line in a crontab; there is no
+  `cron.set_job` in this build);
+- `file.append`, `file.patch`, and the `file.managed` state with chosen content (a
+  file such as a crontab, a unit or a `sudoers` line, as 5.16 said of
+  `file.write`);
+- the `ssh_auth.present` state (a key that gives a shell);
+- the `sudo.present` state (a rule that gives root).
+
+5.16 marked `file.write` and `file.replace` for this reason, so the line
+is already not "runs a process now". Where it is drawn is a decision for
+SPEC 23.5, not for this change.
+
+**Not verified.**
+
+- No policy file on a running hub, and no node with
+  `require_job_signature`, was used for this change. The policy decision
+  was tested through `arbitraryCodeFunctions` and the policy package, and
+  the node refusal through `acceptJob` in a test, not through a real
+  connection from a real hub.
+- The tests ran on macOS (Darwin 25.6) only. CI runs them on all four
+  platforms.
+- The second-tier list above came from reading parameter names in the
+  registry. It is not complete.
+### 5.298 `cpan.module_version` ran the module name as Perl
+
+`cpan.module_version` asked perl for a module's version like this:
+
+```
+perl -M<module> -e 'print $<module>::VERSION'
+```
+
+The name was put into perl's source twice. With the module
+`Carp;BEGIN{print "INJECTED\n"}`, perl ran the `BEGIN` block, once from
+each copy. This was reproduced with perl 5.44.0 on macOS before the fix,
+and again through the function itself in the test below, which returned
+`"INJECTED\nINJECTED"`.
+
+The function is declared non-mutating, with no test mode, and not
+`arbitrary_code`. So a role with read-only functions, or with a wildcard,
+could reach it. On a node it runs as root. A grant to read a version was
+a grant to run any Perl as root. It was found by reading the code (audit
+H-16), not reported from a host.
+
+**The change.**
+
+- The name must match `^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$`.
+  Any other name is refused with an error before anything runs. This is
+  narrower than what perl accepts: the old `'` separator, a leading or
+  trailing `::`, and Unicode identifiers are refused. The refusal is an
+  error, not the empty string the function returns for a module that is
+  not installed, because nothing was asked of the machine.
+- perl now gets the name as an argument, after `--`, and not in its
+  source. The program is fixed: it turns `::` into `/`, does a `require`
+  of the file, and prints `$VERSION`. This is a second wall. It is not
+  enough alone: without the check, `..::..::tmp::evil` becomes a
+  `require` of `../../tmp/evil.pm`. The test includes that name.
+- `require` replaces `-M`, so the module's `import` is no longer called.
+
+**Checked against real perl** (5.44.0, Homebrew, macOS). For `Carp`,
+`JSON::PP`, `List::Util` and `CPAN`, the new form prints the same version
+as the old one. For a module that is not installed, both exit 2.
+`TestCpanModuleVersionAgainstRealPerl` repeats the `Carp` and
+`List::Util` comparison and the not-installed case on any machine with
+perl, and skips without it.
+
+**How it is tested** (`internal/builtin/lang_cpan_test.go`):
+
+- `TestCpanModuleVersionRefusesANameThatIsNotAPackage`: thirteen bad
+  names, including the injection, `..::..::tmp::evil`, `-e` and
+  `Foo'Bar`. Each must be refused, and no command may run.
+- `TestCpanModuleVersionPassesTheNameAsData`: for four valid names, the
+  name is the last argument, after `--`, and is in no other argument.
+- `TestCpanModuleVersionAgainstRealPerl`: with real perl, the argument
+  form does not run the injection even with the check bypassed, and the
+  function refuses it.
+
+Each was broken on purpose. With the check removed, the refusal test
+failed on every bad name. With the check removed and the old `-M` form
+restored, all three failed. Real perl printed `INJECTED`, and the
+function returned `"INJECTED\nINJECTED"`.
+
+**Other places that put a name into interpreter source.** All of
+`internal/builtin` was searched for `perl`, `python`, `ruby`, `node`,
+`php`, `sh`, `powershell` and `osascript` invocations, and for `-e`,
+`-M`, `-c` and `-Command` arguments. `cpan.module_version` was the only
+function that puts a caller's value into interpreter source.
+`cpan.version` runs a fixed program. Two neighbours are a different class
+and were not changed:
+
+- `cpan.install` passes the names to `cpan -i` as arguments. A name that
+  starts with `-` may be read as an option by `cpan`; this was not tried.
+  The function is
+  mutating and installs CPAN code, which runs `Makefile.PL`, so it is
+  already arbitrary code in all but its flag. Whether it should carry
+  `arbitrary_code` is the same open question as the second tier in the
+  ledger section for audit H-09.
+- `virtualenv.create` takes `python`, a path to an interpreter that it
+  runs. It is mutating, and the same question applies.
+
+**Not verified.**
+
+- Only Homebrew perl 5.44.0 on macOS was run. The perl on the fleet
+  (FreeBSD's `perl5` package, Ubuntu's `/usr/bin/perl`) was not run. The
+  new program uses `require`, `s{}{}g` and symbolic references, which
+  every perl 5 has, but no FreeBSD or Linux perl ran it.
+- The test runs perl with this process's environment. A node runs it
+  with the clean environment of SPEC 25.4, and that was not reproduced.
+- A valid name still loads that installed module's code from `@INC`.
+  This was true before as well, and the check does not change it.
+### 5.299 `file.line` compared `match` as a substring, so `^PermitRootLogin` never matched
+
+Audit finding H-08. `file.line`'s `match`, `before` and `after` were
+compared as plain text: a line matched when it contained the value, or
+equalled it once both were trimmed. SPEC section 10.4's table says
+`file.line` patterns are RE2 by default, and the comment on the matcher
+claimed the substring test was "the comparison Salt uses" and that it made
+`match: '^PermitRootLogin'` work. Neither was true. Measured before the
+fix: `mode: ensure`, `match: '^PermitRootLogin'`, `content:
+'PermitRootLogin no'` against `Port 22` / `PermitRootLogin yes`, run three
+times, reported a change on every run and appended another
+`PermitRootLogin no` each time, and the `yes` line stayed first. sshd takes
+the first value it reads for a keyword, so the state reported that root
+login was off on a host where it was still on.
+
+Salt's matcher is `_regex_to_static` in `salt/modules/file.py` (read at
+f37cdcd1c9 in `~/saltstack`, not run): every one of `match`, `before` and
+`after` is compiled with `re.compile(p, re.DOTALL)` up front, and a line is
+kept when the pattern *searches* it or occurs in it as plain text
+(`compiled.search(line) or line.count(p)`). A pattern that does not compile
+raises. An empty or missing pattern is "not given", not the pattern that
+matches every line. The same expression run in plain Python 3 `re` (no
+Salt import, which needs dependencies this Mac does not have) gave:
+`^PermitRootLogin` finds the `yes` line; `Port` finds `Port 22` *and*
+`GatewayPorts no`; `^Port\b` finds only `Port 22`; `allow(all)` finds the
+line `allow(all)` only through the plain-text half; `PermitRootLogin [yes`
+and `(` raise.
+
+halite now does the same, in `linePattern` (`internal/builtin/file_line.go`):
+RE2 search through `regexcompat` with DOTALL, or a plain fragment, for all
+three arguments, compiled before anything is decided. A pattern that does
+not compile, or that uses a construct RE2 lacks, fails the state naming the
+argument, and the file is not touched. The execution function `file.line`
+is the state's own implementation (`registerFileEditAsExec`), so it changed
+with it.
+
+What a tree sees change:
+
+- An anchored or otherwise regex-shaped `match`, `before` or `after` now
+  matches the lines it says. This is the fix.
+- An **unanchored** value is a search, as it was a substring before:
+  `match: Port` still matches `GatewayPorts`. Unchanged, and Salt's.
+- A value with regex metacharacters that is meant literally still matches
+  where it occurs as written, through the plain-text half; it may now *also*
+  match lines its regex reading finds (`a.b` matches `axb`). That is Salt's
+  behaviour.
+- A value that is not a valid RE2 pattern (`[yes`, a leading `*`, a
+  lookahead) now fails the state where it used to be compared as text. When
+  `match` is unset it defaults to `content`, so a `content` like `*.*
+  @loghost` with no `match` fails too. Salt fails on the same `content`
+  when neither `before` nor `after` is given; with one of them given, Salt
+  never compiles `content` and halite does, so there halite fails where
+  Salt would not.
+- The trimmed-equality half is gone: a `match` with leading or trailing
+  whitespace the line lacks no longer matches it. Salt never had it.
+- `mode: absent` or `delete` with neither `match` nor `content` used to
+  delete **every line in the file** (an empty substring is in every line;
+  `TestFileLineMatchIsARegexSearch` watched the old code leave the file
+  empty). It now fails the state. Salt does nothing in that case and says
+  nothing; refusing is the louder of the two choices and the one this
+  project prefers.
+
+Not changed, and different from Salt, recorded here rather than fixed:
+halite's `ensure` with a `match` and no `before`/`after` replaces every
+matching line, or appends; the source read above raises "Unable to ensure
+line without knowing where to put it" for that case. halite's `replace`
+rewrites every matching line where Salt rewrites the first; halite's
+`delete` removes every matching line where Salt removes the lines equal to
+the first match; and `before`/`after` take the first match where Salt
+requires exactly one. Each of those is a tree-visible difference of its
+own and needs its own entry if it is changed.
+
+`TestFileLineMatchIsARegexSearch` (internal/builtin) holds it: the sshd
+case run three times (a change on run 1 only, and the file is `Port 22` /
+`PermitRootLogin no` after every run), `^Port\b` leaving `GatewayPorts`
+alone, an unanchored `Port` reaching it, `$` and `\s`, a literal with
+parentheses, an anchored `after`, invalid and unsupported patterns for
+`match` and `before`, a `content` standing in for `match`, and the empty
+delete. With the old `file_line.go` restored it failed nine of its eleven
+cases (the unanchored and literal cases pass on both, as they should); with
+the plain-text half removed from the new matcher, the literal case failed.
+
+Not verified: no real sshd read the result, no real Salt was run against
+these cases (the Salt behaviour above is from reading its source and from
+re-running its matcher expression in plain Python), and it ran on macOS
+only. `file`'s evidence level is unchanged.
+### 5.300 An archive could write, and delete, outside its destination through its own symlinks
+
+`archive.extracted` and `archive.extract` said, in the module's own
+doc comment, that "a symlink pointing outside the destination, is
+refused by name". By name was the whole of it. Each entry's name, and
+each symlink's target, was checked lexically against the destination,
+and the entry was then written by path, so the kernel resolved it
+through whatever the earlier entries had put on disk. An archive is a
+sequence of operations, not a list of names. These four entries are
+each lexically inside the destination:
+
+    a/            directory
+    a/b        -> ..
+    a/b/L      -> ../..
+    L/escaped.txt
+
+`a/b` is the destination itself, so `a/b/L` lands at `dest/L` and
+points two levels above the destination, and `L/escaped.txt` is written
+there. The audit (H-03) reproduced it, and so does
+`TestArchiveChainedSymlinksCannotWriteOutside` against the old
+extractor. The same shape removed a file outside the destination:
+`a/b/c -> ..` then `a/b/c/victim -> z` ran `os.Remove` on the outside
+`victim` before `os.Symlink`, with `overwrite` unset, because the
+symlink case removed unconditionally
+(`TestArchiveSymlinkCannotRemoveAFileOutside`). The same unchecked path
+also covered the `MkdirAll` of every parent, the atomic write, the zip
+extractor, and the ownership pass: `user:`/`group:` ran `Lchown` as root
+on the archive's names, and a directory on the way that was a link out
+of the destination handed its target to that account.
+
+The archive's own links are one way in. A link already on disk is the
+other: the destination is commonly handed to `user:`, and that account
+could plant `dest/evil -> /etc` before the next run.
+
+The trigger is a hostile archive: `skip_verify`, a compromised
+`salt://` file server, or a local path somebody else can write. Nodes
+run as root.
+
+**What changed.** Every write, `mkdir`, `remove`, `symlink` and `chown`
+under the destination now goes through an `os.Root` opened on it (Go
+1.25's `Root.MkdirAll`, `Symlink`, `Lchown` and `Rename`; `go.mod` says
+1.26). The root resolves each component at the moment of the call and
+refuses one that leaves, so the check and the act cannot disagree, and a
+link that stays inside is still followed. That matters: the
+alternative, refusing any symlinked directory on the way, also refuses
+an archive that ships `current -> lib` and then `current/x`, and
+"hardened" is not worth breaking a JDK. In detail:
+
+- File writes use a new `atomicfile.WriteIn(root, name, ...)`: the same
+  temporary-file, `fileperm`, sync, rename, directory-sync idiom as
+  `Write`, with each step relative to the root. It lives in
+  `internal/atomicfile` so that it is not a seventh copy (5.144). The
+  rename replaces a symlink at the final name rather than writing
+  through it.
+- A symlink entry honours `overwrite`, as a file does. Unset, an
+  existing entry is left alone; set, it is removed through the root.
+- After a link is made, `root.Stat` resolves it the way the kernel
+  will. If that leaves the root, the link is removed and the
+  extraction fails. A link that does not resolve yet is allowed, and
+  every link the run made is checked again once the run has finished,
+  because `x -> p/..` is lexically the destination and is its parent
+  once a later `p -> .` exists
+  (`TestArchiveDanglingLinkIsCheckedOnceItsTargetExists`). That is a
+  unix escape only. Windows cleans `p\..` lexically before it resolves
+  anything, as `os/root_windows.go` documents, so there the link is the
+  destination itself. CI's windows-2022 leg showed it: the link was kept,
+  correctly, and the test now skips on Windows and says why.
+- "Does this entry exist?" (for `overwrite`, and for the state's
+  "what is missing") is `root.Lstat`. An error that is not "it is not
+  there" is a refusal, not "absent, so write it".
+- Ownership is checked with `root.Lstat` and set with `root.Lchown` on
+  unix. Windows and the other platforms have no root-relative form of
+  their ownership call, so there the name is checked through the root
+  and then set by path. That leaves a race with a concurrent writer in
+  the destination which the unix path does not have.
+- The lexical checks stay. They make the early, readable refusal, and
+  the only one a dry run can make.
+
+Hard links (`tar.TypeLink`) were and are skipped, so their `Linkname` is
+never resolved against anything. A zip carries no symlink type this
+extractor creates: a zip symlink entry is written as a regular file
+holding the target text, as it was before. That is a Salt difference
+in its own right, but it is not this defect.
+
+**gitfs.** `internal/gitfs` `safeJoin` is lexical too, and is sound for
+a different reason. It extracts into a staging directory it has just
+removed and recreated, and it refuses every symlink entry. So there is
+never a link on disk for a name to be resolved through. The two
+extractors do not share code because their policies differ: gitfs
+refuses links, and an archive must keep them. If gitfs ever accepts a
+link, or extracts into a directory it did not just create, it needs a
+root as well.
+
+**Demonstrated.** On macOS (Darwin 25.6, as an unprivileged user; the
+break-and-restore runs under the local Go 1.27.2, the final runs under
+the pinned go1.26.6), with the new tests run against `origin/main`'s `archive.go`:
+`escaped.txt` was written two directories above the destination; the
+outside `victim` was replaced by a symlink; writes, links and directories
+went through a planted `dest/evil` link for both values of `overwrite`;
+a zip wrote through it; the late-resolving link was kept; an existing
+link was replaced with `overwrite` unset; and `enforceArchiveOwnership`
+moved an outside file from gid 20 to 101 through `dest/evil`. All pass
+with the fix. Each layer was then broken alone, and a test failed each
+time:
+
+| Broken | Fails |
+|---|---|
+| `linkStaysInside` always nil | the chained test (the escaping link is left behind), the dangling-link test |
+| the final pass over links skipped | the dangling-link test |
+| file writes and parents by path, not root | the planted-link test, the zip test |
+| `entryExists` by path, not root | the planted-link test (`evil/l` is skipped as "existing") |
+| ownership by path, with no root check | the ownership test (the gid changes) |
+
+`TestArchiveInternalSymlinksStillExtract` holds the shape the fix must
+not cost: a `./` entry, `lib/libfoo.so -> libfoo.so.1`,
+`share/lib -> ../lib`, and a file written through `current -> lib`. It
+extracts three times, twice with `overwrite` unset and once with it set.
+
+**Not verified.**
+
+- **Not run as root**, and so not with `user:`. The ownership test
+  changes a group, which an unprivileged account can do to its own
+  files. That `root.Lchown` holds as root comes from the same code
+  path, not from a run.
+- **Not run on Linux or FreeBSD.** `os.Root` uses `openat` with
+  `O_NOFOLLOW` on both. That was read in go1.26.6's
+  `os/root_unix.go`, not seen in a run. CI runs the tests on all four platforms.
+- **Windows** builds and vets. Its ownership path is the
+  check-then-set described above, and nothing ran it.
+- **No hostile archive came from a real file server.** The archives are
+  built in the tests with `archive/tar` and `archive/zip`.
+- **The race with a concurrent writer** in the destination, which the
+  root closes on unix, has no test. That it is closed is a property of
+  `os.Root`, read from its documentation.
+### 5.301 A background command ignored `runas` and ran as root
+
+`cmd.run` with `bg: true` and `runas: deploy` started the command as the
+node's own account -- root -- and reported that it had started. So did
+`cmd.run_bg` with `runas`. Nothing in the result said the account had
+been dropped. Found by reading `OSRunner.Run`, then reproduced:
+`OSRunner.Run` with `RunAs: "no-such-user"` returned an error in the
+foreground and a pid with `Background: true`.
+
+**Two paths, each with its own reason.**
+
+- `OSRunner.Run` applied the umask, the directory, the environment and
+  stdin, then took the `Background` branch to `startAndRelease`, and
+  only after it called `applyCredential`. The background child was built
+  from everything but the account. The `Background` field's own comment
+  says it lives on the command so that the interpreter, the umask and
+  the environment are decided in one place; the account was the one it
+  missed.
+- `cmd.run_bg` did not use `Background` at all. `runInBackground` built
+  its own `os/exec.Cmd` -- written before the runner could start a
+  process without waiting -- and never read `runas`, though its
+  signature declares it. It also never read the context's `RunAs` and
+  `Umask`, the per-state options of SPEC 11.7.
+
+Salt's `_run` (`salt/modules/cmdmod.py`) treats `bg` as "do not wait and
+ignore the exit code" and then goes on to the same `runas` handling as a
+foreground command, including `User '...' is not available` for an
+unknown account. That was read, not run.
+
+**The change.** `applyCredential` moves above the `Background` branch, so
+the background child is built from the same four things as the
+foreground one: umask, directory, environment, account. What stays below
+the branch -- `confineTree`, `WaitDelay`, the output pipes, the timeout
+-- is about waiting for the child, which a background command does not
+do (`cmd.run` already refuses `bg` with `timeout`). `stdin` is still
+dropped for a background child, as before, by `startAndRelease`.
+
+`runInBackground` now builds an `exec.Command` with `Background: true`,
+`runas`, `cwd` and `env`, and hands it to the runner. There is one
+implementation of starting a child, not two. A side effect: without
+`env`, `cmd.run_bg` now gets the runner's default environment (its
+`DefaultEnv`, else `CleanEnv`) rather than always `CleanEnv`, which is
+what `cmd.run` gets.
+
+**How it is tested.**
+
+- `TestRunAsRefusesAnUnknownAccountInTheBackgroundToo`
+  (`internal/exec`): `runas: halite-no-such-account` must fail, naming
+  the account, with and without `Background`.
+- `TestRunAsReachesABackgroundChild` (`internal/exec`, unix): an
+  unprivileged process cannot switch to any account, even its own,
+  because the switch calls `setgroups(2)`. So `runas` set to the current
+  user must fail with "operation not permitted" in both modes. The
+  foreground half is the control. It skips as root.
+- `TestCmdRunBgHonoursRunAs` (`internal/builtin`): `cmd.run_bg` with an
+  unknown account fails, and under a recorder the command carries
+  `RunAs`, `Dir` and `Background`.
+- `TestCmdRunBackgroundHonoursRunAs` (`internal/builtin`): `cmd.run` with
+  `bg: true` and the context's `RunAs` (where the compiler puts a state's
+  `runas`) set to an unknown account fails, naming it.
+
+Each fix was broken on purpose. With the old `exec.go`, both `internal/exec`
+tests failed on their background half (each returned a pid) and both
+`internal/builtin` tests failed (the old `runInBackground` and the old
+runner each started the program). With the old `cmd_more.go` alone,
+`TestCmdRunBgHonoursRunAs` failed and the others passed.
+
+**Not verified.**
+
+- **No privilege drop was observed.** The tests ran unprivileged on
+  macOS (Darwin 25.6). They prove that the credential reaches the child's
+  start; they do not watch a background process run as another account.
+  That needs root, and was not run.
+- **Not run on Linux or FreeBSD.** CI runs the unit tests on all four
+  platforms. The setgroups refusal the second test leans on is the
+  kernel's on each unix; it was seen only on macOS here.
+- **Windows** refuses every `runas` (`credential_windows.go`), and now
+  refuses it for a background command too. Not run on Windows.
+### 5.302 A `listen` reaction ran without its state's guards or account
+
+The handbook (chapter 6) says `listen` is `watch` with the reaction
+deferred. It was not. A watch reaction runs through `execute`, which binds
+the chunk's `runas` and `umask` to the module context, bounds each attempt
+by its `timeout`, retries it and runs its generic `check_cmd`; before
+that, the main pass applies its `creates`, `unless` and `onlyif`.
+`runListeners` called `States.CallWatch` on the runner's shared context
+with none of these. The compiler moves `runas`, `umask` and `timeout` out
+of the arguments and into the chunk's options (`state/lowstate.go`), so
+the module never saw them either.
+
+So, at the end of a run:
+
+- a listened `cmd.run` with `runas: deploy` ran as the node's account,
+  root;
+- `onlyif: nginx -t` and `unless:` did not guard the reaction;
+- a state skipped in the main pass by `creates:` ran its mod_watch
+  anyway. This was reproduced in the runner's test harness before the
+  change;
+- `retry`, `timeout` and `check_cmd` did not apply.
+
+Salt's `call_listen` (`salt/state.py`) copies the whole low chunk, sets
+`fun` to `mod_watch`, removes only the requisite keys, and runs it with
+`call_chunks`, so `call()` applies `_run_check` (`unless`, `onlyif`,
+`creates`), `retry` and `runas` to it as to any chunk. That was read, not
+run.
+
+**The change.** The main pass's "gates, then `execute`" is now one
+function, `runChunk`. The main pass and `runListeners` both call it, so
+the listen reaction and the watch reaction run through the same code and
+cannot come apart again. `runListeners` does not evaluate requisites a
+second time; Salt drops them from the listener's copy for the same
+reason. A gated reaction is reported as skipped, with the gate's comment
+after "Listening reaction, run at the end of the state run." A reaction
+that errors now says "The state raised an error" where it said "The
+listen reaction raised an error".
+
+**How it is tested** (`internal/runner/runner_test.go`; the probe's
+mod_watch now records the account, umask and deadline it saw, and can be
+told to fail):
+
+- `TestListenReactionGetsTheChunksExecutionOptions`: `runas`, `umask` and
+  `timeout` reach the reaction. The same body with `watch` is the control.
+- `TestListenReactionHonoursItsGates`: `creates` on an existing
+  directory, a true `unless` and a false `onlyif` each hold the reaction,
+  and it is reported skipped with success. An open `creates` is the
+  control.
+- `TestListenReactionIsRetried`: a failing reaction with `retry:
+  attempts: 3` runs three times.
+- `TestListenReactionRunsItsCheckCmd`: the generic `check_cmd` runs for
+  the main pass and again for the reaction.
+
+With the old `runner.go` restored, all four failed and the `watch`
+control passed. With `runListeners` calling `execute` directly
+(skipping only the gates), only the gates test failed.
+
+**Not verified.**
+
+- **No real command ran.** The tests use a scripted state module and a
+  recording command runner. No listened `cmd.run` was watched running as
+  another account; that needs root and was not done.
+- **macOS only.** Run on Darwin 25.6, not on Linux or FreeBSD. The runner
+  has no platform code on this path.
+- **Structured conditions still use the shared context.** `evalCondition`
+  runs a `{fun: ...}` condition with `r.Ctx`, not the chunk's context, so
+  it does not see the chunk's `runas`. That is true for the main pass as
+  well and was not changed here. Whether Salt applies `runas` to a
+  `fun:` condition was not checked.
+### 5.303 A request in flight could un-revoke an API token
+
+Found by review, not reported from a host. `apitoken.Store.Redeem` runs
+on every authenticated API request. It read every token record, found
+the one the secret matched, set `LastUsed`, and wrote the whole record
+back. `Revoke` is a separate read-modify-write of the same file, and it
+runs from two places: `halite-api token revoke`, which is a separate
+process, and a logout inside the API. There was no lock in either
+process and none between them. So a revocation that landed after a
+Redeem had read the record and before it wrote it was overwritten by
+Redeem's stale copy, which said `Revoked` false. The token worked again,
+the revocation's own output said it had succeeded, and nothing logged
+the reversal. The window is one request wide, but the hot path is every
+request a busy token makes, which is the token most worth revoking.
+
+**The change** removes the read-modify-write from the hot path instead
+of locking around it. Redeem no longer writes the record at all. The
+idle clock goes to its own file, `<id>.last_used`, which holds one
+RFC 3339 timestamp, and `Get` folds it back into `LastUsed` (the later
+of the two, so a record written before this change keeps its value).
+After `Issue`, the only writer of a record is `Revoke`, and the only
+thing `Revoke` writes is `Revoked` true. No interleaving of any number
+of processes can turn that back. A lock was considered and not chosen:
+the repository has no file-lock helper, `make build-all` builds the API
+for every target including Windows, where `flock` does not exist, and a
+lock protects only as long as every writer in
+every process takes it. The rule here is enforced by there being nothing
+left that could write `false`. `Prune` removes the clock with its
+record.
+
+The worst a lost update to the clock can now do is move a token's idle
+expiry by the width of two concurrent requests.
+
+**What is proven.** `internal/apitoken/race_test.go` uses two `Store`s
+on one directory, as the API and the CLI are, and an unexported hook
+that runs inside the window: in Redeem between the read and the clock
+write, and in Revoke between its read and its write. Revocation holds in
+both orders, and the idle clock that Redeem wrote in the second order
+survives. A third test checks that Redeem leaves the record's bytes
+unchanged. With Redeem's old `put` put back, all of them fail, the first
+with "the redeem in flight wrote the token back unrevoked".
+
+**Linearisation, stated rather than implied.** A Redeem that read the
+record before a revocation landed still succeeds. It began before the
+token was withdrawn, and the request it authenticates is concurrent with
+the revocation. Every Redeem that starts after `Revoke` has returned is
+refused.
+
+**Not verified.** Nothing here has run against a live API. The hook
+tests are in-process with two stores, not two processes. No FreeBSD or
+Windows run has been made. On Windows the per-request rename now goes to
+the `.last_used` file instead of the record, and `atomicfile` already
+retries on that platform, but no Windows API has been seen under load.
+
+**Left alone.** Redeem still lists and parses every token file in the
+store on every request, to find the one whose digest matches (M-07 in
+the review that found this). That is a cost that grows with the store.
+It is not a correctness defect, and it has its own fix (an index by
+digest) that is not this one.
+### 5.304 The login backoff locked a name's owner out, and held no spray
+
+Found by the audit of issue #321 (M-09), and reproduced against the
+limiter with a simulated clock before anything was changed. 5.232 keyed
+the login backoff by name alone (`local:ed`, `ldap:ed`) and checked it
+before the password. A name was let go only after a whole fifteen
+minutes with no failure. So:
+
+- **A third party could keep the owner out.** One failure each time the
+  window opened, timed by the `Retry-After` the hub itself sent, grew
+  the window to fifteen minutes and kept it there. Over a simulated day
+  that is 105 requests, and the name was refused 100% of the time, to
+  its owner from any address, with the right password. The refusals
+  cost the attacker no hash. 5.232 called this "a backoff, not a
+  lockout"; against an active attacker it was a lockout.
+- **Spraying across names was not held** by anything but the bound on
+  checks in flight, as 5.232's own "Not covered" said. One address
+  cycling through a thousand names had a thousand fresh windows.
+- **The username was unbounded.** It was used as a map key and written
+  to the log on every failure, up to the request body's limit (M-08).
+
+**What changed**, in `internal/api/loginlimit.go` and its two callers:
+
+- The backoff is keyed by **(method, source, name)**. The doubling, the
+  fifteen-minute cap, the 4,096-entry bound and its eviction are as
+  they were. An attacker failing from one address now holds that
+  address, and the owner's address has no window at all.
+- **A right password from inside the window is still refused, from that
+  source.** Answering it would let the attacker test each guess for
+  free during the window. Other sources are unaffected, which is what
+  stops it being a lockout.
+- **Each source has a budget of failures**, across every name: thirty
+  in hand, draining one every thirty seconds, about 2,880 a day. Past
+  it, every login from that source is refused with 429 and
+  `Retry-After`, "too many failed logins from this address", before
+  anything is looked up or hashed. Only failures spend it, so correct
+  logins from a shared address cost nothing, and a success does not
+  refill it. The table is bounded at 4,096 sources, and a full one
+  gives up the source with the least spent.
+- It is not `internal/ratelimit.Bucket` (5.233): `Take` checks and
+  spends in one step, and the login must check before it knows whether
+  this attempt is a failure.
+- **The source is the connection's peer** (`RemoteAddr`), never
+  `X-Forwarded-For`. The API is documented to face its callers
+  directly, a reverse proxy being optional (handbook chapter 32), and
+  there is no setting naming a proxy to trust. Honouring the header
+  would let a caller choose the source it is held to. An IPv6 peer is
+  held by its /64, because one host is routinely given a whole /64. An
+  IPv4-mapped peer is its IPv4 address.
+- **A username over 256 bytes is refused with 400** before it is keyed,
+  stored, logged or counted, and before the `eauth` switch, so LDAP is
+  covered too. The name is not echoed. This is M-08, carried in the
+  same change because it is three lines in the same handler.
+
+Tests, in `internal/api/loginsource_test.go`, with an injected clock:
+
+- `TestAnAttackerFailingAtEveryWindowDoesNotHoldTheOwnersAddress` runs
+  the day against the limiter, 105 failures from one address, and
+  requires the owner's address to be free after each. It also requires
+  the attacker to have been held for more than 23 hours, so that it is
+  known the attack ran.
+- `TestALoginBackedOffAtOneAddressIsAcceptedFromAnother`, through the
+  handler with a set `RemoteAddr`: 429 with `Retry-After: 900` at the
+  attacker's address, even for the right password, and 200 for the
+  owner from another at the same instant.
+- `TestSprayingNamesFromOneAddressIsThrottled`: the last failure of the
+  budget goes through the handler, then a fresh name is refused from
+  that address, not from another, and is allowed again after one drain.
+- `TestAnLDAPFailureSpendsTheSourcesBudget`.
+- `TestAnOversizedUsernameIsRefusedBeforeItIsKeptOrLogged`: 257 bytes
+  gets 400, nothing in the log or the limiter's tables; 256 bytes gets
+  the ordinary 401.
+- `TestALoginsSourceIsThePeerAndAnIPv6PeerIsItsSlash64`, with
+  `X-Forwarded-For` and `X-Real-IP` set to another address.
+- `TestAFloodOfSourcesCannotResetTheSprayersBudget`.
+
+Each fix was broken on purpose, and the tests named failed:
+
+- keying by name again failed the first two;
+- a source budget that never refuses failed the spray, LDAP and flood
+  tests;
+- a handler that does not charge the budget failed the spray and LDAP
+  tests;
+- removing the length check failed the oversize test;
+- holding IPv6 per address failed the source test;
+- evicting the most-spent source failed the flood test.
+
+The existing tests of 5.232 pass unchanged.
+
+SPEC 23.2 and its 25.1 row, handbook chapters 26, 32, 34 and 39, the
+command reference and the metric's description now say "from that
+address", and the budget.
+
+**Not covered:**
+
+- **Behind a proxy every caller is the proxy.** The backoff then falls
+  back to per name, which is the lockout this removes, and the budget
+  becomes one budget for everybody behind it. There is no trusted-proxy
+  setting; adding one is its own change.
+- **A guesser with many addresses** is held per address, not per name.
+  Any limit on a name across sources is one a third party can trip for
+  its owner. With a botnet, the bound on checks in flight is what is
+  left.
+- The budget's size and drain rate are a judgement, not a measurement
+  of any estate. An office behind one NAT address shares one budget.
+- The day was simulated against the limiter, not run through the
+  handler with 105 hashes. The handler tests show the same keying with
+  one hash each.
+- No real client or directory was used. Only run on macOS.
+### 5.305 An unknown login name was checked at a third of a real one's cost
+
+Found by the audit of issue #321 (M-10). 5.232 says a failed local
+login runs PBKDF2 for an unknown name too, "so the two take the same
+time", and the comments on `account.Verify` and in the login handler
+said the same. They did not. `Verify` on a nil account derived at
+`MinIterations`, 210,000. Every hash `halite-api account hash` writes,
+and `Hash`'s own default, is at `DefaultIterations`, 600,000. Measured
+once each on this Mac, before the change: 135 ms for a wrong password
+against an account hashed by default, 47 ms for a name with no account.
+A caller timing a handful of logins could tell which names exist, which
+is what the single failure message and the per-name backoff covering
+unknown names (5.232) exist to deny.
+
+**What changed**, in `internal/account/account.go`:
+
+- An unknown account is checked against `unknownAccount`, a verifier
+  built from the constants `Hash` uses: `DefaultIterations`,
+  `saltLength`, `keyLength`. It is not a copy of their values, so
+  raising `DefaultIterations` raises it too.
+- Both paths go through one `Verify` body: the same `derive` (which
+  `Hash` also uses), and the same constant-time comparison. Only the
+  verifier differs. The comparison's result is discarded for the
+  unknown account, so no password matches it, the empty one included.
+- The comments on `Verify` and in the login handler now say what is
+  true. The work is equal to an account hashed **at the default**.
+
+**An account hashed at another count is still distinguishable.** A
+record carries its own count, so one set with `--iterations`, or written
+before `DefaultIterations` was last raised, takes its own time, and an
+unknown name cannot know which count to imitate. The `Verify` comment
+says so, and that setting such a password again at the default puts it
+back in the crowd. Nothing reports which accounts are not at the
+default.
+
+Tests, in `internal/account/verifywork_test.go`. `derive` is a variable
+so that a test can record what each path asks of it, without timing
+PBKDF2 runs against each other:
+
+- `TestAnUnknownAccountIsVerifiedWithTheWorkOfADefaultHash` hashes as
+  the CLI does (`DefaultIterations`) and as `Hash(…, 0)` does. It
+  requires one derivation for a known account and one for an unknown
+  one, with the same iteration count and salt length, and keys of the
+  same length.
+- `TestNoPasswordVerifiesAnUnknownAccount` runs the real derivation
+  with the empty password.
+
+Broken on purpose, the first test failed both times. With the unknown
+verifier set back to `MinIterations` it reported "asked for
+{iterations:210000 …}, a known one for {iterations:600000 …}". With the
+old nil branch restored in front of the shared path, it reported the
+same.
+
+After the change, the same single measurement: 133 ms for the known
+account and 132 ms for the unknown name.
+
+**Not covered:**
+
+- The timing was measured once each, on one Mac, and only as a check on
+  the structural test. No statistical timing test was run, deliberately.
+- The rest of the login handler was not examined for timing beyond the
+  hash. A disabled account and a second-factor account do the same hash
+  and then a little more.
+- `internal/api/loginlimit.go`'s header still says every failed login
+  runs at "the enforced minimum of 210,000 iterations" and that an
+  unknown name takes the same time. That file is being changed by
+  another branch, so it is left to whichever of the two lands second.
+- Only run on macOS.
+
+#### 5.305, the `loginlimit.go` header
+
+The header of `loginLimit` (`internal/api/loginlimit.go`) now says what
+`account.Verify` does. A failed login runs PBKDF2 at the account's own
+count. That is `DefaultIterations` for a hash written by default and
+never less than `MinIterations`. A name with no account runs at
+`DefaultIterations`, so it costs what a default-hashed account costs,
+and an account at another count is still distinguishable. The guessing
+rate it gives is now a range, seven to twenty a second per core, from
+this section's 133 ms and 5.232's 50 ms. Those are the two figures
+already measured. Nothing was measured again.
+
+Only a comment changed. No code changed and no test covers it, so there
+was nothing to break on purpose. The claims in it were checked by reading
+`unknownAccount` and `Verify` in `internal/account/account.go`.
+### 5.306 A binary another account planted in `thin_dir` was run as root
+
+Found by audit (H-07), by reading the code, and confirmed by a test
+before it was fixed. It was not seen on a target.
+
+**The defect.** An agentless run asked the target
+`test -x <thin_dir>/<digest>`. On a yes it did not push, and ran that
+file, as root when the roster says `sudo: true`. Nothing checked who
+owned the file or the directory, and nothing hashed the file. The default
+`thin_dir` is `/var/tmp/halite-thin`, and every account may create
+entries in `/var/tmp`. The digest is the SHA-256 of a published,
+reproducible build, so anybody can compute the name. So any account on a
+target could make `/var/tmp/halite-thin`, put an executable in it under
+the next release's digest, and the next agentless run would execute it
+as root. `prepare` did `mkdir -p` and `chmod 700`, and as root both
+succeed on a directory another account made, which stays that account's.
+The staging name `<digest>.partial` was predictable too.
+
+The real-`sshd` run recorded in 5.13 says "an unsafe
+`thin_dir` was refused by name". That was `shellSafe`, which checks the
+characters in the path. It never checked who could write to it.
+
+**The fix** (`internal/sshexec`). A cached binary is run only if nobody
+but root and the connecting account could have written it or any
+directory above it:
+
+- the binary is a regular file, owned by root or the connecting account,
+  with no group or other write bit and no ACL;
+- `thin_dir` is a directory with the same properties. Sticky does not
+  excuse it, because in a sticky directory anybody can still add a file;
+- every directory above it is owned by root or the connecting account,
+  and has no group or other write bit unless it is sticky. Sticky is what
+  makes `/var/tmp` itself acceptable: only an entry's owner may rename or
+  remove it there. A non-sticky parent with an ACL is refused too;
+- this holds for the path as written and for the physical path that
+  `cd -P` reaches. Symbolic links cannot simply be refused, because
+  FreeBSD's `/home` and macOS's `/var` are links.
+
+The connecting account is trusted because it already has that power: with
+`sudo` it can become root, and without it the binary runs as that account.
+
+The check runs on every run, in the same ssh session as the cache lookup,
+and again in `prepare` before anything is copied. `prepare` checks the
+owner before its `chmod 700`, so a run as root does not change the mode of
+another account's directory before it refuses it. A `thin_dir` owned by
+the connecting account that others may write to is now refused, where
+`prepare` used to `chmod` it. Ownership says who made it, not who has
+written into it since. The staging file is now made by `mktemp`, so two
+runs against one machine no longer share a name. The handbook's tip about
+duplicate roster entries described that collision, and it has been
+rewritten. `thin_dir` must now be absolute and is checked by `shellSafe`
+before anything reaches the target, not only when the job is invoked.
+
+**Why ownership and not a hash.** A hash taken in one ssh session and an
+`exec` in the next leave a gap. If the directory is writable by another
+account, the file can be replaced inside that gap, and the hash is then
+about a file that is gone. Ownership closes the gap by construction: if no
+other account can write anywhere on the path, nobody can win the race. The
+cached binary is still hashed, in the check script, at no extra round
+trip. A mismatch is treated as absent and the binary is replaced, because
+a corrupted binary should not run either. The hash is not what makes this
+safe.
+
+**Why the default did not move.** Salt's default is under `/var/tmp` too:
+`/var/tmp/.<user>_<id>_salt` in `salt/client/ssh/__init__.py`, read in the
+3006.28 source. Its shim refuses a directory whose owner is not the
+running user or whose mode is not 0700 (`ssh_py_shim.py`,
+`need_deployment`). That was read, not run. A root-owned default would
+need `scp` to write as root, which it cannot. A default in the account's
+home would be a relative path, and `sudo` resolves that against a working
+directory its policy may change. What is left is a denial of service:
+another account can make `/var/tmp/halite-thin` first, and agentless runs
+on that machine stop. The refusal names the path, the owner's uid and the
+`thin_dir` setting. That is the right failure, because another account
+doing this is worth an operator knowing about.
+
+**Portability.** The script is POSIX sh. The owner and mode come from
+`ls -ldn`: field 1 is the mode string and field 3 the numeric owner on
+GNU, BSD and busybox. `stat` is `-c` on Linux and `-f` on the BSDs. A `+`
+after the mode marks an ACL on all three. SELinux's `.` and macOS's `@`
+are not refused. `dirname`, `cd -P`, `pwd -P` and `id -u` are POSIX.
+`mktemp` is not POSIX, and is on Linux, FreeBSD and macOS. The digest
+falls back through `sha256sum`, `sha256 -q` and `shasum -a 256`.
+
+**How it is tested.** `internal/sshexec/trust_test.go` runs whole `Run`s
+with ssh and scp replaced by stand-ins that run the real scripts through a
+real `/bin/sh` on the test machine. A planted executable that leaves a
+mark when it runs is put at the cached name. It must not run, and each
+case must be refused for its own reason: a world-writable, a
+group-writable and a sticky world-writable `thin_dir`; a group-writable
+and a world-writable binary; a binary that is a link; a `thin_dir` that
+is a link to a writable directory; a world-writable non-sticky parent.
+Other tests: an `id` on the path that answers uid 4242 makes the test's
+own files read as another account's, and that is refused with and without
+a binary present; a sticky world-writable parent is accepted; a new
+`thin_dir` is made 0700; a cached binary whose content is not its digest
+is replaced and not run; a binary root really owns is trusted; a relative
+`thin_dir` is refused before ssh runs; three concurrent runs against one
+directory all succeed; two `prepare`s give two different staging names.
+
+Each part was broken on purpose and the tests failed:
+
+- with the old `test -x` check restored, the planted binary ran in every
+  case (`return "{\"from\":\"planted\"}"`), and four tests failed;
+- with parents not checked for writers, the non-sticky parent case
+  failed;
+- with the sticky excuse changed, the sticky-parent test failed;
+- without the physical-path walk, the link-to-a-writable-directory case
+  failed;
+- without the owner comparison, the other-account test failed;
+- with a fixed staging name, the staging-name test failed;
+- with the digest ignored, the replaced-binary test failed.
+
+The whole package also passed with the target shell set to `dash`,
+`ksh` and `bash --posix` (`HALITE_TEST_TARGET_SH`). Under `zsh`, which
+does not split words as POSIX sh does, it fails closed: the check refuses.
+No target's `/bin/sh` is zsh.
+
+The two `noexec` tests in `live_noexec_linux_test.go` now run only the
+probe half of the script (`probeScript`). They run inside an unprivileged
+user namespace, where `/` and every other directory owned by the host's
+root show as the overflow uid, and the trust check correctly refuses
+them.
+
+**What CI found on the first push.** The concurrent-runs test passed on
+the Mac it was written on, and failed in CI on Linux, FreeBSD and macOS.
+The staging file had a random name, but the `noexec` probe still had the
+fixed name `.halite-probe`, so one run removed it or was writing it while
+another ran it. The CI logs showed `chmod: cannot access
+'.../halite-thin/.halite-probe': No such file or directory` (ubuntu-24.04,
+fips-test), `/bin/sh: cannot open .../.halite-probe: No such file or
+directory` (FreeBSD, macOS race), and on Linux `.halite-probe: Text file
+busy`. The probe is now made by `mktemp` too. `TestTheProbeNameIsNotFixed`
+does not depend on timing: it puts a directory at the old name first.
+With the fixed name restored, it failed with `.halite-probe: Is a
+directory`. The concurrent test now runs six runs at once, not three, and
+it passed 10 times in a row locally. That shows the race is less likely
+to slip through unseen, not that it is gone. Until CI ran, the claim
+earlier in this section that concurrent runs no longer collide was
+untrue.
+
+**Not verified.**
+
+- **No real target.** Nothing was run over a real ssh connection, and no
+  `sudo` was involved. The stand-in ssh runs the scripts locally as the
+  test's own account.
+- **No real foreign owner and no root.** The tests did not run as root,
+  so no directory belonged to another account, and the case that matters
+  most, a run as root meeting another account's directory, was not run.
+  It was simulated with mode bits and with a fake `id`. The owner check
+  before `chmod` (so root does not change the mode of another account's
+  directory) has no test.
+- **macOS only.** The tests ran on macOS (Darwin 25.6), whose `ls`,
+  `dirname` and `mktemp` come from FreeBSD. They did not run on Linux or
+  FreeBSD. CI runs this package on both. The Linux-only `noexec` tests
+  were not run, because they need Linux.
+- **ACLs** were not exercised. That a `+` marks one comes from the
+  three platforms' `ls` documentation, not from a run.
+- **A target with none of the three digest tools** now gets the cached
+  binary replaced on every run and then refused by `remoteDigest`. That
+  was read from the code, not run.
+- **Related defects, not fixed here.** M-14: ssh option injection
+  through a roster's `host` or `user`. M-28: the temporary tree a
+  `oneshot` run makes is never removed.
+### 5.307 A package name could be a package manager's option, run as root
+
+Audit M-32. Every `pkg` provider builds `tool verb [options] name...`,
+and nothing checked the names or versions on the way in. With a recording
+runner, `pkg.installed` with `pkgs: ["-oDpkg::Pre-Invoke::=touch
+/tmp/pwned", curl]` made the apt provider run
+
+    apt-get install -y -q -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef "-oDpkg::Pre-Invoke::=touch /tmp/pwned" curl
+
+and report success. apt-get reads that element as its own `-o`, which
+sets a dpkg hook, and the node runs as root. There is no shell in that
+path; the injection is into the package manager's option parser. The
+same element reached `dnf install`, `zypper install --name`, `pkg
+install` and `pkg lock`, `apk add`, `brew install` and `choco install`
+unchanged, and dnf's `--setopt=` and `--installroot=` are the same door.
+Names come from SLS, pillar and templates, so whoever can write any of
+those could run a command as root on every node that applies it.
+
+Two paths that should have agreed did not. `dnf_module` refuses a leading
+`-` with a regex for this exact reason ("these specs arrive from pillar
+and templates"), and `chattr` puts `--` before its operand. The main
+`pkg` path did neither.
+
+**The fix.** `pkgValidateName` and `pkgValidateVersion` (`pkg.go`) refuse
+an empty name, a leading `-`, and any whitespace, control character (NUL
+included) or Unicode format character. `packageSpecs` applies them, so
+`pkg.installed`, `pkg.latest`, `pkg.removed`, `pkg.purged`, `pkg.install`
+and `pkg.remove` are covered. `pkg.purge`, `pkg.hold`, `pkg.unhold`,
+`pkg.latest_version`, `pkg.available_version`, `pkg.file_list`,
+`pkg.file_dict`, `pkg.info_installed` and `pkg.download` apply them
+directly. `compareFreeBSD` checks both versions, because `pkg version -t a
+b` gives each one its own argv element. The check runs before the
+provider is asked anything, in a dry run too, so a refused call runs no
+command at all.
+
+It is deliberately not one positive grammar. The managers do not share
+one, and a Debian-strict rule would refuse `www/nginx`,
+`py311-foo@py311`, `openssl@3`, `@group`, `name.arch` and `Git.Install`.
+A per-manager grammar would be a claim about each manager that nobody here
+has measured. Refusing what is dangerous, or what no name can hold,
+needs no measurement. It does not refuse manager features that look like
+names: dnf paths and URLs, apt's `name-` and `name/release`. Those are not
+option injection.
+
+**No `--` was added**, to any provider. That `apt-get`, `dnf`, `pkg(8)`,
+`apk` and `zypper` each accept `--` before operands is not shown by
+anything in this repository, and none of those tools was on the machine
+this was written on. zypper's argv is also held byte-for-byte to captured
+fixtures (`testdata/zypper/leap16/*.argv`), and apt's, dnf's and pkgng's
+install paths are `hardware`; changing their argv without a run would
+turn a demonstrated path into an assumed one. The validator is the guard.
+Adding `--` is a follow-up for a lab run, one tool at a time.
+
+**Tests** (`pkg_name_injection_test.go`, recording runner, provider chosen
+by `Lookup`):
+
+- Twenty-one calls carry payloads in `name`, `pkgs`, a `pkgs` mapping's
+  version, or `version`. The payloads are the apt hook, `--setopt=`, a
+  newline and a NUL. Each runs through the registry on apt, zypper, dnf,
+  pkgng, apk, brew and choco, dry and wet. Each must be refused with
+  "refused" in its message, and run nothing.
+- Every `pkg.*` exec or state function with a `name` or `pkgs` parameter
+  must be in that list. The exceptions are `pkg.version` and
+  `pkg.upgrade_available`, whose names never reach argv. The test checks
+  that too, on every provider.
+- `libstdc++6`, `python3.11`, `nginx:amd64`, `www/nginx` and
+  `py311-foo@py311` produce the whole expected install argv on apt, dnf,
+  pkgng, apk and zypper. Pinned versions with an epoch and `~` are still
+  joined as `name=v` (apt) and `name-v` (dnf).
+
+Broken on purpose, each one watched fail and restored. With the name
+check a no-op, the injection test failed on all seven providers and
+printed the original `apt-get install ... "-oDpkg::Pre-Invoke::=..."`
+argv, and the same element in `dnf install`, `zypper install --name`,
+`apk add` and `pkg lock`. With the version check a no-op, the version
+cases and the FreeBSD comparison failed. With the check removed from
+`hold`/`unhold` alone, those two failed. With `pkg.hold` dropped from the
+list, the coverage test failed. With the check made too strict (refusing
+`/@:+`), the legitimate-name tests failed.
+
+**Not verified.** No real package manager was run. Everything above is
+argv observed through a recording runner on macOS, so nothing here shows
+that each tool reads the payload as an option. That is shown for apt by
+the original report, and for the others by their option syntax. Not run
+on FreeBSD. `dnf_module` keeps its own narrower regex, which is not
+edited here; making it share `pkgValidateName` is a follow-up. Other
+modules that pass package names to a tool (`pip`, `npm`, `gem`, `pkgrepo`
+and so on) were not looked at.
+
+#### 5.307, `dnf_module` shares the check
+
+`dnfModuleValidate` (`internal/builtin/dnf_module.go`) now calls
+`pkgValidateName` on each spec before it matches its own pattern,
+`dnfModuleSpec`. The pattern is kept. It is stricter, and it is a
+dnf-specific rule.
+
+**There was no gap to close.** Every name `pkgValidateName` refuses was
+already refused by `dnfModuleSpec`. The pattern is ASCII only and cannot
+start with `-`. So the only visible change is the message: a spec
+starting with `-`, or holding whitespace or a control or format
+character, now gets pkg's message, not "is not a module spec". The
+reason for the change is that the two were two statements of one rule,
+and the narrower one held only while nobody widened it. A pattern that
+later admits `@` or a non-ASCII letter still cannot admit an option or a
+control character.
+
+`dnf_module` takes no version argument, so `pkgValidateVersion` does not
+apply.
+
+**Tests.** The refused names in `TestPkgValidateName` are now a shared
+table, `pkgRefusedNames`. `TestDnfModuleRefusesWhatPkgRefuses`
+(`internal/builtin/dnf_module_test.go`) requires `dnfModuleValidate` to
+refuse each of them, after a valid `nginx`. It then replaces
+`dnfModuleSpec` with `^.*$` and requires each one to be refused again.
+That second half is what tests the call. The first half passed without
+it.
+
+**Broken on purpose.**
+
+- With the `pkgValidateName` call removed, the first half still passed,
+  as expected from the paragraph above. The second half failed for 12 of
+  the 13 names. `a\nb` was still refused, because `.` in `^.*$` does not
+  match a newline.
+- With the call removed and `dnfModuleSpec` itself set to `^.*$`, both
+  halves failed, 12 names each, and the older
+  `TestDnfModuleRefusesSpecsThatDnfWouldReadAsOptions` failed on its five
+  bad specs.
+
+The call was then put back and the tests passed.
+
+**Not verified.** No dnf was run. Nothing here runs dnf. Only macOS
+(Darwin 25.6). No `CHANGELOG.md` entry, because only an error message
+changes, and only for a spec that was refused already.
+### 5.308 Thirty-four functions acted under `--test`, and the audit for it could not see them
+
+5.135 built `TestEveryMutatingFunctionHonoursItsTestModeClaim` and said
+that it held all 248 mutating functions that claim `reliable`. A review
+found three families that changed the system under a dry run. Rebuilding
+the audit so that it could see them found two more. All five are fixed.
+
+**What acted under a dry run.** Each item was reproduced with `Test`
+set before it was fixed. The `beacons` and `x509` items were found and
+reproduced in this change. The first three were reproduced by the
+review, and again here by the rebuilt audit with each fix removed.
+
+- **`service.mask` and `service.unmask`** masked the unit. The service
+  module's other mutating functions (`simple()`, `force_reload`) check
+  `c.Test`. `maskModule` did not, and it declared no `Privileges`
+  either. It now answers `true` under a dry run, as `service.start`
+  does, and declares `root`.
+- **`file.chmod`, `chown`, `chgrp`, `mkdir`, `makedirs`, `rmdir`,
+  `move`, `hardlink`, `truncate`** all declared `reliable` and none read
+  `c.Test`. `makeDirs` was not even given the context. Each now runs
+  its own refusals (the path exists, the names resolve, the directory is
+  empty, the link name is free) and returns what the real call returns,
+  without the change. `chown` and `chgrp` ask through `plannedOwnership`,
+  the helper `file.managed` already uses in test mode.
+- **`beacons.add`, `modify`, `delete`, `enable`, `disable`,
+  `enable_beacon`, `disable_beacon`, `reset`** called the running beacon
+  engine. Under `--test`, `beacons.reset` removed every beacon from the
+  node. This is the pattern 5.130 fixed in `schedule`, one file over,
+  and `beacons.save` in the same file already checked. They now answer
+  in `schedule`'s shape: `would_add`, `would_reset`, and so on.
+- **`x509.create_private_key`, `create_csr`, `create_certificate`**
+  wrote their file when given a `path`. A dry run of
+  `create_private_key` over a node's real key replaced the key. Each now
+  runs everything up to the write and returns the path.
+- **`pro.attach`, `detach`, `enable`, `disable`, the six `dnf_module`
+  mutators, `dnsutil.hosts_append` and `hosts_remove`** ran their
+  command or wrote their file under a direct `--test` exec call. All of
+  them declared `unreliable`. Inside a state run, `module.run` answers
+  for test mode before it calls any execution function, so the exposure
+  was a direct call. That holds for every family above. Whether a
+  template that calls one of them while a `--test` run renders it is
+  exposed was not checked. The direct call to `pro.detach` detached the node, and only the
+  original contract token can reattach it.
+
+**What `unreliable` now means for these.** 5.135 and plan.md section 6
+record that `unreliable` is used for two things: "cannot predict" and
+"acts anyway". This entry does not settle that question. Each function
+was decided on its own:
+
+- **`dnsutil.hosts_append` and `hosts_remove` are now `reliable`.**
+  Every step before the write is a read, so the line they would add,
+  and whether a removal changes the file, are known exactly. They now
+  return that answer and skip the write.
+- **`pro.*` and `dnf_module.*` stay `unreliable` and run nothing.**
+  What `pro enable` or a stream switch would change is decided by the
+  client and the repositories. No prediction of it has been run and
+  watched to come true. So under a dry run they return the command they
+  would have run (the `pro attach` token is redacted) and claim no
+  change. That is the documented meaning of `unreliable`. After this
+  change, the ten `cmd.*` functions are the only mutating functions
+  whose code never reads `Test`. They are in a closed list with the
+  reason.
+
+**Why the audit could not see them.**
+
+- **Arguments that named nothing.** The dynamic half called each
+  function once, with every path set to a file that did not exist. So
+  `chmod`, `truncate`, `rmdir`, `move` and `hardlink` failed on the
+  missing path before they acted. The snapshot ignored directories, so
+  `mkdir` and `makedirs` were not seen even when they acted. The audit
+  filled required parameters only, so `x509.create_*` never got a path
+  and returned PEM. A function that failed early looked the same as a
+  function that withheld the change. Both went into one "quiet" bucket
+  that the audit did not judge.
+- **No provider, no engine.** On a host with no init system that can
+  mask, `service.mask` refused before it acted. On a systemd host it
+  goes over D-Bus and bypasses the `RecordingRunner`. The context had no
+  beacon engine or schedule attached, so every `beacons.*` and
+  `schedule.*` function refused.
+- **A filter.** The audit skips every function that does not claim
+  `reliable`, by design, so `pro.*`, `dnf_module.*` and the `dnsutil`
+  pair were never called. `pro` and `dnf_module` are also gated to
+  Linux.
+- **The static half could not name helper-built registrations.** It
+  found a registration by reading the `Module:` and `Function:` string
+  literals. `maskModule(r, "mask", …)`, `dnf_module`'s `mutating(…)`,
+  `selinux`'s `mutate(…)`, `beacons`' `sig("add", …)` and `file`'s
+  `edit("touch", …)` have a variable where the name goes, so those
+  functions were not in its map. For a violator that did not matter,
+  because the check only excused functions. But it could not excuse a
+  correct one either.
+- **The static half followed `errors.New` into `builtin.New()`.** It
+  followed every identifier that had the name of a package-level
+  function, including the selected name in a selector. `New()` registers
+  every module, so it contains a `Test` reference. Any function whose
+  call chain built an error with `errors.New` was therefore "reading
+  Test". `pro.detach` passed this way: `proToolPresent` calls
+  `errors.New`. This was found when removing the `pro` fix did not fail
+  the new check.
+
+**The rebuilt audit.**
+
+- **`TestEveryMutatingFunctionReachesTheTestFlag`**
+  (`internal/builtin/testmode_reach_test.go`) is new. It takes each
+  mutating function's `Fn` from the registry through a new
+  `exec.Registry.Func`. The runtime gives the file and line where that
+  code starts, closures inside helpers included. The test finds that
+  code in the parsed package and requires a `.Test` reference in it, or
+  in the package functions it calls. Wrappers that receive their work
+  as an argument (`withBeacons(func…)`, `maskModule(…, func…)`,
+  `edit(…, fileTouch)`) are matched to their call sites, and the code
+  passed in is checked. It does not depend on the platform, so
+  `pro.detach` is checked on a Mac. It applies to `unreliable` functions
+  too. The only exemptions are a closed list, `actsUnderTestByDesign`
+  (the ten `cmd.*` functions), and each entry on it must declare
+  `unreliable`. An entry that stops being true fails the test, and so
+  does a stale entry.
+- **The dynamic half calls each function in four worlds:** every path
+  an existing file with mode 0600, every path an empty directory, the
+  first path a file and the rest free, and every path free one level
+  down. Optional path parameters are filled as well as required ones.
+  The context has recording engines: a service provider that can mask,
+  placed in front of the real providers, a beacon engine, a schedule, a
+  mine, and `SaveConfig`/`ReloadConfig`. Each records a call as an
+  action. The snapshot records directories, modes and contents.
+- **The quiet bucket is split and checked.** "Answered without acting"
+  (no error in some world) is judged. "Refused in every world" is not,
+  and `auditMustReach` names 23 functions that need no tool and no
+  platform. If one of them falls into the refused bucket, the test
+  fails. `service.mask` and `unmask` are not in that list on Windows,
+  where the platform's own provider is chosen first.
+- On this Mac, the old harness judged **4 of 291** and put 287 in one
+  bucket. The new one judges **112 of 291** (6 acted, 106 answered) and
+  reports 179 as unreached. The static check finds the code of all 322
+  mutating functions. 312 of them reach `Test` and 10 are on the list.
+
+**Broken on purpose.** Each fix was removed in turn, the two audits were
+run, and the fix was restored:
+
+- **`maskModule`'s test branch removed:** both audits failed on
+  `service.mask` and `service.unmask`. The dynamic audit showed `service
+  mask <dir>/name` in all four worlds.
+- **`file_more.go` restored from `main`:** the static audit failed on
+  all nine. The dynamic audit failed on seven: `chmod`, `hardlink`,
+  `makedirs`, `mkdir`, `move`, `rmdir`, `truncate`. It does not see
+  `chown` and `chgrp`, because as a normal user the only owner it can
+  set is the current one, which changes nothing.
+- **`proRun`'s test branch removed and `dnf_module.go` restored:** the
+  static audit failed on all ten. This only happened after the
+  `errors.New` correction. Before it, this break passed. The dynamic
+  audit cannot reach them on a Mac.
+- **The `hosts.go` test branches removed, and `beacons.go` and
+  `x509_module.go` restored:** both audits failed on all eight
+  `beacons` functions and both `dnsutil` functions. The static audit
+  failed on all three `x509` functions. The dynamic audit failed on
+  `create_private_key` only, because its synthesised `private_key` for
+  the other two is not a key.
+- **The recording service provider removed:** `auditMustReach` failed
+  on `service.mask` and `service.unmask`.
+
+With the `errors.New` correction in place and every fix restored, no
+other function failed the static check. So no other function had passed
+5.135's static read only because of the collision.
+
+**Not verified.**
+
+- **No systemd, no root, macOS only.** Every run was on macOS (Darwin
+  25.6) as a normal user. No `systemctl mask` or `pro` client was run in
+  either mode, and no D-Bus masking path was run. The `pro` and
+  `dnf_module` test branches were not executed: their signatures are
+  gated to Linux, so only the static check holds them. CI runs the suite
+  on Linux, FreeBSD and Windows, and none of those runs was observed for
+  this change.
+- **The dry-run answers are not compared with the real ones.**
+  `file.chmod` under `--test` returns the path. That is what the real
+  call returns, but no test says that the two agree on every refusal.
+  For example, a dry-run `rmdir` refuses a non-empty directory with its
+  own message, while the real call reports the operating system's
+  error.
+- **The static check proves a read, not a guard.** A function that reads
+  `Test` to word a message and then acts passes the static check. Only
+  the dynamic audit catches that, and only on functions it reaches.
+- **State functions are not in the new static check.** 5.135's state
+  differential is unchanged.
+### 5.309 A dotted unit name was sent to systemd without `.service`
+
+Audit finding H-14. `withServiceSuffix` decided whether a name already had
+a unit type by whether it contained a dot. `php8.2-fpm`, the PHP-FPM unit
+on Debian and Ubuntu, contains one, so the systemd provider passed it to
+`StartUnit`, `EnableUnitFiles` and the rest as it stood. The auditor ran
+the same calls with `busctl` against a real systemd 258 and recorded
+two refusals: `StartUnit "php8.2-fpm"` answered "Unit name php8.2-fpm is
+not valid.", and `EnableUnitFiles` answered "File php8.2-fpm: Invalid
+argument". That observation is the auditor's. It was not reproduced for
+this change; the machine it was made on has no systemd.
+
+The pair that disagreed was the two paths of one provider. `systemctl`
+mangles a name itself: a name that does not end in a unit type gets
+`.service`. The Manager's methods do no mangling. The reads (`Status`,
+`Enabled`, `Masked`) fall through to `systemctl` on a D-Bus error, so
+`service.running: php8.2-fpm` read the unit's state correctly. The
+mutations (start, stop, restart, reload, enable, disable, mask, unmask)
+do not fall back once the bus answered, by the rule in 5.39. So every
+start and enable of the unit failed after a read that had worked. 5.39
+gave a reason that rule was safe ("fails the same way with a worse
+message"), and that reason was wrong for this case. The subsection
+"5.39, corrected" records that.
+
+**The change.** A name keeps its form only when the part after its last
+dot is a systemd unit type. Any other name gets `.service`. The types
+are the eleven in systemd's `UnitType` enum (`src/basic/unit-def.c`,
+and systemd.unit(5)): `service`, `socket`, `device`, `mount`,
+`automount`, `swap`, `target`, `path`, `timer`, `slice`, `scope`. Salt's
+`_canonical_unit_name` (`modules/systemd_service.py`) does the same with
+the first nine. It lacks `slice` and `scope`, and it tests `endswith`
+without the dot, so it would take `fooservice` as typed. halite keeps
+all eleven and tests the dotted suffix. The list was taken from
+systemd's documentation as remembered, not read from a checkout or
+from a running systemd. `systemctl -t help` on a real host prints it,
+and should be compared.
+
+The `systemctl` fallback now also gets the canonical name. Before, it
+got the raw name and relied on `systemctl`'s own mangling to agree with
+the binding. Now both paths are given one string, from one function.
+`Start` through `Unmask`, `Status` and `Enabled` all do this; mask and
+unmask get it through the shared `systemctl` helper. One argv was not
+changed: the `systemctl is-enabled` fallback inside `Masked`, in
+`service_more.go`, which another branch is editing. It still passes the
+raw name and depends on `systemctl` mangling it. That is a read, and
+`systemctl` is the thing that mangles, so it works as before. It should
+be changed when that branch lands.
+
+**What the tests hold.** `TestWithServiceSuffix` gives the mapping:
+`php8.2-fpm` to `php8.2-fpm.service`, `nginx` to `nginx.service`,
+`foo.socket` and `bar.timer` and the other nine types unchanged, and
+`foo.socket.d` and `org.example.daemon` given `.service`.
+`TestSystemdProviderDottedNameOverDBus` uses the recording backend: every
+mutating verb and every read of `php8.2-fpm` reaches it as
+`php8.2-fpm.service`, and nothing is run on the shell.
+`TestSystemdProviderDottedNameFallbackAgrees` takes the bus away and
+checks that the `systemctl` argv carries the same names. The fixtures
+are names and argv only. No captured systemd output exists in the repo
+for this, and none was written from documentation.
+
+The fix was broken three ways, and the tests failed each time. With
+the old dot rule back, the mapping test and both provider tests failed.
+With the name left raw in the `systemctl` helper only, the two
+fallback tests failed. With `slice` and `scope` taken out of the list,
+the mapping test failed on `user.slice` and `session-1.scope`. Each
+change was then put back.
+
+**Not verified.** Nothing here ran against a real systemd. The 5.39 live
+test drives a probe unit whose name has no dot, so it does not cover
+this. A live run should use the Ubuntu 24.04 host or a lab Linux host,
+as root with `HALITE_SYSTEM_LIVE=1`. It should install a throwaway unit
+with a dot in its name, for example `halite-probe1.2.service` in
+`/run/systemd/system`. Then it should call `service.start`,
+`service.enable`, `service.mask` and `service.unmask` with the name
+`halite-probe1.2`, both over D-Bus and with the dial forced to fail, and
+check each step with `systemctl show -p ActiveState,UnitFileState`. It
+should also check that `systemctl -t help` lists the eleven types above.
+
+#### 5.309, `Masked` follows
+
+The `systemctl is-enabled` fallback inside `Masked`
+(`internal/builtin/service_more.go`) now gets `withServiceSuffix(name)`,
+the same name its D-Bus path asks about. It was the one systemd argv
+above that still passed the raw name. Every systemd call in the provider
+now names its unit through the one function.
+
+Nothing an operator sees should change. The raw name went to
+`systemctl`, which mangles names as `withServiceSuffix` does, so this
+read gave the right answer before. That is read from 5.309, not run.
+The point is that the two paths now agree by construction.
+
+**Tests.** `TestSystemdProviderDottedNameFallbackAgrees` now calls
+`Masked` too, and expects `systemctl is-enabled php8.2-fpm.service`.
+`TestSystemdProviderMaskedFallbackUsesTheCanonicalName` gives the
+recording runner the stdout `masked` for the canonical argv only, and
+requires `Masked("php8.2-fpm")` to be true. That stdout is the word
+`Masked` compares against. It is not captured `systemctl` output, and
+the repository has none for this read.
+
+**Broken on purpose.** With the raw name put back, both tests failed.
+The first showed `systemctl is-enabled php8.2-fpm` in the argv. The
+second reported `Masked(php8.2-fpm) = false`. The fix was then put back.
+
+**Found, not changed: the two paths disagree on `masked-runtime`.** The
+D-Bus path says a unit is masked when its `UnitFileState` is `masked` or
+`masked-runtime`. The fallback compares the printed word with `masked`
+only. If `systemctl is-enabled` prints `masked-runtime` for a unit
+masked with `--runtime`, the fallback answers false where the bus
+answers true. That comes from reading the code and systemctl's manual.
+No real systemctl was run. It is a different defect from the name, so it
+was not fixed here. The fix needs `masked-runtime` output captured from a
+real host first.
+
+**Not verified.** No real systemd. The live run described above would
+cover this read too, if it calls `service.masked` on
+`halite-probe1.2` with the bus dial forced to fail. Run on macOS
+(Darwin 25.6) only.
+### 5.310 `mdadm.create` would overwrite a filesystem it said it refused
+
+The package comment in `mdadm.go` and the `force` parameter's doc both
+said `create` refuses, without `force`, a member "that mdadm itself
+flags as holding a filesystem". Nothing checked that. The only guard
+before `mdadm --create` was the one 5.53 describes: `mdadm --examine` on
+each member, refusing an md superblock. `--examine` knows md superblocks
+and nothing else, so a disk holding ext4, XFS, an LVM PV, a ZFS vdev or
+only a partition table answered "No md superblock detected" and passed.
+Then `--run` was always on the command line. mdadm's own Create does
+notice a filesystem or partition table on a member and asks "Continue
+creating array?", and the manual's `-R`/`--run` entry says the option
+suppresses that question. So the one party that had looked was told not
+to ask. The guard also failed open: an `--examine` error other than "No
+md superblock detected" (a busy device, one that could not be opened)
+was `continue`. 5.53 itself described only the superblock refusal and
+was accurate; the code comment overclaimed. Found by audit (H-17), by
+reading the code path, not by losing a disk.
+
+**The fix.** Each member and spare now gets two probes before anything is
+written, with or without `force`:
+
+- `mdadm --examine --export` as before, for the md superblock;
+- `wipefs --no-act --noheadings --output TYPE,OFFSET <dev>`, which lists
+  every signature libblkid recognises: filesystems, partition tables,
+  LVM, ZFS, swap, LUKS, other RAID members.
+
+Without `force`, a superblock, any line from `wipefs`, or **any probe
+that did not give a clean answer** refuses the create, naming the
+device and what was found: an `--examine` error, `wipefs` exiting
+non-zero, `wipefs` failing to start, and `wipefs` absent from the node.
+With `force` the create runs as before, and the comment now says what
+it overrode ("force overrode: /dev/sdb holds signatures (ext4 0x438)"),
+or which device it could not check.
+
+**Why `wipefs` and not `blkid -p`.** Both are util-linux over libblkid.
+`wipefs`'s manual gives exit 0 with nothing listed for an empty device
+and non-zero for one it cannot probe, which is the split this needs.
+`blkid -p` documents exit 2 for "nothing identified"; whether a device
+it cannot open also exits 2 was not established, and if so "empty" and
+"unreadable" would differ only in stderr text. The output is read only
+for "empty or not": every non-blank line is a signature and is quoted
+back, never parsed for meaning. A layout that differs between versions
+can therefore only refuse more, not pass a signature.
+
+**Why `--run` stays.** Without it mdadm's question is read from this
+process's stdin, which `exec` leaves as /dev/null. mdadm also asks that
+question for things that are not a danger: the RAID1 note that metadata
+at the start may not suit a boot device. Dropping `--run` would trade a
+silent overwrite for a create that cannot run unattended. So the
+question is asked by the module first, and `--run` reaches mdadm only
+when every device probed clean, or `force` was given. What mdadm does
+with an EOF answer was not run here; that reasoning is from the
+manual and from memory of its source, not demonstrated.
+
+**Fixtures: synthetic.** No captured `wipefs` output exists in this
+repository. The strings in `mdadm_test.go` (`ext4 0x438`, a `gpt`/`PMBR`
+pair, a `wipefs: error: ... probing initialization failed` line) are
+written to the documented shape and say so in the test. The module
+reads only empty or not, which limits what a wrong guess can cost, but
+they are not evidence. A Linux lab run (`contrib/tofu`, or the fleet
+linux leg) must capture, as root, on a loop device:
+
+1. `wipefs --no-act --noheadings --output TYPE,OFFSET` on a freshly
+   truncated file: its exit code and that stdout is empty;
+2. the same after `mkfs.ext4 -F`, and after `sgdisk -o` (or `parted
+   mklabel gpt`): exit code and stdout;
+3. the same on an md member (expect `linux_raid_member`);
+4. the same on a path that does not exist, and on a device held open
+   exclusively: exit code and stderr;
+5. that every one of the flags is accepted by the util-linux on each
+   distribution the lab raises (`--output` arrived in 2.29, from
+   memory of the changelog; that version boundary is not established
+   either).
+
+`TestLiveMdadmCreateRefusesAMemberHoldingAFilesystem` does 1 and 2 (ext4
+only) and logs the raw output as `capture:` lines. It also proves the
+refusal against a real mkfs and a real mdadm. The existing live tests
+now go through the probe on clean loop devices too, so a flag that a
+real `wipefs` rejects would fail them.
+
+**Tests.** `TestMdadmCreateRefusesAMemberHoldingAFilesystem` (ext4 and a
+partition table: refused, the device and the signature named, no
+`--create` run), `TestMdadmCreateRefusesWhatItCouldNotProbe` (examine
+error, `wipefs` non-zero, `wipefs` failing to start, no `wipefs`: each
+refused), `TestMdadmCreateRunsOverCleanMembers` (both members probed,
+one `--create --run`), `TestMdadmForcedCreateSaysWhatItOverrode`. Each
+was watched failing against a broken fix: with the old `continue`
+restored, the could-not-probe test failed; with the `wipefs` probe
+removed, all four failed; with the force note dropped, the force test
+failed.
+
+#### What was not verified
+
+- **No Linux run.** This was written and tested on macOS (Darwin 25.6),
+  which has no mdadm, wipefs or mkfs. The new live test was seen to skip
+  there and nowhere was it seen to run.
+- **No real `wipefs` output.** See the capture list above.
+- **mdadm's behaviour without `--run` and with stdin at /dev/null** was
+  reasoned, not run.
+- **The evidence level is unchanged** at `hardware`, because the paths
+  it was raised for (superblock and existing-array refusals, the
+  mutating functions) are still the paths that ran. The note now says
+  the signature probe has not.
+### 5.311 `zfs.filesystem_present` set `atime=false`, and a quota it already had, every run
+
+Found by an audit (H-18) and reproduced with a scripted runner before
+anything was changed. A state declaring
+
+```yaml
+tank/data:
+  zfs.filesystem_present:
+    - properties:
+        atime: off
+        quota: 10G
+```
+
+against a dataset whose `zfs get -H -p -o property,value` read
+`atime\toff` and `quota\t10737418240` reported "updated" and ran
+`zfs set atime=false tank/data` and `zfs set quota=10G tank/data`. Every
+run. `zpool.present` had the same comparison for pool properties.
+
+**Two paths that must agree, twice.** The state compared
+`value.KeyString(declared)` with the `-p` output as strings.
+
+- **Booleans.** YAML 1.1 is the default here (`internal/yaml`'s
+  `bool11`), so the commonest ZFS spelling — `atime: off`,
+  `compression: on`, `autotrim: on` — arrives as a Go bool, and
+  `KeyString` renders that as `false`/`true`. zfs prints `off`/`on`, so
+  the comparison never matched, and the value it then handed to
+  `zfs set`, `zfs create -o`, `zpool set`, `zpool create -o` and `-O` was
+  `false`/`true`. That zfs refuses `atime=false` is from zfsprops(7)'s
+  `on | off`, not from a run here; if it does, such a state failed every
+  run, and a `zfs create -o atime=false` failed to create the dataset at
+  all. The live conformance case passed no properties, and the `zfs`
+  evidence note says "dataset properties beyond creation" are not
+  covered, so nothing had ever compared one.
+- **Sizes.** `-p` prints exact byte counts; a person writes `10G` and
+  `128K`. Those never compared equal, and an unset quota reads back as
+  `0` under `-p` where the declaration says `none`.
+
+**The change.** `zfsArg` renders a declared value for the command line
+and for the comparison: a boolean is `on`/`off`, as
+`salt.utils.zfs.to_bool` does before Salt builds any zfs or zpool
+command; anything else is `KeyString` as before. `zfsSameValue` compares
+that with what `get -p` printed and, for the size properties only, parses
+both sides to bytes and compares the numbers. The value sent to zfs is
+still the size as declared.
+
+The rules, and where each came from:
+
+- **The size grammar is Salt's** (`salt/utils/zfs.py`, `re_zfs_size` and
+  `from_size`): digits or a decimal, then one of `K M G T P E` in either
+  case with an optional `B`, each a power of 1024; plus a bare integer,
+  which is what `-p` prints. A decimal is taken only when it comes to a
+  whole number of bytes (`1.5G` is, `1.3K` is not); Salt keeps the
+  fraction as a float that then never equals anything, so a fraction
+  falls back to the string comparison here rather than guessing at
+  libzfs's rounding. `KiB`, a bare `B` and `Z`, which libzfs's own parser
+  accepts as far as its source reads, are not in Salt's grammar and are
+  not parsed either. Anything not parsed is compared as the exact string,
+  which can fail to converge but cannot set something the declaration did
+  not ask for.
+- **Which properties are sizes** is not Salt's. Salt types properties by
+  probing `zfs get`'s usage text, so it types `recordsize` and
+  `volblocksize` (whose VALUES column reads "512 to 1M, power of 2") as
+  strings and would compare them as strings. Here the list is the
+  settable `<size>` properties of zfsprops(7) — `quota`, `refquota`,
+  `reservation`, `refreservation`, `volsize`, `special_small_blocks`,
+  and the `userquota@`, `groupquota@` and `projectquota@` families — plus
+  `recordsize` and `volblocksize`, which take and print bytes all the
+  same. User properties (`com.example:size`) are strings to zfs and stay
+  strings; a test holds that.
+- **`none` is `0`** for `quota`, `refquota`, `reservation`,
+  `refreservation` and the `*quota@` families, on either side. That `-p`
+  prints `0` for these rather than `none` is read from libzfs's
+  `zfs_prop_get` (the word is the non-literal branch), not seen on a
+  machine.
+
+**Fixtures: none of this is captured.** The repository holds no
+`zfs get -H -p` output for any of these properties; the only `get`
+output a run has produced is zpool's `ashift\t12`
+(`contrib/vm/zfs/probe.sh`). Every read-back line in
+`internal/builtin/zfs_test.go` is synthetic and is labelled so there.
+The tests check that the state agrees with that reading of zfs, not that
+zfs agrees with it. They call the state functions directly rather than
+through the registry, which skips them on macOS and Windows, so that
+they run on the Mac this was written on and on every CI platform.
+
+**What a FreeBSD lab run has to check to close this** (contrib/tofu's
+FreeBSD 14 and 15 hosts, or the `freebsd` leg of `fleet.yml`; neither was
+used for this change):
+
+1. On a pool on a file vdev, capture the bytes of
+   `zfs get -H -p -o property,value atime,compression,quota,refquota,reservation,refreservation,recordsize,volsize,special_small_blocks <ds>`
+   on a fresh dataset, and again after `zfs set quota=10G
+   recordsize=128K atime=off compression=on`, and after
+   `zfs set quota=none`. Replace the synthetic lines with them. The
+   claims to confirm or refute: on/off for booleans, `compression` reads
+   back `on` rather than the algorithm it stands for, exact bytes for
+   sizes, and `0` (not `none`) for an unset quota or reservation.
+2. Run `zfs set atime=false <ds>` and `zfs create -o atime=false` and
+   record what zfs says, to settle whether the old behaviour failed or
+   was merely noisy.
+3. Apply the SLS above twice through `halite-node state apply`, then a
+   second time with a changed quota, and check the first and third runs
+   set and the second changes nothing. `userquota@<user>: 1G` with a real
+   account, and `refreservation: none` on a volume, are the cases the
+   conformance harness does not reach.
+4. `zpool.present` with `autotrim: on` and `autoexpand: off` on an
+   existing pool, twice.
+
+The `zfs.filesystem_present` and `zpool.present` cases of
+`TestLiveConformanceOnThisMachine` now declare properties in these spellings
+(`atime`, `compression`, `quota`, `recordsize`, `refreservation`;
+`autoexpand`) and the dataset probe prints them as `zfs get -p` does, so
+the next run of the `freebsd` leg covers the creation half of 3 and
+leaves the bytes of 1 in its log if it fails. That has not run yet.
+The `zfs` and `zpool` evidence levels are unchanged: they are `hardware`
+for creating and destroying, and this is not that.
+
+**Broken on purpose.** Rendering booleans with `KeyString` again failed
+every boolean case in both states, with the old `zfs set atime=false`
+in the output. Comparing sizes as strings failed every size and `none`
+case. Treating every property as a size failed the user-property case.
+Each was restored and the tests passed.
+
+**Not verified.**
+
+- **No zfs here.** Nothing in this change ran against a real `zfs` or
+  `zpool`, on FreeBSD or on Linux. The tests ran on macOS (Darwin 25.6).
+- **`refreservation: auto`**, which a volume can declare, reads back as a
+  number and still never compares equal. Unchanged; not addressed.
+- **`filesystem_limit`/`snapshot_limit`** and the `*objquota@` families
+  are counts, not sizes, and are compared as strings. What `-p` prints
+  for their `none` has not been looked at.
+- **yes/no.** No settable property takes `yes|no` as far as zfsprops(7)
+  and zpoolprops(7) say, so a boolean is always rendered `on`/`off`. A
+  declared `"yes"` string is passed through unchanged.
+### 5.312 A template could end the process that rendered it
+
+The hub compiles pillar in its own process, and a node renders in its
+own unless `render_sandbox` is on, which it is not by default. So a
+template that overflows the Go stack or asks for more memory than there
+is ends the hub or the node. Both are fatal errors in Go, not panics:
+nothing above the engine can recover them. The engine's limits (SPEC
+10.2.8) bounded what a render writes and how often it loops, but not how
+deep the parser recursed, how tall the tree it built was, or how large a
+value a builtin made before anything was written. An audit (H-04)
+reported this; it was reproduced here, against `origin/main` at
+`79b035b`, before anything was changed.
+
+**What was demonstrated on the old code.** With the Go stack capped at
+4 MiB in a child process (a 256th of the default), each of these died
+with `fatal error: stack overflow`: 300,000 `(`, `not` or `-`; 200,000
+`[`; 100,000 `{'a': `; a 300,000-term `1 + 1 + ...`; 200,000 chained
+`|abs`; 100,000 `1 if 0 else`; and 100,000 nested `{% if %}`. A chain is
+the case a parser-only bound misses: it is parsed by a loop without
+recursing, into a left-leaning tree as tall as it is long, and the
+renderer, the filter chain and `migrate`'s walkers all recurse down it.
+With `MaxOutput` and `MaxIterations` set to 1000, these built values past
+the limits, because only what is written is charged: `indent(width=2000)`
+(2,003 bytes), `center(2000)`, `'a'.zfill(2000)`, `[1, 2] * 501`, and
+`permutations(6)` of six items (720 results, under the count limit, and
+4,320 items). These panicked out of `RenderString`, which recovered
+nothing: `indent(width=-1)` (negative `Repeat` count), `'ab' *
+4611686018427387904` (the size check multiplied, and the product
+wrapped), `'abc'.zfill()` (read `args[0]` before counting),
+`truncate(-9223372036854775807)` (slice bounds) and `'::/0' |
+cidr_subnets(63)` (a negative `make` capacity). `range(9223372036854775800,
+9223372036854775807, 5)` had not returned after a minute: the counter
+wraps past `stop` and is below it again. Nor had `[] *
+9223372036854775807`, which looped the count to append nothing.
+`'2001:db8::/64' |
+cidr_subnets(65)` returned the same subnet twice, and `'2001:db8::/80' |
+cidr_subnets(81)` did not return in five minutes.
+
+Some cases were **not** run on the old code, because running them is the
+failure: `[1] * 10000000000`, `batch(10000000000, 0)`,
+`slice(10000000000)` and `range(-9223372036854775807,
+9223372036854775807)`. Their behaviour is read from the code. The last
+is the audit's reading too: `stop - start` overflows, the count goes
+negative, is clamped to zero, passes the item limit, and the loop runs.
+
+**The audit's account of parse time was wrong in one particular.** It
+put the quadratic cost in nested blocks. It was in the lexer, and nesting
+had nothing to do with it: `findNextDelim` searched the whole rest of the
+source for each of `{{`, `{%` and `{#` at every tag, so any template
+lacking one of them, which is most templates, lexed in quadratic time.
+4,000 *sequential* `{% if 1 %}x{% endif %}` took 166 ms, the same as
+4,000 nested; 20,000 lines of them took 4.6 s.
+
+**The changes.**
+
+- *Statement nesting* is bounded in the parser at `MaxDepth`, counting a
+  statement itself, as `renderNode` counts. `renderNode` already refused
+  to render past it, so this refuses nothing that could have rendered
+  through that branch. It does refuse a template whose too-deep branch
+  is never taken, which rendered before: no tree nests a hundred
+  statements, and Jinja itself stops at 98 nested `if` and 20 nested
+  `for` (Python's own block limits).
+- *Expression nesting* is bounded at 1,000 (`maxExprDepth`), in two
+  places that must both hold. The parser counts its own recursion
+  (brackets, prefix `not` and `-`, the right of `**`, the `else` of a
+  conditional), which catches parentheses, which make no node. And the
+  finished tree is measured (`depth.go`), which catches chains.
+  `TestDepthWalkCoversEveryField` reads `ast.go` with `go/parser` and
+  fails if the walker misses a node type or a field. It is not
+  `MaxDepth`, because Jinja accepts taller expressions than 100. Against
+  Jinja 3.1.6 on CPython 3.14 the tallest that render are 69 nested
+  parentheses, 75 nested lists, about 491 chained `+`, `or` or `**`, 491
+  `not` or `-`, and 328 chained filters, all under 1,000. A `~` chain is
+  the exception: Jinja flattens it and accepted 20,000 terms. Here one
+  past 999 `~` is refused. That is a divergence, recorded here and not
+  expected to matter. On the other side, an expression at the limit,
+  inside 99 nested `if`, parses and renders on a 32 MiB stack. It needed
+  between 3 and 4 MiB on darwin/arm64, with and without `-race`, and
+  more than 4 MiB under `-race` on CI's windows-2022/amd64, where the
+  first version of the test, at 4 MiB, overflowed. Every hostile shape
+  was rerun on the old code with the stack at 16 and 32 MiB and still
+  overflowed. At 64 MiB, 100,000 `else` did not, which is why the test
+  stops at 32. On darwin/arm64 the default 1 GiB stack is about 250
+  times what that template needs. The margin on windows/amd64 under
+  `-race` is not known: it needed more than 4 MiB, and whether 32 is
+  enough there is for the next CI run to show.
+- *Allocations* are checked before they are made, against `MaxOutput`
+  for one string and `MaxIterations` for one list, with products checked
+  by division: `indent` (the pad times the lines it lands on, so a wide
+  indent of one line still costs nothing, as in Jinja), `center`,
+  `zfill`, string and list `*`, `range`, `batch` with a fill, `slice`,
+  and `permutations`/`combinations` (now counting items, not results).
+  An empty list times any count is empty without looping the count.
+- *Negative counts* follow Python where Python defines them:
+  `'ab' * -1` and `[1] * -1` are empty, `indent(width=-1)` is no indent,
+  `center(-5)` and `zfill(-3)` leave the string alone. `truncate` with a
+  length shorter than its end string is an error, which is Jinja's
+  `assert length >= len(end)`. Before, `truncate(2)` returned `...`.
+- *`range`* counts in unsigned arithmetic and computes each item from
+  its index, so it can neither wrap the count nor the counter.
+- *`cidr_subnets`* bounds the split by its exponent (at most 2^16 subnets,
+  as before) and advances the address by adding the step to its bytes.
+  The results for /64 to /65, /80 to /81, `::/0` to /1 and two IPv4
+  splits were checked against Python's `ipaddress`. This was audit item
+  L-engine-1, and it is the same class: a panic and an unbounded loop in
+  a filter.
+- *The lexer* caches the next position of each opening delimiter and
+  searches again only when one has been consumed inside a tag, so each
+  delimiter's searches cover disjoint stretches of the source. 20,000
+  lines now lex in about 20 ms. `TestLexingIsLinear` compares two sizes
+  rather than a clock. It failed on the old code at 15.4 times the time
+  for four times the input.
+- *Panics* are recovered in `Parse` and `Render` into an error that says
+  it is a halite defect. This is a backstop: each panic above is fixed
+  where it happened, and `TestPanicsAtTheirSource` fails if one reaches
+  the backstop. It cannot catch a stack overflow or an out-of-memory.
+- *`value.DecodeJSON`* (audit item L-engine-3) refuses nesting deeper
+  than 10,000, which is `encoding/json`'s own `maxNestingDepth`, so it
+  refuses nothing `json.Unmarshal` accepts. The test checks this with
+  `json.Valid` at both edges. Under the pinned go1.26.6, the old code
+  decoded 10,001 levels, because `Decoder.Token` keeps its stack on the
+  heap with no limit. Under go1.27.2, `encoding/json` is built on
+  json/v2 (`JSONv2` is on by default in its `internal/buildcfg`), and
+  its `Token` already refused 10,001 with "exceeded max depth". So this finding depends on the toolchain. It is real for the
+  toolchain that releases are built with.
+
+There is no parse deadline. Parsing is now linear and its depth is
+bounded, so its cost is set by the size of the source, which the engine
+does not bound.
+
+**Not done, and found while doing this.**
+
+- *A value can be as deep as a loop can make it.* `{% set ns.x = [ns.x]
+  %}` in a loop of 200,000 builds a list nested that deep. Printing it
+  overflowed the 4 MiB stack in a child process. Whether
+  `MaxIterations` (10,000,000) is enough to do the same on the default
+  1 GiB stack was not tried. A fix needs a depth bound in every
+  recursive walk of a value: rendering, comparison, `tojson`, and the
+  YAML and JSON encoders. That is a separate change.
+- `{% set x | upper | trim %}` is a parse error here. Jinja 3.1.6 accepts
+  the chain and gives `AB` for ` ab `. Only one filter is read.
+- `truncate` has no leeway. Jinja returns a string unchanged when it is
+  within five characters of the length.
+- `zfill` counts bytes rather than characters, and does not keep a
+  leading sign in front of the zeros, as Python's does.
+- SPEC 10.2.8 still says that rendering happens in the sandbox
+  subprocess. By default it does not, and that is the premise of this
+  section.
+
+**Not verified.** Nothing here was run on FreeBSD, or anywhere but
+darwin/arm64 with go1.27.2 and the pinned go1.26.6. The stack figures
+come from 4 to 32 MiB children, not the default stack. No real Salt tree was
+rendered through the new limits to check that none is refused. The
+template corpus and the package tests pass, and that is the evidence
+that nothing ordinary is refused.
+
+#### 5.312, `TestLexingIsLinear` counts instead of timing
+
+The test compared the wall-clock times of two lexes of a few
+milliseconds. That failed CI's `test (windows-2022)` on PR #367, which
+does not touch the template package: four times the input took 11.4
+times the time (3.2 ms against 36.1 ms), past the threshold of 9. The
+lexer was linear; the runner was busy. A ratio of two clocks still
+depends on the clock.
+
+The lexer now counts the bytes `findNextDelim` hands to `strings.Index`
+(to the end of the match, or to the end of the source when there is
+none), and the test reads that count. It is the same on every machine,
+so the bound is tight rather than generous. Each delimiter's searches
+cover disjoint stretches of the source, so the three together may cover
+it at most three times, and four times the input may search at most
+4.1 times the bytes. Three shapes are checked at 5,000 and 20,000
+lines: statements only, which was the quadratic case; a `{{` inside
+every tag's string, which is the case where the cached position falls
+behind the cursor and is searched for again; and all three delimiters
+on every line.
+
+What was measured, on darwin/arm64 with go1.27.2:
+
+- The fixed lexer searched 2.26, 2.08 and 2.25 times the source for the
+  three shapes, the same at both sizes, so the ratio is 4.00.
+- With the cache disabled (`findNextDelim` searching again for all
+  three at every tag, as before #332) the test failed on all three. The
+  first shape searched 10,001 and 40,001 times the source at the two
+  sizes, the second 5,002 and 20,002: 16.00 times the bytes for four
+  times the input. The third shape is linear even in the old code,
+  because every delimiter is close by, but searched 4.4 times the source
+  and failed the bound of three. The failing run took 16 s, because the
+  count is of work actually done; a regression is slow and loud rather
+  than quick and quiet. With the cache put back, it passed in 0.14 s.
+
+The count covers delimiter searches only. A quadratic cost elsewhere in
+the lexer, or in the parser, would not show in it, where the clock would
+have shown it, noisily. Everything else the lexer does advances the
+cursor, which moves only forward; that was read, not measured.
+
+**Not verified.** The new test has not run on Windows, FreeBSD or Linux
+here; CI will run it. Its Windows and FreeBSD builds were vetted, not
+run.
+
+### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
+
+**What was wrong.** `mount.mounted` decided whether the mounted
+filesystem was the declared one by comparing the running table's device
+field with the declaration's as strings. On Linux the kernel's table
+names the node `mount(8)` resolved the tag to, `/dev/nvme0n1p2`, and the
+declaration says `UUID=…`, `LABEL=…` or a `/dev/disk/by-*` link — the
+form the module's own `device` parameter documents. So the two never
+agreed. Every run reported "remounted from a different device", ran
+`mount -o remount,<opts> UUID=… <point>`, and fired every `onchanges`
+and `watch` on the state. `remount,defaults` could also reset options
+the filesystem had been mounted with. `mount.unmounted` had the same
+comparison for its `device` filter, the other way round: a filter of
+`UUID=…` never matched, so the state said "Nothing is mounted" while the
+filesystem was mounted. Found by audit (H-15), by reading the code; it
+was not seen on a host.
+
+The existing tests did not catch it because their running table was
+invented: `mount_test.go`'s fixture gives the running device as
+`UUID=2222`, which no running table prints. Those fixtures are
+synthetic, and are now marked as such. They test options and the fstab,
+and pass the device comparison only because the strings are equal.
+
+**The fix.** Both sides are reduced to the file they reach, and two
+names are the same device when `os.SameFile` says they are the same
+node:
+
+- `UUID=`, `LABEL=`, `PARTUUID=` and `PARTLABEL=` (quoted or not) become
+  `/dev/disk/by-uuid|by-label|by-partuuid|by-partlabel/<value>`. The
+  value is escaped the way udev names the link: ASCII letters and
+  digits and `#+-.:=@_` are kept, a valid multi-byte UTF-8 sequence is
+  kept, and any other byte is `\xHH` in lower-case hex, so `my data` is
+  `my\x20data`.
+- An absolute path is used as it is. `os.Stat` follows the links, so
+  `/dev/mapper/vg0-data → ../dm-0` and `by-uuid/… → ../../dm-0` match.
+- A name that is not a path or a tag (`tmpfs`, `server:/export`,
+  `zroot/ROOT/default`) is still compared as a string.
+
+`stat`'s `Rdev` was considered as the identity instead. It would also
+match two separate device nodes for the same device. No such pair has
+been seen on a host this manages, and a test cannot make a device node
+without root, so that branch would never have run. It was left out.
+
+**An unresolvable mismatch is a failure, not a remount.** When the
+strings differ and either name does not resolve (a tag with no link — a
+typo, a host without udev, any FreeBSD or macOS host; or a table entry
+such as `/dev/root` that is not in `/dev`), the state returns `False`,
+names both spellings, and changes nothing: no remount and no fstab
+write. Remounting on that difference is the loop being fixed. Also, a
+Linux remount does not change the source device, so a remount was the
+wrong action even when the devices did differ. A failure the operator
+sees once is better than a silent remount on every highstate.
+
+A device that resolves to a different node is still reported as a
+different device and remounted, as before. That remount does not change
+the device on Linux either, so that path probably does not converge. It
+was not changed here and is not tested on a host.
+
+**FreeBSD is not handled, and nothing was captured there.** FreeBSD's
+fstab has no `UUID=` syntax. Its label providers (`/dev/gpt/<label>`,
+`/dev/gptid/…`, `/dev/ufsid/…`, `/dev/label/…`, `/dev/diskid/…`) are
+GEOM providers in devfs, not symlinks, so `os.SameFile` reports them
+different from the partition they label. If the running table names one
+and the declaration the other, the state still reports a different
+device. Whether that happens depends on what the running table prints,
+and that is not known. It is believed that FreeBSD records the name
+given to `mount`, so a filesystem mounted from fstab as `/dev/gpt/data`
+is listed as `/dev/gpt/data`, but no capture shows it. The repo has no
+captured FreeBSD `mount` line with a label device. A FreeBSD lab run
+must capture, as root, on 14 and 15:
+
+1. `mount`, `mount -p`, `glabel status`, `gpart show -l -p` and
+   `ls -l /dev/gpt /dev/gptid /dev/ufsid /dev/label /dev/diskid`, on a
+   host whose root is mounted by a GPT label.
+2. A memory disk with a GPT partition labelled `halitetest` and a UFS
+   filesystem, mounted once as `/dev/gpt/halitetest` and once as
+   `/dev/md0p1`, with `mount` and `mount -p` after each, to see which
+   name the table keeps. Do the same for a `glabel label` and a
+   `/dev/ufsid/…` name.
+3. `stat -f '%d %i %Z' /dev/gpt/halitetest /dev/md0p1`, to see whether
+   two names for one provider share an inode or a device number in
+   devfs.
+4. The result of `mount -u -o <opts>` and `mount -o remount,<opts>` on
+   that filesystem (M-44: `remount` and `defaults` are Linux-only, and
+   are known to be rejected by macOS `mount`).
+
+The fix for FreeBSD probably maps a label to its provider with
+`glabel status` or `geom -p`. That should be written from that capture,
+not from this note.
+
+**Tests.** `internal/builtin/mount_identity_test.go`. Each test builds a
+`/dev` in a temporary directory, with relative symlinks laid out as udev
+lays them out, under a new `DevRoot` variable. The kernel's table is a
+file. **Every running-table line in those tests is synthetic**, and so
+are the device names, UUIDs and labels. The tests cover:
+
+- `UUID=` against the node: no change, nothing run.
+- `UUID=` against a `/dev/mapper` name for the same `dm-0`: no change.
+- `LABEL=my data/2`, quoted and unquoted, against `my\x20data\x2f2`.
+- The encoding, case by case.
+- A UUID of another node: still a device change.
+- A UUID with no link: `False`, no changes, nothing run, no fstab
+  written.
+- Names compared as names, and `/dev/root` against a real node:
+  undecided.
+- `mount.unmounted` with a `UUID=` filter: unmounts.
+
+Each part was broken on purpose and the tests failed:
+
+- With the string compare back: six tests failed.
+- Without the label escaping: the label test failed.
+- With an undecided match remounting: the unresolvable test failed.
+- With `mount.unmounted` back to the string filter: its test failed.
+
+**Not verified.**
+
+- **Nothing was mounted.** The module's evidence stays `Captured`.
+- **No Linux host was used.** That `/proc/self/mounts` names the
+  resolved node for a `UUID=` mount, and for LVM the `/dev/mapper` name,
+  is from util-linux and kernel behaviour as understood. It was not
+  captured for this change.
+- **The udev escaping is from source, not a capture.** It was read from
+  libblkid's `blkid_encode_string` and systemd's `encode_devnode_name`.
+  No label with a space was made and its link listed. Also not checked:
+  a tag whose case differs from the link (a FAT `UUID=abcd-1234`
+  against `ABCD-1234`). It is undecided here, and `mount(8)` may still
+  find it through blkid's cache.
+- **FreeBSD and macOS were not run.** See above.
+- **Loop and bind mounts were not addressed.** On Linux the running
+  table names the loop device or the underlying device, not the image
+  file or source directory that was declared. Both resolve, to
+  different files, so they are still reported as different devices.
+- The tests ran on macOS (Darwin 25.6) only. CI runs them on Linux and
+  FreeBSD.
+### 5.314 A time zone name was a path, and `../secret` was one
+
+Found by a security review, and reproduced here before anything was
+changed.
+
+`linkZone` installs a zone by hand -- on FreeBSD always, and on a Linux
+without a running systemd -- and it built the source path as
+`filepath.Join(zoneinfoDir, want)` with nothing checked but that the
+result existed and was not a directory. `timezone.set_zone` checked only
+that the name was not empty. `timezone.system` checked the name against
+`listZones`, which does refuse a path, but only on a node whose tree it
+could read; when the listing failed the check was skipped.
+
+So `timezone.set_zone timezone=../secret` on FreeBSD:
+
+- copied `/usr/share/secret`'s contents into `/etc/localtime` at 0644,
+  whatever the source's mode was, so a 0600 file became world-readable
+  (the review's reproduction; the tests here assert the refusal and that
+  nothing was written, not the mode);
+- wrote `../secret` into `/var/db/zoneinfo`, which `tzsetup -r` reads
+  back to reinstall the zone.
+
+On Linux without `timedatectl` it pointed `/etc/localtime` at the file.
+An absolute name did not escape: `filepath.Join` does not let a leading
+`/` reset the path, so `/x/secret` named `zoneinfo/x/secret`. It was still
+accepted by `set_zone` and handed to whichever tool or file it reached,
+and in the pre-fix run on macOS (through the test's stand-in for
+`systemsetup`) it moved `/etc/localtime`. Test mode said `../secret` would
+be set.
+
+Reproduced on unmodified `main` by the tests below, with a temporary tree:
+every traversal spelling was accepted by `linkZone` on both the `freebsd`
+and `linux` branches, and `set_zone` accepted `../secret` and an absolute
+path in test mode and, on the real run, moved `/etc/localtime`.
+
+#### The fix is three checks, each of which catches something on its own
+
+1. **A grammar**, `checkZoneName`: components of ASCII letters, digits,
+   `_`, `+` and `-`, separated by single slashes, none empty, none
+   starting with `-`, at most 128 bytes. That rules out `.`, `..`, a
+   leading or trailing slash and an empty component by construction. It
+   is wider than the tz project's rules for *new* names, because the
+   legacy names break those: `Etc/GMT+5`, `Etc/GMT-14`, `EST5EDT`,
+   `America/Argentina/ComodRivadavia`. A leading `-` is refused because
+   every tool a name reaches would take it for an option. No zone name
+   has a dot, which `zoneinfoNames` already relied on.
+2. **Containment after resolution**, `zoneFile`: the joined path and the
+   tree's root are both resolved, and the resolved file must be inside
+   the resolved root and a regular file. Links are not refused for being
+   links -- Alpine and recent Debian ship `US/Pacific` and the rest of
+   `backward` as relative links, and on macOS the root itself is one --
+   only for leaving the tree. `/etc/localtime` is still linked to the
+   joined path, not the resolved one, because `zoneFromPath` reads the
+   name back from the link target.
+3. **The callers check too**: `set_zone` before test mode, so test mode
+   does not promise what the real run must refuse, and `timezone.system`
+   before `listZones`, so the refusal does not depend on the tree being
+   readable. Windows is exempt: its names are registry key names with
+   spaces (`Pacific Standard Time`), never joined to a path, and judged by
+   `tzutil`.
+
+`linkZone` checks for itself (through `zoneFile`) as well as relying on
+its callers, because it is the function that writes.
+
+**Tests, and breaking them.** `TestLinkZoneRefusesANameOutsideTheTree`
+runs thirteen names on both branches and asserts each is refused with
+`/etc/localtime` unchanged (the copy's contents, or the link's target) and
+`/var/db/zoneinfo` not created. `TestLinkZoneAcceptsRealNames` installs
+`America/Argentina/Buenos_Aires`, `Etc/GMT+5`, `Etc/GMT-14`, `UTC`,
+`EST5EDT`, `America/Port-au-Prince`, `posix/Europe/Berlin` and a
+`US/Pacific` that is a relative link, on both branches, and checks the
+installed contents and the name record. `TestSetZoneRefusesANameThatIsAPath`
+covers `set_zone` in both modes and the state. `TestZoneNameGrammar` is
+the table.
+
+- With the grammar disabled, `Etc/../UTC`, `./UTC`, `Etc//UTC` and
+  `Etc/UTC/` were accepted on both branches and the `set_zone` and grammar
+  tests failed. `../secret` was still refused, by containment -- which is
+  the second layer doing its job.
+- With containment disabled, a link in the tree pointing at the secret,
+  and a directory link pointing out of the tree, were both accepted on
+  both branches.
+- With the check in `set_zone` removed, the `set_zone` test failed.
+
+The grammar was also run, once and not committed, over every name
+`zoneinfoNames` returns from this Mac's real tree (macOS 26.7.1, 598
+names, reached through the `/usr/share/zoneinfo` link): none refused, and
+`zoneFile` resolved every one.
+
+**Not verified.** Not run on FreeBSD, and not as root: the tests point the
+module at a temporary tree, so no real `/etc/localtime` or
+`/var/db/zoneinfo` was written, and `tzsetup -r` was not run to see what
+it makes of the record. The grammar was checked against macOS's tree
+only; FreeBSD's and Linux distributions' trees, including their `posix/`
+and `right/` copies, were not walked. The `timezone` evidence level is
+unchanged: this narrows what it accepts and adds no new run.
+### 5.315 `pf` sorted its anchor, so a deny shadowed every allow inside it
+
+5.31 says `quick` "makes a rule's effect independent of the anchor's
+order", and that the anchor is "rewritten and sorted on every change".
+The second half was true. The first half is true only for rules that
+cannot match the same packet. That is the exculpatory shape CLAUDE.md
+warns about: a stated reason ("`quick`, so the order does not matter")
+in place of an open question, and the sort survived on it for this
+long.
+
+With `quick`, pf stops at the first rule that matches. So the order of
+two overlapping rules is the whole of what they do. `Apply` ran
+`sort.Strings` on the anchor before every load. `block drop` and
+`block return` sort before `pass`, so every deny in the anchor sat above
+every allow. Given
+
+	firewall.denied:  from 10.0.0.0/8
+	firewall.allowed: from 10.0.0.5, port 22/tcp
+
+in either order, the anchor was loaded deny first. The bastion's ssh
+matched the /8 and was dropped, and the allow matched nothing. Found by
+reading, in the issue 321 audit (M-38), and reproduced against the
+provider with a recording runner. It was not seen on a host.
+
+It fails closed. A sorted anchor can block traffic an allow was written
+to admit. It cannot admit traffic a deny was written to refuse, because
+every allow is below every deny. That is why nobody would have noticed
+it as an open port.
+
+**The rule now.** A rule not in the anchor is appended to its end. A
+rule already in it keeps its place. Removing a rule leaves the others
+where they were. So the order in the anchor is the order `Apply` was
+called in, and in a state run that is the order the states ran in. That
+is ufw's rule too: `ufw allow` appends, and a rule it has already is
+skipped where it stands. The two providers of `firewall` now agree on
+which of two overlapping rules wins: the first one declared.
+
+**What it cannot do.** Each state knows its own rule and none of the
+others. So a rule that is present is converged wherever it sits.
+Swapping two states in an SLS file does not reorder an anchor that is
+already loaded, on pf or on ufw. And **an anchor loaded by a build that
+sorted keeps the sorted order** after the upgrade, because every rule in
+it is present. To get the declared order, flush the anchor
+(`pfctl -a halite -F rules`) and apply the states again. Between the two
+steps the anchor holds nothing, so its denies are gone too, and the
+traffic falls to the rest of pf.conf. A state that owns the whole
+ordered anchor, or an explicit position on each rule, would close this
+gap. Neither exists, and neither was added here, because both change the
+module's signature.
+
+**How it is tested.** `firewall_pf_order_test.go` runs `Apply` against
+a recording `pfctl`:
+
+- allow then deny, against the anchor pf printed after the allow, loads
+  allow then deny;
+- deny then allow loads deny then allow;
+- removing the last of three rules loads the first two in their order;
+- an anchor that holds the rule is not reloaded, in the declared order
+  and in the sorted one. The second case records the limit above.
+
+Each was broken on purpose. With `sort.Strings` put back, the
+allow-then-deny test and the removal test failed. With a reversed sort
+(every `pass` first, which fails open), the deny-then-allow test failed.
+
+**Not verified.**
+
+- **No real pf ran this.** The `pfctl -s rules` lines in the tests have
+  the shape mail.edlitmus.info printed for 5.31 (`port = N`, and
+  `flags S/SA keep state` on a tcp pass), but the lines themselves are
+  synthetic. No host printed a rule with these addresses.
+- **That `pfctl -s rules` lists an anchor in load order** is pf's
+  documented behaviour, and `Apply` depends on it: it rebuilds the
+  anchor from what pf printed. Nothing in this repository has watched a
+  real pf print it.
+- **That the first match wins in an anchor** was not seen on a packet
+  either. It comes from pf.conf(5), not from a run.
+- **The state engine's order.** "The order the states ran in" is the
+  engine's order: declaration order, adjusted by requisites. This change
+  did not test it with the engine.
+- **Hosts already converged.** It is not known whether any host in the
+  fleet has an anchor with overlapping rules. Any that does keeps the
+  sorted order until it is flushed, as above.
+### 5.316 `netplan.managed` reported a refused document converged on the next run
+
+Audit item M-36, reproduced with the fake runner before it was changed.
+`netplan.managed` wrote the file, ran `netplan generate`, and on a
+refusal returned False with the file left in /etc/netplan. 5.38 records
+that on purpose. But the state's only test for convergence is the bytes
+and the mode. So the **second** run found the refused file equal to the
+declaration and returned True, "already holds the declared
+configuration". It did not run `netplan generate` again.
+
+`apply: true` had the same fault. If `netplan apply` failed, the file
+stayed. The next run found it equal and returned True, and it never ran
+the apply again.
+
+A refused file is not harmless while it waits. netplan renders
+/etc/netplan at boot, through its systemd generator, so the next boot
+meets the file that the state reported as converged. (That is netplan's
+documented design, and `live_netplan_test.go` relies on it. A boot with
+a refused file was not watched for this change.)
+
+**The change.** On a refused `generate`, and on a failed `apply`, the
+state puts the file back as it was before the run: the previous bytes
+and mode, or no file if there was none. Then it runs `netplan generate`
+again, so that the backend files under /run come from the tree as it
+now is. The comment says which of these happened. The next run finds
+the file different from the declaration, which is true, and tries
+again. It fails again for as long as netplan refuses.
+
+A failed apply can have changed some of the live configuration before
+it failed. The state does not undo that, because to undo it is another
+apply. The comment says that this part is still live until the next
+apply or boot.
+
+**Why not validate before writing.** `netplan generate --root-dir` on a
+scratch copy was the other choice. It was not used. netplan reads the
+directory as a whole, so a scratch root would need a copy of the whole
+tree to give the same answer. And it would replace the one `netplan
+generate` call that 5.38 watched validate this module's YAML with a
+call that nobody has run.
+
+**A file the state cannot read is not replaced.** If the read fails for
+any reason other than "not there", the state now returns False before it
+writes, because it could not put that file back.
+
+**How it is tested.** `netplan_rollback_test.go` has a fake netplan that
+reads the directory on each `generate` and refuses it while any file
+holds the key `addressess`. The refusal text is `netplanFixture`'s,
+which 5.38 says matches what real netplan 1.1.2 printed for that key.
+The way the fake reads the directory is synthetic, and the test file
+says so. The text of a failed apply is invented: no failed apply has
+been watched. The tests call `netplanManaged` directly, not through the
+registry, so they run on every platform and not only on Linux.
+
+- A refused document fails on run 1 and on run 2, and no file is left
+  after either run. `generate` runs four times: the written tree and
+  the restored tree, on each run.
+- A refused document that replaces a file puts that file back, byte for
+  byte.
+- A failed apply leaves no file. When the apply then works, run 2
+  writes, validates and applies.
+
+Each was broken on purpose:
+
+- With `netplan.go` from `main`, all three failed. Run 2 returned
+  "already holds the declared configuration", which is M-36. The second
+  run of the apply test did not apply.
+- With only the restore after a failed apply removed, only the apply
+  test failed.
+
+The five Linux-only tests in `netplan_test.go` skip on macOS. A copy of
+them that called `netplanManaged` directly was run on macOS and passed,
+and then it was deleted. The test that a refusal fails, and says
+"nothing has been applied", still passes.
+
+`live_netplan_rollback_test.go` drives the same two runs against the
+real netplan on the `linux` leg. It is `TestLiveNetplan*`, so the
+leg's existing `-run` filter and `live_*_test.go` trigger path include
+it.
+
+**Not verified.**
+
+- **Not run against a real netplan.** The live test was not run for
+  this change. That the restored tree renders, and that `generate` with
+  the file removed rewrites /run, was not watched. The evidence level
+  for `netplan` is unchanged.
+- **A file that an earlier build left refused, or that was put there by
+  hand, still reads as converged** if its bytes and mode match the
+  declaration. This build never leaves one. To validate on every
+  converged run would close that gap. But that puts a `netplan generate`
+  on every run of every Ubuntu node, and nobody has watched what that
+  does to a NetworkManager host. After an upgrade, `netplan.generate`
+  on each Ubuntu node finds such a file.
+- **`apply: true` on a file that already matches** does not apply. That
+  is as documented ("after writing") and was not changed.
+- Tested on macOS (Darwin 25.6) only. CI runs the unit tests on Linux.
+### 5.317 `hostname.system` reported a short name converged on a request for the qualified one
+
+Audit item M-39, reproduced before it was changed. `sameHostname`
+compared a node's name with the name a state asked for, and it treated
+`web1` and `web1.example.com` as the same name **in both directions**. So
+a state that asked for `web1.example.com` on a node that had `web1`
+reported "The hostname is already web1.example.com" and changed nothing.
+That was true for both halves: the running name, and the boot-time
+record on each platform (rc.conf `hostname=` on FreeBSD, /etc/hostname
+on Linux, scutil's HostName on macOS). The estate names its nodes by
+the qualified name (5.94), so this was the move a tree is most likely
+to ask for.
+
+The symmetry was deliberate. `TestAShortNameAndAQualifiedOneAreTheSameNode`
+asserted both directions, with this argument: a node configured with
+the qualified name and running the short one should not be rewritten
+on every run. Its other case was a state that names `web1` on a node
+that has `web1.example`. That state has got what it asked for, and to
+strip the domain on every run would be worse than doing nothing.
+
+**The change.** The comparison is now one-way. In both places it is
+used, the first argument is what the node has (the running name, or
+the boot-time record) and the second is what the state asked for. The
+names match if they are equal, ignoring case, or if the state asked for
+a name with no domain and the node has that name with a domain. A node
+that has `web1.example.com` satisfies `web1`. A node that has `web1`
+does not satisfy `web1.example.com`. Two different domains are still
+two different names.
+
+The second case the test was written for still holds. The first one
+does not need the symmetry if a node that is given the qualified name
+keeps it. Then the state sets the name once, and the next run matches
+exactly. That is what `hostnamectl`, hostname(1) and `scutil` are
+documented to do. It has not been watched with a qualified name (see
+below). If some platform answers with the short name after the
+qualified one was set, the state reports a change on every run there.
+That is loud. The old rule was silent.
+
+**How it is tested.** `hostname_fqdn_test.go` runs `hostname.system` in
+test mode on each platform's own boot-time record, from the existing
+`hostnameFixture`: `sysrc -n hostname` on FreeBSD, scutil's HostName on
+macOS (the set answer, as captured on a macOS 15.7.9 runner), and a
+redirected /etc/hostname elsewhere. The running name comes from
+`osHostname`, a new variable over `os.Hostname`, so that the test does
+not rename the machine. Nothing is set.
+
+- A node that has `web1` in both halves, asked for `web1.example.com`:
+  both halves change.
+- Only the half that does not have the domain changes, in each order.
+- A node that has `web1.example.com`, asked for `web1`: nothing changes.
+  The same when only the boot-time record has the domain.
+- A move from one domain to another changes both halves.
+
+The deliberate test now asserts `have web1, want web1.example` and
+`have web1, want web1.example.com` are different. Its comment records
+why the reverse direction was dropped.
+
+Each was broken on purpose:
+
+- With the symmetric `sameHostname` restored, the first two new tests
+  and the deliberate test failed. Every half that should have changed
+  reported no change, which is M-39.
+- With the short-form match removed altogether, the "leaves a qualified
+  node alone" test and the deliberate test failed. So the case that the
+  old test was for is still held by a test.
+
+**Not verified.**
+
+- **Run on macOS only** (Darwin 25.6). On a Mac, `persistentHostname`
+  takes the scutil branch, so the FreeBSD `sysrc` branch and the
+  /etc/hostname branch of the new tests ran only as code that was
+  compiled. CI runs them on FreeBSD and Linux. FreeBSD is tier 1, and
+  its leg is the one to check.
+- **A qualified name has not been set on a real machine.** The live
+  rename (`TestLiveHostnameRenamesTheMachineAndPutsItBack`) uses
+  `halite-live-probe`, which has no dot. That the kernel then answers
+  with the whole name is from the documentation of `hostnamectl`,
+  hostname(1) and `scutil`, not from a run. The evidence note for
+  `hostname` is unchanged.
+- **A Linux name longer than 64 characters.** The kernel limit is 64,
+  and a valid qualified name can be up to 253. What the running name is
+  after such a name is set was not checked. Under the new rule, the
+  state would report a change on every run there.
+- `TestLiveHostnameStateConvergesOnTheNameTheMachineHas` asks for the
+  running name. On a machine whose running name has a domain that its
+  boot-time record does not have, the state now changes the boot-time
+  record, where before it did not. Which CI machines are like that has
+  not been checked. The live tests were not run for this change.
+### 5.318 An agentless run left the hub's state tree on the target
+
+`halite-node oneshot` -- what `halite-hub ssh` runs on a target -- makes
+a `halite-oneshot-*` directory with `os.MkdirTemp` for any `state.*` job
+or any job that carries files, and writes into it the state and template
+files the hub sent, `0600` in a `0700` directory. Nothing removed it.
+Every agentless state run left one in the target's temporary directory:
+until reboot on a host that clears `/tmp` at boot, and for good on one
+that does not. FreeBSD clears it only when `clear_tmp_enable` is set in
+`rc.conf`, and `rc.conf(5)` gives `NO` as the default -- read from the
+manual, not checked on a host in this estate.
+5.127 had said the staging directory was discarded afterwards; it is
+corrected there.
+
+The files are `0600` and owned by whoever the run was, so this was
+disclosure only to that account and root. What it did do was keep a copy
+of a tree the operator had every reason to think lived only on the hub,
+one directory per run, indefinitely.
+
+**The fix.** `applyOneshotContent` returns the tree it made, and the
+oneshot removes it on every way out of the run:
+
+- **Normally, before the return is written.** The order is the point,
+  not a detail. A hub that has gone away -- a timeout, an operator's
+  Ctrl-C -- leaves the target's stdout a broken pipe. sshd sends no
+  signal to a command it started without a terminal, so the job runs to
+  the end, and then the write of the frame raises SIGPIPE, which kills a
+  Go program writing to fd 1, and a process killed by a signal runs no
+  defers. Removing the tree after the write would have left it on
+  exactly that path.
+- **A `defer`, as the backstop** for a panic in the oneshot itself.
+  `executeJob` already recovers a module's panic into a failed return.
+- **Before returning an error** when a file the hub sent cannot be
+  written, which happens after the directory exists.
+- **On SIGINT, SIGTERM and SIGHUP**, caught for the length of the run:
+  the tree is removed and the process exits `128+n`, the status the
+  signal itself would have produced. The job is abandoned mid-step,
+  as it was before; a state reading the tree in the instant between the
+  removal and the exit gets a missing file, and nothing reports it,
+  because nothing is written after a signal.
+
+Nothing reads the tree after `executeJob` returns, and that was read
+before the removal was placed: the job runs synchronously, rendering and
+file sources included; `cmd.script` copies its source to a file of its
+own and removes that; and the one thing that outlives a job, `cmd.run`
+with `bg: true`, is handed a command line, not a path into the tree.
+
+**What still leaves a tree behind**: SIGKILL, the machine losing power,
+and a signal arriving in the moment between the directory being made
+and the handler being installed, while the hub's files are being
+written. No sweep of old `halite-oneshot-*` directories was added; a
+directory left by a previous binary stays until the operator or the
+platform removes it.
+
+#### What was run
+
+`cmd/halite-node/oneshot_test.go` runs `runOneshot` in-process with a
+temporary root it owns: a `state.apply` whose `file.managed` takes its
+source from the tree (so the tree is shown in use, then gone), a failing
+state, a file path that leaves the tree, and the signal watcher with a
+signal delivered on a channel. The successful run also looks at the
+disk at the moment the frame is written, through a hook.
+
+Each removal was broken on purpose and watched to fail:
+
+- With no removal at all, the success and failure tests both failed,
+  naming the directory left behind.
+- With only the `defer` -- the removal after the write -- the
+  at-the-frame check failed and nothing else did, which is the SIGPIPE
+  path above.
+- Without the removal on the write error, that test failed.
+- Without the removal in the signal handler, the signal test failed.
+
+**The real binary, on macOS (Darwin 25.6, arm64)**, built from this
+change and from `main` and run as `halite-node oneshot` with `TMPDIR`
+pointed at an empty directory and a job on stdin:
+
+| | `main` | this change |
+|---|---|---|
+| a state that succeeds, exit 0 | tree left | removed |
+| SIGTERM during a `cmd.run: sleep 5`, exit 143 | tree left | removed |
+| stdout closed before the job ended, exit 141 (SIGPIPE) | tree left | removed |
+
+The exit statuses are the same from both binaries, which is what
+catching the signals was meant to keep.
+
+#### Not verified
+
+- **Not run on FreeBSD or Linux**, and not through `halite-hub ssh` to
+  a real target: the runs above were the binary invoked directly on a
+  Mac. FreeBSD is where a left tree is most likely to outlive a reboot,
+  and nothing here was run there, nor was any FreeBSD host's
+  `clear_tmp_enable` looked at. CI runs the unit tests on all four platforms.
+- **Not under `sudo`.** A `sudo -n` run relays SIGTERM and SIGHUP to its
+  child, so the handler should see them; that was read, not run.
+- **The `defer` itself** is not tested: no test makes the oneshot
+  panic outside `executeJob`, which recovers its own.
+- **Windows** catches `os.Interrupt` only in practice; the other two
+  signals are never delivered there. The tree is still removed on every
+  path that is not a signal.
+
+### 5.319 One stalled `dnf install` in the rocky9 leg cost two test binaries and the job
+
+The fleet's `rpm (rocky9, …)` leg failed three times in a day the same
+way: the PR runs for #349 and #355 on 2026-10-15 (Fleet runs 38776869080
+and 38780643553) and main's scheduled run at dbc1b5d on 2026-10-16
+(38874376490). Each logged
+
+    before: []; older kernel for the test 5.14.0-687.56.1.el9_8, newest 5.14.0-687.57.1.el9_8
+
+and then nothing for 29m38s, until `go test -timeout 30m` panicked. The
+goroutine dump put the test in `runEnv` at the line that ran
+`dnf install -y -q kernel-5.14.0-687.56.1.el9_8.x86_64`, waiting on the
+child with its stdout pipe still open. run.sh then started the
+conformance harness, whose `pkg.installed` sat for another fourteen
+minutes until the job's 45-minute timeout cancelled the leg. The earlier
+merging work had treated it as a known flake and re-run it.
+
+**Where the thirty minutes went, as far as the logs can say.** All in
+that one dnf command. Every other measured thing was the same in the
+failing and the passing runs: the same `rockylinux/rockylinux:9` digest
+(`sha256:8101994123cf…`), the same seventeen packages in the image build,
+dnf 4.14.0, the same kernel versions offered, and the dnf tests just
+before running at the same speed (`TestLiveDnfModuleInstallAndRemove`
+3.5-4.1s failing, 4.7s passing; BaseOS metadata at 27-64 MB/s failing,
+17 MB/s passing). A passing run on the same image an hour and a half
+earlier (38864128442) did that install and the module's `upgrade`
+together in 89s, and the whole test in 99s. So nothing deterministic
+separated the runs; only the time did.
+
+What the logs **cannot** say is which half of the install stopped:
+the download from a mirror, or the scriptlets that run depmod and
+dracut. `runEnv` collects a command's output with `CombinedOutput` and
+prints it only when the command returns, and this one never did. A
+stalled mirror is the likelier of the two -- dnf's own `minrate` is 1000
+bytes a second, which a mirror can trickle above for a day, and the
+same scriptlets finished in every other run, inside the 89s the install
+and upgrade took together -- but that is
+inference, not something any of these logs shows.
+
+**Why the second hang.** `go test` exits on its timeout without
+killing what the test started, so the dnf was orphaned in the container
+still holding dnf's lock, and the harness's dnf waited on it. One stall
+took the module tests, the conformance tests, and the job.
+
+**The fix, in the test** (`live_kernelpkg_rpm_test.go`; the module is
+unchanged):
+
+- **Every dnf the test runs, the module's included, runs under a
+  limit** -- 4 minutes for a download, 5 for an install or the module's
+  `upgrade` and `remove`, 2 for the quick ones, 4 for each put-back
+  command. It runs through `exec.OSRunner`, the runner the module uses,
+  which puts the child in its own process group and kills the group
+  when the context ends. The module's calls get the limit through
+  `exec.Context.Ctx`. Each limit is also held under the binary's own
+  deadline, less room for the put-back, so the limits cannot add up to
+  the thirty minutes they exist to stop.
+- **Before a kill, the test prints what is running and what dnf last
+  logged**: every process in the container with its parent, its
+  `wchan` and its command line (from /proc, since the image need not
+  have `ps`), and the last forty lines of `dnf.librepo.log`, `dnf.log`
+  and `dnf.rpm.log`. The next stall is the only evidence there will be
+  of which half it was, and this is what makes it say.
+- **The download is a step of its own.** Each kernel is fetched with
+  `install --downloadonly --setopt=minrate=200k`, then the older one is
+  installed with `-C`, from the cache alone, and the newer one is in the
+  cache before the module's `upgrade` runs. So a stalled mirror and a
+  stalled install fail under different names, and each step's time is
+  logged in a passing run too.
+- **A download that runs out its time is tried once more.** A new dnf
+  asks for the mirror list again rather than staying on the transfer that
+  stalled. One that fails outright is not retried.
+
+With this, a stall like the three above fails the test within minutes,
+naming the step, and the conformance harness after it runs against an
+unlocked dnf.
+
+#### What was run
+
+There is no EL host or container on the machine this was written on,
+so the Fleet legs on the PR are the evidence for the EL side.
+
+**On this change's Fleet run (38910442774, commit 47e8a53)** both EL
+legs ran the test, rather than skipping it, and passed. Every expected
+test passed and none skipped. The step times:
+
+| step | rocky9 (dnf 4.14.0) | alma8 (dnf 4.7.0) |
+|---|---|---|
+| download the older kernel | 64.6s | 8.6s |
+| install it from the cache | 39.2s | 53.2s |
+| download the newer kernel | 2.1s | 2.2s |
+| `kernelpkg.upgrade` | 26.7s | 13.3s |
+| `kernelpkg.remove` | 3.2s | 3.3s |
+| whole test | 140.35s | 89.29s |
+
+The first download fetched whatever the kernel needed besides itself.
+The second, at about two seconds on both, found that already
+installed. On rocky9 the first download was the slowest step, and seven
+times alma8's for the same kind of transaction. That is one sample, from
+one mirror on one run, not a measure of the stall. The installs from
+the cache took 39-53s, so the scriptlets are not seconds either. Every
+step was far inside its limit.
+
+`kpStep` and `kpDNF` were run on macOS (Darwin 25.6, arm64) from a
+scratch test that was not kept. A `sh -c "sleep 301 & sleep 302; wait"`
+under a two-second limit came back in 2.00s with an error naming the
+step and the limit, and `pgrep` found neither sleep afterwards; a `true`
+under the same limit passed and logged its time. Broken on purpose, with
+the `cancel()` in the timer removed and the sleeps cut to 15s and 16s,
+the step took the full 16s and the sleeps outlived it, and the scratch
+test failed on both counts. The same run with `-timeout 2m` refused to
+start the step at all, because two minutes is less than the put-back's
+reserve -- the deadline guard. The /proc listing printed nothing there,
+since macOS has no /proc.
+
+#### Not verified
+
+- **What the stall was.** This change makes the next one say; it does
+  not show that any of the three was a mirror.
+- **That `minrate` and a second attempt get past a stalled mirror.**
+  That librepo abandons a transfer below `minrate` for `timeout` seconds
+  and fails over to the next mirror is from dnf.conf(5) and librepo's
+  behaviour as documented, not something seen here. If the stall is in
+  a scriptlet, the leg still goes red, in minutes rather than
+  forty-five, with the process list saying where.
+- **That the module's `upgrade` installs from the cache** the test
+  filled, rather than downloading again. dnf uses a package already in
+  its cache; the upgrade's logged time on the leg is what will show it.
+- **That killing dnf frees the lock** for the conformance harness.
+  dnf's lock records a pid, and a dead pid is a stale lock, but no
+  killed dnf was watched being followed by another one.
+- **The reads.** The `list_installed`, `latest_available` and
+  `upgrade_available` calls, and the `capture` of `remove --assumeno`,
+  still run without a limit. They read repository metadata the earlier
+  tests have already fetched, and none of them is where the three runs
+  stopped.
+- **alma8 under a stall.** Its leg ran the new test green (above) but
+  never failed the old way, so no limit has ever fired on either leg.
+
+### 5.320 `allow_sls` authorized the highstate it was meant to exclude
+
+SPEC 23.5 says a role "may be permitted `state.apply` but restricted to
+a set of SLS names", and `allow_sls` is how a policy says which.
+`checkArgs` enforced it by looping over the request's positional
+arguments and refusing any name outside the list. A request with no
+positional arguments never entered the loop, so it was allowed -- and
+the node, handed a state job with no positional arguments, compiles the
+top file (`runStateJob`: `CompileHighstate` unless `len(j.Arg) > 0`).
+So the role the example policy calls `webops`, limited to `webserver.*`
+and `common.*`, could run everything the top file assigns to its
+targets by asking for less. Issue 321's audit found it as M-01;
+`halite-hub policy test` showed it on 2026-10-16 with the example
+policy (below).
+
+The reach is bounded by the top file: the bypass runs what the top file
+assigns to the targets the rule already covers, not any SLS in the
+tree. That is still not "a set of SLS names", and on a node whose top
+file assigns `database.*` beside `webserver.*` it is exactly the
+database the restriction was written to keep out.
+
+The triage of that audit corrected one of its claims:
+`docs/configuration.md`'s sentence about `state_allowlist` being
+enforced beside `allow_sls` is not contradicted, because that key is the
+node's own check and is applied per SLS during a highstate too. That was
+the triage's reading and was not re-checked here. If it holds, a node
+with `state_allowlist` set was protected from this regardless; one
+without it, the default, was not.
+
+**Two more spellings of the same request**, found while reading the
+node's half rather than reported by the audit:
+
+- **`state.highstate` ignores its arguments.** `runStateJob` compiles
+  the highstate for it whatever the job carries (`fn != "highstate"`
+  guards the SLS branch). So a rule that put `allow_sls` on
+  `state.highstate` and an operator who named an allowed SLS passed the
+  loop and got the whole top file.
+- **`mods=` as a keyword is not an SLS name to the node.** The node
+  reads only positional arguments, so `state.apply mods=webserver.nginx`
+  is a highstate on the node, and the policy -- which judged only
+  positional arguments -- let it through.
+
+**The fix.** When the constraint for the requested function has
+`allow_sls`, `checkArgs` now refuses `state.highstate` outright and any
+other function when the request has no positional arguments, before the
+loop. The reason names the highstate and the allowed patterns:
+
+```
+denied: state.apply with no SLS names runs the highstate, which is not in the SLS names this role may apply (webserver.*, common.*)
+```
+
+The check is keyed on the constraint, not on a list of state functions,
+because `Rule.Args` is keyed by function name already and every state
+function the node runs (`apply`, `sls`, `highstate`, `show_*`) takes the
+highstate path with no positional arguments. So `state.sls` and the
+`state.show_*` renderers are covered by the same line when a rule puts
+`allow_sls` on them, and a role whose function has no `allow_sls` --
+`readonly`'s `state.show_*` in the example -- is untouched.
+
+**What an operator sees.** A role with `allow_sls` can no longer run the
+highstate. `run 'web*' state.apply` from such a role is refused where it
+used to be dispatched; a role that is meant to run the highstate needs a
+rule for it with no `allow_sls`. A schedule, reactor or orchestration
+step that is authorized through the policy under such a role would be
+refused in the same way; which of those paths reach `Authorize` with a
+narrowed role was not checked for this change. This is the reason the change was held back from the first
+pass at issue 321 and carries a CHANGELOG entry.
+
+Chapter 24's self-healing scenario says of its `allow_sls: ['playground']`
+role that the principal "may apply that SLS and nothing else". Before
+this change that was false -- a bare `state.apply` under the role was
+the highstate -- and it is true now. Its reactor names `playground`, so
+the scenario itself is unaffected.
+
+#### What was run
+
+`halite-hub policy test` with `contrib/examples/policy.yaml`, built from
+`main` (`dbc1b5d`) and from this change, on macOS (Darwin 25.6, arm64):
+
+| Request | `main` | this change |
+|---|---|---|
+| `cert:CN=alice web1.prod state.apply` | allowed by `webops` | denied, the reason above |
+| `… state.apply webserver.nginx` | allowed by `webops` | allowed by `webops` |
+| `… state.apply database.postgres` | denied | denied |
+| `… state.apply --kwarg mods=database.postgres` | allowed by `webops` | denied |
+| `… state.show_highstate` | allowed by `readonly` | allowed by `readonly` |
+| `local:ed web1.prod state.apply` | allowed by `administrator` | allowed by `administrator` |
+
+Tests:
+
+- `internal/policy` `TestAllowSLSRefusesTheHighstate`: `state.apply`,
+  `state.sls` and `state.show_highstate` with no names, `state.apply`
+  with only a `mods` keyword, and `state.highstate` with and without an
+  allowed name, all refused with a reason naming the highstate; the
+  same functions with an allowed name still allowed; a role without
+  `allow_sls` still allowed the highstate render.
+- `cmd/halite-hub` `TestTheExamplePolicyDecidesWhatItSaysItDoes` gains
+  the bare `state.apply` row, and chapter 26's policy test gains it too.
+- `cmd/halite-node` `TestTheNodeRunsTheHighstateForTheJobsAllowSLSRefuses`
+  holds the node half of the claim: it runs each refused request through
+  `executeJob` in test mode against a two-SLS top file and checks both
+  SLS ran, and runs `state.apply webserver.nginx` as the control, which
+  ran that one only. The refusal is justified by what the node does, so
+  the node is what is tested; if the node ever honours those arguments,
+  that test fails and the refusal can be reconsidered.
+
+Two existing tests, `TestTargetAndFunctionAreAuthorizedTogether` and
+`TestAScopedRuleDoesNotGrantAWiderTarget`, failed with the fix: both
+used a bare `state.apply` from the `allow_sls` role as their "allowed"
+probe, which is the request this refuses. They test targets, so they
+now name an allowed SLS. Left as they were, their wrong-target rows
+would have passed on the argument check whatever the target check did.
+The example policy's wrong-target row is changed the same way.
+
+Each half was broken on purpose and watched to fail:
+
+- Without the no-arguments check: the policy test failed on the four
+  no-names rows (`state.apply`, `state.sls`, `state.show_highstate`,
+  `mods` as a keyword), and the example-policy test failed on its new
+  row with `allowed=true`.
+- Without the `state.highstate` check: the policy test failed on
+  `state.highstate naming an allowed sls` and nothing else.
+- With the node changed to honour `state.highstate`'s arguments: the
+  node test failed on that row, its return holding `from_webserver`
+  alone.
+
+#### Not changed, and open
+
+- **`deny_sls` still allows the highstate.** A role with only
+  `deny_sls: ['secrets.*']` can run a highstate whose top file assigns
+  `secrets.*`. Whether that is wrong depends on what a deny list is
+  taken to promise, and refusing the highstate to every role with a
+  `deny_sls` is a larger change to what operators see than this one.
+  Left as written; it is a decision, not a finding that it is fine.
+- **`allow_mods` has the keyword half of this.** `policy test
+  'cert:CN=ci-pipeline' '' state.orchestrate --runner --kwarg
+  sls=teardown.everything` is allowed by the example's `deployer`, whose
+  `allow_mods` is `deploy.*`: the loop sees no positional arguments,
+  and the runner's signature binds the keyword `sls` to the same
+  parameter (`sig.Bind` in `internal/hub/runner.go`). Traced and shown
+  through `policy test`; not run through a hub. It is its own change.
+- **A rule that grants `state.*` and constrains only `state.apply`**
+  leaves `state.highstate` and `state.sls` unconstrained, because
+  `args` is keyed by exact function name. That is the policy as written
+  rather than this check, and nothing warns about it.
+
+#### Not verified
+
+- **Not run through a hub to a node.** The decision was shown through
+  `policy test` and the unit tests; the node half through `executeJob`
+  in-process. No job was dispatched from a hub under a narrowed role,
+  and the API's path to `Authorize` was not exercised separately (it
+  calls the same function).
+- **Not run on FreeBSD or Linux.** Nothing here is platform-specific;
+  CI runs the tests on all four.
+- **The fleet's own policies were not read** for roles that rely on a
+  narrowed role running the highstate. Any that do are refused after
+  this change.
+### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
+
+SPEC 23.5's `allow_mods` is how a policy limits a role to named
+orchestrations; the example policy's `deployer` has `allow_mods:
+['deploy.*']` on `state.orchestrate`. `checkArgs` enforced it by looping
+over the request's positional arguments. Two things about the runner it
+guards meant that loop judged less than the runner ran:
+
+- **`sls` binds by keyword as readily as by position.** The runner
+  binds the call against its signature (`sig.Bind` in
+  `internal/hub/runner.go`), which puts a positional argument and a
+  keyword `sls` in the same parameter, and `orchRequestFrom` reads that
+  parameter. The loop read only the positional half. And
+  `halite-hub orch run` sends the name **only** as a keyword
+  (`cmd/halite-hub/orch.go`, `"sls": strings.Join(...)`), so on the
+  operator's own command line `allow_mods` judged nothing at all: a
+  `deployer` could run any orchestration in the tree.
+- **`sls` is a comma list.** `orchRequestFrom` splits it (`tagGlobs`),
+  so `deploy.web,teardown.everything` is two orchestrations to the
+  runner and one string to the policy, and `deploy.*` matches the
+  string because `path.Match`'s `*` stops only at `/`.
+
+The same holds for `state.orch` and `state.orchestrate_show_sls`, which
+take the same `sls`; the example grants neither, but a policy that puts
+`allow_mods` on them was open the same way. The example policy's own
+comment said allow_mods matched "the positional arguments, which is how
+SLS and orchestration names are always submitted". For orchestration
+names that was never true of the shipped CLI, and it is the sentence the
+check was written to.
+
+Found while fixing issue 321's M-01 (`allow_sls` with no arguments),
+not reported by the audit.
+
+`deny_sls` on a runner had the same two holes, since it read the same
+positional arguments; a role with `deny_sls: ['teardown.*']` on
+`state.orchestrate` let `orch run teardown.everything` through.
+
+**The fix.** For a runner request under `deny_sls` or `allow_mods`,
+`checkArgs` now judges the names the runner will compile
+(`runnerNames` in `internal/policy`): every positional argument and the
+keyword `sls`, each split on commas, trimmed and with empties dropped,
+exactly as `tagGlobs` splits. That is a superset of what the runner
+reads -- a second positional argument binds to `env`, not `sls` -- which
+errs towards refusing. Two more refusals:
+
+- **A request under `allow_mods` that names nothing** is refused, with
+  a reason that says so. The runner refuses it too (`sls` is required),
+  but the policy said "allowed" about a request whose names it never
+  saw, and a decision that is right only because a later layer is
+  stricter is the shape of this defect.
+- **A keyword `sls` that is not a string** is refused as uncheckable.
+  The runner's signature refuses one as well; the policy does not rely
+  on it.
+
+Judging the keyword rather than refusing it was the decision, and not a
+close one: refusing a keyword `sls` under `allow_mods` would have
+refused every `orch run` a `deployer` makes, since that is the only form
+the CLI sends. A job's `allow_sls` and `deny_sls` are unchanged -- the
+node reads only positional SLS names and does not split them on commas
+(`runStateJob`, `CompileSLS`), so there the positional arguments are
+what runs.
+
+`TestEveryRunnerThatTakesOrchestrationNamesTakesThemAsSLS` in
+`internal/hub` holds the two paths together: it fails if a runner takes
+`sls` anywhere but as the first positional string, or takes
+orchestration names under another name (`mods`, `names`), which
+`runnerNames` would not read.
+
+**`POST /v1/orch` (issue 321 M-17)** is the API's half of the same pair.
+It authorized `state.orchestrate` with the name as a positional argument
+and *no* keyword arguments, then forwarded the name, `pillar`, `env` and
+`test` as keywords. So `deny_kwargs: ['pillar']` -- which the example
+policy's comment calls "a trivial way around any authorization" when
+missing -- never saw the `pillar` that reached the hub, and the hub
+cannot catch it, because it judges the API's own principal
+(`cert:CN=api`), not the caller's. The handler now authorizes the call
+it forwards, keywords and all. That change is sound only *with* the
+policy fix: with `main`'s `checkArgs` and the new handler,
+`{"sls":"teardown.everything"}` was answered 200, because the name had
+moved from the half the policy read to the half it did not. The two
+are separate commits in the order they have to land.
+
+**What an operator sees.** A role with `allow_mods` is now held to it on
+`orch run`, the API and reactions alike: an orchestration outside the
+patterns, or a comma list with one, is refused where it used to run, and
+`orch run` with an empty name is refused by the policy rather than by
+the runner. A role with `deny_kwargs: ['pillar']` can no longer pass
+`pillar` through `/v1/orch`. A role with no argument limits on these
+runners sees no change.
+
+#### What was run
+
+`halite-hub policy test 'cert:CN=ci-pipeline' '' state.orchestrate …
+--runner` with `contrib/examples/policy.yaml`, built from `main`
+(`dbc1b5d`) and from this change, on macOS (Darwin 25.6, arm64):
+
+| Arguments | `main` | this change |
+|---|---|---|
+| `deploy.web` | allowed by `deployer` | allowed by `deployer` |
+| `teardown.everything` | denied | denied |
+| `--kwarg sls=teardown.everything` | allowed by `deployer` | denied |
+| `--kwarg sls=deploy.web` | allowed by `deployer` | allowed by `deployer` |
+| `deploy.web,teardown.everything` | allowed by `deployer` | denied |
+| `deploy.web --kwarg sls=teardown.everything` | allowed by `deployer` | denied |
+| (none) | allowed by `deployer` | denied, "names no orchestration" |
+
+The row with both a positional and a keyword name could not have run on
+`main` either: `sig.Bind` refuses a parameter "given both positionally
+and by keyword". It is refused by the policy now because it names
+`teardown.everything`, not because of that.
+
+Tests:
+
+- `internal/hub` `TestAllowModsJudgesTheOrchestrationTheRunnerCompiles`
+  drives `CallRunner` -- the path the CLI, reactions and the API reach --
+  for all three runners against a tree holding `deploy/web.sls` and
+  `teardown/everything.sls`, and checks what was *compiled* as well as
+  what was decided. Run against `main`'s `policy.go`, it failed 18 rows,
+  among them `allowed, and the runner compiled [teardown.everything]`
+  for the keyword and `[deploy.web teardown.everything]` for each comma
+  list, on each of the three runners (in test mode for the two that
+  run, so nothing was dispatched).
+- `internal/policy` `TestAllowModsJudgesTheKeywordAndEachNameInACommaList`
+  and `TestDenySLSOnARunnerJudgesTheKeywordAndTheCommaList`, which also
+  hold that a job's keyword `sls` is not read as a name.
+- `cmd/halite-hub` `TestTheExamplePolicyDecidesWhatItSaysItDoes` gains
+  the three rows an operator's `orch run` actually produces.
+- `internal/api` `TestTheOrchEndpointAuthorizesTheCallItForwards`: with
+  the handler as it was, the `pillar` row was answered 200 and reached
+  the hub; with the handler fixed and `main`'s policy, the two
+  `teardown.everything` rows were.
+
+Each part of the policy fix was broken on purpose and watched to fail:
+
+- **The keyword not read:** all three keyword-allowed hub rows failed
+  (refused, as naming nothing), six policy rows, and the `deny_sls`
+  keyword row. The hub's
+  keyword-*refused* rows still passed, refused by the no-names check
+  for the wrong reason; the policy test, which checks the reason, is
+  what catches that.
+- **The comma list not split:** nine hub rows (three per runner) and
+  three policy rows, plus the `deny_sls` comma row.
+- **The no-names check removed:** the three hub `no name at all` rows
+  and two policy rows.
+- **The non-string refusal removed:** one policy row only. The hub test
+  still passed, refused by the no-names check, and the signature would
+  refuse it after that.
+- **`deny_sls` back on the positional arguments:** the two `deny_sls`
+  runner rows.
+
+#### Not changed, and open
+
+- **`env` is not judged.** A `deployer` may compile `deploy.web` from
+  any environment it names, and `allow_mods` says nothing about which
+  tree `deploy.web` comes from. Whether it should is a question about
+  what `allow_mods` promises; not taken up here.
+- **`allow_sls` on a runner** still reads only the positional
+  arguments. Nothing ships `allow_sls` on a runner, and `allow_mods` is
+  the limit for orchestrations, so this was left alone rather than
+  widened without a case.
+- **Exact-name keying.** A rule granting `state.orch*` with `args` only
+  on `state.orchestrate` leaves `state.orch` unconstrained, because
+  `args` is keyed by exact function name. The example grants
+  `state.orchestrate` by name, so it is not affected.
+- **Spelling under `allow_mods`.** The canonical-spelling check that
+  5.294's later subsection added to `deny_sls`/`allow_sls` runs on
+  `allow_mods` names only when the rule also has `deny_sls`. A pattern
+  like `deploy.*` cannot be widened by a second spelling -- `*` stops at
+  `/`, and `deploy..x` is still under `deploy` -- so it was not extended.
+
+**Merged with 5.294's canonical-spelling check.** That change landed on
+`main` first and checked `req.Arg`. On merging, the check reads the
+same `names` the lists do: for a job that is `req.Arg`, unchanged, and
+for a runner under `deny_sls` it is the orchestration names, so
+`orch run teardown/everything` under `deny_sls: ['teardown.*']` is
+refused for its spelling rather than slipping past both. Two rows in
+`TestDenySLSOnARunnerJudgesTheKeywordAndTheCommaList` hold it (a
+keyword and a comma list with a slash), and both failed with the check
+pointed back at `req.Arg`.
+
+#### Not verified
+
+- **Not run through a running hub and the CLI.** The runner path was
+  driven in-process through `CallRunner` with an operator principal, and
+  the CLI's request shape was read from `cmd/halite-hub/orch.go`, not
+  captured off the wire. The API was driven through its own test lab
+  against a stub hub.
+- **Reactions and schedules** that call these runners under a narrowed
+  role go through the same `Authorize` and would now be refused for an
+  orchestration outside `allow_mods`; that was read, not run, and the
+  fleet's reactor and policy files were not read for any that would be.
+- **Not run on FreeBSD or Linux.** Nothing here is platform-specific;
+  CI runs the tests on all four.
+### 5.322 A firewall value could carry a second pf rule
+
+`firewall.allowed` with
+
+	from: "10.0.0.1 \n pass out quick all"
+
+loaded two rules into the `halite` anchor: the one declared, and
+`pass out quick all`. Found by reading, in the issue 321 audit (M-37),
+and reproduced against the provider with a recording runner. It was not
+seen on a host.
+
+Three things lined up. `pfAddress` only trimmed the value.
+`firewallRule.validate` checked the action, protocol and direction and
+that the rule was not empty, and nothing in `from`, `to` or `comment`.
+`loadAnchor` joins the rules with a newline and feeds them to
+`pfctl -a halite -f -`, so a newline in a value is the start of a new
+rule. `port` was safer by accident: `pfPort` refused white space.
+
+This is the pair shape again. The parameter's documentation ("an
+address or network") and the renderer that passed anything through were
+two things that should have said the same thing, and only one of them
+was checked by anyone. The value comes from an SLS file or pillar, so
+whoever could write it could already write a state. But a pillar value
+built from something else (an inventory, a form, another system) could
+open the firewall from a field that was meant to hold one address.
+
+**What is accepted now.** The values are held to what the parameters
+document, by an allowlist and not by a list of pf's special characters.
+A blocklist would have to be complete to be worth anything. An allowlist
+only has to be right.
+
+- `from`, `to`: an IPv4 or IPv6 address or a CIDR network, parsed with
+  `net/netip`; `any`; or a pf table, `<name>`, with letters, digits, `_`
+  and `-`, at most 31.
+- `port`: a port 1 to 65535, a range `low:high`, a service name (RFC 6335
+  shape), or a comma-separated list of these. Digits are checked as
+  digits, because `strconv.Atoi` takes `+22`.
+- `comment`: no control characters. pf does not write it. ufw takes it as
+  an argument.
+
+The check is in `firewallRule.validate`, which both providers' states and
+functions call before the provider sees the rule, so ufw is covered by
+the same refusal. `pfAddress` and `pfPort` check again, because
+`pfProvider.Apply` can be reached without `validate`. `loadAnchor`
+refuses a rule with a line break, whatever built it. That last check is
+on line breaks only, not every control character, because the rules
+already in the anchor come back through it as pf printed them.
+
+**Refused now, and accepted before** (operator-visible): host names,
+interface names, negation (`!`), lists (`{ a, b }`) and IPv6 zones in
+`from`/`to`, and port 0. pf takes all of these. None is what the
+parameter documents. A host name is also resolved once at load time and
+printed back by pf as an address, so it would not have matched itself
+under 5.31's comparison. That last point was read from pf.conf(5) and
+not seen on a host.
+
+**ufw and iptables, for leading `-`.** The audit said ufw takes a
+leading `-` through argv. ufw's `from`, `to` and `port` go through the
+same `validate`, so a value starting with `-` is now refused before ufw
+runs. Whether ufw would have read one as an option was not tested: no
+ufw ran here. A `comment` that starts with `-` is still accepted. It is
+the value after the word `comment`, and nothing here shows that ufw
+reads it as an option. `iptables` was not changed. It does not use
+`firewallRule`. Every value it takes follows its flag in argv (`-s`,
+`--dport`), and its `rule` and `extra` parameters are raw iptables text
+by design, so anybody who can set a value can already write any rule.
+
+**How it is tested.** `firewall_values_test.go`:
+
+- 27 values that are not one address, one port or one comment, from the
+  audit's newline to pf syntax, a leading `-`, `+22`, port 0 and
+  `fe80::1%em0`. `validate` refuses each. `pfProvider.Apply` refuses
+  each that pf writes, and no `pfctl` runs, not even the read.
+- `loadAnchor` refuses a rule with `\n` or `\r` in it and runs nothing.
+- IPv4, IPv6, both as networks, `any`, `<bastions>`, a range, a list
+  with a range, `ssh`, 65535 and a value with spaces round it render
+  exactly as before. A ufw argv with an IPv6 network, a range and a
+  comment is unchanged.
+
+Each guard was broken on purpose. With `pfAddress` and `pfPort` back to
+their old checks, 20 of the pf cases were accepted. The newline cases
+were still refused, by `loadAnchor`, but only after `pfctl` had read the
+anchor. With that guard also removed, the audit's value was loaded, with
+`pfctl -a halite -f -` run: the original defect. With `validate` back to
+its old checks, the `validate` test failed. With the `loadAnchor` guard
+removed, its test failed.
+
+**Not verified.**
+
+- **No pf or ufw ran.** All of this is against a recording runner. That
+  pf would have loaded the second line as a rule is from pf.conf(5) and
+  the shape of `loadAnchor`, not a run.
+- **Hosts.** It is not known whether any state in the fleet uses a host
+  name, an interface or a list in `from`/`to`. Such a state now fails
+  with a message that names what is accepted, and does not change the
+  firewall.
+- **The table name rule** (31 characters, `[A-Za-z0-9_-]`) is a
+  conservative subset of what pf takes. It is not taken from pf's
+  source.
+### 5.323 A renewal could undo a revocation, and the key store had no lock file
+
+Found by review, not reported from a host. `keystore.Authority.Revoke`
+read a node's record, put its serial on the denylist and wrote the
+record back as revoked. `Renew` read the record, checked it was still
+accepted, signed a new certificate and wrote the record back as
+accepted with the new serial. `Store.mu` was taken by `Get` and again
+by `Put`, never across both. And `halite-hub keys revoke` writes the
+store from the operator's shell, a separate process that shares none
+of the hub's memory. So two interleavings went wrong:
+
+- The revocation lands while a renewal is between its read and its
+  write. The renewal writes last. The node is **accepted** again, with
+  a fresh serial that no denylist has seen, and `keys revoke` has
+  already printed that it succeeded.
+- The renewal lands while the revocation is between its read and its
+  write. The revocation writes last, and the record says revoked, but
+  it holds the *old* serial. The node holds a valid certificate whose
+  serial is not on any denylist, and `LoadDenylist` at the next
+  restart will not add it either.
+
+`Enroll`, `Accept` and `Reject` had the same read-then-write shape, and
+so did the bootstrap tokens: `SpendToken` in the hub rewrote a token's
+record to count a use, and `keys token revoke` landing in that window
+was overwritten. The token kept admitting nodes.
+
+The comment on `Store.mu` said that a second process on the same
+directory was a misconfiguration "that the lock file guards against".
+No lock file existed anywhere in the repository. The CLI that is that
+second process is how an operator is told to revoke a node.
+
+**The change.** Every read-modify-write of the store now runs inside
+`Store.locked`. That function takes `mu` and then an exclusive OS lock
+on `<keys>/.lock`, so a goroutine and a separate process are excluded
+in the same way. `Enroll` (including the token it spends), `Accept`,
+`Reject`, `Revoke` and `Renew` each read, decide and write in one
+critical section. So do `MintToken`, `SpendToken`, `RevokeToken`,
+`DeleteToken`, `Put` and `Delete`. Plain reads (`Get`, `List`) take no
+OS lock: records are replaced by an atomic rename, so a reader sees one
+whole version or the other.
+
+The lock is `flock` on every unix target with one exception. Solaris's
+`syscall` has no `flock`, so it uses an `fcntl` write lock, which does
+not exclude a second Store in the *same* process. Windows uses
+`LockFileEx`. A target with neither refuses to write the store. No
+target in `make build-all` is that target. The OS drops the lock when
+its holder exits, so a crashed CLI leaves nothing to clean up. The
+lock file is handed to the directory's owner as records are (5.285),
+because `keys revoke` run as root may be its first writer.
+
+**Revoked is now sticky.** `issue`, the only place a certificate is
+made, refuses a revoked record. `Reject` refuses a revoked node too.
+Before, a revoked node could be rejected. Rejected is not on the
+denylist that `LoadDenylist` rebuilds at a restart, so rejecting a
+revoked node let its certificate back in at the next hub restart.
+Deleting the record is still the way out of revoked.
+
+**What is proven.** `internal/keystore/race_test.go` uses two
+`Authority`s, each with its own `Store` and its own denylist, over one
+directory and one CA, as the hub and the CLI are. A test hook,
+`Store.between`, runs inside the critical section between the read and
+the write. Each test puts the other party into that window. If the
+other party can take the lock there, the test fails and runs it to
+completion inside the window. That is the losing interleaving, so a
+missing exclusion fails every time and not only when the scheduler
+helps. Otherwise the other party is left waiting for the lock. The
+tests show that a revocation during a renewal ends revoked with the
+*new* serial denylisted, both live and through `LoadDenylist`; that a
+renewal during a revocation is refused; that a token revocation during
+a spend holds; and that revoked is sticky against `Renew`, `Accept`,
+`Reject` and `issue`. A separate test re-executes the test binary as a
+second process that takes the lock, and shows that this process cannot
+take it until the other lets go.
+
+Each part was broken on purpose and its tests failed. A no-op
+`lockFile` failed the three race tests and the cross-process test.
+`TestRevokedIsSticky` does not depend on the lock, and it passed. An
+earlier version of this paragraph counted it among the failures. The
+re-run on FreeBSD (below) did not bear that out.
+`Renew` with its read moved back outside the lock failed both renewal
+tests ("the node is accepted after a revocation: the renewal undid
+it"). Without the two stickiness checks, `TestRevokedIsSticky` failed.
+
+**What CI showed** (PR #338, run 38776340940). This was the first
+time the lock ran anywhere but macOS. `internal/keystore` passed on
+`test (ubuntu-24.04)`, `race (ubuntu-24.04)`, `test (freebsd)` (a
+FreeBSD 15.1-RELEASE amd64 VM), `test (windows-2022)` (running as an
+unprivileged account) and `fips-test`. These runs included the
+four race tests and the test that re-runs the binary as a second
+process. That is `flock` on Linux and FreeBSD and `LockFileEx` on
+Windows, each excluding a second Store and a second process. The test
+has no skip path, so "ok" there means it ran.
+
+Every one of those legs failed anyway, on something else.
+`internal/fileperm`'s audit refused `openLock`:
+
+    internal/keystore/keystore.go:191 openLock calls os.OpenFile with mode 0600, which denies group and other
+
+On Windows, a 0600 passed to `os.OpenFile` sets the read-only
+attribute. It is not an access control decision. The lock file is now
+opened through `fileperm.OpenFile`, which applies the mode as an ACL
+there. The first local run checked `internal/keystore` and the audits
+named in this repository's notes, but not `internal/fileperm`, so the
+miss reached CI. With `os.OpenFile` restored, the audit fails locally
+too.
+
+**A live FreeBSD hub, with `keys revoke` beside it** (beastie,
+FreeBSD 15.1-RELEASE-p5 amd64, 12 CPUs, go1.27.2; PR #338 at
+5ea3c2c, and `main` as it stood on 2026-10-16 for comparison). This is the
+run that had been owed. A throwaway hub served on 127.0.0.1:14510
+from a scratch root, as an unprivileged user, beside the production
+hub and not touching it. Its `certificate_lifetime` was 1h. 32 nodes
+enrolled through it and were accepted. Each node then ran
+`halite-node renew --force` 40 times in a loop. While those loops ran,
+`halite-hub keys revoke` ran once per node from its own process, after
+a random delay of 0.2 to 4 seconds. Then the hub was stopped and
+started again, which rebuilds the denylist through `LoadDenylist`.
+Each node then renewed once more with the newest certificate it held.
+The verdict for each node came from the restarted hub's own log, not
+from the node's error: whether the hub refused the serial in that
+node's `node.crt` during the TLS handshake ("the certificate for nN
+(serial …) is revoked").
+
+- `main`, two rounds: in each, 31 of 32 nodes were refused at the
+  handshake, and one was not (n32, serial 0f66978a…, then n14). The
+  restarted hub accepted that certificate at TLS, so the request
+  reached the handler, and the only thing that stopped it was the
+  record's revoked state ("enrollment refused: n32 is revoked"). The
+  certificate itself was never denylisted. That is the second ordering
+  above: the revocation recorded the serial the renewal had just
+  superseded. `keys list` showed all 32 revoked, so the record looked
+  right while the certificate was not denied.
+- This change, two rounds: 32 of 32 refused at the handshake in each.
+  `keys list` showed all 32 revoked. The store directory held
+  `.lock` (mode 0600, empty).
+
+Before this harness was right it gave two wrong answers, and both are
+worth knowing for the next run. The first run built from a checkout
+that was still on another branch. With `renew` but no `--force`, the
+node said "renewal is due at half its life", exited 0, and renewed
+nothing. So that run raced nothing, yet it reported every node
+revoked. Then a check that counted a node as escaped when its
+`connect` log lacked "bad certificate" reported 24 escapes on `main`
+that were nodes the setup had never created. The node's own error is
+also a poor signal: a TLS 1.3 client-certificate refusal often
+reaches the client as "connection reset by peer", "broken pipe" or
+"http2: client conn could not be established" rather than as a bad
+certificate. That is why the verdict is read from the hub.
+
+The test-level breakages were repeated on the same machine. With
+`lockFile` made a no-op in `lock_flock.go`, the three race tests and
+`TestTheStoreLockExcludesAnotherProcess` failed, and the package
+passed again once it was restored. `internal/keystore` passed under
+`-race`, natively on FreeBSD rather than through the Linux
+compatibility layer.
+
+**Not verified.** The `main` failure was seen at 32 nodes. At 8 nodes,
+three rounds (24 races) showed nothing, so this harness is a
+detector only at that scale. Two passing rounds on this change are
+evidence, not proof. The node-held `connect` stream was not raced: the
+renewals here came from `halite-node renew`, not from a connected
+node renewing at half-life. `flock` on OpenBSD and NetBSD and `fcntl` on Solaris
+are compiled only (`go vet` for each target). Nothing measured the
+cost of the extra open and lock per write.
+The hub writes the store on enrollment and renewal, not per request, so
+the cost should be small, but that is not measured.
+
+**Left alone.** When a renewal supersedes a serial, the hub denylists
+the old serial in memory only. The record keeps just the current
+serial, so a hub restart forgets every superseded one (M-05 in the
+review that found this). That has its own fix. It is not this one.
+### 5.324 A node's `region` grain chose the host the hub sent its AWS credentials to
+
+Audit finding H-20. `aws_secrets_manager` built its endpoint as
+`"https://secretsmanager." + region + "." + suffix`. The region came,
+in order, from the secret's own `region`, the ARN's fourth field, the
+node's `region` grain, and the block's `region`. The grain is the
+node's to set, so a node chose part of the host. The request it built is
+SigV4-signed and carries the access key ID in `Authorization` and the
+session token in `X-Amz-Security-Token`, and what came back went into
+that node's pillar. So one node could make the hub:
+
+- send a signed request to any host it named (SSRF from the hub);
+- give that host the key ID and a live session token;
+- put a value of its choosing in its own `aws_secrets` pillar.
+
+It is wider than the audit said. With `node_grain` on, the node also
+writes each secret entry, including its `region` and its ARN, and
+`node_grain_allow` checked only the secret ID. The partition in a
+node's ARN chose the suffix as well; an unknown one fell through to the
+commercial suffix.
+
+**Reproduced, through the handler, with nothing on a network.** A test
+transport records the host of each request and answers locally. With
+both halves of the fix removed, a node's `region` grain sent:
+
+| grain | host the signed request went to |
+|---|---|
+| `x@evil.example/` | `evil.example` |
+| `evil.example:8443/` | `secretsmanager.evil.example:8443` |
+| `10.0.0.5:8443/p?` | `secretsmanager.10.0.0.5:8443` |
+| `evil.example#` | `secretsmanager.evil.example` |
+| `us-east-1@evil.example` | `evil.example.amazonaws.com` |
+
+and, on the first, the `X-Amz-Security-Token` header carried the session
+token from the environment. The `region` field of a `node_grain` entry
+did the same.
+
+**The change has two halves, and each was shown to hold alone.**
+
+1. **Where a region becomes a host, it is checked, whoever supplied
+   it.** `awsauth.ServiceURL` refuses a region that does not match
+   `^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$` (at most 32 bytes), builds the URL
+   as a `url.URL`, renders it, parses it back, and refuses it unless
+   the host is exactly `service.region.suffix`. The grammar admits the
+   names of the three partitions the extension reaches (`us-east-1`,
+   `eu-central-2`, `ap-southeast-4`, `il-central-1`, `us-gov-west-1`,
+   `cn-north-1`, `cn-northwest-1`). It admits no `.`, `@`, `:`, `/`,
+   `?`, `#` or upper case, so a region cannot add a label, become
+   userinfo, add a port, or end the authority. It is a grammar, not a
+   list, so a new region does not need a release. `awsauth.PartitionSuffix`
+   answers `aws`, `aws-us-gov` and `aws-cn` and refuses anything else.
+   The client checks the region before it resolves credentials, so a
+   refused region causes no metadata or STS call either. With a
+   configured `endpoint` the region is not in the host, but it is in
+   the signing scope, so it is checked there too. STS's endpoint in
+   `awsauth` goes through `ServiceURL` as well; its region is the
+   operator's, so that half is hardening, not a fix.
+2. **A region a node supplies is used only if the block allows it.**
+   That is the `region` grain, and the `region` and ARN of a
+   `node_grain` entry. It is allowed if it is the block's own `region`
+   or is listed in the new `node_region_allow` (exact names). Anything
+   else fails that node's compilation with a message naming the
+   setting. A region the hub wrote (the block, `pillar_list`) is held
+   to the grammar only.
+
+An unlisted grain is **refused, not replaced** with the block's
+`region`. Falling back would read the secret of the same name from a
+different region, which in an estate with per-region secrets is a
+different value, and would do it without saying so. That is the
+failure this extension already refuses for a failed fetch.
+
+The block's `region`, `node_region_allow` and `partition` are checked
+when the block is read, so a typo is reported against the block. Errors
+quote at most 64 bytes of a value they refuse (`awsauth.Bounded`).
+
+**This is a change for an estate that spans regions.** A node whose
+`region` grain differs from the block's `region`, whose secrets are named
+rather than given as ARNs, used to read them from its own region. It
+now fails its pillar until that region is in `node_region_allow`. The
+extension's version is now 1.1.0, so a pin has to be moved on purpose.
+
+**The version, and why two extensions moved.** Both extensions say their
+`Version` "changes when behaviour does", because a pin names it. That
+was not true before this change. `aws_secrets_manager` changed
+behaviour twice at 1.0.0: its SPEC 24.3 resource limits (5177ea3) and
+the not-secret setting (09c200b, #274). This change bumps it to 1.1.0,
+because it adds a setting and refuses configurations it used to accept.
+`halite-ext-signer-kms` links `internal/awsauth`. It is 1.0.1 now,
+because the STS endpoint goes through `ServiceURL`: with an assumed
+role, a `region` that is not a region name now fails before the
+AssumeRole call, where before it became part of the host. A valid
+region reaches the same host as before (`TestTheSTSEndpointComesFromThePartition`).
+The URL gained a trailing `/`. A throwaway test, not kept, signed and
+sent both forms to a local server. The SigV4 `Authorization` header was
+identical, and both arrived as `POST /`, because `canonicalURI` already
+writes `/` for an empty path and `net/http` sends `/` for one. No real
+STS endpoint was contacted.
+`halite-ext-signer-local` links neither package and is unchanged. The
+examples in `docs/extensions.md`, handbook chapter 29 and
+`contrib/examples/hub.yaml` that name `aws_secrets_manager`'s version
+now say 1.1.0.
+
+Nothing compares the version an extension reports in its handshake
+with the `version` its bundle was signed as. The hub checks a pin
+against the manifest, and the manifest against its `_ext/<name>/<version>/`
+path. So the 1.1.0 binary signed with `--ext-version 1.0.0` still
+loads. The pin and `sys.list_extensions` both say 1.0.0, because
+`Describe` reports the manifest's version. The version the running
+binary states in its handshake is never read. Noted here, not fixed.
+
+**How it is tested.** `cmd/halite-ext-aws-secrets/region_test.go` drives
+the handler with no `endpoint` and a transport that fails the test if
+it is called:
+
+- eleven hostile regions as the `region` grain, and as a `node_grain`
+  entry's `region`; three as the region field of a node-named ARN; an
+  unknown partition in a node-named ARN. All refused, nothing sent.
+- a well-formed but unlisted region from the grain and from a node
+  entry: refused, naming `node_region_allow`. Listed, or equal to the
+  block's `region`: sent to exactly `secretsmanager.<region>.amazonaws.com`.
+- eight valid regions across the three partitions: the request went to
+  exactly the expected host, `.amazonaws.com.cn` for `aws-cn`.
+- the client alone refuses every hostile region, and errors are bounded.
+
+`internal/awsauth/region_test.go` holds the grammar, the bound, the
+URL's host, the partitions and STS.
+
+Broken on purpose, each failed and was restored:
+
+- `endpoint` concatenating again (policy still on): every hostile case
+  in the client test sent a signed request, to the hosts in the table.
+  The handler tests passed, because the policy half refused first.
+- the policy half returning the region unchecked (client still on): the
+  two unlisted-region tests failed. The hostile tests mostly passed,
+  because the client refused them; the 5,014-byte one failed, because
+  the handler's error then echoed the whole value.
+- the grammar accepting everything (`ServiceURL`'s parse-back still on):
+  `us-east-1.evil.example`, `US-EAST-1` and an over-long region reached
+  a request; the parse-back alone caught `@`, `:`, `/` and `#`.
+- both halves off: the table above.
+
+**Not verified.**
+
+- **No AWS.** Nothing here contacted AWS. That a real Secrets Manager
+  answers on the URL now built (with a trailing `/`, as before) was not
+  run. The bytes on the wire were compared only against the previous
+  code. The STS URL gained a trailing `/`; the request line and the
+  SigV4 canonical URI are `/` either way, which was read from
+  `canonicalURI` and not run against STS.
+- **No GovCloud or China endpoints.** The `aws-us-gov` and `aws-cn`
+  hosts are asserted against a test transport only.
+- **The grammar against AWS's own list.** The regions named above were
+  typed in, not taken from AWS's endpoint data. A region that does not
+  fit the grammar would be refused, and none is known.
+- **The other region-to-host builders.** `internal/s3fs` and
+  `internal/awskms` build hosts from a region too. Their regions come
+  from the hub's configuration, not a node, and they were not changed or
+  checked here.
+- **Other unbounded echoes of node bytes.** `node_grain_allow`'s refusal
+  still quotes a node's secret ID in full, as before.
+- **macOS only.** The tests ran on Darwin 25.6, not on FreeBSD or Linux.
+
+#### Since
+
+The bullet above was true when it was written and stopped being true
+before the change merged. Nobody went back to it. That is the failure
+the top of this file warns about. `cmd/halite-ext-aws-secrets`,
+`cmd/halite-ext-signer-kms`, `internal/awsauth`, `internal/awskms`,
+`internal/extpillar` and `internal/extension` also passed on Linux
+(Ubuntu, the branch merged with main), and natively on FreeBSD
+15.1-RELEASE-p5 under `-race` (beastie), before #329 merged.
+
+The handshake gap this section noted and left open, a binary signed
+as a version it does not report, is fixed in 5.325, and the version
+rule now has a test.
+
+### 5.325 An extension's version was held to nothing
+
+Every shipped extension's `Version` comment says it "changes when
+behaviour does", because a pin names it. Two things made that a
+sentence rather than a property.
+
+**Nothing noticed when it did not change.** `aws_secrets_manager`
+changed behaviour twice at 1.0.0: its SPEC 24.3 resource limits
+(5177ea3) and the not-secret setting (09c200b, #274). Then 5.324
+changed `internal/awsauth`. `halite-ext-signer-kms` links that
+package, and its behaviour with a malformed `region` changed while
+nothing in its own directory did. Each of those changes was reviewed,
+but the version lives in a file none of them touched, so nobody was
+looking at it.
+
+`TestEveryShippedExtensionVersionMovesWithItsCode`
+(`internal/buildpolicy/extversion_test.go`) records, for each
+`cmd/halite-ext-*`, its `Version` and a digest of the code that can
+carry its behaviour, in `internal/buildpolicy/testdata/extension-versions.txt`.
+It fails when the digest moves and the version does not. The way out
+is a decision taken in the open: bump, or record the digest and say in
+the commit why the behaviour is the same. Choices, each made for a
+reason:
+
+- **Transitive, within this module.** The extension's package and
+  every package of this module it imports. The signer-kms case moved
+  through a dependency, so a digest of its own directory would have
+  passed.
+- **Every platform's files.** Imports are followed by parsing, not by
+  `go list`, which answers for the host. FreeBSD behaviour lives in
+  files a Linux leg never builds, and FreeBSD is most of the estate.
+- **Tokens, not text.** Comments and whitespace are not tokens, so
+  prose and gofmt edits do not fire it. String literals, including raw
+  ones, are kept exactly, and so are `//go:` directives, which are
+  comments that decide what compiles. The first version printed the
+  parsed file back with its comment list cleared. A doc comment above
+  a function still changed the digest, because doc comments hang off
+  the declaration, and so did a commented-out `const Version`. A check
+  that fires on prose gets its digest updated by reflex.
+- **Versions only go up**, and an unrecorded bump fails too, so the
+  record cannot drift behind the code.
+
+Measured, each change made and then restored. These passed: a
+comment at the top of a file, a doc comment above a function, blank
+lines, re-indentation, and a commented-out decoy `Version`. These
+failed: a string literal changed in `internal/awsauth` failed
+aws-secrets and signer-kms but not signer-local; a build constraint in
+`ext/` failed all three; a new file in `internal/jobsign` failed
+signer-local; a version decrease and an unrecorded bump each failed
+with their own message. Rebasing onto #329 failed it, as it should,
+for aws-secrets (1.1.0) and signer-kms (1.0.1), and not for
+signer-local. The digests are the same on Linux and natively on
+FreeBSD 15.1.
+
+**Nothing compared the binary with its signature.** The hub checked a
+pin against the manifest, and the manifest against its
+`_ext/<name>/<version>/` path. The version the executable reports in
+its handshake was never read. So a 1.1.0 build signed with
+`--ext-version 1.0.0` loaded, and the pin and `sys.list_extensions`
+(which reports the manifest) both said 1.0.0. The signature covers
+the bytes, so this never ran unsigned code. What it did was let the
+label a pin holds be wrong about what it names. `Loaded.ensure` now
+refuses, after the first handshake, an executable whose name or
+version differs from its manifest, and the message names both. The
+check runs once per pool, because every process in it runs the same
+verified file.
+
+The first full run found the defect in this repository's own tests.
+`internal/extpillar`'s end-to-end test and `cmd/halite-hub`'s
+agentless ext-pillar test both laid out the real 1.1.0 aws-secrets
+binary as 1.0.0. Both now name 1.1.0. Neither can read the version
+from the command (it is package `main`), so each holds a constant
+that has to move with it. That is one more place a bump has to reach,
+and it fails loudly when it is missed.
+`TestAnExecutableIsRunOnlyAsTheExtensionItSaysItIs` signs the echo
+1.0.0 test binary as echo 1.1.0 and as other 1.0.0. Both bundles
+verify, and both are refused at `Start`, with no call run. With the
+`checkIdentity` call removed, both start and the test fails.
+
+**Operators.** A bundle signed under a name or version its executable
+does not report now fails to start, and the message gives both. Re-sign
+it with what the executable reports, and move the pin. The production
+hub on beastie configures no extensions, and no `_ext/*/manifest.json`
+exists anywhere on that machine, so nothing there changes. No other
+estate was checked.
+
+**Not covered.** The standard library and the toolchain: a Go upgrade
+can change an extension's behaviour without moving its digest. The
+vendored-module path in the digest is written but has never run,
+because no shipped extension imports a vendored package. A third-party
+extension's version is held only by the handshake check, since its
+source is not here.
+
+### 5.326 The agentless tests failed under a umask of 002
+
+`go test ./internal/sshexec` failed nine tests on a machine whose umask
+is 002. That is the default for a user with a private group on Ubuntu,
+and it is this project's Linux workstation. Each failure was the trust
+check refusing the test's own directory:
+
+    refusing /tmp/TestAnAgentlessRunPushesThenUsesItsCache…/001: accounts other than its owner may write to it (drwxrwxr-x)
+
+`t.TempDir()` makes a 0700 directory per test, and inside it one
+directory per call, with mode 0777 filtered by the umask. Under 022
+that is `drwxr-xr-x`. Under 002 the group may write to it. The thin
+directory's trust check refuses anything below a directory another
+account may write to, and a group counts. The check was right. The
+tests had asked for a directory and never looked at its mode. Their
+own `mkdir` helper already set modes explicitly, with a comment saying
+the umask would otherwise interfere, but the directory it was called
+inside had no such care. CI's runners and beastie use 022, so only a
+developer on a 002 machine ever saw it, and it read as an unrelated
+environment problem. Being read that way is how it survived. While
+working on 5.325 it was first taken for noise, then reproduced on an
+untouched `main` before anybody called it pre-existing.
+
+The tests now take their directories from `privateTempDir`, which
+sets 0700 on what `t.TempDir()` returned. Nothing outside the tests
+changed.
+
+Measured: on this host (Linux, umask 002) the package passes under
+umasks 002, 022 and 077. With `privateTempDir`'s chmod removed, the
+same nine tests fail under 002, as `main` does. On beastie (FreeBSD
+15.1, native), untouched `main` fails under 002 and passes under 022,
+and this change passes under both. A full `go test ./...` under 002 on
+this host had only this package failing.
+
+**Not verified.** The three mount-namespace tests in
+`live_noexec_linux_test.go` skip on this host ("cannot mount a tmpfs …
+in this namespace") under any umask. They use the helper now, but they
+have not run with it here. CI's Linux leg is where they run.
+### 5.327 Webhook ingress: a delivery twice, a sender starved, and an `mtls` that could not work
+
+Three defects in `/v1/hook/{path}` (SPEC 22.2), found by reading
+`internal/api/hook.go` against what the ledger and the handbook said of
+it. None was reported from a host.
+
+**One signed delivery could reach the bus twice.** The handler asked
+`alreadySeen` whether a signature had been delivered, called the hub,
+and only then called `remember`. Two copies of one delivery arriving
+together -- a sender that retries on a slow answer does exactly this --
+both passed the check before either was recorded, and both became
+events. A reaction that deploys would deploy twice.
+
+The record was after the delivery for a reason, and the reason holds:
+a delivery that fails downstream is one the sender retries with the
+same signature, and refusing that retry as a replay loses the event
+(5.13's table, and the handbook's chapter 27). So the fix keeps it. A signature is now **reserved** -- checked
+against the delivered ones and the in-flight ones, and claimed, in one
+step under the lock -- before the hub is called. If the delivery lands,
+the reservation becomes the record. If it does not -- the hub is
+unreachable, the hub refuses, the rate limit turns it away, or the
+handler panics -- a deferred release gives the signature back, and the
+sender's retry is accepted. A copy that arrives while the first is in
+flight is refused with `409 Conflict`, not `401`, because it is not an
+authentication failure and a sender should not page somebody over it.
+
+**An anonymous caller could starve the real sender.** The rate limit
+was the first thing the handler did, from one token bucket per path,
+before anything was authenticated. At the default of ten a second, ten
+requests from anybody who knew the path took the allowance, and the
+sender's signed deliveries were refused with `429`. The limit now
+applies after authentication, to authenticated deliveries only.
+Refusals -- a bad signature, no token, a replay -- are counted against a
+second bucket per path at the same rate, and that bucket decides only
+whether the refusal is **logged**: a caller without the secret could
+otherwise write a warning per request into the API's log.
+
+What it does *not* bound is the work. Every unauthenticated request is
+still read, up to `max_body`, and checked, because nothing short of
+checking tells a forgery from the sender. A limit in front of that,
+keyed by the remote address, was considered and not added: behind a
+reverse proxy every request has the proxy's address, and that limit
+would starve the sender again in exactly the deployment that most
+needs it. The body limit and the server's read timeout are what bound
+an anonymous flood's cost.
+
+**`auth: mtls` could never succeed, and would have accepted anything.**
+The method checked that `r.TLS.PeerCertificates` was not empty. The
+API's listener does not request client certificates -- operators
+authenticate with tokens -- so it was always empty and every delivery
+to an `mtls` hook was refused. 6.1a called the mode "implemented and
+refused when no client certificate is presented, but never exercised",
+which reads as untested and probably fine; in fact no certificate could
+be presented. And "fixing" it by requesting certificates would have
+opened it: there was no CA to verify against and no identity to match,
+so any certificate from anywhere would have authenticated.
+
+Making it real means requesting client certificates on the listener --
+for every connection, because the handshake is over before the path is
+known, which changes what every browser and API client is asked -- plus
+a CA and an identity per hook. That is a design change with a SPEC
+section behind it. Refusing it is the smaller honest one: `auth: mtls`
+is now an error when the configuration loads, saying why and naming
+`hmac` and `token`. SPEC 22.2 still lists mutual TLS among the methods;
+this build does not keep that promise, and says so at load rather than
+by refusing every delivery.
+
+#### What was run
+
+All of it in `internal/api/hook_test.go`, against the API's real handler
+over HTTP with the hub a TLS test server, and `-race`:
+
+- **Two copies at once**: a hub that holds the first `event.send` until
+  released. The second copy is sent after the first has provably
+  reached the hub, so the interleaving is fixed rather than hoped for.
+  The second answers `409`, the hub sees one call, and a third copy
+  after the first lands answers `401` as a replay.
+- **A flood of twenty unsigned deliveries** against `rate_limit: 2` on a
+  fixed clock, all `401`; then both of the sender's burst go through,
+  only those two reach the hub, a third is `429`, and that same third
+  delivery is accepted once the clock moves a second -- the reservation
+  having been released on the `429`.
+- **Ten refusals write two warnings**, the refusal bucket's burst.
+- **`auth: mtls` does not load**, and `cmd/halite-api`'s exit test runs
+  a real `serve` on a configuration with one and sees it exit 78.
+- The existing test that a delivery the hub refused can be retried with
+  the same signature still passes.
+
+Each was broken on purpose and watched to fail:
+
+- Checking without reserving: the second copy answered `202` and the
+  hub saw the delivery twice.
+- The rate limit moved back in front of authentication: the third
+  anonymous request answered `429`.
+- The reservation never released: the downstream-retry test and the
+  rate-limited retry both answered `409`.
+- Every refusal logged: ten warnings instead of two.
+- `mtls` accepted again: the load test failed, and the `serve` exit
+  test **hung** until the test timeout rather than failing, because
+  `serve` started serving -- and left the serving child running after
+  the test binary gave up; it was found with `pgrep` and stopped. A
+  break that fails by hanging is a weaker witness than one that fails
+  cleanly, and the load test is the one that names the fault.
+
+#### Not verified
+
+- **No real sender**: no GitHub, GitLab or other webhook source was
+  pointed at a running API. Everything above is the handler under
+  `httptest`, plus one `serve` started from the test binary.
+- **Where it ran.** First on macOS (Darwin 25.6). After the merge with
+  main on 2026-10-16, `internal/api` and `cmd/halite-api` also passed on
+  Linux (Ubuntu), and natively on FreeBSD 15.1-RELEASE-p5 under `-race`
+  (beastie, commit 0172ef0). CI runs the tests on all four platforms.
+- **The cost of a flood** was reasoned about, not measured: no load was
+  generated, so how many unauthenticated deliveries a second an API can
+  check before the sender's are delayed is not known.
+- **The reservation is per process.** Two `halite-api` processes behind
+  one address each keep their own, as they each kept their own nonce
+  cache before; a copy that reaches each is delivered twice. Unchanged
+  by this, and not new.
+### 5.328 A hub could replay a signed job: after a restart, after a flood, or with a new nonce
+
+**Found by** a security review (M-02), and reproduced before anything was
+changed: the same signed jid with a fresh nonce was refused, and then
+accepted after 4096 junk jobs had been admitted.
+
+**What the node had.** `job.Guard` is SPEC 6.3's replay cache: in memory,
+one per process (`newExecutor`), a FIFO of 8192 keys, two per job (`jid:`
+and `nonce:`), so about 4096 jobs. Three things were wrong with it as a
+defence against a hub, and SPEC 25.6's signed jobs are exactly the case
+where the hub is the adversary.
+
+- **`Offer` admitted before it checked the signature.** A job refused for
+  having no signature, or a bad one, had already taken two places in the
+  cache. A hub could send a few thousand unsigned jobs to a node that
+  requires signatures on everything, have every one refused, and push a
+  real signed job's entry out. On a node that requires signatures only for
+  some classes, unsigned read-only jobs are accepted anyway, and do the
+  same.
+- **The nonce is not signed.** `SigningPayload` covers the jid and not the
+  nonce, which the hub chooses. So once the jid key was gone, a replay
+  with a fresh nonce was a job the node had never seen.
+- **Nothing survives a restart**, and nothing seeds the cache from the
+  evidence chain. A signed job is good until its expiry, which can be long
+  after the node restarts.
+
+`guard.go` said a replay older than the window was "bounded in practice
+by the job's own expiry, which is the shorter of the two". That was the
+exculpatory conclusion: it is false across a restart, false whenever the
+hub chooses to flood, and false for a job with no expiry.
+
+**The change.**
+
+- **`job.SignedReplay`**, a record of the signed jobs a node has
+  accepted, keyed by jid. It is a file, `<state_dir>/signed-jobs`, one line
+  per job (`<jid> <expiry>`), appended and synced before the job is
+  queued. It is never evicted by count, because only a signer can add to
+  it: the hub cannot flood it. An entry is dropped once its job is a day
+  past its expiry (`SignedReplayRetention`, for a clock stepped back after
+  boot), so it holds what operators signed within one expiry window. A
+  job signed with no expiry is kept for ever, since its signature never
+  stops being good. The file is rewritten without dead lines on load and
+  after 1024 dead lines. A record that cannot be read or written refuses
+  signed jobs, rather than starting empty, since an empty record after a
+  restart is the hole. The one exception is a torn last line from a write
+  that never returned, which admitted nothing.
+- **`Offer` admits last.** `Guard.Check` refuses a replay, an expired job
+  or a malformed one without recording anything. A signed jid already in
+  the record is refused next, before the signature check, which can mean
+  compiling pillar. Then the signature is checked. Then a job that
+  verified is written to the record. Only then does the job take its
+  places in the in-memory cache.
+- **The comment is corrected**, and says what the in-memory cache is for:
+  a hub that redelivers by accident. For an unsigned job that is all a
+  replay cache can do, because a hub that wants an unsigned job run again
+  can mint a new one.
+
+**The other design, and why not.** With no state at all, a node could
+refuse a signed job whose jid predates its own start, less some skew. It
+would refuse the signed jobs that matter most: a job queued on the hub for
+a node that is off is delivered when the node starts, and its jid is
+older than the node by construction. So the record is kept.
+
+**How this and the signing-format change fit.** That change refuses a
+signed job with no expiry, or with one further off than
+`job_signature_max_ttl` (an hour by default). With it, every entry here
+expires within that bound plus a day, and nothing is kept for ever. This
+change does not depend on it. Without it, a signed job with no expiry
+stays in the record permanently, which is correct, and the record's size
+is bounded only by how many such jobs operators sign. `halite-hub run`
+never signs one.
+
+**How it is tested.** `internal/job/signedreplay_test.go`: a signed jid is
+admitted once whatever its nonce; it is refused by a new `SignedReplay` on
+the same file; the file is mode 0600; an entry past its expiry plus the
+retention is dropped from memory and from the file, one inside the
+retention is kept, and one with no expiry is kept; a corrupt line refuses
+the next signed job, a torn last line does not; an unwritable directory
+refuses; the file is compacted; `Guard.Check` records nothing.
+`cmd/halite-node/replay_guard_test.go` drives `acceptJob` and `Offer`: a
+signed job replayed with a fresh nonce is refused; after 8208 junk jobs
+it is still refused, on a node requiring signatures for everything (where
+the junk is refused and the cache holds only the signed job's two keys)
+and on one requiring them for `state` (where the junk is accepted and the
+test checks that it did push the jid out of the in-memory cache, so that
+the record is what refuses the replay); after a new executor on the same
+state directory, a replay with a fresh nonce and the identical message
+are both refused; and a forged job does not use up the jid of the real one.
+
+Each was broken on purpose and watched failing:
+
+- `Offer` restored from `main`: both flood cases, the restart test and
+  the forged-jid test failed. The fresh-nonce test passed, as it should:
+  with nothing evicted, `main` refuses that replay too.
+- The signed record skipped: the `[state]` flood case and the restart test
+  failed. The `true` flood case passed, because the new order alone keeps
+  refused junk out of the cache.
+- The record kept in memory only: the node's restart test and three of
+  the `job` tests failed.
+- `Guard.Check` recording: `TestGuardCheckDoesNotRecord` and every node
+  test failed.
+
+**Not verified.**
+
+- **No live hub and node.** No real hub replayed anything to a real node;
+  the tests drive `acceptJob` and `Offer` in-process. A real restart, with
+  the systemd or rc.d unit, was simulated by a new executor on the same
+  state directory.
+- **FreeBSD.** Run locally on macOS (Darwin 25.6) only. The first push
+  wrote the file with `os.MkdirAll`, `os.OpenFile` and a hand-rolled
+  temp-file-and-`os.Rename`. CI failed it on every platform on the
+  repository's own audits (`TestNothingElseCreatesAPrivateFileWithTheStandardLibrary`,
+  `TestNothingElseRenamesWithTheStandardLibrary`,
+  `TestNothingElseWritesThroughATempFileAndARename`), and on Windows the
+  0600 file came back `-rw-rw-rw-`, because a mode there is the read-only
+  attribute and not access control. It now goes through `fileperm` and
+  `atomicfile`, and the test asks `fileperm.Others` rather than reading
+  mode bits. Sync cost was first measured on macOS, where Go's `Sync` is
+  `F_FULLFSYNC`: about three thousand appends took forty seconds, some
+  13 ms each. That is a cost per signed job, not per job.
+- **The sync cost on FreeBSD** (beastie, FreeBSD 15.1-RELEASE-p5, merge
+  commit ea69fc4). A throwaway test, not kept, ran 3000
+  `SignedReplay.Admit` calls (open, append, `fsync`, close) three times
+  on ZFS. The datasets were `sync=standard`, `logbias=latency`, on a
+  mirror of two SanDisk SmrtStor SAS SSDs behind an LSI SAS3008 HBA,
+  the same pool and settings as `/var/db/halite`. The mean was
+  0.75–0.82 ms, p50 about 0.67 ms, p99 1.5–2.6 ms, and the slowest
+  single admit 3.8–40 ms. That is about seventeen times cheaper than
+  macOS, which fits `fsync` against `F_FULLFSYNC`. The other FreeBSD
+  hosts' disks were not measured. `internal/job`, `internal/jobsign`
+  and `cmd/halite-node` passed natively there under `-race`, and on
+  Linux after the merge.
+- **A filesystem that lies about sync** would lose the last line on a
+  power cut and reopen that one job. Not tested. On beastie the HBA has
+  no write cache. Whether the SSDs' own cache is protected against
+  power loss was not checked, and a sub-millisecond `fsync` cannot tell
+  the two cases apart.
+### 5.329 `not S@10.0.0.0/8` delivered a pillar to every host inside 10/8
+
+Found by a security review, and reproduced here before anything was
+changed. The same shape as 5.136, with a kind the check had no case for.
+
+A pillar top expression is evaluated against `targetNode()`: the node ID,
+the trusted grains, and the hub-authoritative `node:` attributes. The
+default trusted grains do not include `ipv4` or `ipv6`. `S@` (and
+`- match: ipcidr`, which compiles to the same kind) reads exactly those two
+grains (`anyAddress` in `internal/target/target.go`). And
+`checkTargetIsPermitted` switched on `Pillar`, `PillarRegex`, `Grain` and
+`GrainRegex`; a `Subnet` term fell through with the basis `"glob"`.
+
+So a subnet term in a pillar top file was false on every node, and its
+negation true on every node:
+
+```yaml
+base:
+  'not S@10.0.0.0/8':   # "everything outside the private range"
+    - secret
+```
+
+Reproduced with `TestASubnetTargetIsRefused` on unmodified `main`: a node
+with `ipv4: [10.0.5.9]` received `password: hunter2` through the plain
+negation, through `G@os:Ubuntu and not S@10.0.0.0/8`, and through a
+nodegroup defined as `not S@10.0.0.0/8`. The positive forms (`S@10.0.0.0/8`,
+`S@10.0.5.9`, `- match: ipcidr`, a nodegroup of `S@10.0.0.0/8`) matched
+nothing and said nothing -- quieter, and still wrong. None of the seven
+was reported.
+
+#### Why it is refused rather than allowlisted
+
+For an untrusted grain the answer is `pillar_trusted_grains`: an operator
+who has decided a grain is trustworthy says so. That is no answer here.
+The addresses are reported by the node, which can claim any it likes, so
+adding `ipv4` and `ipv6` to the allowlist would make the term evaluate --
+on data the node chose. There is no allowlist escape because there is no
+deliberate decision that makes the term sound. The refusal says what to
+use instead: the node ID, or a hub-authoritative attribute under `node:`.
+
+#### The switch now ends in a refusal
+
+The cases are explicit for every kind a term can have: `Glob`, `List` and
+`Regex` read the node ID, which the hub authenticated; `Grain` and
+`GrainRegex` are judged against the allowlist; `Pillar`, `PillarRegex` and
+`Subnet` are refused. Anything else -- a kind added to `internal/target`
+later -- is refused with its name, rather than falling through to
+"permitted, basis glob". A missing case is not neutral in this function,
+for the reason this section exists: an unread term is false, and its
+negation is true.
+
+`Matcher.Terms()` records a leaf where it is compiled, so the check sees a
+term under `not`, inside parentheses and inside an expanded nodegroup alike;
+the test covers all three.
+
+#### What a top file using it will see
+
+A pillar top file with `S@` or `- match: ipcidr` now fails to compile,
+naming the expression. That is a change in behaviour for a tree that used
+the positive form, which delivered nothing before and fails now; the
+failure is the point, since "delivered nothing, silently" is what the
+negative form's twin looked like.
+
+**Tests, and breaking them.** `TestASubnetTargetIsRefused` runs seven
+spellings against a node at 10.0.5.9, and asserts each is refused, that
+the refusal names `S@`, `node:` and 12.4, and that nothing was delivered;
+and that a `G@os:Ubuntu` target beside them still delivers. Before the fix
+all seven failed, three of them with the secret delivered. With the
+`Subnet` case made permissive, the same three delivered again. With the
+case deleted, the default refusal caught every spelling, and the test
+failed on the message, which does not say what to use instead.
+
+**Not verified.** Not run against a hub and a real node: the evidence is
+the compiler's unit test, with grains supplied by the test.
+
+**The estate, searched since** (2026-10-16, before merge). The production
+hub on beastie has one pillar source, `pillar_roots: base:
+/usr/local/etc/halite/pillar`, and no gitfs or `ext_pillar`. That
+directory holds no files at all, so no top file there meets the new
+refusal. No other hub's pillar tree was searched. `internal/pillar` and
+`internal/target` passed natively on FreeBSD 15.1 (beastie) under
+`-race`, and on Linux after the merge with main.
+### 5.330 A signed dry run could be turned into a real run, and a signature need not expire
 
 **Found by** a security review (M-04), and reproduced before anything was
 changed. Three things together.
@@ -24048,6 +28809,22 @@ Each was broken on purpose and watched failing:
 - **Replay.** The bound is what makes the set of signed jobs a node has to
   remember finite; the replay guard itself is a separate defect and a
   separate change.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
@@ -24646,9 +29423,13 @@ What is **not** built in the API:
 - ~~**Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.~~
   Built: `doctor` (SPEC 26.4) ships, see 5.30, and tracing ships with it, see
   5.34. **Section 26 is complete.**
-- **`mtls` hook authentication.** The mode is implemented and refused
+- ~~**`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been
-  exercised against a real sender.
+  exercised against a real sender.~~ That was exculpatory: the API never
+  asks a client for a certificate, so none could be presented and no
+  delivery to an `mtls` hook could succeed; and the check was only that
+  one was present, so asking would have let any certificate through.
+  `auth: mtls` is refused at load now. See 5.327.
 
 Phase 5 is part built — gitfs, s3fs, the agentless path, relays and the
 FIPS artifact set are in, and 6.1b says what each covers. What is

@@ -317,15 +317,15 @@ func TestTheEnvironmentIsUsedWhenNothingIsConfigured(t *testing.T) {
 // one built for the commercial partition is wrong in China.
 func TestTheSTSEndpointComesFromThePartition(t *testing.T) {
 	cases := map[string]string{
-		"":           "https://sts.eu-west-1.amazonaws.com",
-		"aws":        "https://sts.eu-west-1.amazonaws.com",
-		"aws-cn":     "https://sts.eu-west-1.amazonaws.com.cn",
-		"aws-us-gov": "https://sts.eu-west-1.amazonaws.com",
+		"":           "https://sts.eu-west-1.amazonaws.com/",
+		"aws":        "https://sts.eu-west-1.amazonaws.com/",
+		"aws-cn":     "https://sts.eu-west-1.amazonaws.com.cn/",
+		"aws-us-gov": "https://sts.eu-west-1.amazonaws.com/",
 	}
 	for partition, want := range cases {
 		p := &Provider{Partition: partition, Region: "eu-west-1"}
-		if got := p.stsEndpoint(); got != want {
-			t.Errorf("%q gave %s, want %s", partition, got, want)
+		if got, err := p.stsEndpoint(); err != nil || got != want {
+			t.Errorf("%q gave %s (%v), want %s", partition, got, err, want)
 		}
 	}
 }

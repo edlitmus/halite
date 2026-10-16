@@ -48,7 +48,7 @@ func signedMessageExpiring(t *testing.T, key *ecdsa.PrivateKey, jid string, kwar
 // A hub that turns a signed dry run into a string is refused.
 //
 // The node honours a dry run only as a boolean, so before v2 this ran the
-// job for real under a signature that verified. DIVERGENCE 5.290.
+// job for real under a signature that verified. DIVERGENCE 5.330.
 func TestASignedDryRunTamperedToAStringIsRefused(t *testing.T) {
 	n, key := signedNode(t, "true")
 	msg := signedMessage(t, key, "20261015T080000000001", "test.ping", "web1.example", "glob",

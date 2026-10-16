@@ -258,7 +258,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"state_denylist": {
 		Group:  "State runs",
-		Detail: "Applied after the allowlist, for carving one dangerous SLS out of a permitted set.",
+		Detail: "Applied after the allowlist, for carving one dangerous SLS out of a permitted set. A name is matched in its one dotted spelling (`secret.x`); `secret/x`, `secret..x` and other spellings of it are refused before either list is consulted, so a denied SLS cannot be reached by writing it differently.",
 	},
 	"startup_states": {
 		Group:  "State runs",
@@ -326,7 +326,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"file_ignore_glob": {
 		Group:  "The file server",
-		Detail: "The same, as globs, which is usually the readable form.",
+		Detail: "The same, as globs, which is usually the readable form. They are Salt's fnmatch globs, matched against the path relative to the root and against the base name: `*` and `?` match `/` too, so `secrets/*` hides everything below `secrets/`, not only its first level. Sets are `[abc]` and `[!abc]`.",
 	},
 	"gitfs_remotes": {
 		Group:  "The git file server",

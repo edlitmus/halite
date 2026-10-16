@@ -77,7 +77,7 @@ type Payload struct {
 // `["a","b"]` and the string `["a","b"]`, and `nil` and `"null"`. A node
 // honours a dry run only as the boolean, so a hub could turn a signed
 // `test: true` into `test: "true"` and the signature still verified on a
-// job that then ran for real. DIVERGENCE 5.290.
+// job that then ran for real. DIVERGENCE 5.330.
 const domain = "halite-job-v2\x00"
 
 // domainV1 is the format this build no longer accepts. It is kept only so

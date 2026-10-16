@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path"
@@ -180,7 +181,8 @@ type Template struct {
 
 // Parse compiles a template source. Parsing is separate from rendering so
 // that `lint` can check a tree without executing it.
-func (e *Environment) Parse(src, name string) (*Template, error) {
+func (e *Environment) Parse(src, name string) (t *Template, err error) {
+	defer recoverInto(&err, name, "parsing")
 	toks, err := lex(src, name, e.Opts.Delimiters, lexOptions{
 		TrimBlocks:   e.Opts.TrimBlocks,
 		LstripBlocks: e.Opts.LstripBlocks,
@@ -266,7 +268,8 @@ func (r Result) MapLine(outLine int) (Pos, bool) {
 }
 
 // Render executes a template against a context.
-func (t *Template) Render(ctx map[string]any) (Result, error) {
+func (t *Template) Render(ctx map[string]any) (res Result, err error) {
+	defer recoverInto(&err, t.Name, "rendering")
 	b := &budget{
 		deadline:      time.Now().Add(t.env.Opts.Timeout),
 		maxIterations: t.env.Opts.MaxIterations,
@@ -286,6 +289,33 @@ func (t *Template) Render(ctx map[string]any) (Result, error) {
 		return Result{}, err
 	}
 	return Result{Output: r.out.String(), SourceMap: r.srcMap}, nil
+}
+
+// recoverInto turns a panic inside the engine into an ordinary error.
+//
+// It is a second line, not the fix: each panic a template has been found
+// to cause is fixed where it happens, and has a test there. But a filter
+// is a few dozen lines of arithmetic on values the template chose, the
+// hub compiles pillar in its own process, and a panic that escapes a
+// render takes down whatever called it, so one more such slip should
+// cost one render rather than the process. A recovered panic says so in
+// its message, because it is a defect to report rather than a template
+// to fix.
+//
+// It cannot help with the two failures that matter most here. A Go stack
+// overflow and an allocation the runtime cannot satisfy are fatal errors,
+// not panics, and recover never sees them; those are bounded before they
+// happen, by maxExprDepth, MaxDepth, and the checks in checkBytes and
+// checkItems.
+func recoverInto(err *error, name, doing string) {
+	p := recover()
+	if p == nil {
+		return
+	}
+	*err = &Error{
+		Pos: Pos{File: name},
+		Msg: fmt.Sprintf("internal error %s the template (a halite defect, please report it): %v", doing, p),
+	}
 }
 
 // RenderString is the one-shot form: parse and render in one call.
@@ -339,6 +369,77 @@ func (b *budget) write(n int, pos Pos) error {
 	return nil
 }
 
+// A value built in memory is not output, so it is not charged to the
+// budget; a list that is built and then only measured with `length` would
+// otherwise count against a limit it never reaches. But it has to be
+// bounded by something before it is built, because an allocation the
+// runtime cannot satisfy is a fatal error, not a panic, and the hub
+// compiles pillar in its own process. These are that something: one
+// string may be no larger than all the output a render may write, and
+// one list may hold no more items than a render may iterate over. Each
+// is checked before the allocation, with the size worked out in a way
+// that cannot overflow.
+
+// checkBytes refuses a string of n bytes.
+func (r *renderer) checkBytes(n int64, what string, pos Pos) error {
+	if n < 0 || n > r.opts.MaxOutput {
+		return errorf(pos, "%s would exceed the %d byte output limit", what, r.opts.MaxOutput)
+	}
+	return nil
+}
+
+// checkItems refuses a list of n items.
+func (r *renderer) checkItems(n int64, what string, pos Pos) error {
+	if n < 0 || n > r.opts.MaxIterations {
+		return errorf(pos, "%s would produce more than %d items", what, r.opts.MaxIterations)
+	}
+	return nil
+}
+
+// mulWithin reports whether a*b <= limit, for non-negative a and b,
+// without computing a product that could wrap. 'ab' * (1 << 62) wraps
+// to a small number when multiplied out, which is how a length check
+// written as a multiplication let an allocation through.
+func mulWithin(a, b, limit int64) bool {
+	if a < 0 || b < 0 {
+		return false
+	}
+	if a == 0 || b == 0 {
+		return true
+	}
+	return a <= limit/b
+}
+
+// rangeLen is the number of items range(start, stop, step) produces,
+// worked out in unsigned arithmetic: stop - start overflows int64 for
+// range(-9223372036854775807, 9223372036854775807), and the old
+// expression went negative, was clamped to zero, and passed the item
+// limit, leaving the loop to append some 1.8e19 items (the audit's
+// reading of the code; not run, because running it is the failure). ok
+// is false when the count does not fit in an int64, which is past any
+// limit anyway.
+func rangeLen(start, stop, step int64) (n int64, ok bool) {
+	var span, by uint64
+	switch {
+	case step > 0 && start < stop:
+		span, by = uint64(stop)-uint64(start), uint64(step)
+	case step < 0 && start > stop:
+		// -step overflows for the most negative step, so negate in
+		// unsigned arithmetic.
+		span, by = uint64(start)-uint64(stop), uint64(-(step+1))+1
+	default:
+		return 0, true
+	}
+	c := span / by
+	if span%by != 0 {
+		c++
+	}
+	if c > math.MaxInt64 {
+		return 0, false
+	}
+	return int64(c), true
+}
+
 // seed derives the deterministic random source of SPEC section 10.2.4.
 func (r *renderer) seed(name string) {
 	if r.env.Opts.Nondeterministic {
@@ -388,16 +489,24 @@ func installGlobals(e *Environment) {
 		}
 		// The result is materialised, so it is bounded by the same limit
 		// that bounds a loop.
-		n := (stop - start + step - sign(step)) / step
-		if n < 0 {
-			n = 0
+		n, ok := rangeLen(start, stop, step)
+		if !ok {
+			return nil, fmt.Errorf("range() would produce more items than an int64 can count, past the limit of %d", e.Opts.MaxIterations)
 		}
 		if n > e.Opts.MaxIterations {
 			return nil, fmt.Errorf("range() would produce %d items, past the limit of %d", n, e.Opts.MaxIterations)
 		}
-		out := make([]any, 0, n)
-		for i := start; (step > 0 && i < stop) || (step < 0 && i > stop); i += step {
-			out = append(out, i)
+		// Each item is computed from its index rather than by stepping a
+		// counter, because the counter overflows on the way past stop
+		// when stop is within one step of the int64 limit, wraps, and is
+		// below stop again: range(9223372036854775800,
+		// 9223372036854775807, 5) had not ended after a minute, appending
+		// all the while, when it was tried against the old code. start + i*step for i < n
+		// lies between start and stop, so even where i*step on its own
+		// wraps, Go's wrapping arithmetic lands the sum on that value.
+		out := make([]any, n)
+		for i := int64(0); i < n; i++ {
+			out[i] = start + i*step
 		}
 		return out, nil
 	}}
@@ -435,11 +544,4 @@ func installGlobals(e *Environment) {
 	e.Globals["lipsum"] = funcValue{"lipsum", func([]any, map[string]any) (any, error) {
 		return nil, fmt.Errorf("lipsum() is not supported")
 	}}
-}
-
-func sign(n int64) int64 {
-	if n < 0 {
-		return -1
-	}
-	return 1
 }

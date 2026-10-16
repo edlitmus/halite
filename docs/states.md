@@ -305,8 +305,23 @@ A secret that is not JSON stays the string it is. An ARN carries its own
 region and partition; a secret given by name takes its region from the
 entry's own `region`, from the machine's `region` grain, or from the
 block's `region`, in that order, and a secret with none of them is an
-error rather than a guess. So the block's `region` above is the last
-resort: a machine with a `region` grain overrides it.
+error rather than a guess.
+
+A region the machine supplies — its `region` grain, or the `region` or
+ARN of a secret it names through `node_grain` — is used only if it is
+the block's own `region` or is listed in `node_region_allow`; any other
+fails that machine's compilation and says which to add. A machine
+controls its own grains, and the region is part of the host the hub
+sends its signed request to, so a grain is not trusted to choose it:
+
+```yaml
+      region: us-east-1
+      node_region_allow: [us-west-2, eu-west-1]
+```
+
+Every region, wherever it came from, must look like one (`us-east-1`,
+`us-gov-west-1`, `cn-north-1`); anything else is refused before a
+request is made.
 
 A machine's secrets need not all be listed on the hub. Set `pillar_list`
 in the block to a pillar key, and a list under that key in the tree

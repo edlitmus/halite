@@ -18,7 +18,7 @@ import (
 // the same bytes under it -- reproduced before this was changed. The
 // first is the one that mattered: a node runs a dry run only for the
 // boolean, so a hub could swap a signed `true` for `"true"` and the job
-// ran for real under a signature that still verified. DIVERGENCE 5.290.
+// ran for real under a signature that still verified. DIVERGENCE 5.330.
 func TestValuesOfDifferentTypesEncodeDifferently(t *testing.T) {
 	pairs := []struct {
 		name       string

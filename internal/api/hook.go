@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,7 +28,8 @@ import (
 type Hook struct {
 	// Path is the suffix under /v1/hook/.
 	Path string
-	// Auth is `hmac`, `token`, or `mtls`.
+	// Auth is `hmac` or `token`. `mtls` is refused when the
+	// configuration loads; see ParseHooks.
 	Auth string
 	// Secret is the shared secret for `hmac`, or the expected bearer
 	// value for `token`.
@@ -42,8 +44,9 @@ type Hook struct {
 	ContentTypes []string
 	// MaxBody bounds the request before it is parsed.
 	MaxBody int64
-	// RateLimit is requests per second for this path, with RateBurst
-	// allowed at once.
+	// RateLimit is authenticated deliveries per second for this path,
+	// with RateBurst allowed at once. Refusals are counted against a
+	// bucket of their own at the same rate; see Hooks.
 	RateLimit float64
 	RateBurst int
 	// Principal is who a delivery through this hook is recorded as, so
@@ -69,16 +72,29 @@ type Hooks struct {
 	// seen is the nonce cache: a signature already accepted inside the
 	// replay window is a replay, not a delivery.
 	seen map[string]time.Time
-	// buckets are the per-path rate limits.
+	// inFlight holds the signatures being delivered right now. A
+	// signature is reserved here, under mu, in the same step that checks
+	// seen, so two copies of one delivery arriving together cannot both
+	// pass the check before either is recorded. DIVERGENCE 5.327.
+	inFlight map[string]bool
+	// buckets are the per-path rate limits on authenticated deliveries.
 	buckets map[string]*ratelimit.Bucket
+	// refusals are the per-path buckets for deliveries that did not
+	// authenticate, or were replays. They are separate so that a caller
+	// who holds no secret cannot spend the sender's allowance, which is
+	// what one shared bucket in front of authentication allowed: ten
+	// anonymous requests a second and the real sender got 429s.
+	refusals map[string]*ratelimit.Bucket
 }
 
 // NewHooks prepares a set.
 func NewHooks(hooks []*Hook) *Hooks {
 	h := &Hooks{
-		byPath:  map[string]*Hook{},
-		seen:    map[string]time.Time{},
-		buckets: map[string]*ratelimit.Bucket{},
+		byPath:   map[string]*Hook{},
+		seen:     map[string]time.Time{},
+		inFlight: map[string]bool{},
+		buckets:  map[string]*ratelimit.Bucket{},
+		refusals: map[string]*ratelimit.Bucket{},
 	}
 	for _, hook := range hooks {
 		h.byPath[hook.Path] = hook
@@ -173,13 +189,32 @@ func ParseHooks(v any) ([]*Hook, error) {
 				return nil, fmt.Errorf("hook %s: `%s` needs a `secret`", path, hook.Auth)
 			}
 		case "mtls":
+			// Refused rather than loaded, because it could never work and
+			// read as though it did.
+			//
+			// The API's listener does not ask for a client certificate --
+			// operators authenticate with tokens, and asking every
+			// connection for a certificate is not something a hook path
+			// can do on its own, because the handshake is over before the
+			// path is known. So no delivery to an `mtls` hook ever carried
+			// one and every delivery was refused. Asking for certificates
+			// would not have fixed it either: the check was only that one
+			// was presented, with no CA to verify it against and no
+			// identity to match, so any certificate at all would have
+			// passed. A setting that is either dead or open is worse than
+			// one that is refused, because somebody reading the
+			// configuration believes it. DIVERGENCE 5.327.
+			return nil, fmt.Errorf(
+				"hook %s: `auth: mtls` is not supported by this build: the API does not "+
+					"request or verify client certificates, so no delivery could authenticate. "+
+					"Use `hmac` or `token` (SPEC 22.2, DIVERGENCE 5.327)", path)
 		case "":
 			return nil, fmt.Errorf(
 				"hook %s names no `auth`; every hook declares one, and there is no "+
 					"unauthenticated hook (SPEC 22.2)", path)
 		default:
 			return nil, fmt.Errorf(
-				"hook %s: `auth: %s` is not a method; there are hmac, token, and mtls",
+				"hook %s: `auth: %s` is not a method; there are hmac and token",
 				path, hook.Auth)
 		}
 		if hook.RateBurst == 0 {
@@ -229,11 +264,6 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.hooks().allow(cfg, s.now()) {
-		s.m().hookDeliveries.With(path, "rate_limited").Inc()
-		writeError(w, http.StatusTooManyRequests, "too many deliveries to this hook")
-		return
-	}
 	if err := checkContentType(cfg, r.Header.Get("Content-Type")); err != nil {
 		s.m().hookDeliveries.With(path, "wrong_content_type").Inc()
 		writeError(w, http.StatusUnsupportedMediaType, err.Error())
@@ -246,12 +276,50 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusRequestEntityTooLarge, "the body is larger than this hook accepts")
 		return
 	}
+
+	// Authentication comes before the rate limit, and the order is the
+	// fix, not a detail. The limit used to be taken first, from one
+	// bucket per path, so a caller with no secret at all could spend
+	// the whole allowance and the real sender's deliveries were turned
+	// away with 429. Now only a delivery that authenticated is counted
+	// against the hook's limit, and a refusal is counted against a
+	// bucket of its own -- which bounds what refusals cost in log lines,
+	// not in work: each one is still read and checked, because nothing
+	// short of checking tells a forgery from the sender. DIVERGENCE
+	// 5.327.
 	nonce, err := s.authenticateHook(cfg, r, body)
 	if err != nil {
-		s.m().hookDeliveries.With(path, "unauthenticated").Inc()
-		s.warn("hook delivery refused",
-			"hook", path, "remote", remoteHost(r), "error", err.Error())
-		writeError(w, http.StatusUnauthorized, err.Error())
+		s.refuseHook(w, r, cfg, "unauthenticated", http.StatusUnauthorized, err)
+		return
+	}
+
+	// The signature is reserved before anything is delivered, in one
+	// step with the check that it has not been delivered already. The
+	// check and the record used to sit either side of the call to the
+	// hub, so two copies of one signed delivery arriving together both
+	// passed the check and both reached the bus.
+	release, err := s.hooks().reserve(nonce, s.now(), cfg.ReplayWindow)
+	if err != nil {
+		status, result := http.StatusUnauthorized, "replayed"
+		if errors.Is(err, errDeliveryInFlight) {
+			status, result = http.StatusConflict, "in_flight"
+		}
+		s.refuseHook(w, r, cfg, result, status, err)
+		return
+	}
+	// Released unless the delivery lands, on every path out of here --
+	// including the rate limit below and a panic -- so a delivery that
+	// did not reach the bus is one the sender can retry.
+	landed := false
+	defer func() {
+		if !landed {
+			release()
+		}
+	}()
+
+	if !s.hooks().allow(cfg, s.now()) {
+		s.m().hookDeliveries.With(path, "rate_limited").Inc()
+		writeError(w, http.StatusTooManyRequests, "too many deliveries to this hook")
 		return
 	}
 	namePrincipal(w, cfg.Principal)
@@ -289,20 +357,35 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The nonce is recorded here, after the delivery landed, and not
-	// when the signature verified.
+	// The nonce is recorded as delivered here, after the delivery
+	// landed, and not when the signature verified.
 	//
 	// Recording it earlier is strictly safer against a replay and costs
 	// more than it saves: a delivery that fails downstream is one the
 	// sender will retry, carrying the same signature. Refusing that as
 	// a replay turns a transient fault into a lost event, which is the
-	// failure a webhook exists to avoid.
-	if nonce != "" {
-		s.hooks().remember(nonce, s.now())
-	}
+	// failure a webhook exists to avoid. The reservation above keeps
+	// that property -- it is released when the delivery fails -- while
+	// closing the window in which two copies were both unrecorded.
+	s.hooks().landed(nonce, s.now())
+	landed = true
 	s.m().hookDeliveries.With(path, "delivered").Inc()
 	s.info("hook delivered", "hook", path, "principal", cfg.Principal, "tag", tag)
 	writeJSON(w, http.StatusAccepted, map[string]any{"tag": tag})
+}
+
+// refuseHook answers a delivery that is not going to the bus because of
+// who sent it or because it was sent before. It is logged while the
+// hook's refusal bucket has room, and counted always: a caller holding
+// no secret can make as many of these as it likes, and a warning per
+// request would let it fill the log.
+func (s *Server) refuseHook(w http.ResponseWriter, r *http.Request, cfg *Hook, result string, status int, err error) {
+	s.m().hookDeliveries.With(cfg.Path, result).Inc()
+	if s.hooks().allowRefusal(cfg, s.now()) {
+		s.warn("hook delivery refused",
+			"hook", cfg.Path, "remote", remoteHost(r), "result", result, "error", err.Error())
+	}
+	writeError(w, status, err.Error())
 }
 
 // authenticateHook applies the method the path declared, returning the
@@ -316,12 +399,6 @@ func (s *Server) authenticateHook(cfg *Hook, r *http.Request, body []byte) (stri
 		}
 		if subtle.ConstantTimeCompare([]byte(presented), []byte(cfg.Secret)) != 1 {
 			return "", fmt.Errorf("that token was not accepted")
-		}
-		return "", nil
-
-	case "mtls":
-		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-			return "", fmt.Errorf("this hook needs a client certificate")
 		}
 		return "", nil
 
@@ -364,13 +441,9 @@ func (s *Server) verifySignature(cfg *Hook, r *http.Request, body []byte) (strin
 	if subtle.ConstantTimeCompare([]byte(presented), []byte(want)) != 1 {
 		return "", fmt.Errorf("the signature did not verify")
 	}
-	nonce := cfg.Path + "\x00" + presented
-	if s.hooks().alreadySeen(nonce, now, cfg.ReplayWindow) {
-		// Verified and already delivered: a replay inside the window,
-		// which the signature alone cannot tell from the original.
-		return "", fmt.Errorf("this delivery has already been accepted")
-	}
-	return nonce, nil
+	// Whether it has been delivered already is the caller's question,
+	// asked in the same step as reserving it. See reserve.
+	return cfg.Path + "\x00" + presented, nil
 }
 
 // checkContentType applies the allowlist.
@@ -388,9 +461,22 @@ func checkContentType(cfg *Hook, header string) error {
 	return fmt.Errorf("this hook accepts %s", strings.Join(allowed, ", "))
 }
 
-// alreadySeen reports whether a signature has already been delivered
-// inside the window.
-func (h *Hooks) alreadySeen(key string, now time.Time, window time.Duration) bool {
+// errDeliveryInFlight is a second copy of a delivery that is being
+// delivered right now.
+var errDeliveryInFlight = errors.New("this delivery is already being accepted")
+
+// reserve claims a signature for one delivery, and refuses it when it
+// has been delivered inside the window or is being delivered now. The
+// check and the claim are one step under one lock, which is the point:
+// as two steps, two copies arriving together both passed the check.
+//
+// The returned release gives the claim back, for a delivery that did
+// not land; landed replaces it with the record of one that did. A key
+// of "" -- a token hook, which has no nonce -- reserves nothing.
+func (h *Hooks) reserve(key string, now time.Time, window time.Duration) (func(), error) {
+	if key == "" {
+		return func() {}, nil
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for k, at := range h.seen {
@@ -398,29 +484,55 @@ func (h *Hooks) alreadySeen(key string, now time.Time, window time.Duration) boo
 			delete(h.seen, k)
 		}
 	}
-	_, already := h.seen[key]
-	return already
+	if _, already := h.seen[key]; already {
+		// Verified and already delivered: a replay inside the window,
+		// which the signature alone cannot tell from the original.
+		return nil, fmt.Errorf("this delivery has already been accepted")
+	}
+	if h.inFlight[key] {
+		return nil, errDeliveryInFlight
+	}
+	h.inFlight[key] = true
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		delete(h.inFlight, key)
+	}, nil
 }
 
-// remember records a delivery that landed, so the next one carrying the
-// same signature is a replay.
-func (h *Hooks) remember(key string, now time.Time) {
+// landed records a delivery that reached the bus, so the next one
+// carrying the same signature is a replay, and ends its reservation.
+func (h *Hooks) landed(key string, now time.Time) {
+	if key == "" {
+		return
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.seen[key] = now
+	delete(h.inFlight, key)
 }
 
-// allow is the per-path token bucket.
+// allow is the per-path token bucket for deliveries that authenticated.
 func (h *Hooks) allow(cfg *Hook, now time.Time) bool {
+	return h.take(h.buckets, cfg, now)
+}
+
+// allowRefusal is the per-path bucket for deliveries that did not, at
+// the same rate. It decides only whether a refusal is logged.
+func (h *Hooks) allowRefusal(cfg *Hook, now time.Time) bool {
+	return h.take(h.refusals, cfg, now)
+}
+
+func (h *Hooks) take(buckets map[string]*ratelimit.Bucket, cfg *Hook, now time.Time) bool {
 	if cfg.RateLimit <= 0 {
 		return true
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	b, ok := h.buckets[cfg.Path]
+	b, ok := buckets[cfg.Path]
 	if !ok {
 		b = &ratelimit.Bucket{}
-		h.buckets[cfg.Path] = b
+		buckets[cfg.Path] = b
 	}
 	return b.Take(now, cfg.RateLimit, cfg.RateBurst)
 }

@@ -55,6 +55,9 @@ func registerBeacons(r *Registries) {
 				opt("beacon_data", signature.Map, nil, "The beacon's configuration."),
 			),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_add", beaconName(args)), nil
+				}
 				return changed(c, ctl.Add(beaconName(args), beaconConfig(args)))
 			}),
 		},
@@ -64,42 +67,63 @@ func registerBeacons(r *Registries) {
 				opt("beacon_data", signature.Map, nil, "The beacon's configuration."),
 			),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_modify", beaconName(args)), nil
+				}
 				return changed(c, ctl.Modify(beaconName(args), beaconConfig(args)))
 			}),
 		},
 		exec.Module{
 			Sig: sig("delete", "Remove a beacon from a running node.", name),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_delete", beaconName(args)), nil
+				}
 				return changed(c, ctl.Delete(beaconName(args)))
 			}),
 		},
 		exec.Module{
 			Sig: sig("enable", "Let every beacon on this node fire again."),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_enable", "every beacon"), nil
+				}
 				return changed(c, ctl.SetEnabled("", true))
 			}),
 		},
 		exec.Module{
 			Sig: sig("disable", "Hold every beacon on this node without forgetting any."),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_disable", "every beacon"), nil
+				}
 				return changed(c, ctl.SetEnabled("", false))
 			}),
 		},
 		exec.Module{
 			Sig: sig("enable_beacon", "Let one beacon fire again.", name),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_enable", beaconName(args)), nil
+				}
 				return changed(c, ctl.SetEnabled(beaconName(args), true))
 			}),
 		},
 		exec.Module{
 			Sig: sig("disable_beacon", "Hold one beacon.", name),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_disable", beaconName(args)), nil
+				}
 				return changed(c, ctl.SetEnabled(beaconName(args), false))
 			}),
 		},
 		exec.Module{
 			Sig: sig("reset", "Remove every beacon from a running node."),
 			Fn: withBeacons(func(c *exec.Context, args *value.Map, ctl exec.BeaconControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_reset", "every beacon"), nil
+				}
 				return changed(c, ctl.Reset())
 			}),
 		},
@@ -139,6 +163,12 @@ func withBeacons(fn func(*exec.Context, *value.Map, exec.BeaconControl) (any, er
 }
 
 // changed is the answer a management call gives: true, or the reason.
+//
+// Every caller answers a dry run before it gets here, in the same shape
+// schedule's management calls use (`would_add` and the rest). They did
+// not until DIVERGENCE recorded it: the signatures said reliable, and
+// `beacons.reset` under `--test` removed every beacon from the running
+// node -- the pattern 5.130 fixed in schedule, one file over.
 func changed(c *exec.Context, err error) (any, error) {
 	if err != nil {
 		return nil, err

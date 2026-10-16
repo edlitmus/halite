@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/runner"
@@ -122,7 +124,7 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 // `"true"`, `"yes"` and `1` all meant "not a dry run" and the job ran
 // for real. Under a v1 signature that was a way past the signature as
 // well, because v1 wrote `true` and `"true"` as the same bytes
-// (DIVERGENCE 5.290). The signature no longer allows it; this is the
+// (DIVERGENCE 5.330). The signature no longer allows it; this is the
 // other half, so that a value nobody can have meant as "run it for real"
 // is not taken to mean exactly that. Refused rather than coerced: a
 // caller who wrote `"false"` is as likely as one who wrote `"true"`, and
@@ -323,8 +325,12 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 // growing until it is killed, which is what Salt's does. A full queue
 // is refused and said out loud.
 type executor struct {
-	node    *node
-	guard   *job.Guard
+	node  *node
+	guard *job.Guard
+	// signed is the on-disk record of the signed jobs this node has
+	// accepted, which outlives the process and is never evicted by
+	// count. See job.SignedReplay.
+	signed  *job.SignedReplay
 	queue   chan *job.Job
 	returns func(*job.Return)
 }
@@ -336,9 +342,20 @@ func newExecutor(n *node, depth int, returns func(*job.Return)) *executor {
 	return &executor{
 		node:    n,
 		guard:   job.NewGuard(job.DefaultGuardSize),
+		signed:  job.NewSignedReplay(n.signedReplayPath()),
 		queue:   make(chan *job.Job, depth),
 		returns: returns,
 	}
+}
+
+// signedReplayPath is where job.SignedReplay keeps its record: under
+// `state_dir`, beside the evidence chain, because it has to survive what
+// the evidence chain survives.
+func (n *node) signedReplayPath() string {
+	if n.cfg == nil {
+		return filepath.Join(config.DefaultStateDir, "signed-jobs")
+	}
+	return filepath.Join(n.cfg.String("state_dir", config.DefaultStateDir), "signed-jobs")
 }
 
 // ErrQueueFull is what a node says instead of growing.
@@ -358,8 +375,17 @@ var ErrQueueFull = errors.New("this node's job queue is full")
 // a job recorded as accepted and then refused. Two records rather than
 // one amended record, because a chain that went back and changed an entry
 // would not be append-only.
+//
+// The order inside is the fix for DIVERGENCE 5.328. The replay cache used
+// to record a job before its signature was checked, so a job refused for
+// having no signature still took two places in it; a hub could send a few
+// thousand of those and push a real signed job's entry out, then send that
+// job again. So the cache is consulted first and written last: Check
+// refuses a replay before anything expensive, the signature is checked,
+// a signed job is written to the on-disk record, and only then does the
+// job take a place in the in-memory cache.
 func (e *executor) Offer(j *job.Job) error {
-	if err := e.guard.Admit(j); err != nil {
+	if err := e.guard.Check(j); err != nil {
 		e.node.metrics.countRefusal(err)
 		return err
 	}
@@ -367,8 +393,32 @@ func (e *executor) Offer(j *job.Job) error {
 	// this node will not run unsigned is refused rather than accepted,
 	// and the evidence record says which key authorised the ones it did
 	// run.
+	// A signed jid this node has already accepted is refused here, before
+	// the signature check, which can mean compiling pillar: a hub
+	// replaying a signed job in a loop should cost a map lookup each time.
+	if j.Signature != "" && e.signed.Seen(j.JID) {
+		err := &job.Refusal{Reason: job.ReasonReplayed,
+			Detail: fmt.Sprintf("this node has already accepted the signed job %s", j.JID)}
+		e.node.metrics.countRefusal(err)
+		return err
+	}
 	signer, err := e.node.checkJobSignature(j)
 	if err != nil {
+		e.node.metrics.countRefusal(err)
+		return err
+	}
+	if signer != "" {
+		// Keyed by the jid, which the signature covers, rather than the
+		// nonce, which it does not and the hub chooses. On disk and
+		// synced before the job can be queued, so that neither a restart
+		// nor a flood of other jobs makes this node forget it.
+		if err := e.signed.Admit(j); err != nil {
+			e.node.metrics.countRefusal(err)
+			return err
+		}
+	}
+	if err := e.guard.Admit(j); err != nil {
+		// Only a job that raced its own replay past Check gets here.
 		e.node.metrics.countRefusal(err)
 		return err
 	}
@@ -376,6 +426,14 @@ func (e *executor) Offer(j *job.Job) error {
 	// node will not interpret is recorded as refused rather than as
 	// accepted and then failed. executeJob checks again, for the paths
 	// that do not come through here (a schedule, agentless mode).
+	//
+	// After the replay records, not before them. A signed job refused
+	// here has had its signature checked, so its jid is spent: the same
+	// signed bytes would be refused the same way, and leaving the jid
+	// open would let a hub offer it again, which is what the record is
+	// for. The expiry bound on a signed job is enforced earlier, in
+	// checkJobSignature, so the record still holds no entry for longer
+	// than job_signature_max_ttl and a day.
 	if _, err := jobTestFlag(j); err != nil {
 		e.node.metrics.countRefusal(err)
 		return err

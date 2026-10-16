@@ -329,9 +329,31 @@ func proDisableArgv(args *value.Map) []string {
 // package comment — so a caller gets exactly what the client's JSON
 // said, with no attempt to translate `errors` into anything friendlier
 // than the client's own words.
+//
+// # Under a dry run it runs nothing
+//
+// All four callers declare TestUnreliable, and for a long time that was
+// read as licence: a direct `pro.detach` exec call with `--test` set
+// detached the node, and with it the subscription only the original
+// contract token can restore. Inside a state run `module.run` answers
+// for test mode before it reaches here, which is why nobody saw it; a
+// direct call has no such guard.
+//
+// They stay unreliable rather than becoming reliable, because what
+// `pro enable` would change -- which packages, whether a reboot is owed,
+// what `fips` drags in -- is decided by the client and the contract, and
+// nothing here has watched a prediction of it come true. So the answer
+// says which command would run and claims nothing about its effect.
+// That is the documented meaning of `unreliable` ("cannot honestly
+// predict"); the other meaning DIVERGENCE records it carrying, "acts
+// anyway", is the one these must not have.
 func proRun(c *exec.Context, argv []string) (any, error) {
 	if err := proToolPresent(c); err != nil {
 		return nil, err
+	}
+	if c.Test {
+		return fmt.Sprintf("`%s` would be run; what it would change is the client's to decide, "+
+			"so nothing was run and no change is predicted", exec.Command{Argv: proRedact(argv)}.String()), nil
 	}
 	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
@@ -351,4 +373,20 @@ func proRun(c *exec.Context, argv []string) (any, error) {
 		return nil, fmt.Errorf("`%s` did not succeed: %v", exec.Command{Argv: argv}.String(), doc["errors"])
 	}
 	return value.FromJSON(doc), nil
+}
+
+// proRedact hides `pro attach`'s contract token, which is the one
+// positional argument attach takes. A dry run's answer is printed and
+// logged, and the token is a credential.
+func proRedact(argv []string) []string {
+	out := append([]string(nil), argv...)
+	if len(out) < 2 || out[1] != "attach" {
+		return out
+	}
+	for i := 2; i < len(out); i++ {
+		if out[i] != "json" && !strings.HasPrefix(out[i], "-") {
+			out[i] = "<token>"
+		}
+	}
+	return out
 }

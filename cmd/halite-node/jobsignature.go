@@ -249,7 +249,8 @@ const signatureExpirySkew = time.Minute
 // half: an expiry a decade away is a permanent authorisation spelt
 // differently, and a hub holding one can deliver it whenever suits it.
 // The bound is also what keeps the set of signed jobs a node must
-// remember to refuse a replay finite (DIVERGENCE 5.290).
+// remember to refuse a replay finite (DIVERGENCE 5.330; that record is
+// 5.328's, `<state_dir>/signed-jobs`).
 //
 // Measured against the time the job arrives, so a job that waited in a
 // queue for an offline node is judged on what it has left, not on what

@@ -341,6 +341,13 @@ trees use, and it means a node's own grains decide what the hub fetches.
 Bound it with `node_grain_allow` if you need it, and prefer the pillar
 form if you have the choice.
 
+**A node's `region` grain no longer picks the region on its own.** The
+Python module read the grain and used it. Here a region a node supplies
+— the grain, or one in a `node_grain` entry — is used only when it is
+the block's `region` or is listed in `node_region_allow`; a fleet that
+spans regions and names its secrets without ARNs needs that list, and a
+node outside it fails its pillar with a message naming the setting.
+
 ## Step 3: one node, alongside the agent already on it
 
 Pick one machine. Leave `salt-minion` running; the two do not <!-- lexicon:allow -->
