@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/bridge"
@@ -40,7 +41,7 @@ func TestLiveKMSJobSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := jobsign.Payload{JID: "20261010000000000000", Target: "*", TargetKind: "glob",
-		Fun: "test.ping", Env: "base"}
+		Fun: "test.ping", Env: "base", Expires: time.Now().Add(time.Minute)}
 	sig, err := signer.Sign(ctx, jobsign.Digest(payload))
 	if err != nil {
 		t.Fatal(err)

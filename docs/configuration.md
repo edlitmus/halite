@@ -1854,6 +1854,14 @@ How many jobs may wait before the node refuses more.
 
 How many jobs may wait before the node refuses more. Refusing is the honest answer: the alternative is a queue that grows until the node dies with a backlog nobody can see.
 
+### `job_signature_max_ttl`
+
+*`halite-node` · `1h` · SPEC section 25.6*
+
+How far ahead a signed job's expiry may lie when it arrives.
+
+A signed job whose expiry is further off than this when it arrives is refused, as is one with no expiry at all. A signature is an authorisation, and one that lasts a decade is a permanent one that a compromised hub can hold and deliver whenever suits it; the bound is also what keeps the record of signed jobs this node must remember, to refuse a replay, finite. An hour by default: four times the fifteen minutes `halite-hub run --sign-key` signs for unless given `--ttl`, and the lifetime the hub gives a queued job. A minute of clock difference is tolerated on top. Raise it on the nodes that should accept jobs signed with a longer `--ttl`. Only signed jobs are held to it.
+
 ### `job_signer_keys`
 
 *`halite-node` · no default · SPEC section 25.6*
@@ -2081,6 +2089,7 @@ Every setting, and which programs read it.
 | `job_cache_max_size` | `halite-hub` | `10GiB` | Targeting and the job cache |
 | `job_cache_retention` | `halite-hub` | `720h` | Targeting and the job cache |
 | `job_queue_depth` | `halite-node` | `16` | Node execution controls |
+| `job_signature_max_ttl` | `halite-node` | `1h` | Node execution controls |
 | `job_signer_keys` | `halite-node` | — | Node execution controls |
 | `key_algorithm` | `halite-hub` | `ecdsa-p256` | Enrollment and certificates |
 | `ldap_address` | `halite-api` | — | LDAP and Active Directory |

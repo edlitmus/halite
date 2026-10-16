@@ -2413,6 +2413,12 @@ For estates where hub compromise must not equal fleet compromise:
   their configuration, not through the file server.
 - A job, or an orchestration, is signed over a canonical encoding of `jid`, target, function,
   arguments, environment, and expiry.
+- The canonical encoding writes each argument with its type, so that values of different types
+  never encode alike: a node honours a dry run only for the boolean `test`, and an encoding in
+  which `true` and `"true"` were the same bytes let a hub turn a signed dry run into a real one.
+- A signed job must carry an expiry, and a node refuses one whose expiry lies further ahead than
+  its `job_signature_max_ttl` when the job arrives: a signature without a bounded expiry is a
+  standing authorisation that a compromised hub can hold and deliver when it chooses.
 - `require_job_signature: true` on a node causes it to refuse any job without a valid signature from
   a trusted signer, and to report the refusal.
 - Signing keys may be held in a hardware token, and the signer may be a bridged `signer` extension

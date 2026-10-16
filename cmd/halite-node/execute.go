@@ -79,7 +79,11 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 	// `test` on the job overrides the node's default in one direction
 	// only: a hub asking for a dry run gets one, and a node configured
 	// with `test: true` is not talked out of it.
-	if test, ok := j.Kwarg["test"].(bool); ok && test {
+	test, err := jobTestFlag(j)
+	if err != nil {
+		return fail(ret, err)
+	}
+	if test {
 		n.test = true
 	}
 
@@ -111,6 +115,34 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 	}
 	ret.Return = encoded
 	return ret
+}
+
+// jobTestFlag reads a job's `test` keyword argument, which is how a dry
+// run reaches a node, and refuses one that is not a boolean.
+//
+// It used to be `j.Kwarg["test"].(bool)` with the failure ignored, so
+// `"true"`, `"yes"` and `1` all meant "not a dry run" and the job ran
+// for real. Under a v1 signature that was a way past the signature as
+// well, because v1 wrote `true` and `"true"` as the same bytes
+// (DIVERGENCE 5.330). The signature no longer allows it; this is the
+// other half, so that a value nobody can have meant as "run it for real"
+// is not taken to mean exactly that. Refused rather than coerced: a
+// caller who wrote `"false"` is as likely as one who wrote `"true"`, and
+// a guess in either direction is a guess.
+func jobTestFlag(j *job.Job) (bool, error) {
+	raw, present := j.Kwarg["test"]
+	if !present || raw == nil {
+		return false, nil
+	}
+	test, ok := raw.(bool)
+	if !ok {
+		return false, &job.Refusal{
+			Reason: job.ReasonMalforme,
+			Detail: fmt.Sprintf("the job's `test` is %T %v, and a dry run is asked for with the boolean true "+
+				"or false; refused rather than guessed, since guessing wrong runs it for real", raw, raw),
+		}
+	}
+	return test, nil
 }
 
 // forJob is a shallow copy: the pointers -- configuration, registries,
@@ -387,6 +419,22 @@ func (e *executor) Offer(j *job.Job) error {
 	}
 	if err := e.guard.Admit(j); err != nil {
 		// Only a job that raced its own replay past Check gets here.
+		e.node.metrics.countRefusal(err)
+		return err
+	}
+	// Before the acceptance record, so that a job carrying a `test` this
+	// node will not interpret is recorded as refused rather than as
+	// accepted and then failed. executeJob checks again, for the paths
+	// that do not come through here (a schedule, agentless mode).
+	//
+	// After the replay records, not before them. A signed job refused
+	// here has had its signature checked, so its jid is spent: the same
+	// signed bytes would be refused the same way, and leaving the jid
+	// open would let a hub offer it again, which is what the record is
+	// for. The expiry bound on a signed job is enforced earlier, in
+	// checkJobSignature, so the record still holds no entry for longer
+	// than job_signature_max_ttl and a day.
+	if _, err := jobTestFlag(j); err != nil {
 		e.node.metrics.countRefusal(err)
 		return err
 	}

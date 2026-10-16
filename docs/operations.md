@@ -1496,30 +1496,81 @@ For a signer that is not this program — a CI job, a KMS, a hardware
 token — the bytes are these, and nothing else:
 
 ```
-"halite-job-v1\x00"
+"halite-job-v2\x00"
 jid:<len>:<value>;
 target:<len>:<value>;
 target_kind:<len>:<value>;
 fun:<len>:<value>;
 argc:<n>;  arg:<len>:<value>;  (once per positional argument, in order)
-kwargc:<n>; kwarg:<len>:<name>; value:<len>:<value>;  (sorted by name)
+kwargc:<n>; kwarg:<len>:<name>; <typed value>  (sorted by name)
 env:<len>:<value>;
 expires:<len>:<RFC 3339 with nanoseconds, UTC>;
 ```
 
 The length before each value is in bytes, and it is what stops two
-adjacent fields being re-cut into one. A keyword argument's value is its
-text if it is a string, `true`/`false`, `null`, a decimal number, or its
-JSON encoding if it is a mapping or a list — with every number inside
-written by value rather than by the spelling it arrived in, so that `1`
-and `1.0` sign identically and a 64-bit integer keeps its last digits.
-`--test` is a keyword argument named `test` on the wire, so a signer must
-include it.
+adjacent fields being re-cut into one. A keyword argument's value is
+written with its type, recursively:
+
+```
+null;
+bool:true;   bool:false;
+num:<len>:<decimal>;
+str:<len>:<text>;
+list:<n>;    then n typed values
+map:<n>;     then n of  key:<len>:<name>;  and a typed value, sorted by name
+```
+
+A number is written by value rather than by the spelling it arrived in,
+so `1` and `1.0` sign identically and a 64-bit integer keeps its last
+digits. The type is what matters most: the boolean `true` and the
+string `"true"` sign differently, and a node runs a dry run only for the
+boolean. `--test` is a keyword argument named `test` on the wire, so a
+signer must include it; a node refuses a job whose `test` is anything
+but `true` or `false`.
+
+So `--test` on a job with one mapping argument signs, after the
+positional arguments, as
+
+```
+kwargc:2;kwarg:6:pillar;map:1;key:1:n;num:1:3;kwarg:4:test;bool:true;
+```
 
 The digest is SHA-256 and the signature is ECDSA, ASN.1 DER, base64.
 `openssl dgst -sha256 -sign key.pem` over exactly those bytes produces
 one this build accepts; the test that says so runs `openssl` rather than
 trusting that it would.
+
+**The expiry is required, and bounded.** A node refuses a signed job
+with no expiry, and one whose expiry is more than
+`job_signature_max_ttl` (an hour by default, with a minute of clock
+difference allowed) ahead of it when the job arrives. `halite-hub run`
+signs for fifteen minutes unless given `--ttl`; an estate that signs
+for longer raises the setting on the nodes that should accept it.
+
+**`halite-job-v1` is refused.** The first format wrote a keyword value as
+bare text, so `true` and `"true"` were the same bytes and a hub could turn
+a signed dry run into a real one (DIVERGENCE 5.330). A node now refuses a
+v1 signature and says so by name. Upgrade the signing side —
+`halite-hub` on the operators' machines and CI, and any signer that
+builds these bytes itself — together with the nodes, and re-sign
+anything signed before: a signed job still queued on the hub from
+before the upgrade is refused when it is delivered. The signer
+extensions this project ships (`halite-ext-signer-local`,
+`halite-ext-signer-kms`) sign a digest the hub computes, so they need
+no new build.
+
+The two halves of a mixed estate say different things. An upgraded node
+given a v1 signature names the format:
+
+    the job is signed in the v1 format, which this node refuses because it cannot tell `true` from `"true"`; re-sign it with a current halite-hub
+
+A node *not* yet upgraded, given a v2 signature, cannot know about a
+format newer than itself, and says only:
+
+    the signature does not verify against any of this node's 1 trusted signer key(s)
+
+During the rollout, read that second message as "this node is still on
+the old build", not as a key problem.
 
 ## The record a node keeps of what it ran
 

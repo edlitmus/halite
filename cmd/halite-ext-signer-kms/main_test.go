@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/awskms"
@@ -180,7 +181,7 @@ func TestTheExtensionSignsAJobThroughTheBridge(t *testing.T) {
 		t.Error("the reported public key is not the service's")
 	}
 	payload := jobsign.Payload{JID: "20261010000000000000", Target: "web*", TargetKind: "glob",
-		Fun: "test.ping", Env: "base"}
+		Fun: "test.ping", Env: "base", Expires: time.Now().Add(time.Minute)}
 	sig, err := signer.Sign(ctx, jobsign.Digest(payload))
 	if err != nil {
 		t.Fatal(err)
