@@ -15,7 +15,7 @@ import (
 // followed only while it stays inside the root, and refused when it
 // leaves.
 //
-// It exists for archive extraction (DIVERGENCE 5.290). Write takes a path
+// It exists for archive extraction (DIVERGENCE 5.300). Write takes a path
 // and lets the kernel resolve it, and a path under a directory that an
 // archive has just populated is a path whose meaning the archive chose:
 // `a/b -> ..` and then `a/b/L -> ../..` makes `L/x` two levels above the

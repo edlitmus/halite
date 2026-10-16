@@ -26,7 +26,7 @@ import (
 // check is ours: an entry named ../../etc/passwd, or a symlink pointing
 // outside the destination, is refused by name -- and every write then goes
 // through an os.Root on the destination, so a symlink that is inside by
-// name but outside on disk is refused too (DIVERGENCE 5.290). That is the same property
+// name but outside on disk is refused too (DIVERGENCE 5.300). That is the same property
 // SPEC section 13.5 requires of the file server, applied to an archive.
 func registerArchive(r *Registries) {
 	r.Exec.Add(
@@ -182,7 +182,7 @@ const maxArchiveEntry = 1 << 30
 // component at the moment of the operation and refuses one that leaves,
 // so a link already on disk -- planted by the account the destination was
 // handed to, or left by an older run -- cannot steer a write either.
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.300.
 func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) {
 	absDest, err := filepath.Abs(dest)
 	if err != nil {
@@ -639,7 +639,7 @@ func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wan
 	// Through the root, for the reason extractArchive is: the names are
 	// the archive's, and this runs as root, so a directory on the way that
 	// is a symlink out of the destination would hand whatever it points at
-	// to `user:`. DIVERGENCE 5.290.
+	// to `user:`. DIVERGENCE 5.300.
 	root, err := openExtractRoot(mustAbs(dest), true)
 	if err != nil || root == nil {
 		return 0, err

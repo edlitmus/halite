@@ -109,6 +109,10 @@ func (b *Backend) Update(ctx context.Context) error {
 	roots := map[string][]string{}
 	var state []RemoteState
 	var failures []string
+	// reached are the remotes whose ref list was read, and so whose
+	// cache the sweep may tidy. The sweep runs after the decision about
+	// what is served, not inside the loop: see sweep.
+	var reached []Remote
 
 	for _, remote := range b.opts.Remotes {
 		result := RemoteState{Remote: remote, Refused: map[string]string{}}
@@ -161,7 +165,7 @@ func (b *Backend) Update(ctx context.Context) error {
 				"remote", remote.label(), "refused", len(result.Refused))
 		}
 		state = append(state, result)
-		b.sweep(remote, result.Refs)
+		reached = append(reached, remote)
 	}
 
 	b.mu.Lock()
@@ -173,7 +177,17 @@ func (b *Backend) Update(ctx context.Context) error {
 		b.updated = b.now()
 	}
 	b.state = state
+	served := map[string]bool{}
+	for _, dirs := range b.roots {
+		for _, dir := range dirs {
+			served[dir] = true
+		}
+	}
 	b.mu.Unlock()
+
+	for _, remote := range reached {
+		b.sweep(remote, served)
+	}
 
 	if len(failures) == len(b.opts.Remotes) {
 		return fmt.Errorf("no gitfs remote served anything: %s", strings.Join(failures, ", "))
@@ -198,29 +212,35 @@ func (b *Backend) Refusals() map[string]int {
 	return out
 }
 
-// sweep removes materialised trees for commits no ref points at any
-// more, so the cache does not grow with every push.
-func (b *Backend) sweep(remote Remote, refs []Ref) {
+// sweep removes materialised trees that nothing is serving, so the
+// cache does not grow with every push.
+//
+// What is live is what the backend is actually serving after this
+// update — the directories in b.roots — and not what this update's refs
+// resolved to. The two differ exactly when an update keeps the last
+// good tree: every ref refused (a signature, a symlink, a blob too
+// large to unpack) leaves b.roots pointing at the previous commit's
+// directory while the refs that resolved are none. Keyed on the refs,
+// the sweep deleted that directory and left the file server listing a
+// root with no files in it, which is the empty estate the kept tree
+// was there to prevent (DIVERGENCE 5.293). Keyed on what is served,
+// the sweep and the decision about what to serve cannot disagree,
+// because the second is the input to the first.
+func (b *Backend) sweep(remote Remote, served map[string]bool) {
 	dir := filepath.Join(b.opts.CacheDir, remote.mirrorDir(), "trees")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	live := map[string]bool{}
-	for _, ref := range refs {
-		live[ref.Commit] = true
-	}
 	for _, e := range entries {
-		if !e.IsDir() || live[e.Name()] {
+		path := filepath.Join(dir, e.Name())
+		if !e.IsDir() || served[path] {
 			continue
 		}
-		if strings.HasSuffix(e.Name(), ".building") {
-			// A staging directory left by an update that was
-			// interrupted. Removing it is the point of the sweep.
-			_ = os.RemoveAll(filepath.Join(dir, e.Name()))
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+		// Anything else goes, a `.building` staging directory left by
+		// an interrupted update included: removing those is part of
+		// the point of the sweep.
+		_ = os.RemoveAll(path)
 	}
 }
 

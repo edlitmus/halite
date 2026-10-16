@@ -168,7 +168,7 @@ func legacyHash(data []byte, algorithm string) (string, error) {
 // destination that it is about to hand to `user:` -- the account that can
 // swap a directory for a link between any check and the chown. The root
 // resolves each component at the moment of the call, and Lchown does not
-// follow the last one. DIVERGENCE 5.290.
+// follow the last one. DIVERGENCE 5.300.
 func applyOwnershipIn(root *os.Root, name, wantUser, wantGroup string) error {
 	uid, gid, err := resolveOwner(wantUser, wantGroup)
 	if err != nil {

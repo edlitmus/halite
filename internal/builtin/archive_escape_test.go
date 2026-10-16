@@ -13,7 +13,7 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
-// DIVERGENCE 5.290. The containment check on an archive entry was
+// DIVERGENCE 5.300. The containment check on an archive entry was
 // lexical: it looked at the names, and an archive is a sequence of
 // operations on a disk. These archives are built entry by entry, in
 // order, because the order is the attack -- makeTar takes a map and

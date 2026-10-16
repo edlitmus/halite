@@ -113,7 +113,7 @@ func legacyHash(data []byte, algorithm string) (string, error) {
 // is no root-relative form of what applyOwnership does here, so the name
 // is checked against the root first and then set by path. That leaves the
 // window between the two that the unix version closes; it is recorded in
-// DIVERGENCE 5.290 rather than claimed closed.
+// DIVERGENCE 5.300 rather than claimed closed.
 func applyOwnershipIn(root *os.Root, name, wantUser, wantGroup string) error {
 	if _, err := root.Lstat(name); err != nil {
 		return err
