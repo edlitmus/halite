@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A background command now runs as its `runas` account
+
+`cmd.run` with `bg: true` and `cmd.run_bg` ignored `runas`, and started
+the command as the node's own account, which is root. They now switch
+account as a foreground command does. A state that has been starting a
+background command as root with `runas` set will start it as that
+account from now on, and one whose `runas` names an account the node does
+not have now fails instead of starting it. Without `env`, `cmd.run_bg`
+now uses the same default environment as `cmd.run`. See DIVERGENCE 5.301.
+
+
 ### An archive can no longer write or delete outside its destination
 
 `archive.extracted` and `archive.extract` checked each entry's name and

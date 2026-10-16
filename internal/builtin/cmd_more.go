@@ -3,8 +3,9 @@ package builtin
 import (
 	"fmt"
 	"os"
-	osexec "os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileperm"
@@ -340,48 +341,49 @@ func fetchScript(c *exec.Context, source string) (string, error) {
 
 // runInBackground starts a command and returns its pid without waiting.
 //
-// It goes through os/exec directly rather than through the runner, because
-// the runner's contract is to wait: it collects the output, applies the
-// timeout, and reports the exit code, none of which mean anything for a
-// process meant to outlive the run. A recorded run reports the command it
-// would have started and no pid, so a module test still sees the argv.
+// It goes through the runner with Command.Background set, which is the
+// one place the umask, the environment, the directory and the account
+// are applied to a child. It used to build its own os/exec.Cmd, on the
+// reasoning that the runner's contract is to wait; the runner has since
+// learned not to, and the private copy had quietly diverged from it in
+// the way that matters most: it never read `runas`, although the
+// signature declares it, so `cmd.run_bg runas=deploy` started the
+// program as root and returned a pid. DIVERGENCE 5.301.
+//
+// A recorded run reports the command it would have started and no pid,
+// so a module test still sees the argv -- and now the account too.
 func runInBackground(c *exec.Context, args *value.Map) (any, error) {
 	name := states.Str(args, "name", "")
 	if name == "" {
 		return nil, fmt.Errorf("cmd.run_bg needs a program")
 	}
-	argv := append([]string{name}, states.Strings(args, "args")...)
-
-	if _, real := c.Runner.(*exec.OSRunner); c.Runner != nil && !real {
-		// A test's recorder gets to see the command; nothing is started.
-		res, err := c.Run(exec.Command{Argv: argv, Dir: states.Str(args, "cwd", "")})
-		if err != nil {
-			return nil, err
+	cmd := exec.Command{
+		Argv:       append([]string{name}, states.Strings(args, "args")...),
+		Dir:        states.Str(args, "cwd", ""),
+		RunAs:      states.Str(args, "runas", ""),
+		Background: true,
+	}
+	if envMap := states.Mapping(args, "env"); envMap != nil {
+		env := exec.CleanEnv()
+		for _, e := range envMap.Entries() {
+			env = append(env, value.KeyString(e.Key)+"="+value.KeyString(e.Val))
 		}
+		cmd.Env = env
+	}
+
+	res, err := c.Run(cmd)
+	if err != nil {
+		return nil, err
+	}
+	if _, real := c.Runner.(*exec.OSRunner); !real {
+		// A test's recorder gets to see the command; nothing is started.
 		return value.MapOf("pid", int64(0), "recorded", true, "stdout", res.Stdout), nil
 	}
-
-	cmd := osexec.Command(argv[0], argv[1:]...)
-	cmd.Dir = states.Str(args, "cwd", "")
-	cmd.Env = exec.CleanEnv()
-	if envMap := states.Mapping(args, "env"); envMap != nil {
-		for _, e := range envMap.Entries() {
-			cmd.Env = append(cmd.Env, value.KeyString(e.Key)+"="+value.KeyString(e.Val))
-		}
+	pid, err := strconv.ParseInt(strings.TrimSpace(res.Stdout), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("cmd.run_bg: the runner reported no pid: %q", res.Stdout)
 	}
-	// The child gets no terminal and no pipes: anything it writes goes
-	// nowhere, which is the deal a background command makes.
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	pid := cmd.Process.Pid
-	// The process is released rather than waited on, so it is reparented
-	// to init instead of becoming a zombie held by this run.
-	if err := cmd.Process.Release(); err != nil {
-		return nil, err
-	}
-	return value.MapOf("pid", int64(pid)), nil
+	return value.MapOf("pid", pid), nil
 }
 
 // registerCmdScriptState adds the `cmd.script` state. Salt's takes the
