@@ -23,7 +23,48 @@ package template
 //
 // Python's associativity is followed, including `**` binding to the right.
 
-func (p *parser) parseExpr() (Expr, error) { return p.parseConditional() }
+// maxExprDepth bounds how deeply one expression may nest, both in the
+// parser's recursion and in the height of the tree it builds.
+//
+// It is not MaxDepth, which is 100 and counts statements, because Jinja
+// itself accepts expressions taller than that and a Salt tree may carry
+// one. Measured against Jinja 3.1.6 on CPython 3.14 with the default
+// recursion limit of 1000, the tallest expressions Salt can render are:
+// 69 nested parentheses, 75 nested list literals, about 491 chained
+// `+`, `or` or `**`, 491 `not` or `-` prefixes, 328 chained filters, and
+// an unbounded `~` chain, which Jinja flattens into one node. Every one
+// of those but the last fits under 1000, and a `~` chain of a thousand
+// terms is not something a tree is written with.
+//
+// The other side of the bound is the stack. A Go stack overflow kills
+// the process, so the limit has to be far below where that happens, and
+// TestHostileTemplatesDoNotOverflowTheStack holds it there: an
+// expression at this limit, inside 99 nested statements, parses and
+// renders on a 32 MiB stack, where the default is 1 GiB. It needed
+// between 3 and 4 MiB on darwin/arm64, and more than 4 under -race on
+// windows/amd64.
+const maxExprDepth = 1000
+
+// nest counts one level of the expression parser's recursion. Every cycle
+// in the grammar passes through a call that nests: a bracket, a prefix
+// operator, the right side of `**`, or the `else` of a conditional.
+func (p *parser) nest() error {
+	p.exprs++
+	if p.exprs > maxExprDepth {
+		return errorf(p.pos(), "expression nests deeper than %d levels", maxExprDepth)
+	}
+	return nil
+}
+
+func (p *parser) unnest() { p.exprs-- }
+
+func (p *parser) parseExpr() (Expr, error) {
+	if err := p.nest(); err != nil {
+		return nil, err
+	}
+	defer p.unnest()
+	return p.parseConditional()
+}
 
 func (p *parser) parseConditional() (Expr, error) {
 	e, err := p.parseOr()
@@ -41,7 +82,11 @@ func (p *parser) parseConditional() (Expr, error) {
 	n := &CondExpr{baseNode{pos}, cond, e, nil}
 	if p.peek().kind == tokName && p.peek().val == "else" {
 		p.i++
+		if err := p.nest(); err != nil {
+			return nil, err
+		}
 		n.False, err = p.parseConditional()
+		p.unnest()
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +129,11 @@ func (p *parser) parseAnd() (Expr, error) {
 func (p *parser) parseNot() (Expr, error) {
 	if p.peek().kind == tokName && p.peek().val == "not" {
 		pos := p.next().pos
+		if err := p.nest(); err != nil {
+			return nil, err
+		}
 		x, err := p.parseNot()
+		p.unnest()
 		if err != nil {
 			return nil, err
 		}
@@ -273,7 +322,11 @@ func (p *parser) parseUnary() (Expr, error) { return p.parseUnaryOperand(true) }
 func (p *parser) parseUnaryOperand(withFilter bool) (Expr, error) {
 	if p.peek().kind == tokOp && (p.peek().val == "-" || p.peek().val == "+") {
 		t := p.next()
+		if err := p.nest(); err != nil {
+			return nil, err
+		}
 		x, err := p.parseUnaryOperand(false)
+		p.unnest()
 		if err != nil {
 			return nil, err
 		}
@@ -320,7 +373,11 @@ func (p *parser) parsePower() (Expr, error) {
 	if p.peek().kind == tokOp && p.peek().val == "**" {
 		t := p.next()
 		// Right associative, as in Python.
+		if err := p.nest(); err != nil {
+			return nil, err
+		}
 		r, err := p.parseUnaryOperand(true)
+		p.unnest()
 		if err != nil {
 			return nil, err
 		}

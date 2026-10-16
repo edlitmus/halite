@@ -420,7 +420,7 @@ func (systemdProvider) Status(c *exec.Context, name string) (bool, error) {
 		// fail the caller on it.
 	}
 	res, err := c.Run(exec.Command{
-		Argv:           []string{"systemctl", "is-active", "--quiet", name},
+		Argv:           []string{"systemctl", "is-active", "--quiet", withServiceSuffix(name)},
 		IgnoreExitCode: true,
 	})
 	if err != nil {
@@ -438,7 +438,7 @@ func (systemdProvider) Enabled(c *exec.Context, name string) (bool, error) {
 		}
 	}
 	res, err := c.Run(exec.Command{
-		Argv:           []string{"systemctl", "is-enabled", name},
+		Argv:           []string{"systemctl", "is-enabled", withServiceSuffix(name)},
 		IgnoreExitCode: true,
 	})
 	if err != nil {
@@ -457,8 +457,12 @@ func systemdEnabledState(state string) bool {
 	return false
 }
 
+// systemctl runs one mutating verb on the shell. The name is
+// canonicalised here, not left to systemctl's own mangling, so that the
+// fallback and the D-Bus path are handed the same unit; this covers
+// every caller, including Mask and Unmask in service_more.go.
 func systemctl(c *exec.Context, verb, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"systemctl", verb, name}})
+	_, err := c.Run(exec.Command{Argv: []string{"systemctl", verb, withServiceSuffix(name)}})
 	return err
 }
 

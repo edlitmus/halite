@@ -192,6 +192,17 @@ func addSequenceFilters(f map[string]FilterFunc) {
 			return nil, fc.Errorf("batch needs a positive item count")
 		}
 		fill, hasFill := arg(args, kwargs, 1, "fill_with")
+		// A last batch that is padded holds size items whatever the
+		// input, so batch(10000000000, 0) on a one-item list asks for a
+		// list of ten billion. Jinja tries to build it and fails with a
+		// MemoryError; here running out of memory ends the process, so
+		// it is refused first. (Read from the loop, not run: running it
+		// is the failure.)
+		if hasFill && int64(len(items))%size != 0 {
+			if err := fc.r.checkItems(size, "batch", fc.Pos); err != nil {
+				return nil, err
+			}
+		}
 		out := []any{}
 		for i := 0; i < len(items); i += int(size) {
 			end := i + int(size)
@@ -220,6 +231,13 @@ func addSequenceFilters(f map[string]FilterFunc) {
 		count, _ := asInt(n)
 		if !ok || count <= 0 {
 			return nil, fc.Errorf("slice needs a positive slice count")
+		}
+		// Jinja's slice yields count lists whatever the input, so the
+		// count is a list size and is bounded as one: slice(10000000000)
+		// on any list would append ten billion lists. (Read from the
+		// loop, not run.)
+		if err := fc.r.checkItems(count, "slice", fc.Pos); err != nil {
+			return nil, err
 		}
 		fill, hasFill := arg(args, kwargs, 1, "fill_with")
 		per := len(items) / int(count)
