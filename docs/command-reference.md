@@ -953,6 +953,13 @@ A static `halite-node` is pushed once, verified by digest **after**
 transfer, and cached at `<thin_dir>/<digest>`. A second run skips the
 transfer. `--clean` removes it before and after.
 
+The cached binary is run only when nobody but root and the connecting
+account could have written it: the binary, `thin_dir`, and every directory
+above `thin_dir` must be owned by one of those two and must not be writable
+by other accounts. A directory above `thin_dir` may be writable by others if
+it is sticky, as `/var/tmp` is. Anything else is refused, and the refusal
+names the path and the reason. `thin_dir` must be an absolute path.
+
 Pillar and the state tree are compiled on the hub and sent with the job,
 so a target holds no tree, no pillar, and no other target's secrets. The
 target uses what the hub sent and only that — never a local tree that a
