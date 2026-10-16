@@ -15,7 +15,7 @@ import (
 // zpool's `ashift\t12`, asserted by contrib/vm/zfs/probe.sh. Each line is
 // what OpenZFS prints according to its source and zfsprops(7) — on|off
 // for a boolean, the exact byte count under -p for a size, 0 under -p for
-// an unset quota — and DIVERGENCE 5.290 lists what a FreeBSD lab run has
+// an unset quota — and DIVERGENCE 5.311 lists what a FreeBSD lab run has
 // to capture to replace them. Until then these tests check that the state
 // agrees with that reading of zfs, not that zfs agrees with it.
 
@@ -92,7 +92,7 @@ func yamlProperties(t *testing.T, src string) *value.Map {
 
 // A dataset that already carries what is declared is left alone, in
 // every spelling the commonest properties are written in. Before
-// DIVERGENCE 5.290 each of these was a difference on every run, and the
+// DIVERGENCE 5.311 each of these was a difference on every run, and the
 // state ran `zfs set atime=false` (which zfs refuses) or set the quota it
 // already had.
 func TestZfsFilesystemPresentConvergesOnTheSpellingZfsReadsBack(t *testing.T) {

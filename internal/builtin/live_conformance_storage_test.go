@@ -432,7 +432,7 @@ func (s *storageRig) poolProbe() func() (string, error) {
 // datasetPropertiesProbe is datasetProbe plus the named properties as
 // `zfs get -H -p` prints them, so that a test-mode apply that set one is
 // caught, and so that a failing run's output carries the bytes zfs
-// really printed — which is the capture DIVERGENCE 5.290 is waiting for.
+// really printed — which is the capture DIVERGENCE 5.311 is waiting for.
 func (s *storageRig) datasetPropertiesProbe(dataset, props string) func() (string, error) {
 	exists := s.datasetProbe(dataset)
 	return func() (string, error) {
@@ -478,7 +478,7 @@ func zfsCases() []liveCase {
 	poolOn := newStorageRig()
 	// autoexpand is declared as the Go bool a YAML 1.1 `autoexpand: off`
 	// becomes, so the second apply's "changes nothing" is a check that
-	// the pool's on|off reads back equal to it (DIVERGENCE 5.290).
+	// the pool's on|off reads back equal to it (DIVERGENCE 5.311).
 	poolOnArgs := value.MapOf("name", poolOn.pool, "force", true,
 		"properties", value.MapOf("autoexpand", false))
 	cases = append(cases, withZFS(liveCase{Conformance: states.Conformance{
@@ -516,7 +516,7 @@ func zfsCases() []liveCase {
 	fsOn := newStorageRig()
 	cases = append(cases, withZFS(liveCase{Conformance: states.Conformance{
 		Name: "zfs.filesystem_present",
-		// The properties are the spellings DIVERGENCE 5.290 is about: a
+		// The properties are the spellings DIVERGENCE 5.311 is about: a
 		// YAML 1.1 boolean, as the parser hands it over, and sizes that
 		// `zfs get -p` reads back as byte counts. The harness's second
 		// apply changing nothing is the check that they compare equal to

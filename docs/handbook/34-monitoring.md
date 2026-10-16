@@ -114,7 +114,7 @@ In the order they usually help:
 | `halite_reactor_dropped_total`, `halite_reactor_failures_total` | The reactor overflowed or failed | Yes |
 | `halite_beacon_dropped_total` | A node's beacon queue overflowed | Ticket |
 | `halite_authz_decisions_total{result="denied"}` | Denials: someone's role is wrong, or someone is trying | Graph; alert on a sudden rise |
-| `halite_auth_attempts_total{result="throttled"}` | Sustained = somebody guessing at a name | Yes |
+| `halite_auth_attempts_total{result="throttled"}` | Sustained = somebody guessing at a name or spraying names from one address | Yes |
 | `halite_returns_foreign_schema_total` | A node newer than the hub | Non-zero during an upgrade, zero after |
 | `halite_api_hub_scrape_failures_total` | While this climbs, every `halite_hub_*` panel is empty because the API could not read the hub's half | Yes |
 | `up` | The scrape itself | Yes |

@@ -181,7 +181,7 @@ func parseTabPairs(out string) *value.Map {
 // bool, and KeyString renders that as "false"/"true". zfs does not take
 // those for an on|off property, and `zfs get` never prints them, so the
 // state compared "false" against "off", called it a difference every
-// run, and asked `zfs set atime=false` to fix it (DIVERGENCE 5.290).
+// run, and asked `zfs set atime=false` to fix it (DIVERGENCE 5.311).
 // Salt avoids the same trap in salt.utils.zfs.to_bool, which turns
 // True/False into "on"/"off" before a command is built; this mirrors it.
 //
@@ -228,7 +228,7 @@ var zfsSizeProperties = map[string]bool{
 // With -p, libzfs prints the raw integer for these rather than the word
 // (the word is the non-literal branch of zfs_prop_get). That is read from
 // the OpenZFS source and has not been captured on a machine here — see
-// DIVERGENCE 5.290 for what a lab run needs to check.
+// DIVERGENCE 5.311 for what a lab run needs to check.
 var zfsNoneIsZero = map[string]bool{
 	"quota":          true,
 	"refquota":       true,

@@ -178,7 +178,7 @@ func Hash(password string, iterations int) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	key, err := pbkdf2.Key(sha512.New, password, salt, iterations, keyLength)
+	key, err := derive(password, salt, iterations)
 	if err != nil {
 		return "", err
 	}
@@ -223,27 +223,68 @@ func parseHash(encoded string) (*verifier, error) {
 	return &verifier{iterations: iterations, salt: salt, key: key}, nil
 }
 
+// derive is the one key derivation: what Hash stores and what Verify
+// recomputes, for a known account and for an unknown one alike.
+//
+// A variable so that a test can count what each path asks of it. The
+// amount of work for an unknown name is the claim in Verify, and
+// measuring it would mean timing PBKDF2 runs against each other, which
+// is slow, noisy and proves less than seeing the parameters handed over.
+var derive = func(password string, salt []byte, iterations int) ([]byte, error) {
+	return pbkdf2.Key(sha512.New, password, salt, iterations, keyLength)
+}
+
+// unknownAccount is what a login for a name with no account is checked
+// against: a verifier of exactly the shape Hash produces by default --
+// DefaultIterations, a salt of saltLength, a key of keyLength -- that no
+// password matches, because its key is all zeroes and is never compared
+// as a success (see Verify).
+//
+// It is built from the same constants Hash uses rather than from a copy
+// of their values, so that raising DefaultIterations raises it too. It
+// used MinIterations until DIVERGENCE 5.305, while every hash `halite-api
+// account hash` writes uses DefaultIterations: an unknown name cost
+// 210,000 iterations against a real one's 600,000, measured at about
+// 45 ms against 121 ms, and the difference named which accounts exist.
+var unknownAccount = &verifier{
+	iterations: DefaultIterations,
+	salt:       make([]byte, saltLength),
+	key:        make([]byte, keyLength),
+}
+
 // Verify reports whether a password matches an account.
 //
-// Constant time, and the same amount of work whether the account exists
-// or not: a login endpoint that answers faster for an unknown name is
-// one that enumerates accounts.
+// Constant time, and for an unknown account the same work as for an
+// account hashed at DefaultIterations, which is what `halite-api account
+// hash` writes unless told otherwise: a login endpoint that answers
+// faster for an unknown name is one that enumerates accounts. Both run
+// the same derivation and the same comparison below; only the verifier
+// differs.
+//
+// It is not the same work as an account hashed at some other count --
+// one set with `--iterations`, or written before DefaultIterations was
+// raised. A record carries its own count, and the unknown name cannot
+// know which count the name it is pretending to be would have had. Such
+// an account answers in a time of its own, and so is distinguishable
+// from an unknown name by timing; setting its password again at the
+// default puts it back in the crowd.
 func (a *Account) Verify(password string) bool {
-	if a == nil {
-		// A caller with no account still pays for a hash, so that the
-		// answer takes the same time either way.
-		_, _ = pbkdf2.Key(sha512.New, password, make([]byte, saltLength), MinIterations, keyLength)
-		return false
+	v := unknownAccount
+	if a != nil {
+		parsed, err := parseHash(a.Hash)
+		if err != nil {
+			return false
+		}
+		v = parsed
 	}
-	v, err := parseHash(a.Hash)
+	got, err := derive(password, v.salt, v.iterations)
 	if err != nil {
 		return false
 	}
-	got, err := pbkdf2.Key(sha512.New, password, v.salt, v.iterations, keyLength)
-	if err != nil {
-		return false
-	}
-	return subtle.ConstantTimeCompare(got, v.key) == 1
+	// Compared for the unknown name too, so that both paths do every
+	// step; the result is thrown away there.
+	match := subtle.ConstantTimeCompare(got, v.key) == 1
+	return a != nil && match
 }
 
 // LockedOut names the accounts that require a second factor this build
