@@ -59,7 +59,7 @@ func registerTimezone(r *Registries) {
 					return nil, fmt.Errorf("set_zone needs a zone")
 				}
 				// Before test mode, so that test mode does not promise a
-				// change the real run must refuse. DIVERGENCE 5.290.
+				// change the real run must refuse. DIVERGENCE 5.314.
 				if err := checkPlatformZoneName(want); err != nil {
 					return nil, err
 				}
@@ -353,7 +353,7 @@ func darwinSetZone(c *exec.Context, want string) error {
 // The name is checked here as well as by the callers, and the file it
 // names is checked after the join, because this is the function that turns
 // a string into a path and writes what it finds there into /etc/localtime
-// and the name into /var/db/zoneinfo. Before DIVERGENCE 5.290 it did
+// and the name into /var/db/zoneinfo. Before DIVERGENCE 5.314 it did
 // neither: `../secret` copied a 0600 file into /etc/localtime at 0644 on
 // FreeBSD and recorded `../secret` as the zone for `tzsetup -r` to read.
 func linkZone(want, goos string) error {

@@ -16,7 +16,7 @@ import (
 // /var/db/zoneinfo, which `tzsetup -r` reads back; on a Linux without
 // timedatectl it pointed /etc/localtime at the file. Only the state ever
 // checked the name, against listZones; timezone.set_zone checked only
-// that it was not empty. DIVERGENCE 5.290.
+// that it was not empty. DIVERGENCE 5.314.
 //
 // Each refusal asserts that nothing was written: the localtime copy is
 // untouched, no link appeared, and the name record was not created.
