@@ -272,7 +272,7 @@ func TestArchiveInternalSymlinksStillExtract(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(dest, "lib", "libfoo.so")); err != nil || string(got) != "elf\n" {
 		t.Errorf("lib/libfoo.so reads %q, %v", got, err)
 	}
-	if to, err := os.Readlink(filepath.Join(dest, "share", "lib")); err != nil || to != "../lib" {
+	if to, err := os.Readlink(filepath.Join(dest, "share", "lib")); err != nil || filepath.ToSlash(to) != "../lib" {
 		t.Errorf("share/lib -> %q, %v", to, err)
 	}
 	if got, err := os.ReadFile(filepath.Join(dest, "lib", "note.txt")); err != nil || string(got) != "via an internal link\n" {
