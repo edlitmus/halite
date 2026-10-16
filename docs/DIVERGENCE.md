@@ -28149,9 +28149,10 @@ now say 1.1.0.
 Nothing compares the version an extension reports in its handshake
 with the `version` its bundle was signed as. The hub checks a pin
 against the manifest, and the manifest against its `_ext/<name>/<version>/`
-path. So the 1.1.0 binary signed with `--ext-version 1.0.0` still loads,
-and `sys.list_extensions` then disagrees with the pin. That is noted
-here, not fixed.
+path. So the 1.1.0 binary signed with `--ext-version 1.0.0` still
+loads. The pin and `sys.list_extensions` both say 1.0.0, because
+`Describe` reports the manifest's version. The version the running
+binary states in its handshake is never read. Noted here, not fixed.
 
 **How it is tested.** `cmd/halite-ext-aws-secrets/region_test.go` drives
 the handler with no `endpoint` and a transport that fails the test if
