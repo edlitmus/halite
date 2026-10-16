@@ -429,6 +429,28 @@ func (s *storageRig) poolProbe() func() (string, error) {
 	}
 }
 
+// datasetPropertiesProbe is datasetProbe plus the named properties as
+// `zfs get -H -p` prints them, so that a test-mode apply that set one is
+// caught, and so that a failing run's output carries the bytes zfs
+// really printed — which is the capture DIVERGENCE 5.311 is waiting for.
+func (s *storageRig) datasetPropertiesProbe(dataset, props string) func() (string, error) {
+	exists := s.datasetProbe(dataset)
+	return func() (string, error) {
+		state, err := exists()
+		if err != nil || state == "no dataset" {
+			return state, err
+		}
+		out, err := s.c.Run(hexec.Command{
+			Argv:           []string{"zfs", "get", "-H", "-p", "-o", "property,value", props, dataset},
+			IgnoreExitCode: true,
+		})
+		if err != nil {
+			return "", err
+		}
+		return state + " " + strings.Join(strings.Fields(out.Stdout), " "), nil
+	}
+}
+
 func (s *storageRig) datasetProbe(dataset string) func() (string, error) {
 	return func() (string, error) {
 		out, err := s.c.Run(hexec.Command{
@@ -454,7 +476,11 @@ func zfsCases() []liveCase {
 	var cases []liveCase
 
 	poolOn := newStorageRig()
-	poolOnArgs := value.MapOf("name", poolOn.pool, "force", true)
+	// autoexpand is declared as the Go bool a YAML 1.1 `autoexpand: off`
+	// becomes, so the second apply's "changes nothing" is a check that
+	// the pool's on|off reads back equal to it (DIVERGENCE 5.311).
+	poolOnArgs := value.MapOf("name", poolOn.pool, "force", true,
+		"properties", value.MapOf("autoexpand", false))
 	cases = append(cases, withZFS(liveCase{Conformance: states.Conformance{
 		Name: "zpool.present",
 		Args: poolOnArgs,
@@ -490,7 +516,21 @@ func zfsCases() []liveCase {
 	fsOn := newStorageRig()
 	cases = append(cases, withZFS(liveCase{Conformance: states.Conformance{
 		Name: "zfs.filesystem_present",
-		Args: value.MapOf("name", liveConformancePrefix+"pool/data"),
+		// The properties are the spellings DIVERGENCE 5.311 is about: a
+		// YAML 1.1 boolean, as the parser hands it over, and sizes that
+		// `zfs get -p` reads back as byte counts. The harness's second
+		// apply changing nothing is the check that they compare equal to
+		// what zfs reads back; its first apply, that `zfs create -o` takes
+		// them at all. The quota is larger than the pool on purpose,
+		// which zfs allows.
+		Args: value.MapOf("name", liveConformancePrefix+"pool/data",
+			"properties", value.MapOf(
+				"atime", false,
+				"compression", true,
+				"quota", "10G",
+				"recordsize", "128K",
+				"refreservation", "none",
+			)),
 		Setup: func() error {
 			if err := fsOn.createPool(); err != nil {
 				return err
@@ -498,7 +538,7 @@ func zfsCases() []liveCase {
 			fsOn.quiet("zfs", "destroy", "-r", fsOn.pool+"/data")
 			return nil
 		},
-		Probe:   fsOn.datasetProbe(liveConformancePrefix + "pool/data"),
+		Probe:   fsOn.datasetPropertiesProbe(liveConformancePrefix+"pool/data", "atime,compression,quota,recordsize,refreservation"),
 		Cleanup: fsOn.teardownZFS,
 	}}))
 

@@ -182,12 +182,12 @@ func registerNetworkModule(r *Registries) {
 						"The names, comma separated as Salt takes them, or as a list."),
 				},
 				Mutates:    true,
-				TestMode:   signature.TestUnreliable,
+				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return hostsAppend(args)
+				return hostsAppend(c, args)
 			},
 		},
 		exec.Module{
@@ -200,12 +200,12 @@ func registerNetworkModule(r *Registries) {
 						"The names, comma separated as Salt takes them, or as a list."),
 				},
 				Mutates:    true,
-				TestMode:   signature.TestUnreliable,
+				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return hostsRemove(args)
+				return hostsRemove(c, args)
 			},
 		},
 	)

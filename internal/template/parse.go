@@ -20,7 +20,7 @@ type parser struct {
 	// because the parser and every walk of the tree it builds are
 	// recursive, and a Go stack overflow is a fatal error rather than a
 	// panic: nothing above this package can catch it, and the hub
-	// compiles pillar in its own process (DIVERGENCE 5.290).
+	// compiles pillar in its own process (DIVERGENCE 5.312).
 	blocks int
 	exprs  int
 }

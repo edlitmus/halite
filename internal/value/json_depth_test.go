@@ -10,7 +10,7 @@ import (
 // at the one json.Unmarshal enforces, from both sides and for both kinds
 // of container. decodeValue recurses once per level and nothing else
 // bounded it, so a few megabytes of `[` recursed until the Go stack
-// overflowed, which is fatal rather than an error (DIVERGENCE 5.290).
+// overflowed, which is fatal rather than an error (DIVERGENCE 5.312).
 // Measured under the pinned go1.26.6: the old code decoded 10,001 levels.
 // The proof that the bound refuses nothing the standard decoder accepts
 // is json.Valid agreeing at both edges.

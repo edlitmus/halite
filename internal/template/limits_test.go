@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// These tests hold the resource limits of DIVERGENCE 5.290. The engine
+// These tests hold the resource limits of DIVERGENCE 5.312. The engine
 // runs in the hub's own process when it compiles pillar, and in the
 // node's unless render_sandbox is on, so a template that can overflow the
 // Go stack or ask for more memory than exists ends that process: both are
