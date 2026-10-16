@@ -28125,6 +28125,34 @@ rather than given as ARNs, used to read them from its own region. It
 now fails its pillar until that region is in `node_region_allow`. The
 extension's version is now 1.1.0, so a pin has to be moved on purpose.
 
+**The version, and why two extensions moved.** Both extensions say their
+`Version` "changes when behaviour does", because a pin names it. That
+was not true before this change. `aws_secrets_manager` changed
+behaviour twice at 1.0.0: its SPEC 24.3 resource limits (5177ea3) and
+the not-secret setting (09c200b, #274). This change bumps it to 1.1.0,
+because it adds a setting and refuses configurations it used to accept.
+`halite-ext-signer-kms` links `internal/awsauth`. It is 1.0.1 now,
+because the STS endpoint goes through `ServiceURL`: with an assumed
+role, a `region` that is not a region name now fails before the
+AssumeRole call, where before it became part of the host. A valid
+region reaches the same host as before (`TestTheSTSEndpointComesFromThePartition`).
+The URL gained a trailing `/`. A throwaway test, not kept, signed and
+sent both forms to a local server. The SigV4 `Authorization` header was
+identical, and both arrived as `POST /`, because `canonicalURI` already
+writes `/` for an empty path and `net/http` sends `/` for one. No real
+STS endpoint was contacted.
+`halite-ext-signer-local` links neither package and is unchanged. The
+examples in `docs/extensions.md`, handbook chapter 29 and
+`contrib/examples/hub.yaml` that name `aws_secrets_manager`'s version
+now say 1.1.0.
+
+Nothing compares the version an extension reports in its handshake
+with the `version` its bundle was signed as. The hub checks a pin
+against the manifest, and the manifest against its `_ext/<name>/<version>/`
+path. So the 1.1.0 binary signed with `--ext-version 1.0.0` still loads,
+and `sys.list_extensions` then disagrees with the pin. That is noted
+here, not fixed.
+
 **How it is tested.** `cmd/halite-ext-aws-secrets/region_test.go` drives
 the handler with no `endpoint` and a transport that fails the test if
 it is called:

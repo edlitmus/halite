@@ -45,8 +45,14 @@ import (
 	"github.com/edlitmus/halite/internal/awskms"
 )
 
-// Version is what the handshake and `sys.list_extensions` report.
-const Version = "1.0.0"
+// Version is what the handshake and `sys.list_extensions` report. It is
+// also what a pin names, so it changes when behaviour does -- including
+// behaviour that arrives through a package this extension links, which
+// is how 1.0.1 came about: internal/awsauth began refusing a `region`
+// that is not a region name before it builds the STS host (DIVERGENCE
+// 5.324), so a configuration that used to send a signed AssumeRole call
+// somewhere now fails before it is sent.
+const Version = "1.0.1"
 
 // callTimeout bounds one call to KMS. A `run` waits on it, so a service
 // that does not answer should fail the submission in seconds rather

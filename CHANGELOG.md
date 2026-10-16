@@ -46,8 +46,10 @@ ext_pillar:
       node_region_allow: [us-west-2, eu-west-1]
 ```
 
-The extension's version is now 1.1.0; sign the new bundle and move its
-pin. See DIVERGENCE 5.324.
+The extension's version is now 1.1.0; sign the new bundle as 1.1.0 and
+move its pin. `halite-ext-signer-kms` is now 1.0.1: it shares the STS
+code, which now refuses a `region` that is not a region name before
+sending anything. See DIVERGENCE 5.324.
 
 ### A node renewing at the moment it is revoked now stays revoked
 
