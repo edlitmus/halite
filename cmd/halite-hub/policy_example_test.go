@@ -65,7 +65,7 @@ func TestTheExamplePolicyDecidesWhatItSaysItDoes(t *testing.T) {
 				Arg: []string{"teardown.everything"}}, false},
 		// `halite-hub orch run` sends the name as the keyword `sls`, never
 		// positionally, so these are the decisions an operator actually
-		// gets. DIVERGENCE 5.320.
+		// gets. DIVERGENCE 5.321.
 		{"the deployer runs its orchestration the way orch run sends it",
 			policy.Request{Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
 				Kwarg: map[string]any{"sls": "deploy.web"}}, true},

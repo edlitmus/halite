@@ -588,7 +588,7 @@ func checkArgs(rule Rule, req Request) string {
 	//
 	// It reads `names`, not req.Arg: for a job they are the same, and for
 	// a runner under deny_sls they are the orchestration names the runner
-	// will compile, keyword and comma list included (DIVERGENCE 5.320).
+	// will compile, keyword and comma list included (DIVERGENCE 5.321).
 	// Checking only the positional arguments would let a second spelling
 	// through the keyword the same way the deny list was let through.
 	if len(constraint.DenySLS) > 0 || len(constraint.AllowSLS) > 0 {
@@ -639,7 +639,7 @@ func checkArgs(rule Rule, req Request) string {
 		// The runner refuses it too (`sls` is required), but a decision
 		// that says "allowed" about a request whose names it never saw
 		// is the defect this block exists to prevent, so it is refused
-		// here rather than left to the signature. DIVERGENCE 5.320.
+		// here rather than left to the signature. DIVERGENCE 5.321.
 		if len(names) == 0 {
 			return fmt.Sprintf("%s names no orchestration, so none of the modules this role may orchestrate (%s) can be checked",
 				req.Fun, strings.Join(constraint.AllowMods, ", "))

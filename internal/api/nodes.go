@@ -233,7 +233,7 @@ func (s *Server) orchestrate(w http.ResponseWriter, r *http.Request, token *apit
 	// only because the policy now judges a keyword `sls` against
 	// allow_mods and deny_sls; before that, this change would have
 	// opened allow_mods instead of closing deny_kwargs. Issue 321 M-17;
-	// DIVERGENCE 5.320.
+	// DIVERGENCE 5.321.
 	if !s.authorize(w, token, requestFor("state.orchestrate", "", nil, kwargs, true)) {
 		return
 	}

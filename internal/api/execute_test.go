@@ -388,7 +388,7 @@ func TestApplyingStateToOneNodeTargetsItByList(t *testing.T) {
 // `test` as keywords -- so a role's deny_kwargs never saw the `pillar`
 // that reached the hub, and the hub, which sees this service's
 // principal rather than the caller's, could not catch it. Issue 321
-// M-17; DIVERGENCE 5.320.
+// M-17; DIVERGENCE 5.321.
 func TestTheOrchEndpointAuthorizesTheCallItForwards(t *testing.T) {
 	l, hub := executeLab(t, `
 roles:

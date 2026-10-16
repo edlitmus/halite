@@ -27536,8 +27536,7 @@ Each half was broken on purpose and watched to fail:
 - **The fleet's own policies were not read** for roles that rely on a
   narrowed role running the highstate. Any that do are refused after
   this change.
-
-### 5.320 `allow_mods` never judged a name `halite-hub orch run` sent
+### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
 
 SPEC 23.5's `allow_mods` is how a policy limits a role to named
 orchestrations; the example policy's `deployer` has `allow_mods:

@@ -291,7 +291,7 @@ func TestRunnersAreGrantedSeparately(t *testing.T) {
 // let the keyword through untouched -- and the keyword is the only way
 // `halite-hub orch run` sends a name -- and let a comma list through
 // whole, because `deploy.*` matches `deploy.web,teardown.everything`.
-// DIVERGENCE 5.320.
+// DIVERGENCE 5.321.
 func TestAllowModsJudgesTheKeywordAndEachNameInACommaList(t *testing.T) {
 	p := load(t)
 	cases := []struct {
