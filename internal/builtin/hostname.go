@@ -143,7 +143,7 @@ func hostnameSystem(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	// Both halves are what the node has, and `want` is what was asked
-	// for, and sameHostname is not symmetric (DIVERGENCE 5.290): a node
+	// for, and sameHostname is not symmetric (DIVERGENCE 5.317): a node
 	// that has `web1.example` satisfies a state asking for `web1`, and a
 	// node that has `web1` does not satisfy one asking for
 	// `web1.example`. `hostname` returns whatever was set, which on a
@@ -410,7 +410,7 @@ func darwinSetHostname(c *exec.Context, want string) error {
 // not the same: a state naming `web1.example` on a node that has `web1`
 // is asking for the domain, and treating the two as equal made that
 // state report converged and change nothing -- on FreeBSD's rc.conf, on
-// /etc/hostname and on scutil's HostName alike (DIVERGENCE 5.290).
+// /etc/hostname and on scutil's HostName alike (DIVERGENCE 5.317).
 //
 // Two different domains are two different names, in both directions:
 // matching them would leave the state unable to move a node between

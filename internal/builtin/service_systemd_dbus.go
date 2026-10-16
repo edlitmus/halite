@@ -24,6 +24,12 @@ import (
 // from systemd -- an unknown unit, a polkit refusal, a job that failed
 // -- is a real answer and is returned, never retried on the shell where
 // it would fail the same way with a worse message.
+//
+// "The same way" holds only while both paths are handed the same unit
+// name. They once were not: systemctl mangles `php8.2-fpm` into
+// `php8.2-fpm.service` itself, the Manager does not, and a name the bus
+// refused was a name the shell would have accepted. withServiceSuffix
+// is applied on both sides for that reason.
 
 const (
 	sdDest      = "org.freedesktop.systemd1"
@@ -74,12 +80,40 @@ func dialOrNil(c *exec.Context) (systemdBackend, bool) {
 	return b, true
 }
 
-// withServiceSuffix gives a bare name the `.service` unit type, the way
-// `systemctl start nginx` does. A name that already carries a unit type
-// -- `foo.socket`, `foo.timer` -- is left alone.
+// systemdUnitTypes is every unit type systemd has: the `UnitType` enum
+// in systemd's src/basic/unit-def.c and the list in systemd.unit(5).
+// Salt's VALID_UNIT_TYPES (modules/systemd_service.py) has the first
+// nine and lacks `slice` and `scope`; those are real types, and a state
+// naming `user.slice` must not have `.service` bolted onto it.
+var systemdUnitTypes = []string{
+	"service", "socket", "device", "mount", "automount", "swap",
+	"target", "path", "timer", "slice", "scope",
+}
+
+// withServiceSuffix canonicalises a unit name the way Salt's
+// _canonical_unit_name and systemctl's own name mangling both do: a
+// name that ends in a real unit-type suffix -- `foo.socket`,
+// `foo.timer` -- is left alone, and anything else gets `.service`.
+//
+// The test is the suffix, not the presence of a dot. It used to be the
+// dot, which sent `php8.2-fpm` to systemd as it stood; systemd's
+// Manager does no mangling and refused it ("Unit name php8.2-fpm is not
+// valid"), and because a returned D-Bus error is not retried on the
+// shell, every start and enable of such a unit failed while its reads,
+// which do fall through to systemctl, looked fine (DIVERGENCE 5.39 and
+// the section that corrects it).
+//
+// Every call site -- D-Bus and systemctl alike -- goes through this, so
+// the two paths name the same unit by construction rather than by
+// systemctl happening to mangle the way this function does.
 func withServiceSuffix(name string) string {
-	if strings.Contains(name, ".") {
-		return name
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		suffix := name[i+1:]
+		for _, t := range systemdUnitTypes {
+			if suffix == t {
+				return name
+			}
+		}
 	}
 	return name + ".service"
 }

@@ -58,6 +58,11 @@ func registerTimezone(r *Registries) {
 				if want == "" {
 					return nil, fmt.Errorf("set_zone needs a zone")
 				}
+				// Before test mode, so that test mode does not promise a
+				// change the real run must refuse. DIVERGENCE 5.314.
+				if err := checkPlatformZoneName(want); err != nil {
+					return nil, err
+				}
 				if c.Test {
 					return want, nil
 				}
@@ -118,6 +123,11 @@ func timezoneSystem(c *exec.Context, args *value.Map) (states.Result, error) {
 	want := states.Str(args, "name", "")
 	if want == "" {
 		return states.False("This state needs a time zone."), nil
+	}
+	// The listZones check below would refuse a path too, but only on a
+	// node whose tree it could read; this does not depend on that.
+	if err := checkPlatformZoneName(want); err != nil {
+		return states.False(err.Error()), nil
 	}
 
 	have, err := currentZone(c)
@@ -339,11 +349,17 @@ func darwinSetZone(c *exec.Context, want string) error {
 // branches below are testable on whatever machine the suite runs on. The
 // `venvPip` rewrite made the same change for the same reason, after the Windows
 // branch of a path helper turned out to be unreachable by any test.
+//
+// The name is checked here as well as by the callers, and the file it
+// names is checked after the join, because this is the function that turns
+// a string into a path and writes what it finds there into /etc/localtime
+// and the name into /var/db/zoneinfo. Before DIVERGENCE 5.314 it did
+// neither: `../secret` copied a 0600 file into /etc/localtime at 0644 on
+// FreeBSD and recorded `../secret` as the zone for `tzsetup -r` to read.
 func linkZone(want, goos string) error {
-	src := filepath.Join(zoneinfoDir, filepath.FromSlash(want))
-	info, err := os.Stat(src)
-	if err != nil || info.IsDir() {
-		return fmt.Errorf("no time zone named %s under %s", want, zoneinfoDir)
+	src, err := zoneFile(want)
+	if err != nil {
+		return err
 	}
 
 	// Replace it the way it was already held: FreeBSD ships a copy, and
@@ -410,6 +426,97 @@ func linkZone(want, goos string) error {
 		}
 	}
 	return nil
+}
+
+// maxZoneName bounds a zone name. The longest in the tz database is 32
+// bytes (`America/Argentina/ComodRivadavia`), and the prefixed trees add
+// six; four times that leaves room for a name nobody has invented yet
+// without letting a caller hand a path of arbitrary length to the
+// filesystem.
+const maxZoneName = 128
+
+// checkZoneName holds a unix zone name to the tz database's grammar:
+// components of ASCII letters, digits, `_`, `+` and `-`, separated by
+// single slashes, none of them empty and none starting with `-`.
+//
+// That excludes `.` and `..` -- a dot is in no component at all -- and a
+// leading slash, so a name cannot leave the tree it is joined to. The tz
+// project's own rules for new names are narrower still (no digits, at
+// most 14 bytes a component), but the legacy names break them: `Etc/GMT+5`,
+// `EST5EDT`, `America/Argentina/ComodRivadavia`. No zone name carries a dot,
+// which is also what zoneinfoNames relies on to skip `zone.tab` and its
+// neighbours. A leading `-` is refused because every tool a name reaches
+// (`timedatectl set-timezone`, `systemsetup -settimezone`) would read it
+// as an option.
+func checkZoneName(name string) error {
+	if name == "" || len(name) > maxZoneName {
+		return fmt.Errorf("%q is not a time zone name: it must be 1 to %d bytes", name, maxZoneName)
+	}
+	for _, comp := range strings.Split(name, "/") {
+		if comp == "" {
+			return fmt.Errorf("%q is not a time zone name: it has an empty component, or a leading or trailing /", name)
+		}
+		if comp[0] == '-' {
+			return fmt.Errorf("%q is not a time zone name: a component starts with -", name)
+		}
+		for _, r := range comp {
+			switch {
+			case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9',
+				r == '_', r == '+', r == '-':
+			default:
+				return fmt.Errorf("%q is not a time zone name: %q is not a letter, digit, _, + or -", name, r)
+			}
+		}
+	}
+	return nil
+}
+
+// checkPlatformZoneName applies checkZoneName where a zone name is a path,
+// which is everywhere but Windows: there it is a registry key name with
+// spaces in it (`Pacific Standard Time`), it is never joined to a
+// directory, and tzutil judges it.
+func checkPlatformZoneName(name string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return checkZoneName(name)
+}
+
+// zoneFile is the file in the tz database a zone name names, or an error
+// saying why there is none.
+//
+// The grammar keeps the name inside the tree as written, and this keeps it
+// inside the tree as resolved. The tree holds links -- Alpine and recent
+// Debian ship the `backward` aliases such as `US/Pacific` as relative
+// links to the canonical file, and on macOS the root itself is a link --
+// so a link is not refused for being one. It is refused for pointing out
+// of the tree, which a correctly formed name can still reach if something
+// put such a link there. The returned path is the joined one, not the
+// resolved one, because the symlink /etc/localtime gets is what
+// zoneFromPath reads the name back from: a link to `.../US/Pacific` says
+// `US/Pacific`, and one to its target would say `America/Los_Angeles`.
+func zoneFile(want string) (string, error) {
+	if err := checkZoneName(want); err != nil {
+		return "", err
+	}
+	src := filepath.Join(zoneinfoDir, filepath.FromSlash(want))
+	root, err := filepath.EvalSymlinks(zoneinfoDir)
+	if err != nil {
+		return "", fmt.Errorf("no time zone named %s under %s: %v", want, zoneinfoDir, err)
+	}
+	resolved, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return "", fmt.Errorf("no time zone named %s under %s", want, zoneinfoDir)
+	}
+	rel, err := filepath.Rel(root, resolved)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("the time zone %s under %s resolves to %s, which is outside it", want, zoneinfoDir, resolved)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("no time zone named %s under %s", want, zoneinfoDir)
+	}
+	return src, nil
 }
 
 // replaceSymlink swaps the link atomically, so that a node interrupted

@@ -41,7 +41,7 @@ func TestAnInvalidHostnameIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 }
 
 // A node that has a fully qualified name satisfies a state naming the
-// short one -- and **only that way round** (DIVERGENCE 5.290).
+// short one -- and **only that way round** (DIVERGENCE 5.317).
 //
 // The first argument is what the node has (its running name, or the
 // name it is configured to boot with) and the second what the state

@@ -22,13 +22,16 @@ import (
 func (s *Server) ldapLogin(w http.ResponseWriter, r *http.Request, req LoginRequest) {
 	// The same backoff as a local login, for the same guessing; there
 	// is no hash here to cap, the directory does the comparing.
-	key := "ldap:" + req.Username
-	if s.loginThrottled(w, r, "ldap", key) {
+	// Keyed by source and name, and charged to the source's budget, for
+	// the reasons the local login is: see loginLimit.
+	source := loginSource(r)
+	key := loginKey("ldap", source, req.Username)
+	if s.loginThrottled(w, "ldap", source, key) {
 		return
 	}
 	identity, err := s.LDAP.Authenticate(req.Username, req.Password)
 	if err != nil {
-		s.logins().failed(key, s.now())
+		s.loginFailed(source, key)
 		s.m().authAttempts.With("ldap", "refused").Inc()
 		// One message for every failure, as the local path gives. Which
 		// of them it was goes to the log: the difference between "no

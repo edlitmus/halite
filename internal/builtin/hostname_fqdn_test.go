@@ -7,7 +7,7 @@ import (
 )
 
 // The state, on each platform's own persistent record, moving a node to
-// and from a fully qualified name (DIVERGENCE 5.290).
+// and from a fully qualified name (DIVERGENCE 5.317).
 //
 // The persistent half is each platform's fixture from hostnameFixture:
 // rc.conf through `sysrc -n hostname` on FreeBSD, scutil's HostName on

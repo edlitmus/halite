@@ -231,7 +231,7 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 	// matched. `Runner: true` is what makes the policy read `runners:`
 	// rather than `functions:`.
 	decision := s.Policy.Authorize(
-		policyRequestFor(call.Principal, call.Fun, "", call.Arg, call.Kwarg, true))
+		policyRequestFor(call.Principal, call.Fun, "", "", call.Arg, call.Kwarg, true))
 	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("runner refused by policy",

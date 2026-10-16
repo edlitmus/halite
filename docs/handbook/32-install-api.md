@@ -228,7 +228,7 @@ You should see `ready` and a JSON token. Run the one command alice is allowed
 | A policy change has no effect | The hub *and* the API each read the policy at start | Restart both |
 | `curl` fails with no message under `-s` | The serving certificate lacks the name you used in `subjectAltName` | Re-issue with the name; `-v` shows the verification error |
 | `401` for the right password | Typo in the hash, or the account file is not readable by the service account | `doctor`, the log (it says which of "no such account" and "wrong password" it was) |
-| `429` on login | The name is in a backoff window after failures | Wait for `Retry-After`; it doubles to 15 minutes |
+| `429` on login | The name is in a backoff window after failures from this address, or this address has spent its budget of failures across names | Wait for `Retry-After`; it doubles to 15 minutes. Another address is not held |
 | Tokens vanish after a restart | `state_dir` is not persistent | Check the token store is on durable storage |
 
 To **disable a person immediately**: remove the account or role, then

@@ -29,7 +29,460 @@ the boot-time record (rc.conf on FreeBSD, /etc/hostname, scutil's
 HostName). Now it sets both. A state asking for `web1` on a node that has
 `web1.example.com` still reports converged and leaves the domain alone.
 Expect a change on the first run wherever a state names a qualified name
-that a node does not have yet. See DIVERGENCE 5.290.
+that a node does not have yet. See DIVERGENCE 5.317.
+
+
+### `netplan.managed` no longer reports a refused document converged on the next run
+
+When `netplan generate` refused the document, the state failed and left
+the file in /etc/netplan. The next run found the file equal to the
+declaration and reported True without validating it, and the next boot
+read it. A failed `apply: true` was not retried for the same reason. The
+state now puts the file back as it was (or removes it) on either failure
+and renders the tree again, so the next run fails again or tries the
+apply again. A file left refused by an earlier build still reads as
+converged; `netplan.generate` on each Ubuntu node finds one. See
+DIVERGENCE 5.316.
+
+
+### pf keeps firewall rules in the order they were declared
+
+The pf provider sorted the `halite` anchor alphabetically every time it
+changed it, so every deny sat above every allow. Every rule is `quick`,
+and pf stops at the first rule that matches. So an allow inside a wider
+deny, such as ssh from one host in a denied /8, never matched. New rules
+are now appended in the order the states run, and rules already loaded
+keep their place, as ufw does. An anchor loaded by an earlier build keeps
+the sorted order: flush it (`pfctl -a halite -F rules`) and apply the
+states again to get the declared order. While it is empty its denies do
+not apply either. See DIVERGENCE 5.315.
+
+
+### `timezone` refuses a zone name that is not one
+
+`timezone.set_zone` and `timezone.system` now refuse a name outside the tz
+database's grammar: components of letters, digits, `_`, `+` and `-`
+separated by single slashes, with no `.` or `..`, no leading `/` and no
+leading `-`. They do this in test mode too. On FreeBSD, and on Linux
+without systemd, the zone file must also resolve to a regular file
+inside `/usr/share/zoneinfo`. Before this, `set_zone timezone=../secret`
+copied that file into `/etc/localtime` at 0644 on FreeBSD and recorded
+`../secret` in `/var/db/zoneinfo`; on Linux it pointed `/etc/localtime`
+at the file. Real names, such as `Etc/GMT+5` or
+`America/Argentina/Buenos_Aires`, are unaffected. Windows names are
+unaffected. See DIVERGENCE 5.314.
+
+
+### `mount.mounted` no longer remounts a filesystem declared by UUID or label
+
+A filesystem declared with `device: UUID=…`, `LABEL=…`, `PARTUUID=…`,
+`PARTLABEL=…` or a `/dev/disk/by-*` path was reported as "remounted from
+a different device" on every run. The state ran `mount -o remount` and
+fired its `onchanges` and `watch` each time, because the kernel's table
+names the resolved node, such as `/dev/nvme0n1p2`. Both names are now
+resolved through udev's `/dev/disk/by-*` links and compared as the node
+they reach. When either name cannot be resolved and the two differ, the
+state now **fails** and names both, and does not remount. Before, it
+remounted. `mount.unmounted` with a `UUID=` `device` filter now finds
+the filesystem. Before, it said nothing was mounted. FreeBSD label
+devices (`/dev/gpt/…` against `/dev/ada0p2`) are not handled yet. Not
+run on a host. See DIVERGENCE 5.313.
+
+
+### A template can no longer end the hub or node that renders it
+
+A template could overflow the Go stack or ask for more memory than
+exists. Both end the process, not just the render, and the hub compiles
+pillar in its own process. Deep nesting did it: some hundreds of
+thousands of `(` or `not`, or one long `1 + 1 + ... + 1`. So did a
+builtin asked for a huge result, such as `indent(width=...)`, `[1] * n`,
+`range` across the whole int64 range, or `batch(n, fill)`. Five more
+inputs panicked out of the renderer, among them `indent(width=-1)` and
+`'abc'.zfill()`. Lexing a long template took time quadratic in its length.
+
+- A statement nested deeper than `MaxDepth` (100) is now a parse error.
+  Before, it was a render error, and only on the branch taken.
+- An expression nested deeper than 1,000 levels is now a parse error.
+  Jinja itself stops at well under that for everything except a `~`
+  chain.
+- One string a builtin builds may be no larger than `MaxOutput`, and
+  one list may hold no more items than `MaxIterations`. Both are checked
+  before the value is built.
+- Negative counts follow Python: `'ab' * -1` is empty and
+  `indent(width=-1)` is no indent.
+- `truncate` with a length shorter than its end string is an error, as
+  it is in Jinja. Before, it returned `...`.
+- `cidr_subnets` gives the right subnets for IPv6 splits past 64 bits.
+- `value.DecodeJSON` refuses nesting past `encoding/json`'s own 10,000.
+- Any panic left in the engine becomes a render error that names itself
+  as a halite defect.
+
+See DIVERGENCE 5.312.
+
+
+### ZFS states compare `off` and `10G` the way zfs reads them back
+
+`zfs.filesystem_present` and `zpool.present` compared each declared
+property with `zfs get -p`/`zpool get -p` output as plain strings. An
+unquoted `atime: off` or `autotrim: on` is a YAML boolean, which was
+compared and passed to zfs as `false`/`true`, so the state reported a
+change every run and ran `zfs set atime=false` (or `zfs create -o
+atime=false`, `zpool set`, `zpool create -o`/`-O`). A size such as
+`quota: 10G` or `recordsize: 128K` never equalled the byte count `-p`
+prints, and `quota: none` never equalled `0`, so those were set again
+every run. Booleans now go to zfs, and are compared, as `on`/`off`, as
+Salt does; the size properties are compared in bytes, with Salt's
+1024-based `K`/`M`/`G`/`T`/`P`/`E` suffixes, and `none` equals `0` for
+the quotas and reservations. Other properties are compared as written,
+as before. A run of these states should now report no change where it
+used to report one every time. Not yet run against a real zfs: see
+DIVERGENCE 5.311 for what is unverified.
+
+
+### `mdadm.create` now refuses a member holding a filesystem or partition table
+
+Without `force`, `mdadm.create` checked members only for an md
+superblock, then ran `mdadm --create --run`, and `--run` stops mdadm
+asking before it writes over a filesystem it found. A member holding
+ext4, XFS, LVM, ZFS or just a partition table was overwritten, although
+the `force` documentation said it would be refused. `create` now runs
+`wipefs --no-act` on every member and spare first and refuses, naming
+the device and the signature, if anything is listed. It also refuses
+when a member cannot be probed: `mdadm --examine` or `wipefs` fails, or
+`wipefs` is not installed. Before, an `--examine` error let the create
+go ahead. With `force` the create runs as before, and the comment says
+what it overwrote. A state or script that created arrays over formatted
+disks without `force` will now fail; pass `force` if that is intended.
+Not yet run on a real machine. See DIVERGENCE 5.310.
+
+
+### `service` starts and enables systemd units whose names contain a dot
+
+On systemd, a unit name with a dot in it, such as `php8.2-fpm`, was sent
+to systemd's D-Bus API without `.service`. systemd refused it. The state
+read the unit's status correctly, then every start, stop, restart,
+reload, enable, disable, mask and unmask of it failed. A name now gets
+`.service` unless it ends in one of systemd's unit types (`.socket`,
+`.timer`, `.slice` and the rest). The `systemctl` fallback gets the same
+name. This has not yet been run against a real systemd. See DIVERGENCE
+5.309.
+
+
+### A dry run no longer masks units, changes files, or detaches Ubuntu Pro
+
+Thirty-four execution functions changed the node when they were called
+directly with `--test`. They no longer do:
+
+- `service.mask` and `service.unmask` masked or unmasked the unit.
+- `file.chmod`, `chown`, `chgrp`, `mkdir`, `makedirs`, `rmdir`, `move`,
+  `hardlink` and `truncate` changed the file.
+- `beacons.add`, `modify`, `delete`, `enable`, `disable`,
+  `enable_beacon`, `disable_beacon` and `reset` changed the running
+  beacons. `beacons.reset` removed all of them.
+- `x509.create_private_key`, `create_csr` and `create_certificate` wrote
+  to `path`, so a dry run could replace an existing key.
+- `pro.attach`, `detach`, `enable` and `disable` ran `pro`. A dry-run
+  `pro.detach` removed the subscription.
+- The `dnf_module` functions ran `dnf module`.
+- `dnsutil.hosts_append` and `hosts_remove` wrote the hosts file.
+
+Under `--test`, each function now checks what the real call would check
+and returns without the change. The answers are:
+
+- `beacons.*` returns `would_add`, `would_reset` and so on, as
+  `schedule.*` does.
+- `pro.*` and `dnf_module.*` return the command they would run. They
+  do not predict its effect, and they stay `test mode is unreliable`.
+  The `pro attach` token is not shown.
+- `dnsutil.hosts_append` returns the line it would add.
+  `dnsutil.hosts_remove` returns whether the file would change. Both are
+  now `honours --test` in docs/modules.md.
+
+`service.mask` and `unmask` now also declare that they need root.
+
+`module.run` checks test mode before it calls any execution function, so
+a state that calls one of these through `module.run` was not affected.
+A direct call with `--test` was affected. A template that calls one of
+these while a `--test` run renders it was not checked. Nothing here was
+run as root or against systemd, `pro` or `dnf`. See DIVERGENCE 5.308.
+
+
+### A package name that begins with `-` is refused
+
+Every `pkg` provider put the names and versions it was given straight
+into the package manager's argv. A name such as
+`-oDpkg::Pre-Invoke::=<command>` was read by apt-get as its own `-o`
+option, which ran the command as root. dnf's `--setopt=` works the same
+way. `pkg.installed`, `pkg.latest`, `pkg.removed`, `pkg.purged` and every
+`pkg` execution function that takes a name now refuse it before they run
+anything, in a dry run too. They refuse an empty name, a name or pinned
+version that begins with `-`, and one that holds whitespace or a control
+character. FreeBSD origins (`www/nginx`), flavours (`py311-foo@py311`),
+`name:arch`, `+` and dots are unchanged. A state that named such a
+package now fails, saying why, where before the package manager took it
+as an option. See DIVERGENCE 5.307.
+
+
+### Agentless mode no longer runs a cached binary another account could have planted
+
+Before running the cached `halite-node` on a target, and before copying a new
+one, `halite-hub ssh` now checks who could have written it. The binary,
+`thin_dir`, and every directory above `thin_dir` must be owned by root or by
+the account it connects as, and no other account may write to them. A parent
+such as `/var/tmp` may be writable by others if it is sticky. Before this, a
+file with the right name was enough. The default `thin_dir` is under
+`/var/tmp`, and the name is the published build's digest, so any account on a
+target could put a binary there that the next run with `sudo: true` executed
+as root. The default `thin_dir` is unchanged. Three things an operator may now
+see: a run that refuses a target, naming the path and why; a `thin_dir` that
+you own but others may write to is refused instead of being quietly changed to
+mode 700; a relative `thin_dir` is refused. If another account made
+`/var/tmp/halite-thin`, find out why before you remove it. The copy is now
+staged under a random name, so two roster entries for one host no longer fail
+on each other's staging file. See DIVERGENCE 5.306.
+
+
+### A login for an unknown name takes as long as one for a real account
+
+A failed local login for a name with no account checked a cheaper hash
+than a real account's: about 47 ms against 135 ms. So timing a few
+logins showed which account names exist. An unknown name now does the
+same work as an account hashed with the default settings. An account
+hashed with a different `--iterations`, or before the default was
+raised, still takes its own time. Setting its password again with
+`halite-api account hash` fixes that.
+
+
+### Login backoff is per address, and spraying names is throttled
+
+A failed login backed its *name* off for everybody, so anyone who knew
+an account's name could keep its owner out of it by failing once each
+time the window opened, about 105 requests a day. The backoff is now
+per address and name: guessing from one address no longer affects a
+login from another. A right password from an address inside its window
+is still refused there.
+
+- **New: a per-address budget of failed logins**, across all names:
+  thirty, draining one every thirty seconds. Past it, every login from
+  that address gets 429, "too many failed logins from this address",
+  with `Retry-After`.
+- The address is the connection's peer. `X-Forwarded-For` is not read,
+  so behind a reverse proxy every caller shares the proxy's address and
+  its budget. An IPv6 address is counted by its /64.
+- **A username over 256 bytes is refused with 400** and is not logged.
+
+
+### A revoked API token can no longer be brought back by a request in flight
+
+Every authenticated API request rewrote its token's record to move the
+idle clock. A revocation, by `halite-api token revoke` or a logout, that
+landed between that request's read and its write was overwritten, and
+the token worked again. A request no longer writes the record. The idle
+clock is kept in a separate `<id>.last_used` file beside it in the token
+store, and `halite-api token prune` removes it with its token. Nothing
+needs to change on upgrade: a record's own `last_used` is still read
+until the new file exists. See DIVERGENCE 5.303.
+
+
+### `listen` reactions now honour their state's guards and account
+
+A `listen` reaction ran at the end of the run without its state's
+`creates`, `unless`, `onlyif`, `runas`, `umask`, `timeout`, `retry` or
+`check_cmd`. It now runs exactly as a `watch` reaction does. A listened
+`cmd.run` with `runas` that has been running as root will run as that
+account. A reaction whose `onlyif` fails, whose `unless` succeeds, or
+whose `creates` path exists is now skipped, where before it ran. See
+DIVERGENCE 5.302.
+
+
+### A background command now runs as its `runas` account
+
+`cmd.run` with `bg: true` and `cmd.run_bg` ignored `runas`, and started
+the command as the node's own account, which is root. They now switch
+account as a foreground command does. A state that has been starting a
+background command as root with `runas` set will start it as that
+account from now on, and one whose `runas` names an account the node does
+not have now fails instead of starting it. Without `env`, `cmd.run_bg`
+now uses the same default environment as `cmd.run`. See DIVERGENCE 5.301.
+
+
+### An archive can no longer write or delete outside its destination
+
+`archive.extracted` and `archive.extract` checked each entry's name and
+each symlink's target as text, then wrote by path. An archive whose own
+symlinks were each "inside" by name could chain them to write a file
+above the destination, or to delete a file outside it and leave a
+symlink in its place, even with `overwrite` unset. The ownership pass
+for `user:`/`group:` could be steered the same way, and so could a
+symlink already on disk under the destination. Every write, directory,
+removal, symlink and `chown` now goes through an `os.Root` on the
+destination, so a symlink is followed only while it stays inside. An
+extraction that would leave is refused and names the entry. A symlink
+entry now honours `overwrite`, as a file does: with it unset, an
+existing symlink is left alone where it used to be replaced. Archives
+whose links stay inside, such as `libfoo.so -> libfoo.so.1`, extract
+as before. See DIVERGENCE 5.300.
+
+
+### `file.line` now treats `match`, `before` and `after` as regular expressions
+
+They were compared as plain text, so `match: '^PermitRootLogin'` never
+matched: `mode: ensure` appended another `PermitRootLogin no` on every run
+and left the original `PermitRootLogin yes`, the line sshd honours, first.
+As in Salt, each value is now searched in each line as an RE2 pattern, and a
+line where it appears as plain text matches too. What can change on a tree
+upgraded to this: an anchored or regex-shaped value now matches the lines it
+says; a value with metacharacters can also match lines its regex reading
+finds (`a.b` matches `axb`); a value that is not a valid RE2 pattern —
+including a `content` used as the default `match`, such as `*.* @loghost` —
+now fails the state instead of being compared as text; a `match` with
+surrounding whitespace no longer matches the trimmed line. `mode: absent` or
+`delete` with neither `match` nor `content` deleted every line of the file;
+it now fails. Run the highstate with `test=True` first if your tree uses
+`file.line`. See DIVERGENCE 5.299.
+
+
+### `cpan.module_version` no longer runs a module name as Perl
+
+`cpan.module_version` put the module name into the Perl program it ran.
+A name such as `Carp;BEGIN{...}` ran that code as root, from a function
+that a read-only grant reaches. The name must now be a Perl package
+name, such as `JSON::PP`. Any other name is refused with an error, and
+nothing runs. A valid name gives the same version as before. See
+DIVERGENCE 5.298.
+
+
+### Four more code-running functions are no longer granted by a wildcard
+
+`cmd.script`, `cmd.script_retcode`, `cmd.exec_code` and `cmd.run_bg` run
+code the caller supplies, and now declare `arbitrary_code`. **A role that
+granted them through a wildcard (`'*'` or `'cmd.*'`) no longer has them.**
+A role that needs one must name it, as `cmd.run` must already be named. A
+node with `require_job_signature: [arbitrary_code]` now refuses these four
+unless the job is signed. Before this, it ran all four unsigned. The hub
+already refused `cmd.script` to a wildcard, because it also reads the state
+module of the same name, but the node did not. See DIVERGENCE 5.297.
+
+
+### A scoped role is now authorized by the kind of target it asks for
+
+**Security fix.** A role scoped to part of the estate, such as `target:
+'web*.prod'`, could reach any node. The policy judged a request's
+target string as a glob, without its kind, and the hub then sent the
+job under the kind the request named. `web1.prod,db1.prod` as a list,
+`web1.prod or db1.prod` as a compound and `web1.prod|db1.prod` as a pcre
+were all allowed, and all reached db1.prod. This was true through the
+API, through submission straight to the hub, through runners,
+orchestration and reactions that send jobs, and through mine reads.
+`POST /v1/nodes/{id}/state` with a comma in `{id}` reached several nodes
+too.
+
+What changes for an operator whose role names a target other than `*`:
+
+- A **list** target is allowed only if every node in it is inside the
+  role's target. Use a list to name several nodes.
+- A **compound, nodegroup, pcre, grain, grain_pcre, pillar, pillar_pcre
+  or ipcidr** target is now refused. Before, it was allowed when its
+  text looked like a node inside the grant. To keep using these kinds,
+  the role needs `target: '*'`. Otherwise, name the nodes as a list or a
+  glob.
+- A **glob** is unchanged, except that a string which is not a valid
+  node ID (one with a comma, a space or `|`, for example) now matches
+  only a rule whose target is that exact text, or `*`. As a glob, such a
+  string matched no node.
+- `/v1/nodes/{id}` and `/v1/nodes/{id}/state` return 400 for an `{id}`
+  that is not a valid node ID.
+- A mine read with an unknown `target_kind` is refused. Before, it was
+  read as a glob.
+
+A role with `target: '*'` is not affected. `halite-hub policy test`
+takes `--target-kind` (`L`, `C`, `E`, … or `list`, `compound`, …), so a
+policy test can ask the same question the hub asks. Restart the hub and
+`halite-api` together: each checks the policy. See DIVERGENCE 5.296.
+
+
+### `file_ignore_glob` now hides nested files, as Salt's does
+
+`file_ignore_glob` was matched with Go's glob, where `*` stops at `/`.
+Salt uses Python's `fnmatch`, where `*` matches `/` too. So
+`secrets/*` hid `secrets/a.txt` and still served and listed
+`secrets/deep/b.txt`. Hide rules copied from Salt hid less than they
+did on Salt. The globs are now fnmatch globs: `*` and `?` match `/`,
+negated sets are `[!a]` (not `[^a]`), `\` is a literal, and a `[`
+with no `]` is a literal. A rule now hides everything below the level
+it names. If a state needs a nested file that such a rule now covers,
+the node can no longer fetch it. See DIVERGENCE 5.295.
+
+### On Windows, a relative include in an `init.sls` resolved one level too high
+
+On a Windows node, an `init.sls` read from local roots was treated as a
+flat file. So `include: - .app` in `web/init.sls` looked for `app`, not
+`web.app`. It now resolves to `web.app`, as on other platforms. See
+DIVERGENCE 5.84.
+
+### `state_denylist` can no longer be bypassed by spelling an SLS name differently
+
+The node's `state_denylist` matched an SLS name as written, but the file
+server loaded `secret.x`, `secret..x`, `secret/x`, `.secret.x` and
+`secret/./x` as the same file. So `state_denylist: [secret.x]` refused
+only the first spelling. An SLS name must now be written in its one
+dotted form: non-empty components separated by single dots, with no `/`
+or `\`. Any other spelling is an error, in a `state.sls` or
+`state.apply` argument, a top file entry or an `include:`. The error
+gives the dotted spelling. A script or tree that wrote `web/nginx` for
+`web.nginx` must change. Relative includes (`include: - .foo`) are not
+affected. The hub's role policy (`deny_sls`, `allow_sls`) has the same
+weakness and is not changed yet. See DIVERGENCE 5.294.
+
+### gitfs no longer deletes the tree it keeps serving
+
+When every ref of a reachable remote was refused (a commit adding a
+symlink, a blob too large to unpack, a signature that did not verify),
+gitfs kept serving the last good tree, as documented, and then its cache
+sweep deleted that tree's files. The file server listed the environment
+and served nothing from it. The sweep now keeps every tree that is
+being served. (DIVERGENCE 5.293)
+
+### gitfs signature verification checks the commit it serves
+
+With `gitfs_verify_signatures: true`, a branch was verified by its short
+name and served by its commit id. git reads an ambiguous short name as
+the tag, and the mirror fetches every tag, so a tag pointing at an old
+signed commit could get an unsigned branch tip of the same name served.
+gitfs now verifies the exact object it serves. A branch whose name
+begins with a dash is no longer refused for being read as a git option.
+A hub upgraded to this release may stop serving a branch it served
+before, if that branch's tip was not signed; the refusal is logged and
+counted as a signature refusal. See DIVERGENCE 5.292.
+
+### A target nested more than 100 levels deep is now an error
+
+A compound target with more than 100 levels of `(` and `not` is now
+refused when it compiles, with the column where it went over. Before,
+deep enough nesting overflowed the hub's stack, and one request could
+end the hub. A long `or` chain could also end it, the first time it was
+matched. That chain is still accepted and now evaluates in a loop. No
+real target comes near 100 levels. A nodegroup at the deepest nesting
+that is allowed uses eleven. Long targets are not capped. See DIVERGENCE
+5.291.
+
+### Built with Go 1.27.2, off a Go with ten standard-library advisories
+
+halite was pinned to Go 1.26.6. An external audit (edlitmus/halite#321,
+section 1.2) found ten Go standard-library advisories that affect it. Six
+are on the hub's server paths: HTTP/2 in `net/http`, ECH in `crypto/tls`,
+and `net/textproto`. All are fixed in Go 1.26.9. The pin is now
+`toolchain go1.27.2`. The `go 1.26.0` floor is unchanged, so SPEC 4.1
+still says Go 1.26 or later.
+
+One behaviour change comes with it. Go 1.27 builds `encoding/json` on its
+v2 implementation by default, and that refuses a JSON document nested more
+than 10,000 levels deep. halite's JSON decoder used to accept any depth. It
+now refuses such a document with `exceeded max depth`. The test suite
+passes under 1.27.2, so none of its inputs nests that deep; production
+input was not surveyed. See DIVERGENCE 5.290.
+
+
 
 ### The API's systemd unit now restarts an API whose listener was early
 
