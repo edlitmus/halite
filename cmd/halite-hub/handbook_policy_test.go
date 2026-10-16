@@ -43,6 +43,8 @@ func TestTheHandbookPolicyDecidesWhatChapterTwentySixSays(t *testing.T) {
 	}{
 		{"alice applies an allowed sls",
 			policy.Request{Principal: "cert:CN=alice", Target: "web1.prod", Fun: "state.apply", Arg: []string{"webserver.nginx"}}, true, `role "webops"`},
+		{"alice may not run the highstate by naming no sls",
+			policy.Request{Principal: "cert:CN=alice", Target: "web1.prod", Fun: "state.apply"}, false, "runs the highstate"},
 		{"alice may not apply another team's sls",
 			policy.Request{Principal: "cert:CN=alice", Target: "web1.prod", Fun: "state.apply", Arg: []string{"db.postgres"}}, false, ""},
 		{"alice may not pass pillar on the command line",
