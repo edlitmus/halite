@@ -27873,6 +27873,179 @@ removed, its test failed.
 - **The table name rule** (31 characters, `[A-Za-z0-9_-]`) is a
   conservative subset of what pf takes. It is not taken from pf's
   source.
+### 5.323 A renewal could undo a revocation, and the key store had no lock file
+
+Found by review, not reported from a host. `keystore.Authority.Revoke`
+read a node's record, put its serial on the denylist and wrote the
+record back as revoked. `Renew` read the record, checked it was still
+accepted, signed a new certificate and wrote the record back as
+accepted with the new serial. `Store.mu` was taken by `Get` and again
+by `Put`, never across both. And `halite-hub keys revoke` writes the
+store from the operator's shell, a separate process that shares none
+of the hub's memory. So two interleavings went wrong:
+
+- The revocation lands while a renewal is between its read and its
+  write. The renewal writes last. The node is **accepted** again, with
+  a fresh serial that no denylist has seen, and `keys revoke` has
+  already printed that it succeeded.
+- The renewal lands while the revocation is between its read and its
+  write. The revocation writes last, and the record says revoked, but
+  it holds the *old* serial. The node holds a valid certificate whose
+  serial is not on any denylist, and `LoadDenylist` at the next
+  restart will not add it either.
+
+`Enroll`, `Accept` and `Reject` had the same read-then-write shape, and
+so did the bootstrap tokens: `SpendToken` in the hub rewrote a token's
+record to count a use, and `keys token revoke` landing in that window
+was overwritten. The token kept admitting nodes.
+
+The comment on `Store.mu` said that a second process on the same
+directory was a misconfiguration "that the lock file guards against".
+No lock file existed anywhere in the repository. The CLI that is that
+second process is how an operator is told to revoke a node.
+
+**The change.** Every read-modify-write of the store now runs inside
+`Store.locked`. That function takes `mu` and then an exclusive OS lock
+on `<keys>/.lock`, so a goroutine and a separate process are excluded
+in the same way. `Enroll` (including the token it spends), `Accept`,
+`Reject`, `Revoke` and `Renew` each read, decide and write in one
+critical section. So do `MintToken`, `SpendToken`, `RevokeToken`,
+`DeleteToken`, `Put` and `Delete`. Plain reads (`Get`, `List`) take no
+OS lock: records are replaced by an atomic rename, so a reader sees one
+whole version or the other.
+
+The lock is `flock` on every unix target with one exception. Solaris's
+`syscall` has no `flock`, so it uses an `fcntl` write lock, which does
+not exclude a second Store in the *same* process. Windows uses
+`LockFileEx`. A target with neither refuses to write the store. No
+target in `make build-all` is that target. The OS drops the lock when
+its holder exits, so a crashed CLI leaves nothing to clean up. The
+lock file is handed to the directory's owner as records are (5.285),
+because `keys revoke` run as root may be its first writer.
+
+**Revoked is now sticky.** `issue`, the only place a certificate is
+made, refuses a revoked record. `Reject` refuses a revoked node too.
+Before, a revoked node could be rejected. Rejected is not on the
+denylist that `LoadDenylist` rebuilds at a restart, so rejecting a
+revoked node let its certificate back in at the next hub restart.
+Deleting the record is still the way out of revoked.
+
+**What is proven.** `internal/keystore/race_test.go` uses two
+`Authority`s, each with its own `Store` and its own denylist, over one
+directory and one CA, as the hub and the CLI are. A test hook,
+`Store.between`, runs inside the critical section between the read and
+the write. Each test puts the other party into that window. If the
+other party can take the lock there, the test fails and runs it to
+completion inside the window. That is the losing interleaving, so a
+missing exclusion fails every time and not only when the scheduler
+helps. Otherwise the other party is left waiting for the lock. The
+tests show that a revocation during a renewal ends revoked with the
+*new* serial denylisted, both live and through `LoadDenylist`; that a
+renewal during a revocation is refused; that a token revocation during
+a spend holds; and that revoked is sticky against `Renew`, `Accept`,
+`Reject` and `issue`. A separate test re-executes the test binary as a
+second process that takes the lock, and shows that this process cannot
+take it until the other lets go.
+
+Each part was broken on purpose and its tests failed. A no-op
+`lockFile` failed the three race tests and the cross-process test.
+`TestRevokedIsSticky` does not depend on the lock, and it passed. An
+earlier version of this paragraph counted it among the failures. The
+re-run on FreeBSD (below) did not bear that out.
+`Renew` with its read moved back outside the lock failed both renewal
+tests ("the node is accepted after a revocation: the renewal undid
+it"). Without the two stickiness checks, `TestRevokedIsSticky` failed.
+
+**What CI showed** (PR #338, run 38776340940). This was the first
+time the lock ran anywhere but macOS. `internal/keystore` passed on
+`test (ubuntu-24.04)`, `race (ubuntu-24.04)`, `test (freebsd)` (a
+FreeBSD 15.1-RELEASE amd64 VM), `test (windows-2022)` (running as an
+unprivileged account) and `fips-test`. These runs included the
+four race tests and the test that re-runs the binary as a second
+process. That is `flock` on Linux and FreeBSD and `LockFileEx` on
+Windows, each excluding a second Store and a second process. The test
+has no skip path, so "ok" there means it ran.
+
+Every one of those legs failed anyway, on something else.
+`internal/fileperm`'s audit refused `openLock`:
+
+    internal/keystore/keystore.go:191 openLock calls os.OpenFile with mode 0600, which denies group and other
+
+On Windows, a 0600 passed to `os.OpenFile` sets the read-only
+attribute. It is not an access control decision. The lock file is now
+opened through `fileperm.OpenFile`, which applies the mode as an ACL
+there. The first local run checked `internal/keystore` and the audits
+named in this repository's notes, but not `internal/fileperm`, so the
+miss reached CI. With `os.OpenFile` restored, the audit fails locally
+too.
+
+**A live FreeBSD hub, with `keys revoke` beside it** (beastie,
+FreeBSD 15.1-RELEASE-p5 amd64, 12 CPUs, go1.27.2; PR #338 at
+5ea3c2c, and `main` as it stood on 2026-10-16 for comparison). This is the
+run that had been owed. A throwaway hub served on 127.0.0.1:14510
+from a scratch root, as an unprivileged user, beside the production
+hub and not touching it. Its `certificate_lifetime` was 1h. 32 nodes
+enrolled through it and were accepted. Each node then ran
+`halite-node renew --force` 40 times in a loop. While those loops ran,
+`halite-hub keys revoke` ran once per node from its own process, after
+a random delay of 0.2 to 4 seconds. Then the hub was stopped and
+started again, which rebuilds the denylist through `LoadDenylist`.
+Each node then renewed once more with the newest certificate it held.
+The verdict for each node came from the restarted hub's own log, not
+from the node's error: whether the hub refused the serial in that
+node's `node.crt` during the TLS handshake ("the certificate for nN
+(serial …) is revoked").
+
+- `main`, two rounds: in each, 31 of 32 nodes were refused at the
+  handshake, and one was not (n32, serial 0f66978a…, then n14). The
+  restarted hub accepted that certificate at TLS, so the request
+  reached the handler, and the only thing that stopped it was the
+  record's revoked state ("enrollment refused: n32 is revoked"). The
+  certificate itself was never denylisted. That is the second ordering
+  above: the revocation recorded the serial the renewal had just
+  superseded. `keys list` showed all 32 revoked, so the record looked
+  right while the certificate was not denied.
+- This change, two rounds: 32 of 32 refused at the handshake in each.
+  `keys list` showed all 32 revoked. The store directory held
+  `.lock` (mode 0600, empty).
+
+Before this harness was right it gave two wrong answers, and both are
+worth knowing for the next run. The first run built from a checkout
+that was still on another branch. With `renew` but no `--force`, the
+node said "renewal is due at half its life", exited 0, and renewed
+nothing. So that run raced nothing, yet it reported every node
+revoked. Then a check that counted a node as escaped when its
+`connect` log lacked "bad certificate" reported 24 escapes on `main`
+that were nodes the setup had never created. The node's own error is
+also a poor signal: a TLS 1.3 client-certificate refusal often
+reaches the client as "connection reset by peer", "broken pipe" or
+"http2: client conn could not be established" rather than as a bad
+certificate. That is why the verdict is read from the hub.
+
+The test-level breakages were repeated on the same machine. With
+`lockFile` made a no-op in `lock_flock.go`, the three race tests and
+`TestTheStoreLockExcludesAnotherProcess` failed, and the package
+passed again once it was restored. `internal/keystore` passed under
+`-race`, natively on FreeBSD rather than through the Linux
+compatibility layer.
+
+**Not verified.** The `main` failure was seen at 32 nodes. At 8 nodes,
+three rounds (24 races) showed nothing, so this harness is a
+detector only at that scale. Two passing rounds on this change are
+evidence, not proof. The node-held `connect` stream was not raced: the
+renewals here came from `halite-node renew`, not from a connected
+node renewing at half-life. `flock` on OpenBSD and NetBSD and `fcntl` on Solaris
+are compiled only (`go vet` for each target). Nothing measured the
+cost of the extra open and lock per write.
+The hub writes the store on enrollment and renewal, not per request, so
+the cost should be small, but that is not measured.
+
+**Left alone.** When a renewal supersedes a serial, the hub denylists
+the old serial in memory only. The record keeps just the current
+serial, so a hub restart forgets every superseded one (M-05 in the
+review that found this). That has its own fix. It is not this one.
+
+
 
 
 
