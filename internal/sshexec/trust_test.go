@@ -408,12 +408,30 @@ func TestARelativeThinDirIsRefusedBeforeConnecting(t *testing.T) {
 // Two runs against one machine used to stage, and probe, under the same
 // `<digest>.partial`, and one failed when the other renamed it first
 // (handbook chapter 17). Each now stages under a name of its own.
+//
+// Every harness is built before any run starts. Building one writes its
+// fake `ssh` and `scp` scripts, and they used to be written in the same
+// loop that started the runs. So run 0 could fork while harness 5's
+// `ssh` was still open for writing. The child holds a copy of that
+// descriptor until it execs, and exec of a file open for writing fails
+// with ETXTBSY, so run 5 reported
+//
+//	fork/exec …/ssh: text file busy
+//
+// That is Go's golang/go#22315. It failed the fips-test leg on PR #372
+// and failed 6 times in 300 runs locally, and 0 in 1000 after this
+// change. The race was in the test's fixtures. The package itself writes
+// no local file it then runs: its only execs are the system's `ssh` and
+// `scp`. DIVERGENCE 5.332.
 func TestConcurrentRunsAgainstOneMachineBothSucceed(t *testing.T) {
 	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	var wg sync.WaitGroup
 	results := make([]Result, 6)
-	for i := range results {
-		h := newHarness(t, dir)
+	harnesses := make([]*harness, len(results))
+	for i := range harnesses {
+		harnesses[i] = newHarness(t, dir)
+	}
+	for i, h := range harnesses {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
