@@ -25835,6 +25835,51 @@ on FreeBSD. `dnf_module` keeps its own narrower regex, which is not
 edited here; making it share `pkgValidateName` is a follow-up. Other
 modules that pass package names to a tool (`pip`, `npm`, `gem`, `pkgrepo`
 and so on) were not looked at.
+
+#### 5.307, `dnf_module` shares the check
+
+`dnfModuleValidate` (`internal/builtin/dnf_module.go`) now calls
+`pkgValidateName` on each spec before it matches its own pattern,
+`dnfModuleSpec`. The pattern is kept. It is stricter, and it is a
+dnf-specific rule.
+
+**There was no gap to close.** Every name `pkgValidateName` refuses was
+already refused by `dnfModuleSpec`. The pattern is ASCII only and cannot
+start with `-`. So the only visible change is the message: a spec
+starting with `-`, or holding whitespace or a control or format
+character, now gets pkg's message, not "is not a module spec". The
+reason for the change is that the two were two statements of one rule,
+and the narrower one held only while nobody widened it. A pattern that
+later admits `@` or a non-ASCII letter still cannot admit an option or a
+control character.
+
+`dnf_module` takes no version argument, so `pkgValidateVersion` does not
+apply.
+
+**Tests.** The refused names in `TestPkgValidateName` are now a shared
+table, `pkgRefusedNames`. `TestDnfModuleRefusesWhatPkgRefuses`
+(`internal/builtin/dnf_module_test.go`) requires `dnfModuleValidate` to
+refuse each of them, after a valid `nginx`. It then replaces
+`dnfModuleSpec` with `^.*$` and requires each one to be refused again.
+That second half is what tests the call. The first half passed without
+it.
+
+**Broken on purpose.**
+
+- With the `pkgValidateName` call removed, the first half still passed,
+  as expected from the paragraph above. The second half failed for 12 of
+  the 13 names. `a\nb` was still refused, because `.` in `^.*$` does not
+  match a newline.
+- With the call removed and `dnfModuleSpec` itself set to `^.*$`, both
+  halves failed, 12 names each, and the older
+  `TestDnfModuleRefusesSpecsThatDnfWouldReadAsOptions` failed on its five
+  bad specs.
+
+The call was then put back and the tests passed.
+
+**Not verified.** No dnf was run. Nothing here runs dnf. Only macOS
+(Darwin 25.6). No `CHANGELOG.md` entry, because only an error message
+changes, and only for a spec that was refused already.
 ### 5.308 Thirty-four functions acted under `--test`, and the audit for it could not see them
 
 5.135 built `TestEveryMutatingFunctionHonoursItsTestModeClaim` and said
