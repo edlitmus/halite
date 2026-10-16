@@ -32,7 +32,9 @@ type Bundle struct {
 // halves matter — a version alone is a label the publisher controls.
 type Pin struct {
 	Version string
-	// Root is the hexadecimal Merkle root the bundle must have.
+	// Root is the hexadecimal signing root the bundle must have
+	// (Manifest.SigningRoot), which covers its declarations and
+	// executables as well as its files.
 	Root string
 }
 
@@ -77,11 +79,15 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 		return nil, err
 	}
 
-	root, err := MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		return nil, err
 	}
 	rootHex := hex.EncodeToString(root)
+	filesRoot, err := MerkleRoot(manifest.Files)
+	if err != nil {
+		return nil, err
+	}
 
 	bundle := &Bundle{Dir: dir, Manifest: manifest}
 
@@ -94,6 +100,15 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 			// whatever `require_signature` says. The setting permits an
 			// *absent* signature for development; a wrong one is
 			// tampering or a key rotation nobody finished.
+			if v1Key, ok := signedAsV1(opts.TrustKeys, filesRoot, signature); ok {
+				// Said by name, because "does not verify" sends an
+				// operator to the keys, and the keys are fine.
+				return nil, fmt.Errorf("%s %s is signed by %s in the v1 bundle format, which covers "+
+					"only the files and not the manifest's declares, executables, name, version or "+
+					"kind, so this node refuses it; re-sign it with a current halite-hub "+
+					"(`extensions sign`) and move its pin to the root that prints (DIVERGENCE 5.333)",
+					manifest.Name, manifest.Version, v1Key.Name)
+			}
 			return nil, fmt.Errorf("%s %s: %w", manifest.Name, manifest.Version, err)
 		}
 		bundle.SignedBy = key.Name
@@ -104,7 +119,7 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 		bundle.Unsigned = true
 	}
 
-	if err := checkPin(manifest, rootHex, opts.Pin); err != nil {
+	if err := checkPin(manifest, rootHex, hex.EncodeToString(filesRoot), opts.Pin); err != nil {
 		return nil, err
 	}
 
@@ -119,12 +134,21 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 }
 
 // checkPin holds the bundle to what the estate fixed it at.
-func checkPin(manifest *Manifest, rootHex string, pin Pin) error {
+//
+// filesRootHex is the root a pin held before DIVERGENCE 5.333. It is
+// never accepted, only recognised, so that a pin nobody moved after the
+// format change is reported as that rather than as a swapped bundle.
+func checkPin(manifest *Manifest, rootHex, filesRootHex string, pin Pin) error {
 	if pin.Version != "" && pin.Version != manifest.Version {
 		return fmt.Errorf("%s is pinned to %s and this bundle is %s",
 			manifest.Name, pin.Version, manifest.Version)
 	}
 	if pin.Root != "" && !EqualDigest(pin.Root, rootHex) {
+		if EqualDigest(pin.Root, filesRootHex) {
+			return fmt.Errorf("%s %s is pinned to %s, which is its v1 root: it covers the files "+
+				"and not the manifest. The bundle's root is now %s; move the pin to it "+
+				"(DIVERGENCE 5.333)", manifest.Name, manifest.Version, pin.Root, rootHex)
+		}
 		// The version matched and the contents did not, which is
 		// exactly the swap the digest half of the pin exists to catch.
 		return fmt.Errorf("%s %s has root %s and is pinned to %s",
@@ -195,10 +219,10 @@ func (b *Bundle) Executable(platform string) (string, error) {
 	return filepath.Join(b.Dir, filepath.FromSlash(rel)), nil
 }
 
-// Root is the bundle's Merkle root, hexadecimal — what an operator
+// Root is the bundle's signing root, hexadecimal — what an operator
 // copies into a pin.
 func (b *Bundle) Root() (string, error) {
-	root, err := MerkleRoot(b.Manifest.Files)
+	root, err := b.Manifest.SigningRoot()
 	if err != nil {
 		return "", err
 	}

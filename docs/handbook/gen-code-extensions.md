@@ -118,14 +118,14 @@ SPEC 24.4's claim is that this is materially better than Salt, and the reasons a
 - `LoadSigningKey` (func): LoadSigningKey reads a key CreateSigningKey wrote: the 64-byte Ed25519 private key in base64.
 - `Loaded` (type): Loaded is one extension the runtime knows about.
 - `Manifest` (type): Manifest describes a bundle.
-- `MerkleRoot` (func): MerkleRoot is the digest the signature covers.
+- `MerkleRoot` (func): MerkleRoot is the root of a bundle's file tree: the file half of what the signature covers.
 - `ParseManifest` (func): ParseManifest reads one and checks it.
 - `ParseTrustKey` (func): ParseTrustKey reads `<name> <base64 public key>`, the form `extension_trust_keys` takes.
 - `Pin` (type): Pin is what an estate fixes an extension at.
 - `Platform` (func): Platform is the `<goos>/<goarch>` key for this build.
 - `Report` (type): Report is what a synchronization did.
 - `Runtime` (type): Runtime holds the extensions a node has loaded and running.
-- `Sign` (func): Sign produces the detached signature over a bundle's Merkle root.
+- `Sign` (func): Sign produces the detached signature over a bundle's signing root (Manifest.SigningRoot).
 - `SignBundle` (func): SignBundle writes the manifest of everything in Dir and its signature, and answers with the Merkle root a node pins.
 - `SignOptions` (type): SignOptions is one bundle to sign.
 - `Source` (type): Source is the file server, as much of it as synchronization needs.

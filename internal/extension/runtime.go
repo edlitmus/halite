@@ -72,7 +72,10 @@ type Loaded struct {
 // Nothing is started. The declarations in the manifest are what the
 // sandbox is built from, and they are signed — an extension that asked
 // for the network at handshake but not in its manifest is asking for
-// something nobody signed off on.
+// something nobody signed off on. That was written before it was true:
+// until DIVERGENCE 5.333 the signature covered the files and not the
+// manifest, so `declares` could be rewritten under a valid signature.
+// Manifest.SigningRoot is what makes the sentence hold.
 func (r *Runtime) Add(bundle *Bundle) error {
 	name := bundle.Manifest.Name
 	sandbox, err := bridge.From(bundle.Manifest.Declares, r.RunAs, r.RunAsGroup)

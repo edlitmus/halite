@@ -78,7 +78,7 @@ not defeat the others:
 | Decision | Where it lives |
 |---|---|
 | **Whose signature do I accept?** | `extension_trust_keys` in `hub.yaml` and `node.yaml`: the public keys. |
-| **Exactly which build may run?** | `extension_pins`: `{name: {version, root}}`. The `root` is the Merkle root of the manifest. A version is a label the publisher controls; a digest is not, so **both halves of the pin matter**. |
+| **Exactly which build may run?** | `extension_pins`: `{name: {version, root}}`. The `root` covers every file and every field of the manifest, including `declares` and `executables`. A version is a label the publisher controls; a digest is not, so **both halves of the pin matter**. |
 | **What if there is no signature?** | `extension_require_signature` (on in production). `false` permits an *absent* signature for development and warns on every load; a signature that is present and **wrong** is refused whatever it says. |
 
 and one rule of placement: **the signing key lives on a machine that is not
@@ -156,8 +156,8 @@ halite-hub extensions sign ./build --name aws_secrets_manager \
 ```
 
 This writes `manifest.json` (a digest of every file) and `manifest.sig` (a
-signature over the manifest's Merkle root), and prints the `extension_pins`
-entry. `--publish` copies the bundle to
+signature over a root that covers those files and every field of the
+manifest), and prints the `extension_pins` entry. `--publish` copies the bundle to
 `_ext/<name>/<version>/` in the tree and refuses a version that already
 exists. Read the manifest's `declares` before you ship: it is what the
 sandbox is built from.

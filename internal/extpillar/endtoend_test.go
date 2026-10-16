@@ -115,7 +115,7 @@ func installBundle(t *testing.T, exePath string) (string, extension.TrustKey) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := extension.MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		t.Fatal(err)
 	}

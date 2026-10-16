@@ -362,7 +362,7 @@ func rootOf(dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root, err := MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		return "", err
 	}

@@ -80,7 +80,7 @@ func publish(t *testing.T, server *fileServer, name, version string, tamper func
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
