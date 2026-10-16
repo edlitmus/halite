@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
@@ -553,6 +554,29 @@ func checkArgs(rule Rule, req Request) string {
 				// Passing `pillar` on the command line is otherwise a
 				// trivial way round pillar-based authorization.
 				return fmt.Sprintf("%s may not be called with %q by this role", req.Fun, name)
+			}
+		}
+	}
+	// deny_sls and allow_sls are judged on the one spelling the node's
+	// compiler will load, state.CanonicalSLS, and an argument with any
+	// other spelling is refused before either list is consulted. Matched
+	// as written, `deny_sls: [secret.x]` refused `secret.x` and allowed
+	// `secret/x`, `secret..x`, `.secret.x` and `secret/./x`, every one of
+	// which a file server folds to secret/x.sls. A current node refuses
+	// those spellings itself (DIVERGENCE 5.294), but that does not make
+	// the hub's answer right: the hub logged the job as authorized, and
+	// a node that predates 5.294 would have run it.
+	//
+	// Refusing rather than rewriting is the compiler's reason too: a
+	// rewrite would make this check correct and leave several spellings
+	// that work, and the next check written against req.Arg would have
+	// the same hole. The node does not split `a,b` into two names today,
+	// so neither does this; if it ever does, the split belongs here,
+	// before canonicalising. DIVERGENCE 5.294.
+	if len(constraint.DenySLS) > 0 || len(constraint.AllowSLS) > 0 {
+		for _, arg := range req.Arg {
+			if _, err := state.CanonicalSLS(arg); err != nil {
+				return fmt.Sprintf("%s refused for %s by this role: %v", arg, req.Fun, err)
 			}
 		}
 	}

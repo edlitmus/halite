@@ -39,6 +39,20 @@ A role that should run the highstate needs a rule for `state.apply` (or
 with `halite-hub policy test <principal> <target> state.apply`. Roles
 without `allow_sls` are unchanged. See DIVERGENCE 5.320.
 
+### `deny_sls` and `allow_sls` now refuse an SLS name in a second spelling
+
+The hub's policy matched the arguments of `state.sls` and `state.apply`
+as written, so `deny_sls: [secret.x]` refused `secret.x` but authorized
+`secret/x`, `secret..x`, `.secret.x` and `secret/./x`, which load the
+same file. Where a rule has `deny_sls` or `allow_sls`, an argument that
+is not a plain dotted name is now refused, and the message gives the
+dotted spelling. A node built since DIVERGENCE 5.294 already refused
+those spellings when it compiled; an older node ran them. A pattern in
+either list written with a slash or a doubled dot now matches nothing;
+write it with single dots. `state.apply` with no arguments under
+`allow_sls` is a separate change, the entry above (audit M-01). See
+DIVERGENCE 5.294.
+
 ### An agentless state run no longer leaves the hub's state tree on the target
 
 `halite-node oneshot`, which `halite-hub ssh` runs on a target, wrote the
