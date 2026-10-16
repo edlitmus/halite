@@ -40,8 +40,11 @@ roles:
       # Argument-level constraints. Without allow_sls, "may run
       # state.apply" means "may apply any SLS in the tree".
       #
-      # allow_sls and allow_mods match the positional arguments, which
-      # is how SLS and orchestration names are always submitted.
+      # allow_sls matches the positional arguments, which is how a node
+      # reads SLS names. allow_mods matches every orchestration name the
+      # runner will compile, however it is given: positionally, or as the
+      # keyword `sls` (which is how `halite-hub orch run` sends it), and
+      # each name of a comma list on its own.
       # deny_kwargs matches keyword arguments, and matters more than it
       # looks: passing `pillar` on the command line overrides pillar
       # values, which is otherwise a trivial way around any

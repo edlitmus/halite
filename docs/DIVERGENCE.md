@@ -27070,7 +27070,189 @@ catching the signals was meant to keep.
   signals are never delivered there. The tree is still removed on every
   path that is not a signal.
 
+### 5.319 `allow_mods` never judged a name `halite-hub orch run` sent
 
+SPEC 23.5's `allow_mods` is how a policy limits a role to named
+orchestrations; the example policy's `deployer` has `allow_mods:
+['deploy.*']` on `state.orchestrate`. `checkArgs` enforced it by looping
+over the request's positional arguments. Two things about the runner it
+guards meant that loop judged less than the runner ran:
+
+- **`sls` binds by keyword as readily as by position.** The runner
+  binds the call against its signature (`sig.Bind` in
+  `internal/hub/runner.go`), which puts a positional argument and a
+  keyword `sls` in the same parameter, and `orchRequestFrom` reads that
+  parameter. The loop read only the positional half. And
+  `halite-hub orch run` sends the name **only** as a keyword
+  (`cmd/halite-hub/orch.go`, `"sls": strings.Join(...)`), so on the
+  operator's own command line `allow_mods` judged nothing at all: a
+  `deployer` could run any orchestration in the tree.
+- **`sls` is a comma list.** `orchRequestFrom` splits it (`tagGlobs`),
+  so `deploy.web,teardown.everything` is two orchestrations to the
+  runner and one string to the policy, and `deploy.*` matches the
+  string because `path.Match`'s `*` stops only at `/`.
+
+The same holds for `state.orch` and `state.orchestrate_show_sls`, which
+take the same `sls`; the example grants neither, but a policy that puts
+`allow_mods` on them was open the same way. The example policy's own
+comment said allow_mods matched "the positional arguments, which is how
+SLS and orchestration names are always submitted". For orchestration
+names that was never true of the shipped CLI, and it is the sentence the
+check was written to.
+
+Found while fixing issue 321's M-01 (`allow_sls` with no arguments),
+not reported by the audit.
+
+`deny_sls` on a runner had the same two holes, since it read the same
+positional arguments; a role with `deny_sls: ['teardown.*']` on
+`state.orchestrate` let `orch run teardown.everything` through.
+
+**The fix.** For a runner request under `deny_sls` or `allow_mods`,
+`checkArgs` now judges the names the runner will compile
+(`runnerNames` in `internal/policy`): every positional argument and the
+keyword `sls`, each split on commas, trimmed and with empties dropped,
+exactly as `tagGlobs` splits. That is a superset of what the runner
+reads -- a second positional argument binds to `env`, not `sls` -- which
+errs towards refusing. Two more refusals:
+
+- **A request under `allow_mods` that names nothing** is refused, with
+  a reason that says so. The runner refuses it too (`sls` is required),
+  but the policy said "allowed" about a request whose names it never
+  saw, and a decision that is right only because a later layer is
+  stricter is the shape of this defect.
+- **A keyword `sls` that is not a string** is refused as uncheckable.
+  The runner's signature refuses one as well; the policy does not rely
+  on it.
+
+Judging the keyword rather than refusing it was the decision, and not a
+close one: refusing a keyword `sls` under `allow_mods` would have
+refused every `orch run` a `deployer` makes, since that is the only form
+the CLI sends. A job's `allow_sls` and `deny_sls` are unchanged -- the
+node reads only positional SLS names and does not split them on commas
+(`runStateJob`, `CompileSLS`), so there the positional arguments are
+what runs.
+
+`TestEveryRunnerThatTakesOrchestrationNamesTakesThemAsSLS` in
+`internal/hub` holds the two paths together: it fails if a runner takes
+`sls` anywhere but as the first positional string, or takes
+orchestration names under another name (`mods`, `names`), which
+`runnerNames` would not read.
+
+**`POST /v1/orch` (issue 321 M-17)** is the API's half of the same pair.
+It authorized `state.orchestrate` with the name as a positional argument
+and *no* keyword arguments, then forwarded the name, `pillar`, `env` and
+`test` as keywords. So `deny_kwargs: ['pillar']` -- which the example
+policy's comment calls "a trivial way around any authorization" when
+missing -- never saw the `pillar` that reached the hub, and the hub
+cannot catch it, because it judges the API's own principal
+(`cert:CN=api`), not the caller's. The handler now authorizes the call
+it forwards, keywords and all. That change is sound only *with* the
+policy fix: with `main`'s `checkArgs` and the new handler,
+`{"sls":"teardown.everything"}` was answered 200, because the name had
+moved from the half the policy read to the half it did not. The two
+are separate commits in the order they have to land.
+
+**What an operator sees.** A role with `allow_mods` is now held to it on
+`orch run`, the API and reactions alike: an orchestration outside the
+patterns, or a comma list with one, is refused where it used to run, and
+`orch run` with an empty name is refused by the policy rather than by
+the runner. A role with `deny_kwargs: ['pillar']` can no longer pass
+`pillar` through `/v1/orch`. A role with no argument limits on these
+runners sees no change.
+
+#### What was run
+
+`halite-hub policy test 'cert:CN=ci-pipeline' '' state.orchestrate …
+--runner` with `contrib/examples/policy.yaml`, built from `main`
+(`dbc1b5d`) and from this change, on macOS (Darwin 25.6, arm64):
+
+| Arguments | `main` | this change |
+|---|---|---|
+| `deploy.web` | allowed by `deployer` | allowed by `deployer` |
+| `teardown.everything` | denied | denied |
+| `--kwarg sls=teardown.everything` | allowed by `deployer` | denied |
+| `--kwarg sls=deploy.web` | allowed by `deployer` | allowed by `deployer` |
+| `deploy.web,teardown.everything` | allowed by `deployer` | denied |
+| `deploy.web --kwarg sls=teardown.everything` | allowed by `deployer` | denied |
+| (none) | allowed by `deployer` | denied, "names no orchestration" |
+
+The row with both a positional and a keyword name could not have run on
+`main` either: `sig.Bind` refuses a parameter "given both positionally
+and by keyword". It is refused by the policy now because it names
+`teardown.everything`, not because of that.
+
+Tests:
+
+- `internal/hub` `TestAllowModsJudgesTheOrchestrationTheRunnerCompiles`
+  drives `CallRunner` -- the path the CLI, reactions and the API reach --
+  for all three runners against a tree holding `deploy/web.sls` and
+  `teardown/everything.sls`, and checks what was *compiled* as well as
+  what was decided. Run against `main`'s `policy.go`, it failed 18 rows,
+  among them `allowed, and the runner compiled [teardown.everything]`
+  for the keyword and `[deploy.web teardown.everything]` for each comma
+  list, on each of the three runners (in test mode for the two that
+  run, so nothing was dispatched).
+- `internal/policy` `TestAllowModsJudgesTheKeywordAndEachNameInACommaList`
+  and `TestDenySLSOnARunnerJudgesTheKeywordAndTheCommaList`, which also
+  hold that a job's keyword `sls` is not read as a name.
+- `cmd/halite-hub` `TestTheExamplePolicyDecidesWhatItSaysItDoes` gains
+  the three rows an operator's `orch run` actually produces.
+- `internal/api` `TestTheOrchEndpointAuthorizesTheCallItForwards`: with
+  the handler as it was, the `pillar` row was answered 200 and reached
+  the hub; with the handler fixed and `main`'s policy, the two
+  `teardown.everything` rows were.
+
+Each part of the policy fix was broken on purpose and watched to fail:
+
+- **The keyword not read:** all three keyword-allowed hub rows failed
+  (refused, as naming nothing), six policy rows, and the `deny_sls`
+  keyword row. The hub's
+  keyword-*refused* rows still passed, refused by the no-names check
+  for the wrong reason; the policy test, which checks the reason, is
+  what catches that.
+- **The comma list not split:** nine hub rows (three per runner) and
+  three policy rows, plus the `deny_sls` comma row.
+- **The no-names check removed:** the three hub `no name at all` rows
+  and two policy rows.
+- **The non-string refusal removed:** one policy row only. The hub test
+  still passed, refused by the no-names check, and the signature would
+  refuse it after that.
+- **`deny_sls` back on the positional arguments:** the two `deny_sls`
+  runner rows.
+
+#### Not changed, and open
+
+- **`env` is not judged.** A `deployer` may compile `deploy.web` from
+  any environment it names, and `allow_mods` says nothing about which
+  tree `deploy.web` comes from. Whether it should is a question about
+  what `allow_mods` promises; not taken up here.
+- **`allow_sls` on a runner** still reads only the positional
+  arguments. Nothing ships `allow_sls` on a runner, and `allow_mods` is
+  the limit for orchestrations, so this was left alone rather than
+  widened without a case.
+- **Exact-name keying.** A rule granting `state.orch*` with `args` only
+  on `state.orchestrate` leaves `state.orch` unconstrained, because
+  `args` is keyed by exact function name. The example grants
+  `state.orchestrate` by name, so it is not affected.
+- **Spelling.** A separate change in flight makes `allow_sls`/`deny_sls`
+  refuse non-canonical SLS spellings (`a/b`, `a..b`) on a job's
+  positional arguments. Orchestration names go through the same file
+  server and are not canonicalized here; whichever lands second should
+  make that check read the runner names this one computes.
+
+#### Not verified
+
+- **Not run through a running hub and the CLI.** The runner path was
+  driven in-process through `CallRunner` with an operator principal, and
+  the CLI's request shape was read from `cmd/halite-hub/orch.go`, not
+  captured off the wire. The API was driven through its own test lab
+  against a stub hub.
+- **Reactions and schedules** that call these runners under a narrowed
+  role go through the same `Authorize` and would now be refused for an
+  orchestration outside `allow_mods`; that was read, not run, and the
+  fleet's reactor and policy files were not read for any that would be.
+- **Not run on FreeBSD or Linux.** Nothing here is platform-specific;
+  CI runs the tests on all four.
 
 
 ## 6. Everything else not started

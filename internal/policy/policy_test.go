@@ -201,6 +201,109 @@ func TestRunnersAreGrantedSeparately(t *testing.T) {
 	}
 }
 
+// allow_mods judges the names the orchestration runner will compile:
+// every positional argument and the keyword `sls`, each split on
+// commas as the hub splits it. Judging only the positional arguments
+// let the keyword through untouched -- and the keyword is the only way
+// `halite-hub orch run` sends a name -- and let a comma list through
+// whole, because `deploy.*` matches `deploy.web,teardown.everything`.
+// DIVERGENCE 5.319.
+func TestAllowModsJudgesTheKeywordAndEachNameInACommaList(t *testing.T) {
+	p := load(t)
+	cases := []struct {
+		name       string
+		arg        []string
+		kwarg      map[string]any
+		wantAllow  bool
+		wantReason string
+	}{
+		{"positional, allowed", []string{"deploy.web"}, nil, true, ""},
+		{"keyword, allowed", nil, map[string]any{"sls": "deploy.web"}, true, ""},
+		{"keyword comma list, all allowed", nil, map[string]any{"sls": "deploy.web,deploy.db"}, true, ""},
+		{"keyword, refused", nil, map[string]any{"sls": "teardown.everything"},
+			false, "teardown.everything is not in the modules"},
+		{"positional comma list, one refused", []string{"deploy.web,teardown.everything"}, nil,
+			false, "teardown.everything is not in the modules"},
+		{"keyword comma list, one refused", nil, map[string]any{"sls": "deploy.web, teardown.everything"},
+			false, "teardown.everything is not in the modules"},
+		{"allowed positional, refused keyword", []string{"deploy.web"}, map[string]any{"sls": "teardown.everything"},
+			false, "teardown.everything is not in the modules"},
+		{"no names", nil, nil, false, "names no orchestration"},
+		{"a keyword of commas", nil, map[string]any{"sls": ", ,"}, false, "names no orchestration"},
+		{"a keyword that is not a string", nil, map[string]any{"sls": []any{"teardown.everything"}},
+			false, "cannot check"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := p.Authorize(Request{
+				Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
+				Arg: tc.arg, Kwarg: tc.kwarg,
+			})
+			if d.Allowed != tc.wantAllow {
+				t.Fatalf("allowed=%v, want %v: %s", d.Allowed, tc.wantAllow, d)
+			}
+			if !strings.Contains(d.Reason, tc.wantReason) {
+				t.Errorf("reason %q does not say %q", d.Reason, tc.wantReason)
+			}
+		})
+	}
+}
+
+// deny_sls on a runner is judged on the same names allow_mods is, or
+// the keyword and the comma list walk round it as they walked round
+// allow_mods. A job's deny_sls is unchanged: the node reads only the
+// positional arguments and does not split them.
+func TestDenySLSOnARunnerJudgesTheKeywordAndTheCommaList(t *testing.T) {
+	p, _, err := Load([]byte(`
+roles:
+  orch:
+    - runners: ['state.orchestrate']
+      args:
+        'state.orchestrate':
+          deny_sls: ['teardown.*']
+  web:
+    - target: '*'
+      functions: ['state.apply']
+      args:
+        'state.apply':
+          deny_sls: ['teardown.*']
+bindings:
+  - principal: 'cert:CN=ci'
+    roles: ['orch', 'web']
+`), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		arg       []string
+		kwarg     map[string]any
+		wantAllow bool
+	}{
+		{"keyword, not denied", nil, map[string]any{"sls": "deploy.web"}, true},
+		{"keyword, denied", nil, map[string]any{"sls": "teardown.everything"}, false},
+		{"comma list, denied", []string{"deploy.web,teardown.everything"}, nil, false},
+		// deny_sls alone does not require a name: that is allow_mods'
+		// rule, and a deny list says nothing about an empty request.
+		{"no names", nil, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := p.Authorize(Request{Principal: "cert:CN=ci", Fun: "state.orchestrate", Runner: true,
+				Arg: tc.arg, Kwarg: tc.kwarg})
+			if d.Allowed != tc.wantAllow {
+				t.Fatalf("allowed=%v, want %v: %s", d.Allowed, tc.wantAllow, d)
+			}
+		})
+	}
+	// The job half: `mods` is not a name to the node, and `a,b` is one
+	// name to it, so neither is read here.
+	job := p.Authorize(Request{Principal: "cert:CN=ci", Target: "web1", Fun: "state.apply",
+		Arg: []string{"web"}, Kwarg: map[string]any{"sls": "teardown.everything"}})
+	if !job.Allowed {
+		t.Errorf("a job's keyword `sls` was judged as a name: %s", job)
+	}
+}
+
 // A rule scoped to part of the estate must not be widened by asking for
 // all of it.
 func TestAScopedRuleDoesNotGrantAWiderTarget(t *testing.T) {

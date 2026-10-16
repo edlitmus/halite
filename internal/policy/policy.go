@@ -556,8 +556,20 @@ func checkArgs(rule Rule, req Request) string {
 			}
 		}
 	}
+	// The names deny_sls and allow_mods judge. For a job they are the
+	// positional arguments, as they always were; for a runner they are
+	// the names the orchestration runners will compile, which is a
+	// different set -- see runnerNames.
+	names := req.Arg
+	if req.Runner && (len(constraint.DenySLS) > 0 || len(constraint.AllowMods) > 0) {
+		var reason string
+		names, reason = runnerNames(req)
+		if reason != "" {
+			return reason
+		}
+	}
 	if len(constraint.DenySLS) > 0 {
-		for _, arg := range req.Arg {
+		for _, arg := range names {
 			if matchAny(constraint.DenySLS, arg) {
 				return fmt.Sprintf("%s is not permitted for %s by this role", arg, req.Fun)
 			}
@@ -572,7 +584,16 @@ func checkArgs(rule Rule, req Request) string {
 		}
 	}
 	if len(constraint.AllowMods) > 0 {
-		for _, arg := range req.Arg {
+		// A request that names nothing gave the loop nothing to refuse.
+		// The runner refuses it too (`sls` is required), but a decision
+		// that says "allowed" about a request whose names it never saw
+		// is the defect this block exists to prevent, so it is refused
+		// here rather than left to the signature. DIVERGENCE 5.319.
+		if len(names) == 0 {
+			return fmt.Sprintf("%s names no orchestration, so none of the modules this role may orchestrate (%s) can be checked",
+				req.Fun, strings.Join(constraint.AllowMods, ", "))
+		}
+		for _, arg := range names {
 			if !matchAny(constraint.AllowMods, arg) {
 				return fmt.Sprintf("%s is not in the modules this role may orchestrate (%s)",
 					arg, strings.Join(constraint.AllowMods, ", "))
@@ -580,4 +601,59 @@ func checkArgs(rule Rule, req Request) string {
 		}
 	}
 	return ""
+}
+
+// runnerNames is the set of orchestration names a runner request will
+// compile, which is what deny_sls and allow_mods have to judge. It must
+// agree with the hub, which binds the call against the runner's
+// signature and then splits `sls` on commas (orchRequestFrom and
+// tagGlobs in internal/hub). Judging anything narrower is a way round
+// the constraint, and judging only the positional arguments was two:
+//
+//   - The orchestration runners take `sls` by keyword as readily as by
+//     position, because sig.Bind binds either to the same parameter.
+//     `halite-hub orch run` sends it *only* by keyword, so before this
+//     a role with allow_mods was unconstrained on the operator's own
+//     command line: every name it was asked for was allowed.
+//   - `sls` is a comma list. `deploy.web,teardown.everything` is one
+//     positional argument, `deploy.*` matches it (path.Match's `*`
+//     stops only at `/`), and the runner compiled both.
+//
+// So the names are every positional argument and the keyword `sls`,
+// each split the way tagGlobs splits it. That is a superset of what
+// the runner reads -- a second positional argument binds to `env`, not
+// to `sls` -- and refusing a request because an argument that is not
+// an orchestration name fails the pattern is the safe direction to be
+// wrong in.
+//
+// A keyword `sls` that is not a string cannot be judged and is refused.
+// The runner's signature refuses one too, but the policy should not
+// have to rely on the signature to keep a value it never read from
+// being allowed.
+func runnerNames(req Request) ([]string, string) {
+	var names []string
+	for _, arg := range req.Arg {
+		names = append(names, splitNames(arg)...)
+	}
+	if raw, ok := req.Kwarg["sls"]; ok {
+		s, isString := raw.(string)
+		if !isString {
+			return nil, fmt.Sprintf("%s was given `sls` as %T, which this policy cannot check; give it as a string",
+				req.Fun, raw)
+		}
+		names = append(names, splitNames(s)...)
+	}
+	return names, ""
+}
+
+// splitNames splits a comma list as tagGlobs in internal/hub does:
+// on commas, trimmed, empties dropped.
+func splitNames(spec string) []string {
+	var out []string
+	for _, part := range strings.Split(spec, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
