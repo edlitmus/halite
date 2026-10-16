@@ -21,6 +21,27 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### On Windows, a relative include in an `init.sls` resolved one level too high
+
+On a Windows node, an `init.sls` read from local roots was treated as a
+flat file. So `include: - .app` in `web/init.sls` looked for `app`, not
+`web.app`. It now resolves to `web.app`, as on other platforms. See
+DIVERGENCE 5.84.
+
+### `state_denylist` can no longer be bypassed by spelling an SLS name differently
+
+The node's `state_denylist` matched an SLS name as written, but the file
+server loaded `secret.x`, `secret..x`, `secret/x`, `.secret.x` and
+`secret/./x` as the same file. So `state_denylist: [secret.x]` refused
+only the first spelling. An SLS name must now be written in its one
+dotted form: non-empty components separated by single dots, with no `/`
+or `\`. Any other spelling is an error, in a `state.sls` or
+`state.apply` argument, a top file entry or an `include:`. The error
+gives the dotted spelling. A script or tree that wrote `web/nginx` for
+`web.nginx` must change. Relative includes (`include: - .foo`) are not
+affected. The hub's role policy (`deny_sls`, `allow_sls`) has the same
+weakness and is not changed yet. See DIVERGENCE 5.294.
+
 ### gitfs no longer deletes the tree it keeps serving
 
 When every ref of a reachable remote was refused (a commit adding a
