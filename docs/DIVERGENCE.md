@@ -24503,6 +24503,75 @@ refuses the run.
   path. They never went through `state_denylist`, and they still do
   not. This change is about SLS names only.
 - The tests ran on macOS (Darwin 25.6) only.
+
+#### 5.294, the hub's policy follows the compiler
+
+The follow-up above is done. In `checkArgs`
+(`internal/policy/policy.go`), when a rule for the function has
+`deny_sls` or `allow_sls`, every argument goes through
+`state.CanonicalSLS` before either list is read. A request with a
+non-canonical argument is refused, and the reason gives the canonical
+spelling. Only canonical names are matched against the lists.
+
+Before this, the hub authorized, and logged as authorized,
+`state.sls secret/x` under `deny_sls: [secret.x]`. A node built after
+5.294 then refused the name when it compiled. A node built before 5.294
+ran it. So the hub's decision was wrong on its own, whatever the node
+did next.
+
+The refusal applies only to a function whose rule has one of the two
+lists. A role with no SLS constraint is not changed: the node still
+refuses the spelling, as above.
+
+**How it is tested.** `TestSLSConstraintsJudgeTheCanonicalName`
+(`internal/policy/policy_test.go`) gives a role `deny_sls: [secret.x,
+vault.*]` on `state.sls` and `allow_sls: [web.*]` on `state.apply`.
+
+- `secret.x`, `secret..x`, `secret/x`, `.secret.x`, `secret/./x`,
+  `secret.x.`, `/secret/x`, `secret\x` and `vault/db` are each refused
+  as an argument of `state.sls`, next to an allowed `ok`.
+- The reason for `secret/x` contains `"secret.x"`.
+- `ok`, `secrets.x` and `web.nginx` together are still allowed.
+- Under `allow_sls`, `web.nginx` is allowed. `web..nginx`, `web/nginx`,
+  `.web.nginx` and `web.nginx/` are refused. `web..nginx` matched
+  `web.*` before, because `path.Match` let `*` match `.nginx`.
+
+**Broken on purpose.** With the `CanonicalSLS` check disabled, the test
+failed ten times: all nine `deny_sls` spellings except `secret.x` itself
+were authorized, the reason no longer named the canonical spelling, and
+`state.apply web..nginx` was authorized under `allow_sls`.
+
+**Still open: M-01, `allow_sls` and a bare `state.apply`.** The audit
+(`docs/audits/2026-10-issue-321-triage.md`, M-01) found that
+`state.apply` with no arguments is authorized under `allow_sls`, because
+`checkArgs` only loops over the arguments there are. The node then runs
+the highstate (`runStateJob` in `cmd/halite-node/execute.go`). It was
+checked again here with the `webops` role of the package's example
+policy, and it is still allowed. It was not changed here. The fix is a
+decision, not a spelling. A role with `allow_sls` would lose the
+highstate, and that is a change an operator sees. It should have its own
+change and its own CHANGELOG entry.
+
+**Not changed: `allow_mods`.** `allow_mods` on `state.orchestrate` is
+matched the same way, as written. The hub's orchestration compiles the
+names with `CompileSLS` (`internal/hub/orch.go`), which refuses a
+non-canonical name, so the hub does not run one. But the policy still
+says such a name is authorized. That is a follow-up of the same shape.
+
+**Run through the command line.** `halite-hub policy test`, built from
+`main` (`dbc1b5d`) and from this change, was given a policy file with
+`deny_sls: [secret.x]` on `state.sls`. Built from `main`, it denied
+`secret.x` and printed `allowed by role "ops" rule 0` with exit 0 for
+`secret/x`, `secret..x`, `.secret.x` and `secret/./x`. Built from this
+change, it denied all five with exit 1, and each message gave the
+spelling `secret.x`. `ok` was allowed by both.
+
+**Not verified.** No hub served a job. The dispatch path calls the same
+`Authorize` as `policy test`, but that was read from the code, not run.
+No node received a job. Nobody has checked the estate's policy files for
+`allow_sls` or `deny_sls` patterns written for a non-canonical spelling,
+which would now match nothing. Everything ran on macOS (Darwin 25.6)
+only.
 ### 5.295 `file_ignore_glob` hid only the first level of what it named
 
 Review finding M-55, reproduced before it was changed.
@@ -25567,6 +25636,22 @@ account and 132 ms for the unknown name.
   unknown name takes the same time. That file is being changed by
   another branch, so it is left to whichever of the two lands second.
 - Only run on macOS.
+
+#### 5.305, the `loginlimit.go` header
+
+The header of `loginLimit` (`internal/api/loginlimit.go`) now says what
+`account.Verify` does. A failed login runs PBKDF2 at the account's own
+count. That is `DefaultIterations` for a hash written by default and
+never less than `MinIterations`. A name with no account runs at
+`DefaultIterations`, so it costs what a default-hashed account costs,
+and an account at another count is still distinguishable. The guessing
+rate it gives is now a range, seven to twenty a second per core, from
+this section's 133 ms and 5.232's 50 ms. Those are the two figures
+already measured. Nothing was measured again.
+
+Only a comment changed. No code changed and no test covers it, so there
+was nothing to break on purpose. The claims in it were checked by reading
+`unknownAccount` and `Verify` in `internal/account/account.go`.
 ### 5.306 A binary another account planted in `thin_dir` was run as root
 
 Found by audit (H-07), by reading the code, and confirmed by a test
@@ -25819,6 +25904,51 @@ on FreeBSD. `dnf_module` keeps its own narrower regex, which is not
 edited here; making it share `pkgValidateName` is a follow-up. Other
 modules that pass package names to a tool (`pip`, `npm`, `gem`, `pkgrepo`
 and so on) were not looked at.
+
+#### 5.307, `dnf_module` shares the check
+
+`dnfModuleValidate` (`internal/builtin/dnf_module.go`) now calls
+`pkgValidateName` on each spec before it matches its own pattern,
+`dnfModuleSpec`. The pattern is kept. It is stricter, and it is a
+dnf-specific rule.
+
+**There was no gap to close.** Every name `pkgValidateName` refuses was
+already refused by `dnfModuleSpec`. The pattern is ASCII only and cannot
+start with `-`. So the only visible change is the message: a spec
+starting with `-`, or holding whitespace or a control or format
+character, now gets pkg's message, not "is not a module spec". The
+reason for the change is that the two were two statements of one rule,
+and the narrower one held only while nobody widened it. A pattern that
+later admits `@` or a non-ASCII letter still cannot admit an option or a
+control character.
+
+`dnf_module` takes no version argument, so `pkgValidateVersion` does not
+apply.
+
+**Tests.** The refused names in `TestPkgValidateName` are now a shared
+table, `pkgRefusedNames`. `TestDnfModuleRefusesWhatPkgRefuses`
+(`internal/builtin/dnf_module_test.go`) requires `dnfModuleValidate` to
+refuse each of them, after a valid `nginx`. It then replaces
+`dnfModuleSpec` with `^.*$` and requires each one to be refused again.
+That second half is what tests the call. The first half passed without
+it.
+
+**Broken on purpose.**
+
+- With the `pkgValidateName` call removed, the first half still passed,
+  as expected from the paragraph above. The second half failed for 12 of
+  the 13 names. `a\nb` was still refused, because `.` in `^.*$` does not
+  match a newline.
+- With the call removed and `dnfModuleSpec` itself set to `^.*$`, both
+  halves failed, 12 names each, and the older
+  `TestDnfModuleRefusesSpecsThatDnfWouldReadAsOptions` failed on its five
+  bad specs.
+
+The call was then put back and the tests passed.
+
+**Not verified.** No dnf was run. Nothing here runs dnf. Only macOS
+(Darwin 25.6). No `CHANGELOG.md` entry, because only an error message
+changes, and only for a spec that was refused already.
 ### 5.308 Thirty-four functions acted under `--test`, and the audit for it could not see them
 
 5.135 built `TestEveryMutatingFunctionHonoursItsTestModeClaim` and said
@@ -26080,6 +26210,46 @@ with a dot in its name, for example `halite-probe1.2.service` in
 `halite-probe1.2`, both over D-Bus and with the dial forced to fail, and
 check each step with `systemctl show -p ActiveState,UnitFileState`. It
 should also check that `systemctl -t help` lists the eleven types above.
+
+#### 5.309, `Masked` follows
+
+The `systemctl is-enabled` fallback inside `Masked`
+(`internal/builtin/service_more.go`) now gets `withServiceSuffix(name)`,
+the same name its D-Bus path asks about. It was the one systemd argv
+above that still passed the raw name. Every systemd call in the provider
+now names its unit through the one function.
+
+Nothing an operator sees should change. The raw name went to
+`systemctl`, which mangles names as `withServiceSuffix` does, so this
+read gave the right answer before. That is read from 5.309, not run.
+The point is that the two paths now agree by construction.
+
+**Tests.** `TestSystemdProviderDottedNameFallbackAgrees` now calls
+`Masked` too, and expects `systemctl is-enabled php8.2-fpm.service`.
+`TestSystemdProviderMaskedFallbackUsesTheCanonicalName` gives the
+recording runner the stdout `masked` for the canonical argv only, and
+requires `Masked("php8.2-fpm")` to be true. That stdout is the word
+`Masked` compares against. It is not captured `systemctl` output, and
+the repository has none for this read.
+
+**Broken on purpose.** With the raw name put back, both tests failed.
+The first showed `systemctl is-enabled php8.2-fpm` in the argv. The
+second reported `Masked(php8.2-fpm) = false`. The fix was then put back.
+
+**Found, not changed: the two paths disagree on `masked-runtime`.** The
+D-Bus path says a unit is masked when its `UnitFileState` is `masked` or
+`masked-runtime`. The fallback compares the printed word with `masked`
+only. If `systemctl is-enabled` prints `masked-runtime` for a unit
+masked with `--runtime`, the fallback answers false where the bus
+answers true. That comes from reading the code and systemctl's manual.
+No real systemctl was run. It is a different defect from the name, so it
+was not fixed here. The fix needs `masked-runtime` output captured from a
+real host first.
+
+**Not verified.** No real systemd. The live run described above would
+cover this read too, if it calls `service.masked` on
+`halite-probe1.2` with the bus dial forced to fail. Run on macOS
+(Darwin 25.6) only.
 ### 5.310 `mdadm.create` would overwrite a filesystem it said it refused
 
 The package comment in `mdadm.go` and the `force` parameter's doc both
