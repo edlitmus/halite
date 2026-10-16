@@ -126,7 +126,7 @@ clause: it names the setting, the command or the file.
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | `401 those credentials were not accepted` | One message for every failure | The API log says which it was |
-| `429` with `Retry-After` | A failed-login backoff | Wait; it is per name |
+| `429` with `Retry-After` | A failed-login backoff | Wait; it is per address and name, or per address across names |
 | `403 no rule in [role] permits … against ""` | The role lacks a runner the endpoint uses | Add it to the named role; **restart the API** |
 | Policy changes do nothing in the API | It reads the policy at start | Restart it |
 | `{"error":"not ready"}` | The API cannot reach the hub | `halite-api doctor`; the operator certificate |
