@@ -6,56 +6,162 @@ done to check its 20 High and 55 Medium findings (plus the design note
 M-56) on 2026-10-15, at the same commit. It is a working document for
 choosing and tracking fixes, not a ledger: each fix still gets its own
 `DIVERGENCE.md` section, and a `CHANGELOG.md` entry where an operator
-would notice.
+would notice. The status section below was brought up to date on
+2026-10-16. The triage under it is still as of 2026-10-15. Nothing holds
+this file to the code, so it drifts as work lands.
 
-## Fixes opened so far
+## Status on 2026-10-16
 
-One PR per logical change, all referencing issue 321 and none closing
-it. "Before merge" names a run on real hardware that the PR's own
-author could not do.
+Checked against `main` at `d8ceba1`, after every PR that references
+issue 321 had merged. The status comes from the merged PRs and the
+commit log, with each PR's body read for parts it said it left unfixed.
+The fixes were not re-run for this update, except where a row says so.
+Issue 321 stays open, because what is below is not finished.
 
-| Finding | PR | Before merge |
+| | Fixed | Not fixed |
 |---|---|---|
-| H-01 RBAC target kind | #344 | |
-| H-03 archive symlink escape | #333 | |
-| H-04 template limits (+ L-engine-1, L-engine-3) | #332 | |
-| H-05 background `runas` | #327 | |
-| H-06 `listen` reactions | #347 | |
-| H-07 agentless cache trust | #326 | |
-| H-08 `file.line` regex (+ empty delete) | #343 | |
-| H-09 `ArbitraryCode` flags | #330 | |
-| H-10 token revoke race | #335 | |
-| H-11 cert revoke race | #338 | a FreeBSD hub run of the file lock |
-| H-12 compound target depth | #324 | |
-| H-13, M-18, M-41 `--test` mutations (+ beacons, x509) | #345 | |
-| H-14 dotted systemd unit names | #350 | |
-| H-15 mount device identity | #328 | |
-| H-16 `cpan.module_version` | #341 | |
-| H-17 mdadm create guard | #349 | the fleet `linux` leg |
-| H-18 zfs/zpool properties | #348 | the fleet `freebsd` leg |
-| H-19 gitfs verifies the served commit | #325 | |
-| H-20 aws-secrets region | #329 | |
-| M-02 signed-job replay | #339 | |
-| M-04 typed job signing (breaking) | #337 | |
-| M-32 package name injection | #331 | |
-| M-46 timezone traversal | #336 | |
-| M-49 gitfs keeps served trees | #346 | |
-| M-50 pillar `S@` targets | #334 | |
-| M-54 SLS name spellings (state half) | #340 | |
-| M-55 `file_ignore_glob` fnmatch | #342 | |
-| M-08, M-09 login backoff by (source, name) | #352 | |
-| M-10 login timing, equal work | #353 | |
-| M-38 pf anchor order | #354 | |
-| M-37 firewall value validation | #355 | a grep of the FreeBSD trees for host names in `from`/`to` |
-| M-36 netplan refused file | #356 | |
-| M-39 hostname short vs FQDN | #357 | |
-| M-28 agentless `oneshot` tree | #358 | |
-| M-16 webhook ingress (`auth: mtls` now refused) | #359 | |
-| Section 1.2 toolchain (go1.27.2) | #360 | |
-| M-01 `allow_sls` refuses the highstate (operator-visible) | #366 | a hub-to-node run under a narrowed role |
+| High (20) | 19 | H-02 |
+| Medium (55) | 21 | 34: 3 mentioned and explicitly left, 1 half done, 30 not started |
+| M-56 (design note) | | not done |
+| Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
-Not yet started: H-02 (extension manifest signing; a format decision),
-and the Medium findings not listed above.
+### Fixed
+
+"Left by the PR" is what the PR itself recorded as found and not fixed.
+"Before merge" was a run on real hardware that the PR's author could
+not do. Each has been checked to see whether it happened.
+
+| Finding | PR | Left by the PR | Before merge |
+|---|---|---|---|
+| H-01 RBAC target kind (also `{id}` lists, mine, `DispatchAs`) | #344 | the reactor's `wouldAuthorize` output and resume are untested | |
+| H-03 archive symlink escape | #333 | | |
+| H-04 template limits (+ L-engine-1, L-engine-3) | #332 | a value nested in a loop (`{% set ns.x = [ns.x] %}`) still overflows the stack; chained `set` filters, `truncate` leeway, `zfill`; SPEC 10.2.8's sandbox claim | |
+| H-05 background `runas` | #327 | | |
+| H-06 `listen` reactions | #347 | | |
+| H-07 agentless cache trust | #326 | M-14 (below) | |
+| H-08 `file.line` regex (+ empty delete) | #343 | | |
+| H-09 `ArbitraryCode` flags | #330 | | |
+| H-10 token revoke race | #335 | M-07 (below) | |
+| H-11 cert revoke race | #338 | M-05 (below) | **done**: a live FreeBSD hub on beastie, with `keys revoke` beside it, at 32 nodes. `main` lost a revocation in each round, and this held. DIVERGENCE 5.323 |
+| H-12 compound target depth | #324 | | |
+| H-13, M-18, M-41 `--test` mutations (+ beacons, x509) | #345 | | |
+| H-14 dotted systemd unit names | #350 | | |
+| H-15 mount device identity | #328 | FAT UUIDs whose case differs from the link | |
+| H-16 `cpan.module_version` | #341 | | |
+| H-17 mdadm create guard | #349 | | **done**: fleet run 38853579313 on the branch. On the `linux` leg the three live mdadm tests PASS, including `TestLiveMdadmCreateRefusesAMemberHoldingAFilesystem` |
+| H-18 zfs/zpool properties | #348 | | **done**: fleet run 38854713721 on the branch. On the `freebsd` leg `zfs.filesystem_present`, `zfs.absent`, `zpool.present` and `zpool.absent` conformance PASS |
+| H-19 gitfs verifies the served commit | #325 | | |
+| H-20 aws-secrets region | #329 | `internal/s3fs` and `internal/awskms` build hosts from regions too (hub configuration, not a node) | |
+| M-01 `allow_sls` refuses the highstate | #366 | `allow_mods`'s keyword gap, closed by #367 | **not done**: no job was dispatched hub to node under a narrowed role. The fleet's policies were not read for a role that relies on the old behaviour |
+| M-02 signed-job replay | #339 | | on FreeBSD since: 0.75–0.82 ms per signed job on beastie's ZFS (5.328) |
+| M-04 typed job signing (breaking) | #337 | | live mixed-version run on beastie (5.330) |
+| M-08, M-09 login backoff by (source, name) | #352 | | |
+| M-10 login timing, equal work | #353 | | |
+| M-16 webhook ingress (`auth: mtls` now refused) | #359 | | |
+| M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
+| M-28 agentless `oneshot` tree | #358 | | |
+| M-32 package name injection | #331 | | |
+| M-36 netplan refused file | #356 | | |
+| M-37 firewall value validation | #355 | | **done**: beastie's hub serves no firewall states, so no `from`/`to` there meets the new refusal. pf parsed every accepted form (`pfctl -n`). Other hubs' trees not searched |
+| M-38 pf anchor order | #354 | | |
+| M-39 hostname short vs FQDN | #357 | | |
+| M-46 timezone traversal | #336 | | |
+| M-49 gitfs keeps served trees | #346 | two remotes, one unreachable: that one stops being listed (DIVERGENCE 5.293); a partly refused remote drops its environment | |
+| M-50 pillar `S@` targets | #334 | | beastie's pillar root is empty, so nothing there meets the refusal (5.329) |
+| M-54 SLS name spellings | #340 (state), #362 (policy) | | |
+| M-55 `file_ignore_glob` fnmatch | #342 | | |
+| Section 1.2, the toolchain's ten advisories | #360 (go1.27.2) | M-03 (below) | |
+
+Changes made while doing these, not findings of the audit: #369 holds
+an extension's `Version` to its code, and refuses a binary whose
+handshake differs from its signed manifest (DIVERGENCE 5.325). That
+does not close H-02. #370 fixed `internal/sshexec`'s tests under a
+umask of 002 (5.326).
+
+### Not fixed
+
+Severities are this file's revised ones, from the tables below.
+
+**High.**
+
+- **H-02, the extension manifest is not signed.** Not started. It waits
+  on a format decision. #369 now checks the name and version a binary
+  reports against its manifest. That check does not cover `declares`
+  (root, network) or `executables`, and those are what make H-02 High.
+
+**Medium, mentioned by a PR and explicitly left.**
+
+- **M-05**, Medium: serials superseded by a renewal are denylisted in
+  memory only, and a hub restart forgets them (#338).
+- **M-07**, Medium or higher: `Redeem` parses every token file on every
+  API request (#335).
+- **M-14**, Medium if the hub's ssh is older than 9.6: ssh option
+  injection through a roster's host or user (#326).
+
+**Medium, half done.**
+
+- **M-03**, Low: the toolchain bump (#360) removed the ten advisories,
+  but no workflow runs `govulncheck`. `make vuln` still runs
+  `govulncheck@latest`, unpinned.
+
+**Medium, not started (30).** Ordered by area. FreeBSD is tier 1 and
+carries about 80% of production, so the four marked FreeBSD come first
+when choosing.
+
+| ID | Finding | Revised |
+|---|---|---|
+| M-33 | pkgng/apk ignore pins | Medium (FreeBSD) |
+| M-43 | FreeBSD rcvar not `<name>_enable` | Medium, leaning higher (FreeBSD) |
+| M-44 | BSD remount and `defaults` in fstab | Medium if FreeBSD rejects `defaults` (FreeBSD) |
+| M-35 | fstab without fstype | Medium (FreeBSD and Linux) |
+| M-06 | unbounded enrollment; a bogus token locks out the real node | Medium |
+| M-11 | 1 MiB line limit silently loses a job | Medium |
+| M-12 | returns from non-targets counted | Low-Medium |
+| M-13 | a flood of returns erases history | Medium |
+| M-15 | a relay can claim node IDs (DIVERGENCE 1.9 is wrong about grains and `via`) | Medium |
+| M-19 | `file.managed` on a symlink | Medium |
+| M-20 | edits drop owner/group | Medium, maybe higher |
+| M-21 | string-typed modes | Medium |
+| M-22 | `file.recurse`, including `clean` deleting `exclude_pat` matches | Medium |
+| M-23 | setuid cannot be removed | Medium |
+| M-24 | `git.latest user` ignored | Medium |
+| M-25 | `enroll --force` leaves a key pair every later enroll dies on | Medium |
+| M-26 | renewal ordering (recoverable) | Low |
+| M-27 | script with runas | Low-Medium |
+| M-29 | recursive chmod/chown follows symlinks | Medium |
+| M-30 | `~/.ssh` symlink | Medium |
+| M-31 | directory umask | Low |
+| M-34 | pin without release | Low |
+| M-40 | `iptables.save` | Low |
+| M-42 | LVM alias with `-ff` | Medium |
+| M-45 | free-form values in modprobe, nftables, fstab, pkgrepo and others | Medium |
+| M-47 | firewall lockout, no `-w` | Low |
+| M-48 | D-Bus 90 s deadline | Low |
+| M-51 | s3fs staleness (the ETag comment is not what the code does) | Medium |
+| M-52 | template differences from Jinja2 | Medium |
+| M-53 | gitfs buffers the whole archive | Medium |
+
+**M-56, runners are not scoped.** SPEC 23.5 still says nothing about it.
+Either a sentence there or scoping is owed.
+
+**Low (section 5 of the audit).** Not checked. The audit lists 60
+bullets and says there are about 90. None has been triaged, so none can
+be called fixed. Some may have been fixed in passing by the PRs above;
+that has not been looked for.
+
+**Also from section 1, not addressed.** The staticcheck results (1.3).
+Two live tests whose assumptions are wrong on current distributions
+(1.1): `TestLiveAuthselectReads` expects the `minimal` profile, which
+upstream renamed `local`; `TestLiveDnfModuleReadersAgree` gates on a
+`dnf` binary rather than dnf4, and on dnf5 the module reports "no
+streams" instead of saying modularity is unsupported.
+
+**Ledger and comment statements found to be false** (the table below).
+Each was to be corrected with the fix that touches it. The rows for
+M-15 (DIVERGENCE 1.9) and H-02 (the extension comments that say
+declarations are signed) belong to findings not fixed, so those
+statements are presumably still false. The others were not re-checked
+for this update.
 
 ## How this was checked, and what that does not cover
 
