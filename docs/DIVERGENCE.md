@@ -28460,7 +28460,10 @@ Each was broken on purpose and watched to fail:
 - **No real sender**: no GitHub, GitLab or other webhook source was
   pointed at a running API. Everything above is the handler under
   `httptest`, plus one `serve` started from the test binary.
-- **macOS only** (Darwin 25.6). CI runs the tests on all four platforms.
+- **Where it ran.** First on macOS (Darwin 25.6). After the merge with
+  main on 2026-10-16, `internal/api` and `cmd/halite-api` also passed on
+  Linux (Ubuntu), and natively on FreeBSD 15.1-RELEASE-p5 under `-race`
+  (beastie, commit 0172ef0). CI runs the tests on all four platforms.
 - **The cost of a flood** was reasoned about, not measured: no load was
   generated, so how many unauthenticated deliveries a second an API can
   check before the sender's are delayed is not known.
