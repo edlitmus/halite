@@ -128,9 +128,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, _ := s.Accounts.Lookup(req.Username)
-	// Verified even when the account does not exist, so that the answer
-	// takes the same time either way: a login that is faster for an
-	// unknown name enumerates accounts.
+	// Verified even when the account does not exist, at the cost of a
+	// default hash, so that the answer takes the same time as for an
+	// account hashed at the default: a login that is faster for an
+	// unknown name enumerates accounts. An account hashed at another
+	// count takes its own time; see account.Verify.
 	ok := acct.Verify(req.Password)
 	if ok && acct.Disabled {
 		ok = false

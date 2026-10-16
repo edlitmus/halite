@@ -25440,6 +25440,74 @@ address", and the budget.
   handler with 105 hashes. The handler tests show the same keying with
   one hash each.
 - No real client or directory was used. Only run on macOS.
+### 5.305 An unknown login name was checked at a third of a real one's cost
+
+Found by the audit of issue #321 (M-10). 5.232 says a failed local
+login runs PBKDF2 for an unknown name too, "so the two take the same
+time", and the comments on `account.Verify` and in the login handler
+said the same. They did not. `Verify` on a nil account derived at
+`MinIterations`, 210,000. Every hash `halite-api account hash` writes,
+and `Hash`'s own default, is at `DefaultIterations`, 600,000. Measured
+once each on this Mac, before the change: 135 ms for a wrong password
+against an account hashed by default, 47 ms for a name with no account.
+A caller timing a handful of logins could tell which names exist, which
+is what the single failure message and the per-name backoff covering
+unknown names (5.232) exist to deny.
+
+**What changed**, in `internal/account/account.go`:
+
+- An unknown account is checked against `unknownAccount`, a verifier
+  built from the constants `Hash` uses: `DefaultIterations`,
+  `saltLength`, `keyLength`. It is not a copy of their values, so
+  raising `DefaultIterations` raises it too.
+- Both paths go through one `Verify` body: the same `derive` (which
+  `Hash` also uses), and the same constant-time comparison. Only the
+  verifier differs. The comparison's result is discarded for the
+  unknown account, so no password matches it, the empty one included.
+- The comments on `Verify` and in the login handler now say what is
+  true. The work is equal to an account hashed **at the default**.
+
+**An account hashed at another count is still distinguishable.** A
+record carries its own count, so one set with `--iterations`, or written
+before `DefaultIterations` was last raised, takes its own time, and an
+unknown name cannot know which count to imitate. The `Verify` comment
+says so, and that setting such a password again at the default puts it
+back in the crowd. Nothing reports which accounts are not at the
+default.
+
+Tests, in `internal/account/verifywork_test.go`. `derive` is a variable
+so that a test can record what each path asks of it, without timing
+PBKDF2 runs against each other:
+
+- `TestAnUnknownAccountIsVerifiedWithTheWorkOfADefaultHash` hashes as
+  the CLI does (`DefaultIterations`) and as `Hash(…, 0)` does. It
+  requires one derivation for a known account and one for an unknown
+  one, with the same iteration count and salt length, and keys of the
+  same length.
+- `TestNoPasswordVerifiesAnUnknownAccount` runs the real derivation
+  with the empty password.
+
+Broken on purpose, the first test failed both times. With the unknown
+verifier set back to `MinIterations` it reported "asked for
+{iterations:210000 …}, a known one for {iterations:600000 …}". With the
+old nil branch restored in front of the shared path, it reported the
+same.
+
+After the change, the same single measurement: 133 ms for the known
+account and 132 ms for the unknown name.
+
+**Not covered:**
+
+- The timing was measured once each, on one Mac, and only as a check on
+  the structural test. No statistical timing test was run, deliberately.
+- The rest of the login handler was not examined for timing beyond the
+  hash. A disabled account and a second-factor account do the same hash
+  and then a little more.
+- `internal/api/loginlimit.go`'s header still says every failed login
+  runs at "the enforced minimum of 210,000 iterations" and that an
+  unknown name takes the same time. That file is being changed by
+  another branch, so it is left to whichever of the two lands second.
+- Only run on macOS.
 
 
 

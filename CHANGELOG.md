@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A login for an unknown name takes as long as one for a real account
+
+A failed local login for a name with no account checked a cheaper hash
+than a real account's: about 47 ms against 135 ms. So timing a few
+logins showed which account names exist. An unknown name now does the
+same work as an account hashed with the default settings. An account
+hashed with a different `--iterations`, or before the default was
+raised, still takes its own time. Setting its password again with
+`halite-api account hash` fixes that.
+
+
 ### Login backoff is per address, and spraying names is throttled
 
 A failed login backed its *name* off for everybody, so anyone who knew
