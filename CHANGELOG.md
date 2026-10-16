@@ -21,6 +21,25 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Login backoff is per address, and spraying names is throttled
+
+A failed login backed its *name* off for everybody, so anyone who knew
+an account's name could keep its owner out of it by failing once each
+time the window opened, about 105 requests a day. The backoff is now
+per address and name: guessing from one address no longer affects a
+login from another. A right password from an address inside its window
+is still refused there.
+
+- **New: a per-address budget of failed logins**, across all names:
+  thirty, draining one every thirty seconds. Past it, every login from
+  that address gets 429, "too many failed logins from this address",
+  with `Retry-After`.
+- The address is the connection's peer. `X-Forwarded-For` is not read,
+  so behind a reverse proxy every caller shares the proxy's address and
+  its budget. An IPv6 address is counted by its /64.
+- **A username over 256 bytes is refused with 400** and is not logged.
+
+
 ### A revoked API token can no longer be brought back by a request in flight
 
 Every authenticated API request rewrote its token's record to move the

@@ -20616,6 +20616,17 @@ true, as do the command reference and the metric's values.
   keyed by address.
 - Only run on macOS.
 
+#### 5.232, corrected: "a backoff, not a lockout" was a lockout
+
+The reason given above for a backoff, that a lockout lets anybody who
+knows the break-glass account's name keep its owner out, was true of
+the design and false of the code. The window was keyed by the name
+alone and checked before the password, so one failure each time it
+opened kept the name refused for everybody. 5.304 has the measurement
+and the change: the backoff is now keyed by source and name, and a
+per-source budget covers the spray across names that the list above
+admitted was not held.
+
 
 ### 5.233 Three copies of one token bucket, and one never tested
 
@@ -25320,6 +25331,115 @@ store on every request, to find the one whose digest matches (M-07 in
 the review that found this). That is a cost that grows with the store.
 It is not a correctness defect, and it has its own fix (an index by
 digest) that is not this one.
+### 5.304 The login backoff locked a name's owner out, and held no spray
+
+Found by the audit of issue #321 (M-09), and reproduced against the
+limiter with a simulated clock before anything was changed. 5.232 keyed
+the login backoff by name alone (`local:ed`, `ldap:ed`) and checked it
+before the password. A name was let go only after a whole fifteen
+minutes with no failure. So:
+
+- **A third party could keep the owner out.** One failure each time the
+  window opened, timed by the `Retry-After` the hub itself sent, grew
+  the window to fifteen minutes and kept it there. Over a simulated day
+  that is 105 requests, and the name was refused 100% of the time, to
+  its owner from any address, with the right password. The refusals
+  cost the attacker no hash. 5.232 called this "a backoff, not a
+  lockout"; against an active attacker it was a lockout.
+- **Spraying across names was not held** by anything but the bound on
+  checks in flight, as 5.232's own "Not covered" said. One address
+  cycling through a thousand names had a thousand fresh windows.
+- **The username was unbounded.** It was used as a map key and written
+  to the log on every failure, up to the request body's limit (M-08).
+
+**What changed**, in `internal/api/loginlimit.go` and its two callers:
+
+- The backoff is keyed by **(method, source, name)**. The doubling, the
+  fifteen-minute cap, the 4,096-entry bound and its eviction are as
+  they were. An attacker failing from one address now holds that
+  address, and the owner's address has no window at all.
+- **A right password from inside the window is still refused, from that
+  source.** Answering it would let the attacker test each guess for
+  free during the window. Other sources are unaffected, which is what
+  stops it being a lockout.
+- **Each source has a budget of failures**, across every name: thirty
+  in hand, draining one every thirty seconds, about 2,880 a day. Past
+  it, every login from that source is refused with 429 and
+  `Retry-After`, "too many failed logins from this address", before
+  anything is looked up or hashed. Only failures spend it, so correct
+  logins from a shared address cost nothing, and a success does not
+  refill it. The table is bounded at 4,096 sources, and a full one
+  gives up the source with the least spent.
+- It is not `internal/ratelimit.Bucket` (5.233): `Take` checks and
+  spends in one step, and the login must check before it knows whether
+  this attempt is a failure.
+- **The source is the connection's peer** (`RemoteAddr`), never
+  `X-Forwarded-For`. The API is documented to face its callers
+  directly, a reverse proxy being optional (handbook chapter 32), and
+  there is no setting naming a proxy to trust. Honouring the header
+  would let a caller choose the source it is held to. An IPv6 peer is
+  held by its /64, because one host is routinely given a whole /64. An
+  IPv4-mapped peer is its IPv4 address.
+- **A username over 256 bytes is refused with 400** before it is keyed,
+  stored, logged or counted, and before the `eauth` switch, so LDAP is
+  covered too. The name is not echoed. This is M-08, carried in the
+  same change because it is three lines in the same handler.
+
+Tests, in `internal/api/loginsource_test.go`, with an injected clock:
+
+- `TestAnAttackerFailingAtEveryWindowDoesNotHoldTheOwnersAddress` runs
+  the day against the limiter, 105 failures from one address, and
+  requires the owner's address to be free after each. It also requires
+  the attacker to have been held for more than 23 hours, so that it is
+  known the attack ran.
+- `TestALoginBackedOffAtOneAddressIsAcceptedFromAnother`, through the
+  handler with a set `RemoteAddr`: 429 with `Retry-After: 900` at the
+  attacker's address, even for the right password, and 200 for the
+  owner from another at the same instant.
+- `TestSprayingNamesFromOneAddressIsThrottled`: the last failure of the
+  budget goes through the handler, then a fresh name is refused from
+  that address, not from another, and is allowed again after one drain.
+- `TestAnLDAPFailureSpendsTheSourcesBudget`.
+- `TestAnOversizedUsernameIsRefusedBeforeItIsKeptOrLogged`: 257 bytes
+  gets 400, nothing in the log or the limiter's tables; 256 bytes gets
+  the ordinary 401.
+- `TestALoginsSourceIsThePeerAndAnIPv6PeerIsItsSlash64`, with
+  `X-Forwarded-For` and `X-Real-IP` set to another address.
+- `TestAFloodOfSourcesCannotResetTheSprayersBudget`.
+
+Each fix was broken on purpose, and the tests named failed:
+
+- keying by name again failed the first two;
+- a source budget that never refuses failed the spray, LDAP and flood
+  tests;
+- a handler that does not charge the budget failed the spray and LDAP
+  tests;
+- removing the length check failed the oversize test;
+- holding IPv6 per address failed the source test;
+- evicting the most-spent source failed the flood test.
+
+The existing tests of 5.232 pass unchanged.
+
+SPEC 23.2 and its 25.1 row, handbook chapters 26, 32, 34 and 39, the
+command reference and the metric's description now say "from that
+address", and the budget.
+
+**Not covered:**
+
+- **Behind a proxy every caller is the proxy.** The backoff then falls
+  back to per name, which is the lockout this removes, and the budget
+  becomes one budget for everybody behind it. There is no trusted-proxy
+  setting; adding one is its own change.
+- **A guesser with many addresses** is held per address, not per name.
+  Any limit on a name across sources is one a third party can trip for
+  its owner. With a botnet, the bound on checks in flight is what is
+  left.
+- The budget's size and drain rate are a judgement, not a measurement
+  of any estate. An office behind one NAT address shares one budget.
+- The day was simulated against the limiter, not run through the
+  handler with 105 hashes. The handler tests show the same keying with
+  one hash each.
+- No real client or directory was used. Only run on macOS.
 
 
 
