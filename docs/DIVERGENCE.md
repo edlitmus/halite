@@ -28313,6 +28313,45 @@ because no shipped extension imports a vendored package. A third-party
 extension's version is held only by the handshake check, since its
 source is not here.
 
+### 5.326 The agentless tests failed under a umask of 002
+
+`go test ./internal/sshexec` failed nine tests on a machine whose umask
+is 002. That is the default for a user with a private group on Ubuntu,
+and it is this project's Linux workstation. Each failure was the trust
+check refusing the test's own directory:
+
+    refusing /tmp/TestAnAgentlessRunPushesThenUsesItsCache…/001: accounts other than its owner may write to it (drwxrwxr-x)
+
+`t.TempDir()` makes a 0700 directory per test, and inside it one
+directory per call, with mode 0777 filtered by the umask. Under 022
+that is `drwxr-xr-x`. Under 002 the group may write to it. The thin
+directory's trust check refuses anything below a directory another
+account may write to, and a group counts. The check was right. The
+tests had asked for a directory and never looked at its mode. Their
+own `mkdir` helper already set modes explicitly, with a comment saying
+the umask would otherwise interfere, but the directory it was called
+inside had no such care. CI's runners and beastie use 022, so only a
+developer on a 002 machine ever saw it, and it read as an unrelated
+environment problem. Being read that way is how it survived. While
+working on 5.325 it was first taken for noise, then reproduced on an
+untouched `main` before anybody called it pre-existing.
+
+The tests now take their directories from `privateTempDir`, which
+sets 0700 on what `t.TempDir()` returned. Nothing outside the tests
+changed.
+
+Measured: on this host (Linux, umask 002) the package passes under
+umasks 002, 022 and 077. With `privateTempDir`'s chmod removed, the
+same nine tests fail under 002, as `main` does. On beastie (FreeBSD
+15.1, native), untouched `main` fails under 002 and passes under 022,
+and this change passes under both. A full `go test ./...` under 002 on
+this host had only this package failing.
+
+**Not verified.** The three mount-namespace tests in
+`live_noexec_linux_test.go` skip on this host ("cannot mount a tmpfs …
+in this namespace") under any umask. They use the helper now, but they
+have not run with it here. CI's Linux leg is where they run.
+
 
 
 

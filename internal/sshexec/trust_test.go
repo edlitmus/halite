@@ -57,7 +57,7 @@ type harness struct {
 
 func newHarness(t *testing.T, thinDir string) *harness {
 	t.Helper()
-	bin := t.TempDir()
+	bin := privateTempDir(t)
 
 	ssh := filepath.Join(bin, "ssh")
 	// The last argument is the remote command: `/bin/sh -s` with a
@@ -122,6 +122,28 @@ func (h *harness) plantedRan() bool {
 	return err == nil
 }
 
+// privateTempDir is t.TempDir with its mode set, rather than left to
+// the umask.
+//
+// t.TempDir makes a 0700 directory per test and, inside it, one per
+// call with mode 0777 filtered by the umask. Under the common 022 that
+// is drwxr-xr-x. Under 002, the default for a user with a private group
+// on Ubuntu and others, it is drwxrwxr-x. The trust check refuses a thin
+// directory below anything another account may write to, and the group
+// counts. So every test here that put a thin directory under
+// privateTempDir(t) failed on such a machine, refusing the test's own
+// directory. The check was right, because the test had asked for a
+// directory it did not inspect. CI's runners use 022, so nothing showed
+// it until a developer ran the package on a 002 host.
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // mkdir makes a directory with exactly this mode; the umask would
 // otherwise take the write bits a test is trying to give it.
 func mkdir(t *testing.T, path string, mode os.FileMode) string {
@@ -136,7 +158,7 @@ func mkdir(t *testing.T, path string, mode os.FileMode) string {
 }
 
 func TestAnAgentlessRunPushesThenUsesItsCache(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	h := newHarness(t, dir)
 
 	first := h.run()
@@ -229,7 +251,7 @@ func TestABinaryPlantedWhereAnotherAccountCouldWriteIsNotRun(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, "")
-			h.target.ThinDir = tc.setup(h, t.TempDir())
+			h.target.ThinDir = tc.setup(h, privateTempDir(t))
 
 			r := h.run()
 			if h.plantedRan() {
@@ -255,7 +277,7 @@ func TestABinaryPlantedWhereAnotherAccountCouldWriteIsNotRun(t *testing.T) {
 // that everything the test made reads as somebody else's.
 func fakeID(t *testing.T, o *Options) {
 	t.Helper()
-	bin := t.TempDir()
+	bin := privateTempDir(t)
 	writeExec(t, filepath.Join(bin, "id"), "#!/bin/sh\necho 4242\n")
 	o.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
 }
@@ -269,7 +291,7 @@ func TestAThinDirOwnedByAnotherAccountIsRefused(t *testing.T) {
 	}
 	for _, planted := range []bool{true, false} {
 		h := newHarness(t, "")
-		dir := mkdir(t, filepath.Join(t.TempDir(), "halite-thin"), 0o700)
+		dir := mkdir(t, filepath.Join(privateTempDir(t), "halite-thin"), 0o700)
 		if planted {
 			h.plant(dir, 0o700)
 		}
@@ -294,7 +316,7 @@ func TestAThinDirOwnedByAnotherAccountIsRefused(t *testing.T) {
 // makes it an acceptable parent. Without this the default would refuse
 // on every machine.
 func TestAStickySharedParentIsAccepted(t *testing.T) {
-	parent := mkdir(t, filepath.Join(t.TempDir(), "var-tmp"), 0o777|os.ModeSticky)
+	parent := mkdir(t, filepath.Join(privateTempDir(t), "var-tmp"), 0o777|os.ModeSticky)
 	h := newHarness(t, filepath.Join(parent, "halite-thin"))
 	if r := h.run(); r.Err != nil || !r.Pushed {
 		t.Fatalf("a run under a sticky parent: pushed=%v err=%v", r.Pushed, r.Err)
@@ -310,7 +332,7 @@ func TestAStickySharedParentIsAccepted(t *testing.T) {
 // repairing it would mean deciding which of its entries to believe.
 // Before this change `prepare` quietly `chmod 700`ed it.
 func TestAThinDirOfOurOwnThatOthersMayWriteIsRefused(t *testing.T) {
-	dir := mkdir(t, filepath.Join(t.TempDir(), "halite-thin"), 0o777)
+	dir := mkdir(t, filepath.Join(privateTempDir(t), "halite-thin"), 0o777)
 	h := newHarness(t, dir)
 	r := h.run()
 	if r.Err == nil || !strings.Contains(r.Err.Error(), "accounts other than its owner may write to it") {
@@ -322,7 +344,7 @@ func TestAThinDirOfOurOwnThatOthersMayWriteIsRefused(t *testing.T) {
 // a new directory comes from `mkdir -p` with the umask's mode, and the
 // `chmod 700` after the owner check is what makes it private.
 func TestANewThinDirIsMadePrivate(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	h := newHarness(t, dir)
 	if r := h.run(); r.Err != nil || !r.Pushed {
 		t.Fatalf("pushed=%v err=%v", r.Pushed, r.Err)
@@ -339,7 +361,7 @@ func TestANewThinDirIsMadePrivate(t *testing.T) {
 // A binary in a trusted place whose content is not its name is replaced,
 // not run: the hash is taken in the same script as the check.
 func TestACachedBinaryThatIsNotItsDigestIsReplaced(t *testing.T) {
-	dir := mkdir(t, filepath.Join(t.TempDir(), "halite-thin"), 0o700)
+	dir := mkdir(t, filepath.Join(privateTempDir(t), "halite-thin"), 0o700)
 	h := newHarness(t, dir)
 	h.plant(dir, 0o700)
 
@@ -376,7 +398,7 @@ func TestARootOwnedBinaryIsTrusted(t *testing.T) {
 
 func TestARelativeThinDirIsRefusedBeforeConnecting(t *testing.T) {
 	h := newHarness(t, "halite-thin")
-	h.o.SSH = filepath.Join(t.TempDir(), "no-such-ssh")
+	h.o.SSH = filepath.Join(privateTempDir(t), "no-such-ssh")
 	r := h.run()
 	if r.Err == nil || !strings.Contains(r.Err.Error(), "not an absolute path") {
 		t.Fatalf("got %v; want a refusal saying thin_dir must be absolute", r.Err)
@@ -387,7 +409,7 @@ func TestARelativeThinDirIsRefusedBeforeConnecting(t *testing.T) {
 // `<digest>.partial`, and one failed when the other renamed it first
 // (handbook chapter 17). Each now stages under a name of its own.
 func TestConcurrentRunsAgainstOneMachineBothSucceed(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	var wg sync.WaitGroup
 	results := make([]Result, 6)
 	for i := range results {
@@ -412,7 +434,7 @@ func TestConcurrentRunsAgainstOneMachineBothSucceed(t *testing.T) {
 // 2 on it. This is the deterministic half of the concurrent test above,
 // which passed locally and failed in CI on timing.
 func TestTheProbeNameIsNotFixed(t *testing.T) {
-	dir := mkdir(t, filepath.Join(t.TempDir(), "halite-thin"), 0o700)
+	dir := mkdir(t, filepath.Join(privateTempDir(t), "halite-thin"), 0o700)
 	if err := os.Mkdir(filepath.Join(dir, ".halite-probe"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +446,7 @@ func TestTheProbeNameIsNotFixed(t *testing.T) {
 
 // The staging file is made by mktemp, not computed from the digest.
 func TestTheStagingNameIsNotPredictable(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	h := newHarness(t, dir)
 	first, err := h.o.prepare(context.Background(), h.target, dir)
 	if err != nil {
