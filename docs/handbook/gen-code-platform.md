@@ -247,13 +247,14 @@ Six packages had their own copy of the same write-a-temp-file-and- rename helper
 
 which are the two sides of one race. MoveFileEx has to open the destination for delete with no sharing; a reader holding it open makes that fail, and while it holds it a reader's open fails instead. Neither error mentions the other party, and neither is recoverable by the caller, so both are handled here rather than at eighteen call sites.
 
-**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `perm.go`; with tests.
+**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `perm.go`, `root.go`; with tests.
 
 **Exports.**
 
 - `Read` (func): Read is os.ReadFile.
 - `Rename` (func): Rename is rename(2), which is atomic and does not care who has the destination open.
 - `Write` (func): Write replaces path with data, atomically as far as any reader is concerned: a reader sees either the old contents or the new, never a partial write and never an empty file.
+- `WriteIn` (func): WriteIn is Write for a name inside an os.Root: every component of name is resolved by the root, so a symlink anywhere on the way -- one that was already on disk, or one an archive created a moment earlier -- is followed only while it stays inside the root, and refused when it leaves.
 - `WritePrepared` (func): WritePrepared is Write with one step inserted between the finished temporary file and the rename.
 
 ## `internal/fileperm`

@@ -761,7 +761,7 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	// `runas: deploy` started the command as root and reported success,
 	// and `runas: no-such-user` -- an error in the foreground -- returned
 	// a pid. Nothing the operator could see said the account had been
-	// dropped. DIVERGENCE 5.290.
+	// dropped. DIVERGENCE 5.301.
 	if err := applyCredential(c, cmd); err != nil {
 		return Result{}, err
 	}
