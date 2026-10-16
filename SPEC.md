@@ -927,6 +927,13 @@ maximum output size 64 MiB, maximum loop iterations per render 10,000,000, maxim
 100, maximum include and import depth 25, and a wall-clock deadline of 60 seconds by default. Every
 limit produces a named error with a template position.
 
+Parsing is bounded too, because a Go stack overflow ends the process rather than the render.
+Statements nest at most as deep as the recursion depth (100), and one expression at most 1,000
+levels, counting both brackets and the height of a chain such as `1 + 1 + ... + 1`. A single string
+a builtin builds (`indent`, `center`, `zfill`, `*`) may be no larger than the output limit, and a
+single list (`range`, `*`, `batch`, `slice`, `permutations`, `combinations`) may hold no more items
+than the iteration limit, both checked before the value is built.
+
 Rendering happens in the unprivileged sandbox subprocess described in section 25.4.
 
 ### 10.3 The `exec` renderer

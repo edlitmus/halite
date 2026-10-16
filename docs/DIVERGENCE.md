@@ -26292,6 +26292,161 @@ Each was restored and the tests passed.
 - **yes/no.** No settable property takes `yes|no` as far as zfsprops(7)
   and zpoolprops(7) say, so a boolean is always rendered `on`/`off`. A
   declared `"yes"` string is passed through unchanged.
+### 5.312 A template could end the process that rendered it
+
+The hub compiles pillar in its own process, and a node renders in its
+own unless `render_sandbox` is on, which it is not by default. So a
+template that overflows the Go stack or asks for more memory than there
+is ends the hub or the node. Both are fatal errors in Go, not panics:
+nothing above the engine can recover them. The engine's limits (SPEC
+10.2.8) bounded what a render writes and how often it loops, but not how
+deep the parser recursed, how tall the tree it built was, or how large a
+value a builtin made before anything was written. An audit (H-04)
+reported this; it was reproduced here, against `origin/main` at
+`79b035b`, before anything was changed.
+
+**What was demonstrated on the old code.** With the Go stack capped at
+4 MiB in a child process (a 256th of the default), each of these died
+with `fatal error: stack overflow`: 300,000 `(`, `not` or `-`; 200,000
+`[`; 100,000 `{'a': `; a 300,000-term `1 + 1 + ...`; 200,000 chained
+`|abs`; 100,000 `1 if 0 else`; and 100,000 nested `{% if %}`. A chain is
+the case a parser-only bound misses: it is parsed by a loop without
+recursing, into a left-leaning tree as tall as it is long, and the
+renderer, the filter chain and `migrate`'s walkers all recurse down it.
+With `MaxOutput` and `MaxIterations` set to 1000, these built values past
+the limits, because only what is written is charged: `indent(width=2000)`
+(2,003 bytes), `center(2000)`, `'a'.zfill(2000)`, `[1, 2] * 501`, and
+`permutations(6)` of six items (720 results, under the count limit, and
+4,320 items). These panicked out of `RenderString`, which recovered
+nothing: `indent(width=-1)` (negative `Repeat` count), `'ab' *
+4611686018427387904` (the size check multiplied, and the product
+wrapped), `'abc'.zfill()` (read `args[0]` before counting),
+`truncate(-9223372036854775807)` (slice bounds) and `'::/0' |
+cidr_subnets(63)` (a negative `make` capacity). `range(9223372036854775800,
+9223372036854775807, 5)` had not returned after a minute: the counter
+wraps past `stop` and is below it again. Nor had `[] *
+9223372036854775807`, which looped the count to append nothing.
+`'2001:db8::/64' |
+cidr_subnets(65)` returned the same subnet twice, and `'2001:db8::/80' |
+cidr_subnets(81)` did not return in five minutes.
+
+Some cases were **not** run on the old code, because running them is the
+failure: `[1] * 10000000000`, `batch(10000000000, 0)`,
+`slice(10000000000)` and `range(-9223372036854775807,
+9223372036854775807)`. Their behaviour is read from the code. The last
+is the audit's reading too: `stop - start` overflows, the count goes
+negative, is clamped to zero, passes the item limit, and the loop runs.
+
+**The audit's account of parse time was wrong in one particular.** It
+put the quadratic cost in nested blocks. It was in the lexer, and nesting
+had nothing to do with it: `findNextDelim` searched the whole rest of the
+source for each of `{{`, `{%` and `{#` at every tag, so any template
+lacking one of them, which is most templates, lexed in quadratic time.
+4,000 *sequential* `{% if 1 %}x{% endif %}` took 166 ms, the same as
+4,000 nested; 20,000 lines of them took 4.6 s.
+
+**The changes.**
+
+- *Statement nesting* is bounded in the parser at `MaxDepth`, counting a
+  statement itself, as `renderNode` counts. `renderNode` already refused
+  to render past it, so this refuses nothing that could have rendered
+  through that branch. It does refuse a template whose too-deep branch
+  is never taken, which rendered before: no tree nests a hundred
+  statements, and Jinja itself stops at 98 nested `if` and 20 nested
+  `for` (Python's own block limits).
+- *Expression nesting* is bounded at 1,000 (`maxExprDepth`), in two
+  places that must both hold. The parser counts its own recursion
+  (brackets, prefix `not` and `-`, the right of `**`, the `else` of a
+  conditional), which catches parentheses, which make no node. And the
+  finished tree is measured (`depth.go`), which catches chains.
+  `TestDepthWalkCoversEveryField` reads `ast.go` with `go/parser` and
+  fails if the walker misses a node type or a field. It is not
+  `MaxDepth`, because Jinja accepts taller expressions than 100. Against
+  Jinja 3.1.6 on CPython 3.14 the tallest that render are 69 nested
+  parentheses, 75 nested lists, about 491 chained `+`, `or` or `**`, 491
+  `not` or `-`, and 328 chained filters, all under 1,000. A `~` chain is
+  the exception: Jinja flattens it and accepted 20,000 terms. Here one
+  past 999 `~` is refused. That is a divergence, recorded here and not
+  expected to matter. On the other side, an expression at the limit,
+  inside 99 nested `if`, parses and renders on a 32 MiB stack. It needed
+  between 3 and 4 MiB on darwin/arm64, with and without `-race`, and
+  more than 4 MiB under `-race` on CI's windows-2022/amd64, where the
+  first version of the test, at 4 MiB, overflowed. Every hostile shape
+  was rerun on the old code with the stack at 16 and 32 MiB and still
+  overflowed. At 64 MiB, 100,000 `else` did not, which is why the test
+  stops at 32. On darwin/arm64 the default 1 GiB stack is about 250
+  times what that template needs. The margin on windows/amd64 under
+  `-race` is not known: it needed more than 4 MiB, and whether 32 is
+  enough there is for the next CI run to show.
+- *Allocations* are checked before they are made, against `MaxOutput`
+  for one string and `MaxIterations` for one list, with products checked
+  by division: `indent` (the pad times the lines it lands on, so a wide
+  indent of one line still costs nothing, as in Jinja), `center`,
+  `zfill`, string and list `*`, `range`, `batch` with a fill, `slice`,
+  and `permutations`/`combinations` (now counting items, not results).
+  An empty list times any count is empty without looping the count.
+- *Negative counts* follow Python where Python defines them:
+  `'ab' * -1` and `[1] * -1` are empty, `indent(width=-1)` is no indent,
+  `center(-5)` and `zfill(-3)` leave the string alone. `truncate` with a
+  length shorter than its end string is an error, which is Jinja's
+  `assert length >= len(end)`. Before, `truncate(2)` returned `...`.
+- *`range`* counts in unsigned arithmetic and computes each item from
+  its index, so it can neither wrap the count nor the counter.
+- *`cidr_subnets`* bounds the split by its exponent (at most 2^16 subnets,
+  as before) and advances the address by adding the step to its bytes.
+  The results for /64 to /65, /80 to /81, `::/0` to /1 and two IPv4
+  splits were checked against Python's `ipaddress`. This was audit item
+  L-engine-1, and it is the same class: a panic and an unbounded loop in
+  a filter.
+- *The lexer* caches the next position of each opening delimiter and
+  searches again only when one has been consumed inside a tag, so each
+  delimiter's searches cover disjoint stretches of the source. 20,000
+  lines now lex in about 20 ms. `TestLexingIsLinear` compares two sizes
+  rather than a clock. It failed on the old code at 15.4 times the time
+  for four times the input.
+- *Panics* are recovered in `Parse` and `Render` into an error that says
+  it is a halite defect. This is a backstop: each panic above is fixed
+  where it happened, and `TestPanicsAtTheirSource` fails if one reaches
+  the backstop. It cannot catch a stack overflow or an out-of-memory.
+- *`value.DecodeJSON`* (audit item L-engine-3) refuses nesting deeper
+  than 10,000, which is `encoding/json`'s own `maxNestingDepth`, so it
+  refuses nothing `json.Unmarshal` accepts. The test checks this with
+  `json.Valid` at both edges. Under the pinned go1.26.6, the old code
+  decoded 10,001 levels, because `Decoder.Token` keeps its stack on the
+  heap with no limit. Under go1.27.2, `encoding/json` is built on
+  json/v2 (`JSONv2` is on by default in its `internal/buildcfg`), and
+  its `Token` already refused 10,001 with "exceeded max depth". So this finding depends on the toolchain. It is real for the
+  toolchain that releases are built with.
+
+There is no parse deadline. Parsing is now linear and its depth is
+bounded, so its cost is set by the size of the source, which the engine
+does not bound.
+
+**Not done, and found while doing this.**
+
+- *A value can be as deep as a loop can make it.* `{% set ns.x = [ns.x]
+  %}` in a loop of 200,000 builds a list nested that deep. Printing it
+  overflowed the 4 MiB stack in a child process. Whether
+  `MaxIterations` (10,000,000) is enough to do the same on the default
+  1 GiB stack was not tried. A fix needs a depth bound in every
+  recursive walk of a value: rendering, comparison, `tojson`, and the
+  YAML and JSON encoders. That is a separate change.
+- `{% set x | upper | trim %}` is a parse error here. Jinja 3.1.6 accepts
+  the chain and gives `AB` for ` ab `. Only one filter is read.
+- `truncate` has no leeway. Jinja returns a string unchanged when it is
+  within five characters of the length.
+- `zfill` counts bytes rather than characters, and does not keep a
+  leading sign in front of the zeros, as Python's does.
+- SPEC 10.2.8 still says that rendering happens in the sandbox
+  subprocess. By default it does not, and that is the premise of this
+  section.
+
+**Not verified.** Nothing here was run on FreeBSD, or anywhere but
+darwin/arm64 with go1.27.2 and the pinned go1.26.6. The stack figures
+come from 4 to 32 MiB children, not the default stack. No real Salt tree was
+rendered through the new limits to check that none is refused. The
+template corpus and the package tests pass, and that is the evidence
+that nothing ordinary is refused.
 
 
 
