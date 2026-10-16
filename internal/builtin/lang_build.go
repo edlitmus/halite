@@ -391,7 +391,7 @@ var perlModuleName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Z
 // cpan.module_version used to build `perl -M<name> -e 'print $<name>::VERSION'`,
 // so the name was Perl source twice over. `Carp;BEGIN{print "INJECTED\n"}`
 // ran its BEGIN block, as root, from a function declared non-mutating and
-// not arbitrary_code -- a read-only grant was a root shell. DIVERGENCE 5.290.
+// not arbitrary_code -- a read-only grant was a root shell. DIVERGENCE 5.298.
 //
 // A refusal is an error rather than the empty string the function returns
 // for a module that is not installed: "not installed" would be a claim about

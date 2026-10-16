@@ -13,7 +13,7 @@ import (
 // a read-only grant reaches it. It used to splice the module name into
 // perl source (`-M<name>` and `-e 'print $<name>::VERSION'`), and
 // `Carp;BEGIN{print "INJECTED\n"}` ran its BEGIN block -- reproduced with
-// perl 5.44.0 before this was fixed. DIVERGENCE 5.290.
+// perl 5.44.0 before this was fixed. DIVERGENCE 5.298.
 //
 // A name that is not a Perl package name is refused before anything runs.
 func TestCpanModuleVersionRefusesANameThatIsNotAPackage(t *testing.T) {
