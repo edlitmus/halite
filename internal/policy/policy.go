@@ -71,7 +71,7 @@ type Request struct {
 	// first and dispatch then ran the second. Every site that
 	// authorizes a job must pass the kind the job will be compiled
 	// under -- the same value it hands to Dispatch -- or the two paths
-	// disagree about which nodes were asked for. DIVERGENCE 5.290.
+	// disagree about which nodes were asked for. DIVERGENCE 5.296.
 	TargetKind string
 	Fun        string
 	Arg        []string
@@ -466,7 +466,7 @@ func namedExactly(patterns []string, fun string) bool {
 // was the literal text of a compound expression granted that expression
 // by equality; but a rule's target is never compiled as a compound --
 // VisibleNode reads it as a glob -- so that grant meant something the
-// rest of the policy did not. DIVERGENCE 5.290.
+// rest of the policy did not. DIVERGENCE 5.296.
 func targetCovered(granted string, kind target.Kind, asked string) bool {
 	if granted == "*" {
 		return true

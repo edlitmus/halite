@@ -515,7 +515,7 @@ func matchScalarOrList(v any, pred func(string) bool) bool {
 // that split on commas but not on surrounding spaces -- or dropped empty
 // elements where dispatch kept them -- would be deciding about a
 // different set of nodes from the one the job reaches. One function is
-// the only way the two cannot drift. DIVERGENCE 5.290.
+// the only way the two cannot drift. DIVERGENCE 5.296.
 func ListIDs(expr string) []string {
 	var out []string
 	for _, id := range strings.Split(expr, ",") {

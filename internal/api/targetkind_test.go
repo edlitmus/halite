@@ -8,7 +8,7 @@ import (
 
 // The API authorizes a run as the kind it forwards to the hub.
 //
-// DIVERGENCE 5.290: the policy question carried no kind, so the target
+// DIVERGENCE 5.296: the policy question carried no kind, so the target
 // string was judged as a glob -- and, having no `*?[`, as a literal
 // node name -- while the hub compiled it as tgt_type said. A role for
 // `web*` could then reach db1 as a list, a compound or a pcre. Every

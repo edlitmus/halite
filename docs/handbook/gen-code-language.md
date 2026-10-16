@@ -264,10 +264,11 @@ The compiler reproduces Salt's semantics including the parts that are surprising
 
 One departure is worth stating up front: every error is collected and reported together. Salt reports the first and stops, which makes fixing a large tree an iterative grind. SPEC section 11.2 step 10.
 
-**Files:** `compile.go`, `diag.go`, `highstate.go`, `lowstate.go`, `order.go`, `requisite.go`, `top.go`; with tests.
+**Files:** `compile.go`, `diag.go`, `highstate.go`, `lowstate.go`, `order.go`, `requisite.go`, `slsname.go`, `top.go`; with tests.
 
 **Exports.**
 
+- `CanonicalSLS` (func): CanonicalSLS is the one definition of what an SLS name may look like, and every path that turns a name into a file, or decides whether a name may be loaded, goes through it.
 - `Chunk` (type): Chunk is one executable unit of the low state: a single state module function with its resolved arguments.
 - `CompileTopTarget` (func): CompileTopTarget builds the matcher for one top file entry, honouring the `- match: grain` directive Salt allows as the first list item.
 - `Compiled` (type): Compiled is the result of a compilation.

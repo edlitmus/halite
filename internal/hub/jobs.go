@@ -204,7 +204,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 	//
 	// The kind goes with the target: it is what Dispatch below compiles
 	// the target under, and a check that read the string as a glob let
-	// `web1.prod,db1.prod` (-L) past a `web*.prod` rule. DIVERGENCE 5.290.
+	// `web1.prod,db1.prod` (-L) past a `web*.prod` rule. DIVERGENCE 5.296.
 	decision := s.Policy.Authorize(policy.Request{
 		Principal:  principal,
 		Target:     req.Target,

@@ -69,7 +69,7 @@ func (s *Server) nodeDetail(w http.ResponseWriter, r *http.Request, token *apito
 	// an endpoint that says it is one. The policy now authorizes each
 	// element of a list, which closes the escalation; refusing the
 	// segment here is the other half, so the endpoint means what its
-	// path says whatever the policy grants. DIVERGENCE 5.290.
+	// path says whatever the policy grants. DIVERGENCE 5.296.
 	if err := pki.ValidateNodeID(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

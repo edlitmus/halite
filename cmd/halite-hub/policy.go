@@ -117,7 +117,7 @@ func runPolicy(args *cli.Args) int {
 		// The kind is part of the question: `web1.prod,db1.prod` is one
 		// string to a glob and two nodes to a list, and a test that
 		// could only ask the glob question would say "denied" about a
-		// request the hub decides differently. DIVERGENCE 5.290.
+		// request the hub decides differently. DIVERGENCE 5.296.
 		req := policy.Request{
 			Principal:  args.Positional[1],
 			Target:     args.Positional[2],

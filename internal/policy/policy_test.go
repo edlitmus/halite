@@ -257,7 +257,7 @@ bindings: []
 // reach a node outside it, or is a kind whose reach a string cannot
 // tell. root's `*` rule covers every kind. service.restart, because
 // alice's readonly role grants test.ping against `*` and would answer
-// every row. DIVERGENCE 5.290: before,
+// every row. DIVERGENCE 5.296: before,
 // the rows marked "the escalation" were allowed, because the target
 // was matched literally against web*.prod whatever its kind, and `*`
 // consumes commas, spaces and `|`.

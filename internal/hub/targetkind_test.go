@@ -40,7 +40,7 @@ bindings:
 }
 
 // An operator submitting straight to the hub is authorized as the kind
-// the job is dispatched under. DIVERGENCE 5.290: the hub's own check
+// the job is dispatched under. DIVERGENCE 5.296: the hub's own check
 // carried no kind either, so a scoped operator did not need the API to
 // reach db1 -- every "refused" row here was dispatched to it.
 func TestTheHubAuthorizesAJobAsItsKind(t *testing.T) {

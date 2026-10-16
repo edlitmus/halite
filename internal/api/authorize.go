@@ -62,7 +62,7 @@ func requestFor(fun, target string, arg []string, kwarg map[string]any, runner b
 // node-shaped string under glob and as two nodes under list, and an API
 // that authorized the first and forwarded the second let a `web*.prod`
 // role reach db1.prod. Taking the kind as a required argument, rather
-// than a field someone may forget to set, is the point. DIVERGENCE 5.290.
+// than a field someone may forget to set, is the point. DIVERGENCE 5.296.
 func jobRequestFor(fun, target, kind string, arg []string, kwarg map[string]any) policy.Request {
 	req := requestFor(fun, target, arg, kwarg, false)
 	req.TargetKind = kind

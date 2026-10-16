@@ -410,7 +410,7 @@ func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) 
 // kind is the target kind in the flag form Dispatch takes, and must be
 // the same value the job is dispatched with: a policy that judged the
 // target as one kind while Dispatch compiled it as another authorized a
-// different set of nodes from the one the job reached. DIVERGENCE 5.290.
+// different set of nodes from the one the job reached. DIVERGENCE 5.296.
 func policyRequestFor(principal, fun, target, kind string, arg []string, kwarg map[string]any, runner bool) policy.Request {
 	return policy.Request{
 		Principal:  principal,
