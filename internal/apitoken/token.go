@@ -289,7 +289,7 @@ func (s *Store) Get(id string) (*Token, error) {
 // `halite-api token revoke`, a separate process, or from a logout in
 // this one -- was then overwritten by the stale copy with Revoked
 // false, and the revoked token worked again with nothing in any log to
-// say so. DIVERGENCE 5.290. The idle clock now goes to its own file
+// say so. DIVERGENCE 5.303. The idle clock now goes to its own file
 // (touch), so the only writer of a record after Issue is Revoke, and the
 // only thing Revoke writes is Revoked true. No interleaving of any
 // number of processes can turn that back, which is why there is no lock

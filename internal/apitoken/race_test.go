@@ -28,7 +28,7 @@ func twoStores(t *testing.T) (*Store, *Store) {
 
 // A revocation that lands while a request is being authenticated --
 // after Redeem read the record and before it wrote the idle clock --
-// must still be in force afterwards. Before DIVERGENCE 5.290, Redeem
+// must still be in force afterwards. Before DIVERGENCE 5.303, Redeem
 // wrote back the whole record it had read, with Revoked false, and the
 // revoked token worked again.
 func TestARevocationDuringARedeemIsNotUndone(t *testing.T) {

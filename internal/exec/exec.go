@@ -754,6 +754,17 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	if cmd.Stdin != "" {
 		c.Stdin = strings.NewReader(cmd.Stdin)
 	}
+	// The account switch comes before the background branch, with the
+	// umask, the directory and the environment, because those four are
+	// what the child *is*; everything after the branch is about waiting
+	// for it. It sat after the branch, so `cmd.run` with `bg: true` and
+	// `runas: deploy` started the command as root and reported success,
+	// and `runas: no-such-user` -- an error in the foreground -- returned
+	// a pid. Nothing the operator could see said the account had been
+	// dropped. DIVERGENCE 5.301.
+	if err := applyCredential(c, cmd); err != nil {
+		return Result{}, err
+	}
 	if cmd.Background {
 		return startAndRelease(c)
 	}
@@ -764,9 +775,6 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	afterStart, cleanup := confineTree(c)
 	defer cleanup()
 	c.WaitDelay = waitDelay
-	if err := applyCredential(c, cmd); err != nil {
-		return Result{}, err
-	}
 
 	var stdout, stderr strings.Builder
 	c.Stdout = &stdout
