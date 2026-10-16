@@ -14,7 +14,7 @@ import (
 	"github.com/edlitmus/halite/internal/awsauth"
 )
 
-// DIVERGENCE 5.290. The region became part of the endpoint's host by
+// DIVERGENCE 5.324. The region became part of the endpoint's host by
 // concatenation, and could come from the node, so a node could send the
 // hub's signed request -- and its access key ID and session token -- to
 // a host of its choosing. These are the values that were shown to do

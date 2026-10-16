@@ -102,10 +102,106 @@ var ErrNotFound = errors.New("no such node in the key store")
 // Store is a directory of records.
 type Store struct {
 	dir string
-	// mu serialises read-modify-write. The hub is one process; a second
-	// one pointed at the same directory is a misconfiguration that the
-	// lock file guards against, not a supported arrangement.
+	// mu serialises this Store's own goroutines. It does nothing about
+	// another process, and there always is one: `halite-hub keys
+	// accept|reject|revoke|delete` and `keys token` open the same
+	// directory from the operator's shell while the hub is serving. This
+	// comment used to say a lock file guarded against a second process.
+	// There was no lock file, so a revocation from the CLI could be
+	// overwritten by the hub renewing the same node a moment later, and
+	// the node was left accepted with a fresh serial that no denylist
+	// had ever seen. DIVERGENCE 5.323. Every read-modify-write now runs
+	// inside locked, which takes mu and then an exclusive OS lock on
+	// lockName, so the exclusion is the same between processes as
+	// between goroutines.
 	mu sync.Mutex
+
+	// between, when set, runs inside each read-modify-write's critical
+	// section, after the record is read and before it is written: the
+	// window in which, before DIVERGENCE 5.323, another process's
+	// decision could land and then be overwritten. It lets a test put a
+	// second Store over the same directory -- which is what the hub and
+	// `halite-hub keys` are -- into exactly that window, instead of
+	// hoping a loop finds it. Nil in production.
+	between func(op, id string)
+}
+
+func (s *Store) inWindow(op, id string) {
+	if s.between != nil {
+		s.between(op, id)
+	}
+}
+
+// lockName is the file in the store's directory that every process
+// writing the store locks. It is never written to: it exists to be
+// locked, and the OS drops the lock when the holder exits, so a process
+// that dies holding it leaves nothing to clean up.
+const lockName = ".lock"
+
+// locked runs fn holding the store against every other writer, in this
+// process and in any other. fn may read and write records and tokens
+// through the unexported get/put/getToken/putToken, which take no lock
+// of their own.
+//
+// The lock covers the token directory as well as the records: it is
+// one store to an operator, and SpendToken and RevokeToken have the
+// same read-modify-write shape as Revoke and Renew.
+func (s *Store) locked(fn func() error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := s.openLock()
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := lockFile(f); err != nil {
+		return fmt.Errorf("locking the key store at %s: %w", s.dir, err)
+	}
+	defer unlockFile(f)
+	return fn()
+}
+
+// tryLocked reports whether the store's lock could be taken at this
+// moment, and releases it if it was. It is for the tests, which use it
+// to show -- without timing anything -- that another Store, in this
+// process or another, holds the lock.
+func (s *Store) tryLocked() (bool, error) {
+	f, err := s.openLock()
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	ok, err := tryLockFile(f)
+	if ok {
+		unlockFile(f)
+	}
+	return ok, err
+}
+
+// openLock opens the lock file, creating it if this is the first write
+// the store has seen. Read-write, because Solaris's fcntl lock needs a
+// descriptor open for writing to take a write lock.
+//
+// It is handed to the directory's owner as every record is (#317,
+// DIVERGENCE 5.285): `keys revoke` run as root is quite likely to be
+// the first writer, and a root-owned 0600 lock file would make every
+// write the hub's own account tried afterwards fail at the open.
+//
+// Through fileperm.OpenFile rather than os.OpenFile, so that 0600 is
+// carried out as an ACL on Windows rather than becoming the read-only
+// attribute; internal/fileperm's audit refused the os.OpenFile this
+// first shipped with, on every CI leg.
+func (s *Store) openLock() (*os.File, error) {
+	path := filepath.Join(s.dir, lockName)
+	f, err := fileperm.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("opening the key store's lock at %s: %w", path, err)
+	}
+	if err := inheritOwner(path, s.dir); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("handing the key store's lock at %s to its directory's owner: %w", path, err)
+	}
+	return f, nil
 }
 
 // Open prepares a store, creating the directory if it is absent.
@@ -212,10 +308,13 @@ func (s *Store) get(nodeID string) (*Record, error) {
 }
 
 // Put writes a record, replacing any earlier one.
+//
+// It takes the store's lock, but only around the write: a caller that
+// read the record first and decides from it has a read-modify-write
+// that Put cannot protect. The Authority's decisions go through locked
+// for that reason, and so should anything else that decides.
 func (s *Store) Put(rec *Record) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.put(rec)
+	return s.locked(func() error { return s.put(rec) })
 }
 
 func (s *Store) put(rec *Record) error {
@@ -237,19 +336,19 @@ func (s *Store) put(rec *Record) error {
 // action; it is the only one that loses the audit trail, so the caller
 // is expected to have said so out loud.
 func (s *Store) Delete(nodeID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	path, err := s.path(nodeID)
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("%s: %w", nodeID, ErrNotFound)
+	return s.locked(func() error {
+		if err := os.Remove(path); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%s: %w", nodeID, ErrNotFound)
+			}
+			return fmt.Errorf("deleting the record for %s: %w", nodeID, err)
 		}
-		return fmt.Errorf("deleting the record for %s: %w", nodeID, err)
-	}
-	return nil
+		return nil
+	})
 }
 
 // List returns every record, in node ID order.

@@ -115,7 +115,7 @@ type Config struct {
 	//
 	// A node controls its grains, and a region is part of the host the
 	// hub sends a signed request to, so a node-supplied region is used
-	// only when the operator has said it may be (DIVERGENCE 5.290).
+	// only when the operator has said it may be (DIVERGENCE 5.324).
 	NodeRegionAllow []string `json:"node_region_allow"`
 
 	// Credentials. The instance role needs none of these.
@@ -246,7 +246,7 @@ func (c *Config) provider() *awsauth.Provider {
 // secret it named through `node_grain` -- must also be the block's own
 // `region` or be listed in `node_region_allow`. That is a change from
 // the Salt module, which used the grain as given, and from this
-// extension before DIVERGENCE 5.290, which concatenated it into the
+// extension before DIVERGENCE 5.324, which concatenated it into the
 // endpoint's host: a node could point the hub's signed request, and
 // its access key ID and session token, at any host it liked.
 //

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -265,8 +266,18 @@ func resolveRelative(name, sls string, pkg bool, sourceSLS string, pos value.Pos
 
 // isPackage reports whether an SLS came from an `init.sls`, which is
 // what decides where its relative includes point.
+//
+// filePath is whatever the Loader reported: an OS path from
+// fileserver.Roots, which on Windows is separated by `\`, or a
+// `halite://env/...` URI from fileserver.Remote, separated by `/`. It
+// was tested for the suffix "/init.sls", so on a Windows node every
+// init.sls read from local roots was taken for a flat file and its
+// relative includes resolved one level too high -- 5.84's defect again,
+// on one platform. filepath.Base splits on both separators on Windows
+// and on `/` elsewhere, which is each platform's own idea of a path.
+// DIVERGENCE 5.84.
 func isPackage(filePath string) bool {
-	return strings.HasSuffix(filePath, "/init.sls") || filePath == "init.sls"
+	return filepath.Base(filePath) == "init.sls"
 }
 
 func parseExcludes(v any, sls string, pos value.Pos, diags *Diags) []excludeRef {

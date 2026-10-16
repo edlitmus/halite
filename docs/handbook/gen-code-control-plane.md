@@ -315,7 +315,7 @@ Package fileserver resolves halite:// and salt:// paths against configured roots
 
 Path containment is the security property this package exists to guarantee. Salt's CVE-2020-11652 was a directory traversal in exactly this code path, so every request resolves the path and confirms the result is inside the configured root \*after\* symlink resolution, and the property is covered by a test asserting that no input escapes. SPEC section 13.5.
 
-**Files:** `fetch.go`, `hash.go`, `manifest.go`, `remote.go`, `roots.go`; with tests.
+**Files:** `fetch.go`, `fnmatch.go`, `hash.go`, `manifest.go`, `remote.go`, `roots.go`; with tests.
 
 **Exports.**
 
@@ -429,7 +429,7 @@ Package keystore is the hub's record of who has asked to join and who has been l
 
 One JSON file per node, named for the node, written atomically. A directory rather than a database because the thing an operator does at three in the morning is read it, and because a key store that cannot be recovered with \`cat\` is a key store that gets recovered by guessing.
 
-**Files:** `authority.go`, `keystore.go`, `owner_other.go`, `owner_unix.go`, `token.go`; with tests.
+**Files:** `authority.go`, `keystore.go`, `lock_fcntl.go`, `lock_flock.go`, `lock_other.go`, `lock_windows.go`, `owner_other.go`, `owner_unix.go`, `token.go`; with tests.
 
 **Exports.**
 

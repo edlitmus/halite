@@ -258,6 +258,12 @@ func netplanManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	want := yaml.Encode(config, yaml.EncodeOptions{Indent: 2})
 	have, readErr := os.ReadFile(filepath.Clean(path))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		// A file that is there and cannot be read is a file that could
+		// not be put back if netplan refused what replaced it (below),
+		// so it is not replaced.
+		return states.False(fmt.Sprintf("%s could not be read, so it was not replaced: %v", path, readErr)), nil
+	}
 	unchanged := readErr == nil && string(have) == want
 
 	changes := value.NewMap(2)
@@ -270,11 +276,22 @@ func netplanManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	// it can hold a wireless passphrase, and a file left at 0644 is a
 	// warning on every run at best.
 	modeWrong := false
-	if info, err := os.Stat(path); err == nil && info.Mode().Perm() != 0o600 {
-		modeWrong = true
-		changes.Set(path+" mode", states.Change(info.Mode().Perm().String(), "-rw-------"))
+	prevMode := os.FileMode(0o600)
+	if info, err := os.Stat(path); err == nil {
+		prevMode = info.Mode().Perm()
+		if prevMode != 0o600 {
+			modeWrong = true
+			changes.Set(path+" mode", states.Change(prevMode.String(), "-rw-------"))
+		}
 	}
 
+	// Converged is decided on the bytes and the mode, without asking
+	// netplan. That is sound only because a run never leaves behind a
+	// file netplan refused (below). A refused file left by an earlier
+	// build, or put there by hand, still matches here and reads as
+	// converged; validating on every converged run would close that, at
+	// the price of a `netplan generate` on every run of every Ubuntu node,
+	// which nobody has watched for what it does to a NetworkManager host.
 	if changes.Len() == 0 {
 		return states.True(fmt.Sprintf("%s already holds the declared configuration.", path)), nil
 	}
@@ -295,14 +312,51 @@ func netplanManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 		}
 	}
 
-	// Validated after writing, because that is the only way netplan will
-	// look at it, and a configuration that does not render is one an
-	// operator wants to know about before they apply it rather than
-	// after.
+	// **Only a configuration that rendered, and was applied when asked,
+	// is left in /etc/netplan** (DIVERGENCE 5.38, and the section after
+	// it that records why this changed).
+	//
+	// This used to leave a refused file where it was, and the test said
+	// so on purpose: the result named the file as on disk and nothing
+	// applied, which was true. What nobody had followed is the *second*
+	// run. The comparison above is the whole of this state's idea of
+	// convergence, so on the next run the refused file matched the
+	// declaration byte for byte and the state reported True, "already
+	// holds the declared configuration", without asking netplan again.
+	// A failed `apply: true` went the same way: the file was written, the
+	// apply failed, and every later run found the file in place and never
+	// applied. And a file netplan will not render is not inert: netplan
+	// renders /etc/netplan at boot through its systemd generator (its
+	// documented design; a boot over a refused file has not been watched
+	// here), so the next boot meets it whether or not anybody applied
+	// anything.
+	//
+	// So on either failure the file is put back as it was -- the previous
+	// bytes and mode, or no file if there was none -- and the tree is
+	// rendered again from what is now there. The next run then finds the
+	// file different from the declaration, which is the truth, and tries
+	// again, failing again for as long as netplan refuses.
+	//
+	// Validating before writing, in a scratch root (`netplan generate
+	// --root-dir`), was the alternative, and is not this because it is
+	// not the same check: netplan reads the directory as a whole, so a
+	// scratch root would need a copy of the whole tree to give the answer
+	// the real directory gives, and it would replace the one invocation
+	// of netplan that has been watched validating this module's YAML
+	// (5.38) with one nobody has run.
+	//
+	// When only the mode was wrong (`unchanged`), nothing is put back:
+	// the content was there before this run and this run did not write
+	// it. The state still fails.
 	if err := netplanGenerate(c); err != nil {
+		if unchanged {
+			return states.False(fmt.Sprintf(
+				"%s already held the declared configuration and netplan will not render it: %v; "+
+					"nothing has been applied.", path, err)), nil
+		}
 		return states.False(fmt.Sprintf(
-			"%s was written and netplan will not render it: %v. The file is on disk and nothing has been applied.",
-			path, err)), nil
+			"%s was written and netplan will not render it: %v; nothing has been applied. %s",
+			path, err, netplanRestore(c, path, have, readErr == nil, prevMode))), nil
 	}
 
 	if !states.Bool(args, "apply", false) {
@@ -312,10 +366,46 @@ func netplanManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 			path), changes), nil
 	}
 	if err := netplanApply(c); err != nil {
+		// Put back for the same reason as a refused render: left in
+		// place, the next run would find it matching and never apply.
+		// What the failed apply changed before it failed is live and is
+		// not undone here -- undoing it would be another apply.
+		restored := ""
+		if !unchanged {
+			restored = " " + netplanRestore(c, path, have, readErr == nil, prevMode) +
+				" Whatever `netplan apply` changed before it failed is still live until the next apply or boot."
+		}
 		return states.False(fmt.Sprintf(
-			"%s was written and validated, and `netplan apply` failed: %v", path, err)), nil
+			"%s was written and validated, and `netplan apply` failed: %v.%s", path, err, restored)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s was written, validated and applied.", path), changes), nil
+}
+
+// netplanRestore puts a configuration file back as it was before this
+// run wrote it -- its previous bytes and mode, or no file at all -- and
+// renders the tree again from what is now there, and says which of
+// those happened in a sentence for the state's comment.
+//
+// The render is `netplan generate` again, not `apply`: it rewrites the
+// backend files under /run that the refused or unapplied document may
+// have reached, and touches no interface.
+func netplanRestore(c *exec.Context, path string, prev []byte, existed bool, mode os.FileMode) string {
+	var put string
+	if existed {
+		if err := writeAtomic(path, prev, mode); err != nil {
+			return fmt.Sprintf("The previous file could not be put back (%v), and %s is still on disk.", err, path)
+		}
+		put = "The previous file has been put back"
+	} else {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Sprintf("It could not be removed (%v), and is still on disk.", err)
+		}
+		put = "There was no file before, and it has been removed"
+	}
+	if err := netplanGenerate(c); err != nil {
+		return put + fmt.Sprintf(", and netplan will not render the tree as it now stands either: %v.", err)
+	}
+	return put + " and the tree rendered again."
 }
 
 func netplanApplyNote(args *value.Map) string {

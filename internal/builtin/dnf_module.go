@@ -148,6 +148,16 @@ func dnfPresent(c *exec.Context) error {
 // to stop is a leading `-`, which dnf would read as an option -- these
 // specs arrive from pillar and templates, and `--setopt=...` smuggled in
 // as a "module" would reconfigure the package manager.
+//
+// It is checked after pkgValidateName, not instead of it. Today the
+// regexp refuses everything pkgValidateName refuses (a leading `-`,
+// whitespace, control and format characters), so the order changes only
+// which message is given. But the two were two statements of one rule,
+// and the narrower one held only while nobody widened it: allowing `@`,
+// or a non-ASCII letter, is an edit to one character class, and nothing
+// would then have said that a module spec must still not be something
+// the package manager reads as an option. Calling the shared check
+// first makes that hold whatever this pattern becomes. DIVERGENCE 5.307.
 var dnfModuleSpec = regexp.MustCompile(`^[A-Za-z0-9_.+*][A-Za-z0-9_.+*:/-]*$`)
 
 func dnfModuleValidate(specs []string) error {
@@ -155,6 +165,9 @@ func dnfModuleValidate(specs []string) error {
 		return errors.New("no modules given")
 	}
 	for _, spec := range specs {
+		if err := pkgValidateName(spec); err != nil {
+			return err
+		}
 		if !dnfModuleSpec.MatchString(spec) {
 			return fmt.Errorf("%q is not a module spec; expected name, name:stream or name:stream/profile", spec)
 		}
@@ -207,6 +220,18 @@ func dnfModuleMutate(c *exec.Context, verb string, specs []string) (any, error) 
 	}
 	if err := dnfPresent(c); err != nil {
 		return nil, err
+	}
+	if c.Test {
+		// Every caller is TestUnreliable, and stays so: which streams a
+		// switch or an install would change is dnf's to resolve against
+		// repository metadata, and nothing here has watched a
+		// prediction of that come true. But unreliable means "cannot
+		// predict", not "acts anyway" -- a direct exec call with
+		// `--test` set used to run the transaction. So the answer names
+		// the command and claims no change.
+		return fmt.Sprintf("`%s` would be run; what it would change is dnf's to resolve, "+
+			"so nothing was run and no change is predicted",
+			exec.Command{Argv: dnfModuleArgv(verb, specs)}.String()), nil
 	}
 	before, err := dnfModuleReadStatus(DnfModulesDir)
 	if err != nil {

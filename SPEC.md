@@ -927,6 +927,13 @@ maximum output size 64 MiB, maximum loop iterations per render 10,000,000, maxim
 100, maximum include and import depth 25, and a wall-clock deadline of 60 seconds by default. Every
 limit produces a named error with a template position.
 
+Parsing is bounded too, because a Go stack overflow ends the process rather than the render.
+Statements nest at most as deep as the recursion depth (100), and one expression at most 1,000
+levels, counting both brackets and the height of a chain such as `1 + 1 + ... + 1`. A single string
+a builtin builds (`indent`, `center`, `zfill`, `*`) may be no larger than the output limit, and a
+single list (`range`, `*`, `batch`, `slice`, `permutations`, `combinations`) may hold no more items
+than the iteration limit, both checked before the value is built.
+
 Rendering happens in the unprivileged sandbox subprocess described in section 25.4.
 
 ### 10.3 The `exec` renderer
@@ -1951,7 +1958,10 @@ it has a static binary to work with.
 4. Send the job as JSON on stdin, execute in a one-shot local mode, receive the return as JSON on
    stdout with a framed delimiter that separates it from any stray target output.
 5. Cache the binary on the target under `/var/tmp/halite-thin/<version>-<digest>` so that
-   subsequent runs skip the transfer, and remove it on `--clean`.
+   subsequent runs skip the transfer, and remove it on `--clean`. A cached binary is executed only
+   when nobody but root and the connecting account could have written it: it, the cache directory,
+   and every directory above that are owned by one of the two and writable by no other account,
+   except that a parent may be a sticky directory such as `/var/tmp`. Anything else is refused.
 
 Pillar and file server content are compiled on the hub and sent inline with the job, or fetched by
 the pushed binary through a reverse tunnel that the `ssh` invocation sets up. Inline is the default
@@ -2052,11 +2062,15 @@ raised on each release.
 
 `POST /v1/login` takes no credential before the password, so it is throttled two ways. Password
 checks in flight are bounded at half the CPUs, and a login past that is refused with 503 before any
-hash is computed. And a failed login holds its name — any name, whether an account by it exists or
-not, so the answer is no oracle for which do — to a window refused with 429 and `Retry-After`,
-doubling from one second to fifteen minutes and cleared by a success. It is a backoff rather than a
-lockout, because a lockout lets anybody who knows the break-glass account's name keep its owner out.
-The LDAP path is held to the same backoff.
+hash is computed. A failed login holds its name *from that source* — any name, whether an account
+by it exists or not, so the answer is no oracle for which do — to a window refused with 429 and
+`Retry-After`, doubling from one second to fifteen minutes and cleared by a success. The source is
+the connection's peer address (an IPv6 peer by its /64), never a forwarded header. It is keyed by
+source and name rather than by name, because a window on the name alone lets anybody who knows the
+break-glass account's name keep its owner out of it from somewhere else. And a source's failures
+across every name share a budget of thirty, draining one every thirty seconds, past which every
+login from it is refused with 429. A username over 256 bytes is refused with 400 before anything
+keeps or logs it. The LDAP path is held to the same limits.
 
 Local accounts are intended for break-glass and for automation identities, not as the primary
 operator path. TOTP second-factor support is included, HMAC-SHA-1 over a time counter per RFC 6238,
@@ -2136,7 +2150,8 @@ Properties that are requirements, not suggestions:
   rule names both, and a request must match at least one rule entirely.
 - **Argument-level constraints.** A role may be permitted `state.apply` but restricted to a set of
   SLS names, and may be forbidden from passing `pillar` on the command line, which is otherwise a
-  trivial way to bypass pillar-based authorization.
+  trivial way to bypass pillar-based authorization. A restriction to SLS names excludes the
+  highstate: a request that names no SLS, or `state.highstate`, is refused under `allow_sls`.
 - **`cmd.run` is a distinct permission** from every other function and is never granted by a
   wildcard. `functions: ['*']` does not include `cmd.run`, `cmd.script`, `cmd.shell`, `module.run`,
   `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.
@@ -2310,7 +2325,7 @@ number. Changing it is a decision recorded here, not an implementation detail.
 | Adversary | Capability assumed | Primary controls |
 |---|---|---|
 | Unauthenticated network attacker reaching the hub port | Can send arbitrary TCP bytes | TLS 1.3 mutual auth terminated by the standard library before any application code; one port; no pre-auth application parsing; `/v1/health` returns a constant |
-| Unauthenticated network attacker reaching the API port | Can call the endpoints that issue a token | TLS 1.3; one answer for every failed login; a per-name login backoff that does not reveal which names exist; a bound on password checks in flight and on OIDC logins in flight (section 23.2) |
+| Unauthenticated network attacker reaching the API port | Can call the endpoints that issue a token | TLS 1.3; one answer for every failed login; a per-source-and-name login backoff that does not reveal which names exist, and a per-source budget of failed logins; a bound on password checks in flight and on OIDC logins in flight (section 23.2) |
 | Compromised node | Full control of one node, its key, its grains | Hub-side targeting so it sees only its own jobs; trusted-grain allowlist for pillar; event tag restrictions; deny-by-default peer access; rate limits; its certificate is revocable and short-lived; its evidence chain anchored at the hub, so a rewrite of anything it had reported contradicts the hub's record |
 | Compromised hub | Full control of the hub process | Optional detached job signing by an operator key the hub does not hold; node-side job expiry and replay caches; signed and pinned extensions; signed gitfs refs; append-only local evidence on the node, holding receipts the hub signed for the heads it anchored |
 | Malicious or compromised state tree | Can put arbitrary SLS, templates, and files in the file server | gitfs signature verification; strict undefined; render sandbox; template resource limits; no YAML object construction; `cmd.run` as a distinct permission; optional signed state trees |

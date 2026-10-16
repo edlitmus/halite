@@ -256,7 +256,7 @@ func (p *Provider) get(ctx context.Context, endpoint string, headers map[string]
 // The region goes through ServiceURL, which refuses anything that is
 // not a region name before it becomes part of a host. Here the region
 // is the operator's configuration rather than a node's, so this is the
-// cheaper half of DIVERGENCE 5.290 -- but a signed STS call is the one
+// cheaper half of DIVERGENCE 5.324 -- but a signed STS call is the one
 // that carries the long-lived key's signature, and the place a region
 // becomes a host is where it is checked, whoever supplied it. An
 // unknown partition keeps its old meaning (the commercial suffix), so

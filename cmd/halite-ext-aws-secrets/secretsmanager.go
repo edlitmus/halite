@@ -74,7 +74,7 @@ func (c *secretsClient) client() *http.Client {
 // node reporting `x@evil.example/` had the hub post a SigV4-signed
 // request -- access key ID in the Authorization header, session token
 // in X-Amz-Security-Token -- to evil.example, and put whatever came
-// back into that node's pillar (DIVERGENCE 5.290). Whoever supplied the
+// back into that node's pillar (DIVERGENCE 5.324). Whoever supplied the
 // region, this is where it becomes part of a host, so this is where it
 // is checked: awsauth.ServiceURL refuses anything that is not a region
 // name and then confirms the URL parses back to exactly the host meant.

@@ -434,7 +434,7 @@ func hostsTarget(args *value.Map) string {
 	return HostsPath
 }
 
-func hostsAppend(args *value.Map) (any, error) {
+func hostsAppend(c *exec.Context, args *value.Map) (any, error) {
 	path := hostsTarget(args)
 	addr := strings.TrimSpace(states.Str(args, "ip_addr", ""))
 	names := hostsEntryNames(args)
@@ -465,6 +465,14 @@ func hostsAppend(args *value.Map) (any, error) {
 		return fmt.Sprintf("No additional hosts were added to %s", path), nil
 	}
 
+	if c.Test {
+		// Everything above is a read, so the line it would add is known
+		// exactly; the write is the only step a dry run skips. This is
+		// what lets the signature claim reliable, which it could not
+		// while the write happened either way.
+		return fmt.Sprintf("The following line would be added to %s:\n%s %s",
+			path, addr, strings.Join(adding, " ")), nil
+	}
 	entries = append(entries, hostEntry{Address: addr, Names: adding})
 	if err := writeAtomic(path, []byte(renderHosts(entries)), 0o644); err != nil {
 		return nil, err
@@ -473,7 +481,7 @@ func hostsAppend(args *value.Map) (any, error) {
 		path, addr, strings.Join(adding, " ")), nil
 }
 
-func hostsRemove(args *value.Map) (any, error) {
+func hostsRemove(c *exec.Context, args *value.Map) (any, error) {
 	path := hostsTarget(args)
 	names := hostsEntryNames(args)
 	if len(names) == 0 {
@@ -486,7 +494,14 @@ func hostsRemove(args *value.Map) (any, error) {
 	// removeNamesFrom drops an address left with no names, which is what
 	// Salt means by "if doing so will leave a line containing only an IP
 	// address, then the line will be deleted".
+	before := renderHosts(entries)
 	entries = removeNamesFrom(entries, names, "")
+	if c.Test {
+		// Whether the file would change, as file.remove answers whether
+		// there is anything to remove. The real call returns true either
+		// way, which is Salt's answer and is kept.
+		return before != renderHosts(entries), nil
+	}
 	if err := writeAtomic(path, []byte(renderHosts(entries)), 0o644); err != nil {
 		return nil, err
 	}

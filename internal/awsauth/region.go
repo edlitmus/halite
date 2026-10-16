@@ -24,7 +24,7 @@ import (
 // userinfo and name a different host after it; no `:`, so it cannot
 // add a port; no `/`, `?` or `#`, so it cannot end the authority early
 // and make the real suffix a path or a query. Each of those has been
-// demonstrated against the Secrets Manager extension (DIVERGENCE 5.290),
+// demonstrated against the Secrets Manager extension (DIVERGENCE 5.324),
 // where the region could come from a node's own grains.
 var regionGrammar = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$`)
 

@@ -6,7 +6,7 @@ import (
 )
 
 // The grammar admits the regions of the three partitions and nothing
-// that can change which host a URL names (DIVERGENCE 5.290).
+// that can change which host a URL names (DIVERGENCE 5.324).
 func TestValidRegion(t *testing.T) {
 	for _, r := range []string{
 		"us-east-1", "eu-central-2", "us-gov-west-1", "cn-north-1", "cn-northwest-1",

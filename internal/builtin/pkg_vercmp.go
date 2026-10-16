@@ -106,6 +106,14 @@ func compareFreeBSD(c *exec.Context, a, b string) (any, error) {
 	if c.Which("pkg") == "" {
 		return nil, fmt.Errorf("pkg was not found on this node; FreeBSD version comparison is libpkg's and needs the binary")
 	}
+	// Each version is an argv element of its own here, so one beginning
+	// with `-` would be read by pkg(8) as an option. They arrive from a
+	// pin in pillar as easily as from `pkg query`. See pkgValidateVersion.
+	for _, v := range []string{a, b} {
+		if err := pkgValidateVersion("the comparison", v); err != nil {
+			return nil, err
+		}
+	}
 	res, err := c.Run(exec.Command{Argv: []string{"pkg", "version", "-t", a, b}, IgnoreExitCode: true})
 	if err != nil {
 		return nil, err
