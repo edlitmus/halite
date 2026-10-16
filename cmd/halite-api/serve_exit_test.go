@@ -110,7 +110,7 @@ func TestAPIServeExitsConfigForAFaultARestartCannotFix(t *testing.T) {
 		"a hooks block that does not parse": {
 			extra: "hooks:\n  deploy:\n    auth: rot13\n", says: "rot13"},
 		// An mtls hook could never authenticate a delivery, and is a
-		// configuration fault now rather than a dead hook. DIVERGENCE 5.290.
+		// configuration fault now rather than a dead hook. DIVERGENCE 5.327.
 		"an mtls hook": {
 			extra: "hooks:\n  deploy:\n    auth: mtls\n", says: "auth: mtls"},
 		"an issuer with no role map": {

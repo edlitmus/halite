@@ -83,11 +83,13 @@ to `local:<name>`; using both for one person is how a grant ends up
 somewhere nobody looks. TOTP (RFC 6238) can be added per account.
 
 Logins are throttled in two ways. Password checks in flight are bounded, and
-a login past that is refused with `503`. And a failed login holds its name,
-whether or not an account by that name exists, to a window refused with
-`429` and `Retry-After`, doubling from one second to fifteen minutes and
-cleared by a success. It is a backoff and not a lockout, because a lockout
-lets anybody who knows the break-glass account's name keep its owner out.
+a login past that is refused with `503`. A failed login holds its name *from
+that address*, whether or not an account by that name exists, to a window
+refused with `429` and `Retry-After`, doubling from one second to fifteen
+minutes and cleared by a success. Somebody guessing from elsewhere keeps only
+themselves out, never the account's owner. And one address's failures across
+all names share a budget of thirty, draining one every thirty seconds. The
+address is the connection's peer, so behind a proxy everybody shares one.
 Every failure returns the same message, so the response is no oracle for
 which accounts exist (the log says which it was).
 
@@ -183,6 +185,18 @@ that may restart `web*.prod` services cannot restart `db*` ones, and cannot
 `cmd.run` anything, whatever the operator types. Rules are never
 combined across to make a larger grant.
 
+A rule's `target` is a glob over node IDs, and a request is checked by the
+**kind** of target it uses:
+
+- **A glob** is covered if it is one node ID inside the rule's target, or
+  exactly the rule's target.
+- **A list** (`-L`) is covered if every node in it is inside the rule's
+  target.
+- **Any other kind** (compound, nodegroup, pcre, grain, pillar, subnet) is
+  covered only by `target: '*'`. Which nodes such an expression reaches
+  depends on the fleet when the job is sent, not on the text. An operator
+  with a scoped role names the nodes as a list instead.
+
 Function names are **patterns**: `service.*` is every function of the
 `service` module, `state.show_*` the inspection functions, `*` everything
 (with an important exception, below). A missing field matches nothing;
@@ -194,9 +208,9 @@ A rule can restrict how a function is called:
 
 | Limit | Meaning |
 |---|---|
-| `allow_sls: [webserver.*]` | `state.apply` may name only these SLS files (patterns). |
+| `allow_sls: [webserver.*]` | `state.apply` may name only these SLS files (patterns). A request naming none runs the highstate and is refused, as is `state.highstate`. |
 | `deny_sls: [...]` | ...or must not name these. |
-| `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. |
+| `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. Each name is checked, positional or the `sls` keyword, and each name of a comma list on its own. |
 | `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name. |
 
 `deny_kwargs: ['pillar']` matters more than it looks. Pillar can be passed
@@ -209,9 +223,10 @@ A function whose signature says `arbitrary_code` can run anything. They are
 never granted by a pattern; a role must **name** them:
 
 ```
-never granted by a wildcard: cmd.retcode, cmd.run, cmd.run_all, cmd.run_stderr,
-cmd.run_stdout, cmd.script, cmd.shell, cmd.wait, file.replace, file.write,
-module.run, module.wait, schedule.add, schedule.modify, schedule.run_job
+never granted by a wildcard: cmd.exec_code, cmd.retcode, cmd.run, cmd.run_all,
+cmd.run_bg, cmd.run_stderr, cmd.run_stdout, cmd.script, cmd.script_retcode,
+cmd.shell, cmd.wait, file.replace, file.write, module.run, module.wait,
+schedule.add, schedule.modify, schedule.run_job
 ```
 
 (That is `halite-hub policy show` for this build.) The list is taken from
@@ -260,6 +275,7 @@ can be tested in CI. Each of these was run against the policy above:
 | Command | Result |
 |---|---|
 | `policy test cert:CN=alice web1.prod state.apply webserver.nginx` | allowed by role "webops" rule 0 |
+| `… web1.prod state.apply` | denied: `state.apply` with no SLS names runs the highstate, which is not in the SLS names this role may apply (`webserver.*`) |
 | `… web1.prod state.apply db.postgres` | denied: `db.postgres` is not in the SLS names this role may apply (`webserver.*`) |
 | `… web1.prod state.apply webserver.nginx --kwarg pillar=x` | denied: `state.apply` may not be called with "pillar" by this role |
 | `… db1.prod test.ping` | allowed by role "readonly" rule 0 |
@@ -270,7 +286,9 @@ can be tested in CI. Each of these was run against the policy above:
 | `node:lb1.prod web1.prod pillar.items` | denied: no rule in [lb_peer] permits pillar.items against "web1.prod" |
 
 `--runner` evaluates the function as a hub runner and `--kwarg k=v` supplies
-an argument. A test suite for your policy is a shell script of these lines
+an argument. `--target-kind` reads the target as the kind a job would be sent
+with (`L`, `C`, `E`, `G`, … or `list`, `compound`, …). Without it, the target
+is a glob. A test suite for your policy is a shell script of these lines
 with the expected exit status: write it when you write the policy and run
 it on every change.
 

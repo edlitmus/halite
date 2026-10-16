@@ -75,7 +75,7 @@ type Hooks struct {
 	// inFlight holds the signatures being delivered right now. A
 	// signature is reserved here, under mu, in the same step that checks
 	// seen, so two copies of one delivery arriving together cannot both
-	// pass the check before either is recorded. DIVERGENCE 5.290.
+	// pass the check before either is recorded. DIVERGENCE 5.327.
 	inFlight map[string]bool
 	// buckets are the per-path rate limits on authenticated deliveries.
 	buckets map[string]*ratelimit.Bucket
@@ -203,11 +203,11 @@ func ParseHooks(v any) ([]*Hook, error) {
 			// identity to match, so any certificate at all would have
 			// passed. A setting that is either dead or open is worse than
 			// one that is refused, because somebody reading the
-			// configuration believes it. DIVERGENCE 5.290.
+			// configuration believes it. DIVERGENCE 5.327.
 			return nil, fmt.Errorf(
 				"hook %s: `auth: mtls` is not supported by this build: the API does not "+
 					"request or verify client certificates, so no delivery could authenticate. "+
-					"Use `hmac` or `token` (SPEC 22.2, DIVERGENCE 5.290)", path)
+					"Use `hmac` or `token` (SPEC 22.2, DIVERGENCE 5.327)", path)
 		case "":
 			return nil, fmt.Errorf(
 				"hook %s names no `auth`; every hook declares one, and there is no "+
@@ -286,7 +286,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	// bucket of its own -- which bounds what refusals cost in log lines,
 	// not in work: each one is still read and checked, because nothing
 	// short of checking tells a forgery from the sender. DIVERGENCE
-	// 5.290.
+	// 5.327.
 	nonce, err := s.authenticateHook(cfg, r, body)
 	if err != nil {
 		s.refuseHook(w, r, cfg, "unauthenticated", http.StatusUnauthorized, err)

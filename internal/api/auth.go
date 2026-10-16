@@ -38,12 +38,19 @@ type LoginResponse struct {
 	Expires   string   `json:"expires"`
 }
 
-// loginThrottled answers 429 for a name still inside its backoff window,
-// and reports whether it did. Nothing is hashed and nothing is looked up
-// for it, and the window is not lengthened: a refused attempt is free to
-// the hub and gains the caller nothing.
-func (s *Server) loginThrottled(w http.ResponseWriter, r *http.Request, method, key string) bool {
-	wait := s.logins().wait(key, s.now())
+// loginThrottled answers 429 for a source that has spent its budget of
+// failures, or for a name still inside its backoff window from this
+// source, and reports whether it did. Nothing is hashed and nothing is
+// looked up for it, and neither limit is moved: a refused attempt is
+// free to the hub and gains the caller nothing. See loginLimit.
+func (s *Server) loginThrottled(w http.ResponseWriter, method, source, key string) bool {
+	now := s.now()
+	message := "too many failed logins from this address; try again in "
+	wait := s.logins().sourceWait(source, now)
+	if wait <= 0 {
+		message = "too many failed logins for this name; try again in "
+		wait = s.logins().wait(key, now)
+	}
 	if wait <= 0 {
 		return false
 	}
@@ -53,9 +60,16 @@ func (s *Server) loginThrottled(w http.ResponseWriter, r *http.Request, method, 
 		seconds++
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(seconds))
-	writeError(w, http.StatusTooManyRequests,
-		"too many failed logins for this name; try again in "+strconv.Itoa(seconds)+"s")
+	writeError(w, http.StatusTooManyRequests, message+strconv.Itoa(seconds)+"s")
 	return true
+}
+
+// loginFailed charges a failure to the name from this source and to the
+// source's budget.
+func (s *Server) loginFailed(source, key string) {
+	now := s.now()
+	s.logins().failed(key, now)
+	s.logins().sourceFailed(source, now)
 }
 
 // login exchanges credentials for a token.
@@ -63,6 +77,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// Before anything keys, stores or logs the name: it comes from the
+	// caller, and the body bound is far larger than any name. It is
+	// refused as the malformed body above is, neither echoed nor logged
+	// nor counted as an attempt, because no credential was checked.
+	if len(req.Username) > loginNameMax {
+		writeError(w, http.StatusBadRequest,
+			"the username is longer than "+strconv.Itoa(loginNameMax)+" bytes")
 		return
 	}
 	switch req.Eauth {
@@ -90,9 +113,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Held to the backoff before anything is looked up or hashed, and
-	// for any name, real or not: see loginLimit.
-	key := "local:" + req.Username
-	if s.loginThrottled(w, r, "local", key) {
+	// for any name, real or not, from this source: see loginLimit.
+	source := loginSource(r)
+	key := loginKey("local", source, req.Username)
+	if s.loginThrottled(w, "local", source, key) {
 		return
 	}
 	if !s.logins().acquire() {
@@ -104,9 +128,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, _ := s.Accounts.Lookup(req.Username)
-	// Verified even when the account does not exist, so that the answer
-	// takes the same time either way: a login that is faster for an
-	// unknown name enumerates accounts.
+	// Verified even when the account does not exist, at the cost of a
+	// default hash, so that the answer takes the same time as for an
+	// account hashed at the default: a login that is faster for an
+	// unknown name enumerates accounts. An account hashed at another
+	// count takes its own time; see account.Verify.
 	ok := acct.Verify(req.Password)
 	if ok && acct.Disabled {
 		ok = false
@@ -116,7 +142,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logins().release()
 	if !ok {
-		s.logins().failed(key, s.now())
+		s.loginFailed(source, key)
 		s.m().authAttempts.With("local", "refused").Inc()
 		// One message for every failure. Which of the three it was is
 		// in the log and not in the answer, because the difference

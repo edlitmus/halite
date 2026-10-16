@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/apitoken"
+	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -62,6 +63,17 @@ func (s *Server) nodeDetail(w http.ResponseWriter, r *http.Request, token *apito
 		writeError(w, http.StatusBadRequest, "that is not a node identifier")
 		return
 	}
+	// The segment is one node, so it is held to what a node may enrol
+	// as. `/state` submits it as a list target, and a list splits on
+	// commas: `/v1/nodes/web1.prod,db1.prod/state` was two nodes through
+	// an endpoint that says it is one. The policy now authorizes each
+	// element of a list, which closes the escalation; refusing the
+	// segment here is the other half, so the endpoint means what its
+	// path says whatever the policy grants. DIVERGENCE 5.296.
+	if err := pki.ValidateNodeID(id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	switch {
 	case action == "" && r.Method == http.MethodGet:
@@ -102,13 +114,15 @@ func (s *Server) applyState(w http.ResponseWriter, r *http.Request, token *apito
 			return
 		}
 	}
-	if !s.authorize(w, token, requestFor("state.apply", id, req.SLS, nil, false)) {
+	// One kind, named once, for the question and for the job.
+	const kind = "L"
+	if !s.authorize(w, token, jobRequestFor("state.apply", id, kind, req.SLS, nil)) {
 		return
 	}
 
 	res, err := s.Hub.Submit(r.Context(), transport.SubmitRequest{
 		Target:     id,
-		TargetKind: "L",
+		TargetKind: kind,
 		Fun:        "state.apply",
 		Arg:        req.SLS,
 		Env:        req.Env,
@@ -200,10 +214,6 @@ func (s *Server) orchestrate(w http.ResponseWriter, r *http.Request, token *apit
 		writeError(w, http.StatusBadRequest, "an orchestration needs `sls`")
 		return
 	}
-	if !s.authorize(w, token, requestFor("state.orchestrate", "", []string{req.SLS}, nil, true)) {
-		return
-	}
-
 	kwargs := map[string]any{"sls": req.SLS}
 	if req.Env != "" {
 		kwargs["env"] = req.Env
@@ -213,6 +223,19 @@ func (s *Server) orchestrate(w http.ResponseWriter, r *http.Request, token *apit
 	}
 	if len(req.Pillar) > 0 {
 		kwargs["pillar"] = req.Pillar
+	}
+	// The question asked is the call forwarded, argument for argument.
+	// This used to authorize the name as a positional argument with no
+	// keyword arguments and then forward everything as keywords, so a
+	// role's deny_kwargs never saw the `pillar` that reached the hub --
+	// and the hub cannot catch it, because it judges this service's
+	// principal, not the caller's. Asking about the keywords is sound
+	// only because the policy now judges a keyword `sls` against
+	// allow_mods and deny_sls; before that, this change would have
+	// opened allow_mods instead of closing deny_kwargs. Issue 321 M-17;
+	// DIVERGENCE 5.321.
+	if !s.authorize(w, token, requestFor("state.orchestrate", "", nil, kwargs, true)) {
+		return
 	}
 	s.forwardRunner(w, r, "state.orchestrate", nil, kwargs)
 }

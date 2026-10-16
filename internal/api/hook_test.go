@@ -349,7 +349,7 @@ func TestADeliveryThatFailedDownstreamCanBeRetried(t *testing.T) {
 
 // `auth: mtls` could never succeed -- the API asks no client for a
 // certificate -- and would have accepted any certificate if it had. It is
-// refused when the configuration loads, saying why. DIVERGENCE 5.290.
+// refused when the configuration loads, saying why. DIVERGENCE 5.327.
 func TestAnMTLSHookIsRefusedAtLoad(t *testing.T) {
 	_, err := parseHooksErr("hooks:\n  deploy:\n    auth: mtls\n")
 	if err == nil {
@@ -408,7 +408,7 @@ func (g *gatedHub) count() int {
 // is being put on the bus. The check that a signature had not been
 // delivered and the record that it had were either side of the call to
 // the hub, so both copies passed and the event was delivered twice.
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.327.
 func TestTwoCopiesOfOneDeliveryReachTheBusOnce(t *testing.T) {
 	l := newLab(t)
 	l.server.Metrics = metrics.NewRegistry()
@@ -457,7 +457,7 @@ func TestTwoCopiesOfOneDeliveryReachTheBusOnce(t *testing.T) {
 // A caller holding no secret could spend a hook's whole rate limit,
 // because the limit was taken before authentication from one bucket per
 // path: the real sender's deliveries were then refused with 429. The
-// clock is fixed, so no bucket refills during the test. DIVERGENCE 5.290.
+// clock is fixed, so no bucket refills during the test. DIVERGENCE 5.327.
 func TestAnAnonymousFloodDoesNotSpendTheSendersAllowance(t *testing.T) {
 	l, hub := hookLab(t, "hooks:\n  deploy:\n    auth: hmac\n    secret: s3cret\n    rate_limit: 2\n")
 	now := time.Now().UTC().Truncate(time.Second)

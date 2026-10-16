@@ -107,7 +107,15 @@ func TestTargetAndFunctionAreAuthorizedTogether(t *testing.T) {
 		{"node:lb1.staging", "*", "test.ping", false},
 	}
 	for _, c := range cases {
-		d := p.Authorize(Request{Principal: c.principal, Target: c.target, Fun: c.fun})
+		req := Request{Principal: c.principal, Target: c.target, Fun: c.fun}
+		// state.apply names an SLS its allow_sls permits, so that the
+		// target is the only thing being decided: a bare state.apply is
+		// refused under allow_sls whatever the target (DIVERGENCE 5.320),
+		// and would make the wrong-target rows pass for the wrong reason.
+		if c.fun == "state.apply" {
+			req.Arg = []string{"webserver.nginx"}
+		}
+		d := p.Authorize(req)
 		if d.Allowed != c.want {
 			t.Errorf("%s %s against %s: allowed=%v (%s)", c.principal, c.fun, c.target, d.Allowed, d.Reason)
 		}
@@ -179,6 +187,82 @@ func TestArgumentConstraints(t *testing.T) {
 	}
 }
 
+// allow_sls is a list of SLS names, and a request that names none is
+// not inside it: the node runs the highstate for a state job with no
+// positional arguments, and for `state.highstate` whatever arguments it
+// has. Before DIVERGENCE 5.320 the check looped over the names given,
+// so the empty request passed it — shown on 2026-10-16 with the
+// `webops` role above, which said allowed=true to a bare `state.apply`.
+func TestAllowSLSRefusesTheHighstate(t *testing.T) {
+	const src = `
+roles:
+  narrow:
+    - target: 'web*.prod'
+      functions: ['state.apply', 'state.sls', 'state.highstate', 'state.show_highstate']
+      args:
+        'state.apply':           {allow_sls: ['webserver.*']}
+        'state.sls':             {allow_sls: ['webserver.*']}
+        'state.highstate':       {allow_sls: ['webserver.*']}
+        'state.show_highstate':  {allow_sls: ['webserver.*']}
+bindings:
+  - principal: 'cert:CN=alice'
+    roles: ['narrow']
+`
+	p, _, err := Load([]byte(src), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ask := func(fun string, arg []string, kwarg map[string]any) Decision {
+		return p.Authorize(Request{
+			Principal: "cert:CN=alice", Target: "web1.prod", Fun: fun, Arg: arg, Kwarg: kwarg,
+		})
+	}
+
+	for _, c := range []struct {
+		name  string
+		fun   string
+		arg   []string
+		kwarg map[string]any
+	}{
+		{"state.apply with no names", "state.apply", nil, nil},
+		{"state.sls with no names", "state.sls", nil, nil},
+		{"state.show_highstate with no names", "state.show_highstate", nil, nil},
+		// The node reads only positional arguments, so mods= as a
+		// keyword is a highstate on the node, not the SLS it names.
+		{"state.apply with mods only as a keyword", "state.apply", nil,
+			map[string]any{"mods": "webserver.nginx"}},
+		// The node ignores state.highstate's arguments, so an allowed
+		// name here buys the whole top file.
+		{"state.highstate naming an allowed sls", "state.highstate",
+			[]string{"webserver.nginx"}, nil},
+		{"state.highstate with no names", "state.highstate", nil, nil},
+	} {
+		d := ask(c.fun, c.arg, c.kwarg)
+		if d.Allowed {
+			t.Errorf("%s: allowed under allow_sls, which runs the highstate on the node", c.name)
+			continue
+		}
+		if !strings.Contains(d.Reason, "highstate") || !strings.Contains(d.Reason, "webserver.*") {
+			t.Errorf("%s: the reason should say the highstate is not in allow_sls: %s", c.name, d.Reason)
+		}
+	}
+
+	// And the narrowing did not take the allowed names with it.
+	for _, fun := range []string{"state.apply", "state.sls", "state.show_highstate"} {
+		if d := ask(fun, []string{"webserver.nginx"}, nil); !d.Allowed {
+			t.Errorf("%s webserver.nginx was refused: %s", fun, d.Reason)
+		}
+	}
+
+	// A function with no allow_sls is untouched: readonly's
+	// state.show_* still renders the highstate, as it did.
+	if d := load(t).Authorize(Request{
+		Principal: "cert:CN=alice", Target: "db1.prod", Fun: "state.show_highstate",
+	}); !d.Allowed {
+		t.Errorf("a role with no allow_sls lost the highstate: %s", d.Reason)
+	}
+}
+
 func TestRunnersAreGrantedSeparately(t *testing.T) {
 	p := load(t)
 	if !p.Authorize(Request{
@@ -201,17 +285,128 @@ func TestRunnersAreGrantedSeparately(t *testing.T) {
 	}
 }
 
+// allow_mods judges the names the orchestration runner will compile:
+// every positional argument and the keyword `sls`, each split on
+// commas as the hub splits it. Judging only the positional arguments
+// let the keyword through untouched -- and the keyword is the only way
+// `halite-hub orch run` sends a name -- and let a comma list through
+// whole, because `deploy.*` matches `deploy.web,teardown.everything`.
+// DIVERGENCE 5.321.
+func TestAllowModsJudgesTheKeywordAndEachNameInACommaList(t *testing.T) {
+	p := load(t)
+	cases := []struct {
+		name       string
+		arg        []string
+		kwarg      map[string]any
+		wantAllow  bool
+		wantReason string
+	}{
+		{"positional, allowed", []string{"deploy.web"}, nil, true, ""},
+		{"keyword, allowed", nil, map[string]any{"sls": "deploy.web"}, true, ""},
+		{"keyword comma list, all allowed", nil, map[string]any{"sls": "deploy.web,deploy.db"}, true, ""},
+		{"keyword, refused", nil, map[string]any{"sls": "teardown.everything"},
+			false, "teardown.everything is not in the modules"},
+		{"positional comma list, one refused", []string{"deploy.web,teardown.everything"}, nil,
+			false, "teardown.everything is not in the modules"},
+		{"keyword comma list, one refused", nil, map[string]any{"sls": "deploy.web, teardown.everything"},
+			false, "teardown.everything is not in the modules"},
+		{"allowed positional, refused keyword", []string{"deploy.web"}, map[string]any{"sls": "teardown.everything"},
+			false, "teardown.everything is not in the modules"},
+		{"no names", nil, nil, false, "names no orchestration"},
+		{"a keyword of commas", nil, map[string]any{"sls": ", ,"}, false, "names no orchestration"},
+		{"a keyword that is not a string", nil, map[string]any{"sls": []any{"teardown.everything"}},
+			false, "cannot check"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := p.Authorize(Request{
+				Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
+				Arg: tc.arg, Kwarg: tc.kwarg,
+			})
+			if d.Allowed != tc.wantAllow {
+				t.Fatalf("allowed=%v, want %v: %s", d.Allowed, tc.wantAllow, d)
+			}
+			if !strings.Contains(d.Reason, tc.wantReason) {
+				t.Errorf("reason %q does not say %q", d.Reason, tc.wantReason)
+			}
+		})
+	}
+}
+
+// deny_sls on a runner is judged on the same names allow_mods is, or
+// the keyword and the comma list walk round it as they walked round
+// allow_mods. A job's deny_sls is unchanged: the node reads only the
+// positional arguments and does not split them.
+func TestDenySLSOnARunnerJudgesTheKeywordAndTheCommaList(t *testing.T) {
+	p, _, err := Load([]byte(`
+roles:
+  orch:
+    - runners: ['state.orchestrate']
+      args:
+        'state.orchestrate':
+          deny_sls: ['teardown.*']
+  web:
+    - target: '*'
+      functions: ['state.apply']
+      args:
+        'state.apply':
+          deny_sls: ['teardown.*']
+bindings:
+  - principal: 'cert:CN=ci'
+    roles: ['orch', 'web']
+`), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		arg       []string
+		kwarg     map[string]any
+		wantAllow bool
+	}{
+		{"keyword, not denied", nil, map[string]any{"sls": "deploy.web"}, true},
+		{"keyword, denied", nil, map[string]any{"sls": "teardown.everything"}, false},
+		{"comma list, denied", []string{"deploy.web,teardown.everything"}, nil, false},
+		// The canonical-spelling check of DIVERGENCE 5.294 reads the
+		// runner names too, or `teardown/everything` by keyword misses
+		// `teardown.*` and is never checked for its spelling either.
+		{"keyword, second spelling", nil, map[string]any{"sls": "teardown/everything"}, false},
+		{"comma list, second spelling", nil, map[string]any{"sls": "deploy.web, teardown/everything"}, false},
+		// deny_sls alone does not require a name: that is allow_mods'
+		// rule, and a deny list says nothing about an empty request.
+		{"no names", nil, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := p.Authorize(Request{Principal: "cert:CN=ci", Fun: "state.orchestrate", Runner: true,
+				Arg: tc.arg, Kwarg: tc.kwarg})
+			if d.Allowed != tc.wantAllow {
+				t.Fatalf("allowed=%v, want %v: %s", d.Allowed, tc.wantAllow, d)
+			}
+		})
+	}
+	// The job half: `mods` is not a name to the node, and `a,b` is one
+	// name to it, so neither is read here.
+	job := p.Authorize(Request{Principal: "cert:CN=ci", Target: "web1", Fun: "state.apply",
+		Arg: []string{"web"}, Kwarg: map[string]any{"sls": "teardown.everything"}})
+	if !job.Allowed {
+		t.Errorf("a job's keyword `sls` was judged as a name: %s", job)
+	}
+}
+
 // A rule scoped to part of the estate must not be widened by asking for
 // all of it.
 func TestAScopedRuleDoesNotGrantAWiderTarget(t *testing.T) {
 	p := load(t)
-	if p.Authorize(Request{Principal: "cert:CN=alice", Target: "*", Fun: "state.apply"}).Allowed {
+	// An SLS the rule's allow_sls permits, so the target is the only
+	// thing that can refuse these. DIVERGENCE 5.320.
+	sls := []string{"webserver.nginx"}
+	if p.Authorize(Request{Principal: "cert:CN=alice", Target: "*", Fun: "state.apply", Arg: sls}).Allowed {
 		t.Error("a rule for web*.prod granted a job against *")
 	}
-	if p.Authorize(Request{Principal: "cert:CN=alice", Target: "db*.prod", Fun: "state.apply"}).Allowed {
+	if p.Authorize(Request{Principal: "cert:CN=alice", Target: "db*.prod", Fun: "state.apply", Arg: sls}).Allowed {
 		t.Error("a rule for web*.prod granted a job against db*.prod")
 	}
-	if !p.Authorize(Request{Principal: "cert:CN=alice", Target: "web*.prod", Fun: "state.apply"}).Allowed {
+	if !p.Authorize(Request{Principal: "cert:CN=alice", Target: "web*.prod", Fun: "state.apply", Arg: sls}).Allowed {
 		t.Error("a rule for web*.prod should grant exactly web*.prod")
 	}
 }
@@ -247,6 +442,160 @@ bindings: []
 	for what, src := range cases {
 		if _, _, err := Load([]byte(src), "policy.yaml"); err == nil {
 			t.Errorf("%s was accepted", what)
+		}
+	}
+}
+
+// A scoped rule is judged against the target as the kind it will be
+// dispatched under. Each "allowed: true" row for alice is a request
+// whose every reachable node is inside web*.prod; each false row could
+// reach a node outside it, or is a kind whose reach a string cannot
+// tell. root's `*` rule covers every kind. service.restart, because
+// alice's readonly role grants test.ping against `*` and would answer
+// every row. DIVERGENCE 5.296: before,
+// the rows marked "the escalation" were allowed, because the target
+// was matched literally against web*.prod whatever its kind, and `*`
+// consumes commas, spaces and `|`.
+func TestATargetIsAuthorizedAsTheKindItIsDispatchedUnder(t *testing.T) {
+	p := load(t)
+	cases := []struct {
+		principal, target, kind string
+		allowed                 bool
+	}{
+		// glob, the default: unchanged.
+		{"cert:CN=alice", "web1.prod", "", true},
+		{"cert:CN=alice", "web1.prod", "glob", true},
+		{"cert:CN=alice", "web*.prod", "", true},
+		{"cert:CN=alice", "db1.prod", "", false},
+		{"cert:CN=alice", "*", "", false},
+		// glob: a string that is not a node ID is not a literal.
+		{"cert:CN=alice", "web1.prod,db1.prod", "", false},
+		{"cert:CN=alice", "web1.prod or db1.prod", "", false},
+		{"cert:CN=alice", `web1\.prod`, "", false},
+
+		// list: every element, as a node.
+		{"cert:CN=alice", "web1.prod", "L", true},
+		{"cert:CN=alice", "web1.prod,web2.prod", "L", true},
+		{"cert:CN=alice", "web1.prod, web2.prod", "list", true},
+		{"cert:CN=alice", "web1.prod,db1.prod", "L", false}, // the escalation
+		{"cert:CN=alice", "web1.prod,db1.prod", "list", false},
+		{"cert:CN=alice", "web1.prod, ,db1.prod", "L", false},
+		{"cert:CN=alice", "web*.prod", "L", false},
+		{"cert:CN=alice", "", "L", false},
+		{"cert:CN=alice", ",", "L", false},
+
+		// compound and nodegroup: only `*` covers them.
+		{"cert:CN=alice", "web1.prod or db1.prod", "C", false}, // the escalation
+		{"cert:CN=alice", "web1.prod and not G@x:y or db1.prod", "compound", false},
+		{"cert:CN=alice", "web1.prod", "C", false},
+		{"cert:CN=alice", "web*.prod", "C", false},
+		{"cert:CN=alice", "webgroup", "N", false},
+
+		// pcre: a pattern however literal it looks.
+		{"cert:CN=alice", "web1.prod|db1.prod", "E", false}, // the escalation
+		{"cert:CN=alice", "web1.prod", "pcre", false},
+		{"cert:CN=alice", "web*.prod", "E", false},
+
+		// grain, pillar, subnet and their regex forms.
+		{"cert:CN=alice", "web1.prod", "G", false},
+		{"cert:CN=alice", "role:web", "grain", false},
+		{"cert:CN=alice", "role:web", "P", false},
+		{"cert:CN=alice", "role:web", "I", false},
+		{"cert:CN=alice", "role:web", "J", false},
+		{"cert:CN=alice", "10.0.0.0/8", "S", false},
+
+		// An unknown kind is never matched.
+		{"cert:CN=alice", "web1.prod", "bogus", false},
+		{"cert:CN=root", "*", "bogus", false},
+
+		// `*` still covers every kind.
+		{"cert:CN=root", "*", "", true},
+		{"cert:CN=root", "web1.prod,db1.prod", "L", true},
+		{"cert:CN=root", "web1.prod or db1.prod", "C", true},
+		{"cert:CN=root", "web1.prod|db1.prod", "E", true},
+		{"cert:CN=root", "role:web", "G", true},
+		{"cert:CN=root", "webgroup", "N", true},
+		{"cert:CN=root", "10.0.0.0/8", "S", true},
+	}
+	for _, c := range cases {
+		d := p.Authorize(Request{
+			Principal: c.principal, Target: c.target, TargetKind: c.kind, Fun: "service.restart",
+		})
+		if d.Allowed != c.allowed {
+			t.Errorf("%s: service.restart against %q as kind %q: allowed=%v, want %v (%s)",
+				c.principal, c.target, c.kind, d.Allowed, c.allowed, d)
+		}
+	}
+}
+
+// A denial for a non-glob kind says which kind it judged, so an
+// operator refused for `-C 'web1.prod'` is not left wondering why a
+// glob rule for web*.prod did not match web1.prod.
+func TestADenialNamesTheTargetKind(t *testing.T) {
+	p := load(t)
+	d := p.Authorize(Request{Principal: "cert:CN=alice", Target: "web1.prod", TargetKind: "C", Fun: "state.apply"})
+	if d.Allowed || !strings.Contains(d.Reason, "compound") {
+		t.Errorf("got %s; want a denial naming the compound kind", d)
+	}
+	d = p.Authorize(Request{Principal: "cert:CN=alice", Target: "web1.prod", TargetKind: "nope", Fun: "test.ping"})
+	if d.Allowed || !strings.Contains(d.Reason, "not a target kind") {
+		t.Errorf("got %s; want a denial for an unknown kind", d)
+	}
+}
+
+// deny_sls and allow_sls are matched against the one spelling of an SLS
+// name the node's compiler loads. Every spelling below is a name a file
+// server folds to secret/x.sls (DIVERGENCE 5.294), and until the policy
+// followed the compiler each was authorized under `deny_sls: [secret.x]`,
+// because it was matched as written.
+func TestSLSConstraintsJudgeTheCanonicalName(t *testing.T) {
+	const src = `
+roles:
+  ops:
+    - target: '*'
+      functions: ['state.sls', 'state.apply']
+      args:
+        'state.sls':
+          deny_sls: ['secret.x', 'vault.*']
+        'state.apply':
+          allow_sls: ['web.*']
+bindings:
+  - principal: 'cert:CN=ops'
+    roles: ['ops']
+`
+	p, _, err := Load([]byte(src), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ask := func(fun string, args ...string) Decision {
+		return p.Authorize(Request{Principal: "cert:CN=ops", Target: "n1", Fun: fun, Arg: args})
+	}
+
+	for _, spelling := range []string{
+		"secret.x", "secret..x", "secret/x", ".secret.x", "secret/./x",
+		"secret.x.", "/secret/x", `secret\x`, "vault/db",
+	} {
+		d := ask("state.sls", "ok", spelling)
+		if d.Allowed {
+			t.Errorf("state.sls %q was authorized under deny_sls [secret.x vault.*]", spelling)
+		}
+	}
+	// The reason for a non-canonical name gives the spelling to use.
+	if d := ask("state.sls", "secret/x"); !strings.Contains(d.Reason, `"secret.x"`) {
+		t.Errorf("the refusal should give the canonical spelling: %s", d.Reason)
+	}
+	if d := ask("state.sls", "ok", "secrets.x", "web.nginx"); !d.Allowed {
+		t.Errorf("canonical names outside deny_sls were refused: %s", d.Reason)
+	}
+
+	// allow_sls: a canonical name inside it is allowed; the same file
+	// spelled another way is refused rather than matched loosely.
+	if d := ask("state.apply", "web.nginx"); !d.Allowed {
+		t.Errorf("web.nginx is inside allow_sls [web.*] and was refused: %s", d.Reason)
+	}
+	for _, spelling := range []string{"web..nginx", "web/nginx", ".web.nginx", "web.nginx/"} {
+		if d := ask("state.apply", spelling); d.Allowed {
+			t.Errorf("state.apply %q was authorized under allow_sls [web.*]", spelling)
 		}
 	}
 }

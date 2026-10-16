@@ -53,6 +53,11 @@ type Token struct {
 	// Zero means only the absolute expiry applies.
 	IdleFor time.Duration `json:"idle_for,omitempty"`
 	// LastUsed moves as the token is used, for the idle expiry.
+	//
+	// In the record it is only ever the moment of issue. The moving
+	// value lives beside the record, in `<id>.last_used`, and Get folds
+	// it back in: see touch for why the record itself must not be
+	// rewritten on every request.
 	LastUsed time.Time `json:"last_used,omitempty"`
 
 	// SourceCIDR binds the token to a network. Empty means anywhere.
@@ -130,6 +135,15 @@ const (
 type Store struct {
 	dir string
 	Now func() time.Time
+
+	// between, when set, runs in the middle of a read-modify-write:
+	// in Redeem after the record is read and checked and before the
+	// idle clock is written, and in Revoke after the record is read and
+	// before it is written back. It exists so a test can put another
+	// writer -- another Store on the same directory, which is what a
+	// second process is -- exactly into the window the race needs,
+	// rather than hoping a tight loop finds it. Nil in production.
+	between func(op string, id string)
 }
 
 // Open prepares the store.
@@ -254,6 +268,9 @@ func (s *Store) Get(id string) (*Token, error) {
 	if err := json.Unmarshal(raw, &t); err != nil {
 		return nil, fmt.Errorf("the record for %s is unreadable: %w", id, err)
 	}
+	if at := s.lastUsed(id); at.After(t.LastUsed) {
+		t.LastUsed = at
+	}
 	return &t, nil
 }
 
@@ -262,7 +279,22 @@ func (s *Store) Get(id string) (*Token, error) {
 //
 // The lookup is by digest across the store rather than by an index, and
 // the secret never becomes a filename: a filename reaches a log, a
-// backup, and a directory listing.
+// backup, and a directory listing. That also means every request reads
+// and parses every token file in the store (M-07); it is a cost, not a
+// correctness problem, and it is not addressed here.
+//
+// Redeem never writes the token's record. It used to: it set LastUsed
+// and wrote the whole record back, on every authenticated request. A
+// revocation landing between that read and that write -- from
+// `halite-api token revoke`, a separate process, or from a logout in
+// this one -- was then overwritten by the stale copy with Revoked
+// false, and the revoked token worked again with nothing in any log to
+// say so. DIVERGENCE 5.303. The idle clock now goes to its own file
+// (touch), so the only writer of a record after Issue is Revoke, and the
+// only thing Revoke writes is Revoked true. No interleaving of any
+// number of processes can turn that back, which is why there is no lock
+// here: a lock would have to be held by every writer in every process,
+// and the one that forgot would reopen the hole.
 func (s *Store) Redeem(secret, remote string) (*Token, error) {
 	if secret == "" {
 		return nil, fmt.Errorf("no token was presented")
@@ -283,16 +315,61 @@ func (s *Store) Redeem(secret, remote string) (*Token, error) {
 		if !t.AllowsSource(remote) {
 			return nil, fmt.Errorf("this token is bound to %s", t.SourceCIDR)
 		}
-		t.LastUsed = now
-		if err := s.put(t); err != nil {
+		if s.between != nil {
+			s.between("redeem", t.ID)
+		}
+		if err := s.touch(t.ID, now); err != nil {
 			return nil, err
 		}
+		t.LastUsed = now
 		return t, nil
 	}
 	return nil, fmt.Errorf("that token is not one this service issued")
 }
 
+// lastUsedSuffix names the file beside a record that carries its idle
+// clock. Not ".json", so List does not take it for a token.
+const lastUsedSuffix = ".last_used"
+
+// touch records that a token was used at a moment.
+//
+// The file holds a timestamp and nothing else, so the worst a lost
+// update can do is move the idle clock by the width of two concurrent
+// requests. It cannot carry, and so cannot restore, anything a
+// revocation changed.
+func (s *Store) touch(id string, at time.Time) error {
+	path, err := s.path(id)
+	if err != nil {
+		return err
+	}
+	path = strings.TrimSuffix(path, ".json") + lastUsedSuffix
+	return writeAtomic(path, []byte(at.UTC().Format(time.RFC3339Nano)), 0o600)
+}
+
+// lastUsed reads a token's idle clock, or zero when it has none yet.
+func (s *Store) lastUsed(id string) time.Time {
+	path, err := s.path(id)
+	if err != nil {
+		return time.Time{}
+	}
+	raw, err := atomicfile.Read(strings.TrimSuffix(path, ".json") + lastUsedSuffix)
+	if err != nil {
+		return time.Time{}
+	}
+	at, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(raw)))
+	if err != nil {
+		return time.Time{}
+	}
+	return at
+}
+
 // Revoke withdraws a token, keeping the record for the audit.
+//
+// This is still a read-modify-write of the record, and that is safe
+// only because of the rule Redeem keeps: after Issue, nothing but Revoke
+// writes a record, and Revoke writes only Revoked true. Two revocations
+// racing write the same verdict; the loser's RevokedAt is the one kept,
+// which is a difference of the width of the race.
 func (s *Store) Revoke(id string) (*Token, error) {
 	t, err := s.Get(id)
 	if err != nil {
@@ -300,6 +377,9 @@ func (s *Store) Revoke(id string) (*Token, error) {
 	}
 	if t.Revoked {
 		return t, nil
+	}
+	if s.between != nil {
+		s.between("revoke", t.ID)
 	}
 	t.Revoked = true
 	t.RevokedAt = s.now()
@@ -374,6 +454,12 @@ func (s *Store) Prune(keepAfterExpiry time.Duration) (int, error) {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return n, err
 		}
+		// The idle clock goes with its record. A Redeem that checked
+		// the token a moment before it expired and touches it after this
+		// can leave the clock behind with no record; that file holds a
+		// timestamp and nothing else, List does not read it, and it is
+		// not a reason to fail a prune.
+		_ = os.Remove(strings.TrimSuffix(path, ".json") + lastUsedSuffix)
 		n++
 	}
 	return n, nil
