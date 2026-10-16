@@ -42,7 +42,7 @@ to reach the hub unchecked.
 role with `allow_mods` that names an orchestration outside its patterns
 is refused where it used to run. Check reactions and pipelines that run
 orchestrations under a narrowed role with `halite-hub policy test …
---runner --kwarg sls=<name>`. See DIVERGENCE 5.319.
+--runner --kwarg sls=<name>`. See DIVERGENCE 5.320.
 
 ### An agentless state run no longer leaves the hub's state tree on the target
 

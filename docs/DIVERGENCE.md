@@ -27207,8 +27207,7 @@ since macOS has no /proc.
   stopped.
 - **alma8 under a stall.** Its leg ran the new test green (above) but
   never failed the old way, so no limit has ever fired on either leg.
-
-### 5.319 `allow_mods` never judged a name `halite-hub orch run` sent
+### 5.320 `allow_mods` never judged a name `halite-hub orch run` sent
 
 SPEC 23.5's `allow_mods` is how a policy limits a role to named
 orchestrations; the example policy's `deployer` has `allow_mods:
@@ -27391,6 +27390,7 @@ Each part of the policy fix was broken on purpose and watched to fail:
   fleet's reactor and policy files were not read for any that would be.
 - **Not run on FreeBSD or Linux.** Nothing here is platform-specific;
   CI runs the tests on all four.
+
 
 
 ## 6. Everything else not started

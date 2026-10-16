@@ -588,7 +588,7 @@ func checkArgs(rule Rule, req Request) string {
 		// The runner refuses it too (`sls` is required), but a decision
 		// that says "allowed" about a request whose names it never saw
 		// is the defect this block exists to prevent, so it is refused
-		// here rather than left to the signature. DIVERGENCE 5.319.
+		// here rather than left to the signature. DIVERGENCE 5.320.
 		if len(names) == 0 {
 			return fmt.Sprintf("%s names no orchestration, so none of the modules this role may orchestrate (%s) can be checked",
 				req.Fun, strings.Join(constraint.AllowMods, ", "))
