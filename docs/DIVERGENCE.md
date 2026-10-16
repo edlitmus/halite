@@ -27948,7 +27948,10 @@ second process that takes the lock, and shows that this process cannot
 take it until the other lets go.
 
 Each part was broken on purpose and its tests failed. A no-op
-`lockFile` failed all four race tests and the cross-process test.
+`lockFile` failed the three race tests and the cross-process test.
+`TestRevokedIsSticky` does not depend on the lock, and it passed. An
+earlier version of this paragraph counted it among the failures. The
+re-run on FreeBSD (below) did not bear that out.
 `Renew` with its read moved back outside the lock failed both renewal
 tests ("the node is accepted after a revocation: the renewal undid
 it"). Without the two stickiness checks, `TestRevokedIsSticky` failed.
@@ -27976,9 +27979,62 @@ named in this repository's notes, but not `internal/fileperm`, so the
 miss reached CI. With `os.OpenFile` restored, the audit fails locally
 too.
 
-**Not verified.** No live hub has run this. That includes a FreeBSD
-hub with `halite-hub keys revoke` run beside it: the CI VM ran the
-tests, not a hub. `flock` on OpenBSD and NetBSD and `fcntl` on Solaris
+**A live FreeBSD hub, with `keys revoke` beside it** (beastie,
+FreeBSD 15.1-RELEASE-p5 amd64, 12 CPUs, go1.27.2; PR #338 at
+5ea3c2c, and `main` as it stood on 2026-10-16 for comparison). This is the
+run that had been owed. A throwaway hub served on 127.0.0.1:14510
+from a scratch root, as an unprivileged user, beside the production
+hub and not touching it. Its `certificate_lifetime` was 1h. 32 nodes
+enrolled through it and were accepted. Each node then ran
+`halite-node renew --force` 40 times in a loop. While those loops ran,
+`halite-hub keys revoke` ran once per node from its own process, after
+a random delay of 0.2 to 4 seconds. Then the hub was stopped and
+started again, which rebuilds the denylist through `LoadDenylist`.
+Each node then renewed once more with the newest certificate it held.
+The verdict for each node came from the restarted hub's own log, not
+from the node's error: whether the hub refused the serial in that
+node's `node.crt` during the TLS handshake ("the certificate for nN
+(serial …) is revoked").
+
+- `main`, two rounds: in each, 31 of 32 nodes were refused at the
+  handshake, and one was not (n32, serial 0f66978a…, then n14). The
+  restarted hub accepted that certificate at TLS, so the request
+  reached the handler, and the only thing that stopped it was the
+  record's revoked state ("enrollment refused: n32 is revoked"). The
+  certificate itself was never denylisted. That is the second ordering
+  above: the revocation recorded the serial the renewal had just
+  superseded. `keys list` showed all 32 revoked, so the record looked
+  right while the certificate was not denied.
+- This change, two rounds: 32 of 32 refused at the handshake in each.
+  `keys list` showed all 32 revoked. The store directory held
+  `.lock` (mode 0600, empty).
+
+Before this harness was right it gave two wrong answers, and both are
+worth knowing for the next run. The first run built from a checkout
+that was still on another branch. With `renew` but no `--force`, the
+node said "renewal is due at half its life", exited 0, and renewed
+nothing. So that run raced nothing, yet it reported every node
+revoked. Then a check that counted a node as escaped when its
+`connect` log lacked "bad certificate" reported 24 escapes on `main`
+that were nodes the setup had never created. The node's own error is
+also a poor signal: a TLS 1.3 client-certificate refusal often
+reaches the client as "connection reset by peer", "broken pipe" or
+"http2: client conn could not be established" rather than as a bad
+certificate. That is why the verdict is read from the hub.
+
+The test-level breakages were repeated on the same machine. With
+`lockFile` made a no-op in `lock_flock.go`, the three race tests and
+`TestTheStoreLockExcludesAnotherProcess` failed, and the package
+passed again once it was restored. `internal/keystore` passed under
+`-race`, natively on FreeBSD rather than through the Linux
+compatibility layer.
+
+**Not verified.** The `main` failure was seen at 32 nodes. At 8 nodes,
+three rounds (24 races) showed nothing, so this harness is a
+detector only at that scale. Two passing rounds on this change are
+evidence, not proof. The node-held `connect` stream was not raced: the
+renewals here came from `halite-node renew`, not from a connected
+node renewing at half-life. `flock` on OpenBSD and NetBSD and `fcntl` on Solaris
 are compiled only (`go vet` for each target). Nothing measured the
 cost of the extra open and lock per write.
 The hub writes the store on enrollment and renewal, not per request, so
