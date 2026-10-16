@@ -4531,6 +4531,15 @@ documented platform defect with a reproduction (5.37), not an untried
 path; `snap` still wants snapd and the network together, and the
 network is what 5.35's rule refuses.
 
+#### Later: the file left on disk read as converged on the next run (5.316)
+
+"The file is left on disk" above was true, and the test said so on
+purpose. What neither looked at was the run after. The state compared
+bytes, found the refused file equal to the declaration, and reported
+True without asking netplan again. A failed `apply: true` went the same
+way. The state now puts the directory back as it was on either failure.
+5.316 has the detail.
+
 ### 5.39 `service`: systemd over its own D-Bus API
 
 SPEC 15.2: systemd "is spoken to over its D-Bus API where available,
@@ -26763,6 +26772,101 @@ allow-then-deny test and the removal test failed. With a reversed sort
 - **Hosts already converged.** It is not known whether any host in the
   fleet has an anchor with overlapping rules. Any that does keeps the
   sorted order until it is flushed, as above.
+### 5.316 `netplan.managed` reported a refused document converged on the next run
+
+Audit item M-36, reproduced with the fake runner before it was changed.
+`netplan.managed` wrote the file, ran `netplan generate`, and on a
+refusal returned False with the file left in /etc/netplan. 5.38 records
+that on purpose. But the state's only test for convergence is the bytes
+and the mode. So the **second** run found the refused file equal to the
+declaration and returned True, "already holds the declared
+configuration". It did not run `netplan generate` again.
+
+`apply: true` had the same fault. If `netplan apply` failed, the file
+stayed. The next run found it equal and returned True, and it never ran
+the apply again.
+
+A refused file is not harmless while it waits. netplan renders
+/etc/netplan at boot, through its systemd generator, so the next boot
+meets the file that the state reported as converged. (That is netplan's
+documented design, and `live_netplan_test.go` relies on it. A boot with
+a refused file was not watched for this change.)
+
+**The change.** On a refused `generate`, and on a failed `apply`, the
+state puts the file back as it was before the run: the previous bytes
+and mode, or no file if there was none. Then it runs `netplan generate`
+again, so that the backend files under /run come from the tree as it
+now is. The comment says which of these happened. The next run finds
+the file different from the declaration, which is true, and tries
+again. It fails again for as long as netplan refuses.
+
+A failed apply can have changed some of the live configuration before
+it failed. The state does not undo that, because to undo it is another
+apply. The comment says that this part is still live until the next
+apply or boot.
+
+**Why not validate before writing.** `netplan generate --root-dir` on a
+scratch copy was the other choice. It was not used. netplan reads the
+directory as a whole, so a scratch root would need a copy of the whole
+tree to give the same answer. And it would replace the one `netplan
+generate` call that 5.38 watched validate this module's YAML with a
+call that nobody has run.
+
+**A file the state cannot read is not replaced.** If the read fails for
+any reason other than "not there", the state now returns False before it
+writes, because it could not put that file back.
+
+**How it is tested.** `netplan_rollback_test.go` has a fake netplan that
+reads the directory on each `generate` and refuses it while any file
+holds the key `addressess`. The refusal text is `netplanFixture`'s,
+which 5.38 says matches what real netplan 1.1.2 printed for that key.
+The way the fake reads the directory is synthetic, and the test file
+says so. The text of a failed apply is invented: no failed apply has
+been watched. The tests call `netplanManaged` directly, not through the
+registry, so they run on every platform and not only on Linux.
+
+- A refused document fails on run 1 and on run 2, and no file is left
+  after either run. `generate` runs four times: the written tree and
+  the restored tree, on each run.
+- A refused document that replaces a file puts that file back, byte for
+  byte.
+- A failed apply leaves no file. When the apply then works, run 2
+  writes, validates and applies.
+
+Each was broken on purpose:
+
+- With `netplan.go` from `main`, all three failed. Run 2 returned
+  "already holds the declared configuration", which is M-36. The second
+  run of the apply test did not apply.
+- With only the restore after a failed apply removed, only the apply
+  test failed.
+
+The five Linux-only tests in `netplan_test.go` skip on macOS. A copy of
+them that called `netplanManaged` directly was run on macOS and passed,
+and then it was deleted. The test that a refusal fails, and says
+"nothing has been applied", still passes.
+
+`live_netplan_rollback_test.go` drives the same two runs against the
+real netplan on the `linux` leg. It is `TestLiveNetplan*`, so the
+leg's existing `-run` filter and `live_*_test.go` trigger path include
+it.
+
+**Not verified.**
+
+- **Not run against a real netplan.** The live test was not run for
+  this change. That the restored tree renders, and that `generate` with
+  the file removed rewrites /run, was not watched. The evidence level
+  for `netplan` is unchanged.
+- **A file that an earlier build left refused, or that was put there by
+  hand, still reads as converged** if its bytes and mode match the
+  declaration. This build never leaves one. To validate on every
+  converged run would close that gap. But that puts a `netplan generate`
+  on every run of every Ubuntu node, and nobody has watched what that
+  does to a NetworkManager host. After an upgrade, `netplan.generate`
+  on each Ubuntu node finds such a file.
+- **`apply: true` on a file that already matches** does not apply. That
+  is as documented ("after writing") and was not changed.
+- Tested on macOS (Darwin 25.6) only. CI runs the unit tests on Linux.
 
 
 
