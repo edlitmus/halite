@@ -26644,6 +26644,51 @@ come from 4 to 32 MiB children, not the default stack. No real Salt tree was
 rendered through the new limits to check that none is refused. The
 template corpus and the package tests pass, and that is the evidence
 that nothing ordinary is refused.
+
+#### 5.312, `TestLexingIsLinear` counts instead of timing
+
+The test compared the wall-clock times of two lexes of a few
+milliseconds. That failed CI's `test (windows-2022)` on PR #367, which
+does not touch the template package: four times the input took 11.4
+times the time (3.2 ms against 36.1 ms), past the threshold of 9. The
+lexer was linear; the runner was busy. A ratio of two clocks still
+depends on the clock.
+
+The lexer now counts the bytes `findNextDelim` hands to `strings.Index`
+(to the end of the match, or to the end of the source when there is
+none), and the test reads that count. It is the same on every machine,
+so the bound is tight rather than generous. Each delimiter's searches
+cover disjoint stretches of the source, so the three together may cover
+it at most three times, and four times the input may search at most
+4.1 times the bytes. Three shapes are checked at 5,000 and 20,000
+lines: statements only, which was the quadratic case; a `{{` inside
+every tag's string, which is the case where the cached position falls
+behind the cursor and is searched for again; and all three delimiters
+on every line.
+
+What was measured, on darwin/arm64 with go1.27.2:
+
+- The fixed lexer searched 2.26, 2.08 and 2.25 times the source for the
+  three shapes, the same at both sizes, so the ratio is 4.00.
+- With the cache disabled (`findNextDelim` searching again for all
+  three at every tag, as before #332) the test failed on all three. The
+  first shape searched 10,001 and 40,001 times the source at the two
+  sizes, the second 5,002 and 20,002: 16.00 times the bytes for four
+  times the input. The third shape is linear even in the old code,
+  because every delimiter is close by, but searched 4.4 times the source
+  and failed the bound of three. The failing run took 16 s, because the
+  count is of work actually done; a regression is slow and loud rather
+  than quick and quiet. With the cache put back, it passed in 0.14 s.
+
+The count covers delimiter searches only. A quadratic cost elsewhere in
+the lexer, or in the parser, would not show in it, where the clock would
+have shown it, noisily. Everything else the lexer does advances the
+cursor, which moves only forward; that was read, not measured.
+
+**Not verified.** The new test has not run on Windows, FreeBSD or Linux
+here; CI will run it. Its Windows and FreeBSD builds were vetted, not
+run.
+
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
 **What was wrong.** `mount.mounted` decided whether the mounted
