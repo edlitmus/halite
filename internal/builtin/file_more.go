@@ -45,6 +45,12 @@ func registerFileMore(r *Registries) {
 				// so this compiles on Windows, where it refuses with a
 				// message instead of pretending to work.
 				path := states.Str(args, "path", "")
+				if c.Test {
+					if err := predictOwnership(path, states.Str(args, "user", ""), states.Str(args, "group", "")); err != nil {
+						return nil, err
+					}
+					return path, nil
+				}
 				if err := applyOwnership(path, states.Str(args, "user", ""), states.Str(args, "group", "")); err != nil {
 					return nil, err
 				}
@@ -65,6 +71,12 @@ func registerFileMore(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				path := states.Str(args, "path", "")
+				if c.Test {
+					if err := predictOwnership(path, "", states.Str(args, "group", "")); err != nil {
+						return nil, err
+					}
+					return path, nil
+				}
 				if err := applyOwnership(path, "", states.Str(args, "group", "")); err != nil {
 					return nil, err
 				}
@@ -89,6 +101,15 @@ func registerFileMore(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
+				if c.Test {
+					// The real call fails on a missing path, so the
+					// prediction does too; otherwise it answers as the
+					// real call would and changes nothing.
+					if _, err := os.Lstat(path); err != nil {
+						return nil, err
+					}
+					return path, nil
+				}
 				if err := applyMode(path, mode); err != nil {
 					return nil, err
 				}
@@ -110,7 +131,7 @@ func registerFileMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return makeDirs(args)
+				return makeDirs(c, args)
 			},
 		},
 		exec.Module{
@@ -136,6 +157,9 @@ func registerFileMore(r *Registries) {
 					return nil, err
 				}
 				parent := filepath.Dir(filepath.Clean(states.Str(args, "path", "")))
+				if c.Test {
+					return parent, nil
+				}
 				if err := os.MkdirAll(parent, mode); err != nil {
 					return nil, err
 				}
@@ -162,6 +186,19 @@ func registerFileMore(r *Registries) {
 				if !info.IsDir() {
 					return nil, fmt.Errorf("%s is not a directory; file.remove removes files", path)
 				}
+				if c.Test {
+					// Whether it is empty is the one thing the real
+					// call could still refuse on, and reading the
+					// directory answers it without touching it.
+					entries, err := os.ReadDir(path)
+					if err != nil {
+						return nil, err
+					}
+					if len(entries) > 0 {
+						return nil, fmt.Errorf("%s is not empty; file.remove removes a tree", path)
+					}
+					return true, nil
+				}
 				// os.Remove on a directory removes it only when empty,
 				// which is what rmdir means. A tree wanting the recursive
 				// form asks for file.remove.
@@ -187,6 +224,12 @@ func registerFileMore(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				src, dst := states.Str(args, "src", ""), states.Str(args, "dst", "")
+				if c.Test {
+					if _, err := os.Lstat(src); err != nil {
+						return nil, err
+					}
+					return dst, nil
+				}
 				if err := atomicfile.Rename(src, dst); err == nil {
 					return dst, nil
 				}
@@ -269,6 +312,17 @@ func registerFileMore(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				src, path := states.Str(args, "src", ""), states.Str(args, "path", "")
+				if c.Test {
+					// The two refusals os.Link would make, asked without
+					// making the link: no source, or a path already taken.
+					if _, err := os.Lstat(src); err != nil {
+						return nil, err
+					}
+					if _, err := os.Lstat(path); err == nil {
+						return nil, fmt.Errorf("%s already exists", path)
+					}
+					return path, nil
+				}
 				if err := os.Link(src, path); err != nil {
 					return nil, err
 				}
@@ -369,6 +423,12 @@ func registerFileMore(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				path := states.Str(args, "path", "")
+				if c.Test {
+					if _, err := os.Stat(path); err != nil {
+						return nil, err
+					}
+					return path, nil
+				}
 				if err := os.Truncate(path, states.Int(args, "length", 0)); err != nil {
 					return nil, err
 				}
@@ -417,12 +477,27 @@ func registerFileMore(r *Registries) {
 	)
 }
 
-func makeDirs(args *value.Map) (any, error) {
+// predictOwnership answers a dry-run chown or chgrp: the path has to be
+// there and the names have to resolve, which are the refusals the real
+// call would make, and plannedOwnership asks both without changing
+// anything. It is the same helper file.managed's own test mode uses.
+func predictOwnership(path, wantUser, wantGroup string) error {
+	if _, err := os.Lstat(path); err != nil {
+		return err
+	}
+	_, _, err := plannedOwnership(path, true, wantUser, wantGroup)
+	return err
+}
+
+func makeDirs(c *exec.Context, args *value.Map) (any, error) {
 	mode, err := parseMode(states.Str(args, "mode", "0755"))
 	if err != nil {
 		return nil, err
 	}
 	path := filepath.Clean(states.Str(args, "path", ""))
+	if c.Test {
+		return path, nil
+	}
 	if err := os.MkdirAll(path, mode); err != nil {
 		return nil, err
 	}

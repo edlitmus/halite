@@ -21,6 +21,45 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A dry run no longer masks units, changes files, or detaches Ubuntu Pro
+
+Thirty-four execution functions changed the node when they were called
+directly with `--test`. They no longer do:
+
+- `service.mask` and `service.unmask` masked or unmasked the unit.
+- `file.chmod`, `chown`, `chgrp`, `mkdir`, `makedirs`, `rmdir`, `move`,
+  `hardlink` and `truncate` changed the file.
+- `beacons.add`, `modify`, `delete`, `enable`, `disable`,
+  `enable_beacon`, `disable_beacon` and `reset` changed the running
+  beacons. `beacons.reset` removed all of them.
+- `x509.create_private_key`, `create_csr` and `create_certificate` wrote
+  to `path`, so a dry run could replace an existing key.
+- `pro.attach`, `detach`, `enable` and `disable` ran `pro`. A dry-run
+  `pro.detach` removed the subscription.
+- The `dnf_module` functions ran `dnf module`.
+- `dnsutil.hosts_append` and `hosts_remove` wrote the hosts file.
+
+Under `--test`, each function now checks what the real call would check
+and returns without the change. The answers are:
+
+- `beacons.*` returns `would_add`, `would_reset` and so on, as
+  `schedule.*` does.
+- `pro.*` and `dnf_module.*` return the command they would run. They
+  do not predict its effect, and they stay `test mode is unreliable`.
+  The `pro attach` token is not shown.
+- `dnsutil.hosts_append` returns the line it would add.
+  `dnsutil.hosts_remove` returns whether the file would change. Both are
+  now `honours --test` in docs/modules.md.
+
+`service.mask` and `unmask` now also declare that they need root.
+
+`module.run` checks test mode before it calls any execution function, so
+a state that calls one of these through `module.run` was not affected.
+A direct call with `--test` was affected. A template that calls one of
+these while a `--test` run renders it was not checked. Nothing here was
+run as root or against systemd, `pro` or `dnf`. See DIVERGENCE 5.308.
+
+
 ### A package name that begins with `-` is refused
 
 Every `pkg` provider put the names and versions it was given straight

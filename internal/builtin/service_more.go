@@ -197,16 +197,29 @@ func maskModule(r *Registries, name, doc string,
 			Params: []signature.Param{
 				req("name", signature.String, "The service."),
 			},
-			Mutates:  true,
-			TestMode: signature.TestReliable,
-			Section:  "15.2",
+			Mutates:    true,
+			TestMode:   signature.TestReliable,
+			Privileges: []string{"root"},
+			Section:    "15.2",
 		},
 		Fn: func(c *exec.Context, args *value.Map) (any, error) {
 			m, err := pickMasker(c)
 			if err != nil {
 				return nil, err
 			}
-			if err := run(m, c, states.Str(args, "name", "")); err != nil {
+			name := states.Str(args, "name", "")
+			if c.Test {
+				// The same answer `service.start` and the rest of
+				// simple() give under a dry run, and for the same
+				// reason: the provider was found, so the call would
+				// have been made, and making it is the change. Without
+				// this a `--test` call masked the unit for real -- the
+				// signature said reliable and nothing read the flag.
+				// Choosing a provider first keeps the refusal on a
+				// node with no systemd the same either way.
+				return true, nil
+			}
+			if err := run(m, c, name); err != nil {
 				return nil, err
 			}
 			return true, nil

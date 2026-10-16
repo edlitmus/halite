@@ -433,6 +433,17 @@ func (r *Registry) Has(name string) bool {
 // Names lists every function, sorted.
 func (r *Registry) Names() []string { return r.sigs.Names() }
 
+// Func returns the function registered under a name, without resolving
+// aliases or checking the platform. It exists for the audits, which need
+// to know which source a registration's body came from -- the test-mode
+// audit in internal/builtin locates each mutating function's code from
+// it -- and nothing that dispatches a call should use it: Call binds and
+// type-checks the arguments, and this does neither.
+func (r *Registry) Func(name string) (Func, bool) {
+	fn, ok := r.fns[name]
+	return fn, ok
+}
+
 // Call binds arguments against the signature and invokes the function.
 func (r *Registry) Call(c *Context, name string, args *value.Map) (any, error) {
 	resolved, err := r.resolve(c, name)
