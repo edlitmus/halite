@@ -312,8 +312,12 @@ func (systemdProvider) Masked(c *exec.Context, name string) (bool, error) {
 			return state == "masked" || state == "masked-runtime", nil
 		}
 	}
+	// The fallback names the unit the D-Bus path just asked about, by the
+	// same function, rather than leaving systemctl to mangle the raw name
+	// and agree by coincidence. It was the one systemd argv 5.309 left
+	// raw, because another branch was editing this file.
 	res, err := c.Run(exec.Command{
-		Argv:           []string{"systemctl", "is-enabled", name},
+		Argv:           []string{"systemctl", "is-enabled", withServiceSuffix(name)},
 		IgnoreExitCode: true,
 	})
 	if err != nil {

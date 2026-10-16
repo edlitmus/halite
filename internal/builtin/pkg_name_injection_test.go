@@ -287,13 +287,17 @@ func TestPkgLegitimateVersionsReachTheArgv(t *testing.T) {
 	}
 }
 
+// pkgRefusedNames is what pkgValidateName must refuse. It is shared with
+// the dnf_module test, which holds that module to the same refusals
+// (DIVERGENCE 5.307).
+var pkgRefusedNames = []string{"", "-", "-y", "--setopt=x", "a b", "a\tb", "a\nb", "a\rb", "a\x00b",
+	"a\x7fb", "a b", "a‮b", "a b"}
+
 // The validator's own table, for the edges the registry tests do not
 // spell: Unicode whitespace and format characters, and what is let
 // through on purpose.
 func TestPkgValidateName(t *testing.T) {
-	refuse := []string{"", "-", "-y", "--setopt=x", "a b", "a\tb", "a\nb", "a\rb", "a\x00b",
-		"a\x7fb", "a b", "a‮b", "a b"}
-	for _, n := range refuse {
+	for _, n := range pkgRefusedNames {
 		if pkgValidateName(n) == nil {
 			t.Errorf("%q was accepted", n)
 		}
