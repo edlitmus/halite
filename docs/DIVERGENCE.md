@@ -28588,11 +28588,26 @@ Each was broken on purpose and watched failing:
   0600 file came back `-rw-rw-rw-`, because a mode there is the read-only
   attribute and not access control. It now goes through `fileperm` and
   `atomicfile`, and the test asks `fileperm.Others` rather than reading
-  mode bits. Sync cost was measured only on macOS, where Go's `Sync` is
+  mode bits. Sync cost was first measured on macOS, where Go's `Sync` is
   `F_FULLFSYNC`: about three thousand appends took forty seconds, some
   13 ms each. That is a cost per signed job, not per job.
+- **The sync cost on FreeBSD** (beastie, FreeBSD 15.1-RELEASE-p5, merge
+  commit ea69fc4). A throwaway test, not kept, ran 3000
+  `SignedReplay.Admit` calls (open, append, `fsync`, close) three times
+  on ZFS. The datasets were `sync=standard`, `logbias=latency`, on a
+  mirror of two SanDisk SmrtStor SAS SSDs behind an LSI SAS3008 HBA,
+  the same pool and settings as `/var/db/halite`. The mean was
+  0.75–0.82 ms, p50 about 0.67 ms, p99 1.5–2.6 ms, and the slowest
+  single admit 3.8–40 ms. That is about seventeen times cheaper than
+  macOS, which fits `fsync` against `F_FULLFSYNC`. The other FreeBSD
+  hosts' disks were not measured. `internal/job`, `internal/jobsign`
+  and `cmd/halite-node` passed natively there under `-race`, and on
+  Linux after the merge.
 - **A filesystem that lies about sync** would lose the last line on a
-  power cut and reopen that one job. Not tested.
+  power cut and reopen that one job. Not tested. On beastie the HBA has
+  no write cache. Whether the SSDs' own cache is protected against
+  power loss was not checked, and a sub-millisecond `fsync` cannot tell
+  the two cases apart.
 
 
 
