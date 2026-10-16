@@ -2150,7 +2150,8 @@ Properties that are requirements, not suggestions:
   rule names both, and a request must match at least one rule entirely.
 - **Argument-level constraints.** A role may be permitted `state.apply` but restricted to a set of
   SLS names, and may be forbidden from passing `pillar` on the command line, which is otherwise a
-  trivial way to bypass pillar-based authorization.
+  trivial way to bypass pillar-based authorization. A restriction to SLS names excludes the
+  highstate: a request that names no SLS, or `state.highstate`, is refused under `allow_sls`.
 - **`cmd.run` is a distinct permission** from every other function and is never granted by a
   wildcard. `functions: ['*']` does not include `cmd.run`, `cmd.script`, `cmd.shell`, `module.run`,
   `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.

@@ -21,6 +21,24 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A role with `allow_sls` can no longer run the highstate
+
+**This changes what operators see.** `allow_sls` restricts a role to a
+set of SLS names, but a request that named none -- a bare
+`state.apply`, `state.sls`, or `state.apply mods=...` -- passed the
+check, and the node ran the highstate: everything the top file assigns.
+`state.highstate` was the same with any arguments, because the node
+ignores them. Such a request is now refused, and `policy test` says why:
+
+```
+denied: state.apply with no SLS names runs the highstate, which is not in the SLS names this role may apply (webserver.*, common.*)
+```
+
+A role that should run the highstate needs a rule for `state.apply` (or
+`state.highstate`) without `allow_sls`. Check a policy before upgrading
+with `halite-hub policy test <principal> <target> state.apply`. Roles
+without `allow_sls` are unchanged. See DIVERGENCE 5.319.
+
 ### An agentless state run no longer leaves the hub's state tree on the target
 
 `halite-node oneshot`, which `halite-hub ssh` runs on a target, wrote the

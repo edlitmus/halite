@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/builtin"
@@ -90,5 +92,88 @@ func nodeWithBrokenPillar(t *testing.T) *node {
 		format:    cli.Nested,
 		log:       logger,
 		pillars:   fileserver.NewRoots(map[string][]string{"base": {pillarDir}}),
+	}
+}
+
+// nodeWithTwoSLS is a node whose top file assigns two SLS files, each
+// with one state that changes nothing, so a test can see which of them
+// a job ran from the IDs in its return.
+func nodeWithTwoSLS(t *testing.T) *node {
+	t.Helper()
+	n := nodeWithBrokenPillar(t)
+	dir := t.TempDir()
+	pillarDir := filepath.Join(dir, "pillar")
+	stateDir := filepath.Join(dir, "states")
+	for path, body := range map[string]string{
+		filepath.Join(pillarDir, "top.sls"):                 "base: {}\n",
+		filepath.Join(stateDir, "top.sls"):                  "base:\n  '*':\n    - webserver.nginx\n    - database.postgres\n",
+		filepath.Join(stateDir, "webserver", "nginx.sls"):   "from_webserver:\n  test.succeed_without_changes: []\n",
+		filepath.Join(stateDir, "database", "postgres.sls"): "from_database:\n  test.succeed_without_changes: []\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n.pillars = fileserver.NewRoots(map[string][]string{"base": {pillarDir}})
+	n.files = fileserver.NewFetcher(fileserver.NewRoots(map[string][]string{"base": {stateDir}}))
+	// newNode sets this; a state job counts itself in it for SPEC 16.3.
+	n.statesRunning = new(atomic.Int64)
+	return n
+}
+
+// The hub's allow_sls (internal/policy checkArgs) refuses the requests
+// below because of what the node does with them, and that is a claim
+// about this file, not about the policy. So it is held here: if the
+// node ever starts honouring state.highstate's arguments or a keyword
+// `mods`, these fail, and the policy's refusal can be reconsidered
+// rather than left standing for a reason that stopped being true.
+// DIVERGENCE 5.319.
+func TestTheNodeRunsTheHighstateForTheJobsAllowSLSRefuses(t *testing.T) {
+	cases := []struct {
+		name  string
+		fun   string
+		arg   []string
+		kwarg map[string]any
+	}{
+		{"state.apply with no names", "state.apply", nil, nil},
+		{"state.sls with no names", "state.sls", nil, nil},
+		{"state.apply with mods only as a keyword", "state.apply", nil,
+			map[string]any{"mods": "webserver.nginx"}},
+		{"state.highstate naming one sls", "state.highstate", []string{"webserver.nginx"}, nil},
+	}
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			kwarg := map[string]any{"test": true}
+			for k, v := range c.kwarg {
+				kwarg[k] = v
+			}
+			ret := nodeWithTwoSLS(t).executeJob(&job.Job{
+				JID: job.ID(fmt.Sprintf("20261016T%d", i)), Fun: c.fun, Arg: c.arg, Kwarg: kwarg,
+			})
+			if !ret.Success {
+				t.Fatalf("the job failed: %s", ret.Return)
+			}
+			for _, id := range []string{"from_webserver", "from_database"} {
+				if !strings.Contains(string(ret.Return), id) {
+					t.Errorf("%s did not run %s, so it was not the highstate: %s", c.fun, id, ret.Return)
+				}
+			}
+		})
+	}
+
+	// And the control: naming an SLS to state.apply runs that SLS and
+	// nothing else, which is the request allow_sls still permits.
+	ret := nodeWithTwoSLS(t).executeJob(&job.Job{
+		JID: job.ID("20261016T9"), Fun: "state.apply", Arg: []string{"webserver.nginx"},
+		Kwarg: map[string]any{"test": true},
+	})
+	if !ret.Success {
+		t.Fatalf("the job failed: %s", ret.Return)
+	}
+	if !strings.Contains(string(ret.Return), "from_webserver") || strings.Contains(string(ret.Return), "from_database") {
+		t.Errorf("state.apply webserver.nginx did not run exactly that SLS: %s", ret.Return)
 	}
 }
