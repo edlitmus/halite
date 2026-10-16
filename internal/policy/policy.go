@@ -606,6 +606,27 @@ func checkArgs(rule Rule, req Request) string {
 		}
 	}
 	if len(constraint.AllowSLS) > 0 {
+		// The loop below judges the names a request gives, so a request
+		// that gives none passed it — and a node handed a state job with
+		// no names runs the highstate (runStateJob compiles the top file
+		// unless there are positional arguments). `state.highstate` is
+		// worse: the node ignores its arguments altogether, so naming an
+		// allowed SLS bought the whole top file. Either way the run is
+		// whatever the top file assigns, which is not a set of SLS names
+		// this rule can check, so allow_sls refuses it. SPEC 23.5;
+		// DIVERGENCE 5.320.
+		//
+		// `mods=` as a keyword does not rescue it: the node reads only
+		// the positional arguments, so a keyword-only request is still
+		// a highstate on the node.
+		if req.Fun == "state.highstate" {
+			return fmt.Sprintf("%s runs the whole highstate, which is not in the SLS names this role may apply (%s)",
+				req.Fun, strings.Join(constraint.AllowSLS, ", "))
+		}
+		if len(req.Arg) == 0 {
+			return fmt.Sprintf("%s with no SLS names runs the highstate, which is not in the SLS names this role may apply (%s)",
+				req.Fun, strings.Join(constraint.AllowSLS, ", "))
+		}
 		for _, arg := range req.Arg {
 			if !matchAny(constraint.AllowSLS, arg) {
 				return fmt.Sprintf("%s is not in the SLS names this role may apply (%s)",

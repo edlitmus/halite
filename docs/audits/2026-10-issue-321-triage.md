@@ -52,6 +52,7 @@ author could not do.
 | M-28 agentless `oneshot` tree | #358 | |
 | M-16 webhook ingress (`auth: mtls` now refused) | #359 | |
 | Section 1.2 toolchain (go1.27.2) | #360 | |
+| M-01 `allow_sls` refuses the highstate (operator-visible) | #366 | a hub-to-node run under a narrowed role |
 
 Not yet started: H-02 (extension manifest signing; a format decision),
 and the Medium findings not listed above.

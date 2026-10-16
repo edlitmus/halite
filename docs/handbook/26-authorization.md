@@ -208,7 +208,7 @@ A rule can restrict how a function is called:
 
 | Limit | Meaning |
 |---|---|
-| `allow_sls: [webserver.*]` | `state.apply` may name only these SLS files (patterns). |
+| `allow_sls: [webserver.*]` | `state.apply` may name only these SLS files (patterns). A request naming none runs the highstate and is refused, as is `state.highstate`. |
 | `deny_sls: [...]` | ...or must not name these. |
 | `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. Each name is checked, positional or the `sls` keyword, and each name of a comma list on its own. |
 | `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name. |
@@ -275,6 +275,7 @@ can be tested in CI. Each of these was run against the policy above:
 | Command | Result |
 |---|---|
 | `policy test cert:CN=alice web1.prod state.apply webserver.nginx` | allowed by role "webops" rule 0 |
+| `… web1.prod state.apply` | denied: `state.apply` with no SLS names runs the highstate, which is not in the SLS names this role may apply (`webserver.*`) |
 | `… web1.prod state.apply db.postgres` | denied: `db.postgres` is not in the SLS names this role may apply (`webserver.*`) |
 | `… web1.prod state.apply webserver.nginx --kwarg pillar=x` | denied: `state.apply` may not be called with "pillar" by this role |
 | `… db1.prod test.ping` | allowed by role "readonly" rule 0 |

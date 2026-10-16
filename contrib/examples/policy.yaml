@@ -19,7 +19,7 @@
 # Check a decision before you deploy it, rather than in production:
 #
 #   halite-hub policy show
-#   halite-hub policy test 'cert:CN=alice' 'web1.prod' state.apply
+#   halite-hub policy test 'cert:CN=alice' 'web1.prod' state.apply webserver.nginx
 #   halite-hub policy test 'cert:CN=ci' hub state.orchestrate --runner
 #
 # `policy test` prints the rule that matched or the reason for the
@@ -41,10 +41,15 @@ roles:
       # state.apply" means "may apply any SLS in the tree".
       #
       # allow_sls matches the positional arguments, which is how a node
-      # reads SLS names. allow_mods matches every orchestration name the
-      # runner will compile, however it is given: positionally, or as the
-      # keyword `sls` (which is how `halite-hub orch run` sends it), and
-      # each name of a comma list on its own.
+      # reads SLS names. A request under allow_sls that names no SLS, or
+      # state.highstate, is refused: it would run the whole highstate,
+      # which is not one of the names. A role meant to run the highstate
+      # needs a rule without allow_sls.
+      #
+      # allow_mods matches every orchestration name the runner will
+      # compile, however it is given: positionally, or as the keyword
+      # `sls` (which is how `halite-hub orch run` sends it), and each
+      # name of a comma list on its own.
       # deny_kwargs matches keyword arguments, and matters more than it
       # looks: passing `pillar` on the command line overrides pillar
       # values, which is otherwise a trivial way around any
