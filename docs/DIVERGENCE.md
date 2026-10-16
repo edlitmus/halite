@@ -26157,6 +26157,141 @@ failed.
   it was raised for (superblock and existing-array refusals, the
   mutating functions) are still the paths that ran. The note now says
   the signature probe has not.
+### 5.311 `zfs.filesystem_present` set `atime=false`, and a quota it already had, every run
+
+Found by an audit (H-18) and reproduced with a scripted runner before
+anything was changed. A state declaring
+
+```yaml
+tank/data:
+  zfs.filesystem_present:
+    - properties:
+        atime: off
+        quota: 10G
+```
+
+against a dataset whose `zfs get -H -p -o property,value` read
+`atime\toff` and `quota\t10737418240` reported "updated" and ran
+`zfs set atime=false tank/data` and `zfs set quota=10G tank/data`. Every
+run. `zpool.present` had the same comparison for pool properties.
+
+**Two paths that must agree, twice.** The state compared
+`value.KeyString(declared)` with the `-p` output as strings.
+
+- **Booleans.** YAML 1.1 is the default here (`internal/yaml`'s
+  `bool11`), so the commonest ZFS spelling — `atime: off`,
+  `compression: on`, `autotrim: on` — arrives as a Go bool, and
+  `KeyString` renders that as `false`/`true`. zfs prints `off`/`on`, so
+  the comparison never matched, and the value it then handed to
+  `zfs set`, `zfs create -o`, `zpool set`, `zpool create -o` and `-O` was
+  `false`/`true`. That zfs refuses `atime=false` is from zfsprops(7)'s
+  `on | off`, not from a run here; if it does, such a state failed every
+  run, and a `zfs create -o atime=false` failed to create the dataset at
+  all. The live conformance case passed no properties, and the `zfs`
+  evidence note says "dataset properties beyond creation" are not
+  covered, so nothing had ever compared one.
+- **Sizes.** `-p` prints exact byte counts; a person writes `10G` and
+  `128K`. Those never compared equal, and an unset quota reads back as
+  `0` under `-p` where the declaration says `none`.
+
+**The change.** `zfsArg` renders a declared value for the command line
+and for the comparison: a boolean is `on`/`off`, as
+`salt.utils.zfs.to_bool` does before Salt builds any zfs or zpool
+command; anything else is `KeyString` as before. `zfsSameValue` compares
+that with what `get -p` printed and, for the size properties only, parses
+both sides to bytes and compares the numbers. The value sent to zfs is
+still the size as declared.
+
+The rules, and where each came from:
+
+- **The size grammar is Salt's** (`salt/utils/zfs.py`, `re_zfs_size` and
+  `from_size`): digits or a decimal, then one of `K M G T P E` in either
+  case with an optional `B`, each a power of 1024; plus a bare integer,
+  which is what `-p` prints. A decimal is taken only when it comes to a
+  whole number of bytes (`1.5G` is, `1.3K` is not); Salt keeps the
+  fraction as a float that then never equals anything, so a fraction
+  falls back to the string comparison here rather than guessing at
+  libzfs's rounding. `KiB`, a bare `B` and `Z`, which libzfs's own parser
+  accepts as far as its source reads, are not in Salt's grammar and are
+  not parsed either. Anything not parsed is compared as the exact string,
+  which can fail to converge but cannot set something the declaration did
+  not ask for.
+- **Which properties are sizes** is not Salt's. Salt types properties by
+  probing `zfs get`'s usage text, so it types `recordsize` and
+  `volblocksize` (whose VALUES column reads "512 to 1M, power of 2") as
+  strings and would compare them as strings. Here the list is the
+  settable `<size>` properties of zfsprops(7) — `quota`, `refquota`,
+  `reservation`, `refreservation`, `volsize`, `special_small_blocks`,
+  and the `userquota@`, `groupquota@` and `projectquota@` families — plus
+  `recordsize` and `volblocksize`, which take and print bytes all the
+  same. User properties (`com.example:size`) are strings to zfs and stay
+  strings; a test holds that.
+- **`none` is `0`** for `quota`, `refquota`, `reservation`,
+  `refreservation` and the `*quota@` families, on either side. That `-p`
+  prints `0` for these rather than `none` is read from libzfs's
+  `zfs_prop_get` (the word is the non-literal branch), not seen on a
+  machine.
+
+**Fixtures: none of this is captured.** The repository holds no
+`zfs get -H -p` output for any of these properties; the only `get`
+output a run has produced is zpool's `ashift\t12`
+(`contrib/vm/zfs/probe.sh`). Every read-back line in
+`internal/builtin/zfs_test.go` is synthetic and is labelled so there.
+The tests check that the state agrees with that reading of zfs, not that
+zfs agrees with it. They call the state functions directly rather than
+through the registry, which skips them on macOS and Windows, so that
+they run on the Mac this was written on and on every CI platform.
+
+**What a FreeBSD lab run has to check to close this** (contrib/tofu's
+FreeBSD 14 and 15 hosts, or the `freebsd` leg of `fleet.yml`; neither was
+used for this change):
+
+1. On a pool on a file vdev, capture the bytes of
+   `zfs get -H -p -o property,value atime,compression,quota,refquota,reservation,refreservation,recordsize,volsize,special_small_blocks <ds>`
+   on a fresh dataset, and again after `zfs set quota=10G
+   recordsize=128K atime=off compression=on`, and after
+   `zfs set quota=none`. Replace the synthetic lines with them. The
+   claims to confirm or refute: on/off for booleans, `compression` reads
+   back `on` rather than the algorithm it stands for, exact bytes for
+   sizes, and `0` (not `none`) for an unset quota or reservation.
+2. Run `zfs set atime=false <ds>` and `zfs create -o atime=false` and
+   record what zfs says, to settle whether the old behaviour failed or
+   was merely noisy.
+3. Apply the SLS above twice through `halite-node state apply`, then a
+   second time with a changed quota, and check the first and third runs
+   set and the second changes nothing. `userquota@<user>: 1G` with a real
+   account, and `refreservation: none` on a volume, are the cases the
+   conformance harness does not reach.
+4. `zpool.present` with `autotrim: on` and `autoexpand: off` on an
+   existing pool, twice.
+
+The `zfs.filesystem_present` and `zpool.present` cases of
+`TestLiveConformanceOnThisMachine` now declare properties in these spellings
+(`atime`, `compression`, `quota`, `recordsize`, `refreservation`;
+`autoexpand`) and the dataset probe prints them as `zfs get -p` does, so
+the next run of the `freebsd` leg covers the creation half of 3 and
+leaves the bytes of 1 in its log if it fails. That has not run yet.
+The `zfs` and `zpool` evidence levels are unchanged: they are `hardware`
+for creating and destroying, and this is not that.
+
+**Broken on purpose.** Rendering booleans with `KeyString` again failed
+every boolean case in both states, with the old `zfs set atime=false`
+in the output. Comparing sizes as strings failed every size and `none`
+case. Treating every property as a size failed the user-property case.
+Each was restored and the tests passed.
+
+**Not verified.**
+
+- **No zfs here.** Nothing in this change ran against a real `zfs` or
+  `zpool`, on FreeBSD or on Linux. The tests ran on macOS (Darwin 25.6).
+- **`refreservation: auto`**, which a volume can declare, reads back as a
+  number and still never compares equal. Unchanged; not addressed.
+- **`filesystem_limit`/`snapshot_limit`** and the `*objquota@` families
+  are counts, not sizes, and are compared as strings. What `-p` prints
+  for their `none` has not been looked at.
+- **yes/no.** No settable property takes `yes|no` as far as zfsprops(7)
+  and zpoolprops(7) say, so a boolean is always rendered `on`/`off`. A
+  declared `"yes"` string is passed through unchanged.
 
 
 
