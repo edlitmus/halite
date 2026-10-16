@@ -112,7 +112,7 @@ func mountTmpfs(t *testing.T, dir, opts string) {
 func TestANoexecStagingDirectoryIsRefusedByTheProbe(t *testing.T) {
 	mountnsReexec(t)
 
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("making the mount point: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestANoexecStagingDirectoryIsRefusedByTheProbe(t *testing.T) {
 func TestTheSameDirectoryWithoutNoexecIsAccepted(t *testing.T) {
 	mountnsReexec(t)
 
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("making the mount point: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestTheSameDirectoryWithoutNoexecIsAccepted(t *testing.T) {
 // instead of a canned exit status.
 func localSH(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "local-ssh")
+	path := filepath.Join(privateTempDir(t), "local-ssh")
 	// The last argument is the remote command -- "/bin/sh -s" -- and
 	// the script arrives on stdin. Everything before it is ssh's own
 	// options and the destination, which mean nothing here.
@@ -185,7 +185,7 @@ func localSH(t *testing.T) string {
 func TestPrepareNamesNoexecOnARealMount(t *testing.T) {
 	mountnsReexec(t)
 
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("making the mount point: %v", err)
 	}

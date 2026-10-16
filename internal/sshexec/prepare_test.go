@@ -60,7 +60,7 @@ func runScript(t *testing.T, script string) (string, int) {
 }
 
 func TestThePrepareScriptMakesTheDirectoryAndProvesItRuns(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 
 	out, code := runScript(t, prepareScript(dir))
 	if code != 0 {
@@ -99,7 +99,7 @@ func TestThePrepareScriptSeparatesItsFailures(t *testing.T) {
 	}
 
 	// Cannot be created: a directory under one that permits no writing.
-	readOnly := t.TempDir()
+	readOnly := privateTempDir(t)
 	if err := os.Chmod(readOnly, 0o500); err != nil {
 		t.Fatalf("making a read-only directory: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestThePrepareScriptSeparatesItsFailures(t *testing.T) {
 	// taking that name first; the probe is now made by `mktemp`, which
 	// is the point of DIVERGENCE 5.306, so the half of the script after
 	// the `chmod` is run on its own against a directory it may not write.
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatalf("making a read-only directory: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestThePrepareScriptSeparatesItsFailures(t *testing.T) {
 // test's choosing, so the refusal can be read without a target.
 func fakeSSH(t *testing.T, status int, stderr string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "fake-ssh")
+	path := filepath.Join(privateTempDir(t), "fake-ssh")
 	script := "#!/bin/sh\n" +
 		"cat >/dev/null\n" +
 		"echo " + shellQuote(stderr) + " >&2\n" +
@@ -170,7 +170,7 @@ func TestATargetThatWillNotExecuteIsToldWhy(t *testing.T) {
 // again. Nothing has been learned about the directory when the command
 // never ran, and saying `noexec` there is the mistake CI found.
 func TestATargetThatCouldNotBeReachedIsNotDiagnosed(t *testing.T) {
-	o := &Options{SSH: filepath.Join(t.TempDir(), "no-such-ssh")}
+	o := &Options{SSH: filepath.Join(privateTempDir(t), "no-such-ssh")}
 	target := roster.Target{ID: "web1.example", Host: "web1.example", ThinDir: "/var/tmp/halite-thin"}
 
 	_, err := o.prepare(context.Background(), target, target.ThinDir)
