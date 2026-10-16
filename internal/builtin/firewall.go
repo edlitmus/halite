@@ -428,7 +428,7 @@ func (r firewallRule) validate() error {
 	// as a line of pf.conf from `pfctl -f -`, and ufw reads them as argv.
 	// They used to be checked for nothing, so `from: "10.0.0.1 \n pass
 	// out quick all"` rendered a second pf rule nobody declared
-	// (DIVERGENCE 5.291). So each is held to the shape its parameter
+	// (DIVERGENCE 5.322). So each is held to the shape its parameter
 	// documents rather than to "anything without a newline": a
 	// blocklist of pf's syntax characters would have to be complete to
 	// be worth anything, and an allowlist only has to be right.

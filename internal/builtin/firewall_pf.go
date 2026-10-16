@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -13,7 +12,10 @@ import (
 // PFAnchor is the anchor halite loads its rules into.
 //
 // A variable so a test can point it elsewhere, and a single name rather
-// than one per rule because pf evaluates an anchor's rules as a set.
+// than one per rule because pf loads an anchor's rules as one ruleset.
+// It does not evaluate them as a set: they are evaluated in the order
+// they were loaded, which is why Apply keeps that order (DIVERGENCE
+// 5.315).
 var PFAnchor = "halite"
 
 // PFConfPath is the ruleset an operator maintains, read only to check
@@ -50,10 +52,33 @@ var PFConfPath = "/etc/pf.conf"
 //
 // pf is last-match-wins; ufw, and the `firewall` module's own shape, is
 // first-match-wins. Emitting `quick` on every rule makes the first match
-// decisive, which is what somebody writing `firewall.allowed` means. It
-// also makes a rule's effect independent of the order the anchor happens
-// to hold them in, which matters because this module rewrites the whole
-// anchor on every change and nothing here promises an order.
+// decisive, which is what somebody writing `firewall.allowed` means.
+//
+// `quick` does **not** make the anchor's order irrelevant. It makes the
+// order decisive: the first rule that matches a packet is the only one
+// that counts. For rules that cannot match the same packet that makes no
+// difference, and for rules that overlap it is the whole difference —
+// `deny from 10.0.0.0/8` above `allow from 10.0.0.5 port 22` means the
+// allow never matches anything. This comment used to say the opposite,
+// and Apply sorted the anchor alphabetically on every change, which put
+// every `block` above every `pass` (DIVERGENCE 5.315).
+//
+// # The order is the order the rules were declared in
+//
+// More exactly, the order Apply was called in, which for a state run is
+// the order the states ran: a rule not yet in the anchor is appended to
+// the end of it, a rule already there keeps its place, and removing a
+// rule leaves the others where they were. That is what ufw does — `ufw
+// allow` appends, and a rule it already has is skipped where it stands —
+// so the two providers of one virtual module agree about which of two
+// overlapping rules wins: the one declared first.
+//
+// What this cannot do is move a rule that is already loaded. Each state
+// knows its own rule and nothing about the others, so a rule that is
+// present is converged wherever it sits; reordering two states in an SLS
+// file does not reorder a loaded anchor, on pf or on ufw. An anchor
+// loaded by a build that sorted keeps that order until it is flushed and
+// re-applied.
 //
 // # What pf does not have
 //
@@ -196,9 +221,13 @@ func (p pfProvider) Apply(c *exec.Context, r firewallRule, remove, dryRun bool) 
 	case !remove && found:
 		return false, nil
 	case !remove:
+		// Appended, not inserted in some canonical place: with every
+		// rule `quick`, position is precedence, and the only precedence
+		// anybody expressed is the order the states ran in. Sorting
+		// here was DIVERGENCE 5.315 — it put every `block` above every
+		// `pass`, so an allow carved out of a wider deny never matched.
 		want = append(want, line)
 	}
-	sort.Strings(want)
 
 	if dryRun {
 		return true, nil
@@ -250,7 +279,7 @@ func (pfProvider) anchorRules(c *exec.Context) ([]string, error) {
 // line break is where pf starts reading the next rule. pfRule refuses
 // values that could carry one; this is the check at the boundary itself,
 // so that whatever the next way of building a rule is, a rule that is
-// really two is refused here rather than loaded (DIVERGENCE 5.291).
+// really two is refused here rather than loaded (DIVERGENCE 5.322).
 func (pfProvider) loadAnchor(c *exec.Context, rules []string) error {
 	for _, rule := range rules {
 		// Line breaks only, and not every control character: the rules
@@ -469,7 +498,7 @@ func normalizePFRule(rule string) string {
 // has, because this is the last place before the text becomes a line of
 // pf.conf, and Apply is reachable without validate — the tests reach it
 // that way, and so would the next caller. It used to only trim, so a
-// value with a newline in it rendered a second rule (DIVERGENCE 5.291).
+// value with a newline in it rendered a second rule (DIVERGENCE 5.322).
 func pfAddress(field, a string) (string, error) {
 	if err := validateFirewallAddress(field, a); err != nil {
 		return "", err

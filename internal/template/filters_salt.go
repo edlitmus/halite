@@ -667,10 +667,15 @@ func combinatoric(ordered bool) FilterFunc {
 		var walk func(start int) error
 		walk = func(start int) error {
 			if int64(len(cur)) == r {
-				out = append(out, append([]any{}, cur...))
-				if int64(len(out)) > fc.r.opts.MaxIterations {
-					return fc.Errorf("this combination would produce more than %d results", fc.r.opts.MaxIterations)
+				// The bound is on the items held, not on the results:
+				// permutations of ten items, ten at a time, is 3.6
+				// million results, under a count limit of ten million,
+				// and 36 million items, which is the memory. An empty
+				// result still costs a slot, so it counts as one.
+				if !mulWithin(int64(len(out))+1, max(r, 1), fc.r.opts.MaxIterations) {
+					return fc.Errorf("this combination would produce more than %d items", fc.r.opts.MaxIterations)
 				}
+				out = append(out, append([]any{}, cur...))
 				return nil
 			}
 			for i := 0; i < len(items); i++ {
@@ -694,6 +699,34 @@ func combinatoric(ordered bool) FilterFunc {
 			return nil, err
 		}
 		return out, nil
+	}
+}
+
+// addPow2 adds 2^k to an address, wrapping at the top of its family as
+// the last subnet of the whole space does.
+func addPow2(a netip.Addr, k int) netip.Addr {
+	if a.Is4() {
+		b := a.As4()
+		addBit(b[:], k)
+		return netip.AddrFrom4(b)
+	}
+	b := a.As16()
+	addBit(b[:], k)
+	return netip.AddrFrom16(b)
+}
+
+// addBit adds 2^k to a big-endian integer, carrying, and drops a carry
+// out of the top.
+func addBit(b []byte, k int) {
+	if k < 0 || k >= len(b)*8 {
+		return
+	}
+	i := len(b) - 1 - k/8
+	carry := uint16(1) << (k % 8)
+	for ; i >= 0 && carry != 0; i-- {
+		sum := uint16(b[i]) + carry
+		b[i] = byte(sum)
+		carry = sum >> 8
 	}
 }
 
@@ -837,18 +870,27 @@ func addNetworkFilters(f map[string]FilterFunc) {
 		if !ok || int(bits) <= p.Bits() || int(bits) > p.Addr().BitLen() {
 			return nil, fc.Errorf("cidr_subnets needs a prefix length longer than %d", p.Bits())
 		}
-		count := int64(1) << (bits - int64(p.Bits()))
-		if count > 65536 {
-			return nil, fc.Errorf("cidr_subnets: %d subnets is more than this filter will enumerate", count)
+		// The count and the step are powers of two that an IPv6 prefix
+		// takes past 64 bits, and both were int64 shifts. A count of
+		// 1<<63 is negative, which passed the limit below and made
+		// make() panic ('::/0'|cidr_subnets(63)); 1<<64 is zero, which
+		// returned nothing. The step wrapped the same way, to zero (the
+		// same subnet 65,536 times) or to a number of addr.Next() calls
+		// no render would finish ('2001:db8::/80'|cidr_subnets(81) is
+		// 2^47 of them per subnet). So the count is bounded by its
+		// exponent, and the address is advanced by adding the step to
+		// its bytes rather than by counting.
+		split := bits - int64(p.Bits())
+		if split > 16 {
+			return nil, fc.Errorf("cidr_subnets: 2^%d subnets is more than this filter will enumerate", split)
 		}
+		count := int64(1) << split
 		out := make([]any, 0, count)
 		addr := p.Masked().Addr()
-		step := int64(1) << (int64(p.Addr().BitLen()) - bits)
+		hostBits := p.Addr().BitLen() - int(bits)
 		for i := int64(0); i < count; i++ {
 			out = append(out, netip.PrefixFrom(addr, int(bits)).String())
-			for j := int64(0); j < step; j++ {
-				addr = addr.Next()
-			}
+			addr = addPow2(addr, hostBits)
 		}
 		return out, nil
 	}

@@ -232,12 +232,20 @@ func addCoreFilters(f map[string]FilterFunc) {
 		// literal string too — `indent(width='>>> ')` prefixes every
 		// indented line with the string as written rather than that many
 		// spaces, which is how a tree marks up a diff or a quoted block.
-		pad := strings.Repeat(" ", 4)
+		//
+		// A numeric width is Python's `" " * width`, so a negative one is
+		// no indent at all rather than the panic strings.Repeat raised.
+		// The pad is built only once the result has been measured.
+		// Nothing measured it before: with MaxOutput at 1000,
+		// indent(width=2000)|length was 2003, because only what is
+		// written is charged to the output budget, and a width of ten
+		// billion was ten gigabytes of spaces before anything looked.
+		pad, padLen, spaces := "", int64(4), true
 		if w, ok := arg(args, kwargs, 0, "width"); ok {
-			if s, ok := w.(string); ok {
-				pad = s
+			if str, ok := w.(string); ok {
+				pad, padLen, spaces = str, int64(len(str)), false
 			} else if n, ok := asInt(w); ok {
-				pad = strings.Repeat(" ", int(n))
+				padLen = max(n, 0)
 			}
 		}
 		first := false
@@ -249,14 +257,32 @@ func addCoreFilters(f map[string]FilterFunc) {
 			blank = truthy(b)
 		}
 		lines := strings.Split(s, "\n")
+		padded := func(i int, ln string) bool {
+			return (i > 0 || first) && (ln != "" || blank)
+		}
+		// The result is the input plus one pad per indented line, and a
+		// long pad on many lines multiplies: a 1 KiB string pad over a
+		// megabyte of newlines is a gigabyte. A pad on no line costs
+		// nothing, as in Jinja, so a wide indent of one line is fine.
+		var count int64
 		for i, ln := range lines {
-			if i == 0 && !first {
-				continue
+			if padded(i, ln) {
+				count++
 			}
-			if ln == "" && !blank {
-				continue
+		}
+		if count == 0 {
+			return s, nil
+		}
+		if !mulWithin(padLen, count, fc.r.opts.MaxOutput-int64(len(s))) {
+			return nil, fc.Errorf("indent would exceed the %d byte output limit", fc.r.opts.MaxOutput)
+		}
+		if spaces {
+			pad = strings.Repeat(" ", int(padLen))
+		}
+		for i, ln := range lines {
+			if padded(i, ln) {
+				lines[i] = pad + ln
 			}
-			lines[i] = pad + ln
 		}
 		return strings.Join(lines, "\n"), nil
 	}
@@ -270,12 +296,19 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if w, ok := arg(args, kwargs, 0, "width"); ok {
 			width, _ = asInt(w)
 		}
-		gap := int(width) - len([]rune(s))
+		// Python's str.center returns the string unchanged for a width
+		// at or below its length, negative included, and the padding is
+		// otherwise refused before it is built if it would be larger
+		// than a render may write.
+		gap := width - int64(len([]rune(s)))
 		if gap <= 0 {
 			return s, nil
 		}
+		if err := fc.r.checkBytes(gap+int64(len(s)), "center", fc.Pos); err != nil {
+			return nil, err
+		}
 		left := gap / 2
-		return strings.Repeat(" ", left) + s + strings.Repeat(" ", gap-left), nil
+		return strings.Repeat(" ", int(left)) + s + strings.Repeat(" ", int(gap-left)), nil
 	}
 
 	f["truncate"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
@@ -295,14 +328,20 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if e, ok := argString(args, kwargs, 2, "end"); ok {
 			end = e
 		}
+		// Jinja asserts length >= len(end) before anything else, so a
+		// length shorter than the ellipsis is an error under Salt too.
+		// Here it was worse than an error: truncate(-9223372036854775807)
+		// wrapped the subtraction below to a huge positive cut and
+		// sliced past the end of the string, which panicked.
+		endLen := int64(len([]rune(end)))
+		if length < endLen {
+			return nil, fc.Errorf("truncate expects a length of at least %d, the length of its end string, got %d", endLen, length)
+		}
 		rs := []rune(s)
 		if int64(len(rs)) <= length {
 			return s, nil
 		}
-		cut := int(length) - len([]rune(end))
-		if cut < 0 {
-			cut = 0
-		}
+		cut := int(length - endLen)
 		out := string(rs[:cut])
 		if !killwords {
 			if i := strings.LastIndexByte(out, ' '); i > 0 {
