@@ -106,7 +106,7 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 				return nil, fmt.Errorf("%s %s is signed by %s in the v1 bundle format, which covers "+
 					"only the files and not the manifest's declares, executables, name, version or "+
 					"kind, so this node refuses it; re-sign it with a current halite-hub "+
-					"(`extensions sign`) and move its pin to the root that prints (DIVERGENCE 5.331)",
+					"(`extensions sign`) and move its pin to the root that prints (DIVERGENCE 5.333)",
 					manifest.Name, manifest.Version, v1Key.Name)
 			}
 			return nil, fmt.Errorf("%s %s: %w", manifest.Name, manifest.Version, err)
@@ -135,7 +135,7 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 
 // checkPin holds the bundle to what the estate fixed it at.
 //
-// filesRootHex is the root a pin held before DIVERGENCE 5.331. It is
+// filesRootHex is the root a pin held before DIVERGENCE 5.333. It is
 // never accepted, only recognised, so that a pin nobody moved after the
 // format change is reported as that rather than as a swapped bundle.
 func checkPin(manifest *Manifest, rootHex, filesRootHex string, pin Pin) error {
@@ -147,7 +147,7 @@ func checkPin(manifest *Manifest, rootHex, filesRootHex string, pin Pin) error {
 		if EqualDigest(pin.Root, filesRootHex) {
 			return fmt.Errorf("%s %s is pinned to %s, which is its v1 root: it covers the files "+
 				"and not the manifest. The bundle's root is now %s; move the pin to it "+
-				"(DIVERGENCE 5.331)", manifest.Name, manifest.Version, pin.Root, rootHex)
+				"(DIVERGENCE 5.333)", manifest.Name, manifest.Version, pin.Root, rootHex)
 		}
 		// The version matched and the contents did not, which is
 		// exactly the swap the digest half of the pin exists to catch.

@@ -211,7 +211,7 @@ func (m *Manifest) Encode() ([]byte, error) {
 // A field this build does not know is refused, not ignored. SigningRoot
 // is computed from the fields this build parses, so a field it skips is
 // outside the signature, and a later build that gave the field a meaning
-// would act on something nobody signed. Before DIVERGENCE 5.331 the whole
+// would act on something nobody signed. Before DIVERGENCE 5.333 the whole
 // manifest was outside the signature, and tolerating unknown fields cost
 // nothing because nothing was covered anyway.
 func ParseManifest(raw []byte) (*Manifest, error) {
@@ -242,7 +242,7 @@ func ParseManifest(raw []byte) (*Manifest, error) {
 // file runs; and `name`, `version` and `kind`, which say what it is.
 // Anyone who could write `manifest.json` could change any of those under a
 // valid signature and a matching pin. Issue 321 finding H-02; DIVERGENCE
-// 5.331.
+// 5.333.
 //
 // The file tree stays a tree of its own, so two bundles that share files
 // still share subtrees (SPEC 24.4), and the metadata is one more node

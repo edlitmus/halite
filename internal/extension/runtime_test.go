@@ -210,7 +210,7 @@ func TestTheSandboxComesFromTheSignedManifest(t *testing.T) {
 	// And "signed" is checked rather than asserted: the same cached
 	// bundle with `network` written into its manifest afterwards is
 	// refused by the store, so it never reaches Add. Before DIVERGENCE
-	// 5.331 this comment's first line was false, and this half of the
+	// 5.333 this comment's first line was false, and this half of the
 	// test would have loaded the rewritten bundle as signed by "release"
 	// with the network granted.
 	path := filepath.Join(cache, "echo", "1.0.0", ManifestName)

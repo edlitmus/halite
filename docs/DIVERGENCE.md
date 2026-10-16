@@ -28870,7 +28870,36 @@ then honoured it as a dry run. That half is the unit tests'.
 `TestLiveKMSJobSignature` is still unrun; it needs a KMS key. The live
 run used one node of each build, not an estate.
 
-### 5.331 An extension's signature covered its files and not its manifest
+### 5.332 An agentless concurrency test raced its own fixtures (ETXTBSY)
+
+`TestConcurrentRunsAgainstOneMachineBothSucceed` failed the `fips-test`
+leg on PR #372, a change that did not touch `internal/sshexec`:
+
+    run 5: web1.example: fork/exec /tmp/…/007/ssh: text file busy
+
+The test built six harnesses in the loop that started their runs. Each
+harness writes a fake `ssh` and `scp` script. So run 0 could fork while
+the loop was still writing harness 5's `ssh`. Between fork and exec, the
+child holds a copy of every descriptor the parent has open, and exec of
+a file that is open for writing fails with ETXTBSY. This is Go's
+golang/go#22315. The last harness written is the one that fails, and it
+did.
+
+It reproduced locally on the unchanged test: 6 failures in 300 runs of
+the one test, with no parallel tests in the package. The harnesses are
+now all built before any run starts. After that, 1000 runs gave 0
+failures. 5.326 changed how this test makes its directory and nothing
+about the writes or the forks, so it neither caused this nor fixed it.
+
+The package itself is not exposed in the same way. Its only execs are
+the system's `ssh` and `scp` (`sshexec.go`), and it writes no local file
+that it then runs.
+
+**Not verified.** Other tests in the repository that write an
+executable and then fork in a goroutine were not searched for. The 1000
+clean runs are evidence against the race, not proof that the window is
+closed on every machine.
+### 5.333 An extension's signature covered its files and not its manifest
 
 Issue 321 finding H-02, and the one High that the triage held back as "a
 format decision".
@@ -28997,35 +29026,7 @@ written by the same author from the same description, so it catches the
 doc and the code disagreeing, not a format that is wrong in both. A
 third-party signer was not written against it.
 
-### 5.332 An agentless concurrency test raced its own fixtures (ETXTBSY)
 
-`TestConcurrentRunsAgainstOneMachineBothSucceed` failed the `fips-test`
-leg on PR #372, a change that did not touch `internal/sshexec`:
-
-    run 5: web1.example: fork/exec /tmp/…/007/ssh: text file busy
-
-The test built six harnesses in the loop that started their runs. Each
-harness writes a fake `ssh` and `scp` script. So run 0 could fork while
-the loop was still writing harness 5's `ssh`. Between fork and exec, the
-child holds a copy of every descriptor the parent has open, and exec of
-a file that is open for writing fails with ETXTBSY. This is Go's
-golang/go#22315. The last harness written is the one that fails, and it
-did.
-
-It reproduced locally on the unchanged test: 6 failures in 300 runs of
-the one test, with no parallel tests in the package. The harnesses are
-now all built before any run starts. After that, 1000 runs gave 0
-failures. 5.326 changed how this test makes its directory and nothing
-about the writes or the forks, so it neither caused this nor fixed it.
-
-The package itself is not exposed in the same way. Its only execs are
-the system's `ssh` and `scp` (`sshexec.go`), and it writes no local file
-that it then runs.
-
-**Not verified.** Other tests in the repository that write an
-executable and then fork in a goroutine were not searched for. The 1000
-clean runs are evidence against the race, not proof that the window is
-closed on every machine.
 
 
 

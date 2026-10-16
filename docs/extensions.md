@@ -357,7 +357,7 @@ signed   = Ed25519 over "halite-extension-bundle-v2\x00" || root
 in `internal/extension` fixes one reference manifest's root, and it
 agrees with a separate implementation written from this description.
 
-Before DIVERGENCE 5.331 the signature covered only the files, and a
+Before DIVERGENCE 5.333 the signature covered only the files, and a
 bundle signed that way (`halite-extension-bundle-v1`) is now refused,
 saying so by name. Re-sign it and move its pin; a pin still holding the
 old root is reported as exactly that, with the new root to move it to.

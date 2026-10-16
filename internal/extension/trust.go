@@ -140,7 +140,7 @@ func Verify(keys []TrustKey, root, signature []byte) (TrustKey, error) {
 // signs — a job, a state tree, a token. That costs one string and
 // removes a whole class of confusion.
 //
-// v2 since DIVERGENCE 5.331, when the root began to cover the manifest's
+// v2 since DIVERGENCE 5.333, when the root began to cover the manifest's
 // fields. The domain is not what stops a v1 signature verifying: the
 // signing root is a different hash from the file root a v1 signature
 // covers, so one cannot verify as the other short of a SHA-256 collision,

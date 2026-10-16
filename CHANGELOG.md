@@ -39,7 +39,7 @@ it is the old format. A pin still holding a bundle's old root is
 reported as that, with the new root to use. A `manifest.json` edited
 after signing, or holding a field this build does not know, is refused.
 The exact bytes signed are in docs/extensions.md, for anybody with a
-signer of their own. See DIVERGENCE 5.331.
+signer of their own. See DIVERGENCE 5.333.
 
 ### Signed jobs use a new format, and old signatures are refused
 

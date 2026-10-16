@@ -22,7 +22,7 @@ import (
 // -- could give a signed extension `root` and `network` that its
 // publisher never declared, point it at a different signed file, or
 // relabel it as another extension or an older release, and the bundle
-// still loaded as signed. Issue 321 finding H-02; DIVERGENCE 5.331.
+// still loaded as signed. Issue 321 finding H-02; DIVERGENCE 5.333.
 func TestEveryManifestFieldIsCoveredByTheSignature(t *testing.T) {
 	cases := []struct {
 		name   string
