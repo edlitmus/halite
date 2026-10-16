@@ -13,14 +13,15 @@ this file to the code, so it drifts as work lands.
 ## Status on 2026-10-16
 
 Checked against `main` at `d8ceba1`, after every PR that references
-issue 321 had merged. The status comes from the merged PRs and the
+issue 321 had merged. H-02 was fixed later the same day, at `9ce448e`
+(#372); the rows for it below are updated. The status comes from the merged PRs and the
 commit log, with each PR's body read for parts it said it left unfixed.
 The fixes were not re-run for this update, except where a row says so.
 Issue 321 stays open, because what is below is not finished.
 
 | | Fixed | Not fixed |
 |---|---|---|
-| High (20) | 19 | H-02 |
+| High (20) | 20 | none |
 | Medium (55) | 21 | 34: 3 mentioned and explicitly left, 1 half done, 30 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
@@ -33,6 +34,7 @@ not do. Each has been checked to see whether it happened.
 
 | Finding | PR | Left by the PR | Before merge |
 |---|---|---|---|
+| H-02 extension manifest signed (breaking: re-sign every bundle, move every pin) | #372 | | DIVERGENCE 5.333. On untouched main all eight tamper cases loaded as signed; the real CLI then refused a main-signed bundle by name, loaded a branch-signed one, refused a manifest rewritten after sync, and refused a pin of the old root. Extension packages pass natively on FreeBSD. No node synced from a hub's tree |
 | H-01 RBAC target kind (also `{id}` lists, mine, `DispatchAs`) | #344 | the reactor's `wouldAuthorize` output and resume are untested | |
 | H-03 archive symlink escape | #333 | | |
 | H-04 template limits (+ L-engine-1, L-engine-3) | #332 | a value nested in a loop (`{% set ns.x = [ns.x] %}`) still overflows the stack; chained `set` filters, `truncate` leeway, `zfill`; SPEC 10.2.8's sandbox claim | |
@@ -75,19 +77,15 @@ not do. Each has been checked to see whether it happened.
 Changes made while doing these, not findings of the audit: #369 holds
 an extension's `Version` to its code, and refuses a binary whose
 handshake differs from its signed manifest (DIVERGENCE 5.325). That
-does not close H-02. #370 fixed `internal/sshexec`'s tests under a
-umask of 002 (5.326).
+does not close H-02 (#372 below does). #370 fixed `internal/sshexec`'s
+tests under a umask of 002 (5.326). #373 fixed an ETXTBSY race in one of
+those tests, which failed CI on #372 (5.332).
 
 ### Not fixed
 
 Severities are this file's revised ones, from the tables below.
 
-**High.**
-
-- **H-02, the extension manifest is not signed.** Not started. It waits
-  on a format decision. #369 now checks the name and version a binary
-  reports against its manifest. That check does not cover `declares`
-  (root, network) or `executables`, and those are what make H-02 High.
+**High.** None. H-02 is fixed (#372, above).
 
 **Medium, mentioned by a PR and explicitly left.**
 
@@ -157,10 +155,10 @@ upstream renamed `local`; `TestLiveDnfModuleReadersAgree` gates on a
 streams" instead of saying modularity is unsupported.
 
 **Ledger and comment statements found to be false** (the table below).
-Each was to be corrected with the fix that touches it. The rows for
-M-15 (DIVERGENCE 1.9) and H-02 (the extension comments that say
-declarations are signed) belong to findings not fixed, so those
-statements are presumably still false. The others were not re-checked
+Each was to be corrected with the fix that touches it. The row for
+M-15 (DIVERGENCE 1.9) belongs to a finding not fixed, so that statement
+is presumably still false. The H-02 row's comments (declarations are
+signed) are true since #372, and `Runtime.Add`'s says when it became so. The others were not re-checked
 for this update.
 
 ## How this was checked, and what that does not cover
