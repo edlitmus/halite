@@ -28471,6 +28471,145 @@ Each was broken on purpose and watched to fail:
   one address each keep their own, as they each kept their own nonce
   cache before; a copy that reaches each is delivered twice. Unchanged
   by this, and not new.
+### 5.328 A hub could replay a signed job: after a restart, after a flood, or with a new nonce
+
+**Found by** a security review (M-02), and reproduced before anything was
+changed: the same signed jid with a fresh nonce was refused, and then
+accepted after 4096 junk jobs had been admitted.
+
+**What the node had.** `job.Guard` is SPEC 6.3's replay cache: in memory,
+one per process (`newExecutor`), a FIFO of 8192 keys, two per job (`jid:`
+and `nonce:`), so about 4096 jobs. Three things were wrong with it as a
+defence against a hub, and SPEC 25.6's signed jobs are exactly the case
+where the hub is the adversary.
+
+- **`Offer` admitted before it checked the signature.** A job refused for
+  having no signature, or a bad one, had already taken two places in the
+  cache. A hub could send a few thousand unsigned jobs to a node that
+  requires signatures on everything, have every one refused, and push a
+  real signed job's entry out. On a node that requires signatures only for
+  some classes, unsigned read-only jobs are accepted anyway, and do the
+  same.
+- **The nonce is not signed.** `SigningPayload` covers the jid and not the
+  nonce, which the hub chooses. So once the jid key was gone, a replay
+  with a fresh nonce was a job the node had never seen.
+- **Nothing survives a restart**, and nothing seeds the cache from the
+  evidence chain. A signed job is good until its expiry, which can be long
+  after the node restarts.
+
+`guard.go` said a replay older than the window was "bounded in practice
+by the job's own expiry, which is the shorter of the two". That was the
+exculpatory conclusion: it is false across a restart, false whenever the
+hub chooses to flood, and false for a job with no expiry.
+
+**The change.**
+
+- **`job.SignedReplay`**, a record of the signed jobs a node has
+  accepted, keyed by jid. It is a file, `<state_dir>/signed-jobs`, one line
+  per job (`<jid> <expiry>`), appended and synced before the job is
+  queued. It is never evicted by count, because only a signer can add to
+  it: the hub cannot flood it. An entry is dropped once its job is a day
+  past its expiry (`SignedReplayRetention`, for a clock stepped back after
+  boot), so it holds what operators signed within one expiry window. A
+  job signed with no expiry is kept for ever, since its signature never
+  stops being good. The file is rewritten without dead lines on load and
+  after 1024 dead lines. A record that cannot be read or written refuses
+  signed jobs, rather than starting empty, since an empty record after a
+  restart is the hole. The one exception is a torn last line from a write
+  that never returned, which admitted nothing.
+- **`Offer` admits last.** `Guard.Check` refuses a replay, an expired job
+  or a malformed one without recording anything. A signed jid already in
+  the record is refused next, before the signature check, which can mean
+  compiling pillar. Then the signature is checked. Then a job that
+  verified is written to the record. Only then does the job take its
+  places in the in-memory cache.
+- **The comment is corrected**, and says what the in-memory cache is for:
+  a hub that redelivers by accident. For an unsigned job that is all a
+  replay cache can do, because a hub that wants an unsigned job run again
+  can mint a new one.
+
+**The other design, and why not.** With no state at all, a node could
+refuse a signed job whose jid predates its own start, less some skew. It
+would refuse the signed jobs that matter most: a job queued on the hub for
+a node that is off is delivered when the node starts, and its jid is
+older than the node by construction. So the record is kept.
+
+**How this and the signing-format change fit.** That change refuses a
+signed job with no expiry, or with one further off than
+`job_signature_max_ttl` (an hour by default). With it, every entry here
+expires within that bound plus a day, and nothing is kept for ever. This
+change does not depend on it. Without it, a signed job with no expiry
+stays in the record permanently, which is correct, and the record's size
+is bounded only by how many such jobs operators sign. `halite-hub run`
+never signs one.
+
+**How it is tested.** `internal/job/signedreplay_test.go`: a signed jid is
+admitted once whatever its nonce; it is refused by a new `SignedReplay` on
+the same file; the file is mode 0600; an entry past its expiry plus the
+retention is dropped from memory and from the file, one inside the
+retention is kept, and one with no expiry is kept; a corrupt line refuses
+the next signed job, a torn last line does not; an unwritable directory
+refuses; the file is compacted; `Guard.Check` records nothing.
+`cmd/halite-node/replay_guard_test.go` drives `acceptJob` and `Offer`: a
+signed job replayed with a fresh nonce is refused; after 8208 junk jobs
+it is still refused, on a node requiring signatures for everything (where
+the junk is refused and the cache holds only the signed job's two keys)
+and on one requiring them for `state` (where the junk is accepted and the
+test checks that it did push the jid out of the in-memory cache, so that
+the record is what refuses the replay); after a new executor on the same
+state directory, a replay with a fresh nonce and the identical message
+are both refused; and a forged job does not use up the jid of the real one.
+
+Each was broken on purpose and watched failing:
+
+- `Offer` restored from `main`: both flood cases, the restart test and
+  the forged-jid test failed. The fresh-nonce test passed, as it should:
+  with nothing evicted, `main` refuses that replay too.
+- The signed record skipped: the `[state]` flood case and the restart test
+  failed. The `true` flood case passed, because the new order alone keeps
+  refused junk out of the cache.
+- The record kept in memory only: the node's restart test and three of
+  the `job` tests failed.
+- `Guard.Check` recording: `TestGuardCheckDoesNotRecord` and every node
+  test failed.
+
+**Not verified.**
+
+- **No live hub and node.** No real hub replayed anything to a real node;
+  the tests drive `acceptJob` and `Offer` in-process. A real restart, with
+  the systemd or rc.d unit, was simulated by a new executor on the same
+  state directory.
+- **FreeBSD.** Run locally on macOS (Darwin 25.6) only. The first push
+  wrote the file with `os.MkdirAll`, `os.OpenFile` and a hand-rolled
+  temp-file-and-`os.Rename`. CI failed it on every platform on the
+  repository's own audits (`TestNothingElseCreatesAPrivateFileWithTheStandardLibrary`,
+  `TestNothingElseRenamesWithTheStandardLibrary`,
+  `TestNothingElseWritesThroughATempFileAndARename`), and on Windows the
+  0600 file came back `-rw-rw-rw-`, because a mode there is the read-only
+  attribute and not access control. It now goes through `fileperm` and
+  `atomicfile`, and the test asks `fileperm.Others` rather than reading
+  mode bits. Sync cost was first measured on macOS, where Go's `Sync` is
+  `F_FULLFSYNC`: about three thousand appends took forty seconds, some
+  13 ms each. That is a cost per signed job, not per job.
+- **The sync cost on FreeBSD** (beastie, FreeBSD 15.1-RELEASE-p5, merge
+  commit ea69fc4). A throwaway test, not kept, ran 3000
+  `SignedReplay.Admit` calls (open, append, `fsync`, close) three times
+  on ZFS. The datasets were `sync=standard`, `logbias=latency`, on a
+  mirror of two SanDisk SmrtStor SAS SSDs behind an LSI SAS3008 HBA,
+  the same pool and settings as `/var/db/halite`. The mean was
+  0.75–0.82 ms, p50 about 0.67 ms, p99 1.5–2.6 ms, and the slowest
+  single admit 3.8–40 ms. That is about seventeen times cheaper than
+  macOS, which fits `fsync` against `F_FULLFSYNC`. The other FreeBSD
+  hosts' disks were not measured. `internal/job`, `internal/jobsign`
+  and `cmd/halite-node` passed natively there under `-race`, and on
+  Linux after the merge.
+- **A filesystem that lies about sync** would lose the last line on a
+  power cut and reopen that one job. Not tested. On beastie the HBA has
+  no write cache. Whether the SSDs' own cache is protected against
+  power loss was not checked, and a sub-millisecond `fsync` cannot tell
+  the two cases apart.
+
+
 
 
 
