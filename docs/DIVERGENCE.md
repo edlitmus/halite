@@ -29026,6 +29026,66 @@ written by the same author from the same description, so it catches the
 doc and the code disagreeing, not a format that is wrong in both. A
 third-party signer was not written against it.
 
+### 5.334 pkgng and apk dropped a package's pinned version
+
+Issue 321 finding M-33. `pkgngProvider.Install` and `apkProvider.Install`
+took the map of pinned versions and never read it, so a state pinning
+`nginx: 1.24.0` ran `pkg install -y -q nginx` and installed whatever the
+repository carried. `pkg.installed` then rebuilt its change set from the
+installed list and returned success without looking at the pin. The next
+run read the same mismatch (`pinned && !versionSatisfies`) and did the
+same thing again, so a pinned package on FreeBSD reported a change on
+every run and never reached its pin. apt, dnf and zypper glue the pin to
+the name; `TestPkgLegitimateVersionsReachTheArgv` asserted those three
+and left the other two out, which is how it stayed unseen.
+
+**Reproduced on beastie** (FreeBSD 15.1-RELEASE-p5, pkg 2.8.4), as root,
+with `halite-node state sls --local` built from main at 48f80fa and a
+state pinning `sl` to `0.1`, a version the repository does not carry (it
+carries 5.02_1). Run one installed 5.02_1 and said "The following
+packages were installed: sl." with result true. Run two said the same,
+with the change `5.02_1 -> 5.02_1`.
+
+**Two fixes, because there were two defects.**
+
+- pkgng now passes `name-version`, which is how pkg spells a package
+  itself. On beastie, `pkg install tree-2.3.2` installs that version, and
+  `pkg install tree-1.0.0` exits 1 with "No packages available to
+  install matching 'tree-1.0.0' have been found in the repositories". A
+  wildcard pin still goes as the bare name: pkg matched `tree-2*` only
+  under `-g` there, and `-g` applies to every operand on the line.
+- `pkg.installed` now checks each pin against what is installed after
+  the install, with the same `versionSatisfies` that decided to install.
+  A pin that was not met fails, and the comment names the version that
+  came instead. That is the general fix, and it is what covers apk,
+  whose argv is unchanged.
+
+**Run on beastie at 773449e**, the same way, removing `sl` between cases:
+the `0.1` pin failed with pkg's own message and installed nothing; a
+`5.02_1` pin installed it and the second run exited 2 (converged) with
+no changes; a `4.*` pin installed 5.02_1 under the bare name and failed
+both runs with "sl is pinned to 4.* and 5.02_1 is installed".
+
+**Breaking, in the honest direction.** A tree that pins a version its
+FreeBSD repository does not carry used to pass and now fails. That was
+always a pin that was not being honoured.
+
+**Not done or not verified.**
+
+- apk still drops the pin from its argv. Its pin syntax was not run
+  anywhere, and no CI leg or LAN host runs Alpine, so the fix there is
+  only the post-install check: a pinned apk package that apk does not
+  install now fails each run rather than reporting a change. That check
+  was exercised against a fake apk, not a real one.
+- The post-install check applies to apt, dnf, zypper, brew and
+  Chocolatey too. None of them was rerun for this change. Each of them
+  already compared a pin with the same function before installing, so a
+  pin they meet passes both checks; a pin they "meet" in a spelling the
+  installed list does not use would now fail instead of reinstalling on
+  every run. No such case was found, and none was looked for on a real
+  machine.
+- A pin given with a FreeBSD origin (`www/nginx`) was not tried.
+
 
 
 
