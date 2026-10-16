@@ -117,7 +117,7 @@ func TestThePrepareScriptSeparatesItsFailures(t *testing.T) {
 	// somebody else, which cannot be arranged here without root. The
 	// probe used to have a fixed name, and this test blocked it by
 	// taking that name first; the probe is now made by `mktemp`, which
-	// is the point of DIVERGENCE 5.290, so the half of the script after
+	// is the point of DIVERGENCE 5.306, so the half of the script after
 	// the `chmod` is run on its own against a directory it may not write.
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o500); err != nil {

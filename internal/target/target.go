@@ -398,10 +398,8 @@ func compileLeaf(kind Kind, expr string) (node, error) {
 
 	case List:
 		ids := map[string]bool{}
-		for _, id := range strings.Split(expr, ",") {
-			if id = strings.TrimSpace(id); id != "" {
-				ids[id] = true
-			}
+		for _, id := range ListIDs(expr) {
+			ids[id] = true
 		}
 		return funcNode(func(n Node) bool { return ids[n.ID] }), nil
 
@@ -507,6 +505,25 @@ func matchScalarOrList(v any, pred func(string) bool) bool {
 	default:
 		return pred(value.KeyString(v))
 	}
+}
+
+// ListIDs splits a list target, flag -L, into the node IDs it names:
+// comma-separated, each trimmed, empty elements dropped.
+//
+// Exported because authorization has to read a list exactly as dispatch
+// does. The policy authorizes each element as one node, and a policy
+// that split on commas but not on surrounding spaces -- or dropped empty
+// elements where dispatch kept them -- would be deciding about a
+// different set of nodes from the one the job reaches. One function is
+// the only way the two cannot drift. DIVERGENCE 5.296.
+func ListIDs(expr string) []string {
+	var out []string
+	for _, id := range strings.Split(expr, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // MatchGlob reports whether a node ID matches a glob, by the same rule

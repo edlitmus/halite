@@ -16,7 +16,7 @@ import (
 )
 
 // Whether a cached binary can have been planted by another account.
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.306.
 //
 // The cache was trusted by its name: `test -x <thin_dir>/<digest>`, and
 // a yes ran the file, as root under `sudo`. The default `thin_dir` is

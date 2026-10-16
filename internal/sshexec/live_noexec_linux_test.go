@@ -42,7 +42,7 @@ import (
 // These run probeScript, the half of the shipped script after the trust
 // check, and not all of it: inside the namespace the host's root-owned
 // directories read as the overflow uid, which the trust check refuses
-// before the probe is reached (DIVERGENCE 5.290).
+// before the probe is reached (DIVERGENCE 5.306).
 //
 // That the real script, through a real `/bin/sh`, against a real
 // `noexec` filesystem, gets as far as the probe and is refused there --

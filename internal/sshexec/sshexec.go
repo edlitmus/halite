@@ -262,7 +262,7 @@ func (o *Options) binaryFor(t roster.Target) (string, error) {
 // succeed for root on a directory somebody else made, and leave them its
 // owner. The staging name `<digest>.partial` was predictable as well, so
 // the transfer itself could be redirected by a link put there first.
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.306.
 //
 // # What is trusted now, and why this and not something else
 //
@@ -536,7 +536,7 @@ func probeScript(dir string) string {
 	// other ran it. CI found that on its first run of the concurrent
 	// test, on Linux, FreeBSD and macOS alike: "chmod: cannot access
 	// '.../.halite-probe': No such file or directory" and, on Linux,
-	// "Text file busy" (DIVERGENCE 5.290).
+	// "Text file busy" (DIVERGENCE 5.306).
 	//
 	// Written as one script over stdin, because a target's login shell
 	// is not always POSIX and this is already how everything else here
