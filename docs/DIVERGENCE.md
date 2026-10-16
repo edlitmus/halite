@@ -28988,7 +28988,10 @@ or fixture in this repository was signed in the old format.
 
 **Not verified.** No node loaded an extension from a hub's tree: the CLI
 run was the hub's own sync and list. That shares `Load` with a node but
-not its sync path. Nothing ran on FreeBSD or macOS. The format was not
+not its sync path. `internal/extension`, `internal/extpillar`,
+`internal/extsigner`, `internal/bridge` and `cmd/halite-hub` passed
+natively on FreeBSD 15.1 (beastie) under `-race`, at 15a99dd; the CLI
+run was Linux only, and nothing ran on macOS. The format was not
 reviewed by anybody but its author, and the cross-check in Python was
 written by the same author from the same description, so it catches the
 doc and the code disagreeing, not a format that is wrong in both. A
