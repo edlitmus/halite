@@ -21,6 +21,19 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A pillar top file may no longer target on an address
+
+`S@` and `- match: ipcidr` in a pillar top file are now refused, and the
+pillar fails to compile with an error naming the expression. They read the
+`ipv4` and `ipv6` grains, which a node reports about itself and which a
+pillar target never saw. So `not S@10.0.0.0/8` was true on every node and
+delivered its pillar to hosts inside 10/8 as well, and `S@10.0.0.0/8`
+silently delivered nothing. Target the node ID (a glob, `L@` or `E@`) or a
+hub-authoritative attribute under `node:` instead. Adding `ipv4` to
+`pillar_trusted_grains` does not re-enable it, because the node chooses
+the address it reports. Job targeting with `-S` is unchanged. See
+DIVERGENCE 5.329.
+
 ### A signed job can no longer be replayed to a node
 
 A node now keeps the identifier of every signed job it accepts in

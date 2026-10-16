@@ -112,7 +112,7 @@ write a whole pillar value into a file with no template at all, use
 The pillar top file works just like the state top file
 ([chapter 10](10-top-and-files.md)): environment, then target
 expressions, then SLS names. Globs, lists, regular expressions, compound
-expressions and trusted grains all work as targets. Three rules apply
+expressions and trusted grains all work as targets. Four rules apply
 only here.
 
 **Pillar can be targeted only on trusted grains.** Grains come from the
@@ -140,6 +140,18 @@ refused, because the answer would depend on the thing being computed:
 ```
 pillar top expression "I@app:port:80" targets on pillar, which is not
 available while pillar is being compiled
+```
+
+**Pillar cannot be targeted on an address.** `S@` and `- match: ipcidr`
+read the `ipv4` and `ipv6` grains, which the node reports about itself.
+They are refused, and adding them to `pillar_trusted_grains` does not
+change that. Target the node ID or a `node:` attribute instead:
+
+```
+pillar top expression "not S@10.0.0.0/8" targets on an address (S@ or
+match: ipcidr), which is read from the ipv4 and ipv6 grains a node reports
+about itself; target the node ID, or a hub-authoritative attribute under
+node:
 ```
 
 **Node ID is always safe to target.** A node's ID comes from its
@@ -397,7 +409,8 @@ what a node will be given.
 - Pillar is **your data for nodes**, compiled **on the hub, per node**,
   delivered only to that node: the right place for secrets.
 - It uses a **top file and SLS files** like states; targeting uses
-  **trusted grains and node ID only** and never pillar itself.
+  **trusted grains and node ID only**, never pillar itself and never
+  an address.
 - **Merging** is deep for mappings, replace for lists and scalars under
   `smart`; `aggregate` and `pillar_merge_lists` concatenate lists.
 - Secrets are **masked on output** (`--reveal` to see), kept off disk,
