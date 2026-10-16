@@ -24980,6 +24980,140 @@ Not verified: no real sshd read the result, no real Salt was run against
 these cases (the Salt behaviour above is from reading its source and from
 re-running its matcher expression in plain Python), and it ran on macOS
 only. `file`'s evidence level is unchanged.
+### 5.300 An archive could write, and delete, outside its destination through its own symlinks
+
+`archive.extracted` and `archive.extract` said, in the module's own
+doc comment, that "a symlink pointing outside the destination, is
+refused by name". By name was the whole of it. Each entry's name, and
+each symlink's target, was checked lexically against the destination,
+and the entry was then written by path, so the kernel resolved it
+through whatever the earlier entries had put on disk. An archive is a
+sequence of operations, not a list of names. These four entries are
+each lexically inside the destination:
+
+    a/            directory
+    a/b        -> ..
+    a/b/L      -> ../..
+    L/escaped.txt
+
+`a/b` is the destination itself, so `a/b/L` lands at `dest/L` and
+points two levels above the destination, and `L/escaped.txt` is written
+there. The audit (H-03) reproduced it, and so does
+`TestArchiveChainedSymlinksCannotWriteOutside` against the old
+extractor. The same shape removed a file outside the destination:
+`a/b/c -> ..` then `a/b/c/victim -> z` ran `os.Remove` on the outside
+`victim` before `os.Symlink`, with `overwrite` unset, because the
+symlink case removed unconditionally
+(`TestArchiveSymlinkCannotRemoveAFileOutside`). The same unchecked path
+also covered the `MkdirAll` of every parent, the atomic write, the zip
+extractor, and the ownership pass: `user:`/`group:` ran `Lchown` as root
+on the archive's names, and a directory on the way that was a link out
+of the destination handed its target to that account.
+
+The archive's own links are one way in. A link already on disk is the
+other: the destination is commonly handed to `user:`, and that account
+could plant `dest/evil -> /etc` before the next run.
+
+The trigger is a hostile archive: `skip_verify`, a compromised
+`salt://` file server, or a local path somebody else can write. Nodes
+run as root.
+
+**What changed.** Every write, `mkdir`, `remove`, `symlink` and `chown`
+under the destination now goes through an `os.Root` opened on it (Go
+1.25's `Root.MkdirAll`, `Symlink`, `Lchown` and `Rename`; `go.mod` says
+1.26). The root resolves each component at the moment of the call and
+refuses one that leaves, so the check and the act cannot disagree, and a
+link that stays inside is still followed. That matters: the
+alternative, refusing any symlinked directory on the way, also refuses
+an archive that ships `current -> lib` and then `current/x`, and
+"hardened" is not worth breaking a JDK. In detail:
+
+- File writes use a new `atomicfile.WriteIn(root, name, ...)`: the same
+  temporary-file, `fileperm`, sync, rename, directory-sync idiom as
+  `Write`, with each step relative to the root. It lives in
+  `internal/atomicfile` so that it is not a seventh copy (5.144). The
+  rename replaces a symlink at the final name rather than writing
+  through it.
+- A symlink entry honours `overwrite`, as a file does. Unset, an
+  existing entry is left alone; set, it is removed through the root.
+- After a link is made, `root.Stat` resolves it the way the kernel
+  will. If that leaves the root, the link is removed and the
+  extraction fails. A link that does not resolve yet is allowed, and
+  every link the run made is checked again once the run has finished,
+  because `x -> p/..` is lexically the destination and is its parent
+  once a later `p -> .` exists
+  (`TestArchiveDanglingLinkIsCheckedOnceItsTargetExists`). That is a
+  unix escape only. Windows cleans `p\..` lexically before it resolves
+  anything, as `os/root_windows.go` documents, so there the link is the
+  destination itself. CI's windows-2022 leg showed it: the link was kept,
+  correctly, and the test now skips on Windows and says why.
+- "Does this entry exist?" (for `overwrite`, and for the state's
+  "what is missing") is `root.Lstat`. An error that is not "it is not
+  there" is a refusal, not "absent, so write it".
+- Ownership is checked with `root.Lstat` and set with `root.Lchown` on
+  unix. Windows and the other platforms have no root-relative form of
+  their ownership call, so there the name is checked through the root
+  and then set by path. That leaves a race with a concurrent writer in
+  the destination which the unix path does not have.
+- The lexical checks stay. They make the early, readable refusal, and
+  the only one a dry run can make.
+
+Hard links (`tar.TypeLink`) were and are skipped, so their `Linkname` is
+never resolved against anything. A zip carries no symlink type this
+extractor creates: a zip symlink entry is written as a regular file
+holding the target text, as it was before. That is a Salt difference
+in its own right, but it is not this defect.
+
+**gitfs.** `internal/gitfs` `safeJoin` is lexical too, and is sound for
+a different reason. It extracts into a staging directory it has just
+removed and recreated, and it refuses every symlink entry. So there is
+never a link on disk for a name to be resolved through. The two
+extractors do not share code because their policies differ: gitfs
+refuses links, and an archive must keep them. If gitfs ever accepts a
+link, or extracts into a directory it did not just create, it needs a
+root as well.
+
+**Demonstrated.** On macOS (Darwin 25.6, as an unprivileged user; the
+break-and-restore runs under the local Go 1.27.2, the final runs under
+the pinned go1.26.6), with the new tests run against `origin/main`'s `archive.go`:
+`escaped.txt` was written two directories above the destination; the
+outside `victim` was replaced by a symlink; writes, links and directories
+went through a planted `dest/evil` link for both values of `overwrite`;
+a zip wrote through it; the late-resolving link was kept; an existing
+link was replaced with `overwrite` unset; and `enforceArchiveOwnership`
+moved an outside file from gid 20 to 101 through `dest/evil`. All pass
+with the fix. Each layer was then broken alone, and a test failed each
+time:
+
+| Broken | Fails |
+|---|---|
+| `linkStaysInside` always nil | the chained test (the escaping link is left behind), the dangling-link test |
+| the final pass over links skipped | the dangling-link test |
+| file writes and parents by path, not root | the planted-link test, the zip test |
+| `entryExists` by path, not root | the planted-link test (`evil/l` is skipped as "existing") |
+| ownership by path, with no root check | the ownership test (the gid changes) |
+
+`TestArchiveInternalSymlinksStillExtract` holds the shape the fix must
+not cost: a `./` entry, `lib/libfoo.so -> libfoo.so.1`,
+`share/lib -> ../lib`, and a file written through `current -> lib`. It
+extracts three times, twice with `overwrite` unset and once with it set.
+
+**Not verified.**
+
+- **Not run as root**, and so not with `user:`. The ownership test
+  changes a group, which an unprivileged account can do to its own
+  files. That `root.Lchown` holds as root comes from the same code
+  path, not from a run.
+- **Not run on Linux or FreeBSD.** `os.Root` uses `openat` with
+  `O_NOFOLLOW` on both. That was read in go1.26.6's
+  `os/root_unix.go`, not seen in a run. CI runs the tests on all four platforms.
+- **Windows** builds and vets. Its ownership path is the
+  check-then-set described above, and nothing ran it.
+- **No hostile archive came from a real file server.** The archives are
+  built in the tests with `archive/tar` and `archive/zip`.
+- **The race with a concurrent writer** in the destination, which the
+  root closes on unix, has no test. That it is closed is a property of
+  `os.Root`, read from its documentation.
 
 
 
