@@ -315,7 +315,7 @@ Package fileserver resolves halite:// and salt:// paths against configured roots
 
 Path containment is the security property this package exists to guarantee. Salt's CVE-2020-11652 was a directory traversal in exactly this code path, so every request resolves the path and confirms the result is inside the configured root \*after\* symlink resolution, and the property is covered by a test asserting that no input escapes. SPEC section 13.5.
 
-**Files:** `fetch.go`, `hash.go`, `manifest.go`, `remote.go`, `roots.go`; with tests.
+**Files:** `fetch.go`, `fnmatch.go`, `hash.go`, `manifest.go`, `remote.go`, `roots.go`; with tests.
 
 **Exports.**
 

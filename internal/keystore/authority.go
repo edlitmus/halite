@@ -247,7 +247,7 @@ func (a *Authority) accepted(rec *Record) *Result {
 // what is on disk now. A revoked record is refused here as well as by
 // every caller: revocation is the one decision that must never be
 // undone by a later one, and this is the last point at which a new
-// serial could be minted for it. DIVERGENCE 5.290.
+// serial could be minted for it. DIVERGENCE 5.323.
 func (a *Authority) issue(rec *Record, csr *x509.CertificateRequest, now time.Time) (*Result, error) {
 	if rec.State == Revoked {
 		return nil, fmt.Errorf("%w: %s was revoked (%s)", ErrRefused, rec.NodeID, rec.Reason)
@@ -363,7 +363,7 @@ func (a *Authority) Reject(nodeID, reason string) (*Record, error) {
 //
 // The serial is the one on disk under the store's lock, so it is the
 // node's current certificate and not one a renewal has just replaced.
-// Before DIVERGENCE 5.290 a renewal from the hub could write between
+// Before DIVERGENCE 5.323 a renewal from the hub could write between
 // this read and this write -- or after it -- and leave the node accepted
 // with a fresh serial that nothing had denylisted.
 func (a *Authority) Revoke(nodeID, reason string) (*Record, error) {
@@ -403,7 +403,7 @@ func (a *Authority) Revoke(nodeID, reason string) (*Record, error) {
 // serial are one critical section, against the CLI as well as the hub's
 // own goroutines, so a revocation lands wholly before it (and the renewal
 // is refused) or wholly after it (and revokes the new serial).
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.323.
 func (a *Authority) Renew(peer *x509.Certificate, csrPEM []byte) (*Result, error) {
 	nodeID, err := pki.NodeIDFromCert(peer)
 	if err != nil {

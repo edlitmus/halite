@@ -92,7 +92,7 @@ func intrude(t *testing.T, store *Store, other func()) (wait func()) {
 // A revocation from the CLI that arrives while the hub is renewing the
 // same node -- after the renewal has read the record and before it has
 // written the new serial -- must end with the node revoked, and with the
-// serial the renewal minted on the denylist. Before DIVERGENCE 5.290 the
+// serial the renewal minted on the denylist. Before DIVERGENCE 5.323 the
 // renewal's write landed last and left the node accepted with a serial
 // nothing had denylisted.
 func TestARevocationDuringARenewalRevokesTheNewSerial(t *testing.T) {
@@ -238,7 +238,7 @@ func TestRevokedIsSticky(t *testing.T) {
 }
 
 // A bootstrap token revoked from the CLI while the hub is spending it
-// stays revoked. Before DIVERGENCE 5.290 the spend wrote back the whole
+// stays revoked. Before DIVERGENCE 5.323 the spend wrote back the whole
 // token record, read before the revocation, and the token went on
 // admitting nodes.
 func TestATokenRevocationDuringASpendIsNotUndone(t *testing.T) {

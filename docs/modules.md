@@ -665,7 +665,7 @@ cmd.exec_code(lang: string, code: string, args: list, cwd: path = , runas: strin
 | `runas` | string | `` | Account to run as. |
 | `timeout` | duration | — | How long it may run. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.has_exec`
 
@@ -769,7 +769,7 @@ cmd.run_bg(name: string, args: list, cwd: path = , runas: string = , env: map)
 | `runas` | string | `` | Account to run as. |
 | `env` | map | — | Environment, replacing the clean default. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.run_stderr`
 
@@ -839,7 +839,7 @@ cmd.script(source: string, args: list, shell: string = , cwd: path = , runas: st
 | `timeout` | duration | — | How long it may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.script_retcode`
 
@@ -858,7 +858,7 @@ cmd.script_retcode(source: string, args: list, shell: string = , cwd: path = , r
 | `runas` | string | `` | Account to run as. |
 | `timeout` | duration | — | How long it may run. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.shell`
 
@@ -1019,7 +1019,7 @@ cpan.module_version(module: string)
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `module` | string | *required* | The module name. |
+| `module` | string | *required* | The module name, such as `JSON::PP`. A name that is not a Perl package name is refused. |
 
 *SPEC section 15.4*
 
@@ -1472,7 +1472,7 @@ dnsutil.hosts_append(hostsfile: path = , ip_addr: string, entries: any)
 | `ip_addr` | string | *required* | The address. |
 | `entries` | any | *required* | The names, comma separated as Salt takes them, or as a list. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · honours `--test` · SPEC section 15.2*
 
 #### `dnsutil.hosts_remove`
 
@@ -1487,7 +1487,7 @@ dnsutil.hosts_remove(hostsfile: path = , entries: any)
 | `hostsfile` | path | `` | The file to write. Defaults to the system's. |
 | `entries` | any | *required* | The names, comma separated as Salt takes them, or as a list. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · honours `--test` · SPEC section 15.2*
 
 #### `dnsutil.parse_hosts`
 
@@ -2085,11 +2085,11 @@ file.line(path: path, content: string = , match: string = , mode: string = , loc
 |---|---|---|---|
 | `path` | path | *required* | The file to edit. |
 | `content` | string | `` | The line. |
-| `match` | string | `` | The line to act on; defaults to `content`. |
+| `match` | string | `` | An RE2 pattern searched in each line (a plain fragment also matches); defaults to `content`. |
 | `mode` | string | `` | ensure, replace, delete, insert, or prepend. |
 | `location` | string | `` | start or end, for insert. |
-| `before` | string | `` | Insert before the line matching this. |
-| `after` | string | `` | Insert after the line matching this. |
+| `before` | string | `` | Insert before the first line this RE2 pattern (or plain fragment) matches. |
+| `after` | string | `` | Insert after the first line this RE2 pattern (or plain fragment) matches. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
@@ -5356,7 +5356,7 @@ mdadm.assemble(device: path = , devices: list, uuid: string = , scan: bool = fal
 
 #### `mdadm.create`
 
-Create a new array. Refuses a device that is already an array, or a member that already holds one, without force.
+Create a new array. Without force, refuses a member or spare that carries an md superblock or any signature `wipefs` lists (a filesystem, a partition table, an LVM or ZFS member), or that could not be probed.
 
 ```
 mdadm.create(device: path, level: string, devices: list, spares: list, metadata: string = , name: string = , chunk: string = , assume_clean: bool = false, force: bool = false)
@@ -5372,7 +5372,7 @@ mdadm.create(device: path, level: string, devices: list, spares: list, metadata:
 | `name` | string | `` | A name for the array, stored in the superblock. |
 | `chunk` | string | `` | Chunk size, such as 512K. For striped levels. |
 | `assume_clean` | bool | `false` | Skip the initial resync. Only safe on devices known to be zeroed or when the data is disposable. |
-| `force` | bool | `false` | Overwrite an existing md superblock or a detected filesystem on a member. |
+| `force` | bool | `false` | Create even over a member whose `mdadm --examine` finds an md superblock, on which `wipefs` lists a signature, or which could not be probed. Whatever was found is named in the comment. |
 
 *changes the system · honours `--test` · SPEC section 15.3*
 
@@ -10648,10 +10648,10 @@ file.line(name: path, content: string = , mode: string = ensure, match: string =
 | `name` | path | — | The file to edit. Defaults to the state ID. |
 | `content` | string | `` | The line. |
 | `mode` | string | `ensure` | What to do: ensure, absent, replace, insert, or delete. |
-| `match` | string | `` | The existing line to act on; defaults to content. |
+| `match` | string | `` | An RE2 pattern searched in each line (a plain fragment also matches) to find the line to act on; defaults to content. |
 | `location` | string | `` | Where to insert: start or end. |
-| `before` | string | `` | Insert before the first line matching this. |
-| `after` | string | `` | Insert after the first line matching this. |
+| `before` | string | `` | Insert before the first line this RE2 pattern (or plain fragment) matches. |
+| `after` | string | `` | Insert after the first line this RE2 pattern (or plain fragment) matches. |
 | `indent` | bool | `true` | Match the indentation of the surrounding line. |
 | `backup` | string | `` | Keep a copy with this suffix. |
 | `show_changes` | bool | `true` | Include a unified diff. |

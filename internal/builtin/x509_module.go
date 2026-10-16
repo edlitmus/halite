@@ -112,6 +112,15 @@ func registerX509(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
+				if c.Test && states.Str(args, "path", "") != "" {
+					// The write is the change, and a dry run that wrote
+					// one replaced whatever key was at the path -- a
+					// node's real key, for a tree that names one. The
+					// spec is checked first so a bad one still fails
+					// the dry run; generating the key is skipped, since
+					// nothing would keep it.
+					return states.Str(args, "path", ""), nil
+				}
 				key, err := generateKey(spec)
 				if err != nil {
 					return nil, err
@@ -173,6 +182,12 @@ func registerX509(r *Registries) {
 				if path == "" {
 					return string(encoded), nil
 				}
+				if c.Test {
+					// Everything up to the write ran, so a dry run
+					// fails where the real one would; the write is the
+					// change and is the one step skipped.
+					return path, nil
+				}
 				if err := writeAtomic(path, encoded, 0o644); err != nil {
 					return nil, err
 				}
@@ -200,7 +215,18 @@ func registerX509(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return createCertificate(args, states.Str(args, "path", ""), 0)
+				path := states.Str(args, "path", "")
+				if c.Test && path != "" {
+					// Built in full but not written, so a dry run fails
+					// where the real one would and changes nothing. With
+					// no path the PEM is the answer and nothing is
+					// written either way.
+					if _, err := createCertificate(args, "", 0); err != nil {
+						return nil, err
+					}
+					return path, nil
+				}
+				return createCertificate(args, path, 0)
 			},
 		},
 

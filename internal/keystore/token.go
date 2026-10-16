@@ -238,7 +238,7 @@ func (s *Store) listTokens() ([]*Token, error) {
 // Under the store's lock, because the hub's SpendToken rewrites the same
 // record to count a use: without it, `keys token revoke` landing between
 // a spend's read and its write was overwritten by the spend, and the
-// token went on admitting nodes. DIVERGENCE 5.290.
+// token went on admitting nodes. DIVERGENCE 5.323.
 func (s *Store) RevokeToken(id string) error {
 	return s.locked(func() error {
 		tok, err := s.getToken(id)

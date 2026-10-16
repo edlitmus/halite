@@ -201,12 +201,17 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 	// SPEC 9.1 step 2, and SPEC 23.5: every decision is logged, allowed
 	// or denied, with the rule that matched. A denial that is not
 	// recorded is one nobody can explain afterwards.
+	//
+	// The kind goes with the target: it is what Dispatch below compiles
+	// the target under, and a check that read the string as a glob let
+	// `web1.prod,db1.prod` (-L) past a `web*.prod` rule. DIVERGENCE 5.296.
 	decision := s.Policy.Authorize(policy.Request{
-		Principal: principal,
-		Target:    req.Target,
-		Fun:       req.Fun,
-		Arg:       req.Arg,
-		Kwarg:     req.Kwarg,
+		Principal:  principal,
+		Target:     req.Target,
+		TargetKind: req.TargetKind,
+		Fun:        req.Fun,
+		Arg:        req.Arg,
+		Kwarg:      req.Kwarg,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {
@@ -290,11 +295,12 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request, principal string
 	// the original request: an operator who may not run it now may not
 	// resume it either, whoever submitted it before.
 	decision := s.Policy.Authorize(policy.Request{
-		Principal: principal,
-		Target:    existing.Target,
-		Fun:       existing.Fun,
-		Arg:       existing.Arg,
-		Kwarg:     existing.Kwarg,
+		Principal:  principal,
+		Target:     existing.Target,
+		TargetKind: existing.TargetKind,
+		Fun:        existing.Fun,
+		Arg:        existing.Arg,
+		Kwarg:      existing.Kwarg,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {
@@ -347,7 +353,8 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 		return
 	}
 	decision := s.Policy.Authorize(policy.Request{
-		Principal: principal, Target: j.Target, Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg,
+		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
+		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {

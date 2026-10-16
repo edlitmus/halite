@@ -110,7 +110,7 @@ type Store struct {
 	// There was no lock file, so a revocation from the CLI could be
 	// overwritten by the hub renewing the same node a moment later, and
 	// the node was left accepted with a fresh serial that no denylist
-	// had ever seen. DIVERGENCE 5.290. Every read-modify-write now runs
+	// had ever seen. DIVERGENCE 5.323. Every read-modify-write now runs
 	// inside locked, which takes mu and then an exclusive OS lock on
 	// lockName, so the exclusion is the same between processes as
 	// between goroutines.
@@ -118,7 +118,7 @@ type Store struct {
 
 	// between, when set, runs inside each read-modify-write's critical
 	// section, after the record is read and before it is written: the
-	// window in which, before DIVERGENCE 5.290, another process's
+	// window in which, before DIVERGENCE 5.323, another process's
 	// decision could land and then be overwritten. It lets a test put a
 	// second Store over the same directory -- which is what the hub and
 	// `halite-hub keys` are -- into exactly that window, instead of
