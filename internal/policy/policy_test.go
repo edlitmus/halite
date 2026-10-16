@@ -283,6 +283,11 @@ bindings:
 		{"keyword, not denied", nil, map[string]any{"sls": "deploy.web"}, true},
 		{"keyword, denied", nil, map[string]any{"sls": "teardown.everything"}, false},
 		{"comma list, denied", []string{"deploy.web,teardown.everything"}, nil, false},
+		// The canonical-spelling check of DIVERGENCE 5.294 reads the
+		// runner names too, or `teardown/everything` by keyword misses
+		// `teardown.*` and is never checked for its spelling either.
+		{"keyword, second spelling", nil, map[string]any{"sls": "teardown/everything"}, false},
+		{"comma list, second spelling", nil, map[string]any{"sls": "deploy.web, teardown/everything"}, false},
 		// deny_sls alone does not require a name: that is allow_mods'
 		// rule, and a deny list says nothing about an empty request.
 		{"no names", nil, nil, true},

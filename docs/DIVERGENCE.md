@@ -27541,11 +27541,21 @@ Each part of the policy fix was broken on purpose and watched to fail:
   on `state.orchestrate` leaves `state.orch` unconstrained, because
   `args` is keyed by exact function name. The example grants
   `state.orchestrate` by name, so it is not affected.
-- **Spelling.** A separate change in flight makes `allow_sls`/`deny_sls`
-  refuse non-canonical SLS spellings (`a/b`, `a..b`) on a job's
-  positional arguments. Orchestration names go through the same file
-  server and are not canonicalized here; whichever lands second should
-  make that check read the runner names this one computes.
+- **Spelling under `allow_mods`.** The canonical-spelling check that
+  5.294's later subsection added to `deny_sls`/`allow_sls` runs on
+  `allow_mods` names only when the rule also has `deny_sls`. A pattern
+  like `deploy.*` cannot be widened by a second spelling -- `*` stops at
+  `/`, and `deploy..x` is still under `deploy` -- so it was not extended.
+
+**Merged with 5.294's canonical-spelling check.** That change landed on
+`main` first and checked `req.Arg`. On merging, the check reads the
+same `names` the lists do: for a job that is `req.Arg`, unchanged, and
+for a runner under `deny_sls` it is the orchestration names, so
+`orch run teardown/everything` under `deny_sls: ['teardown.*']` is
+refused for its spelling rather than slipping past both. Two rows in
+`TestDenySLSOnARunnerJudgesTheKeywordAndTheCommaList` hold it (a
+keyword and a comma list with a slash), and both failed with the check
+pointed back at `req.Arg`.
 
 #### Not verified
 
