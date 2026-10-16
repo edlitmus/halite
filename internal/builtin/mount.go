@@ -1036,7 +1036,7 @@ var deviceTagLinks = []struct{ tag, dir string }{
 // they label. If the running table names one and the declaration the
 // other, this still reports a different device, as before. What a
 // FreeBSD lab run must capture before that can be handled is in
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.313.
 func sameDevice(have, want string) deviceMatch {
 	if have == want {
 		return deviceSame
@@ -1090,7 +1090,7 @@ func devicePath(s string) (string, bool) {
 // That rule is read from the source (libblkid's blkid_encode_string,
 // which udev's blkid builtin uses for ID_FS_LABEL_ENC and
 // ID_FS_UUID_ENC, and systemd's encode_devnode_name, which is the same
-// rule), not captured from a machine. DIVERGENCE 5.290 records that.
+// rule), not captured from a machine. DIVERGENCE 5.313 records that.
 func encodeDevnodeName(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {

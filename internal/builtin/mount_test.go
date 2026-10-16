@@ -362,7 +362,7 @@ func TestMountedConvergesAgainstTheKernelsOwnTable(t *testing.T) {
 // kernel names the node mount(8) resolved the tag to. Those tests are
 // about options and the table, and they pass the comparison only
 // because the two strings are equal. The device comparison itself is
-// tested in mount_identity_test.go (DIVERGENCE 5.290).
+// tested in mount_identity_test.go (DIVERGENCE 5.313).
 func mountFixture(t *testing.T, active map[string]any) (*exec.Context, string) {
 	t.Helper()
 	// The states are declared for the platforms with a mount table, and

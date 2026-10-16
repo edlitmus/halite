@@ -162,7 +162,7 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 		}
 	}
 
-	if m, ok := method(obj, name); ok {
+	if m, ok := method(obj, name, r.opts.MaxOutput); ok {
 		return m, nil
 	}
 	v, ok := index(obj, name)
@@ -429,10 +429,14 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 			if !ok {
 				return nil, errorf(pos, "a string can only be multiplied by an integer")
 			}
+			// Python's rule: a negative count is an empty string. The
+			// size is checked by division, because len*n multiplied out
+			// wraps for a large n and the wrapped product passed the
+			// check it was written for, leaving strings.Repeat to panic.
 			if n < 0 {
 				n = 0
 			}
-			if int64(len(ls))*n > int64(r.opts.MaxOutput) {
+			if !mulWithin(int64(len(ls)), n, r.opts.MaxOutput) {
 				return nil, errorf(pos, "string repetition would exceed the %d byte output limit", r.opts.MaxOutput)
 			}
 			return strings.Repeat(ls, int(n)), nil
@@ -442,7 +446,19 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 			if !ok {
 				return nil, errorf(pos, "a list can only be multiplied by an integer")
 			}
-			out := []any{}
+			// The list form had no bound at all: [1] * 10000000000 would
+			// grow until the runtime could not allocate, which ends the
+			// process (read from the loop, not run). Python's rule for a
+			// negative count is an empty list.
+			// An empty list repeated is empty however large the count,
+			// and looping the count to find that out is its own hang.
+			if n < 0 || len(ll) == 0 {
+				return []any{}, nil
+			}
+			if !mulWithin(int64(len(ll)), n, r.opts.MaxIterations) {
+				return nil, errorf(pos, "list repetition would produce more than %d items", r.opts.MaxIterations)
+			}
+			out := make([]any, 0, int64(len(ll))*n)
 			for i := int64(0); i < n; i++ {
 				out = append(out, ll...)
 			}

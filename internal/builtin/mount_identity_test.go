@@ -15,7 +15,7 @@ import (
 // mount.unmounted: a declaration names a device by UUID=, LABEL= or a
 // /dev/disk/by-* link, and the running table names the node mount(8)
 // resolved that to. Compared as strings the two never agreed, and every
-// run remounted (DIVERGENCE 5.290).
+// run remounted (DIVERGENCE 5.313).
 //
 // NOTHING HERE IS CAPTURED. Every running-table line below is synthetic:
 // written to the shape of /proc/self/mounts, not taken from a machine,

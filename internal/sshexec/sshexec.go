@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -159,23 +160,40 @@ func (o *Options) Run(ctx context.Context, t roster.Target, request []byte) Resu
 	// SPEC 21.1's cache: `<thin_dir>/<version>-<digest>`, so a
 	// different build is a different path and an upgrade never runs the
 	// old binary.
-	remote := t.ThinDir + "/" + digest
+	//
+	// The directory is checked here, before anything reaches the
+	// target, rather than only in `invocation`: the scripts below put it
+	// inside double quotes, and the trust check it is subject to walks
+	// it component by component, which means nothing for a relative
+	// path whose meaning depends on where the login shell starts.
+	dir := path.Clean(t.ThinDir)
+	if !path.IsAbs(dir) {
+		result.Err = fmt.Errorf("%s: thin_dir is %q, which is not an absolute path; "+
+			"a cached binary that runs as root has to be somewhere whose every "+
+			"directory can be checked", t.ID, t.ThinDir)
+		return result
+	}
+	if err := shellSafe("thin_dir", dir); err != nil {
+		result.Err = fmt.Errorf("%s: %w", t.ID, err)
+		return result
+	}
+	remote := dir + "/" + digest
 	if o.Clean {
 		// Before, not only after: a run with --clean is what an
 		// operator reaches for when they suspect the cached copy.
-		if _, _, err := o.script(ctx, t, "rm -rf "+shellQuote(t.ThinDir)); err != nil {
+		if _, _, err := o.script(ctx, t, "rm -rf "+shellQuote(dir)); err != nil {
 			o.log("warn", "the cached binary could not be removed",
 				"target", t.ID, "error", err.Error())
 		}
 	}
 
-	present, err := o.hasBinary(ctx, t, remote)
+	present, err := o.cached(ctx, t, dir, remote, digest)
 	if err != nil {
 		result.Err = err
 		return result
 	}
 	if !present {
-		if err := o.push(ctx, t, binary, remote); err != nil {
+		if err := o.push(ctx, t, binary, dir, remote); err != nil {
 			result.Err = err
 			return result
 		}
@@ -209,7 +227,7 @@ func (o *Options) Run(ctx context.Context, t roster.Target, request []byte) Resu
 	result.Return = []byte(framed)
 
 	if o.Clean {
-		if _, _, err := o.script(ctx, t, "rm -rf "+shellQuote(t.ThinDir)); err != nil {
+		if _, _, err := o.script(ctx, t, "rm -rf "+shellQuote(dir)); err != nil {
 			o.log("warn", "the cached binary could not be removed after the run",
 				"target", t.ID, "error", err.Error())
 		}
@@ -227,17 +245,204 @@ func (o *Options) binaryFor(t roster.Target) (string, error) {
 	return o.Binary, nil
 }
 
-// hasBinary reports whether the target already has this build cached.
-func (o *Options) hasBinary(ctx context.Context, t roster.Target, remote string) (bool, error) {
-	// `test -x` rather than `test -f`: a transfer interrupted part-way
-	// leaves a file that is not executable, and running it would fail
-	// in a way that blames the job.
-	stdout, stderr, err := o.script(ctx, t,
-		fmt.Sprintf("test -x %s && echo present || echo absent", shellQuote(remote)))
+// Who may have put a cached binary where the next run will execute it.
+//
+// # The defect this answers
+//
+// The cache used to be trusted by its name. A run asked the target
+// `test -x <thin_dir>/<digest>`, and on a yes it skipped the transfer and
+// ran that file -- under `sudo` when the roster asked for it, so as root.
+// The default `thin_dir` is under `/var/tmp`, which every local account
+// may write to, and the digest is the SHA-256 of a published,
+// reproducible build, so the name is known to anybody who can read the
+// release page. Any account on a target could make `/var/tmp/halite-thin`
+// before halite ever ran there, put an executable in it under the next
+// release's digest, and have the next agentless run execute it as root.
+// `mkdir -p` and `chmod 700`, which were the only preparation, both
+// succeed for root on a directory somebody else made, and leave them its
+// owner. The staging name `<digest>.partial` was predictable as well, so
+// the transfer itself could be redirected by a link put there first.
+// DIVERGENCE 5.306.
+//
+// # What is trusted now, and why this and not something else
+//
+// A cached binary is run only when nobody but root and the connecting
+// account could have written it or anything on the way to it:
+//
+//   - the binary is a regular file, owned by root or the connecting
+//     account, writable by neither its group nor others, with no access
+//     control list;
+//   - `thin_dir` is a directory with the same properties;
+//   - every directory above it is owned by root or the connecting
+//     account and is not writable by group or others unless it is
+//     sticky, which is what makes `/var/tmp` itself acceptable: in a
+//     sticky directory only an entry's owner may rename or remove it, so
+//     another account cannot swap `halite-thin` for its own;
+//   - all of that holds for the path as written *and* for the physical
+//     path a `cd -P` reaches, so a symbolic link anywhere along it is
+//     followed to where it really goes and that is checked too. (FreeBSD's
+//     `/home` and macOS's `/var` are links, so links cannot simply be
+//     refused.)
+//
+// The connecting account counts as trusted because it already is: with
+// `sudo` in the roster it can become root, and without it the binary
+// runs as that account. Nothing is trusted that was not already.
+//
+// Re-hashing the cached binary on its own would not have been enough.
+// A hash taken in one ssh session and an `exec` in the next leave a gap
+// in which a writable directory can have its file replaced, and the
+// hash then speaks for a file that is no longer there. Ownership closes
+// that gap by construction: when no other account can write anywhere on
+// the path, there is nobody to win the race. The hash is still taken, in
+// the same script as the check, and a mismatch is treated as a missing
+// binary and replaced -- not as the security property, which it is not,
+// but because a binary truncated by a full disk or edited by a careless
+// root should not be run either, and it costs no extra round trip.
+//
+// A different default `thin_dir` was considered and not taken. Salt's
+// own default is under `/var/tmp` too (`/var/tmp/.<user>_<id>_salt`, in
+// `salt/client/ssh/__init__.py` as of 3006.28), and its shim's answer is
+// the same one made here: refuse a directory the running user does not
+// own or whose mode is not 0700. A root-owned default would need the
+// copy itself to run under `sudo`, which `scp` cannot do; a default in
+// the account's home would be a relative path, which `sudo` resolves
+// against a working directory that its policy may change. What remains
+// is that another account can *deny* a run by making the directory
+// first. That is refused with a message naming the directory, its
+// owner and the `thin_dir` setting -- which is the right failure: an
+// operator who sees it has found somebody on that machine doing
+// something worth knowing about.
+//
+// Portability. Everything below is POSIX sh and POSIX utilities. The
+// owner and mode come from `ls -ldn`, whose first and third fields are
+// the mode string and the numeric owner on GNU, BSD and busybox alike;
+// `stat` would have been tidier and is spelled `-c` on Linux and `-f` on
+// the BSDs. A trailing `+` on the mode string is how their `ls` pages say
+// an access control list is marked, and `.` (SELinux) or `@` (macOS
+// extended attributes) are not refused. `mktemp` is not POSIX, and is on
+// Linux, FreeBSD and macOS. The tests run these scripts through the
+// test machine's /bin/sh, and through dash, ksh and `bash --posix` when
+// HALITE_TEST_TARGET_SH names them; zsh, which does not split words,
+// fails closed.
+const trustFunctions = `set -f
+halite_refuse() {
+	echo "halite: refusing $1: $2" >&2
+	exit 3
+}
+halite_me=$(id -u) || halite_refuse "the cache" "id -u did not say which account this is"
+halite_stat() {
+	halite_line=$(ls -ldn "$1" 2>/dev/null) || return 1
+	set -- $halite_line
+	halite_mode=$1
+	halite_uid=$3
+}
+halite_owner() {
+	halite_stat "$1" || halite_refuse "$1" "it cannot be examined"
+	[ "$halite_uid" = 0 ] || [ "$halite_uid" = "$halite_me" ] ||
+		halite_refuse "$1" "it belongs to uid $halite_uid, and only root or the connecting account (uid $halite_me) may own it"
+}
+halite_private() {
+	case $halite_mode in
+	?????w*|????????w*) halite_refuse "$1" "accounts other than its owner may write to it ($halite_mode)" ;;
+	??????????+*) halite_refuse "$1" "it has an access control list ($halite_mode), which this cannot read" ;;
+	esac
+}
+halite_above() {
+	halite_p=$1
+	while [ "$halite_p" != / ]; do
+		halite_p=$(dirname "$halite_p")
+		halite_owner "$halite_p"
+		case $halite_mode in
+		l*) ;;
+		?????????[tT]*) ;;
+		*) halite_private "$halite_p" ;;
+		esac
+	done
+}
+halite_trust_dir() {
+	case $1 in /*) ;; *) halite_refuse "$1" "it is not an absolute path" ;; esac
+	halite_above "$1"
+	halite_owner "$1"
+	halite_phys=$(cd -P "$1" 2>/dev/null && pwd -P) ||
+		halite_refuse "$1" "it is not a directory this account can enter"
+	halite_above "$halite_phys"
+	halite_owner "$halite_phys"
+	case $halite_mode in d*) ;; *) halite_refuse "$1" "it is not a directory" ;; esac
+	[ "$2" = owner ] || halite_private "$halite_phys"
+}
+`
+
+// untrusted is the status the scripts exit with when they refuse.
+const untrusted = 3
+
+// digestCommand prints the SHA-256 of a file through whichever of the
+// usual tools the target has: `sha256sum` on Linux, `sha256 -q` on
+// FreeBSD, `shasum` on macOS. It prints NO-DIGEST-TOOL when none is.
+func digestCommand(quoted string) string {
+	return fmt.Sprintf(
+		"if command -v sha256sum >/dev/null 2>&1; then sha256sum %s | cut -d' ' -f1; "+
+			"elif command -v sha256 >/dev/null 2>&1; then sha256 -q %s; "+
+			"elif command -v shasum >/dev/null 2>&1; then shasum -a 256 %s | cut -d' ' -f1; "+
+			"else echo NO-DIGEST-TOOL; fi", quoted, quoted, quoted)
+}
+
+// checkScript is what the target runs to ask whether this build is
+// cached and may be trusted. Its last line is `absent`, or `present`
+// and the digest the target computed; it exits `untrusted` with the
+// reason on stderr when something on the path could have been written
+// by another account.
+//
+// A missing directory is `absent`, and `prepare` makes and checks it.
+// A binary that is not executable is `absent` too: nothing but a
+// trusted account can have left it there, and the staged copy's `mv`
+// replaces it.
+func checkScript(dir, remote string) string {
+	return trustFunctions +
+		"halite_dir=" + shellQuote(dir) + "\n" +
+		"halite_bin=" + shellQuote(remote) + "\n" +
+		`if [ ! -e "$halite_dir" ] && [ ! -h "$halite_dir" ]; then echo absent; exit 0; fi
+halite_trust_dir "$halite_dir"
+halite_stat "$halite_bin" || { echo absent; exit 0; }
+case $halite_mode in -*) ;; *) halite_refuse "$halite_bin" "it is not a regular file ($halite_mode)" ;; esac
+halite_owner "$halite_bin"
+halite_private "$halite_bin"
+case $halite_mode in ???x*) ;; *) echo absent; exit 0 ;; esac
+echo present $(` + digestCommand(`"$halite_bin"`) + `)
+`
+}
+
+// cached reports whether the target already has this build, in a
+// place nobody else could have put it.
+func (o *Options) cached(ctx context.Context, t roster.Target, dir, remote, digest string) (bool, error) {
+	stdout, stderr, err := o.script(ctx, t, checkScript(dir, remote))
 	if err != nil {
+		if exitStatus(err) == untrusted {
+			return false, refusal(t, dir, stderr)
+		}
 		return false, fmt.Errorf("%s: %w", t.ID, enrich(err, stderr))
 	}
-	return strings.Contains(stdout, "present"), nil
+	fields := strings.Fields(lastLine(stdout))
+	if len(fields) == 0 || fields[0] != "present" {
+		return false, nil
+	}
+	if len(fields) != 2 || fields[1] != digest {
+		// Not an attack -- only root or the connecting account could
+		// have written it, which the script has just established -- but
+		// not this build either, so it is replaced rather than run.
+		o.log("warn", "the cached binary does not match its name and will be replaced",
+			"target", t.ID, "path", remote, "answer", summarise(stdout))
+		return false, nil
+	}
+	return true, nil
+}
+
+// refusal is what an operator is told when the cache cannot be trusted.
+func refusal(t roster.Target, dir, stderr string) error {
+	return fmt.Errorf("%s: %s cannot be trusted to hold a binary that this run executes: %s. "+
+		"Only root or the connecting account may own it or any directory above it, and no "+
+		"other account may be able to write to them. If another account made it, find out "+
+		"why, then remove it as root, or set `thin_dir` in the roster to a directory that "+
+		"meets this", t.ID, dir, summarise(stderr))
 }
 
 // push copies the binary and verifies its digest on the target.
@@ -246,13 +451,12 @@ func (o *Options) hasBinary(ctx context.Context, t roster.Target, remote string)
 // binary that runs and does something unpredictable, and scp reports
 // success for a transfer the network cut short more often than anybody
 // would like.
-func (o *Options) push(ctx context.Context, t roster.Target, binary, remote string) error {
-	dir := t.ThinDir
-	if err := o.prepare(ctx, t, dir); err != nil {
+func (o *Options) push(ctx context.Context, t roster.Target, binary, dir, remote string) error {
+	staging, err := o.prepare(ctx, t, dir)
+	if err != nil {
 		return err
 	}
 
-	staging := remote + ".partial"
 	args := append([]string{"-q", "-B"}, o.scpArgs(t)...)
 	args = append(args, binary, destination(t)+":"+staging)
 
@@ -261,6 +465,7 @@ func (o *Options) push(ctx context.Context, t roster.Target, binary, remote stri
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		_, _, _ = o.script(ctx, t, "rm -f "+shellQuote(staging))
 		return fmt.Errorf("%s: copying the binary: %w", t.ID, enrich(err, stderr.String()))
 	}
 
@@ -280,8 +485,9 @@ func (o *Options) push(ctx context.Context, t roster.Target, binary, remote stri
 	}
 
 	// Only now does it become the cached name, so a concurrent run
-	// never finds a half-written binary.
-	move := fmt.Sprintf("chmod 700 %s && mv %s %s",
+	// never finds a half-written binary. Two runs against the same
+	// machine stage under two names, so neither renames the other's.
+	move := fmt.Sprintf("chmod 700 %s && mv -f %s %s",
 		shellQuote(staging), shellQuote(staging), shellQuote(remote))
 	if _, stderr, err := o.script(ctx, t, move); err != nil {
 		return fmt.Errorf("%s: installing the binary: %w", t.ID, enrich(err, stderr))
@@ -293,22 +499,62 @@ func (o *Options) push(ctx context.Context, t roster.Target, binary, remote stri
 // run it through a real /bin/sh against a real directory: the shell is
 // the thing being programmed here, and a script checked only against
 // what its author meant is the mistake DIVERGENCE 5.31 is about.
+//
+// The directory is checked for its owner *before* the `chmod`, and in
+// full after it. The order matters when the connecting account is
+// root: `chmod` as root succeeds on a directory another account made,
+// and on the target of a link another account planted, and it would be
+// changing the mode of something that is not ours before the check
+// that says so.
+//
+// Its last line names a staging file made by `mktemp`, which the copy
+// is written to. The previous `<digest>.partial` was a name anybody
+// could compute and make first.
 func prepareScript(dir string) string {
 	quoted := shellQuote(dir)
-	probe := shellQuote(dir + "/.halite-probe")
+	return trustFunctions +
+		"mkdir -p " + quoted + " || exit 1\n" +
+		"halite_trust_dir " + quoted + " owner\n" +
+		"chmod 700 " + quoted + " || exit 1\n" +
+		"halite_trust_dir " + quoted + "\n" +
+		probeScript(dir)
+}
+
+// probeScript is the half of prepareScript after the directory has been
+// trusted: run something out of it, then make the staging file.
+//
+// Separate so that the tests which mount a real `noexec` filesystem can
+// run it on its own. They do that inside an unprivileged user namespace,
+// where every directory the host's root owns -- `/` among them -- shows
+// as owned by the overflow uid, and the trust check refuses it, rightly:
+// from in there it cannot tell who owns it. That refusal is tested
+// elsewhere; what those tests are for is the probe.
+func probeScript(dir string) string {
+	// The probe is made by `mktemp` as well, for the same reason as the
+	// staging file: two runs against one machine used to share the name
+	// `.halite-probe`, and one removed it, or was writing it, while the
+	// other ran it. CI found that on its first run of the concurrent
+	// test, on Linux, FreeBSD and macOS alike: "chmod: cannot access
+	// '.../.halite-probe': No such file or directory" and, on Linux,
+	// "Text file busy" (DIVERGENCE 5.306).
+	//
 	// Written as one script over stdin, because a target's login shell
 	// is not always POSIX and this is already how everything else here
 	// reaches it. `rm` runs whatever happened, so a refused probe does
 	// not leave a file behind.
-	return "mkdir -p " + quoted + " && chmod 700 " + quoted + " || exit 1\n" +
-		"printf '#!/bin/sh\\nexit 0\\n' > " + probe + " && chmod 700 " + probe + " || exit 2\n" +
-		probe + "; status=$?\n" +
-		"rm -f " + probe + "\n" +
-		"exit $status\n"
+	return "halite_probe=$(mktemp " + shellQuote(dir+"/.probe.XXXXXXXX") + ") || exit 2\n" +
+		"printf '#!/bin/sh\\nexit 0\\n' > \"$halite_probe\" && chmod 700 \"$halite_probe\" || " +
+		"{ rm -f \"$halite_probe\"; exit 2; }\n" +
+		"\"$halite_probe\"; status=$?\n" +
+		"rm -f \"$halite_probe\"\n" +
+		"[ $status -eq 0 ] || exit $status\n" +
+		"halite_staging=$(mktemp " + shellQuote(dir+"/.partial.XXXXXXXX") + ") || exit 2\n" +
+		"echo staging $halite_staging\n"
 }
 
-// prepare makes the staging directory and proves the target can run
-// something out of it.
+// prepare makes the staging directory, proves that nobody else could
+// have written to it and that the target can run something out of it,
+// and answers with the name to copy the binary to.
 //
 // `mkdir -p` succeeding says the directory exists. It does not say this
 // account can use it, and the dimension that decides an agentless run is
@@ -324,16 +570,32 @@ func prepareScript(dir string) string {
 //
 // It is the check `OpenNodeCache` already makes for itself on the hub,
 // asked about execution rather than about writing.
-func (o *Options) prepare(ctx context.Context, t roster.Target, dir string) error {
-	_, stderr, err := o.script(ctx, t, prepareScript(dir))
+func (o *Options) prepare(ctx context.Context, t roster.Target, dir string) (string, error) {
+	return o.prepareWith(ctx, t, dir, prepareScript(dir))
+}
+
+// prepareWith runs a preparation script and reads its answer. Only the
+// noexec tests pass anything but prepareScript; see probeScript.
+func (o *Options) prepareWith(ctx context.Context, t roster.Target, dir, script string) (string, error) {
+	stdout, stderr, err := o.script(ctx, t, script)
 	if err == nil {
-		return nil
+		staging := strings.TrimPrefix(strings.TrimSpace(lastLine(stdout)), "staging ")
+		// What came back is about to be put on an scp command line and
+		// into scripts, so it is held to the same rule as thin_dir, and
+		// to being where it was asked to be.
+		if !strings.HasPrefix(staging, dir+"/.partial.") || shellSafe("staging", staging) != nil {
+			return "", fmt.Errorf("%s: preparing %s answered %q, which is not a staging file in it",
+				t.ID, dir, summarise(stdout))
+		}
+		return staging, nil
 	}
 	switch exitStatus(err) {
 	case 1:
-		return fmt.Errorf("%s: %s could not be created: %w", t.ID, dir, enrich(err, stderr))
+		return "", fmt.Errorf("%s: %s could not be created: %w", t.ID, dir, enrich(err, stderr))
 	case 2:
-		return fmt.Errorf("%s: nothing could be written to %s: %w", t.ID, dir, enrich(err, stderr))
+		return "", fmt.Errorf("%s: nothing could be written to %s: %w", t.ID, dir, enrich(err, stderr))
+	case untrusted:
+		return "", refusal(t, dir, stderr)
 	case noStatus:
 		// The script never ran, so nothing has been learned about the
 		// directory. ssh could not be started, or was killed, or the
@@ -341,12 +603,12 @@ func (o *Options) prepare(ctx context.Context, t roster.Target, dir string) erro
 		// would be a confident answer to a question nobody asked. CI's
 		// Windows leg found this by failing to find `ssh` at all and
 		// being told its /var/tmp was mounted wrong.
-		return fmt.Errorf("%s: preparing %s: %w", t.ID, dir, enrich(err, stderr))
+		return "", fmt.Errorf("%s: preparing %s: %w", t.ID, dir, enrich(err, stderr))
 	}
 	// Anything else is the probe itself refusing to run, which is what
 	// a `noexec` mount looks like from here: 126 from a shell, or 1
 	// from an `execve` that never happened.
-	return fmt.Errorf("%s: %s holds the pushed binary and will not run it. "+
+	return "", fmt.Errorf("%s: %s holds the pushed binary and will not run it. "+
 		"A filesystem mounted `noexec` is the usual reason, and hardening benchmarks "+
 		"ask for exactly that on /var/tmp and /tmp. Set `thin_dir` in the roster to a "+
 		"directory this account may execute from: %w", t.ID, dir, enrich(err, stderr))
@@ -373,11 +635,7 @@ func exitStatus(err error) int {
 // asks to be checked.
 func (o *Options) remoteDigest(ctx context.Context, t roster.Target, path string) (string, error) {
 	quoted := shellQuote(path)
-	command := fmt.Sprintf(
-		"if command -v sha256sum >/dev/null 2>&1; then sha256sum %s | cut -d' ' -f1; "+
-			"elif command -v sha256 >/dev/null 2>&1; then sha256 -q %s; "+
-			"elif command -v shasum >/dev/null 2>&1; then shasum -a 256 %s | cut -d' ' -f1; "+
-			"else echo NO-DIGEST-TOOL; fi", quoted, quoted, quoted)
+	command := digestCommand(quoted)
 
 	stdout, stderr, err := o.script(ctx, t, command)
 	if err != nil {
