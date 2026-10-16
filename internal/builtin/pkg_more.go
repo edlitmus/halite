@@ -88,11 +88,14 @@ func registerPkgMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				names := states.Strings(args, "pkgs")
+				if err := pkgValidateNames(names); err != nil {
+					return nil, err
+				}
 				p, err := pickPkgProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				names := states.Strings(args, "pkgs")
 				before, err := p.ListPkgs(c)
 				if err != nil {
 					return nil, err
@@ -197,11 +200,15 @@ func registerPkgMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name := states.Str(args, "name", "")
+				if err := pkgValidateName(name); err != nil {
+					return nil, err
+				}
 				o, err := pickOwner(c)
 				if err != nil {
 					return nil, err
 				}
-				files, err := o.FileList(c, states.Str(args, "name", ""))
+				files, err := o.FileList(c, name)
 				if err != nil {
 					return nil, err
 				}
@@ -244,11 +251,15 @@ func registerPkgMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name := states.Str(args, "name", "")
+				if err := pkgValidateName(name); err != nil {
+					return nil, err
+				}
 				p, err := pickPkgProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				return p.LatestVersion(c, states.Str(args, "name", ""))
+				return p.LatestVersion(c, name)
 			},
 		},
 		exec.Module{
@@ -282,11 +293,15 @@ func registerPkgMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				names := states.Strings(args, "pkgs")
+				if err := pkgValidateNames(names); err != nil {
+					return nil, err
+				}
 				i, err := pickInspector(c)
 				if err != nil {
 					return nil, err
 				}
-				return i.InfoInstalled(c, states.Strings(args, "pkgs"))
+				return i.InfoInstalled(c, names)
 			},
 		},
 		exec.Module{
@@ -300,11 +315,14 @@ func registerPkgMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				names := states.Strings(args, "pkgs")
+				if err := pkgValidateNames(names); err != nil {
+					return nil, err
+				}
 				o, err := pickOwner(c)
 				if err != nil {
 					return nil, err
 				}
-				names := states.Strings(args, "pkgs")
 				out := value.NewMap(len(names))
 				for _, name := range names {
 					files, err := o.FileList(c, name)
@@ -334,11 +352,14 @@ func registerPkgMore(r *Registries) {
 				Section:    "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				names := states.Strings(args, "pkgs")
+				if err := pkgValidateNames(names); err != nil {
+					return nil, err
+				}
 				d, err := pickDownloader(c)
 				if err != nil {
 					return nil, err
 				}
-				names := states.Strings(args, "pkgs")
 				if c.Test {
 					return names, nil
 				}
@@ -443,6 +464,10 @@ func holdModule(name, doc string, run func(pkgHolder, *exec.Context, string) err
 			Section:  "15.2",
 		},
 		Fn: func(c *exec.Context, args *value.Map) (any, error) {
+			name := states.Str(args, "name", "")
+			if err := pkgValidateName(name); err != nil {
+				return nil, err
+			}
 			h, err := pickHolder(c)
 			if err != nil {
 				return nil, err
@@ -452,9 +477,9 @@ func holdModule(name, doc string, run func(pkgHolder, *exec.Context, string) err
 				// package manager cannot hold anything still says so
 				// under a dry run rather than reporting a change it
 				// could never make.
-				return states.Str(args, "name", ""), nil
+				return name, nil
 			}
-			if err := run(h, c, states.Str(args, "name", "")); err != nil {
+			if err := run(h, c, name); err != nil {
 				return nil, err
 			}
 			return true, nil

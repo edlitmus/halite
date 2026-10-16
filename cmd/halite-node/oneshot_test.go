@@ -82,7 +82,7 @@ func leftInlineTrees(t *testing.T, temp string) []string {
 
 // Every agentless `state.*` run made a `halite-oneshot-*` directory of
 // the hub's state and template files and nothing ever removed it.
-// DIVERGENCE 5.290.
+// DIVERGENCE 5.318.
 //
 // The state reads a file the hub sent, through file.managed's source,
 // so the tree is shown to have been in use during the run and gone

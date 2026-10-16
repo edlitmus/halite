@@ -111,7 +111,7 @@ func runOneshot(args *cli.Args) int {
 	// agentless `state.*` run left a `halite-oneshot-*` directory of the
 	// hub's state and template files in the target's temporary directory
 	// -- until reboot on a host that clears /tmp, and indefinitely on one
-	// that does not. DIVERGENCE 5.290.
+	// that does not. DIVERGENCE 5.318.
 	//
 	// The defer is the backstop for a panic. The explicit remove below,
 	// before the frame is written, is the one that normally runs, and the

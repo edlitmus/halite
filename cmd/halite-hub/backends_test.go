@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/builtin"
 )
 
 // The list `serve` validates `fileserver_backend` against and the names
@@ -105,5 +107,39 @@ func TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard(t *testing.T) {
 			t.Errorf("SPEC 23.5 names %s, but it does not declare arbitrary_code, "+
 				"so functions: ['*'] grants it", fn)
 		}
+	}
+}
+
+// The hub and the node must agree on which submittable functions are
+// arbitrary code, because one decides whether a wildcard grants a
+// function and the other whether it may run unsigned.
+//
+// They compute it differently. The hub merges the execution and state
+// registries by name (arbitraryCodeFunctions, for `module.run`, which is
+// a state); the node reads the execution registry alone
+// (cmd/halite-node/jobsignature.go). For every name a job can carry —
+// an execution function — the two must give the same answer. They did
+// not for `cmd.script`: the state module declared arbitrary_code and the
+// execution function did not, so the hub refused it to a wildcard while
+// the node ran it unsigned, and TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard
+// passed because it asked the hub. DIVERGENCE 5.297.
+//
+// This does not change the hub's computation: with the twin rule held in
+// internal/builtin the merge adds no execution name the execution
+// registry did not already flag, and this test is what says so.
+func TestTheHubAndTheNodeAgreeOnArbitraryCode(t *testing.T) {
+	hub := arbitraryCodeFunctions()
+	execs := builtin.New().Exec.Signatures()
+	checked := 0
+	for _, name := range execs.Names() {
+		sig, _ := execs.Lookup(name)
+		checked++
+		if hub[name] != sig.ArbitraryCode {
+			t.Errorf("%s: the hub says arbitrary_code=%v, the node (execution registry) says %v",
+				name, hub[name], sig.ArbitraryCode)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("the execution registry is empty; this check has stopped checking")
 	}
 }

@@ -208,6 +208,18 @@ func dnfModuleMutate(c *exec.Context, verb string, specs []string) (any, error) 
 	if err := dnfPresent(c); err != nil {
 		return nil, err
 	}
+	if c.Test {
+		// Every caller is TestUnreliable, and stays so: which streams a
+		// switch or an install would change is dnf's to resolve against
+		// repository metadata, and nothing here has watched a
+		// prediction of that come true. But unreliable means "cannot
+		// predict", not "acts anyway" -- a direct exec call with
+		// `--test` set used to run the transaction. So the answer names
+		// the command and claims no change.
+		return fmt.Sprintf("`%s` would be run; what it would change is dnf's to resolve, "+
+			"so nothing was run and no change is predicted",
+			exec.Command{Argv: dnfModuleArgv(verb, specs)}.String()), nil
+	}
 	before, err := dnfModuleReadStatus(DnfModulesDir)
 	if err != nil {
 		return nil, err

@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
 )
@@ -58,9 +60,22 @@ type Binding struct {
 type Request struct {
 	Principal string
 	Target    string
-	Fun       string
-	Arg       []string
-	Kwarg     map[string]any
+	// TargetKind is how Target is to be read, in the flag form dispatch
+	// takes (target.KindFromFlag): "" or "glob", "L" or "list", "C" or
+	// "compound", and so on.
+	//
+	// It is part of the question because the same string names
+	// different nodes under different kinds. `web1.prod,db1.prod` is a
+	// glob that matches nothing and a list that reaches db1.prod; a
+	// policy that judged the string without the kind authorized the
+	// first and dispatch then ran the second. Every site that
+	// authorizes a job must pass the kind the job will be compiled
+	// under -- the same value it hands to Dispatch -- or the two paths
+	// disagree about which nodes were asked for. DIVERGENCE 5.296.
+	TargetKind string
+	Fun        string
+	Arg        []string
+	Kwarg      map[string]any
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
 	Runner bool
@@ -291,6 +306,21 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 	// target matched but whose function did not should be told that,
 	// not "no rule matched".
 	best := Decision{Reason: fmt.Sprintf("no rule in %v permits %s against %q", roles, req.Fun, req.Target)}
+	var kind target.Kind
+	if !req.Runner {
+		k, ok := target.KindFromFlag(req.TargetKind)
+		if !ok {
+			// Dispatch refuses an unknown kind too; refusing it here
+			// first means no rule is ever matched against a string
+			// whose meaning nobody knows.
+			return Decision{Reason: fmt.Sprintf("%q is not a target kind", req.TargetKind)}
+		}
+		kind = k
+		if kind != target.Glob {
+			best = Decision{Reason: fmt.Sprintf("no rule in %v permits %s against %s target %q",
+				roles, req.Fun, kind, req.Target)}
+		}
+	}
 	for _, role := range roles {
 		for i, rule := range p.Roles[role] {
 			if req.Runner {
@@ -306,7 +336,7 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 					continue
 				}
 			} else {
-				if !targetCovered(rule.Target, req.Target) {
+				if !targetCovered(rule.Target, kind, req.Target) {
 					continue
 				}
 				if !p.functionGranted(rule, req.Fun) || (req.NeverWildcard && !namedExactly(rule.Functions, req.Fun)) {
@@ -368,7 +398,7 @@ func (p *Policy) VisibleNode(roles []string, node string) bool {
 			if rule.Target == "" {
 				continue
 			}
-			if targetCovered(rule.Target, node) {
+			if literalCovered(rule.Target, node) {
 				return true
 			}
 		}
@@ -405,27 +435,92 @@ func namedExactly(patterns []string, fun string) bool {
 }
 
 // targetCovered reports whether a rule's target pattern covers the
-// target being asked for.
+// target being asked for, read as the kind it will be dispatched under.
 //
-// This is a comparison of *patterns*, not of nodes: `web*.prod` covers
-// `web1.prod` and covers `web*.prod`, and does not cover `*`. A rule
-// that granted `*` because the request said `*` would be granting the
-// whole estate to a role scoped to part of it.
-func targetCovered(granted, asked string) bool {
+// A rule's target is a glob over node IDs, which is all SPEC 23.5 has
+// ever written one as. So the question is always "is every node this
+// request can reach inside that glob?", and how it is answered depends
+// on the kind:
+//
+//   - glob: a comparison of *patterns*, not of nodes. `web*.prod`
+//     covers `web1.prod` and covers `web*.prod`, and does not cover
+//     `*`. A rule that granted `*` because the request said `*` would
+//     be granting the whole estate to a role scoped to part of it.
+//   - list: each element is one node ID, and each must be covered as a
+//     literal. This is what `web1.prod,db1.prod` used to slip through:
+//     as a string it has no `*?[`, so it was matched literally against
+//     `web*.prod` -- whose `*` happily consumes `1.prod,db1` -- and
+//     dispatch then split it and reached db1.prod.
+//   - everything else (compound, nodegroup, pcre, grain, pillar,
+//     ipcidr): only a rule of `*` covers it. Whether a compound
+//     expression stays inside a glob is a question about the fleet at
+//     the moment of dispatch, not about two strings, and a pcre that
+//     looks like a node ID is still a pattern (`.` matches anything).
+//     The hub could resolve the expression and check each matched
+//     node, but the API authorizes before it forwards and has no fleet
+//     to resolve against, and the two must make the same decision
+//     (SPEC 5.2: both check). Refusing is the answer both can give.
+//     A scoped operator who wants a set of nodes writes them as a list.
+//
+// Rule-text equality is kept only for glob. Before, a rule whose target
+// was the literal text of a compound expression granted that expression
+// by equality; but a rule's target is never compiled as a compound --
+// VisibleNode reads it as a glob -- so that grant meant something the
+// rest of the policy did not. DIVERGENCE 5.296.
+func targetCovered(granted string, kind target.Kind, asked string) bool {
 	if granted == "*" {
 		return true
 	}
-	if granted == asked {
+	switch kind {
+	case target.Glob:
+		if granted == asked {
+			return true
+		}
+		// A glob request is covered only by an identical or broader
+		// glob, and "broader" is not decidable in general, so equality
+		// is the rule. An operator who wants a wider grant writes a
+		// wider rule.
+		return literalCovered(granted, asked)
+	case target.List:
+		ids := target.ListIDs(asked)
+		if len(ids) == 0 {
+			// A list of nothing reaches nothing; there is nothing for a
+			// scoped rule to say yes to, and saying yes to the empty
+			// string is how an unconsidered case becomes a grant.
+			return false
+		}
+		for _, id := range ids {
+			if !literalCovered(granted, id) {
+				return false
+			}
+		}
 		return true
 	}
-	// A literal request inside a granted glob.
-	if !strings.ContainsAny(asked, "*?[") {
-		return matchGlob(granted, asked)
-	}
-	// A glob request is covered only by an identical or broader glob,
-	// and "broader" is not decidable in general, so equality is the
-	// rule. An operator who wants a wider grant writes a wider rule.
 	return false
+}
+
+// literalCovered reports whether one node ID falls inside a rule's glob.
+//
+// "A node ID" is held to pki.ValidateNodeID, the alphabet a node may
+// enrol under: letters, digits and `.-_`. That is what makes it safe to
+// match the string as a literal. Anything outside it -- a comma, a
+// space, `\`, `*?[`, `|`, `@` -- is either a pattern or not an ID any
+// node can have, and before this the test was only "contains no `*?[`",
+// which let `web1.prod or db1.prod` and `web1.prod|db1.prod` through as
+// "literals" under a `web*.prod` rule. Such a string is now covered only
+// by rule-text equality or by `*`.
+//
+// The match itself is target.MatchGlob, the function dispatch matches
+// node IDs with, so that "inside the rule's glob" and "matched by that
+// glob as a target" cannot come to mean different things.
+func literalCovered(granted, id string) bool {
+	if granted == "*" {
+		return true
+	}
+	if pki.ValidateNodeID(id) != nil {
+		return false
+	}
+	return granted == id || target.MatchGlob(granted, id)
 }
 
 func matchAny(patterns []string, s string) bool {
