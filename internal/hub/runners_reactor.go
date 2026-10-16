@@ -125,13 +125,13 @@ func (s *Server) wouldAuthorize(entry ReactorEntry, r Reaction) string {
 	var decision string
 	switch r.Kind {
 	case ReactRunner, ReactWheel:
-		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, "", r.Arg, r.Kwarg, true))
+		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, "", "", r.Arg, r.Kwarg, true))
 		decision = d.String()
 	case ReactCaller:
-		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, "<the node that fired the event>", r.Arg, r.Kwarg, false))
+		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, "<the node that fired the event>", "L", r.Arg, r.Kwarg, false))
 		decision = d.String()
 	default:
-		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, r.Target, r.Arg, r.Kwarg, false))
+		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, r.Target, r.TargetKind, r.Arg, r.Kwarg, false))
 		decision = d.String()
 	}
 	return decision

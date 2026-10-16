@@ -105,3 +105,9 @@ func Read(path string) ([]byte, error) {
 	}
 	return out, nil
 }
+
+// renameIn is Rename inside a root, with the same wait for a reader that
+// has newname open. See WriteIn.
+func renameIn(root *os.Root, oldname, newname string) error {
+	return retry(func() error { return root.Rename(oldname, newname) })
+}

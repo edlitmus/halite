@@ -29,7 +29,7 @@ const (
 	owner    = "203.0.113.9:50000"
 )
 
-// DIVERGENCE 5.290: keyed by name alone, one failure each time the
+// DIVERGENCE 5.304: keyed by name alone, one failure each time the
 // window opened kept a name refused all day, for its owner as well. The
 // day is simulated against the limiter itself, with no hashing: an
 // attacker at one address fails the moment each window opens, and at
@@ -79,7 +79,7 @@ func TestALoginBackedOffAtOneAddressIsAcceptedFromAnother(t *testing.T) {
 	if code, wait, body := loginFrom(t, l.server, attacker, `{"username":"ed","password":"wrong"}`); code != http.StatusTooManyRequests || wait != "900" {
 		t.Fatalf("the attacker inside its window answered %d, Retry-After %q: %s", code, wait, body)
 	}
-	// The decision recorded in 5.290: from the address being backed
+	// The decision recorded in 5.304: from the address being backed
 	// off, a right password is refused too, or the backoff would answer
 	// every guess for free.
 	if code, _, _ := loginFrom(t, l.server, attacker, `{"username":"ed","password":"hunter2"}`); code != http.StatusTooManyRequests {

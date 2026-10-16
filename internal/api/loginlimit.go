@@ -34,7 +34,7 @@ import (
 // clears it. A refusal inside the window costs no hash and does not
 // lengthen it.
 //
-// It was keyed by the name alone until DIVERGENCE 5.290, and that made
+// It was keyed by the name alone until DIVERGENCE 5.304, and that made
 // it a lockout after all. The window is checked before the password, so
 // one failure from anywhere each time the window opened -- about 105
 // requests a day, timed by the Retry-After the hub itself sent -- kept a
@@ -138,7 +138,7 @@ func newLoginLimit() *loginLimit {
 // it is held to, which is to say not be held. Behind a proxy every
 // caller is the proxy's address. The backoff then falls back to what it
 // was, per name, and the source budget becomes one budget for everybody
-// behind it -- said in DIVERGENCE 5.290 rather than worked around.
+// behind it -- said in DIVERGENCE 5.304 rather than worked around.
 //
 // An IPv6 peer is held by its /64. A single host is routinely given a
 // whole /64, so per address it would have 2^64 fresh budgets.
