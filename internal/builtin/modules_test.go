@@ -1210,3 +1210,132 @@ func TestArgvFormBeatsTheDefaultShell(t *testing.T) {
 		t.Error("the cmd.run state should refuse the same contradiction")
 	}
 }
+
+// TestFileLineMatchIsARegexSearch is audit finding H-08. Salt's file.line
+// searches `match` against each line as a regular expression (and as a
+// plain fragment); halite compared it as a substring, so the anchored
+// sshd_config idiom never matched. Measured before the fix: three runs
+// of this state each reported a change and appended another
+// `PermitRootLogin no`, and the `yes` line — the one sshd honours,
+// because it reads the first — stayed first.
+func TestFileLineMatchIsARegexSearch(t *testing.T) {
+	r := New()
+	dir := t.TempDir()
+
+	t.Run("anchored sshd match converges in one run", func(t *testing.T) {
+		path := writeFile(t, filepath.Join(dir, "sshd_config"), "Port 22\nPermitRootLogin yes\n")
+		args := value.MapOf("name", path, "mode", "ensure",
+			"match", "^PermitRootLogin", "content", "PermitRootLogin no")
+		for i := 1; i <= 3; i++ {
+			res := run(t, r, "file.line", args, false)
+			if !res.Succeeded() {
+				t.Fatalf("run %d failed: %s", i, res.Comment)
+			}
+			if want := i == 1; res.HasChanges() != want {
+				t.Errorf("run %d: changed = %v, want %v (%s)", i, res.HasChanges(), want, res.Comment)
+			}
+			if got := readFile(t, path); got != "Port 22\nPermitRootLogin no\n" {
+				t.Fatalf("run %d: file = %q", i, got)
+			}
+		}
+	})
+
+	t.Run("anchored match does not reach a longer key", func(t *testing.T) {
+		path := writeFile(t, filepath.Join(dir, "ports"), "GatewayPorts no\nPort 22\n")
+		run(t, r, "file.line", value.MapOf("name", path, "mode", "replace",
+			"match", `^Port\b`, "content", "Port 2222"), false)
+		if got := readFile(t, path); got != "GatewayPorts no\nPort 2222\n" {
+			t.Errorf("file = %q", got)
+		}
+	})
+
+	t.Run("an unanchored match is a search, as in Salt", func(t *testing.T) {
+		// Salt's re.search finds `Port` inside `GatewayPorts`; this is
+		// recorded rather than hidden, because it is why trees anchor.
+		path := writeFile(t, filepath.Join(dir, "unanchored"), "GatewayPorts no\nUseDNS no\n")
+		run(t, r, "file.line", value.MapOf("name", path, "mode", "delete", "match", "Port"), false)
+		if got := readFile(t, path); got != "UseDNS no\n" {
+			t.Errorf("file = %q", got)
+		}
+	})
+
+	t.Run("end anchor and character class", func(t *testing.T) {
+		path := writeFile(t, filepath.Join(dir, "anchors"), "X11Forwarding yes\nAllowTcpForwarding yes\n")
+		run(t, r, "file.line", value.MapOf("name", path, "mode", "delete",
+			"match", `^X11Forwarding\s+yes$`), false)
+		if got := readFile(t, path); got != "AllowTcpForwarding yes\n" {
+			t.Errorf("file = %q", got)
+		}
+	})
+
+	t.Run("a literal with metacharacters still matches as a fragment", func(t *testing.T) {
+		path := writeFile(t, filepath.Join(dir, "literal"), "allow(all)\nother\n")
+		run(t, r, "file.line", value.MapOf("name", path, "mode", "delete", "match", "allow(all)"), false)
+		if got := readFile(t, path); got != "other\n" {
+			t.Errorf("file = %q", got)
+		}
+	})
+
+	t.Run("before and after are patterns too", func(t *testing.T) {
+		path := writeFile(t, filepath.Join(dir, "anchored-insert"), "# Port 22\nPort 22\nUseDNS no\n")
+		run(t, r, "file.line", value.MapOf("name", path, "mode", "insert",
+			"after", `^Port\s`, "content", "ListenAddress 0.0.0.0"), false)
+		if got := readFile(t, path); got != "# Port 22\nPort 22\nListenAddress 0.0.0.0\nUseDNS no\n" {
+			t.Errorf("file = %q", got)
+		}
+	})
+
+	for _, tc := range []struct{ name, arg, pattern string }{
+		{"invalid match", "match", "PermitRootLogin [yes"},
+		{"unsupported match", "match", `^Port(?!s)`},
+		{"invalid before", "before", "("},
+	} {
+		t.Run(tc.name+" fails the state", func(t *testing.T) {
+			const body = "Port 22\nPermitRootLogin yes\n"
+			path := writeFile(t, filepath.Join(dir, "invalid"), body)
+			args := value.MapOf("name", path, "mode", "ensure", "content", "PermitRootLogin no",
+				"match", "^PermitRootLogin", tc.arg, tc.pattern)
+			res := run(t, r, "file.line", args, false)
+			if res.Succeeded() {
+				t.Fatalf("a %s of %q must fail the state: %s", tc.arg, tc.pattern, res.Comment)
+			}
+			// Naming the argument is not enough: before the fix an
+			// unmatched `before` failed too, saying "no line matches
+			// before", which is the right outcome for the wrong reason.
+			if !strings.Contains(res.Comment, "file.line "+tc.arg+" is not a usable regular expression") {
+				t.Errorf("the comment should say %s is not a usable pattern: %s", tc.arg, res.Comment)
+			}
+			if got := readFile(t, path); got != body {
+				t.Errorf("a failed state edited the file: %q", got)
+			}
+		})
+	}
+
+	t.Run("content standing in for match is a pattern too", func(t *testing.T) {
+		// An unset match defaults to content, so a content that is not a
+		// valid pattern fails, as Salt's does when before and after are
+		// unset. The changelog warns about exactly this rsyslog shape.
+		const body = "# rules\n"
+		path := writeFile(t, filepath.Join(dir, "rsyslog"), body)
+		res := run(t, r, "file.line", value.MapOf("name", path, "mode", "ensure",
+			"content", "*.* @loghost"), false)
+		if res.Succeeded() || !strings.Contains(res.Comment, "file.line match is not a usable regular expression") {
+			t.Errorf("result = %v: %s", res.Succeeded(), res.Comment)
+		}
+		if got := readFile(t, path); got != body {
+			t.Errorf("file = %q", got)
+		}
+	})
+
+	t.Run("delete with nothing to match is refused, not a wiped file", func(t *testing.T) {
+		const body = "a\nb\n"
+		path := writeFile(t, filepath.Join(dir, "empty"), body)
+		res := run(t, r, "file.line", value.MapOf("name", path, "mode", "absent"), false)
+		if res.Succeeded() {
+			t.Errorf("an absent with no match and no content must fail: %s", res.Comment)
+		}
+		if got := readFile(t, path); got != body {
+			t.Errorf("file = %q", got)
+		}
+	})
+}
