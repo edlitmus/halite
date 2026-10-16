@@ -24503,6 +24503,75 @@ refuses the run.
   path. They never went through `state_denylist`, and they still do
   not. This change is about SLS names only.
 - The tests ran on macOS (Darwin 25.6) only.
+
+#### 5.294, the hub's policy follows the compiler
+
+The follow-up above is done. In `checkArgs`
+(`internal/policy/policy.go`), when a rule for the function has
+`deny_sls` or `allow_sls`, every argument goes through
+`state.CanonicalSLS` before either list is read. A request with a
+non-canonical argument is refused, and the reason gives the canonical
+spelling. Only canonical names are matched against the lists.
+
+Before this, the hub authorized, and logged as authorized,
+`state.sls secret/x` under `deny_sls: [secret.x]`. A node built after
+5.294 then refused the name when it compiled. A node built before 5.294
+ran it. So the hub's decision was wrong on its own, whatever the node
+did next.
+
+The refusal applies only to a function whose rule has one of the two
+lists. A role with no SLS constraint is not changed: the node still
+refuses the spelling, as above.
+
+**How it is tested.** `TestSLSConstraintsJudgeTheCanonicalName`
+(`internal/policy/policy_test.go`) gives a role `deny_sls: [secret.x,
+vault.*]` on `state.sls` and `allow_sls: [web.*]` on `state.apply`.
+
+- `secret.x`, `secret..x`, `secret/x`, `.secret.x`, `secret/./x`,
+  `secret.x.`, `/secret/x`, `secret\x` and `vault/db` are each refused
+  as an argument of `state.sls`, next to an allowed `ok`.
+- The reason for `secret/x` contains `"secret.x"`.
+- `ok`, `secrets.x` and `web.nginx` together are still allowed.
+- Under `allow_sls`, `web.nginx` is allowed. `web..nginx`, `web/nginx`,
+  `.web.nginx` and `web.nginx/` are refused. `web..nginx` matched
+  `web.*` before, because `path.Match` let `*` match `.nginx`.
+
+**Broken on purpose.** With the `CanonicalSLS` check disabled, the test
+failed ten times: all nine `deny_sls` spellings except `secret.x` itself
+were authorized, the reason no longer named the canonical spelling, and
+`state.apply web..nginx` was authorized under `allow_sls`.
+
+**Still open: M-01, `allow_sls` and a bare `state.apply`.** The audit
+(`docs/audits/2026-10-issue-321-triage.md`, M-01) found that
+`state.apply` with no arguments is authorized under `allow_sls`, because
+`checkArgs` only loops over the arguments there are. The node then runs
+the highstate (`runStateJob` in `cmd/halite-node/execute.go`). It was
+checked again here with the `webops` role of the package's example
+policy, and it is still allowed. It was not changed here. The fix is a
+decision, not a spelling. A role with `allow_sls` would lose the
+highstate, and that is a change an operator sees. It should have its own
+change and its own CHANGELOG entry.
+
+**Not changed: `allow_mods`.** `allow_mods` on `state.orchestrate` is
+matched the same way, as written. The hub's orchestration compiles the
+names with `CompileSLS` (`internal/hub/orch.go`), which refuses a
+non-canonical name, so the hub does not run one. But the policy still
+says such a name is authorized. That is a follow-up of the same shape.
+
+**Run through the command line.** `halite-hub policy test`, built from
+`main` (`dbc1b5d`) and from this change, was given a policy file with
+`deny_sls: [secret.x]` on `state.sls`. Built from `main`, it denied
+`secret.x` and printed `allowed by role "ops" rule 0` with exit 0 for
+`secret/x`, `secret..x`, `.secret.x` and `secret/./x`. Built from this
+change, it denied all five with exit 1, and each message gave the
+spelling `secret.x`. `ok` was allowed by both.
+
+**Not verified.** No hub served a job. The dispatch path calls the same
+`Authorize` as `policy test`, but that was read from the code, not run.
+No node received a job. Nobody has checked the estate's policy files for
+`allow_sls` or `deny_sls` patterns written for a non-canonical spelling,
+which would now match nothing. Everything ran on macOS (Darwin 25.6)
+only.
 ### 5.295 `file_ignore_glob` hid only the first level of what it named
 
 Review finding M-55, reproduced before it was changed.

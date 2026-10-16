@@ -347,3 +347,60 @@ func TestADenialNamesTheTargetKind(t *testing.T) {
 		t.Errorf("got %s; want a denial for an unknown kind", d)
 	}
 }
+
+// deny_sls and allow_sls are matched against the one spelling of an SLS
+// name the node's compiler loads. Every spelling below is a name a file
+// server folds to secret/x.sls (DIVERGENCE 5.294), and until the policy
+// followed the compiler each was authorized under `deny_sls: [secret.x]`,
+// because it was matched as written.
+func TestSLSConstraintsJudgeTheCanonicalName(t *testing.T) {
+	const src = `
+roles:
+  ops:
+    - target: '*'
+      functions: ['state.sls', 'state.apply']
+      args:
+        'state.sls':
+          deny_sls: ['secret.x', 'vault.*']
+        'state.apply':
+          allow_sls: ['web.*']
+bindings:
+  - principal: 'cert:CN=ops'
+    roles: ['ops']
+`
+	p, _, err := Load([]byte(src), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ask := func(fun string, args ...string) Decision {
+		return p.Authorize(Request{Principal: "cert:CN=ops", Target: "n1", Fun: fun, Arg: args})
+	}
+
+	for _, spelling := range []string{
+		"secret.x", "secret..x", "secret/x", ".secret.x", "secret/./x",
+		"secret.x.", "/secret/x", `secret\x`, "vault/db",
+	} {
+		d := ask("state.sls", "ok", spelling)
+		if d.Allowed {
+			t.Errorf("state.sls %q was authorized under deny_sls [secret.x vault.*]", spelling)
+		}
+	}
+	// The reason for a non-canonical name gives the spelling to use.
+	if d := ask("state.sls", "secret/x"); !strings.Contains(d.Reason, `"secret.x"`) {
+		t.Errorf("the refusal should give the canonical spelling: %s", d.Reason)
+	}
+	if d := ask("state.sls", "ok", "secrets.x", "web.nginx"); !d.Allowed {
+		t.Errorf("canonical names outside deny_sls were refused: %s", d.Reason)
+	}
+
+	// allow_sls: a canonical name inside it is allowed; the same file
+	// spelled another way is refused rather than matched loosely.
+	if d := ask("state.apply", "web.nginx"); !d.Allowed {
+		t.Errorf("web.nginx is inside allow_sls [web.*] and was refused: %s", d.Reason)
+	}
+	for _, spelling := range []string{"web..nginx", "web/nginx", ".web.nginx", "web.nginx/"} {
+		if d := ask("state.apply", spelling); d.Allowed {
+			t.Errorf("state.apply %q was authorized under allow_sls [web.*]", spelling)
+		}
+	}
+}
