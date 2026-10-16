@@ -21,6 +21,36 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A node's `region` grain no longer chooses where the hub sends AWS credentials
+
+The `aws_secrets_manager` pillar extension put the region into the
+endpoint's host by string concatenation. The region could come from the
+node's `region` grain, or from a secret a node named through
+`node_grain`. So a node could make the hub send a signed request, with
+its access key ID and session token, to a host the node chose, and put
+the answer in its own pillar. Every region must now look like an AWS
+region (`us-east-1`, `us-gov-west-1`, `cn-north-1`) before it becomes a
+host, and an unknown `partition` is refused.
+
+**A node-supplied region is no longer used by default.** A region from
+the node's `region` grain, or from the `region` or ARN of a `node_grain`
+entry, is used only if it is the block's `region` or is listed in the new
+`node_region_allow`. Otherwise that node's pillar fails, and the message
+names the setting. If your nodes span regions and name secrets without
+ARNs, add their regions:
+
+```yaml
+ext_pillar:
+  - aws_secrets_manager:
+      region: us-east-1
+      node_region_allow: [us-west-2, eu-west-1]
+```
+
+The extension's version is now 1.1.0; sign the new bundle as 1.1.0 and
+move its pin. `halite-ext-signer-kms` is now 1.0.1: it shares the STS
+code, which now refuses a `region` that is not a region name before
+sending anything. See DIVERGENCE 5.324.
+
 ### A node renewing at the moment it is revoked now stays revoked
 
 `halite-hub keys revoke` writes the key store from the operator's shell,

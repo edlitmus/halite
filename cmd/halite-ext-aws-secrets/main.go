@@ -58,6 +58,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -66,7 +67,7 @@ import (
 
 // Version is what the handshake and `sys.list_extensions` report. It is
 // also what a pin names, so it changes when behaviour does.
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 func main() {
 	// The resource limits of SPEC 24.3, applied by the extension to
@@ -189,6 +190,7 @@ func handle(call ext.Call) (any, error) {
 
 	client := &secretsClient{
 		Provider:  cfg.provider(),
+		Client:    handlerClient,
 		Partition: cfg.Partition,
 		Endpoint:  cfg.Endpoint,
 		Timeout:   cfg.timeout(),
@@ -197,7 +199,10 @@ func handle(call ext.Call) (any, error) {
 	flat := map[string]any{}
 	var order []string
 	for _, s := range secrets {
-		region := cfg.regionFor(s, grains)
+		region, err := cfg.regionFor(s, grains)
+		if err != nil {
+			return nil, fmt.Errorf("the secret for the pillar key %q: %w", s.Key, err)
+		}
 		if region == "" {
 			return nil, fmt.Errorf("the secret %q names neither a region nor an ARN carrying one, "+
 				"and neither `region` in this block nor this node's `region` grain is set", s.Key)
@@ -221,6 +226,13 @@ func handle(call ext.Call) (any, error) {
 
 	return map[string]any{cfg.root(): nest(flat, order)}, nil
 }
+
+// handlerClient is nil in a running extension, which means a client
+// built from the block's timeout. The tests set it, so that the handler
+// can be driven with no `endpoint` -- the configuration in which the
+// region becomes part of the host -- without anything leaving the
+// machine: a transport that answers locally, or fails the test.
+var handlerClient *http.Client
 
 // cache is process-wide, which is what makes the TTL worth having: the
 // host keeps a pool of these processes alive across compilations, so a

