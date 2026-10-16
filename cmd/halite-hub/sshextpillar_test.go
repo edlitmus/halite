@@ -28,7 +28,11 @@ func installAWSExtension(t *testing.T) string {
 		exe += ".exe"
 	}
 	cache := t.TempDir()
-	dir := filepath.Join(cache, "aws_secrets_manager", "1.0.0")
+	// cmd/halite-ext-aws-secrets's Version: the hub refuses an
+	// executable laid out as any other version, signed or not
+	// (DIVERGENCE 5.325).
+	const version = "1.1.0"
+	dir := filepath.Join(cache, "aws_secrets_manager", version)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +42,7 @@ func installAWSExtension(t *testing.T) string {
 		t.Fatalf("building the extension: %v", err)
 	}
 	manifest, err := extension.Build(dir, extension.Manifest{
-		Name: "aws_secrets_manager", Version: "1.0.0", Kind: "pillar",
+		Name: "aws_secrets_manager", Version: version, Kind: "pillar",
 		Declares:    []string{"network"},
 		Executables: map[string]string{runtime.GOOS + "/" + runtime.GOARCH: exe},
 	})

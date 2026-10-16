@@ -24,7 +24,7 @@ import (
 // Guard is in memory, one per process, bounded by count, and keyed by jid
 // and nonce. That is enough against a hub that redelivers a job by
 // accident, and it is no protection at all against a hub that means it,
-// for three reasons that were each reproduced (DIVERGENCE 5.290):
+// for three reasons that were each reproduced (DIVERGENCE 5.328):
 //
 //   - It forgets on restart, and a signed job is good until its expiry,
 //     which can be long after the node has restarted.

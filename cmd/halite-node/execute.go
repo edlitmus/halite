@@ -344,7 +344,7 @@ var ErrQueueFull = errors.New("this node's job queue is full")
 // one amended record, because a chain that went back and changed an entry
 // would not be append-only.
 //
-// The order inside is the fix for DIVERGENCE 5.290. The replay cache used
+// The order inside is the fix for DIVERGENCE 5.328. The replay cache used
 // to record a job before its signature was checked, so a job refused for
 // having no signature still took two places in it; a hub could send a few
 // thousand of those and push a real signed job's entry out, then send that

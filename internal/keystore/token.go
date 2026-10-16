@@ -153,12 +153,13 @@ func (s *Store) MintToken(opts TokenOptions, now time.Time) (*Token, string, err
 		Created:  now,
 		Comment:  opts.Comment,
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := mkdirOwned(s.tokenDir()); err != nil {
-		return nil, "", fmt.Errorf("creating the token store: %w", err)
-	}
-	if err := s.putToken(tok); err != nil {
+	err := s.locked(func() error {
+		if err := mkdirOwned(s.tokenDir()); err != nil {
+			return fmt.Errorf("creating the token store: %w", err)
+		}
+		return s.putToken(tok)
+	})
+	if err != nil {
 		return nil, "", err
 	}
 	return tok, secret, nil
@@ -233,32 +234,38 @@ func (s *Store) listTokens() ([]*Token, error) {
 }
 
 // RevokeToken withdraws a token immediately.
+//
+// Under the store's lock, because the hub's SpendToken rewrites the same
+// record to count a use: without it, `keys token revoke` landing between
+// a spend's read and its write was overwritten by the spend, and the
+// token went on admitting nodes. DIVERGENCE 5.323.
 func (s *Store) RevokeToken(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	tok, err := s.getToken(id)
-	if err != nil {
-		return err
-	}
-	tok.Revoked = true
-	return s.putToken(tok)
+	return s.locked(func() error {
+		tok, err := s.getToken(id)
+		if err != nil {
+			return err
+		}
+		s.inWindow("revoke-token", id)
+		tok.Revoked = true
+		return s.putToken(tok)
+	})
 }
 
 // DeleteToken removes an expired or spent record.
 func (s *Store) DeleteToken(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	path, err := s.tokenPath(id)
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("token %s: %w", id, ErrNoToken)
+	return s.locked(func() error {
+		if err := os.Remove(path); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("token %s: %w", id, ErrNoToken)
+			}
+			return fmt.Errorf("deleting token %s: %w", id, err)
 		}
-		return fmt.Errorf("deleting token %s: %w", id, err)
-	}
-	return nil
+		return nil
+	})
 }
 
 // SpendToken checks a presented secret against the scope it was minted
@@ -272,10 +279,20 @@ func (s *Store) SpendToken(secret, nodeID, remoteAddr string, now time.Time) (*T
 	if err := pki.ValidateNodeID(nodeID); err != nil {
 		return nil, err
 	}
-	digest := digestOf(secret)
+	var spent *Token
+	err := s.locked(func() error {
+		var err error
+		spent, err = s.spendToken(secret, nodeID, remoteAddr, now)
+		return err
+	})
+	return spent, err
+}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// spendToken is SpendToken for a caller already inside locked: an
+// enrollment spends its token and writes its record in one critical
+// section, so that neither can be undone between the two.
+func (s *Store) spendToken(secret, nodeID, remoteAddr string, now time.Time) (*Token, error) {
+	digest := digestOf(secret)
 	tokens, err := s.listTokens()
 	if err != nil {
 		return nil, err
@@ -306,6 +323,7 @@ func (s *Store) SpendToken(secret, nodeID, remoteAddr string, now time.Time) (*T
 		}
 	}
 
+	s.inWindow("spend", found.ID)
 	found.Uses++
 	found.SpentBy = append(found.SpentBy, nodeID)
 	if err := s.putToken(found); err != nil {

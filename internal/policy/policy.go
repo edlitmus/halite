@@ -14,6 +14,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/state"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
 )
@@ -58,9 +61,22 @@ type Binding struct {
 type Request struct {
 	Principal string
 	Target    string
-	Fun       string
-	Arg       []string
-	Kwarg     map[string]any
+	// TargetKind is how Target is to be read, in the flag form dispatch
+	// takes (target.KindFromFlag): "" or "glob", "L" or "list", "C" or
+	// "compound", and so on.
+	//
+	// It is part of the question because the same string names
+	// different nodes under different kinds. `web1.prod,db1.prod` is a
+	// glob that matches nothing and a list that reaches db1.prod; a
+	// policy that judged the string without the kind authorized the
+	// first and dispatch then ran the second. Every site that
+	// authorizes a job must pass the kind the job will be compiled
+	// under -- the same value it hands to Dispatch -- or the two paths
+	// disagree about which nodes were asked for. DIVERGENCE 5.296.
+	TargetKind string
+	Fun        string
+	Arg        []string
+	Kwarg      map[string]any
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
 	Runner bool
@@ -291,6 +307,21 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 	// target matched but whose function did not should be told that,
 	// not "no rule matched".
 	best := Decision{Reason: fmt.Sprintf("no rule in %v permits %s against %q", roles, req.Fun, req.Target)}
+	var kind target.Kind
+	if !req.Runner {
+		k, ok := target.KindFromFlag(req.TargetKind)
+		if !ok {
+			// Dispatch refuses an unknown kind too; refusing it here
+			// first means no rule is ever matched against a string
+			// whose meaning nobody knows.
+			return Decision{Reason: fmt.Sprintf("%q is not a target kind", req.TargetKind)}
+		}
+		kind = k
+		if kind != target.Glob {
+			best = Decision{Reason: fmt.Sprintf("no rule in %v permits %s against %s target %q",
+				roles, req.Fun, kind, req.Target)}
+		}
+	}
 	for _, role := range roles {
 		for i, rule := range p.Roles[role] {
 			if req.Runner {
@@ -306,7 +337,7 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 					continue
 				}
 			} else {
-				if !targetCovered(rule.Target, req.Target) {
+				if !targetCovered(rule.Target, kind, req.Target) {
 					continue
 				}
 				if !p.functionGranted(rule, req.Fun) || (req.NeverWildcard && !namedExactly(rule.Functions, req.Fun)) {
@@ -368,7 +399,7 @@ func (p *Policy) VisibleNode(roles []string, node string) bool {
 			if rule.Target == "" {
 				continue
 			}
-			if targetCovered(rule.Target, node) {
+			if literalCovered(rule.Target, node) {
 				return true
 			}
 		}
@@ -405,27 +436,92 @@ func namedExactly(patterns []string, fun string) bool {
 }
 
 // targetCovered reports whether a rule's target pattern covers the
-// target being asked for.
+// target being asked for, read as the kind it will be dispatched under.
 //
-// This is a comparison of *patterns*, not of nodes: `web*.prod` covers
-// `web1.prod` and covers `web*.prod`, and does not cover `*`. A rule
-// that granted `*` because the request said `*` would be granting the
-// whole estate to a role scoped to part of it.
-func targetCovered(granted, asked string) bool {
+// A rule's target is a glob over node IDs, which is all SPEC 23.5 has
+// ever written one as. So the question is always "is every node this
+// request can reach inside that glob?", and how it is answered depends
+// on the kind:
+//
+//   - glob: a comparison of *patterns*, not of nodes. `web*.prod`
+//     covers `web1.prod` and covers `web*.prod`, and does not cover
+//     `*`. A rule that granted `*` because the request said `*` would
+//     be granting the whole estate to a role scoped to part of it.
+//   - list: each element is one node ID, and each must be covered as a
+//     literal. This is what `web1.prod,db1.prod` used to slip through:
+//     as a string it has no `*?[`, so it was matched literally against
+//     `web*.prod` -- whose `*` happily consumes `1.prod,db1` -- and
+//     dispatch then split it and reached db1.prod.
+//   - everything else (compound, nodegroup, pcre, grain, pillar,
+//     ipcidr): only a rule of `*` covers it. Whether a compound
+//     expression stays inside a glob is a question about the fleet at
+//     the moment of dispatch, not about two strings, and a pcre that
+//     looks like a node ID is still a pattern (`.` matches anything).
+//     The hub could resolve the expression and check each matched
+//     node, but the API authorizes before it forwards and has no fleet
+//     to resolve against, and the two must make the same decision
+//     (SPEC 5.2: both check). Refusing is the answer both can give.
+//     A scoped operator who wants a set of nodes writes them as a list.
+//
+// Rule-text equality is kept only for glob. Before, a rule whose target
+// was the literal text of a compound expression granted that expression
+// by equality; but a rule's target is never compiled as a compound --
+// VisibleNode reads it as a glob -- so that grant meant something the
+// rest of the policy did not. DIVERGENCE 5.296.
+func targetCovered(granted string, kind target.Kind, asked string) bool {
 	if granted == "*" {
 		return true
 	}
-	if granted == asked {
+	switch kind {
+	case target.Glob:
+		if granted == asked {
+			return true
+		}
+		// A glob request is covered only by an identical or broader
+		// glob, and "broader" is not decidable in general, so equality
+		// is the rule. An operator who wants a wider grant writes a
+		// wider rule.
+		return literalCovered(granted, asked)
+	case target.List:
+		ids := target.ListIDs(asked)
+		if len(ids) == 0 {
+			// A list of nothing reaches nothing; there is nothing for a
+			// scoped rule to say yes to, and saying yes to the empty
+			// string is how an unconsidered case becomes a grant.
+			return false
+		}
+		for _, id := range ids {
+			if !literalCovered(granted, id) {
+				return false
+			}
+		}
 		return true
 	}
-	// A literal request inside a granted glob.
-	if !strings.ContainsAny(asked, "*?[") {
-		return matchGlob(granted, asked)
-	}
-	// A glob request is covered only by an identical or broader glob,
-	// and "broader" is not decidable in general, so equality is the
-	// rule. An operator who wants a wider grant writes a wider rule.
 	return false
+}
+
+// literalCovered reports whether one node ID falls inside a rule's glob.
+//
+// "A node ID" is held to pki.ValidateNodeID, the alphabet a node may
+// enrol under: letters, digits and `.-_`. That is what makes it safe to
+// match the string as a literal. Anything outside it -- a comma, a
+// space, `\`, `*?[`, `|`, `@` -- is either a pattern or not an ID any
+// node can have, and before this the test was only "contains no `*?[`",
+// which let `web1.prod or db1.prod` and `web1.prod|db1.prod` through as
+// "literals" under a `web*.prod` rule. Such a string is now covered only
+// by rule-text equality or by `*`.
+//
+// The match itself is target.MatchGlob, the function dispatch matches
+// node IDs with, so that "inside the rule's glob" and "matched by that
+// glob as a target" cannot come to mean different things.
+func literalCovered(granted, id string) bool {
+	if granted == "*" {
+		return true
+	}
+	if pki.ValidateNodeID(id) != nil {
+		return false
+	}
+	return granted == id || target.MatchGlob(granted, id)
 }
 
 func matchAny(patterns []string, s string) bool {
@@ -461,14 +557,76 @@ func checkArgs(rule Rule, req Request) string {
 			}
 		}
 	}
+	// The names deny_sls and allow_mods judge. For a job they are the
+	// positional arguments, as they always were; for a runner they are
+	// the names the orchestration runners will compile, which is a
+	// different set -- see runnerNames.
+	names := req.Arg
+	if req.Runner && (len(constraint.DenySLS) > 0 || len(constraint.AllowMods) > 0) {
+		var reason string
+		names, reason = runnerNames(req)
+		if reason != "" {
+			return reason
+		}
+	}
+	// deny_sls and allow_sls are judged on the one spelling the node's
+	// compiler will load, state.CanonicalSLS, and an argument with any
+	// other spelling is refused before either list is consulted. Matched
+	// as written, `deny_sls: [secret.x]` refused `secret.x` and allowed
+	// `secret/x`, `secret..x`, `.secret.x` and `secret/./x`, every one of
+	// which a file server folds to secret/x.sls. A current node refuses
+	// those spellings itself (DIVERGENCE 5.294), but that does not make
+	// the hub's answer right: the hub logged the job as authorized, and
+	// a node that predates 5.294 would have run it.
+	//
+	// Refusing rather than rewriting is the compiler's reason too: a
+	// rewrite would make this check correct and leave several spellings
+	// that work, and the next check written against req.Arg would have
+	// the same hole. The node does not split `a,b` into two names today,
+	// so neither does this; if it ever does, the split belongs here,
+	// before canonicalising. DIVERGENCE 5.294.
+	//
+	// It reads `names`, not req.Arg: for a job they are the same, and for
+	// a runner under deny_sls they are the orchestration names the runner
+	// will compile, keyword and comma list included (DIVERGENCE 5.321).
+	// Checking only the positional arguments would let a second spelling
+	// through the keyword the same way the deny list was let through.
+	if len(constraint.DenySLS) > 0 || len(constraint.AllowSLS) > 0 {
+		for _, arg := range names {
+			if _, err := state.CanonicalSLS(arg); err != nil {
+				return fmt.Sprintf("%s refused for %s by this role: %v", arg, req.Fun, err)
+			}
+		}
+	}
 	if len(constraint.DenySLS) > 0 {
-		for _, arg := range req.Arg {
+		for _, arg := range names {
 			if matchAny(constraint.DenySLS, arg) {
 				return fmt.Sprintf("%s is not permitted for %s by this role", arg, req.Fun)
 			}
 		}
 	}
 	if len(constraint.AllowSLS) > 0 {
+		// The loop below judges the names a request gives, so a request
+		// that gives none passed it — and a node handed a state job with
+		// no names runs the highstate (runStateJob compiles the top file
+		// unless there are positional arguments). `state.highstate` is
+		// worse: the node ignores its arguments altogether, so naming an
+		// allowed SLS bought the whole top file. Either way the run is
+		// whatever the top file assigns, which is not a set of SLS names
+		// this rule can check, so allow_sls refuses it. SPEC 23.5;
+		// DIVERGENCE 5.320.
+		//
+		// `mods=` as a keyword does not rescue it: the node reads only
+		// the positional arguments, so a keyword-only request is still
+		// a highstate on the node.
+		if req.Fun == "state.highstate" {
+			return fmt.Sprintf("%s runs the whole highstate, which is not in the SLS names this role may apply (%s)",
+				req.Fun, strings.Join(constraint.AllowSLS, ", "))
+		}
+		if len(req.Arg) == 0 {
+			return fmt.Sprintf("%s with no SLS names runs the highstate, which is not in the SLS names this role may apply (%s)",
+				req.Fun, strings.Join(constraint.AllowSLS, ", "))
+		}
 		for _, arg := range req.Arg {
 			if !matchAny(constraint.AllowSLS, arg) {
 				return fmt.Sprintf("%s is not in the SLS names this role may apply (%s)",
@@ -477,7 +635,16 @@ func checkArgs(rule Rule, req Request) string {
 		}
 	}
 	if len(constraint.AllowMods) > 0 {
-		for _, arg := range req.Arg {
+		// A request that names nothing gave the loop nothing to refuse.
+		// The runner refuses it too (`sls` is required), but a decision
+		// that says "allowed" about a request whose names it never saw
+		// is the defect this block exists to prevent, so it is refused
+		// here rather than left to the signature. DIVERGENCE 5.321.
+		if len(names) == 0 {
+			return fmt.Sprintf("%s names no orchestration, so none of the modules this role may orchestrate (%s) can be checked",
+				req.Fun, strings.Join(constraint.AllowMods, ", "))
+		}
+		for _, arg := range names {
 			if !matchAny(constraint.AllowMods, arg) {
 				return fmt.Sprintf("%s is not in the modules this role may orchestrate (%s)",
 					arg, strings.Join(constraint.AllowMods, ", "))
@@ -485,4 +652,59 @@ func checkArgs(rule Rule, req Request) string {
 		}
 	}
 	return ""
+}
+
+// runnerNames is the set of orchestration names a runner request will
+// compile, which is what deny_sls and allow_mods have to judge. It must
+// agree with the hub, which binds the call against the runner's
+// signature and then splits `sls` on commas (orchRequestFrom and
+// tagGlobs in internal/hub). Judging anything narrower is a way round
+// the constraint, and judging only the positional arguments was two:
+//
+//   - The orchestration runners take `sls` by keyword as readily as by
+//     position, because sig.Bind binds either to the same parameter.
+//     `halite-hub orch run` sends it *only* by keyword, so before this
+//     a role with allow_mods was unconstrained on the operator's own
+//     command line: every name it was asked for was allowed.
+//   - `sls` is a comma list. `deploy.web,teardown.everything` is one
+//     positional argument, `deploy.*` matches it (path.Match's `*`
+//     stops only at `/`), and the runner compiled both.
+//
+// So the names are every positional argument and the keyword `sls`,
+// each split the way tagGlobs splits it. That is a superset of what
+// the runner reads -- a second positional argument binds to `env`, not
+// to `sls` -- and refusing a request because an argument that is not
+// an orchestration name fails the pattern is the safe direction to be
+// wrong in.
+//
+// A keyword `sls` that is not a string cannot be judged and is refused.
+// The runner's signature refuses one too, but the policy should not
+// have to rely on the signature to keep a value it never read from
+// being allowed.
+func runnerNames(req Request) ([]string, string) {
+	var names []string
+	for _, arg := range req.Arg {
+		names = append(names, splitNames(arg)...)
+	}
+	if raw, ok := req.Kwarg["sls"]; ok {
+		s, isString := raw.(string)
+		if !isString {
+			return nil, fmt.Sprintf("%s was given `sls` as %T, which this policy cannot check; give it as a string",
+				req.Fun, raw)
+		}
+		names = append(names, splitNames(s)...)
+	}
+	return names, ""
+}
+
+// splitNames splits a comma list as tagGlobs in internal/hub does:
+// on commas, trimmed, empties dropped.
+func splitNames(spec string) []string {
+	var out []string
+	for _, part := range strings.Split(spec, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

@@ -88,7 +88,7 @@ func TestOnlyTheValuesTheHubNamesAreMasked(t *testing.T) {
 func TestAnAgentlessRunSeedsTheRedactorFromThePushedPillar(t *testing.T) {
 	n := &node{secrets: redact.New()}
 	named := []string{"tok3n-pushed-by-the-hub"}
-	err := applyOneshotContent(n, OneshotRequest{
+	_, err := applyOneshotContent(n, OneshotRequest{
 		Pillar:  []byte(`{"address":"10.11.12.13","token":"tok3n-pushed-by-the-hub"}`),
 		Secrets: &named,
 	})

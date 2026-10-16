@@ -1,6 +1,7 @@
 package state
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -82,6 +83,28 @@ func TestIsPackageIsAboutInitSLS(t *testing.T) {
 		"base/cleanup.sls":      false,
 		"base/initial.sls":      false,
 		"base/init.sls.jinja":   false,
+		// fileserver.Remote reports a URI.
+		"halite://base/base/cleanup/init.sls": true,
+		"halite://base/base/cleanup.sls":      false,
+	} {
+		if got := isPackage(path); got != want {
+			t.Errorf("isPackage(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+// On Windows, fileserver.Roots reports a path separated by `\`, and an
+// init.sls there must still be a package. This was found by CI's
+// Windows leg running a relative include through a real Roots tree:
+// `web/init.sls` including `.app` looked for `app`. It can only run
+// where `\` is a separator. DIVERGENCE 5.84.
+func TestIsPackageOnWindowsPaths(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("a backslash is a separator only on Windows; elsewhere it is part of a file name")
+	}
+	for path, want := range map[string]bool{
+		`C:\srv\salt\web\init.sls`:  true,
+		`C:\srv\salt\web\nginx.sls`: false,
 	} {
 		if got := isPackage(path); got != want {
 			t.Errorf("isPackage(%q) = %v, want %v", path, got, want)

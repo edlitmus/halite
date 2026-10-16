@@ -46,7 +46,7 @@ func (r *Refusal) Is(target error) bool { return target == ErrRefused }
 // What it defends against is a hub redelivering a job by accident -- a
 // reconnect that resends, a resumed batch -- and nothing more. It used to
 // say a replay older than its window was "bounded in practice by the
-// job's own expiry", and that was not true (DIVERGENCE 5.290): it is in
+// job's own expiry", and that was not true (DIVERGENCE 5.328): it is in
 // memory, so a restart empties it whatever the expiry says; it is
 // evicted by count, and the hub decides the count, so a few thousand
 // junk jobs push any entry out well inside an expiry; and a job with no

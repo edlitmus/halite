@@ -1593,6 +1593,16 @@ unchanged.
    tell which they have. A fourth level would say it; so would a sentence
    in each affected function's documentation.
 
+   DIVERGENCE 5.308 narrowed the second meaning without settling it.
+   `pro.*` and `dnf_module.*` declared unreliable and acted under a
+   direct `--test` call; they now run nothing and say which command they
+   would have run, which is the documented meaning. The ten `cmd.*`
+   functions are now the only mutating functions whose code never reads
+   Test at all, named in a closed list in
+   `internal/builtin/testmode_reach_test.go`. That is a statement about
+   the source, not a proof that every other unreliable function withholds
+   its work: reading the flag is not the same as obeying it.
+
 7a. **Done: 7 of 132 to 131 of 132, one excused.**
    ~~The conformance harness covers 6 state functions of 132~~ — the count
    was 7 when it was measured rather than 6, which is one more hand-written
