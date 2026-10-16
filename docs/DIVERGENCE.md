@@ -27148,10 +27148,29 @@ unlocked dnf.
 
 #### What was run
 
-Not the rocky9 leg: there is no EL host or container on the machine this
-was written on, so the Fleet leg on the PR is the evidence, and it is
-only evidence if its log shows the new step lines
-(`dnf download kernel-…, attempt 1: …`) rather than a skip.
+There is no EL host or container on the machine this was written on,
+so the Fleet legs on the PR are the evidence for the EL side.
+
+**On this change's Fleet run (38910442774, commit 47e8a53)** both EL
+legs ran the test, rather than skipping it, and passed. Every expected
+test passed and none skipped. The step times:
+
+| step | rocky9 (dnf 4.14.0) | alma8 (dnf 4.7.0) |
+|---|---|---|
+| download the older kernel | 64.6s | 8.6s |
+| install it from the cache | 39.2s | 53.2s |
+| download the newer kernel | 2.1s | 2.2s |
+| `kernelpkg.upgrade` | 26.7s | 13.3s |
+| `kernelpkg.remove` | 3.2s | 3.3s |
+| whole test | 140.35s | 89.29s |
+
+The first download fetched whatever the kernel needed besides itself.
+The second, at about two seconds on both, found that already
+installed. On rocky9 the first download was the slowest step, and seven
+times alma8's for the same kind of transaction. That is one sample, from
+one mirror on one run, not a measure of the stall. The installs from
+the cache took 39-53s, so the scriptlets are not seconds either. Every
+step was far inside its limit.
 
 `kpStep` and `kpDNF` were run on macOS (Darwin 25.6, arm64) from a
 scratch test that was not kept. A `sh -c "sleep 301 & sleep 302; wait"`
@@ -27186,8 +27205,8 @@ since macOS has no /proc.
   still run without a limit. They read repository metadata the earlier
   tests have already fetched, and none of them is where the three runs
   stopped.
-- **alma8.** Its leg runs the same test and never failed this way.
-  Nothing here was run on it either.
+- **alma8 under a stall.** Its leg ran the new test green (above) but
+  never failed the old way, so no limit has ever fired on either leg.
 
 
 
