@@ -135,6 +135,13 @@ type lexer struct {
 	nextDelim [3]int
 	// delimValid says nextDelim[i] has been filled.
 	delimValid [3]bool
+	// scanned counts the bytes findNextDelim has handed to strings.Index:
+	// up to the end of the match, or to the end of the source when there
+	// is none. It is the lexer's whole cost of looking for delimiters, and
+	// it is kept so TestLexingIsLinear can measure that cost exactly rather
+	// than infer it from a clock, which a loaded CI runner made lie. It is
+	// read by nothing else.
+	scanned int
 }
 
 type lexOptions struct {
@@ -143,11 +150,17 @@ type lexOptions struct {
 }
 
 func lex(src, file string, delims Delimiters, opts lexOptions) ([]token, error) {
-	l := &lexer{src: src, file: file, line: 1, col: 1, delims: delims, opts: opts, atLineStart: true}
+	l := newLexer(src, file, delims, opts)
 	if err := l.run(); err != nil {
 		return nil, err
 	}
 	return l.toks, nil
+}
+
+// newLexer is separate from lex so that a test can run the same lexer
+// lex runs and then read what it counted.
+func newLexer(src, file string, delims Delimiters, opts lexOptions) *lexer {
+	return &lexer{src: src, file: file, line: 1, col: 1, delims: delims, opts: opts, atLineStart: true}
 }
 
 func (l *lexer) pos() Pos { return Pos{File: l.file, Line: l.line, Col: l.col} }
@@ -237,6 +250,9 @@ func (l *lexer) findNextDelim() (int, tokenKind) {
 			l.nextDelim[n] = len(l.src)
 			if i := strings.Index(l.src[l.off:], c.s); i >= 0 {
 				l.nextDelim[n] = l.off + i
+				l.scanned += i + len(c.s)
+			} else {
+				l.scanned += len(l.src) - l.off
 			}
 			l.delimValid[n] = true
 		}

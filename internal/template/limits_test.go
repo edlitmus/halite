@@ -267,26 +267,49 @@ func TestHostileTemplatesDoNotOverflowTheStack(t *testing.T) {
 // the rest of the source for every opening delimiter at every tag, so a
 // template without `{{` or `{#` in it, which is most templates of nothing
 // but statements, cost the square of its length: 4,000 sequential `{% if
-// %}` took 160 ms and 100,000 did not finish. A wall-clock ceiling would
-// be flaky on a loaded runner, so this compares two sizes instead: four
-// times the input may cost four times the time, with room for noise, and
-// not sixteen.
+// %}` took 160 ms and 100,000 did not finish.
+//
+// It counts the bytes the lexer searches for delimiters rather than
+// timing it. It used to compare the wall-clock times of two sizes, and a
+// shared Windows runner made four times the input take 11.4 times the
+// time for a lexer that is linear (DIVERGENCE 5.312). A count is the same
+// on every machine, so the bound can be tight: each delimiter's searches
+// cover disjoint stretches of the source, so all three together cover it
+// at most three times. The fixed lexer searches 2.1 to 2.3 times the
+// source for these shapes, at both sizes. The old lexer, which searched
+// again for all three at every tag, searched 40,001 times the source at
+// 20,000 lines of the first shape and 16.00 times as much as at 5,000.
+//
+// "delimiter in tag" puts a `{{` inside every tag's string, which is the
+// case where the cached position falls behind the cursor and is searched
+// for again, and holds it to the same bound.
 func TestLexingIsLinear(t *testing.T) {
-	timeLex := func(n int) time.Duration {
-		src := strings.Repeat("{% if 1 %}x{% endif %}\n", n)
-		best := time.Duration(1 << 62)
-		for range 3 {
-			start := time.Now()
-			if _, err := lex(src, "t.sls", DefaultDelimiters(), lexOptions{}); err != nil {
-				t.Fatal(err)
-			}
-			best = min(best, time.Since(start))
-		}
-		return best
+	shapes := map[string]string{
+		"statements only":    "{% if 1 %}x{% endif %}\n",
+		"delimiter in tag":   "{% if \"{{\" %}x{% endif %}\n",
+		"every kind present": "{# c #}{% if 1 %}{{ x }}{% endif %}\n",
 	}
-	small, large := timeLex(5_000), timeLex(20_000)
-	if ratio := float64(large) / float64(small); ratio > 9 {
-		t.Fatalf("lexing 4x the input took %.1fx the time (%v, %v); quadratic would be 16x", ratio, small, large)
+	for name, line := range shapes {
+		t.Run(name, func(t *testing.T) {
+			scanned := func(n int) (int, int) {
+				src := strings.Repeat(line, n)
+				l := newLexer(src, "t.sls", DefaultDelimiters(), lexOptions{})
+				if err := l.run(); err != nil {
+					t.Fatal(err)
+				}
+				return l.scanned, len(src)
+			}
+			for _, n := range []int{5_000, 20_000} {
+				if got, size := scanned(n); got > 3*size {
+					t.Errorf("%d lines (%d bytes): the lexer searched %d bytes for delimiters, %.1f times the source; one pass per delimiter is 3", n, size, got, float64(got)/float64(size))
+				}
+			}
+			small, _ := scanned(5_000)
+			large, _ := scanned(20_000)
+			if ratio := float64(large) / float64(small); ratio > 4.1 {
+				t.Errorf("lexing 4x the input searched %.2fx the bytes (%d, %d); quadratic would be 16x", ratio, small, large)
+			}
+		})
 	}
 }
 
