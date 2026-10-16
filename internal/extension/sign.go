@@ -71,7 +71,7 @@ func SignBundle(o SignOptions) ([]byte, error) {
 	if err := fileperm.WriteFile(filepath.Join(o.Dir, ManifestName), raw, 0o644); err != nil {
 		return nil, err
 	}
-	root, err := MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		return nil, err
 	}

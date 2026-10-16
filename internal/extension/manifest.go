@@ -9,6 +9,9 @@
 package extension
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -21,8 +24,8 @@ import (
 // ManifestName is the file inside a bundle that describes it.
 const ManifestName = "manifest.json"
 
-// SignatureName is the detached signature over the bundle's Merkle
-// root.
+// SignatureName is the detached signature over the bundle's signing
+// root, which covers the manifest's fields as well as its files.
 const SignatureName = "manifest.sig"
 
 // Kinds are the extension kinds of SPEC 24.2.
@@ -61,7 +64,7 @@ type Manifest struct {
 	// sandbox grants nothing else, and SPEC 24.3 makes this visible.
 	Declares []string `json:"declares,omitempty"`
 	// Files is every file in the bundle with its SHA-256, which is what
-	// the Merkle root is computed over.
+	// the file half of the signing root is computed over.
 	Files map[string]string `json:"files"`
 	// Description is for a person reading `sys.list_extensions`.
 	Description string `json:"description,omitempty"`
@@ -133,8 +136,8 @@ func (m *Manifest) Check() error {
 
 // checkPath refuses anything that would write outside the bundle.
 //
-// A manifest is signed, so a hostile one needs a trusted key — but a
-// *mistaken* one does not, and neither does a bundle whose author was
+// A manifest is signed (SigningRoot covers every field), so a hostile
+// one needs a trusted key — but a *mistaken* one does not, and neither does a bundle whose author was
 // careless with a build script. The check costs nothing.
 func checkPath(rel string) error {
 	if rel == "" {
@@ -187,14 +190,14 @@ func (m *Manifest) ExecutableFor(platform string) (string, error) {
 		m.Name, m.Version, platform, strings.Join(have, ", "))
 }
 
-// Encode renders the manifest as it is signed: sorted keys, two-space
+// Encode renders the manifest for the bundle: sorted keys, two-space
 // indent, one trailing newline.
 //
-// Byte-stable on purpose. The signature is over the Merkle root rather
-// than over this, so the encoding does not have to be canonical for
-// verification to work — but a manifest that re-encodes differently
-// every time makes a diff between two bundles unreadable, and somebody
-// will diff them.
+// Byte-stable on purpose. The signature is over SigningRoot, which is
+// computed from the parsed fields rather than from these bytes, so the
+// encoding does not have to be canonical for verification to work — but
+// a manifest that re-encodes differently every time makes a diff between
+// two bundles unreadable, and somebody will diff them.
 func (m *Manifest) Encode() ([]byte, error) {
 	raw, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -204,15 +207,112 @@ func (m *Manifest) Encode() ([]byte, error) {
 }
 
 // ParseManifest reads one and checks it.
+//
+// A field this build does not know is refused, not ignored. SigningRoot
+// is computed from the fields this build parses, so a field it skips is
+// outside the signature, and a later build that gave the field a meaning
+// would act on something nobody signed. Before DIVERGENCE 5.331 the whole
+// manifest was outside the signature, and tolerating unknown fields cost
+// nothing because nothing was covered anyway.
 func ParseManifest(raw []byte) (*Manifest, error) {
 	var m Manifest
-	if err := json.Unmarshal(raw, &m); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("the manifest is not readable: %w", err)
+	}
+	if dec.More() {
+		return nil, fmt.Errorf("the manifest is not readable: it holds more than one JSON value")
 	}
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// SigningRoot is what a bundle's signature covers and what a pin's root
+// fixes: the Merkle root of the files and a digest of every other field,
+// combined under a domain of their own.
+//
+//	SHA-256("halite-extension-root-v2\x00" || MerkleRoot(files) || SHA-256(metadata))
+//
+// It used to be MerkleRoot(files) alone. That signed the bytes of every
+// file and nothing the manifest said about them: `declares`, which is
+// what the sandbox grants (`root`, `network`); `executables`, which signed
+// file runs; and `name`, `version` and `kind`, which say what it is.
+// Anyone who could write `manifest.json` could change any of those under a
+// valid signature and a matching pin. Issue 321 finding H-02; DIVERGENCE
+// 5.331.
+//
+// The file tree stays a tree of its own, so two bundles that share files
+// still share subtrees (SPEC 24.4), and the metadata is one more node
+// above it rather than a leaf among the files: no file path can be
+// spelled so that its leaf collides with it.
+func (m *Manifest) SigningRoot() ([]byte, error) {
+	files, err := MerkleRoot(m.Files)
+	if err != nil {
+		return nil, err
+	}
+	meta := sha256.Sum256(m.metadata())
+	h := sha256.New()
+	h.Write([]byte("halite-extension-root-v2\x00"))
+	h.Write(files)
+	h.Write(meta[:])
+	return h.Sum(nil), nil
+}
+
+// metadata is the canonical encoding of every field but Files.
+//
+// Built from the parsed values, never from the bytes on disk, so two
+// manifests that mean the same thing sign the same way however they were
+// formatted, and nothing outside these fields can be signed by accident.
+// Each value is length-prefixed, so a byte cannot move across a field
+// boundary without changing the encoding. `declares` and `executables`
+// are sets to the code that reads them, so they are sorted: the order a
+// publisher wrote them in is not something to sign.
+//
+// A field added to Manifest has to be added here. TestTheMetadataCoversEveryField
+// fails until it is, because a field outside this encoding is a field
+// outside the signature.
+func (m *Manifest) metadata() []byte {
+	var b bytes.Buffer
+	b.WriteString("halite-extension-manifest-v2\x00")
+	str := func(s string) {
+		var n [binary.MaxVarintLen64]byte
+		b.Write(n[:binary.PutUvarint(n[:], uint64(len(s)))])
+		b.WriteString(s)
+	}
+	count := func(n int) {
+		var c [binary.MaxVarintLen64]byte
+		b.Write(c[:binary.PutUvarint(c[:], uint64(n))])
+	}
+	str("name")
+	str(m.Name)
+	str("version")
+	str(m.Version)
+	str("kind")
+	str(m.Kind)
+	str("description")
+	str(m.Description)
+	str("declares")
+	declares := append([]string(nil), m.Declares...)
+	sort.Strings(declares)
+	count(len(declares))
+	for _, d := range declares {
+		str(d)
+	}
+	str("executables")
+	platforms := make([]string, 0, len(m.Executables))
+	for p := range m.Executables {
+		platforms = append(platforms, p)
+	}
+	sort.Strings(platforms)
+	count(len(platforms))
+	for _, p := range platforms {
+		str(p)
+		str(m.Executables[p])
+	}
+	return b.Bytes()
 }
 
 // windowsRunnable are the extensions Windows will start a file by.

@@ -305,9 +305,9 @@ go run ./tools/extbundle \
 ```
 
 That writes `manifest.json` — the digest of every file — and
-`manifest.sig`, an Ed25519 signature over the Merkle root of the
-manifest. It prints the trust key to put in `hub.yaml` and the root to
-pin:
+`manifest.sig`, an Ed25519 signature over a root that covers those files
+and every other field of the manifest. It prints the trust key to put in
+`hub.yaml` and the root to pin:
 
 ```
 trust_key: lab rK7XI/MZuaShviflQHZDgrzWtKPQDLACL8gILM4+6u4=
@@ -330,6 +330,37 @@ grep -A3 '"declares"' ./build/manifest.json
 
 The manifest is indented JSON, so a bare `grep declares` prints only the
 line that opens the list.
+
+**What the signature covers.** Every file, and every field of the
+manifest: `name`, `version`, `kind`, `executables`, `declares` and
+`description`. Editing `manifest.json` after signing, even to add a
+declaration the extension really needs, breaks the signature, and a
+node refuses the bundle. Re-sign instead. A field the node does not
+know is refused too, because it would be outside the signature. For
+anybody writing a signer of their own, the bytes are:
+
+```
+files    = the Merkle root of the files, as before
+           (leaves SHA-256(path || 0x00 || digest), sorted by path,
+            an odd node carried up)
+metadata = "halite-extension-manifest-v2\x00", then for each of
+           name, version, kind, description: the field's name and its
+           value; then "declares", a count and each value sorted; then
+           "executables", a count and each platform and path, sorted by
+           platform. Every string is preceded by its length as a
+           uvarint, and every count is a uvarint.
+root     = SHA-256("halite-extension-root-v2\x00" || files || SHA-256(metadata))
+signed   = Ed25519 over "halite-extension-bundle-v2\x00" || root
+```
+
+`root` is also what a pin's `root` holds. `TestTheSigningFormatIsPinned`
+in `internal/extension` fixes one reference manifest's root, and it
+agrees with a separate implementation written from this description.
+
+Before DIVERGENCE 5.331 the signature covered only the files, and a
+bundle signed that way (`halite-extension-bundle-v1`) is now refused,
+saying so by name. Re-sign it and move its pin; a pin still holding the
+old root is reported as exactly that, with the new root to move it to.
 
 **4. Publish it into the tree** under `_ext/<name>/<version>/`, where the
 file server already serves everything else:

@@ -191,7 +191,7 @@ func extensionsSync(h *hubContext, env string) int {
 		case "refused":
 			fmt.Printf("  refused   %s %s: %s\n", c.Name, c.Version, c.Reason)
 		case "fetched":
-			// The Merkle root is printed because it is what an operator
+			// The signing root is printed because it is what an operator
 			// copies into `extension_pins`, and having to go and find
 			// it is why pins get left unset.
 			fmt.Printf("  fetched   %s %s\n            root: %s\n", c.Name, c.Version, c.Root)

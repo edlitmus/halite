@@ -243,7 +243,8 @@ supply-chain goal. Salt's extensibility is a Python file dropped in
 `_modules/` on the file server, which the agent imports and runs in
 process, as root, with no signature requirement. Here an extension is a
 separate executable speaking JSON over stdio: signed with Ed25519 over a
-Merkle root, pinned by version and digest, verified on every load,
+root that covers every file and everything the manifest declares,
+pinned by version and digest, verified on every load,
 started as a sandboxed process, and killed if it hangs.
 `sys.list_extensions` reports what actually confines it on the machine
 in front of you, and names what does not.

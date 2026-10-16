@@ -21,6 +21,26 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An extension's signature now covers its manifest; re-sign every bundle
+
+An extension bundle's signature covered its files and not what its
+manifest says about them. So anyone who could write `manifest.json`, on
+the file server, in a gitfs tree or in a node's cache, could give a
+signed extension `root` and `network` access its publisher never
+declared, point it at a different signed file, or relabel it, and it
+still loaded as signed and matched its pin. The signature now covers
+every field of the manifest, and a pin's `root` fixes them too.
+
+**This is breaking. Re-sign every bundle** with a current
+`halite-hub extensions sign` (or `tools/extbundle`), **and move every
+`extension_pins` root** to the root that prints. Trust keys are
+unchanged. A bundle signed the old way is refused, and the message says
+it is the old format. A pin still holding a bundle's old root is
+reported as that, with the new root to use. A `manifest.json` edited
+after signing, or holding a field this build does not know, is refused.
+The exact bytes signed are in docs/extensions.md, for anybody with a
+signer of their own. See DIVERGENCE 5.331.
+
 ### Signed jobs use a new format, and old signatures are refused
 
 **Hubs, every `halite-hub` used to sign, any signer that builds the

@@ -85,7 +85,7 @@ func installRealAs(t *testing.T, cache, name, version string) TrustKey {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,6 +205,39 @@ func TestTheSandboxComesFromTheSignedManifest(t *testing.T) {
 	// however the running process introduces itself.
 	if loaded.Sandbox.Network {
 		t.Error("an extension that declared nothing was granted the network")
+	}
+
+	// And "signed" is checked rather than asserted: the same cached
+	// bundle with `network` written into its manifest afterwards is
+	// refused by the store, so it never reaches Add. Before DIVERGENCE
+	// 5.331 this comment's first line was false, and this half of the
+	// test would have loaded the rewritten bundle as signed by "release"
+	// with the network granted.
+	path := filepath.Join(cache, "echo", "1.0.0", ManifestName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := ParseManifest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Declares = []string{"network"}
+	rewritten, err := m.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, rewritten, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := store.Load()
+	usable, problems := store.Usable(again)
+	if b := usable["echo"]; b != nil {
+		t.Fatalf("a bundle whose manifest gained `network` after signing is usable, signed by %q, declaring %v",
+			b.SignedBy, b.Manifest.Declares)
+	}
+	if len(problems) == 0 {
+		t.Error("the rewritten bundle was dropped without a problem being reported")
 	}
 }
 

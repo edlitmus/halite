@@ -28870,6 +28870,130 @@ then honoured it as a dry run. That half is the unit tests'.
 `TestLiveKMSJobSignature` is still unrun; it needs a KMS key. The live
 run used one node of each build, not an estate.
 
+### 5.331 An extension's signature covered its files and not its manifest
+
+Issue 321 finding H-02, and the one High that the triage held back as "a
+format decision".
+
+A bundle's signature was Ed25519 over `MerkleRoot(files)`, and a pin's
+`root` was the same value. The root covered the bytes of every file and
+nothing the manifest said about them:
+
+- `declares`, which is what the sandbox grants (`root`, `network`);
+- `executables`, which signed file runs on each platform;
+- `name`, `version` and `kind`, which say what the bundle is;
+- `description`.
+
+So anyone who could write `manifest.json` could rewrite any of those
+under a valid signature and a matching pin: the hub's file server, a
+gitfs tree, or a node's extension cache. `bridge.From` would then build
+the sandbox from the rewritten `declares`. Four comments said the
+declarations were signed (`Runtime.Add`, `bridge/doc.go`,
+`checkPath`, the sync's name check). So did
+`TestTheSandboxComesFromTheSignedManifest`, which never tampered with
+anything. The docs said the root was "the Merkle root of the manifest",
+which was the root of the files the manifest lists.
+
+**Reproduced first, on untouched main.** `TestEveryManifestFieldIsCoveredByTheSignature`
+signs a bundle, rewrites one field and loads it. On main all eight cases
+loaded as signed by `release`: `declares` gaining `root` and `network`,
+`declares` gaining `network`, `executables` repointed at the signed
+`README`, `executables` gaining a platform, the version relabelled, the
+name relabelled, the kind changed, and the description changed. An
+unknown field (`"privileged": true`) was accepted silently.
+
+**The format now.** `Manifest.SigningRoot` is
+
+    SHA-256("halite-extension-root-v2\x00" || MerkleRoot(files) || SHA-256(metadata))
+
+`metadata` is a canonical encoding of every field but `files`, built from
+the parsed values and not from the bytes on disk. Every string has a
+uvarint length prefix. `declares` and `executables` are sorted, because
+they are sets to the code that reads them. The signature is over
+`"halite-extension-bundle-v2\x00" || root`, and a pin's `root` holds the
+same root, so a pin now fixes the declarations as well as the files.
+`ParseManifest` refuses a field it does not know. The digest covers only
+the fields this build parses, so an unknown field would be outside the
+signature, and a later build that gave it a meaning would act on
+something nobody signed. The file tree is still a tree of its own, so
+two bundles that share files still share subtrees, as SPEC 24.4 wants.
+The metadata is one node above that tree, not a leaf in it, so no file
+path can be spelled to collide with it.
+
+A v1 signature is refused, and the refusal names it: "signed by release
+in the v1 bundle format, which covers only the files and not the
+manifest's declares, executables, name, version or kind … re-sign it".
+Accepting v1 alongside v2 would leave the hole open, because a v1
+signature honours whatever the manifest now says. A pin that still
+holds a bundle's v1 root is reported as exactly that, with the new root
+to move it to, rather than as a swapped bundle. Both are recognised and
+never accepted.
+
+**The domain is a label, not a defence.** Changing the signed domain
+from v1 to v2 broke no test. That is correct: the signing root is a
+different hash from the file root, so a v1 signature cannot verify as a
+v2 one short of a SHA-256 collision. The comment on `signedMessage` first
+claimed the new domain stopped that, and now says what is true: it marks
+the format for anybody writing a signer of their own.
+`TestTheSigningFormatIsPinned` holds one reference manifest's root to a
+known answer. That answer was computed twice, by this code and by a
+separate Python implementation written from the formula in the doc
+comments and in `docs/extensions.md`, and the two agreed.
+
+**Broken on purpose, each restored afterwards:**
+
+- signing root reverted to the file root (the old behaviour): the
+  tamper, pin, metadata, ambiguity and v1-pin tests failed, and so did
+  the extended sandbox test, with "a bundle whose manifest gained
+  `network` after signing is usable, signed by "release", declaring
+  [network]";
+- `declares` left out of the metadata: the tamper test, the pin test,
+  the root test and `TestTheMetadataCoversEveryField` failed. That last
+  test walks the struct by reflection, so a field added later and left
+  out of `metadata()` fails it;
+- unknown fields tolerated: the unknown-field test failed;
+- `declares` not sorted: the order test failed;
+- the length prefix written as zero bytes: the ambiguity test and the
+  pinned format failed. The ambiguity test's first version moved a byte
+  between `name` and `version`, and it passed with the prefixes gone,
+  because the field labels between those two already separate them. It
+  now uses an `executables` key and value, which are adjacent:
+  `linux/amd64`+`echo` and `linux/amd64e`+`cho` are the same bytes
+  without a prefix;
+- v1 signature diagnosis off: its test failed;
+- v1 pin diagnosis off: its test failed;
+- the domain reverted to v1: only the pinned format failed (above).
+
+**Through the real CLI** (Linux; none of this is platform-specific).
+`halite-hub` was built from this branch and from main (d8ceba1), and
+`echoext` was used as the extension:
+
+1. main's `extensions sign`, then this branch's `extensions sync`:
+   refused, naming the v1 format. The root main printed (`a9581a9b…`)
+   is the v1 root that case 4 computes independently.
+2. This branch signs, then sync and list: fetched, loaded, started, and
+   lists `say()`. Signed as 1.0.1, it is refused at start by 5.325's
+   handshake check, because the binary says 1.0.0.
+3. `declares: [root, network]` written into the cached manifest after
+   sync: `list` refuses it, and nothing is installed.
+4. `extension_pins` holding the v1 root: refused, giving the new root.
+
+**Operators.** A breaking change. Every bundle has to be signed again
+with a current `halite-hub extensions sign` (or `tools/extbundle`), and
+every `extension_pins` root moved to the root that prints. The trust
+keys do not change. The production hub on beastie configures no
+extensions, and no `_ext/*/manifest.json` exists on that machine, so
+nothing there changes. No other estate was checked. No committed bundle
+or fixture in this repository was signed in the old format.
+
+**Not verified.** No node loaded an extension from a hub's tree: the CLI
+run was the hub's own sync and list. That shares `Load` with a node but
+not its sync path. Nothing ran on FreeBSD or macOS. The format was not
+reviewed by anybody but its author, and the cross-check in Python was
+written by the same author from the same description, so it catches the
+doc and the code disagreeing, not a format that is wrong in both. A
+third-party signer was not written against it.
+
 ### 5.332 An agentless concurrency test raced its own fixtures (ETXTBSY)
 
 `TestConcurrentRunsAgainstOneMachineBothSucceed` failed the `fips-test`

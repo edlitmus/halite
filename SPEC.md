@@ -2250,7 +2250,9 @@ declare it, and the declaration is visible in `halite-node call sys.list_extensi
 ### 24.4 Distribution and trust
 
 - An extension is a signed bundle: the executable or a directory of platform executables, a manifest,
-  and a detached signature over a Merkle root of the contents.
+  and a detached signature over a root that covers both the Merkle root of the contents and every
+  other field of the manifest (name, version, kind, executables, declares, description). The
+  declarations the sandbox is built from are therefore signed, and a pin's root fixes them too.
 - `extension_trust_keys` lists the keys a node will accept. An unsigned or badly-signed extension is
   refused. `extension_require_signature: false` exists for development and logs a warning on every
   load.

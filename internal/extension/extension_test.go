@@ -37,7 +37,7 @@ func aBundle(t *testing.T, adjust func(*Manifest)) (string, TrustKey, *Manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestAnUnlistedFileIsRefused(t *testing.T) {
 // The version is a label the publisher controls; the digest is not.
 func TestThePinHoldsBothVersionAndDigest(t *testing.T) {
 	dir, key, manifest := aBundle(t, nil)
-	root, err := MerkleRoot(manifest.Files)
+	root, err := manifest.SigningRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
