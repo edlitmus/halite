@@ -130,7 +130,7 @@ func nodeWithTwoSLS(t *testing.T) *node {
 // node ever starts honouring state.highstate's arguments or a keyword
 // `mods`, these fail, and the policy's refusal can be reconsidered
 // rather than left standing for a reason that stopped being true.
-// DIVERGENCE 5.319.
+// DIVERGENCE 5.320.
 func TestTheNodeRunsTheHighstateForTheJobsAllowSLSRefuses(t *testing.T) {
 	cases := []struct {
 		name  string

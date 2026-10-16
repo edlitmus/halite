@@ -572,7 +572,7 @@ func checkArgs(rule Rule, req Request) string {
 		// allowed SLS bought the whole top file. Either way the run is
 		// whatever the top file assigns, which is not a set of SLS names
 		// this rule can check, so allow_sls refuses it. SPEC 23.5;
-		// DIVERGENCE 5.319.
+		// DIVERGENCE 5.320.
 		//
 		// `mods=` as a keyword does not rescue it: the node reads only
 		// the positional arguments, so a keyword-only request is still

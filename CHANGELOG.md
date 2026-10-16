@@ -37,7 +37,7 @@ denied: state.apply with no SLS names runs the highstate, which is not in the SL
 A role that should run the highstate needs a rule for `state.apply` (or
 `state.highstate`) without `allow_sls`. Check a policy before upgrading
 with `halite-hub policy test <principal> <target> state.apply`. Roles
-without `allow_sls` are unchanged. See DIVERGENCE 5.319.
+without `allow_sls` are unchanged. See DIVERGENCE 5.320.
 
 ### An agentless state run no longer leaves the hub's state tree on the target
 

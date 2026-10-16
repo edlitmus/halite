@@ -110,7 +110,7 @@ func TestTargetAndFunctionAreAuthorizedTogether(t *testing.T) {
 		req := Request{Principal: c.principal, Target: c.target, Fun: c.fun}
 		// state.apply names an SLS its allow_sls permits, so that the
 		// target is the only thing being decided: a bare state.apply is
-		// refused under allow_sls whatever the target (DIVERGENCE 5.319),
+		// refused under allow_sls whatever the target (DIVERGENCE 5.320),
 		// and would make the wrong-target rows pass for the wrong reason.
 		if c.fun == "state.apply" {
 			req.Arg = []string{"webserver.nginx"}
@@ -190,7 +190,7 @@ func TestArgumentConstraints(t *testing.T) {
 // allow_sls is a list of SLS names, and a request that names none is
 // not inside it: the node runs the highstate for a state job with no
 // positional arguments, and for `state.highstate` whatever arguments it
-// has. Before DIVERGENCE 5.319 the check looped over the names given,
+// has. Before DIVERGENCE 5.320 the check looped over the names given,
 // so the empty request passed it — shown on 2026-10-16 with the
 // `webops` role above, which said allowed=true to a bare `state.apply`.
 func TestAllowSLSRefusesTheHighstate(t *testing.T) {
@@ -290,7 +290,7 @@ func TestRunnersAreGrantedSeparately(t *testing.T) {
 func TestAScopedRuleDoesNotGrantAWiderTarget(t *testing.T) {
 	p := load(t)
 	// An SLS the rule's allow_sls permits, so the target is the only
-	// thing that can refuse these. DIVERGENCE 5.319.
+	// thing that can refuse these. DIVERGENCE 5.320.
 	sls := []string{"webserver.nginx"}
 	if p.Authorize(Request{Principal: "cert:CN=alice", Target: "*", Fun: "state.apply", Arg: sls}).Allowed {
 		t.Error("a rule for web*.prod granted a job against *")

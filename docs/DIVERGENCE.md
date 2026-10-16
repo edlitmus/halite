@@ -27208,7 +27208,7 @@ since macOS has no /proc.
 - **alma8 under a stall.** Its leg ran the new test green (above) but
   never failed the old way, so no limit has ever fired on either leg.
 
-### 5.319 `allow_sls` authorized the highstate it was meant to exclude
+### 5.320 `allow_sls` authorized the highstate it was meant to exclude
 
 SPEC 23.5 says a role "may be permitted `state.apply` but restricted to
 a set of SLS names", and `allow_sls` is how a policy says which.
@@ -27366,6 +27366,7 @@ Each half was broken on purpose and watched to fail:
 - **The fleet's own policies were not read** for roles that rely on a
   narrowed role running the highstate. Any that do are refused after
   this change.
+
 
 
 ## 6. Everything else not started
