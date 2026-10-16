@@ -447,7 +447,7 @@ SLS names a run may include, as globs. Empty permits any. This is the control th
 
 SLS names a state run may not include.
 
-Applied after the allowlist, for carving one dangerous SLS out of a permitted set.
+Applied after the allowlist, for carving one dangerous SLS out of a permitted set. A name is matched in its one dotted spelling (`secret.x`); `secret/x`, `secret..x` and other spellings of it are refused before either list is consulted, so a denied SLS cannot be reached by writing it differently.
 
 ### `test`
 

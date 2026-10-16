@@ -6,7 +6,7 @@
 #   python3 -I fnmatch_cpython.py > fnmatch_cpython.json
 #
 # The JSON's "captured" line records the date and the Python that ran.
-# DIVERGENCE 5.290.
+# DIVERGENCE 5.295.
 import fnmatch, json, sys
 pats = ["secrets/*", "*/er/*", "*", "*.swp", "?", "a?c", "[abc]", "[!abc]", "[a-c]x", "[!a-c]x",
         "[]]", "[!]]", "[]-]", "[z-a]", "[!z-a]", "[a-]", "[-a]", "[!-a]", "[a-cx-z]", "[z-ab-c]",

@@ -19,7 +19,7 @@ import (
 //   - `*` matches any run of characters, `/` included. path.Match's `*`
 //     stops at `/`, so `secrets/*` hid `secrets/a.txt` and served
 //     `secrets/deep/b.txt` -- a hide rule migrated from Salt silently
-//     stopped hiding everything below its first level. DIVERGENCE 5.290.
+//     stopped hiding everything below its first level. DIVERGENCE 5.295.
 //   - `?` matches any one character, `/` included.
 //   - `[seq]` and `[!seq]` are sets, with `a-z` ranges. `^` is not
 //     negation, and `]` first in the set is a literal.

@@ -31,7 +31,76 @@ did on Salt. The globs are now fnmatch globs: `*` and `?` match `/`,
 negated sets are `[!a]` (not `[^a]`), `\` is a literal, and a `[`
 with no `]` is a literal. A rule now hides everything below the level
 it names. If a state needs a nested file that such a rule now covers,
-the node can no longer fetch it. See DIVERGENCE 5.290.
+the node can no longer fetch it. See DIVERGENCE 5.295.
+
+### On Windows, a relative include in an `init.sls` resolved one level too high
+
+On a Windows node, an `init.sls` read from local roots was treated as a
+flat file. So `include: - .app` in `web/init.sls` looked for `app`, not
+`web.app`. It now resolves to `web.app`, as on other platforms. See
+DIVERGENCE 5.84.
+
+### `state_denylist` can no longer be bypassed by spelling an SLS name differently
+
+The node's `state_denylist` matched an SLS name as written, but the file
+server loaded `secret.x`, `secret..x`, `secret/x`, `.secret.x` and
+`secret/./x` as the same file. So `state_denylist: [secret.x]` refused
+only the first spelling. An SLS name must now be written in its one
+dotted form: non-empty components separated by single dots, with no `/`
+or `\`. Any other spelling is an error, in a `state.sls` or
+`state.apply` argument, a top file entry or an `include:`. The error
+gives the dotted spelling. A script or tree that wrote `web/nginx` for
+`web.nginx` must change. Relative includes (`include: - .foo`) are not
+affected. The hub's role policy (`deny_sls`, `allow_sls`) has the same
+weakness and is not changed yet. See DIVERGENCE 5.294.
+
+### gitfs no longer deletes the tree it keeps serving
+
+When every ref of a reachable remote was refused (a commit adding a
+symlink, a blob too large to unpack, a signature that did not verify),
+gitfs kept serving the last good tree, as documented, and then its cache
+sweep deleted that tree's files. The file server listed the environment
+and served nothing from it. The sweep now keeps every tree that is
+being served. (DIVERGENCE 5.293)
+
+### gitfs signature verification checks the commit it serves
+
+With `gitfs_verify_signatures: true`, a branch was verified by its short
+name and served by its commit id. git reads an ambiguous short name as
+the tag, and the mirror fetches every tag, so a tag pointing at an old
+signed commit could get an unsigned branch tip of the same name served.
+gitfs now verifies the exact object it serves. A branch whose name
+begins with a dash is no longer refused for being read as a git option.
+A hub upgraded to this release may stop serving a branch it served
+before, if that branch's tip was not signed; the refusal is logged and
+counted as a signature refusal. See DIVERGENCE 5.292.
+
+### A target nested more than 100 levels deep is now an error
+
+A compound target with more than 100 levels of `(` and `not` is now
+refused when it compiles, with the column where it went over. Before,
+deep enough nesting overflowed the hub's stack, and one request could
+end the hub. A long `or` chain could also end it, the first time it was
+matched. That chain is still accepted and now evaluates in a loop. No
+real target comes near 100 levels. A nodegroup at the deepest nesting
+that is allowed uses eleven. Long targets are not capped. See DIVERGENCE
+5.291.
+
+### Built with Go 1.27.2, off a Go with ten standard-library advisories
+
+halite was pinned to Go 1.26.6. An external audit (edlitmus/halite#321,
+section 1.2) found ten Go standard-library advisories that affect it. Six
+are on the hub's server paths: HTTP/2 in `net/http`, ECH in `crypto/tls`,
+and `net/textproto`. All are fixed in Go 1.26.9. The pin is now
+`toolchain go1.27.2`. The `go 1.26.0` floor is unchanged, so SPEC 4.1
+still says Go 1.26 or later.
+
+One behaviour change comes with it. Go 1.27 builds `encoding/json` on its
+v2 implementation by default, and that refuses a JSON document nested more
+than 10,000 levels deep. halite's JSON decoder used to accept any depth. It
+now refuses such a document with `exceeded max depth`. The test suite
+passes under 1.27.2, so none of its inputs nests that deep; production
+input was not surveyed. See DIVERGENCE 5.290.
 
 ### The API's systemd unit now restarts an API whose listener was early
 

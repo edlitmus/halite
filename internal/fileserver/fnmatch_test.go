@@ -12,7 +12,7 @@ import (
 // Python (testdata/fnmatch_cpython.py), not written from its
 // documentation: the sets, the ranges that run backwards, the unclosed
 // `[` and the literal backslash are exactly the places a reading of the
-// documentation gets wrong. DIVERGENCE 5.290.
+// documentation gets wrong. DIVERGENCE 5.295.
 func TestFnmatchAgreesWithCPython(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "fnmatch_cpython.json"))
 	if err != nil {
