@@ -24698,6 +24698,116 @@ Each was broken on purpose, and each failed:
   not this defect, and it was not changed.
 - **macOS only.** The tests ran on macOS (Darwin 25.6). CI runs them on
   the other platforms.
+### 5.297 Four functions that run caller-supplied code were not arbitrary code
+
+SPEC 23.5 says a wildcard grant never includes a function marked
+`arbitrary_code`, and a node with `require_job_signature:
+[arbitrary_code]` refuses such a function unless the job is signed
+(SPEC 25.6). Both read the same field on the signature. Four execution
+functions in `internal/builtin/cmd_more.go` run code the caller supplies
+and did not set it:
+
+| Function | What it runs |
+|---|---|
+| `cmd.script` | A script the caller names, from `salt://` or a local path. |
+| `cmd.script_retcode` | The same script, through the same `runScript`. Only the return value differs. |
+| `cmd.exec_code` | Code the caller writes, under an interpreter the caller names. |
+| `cmd.run_bg` | The program the caller names, detached. It is `cmd.run` without the wait. |
+
+So `functions: ['*']` granted all four. A role that was deliberately
+refused `cmd.run` got the same power from any of them. On a node that
+required a signature for `arbitrary_code`, all four ran unsigned.
+
+**Why 5.16's check did not see it.** The hub's
+`arbitraryCodeFunctions` merges the execution and state registries by
+name. That is how it covers `module.run`, which is a state. The *state*
+`cmd.script` was marked, so the name `cmd.script` was in the hub's set.
+The hub refused it to a wildcard, and
+`TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard` passed. The node
+reads the execution registry alone
+(`cmd/halite-node/jobsignature.go`), and the *execution* `cmd.script`,
+which is what a job runs, was not marked. The two daemons disagreed
+about the one name the test checked. The other three are not in SPEC's
+list of six names, so no list held them.
+
+This is the pair problem. The hub and the node are two computations of
+one class, and only one of them was being tested.
+
+**The change.** The four functions now declare `arbitrary_code`. The
+hub's computation is not changed: it still merges, for `module.run`.
+Three tests now hold the two paths to the same answer:
+
+- `TestEveryFunctionThatRunsCallerCodeIsMarked` (`internal/builtin`)
+  reads the execution registry directly, which is the node's view. It
+  applies three rules. First, an explicit list (the cmd runners,
+  `cmd.shell`, the four above, `file.write`, `file.replace`). Second, a
+  state that declares `arbitrary_code` makes its execution twin declare
+  it. Third, every mutating function in the `cmd` module declares it,
+  so a new `cmd.*` function is covered without anyone adding it to a
+  list. The second and third rules each fail if they stop finding
+  anything to check.
+- `TestTheHubAndTheNodeAgreeOnArbitraryCode` (`cmd/halite-hub`) requires
+  that, for every execution function, the hub's merged set and the
+  execution registry give the same answer.
+- `TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode`
+  (`cmd/halite-node`) sends each function unsigned to a node that
+  requires `[arbitrary_code]`, and requires a refusal that names the
+  class.
+
+With `cmd_more.go` restored to the code before this change, all three
+failed. The builtin test named all four functions under the list rule
+and the `cmd` rule, and `cmd.script` under the twin rule. The node test
+accepted all four unsigned. The agreement test named `cmd.script`.
+`TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard` still passed,
+which is the blind spot shown directly.
+
+**The handbook had the same gap.** Chapter 26 quotes the "never
+granted by a wildcard" line of `halite-hub policy show` and says it is
+the output for this build. Nothing compared the two. After this change
+the page was three names short (the hub already had `cmd.script`). The
+line was replaced with the output of `policy show` run on
+`contrib/examples/policy.yaml` with this build.
+`TestChapterTwentySixListsWhatPolicyShowPrints` (`cmd/halite-hub`) now
+reads the names from the chapter and compares them with
+`arbitraryCodeFunctions`, in both directions. It failed with the old
+line restored (three names missing), and it failed with `test.ping`
+added to the line.
+
+**What operators see.** A role that granted these functions through a
+wildcard (`'*'`, `'cmd.*'`) no longer has them. A role that needs one
+must name it, as `break_glass` in `contrib/examples/policy.yaml` names
+`cmd.run`. A node that requires a signature for `arbitrary_code` now
+refuses these four unsigned.
+
+**Still open: the second tier.** These functions are not marked, and
+each one can make the machine run something the caller chose, later or
+indirectly. This change does not decide whether they are in the class:
+
+- `at.at` (a command line for `at(1)`);
+- `win_task.create` (a command for the Task Scheduler);
+- the `cron.present` state (a command line in a crontab; there is no
+  `cron.set_job` in this build);
+- `file.append`, `file.patch`, and the `file.managed` state with chosen content (a
+  file such as a crontab, a unit or a `sudoers` line, as 5.16 said of
+  `file.write`);
+- the `ssh_auth.present` state (a key that gives a shell);
+- the `sudo.present` state (a rule that gives root).
+
+5.16 marked `file.write` and `file.replace` for this reason, so the line
+is already not "runs a process now". Where it is drawn is a decision for
+SPEC 23.5, not for this change.
+
+**Not verified.**
+
+- No policy file on a running hub, and no node with
+  `require_job_signature`, was used for this change. The policy decision
+  was tested through `arbitraryCodeFunctions` and the policy package, and
+  the node refusal through `acceptJob` in a test, not through a real
+  connection from a real hub.
+- The tests ran on macOS (Darwin 25.6) only. CI runs them on all four
+  platforms.
+- The second-tier list above came from reading parameter names in the
+  registry. It is not complete.
 
 
 

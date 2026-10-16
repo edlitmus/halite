@@ -221,9 +221,10 @@ A function whose signature says `arbitrary_code` can run anything. They are
 never granted by a pattern; a role must **name** them:
 
 ```
-never granted by a wildcard: cmd.retcode, cmd.run, cmd.run_all, cmd.run_stderr,
-cmd.run_stdout, cmd.script, cmd.shell, cmd.wait, file.replace, file.write,
-module.run, module.wait, schedule.add, schedule.modify, schedule.run_job
+never granted by a wildcard: cmd.exec_code, cmd.retcode, cmd.run, cmd.run_all,
+cmd.run_bg, cmd.run_stderr, cmd.run_stdout, cmd.script, cmd.script_retcode,
+cmd.shell, cmd.wait, file.replace, file.write, module.run, module.wait,
+schedule.add, schedule.modify, schedule.run_job
 ```
 
 (That is `halite-hub policy show` for this build.) The list is taken from

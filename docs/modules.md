@@ -665,7 +665,7 @@ cmd.exec_code(lang: string, code: string, args: list, cwd: path = , runas: strin
 | `runas` | string | `` | Account to run as. |
 | `timeout` | duration | — | How long it may run. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.has_exec`
 
@@ -769,7 +769,7 @@ cmd.run_bg(name: string, args: list, cwd: path = , runas: string = , env: map)
 | `runas` | string | `` | Account to run as. |
 | `env` | map | — | Environment, replacing the clean default. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.run_stderr`
 
@@ -839,7 +839,7 @@ cmd.script(source: string, args: list, shell: string = , cwd: path = , runas: st
 | `timeout` | duration | — | How long it may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.script_retcode`
 
@@ -858,7 +858,7 @@ cmd.script_retcode(source: string, args: list, shell: string = , cwd: path = , r
 | `runas` | string | `` | Account to run as. |
 | `timeout` | duration | — | How long it may run. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.shell`
 

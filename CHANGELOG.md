@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Four more code-running functions are no longer granted by a wildcard
+
+`cmd.script`, `cmd.script_retcode`, `cmd.exec_code` and `cmd.run_bg` run
+code the caller supplies, and now declare `arbitrary_code`. **A role that
+granted them through a wildcard (`'*'` or `'cmd.*'`) no longer has them.**
+A role that needs one must name it, as `cmd.run` must already be named. A
+node with `require_job_signature: [arbitrary_code]` now refuses these four
+unless the job is signed. Before this, it ran all four unsigned. The hub
+already refused `cmd.script` to a wildcard, because it also reads the state
+module of the same name, but the node did not. See DIVERGENCE 5.297.
+
+
 ### A scoped role is now authorized by the kind of target it asks for
 
 **Security fix.** A role scoped to part of the estate, such as `target:

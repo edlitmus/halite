@@ -906,6 +906,86 @@ func TestArbitraryCodeIsMarked(t *testing.T) {
 	}
 }
 
+// TestEveryFunctionThatRunsCallerCodeIsMarked reads the execution
+// registry alone, which is what a node computes `require_job_signature:
+// [arbitrary_code]` from (cmd/halite-node/jobsignature.go).
+//
+// The check DIVERGENCE 5.16 added asked the hub's set, and the hub merges
+// the execution and state registries by name. The state module
+// `cmd.script` declared arbitrary_code, so the name `cmd.script` was in
+// the hub's set and the check passed — while the execution function of
+// the same name, the one a job actually runs, did not declare it, and a
+// node read it as an ordinary mutating function. That was the blind
+// spot, and three more code-running functions (`cmd.script_retcode`,
+// `cmd.exec_code`, `cmd.run_bg`) sat in it because no list named them.
+// DIVERGENCE 5.297.
+//
+// So there are three rules here, and only the first is a list:
+//
+//   - the named functions, looked up in the execution registry;
+//   - a state function that declares arbitrary_code makes its execution
+//     twin declare it too, because the hub's merge would otherwise make
+//     the two daemons disagree about the twin;
+//   - every mutating function in the `cmd` module declares it, because
+//     running something the caller names is what that module is for. A
+//     new `cmd.*` function arrives covered or fails here; it does not
+//     depend on somebody adding it to the list.
+func TestEveryFunctionThatRunsCallerCodeIsMarked(t *testing.T) {
+	r := New()
+	execs := r.Exec.Signatures()
+
+	for _, name := range []string{
+		"cmd.run", "cmd.run_all", "cmd.run_stdout", "cmd.run_stderr", "cmd.retcode",
+		"cmd.shell", "cmd.script", "cmd.script_retcode", "cmd.exec_code", "cmd.run_bg",
+		"file.write", "file.replace",
+	} {
+		sig, ok := execs.Lookup(name)
+		if !ok {
+			t.Errorf("%s is missing from the execution registry", name)
+			continue
+		}
+		if !sig.ArbitraryCode {
+			t.Errorf("the execution function %s runs what the caller supplies and must declare arbitrary_code", name)
+		}
+	}
+
+	twins := 0
+	for _, name := range r.States.Names() {
+		state, _ := r.States.Signatures().Lookup(name)
+		if !state.ArbitraryCode {
+			continue
+		}
+		exec, ok := execs.Lookup(name)
+		if !ok {
+			continue
+		}
+		twins++
+		if !exec.ArbitraryCode {
+			t.Errorf("the state %s declares arbitrary_code and its execution twin does not; "+
+				"the hub merges the two by name and the node reads only the execution one, "+
+				"so they disagree about whether an unsigned %s may run", name, name)
+		}
+	}
+	if twins == 0 {
+		t.Error("no arbitrary-code state has an execution twin; the twin rule has stopped checking anything")
+	}
+
+	cmdMutating := 0
+	for _, name := range execs.Names() {
+		sig, _ := execs.Lookup(name)
+		if sig.Module != "cmd" || !sig.Mutates {
+			continue
+		}
+		cmdMutating++
+		if !sig.ArbitraryCode {
+			t.Errorf("%s is a mutating cmd function and does not declare arbitrary_code", name)
+		}
+	}
+	if cmdMutating < 10 {
+		t.Errorf("only %d mutating cmd functions were found; the module rule is not looking where it thinks", cmdMutating)
+	}
+}
+
 // TestEveryStateModuleDeclaresItsTestMode is the check that keeps the
 // signature honest as modules are added.
 func TestEveryStateModuleDeclaresItsTestMode(t *testing.T) {
