@@ -24433,6 +24433,132 @@ refuses the run.
   path. They never went through `state_denylist`, and they still do
   not. This change is about SLS names only.
 - The tests ran on macOS (Darwin 25.6) only.
+### 5.295 `file_ignore_glob` hid only the first level of what it named
+
+Review finding M-55, reproduced before it was changed.
+
+`Roots.ignored` matched each `file_ignore_glob` pattern with Go's
+`path.Match`, against the path relative to the root and against the
+base name. In `path.Match`, `*` does not match `/`. Salt matches the
+setting with Python's `fnmatch.fnmatch` (`is_file_ignored` in
+`salt/fileserver/__init__.py`), and there `*` matches any run of
+characters, `/` included. With `file_ignore_glob: [secrets/*, */er/*]`:
+
+- `secrets/a.txt` was hidden.
+- `secrets/deep/b.txt` was served and listed.
+- `secrets/deep/er/c.txt` was served and listed.
+
+A hide rule copied from a Salt tree hid less on halite, and nothing
+said so. The difference goes in the dangerous direction: files that the
+operator meant to hide were served.
+
+Two smaller differences had the same cause:
+
+- `path.Match` treats `\` as an escape and `[^a]` as a negated set.
+  fnmatch treats `\` as a literal and `[^a]` as a set of `^` and `a`.
+  Its negated set is `[!a]`.
+- A `[` with no `]` is a literal in fnmatch. `path.Match` returns
+  `ErrBadPattern`, which `ignored` read as "no match". So a rule such
+  as `a[b` hid nothing.
+
+**The change.** `internal/fileserver/fnmatch.go` is a port of CPython's
+`fnmatch._translate` to an RE2 expression. It is `fnmatchcase`, which
+is case-sensitive. That is what `fnmatch.fnmatch` is on a POSIX host,
+because `os.path.normcase` does nothing there. `ignored` now calls it.
+It is still matched against the relative path and against the base
+name. The base name match is halite's own: Salt does not do it. It
+only hides more, and it was kept.
+
+**One function for every path.** `Resolve` (and so `Read` and the
+hub's file handler) and `List` (and so the manifest) both call
+`ignored` with the same relative path, so a file cannot be hidden from
+one and shown by the other. gitfs and s3fs trees are served through the
+same `Roots` (`fetchingBackends.update` puts their directories in its
+search path), so the rule applies to them too. Salt's gitfs does not
+call `is_file_ignored` at all in the checkout that was read, so on
+halite the rule covers more backends than on Salt. That was already
+true and is unchanged.
+
+**Salt is not consistent with itself, and this does not copy it.**
+Salt's roots backend calls `is_file_ignored` with two different paths.
+`file_list` gives it the path relative to the root. `find_file`, the
+serving path, gives it `os.path.join(root, path)`, the absolute path.
+An anchored glob such as `secrets/*` does not match
+`/srv/salt/secrets/a.txt`. So on Salt that rule hides the file from the
+listing and still serves it to `cp.get_file`. halite matches the
+relative path in both places. To match the absolute path as well would
+make the cache directories of gitfs and s3fs part of what an operator's
+glob is matched against.
+
+**How it is tested.**
+
+- `TestFnmatchAgreesWithCPython` holds `fnmatch` to 1,584
+  pattern-and-name pairs in `testdata/fnmatch_cpython.json`. The answers
+  were captured on 2026-10-15 by running `fnmatch.fnmatchcase` in
+  CPython 3.15.0 on macOS (`testdata/fnmatch_cpython.py` makes the
+  file). They were not written from the documentation. The table covers
+  `*` across `/`, `?`, sets, negated sets, `]` first in a set, ranges,
+  backward ranges (`[z-a]`, `[!z-a]`), a hyphen at either end, unclosed
+  `[`, backslashes and a newline in a name.
+- `TestIgnoreGlobsHideNestedFilesAsSaltDoes` is the reproduced case on
+  a real directory. Under `[secrets/*, */er/*]`, five nested files are
+  refused by `Resolve` and `Read` and left out of `List`, and four
+  files that no rule names (`public/er.txt`, `secretsfile.txt` among
+  them) are still served and listed.
+- `TestAnUnclosedBracketIsALiteral`: the rule `a[b` hides `a[b`.
+- The existing `TestIgnoreGlobs` (`*.swp`, at the top level and in a
+  subdirectory) still passes.
+
+**Broken on purpose.**
+
+- With `ignored` put back on `path.Match`,
+  `TestIgnoreGlobsHideNestedFilesAsSaltDoes` failed: it served, read
+  and listed `secrets/deep/b.txt`, `secrets/deep/er/c.txt` and
+  `public/x/er/e.txt`. That is the reported defect. The unclosed-bracket
+  test also failed.
+- With `*` translated to `[^/]*`, the CPython table failed on every
+  pair where `*` must cross `/`.
+- With set negation removed, the table failed on `[!abc]`.
+
+**Open, not changed: a symlink to a hidden file is served under its own
+name.** This was run, not only read. In a tree with
+`pub.txt -> secrets/a.txt` and `file_ignore_glob: [secrets/*]`:
+
+- With `fileserver_follow_symlinks: true`, `Read("pub.txt")` returns the
+  contents of `secrets/a.txt`.
+- With it false, the read is refused, but `List` still returns
+  `pub.txt`. That is a separate disagreement between listing and
+  serving.
+
+Salt does the same on the first point: `find_file` checks the link's
+own path, not its target. The rule hides names, not contents, and the
+key's own documentation says it is not a security control. To fix it,
+`Resolve` and `List` would both have to check the resolved target's
+path as well, and they would have to agree. That is a separate change,
+and it was not made here.
+
+**Not verified.**
+
+- No real Salt file server was run with these globs. Salt's behaviour comes
+  from reading `is_file_ignored` and the roots backend, and from running
+  Python's `fnmatch` itself.
+- The fixture comes from CPython 3.15.0. The same generator was run on
+  CPython 3.10.22, 3.12.15, 3.13.16 and 3.14.8 (Homebrew, macOS), and
+  each gave the same 1,584 answers. On CPython 3.9.6 (the macOS system
+  Python) every pair gave the same answer except the patterns with a
+  backward range (`[z-a]`, `[!z-a]`, `[z-ab-c]`), where 3.9 raises
+  `re.error` instead of treating the range as empty. halite follows
+  3.10 and later. Which Python the estate's Salt masters run was not
+  checked.
+- Case-insensitive matching, which is what `fnmatch.fnmatch` does on
+  Windows, was not implemented. A hub runs on Linux and FreeBSD.
+- No real hub was run, and no hide rule from the estate was checked
+  against its tree. A rule that now hides more than it used to will
+  hide it from nodes too: a nested file that a state still needs is
+  now refused.
+- The tests ran on macOS (Darwin 25.6) only.
+
+
 
 
 

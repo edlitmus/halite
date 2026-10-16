@@ -554,7 +554,7 @@ serve.
 
 Paths the file server hides.
 
-The same, as globs, which is usually the readable form.
+The same, as globs, which is usually the readable form. They are Salt's fnmatch globs, matched against the path relative to the root and against the base name: `*` and `?` match `/` too, so `secrets/*` hides everything below `secrets/`, not only its first level. Sets are `[abc]` and `[!abc]`.
 
 ### `file_ignore_regex`
 

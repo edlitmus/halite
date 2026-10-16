@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `file_ignore_glob` now hides nested files, as Salt's does
+
+`file_ignore_glob` was matched with Go's glob, where `*` stops at `/`.
+Salt uses Python's `fnmatch`, where `*` matches `/` too. So
+`secrets/*` hid `secrets/a.txt` and still served and listed
+`secrets/deep/b.txt`. Hide rules copied from Salt hid less than they
+did on Salt. The globs are now fnmatch globs: `*` and `?` match `/`,
+negated sets are `[!a]` (not `[^a]`), `\` is a literal, and a `[`
+with no `]` is a literal. A rule now hides everything below the level
+it names. If a state needs a nested file that such a rule now covers,
+the node can no longer fetch it. See DIVERGENCE 5.295.
+
 ### On Windows, a relative include in an `init.sls` resolved one level too high
 
 On a Windows node, an `init.sls` read from local roots was treated as a
