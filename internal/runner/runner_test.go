@@ -29,6 +29,12 @@ type probe struct {
 	runAs     []string
 	umask     []string
 	deadlines []time.Duration
+	// What each mod_watch reaction saw, kept apart from the normal
+	// function's so that a test can tell which of the two the options
+	// reached.
+	watchRunAs     []string
+	watchUmask     []string
+	watchDeadlines []time.Duration
 }
 
 // registries builds a state registry whose behaviour a test can script
@@ -49,6 +55,7 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 				{Name: "changes_keys", Type: signature.List},
 				{Name: "fail", Type: signature.Bool, Default: false},
 				{Name: "watch_marker", Type: signature.String},
+				{Name: "watch_fail", Type: signature.Bool, Default: false},
 			},
 			Mutates: true, TestMode: signature.TestReliable, Section: "test",
 		}
@@ -96,6 +103,16 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 
 	watch := func(c *exec.Context, args *value.Map) (states.Result, error) {
 		p.ran = append(p.ran, states.Str(args, "name", "")+":mod_watch")
+		p.watchRunAs = append(p.watchRunAs, c.RunAs)
+		p.watchUmask = append(p.watchUmask, c.Umask)
+		var remaining time.Duration
+		if deadline, ok := c.Ctx.Deadline(); ok {
+			remaining = time.Until(deadline)
+		}
+		p.watchDeadlines = append(p.watchDeadlines, remaining)
+		if states.Bool(args, "watch_fail", false) {
+			return states.False("The watch reaction was scripted to fail."), nil
+		}
 		return states.Changed("The watch reaction ran.",
 			value.MapOf("reacted", states.Change(false, true))), nil
 	}
@@ -531,6 +548,157 @@ listener:
 `)
 	if ranContains(p, "listener:mod_watch") {
 		t.Errorf("the listen reaction fired without a change: %v", p.ran)
+	}
+}
+
+// A listen reaction runs with the chunk's own runas, umask and timeout,
+// as a watch reaction does. It ran on the shared context, so a listened
+// `cmd.run` with `runas: deploy` ran as root. DIVERGENCE 5.302.
+func TestListenReactionGetsTheChunksExecutionOptions(t *testing.T) {
+	for _, kind := range []string{"listen", "watch"} {
+		_, p := compileAndRun(t, `
+source:
+  probe.run:
+    - changes: true
+
+listener:
+  probe.run:
+    - runas: deploy
+    - umask: '077'
+    - timeout: 30
+    - `+kind+`:
+      - probe: source
+`)
+		if len(p.watchRunAs) != 1 {
+			t.Fatalf("%s: the reaction ran %d times: %v", kind, len(p.watchRunAs), p.ran)
+		}
+		if p.watchRunAs[0] != "deploy" {
+			t.Errorf("%s: the reaction ran as %q, want deploy", kind, p.watchRunAs[0])
+		}
+		if p.watchUmask[0] != "077" {
+			t.Errorf("%s: the reaction's umask was %q, want 077", kind, p.watchUmask[0])
+		}
+		if d := p.watchDeadlines[0]; d <= 0 || d > 30*time.Second {
+			t.Errorf("%s: the reaction saw a deadline of %v, want one just under 30s", kind, d)
+		}
+	}
+}
+
+// A listen reaction honours the chunk's creates, unless and onlyif. The
+// reproduction: a listener with `creates:` naming a directory that
+// exists was skipped in the main pass and then ran its mod_watch at the
+// end of the run regardless.
+func TestListenReactionHonoursItsGates(t *testing.T) {
+	dir := t.TempDir()
+	gates := map[string]string{
+		"creates": `
+    - creates: ` + dir,
+		"unless": `
+    - unless:
+        fun: probe.answer
+        kwargs:
+          value: true`,
+		"onlyif": `
+    - onlyif:
+        fun: probe.answer
+        kwargs:
+          value: false`,
+	}
+	for name, gate := range gates {
+		out, p := compileAndRun(t, `
+source:
+  probe.run:
+    - changes: true
+
+listener:
+  probe.run:`+gate+`
+    - listen:
+      - probe: source
+`)
+		if ranContains(p, "listener:mod_watch") {
+			t.Errorf("%s: the listen reaction ran past its gate: %v", name, p.ran)
+		}
+		last := out.Results[len(out.Results)-1]
+		if last.Chunk.ID != "listener" || !last.Skipped || last.Result.Failed() {
+			t.Errorf("%s: the reaction should be reported as skipped with success, got %s skipped=%v %q",
+				name, last.Chunk.ID, last.Skipped, last.Result.Comment)
+		}
+	}
+
+	// The control: the same listener with a gate that lets it through
+	// still reacts, so the assertions above are not passing because
+	// nothing ever fires.
+	_, p := compileAndRun(t, `
+source:
+  probe.run:
+    - changes: true
+
+listener:
+  probe.run:
+    - creates: `+dir+`/absent
+    - listen:
+      - probe: source
+`)
+	if !ranContains(p, "listener:mod_watch") {
+		t.Errorf("an open gate held the listen reaction: %v", p.ran)
+	}
+}
+
+// A listen reaction is retried, as Salt's call() retries the listener's
+// copy of the chunk.
+func TestListenReactionIsRetried(t *testing.T) {
+	_, p := compileAndRun(t, `
+source:
+  probe.run:
+    - changes: true
+
+listener:
+  probe.run:
+    - watch_fail: true
+    - retry:
+        attempts: 3
+        interval: 1
+    - listen:
+      - probe: source
+`)
+	count := 0
+	for _, n := range p.ran {
+		if n == "listener:mod_watch" {
+			count++
+		}
+	}
+	if count != 3 {
+		t.Errorf("the listen reaction ran %d times, want 3 attempts: %v", count, p.ran)
+	}
+}
+
+// A listen reaction runs the chunk's generic check_cmd, as the main pass
+// does.
+func TestListenReactionRunsItsCheckCmd(t *testing.T) {
+	rec := &exec.RecordingRunner{}
+	_, p := compileAndRun(t, `
+source:
+  probe.run:
+    - changes: true
+
+listener:
+  probe.run:
+    - check_cmd: halite-test-check
+    - listen:
+      - probe: source
+`, func(r *Runner) { r.Ctx.Runner = rec })
+	if !ranContains(p, "listener:mod_watch") {
+		t.Fatalf("the listen reaction did not run: %v", p.ran)
+	}
+	checks := 0
+	for _, c := range rec.RanCommands() {
+		if strings.Contains(c, "halite-test-check") {
+			checks++
+		}
+	}
+	// Once for the main pass and once for the reaction.
+	if checks != 2 {
+		t.Errorf("check_cmd ran %d times, want 2 (main pass and reaction): %v", checks, rec.RanCommands())
 	}
 }
 

@@ -497,7 +497,7 @@ func TestDroppingTheConfEntryWithNoConfigAtAll(t *testing.T) {
 	}
 }
 
-// ---- create: what is already on the members (DIVERGENCE 5.290) ----
+// ---- create: what is already on the members (DIVERGENCE 5.310) ----
 //
 // **Every wipefs output below is SYNTHETIC.** No captured `wipefs` output
 // exists in this repository yet; these strings are written to the shape
@@ -506,7 +506,7 @@ func TestDroppingTheConfEntryWithNoConfigAtAll(t *testing.T) {
 // layout that turns out different cannot make a found signature pass.
 // The "No md superblock detected" stderr is the substring the module has
 // matched since 5.53; the line around it is written here, not captured.
-// DIVERGENCE 5.290 lists what a lab run must capture to replace them.
+// DIVERGENCE 5.310 lists what a lab run must capture to replace them.
 
 const (
 	mdadmTestNoArray    = "mdadm: cannot open /dev/md0: No such file or directory"
@@ -551,7 +551,7 @@ func mdadmCreateArgs(extra ...any) *value.Map {
 }
 
 // A member mdadm --examine calls clean but which holds a filesystem, or a
-// partition table, is refused -- this is the case 5.290 was about: before
+// partition table, is refused -- this is the case 5.310 was about: before
 // it, "No md superblock detected" was the whole check and `--run` told
 // mdadm not to ask about the ext4 it had found.
 func TestMdadmCreateRefusesAMemberHoldingAFilesystem(t *testing.T) {
@@ -575,7 +575,7 @@ func TestMdadmCreateRefusesAMemberHoldingAFilesystem(t *testing.T) {
 	}
 }
 
-// Any probe that does not give a clean answer refuses. Before 5.290 an
+// Any probe that does not give a clean answer refuses. Before 5.310 an
 // examine error was `continue` -- the guard failed open.
 func TestMdadmCreateRefusesWhatItCouldNotProbe(t *testing.T) {
 	examineSda := (exec.Command{Argv: []string{"mdadm", "--examine", "--export", "/dev/sda"}}).String()

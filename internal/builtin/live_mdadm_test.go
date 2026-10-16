@@ -367,9 +367,9 @@ func TestLiveMdadmDestroyRemovesTheArrayAndItsSuperblocks(t *testing.T) {
 }
 
 // `create` over a member holding a real filesystem is refused, and
-// nothing is created (DIVERGENCE 5.290).
+// nothing is created (DIVERGENCE 5.310).
 //
-// Before 5.290 the only check was `mdadm --examine`, which answers "No
+// Before 5.310 the only check was `mdadm --examine`, which answers "No
 // md superblock detected" for an ext4 disk, and `--run` then told mdadm
 // not to ask about the filesystem it had found. This makes the
 // filesystem with the real mkfs and asks the real wipefs, and it logs

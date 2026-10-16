@@ -363,7 +363,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"stopped, restarted, enabled, disabled, masked and unmasked, each checked against " +
 		"`systemctl` directly rather than the module's own read-back, and the `JobRemoved` " +
 		"wait shown to be awaited (DIVERGENCE 5.39). The `systemctl` fallback was driven " +
-		"against the same unit. The launchd provider was driven against a real launchctl " +
+		"against the same unit. That unit's name had no dot, and a dotted name such as " +
+		"`php8.2-fpm` was sent to D-Bus without `.service` and refused there until " +
+		"DIVERGENCE 5.309; that fix is held by a recording backend and has not been run " +
+		"against a real systemd. The launchd provider was driven against a real launchctl " +
 		"on a macOS 15 runner as root, on a LaunchDaemon the test bootstraps: started, " +
 		"stopped, restarted, enabled, disabled and listed, each checked against " +
 		"`launchctl print` rather than the `launchctl list` the module reads, which found " +
@@ -436,7 +439,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"member table, checked against real degraded output (a removed slot, a faulty member). Not covered: " +
 		"`grow` (a reshape is too slow for a test), `assemble --scan` (it reads every superblock on the host), " +
 		"RAID levels other than 1, metadata 0.90, and the `wipefs` signature probe `create` runs on every member " +
-		"before it writes (DIVERGENCE 5.290): written and tested against synthetic output only, and its live test " +
+		"before it writes (DIVERGENCE 5.310): written and tested against synthetic output only, and its live test " +
 		"(a member holding real ext4 refused) has not yet run on any machine"},
 	"modprobe": {Level: exec.Hardware, Note: "driven against a real kernel on Ubuntu 24.04: `list`, `info` and " +
 		"`is_denylisted` read against whatever this host's kernel already has loaded, and the mutating half " +

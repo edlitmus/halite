@@ -44,7 +44,7 @@
 # with no network at all, so a toolchain it has to fetch is a toolchain
 # it cannot get. internal/buildpolicy holds this tag to go.mod's
 # `toolchain` directive so the two cannot drift.
-FROM golang:1.26.6-bookworm
+FROM golang:1.27.2-bookworm
 
 # The tools under test, and the two that build the local repository.
 #

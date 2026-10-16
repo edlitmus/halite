@@ -75,7 +75,7 @@ var MdadmConfPaths = []string{"/etc/mdadm/mdadm.conf", "/etc/mdadm.conf"}
 // question mdadm would have asked is asked here first, by a probe whose
 // answer this module reads, and `--run` only reaches mdadm once it has
 // said "nothing here" for every device, or the caller passed `force`.
-// DIVERGENCE 5.290 is how the old wording here claimed a filesystem check
+// DIVERGENCE 5.310 is how the old wording here claimed a filesystem check
 // that did not exist.
 func registerMdadm(r *Registries) {
 	r.Exec.Add(
@@ -1089,7 +1089,7 @@ func mdadmCreateFn(c *exec.Context, args *value.Map) (any, error) {
 // the most useful thing to say (it may be another array's member). It is
 // not enough on its own: `--examine` knows md superblocks and nothing
 // else, so a disk holding ext4, XFS, an LVM PV, a ZFS vdev or just a
-// partition table answers "No md superblock detected" and, before 5.290,
+// partition table answers "No md superblock detected" and, before 5.310,
 // went straight on to a `--create --run` that wrote over it.
 func mdadmMemberInUse(c *exec.Context, dev string) (string, error) {
 	ex, err := mdadmExamineFn(c, value.MapOf("device", dev))
@@ -1121,7 +1121,7 @@ func mdadmMemberInUse(c *exec.Context, dev string) (string, error) {
 // documents exit 2 for "nothing identified", and whether a device it
 // could not open also lands on 2 was not established -- if it does,
 // "empty" and "unreadable" would differ only in stderr text. Neither
-// contract has yet been watched on a real machine for this (5.290). `wipefs`
+// contract has yet been watched on a real machine for this (5.310). `wipefs`
 // without `-a`/`-o` only lists; `--no-act` is passed as well so that no
 // later edit adding an erase option can make this probe write.
 //
@@ -1136,7 +1136,7 @@ func mdadmMemberInUse(c *exec.Context, dev string) (string, error) {
 // meaning.
 //
 // No output of a real wipefs is held as a fixture yet: the tests use
-// output written to this shape and say so, and DIVERGENCE 5.290 lists
+// output written to this shape and say so, and DIVERGENCE 5.310 lists
 // what a lab run has to capture.
 func mdadmProbeSignatures(c *exec.Context, dev string) ([]string, error) {
 	if c.Which("wipefs") == "" {
