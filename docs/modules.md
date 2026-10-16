@@ -1019,7 +1019,7 @@ cpan.module_version(module: string)
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `module` | string | *required* | The module name. |
+| `module` | string | *required* | The module name, such as `JSON::PP`. A name that is not a Perl package name is refused. |
 
 *SPEC section 15.4*
 

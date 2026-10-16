@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `cpan.module_version` no longer runs a module name as Perl
+
+`cpan.module_version` put the module name into the Perl program it ran.
+A name such as `Carp;BEGIN{...}` ran that code as root, from a function
+that a read-only grant reaches. The name must now be a Perl package
+name, such as `JSON::PP`. Any other name is refused with an error, and
+nothing runs. A valid name gives the same version as before. See
+DIVERGENCE 5.298.
+
+
 ### Four more code-running functions are no longer granted by a wildcard
 
 `cmd.script`, `cmd.script_retcode`, `cmd.exec_code` and `cmd.run_bg` run

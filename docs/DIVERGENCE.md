@@ -24808,6 +24808,92 @@ SPEC 23.5, not for this change.
   platforms.
 - The second-tier list above came from reading parameter names in the
   registry. It is not complete.
+### 5.298 `cpan.module_version` ran the module name as Perl
+
+`cpan.module_version` asked perl for a module's version like this:
+
+```
+perl -M<module> -e 'print $<module>::VERSION'
+```
+
+The name was put into perl's source twice. With the module
+`Carp;BEGIN{print "INJECTED\n"}`, perl ran the `BEGIN` block, once from
+each copy. This was reproduced with perl 5.44.0 on macOS before the fix,
+and again through the function itself in the test below, which returned
+`"INJECTED\nINJECTED"`.
+
+The function is declared non-mutating, with no test mode, and not
+`arbitrary_code`. So a role with read-only functions, or with a wildcard,
+could reach it. On a node it runs as root. A grant to read a version was
+a grant to run any Perl as root. It was found by reading the code (audit
+H-16), not reported from a host.
+
+**The change.**
+
+- The name must match `^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$`.
+  Any other name is refused with an error before anything runs. This is
+  narrower than what perl accepts: the old `'` separator, a leading or
+  trailing `::`, and Unicode identifiers are refused. The refusal is an
+  error, not the empty string the function returns for a module that is
+  not installed, because nothing was asked of the machine.
+- perl now gets the name as an argument, after `--`, and not in its
+  source. The program is fixed: it turns `::` into `/`, does a `require`
+  of the file, and prints `$VERSION`. This is a second wall. It is not
+  enough alone: without the check, `..::..::tmp::evil` becomes a
+  `require` of `../../tmp/evil.pm`. The test includes that name.
+- `require` replaces `-M`, so the module's `import` is no longer called.
+
+**Checked against real perl** (5.44.0, Homebrew, macOS). For `Carp`,
+`JSON::PP`, `List::Util` and `CPAN`, the new form prints the same version
+as the old one. For a module that is not installed, both exit 2.
+`TestCpanModuleVersionAgainstRealPerl` repeats the `Carp` and
+`List::Util` comparison and the not-installed case on any machine with
+perl, and skips without it.
+
+**How it is tested** (`internal/builtin/lang_cpan_test.go`):
+
+- `TestCpanModuleVersionRefusesANameThatIsNotAPackage`: thirteen bad
+  names, including the injection, `..::..::tmp::evil`, `-e` and
+  `Foo'Bar`. Each must be refused, and no command may run.
+- `TestCpanModuleVersionPassesTheNameAsData`: for four valid names, the
+  name is the last argument, after `--`, and is in no other argument.
+- `TestCpanModuleVersionAgainstRealPerl`: with real perl, the argument
+  form does not run the injection even with the check bypassed, and the
+  function refuses it.
+
+Each was broken on purpose. With the check removed, the refusal test
+failed on every bad name. With the check removed and the old `-M` form
+restored, all three failed. Real perl printed `INJECTED`, and the
+function returned `"INJECTED\nINJECTED"`.
+
+**Other places that put a name into interpreter source.** All of
+`internal/builtin` was searched for `perl`, `python`, `ruby`, `node`,
+`php`, `sh`, `powershell` and `osascript` invocations, and for `-e`,
+`-M`, `-c` and `-Command` arguments. `cpan.module_version` was the only
+function that puts a caller's value into interpreter source.
+`cpan.version` runs a fixed program. Two neighbours are a different class
+and were not changed:
+
+- `cpan.install` passes the names to `cpan -i` as arguments. A name that
+  starts with `-` may be read as an option by `cpan`; this was not tried.
+  The function is
+  mutating and installs CPAN code, which runs `Makefile.PL`, so it is
+  already arbitrary code in all but its flag. Whether it should carry
+  `arbitrary_code` is the same open question as the second tier in the
+  ledger section for audit H-09.
+- `virtualenv.create` takes `python`, a path to an interpreter that it
+  runs. It is mutating, and the same question applies.
+
+**Not verified.**
+
+- Only Homebrew perl 5.44.0 on macOS was run. The perl on the fleet
+  (FreeBSD's `perl5` package, Ubuntu's `/usr/bin/perl`) was not run. The
+  new program uses `require`, `s{}{}g` and symbolic references, which
+  every perl 5 has, but no FreeBSD or Linux perl ran it.
+- The test runs perl with this process's environment. A node runs it
+  with the clean environment of SPEC 25.4, and that was not reproduced.
+- A valid name still loads that installed module's code from `@INC`.
+  This was true before as well, and the check does not change it.
 
 
 
