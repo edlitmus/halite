@@ -381,3 +381,49 @@ func TestApplyingStateToOneNodeTargetsItByList(t *testing.T) {
 		t.Errorf("it ran %q", hub.submitted.Fun)
 	}
 }
+
+// `POST /v1/orch` has to authorize the call it forwards. It used to
+// ask about `state.orchestrate` with the name as a positional argument
+// and no keyword arguments, then forward the name, `pillar`, `env` and
+// `test` as keywords -- so a role's deny_kwargs never saw the `pillar`
+// that reached the hub, and the hub, which sees this service's
+// principal rather than the caller's, could not catch it. Issue 321
+// M-17; DIVERGENCE 5.319.
+func TestTheOrchEndpointAuthorizesTheCallItForwards(t *testing.T) {
+	l, hub := executeLab(t, `
+roles:
+  deployer:
+    - runners: ['state.orchestrate']
+      args:
+        'state.orchestrate':
+          allow_mods: ['deploy.*']
+          deny_kwargs: ['pillar']
+bindings:
+  - principal: 'local:ed'
+    roles: ['deployer']
+`)
+	out := l.login(t, "ed", "hunter2")
+
+	for _, tc := range []struct {
+		name, body string
+		wantStatus int
+	}{
+		{"an allowed orchestration", `{"sls":"deploy.web"}`, http.StatusOK},
+		{"an allowed orchestration in test mode", `{"sls":"deploy.web","test":true}`, http.StatusOK},
+		{"pillar, which deny_kwargs names", `{"sls":"deploy.web","pillar":{"role":"db"}}`, http.StatusForbidden},
+		{"a name outside allow_mods", `{"sls":"teardown.everything"}`, http.StatusForbidden},
+		{"a name outside allow_mods in a comma list", `{"sls":"deploy.web,teardown.everything"}`, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := len(hub.seen)
+			res, body := l.post(t, "/v1/orch", tc.body, out.Token)
+			if res.StatusCode != tc.wantStatus {
+				t.Fatalf("answered %d, want %d: %s", res.StatusCode, tc.wantStatus, body)
+			}
+			reached := len(hub.seen) > before
+			if reached != (tc.wantStatus == http.StatusOK) {
+				t.Errorf("reached the hub: %v", reached)
+			}
+		})
+	}
+}
