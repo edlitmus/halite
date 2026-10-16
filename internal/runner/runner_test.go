@@ -553,7 +553,7 @@ listener:
 
 // A listen reaction runs with the chunk's own runas, umask and timeout,
 // as a watch reaction does. It ran on the shared context, so a listened
-// `cmd.run` with `runas: deploy` ran as root. DIVERGENCE 5.290.
+// `cmd.run` with `runas: deploy` ran as root. DIVERGENCE 5.302.
 func TestListenReactionGetsTheChunksExecutionOptions(t *testing.T) {
 	for _, kind := range []string{"listen", "watch"} {
 		_, p := compileAndRun(t, `

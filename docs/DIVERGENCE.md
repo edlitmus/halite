@@ -7956,6 +7956,37 @@ and the suite would have agreed. It is asserted directly now, in both
 directions, and `shell: false` is asserted beside the two opt-ins so
 that the path form cannot quietly turn the shell on for everybody.
 
+#### The same defect on Windows, found by 5.294's test (2026-10-15)
+
+`isPackage` tested the loader's file path for the suffix `/init.sls`.
+`fileserver.Roots` reports an OS path, and on Windows that path is
+separated by `\`. So on a Windows node every `init.sls` read from local
+roots was taken for a flat file, and its relative includes resolved
+one level too high. That is this section's defect again, on one
+platform.
+
+The unit tests for `isPackage` used only `/` paths, so they could not
+see it. CI's Windows legs (`test` and `race` on windows-2022) found it
+on PR #340, the first time a relative include ran through a real
+`Roots` tree (`TestCanonicalNamesAndRelativeIncludesStillCompile` in
+5.294). The log line was:
+
+    web did not compile: ... app: sls "app" was not found in environment "base"
+
+`web/init.sls` includes `.app`, which is `web.app`. It looked for `app`.
+
+`isPackage` now compares `filepath.Base(filePath)` with `init.sls`.
+`filepath.Base` splits on `\` and `/` on Windows and on `/` elsewhere,
+so it also covers `fileserver.Remote`, which reports a `halite://` URI.
+`TestIsPackageIsAboutInitSLS` now has URI cases, and
+`TestIsPackageOnWindowsPaths` has `\` cases. The second test skips
+outside Windows, because there a backslash is part of a file name.
+
+**Not verified locally.** The development machine is macOS, so neither
+the failure nor the fix was run here on Windows. Only CI's Windows legs
+show it. The failing run is the evidence for the defect, and the next
+run on the PR is the evidence for the fix.
+
 ### 5.85 A conformance harness, and what it found
 
 5.80 and 5.81 left the same thing open, and `docs/extensions.md` said so
@@ -23929,7 +23960,1239 @@ The hub's 5.287 tests pass with the function moved.
 - **rc.d** runs the API under `daemon(8)` without `-r`, as it runs the
   hub. It never restarted on any status, so it is unchanged.
 
-### 5.290 A `listen` reaction ran without its state's guards or account
+### 5.290 The toolchain was a Go with ten standard-library advisories
+
+The pin was `toolchain go1.26.6`. The external audit of edlitmus/halite#321
+(section 1.2) found ten Go standard-library advisories that affect it. Six
+are on the hub's server paths: HTTP/2 in `net/http`, ECH in `crypto/tls`,
+and `net/textproto`. All ten are fixed in go1.26.9. The pin is now
+`toolchain go1.27.2`. The advisory list is the audit's. It was not
+re-derived here, and `make vuln` was not run.
+
+**The `go` directive stays at `1.26.0`.** It is a floor, not the pin
+(SPEC 4.3, `TestGoModPinsTheToolchain`), and
+`TestGoModFloorMatchesTheSpec` holds it to SPEC 4.1's "Go 1.26 or
+later". Raising it would be a SPEC change that nothing here needs. It
+also decides the default GODEBUG settings. A hub built at this commit
+records `DefaultGODEBUG=tracebacklabels=0,x509sslcertoverrideplatform=0`
+(`go version -m`). So the two settings Go 1.27 changed keep their 1.26
+behaviour.
+
+**Every place that names the pin moved with it.** `go.mod`; the
+`go-version` of eleven setup-go steps in `ci.yml`, `fleet.yml` and
+`release.yml`; `FROM golang:1.27.2-bookworm` in `contrib/docker/fleet`
+and the two `contrib/docker/fleet-rpm` images; and `go_version`,
+`go_sha256` and `go_sha256_freebsd` in `contrib/tofu/variables.tf`.
+`internal/buildpolicy` holds the first three to `go.mod`. Nothing holds
+the lab's, so its checksums were taken from
+`https://go.dev/dl/?mode=json&include=all` for the two tarballs the
+bootstraps fetch: `go1.27.2.linux-amd64.tar.gz` is `ecbadb99…045fe5`
+and `go1.27.2.freebsd-amd64.tar.gz` is `3baf61ee…1eded`. The same
+extraction, run for go1.26.6, gave the two digests that were already
+pinned. Docker Hub's tag metadata lists `golang:1.27.2-bookworm` as
+active for amd64 and arm64. No image was pulled.
+
+The remaining mentions of 1.26.6 in `.gitattributes`, the setup-go
+comments, `plan.md`, `contrib/tofu/README.md` and this ledger record
+what happened on that toolchain at the time. They are still true and
+were left unchanged.
+
+**One behaviour change was found, in `value.DecodeJSON`.** Go 1.27 turns
+on the `jsonv2` experiment by default, and that does not depend on the
+`go` directive. `encoding/json`'s `Decoder.Token` now refuses nesting
+deeper than 10,000. On the 1.26 path only `Unmarshal` had that limit.
+`DecodeJSON` walks tokens recursively and had no limit of its own.
+Measured on go1.27.2 (darwin/arm64), with a throwaway test that was not
+committed:
+
+| Input | default | `GOEXPERIMENT=nojsonv2` |
+|---|---|---|
+| 10,000 nested arrays | decodes | decodes |
+| 10,001 nested arrays | `exceeded max depth` | decodes |
+
+This makes the decoder bounded where it was not, and nothing in the
+suite depends on deeper input. It was not made into a test. A test that
+asserts the limit is a test of the standard library, and the limit
+belongs to the toolchain, not to halite. If halite should have a limit
+of its own, that is a separate change.
+
+**What was run.** All on darwin/arm64 with go1.27.2,
+`GOTOOLCHAIN=local`, `GOFLAGS=-mod=vendor`, `GOPROXY=off` and
+`GOMAXPROCS=2`:
+
+- `go build ./...`, `go vet ./...` (no findings from 1.27's analyzers),
+  `gofmt -l` (clean), and `go mod verify`.
+- `make check`: `fmt-check`, `vet`, `build-all` (every target in
+  `TARGETS`, built and vetted), `test`, `race`, `policy` and
+  `fips-test` with `GOFIPS140=v1.0.0`. Exit 0. go1.27.2 still carries
+  the v1.0.0 module.
+- `bmake repro`: all three binaries were byte-identical from two paths.
+
+`vendor/modules.txt` and `go.sum` did not change.
+`golang.org/x/sys` v0.47.0 builds on every target above.
+
+**Not verified.**
+
+- **No CI run on this change at the time of writing.** Linux, Windows
+  and the FreeBSD VM legs of `ci.yml`, and `fleet.yml`'s live legs, were
+  not run locally. The tests ran on macOS only.
+- **The lab bootstrap was not run with the new checksums.** No instance
+  was raised. The digests are go.dev's. No tarball was downloaded and
+  hashed here.
+- **The Docker images were not built.** That `golang:1.27.2-bookworm`
+  exists was read from Docker Hub's metadata.
+- **Release builders.** The two-builder comparison in `release.yml` was
+  not run. Only `repro`, on one machine, was run.
+- **The advisories themselves.** No advisory was reproduced against
+  go1.26.6, or shown to be absent on go1.27.2.
+### 5.291 A deeply nested target expression ended the hub
+
+Audit H-12. The compound parser in `internal/target/compound.go` is
+recursive descent, `parseOr` to `parseAnd` to `parseNot` to
+`parsePrimary` and back to `parseOr` on every `(`, and `parseNot` calls
+itself on every `not`. Nothing bounded either. The only depth limit in
+the package was `resolveNodegroup`'s ten levels of `N@`. A Go stack
+overflow is `fatal error: stack overflow`, not a panic, and `net/http`
+cannot recover it. So one request whose target was enough `(` ended the
+hub, and every job in flight with it. The hub calls `target.Compile`
+in `hub.Dispatch` (`internal/hub/dispatch.go`), the mine
+(`internal/hub/mine.go`) and the nodegroup runner
+(`internal/hub/runners_fleet.go`). The audit also names the reactors,
+which were not traced for this entry. The API bounds a body at `max_body`, 64 MiB by default, and
+nothing smaller bounds a target. The caller needs a role whose target
+covers the expression, which `*` does.
+
+**The second half was not in the audit.** `or` and `and` chains are a
+loop in the parser, so they looked safe. But the loop built
+`((a or b) or c) or …` as one closure inside the next, and `Match`
+recursed once per term. So a long flat target did not crash at
+compile. It crashed at match, against the first node.
+
+**Measured**, darwin/arm64, go1.27.2, with `debug.SetMaxStack(4 << 20)`
+in a child process, on the code before the change:
+
+- `(` × n, then `x`, then `)` × n: 10,000 parsed and 15,000 overflowed.
+  That is some 300 to 400 bytes a level. The audit's own figure, from a
+  32 MiB stack, was about 170 bytes; the platform and the measurement
+  differ, and either way a few megabytes of `(` exceeds the default
+  1 GiB stack.
+- `nomatch or ` × n: 25,000 evaluated and 30,000 overflowed in `Match`,
+  some 150 bytes a term. Extrapolated, not run: a few tens of megabytes
+  of `a or a or …` at the default stack. That is inside the 64 MiB body.
+- 200,000 `(`, 200,000 `not`, and 200,000-term `or` and `and` chains
+  all ended the child with `fatal error: stack overflow`.
+
+**The change.** Two parts.
+
+- `maxCompoundDepth = 100` bounds nesting. Each `(` and each `not` is
+  one level. Past the bound, `Compile` returns an ordinary `*Error` with
+  the column of the token that went over: *"the expression nests deeper
+  than 100 levels of `(` and `not`"*. 100 is far above what anyone
+  writes. A fully nested nodegroup costs eleven levels: ten references,
+  each wrapped in one pair of parentheses by `resolveNodegroup`, and the
+  root. 100 is also far below the stack a level costs.
+- `or` and `and` chains are now `anyNode` and `allNode`, a slice that
+  `Match` walks in a loop. The order of evaluation and the
+  short-circuit are left to right, as before. The tree is now as deep as
+  the nesting, and the bound covers that.
+
+An `N@` term inside a compound is parsed by a fresh parser from depth 0,
+not from the enclosing depth. `ValidateNodegroups` checks a group at
+depth 0 when it loads. If use counted from the enclosing depth, a group
+that passed at load could fail at use: two paths that must agree. The
+expansion has no `N@` left in it, so the fresh parser never starts
+another. The worst case is twice the bound.
+
+**Length is not capped, on purpose.** A cap was considered at
+`target.Compile` and at the API. After the change, length costs time and
+memory in a straight line and no stack. A long target is what a list of
+node names looks like, and a large estate has long ones. A cap would
+refuse a valid target, and no crash is behind it. The API's `max_body`
+already bounds the memory. `TestLongFlatTargetsStillCompile` holds a
+5,001-term `or` of `L@` names.
+
+**Other recursion in `internal/target`**, checked with 200,000 `(` under
+a 4 MiB stack: `E@`, `P@`, `J@` go to Go's `regexp`, which refuses that
+with its own nesting error. `G@`, `I@`, glob, list and `S@` do not
+recurse on the expression. A 200,000-segment `G@` key was compiled and
+matched. `resolveNodegroup` was already bounded at ten. Nothing else was
+changed.
+
+**Tests.** `internal/target/depth_test.go`.
+`TestHostileTargetsDoNotOverflowTheStack` runs the four shapes above in
+a child with a 4 MiB stack. `TestCompoundNestingLimitEdge` holds both
+sides of the bound, for `(`, `not` and both mixed. Each was broken on
+purpose and seen to fail:
+
+- The old `compound.go`: all four shapes overflowed.
+- The bound disabled: `parens` and `nots` overflowed. The edge test
+  failed for all three shapes.
+- `>=` changed to `>`: the edge test failed for all three shapes.
+- The nested closures restored for `or` and `and`: `or-chain` and
+  `and-chain` overflowed.
+
+**Not verified.** No hub or API was run. The crash was reproduced in
+`internal/target` and not through a request. That the request path
+reaches `Compile` is from the audit and from reading `dispatch.go`. The
+node compiles a job's target again in `cmd/halite-node/jobsignature.go`.
+That path shares the same code and the same bound, but a test was not
+run there. The figures above are from one Mac and were not taken on
+FreeBSD or Linux.
+### 5.292 gitfs verified a branch by its name and served it by its commit
+
+With `gitfs_verify_signatures: true`, `verify` ran
+`git verify-commit --raw <name>`, where the name was the short one
+(`production`, not `refs/heads/production`). What was then archived and
+served was the object id `for-each-ref` had printed for the branch. Those
+are two paths that must agree, and they did not. git resolves an
+ambiguous short name to the tag before the branch, and the mirror holds
+every tag the remote has, because it is made with `clone --mirror` and
+kept with `fetch --tags`, whatever `gitfs_ref_types` says is served.
+
+So the control could be walked past by anybody who could push a branch
+and a tag, without a trusted key: tag an old commit that a trusted key
+signed as `production`, push an unsigned tip to the branch `production`.
+The tag's commit was verified and the branch's tip was served. Found by
+audit (H-19) and reproduced before it was changed: `git rev-parse
+production` in such a repository warns that the name is ambiguous and
+prints the tag's commit.
+
+**The change.** `verify` passes the object id that is served
+(`ref.Commit`), after `--`. A full object id has no ambiguous reading,
+and it is the same string that names the tree directory and that
+`materialise` hands to `git archive`, so what is checked and what is
+served are now one value rather than two that happened to agree. For a
+tag the object id is the tag object's, so `verify-tag` still checks the
+tag's own signature. `refs` now drops, with a warning, any line whose
+object id is not forty or sixty-four lower-case hex digits, so that
+nothing else reaches those arguments.
+
+**Remote-controlled names in argv** (audit L-engine-9). The other way a
+name reached git as an argument was the same call: a branch named
+`-dashed`, which `git branch` refuses but `update-ref` makes and a push
+carries, was read by `verify-commit` as options (`unknown switch 'd'`)
+and refused although its commit was signed. It now never reaches argv.
+`clone --mirror` gained `--` before the URL too. The URL is the
+operator's, not the remote's, and `checkURL` admits only `https://`,
+`ssh://`, `file://`, an absolute path, scp style, or anything with
+`insecure: true`, which is the case `--` covers. The other git calls in
+the package take no remote-controlled name: `fetch` names `origin`,
+`for-each-ref` takes fixed patterns, and `archive` takes the object id.
+That `verify-commit`, `verify-tag` and `clone` accept `--` there was
+checked by hand on git 2.56.0 only. No minimum git version is stated in
+SPEC 13.3; all three parse their options with git's common parser, which
+treats `--` as the end of options.
+
+**How it is tested,** with real git and real GnuPG, in
+`internal/gitfs/gitfs_test.go`:
+
+- `TestABranchIsVerifiedAtTheCommitServedNotAtATagOfTheSameName` builds
+  the attack: a signed commit on `main`, a lightweight tag `production`
+  on it, and a branch `production` with an unsigned commit on top. It
+  first checks that `git rev-parse production` gives the signed commit,
+  so the scenario is shown rather than assumed. Then `main` must be
+  served (a real signature verified against a real keyring) and
+  `production` must be refused and its unsigned commit not served.
+- `TestABranchNamedLikeAnOptionIsVerifiedAsACommit`: a branch
+  `-dashed` at a signed commit must be served as `dashed`.
+- `TestIsObjectID`, for the new filter.
+
+Both were broken on purpose by putting `ref.Name` back in place of
+`"--", ref.Commit`. The first failed with `production` served from
+`trees/<the unsigned commit>` and nothing refused. The second failed with
+`unknown switch 'd'` and only `base` served. Both passed again when it
+was restored.
+
+**A skip that had hidden the signed path on a Mac.** The existing
+`TestASignedRefIsServedAndAnUntrustedOneIsNot` skipped on macOS: its
+GnuPG home was `t.TempDir()`, under `/var/folders/…` with the test's
+name in it, and gpg-agent's socket path in it was too long ("can't
+connect to the gpg-agent: File name too long"), so no key was made. A
+skip says so, but it reads as green. The tests now make the home with a
+short name under `/tmp` where there is one, and stop the agent after.
+On this Mac all three signed tests ran and passed rather than skipping.
+
+**Not verified.**
+
+- **Not run through a hub or in the lab.** No hub served a repository
+  with this change; the tests drive `Backend.Update` directly against a
+  local repository. SHA-256 repositories were not tried; the
+  sixty-four-digit case is from git's documentation of the object
+  format, not a capture.
+- **macOS only** (Darwin 25.6, git 2.56.0, Homebrew GnuPG). CI runs the
+  package on Linux, FreeBSD and Windows. Whether gpg can make a key
+  there, or those legs skip the signed tests, was not checked.
+- **`clone --` with a URL beginning with a dash** has no test. It was
+  run by hand on git 2.56.0 with an ordinary path only.
+- **Not fixed here:** the sweep after an update deletes every tree no
+  current ref points at, including the trees of a remote whose refs were
+  all refused, while `Update` keeps serving the previous roots. A hub
+  that starts refusing a ref after this change can therefore keep
+  pointing at a tree directory that is gone. That is audit M-49 and is a
+  separate change.
+### 5.293 gitfs kept the last good tree's path and swept away its files
+
+`Update` keeps the last good tree when a reachable remote serves
+nothing: every ref refused, by a signature or by `materialise`. That is
+what 13.3, the paragraph on it in this ledger and the command reference
+all promise. But the sweep that stops the cache growing ran in the same
+loop, before that decision, keyed on the refs this update had resolved.
+On the kept-tree path those are none, so it removed every tree under the
+remote, the one `b.roots` still pointed at included. `Roots()` went on
+naming tree A, and tree A had no files in it. The estate got the empty
+file server the kept tree exists to prevent, with nothing in `Roots()`
+or the report to say so.
+
+The audit (M-49) found it with real git. A commit that adds a symlink
+is the easy trigger: git commits one and `materialise` refuses it. A
+blob too large to unpack does the same. So does a signature refused on
+a remote's only branch.
+
+**Why the existing test did not see it.**
+`TestAFailedUpdateLeavesTheServedTreeInPlace` compared the root's path
+string, not the files under it. It also drives the other failure: a
+remote that has vanished fails at `mirror`, which `continue`s before
+the sweep. So it never ran the path that deleted anything. It now reads
+`top.sls` from the kept root as well. It still passes against the old
+code, because that path never swept; it is not the test for this fix.
+
+**The change.** The sweep runs after the decision about what is
+served, and its live set is the directories in `b.roots` after that
+decision, not this update's refs. The two inputs disagreed exactly when
+the tree was kept. Now the decision is the sweep's input, so they cannot
+disagree. Skipping the sweep when roots are not replaced was the other
+option. It fixes this case but leaves two lists of "what is live" that
+must agree, which is the shape of the defect.
+
+**What was demonstrated.**
+`TestARefusedCommitLeavesTheServedTreesFilesInPlace` drives real git:
+a good commit, then a commit adding a symlink. It checks that the
+refusal is a `materialise` one, that `Roots()` still names the first
+tree, and that its `top.sls` reads back with the first commit's body,
+after the refused update and after a second one. Run against the old
+`backend.go` it fails with `top.sls: no such file or directory` under
+the listed root. Run with the new structure but the live set taken from
+this update's `roots` rather than `b.roots`, it fails the same way.
+`TestOldTreesAreSweptAway` still passes, so the sweep still removes
+what is not served.
+
+**Two things this does not change, both found while checking it.**
+They were run with real git in a throwaway test, which is not
+committed.
+
+- *Some refs of a remote refused.* One branch of two gets a symlink
+  commit. The roots are replaced, the refused branch's environment
+  drops out entirely, and `Update` returns nil. The refusal is in
+  `State()` and in the refusal counter. Not changed: 13.3 says a ref
+  that fails verification is not served, and the kept-tree promise
+  here and in the command reference is made per remote ("a remote
+  whose refs are all refused"). Whether a withdrawn key on one branch
+  should keep that branch's last good tree is a decision, not a defect,
+  and it is not made here.
+- *Two remotes, one unreachable.* The other remote serves, so the roots
+  are replaced, and the unreachable remote's environment stops being
+  served. That contradicts `Update`'s own comment ("it does not clear
+  what it was already serving") and the paragraph above saying a
+  remote that fails leaves its last tree in place. That is a separate
+  defect and is left for its own change. The sweep does not run for an
+  unreachable remote, so its trees are still on disk; they are just not
+  listed. A reachable remote whose refs are all refused, next to one
+  that serves, has its trees swept. That agrees with `Roots()`, which no
+  longer lists them.
+
+**Not verified.** The 2 GB blob and signature triggers were not run
+here; they reach the same `len(result.Refs) == 0` path as the symlink.
+No hub was run: this is the backend under `go test` on macOS. The
+existing window between the sweep removing a replaced tree and the
+hub's file server switching to the new roots is unchanged.
+### 5.294 `state_denylist` refused one spelling of an SLS name, and the loader accepted five
+
+Review finding M-54, reproduced for the compiler before it was changed.
+
+The compiler's `state_allowlist` and `state_denylist` matched the SLS
+name as it was written, with `path.Match`. The file server's loader
+(`slsCandidates`, then `Resolve`) turned every `.` into `/` and cleaned
+the path. So these names all loaded `secret/x.sls`:
+
+- `secret.x`
+- `secret..x`
+- `secret/x`
+- `.secret.x`
+- `secret/./x`
+
+and also `/secret/x` and `secret\x`. With `state_denylist: [secret.x]`,
+only the first was refused. A `state.sls` argument, a top file entry or
+an `include:` in any of the other spellings ran the states the denylist
+names. The allowlist direction failed closed, because a strange
+spelling matched no allow pattern, so only the denylist leaked.
+
+Salt accepts all of these spellings as well: `fileclient.get_state`
+replaces dots with slashes and the file server joins the result. But
+Salt has no state denylist, so there the looseness gets round nothing.
+Here it does.
+
+**The pair.** The denylist and the loader are two paths that must agree
+on what a name means. They did not.
+
+**The change.** There is now one definition, `state.CanonicalSLS`
+(`internal/state/slsname.go`). A name is canonical when it is not empty,
+every dot-separated component is not empty, and it holds no `/` or `\`.
+That refuses a leading or trailing dot, `..`, a `.` component and any
+path separator. Three places call it:
+
+- `Compiler.loadSLS`, before the allowlist and the denylist. Every
+  name reaches the compiler through `loadSLS`: `state.sls` and
+  `state.apply` arguments (`CompileSLS`, which the node and the hub's
+  orchestration both call), top file entries (`CompileHighstate`) and
+  `include:`.
+- `fileserver.Roots.Source` and `fileserver.Remote.Source`, so that a
+  loader cannot fold a spelling that the compiler did not see.
+
+A non-canonical name is refused, not rewritten. The error gives the
+canonical spelling. Rewriting would make the denylist correct, but it
+would leave several spellings that work, and the next check written
+against the raw name would have the same hole.
+
+**Relative includes still work.** `include: - .foo` is Salt syntax
+(`salt/state.py`, the `inc_sls.startswith(".")` branch), and it is not
+refused. `resolveRelative` (5.84) turns it into the absolute name while
+the including file is parsed. That happens before the name reaches
+`loadSLS`, so before this check and before the denylist. A denylist
+entry for `secret.x` refuses `.x` written inside `secret.y`, and the
+test checks this. A relative include that resolves to a non-canonical
+name (`..secret..x` in a flat file resolves to `secret..x`) is refused.
+
+**`extend:` and `exclude:`** do not load an SLS. `extend` names state
+IDs. `exclude: - sls:` removes the states of a name that was loaded. All
+loaded names are now canonical, so an `exclude` in another spelling
+matches nothing. It did not match before either. That was not changed.
+
+**How it is tested.**
+`internal/fileserver/slsname_test.go` runs the real compiler against
+the real `Roots` on a temporary tree. The state package's in-memory
+loader is keyed on the name as written. It cannot fold spellings, and
+that is why the hole could not be seen in those tests.
+
+- Each of the eight spellings above, as a `state.sls` argument under
+  `state_denylist: [secret.x]`, is an error and declares nothing from
+  `secret/x.sls`.
+- An `include:` of `secret..x`, of `secret/x`, and the relative
+  `..secret..x` is refused in the same way.
+- A top file entry `secret/x` is refused.
+- A relative include of `.x` inside `secret.y` is refused by the
+  denylist as `secret.x`.
+- `ok`, `web` (an `init.sls` with the relative include `.app`) and
+  `web.nginx` (a flat file with `.app`) still compile, under the
+  denylist and under `state_allowlist: [web*]`.
+- `Roots.Source` refuses the spellings on its own.
+
+`internal/state/slsname_test.go` tests `CanonicalSLS` itself. It also
+runs the compiler with a loader that folds spellings as a file server
+does but checks nothing, so that the compiler's own check is tested
+without the file server's check behind it.
+
+**Broken on purpose.**
+
+- With `CanonicalSLS` made to accept everything, the bypass came back:
+  `state.sls secret..x`, `secret/x`, `.secret.x`, `secret/./x`,
+  `/secret/x` and `secret\x` each declared `secret_x` under the
+  denylist, and so did all three include files. Four tests failed.
+- With only the `loadSLS` check removed, the file server tests still
+  passed, because `Roots.Source` refused the names.
+  `TestTheCompilerRefusesANonCanonicalNameWhateverTheLoader` failed on
+  four spellings.
+- With only the `Roots.Source` check removed,
+  `TestRootsSourceRefusesANonCanonicalName` failed.
+
+**Not changed: the hub's policy has the same shape.** The role rules
+`deny_sls` and `allow_sls` in `internal/policy/policy.go` (`checkArgs`)
+match each argument of `state.sls` and `state.apply` with `path.Match`,
+as written. So `deny_sls: [secret.x]` does not refuse `state.sls
+secret/x`. That file is being rewritten on another branch, so it was
+not edited here. The follow-up is: in `checkArgs`, when `DenySLS` or
+`AllowSLS` is set, call `state.CanonicalSLS` on each argument, refuse
+the request if an argument is not canonical, and match only canonical
+names against the lists. Salt's `state.sls` also takes `a,b`. Neither
+the node nor the policy splits on commas today (the node looks for one
+SLS named `a,b`; this was read from the code, not run), so a comma is not a way round
+today. If the node ever learns to split, the policy must split in the
+same place, before it canonicalises. A test should repeat the spellings in this section
+against a role with `deny_sls`. Until that lands, `deny_sls` is
+bypassable in the same way, but the node's own `state_denylist` now
+refuses the run.
+
+**Not verified.**
+
+- No real Salt was run. Salt's spelling behaviour comes from reading
+  `fileclient.get_state` and the include branch of `salt/state.py`.
+- No real tree was compiled. If a tree or a script calls `state.sls`
+  with a slash (`web/nginx`), it now fails with the error that gives
+  the dotted spelling. Nobody has checked the estate's trees or the
+  shared-state tree for such names.
+- Template includes (`{% include 'secret/x.sls' %}`) read a file by
+  path. They never went through `state_denylist`, and they still do
+  not. This change is about SLS names only.
+- The tests ran on macOS (Darwin 25.6) only.
+### 5.295 `file_ignore_glob` hid only the first level of what it named
+
+Review finding M-55, reproduced before it was changed.
+
+`Roots.ignored` matched each `file_ignore_glob` pattern with Go's
+`path.Match`, against the path relative to the root and against the
+base name. In `path.Match`, `*` does not match `/`. Salt matches the
+setting with Python's `fnmatch.fnmatch` (`is_file_ignored` in
+`salt/fileserver/__init__.py`), and there `*` matches any run of
+characters, `/` included. With `file_ignore_glob: [secrets/*, */er/*]`:
+
+- `secrets/a.txt` was hidden.
+- `secrets/deep/b.txt` was served and listed.
+- `secrets/deep/er/c.txt` was served and listed.
+
+A hide rule copied from a Salt tree hid less on halite, and nothing
+said so. The difference goes in the dangerous direction: files that the
+operator meant to hide were served.
+
+Two smaller differences had the same cause:
+
+- `path.Match` treats `\` as an escape and `[^a]` as a negated set.
+  fnmatch treats `\` as a literal and `[^a]` as a set of `^` and `a`.
+  Its negated set is `[!a]`.
+- A `[` with no `]` is a literal in fnmatch. `path.Match` returns
+  `ErrBadPattern`, which `ignored` read as "no match". So a rule such
+  as `a[b` hid nothing.
+
+**The change.** `internal/fileserver/fnmatch.go` is a port of CPython's
+`fnmatch._translate` to an RE2 expression. It is `fnmatchcase`, which
+is case-sensitive. That is what `fnmatch.fnmatch` is on a POSIX host,
+because `os.path.normcase` does nothing there. `ignored` now calls it.
+It is still matched against the relative path and against the base
+name. The base name match is halite's own: Salt does not do it. It
+only hides more, and it was kept.
+
+**One function for every path.** `Resolve` (and so `Read` and the
+hub's file handler) and `List` (and so the manifest) both call
+`ignored` with the same relative path, so a file cannot be hidden from
+one and shown by the other. gitfs and s3fs trees are served through the
+same `Roots` (`fetchingBackends.update` puts their directories in its
+search path), so the rule applies to them too. Salt's gitfs does not
+call `is_file_ignored` at all in the checkout that was read, so on
+halite the rule covers more backends than on Salt. That was already
+true and is unchanged.
+
+**Salt is not consistent with itself, and this does not copy it.**
+Salt's roots backend calls `is_file_ignored` with two different paths.
+`file_list` gives it the path relative to the root. `find_file`, the
+serving path, gives it `os.path.join(root, path)`, the absolute path.
+An anchored glob such as `secrets/*` does not match
+`/srv/salt/secrets/a.txt`. So on Salt that rule hides the file from the
+listing and still serves it to `cp.get_file`. halite matches the
+relative path in both places. To match the absolute path as well would
+make the cache directories of gitfs and s3fs part of what an operator's
+glob is matched against.
+
+**How it is tested.**
+
+- `TestFnmatchAgreesWithCPython` holds `fnmatch` to 1,584
+  pattern-and-name pairs in `testdata/fnmatch_cpython.json`. The answers
+  were captured on 2026-10-15 by running `fnmatch.fnmatchcase` in
+  CPython 3.15.0 on macOS (`testdata/fnmatch_cpython.py` makes the
+  file). They were not written from the documentation. The table covers
+  `*` across `/`, `?`, sets, negated sets, `]` first in a set, ranges,
+  backward ranges (`[z-a]`, `[!z-a]`), a hyphen at either end, unclosed
+  `[`, backslashes and a newline in a name.
+- `TestIgnoreGlobsHideNestedFilesAsSaltDoes` is the reproduced case on
+  a real directory. Under `[secrets/*, */er/*]`, five nested files are
+  refused by `Resolve` and `Read` and left out of `List`, and four
+  files that no rule names (`public/er.txt`, `secretsfile.txt` among
+  them) are still served and listed.
+- `TestAnUnclosedBracketIsALiteral`: the rule `a[b` hides `a[b`.
+- The existing `TestIgnoreGlobs` (`*.swp`, at the top level and in a
+  subdirectory) still passes.
+
+**Broken on purpose.**
+
+- With `ignored` put back on `path.Match`,
+  `TestIgnoreGlobsHideNestedFilesAsSaltDoes` failed: it served, read
+  and listed `secrets/deep/b.txt`, `secrets/deep/er/c.txt` and
+  `public/x/er/e.txt`. That is the reported defect. The unclosed-bracket
+  test also failed.
+- With `*` translated to `[^/]*`, the CPython table failed on every
+  pair where `*` must cross `/`.
+- With set negation removed, the table failed on `[!abc]`.
+
+**Open, not changed: a symlink to a hidden file is served under its own
+name.** This was run, not only read. In a tree with
+`pub.txt -> secrets/a.txt` and `file_ignore_glob: [secrets/*]`:
+
+- With `fileserver_follow_symlinks: true`, `Read("pub.txt")` returns the
+  contents of `secrets/a.txt`.
+- With it false, the read is refused, but `List` still returns
+  `pub.txt`. That is a separate disagreement between listing and
+  serving.
+
+Salt does the same on the first point: `find_file` checks the link's
+own path, not its target. The rule hides names, not contents, and the
+key's own documentation says it is not a security control. To fix it,
+`Resolve` and `List` would both have to check the resolved target's
+path as well, and they would have to agree. That is a separate change,
+and it was not made here.
+
+**Not verified.**
+
+- No real Salt file server was run with these globs. Salt's behaviour comes
+  from reading `is_file_ignored` and the roots backend, and from running
+  Python's `fnmatch` itself.
+- The fixture comes from CPython 3.15.0. The same generator was run on
+  CPython 3.10.22, 3.12.15, 3.13.16 and 3.14.8 (Homebrew, macOS), and
+  each gave the same 1,584 answers. On CPython 3.9.6 (the macOS system
+  Python) every pair gave the same answer except the patterns with a
+  backward range (`[z-a]`, `[!z-a]`, `[z-ab-c]`), where 3.9 raises
+  `re.error` instead of treating the range as empty. halite follows
+  3.10 and later. Which Python the estate's Salt masters run was not
+  checked.
+- Case-insensitive matching, which is what `fnmatch.fnmatch` does on
+  Windows, was not implemented. A hub runs on Linux and FreeBSD.
+- No real hub was run, and no hide rule from the estate was checked
+  against its tree. A rule that now hides more than it used to will
+  hide it from nodes too: a nested file that a state still needs is
+  now refused.
+- The tests ran on macOS (Darwin 25.6) only.
+### 5.296 A scoped role reached any node by naming a list, a compound or a pcre
+
+Audit H-01, reproduced before it was fixed. The policy decided whether a
+rule's target covered a request's target by comparing two strings, and
+the request carried no target kind. A request target with no `*?[` was
+taken to be one node ID and matched against the rule's glob with
+`path.Match`, whose `*` matches commas, spaces and `|`. Dispatch then
+compiled the same string under the kind the request named. So a role
+for `web*.prod` was allowed, and dispatched to db1.prod, for each of:
+
+- `web1.prod,db1.prod` as a list (`-L`);
+- `web1.prod or db1.prod` as a compound;
+- `web1.prod and not G@x:y or db1.prod` as a compound;
+- `web1.prod|db1.prod` as a pcre.
+
+A pcre that looks like one node ID was wider than it looks as well:
+`web1.prod` as a pcre matches `web1Xprod`, since `.` is any character.
+
+**The pair.** This is the commonest shape here: two paths that must
+agree, one reading the target as a glob and one reading it as what it
+was. The audit named the API (`authorize.go` built the question without
+the kind; `execute.go` forwarded `tgt_type`). The hub's own check in
+`jobs.go` had the same gap, so an operator submitting straight to the
+hub did not need the API. So did the mine read in `mine.go`, `DispatchAs`
+(which every runner, orchestration step and reactor reaction that
+dispatches on a principal's behalf goes through), job resume and kill,
+which are authorized as the recorded job, and the reactor's dry-run
+`wouldAuthorize`.
+
+**A second route** was `POST /v1/nodes/{id}/state`. It submits the path
+segment as a list, so `/v1/nodes/web1.prod,db1.prod/state` was two nodes
+through an endpoint that names one. A `%2C` reaches the handler as a
+comma.
+
+**The change.**
+
+- `policy.Request` carries `TargetKind`, in the flag form `Dispatch`
+  takes, and every site above passes the value it dispatches with. In
+  the hub, `policyRequestFor` takes the kind as an argument. In the API,
+  jobs are asked through `jobRequestFor`, which also takes it as an
+  argument, so it cannot be left out by mistake. The hub and the API
+  call the same `policy.AuthorizeAs`, so they make the same decision.
+- **glob**: as before. The asked string is treated as one node only if
+  it passes `pki.ValidateNodeID` (letters, digits, `.-_`), which is the
+  alphabet a node can enrol under. Before, the test was "contains no
+  `*?[`". A glob request that is not a node ID is now covered only by
+  rule-text equality or by `*`. As a glob, `web1.prod,db1.prod` matched
+  nothing, so this refuses nothing that ever ran.
+- **list**: each element, split by `target.ListIDs`, must be a valid node
+  ID inside the rule's glob. `ListIDs` is the function dispatch now
+  splits with too, so the two cannot disagree about trimming or empty
+  elements. An empty list is refused.
+- **every other kind** (compound, nodegroup, pcre, grain, grain_pcre,
+  pillar, pillar_pcre, ipcidr) is covered only by a rule whose target is
+  `*`. An unknown kind is refused before any rule is read.
+- The node test of `literalCovered` uses `target.MatchGlob`, the function
+  dispatch matches node IDs with. `VisibleNode` (the event filter) uses
+  it too.
+- The API refuses an `{id}` segment that is not a valid node ID with
+  400, before it asks the policy. This applies to `GET /v1/nodes/{id}`
+  too.
+- `halite-hub policy test` takes `--target-kind`, so that a policy test
+  in CI can ask the question the hub asks.
+
+**Why not resolve the target and check each node.** The hub can resolve
+a compound target to its nodes (`resolve`). It could check each node
+against the rule's glob, and a scoped operator could then keep compound
+targets. That was not done. The API authorizes before it forwards and
+has no fleet to resolve against. A hub-only resolution would make the
+two checks give different answers, which is the defect being fixed. And
+whether an expression stays inside a glob depends on grains and pillar
+at the moment of dispatch, which is not a question about two strings. A
+list is the form that says exactly which nodes, and that form is now
+authorized element by element.
+
+**What an operator sees.** A principal whose roles are scoped (a target
+other than `*`) is now refused for a compound, nodegroup, pcre, grain,
+pillar or subnet target. Before, such a request was allowed when its
+text happened to match the rule's glob as a literal, or exactly equalled
+the rule's target. A list is refused if any element is outside the
+grant. The refusal names the kind: `no rule in [webops] permits
+service.restart against compound target "web1.prod"`. A `*` role is
+unchanged. A mine read by a scoped `node:` principal with a compound
+target is refused in the same way. One more change: a mine read with an
+unknown `target_kind` used to fall back to glob, and is now refused.
+
+**How it is tested.**
+
+- `internal/policy`: `TestATargetIsAuthorizedAsTheKindItIsDispatchedUnder`
+  is a table of 40 rows: glob, list, compound, nodegroup, pcre, grain,
+  grain_pcre, pillar, pillar_pcre and ipcidr against `web*.prod`, an
+  unknown kind, and a `*` rule against every kind.
+  `TestADenialNamesTheTargetKind` checks the message.
+- `internal/api`: a run through `/v1/run` with `tgt_type` and
+  `expr_form`, checking that a refused run never reaches the stub hub,
+  and that an allowed one is forwarded under the kind it was authorized
+  as. A `*` role still runs each kind. `/v1/nodes/{id}/state` with `,`,
+  `%2C`, `%20`, a trailing comma and `*` returns 400 under a scoped
+  policy and under an estate-wide one, and nothing reaches the hub.
+- `internal/hub`: a real hub and operator certificates. Direct submission
+  of each escalation is refused. A list inside the grant reaches its two
+  nodes. A `*` role's compound reaches both. A scoped operator cannot
+  kill an estate-wide operator's list job. `DispatchAs` and the mine
+  read are refused for list, compound and pcre, including a node-shaped
+  `web1.example` as compound or pcre.
+
+Each was broken on purpose, and each failed:
+
+- With the old `targetCovered` restored (no kind, no `*?[`), 15 policy
+  rows failed. Every API escalation row returned 200 and reached the
+  hub. In the hub, each escalation was dispatched to db1.example, the
+  kill was allowed, `DispatchAs` dispatched, and the mine read returned
+  db1's data.
+- With the API's node-ID check removed, the estate-wide policy let
+  `web1.example,db1.example` (and `%2C`) reach the hub as a list. Under
+  the scoped policy the request was refused with 403, by the policy
+  half.
+- With the API dropping the kind, `web1,web2` as a list was refused, and
+  `web1` as a compound or pcre was allowed.
+- With the hub's `jobs.go` dropping the kind, a list inside the grant
+  was refused and `web1.example` as a pcre was dispatched. With
+  `DispatchAs` and the mine read dropping it, `web1.example` was
+  dispatched as a compound and read as a pcre.
+
+**Not verified.**
+
+- **No live hub and API together.** The API tests use a stub hub. The
+  hub tests use a real hub with operator certificates, but not the API
+  in front of it. No real estate was run against.
+- **The reactor's `wouldAuthorize`** (the dry run `reactor.test`
+  reports) now passes the reaction's kind, and `L` for a caller
+  reaction. No test checks its output. The reaction itself dispatches
+  through `DispatchAs`, which is tested.
+- **Resume** is authorized as the recorded job's kind, as kill is. Only
+  kill is tested. A job recorded before `target_kind` existed has an
+  empty kind and is judged as a glob.
+- **`mine.get` the runner** reads by the runner grant alone and is not
+  scoped by target. That is the existing design (a `runners:` grant),
+  not this defect, and it was not changed.
+- **macOS only.** The tests ran on macOS (Darwin 25.6). CI runs them on
+  the other platforms.
+### 5.297 Four functions that run caller-supplied code were not arbitrary code
+
+SPEC 23.5 says a wildcard grant never includes a function marked
+`arbitrary_code`, and a node with `require_job_signature:
+[arbitrary_code]` refuses such a function unless the job is signed
+(SPEC 25.6). Both read the same field on the signature. Four execution
+functions in `internal/builtin/cmd_more.go` run code the caller supplies
+and did not set it:
+
+| Function | What it runs |
+|---|---|
+| `cmd.script` | A script the caller names, from `salt://` or a local path. |
+| `cmd.script_retcode` | The same script, through the same `runScript`. Only the return value differs. |
+| `cmd.exec_code` | Code the caller writes, under an interpreter the caller names. |
+| `cmd.run_bg` | The program the caller names, detached. It is `cmd.run` without the wait. |
+
+So `functions: ['*']` granted all four. A role that was deliberately
+refused `cmd.run` got the same power from any of them. On a node that
+required a signature for `arbitrary_code`, all four ran unsigned.
+
+**Why 5.16's check did not see it.** The hub's
+`arbitraryCodeFunctions` merges the execution and state registries by
+name. That is how it covers `module.run`, which is a state. The *state*
+`cmd.script` was marked, so the name `cmd.script` was in the hub's set.
+The hub refused it to a wildcard, and
+`TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard` passed. The node
+reads the execution registry alone
+(`cmd/halite-node/jobsignature.go`), and the *execution* `cmd.script`,
+which is what a job runs, was not marked. The two daemons disagreed
+about the one name the test checked. The other three are not in SPEC's
+list of six names, so no list held them.
+
+This is the pair problem. The hub and the node are two computations of
+one class, and only one of them was being tested.
+
+**The change.** The four functions now declare `arbitrary_code`. The
+hub's computation is not changed: it still merges, for `module.run`.
+Three tests now hold the two paths to the same answer:
+
+- `TestEveryFunctionThatRunsCallerCodeIsMarked` (`internal/builtin`)
+  reads the execution registry directly, which is the node's view. It
+  applies three rules. First, an explicit list (the cmd runners,
+  `cmd.shell`, the four above, `file.write`, `file.replace`). Second, a
+  state that declares `arbitrary_code` makes its execution twin declare
+  it. Third, every mutating function in the `cmd` module declares it,
+  so a new `cmd.*` function is covered without anyone adding it to a
+  list. The second and third rules each fail if they stop finding
+  anything to check.
+- `TestTheHubAndTheNodeAgreeOnArbitraryCode` (`cmd/halite-hub`) requires
+  that, for every execution function, the hub's merged set and the
+  execution registry give the same answer.
+- `TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode`
+  (`cmd/halite-node`) sends each function unsigned to a node that
+  requires `[arbitrary_code]`, and requires a refusal that names the
+  class.
+
+With `cmd_more.go` restored to the code before this change, all three
+failed. The builtin test named all four functions under the list rule
+and the `cmd` rule, and `cmd.script` under the twin rule. The node test
+accepted all four unsigned. The agreement test named `cmd.script`.
+`TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard` still passed,
+which is the blind spot shown directly.
+
+**The handbook had the same gap.** Chapter 26 quotes the "never
+granted by a wildcard" line of `halite-hub policy show` and says it is
+the output for this build. Nothing compared the two. After this change
+the page was three names short (the hub already had `cmd.script`). The
+line was replaced with the output of `policy show` run on
+`contrib/examples/policy.yaml` with this build.
+`TestChapterTwentySixListsWhatPolicyShowPrints` (`cmd/halite-hub`) now
+reads the names from the chapter and compares them with
+`arbitraryCodeFunctions`, in both directions. It failed with the old
+line restored (three names missing), and it failed with `test.ping`
+added to the line.
+
+**What operators see.** A role that granted these functions through a
+wildcard (`'*'`, `'cmd.*'`) no longer has them. A role that needs one
+must name it, as `break_glass` in `contrib/examples/policy.yaml` names
+`cmd.run`. A node that requires a signature for `arbitrary_code` now
+refuses these four unsigned.
+
+**Still open: the second tier.** These functions are not marked, and
+each one can make the machine run something the caller chose, later or
+indirectly. This change does not decide whether they are in the class:
+
+- `at.at` (a command line for `at(1)`);
+- `win_task.create` (a command for the Task Scheduler);
+- the `cron.present` state (a command line in a crontab; there is no
+  `cron.set_job` in this build);
+- `file.append`, `file.patch`, and the `file.managed` state with chosen content (a
+  file such as a crontab, a unit or a `sudoers` line, as 5.16 said of
+  `file.write`);
+- the `ssh_auth.present` state (a key that gives a shell);
+- the `sudo.present` state (a rule that gives root).
+
+5.16 marked `file.write` and `file.replace` for this reason, so the line
+is already not "runs a process now". Where it is drawn is a decision for
+SPEC 23.5, not for this change.
+
+**Not verified.**
+
+- No policy file on a running hub, and no node with
+  `require_job_signature`, was used for this change. The policy decision
+  was tested through `arbitraryCodeFunctions` and the policy package, and
+  the node refusal through `acceptJob` in a test, not through a real
+  connection from a real hub.
+- The tests ran on macOS (Darwin 25.6) only. CI runs them on all four
+  platforms.
+- The second-tier list above came from reading parameter names in the
+  registry. It is not complete.
+### 5.298 `cpan.module_version` ran the module name as Perl
+
+`cpan.module_version` asked perl for a module's version like this:
+
+```
+perl -M<module> -e 'print $<module>::VERSION'
+```
+
+The name was put into perl's source twice. With the module
+`Carp;BEGIN{print "INJECTED\n"}`, perl ran the `BEGIN` block, once from
+each copy. This was reproduced with perl 5.44.0 on macOS before the fix,
+and again through the function itself in the test below, which returned
+`"INJECTED\nINJECTED"`.
+
+The function is declared non-mutating, with no test mode, and not
+`arbitrary_code`. So a role with read-only functions, or with a wildcard,
+could reach it. On a node it runs as root. A grant to read a version was
+a grant to run any Perl as root. It was found by reading the code (audit
+H-16), not reported from a host.
+
+**The change.**
+
+- The name must match `^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$`.
+  Any other name is refused with an error before anything runs. This is
+  narrower than what perl accepts: the old `'` separator, a leading or
+  trailing `::`, and Unicode identifiers are refused. The refusal is an
+  error, not the empty string the function returns for a module that is
+  not installed, because nothing was asked of the machine.
+- perl now gets the name as an argument, after `--`, and not in its
+  source. The program is fixed: it turns `::` into `/`, does a `require`
+  of the file, and prints `$VERSION`. This is a second wall. It is not
+  enough alone: without the check, `..::..::tmp::evil` becomes a
+  `require` of `../../tmp/evil.pm`. The test includes that name.
+- `require` replaces `-M`, so the module's `import` is no longer called.
+
+**Checked against real perl** (5.44.0, Homebrew, macOS). For `Carp`,
+`JSON::PP`, `List::Util` and `CPAN`, the new form prints the same version
+as the old one. For a module that is not installed, both exit 2.
+`TestCpanModuleVersionAgainstRealPerl` repeats the `Carp` and
+`List::Util` comparison and the not-installed case on any machine with
+perl, and skips without it.
+
+**How it is tested** (`internal/builtin/lang_cpan_test.go`):
+
+- `TestCpanModuleVersionRefusesANameThatIsNotAPackage`: thirteen bad
+  names, including the injection, `..::..::tmp::evil`, `-e` and
+  `Foo'Bar`. Each must be refused, and no command may run.
+- `TestCpanModuleVersionPassesTheNameAsData`: for four valid names, the
+  name is the last argument, after `--`, and is in no other argument.
+- `TestCpanModuleVersionAgainstRealPerl`: with real perl, the argument
+  form does not run the injection even with the check bypassed, and the
+  function refuses it.
+
+Each was broken on purpose. With the check removed, the refusal test
+failed on every bad name. With the check removed and the old `-M` form
+restored, all three failed. Real perl printed `INJECTED`, and the
+function returned `"INJECTED\nINJECTED"`.
+
+**Other places that put a name into interpreter source.** All of
+`internal/builtin` was searched for `perl`, `python`, `ruby`, `node`,
+`php`, `sh`, `powershell` and `osascript` invocations, and for `-e`,
+`-M`, `-c` and `-Command` arguments. `cpan.module_version` was the only
+function that puts a caller's value into interpreter source.
+`cpan.version` runs a fixed program. Two neighbours are a different class
+and were not changed:
+
+- `cpan.install` passes the names to `cpan -i` as arguments. A name that
+  starts with `-` may be read as an option by `cpan`; this was not tried.
+  The function is
+  mutating and installs CPAN code, which runs `Makefile.PL`, so it is
+  already arbitrary code in all but its flag. Whether it should carry
+  `arbitrary_code` is the same open question as the second tier in the
+  ledger section for audit H-09.
+- `virtualenv.create` takes `python`, a path to an interpreter that it
+  runs. It is mutating, and the same question applies.
+
+**Not verified.**
+
+- Only Homebrew perl 5.44.0 on macOS was run. The perl on the fleet
+  (FreeBSD's `perl5` package, Ubuntu's `/usr/bin/perl`) was not run. The
+  new program uses `require`, `s{}{}g` and symbolic references, which
+  every perl 5 has, but no FreeBSD or Linux perl ran it.
+- The test runs perl with this process's environment. A node runs it
+  with the clean environment of SPEC 25.4, and that was not reproduced.
+- A valid name still loads that installed module's code from `@INC`.
+  This was true before as well, and the check does not change it.
+### 5.299 `file.line` compared `match` as a substring, so `^PermitRootLogin` never matched
+
+Audit finding H-08. `file.line`'s `match`, `before` and `after` were
+compared as plain text: a line matched when it contained the value, or
+equalled it once both were trimmed. SPEC section 10.4's table says
+`file.line` patterns are RE2 by default, and the comment on the matcher
+claimed the substring test was "the comparison Salt uses" and that it made
+`match: '^PermitRootLogin'` work. Neither was true. Measured before the
+fix: `mode: ensure`, `match: '^PermitRootLogin'`, `content:
+'PermitRootLogin no'` against `Port 22` / `PermitRootLogin yes`, run three
+times, reported a change on every run and appended another
+`PermitRootLogin no` each time, and the `yes` line stayed first. sshd takes
+the first value it reads for a keyword, so the state reported that root
+login was off on a host where it was still on.
+
+Salt's matcher is `_regex_to_static` in `salt/modules/file.py` (read at
+f37cdcd1c9 in `~/saltstack`, not run): every one of `match`, `before` and
+`after` is compiled with `re.compile(p, re.DOTALL)` up front, and a line is
+kept when the pattern *searches* it or occurs in it as plain text
+(`compiled.search(line) or line.count(p)`). A pattern that does not compile
+raises. An empty or missing pattern is "not given", not the pattern that
+matches every line. The same expression run in plain Python 3 `re` (no
+Salt import, which needs dependencies this Mac does not have) gave:
+`^PermitRootLogin` finds the `yes` line; `Port` finds `Port 22` *and*
+`GatewayPorts no`; `^Port\b` finds only `Port 22`; `allow(all)` finds the
+line `allow(all)` only through the plain-text half; `PermitRootLogin [yes`
+and `(` raise.
+
+halite now does the same, in `linePattern` (`internal/builtin/file_line.go`):
+RE2 search through `regexcompat` with DOTALL, or a plain fragment, for all
+three arguments, compiled before anything is decided. A pattern that does
+not compile, or that uses a construct RE2 lacks, fails the state naming the
+argument, and the file is not touched. The execution function `file.line`
+is the state's own implementation (`registerFileEditAsExec`), so it changed
+with it.
+
+What a tree sees change:
+
+- An anchored or otherwise regex-shaped `match`, `before` or `after` now
+  matches the lines it says. This is the fix.
+- An **unanchored** value is a search, as it was a substring before:
+  `match: Port` still matches `GatewayPorts`. Unchanged, and Salt's.
+- A value with regex metacharacters that is meant literally still matches
+  where it occurs as written, through the plain-text half; it may now *also*
+  match lines its regex reading finds (`a.b` matches `axb`). That is Salt's
+  behaviour.
+- A value that is not a valid RE2 pattern (`[yes`, a leading `*`, a
+  lookahead) now fails the state where it used to be compared as text. When
+  `match` is unset it defaults to `content`, so a `content` like `*.*
+  @loghost` with no `match` fails too. Salt fails on the same `content`
+  when neither `before` nor `after` is given; with one of them given, Salt
+  never compiles `content` and halite does, so there halite fails where
+  Salt would not.
+- The trimmed-equality half is gone: a `match` with leading or trailing
+  whitespace the line lacks no longer matches it. Salt never had it.
+- `mode: absent` or `delete` with neither `match` nor `content` used to
+  delete **every line in the file** (an empty substring is in every line;
+  `TestFileLineMatchIsARegexSearch` watched the old code leave the file
+  empty). It now fails the state. Salt does nothing in that case and says
+  nothing; refusing is the louder of the two choices and the one this
+  project prefers.
+
+Not changed, and different from Salt, recorded here rather than fixed:
+halite's `ensure` with a `match` and no `before`/`after` replaces every
+matching line, or appends; the source read above raises "Unable to ensure
+line without knowing where to put it" for that case. halite's `replace`
+rewrites every matching line where Salt rewrites the first; halite's
+`delete` removes every matching line where Salt removes the lines equal to
+the first match; and `before`/`after` take the first match where Salt
+requires exactly one. Each of those is a tree-visible difference of its
+own and needs its own entry if it is changed.
+
+`TestFileLineMatchIsARegexSearch` (internal/builtin) holds it: the sshd
+case run three times (a change on run 1 only, and the file is `Port 22` /
+`PermitRootLogin no` after every run), `^Port\b` leaving `GatewayPorts`
+alone, an unanchored `Port` reaching it, `$` and `\s`, a literal with
+parentheses, an anchored `after`, invalid and unsupported patterns for
+`match` and `before`, a `content` standing in for `match`, and the empty
+delete. With the old `file_line.go` restored it failed nine of its eleven
+cases (the unanchored and literal cases pass on both, as they should); with
+the plain-text half removed from the new matcher, the literal case failed.
+
+Not verified: no real sshd read the result, no real Salt was run against
+these cases (the Salt behaviour above is from reading its source and from
+re-running its matcher expression in plain Python), and it ran on macOS
+only. `file`'s evidence level is unchanged.
+### 5.300 An archive could write, and delete, outside its destination through its own symlinks
+
+`archive.extracted` and `archive.extract` said, in the module's own
+doc comment, that "a symlink pointing outside the destination, is
+refused by name". By name was the whole of it. Each entry's name, and
+each symlink's target, was checked lexically against the destination,
+and the entry was then written by path, so the kernel resolved it
+through whatever the earlier entries had put on disk. An archive is a
+sequence of operations, not a list of names. These four entries are
+each lexically inside the destination:
+
+    a/            directory
+    a/b        -> ..
+    a/b/L      -> ../..
+    L/escaped.txt
+
+`a/b` is the destination itself, so `a/b/L` lands at `dest/L` and
+points two levels above the destination, and `L/escaped.txt` is written
+there. The audit (H-03) reproduced it, and so does
+`TestArchiveChainedSymlinksCannotWriteOutside` against the old
+extractor. The same shape removed a file outside the destination:
+`a/b/c -> ..` then `a/b/c/victim -> z` ran `os.Remove` on the outside
+`victim` before `os.Symlink`, with `overwrite` unset, because the
+symlink case removed unconditionally
+(`TestArchiveSymlinkCannotRemoveAFileOutside`). The same unchecked path
+also covered the `MkdirAll` of every parent, the atomic write, the zip
+extractor, and the ownership pass: `user:`/`group:` ran `Lchown` as root
+on the archive's names, and a directory on the way that was a link out
+of the destination handed its target to that account.
+
+The archive's own links are one way in. A link already on disk is the
+other: the destination is commonly handed to `user:`, and that account
+could plant `dest/evil -> /etc` before the next run.
+
+The trigger is a hostile archive: `skip_verify`, a compromised
+`salt://` file server, or a local path somebody else can write. Nodes
+run as root.
+
+**What changed.** Every write, `mkdir`, `remove`, `symlink` and `chown`
+under the destination now goes through an `os.Root` opened on it (Go
+1.25's `Root.MkdirAll`, `Symlink`, `Lchown` and `Rename`; `go.mod` says
+1.26). The root resolves each component at the moment of the call and
+refuses one that leaves, so the check and the act cannot disagree, and a
+link that stays inside is still followed. That matters: the
+alternative, refusing any symlinked directory on the way, also refuses
+an archive that ships `current -> lib` and then `current/x`, and
+"hardened" is not worth breaking a JDK. In detail:
+
+- File writes use a new `atomicfile.WriteIn(root, name, ...)`: the same
+  temporary-file, `fileperm`, sync, rename, directory-sync idiom as
+  `Write`, with each step relative to the root. It lives in
+  `internal/atomicfile` so that it is not a seventh copy (5.144). The
+  rename replaces a symlink at the final name rather than writing
+  through it.
+- A symlink entry honours `overwrite`, as a file does. Unset, an
+  existing entry is left alone; set, it is removed through the root.
+- After a link is made, `root.Stat` resolves it the way the kernel
+  will. If that leaves the root, the link is removed and the
+  extraction fails. A link that does not resolve yet is allowed, and
+  every link the run made is checked again once the run has finished,
+  because `x -> p/..` is lexically the destination and is its parent
+  once a later `p -> .` exists
+  (`TestArchiveDanglingLinkIsCheckedOnceItsTargetExists`). That is a
+  unix escape only. Windows cleans `p\..` lexically before it resolves
+  anything, as `os/root_windows.go` documents, so there the link is the
+  destination itself. CI's windows-2022 leg showed it: the link was kept,
+  correctly, and the test now skips on Windows and says why.
+- "Does this entry exist?" (for `overwrite`, and for the state's
+  "what is missing") is `root.Lstat`. An error that is not "it is not
+  there" is a refusal, not "absent, so write it".
+- Ownership is checked with `root.Lstat` and set with `root.Lchown` on
+  unix. Windows and the other platforms have no root-relative form of
+  their ownership call, so there the name is checked through the root
+  and then set by path. That leaves a race with a concurrent writer in
+  the destination which the unix path does not have.
+- The lexical checks stay. They make the early, readable refusal, and
+  the only one a dry run can make.
+
+Hard links (`tar.TypeLink`) were and are skipped, so their `Linkname` is
+never resolved against anything. A zip carries no symlink type this
+extractor creates: a zip symlink entry is written as a regular file
+holding the target text, as it was before. That is a Salt difference
+in its own right, but it is not this defect.
+
+**gitfs.** `internal/gitfs` `safeJoin` is lexical too, and is sound for
+a different reason. It extracts into a staging directory it has just
+removed and recreated, and it refuses every symlink entry. So there is
+never a link on disk for a name to be resolved through. The two
+extractors do not share code because their policies differ: gitfs
+refuses links, and an archive must keep them. If gitfs ever accepts a
+link, or extracts into a directory it did not just create, it needs a
+root as well.
+
+**Demonstrated.** On macOS (Darwin 25.6, as an unprivileged user; the
+break-and-restore runs under the local Go 1.27.2, the final runs under
+the pinned go1.26.6), with the new tests run against `origin/main`'s `archive.go`:
+`escaped.txt` was written two directories above the destination; the
+outside `victim` was replaced by a symlink; writes, links and directories
+went through a planted `dest/evil` link for both values of `overwrite`;
+a zip wrote through it; the late-resolving link was kept; an existing
+link was replaced with `overwrite` unset; and `enforceArchiveOwnership`
+moved an outside file from gid 20 to 101 through `dest/evil`. All pass
+with the fix. Each layer was then broken alone, and a test failed each
+time:
+
+| Broken | Fails |
+|---|---|
+| `linkStaysInside` always nil | the chained test (the escaping link is left behind), the dangling-link test |
+| the final pass over links skipped | the dangling-link test |
+| file writes and parents by path, not root | the planted-link test, the zip test |
+| `entryExists` by path, not root | the planted-link test (`evil/l` is skipped as "existing") |
+| ownership by path, with no root check | the ownership test (the gid changes) |
+
+`TestArchiveInternalSymlinksStillExtract` holds the shape the fix must
+not cost: a `./` entry, `lib/libfoo.so -> libfoo.so.1`,
+`share/lib -> ../lib`, and a file written through `current -> lib`. It
+extracts three times, twice with `overwrite` unset and once with it set.
+
+**Not verified.**
+
+- **Not run as root**, and so not with `user:`. The ownership test
+  changes a group, which an unprivileged account can do to its own
+  files. That `root.Lchown` holds as root comes from the same code
+  path, not from a run.
+- **Not run on Linux or FreeBSD.** `os.Root` uses `openat` with
+  `O_NOFOLLOW` on both. That was read in go1.26.6's
+  `os/root_unix.go`, not seen in a run. CI runs the tests on all four platforms.
+- **Windows** builds and vets. Its ownership path is the
+  check-then-set described above, and nothing ran it.
+- **No hostile archive came from a real file server.** The archives are
+  built in the tests with `archive/tar` and `archive/zip`.
+- **The race with a concurrent writer** in the destination, which the
+  root closes on unix, has no test. That it is closed is a property of
+  `os.Root`, read from its documentation.
+### 5.301 A background command ignored `runas` and ran as root
+
+`cmd.run` with `bg: true` and `runas: deploy` started the command as the
+node's own account -- root -- and reported that it had started. So did
+`cmd.run_bg` with `runas`. Nothing in the result said the account had
+been dropped. Found by reading `OSRunner.Run`, then reproduced:
+`OSRunner.Run` with `RunAs: "no-such-user"` returned an error in the
+foreground and a pid with `Background: true`.
+
+**Two paths, each with its own reason.**
+
+- `OSRunner.Run` applied the umask, the directory, the environment and
+  stdin, then took the `Background` branch to `startAndRelease`, and
+  only after it called `applyCredential`. The background child was built
+  from everything but the account. The `Background` field's own comment
+  says it lives on the command so that the interpreter, the umask and
+  the environment are decided in one place; the account was the one it
+  missed.
+- `cmd.run_bg` did not use `Background` at all. `runInBackground` built
+  its own `os/exec.Cmd` -- written before the runner could start a
+  process without waiting -- and never read `runas`, though its
+  signature declares it. It also never read the context's `RunAs` and
+  `Umask`, the per-state options of SPEC 11.7.
+
+Salt's `_run` (`salt/modules/cmdmod.py`) treats `bg` as "do not wait and
+ignore the exit code" and then goes on to the same `runas` handling as a
+foreground command, including `User '...' is not available` for an
+unknown account. That was read, not run.
+
+**The change.** `applyCredential` moves above the `Background` branch, so
+the background child is built from the same four things as the
+foreground one: umask, directory, environment, account. What stays below
+the branch -- `confineTree`, `WaitDelay`, the output pipes, the timeout
+-- is about waiting for the child, which a background command does not
+do (`cmd.run` already refuses `bg` with `timeout`). `stdin` is still
+dropped for a background child, as before, by `startAndRelease`.
+
+`runInBackground` now builds an `exec.Command` with `Background: true`,
+`runas`, `cwd` and `env`, and hands it to the runner. There is one
+implementation of starting a child, not two. A side effect: without
+`env`, `cmd.run_bg` now gets the runner's default environment (its
+`DefaultEnv`, else `CleanEnv`) rather than always `CleanEnv`, which is
+what `cmd.run` gets.
+
+**How it is tested.**
+
+- `TestRunAsRefusesAnUnknownAccountInTheBackgroundToo`
+  (`internal/exec`): `runas: halite-no-such-account` must fail, naming
+  the account, with and without `Background`.
+- `TestRunAsReachesABackgroundChild` (`internal/exec`, unix): an
+  unprivileged process cannot switch to any account, even its own,
+  because the switch calls `setgroups(2)`. So `runas` set to the current
+  user must fail with "operation not permitted" in both modes. The
+  foreground half is the control. It skips as root.
+- `TestCmdRunBgHonoursRunAs` (`internal/builtin`): `cmd.run_bg` with an
+  unknown account fails, and under a recorder the command carries
+  `RunAs`, `Dir` and `Background`.
+- `TestCmdRunBackgroundHonoursRunAs` (`internal/builtin`): `cmd.run` with
+  `bg: true` and the context's `RunAs` (where the compiler puts a state's
+  `runas`) set to an unknown account fails, naming it.
+
+Each fix was broken on purpose. With the old `exec.go`, both `internal/exec`
+tests failed on their background half (each returned a pid) and both
+`internal/builtin` tests failed (the old `runInBackground` and the old
+runner each started the program). With the old `cmd_more.go` alone,
+`TestCmdRunBgHonoursRunAs` failed and the others passed.
+
+**Not verified.**
+
+- **No privilege drop was observed.** The tests ran unprivileged on
+  macOS (Darwin 25.6). They prove that the credential reaches the child's
+  start; they do not watch a background process run as another account.
+  That needs root, and was not run.
+- **Not run on Linux or FreeBSD.** CI runs the unit tests on all four
+  platforms. The setgroups refusal the second test leans on is the
+  kernel's on each unix; it was seen only on macOS here.
+- **Windows** refuses every `runas` (`credential_windows.go`), and now
+  refuses it for a background command too. Not run on Windows.
+### 5.302 A `listen` reaction ran without its state's guards or account
 
 The handbook (chapter 6) says `listen` is `watch` with the reaction
 deferred. It was not. A watch reaction runs through `execute`, which binds
@@ -23998,6 +25261,9 @@ control passed. With `runListeners` calling `execute` directly
   it does not see the chunk's `runas`. That is true for the main pass as
   well and was not changed here. Whether Salt applies `runas` to a
   `fun:` condition was not checked.
+
+
+
 
 ## 6. Everything else not started
 

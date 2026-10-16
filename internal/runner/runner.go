@@ -429,7 +429,7 @@ func mustGet(m *value.Map, key string) any {
 // root, an `onlyif: nginx -t` fired unguarded, and a state skipped in the
 // main pass by `creates:` ran its mod_watch at the end anyway. Salt's
 // call_listen copies the whole low chunk, drops only the requisite keys,
-// and sends it through call(), which applies all of them. DIVERGENCE 5.290.
+// and sends it through call(), which applies all of them. DIVERGENCE 5.302.
 func (r *Runner) runChunk(ch *state.Chunk, watchFired bool) (res states.Result, held bool) {
 	if gate, held := r.evaluateGates(ch); held {
 		return gate, true
