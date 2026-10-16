@@ -785,13 +785,13 @@ func TestPkgInstalledPlansAndReports(t *testing.T) {
 
 func TestPackageSpecsReadsBothForms(t *testing.T) {
 	// `pkgs` as a plain list.
-	names, versions := packageSpecs(value.MapOf("pkgs", []any{"curl", "jq"}))
+	names, versions, _ := packageSpecs(value.MapOf("pkgs", []any{"curl", "jq"}))
 	if len(names) != 2 || len(versions) != 0 {
 		t.Errorf("names=%v versions=%v", names, versions)
 	}
 	// `pkgs` carrying pinned versions, which is Salt's
 	// list-of-single-key-mappings form.
-	names, versions = packageSpecs(value.MapOf("pkgs", []any{
+	names, versions, _ = packageSpecs(value.MapOf("pkgs", []any{
 		value.MapOf("nginx", "1.24.0"),
 		value.MapOf("curl", nil),
 	}))
@@ -799,7 +799,7 @@ func TestPackageSpecsReadsBothForms(t *testing.T) {
 		t.Errorf("names=%v versions=%v", names, versions)
 	}
 	// A bare name plus a version.
-	names, versions = packageSpecs(value.MapOf("name", "nginx", "version", "1.24.*"))
+	names, versions, _ = packageSpecs(value.MapOf("name", "nginx", "version", "1.24.*"))
 	if len(names) != 1 || versions["nginx"] != "1.24.*" {
 		t.Errorf("names=%v versions=%v", names, versions)
 	}
