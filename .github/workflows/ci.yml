@@ -169,7 +169,7 @@ jobs:
           # drifting below go.mod's -- `auto` would download and say
           # nothing, `local` would fail -- and buildpolicy already makes
           # that drift impossible.
-          go-version: "1.26.6"
+          go-version: "1.27.2"
           cache: true
       - run: make fmt-check
       - run: make vet
@@ -189,7 +189,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.26.6"
+          go-version: "1.27.2"
           cache: true
       - run: make build-all
 
@@ -224,7 +224,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.26.6"
+          go-version: "1.27.2"
           cache: true
 
       - name: test (make)
@@ -337,7 +337,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.26.6"
+          go-version: "1.27.2"
           cache: true
 
       - name: race (make)
@@ -501,7 +501,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.26.6"
+          go-version: "1.27.2"
           cache: true
       # fips-test builds with GOPROXY=off, and fetching a toolchain
       # needs the proxy. So if the runner's Go is older than the pinned
@@ -556,7 +556,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.26.6"
+          go-version: "1.27.2"
           cache: true
       - name: the runner's Go is the pinned toolchain
         run: .github/toolchain-check.sh

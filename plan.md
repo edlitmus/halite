@@ -1593,7 +1593,7 @@ unchanged.
    tell which they have. A fourth level would say it; so would a sentence
    in each affected function's documentation.
 
-   DIVERGENCE 5.290 narrowed the second meaning without settling it.
+   DIVERGENCE 5.308 narrowed the second meaning without settling it.
    `pro.*` and `dnf_module.*` declared unreliable and acted under a
    direct `--test` call; they now run nothing and say which command they
    would have run, which is the documented meaning. The ten `cmd.*`
