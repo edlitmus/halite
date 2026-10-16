@@ -3629,6 +3629,10 @@ skipping the anchor-reference check.
 
 `jail` remains the FreeBSD row's one genuine absence.
 
+**Corrected by 5.315.** The `quick` paragraph above is wrong for rules
+that overlap. `quick` makes the anchor's order decisive, not irrelevant,
+and the sort it describes put every `block` above every `pass`.
+
 ### 5.32 `jail`, written against what `pf` cost
 
 `jail` was the FreeBSD row's last absence, and it was written the day
@@ -26677,6 +26681,88 @@ it makes of the record. The grammar was checked against macOS's tree
 only; FreeBSD's and Linux distributions' trees, including their `posix/`
 and `right/` copies, were not walked. The `timezone` evidence level is
 unchanged: this narrows what it accepts and adds no new run.
+### 5.315 `pf` sorted its anchor, so a deny shadowed every allow inside it
+
+5.31 says `quick` "makes a rule's effect independent of the anchor's
+order", and that the anchor is "rewritten and sorted on every change".
+The second half was true. The first half is true only for rules that
+cannot match the same packet. That is the exculpatory shape CLAUDE.md
+warns about: a stated reason ("`quick`, so the order does not matter")
+in place of an open question, and the sort survived on it for this
+long.
+
+With `quick`, pf stops at the first rule that matches. So the order of
+two overlapping rules is the whole of what they do. `Apply` ran
+`sort.Strings` on the anchor before every load. `block drop` and
+`block return` sort before `pass`, so every deny in the anchor sat above
+every allow. Given
+
+	firewall.denied:  from 10.0.0.0/8
+	firewall.allowed: from 10.0.0.5, port 22/tcp
+
+in either order, the anchor was loaded deny first. The bastion's ssh
+matched the /8 and was dropped, and the allow matched nothing. Found by
+reading, in the issue 321 audit (M-38), and reproduced against the
+provider with a recording runner. It was not seen on a host.
+
+It fails closed. A sorted anchor can block traffic an allow was written
+to admit. It cannot admit traffic a deny was written to refuse, because
+every allow is below every deny. That is why nobody would have noticed
+it as an open port.
+
+**The rule now.** A rule not in the anchor is appended to its end. A
+rule already in it keeps its place. Removing a rule leaves the others
+where they were. So the order in the anchor is the order `Apply` was
+called in, and in a state run that is the order the states ran in. That
+is ufw's rule too: `ufw allow` appends, and a rule it has already is
+skipped where it stands. The two providers of `firewall` now agree on
+which of two overlapping rules wins: the first one declared.
+
+**What it cannot do.** Each state knows its own rule and none of the
+others. So a rule that is present is converged wherever it sits.
+Swapping two states in an SLS file does not reorder an anchor that is
+already loaded, on pf or on ufw. And **an anchor loaded by a build that
+sorted keeps the sorted order** after the upgrade, because every rule in
+it is present. To get the declared order, flush the anchor
+(`pfctl -a halite -F rules`) and apply the states again. Between the two
+steps the anchor holds nothing, so its denies are gone too, and the
+traffic falls to the rest of pf.conf. A state that owns the whole
+ordered anchor, or an explicit position on each rule, would close this
+gap. Neither exists, and neither was added here, because both change the
+module's signature.
+
+**How it is tested.** `firewall_pf_order_test.go` runs `Apply` against
+a recording `pfctl`:
+
+- allow then deny, against the anchor pf printed after the allow, loads
+  allow then deny;
+- deny then allow loads deny then allow;
+- removing the last of three rules loads the first two in their order;
+- an anchor that holds the rule is not reloaded, in the declared order
+  and in the sorted one. The second case records the limit above.
+
+Each was broken on purpose. With `sort.Strings` put back, the
+allow-then-deny test and the removal test failed. With a reversed sort
+(every `pass` first, which fails open), the deny-then-allow test failed.
+
+**Not verified.**
+
+- **No real pf ran this.** The `pfctl -s rules` lines in the tests have
+  the shape mail.edlitmus.info printed for 5.31 (`port = N`, and
+  `flags S/SA keep state` on a tcp pass), but the lines themselves are
+  synthetic. No host printed a rule with these addresses.
+- **That `pfctl -s rules` lists an anchor in load order** is pf's
+  documented behaviour, and `Apply` depends on it: it rebuilds the
+  anchor from what pf printed. Nothing in this repository has watched a
+  real pf print it.
+- **That the first match wins in an anchor** was not seen on a packet
+  either. It comes from pf.conf(5), not from a run.
+- **The state engine's order.** "The order the states ran in" is the
+  engine's order: declaration order, adjusted by requisites. This change
+  did not test it with the engine.
+- **Hosts already converged.** It is not known whether any host in the
+  fleet has an anchor with overlapping rules. Any that does keeps the
+  sorted order until it is flushed, as above.
 
 
 
