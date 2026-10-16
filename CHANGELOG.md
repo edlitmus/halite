@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `service` starts and enables systemd units whose names contain a dot
+
+On systemd, a unit name with a dot in it, such as `php8.2-fpm`, was sent
+to systemd's D-Bus API without `.service`. systemd refused it. The state
+read the unit's status correctly, then every start, stop, restart,
+reload, enable, disable, mask and unmask of it failed. A name now gets
+`.service` unless it ends in one of systemd's unit types (`.socket`,
+`.timer`, `.slice` and the rest). The `systemctl` fallback gets the same
+name. This has not yet been run against a real systemd. See DIVERGENCE
+5.309.
+
+
 ### A dry run no longer masks units, changes files, or detaches Ubuntu Pro
 
 Thirty-four execution functions changed the node when they were called
