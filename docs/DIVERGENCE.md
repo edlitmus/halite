@@ -27377,7 +27377,164 @@ since macOS has no /proc.
   stopped.
 - **alma8 under a stall.** Its leg ran the new test green (above) but
   never failed the old way, so no limit has ever fired on either leg.
-### 5.320 `allow_mods` never judged a name `halite-hub orch run` sent
+### 5.320 `allow_sls` authorized the highstate it was meant to exclude
+
+SPEC 23.5 says a role "may be permitted `state.apply` but restricted to
+a set of SLS names", and `allow_sls` is how a policy says which.
+`checkArgs` enforced it by looping over the request's positional
+arguments and refusing any name outside the list. A request with no
+positional arguments never entered the loop, so it was allowed -- and
+the node, handed a state job with no positional arguments, compiles the
+top file (`runStateJob`: `CompileHighstate` unless `len(j.Arg) > 0`).
+So the role the example policy calls `webops`, limited to `webserver.*`
+and `common.*`, could run everything the top file assigns to its
+targets by asking for less. Issue 321's audit found it as M-01;
+`halite-hub policy test` showed it on 2026-10-16 with the example
+policy (below).
+
+The reach is bounded by the top file: the bypass runs what the top file
+assigns to the targets the rule already covers, not any SLS in the
+tree. That is still not "a set of SLS names", and on a node whose top
+file assigns `database.*` beside `webserver.*` it is exactly the
+database the restriction was written to keep out.
+
+The triage of that audit corrected one of its claims:
+`docs/configuration.md`'s sentence about `state_allowlist` being
+enforced beside `allow_sls` is not contradicted, because that key is the
+node's own check and is applied per SLS during a highstate too. That was
+the triage's reading and was not re-checked here. If it holds, a node
+with `state_allowlist` set was protected from this regardless; one
+without it, the default, was not.
+
+**Two more spellings of the same request**, found while reading the
+node's half rather than reported by the audit:
+
+- **`state.highstate` ignores its arguments.** `runStateJob` compiles
+  the highstate for it whatever the job carries (`fn != "highstate"`
+  guards the SLS branch). So a rule that put `allow_sls` on
+  `state.highstate` and an operator who named an allowed SLS passed the
+  loop and got the whole top file.
+- **`mods=` as a keyword is not an SLS name to the node.** The node
+  reads only positional arguments, so `state.apply mods=webserver.nginx`
+  is a highstate on the node, and the policy -- which judged only
+  positional arguments -- let it through.
+
+**The fix.** When the constraint for the requested function has
+`allow_sls`, `checkArgs` now refuses `state.highstate` outright and any
+other function when the request has no positional arguments, before the
+loop. The reason names the highstate and the allowed patterns:
+
+```
+denied: state.apply with no SLS names runs the highstate, which is not in the SLS names this role may apply (webserver.*, common.*)
+```
+
+The check is keyed on the constraint, not on a list of state functions,
+because `Rule.Args` is keyed by function name already and every state
+function the node runs (`apply`, `sls`, `highstate`, `show_*`) takes the
+highstate path with no positional arguments. So `state.sls` and the
+`state.show_*` renderers are covered by the same line when a rule puts
+`allow_sls` on them, and a role whose function has no `allow_sls` --
+`readonly`'s `state.show_*` in the example -- is untouched.
+
+**What an operator sees.** A role with `allow_sls` can no longer run the
+highstate. `run 'web*' state.apply` from such a role is refused where it
+used to be dispatched; a role that is meant to run the highstate needs a
+rule for it with no `allow_sls`. A schedule, reactor or orchestration
+step that is authorized through the policy under such a role would be
+refused in the same way; which of those paths reach `Authorize` with a
+narrowed role was not checked for this change. This is the reason the change was held back from the first
+pass at issue 321 and carries a CHANGELOG entry.
+
+Chapter 24's self-healing scenario says of its `allow_sls: ['playground']`
+role that the principal "may apply that SLS and nothing else". Before
+this change that was false -- a bare `state.apply` under the role was
+the highstate -- and it is true now. Its reactor names `playground`, so
+the scenario itself is unaffected.
+
+#### What was run
+
+`halite-hub policy test` with `contrib/examples/policy.yaml`, built from
+`main` (`dbc1b5d`) and from this change, on macOS (Darwin 25.6, arm64):
+
+| Request | `main` | this change |
+|---|---|---|
+| `cert:CN=alice web1.prod state.apply` | allowed by `webops` | denied, the reason above |
+| `… state.apply webserver.nginx` | allowed by `webops` | allowed by `webops` |
+| `… state.apply database.postgres` | denied | denied |
+| `… state.apply --kwarg mods=database.postgres` | allowed by `webops` | denied |
+| `… state.show_highstate` | allowed by `readonly` | allowed by `readonly` |
+| `local:ed web1.prod state.apply` | allowed by `administrator` | allowed by `administrator` |
+
+Tests:
+
+- `internal/policy` `TestAllowSLSRefusesTheHighstate`: `state.apply`,
+  `state.sls` and `state.show_highstate` with no names, `state.apply`
+  with only a `mods` keyword, and `state.highstate` with and without an
+  allowed name, all refused with a reason naming the highstate; the
+  same functions with an allowed name still allowed; a role without
+  `allow_sls` still allowed the highstate render.
+- `cmd/halite-hub` `TestTheExamplePolicyDecidesWhatItSaysItDoes` gains
+  the bare `state.apply` row, and chapter 26's policy test gains it too.
+- `cmd/halite-node` `TestTheNodeRunsTheHighstateForTheJobsAllowSLSRefuses`
+  holds the node half of the claim: it runs each refused request through
+  `executeJob` in test mode against a two-SLS top file and checks both
+  SLS ran, and runs `state.apply webserver.nginx` as the control, which
+  ran that one only. The refusal is justified by what the node does, so
+  the node is what is tested; if the node ever honours those arguments,
+  that test fails and the refusal can be reconsidered.
+
+Two existing tests, `TestTargetAndFunctionAreAuthorizedTogether` and
+`TestAScopedRuleDoesNotGrantAWiderTarget`, failed with the fix: both
+used a bare `state.apply` from the `allow_sls` role as their "allowed"
+probe, which is the request this refuses. They test targets, so they
+now name an allowed SLS. Left as they were, their wrong-target rows
+would have passed on the argument check whatever the target check did.
+The example policy's wrong-target row is changed the same way.
+
+Each half was broken on purpose and watched to fail:
+
+- Without the no-arguments check: the policy test failed on the four
+  no-names rows (`state.apply`, `state.sls`, `state.show_highstate`,
+  `mods` as a keyword), and the example-policy test failed on its new
+  row with `allowed=true`.
+- Without the `state.highstate` check: the policy test failed on
+  `state.highstate naming an allowed sls` and nothing else.
+- With the node changed to honour `state.highstate`'s arguments: the
+  node test failed on that row, its return holding `from_webserver`
+  alone.
+
+#### Not changed, and open
+
+- **`deny_sls` still allows the highstate.** A role with only
+  `deny_sls: ['secrets.*']` can run a highstate whose top file assigns
+  `secrets.*`. Whether that is wrong depends on what a deny list is
+  taken to promise, and refusing the highstate to every role with a
+  `deny_sls` is a larger change to what operators see than this one.
+  Left as written; it is a decision, not a finding that it is fine.
+- **`allow_mods` has the keyword half of this.** `policy test
+  'cert:CN=ci-pipeline' '' state.orchestrate --runner --kwarg
+  sls=teardown.everything` is allowed by the example's `deployer`, whose
+  `allow_mods` is `deploy.*`: the loop sees no positional arguments,
+  and the runner's signature binds the keyword `sls` to the same
+  parameter (`sig.Bind` in `internal/hub/runner.go`). Traced and shown
+  through `policy test`; not run through a hub. It is its own change.
+- **A rule that grants `state.*` and constrains only `state.apply`**
+  leaves `state.highstate` and `state.sls` unconstrained, because
+  `args` is keyed by exact function name. That is the policy as written
+  rather than this check, and nothing warns about it.
+
+#### Not verified
+
+- **Not run through a hub to a node.** The decision was shown through
+  `policy test` and the unit tests; the node half through `executeJob`
+  in-process. No job was dispatched from a hub under a narrowed role,
+  and the API's path to `Authorize` was not exercised separately (it
+  calls the same function).
+- **Not run on FreeBSD or Linux.** Nothing here is platform-specific;
+  CI runs the tests on all four.
+- **The fleet's own policies were not read** for roles that rely on a
+  narrowed role running the highstate. Any that do are refused after
+  this change.
 
 SPEC 23.5's `allow_mods` is how a policy limits a role to named
 orchestrations; the example policy's `deployer` has `allow_mods:
@@ -27570,6 +27727,9 @@ pointed back at `req.Arg`.
   fleet's reactor and policy files were not read for any that would be.
 - **Not run on FreeBSD or Linux.** Nothing here is platform-specific;
   CI runs the tests on all four.
+### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
+
+
 
 
 

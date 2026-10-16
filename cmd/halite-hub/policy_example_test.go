@@ -43,10 +43,13 @@ func TestTheExamplePolicyDecidesWhatItSaysItDoes(t *testing.T) {
 			policy.Request{Principal: "cert:CN=alice", Target: "web1.prod", Fun: "state.apply",
 				Arg: []string{"webserver.nginx"}}, true},
 		{"webops is not granted a target outside its pattern",
-			policy.Request{Principal: "cert:CN=alice", Target: "db1.prod", Fun: "state.apply"}, false},
+			policy.Request{Principal: "cert:CN=alice", Target: "db1.prod", Fun: "state.apply",
+				Arg: []string{"webserver.nginx"}}, false},
 		{"webops may not pass pillar on the command line",
 			policy.Request{Principal: "cert:CN=alice", Target: "web1.prod", Fun: "state.apply",
 				Kwarg: map[string]any{"pillar": "{}"}}, false},
+		{"webops may not run the highstate by naming nothing",
+			policy.Request{Principal: "cert:CN=alice", Target: "web1.prod", Fun: "state.apply"}, false},
 		{"webops may not apply an sls outside allow_sls",
 			policy.Request{Principal: "cert:CN=alice", Target: "web1.prod", Fun: "state.apply",
 				Arg: []string{"database.postgres"}}, false},
@@ -62,7 +65,7 @@ func TestTheExamplePolicyDecidesWhatItSaysItDoes(t *testing.T) {
 				Arg: []string{"teardown.everything"}}, false},
 		// `halite-hub orch run` sends the name as the keyword `sls`, never
 		// positionally, so these are the decisions an operator actually
-		// gets. DIVERGENCE 5.320.
+		// gets. DIVERGENCE 5.321.
 		{"the deployer runs its orchestration the way orch run sends it",
 			policy.Request{Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
 				Kwarg: map[string]any{"sls": "deploy.web"}}, true},

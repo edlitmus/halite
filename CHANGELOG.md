@@ -42,7 +42,25 @@ to reach the hub unchecked.
 role with `allow_mods` that names an orchestration outside its patterns
 is refused where it used to run. Check reactions and pipelines that run
 orchestrations under a narrowed role with `halite-hub policy test …
---runner --kwarg sls=<name>`. See DIVERGENCE 5.320.
+--runner --kwarg sls=<name>`. See DIVERGENCE 5.321.
+
+### A role with `allow_sls` can no longer run the highstate
+
+**This changes what operators see.** `allow_sls` restricts a role to a
+set of SLS names, but a request that named none -- a bare
+`state.apply`, `state.sls`, or `state.apply mods=...` -- passed the
+check, and the node ran the highstate: everything the top file assigns.
+`state.highstate` was the same with any arguments, because the node
+ignores them. Such a request is now refused, and `policy test` says why:
+
+```
+denied: state.apply with no SLS names runs the highstate, which is not in the SLS names this role may apply (webserver.*, common.*)
+```
+
+A role that should run the highstate needs a rule for `state.apply` (or
+`state.highstate`) without `allow_sls`. Check a policy before upgrading
+with `halite-hub policy test <principal> <target> state.apply`. Roles
+without `allow_sls` are unchanged. See DIVERGENCE 5.320.
 
 ### `deny_sls` and `allow_sls` now refuse an SLS name in a second spelling
 
@@ -54,9 +72,9 @@ is not a plain dotted name is now refused, and the message gives the
 dotted spelling. A node built since DIVERGENCE 5.294 already refused
 those spellings when it compiled; an older node ran them. A pattern in
 either list written with a slash or a doubled dot now matches nothing;
-write it with single dots. `state.apply` with no arguments is still
-authorized under `allow_sls` and runs the highstate (audit M-01, not
-changed here). See DIVERGENCE 5.294.
+write it with single dots. `state.apply` with no arguments under
+`allow_sls` is a separate change, the entry above (audit M-01). See
+DIVERGENCE 5.294.
 
 ### An agentless state run no longer leaves the hub's state tree on the target
 

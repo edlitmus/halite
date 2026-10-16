@@ -18,7 +18,7 @@ import (
 // allowed `halite-hub orch run teardown.everything` -- which sends the
 // name as a keyword -- to a role limited to `deploy.*`, and allowed
 // `deploy.web,teardown.everything` as one positional argument because
-// `deploy.*` matches the whole string. DIVERGENCE 5.320.
+// `deploy.*` matches the whole string. DIVERGENCE 5.321.
 //
 // This drives CallRunner, the path an operator, a reaction and the API
 // all reach, against a tree that has both orchestrations, and checks
