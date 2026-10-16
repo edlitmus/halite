@@ -365,7 +365,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"wait shown to be awaited (DIVERGENCE 5.39). The `systemctl` fallback was driven " +
 		"against the same unit. That unit's name had no dot, and a dotted name such as " +
 		"`php8.2-fpm` was sent to D-Bus without `.service` and refused there until " +
-		"DIVERGENCE 5.290; that fix is held by a recording backend and has not been run " +
+		"DIVERGENCE 5.309; that fix is held by a recording backend and has not been run " +
 		"against a real systemd. The launchd provider was driven against a real launchctl " +
 		"on a macOS 15 runner as root, on a LaunchDaemon the test bootstraps: started, " +
 		"stopped, restarted, enabled, disabled and listed, each checked against " +

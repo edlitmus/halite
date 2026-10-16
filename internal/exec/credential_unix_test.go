@@ -2,7 +2,13 @@
 
 package exec
 
-import "testing"
+import (
+	"context"
+	"os"
+	"os/user"
+	"strings"
+	"testing"
+)
 
 // macOS will not take more supplementary groups than NGROUPS_MAX, and
 // the failure when it is handed more says nothing about groups.
@@ -44,5 +50,39 @@ func TestSupplementaryGroupsAreCappedOnDarwinAlone(t *testing.T) {
 	}
 	if capGroups("darwin", nil) != nil {
 		t.Error("a nil group list did not come back nil")
+	}
+}
+
+// The credential reaches a background child, for an account that exists.
+//
+// This cannot watch a process change account without root, so it uses
+// the one observable thing an unprivileged run has: switching to any
+// account, even this one, means setgroups(2), and the kernel refuses
+// that to a process that is not root. A command whose credential was
+// applied therefore fails to start here, and one whose credential was
+// dropped starts and returns a pid. The foreground half is the control,
+// so that a platform which lets setgroups through fails loudly rather
+// than making the background half pass for the wrong reason.
+func TestRunAsReachesABackgroundChild(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("as root the switch succeeds, and a released child's account cannot be read back portably; this test needs an unprivileged run")
+	}
+	me, err := user.Current()
+	if err != nil {
+		t.Skipf("no current account to name: %v", err)
+	}
+	r := &OSRunner{}
+	for _, bg := range []bool{false, true} {
+		cmd := helperCommand("echo")
+		cmd.RunAs = me.Username
+		cmd.Background = bg
+		res, err := r.Run(context.Background(), cmd)
+		if err == nil {
+			t.Errorf("background=%v: runas %q started without a credential switch (stdout %q)", bg, me.Username, res.Stdout)
+			continue
+		}
+		if !strings.Contains(err.Error(), "operation not permitted") {
+			t.Errorf("background=%v: want the kernel's refusal of setgroups, got %v", bg, err)
+		}
 	}
 }
