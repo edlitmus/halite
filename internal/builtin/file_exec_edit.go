@@ -64,11 +64,11 @@ func registerFileEditAsExec(r *Registries) {
 			[]signature.Param{
 				req("path", signature.Path, "The file to edit."),
 				opt("content", signature.String, "", "The line."),
-				opt("match", signature.String, "", "The line to act on; defaults to `content`."),
+				opt("match", signature.String, "", "An RE2 pattern searched in each line (a plain fragment also matches); defaults to `content`."),
 				opt("mode", signature.String, "", "ensure, replace, delete, insert, or prepend."),
 				opt("location", signature.String, "", "start or end, for insert."),
-				opt("before", signature.String, "", "Insert before the line matching this."),
-				opt("after", signature.String, "", "Insert after the line matching this."),
+				opt("before", signature.String, "", "Insert before the first line this RE2 pattern (or plain fragment) matches."),
+				opt("after", signature.String, "", "Insert after the first line this RE2 pattern (or plain fragment) matches."),
 			}, toName, fileLine),
 
 		edit("blockreplace", "Replace the text between two markers.",

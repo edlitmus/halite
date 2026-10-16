@@ -108,7 +108,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, token *apitoken
 		writeError(w, http.StatusBadRequest, "a local run needs `tgt`, the nodes to run against")
 		return
 	}
-	if !s.authorize(w, token, requestFor(req.Function, req.Target, req.Arg, req.Kwarg, false)) {
+	if !s.authorize(w, token, jobRequestFor(req.Function, req.Target, req.targetKind(), req.Arg, req.Kwarg)) {
 		return
 	}
 

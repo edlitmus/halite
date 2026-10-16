@@ -23,7 +23,7 @@ func countDerivations(t *testing.T) *[]derivation {
 	return &seen
 }
 
-// DIVERGENCE 5.290: an unknown name was checked at MinIterations while
+// DIVERGENCE 5.305: an unknown name was checked at MinIterations while
 // every hash `halite-api account hash` writes is at DefaultIterations,
 // so the login answered about 75 ms sooner for a name with no account.
 // A login for an unknown name must ask the derivation for exactly what a

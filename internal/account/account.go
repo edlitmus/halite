@@ -242,7 +242,7 @@ var derive = func(password string, salt []byte, iterations int) ([]byte, error) 
 //
 // It is built from the same constants Hash uses rather than from a copy
 // of their values, so that raising DefaultIterations raises it too. It
-// used MinIterations until DIVERGENCE 5.290, while every hash `halite-api
+// used MinIterations until DIVERGENCE 5.305, while every hash `halite-api
 // account hash` writes uses DefaultIterations: an unknown name cost
 // 210,000 iterations against a real one's 600,000, measured at about
 // 45 ms against 121 ms, and the difference named which accounts exist.
