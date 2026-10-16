@@ -26096,6 +26096,46 @@ with a dot in its name, for example `halite-probe1.2.service` in
 `halite-probe1.2`, both over D-Bus and with the dial forced to fail, and
 check each step with `systemctl show -p ActiveState,UnitFileState`. It
 should also check that `systemctl -t help` lists the eleven types above.
+
+#### 5.309, `Masked` follows
+
+The `systemctl is-enabled` fallback inside `Masked`
+(`internal/builtin/service_more.go`) now gets `withServiceSuffix(name)`,
+the same name its D-Bus path asks about. It was the one systemd argv
+above that still passed the raw name. Every systemd call in the provider
+now names its unit through the one function.
+
+Nothing an operator sees should change. The raw name went to
+`systemctl`, which mangles names as `withServiceSuffix` does, so this
+read gave the right answer before. That is read from 5.309, not run.
+The point is that the two paths now agree by construction.
+
+**Tests.** `TestSystemdProviderDottedNameFallbackAgrees` now calls
+`Masked` too, and expects `systemctl is-enabled php8.2-fpm.service`.
+`TestSystemdProviderMaskedFallbackUsesTheCanonicalName` gives the
+recording runner the stdout `masked` for the canonical argv only, and
+requires `Masked("php8.2-fpm")` to be true. That stdout is the word
+`Masked` compares against. It is not captured `systemctl` output, and
+the repository has none for this read.
+
+**Broken on purpose.** With the raw name put back, both tests failed.
+The first showed `systemctl is-enabled php8.2-fpm` in the argv. The
+second reported `Masked(php8.2-fpm) = false`. The fix was then put back.
+
+**Found, not changed: the two paths disagree on `masked-runtime`.** The
+D-Bus path says a unit is masked when its `UnitFileState` is `masked` or
+`masked-runtime`. The fallback compares the printed word with `masked`
+only. If `systemctl is-enabled` prints `masked-runtime` for a unit
+masked with `--runtime`, the fallback answers false where the bus
+answers true. That comes from reading the code and systemctl's manual.
+No real systemctl was run. It is a different defect from the name, so it
+was not fixed here. The fix needs `masked-runtime` output captured from a
+real host first.
+
+**Not verified.** No real systemd. The live run described above would
+cover this read too, if it calls `service.masked` on
+`halite-probe1.2` with the bus dial forced to fail. Run on macOS
+(Darwin 25.6) only.
 ### 5.310 `mdadm.create` would overwrite a filesystem it said it refused
 
 The package comment in `mdadm.go` and the `force` parameter's doc both

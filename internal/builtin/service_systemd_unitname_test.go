@@ -3,6 +3,8 @@ package builtin
 import (
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/exec"
 )
 
 // The unit-name canonicalisation, case by case. The dotted names are
@@ -115,6 +117,7 @@ func TestSystemdProviderDottedNameFallbackAgrees(t *testing.T) {
 		func() error { return p.Unmask(c, "php8.2-fpm") },
 		func() error { _, err := p.Status(c, "php8.2-fpm"); return err },
 		func() error { _, err := p.Enabled(c, "php8.2-fpm"); return err },
+		func() error { _, err := p.Masked(c, "php8.2-fpm"); return err },
 		func() error { return p.Start(c, "foo.socket") },
 		func() error { return p.Enable(c, "bar.timer") },
 	} {
@@ -134,11 +137,32 @@ func TestSystemdProviderDottedNameFallbackAgrees(t *testing.T) {
 		"systemctl unmask php8.2-fpm.service",
 		"systemctl is-active --quiet php8.2-fpm.service",
 		"systemctl is-enabled php8.2-fpm.service",
+		"systemctl is-enabled php8.2-fpm.service",
 		"systemctl start foo.socket",
 		"systemctl enable bar.timer",
 	}
 	got := runner.RanCommands()
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("systemctl argv:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// Masked's fallback reads `systemctl is-enabled` for the same unit the
+// D-Bus path asks about, and answers from what it prints. It was the
+// one argv 5.309 left with the raw name; the response here is keyed on
+// the canonical argv, so a raw name gets the runner's empty default and
+// reads as not masked. The stdout is the word Masked already compares
+// against, not captured systemctl output; none is in the repository.
+func TestSystemdProviderMaskedFallbackUsesTheCanonicalName(t *testing.T) {
+	useSystemd(t, nil) // bus unreachable
+	c, runner := serviceCtx(t, map[string]exec.Result{
+		"systemctl is-enabled php8.2-fpm.service": {Stdout: "masked\n"},
+	})
+	masked, err := systemdProvider{}.Masked(c, "php8.2-fpm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !masked {
+		t.Errorf("Masked(php8.2-fpm) = false; ran %q", runner.RanCommands())
 	}
 }
