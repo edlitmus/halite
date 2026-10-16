@@ -252,6 +252,11 @@ func (l *Loaded) ensure(ctx context.Context) (*bridge.Pool, error) {
 			l.poolErr = err
 			return
 		}
+		if err := l.checkIdentity(pool); err != nil {
+			pool.Close()
+			l.poolErr = err
+			return
+		}
 		l.pool = pool
 		l.readSignatures()
 	})
@@ -259,6 +264,48 @@ func (l *Loaded) ensure(ctx context.Context) (*bridge.Pool, error) {
 		return nil, l.poolErr
 	}
 	return l.pool, nil
+}
+
+// checkIdentity refuses an executable that is not the extension its
+// bundle was signed as.
+//
+// The manifest names a version, the pin names a version, and the hub
+// checks those two against each other and against the bundle's
+// `_ext/<name>/<version>/` path. The binary names a version as well, in
+// its handshake, and nothing compared that one with any of them. So a
+// 1.1.0 build signed with `--ext-version 1.0.0` loaded, and every
+// operator-facing surface -- the pin, `sys.list_extensions`, which
+// reports the manifest -- said 1.0.0 about code that was not 1.0.0. The
+// signature is over the bytes, so this was never a way to run unsigned
+// code. It was a way for the one label an operator pins by to be wrong
+// about what it names, which is the failure a pin exists to prevent.
+// DIVERGENCE 5.325.
+//
+// Checked once, when the pool first starts, because every process in
+// it runs the same executable: a later handshake cannot answer
+// differently without a different file, and a different file fails
+// the bundle's digest before it is run.
+func (l *Loaded) checkIdentity(pool *bridge.Pool) error {
+	info, known := pool.Info()
+	if !known {
+		return fmt.Errorf("%s started but its handshake was not recorded, so it cannot be "+
+			"checked against its manifest", l.name)
+	}
+	m := l.Bundle.Manifest
+	if info.Name != m.Name || info.Version != m.Version {
+		return fmt.Errorf("%s is signed as %s %s, but the executable says it is %s %s; "+
+			"sign the bundle with the name and version the executable reports, "+
+			"and move the pin to match",
+			l.name, m.Name, m.Version, orNone(info.Name), orNone(info.Version))
+	}
+	return nil
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
 }
 
 // readSignatures records what the extension declared at handshake.

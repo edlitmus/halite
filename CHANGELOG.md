@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An extension runs only as the name and version it was signed as
+
+The hub compared an extension's pin with its manifest, but never the
+version the executable itself reports. So a build signed with the wrong
+`--ext-version` loaded, and the pin and `sys.list_extensions` named a
+version that was not what ran. **A bundle whose executable reports a
+different name or version from its manifest now fails to start**, and
+the message gives both. To fix one, re-sign it with what the executable
+reports and move the pin. `halite-ext-aws-secrets` reports 1.1.0 and
+`halite-ext-signer-kms` reports 1.0.1, so a bundle of either signed
+under an older version has to be signed again. See DIVERGENCE 5.325.
+
 ### A node's `region` grain no longer chooses where the hub sends AWS credentials
 
 The `aws_secrets_manager` pillar extension put the region into the

@@ -61,13 +61,23 @@ func buildExtension(t *testing.T) string {
 	return builtPath
 }
 
+// awsSecretsVersion is cmd/halite-ext-aws-secrets's Version. It moves
+// with it: a bump there fails this test until it does, which is the
+// same decision the release has to make.
+const awsSecretsVersion = "1.1.0"
+
 // installBundle writes a signed bundle into a cache the way
 // `halite-hub extensions sync` would, and returns the cache directory
 // and the key a hub must trust to run it.
 func installBundle(t *testing.T, exePath string) (string, extension.TrustKey) {
 	t.Helper()
 	cache := t.TempDir()
-	dir := filepath.Join(cache, "aws_secrets_manager", "1.0.0")
+	// The version the built binary reports. The hub refuses a bundle
+	// signed as anything else (DIVERGENCE 5.325), and this test signed
+	// the 1.1.0 binary as 1.0.0 until that check found it -- the very
+	// mismatch the check exists for, in the test of the extension it was
+	// written about.
+	dir := filepath.Join(cache, "aws_secrets_manager", awsSecretsVersion)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +96,7 @@ func installBundle(t *testing.T, exePath string) (string, extension.TrustKey) {
 
 	platform := runtime.GOOS + "/" + runtime.GOARCH
 	manifest, err := extension.Build(dir, extension.Manifest{
-		Name: "aws_secrets_manager", Version: "1.0.0", Kind: "pillar",
+		Name: "aws_secrets_manager", Version: awsSecretsVersion, Kind: "pillar",
 		Declares:    []string{"network"},
 		Executables: map[string]string{platform: exe},
 	})

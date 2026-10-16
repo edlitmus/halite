@@ -28206,6 +28206,113 @@ Broken on purpose, each failed and was restored:
   still quotes a node's secret ID in full, as before.
 - **macOS only.** The tests ran on Darwin 25.6, not on FreeBSD or Linux.
 
+#### Since
+
+The bullet above was true when it was written and stopped being true
+before the change merged. Nobody went back to it. That is the failure
+the top of this file warns about. `cmd/halite-ext-aws-secrets`,
+`cmd/halite-ext-signer-kms`, `internal/awsauth`, `internal/awskms`,
+`internal/extpillar` and `internal/extension` also passed on Linux
+(Ubuntu, the branch merged with main), and natively on FreeBSD
+15.1-RELEASE-p5 under `-race` (beastie), before #329 merged.
+
+The handshake gap this section noted and left open, a binary signed
+as a version it does not report, is fixed in 5.325, and the version
+rule now has a test.
+
+### 5.325 An extension's version was held to nothing
+
+Every shipped extension's `Version` comment says it "changes when
+behaviour does", because a pin names it. Two things made that a
+sentence rather than a property.
+
+**Nothing noticed when it did not change.** `aws_secrets_manager`
+changed behaviour twice at 1.0.0: its SPEC 24.3 resource limits
+(5177ea3) and the not-secret setting (09c200b, #274). Then 5.324
+changed `internal/awsauth`. `halite-ext-signer-kms` links that
+package, and its behaviour with a malformed `region` changed while
+nothing in its own directory did. Each of those changes was reviewed,
+but the version lives in a file none of them touched, so nobody was
+looking at it.
+
+`TestEveryShippedExtensionVersionMovesWithItsCode`
+(`internal/buildpolicy/extversion_test.go`) records, for each
+`cmd/halite-ext-*`, its `Version` and a digest of the code that can
+carry its behaviour, in `internal/buildpolicy/testdata/extension-versions.txt`.
+It fails when the digest moves and the version does not. The way out
+is a decision taken in the open: bump, or record the digest and say in
+the commit why the behaviour is the same. Choices, each made for a
+reason:
+
+- **Transitive, within this module.** The extension's package and
+  every package of this module it imports. The signer-kms case moved
+  through a dependency, so a digest of its own directory would have
+  passed.
+- **Every platform's files.** Imports are followed by parsing, not by
+  `go list`, which answers for the host. FreeBSD behaviour lives in
+  files a Linux leg never builds, and FreeBSD is most of the estate.
+- **Tokens, not text.** Comments and whitespace are not tokens, so
+  prose and gofmt edits do not fire it. String literals, including raw
+  ones, are kept exactly, and so are `//go:` directives, which are
+  comments that decide what compiles. The first version printed the
+  parsed file back with its comment list cleared. A doc comment above
+  a function still changed the digest, because doc comments hang off
+  the declaration, and so did a commented-out `const Version`. A check
+  that fires on prose gets its digest updated by reflex.
+- **Versions only go up**, and an unrecorded bump fails too, so the
+  record cannot drift behind the code.
+
+Measured, each change made and then restored. These passed: a
+comment at the top of a file, a doc comment above a function, blank
+lines, re-indentation, and a commented-out decoy `Version`. These
+failed: a string literal changed in `internal/awsauth` failed
+aws-secrets and signer-kms but not signer-local; a build constraint in
+`ext/` failed all three; a new file in `internal/jobsign` failed
+signer-local; a version decrease and an unrecorded bump each failed
+with their own message. Rebasing onto #329 failed it, as it should,
+for aws-secrets (1.1.0) and signer-kms (1.0.1), and not for
+signer-local. The digests are the same on Linux and natively on
+FreeBSD 15.1.
+
+**Nothing compared the binary with its signature.** The hub checked a
+pin against the manifest, and the manifest against its
+`_ext/<name>/<version>/` path. The version the executable reports in
+its handshake was never read. So a 1.1.0 build signed with
+`--ext-version 1.0.0` loaded, and the pin and `sys.list_extensions`
+(which reports the manifest) both said 1.0.0. The signature covers
+the bytes, so this never ran unsigned code. What it did was let the
+label a pin holds be wrong about what it names. `Loaded.ensure` now
+refuses, after the first handshake, an executable whose name or
+version differs from its manifest, and the message names both. The
+check runs once per pool, because every process in it runs the same
+verified file.
+
+The first full run found the defect in this repository's own tests.
+`internal/extpillar`'s end-to-end test and `cmd/halite-hub`'s
+agentless ext-pillar test both laid out the real 1.1.0 aws-secrets
+binary as 1.0.0. Both now name 1.1.0. Neither can read the version
+from the command (it is package `main`), so each holds a constant
+that has to move with it. That is one more place a bump has to reach,
+and it fails loudly when it is missed.
+`TestAnExecutableIsRunOnlyAsTheExtensionItSaysItIs` signs the echo
+1.0.0 test binary as echo 1.1.0 and as other 1.0.0. Both bundles
+verify, and both are refused at `Start`, with no call run. With the
+`checkIdentity` call removed, both start and the test fails.
+
+**Operators.** A bundle signed under a name or version its executable
+does not report now fails to start, and the message gives both. Re-sign
+it with what the executable reports, and move the pin. The production
+hub on beastie configures no extensions, and no `_ext/*/manifest.json`
+exists anywhere on that machine, so nothing there changes. No other
+estate was checked.
+
+**Not covered.** The standard library and the toolchain: a Go upgrade
+can change an extension's behaviour without moving its digest. The
+vendored-module path in the digest is written but has never run,
+because no shipped extension imports a vendored package. A third-party
+extension's version is held only by the handshake check, since its
+source is not here.
+
 
 
 
