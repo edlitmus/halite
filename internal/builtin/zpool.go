@@ -633,11 +633,11 @@ func zpoolCreate(c *exec.Context, name string, vdevs []zpoolVdev, args *value.Ma
 	}
 	for _, p := range sortedPropertyNames(states.Mapping(args, "properties")) {
 		v, _ := states.Mapping(args, "properties").Get(p)
-		argv = append(argv, "-o", p+"="+value.KeyString(v))
+		argv = append(argv, "-o", p+"="+zfsArg(v))
 	}
 	for _, p := range sortedPropertyNames(states.Mapping(args, "filesystem_properties")) {
 		v, _ := states.Mapping(args, "filesystem_properties").Get(p)
-		argv = append(argv, "-O", p+"="+value.KeyString(v))
+		argv = append(argv, "-O", p+"="+zfsArg(v))
 	}
 	argv = append(argv, name)
 	argv = append(argv, vdevArgv(vdevs)...)
@@ -785,10 +785,9 @@ func zpoolUpdateState(c *exec.Context, args *value.Map, name string, declared []
 		}
 		for _, e := range props.Entries() {
 			prop := value.KeyString(e.Key)
-			want := value.KeyString(e.Val)
 			cur, ok := have.Get(prop)
-			if !ok || value.KeyString(cur) != want {
-				changes.Set(prop, states.Change(cur, want))
+			if !ok || !zfsSameValue(prop, e.Val, cur) {
+				changes.Set(prop, states.Change(cur, zfsArg(e.Val)))
 			}
 		}
 	}
@@ -831,7 +830,7 @@ func zpoolUpdateState(c *exec.Context, args *value.Map, name string, declared []
 	for _, e := range changes.Entries() {
 		prop := value.KeyString(e.Key)
 		v, _ := props.Get(prop)
-		if err := zpoolAct(c, []string{"zpool", "set", prop + "=" + value.KeyString(v), name}); err != nil {
+		if err := zpoolAct(c, []string{"zpool", "set", prop + "=" + zfsArg(v), name}); err != nil {
 			return states.False(fmt.Sprintf("The property %s of %s could not be set: %v", prop, name, err)), nil
 		}
 	}

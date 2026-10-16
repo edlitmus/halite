@@ -15,7 +15,7 @@ import (
 // than one per rule because pf loads an anchor's rules as one ruleset.
 // It does not evaluate them as a set: they are evaluated in the order
 // they were loaded, which is why Apply keeps that order (DIVERGENCE
-// 5.290).
+// 5.315).
 var PFAnchor = "halite"
 
 // PFConfPath is the ruleset an operator maintains, read only to check
@@ -61,7 +61,7 @@ var PFConfPath = "/etc/pf.conf"
 // `deny from 10.0.0.0/8` above `allow from 10.0.0.5 port 22` means the
 // allow never matches anything. This comment used to say the opposite,
 // and Apply sorted the anchor alphabetically on every change, which put
-// every `block` above every `pass` (DIVERGENCE 5.290).
+// every `block` above every `pass` (DIVERGENCE 5.315).
 //
 // # The order is the order the rules were declared in
 //
@@ -224,7 +224,7 @@ func (p pfProvider) Apply(c *exec.Context, r firewallRule, remove, dryRun bool) 
 		// Appended, not inserted in some canonical place: with every
 		// rule `quick`, position is precedence, and the only precedence
 		// anybody expressed is the order the states ran in. Sorting
-		// here was DIVERGENCE 5.290 — it put every `block` above every
+		// here was DIVERGENCE 5.315 — it put every `block` above every
 		// `pass`, so an allow carved out of a wider deny never matched.
 		want = append(want, line)
 	}

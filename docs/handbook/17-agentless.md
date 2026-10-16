@@ -31,7 +31,9 @@ they reach the machine differs.
 3. It pushes a static `halite-node` for the target's platform and checks
    its digest **after** the transfer. The binary is cached on the target
    under a directory named by its digest (`/var/tmp/halite-thin/<digest>`),
-   so the next run skips the transfer.
+   so the next run skips the transfer. A cached binary is run only if
+   nobody but root and the account halite connects as could have written
+   it (see "When the cache is refused", below).
 4. It sends the job on standard input and reads the answer from standard
    output, in a framed form that separates it from any other output.
 5. For `state.*` functions it compiles the state tree and pillar **on the
@@ -149,16 +151,30 @@ and adding `id: local1.example` under `grains:` fixes it. Pillar targeting
 ### A tip
 
 Give every machine exactly one roster entry. Two entries that resolve to the
-**same host** run concurrently and both try to install the cached binary,
-and one fails:
+**same host** both run the job on it. They no longer collide over the cached
+binary, because each run stages its copy under a name of its own, but the
+duplicate is still the thing to remove.
+
+### When the cache is refused
+
+The cached binary runs as root when the roster says `sudo: true`, and the
+default `thin_dir` is under `/var/tmp`, where every account on the machine
+may create files. So before it runs the cached binary, or copies a new one,
+halite checks that only root and the account it connects as could have
+written to the binary, to `thin_dir`, or to any directory above it. A
+directory above it may be writable by others only if it is sticky, as
+`/var/tmp` is. If a check fails, halite stops and says which path failed and
+why:
 
 ```
-local2.example: installing the binary: exit status 1: chmod: cannot access
-'/var/tmp/halite-thin/….partial': No such file or directory
+web1.example: /var/tmp/halite-thin cannot be trusted to hold a binary that
+this run executes: halite: refusing /var/tmp/halite-thin: it belongs to uid
+1003, and only root or the connecting account (uid 0) may own it. …
 ```
 
-Re-running succeeds, and `--ssh-concurrency 1` avoids it, but the duplicate
-is the thing to remove.
+Do not just delete the directory. If another account made it, find out why
+first. Then remove it as root, or set `thin_dir` in the roster to a
+directory that passes the check. `thin_dir` must be an absolute path.
 
 ## What agentless mode cannot do
 

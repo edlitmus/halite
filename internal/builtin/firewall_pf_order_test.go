@@ -145,7 +145,7 @@ func TestPFRemovingARuleKeepsTheOthersInOrder(t *testing.T) {
 // states in an SLS file does not reorder an anchor that is already
 // loaded — ufw behaves the same way — and an anchor written by a build
 // that sorted keeps the sorted order until it is flushed (DIVERGENCE
-// 5.290). If this half starts failing, something has begun reordering
+// 5.315). If this half starts failing, something has begun reordering
 // loaded rules, and that wants a ledger entry of its own.
 func TestPFDoesNotReloadAnAnchorThatHoldsTheRule(t *testing.T) {
 	for _, tc := range []struct {

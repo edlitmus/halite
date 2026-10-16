@@ -100,7 +100,7 @@ func TestAPFRuleRendersTheWayPFPrintsItBack(t *testing.T) {
 // Without `quick` a later rule in the anchor silently overrides an
 // earlier one. With it, the earlier rule wins — so the anchor's order is
 // precedence, and Apply keeps the declared order rather than sorting
-// (DIVERGENCE 5.290; firewall_pf_order_test.go).
+// (DIVERGENCE 5.315; firewall_pf_order_test.go).
 func TestEveryPFRuleIsQuick(t *testing.T) {
 	for _, r := range []firewallRule{
 		{Action: "allow", Port: "22"},

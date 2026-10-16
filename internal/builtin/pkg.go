@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -118,11 +119,15 @@ func registerPkg(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name := states.Str(args, "name", "")
+				if err := pkgValidateName(name); err != nil {
+					return nil, err
+				}
 				p, err := pickPkgProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				return p.LatestVersion(c, states.Str(args, "name", ""))
+				return p.LatestVersion(c, name)
 			},
 		},
 		exec.Module{
@@ -160,11 +165,14 @@ func registerPkg(r *Registries) {
 				Section:    "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				names, versions, err := packageSpecs(args)
+				if err != nil {
+					return nil, err
+				}
 				p, err := pickPkgProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				names, versions := packageSpecs(args)
 				if c.Test {
 					return names, nil
 				}
@@ -185,11 +193,14 @@ func registerPkg(r *Registries) {
 				Section:    "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				names, _, err := packageSpecs(args)
+				if err != nil {
+					return nil, err
+				}
 				p, err := pickPkgProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				names, _ := packageSpecs(args)
 				if c.Test {
 					return names, nil
 				}
@@ -268,7 +279,28 @@ func registerPkg(r *Registries) {
 // packageSpecs reads the name, pkgs, and version arguments into a name
 // list and a pin map. `pkgs` accepts both a plain list and Salt's
 // list-of-single-key-mappings form that carries versions.
-func packageSpecs(args *value.Map) ([]string, map[string]string) {
+//
+// Every name and every version it returns has been through
+// pkgValidateName and pkgValidateVersion, and it is the only way the
+// install, remove and purge paths read them -- so a spec that would be
+// read as an option by the package manager is refused here, before any
+// provider is asked anything. See pkgValidateName for why.
+func packageSpecs(args *value.Map) ([]string, map[string]string, error) {
+	names, versions := packageSpecsUnchecked(args)
+	if err := pkgValidateNames(names); err != nil {
+		return nil, nil, err
+	}
+	for _, n := range names {
+		if v, ok := versions[n]; ok {
+			if err := pkgValidateVersion(n, v); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	return names, versions, nil
+}
+
+func packageSpecsUnchecked(args *value.Map) ([]string, map[string]string) {
 	versions := map[string]string{}
 	var names []string
 
@@ -314,7 +346,10 @@ func pkgInstalled(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("No package provider is available: %v", err)), nil
 	}
 	allowUpdates := states.Bool(args, "allow_updates", false)
-	names, versions := packageSpecs(args)
+	names, versions, err := packageSpecs(args)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	if len(names) == 0 {
 		return states.False("This state names no packages to install."), nil
 	}
@@ -467,7 +502,10 @@ func pkgRemoveOrPurge(c *exec.Context, args *value.Map, purge bool) (states.Resu
 	if err != nil {
 		return states.False(fmt.Sprintf("No package provider is available: %v", err)), nil
 	}
-	names, _ := packageSpecs(args)
+	names, _, err := packageSpecs(args)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	if len(names) == 0 {
 		return states.False(fmt.Sprintf("This state names no packages to be %s.", verbed)), nil
 	}
@@ -504,7 +542,10 @@ func pkgLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("No package provider is available: %v", err)), nil
 	}
-	names, _ := packageSpecs(args)
+	names, _, err := packageSpecs(args)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	if len(names) == 0 {
 		return states.False("This state names no packages to bring up to date."), nil
 	}
@@ -589,4 +630,126 @@ func pkgLatestSentence(installPhrase, upgradePhrase string, toInstall, toUpgrade
 	return fmt.Sprintf("The following packages %s: %s; and these %s: %s.",
 		installPhrase, states.SortedNames(toInstall),
 		upgradePhrase, states.SortedNames(toUpgrade))
+}
+
+// pkgValidateName refuses a package name that a package manager would
+// read as something other than a package name.
+//
+// # Why
+//
+// Every provider builds its argv as `tool verb [options] name...`, and a
+// name comes from an SLS file, from pillar, or from a template rendered
+// with either -- which is to say from whoever can write any of those, not
+// from whoever wrote the provider. Nothing stood between that string and
+// the argv. `pkgs: ["-oDpkg::Pre-Invoke::=touch /tmp/pwned", curl]` made
+// the apt provider run
+//
+//	apt-get install -y -q -o ... -o ... "-oDpkg::Pre-Invoke::=touch /tmp/pwned" curl
+//
+// and apt-get parses that element as its own `-o`, which sets a dpkg hook
+// that runs as root. dnf's `--setopt=` and `--installroot=` are the same
+// door in another tool. There is no shell anywhere in that path; argv
+// alone is enough, because the injection is into the package manager's
+// option parser, not into a shell's.
+//
+// Two paths in this package already disagreed with this one about it:
+// `dnf_module` refuses a leading `-` by regex for exactly this reason
+// ("these specs arrive from pillar and templates"), and `chattr` puts
+// `--` before its operand. The main pkg path did neither.
+//
+// # What is refused, and why only that
+//
+//   - The empty string: there is no package with no name, and an empty
+//     element is not something any caller meant.
+//   - A leading `-`: this is the defect. In the argv halite builds --
+//     options first, operands after, no `--` -- such an element is read
+//     by the tool's option parser before it could be read as a package,
+//     so a name spelled that way could never have been installed as a
+//     package by these providers anyway. Refusing it removes nothing
+//     that worked.
+//   - Whitespace, control characters (NUL included) and Unicode format
+//     characters anywhere: no manager's name grammar contains them; in
+//     argv they are not dangerous to the tool by themselves, but they are
+//     what makes a refused name *look* like an accepted one in a log or a
+//     state comment (a newline, a carriage return, a right-to-left
+//     override), and NUL cannot be passed through execve at all.
+//
+// It deliberately does **not** impose one positive grammar, because the
+// managers do not share one and a grammar strict enough for Debian would
+// refuse legitimate names elsewhere: FreeBSD origins (`www/nginx`) and
+// flavours (`py311-foo@py311`), Homebrew's `openssl@3` and tap paths,
+// dnf's `name.arch`, globs and `@group`, apt's `name:arch`, Chocolatey's
+// mixed case and dots. A narrower check per manager would be a claim
+// about each manager's grammar that nobody here has measured; refusing
+// the characters that are dangerous or that no manager can carry is a
+// claim that needs no measurement.
+//
+// What this does not stop is a *legitimate-looking* operand that a
+// manager treats specially -- dnf's local paths and URLs, apt's
+// `name-` (remove) suffix, `name/release`. Those are package-manager
+// features a tree may use on purpose, and they are not option
+// injection.
+//
+// `dnf_module`'s `dnfModuleSpec` is the same rule written as a narrower
+// positive grammar for module specs; it is left as it is, and making it
+// call this for the shared half is a follow-up.
+func pkgValidateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("a package name is empty")
+	}
+	if strings.HasPrefix(name, "-") {
+		return fmt.Errorf("the package name %q begins with \"-\", which the package manager would read as an option rather than a package; refused", name)
+	}
+	if r, ok := pkgUnsafeRune(name); ok {
+		return fmt.Errorf("the package name %q contains %U, and no package manager's names contain whitespace or control characters; refused", name, r)
+	}
+	return nil
+}
+
+// pkgValidateVersion is pkgValidateName for a pinned version.
+//
+// A version reaches argv in two shapes. Glued to its name -- apt's and
+// zypper's `name=version`, dnf's `name-version` -- it cannot become an
+// option, because the element starts with the (already validated) name.
+// As an element of its own -- Chocolatey's `--version <v>`, and
+// `pkg version -t <a> <b>` on FreeBSD -- it can, and there it is read
+// as an option before it could be read as a version. The rule is the
+// same as for names, and is applied everywhere rather than only where it
+// happens to matter today:
+// the shape is the provider's choice, and a provider can change it
+// without anybody revisiting this.
+func pkgValidateVersion(name, version string) error {
+	if version == "" {
+		return nil
+	}
+	if strings.HasPrefix(version, "-") {
+		return fmt.Errorf("the version %q pinned for %s begins with \"-\", which the package manager would read as an option; refused", version, name)
+	}
+	if r, ok := pkgUnsafeRune(version); ok {
+		return fmt.Errorf("the version %q pinned for %s contains %U, and no version scheme contains whitespace or control characters; refused", version, name, r)
+	}
+	return nil
+}
+
+// pkgValidateNames applies pkgValidateName to each of names.
+func pkgValidateNames(names []string) error {
+	for _, n := range names {
+		if err := pkgValidateName(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pkgUnsafeRune finds the first rune no package name or version may hold.
+// Invalid UTF-8 decodes as U+FFFD, which is neither space nor control,
+// and is let through for the same reason non-ASCII letters are: no
+// measurement says every manager refuses it.
+func pkgUnsafeRune(s string) (rune, bool) {
+	for _, r := range s {
+		if unicode.IsSpace(r) || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return r, true
+		}
+	}
+	return 0, false
 }
