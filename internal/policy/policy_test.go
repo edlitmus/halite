@@ -250,3 +250,100 @@ bindings: []
 		}
 	}
 }
+
+// A scoped rule is judged against the target as the kind it will be
+// dispatched under. Each "allowed: true" row for alice is a request
+// whose every reachable node is inside web*.prod; each false row could
+// reach a node outside it, or is a kind whose reach a string cannot
+// tell. root's `*` rule covers every kind. service.restart, because
+// alice's readonly role grants test.ping against `*` and would answer
+// every row. DIVERGENCE 5.296: before,
+// the rows marked "the escalation" were allowed, because the target
+// was matched literally against web*.prod whatever its kind, and `*`
+// consumes commas, spaces and `|`.
+func TestATargetIsAuthorizedAsTheKindItIsDispatchedUnder(t *testing.T) {
+	p := load(t)
+	cases := []struct {
+		principal, target, kind string
+		allowed                 bool
+	}{
+		// glob, the default: unchanged.
+		{"cert:CN=alice", "web1.prod", "", true},
+		{"cert:CN=alice", "web1.prod", "glob", true},
+		{"cert:CN=alice", "web*.prod", "", true},
+		{"cert:CN=alice", "db1.prod", "", false},
+		{"cert:CN=alice", "*", "", false},
+		// glob: a string that is not a node ID is not a literal.
+		{"cert:CN=alice", "web1.prod,db1.prod", "", false},
+		{"cert:CN=alice", "web1.prod or db1.prod", "", false},
+		{"cert:CN=alice", `web1\.prod`, "", false},
+
+		// list: every element, as a node.
+		{"cert:CN=alice", "web1.prod", "L", true},
+		{"cert:CN=alice", "web1.prod,web2.prod", "L", true},
+		{"cert:CN=alice", "web1.prod, web2.prod", "list", true},
+		{"cert:CN=alice", "web1.prod,db1.prod", "L", false}, // the escalation
+		{"cert:CN=alice", "web1.prod,db1.prod", "list", false},
+		{"cert:CN=alice", "web1.prod, ,db1.prod", "L", false},
+		{"cert:CN=alice", "web*.prod", "L", false},
+		{"cert:CN=alice", "", "L", false},
+		{"cert:CN=alice", ",", "L", false},
+
+		// compound and nodegroup: only `*` covers them.
+		{"cert:CN=alice", "web1.prod or db1.prod", "C", false}, // the escalation
+		{"cert:CN=alice", "web1.prod and not G@x:y or db1.prod", "compound", false},
+		{"cert:CN=alice", "web1.prod", "C", false},
+		{"cert:CN=alice", "web*.prod", "C", false},
+		{"cert:CN=alice", "webgroup", "N", false},
+
+		// pcre: a pattern however literal it looks.
+		{"cert:CN=alice", "web1.prod|db1.prod", "E", false}, // the escalation
+		{"cert:CN=alice", "web1.prod", "pcre", false},
+		{"cert:CN=alice", "web*.prod", "E", false},
+
+		// grain, pillar, subnet and their regex forms.
+		{"cert:CN=alice", "web1.prod", "G", false},
+		{"cert:CN=alice", "role:web", "grain", false},
+		{"cert:CN=alice", "role:web", "P", false},
+		{"cert:CN=alice", "role:web", "I", false},
+		{"cert:CN=alice", "role:web", "J", false},
+		{"cert:CN=alice", "10.0.0.0/8", "S", false},
+
+		// An unknown kind is never matched.
+		{"cert:CN=alice", "web1.prod", "bogus", false},
+		{"cert:CN=root", "*", "bogus", false},
+
+		// `*` still covers every kind.
+		{"cert:CN=root", "*", "", true},
+		{"cert:CN=root", "web1.prod,db1.prod", "L", true},
+		{"cert:CN=root", "web1.prod or db1.prod", "C", true},
+		{"cert:CN=root", "web1.prod|db1.prod", "E", true},
+		{"cert:CN=root", "role:web", "G", true},
+		{"cert:CN=root", "webgroup", "N", true},
+		{"cert:CN=root", "10.0.0.0/8", "S", true},
+	}
+	for _, c := range cases {
+		d := p.Authorize(Request{
+			Principal: c.principal, Target: c.target, TargetKind: c.kind, Fun: "service.restart",
+		})
+		if d.Allowed != c.allowed {
+			t.Errorf("%s: service.restart against %q as kind %q: allowed=%v, want %v (%s)",
+				c.principal, c.target, c.kind, d.Allowed, c.allowed, d)
+		}
+	}
+}
+
+// A denial for a non-glob kind says which kind it judged, so an
+// operator refused for `-C 'web1.prod'` is not left wondering why a
+// glob rule for web*.prod did not match web1.prod.
+func TestADenialNamesTheTargetKind(t *testing.T) {
+	p := load(t)
+	d := p.Authorize(Request{Principal: "cert:CN=alice", Target: "web1.prod", TargetKind: "C", Fun: "state.apply"})
+	if d.Allowed || !strings.Contains(d.Reason, "compound") {
+		t.Errorf("got %s; want a denial naming the compound kind", d)
+	}
+	d = p.Authorize(Request{Principal: "cert:CN=alice", Target: "web1.prod", TargetKind: "nope", Fun: "test.ping"})
+	if d.Allowed || !strings.Contains(d.Reason, "not a target kind") {
+		t.Errorf("got %s; want a denial for an unknown kind", d)
+	}
+}
