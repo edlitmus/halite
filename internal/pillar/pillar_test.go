@@ -683,7 +683,7 @@ func TestOnRenderedSeesThePillarTopAndFiles(t *testing.T) {
 // only to hosts outside 10/8, delivered it to 10.0.5.9 as well. Trusting
 // the address grains would not fix it, because a node that controls its
 // own grains controls them too. The same shape as DIVERGENCE 5.136, with
-// a kind the check had no case for. DIVERGENCE 5.290.
+// a kind the check had no case for. DIVERGENCE 5.329.
 func TestASubnetTargetIsRefused(t *testing.T) {
 	inside := Config{
 		NodeID:     "web1.prod",

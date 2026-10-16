@@ -160,7 +160,7 @@ Package job is the job identity, the replay defences, and the return schema of S
 
 The hub and the node both depend on this, and they have to agree exactly: a jid the hub assigns is the key the node records to refuse a replay, the key the job cache files a return under, and the string an operator types into \`jobs show\`.
 
-**Files:** `cache.go`, `guard.go`, `job.go`, `model.go`; with tests.
+**Files:** `cache.go`, `guard.go`, `job.go`, `model.go`, `signedreplay.go`; with tests.
 
 **Exports.**
 
@@ -173,6 +173,7 @@ The hub and the node both depend on this, and they have to agree exactly: a jid 
 - `Job` (type): Job is the record the hub keeps and the message the node receives.
 - `NewGuard` (func): NewGuard makes a replay cache.
 - `NewID` (func): NewID is the identifier for one moment, for a caller with no hub behind it: a local run, or a test.
+- `NewSignedReplay` (func): NewSignedReplay names the file the record lives in.
 - `Nonce` (func): Nonce is SPEC 6.3's 128 bits of randomness, recorded by the node in a bounded replay cache.
 - `Offline` (type): Offline is the per-job policy of SPEC 9.5 for a node that is not connected.
 - `OpenCache` (func): OpenCache prepares the store.
@@ -181,6 +182,7 @@ The hub and the node both depend on this, and they have to agree exactly: a jid 
 - `Refusal` (type): Refusal is why a node would not run a job.
 - `Return` (type): Return is one node's answer, in the shape SPEC 9.4 freezes.
 - `SchemaFor` (func): SchemaFor is the lowest schema that can represent this record.
+- `SignedReplay` (type): SignedReplay is the node's record of every signed job it has accepted, kept on disk until the job's own expiry has passed: the replay cache SPEC 6.3 asks for, for the jobs whose replay a node can actually be made to suffer.
 - `SigningPayload` (func): SigningPayload is what SPEC 25.6's signature covers.
 - `State` (type): State is where a job has got to.
 - `WireKwargs` (func): WireKwargs is the keyword arguments as a node will receive them.
@@ -315,7 +317,7 @@ Package fileserver resolves halite:// and salt:// paths against configured roots
 
 Path containment is the security property this package exists to guarantee. Salt's CVE-2020-11652 was a directory traversal in exactly this code path, so every request resolves the path and confirms the result is inside the configured root \*after\* symlink resolution, and the property is covered by a test asserting that no input escapes. SPEC section 13.5.
 
-**Files:** `fetch.go`, `hash.go`, `manifest.go`, `remote.go`, `roots.go`; with tests.
+**Files:** `fetch.go`, `fnmatch.go`, `hash.go`, `manifest.go`, `remote.go`, `roots.go`; with tests.
 
 **Exports.**
 
@@ -429,7 +431,7 @@ Package keystore is the hub's record of who has asked to join and who has been l
 
 One JSON file per node, named for the node, written atomically. A directory rather than a database because the thing an operator does at three in the morning is read it, and because a key store that cannot be recovered with \`cat\` is a key store that gets recovered by guessing.
 
-**Files:** `authority.go`, `keystore.go`, `owner_other.go`, `owner_unix.go`, `token.go`; with tests.
+**Files:** `authority.go`, `keystore.go`, `lock_fcntl.go`, `lock_flock.go`, `lock_other.go`, `lock_windows.go`, `owner_other.go`, `owner_unix.go`, `token.go`; with tests.
 
 **Exports.**
 

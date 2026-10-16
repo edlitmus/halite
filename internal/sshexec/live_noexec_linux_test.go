@@ -39,6 +39,11 @@ import (
 //
 // # What it establishes
 //
+// These run probeScript, the half of the shipped script after the trust
+// check, and not all of it: inside the namespace the host's root-owned
+// directories read as the overflow uid, which the trust check refuses
+// before the probe is reached (DIVERGENCE 5.306).
+//
 // That the real script, through a real `/bin/sh`, against a real
 // `noexec` filesystem, gets as far as the probe and is refused there --
 // exit 126, not the 1 of a directory that could not be made or the 2 of
@@ -107,13 +112,13 @@ func mountTmpfs(t *testing.T, dir, opts string) {
 func TestANoexecStagingDirectoryIsRefusedByTheProbe(t *testing.T) {
 	mountnsReexec(t)
 
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("making the mount point: %v", err)
 	}
 	mountTmpfs(t, dir, "noexec,nosuid,nodev")
 
-	out, code := runScript(t, prepareScript(dir))
+	out, code := runScript(t, probeScript(dir))
 
 	// Not 0: the probe must not appear to have run. Not 1 or 2 either:
 	// those are the directory failing to be made or written to, and
@@ -136,8 +141,8 @@ func TestANoexecStagingDirectoryIsRefusedByTheProbe(t *testing.T) {
 
 	// The probe is removed whatever happened, even on the filesystem
 	// that refused to run it.
-	if _, err := os.Stat(filepath.Join(dir, ".halite-probe")); !os.IsNotExist(err) {
-		t.Errorf("the probe file was left behind on a noexec mount: %v", err)
+	if left, _ := filepath.Glob(filepath.Join(dir, ".probe.*")); len(left) != 0 {
+		t.Errorf("the probe file was left behind on a noexec mount: %v", left)
 	}
 }
 
@@ -148,13 +153,13 @@ func TestANoexecStagingDirectoryIsRefusedByTheProbe(t *testing.T) {
 func TestTheSameDirectoryWithoutNoexecIsAccepted(t *testing.T) {
 	mountnsReexec(t)
 
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("making the mount point: %v", err)
 	}
 	mountTmpfs(t, dir, "nosuid,nodev")
 
-	if out, code := runScript(t, prepareScript(dir)); code != 0 {
+	if out, code := runScript(t, probeScript(dir)); code != 0 {
 		t.Fatalf("an executable staging directory exited %d:\n%s", code, out)
 	}
 }
@@ -164,7 +169,7 @@ func TestTheSameDirectoryWithoutNoexecIsAccepted(t *testing.T) {
 // instead of a canned exit status.
 func localSH(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "local-ssh")
+	path := filepath.Join(privateTempDir(t), "local-ssh")
 	// The last argument is the remote command -- "/bin/sh -s" -- and
 	// the script arrives on stdin. Everything before it is ssh's own
 	// options and the destination, which mean nothing here.
@@ -180,7 +185,7 @@ func localSH(t *testing.T) string {
 func TestPrepareNamesNoexecOnARealMount(t *testing.T) {
 	mountnsReexec(t)
 
-	dir := filepath.Join(t.TempDir(), "halite-thin")
+	dir := filepath.Join(privateTempDir(t), "halite-thin")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("making the mount point: %v", err)
 	}
@@ -189,7 +194,7 @@ func TestPrepareNamesNoexecOnARealMount(t *testing.T) {
 	o := &Options{SSH: localSH(t)}
 	target := roster.Target{ID: "web1.example", Host: "web1.example", ThinDir: dir}
 
-	err := o.prepare(context.Background(), target, dir)
+	_, err := o.prepareWith(context.Background(), target, dir, probeScript(dir))
 	if err == nil {
 		t.Fatal("a target whose staging directory is noexec was accepted")
 	}

@@ -183,9 +183,10 @@ func TestBothSpellingsAreRead(t *testing.T) {
 }
 
 // Region precedence: the secret's own setting, then the ARN, then the
-// node's `region` grain, then the block's default.
+// node's `region` grain, then the block's default. The grain is one the
+// block allows; one it does not is TestANodeSuppliedRegionMustBeAllowed.
 func TestRegionPrecedence(t *testing.T) {
-	cfg := &Config{Region: "us-east-1"}
+	cfg := &Config{Region: "us-east-1", NodeRegionAllow: []string{"eu-west-2"}}
 	grains := map[string]any{"region": "eu-west-2"}
 	cases := []struct {
 		name   string
@@ -202,8 +203,8 @@ func TestRegionPrecedence(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := cfg.regionFor(c.secret, c.grains); got != c.want {
-				t.Errorf("it chose %s, want %s", got, c.want)
+			if got, err := cfg.regionFor(c.secret, c.grains); err != nil || got != c.want {
+				t.Errorf("it chose %s (%v), want %s", got, err, c.want)
 			}
 		})
 	}
@@ -343,8 +344,8 @@ func TestTheEndpointComesFromThePartition(t *testing.T) {
 	}
 	for partition, want := range cases {
 		c := &secretsClient{Partition: partition}
-		if got := c.host("us-gov-east-1"); got != want {
-			t.Errorf("%q gave %s, want %s", partition, got, want)
+		if got, err := c.endpoint("us-gov-east-1"); err != nil || got.String() != want+"/" {
+			t.Errorf("%q gave %v (%v), want %s/", partition, got, err, want)
 		}
 	}
 }

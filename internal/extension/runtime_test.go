@@ -52,7 +52,15 @@ func echoBinary(t *testing.T) string {
 // installReal puts a signed bundle carrying the real binary in a cache.
 func installReal(t *testing.T, cache string) TrustKey {
 	t.Helper()
-	dir := filepath.Join(cache, "echo", "1.0.0")
+	return installRealAs(t, cache, "echo", "1.0.0")
+}
+
+// installRealAs signs the same binary -- which says it is echo 1.0.0 --
+// under whatever name and version the caller chooses, which is what an
+// operator does with `extensions sign --name --ext-version`.
+func installRealAs(t *testing.T, cache, name, version string) TrustKey {
+	t.Helper()
+	dir := filepath.Join(cache, name, version)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +72,7 @@ func installReal(t *testing.T, cache string) TrustKey {
 		t.Fatal(err)
 	}
 	manifest, err := Build(dir, Manifest{
-		Name: "echo", Version: "1.0.0", Kind: "module",
+		Name: name, Version: version, Kind: "module",
 		Description: "returns what it was given",
 		Executables: map[string]string{Platform(runtime.GOOS, runtime.GOARCH): exeName("echoext")},
 	})
@@ -246,5 +254,59 @@ func TestTheWorkingDirectoryIsCreated(t *testing.T) {
 	}
 	if info, err := os.Stat(work); err != nil || !info.IsDir() {
 		t.Errorf("the working directory was not created: %v", err)
+	}
+}
+
+// An executable is only run as the extension it says it is.
+//
+// The echo binary's handshake says echo 1.0.0. Signed as 1.1.0, the pin
+// and `sys.list_extensions` would both have said 1.1.0 about code that
+// says otherwise, and signed under another name it would have been
+// keyed, configured and pinned as something it is not. Both loaded
+// before DIVERGENCE 5.325. The bundle verifies in each case -- the
+// signature is honest about the bytes -- which is why this is checked
+// at the handshake and not at load.
+func TestAnExecutableIsRunOnlyAsTheExtensionItSaysItIs(t *testing.T) {
+	cases := []struct{ name, version, wantSigned string }{
+		{"echo", "1.1.0", "echo 1.1.0"},
+		{"other", "1.0.0", "other 1.0.0"},
+	}
+	for _, c := range cases {
+		t.Run(c.name+"-"+c.version, func(t *testing.T) {
+			cache := t.TempDir()
+			key := installRealAs(t, cache, c.name, c.version)
+			store := &Store{Dir: cache, Options: LoadOptions{
+				TrustKeys: []TrustKey{key}, RequireSignature: true,
+			}}
+			installed, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			usable, problems := store.Usable(installed)
+			if len(problems) != 0 {
+				t.Fatalf("the bundle should verify -- the signature is over honest bytes: %v", problems)
+			}
+			work := t.TempDir()
+			rt := &Runtime{WorkDirFor: func(string) string { return work }, Timeout: 20 * time.Second, PoolSize: 1}
+			defer rt.Close()
+			if err := rt.Add(usable[c.name]); err != nil {
+				t.Fatal(err)
+			}
+			loaded, _ := rt.Get(c.name)
+
+			err = loaded.Start(context.Background())
+			if err == nil {
+				t.Fatalf("the echo 1.0.0 binary signed as %s was started", c.wantSigned)
+			}
+			for _, want := range []string{"signed as " + c.wantSigned, "says it is echo 1.0.0"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not say %q: %v", want, err)
+				}
+			}
+			if _, err := loaded.Call(context.Background(), "say", nil,
+				map[string]any{"message": "x"}, nil); err == nil {
+				t.Error("a call ran after the start was refused")
+			}
+		})
 	}
 }

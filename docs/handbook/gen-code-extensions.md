@@ -204,15 +204,19 @@ SPEC 13.4 implements this directly rather than importing the AWS SDK, which woul
 
 The algorithm is specified precisely and its failure mode is a signature that does not verify, so the tests here are the AWS documentation's own published vectors: an implementation that agrees with itself proves nothing.
 
-**Files:** `credentials.go`, `imds.go`, `sigv4.go`; with tests.
+**Files:** `credentials.go`, `imds.go`, `region.go`, `sigv4.go`; with tests.
 
 **Exports.**
 
+- `Bounded` (func): Bounded quotes s for an error message, cut to 64 bytes.
 - `Credentials` (type): Credentials are what a request is signed with.
 - `HexSHA256` (func): HexSHA256 is the payload hash a caller puts in `x-amz-content-sha256`.
 - `IMDS` (type): IMDS reads the EC2 instance metadata service.
+- `PartitionSuffix` (func): PartitionSuffix is the DNS suffix of a partition's endpoints.
 - `Provider` (type): Provider resolves credentials.
+- `ServiceURL` (func): ServiceURL is `https://<service>.<region>.<suffix>/`, built as a URL rather than as a string.
 - `Signer` (type): Signer signs requests for one service in one region.
+- `ValidRegion` (func): ValidRegion reports whether region is safe to place in a host name.
 
 ## `internal/awskms`
 

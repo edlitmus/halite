@@ -1,0 +1,11 @@
+# Version and source digest of each shipped extension, held by
+# TestEveryShippedExtensionVersionMovesWithItsCode (extversion_test.go).
+#
+# Change a line here in the same change that changes the extension or a
+# package it imports. If Version did not move, the commit says why the
+# behaviour is the same.
+#
+# name version digest
+halite-ext-aws-secrets 1.1.0 sha256:b757d1648fae610a9b0869d0ff216848dcbdd797b4b68dcd1cffe51d60210f72
+halite-ext-signer-kms 1.0.1 sha256:c118e5a1503245feeaaba6a3ef38ddfa7e47488ac4a597210e9cc5feba3a8e6e
+halite-ext-signer-local 1.0.0 sha256:2198be756735158230ebd61a57489eb2dd235ac3af87367c1128ea915b53575a

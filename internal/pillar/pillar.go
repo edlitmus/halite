@@ -385,7 +385,7 @@ func (c *Compiler) readTop(out *Compiled, env string) *value.Map {
 // is not neutral: a pillar target is evaluated against the trusted grains
 // alone, so a term that reads anything else is false on every node and its
 // negation true on every node. That is how `not S@10.0.0.0/8` delivered a
-// pillar to every host inside 10/8 (DIVERGENCE 5.290), and why the switch
+// pillar to every host inside 10/8 (DIVERGENCE 5.329), and why the switch
 // below ends in a refusal rather than falling through to "glob": a kind
 // added to internal/target later fails loudly here until somebody decides
 // what it consults.
@@ -411,7 +411,7 @@ func (c *Compiler) checkTargetIsPermitted(expr string, matcher *target.Matcher) 
 			// sound, because they are reported by the node, which can
 			// claim any address it likes. There is no allowlist answer,
 			// so there is no allowlist escape: it is refused outright.
-			// DIVERGENCE 5.290.
+			// DIVERGENCE 5.329.
 			return "", fmt.Errorf(
 				"pillar top expression %q targets on an address (S@ or match: ipcidr), which is read from the ipv4 and ipv6 grains "+
 					"a node reports about itself; target the node ID, or a hub-authoritative attribute under node: (SPEC section 12.4)",

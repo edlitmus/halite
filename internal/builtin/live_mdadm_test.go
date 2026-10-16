@@ -365,3 +365,49 @@ func TestLiveMdadmDestroyRemovesTheArrayAndItsSuperblocks(t *testing.T) {
 		t.Error("a second destroy reported a change")
 	}
 }
+
+// `create` over a member holding a real filesystem is refused, and
+// nothing is created (DIVERGENCE 5.310).
+//
+// Before 5.310 the only check was `mdadm --examine`, which answers "No
+// md superblock detected" for an ext4 disk, and `--run` then told mdadm
+// not to ask about the filesystem it had found. This makes the
+// filesystem with the real mkfs and asks the real wipefs, and it logs
+// wipefs's raw output for a clean and a formatted device: those two
+// lines are the fixtures mdadm_test.go is still holding as synthetic,
+// and a run of this is how they get captured.
+func TestLiveMdadmCreateRefusesAMemberHoldingAFilesystem(t *testing.T) {
+	rig := liveMdadmSetup(t)
+	c, r := rig.c, rig.r
+	if c.Which("mkfs.ext4") == "" || c.Which("wipefs") == "" {
+		t.Skip("this host has no mkfs.ext4 or no wipefs")
+	}
+	if err := liveMdadmRun(c, "mkfs.ext4", "-q", "-F", rig.devices[1]); err != nil {
+		t.Fatalf("the filesystem to refuse could not be made: %v", err)
+	}
+	for _, d := range rig.devices[:2] {
+		res, err := c.Run(exec.Command{
+			Argv:           []string{"wipefs", "--no-act", "--noheadings", "--output", "TYPE,OFFSET", d},
+			IgnoreExitCode: true,
+		})
+		if err != nil {
+			t.Fatalf("wipefs %s: %v", d, err)
+		}
+		t.Logf("capture: wipefs %s exited %d\nstdout: %q\nstderr: %q", d, res.Code, res.Stdout, res.Stderr)
+	}
+
+	_, err := r.Exec.Call(c, "mdadm.create", value.MapOf("device", rig.array, "level", "1",
+		"devices", []any{rig.devices[0], rig.devices[1]}))
+	if err == nil {
+		t.Fatal("create over a member holding ext4 was allowed without force")
+	}
+	if !strings.Contains(err.Error(), rig.devices[1]) || !strings.Contains(err.Error(), "ext4") {
+		t.Errorf("the refusal does not name the device and what is on it: %v", err)
+	}
+	if _, derr := r.Exec.Call(c, "mdadm.detail", value.MapOf("device", rig.array)); derr == nil {
+		t.Error("an array exists after the refusal")
+	}
+	if err := liveMdadmRun(c, "mdadm", "--examine", rig.devices[0]); err == nil {
+		t.Errorf("%s carries an md superblock after a refused create", rig.devices[0])
+	}
+}

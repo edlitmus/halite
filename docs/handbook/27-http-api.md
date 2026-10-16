@@ -323,10 +323,15 @@ The refusals, all of which were run:
 | A hook path that is not configured | `404 {"error":"no such hook"}` |
 | A body larger than the limit | `413` |
 
-`auth: token` and `auth: mtls` are the other two modes. The nonce is
+`auth: token` is the other mode. `auth: mtls` is refused when the API
+loads its configuration: the API does not ask clients for certificates, so
+no delivery to such a hook could ever authenticate. The nonce is
 recorded after the delivery lands on the bus, not when the signature verifies,
 so a delivery that failed downstream and is retried with the same signature
-is not refused as a replay.
+is not refused as a replay. A second copy that arrives while the first is
+still being delivered is refused with `409`. The hook's `rate_limit` counts
+only deliveries that authenticated, so requests without the secret cannot
+use up the sender's allowance.
 
 A reaction can now act on `halite/hook/deploy`
 ([chapter 20](20-reactors.md)): start an orchestration, apply a state, send

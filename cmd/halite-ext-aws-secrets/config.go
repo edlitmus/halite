@@ -31,6 +31,11 @@ type Secret struct {
 	Region string
 	// Stage selects a version other than AWSCURRENT.
 	Stage string
+
+	// fromNode is set on a secret named by the node's own grain rather
+	// than by the hub's configuration or the tree, so that every region
+	// it implies is held to `node_region_allow`.
+	fromNode bool
 }
 
 // UnmarshalJSON reads one secret specification.
@@ -78,7 +83,8 @@ type Config struct {
 	// Root is the pillar key to nest everything under.
 	Root string `json:"pillar_key"`
 	// Region is the fallback when a secret is named rather than given
-	// as an ARN and the node has no `region` grain.
+	// as an ARN and the node has no `region` grain. It is also the one
+	// region a node may always name; see NodeRegionAllow.
 	Region string `json:"region"`
 	// Partition is `aws`, `aws-us-gov`, or `aws-cn`, for secrets whose
 	// ARN does not say.
@@ -103,6 +109,14 @@ type Config struct {
 	// NodeGrainAllow are glob patterns a node-named secret ID must
 	// match. Empty allows any, which is the Salt behaviour.
 	NodeGrainAllow []string `json:"node_grain_allow"`
+	// NodeRegionAllow are the regions, beyond Region, that a node may
+	// name -- through its own `region` grain, or through the `region`
+	// or ARN of an entry in NodeGrain. Exact names, not patterns.
+	//
+	// A node controls its grains, and a region is part of the host the
+	// hub sends a signed request to, so a node-supplied region is used
+	// only when the operator has said it may be (DIVERGENCE 5.324).
+	NodeRegionAllow []string `json:"node_region_allow"`
 
 	// Credentials. The instance role needs none of these.
 	AccessKeyID          string `json:"access_key_id"`
@@ -161,6 +175,22 @@ func parseConfig(raw json.RawMessage) (*Config, error) {
 			return nil, fmt.Errorf("%q is not a usable pattern: %v", p, err)
 		}
 	}
+	// Checked here as well as where they become a host, so that a typo
+	// in the block is reported against the block rather than against
+	// the first node whose compilation happens to reach it.
+	if cfg.Region != "" {
+		if err := awsauth.ValidRegion(cfg.Region); err != nil {
+			return nil, fmt.Errorf("`region`: %w", err)
+		}
+	}
+	for _, r := range cfg.NodeRegionAllow {
+		if err := awsauth.ValidRegion(r); err != nil {
+			return nil, fmt.Errorf("`node_region_allow`: %w", err)
+		}
+	}
+	if _, err := awsauth.PartitionSuffix(cfg.Partition); err != nil {
+		return nil, fmt.Errorf("`partition`: %w", err)
+	}
 	return cfg, nil
 }
 
@@ -210,17 +240,51 @@ func (c *Config) provider() *awsauth.Provider {
 // surprised; then the ARN, which carries the truth when it is given;
 // then the node's own `region` grain, which is what the Salt module
 // reached for; then the block's default.
-func (c *Config) regionFor(s Secret, grains map[string]any) string {
+//
+// Every region is checked against the region grammar, and every region
+// a node supplied -- its `region` grain, or the `region` or ARN of a
+// secret it named through `node_grain` -- must also be the block's own
+// `region` or be listed in `node_region_allow`. That is a change from
+// the Salt module, which used the grain as given, and from this
+// extension before DIVERGENCE 5.324, which concatenated it into the
+// endpoint's host: a node could point the hub's signed request, and
+// its access key ID and session token, at any host it liked.
+//
+// A grain that names a region the block does not allow is refused, not
+// skipped in favour of the block's default. Skipping it would read the
+// secret of the same name from a different region than the node is in,
+// which in an estate with per-region secrets is a different value, and
+// it would do so silently. The refusal says what to add.
+func (c *Config) regionFor(s Secret, grains map[string]any) (string, error) {
 	if s.Region != "" {
-		return s.Region
+		return c.checkRegion(s.Region, s.fromNode, "the secret's own `region`")
 	}
 	if r := regionFromARN(s.SecretID); r != "" {
-		return r
+		return c.checkRegion(r, s.fromNode, "the secret's ARN")
 	}
 	if r, ok := grains["region"].(string); ok && r != "" {
-		return r
+		return c.checkRegion(r, true, "this node's `region` grain")
 	}
-	return c.Region
+	return c.Region, nil
+}
+
+// checkRegion holds one region to the grammar and, when a node supplied
+// it, to the block's allowance.
+func (c *Config) checkRegion(region string, fromNode bool, source string) (string, error) {
+	if err := awsauth.ValidRegion(region); err != nil {
+		return "", fmt.Errorf("%s: %w", source, err)
+	}
+	if !fromNode || region == c.Region {
+		return region, nil
+	}
+	for _, allowed := range c.NodeRegionAllow {
+		if region == allowed {
+			return region, nil
+		}
+	}
+	return "", fmt.Errorf("%s names the region %s, which is supplied by the node and is neither "+
+		"this block's `region` nor listed in `node_region_allow`; add it there if this node "+
+		"may read secrets from it", source, awsauth.Bounded(region))
 }
 
 // secretsFor is the configured list, plus what the tree asked for, plus
@@ -243,10 +307,11 @@ func (c *Config) secretsFor(grains, treePillar map[string]any) ([]Secret, error)
 		// Only these are checked against the allow list. A list that
 		// came from the tree is the hub's own writing; one that came
 		// from a grain is the node's.
-		for _, s := range found {
-			if err := c.allowed(s.SecretID); err != nil {
+		for i := range found {
+			if err := c.allowed(found[i].SecretID); err != nil {
 				return nil, err
 			}
+			found[i].fromNode = true
 		}
 		out = append(out, found...)
 	}
