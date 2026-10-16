@@ -1554,7 +1554,23 @@ v1 signature and says so by name. Upgrade the signing side —
 `halite-hub` on the operators' machines and CI, and any signer that
 builds these bytes itself — together with the nodes, and re-sign
 anything signed before: a signed job still queued on the hub from
-before the upgrade is refused when it is delivered.
+before the upgrade is refused when it is delivered. The signer
+extensions this project ships (`halite-ext-signer-local`,
+`halite-ext-signer-kms`) sign a digest the hub computes, so they need
+no new build.
+
+The two halves of a mixed estate say different things. An upgraded node
+given a v1 signature names the format:
+
+    the job is signed in the v1 format, which this node refuses because it cannot tell `true` from `"true"`; re-sign it with a current halite-hub
+
+A node *not* yet upgraded, given a v2 signature, cannot know about a
+format newer than itself, and says only:
+
+    the signature does not verify against any of this node's 1 trusted signer key(s)
+
+During the rollout, read that second message as "this node is still on
+the old build", not as a key problem.
 
 ## The record a node keeps of what it ran
 

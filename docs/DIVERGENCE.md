@@ -28810,6 +28810,66 @@ Each was broken on purpose and watched failing:
   remember finite; the replay guard itself is a separate defect and a
   separate change.
 
+#### Since
+
+Prepared for merge on 2026-10-16, after 5.328 had landed.
+
+**The order in `Offer`.** Both changes rewrote it. It now checks the
+in-memory guard, then whether the signed jid has been seen, then the
+signature (including this section's expiry bound), then writes the
+signed record (5.328) and the in-memory guard, and only then reads
+`test`. The `test` refusal comes after the record, so a signed job
+refused for a non-boolean `test` has its jid spent. The same signed
+bytes would be refused the same way, so leaving the jid open would
+only let a hub offer it again. The record holds only jobs that passed
+the bound, so no entry lives longer than `job_signature_max_ttl` and a
+day. That answers the "Replay" bullet above.
+
+**The signer extensions do not change.** The version guard (5.325)
+fired for `halite-ext-signer-local`, which links `internal/jobsign`.
+The first reading, here and in the review, was that its signatures
+change, so it should go to 2.0.0. That was wrong. It calls one
+function, `DecodePrivateKey`, and neither that nor its callee
+`checkCurve` is in any hunk of this change. It signs the digest the hub
+sends, and the hub computes that digest. A signer-local built from
+untouched `main` (6ea2fab), substituted into
+`TestSignerExtensionSignsAndVerifiesForReal` by a throwaway edit, signed
+a v2 digest that this change's `Verify` accepted. Its version stays
+1.0.0 and its digest is recorded. The guard did not fire for
+`halite-ext-signer-kms`, which does not link `jobsign`. The CHANGELOG
+headline said "any external signer" must upgrade. It now says "any
+signer that builds the signed bytes itself", which is what the
+paragraph under it and `docs/operations.md` already said.
+
+**A live mixed estate** (beastie, FreeBSD 15.1-RELEASE-p5, branch at
+6c4b2ce, `main` at 6ea2fab). One throwaway hub on loopback, built from
+the branch, with an admin operator and a signer key `ops`. Two nodes,
+each with `require_job_signature: true` and the `ops` key, one built
+from the branch and one from `main`. `halite-hub run -L <node>
+test.ping --sign-key` was run from each build's CLI:
+
+- new CLI, new node: ran (`True`). With `--test`: ran (`True`).
+- **old CLI, new node: refused, naming the format**: "the job is signed
+  in the v1 format, which this node refuses because it cannot tell
+  `true` from `"true"`; re-sign it with a current halite-hub (it
+  verifies against ops's key in that format)".
+- **new CLI, old node: refused**, but only as "the signature does not
+  verify against any of this node's 1 trusted signer key(s)". An old
+  node cannot know about a newer format, so this half of a mixed estate
+  reads like a key problem. `docs/operations.md` and the CHANGELOG now
+  say so, so that nobody rotates keys over it mid-rollout.
+- old CLI, old node (control): ran.
+
+`internal/jobsign`, `internal/job`, `internal/extsigner`,
+`cmd/halite-ext-signer-local`, `cmd/halite-ext-signer-kms` and
+`cmd/halite-node` passed there natively under `-race`, and on Linux.
+
+**Still not verified.** `test.ping` ignores `test`, so the signed
+`--test` run shows the flag is signed and accepted, not that the node
+then honoured it as a dry run. That half is the unit tests'.
+`TestLiveKMSJobSignature` is still unrun; it needs a KMS key. The live
+run used one node of each build, not an estate.
+
 
 
 

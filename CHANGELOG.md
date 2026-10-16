@@ -23,16 +23,21 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ### Signed jobs use a new format, and old signatures are refused
 
-**Hubs, every `halite-hub` used to sign, any external signer, and nodes
-must be upgraded together.** The bytes a job signature covers now carry
+**Hubs, every `halite-hub` used to sign, any signer that builds the
+signed bytes itself, and nodes must be upgraded together.** The shipped
+signer extensions, `halite-ext-signer-local` and `halite-ext-signer-kms`,
+sign a digest the hub computes, and do not need replacing. The bytes a job signature covers now carry
 each keyword argument's type (`halite-job-v2`). Under the old format the
 boolean `true` and the string `"true"` signed identically, and a node runs
 a dry run only for the boolean, so a hub could turn a signed `--test` run
 into a real one without breaking the signature. A node now refuses a
 `halite-job-v1` signature, saying so by name; a signed job still queued on
 the hub from before the upgrade is refused on delivery and has to be
-submitted again. A CI job or KMS signer that builds the bytes itself must
-follow the new encoding in docs/operations.md.
+submitted again. A node not yet upgraded refuses a new signature as
+"the signature does not verify against any of this node's trusted signer
+key(s)". That is the format, not the key, so do not rotate keys over it.
+A CI job or KMS signer that builds the bytes itself must follow the new
+encoding in docs/operations.md.
 
 A signed job must now carry an expiry, and a node refuses one whose
 expiry is more than the new `job_signature_max_ttl` (default `1h`) away
