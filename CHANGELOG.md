@@ -21,6 +21,29 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `allow_mods` now judges the orchestration names `orch run` sends
+
+A role limited by `allow_mods` -- the example policy's `deployer`, with
+`deploy.*` -- could run any orchestration through `halite-hub orch run`,
+because the CLI sends the name as the keyword `sls` and the policy
+judged only positional arguments. It could also hide a name in a comma
+list (`deploy.web,teardown.everything`), which the runner splits and
+the policy did not. Both are now judged: every name, positional or
+keyword, each name of a comma list on its own, for `state.orchestrate`,
+`state.orch` and `state.orchestrate_show_sls`. A runner request under
+`allow_mods` that names no orchestration is refused by the policy.
+`deny_sls` on these runners is judged the same way.
+
+`POST /v1/orch` now authorizes the keyword arguments it forwards, so a
+role's `deny_kwargs: ['pillar']` stops a `pillar` sent there; it used
+to reach the hub unchecked.
+
+**What you may notice:** an `orch run`, API call or reaction under a
+role with `allow_mods` that names an orchestration outside its patterns
+is refused where it used to run. Check reactions and pipelines that run
+orchestrations under a narrowed role with `halite-hub policy test …
+--runner --kwarg sls=<name>`. See DIVERGENCE 5.321.
+
 ### A role with `allow_sls` can no longer run the highstate
 
 **This changes what operators see.** `allow_sls` restricts a role to a

@@ -50,6 +50,10 @@ a run that names none, and
 are refused: either would apply the whole highstate.
 .It Cm allow_mods
 which orchestrations a runner may run.
+Every name is checked, whether it is given positionally or as the
+.Ql sls
+keyword, and each name of a comma list on its own.
+A request that names none is refused.
 .It Cm deny_kwargs
 keyword arguments that may not be passed, such as
 .Ql pillar .

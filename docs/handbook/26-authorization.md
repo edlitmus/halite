@@ -210,7 +210,7 @@ A rule can restrict how a function is called:
 |---|---|
 | `allow_sls: [webserver.*]` | `state.apply` may name only these SLS files (patterns). A request naming none runs the highstate and is refused, as is `state.highstate`. |
 | `deny_sls: [...]` | ...or must not name these. |
-| `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. |
+| `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. Each name is checked, positional or the `sls` keyword, and each name of a comma list on its own. |
 | `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name. |
 
 `deny_kwargs: ['pillar']` matters more than it looks. Pillar can be passed

@@ -63,6 +63,18 @@ func TestTheExamplePolicyDecidesWhatItSaysItDoes(t *testing.T) {
 		{"the deployer may not orchestrate outside allow_mods",
 			policy.Request{Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
 				Arg: []string{"teardown.everything"}}, false},
+		// `halite-hub orch run` sends the name as the keyword `sls`, never
+		// positionally, so these are the decisions an operator actually
+		// gets. DIVERGENCE 5.321.
+		{"the deployer runs its orchestration the way orch run sends it",
+			policy.Request{Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
+				Kwarg: map[string]any{"sls": "deploy.web"}}, true},
+		{"the deployer may not orchestrate outside allow_mods by keyword",
+			policy.Request{Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
+				Kwarg: map[string]any{"sls": "teardown.everything"}}, false},
+		{"the deployer may not hide a name in a comma list",
+			policy.Request{Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true,
+				Kwarg: map[string]any{"sls": "deploy.web,teardown.everything"}}, false},
 		{"a relay proxies and does nothing else",
 			policy.Request{Principal: "node:relay1.prod", Fun: "relay.proxy", Runner: true}, true},
 		{"a relay is not an operator",
