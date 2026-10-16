@@ -25192,6 +25192,75 @@ runner each started the program). With the old `cmd_more.go` alone,
   kernel's on each unix; it was seen only on macOS here.
 - **Windows** refuses every `runas` (`credential_windows.go`), and now
   refuses it for a background command too. Not run on Windows.
+### 5.302 A `listen` reaction ran without its state's guards or account
+
+The handbook (chapter 6) says `listen` is `watch` with the reaction
+deferred. It was not. A watch reaction runs through `execute`, which binds
+the chunk's `runas` and `umask` to the module context, bounds each attempt
+by its `timeout`, retries it and runs its generic `check_cmd`; before
+that, the main pass applies its `creates`, `unless` and `onlyif`.
+`runListeners` called `States.CallWatch` on the runner's shared context
+with none of these. The compiler moves `runas`, `umask` and `timeout` out
+of the arguments and into the chunk's options (`state/lowstate.go`), so
+the module never saw them either.
+
+So, at the end of a run:
+
+- a listened `cmd.run` with `runas: deploy` ran as the node's account,
+  root;
+- `onlyif: nginx -t` and `unless:` did not guard the reaction;
+- a state skipped in the main pass by `creates:` ran its mod_watch
+  anyway. This was reproduced in the runner's test harness before the
+  change;
+- `retry`, `timeout` and `check_cmd` did not apply.
+
+Salt's `call_listen` (`salt/state.py`) copies the whole low chunk, sets
+`fun` to `mod_watch`, removes only the requisite keys, and runs it with
+`call_chunks`, so `call()` applies `_run_check` (`unless`, `onlyif`,
+`creates`), `retry` and `runas` to it as to any chunk. That was read, not
+run.
+
+**The change.** The main pass's "gates, then `execute`" is now one
+function, `runChunk`. The main pass and `runListeners` both call it, so
+the listen reaction and the watch reaction run through the same code and
+cannot come apart again. `runListeners` does not evaluate requisites a
+second time; Salt drops them from the listener's copy for the same
+reason. A gated reaction is reported as skipped, with the gate's comment
+after "Listening reaction, run at the end of the state run." A reaction
+that errors now says "The state raised an error" where it said "The
+listen reaction raised an error".
+
+**How it is tested** (`internal/runner/runner_test.go`; the probe's
+mod_watch now records the account, umask and deadline it saw, and can be
+told to fail):
+
+- `TestListenReactionGetsTheChunksExecutionOptions`: `runas`, `umask` and
+  `timeout` reach the reaction. The same body with `watch` is the control.
+- `TestListenReactionHonoursItsGates`: `creates` on an existing
+  directory, a true `unless` and a false `onlyif` each hold the reaction,
+  and it is reported skipped with success. An open `creates` is the
+  control.
+- `TestListenReactionIsRetried`: a failing reaction with `retry:
+  attempts: 3` runs three times.
+- `TestListenReactionRunsItsCheckCmd`: the generic `check_cmd` runs for
+  the main pass and again for the reaction.
+
+With the old `runner.go` restored, all four failed and the `watch`
+control passed. With `runListeners` calling `execute` directly
+(skipping only the gates), only the gates test failed.
+
+**Not verified.**
+
+- **No real command ran.** The tests use a scripted state module and a
+  recording command runner. No listened `cmd.run` was watched running as
+  another account; that needs root and was not done.
+- **macOS only.** Run on Darwin 25.6, not on Linux or FreeBSD. The runner
+  has no platform code on this path.
+- **Structured conditions still use the shared context.** `evalCondition`
+  runs a `{fun: ...}` condition with `r.Ctx`, not the chunk's context, so
+  it does not see the chunk's `runas`. That is true for the main pass as
+  well and was not changed here. Whether Salt applies `runas` to a
+  `fun:` condition was not checked.
 
 
 
