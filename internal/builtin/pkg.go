@@ -690,9 +690,9 @@ func pkgLatestSentence(installPhrase, upgradePhrase string, toInstall, toUpgrade
 // features a tree may use on purpose, and they are not option
 // injection.
 //
-// `dnf_module`'s `dnfModuleSpec` is the same rule written as a narrower
-// positive grammar for module specs; it is left as it is, and making it
-// call this for the shared half is a follow-up.
+// `dnf_module` calls this before its own narrower positive grammar for
+// module specs, `dnfModuleSpec`, so that a module spec is refused for
+// everything a package name is, whatever that grammar later admits.
 func pkgValidateName(name string) error {
 	if name == "" {
 		return fmt.Errorf("a package name is empty")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -252,6 +253,28 @@ func TestDnfModuleRefusesSpecsThatDnfWouldReadAsOptions(t *testing.T) {
 	}
 	if err := dnfModuleValidate(nil); err == nil {
 		t.Error("no modules at all accepted")
+	}
+}
+
+// A module spec is refused for everything a package name is, by the same
+// function: dnf_module and pkg both put a caller's string into dnf's
+// argv as root. The second half checks the shared check alone, with the
+// module's own grammar out of the way, so that this test fails if the
+// call is removed and not only if the grammar is widened.
+func TestDnfModuleRefusesWhatPkgRefuses(t *testing.T) {
+	for _, bad := range pkgRefusedNames {
+		if err := dnfModuleValidate([]string{"nginx", bad}); err == nil {
+			t.Errorf("dnf_module accepted %q, which pkgValidateName refuses", bad)
+		}
+	}
+
+	old := dnfModuleSpec
+	dnfModuleSpec = regexp.MustCompile(`^.*$`)
+	t.Cleanup(func() { dnfModuleSpec = old })
+	for _, bad := range pkgRefusedNames {
+		if err := dnfModuleValidate([]string{bad}); err == nil {
+			t.Errorf("with the module grammar widened to anything, %q was accepted", bad)
+		}
 	}
 }
 
