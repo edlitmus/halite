@@ -111,6 +111,7 @@ Two deliberate departures from Jinja are worth knowing before reading further. U
 - `CallExpr` (type): CallExpr is a function or macro call.
 - `CallNode` (type): CallNode is `{% call macro(...) %}body{% endcall %}`, which makes the body available to the macro as caller().
 - `Callable` (type): Callable is anything a template may invoke: a macro, a bound method, a module dispatcher entry, or a global function.
+- `CompareExpr` (type): CompareExpr is a chain of comparisons.
 - `CondExpr` (type): CondExpr is `a if c else b`.
 - `ContinueNode` (type): ContinueNode ends the current iteration and starts the next.
 - `DataImportNode` (type): DataImportNode is Salt's `{% import_yaml expr as name %}`, and its `import_json` and `import_text` siblings.
@@ -162,8 +163,7 @@ Two deliberate departures from Jinja are worth knowing before reading further. U
 - `TestFunc` (type): TestFunc is one `is` test.
 - `TextNode` (type): TextNode is a literal span between tags.
 - `Tuple` (type): Tuple is a tuple literal's value.
-- `TupleExpr` (type): TupleExpr is a tuple literal.
-- … and 4 more; see the source.
+- … and 5 more; see the source.
 
 ## `internal/render`
 

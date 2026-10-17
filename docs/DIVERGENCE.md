@@ -30235,6 +30235,48 @@ none, in 32 s.
 check`, by design. The pin will age, and moving it is a change like any
 other.
 
+### 5.351 A chained comparison or a power gave a different answer from Jinja, silently
+
+Issue 321 finding M-52, the half of it where a tree silently takes a
+different branch or computes a different number. The finding's
+differential was against jinja2 3.1.6; here every expected value was
+captured from jinja2 3.1.2, rendering the same source with x=15, and
+`TestComparisonsAndPowerMatchJinja` holds fourteen of them. Main got
+seven wrong:
+
+| Source | main | jinja2 3.1.2 |
+|---|---|---|
+| `{{ 0 < 15 < 10 }}` | True | False |
+| `{% if 0 < x < 10 %}in{% else %}out{% endif %}` | in | out |
+| `{{ 3 > 2 > 1 }}` | False | True |
+| `{{ 0 < 5 > 3 }}` | False | True |
+| `{{ 1 in [1] == true }}` | True | False |
+| `{{ 2 ** 3 ** 2 }}` | 512 | 64 |
+| `{{ -2 ** 2 }}` | -4 | 4 |
+
+- **Comparisons chain.** `a < b < c` is `a < b and b < c`, with b
+  evaluated once and the chain stopping at the first false comparison:
+  a `CompareExpr` of operands and operators. It was a left fold of
+  `BinaryExpr`, so the second comparison compared a boolean. `in` and
+  `not in` take part in a chain, as they do in Jinja; an `is` test ends
+  one.
+- **`**` is Jinja's, not Python's**: left associative, over unary
+  operands. Two existing tests asserted Python's 512 and -4. They were
+  written from Python's rules and never captured from Jinja, and they
+  now hold Jinja's answers.
+
+**Not done.** The rest of M-52 stands:
+
+- `~` binds tighter than `+` in Jinja (`"a" ~ 1 + 2` is an error
+  there, `a3` here);
+- `str.format` specs are ignored rather than applied;
+- `|format` is `fmt.Sprintf` underneath, and several common `%s`
+  idioms fail loudly;
+- integer overflow saturates, as the triage corrected;
+- `round`, `dict([...])` and `tojson` escaping differ.
+
+None of these changes the branch a comparison takes; each is a separate
+change.
 
 
 ## 6. Everything else not started
