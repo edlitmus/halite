@@ -294,7 +294,13 @@ func (o *Options) materialise(ctx context.Context, mirror, target string, remote
 	return nil
 }
 
-// runBinary is `run` for output that is not text.
+// trailerLimit is how much runStream reads after a consumer that finished
+// without error. `git archive` pads its tar to a whole 10 KiB record after
+// the end marker, where the tar reader stops; this is room for that and
+// more, and is still a bound on a git that writes without end.
+const trailerLimit = 1 << 20
+
+// runStream runs git and hands its output, as it comes, to consume.
 func (o *Options) runStream(ctx context.Context, dir string, consume func(io.Reader) error, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, o.timeout())
 	defer cancel()
@@ -312,6 +318,22 @@ func (o *Options) runStream(ctx context.Context, dir string, consume func(io.Rea
 		return fmt.Errorf("git %s: %w", args[0], err)
 	}
 	consumeErr := consume(stdout)
+	if consumeErr == nil {
+		// A consumer that finished may not have read everything: the tar
+		// reader stops at the end marker, and git still has the padding
+		// after it to write. Waiting for git without reading it can
+		// deadlock: on beastie (FreeBSD 15.1) a one-file tree was a single
+		// 10 KiB record of which 7 KiB followed the marker, git did not
+		// exit with that unread, and every gitfs update hung until its
+		// timeout. The same on Linux finished, so the pipe there took it.
+		// Which pipes do is not this function's to depend on: what is left
+		// is read, up to a bound, and past it git is killed and the run
+		// fails.
+		n, _ := io.Copy(io.Discard, io.LimitReader(stdout, trailerLimit+1))
+		if n > trailerLimit {
+			consumeErr = fmt.Errorf("git %s wrote more than %d bytes past what it was asked for", args[0], trailerLimit)
+		}
+	}
 	if consumeErr != nil {
 		// The consumer stopped early, and git may still be writing: kill
 		// it rather than wait on a pipe nobody will read.
