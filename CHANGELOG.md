@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `str.format` in templates applies its spec, and floats render as Python's
+
+`"{:>8}"`, `"{:.2f}"`, `"{:,}"` and every other format spec were
+ignored, so the bare value was rendered. They are now applied as Python
+applies them. A float renders as Python's `str()` writes it, so `1e15` is
+`1000000000000000.0` and an infinity is `inf`, not `1e+15` and `+Inf`.
+**A file rendered through either changes** to what Salt wrote (issue
+321, M-52). DIVERGENCE 5.369.
+
 ### `round` in templates rounds as Jinja does
 
 `round` now rounds half to even, as Python and Jinja do, on the number's

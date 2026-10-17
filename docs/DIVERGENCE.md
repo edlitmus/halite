@@ -30591,6 +30591,55 @@ that nothing else moved with it.
 **Not done.** `str.format` specs and `|format`'s `%s` idioms; the tuple
 cases above; which `yaml_encode` answer is Salt's.
 
+### 5.369 `str.format` threw its spec away, and a float rendered as Go writes it
+
+Issue 321 finding M-52, the last of 5.359's silent items: "`str.format`
+specs are ignored rather than applied". `formatBraces` found the spec
+after a field's colon and dropped it, so a config file built with
+`"{:>8}".format(name)` or `"{:.2f}".format(load)` came out unaligned or
+unrounded, with no error:
+
+| Source | main | jinja2 3.1.2 |
+|---|---|---|
+| `"{:>5}".format("a")` | a | `    a` |
+| `"{:.2f}".format(x)`, x = 3.14159 | 3.14159 | 3.14 |
+| `"{:,}".format(1234567)` | 1234567 | 1,234,567 |
+| `"{0:08.3f}\|{1:<4}\|{x:^7}".format(2.5, "ab", x="mid")` | `2.5\|ab\|mid` | `0002.500\|ab  \|  mid  ` |
+
+`pyformat.go` is Python's format-specification mini-language: fill,
+alignment, sign, `z`, `#`, `0`, width, grouping, precision, and the `s`,
+`d`, `b`, `o`, `x`, `X`, `c`, `e`, `E`, `f`, `F`, `g`, `G` and `%`
+types, over strings, integers, bools and floats. It is held to Python
+itself: `tools/make-pyformat-corpus.py` writes 3,000 random value-and-spec
+pairs with Python 3.12.3's answers into `testdata/pyformat`, refusals
+included, and `TestPyFormatSpecMatchesPython` requires every one. The
+first version of the code differed on 96 of 6,000; each difference was a
+rule worth writing down, and they are in the code's comments: the `0`
+flag sets the fill even beside an explicit alignment, and since Python
+3.10 does not change a string's; inf and nan are padded but never
+grouped, and `z` leaves `-inf` alone; a spec with a precision and no
+type is CPython's `ADD_DOT_0` form of `g`, which goes scientific an
+exponent earlier, so with x = 3.14, `"{:.0}".format(x)` is `3e+00`
+where `"{:.0g}".format(x)` is `3`; zero padding is grouped and may come out one wider than asked
+(`format(1234, "08,")` is `0,001,234`). A spec it cannot do -- the `n`
+type, which follows the locale -- is refused, not ignored.
+
+A coverage test, `TestStringFormatEdgeCases`, asserted
+`'{:>5}'.format('x')` rendered `x`: the spec thrown away, written from
+what the code did. It now asserts Python's `    x`.
+
+**A float's own rendering, in a separate commit.** Rendering a float was
+fixed point with `.0` below 1e15 and Go's shortest `g` above, so `1e15`
+rendered `1e+15` where Python writes `1000000000000000.0`, and an
+infinity `+Inf` where Python writes `inf`. It now goes through the same
+`repr` the format path uses, held to Python's `str()` on 1,000 floats
+(`testdata/pyformat/str.tsv`) and to six cases rendered through jinja2.
+
+**Not done.** `|format`'s `%s` idioms, which fail loudly rather than
+silently (`"%s" | format(true)`, `%r`, `%(name)s`); conversions (`!r`,
+`!s`) and attribute or index fields (`{0.name}`, `{x[0]}`) in
+`str.format`, which already fail as missing arguments.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
