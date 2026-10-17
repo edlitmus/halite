@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `file.directory`'s recursive changes cannot be led outside the directory
+
+With `recurse:`, the paths were found first and changed afterwards by
+full path. A user who owned something in the tree could swap it, or a
+parent directory, for a symbolic link in between, and the node would set
+the mode, as root, on whatever the link named. The changes now go through
+the directory itself, and nothing outside it can be reached (issue 321,
+M-29). DIVERGENCE 5.346.
+
 ### `file.recurse` keeps excluded files on `clean`, and applies a changed mode
 
 `clean: True` deleted files that `exclude_pat` matched; they are now kept,
