@@ -29719,7 +29719,7 @@ through the link (`os.ReadFile` follows it) and then wrote over it.
 that does not resolve is refused, naming where it points.
 `file.managed`, the edit functions' shared `editResult`, `file.sed` and
 `file.serialize` call it first, so the stat, the read, the comparison,
-the write, the mode and 5.342's owner all concern the target. Salt's
+the write, the mode and the owner M-20 keeps all concern the target. Salt's
 `file.managed` follows by default (`follow_symlinks: True`).
 `writeAtomic` itself does not follow. Some of its callers must not: the
 timezone module writes `/etc/localtime`, which is often a link into the
