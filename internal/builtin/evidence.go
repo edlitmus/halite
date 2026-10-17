@@ -667,9 +667,19 @@ var moduleEvidence = map[string]exec.Evidence{
 		"raised by hand: they used to skip on a machine with no /etc/jail.conf, which is every " +
 		"fresh FreeBSD, so the mutating half ran only where jails already existed " +
 		"(DIVERGENCE 5.123)"},
-	"mount": {Level: exec.Captured, Note: "reads the real /proc/self/mounts and the real " +
-		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
-		"unmounted by this module"},
+	"mount": {Level: exec.Hardware, Note: "reads the real /proc/self/mounts and the real " +
+		"`mount` output on the platforms CI runs. The mutating half was first run on " +
+		"2026-10-16, as root, by `TestLiveMountMountedConvergesAndRemounts` on a scratch " +
+		"tmpfs with a scratch table passed as `config`: on beastie (FreeBSD 15.1-RELEASE-p5) " +
+		"and on Ubuntu 24.04.5 (util-linux 2.39.3), `mount.mounted` with no `opts` mounted " +
+		"it and wrote the table, the second run changed nothing, the line it wrote was " +
+		"mounted by mount(8) itself (`mount -F` and `mount --fstab`), and declaring `ro` " +
+		"remounted it read-only and then converged. On FreeBSD that run is what found " +
+		"`defaults` and `-o remount` refused, so that nothing this module mounted with its " +
+		"default options had ever worked there (DIVERGENCE 5.336). Not covered: a real block " +
+		"device, UUID= or LABEL= devices outside fixtures, `mount.unmounted`, the machine's " +
+		"own /etc/fstab, a boot, and macOS, OpenBSD, NetBSD and DragonFly, whose `-u` and " +
+		"`rw` spelling follow FreeBSD's here without having been run"},
 	"acl": {Level: exec.Hardware, Note: "driven against the real getfacl and setfacl on this " +
 		"fleet's FreeBSD 15.1 host, and on 14.5 and 15.1 in the lab. The mutating half needs no root -- an ACL is set on a file " +
 		"the test owns -- so the round trip runs wherever the suite does. Two things were " +

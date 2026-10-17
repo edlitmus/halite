@@ -320,6 +320,7 @@ func TestMountedConvergesAgainstTheKernelsOwnTable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("mount.mounted does not run on Windows, and this build says so")
 	}
+	linuxMount(t)
 	r := New()
 	dir := t.TempDir()
 
@@ -363,6 +364,18 @@ func TestMountedConvergesAgainstTheKernelsOwnTable(t *testing.T) {
 // about options and the table, and they pass the comparison only
 // because the two strings are equal. The device comparison itself is
 // tested in mount_identity_test.go (DIVERGENCE 5.313).
+// linuxMount makes this module speak Linux's mount for one test, which
+// is what a fixture of xfs, UUID= devices, /proc/self/mounts and
+// `defaults` is. CI runs this suite natively on FreeBSD as well, where
+// mountGOOS would otherwise give the BSD spelling; that spelling is held
+// by mount_bsd_test.go.
+func linuxMount(t *testing.T) {
+	t.Helper()
+	old := mountGOOS
+	mountGOOS = "linux"
+	t.Cleanup(func() { mountGOOS = old })
+}
+
 func mountFixture(t *testing.T, active map[string]any) (*exec.Context, string) {
 	t.Helper()
 	// The states are declared for the platforms with a mount table, and
@@ -376,6 +389,7 @@ func mountFixture(t *testing.T, active map[string]any) (*exec.Context, string) {
 	oldProc := ProcMountsPath
 	ProcMountsPath = filepath.Join(t.TempDir(), "no-proc-mounts")
 	t.Cleanup(func() { ProcMountsPath = oldProc })
+	linuxMount(t)
 
 	var lines []string
 	for point, m := range active {
@@ -416,4 +430,50 @@ func assertRan(t *testing.T, c *exec.Context, want string) {
 		}
 	}
 	t.Errorf("%q was not run; ran %v", want, c.Runner.(*exec.RecordingRunner).RanCommands())
+}
+
+// **A table line needs its type** (issue 321, M-35). Without one the
+// fields close up, the options are read as the type, and neither FreeBSD
+// nor Linux mounts the line; this module's own reader misread it the same
+// way, so the entry was rewritten on every run. The state refuses before
+// mounting or writing anything, and says how to mount without a table
+// entry; mount.set_fstab refuses too.
+func TestATableEntryWithoutAnFstypeIsRefused(t *testing.T) {
+	r := New()
+	c, path := mountFixture(t, nil)
+	res, err := r.States.Call(c, "mount.mounted", value.MapOf(
+		"name", "/srv/data", "device", "/dev/sdb1", "config", path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result == nil || *res.Result {
+		t.Fatalf("a table entry with no fstype was accepted: %+v", res)
+	}
+	if !strings.Contains(res.Comment, "needs an fstype") || !strings.Contains(res.Comment, "persist: false") {
+		t.Errorf("the refusal does not say why or what to do: %s", res.Comment)
+	}
+	assertChangedNothing(t, c)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the table was written: %v", err)
+	}
+
+	if _, err := r.Exec.Call(c, "mount.set_fstab", value.MapOf(
+		"name", "/srv/data", "device", "/dev/sdb1", "config", path)); err == nil || !strings.Contains(err.Error(), "needs an fstype") {
+		t.Errorf("mount.set_fstab with no fstype = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("mount.set_fstab wrote the table: %v", err)
+	}
+
+	// Mounting without a table entry still needs no type: mount(8)
+	// probes for one.
+	res, err = r.States.Call(c, "mount.mounted", value.MapOf(
+		"name", "/srv/data", "device", "/dev/sdb1", "persist", false, "config", path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result == nil || !*res.Result {
+		t.Errorf("mounting with persist: false and no fstype failed: %s", res.Comment)
+	}
+	assertRan(t, c, "mount -o defaults /dev/sdb1 /srv/data")
 }

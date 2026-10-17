@@ -29163,8 +29163,119 @@ same `sysrc -n` probe defect described above. None
 of the 39 real mismatched scripts was enabled or disabled, only the
 probes: several (`ipfw`, `securelevel`, `noshutdown`) would change how
 beastie boots.
+### 5.336 mount spoke Linux on the BSDs: `defaults` and `-o remount`
 
+Issue 321 finding M-44, which the triage could only mark PARTLY: macOS's
+refusal had been run, FreeBSD's had not. `mount` is declared for Linux,
+FreeBSD, OpenBSD, NetBSD, DragonFly and macOS. Its `opts` default is
+`defaults`, and its remount is `mount -o remount,<opts>`. Both are
+Linux's.
 
+**Measured on beastie** (FreeBSD 15.1-RELEASE-p5) as root, with a tmpfs
+on a scratch directory and a scratch table given to `mount -F`:
+
+| What | FreeBSD said |
+|---|---|
+| `mount -t tmpfs -o defaults tmpfs <p>` | `mount option <defaults> is unknown: Invalid argument` |
+| `mount -o remount,ro <p>` | `unknown special file or file system` |
+| `mount -u -t tmpfs -o ro tmpfs <p>` | updated in place; `mount` then says `(tmpfs, local, read-only)` |
+| a table line with opts `defaults` | `Inappropriate file type or format` |
+| a table line with opts `noatime` | `Inappropriate file type or format` |
+| a table line with opts `defaults,rw` | read, then `mount option <defaults> is unknown` |
+| a table line with opts `rw`, or `ro` | mounted |
+
+`mount -F <table> -a` *exited 0* while skipping the line it called
+inappropriate. getfsent takes a line's type from its options, and only
+`rw`, `ro`, `rq`, `sw` and `xx` give it one, so a line with no mode is not
+a mount line at all.
+
+So on FreeBSD, `mount.mounted` with no `opts` failed to mount, with
+`defaults` named. That is the case most trees write. With `mount:
+false`, it wrote a table line that boot would skip without a word. Any
+remount failed.
+
+**The fix.** On a BSD, and on macOS, `defaults` is dropped and `rw` is
+put first where no mode is left. The same spelling goes into the table
+and onto the command line, so the comparison and the mount agree. A
+remount there is `mount -u`. Linux is unchanged. The platform is a
+package variable, `mountGOOS`, so the BSD spelling is held by unit tests
+on every CI platform. The existing fixtures are Linux-shaped (xfs,
+`UUID=` devices, /proc/self/mounts), so they are pinned to Linux.
+Without the pin, two of them failed when the suite ran as if on
+FreeBSD, which is how CI's native FreeBSD job would have run them.
+
+**Demonstrated.** `TestLiveMountMountedConvergesAndRemounts` drives the
+state on a scratch tmpfs, as root:
+
+1. no `opts`, applied twice, and the second run changes nothing;
+2. the line it wrote is handed back to mount(8) (`mount -F` or
+   `mount --fstab`), which has to mount it;
+3. `ro` is declared, which forces a remount, and the kernel's own table
+   must then say `ro`; then a second `ro` run.
+
+Results:
+
+- beastie at b6e9e7b: passed, writing `tmpfs <p> tmpfs rw 0 0`.
+- Ubuntu 24.04.5 (util-linux 2.39.3): passed, writing `defaults`, which
+  Linux accepts.
+- beastie, main's `mount.go`: failed on the first run with `mount
+  option <defaults> is unknown`.
+
+The mount unit tests also passed natively on beastie. Nothing was left
+mounted, and /etc/fstab was byte-identical to a copy taken first. The
+test joins the `linux` leg's filter, and `mount*.go` the fleet trigger
+paths, which it was in neither of. The `mount` evidence level goes from
+`captured` to `hardware` on these runs.
+
+I broke each half on purpose: keeping `defaults` failed
+`TestPlatformMountOpts` and `TestMountedOnFreeBSDWritesNoDefaults`, and
+`-o remount` on FreeBSD failed `TestMountedOnFreeBSDRemountsWithU`.
+
+**Not verified.**
+
+- macOS, OpenBSD, NetBSD and DragonFly get the same spelling and were
+  not run. The audit's own run on macOS found both `defaults` and
+  `remount` refused there, which is the case for the change, not proof
+  of the new argv.
+- A real block device, `mount.unmounted`, and a boot were not tried.
+- A filesystem type whose options differ (tmpfs refused `noatime` on
+  FreeBSD) was not explored.
+### 5.337 An fstab line written without a type was unreadable, and rewritten for ever
+
+Issue 321 finding M-35. `entryFromArgs` requires a mount point and a
+device; `fstype` is optional, because mount(8) can probe. But a table
+line was then written with an empty third field:
+`/dev/sdb1\t/srv/data\t\tdefaults\t0 0`. The fields are separated by
+whitespace, so that is not an empty field. It closes up, and the
+options are read as the type.
+
+**Who reads it how.**
+
+- FreeBSD 15.1 (beastie) refused it with "Inappropriate file type or
+  format".
+- util-linux 2.39.3 on Ubuntu 24.04.5 refused it with "unknown
+  filesystem type 'defaults'" (exit 32).
+- This module's own `parseFstabLine` read type `defaults` and options
+  `0`. So the entry never matched what was declared, and `mount.mounted`
+  rewrote it and reported a change on every run, as the audit
+  reproduced.
+
+**The fix.** `mount.mounted` with `persist` (its default) and
+`mount.set_fstab` refuse an entry without `fstype`, before anything is
+mounted or written. The refusal names `persist: false` as the way to
+mount without a table entry, which still needs no type. It is not
+defaulted to `auto`: FreeBSD has nothing like it, and Salt's own
+`set_fstab` takes the type as a required argument.
+
+**Breaking.** A state that relied on omitting `fstype` while
+persisting now fails. It never produced a usable table line.
+
+`TestATableEntryWithoutAnFstypeIsRefused` holds both refusals, holds
+that the table is not created, and holds that `persist: false` still
+mounts. Disabling the check failed it.
+
+**Not verified.** Neither platform was booted with such a line; their
+refusals were taken from `mount` reading a scratch table.
 
 
 

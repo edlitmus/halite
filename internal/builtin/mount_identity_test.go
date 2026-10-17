@@ -39,6 +39,7 @@ func identityFixture(t *testing.T, nodes []string, links map[string]string, proc
 	if runtime.GOOS == "windows" {
 		t.Skip("mount.mounted does not run on Windows, and this build says so")
 	}
+	linuxMount(t)
 	root := t.TempDir()
 	for _, n := range nodes {
 		p := filepath.Join(root, n)
