@@ -83,6 +83,30 @@ type Authority struct {
 	Revoker  Revoker
 	// Now is the clock, so a test can watch a certificate expire.
 	Now func() time.Time
+	// MaxPending bounds the pending records an unauthenticated caller
+	// can create; zero means DefaultMaxPending. See Enroll.
+	MaxPending int
+}
+
+// MaxCSRBytes bounds the PEM CSR Enroll will read. A node's CSR here is
+// an ECDSA key, a subject and one SAN, and halite-node's are about 500
+// bytes at P-256 and 600 at P-384; 16 KiB leaves room for a CSR another
+// tool made and none for the 8 MiB extension issue 321's M-06 stored.
+const MaxCSRBytes = 16 << 10
+
+// DefaultMaxPending is how many pending records may exist before a new
+// name is refused. Every new name on /v1/enroll wrote one, and nothing
+// bounded how many: the endpoint takes no credential, because it is how
+// a node with none gets one (issue 321, M-06). An estate enrolling more
+// than this at once in manual mode accepts in batches, which `keys
+// accept --all` does.
+const DefaultMaxPending = 1024
+
+func (a *Authority) maxPending() int {
+	if a.MaxPending > 0 {
+		return a.MaxPending
+	}
+	return DefaultMaxPending
 }
 
 func (a *Authority) now() time.Time {
@@ -130,6 +154,10 @@ type Result struct {
 	// Fingerprint is the request's public key digest, which is what an
 	// operator compares out of band.
 	Fingerprint string
+	// Superseded is the fingerprint of a pending request for the same
+	// name that a spent token replaced, so the hub can say so. Empty
+	// otherwise.
+	Superseded string
 }
 
 // Enroll records a request and, in an automatic mode, issues.
@@ -138,6 +166,9 @@ type Result struct {
 // lost the answer gets the same answer, and does not spend a second
 // token doing it.
 func (a *Authority) Enroll(req Request) (*Result, error) {
+	if len(req.CSR) > MaxCSRBytes {
+		return nil, fmt.Errorf("the CSR is %d bytes, and a node's is under %d", len(req.CSR), MaxCSRBytes)
+	}
 	csr, err := pki.DecodeCSR(req.CSR)
 	if err != nil {
 		return nil, err
@@ -172,10 +203,47 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 	}
 	a.Store.inWindow("enroll", nodeID)
 
+	if rec != nil && rec.Fingerprint != fingerprint && rec.State == Pending &&
+		a.Mode == ModeToken && req.Token != "" {
+		// **A spent token outranks a pending request.** Nobody has
+		// decided a pending record, and anybody can make one: a request
+		// for web1 with a bogus token used to leave web1 pending under
+		// the caller's key, and then the real web1, arriving with a
+		// valid token scoped to it, was refused as "a different key"
+		// until an operator deleted the record (issue 321, M-06). A
+		// token that spends for this name is the operator's decision
+		// made in advance, so it takes the name, and the record it
+		// replaces is named by its fingerprint in the hub's log. A token that does not
+		// spend changes nothing: the pending record stays.
+		tok, spendErr := a.Store.spendToken(req.Token, nodeID, req.RemoteAddr, now)
+		if spendErr != nil {
+			return nil, fmt.Errorf("%w: %s is pending under a different key (%s), and this request's token does not admit it: %v",
+				ErrRefused, rec.NodeID, rec.Fingerprint, spendErr)
+		}
+		superseded := rec.Fingerprint
+		rec = &Record{
+			NodeID:      nodeID,
+			State:       Pending,
+			Source:      SourceToken,
+			TokenID:     tok.ID,
+			Fingerprint: fingerprint,
+			CSR:         string(pki.EncodeCSR(csr.Raw)),
+			FirstSeen:   now,
+			Updated:     now,
+		}
+		res, err := a.issue(rec, csr, now)
+		if res != nil {
+			res.Superseded = superseded
+		}
+		return res, err
+	}
+
+	isNew := rec == nil
 	if rec != nil {
 		// A different key presenting an established name is the attack
 		// this section exists to stop, and it is refused in every
-		// state rather than treated as a new request.
+		// state rather than treated as a new request -- except the one
+		// above, a pending record and a token that spends.
 		if rec.Fingerprint != fingerprint {
 			return nil, fmt.Errorf("%w: %s is already known by a different key (%s); delete the record first if the node was rebuilt",
 				ErrRefused, rec.NodeID, rec.Fingerprint)
@@ -197,6 +265,14 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 			return nil, fmt.Errorf("%w: %s is %s", ErrRefused, rec.NodeID, rec.State)
 		}
 	} else {
+		// A new name, from a caller nobody has authenticated. A token
+		// that spends issues below without counting; anything that would
+		// stay pending is bounded, so the store cannot be filled.
+		if !(a.Mode == ModeToken && req.Token != "") {
+			if err := a.roomForPending(); err != nil {
+				return nil, err
+			}
+		}
 		rec = &Record{
 			NodeID:      nodeID,
 			State:       Pending,
@@ -217,7 +293,13 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 		}
 		// The request is still recorded as pending, so that a failed
 		// automatic enrollment leaves something for an operator to
-		// accept by hand rather than vanishing.
+		// accept by hand rather than vanishing -- within the bound, for
+		// a new name, since a bad token costs the caller nothing.
+		if isNew {
+			if err := a.roomForPending(); err != nil {
+				return nil, fmt.Errorf("%w; and %v", err, spendErr)
+			}
+		}
 		if err := a.Store.put(rec); err != nil {
 			return nil, err
 		}
@@ -228,6 +310,21 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 		return nil, err
 	}
 	return &Result{NodeID: nodeID, State: Pending, Fingerprint: fingerprint}, ErrPending
+}
+
+// roomForPending refuses a new pending record once there are
+// maxPending. It reads every record, which is the store's size and is
+// paid only for a name not seen before.
+func (a *Authority) roomForPending() error {
+	n, err := a.Store.countPending()
+	if err != nil {
+		return err
+	}
+	if n >= a.maxPending() {
+		return fmt.Errorf("%w: %d enrollment requests are already pending, which is the limit; accept or reject some (`halite-hub keys list --state pending`)",
+			ErrRefused, n)
+	}
+	return nil
 }
 
 // accepted is the answer to a node collecting what it has been granted.

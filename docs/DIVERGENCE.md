@@ -29170,6 +29170,84 @@ refusal had been run, FreeBSD's had not. `mount` is declared for Linux,
 FreeBSD, OpenBSD, NetBSD, DragonFly and macOS. Its `opts` default is
 `defaults`, and its remount is `mount -o remount,<opts>`. Both are
 Linux's.
+### 5.336 Unauthenticated enrollment had no bounds, and a bogus token could hold a name
+
+Issue 321 finding M-06. `POST /v1/enroll` is the one route a caller
+with no certificate reaches, because it is how a node gets one. It took
+MaxRequestBody's 64 MiB. It had no read deadline beyond the listener's
+ReadHeaderTimeout. Every new name wrote a pending record holding the
+CSR verbatim, and nothing bounded how many. The audit reproduced three
+CSRs, each with an 8 MiB extension, making three 11.5 MB pending records.
+`Store.List`, which reconciliation and every dispatch call, then reads
+them all.
+
+The triage widened it. In token mode a request for a name with a bogus
+token still leaves a pending record under the caller's key. Because the
+first key wins, the real node then arrives with a valid token scoped to
+that name and is refused as "a different key" until an operator deletes
+the record.
+
+**The bounds.**
+
+- The enroll body is now `transport.MaxEnrollBody`, 64 KiB.
+- `Authority.Enroll` refuses a CSR over `keystore.MaxCSRBytes`, 16 KiB,
+  before parsing it. halite-node's CSRs are about 500 bytes; the
+  largest in beastie's production key store is 460.
+- A new pending record is refused once `DefaultMaxPending` (1,024) are
+  pending. The refusal names `keys list --state pending`. A retry by a
+  name already pending is not counted, and neither is a request whose
+  token spends, so a flood of new names cannot lock token mode out.
+- The enroll request sets its own read deadline, `HandshakeTimeout`. A
+  server-wide ReadTimeout would also cut `/v1/subscribe`, which is a
+  long-lived request.
+
+**The deadline did nothing at first.** `http.ResponseController`'s
+`SetReadDeadline` answered "feature not supported". The hub's metrics
+middleware wraps every ResponseWriter in a `countingWriter`, and that
+type had no `Unwrap`. The handler had discarded the error, and the test
+caught it: a body trickled one byte every 100 ms was still being read
+when the client gave up at 3 s. `countingWriter` now has `Unwrap`, and a
+failure to set the deadline is logged instead of dropped. With both, the
+same request was answered 400 after 303 ms against a 300 ms deadline.
+Every handler behind the wrapper can now reach the connection through
+ResponseController; none did before.
+
+**The lockout.** In token mode, when a request's token spends for the
+name, it supersedes a pending record held by another key. The hub logs
+the replaced fingerprint as a warning. A token that does not spend
+changes nothing. Accepted, rejected and revoked records are never
+superseded. Manual mode is unchanged: first key wins and the operator
+decides. SPEC 7.3 now says so, and SPEC 6.5 lists the three bounds.
+
+**Tests.** Each is held by a test that was broken on purpose and seen
+to fail:
+
+- `TestAnOversizedCSRIsRefusedAndNotStored`, with a 1 MiB extension;
+- `TestPendingRecordsAreBounded`, including the retry and the token;
+- `TestATokenTakesANameFromAPendingRequestByAnotherKey`;
+- `TestAnEnrollmentBodyPastTheBoundIsRefusedAndKeepsNothing`: a real
+  CSR and a 1 MiB token, which on the 64 MiB bound left a pending
+  record;
+- `TestAnEnrollmentThatTricklesInIsCutOff`, which fails without
+  `Unwrap`.
+
+**Breaking.** Tooling that enrolls more than 1,024 names at
+once in manual mode now has to accept in batches. beastie's production
+hub runs `enrollment_mode: manual` with 4 records, none pending; nothing
+there meets a bound.
+
+**Not done.**
+
+- The per-source rate limit and the connection cap the audit also
+  suggested. With the bounds above, a flood fills the pending bound
+  rather than the disk, and what stays open is that one caller can fill
+  it quickly. A per-source limit needs the node's `enroll --wait` to
+  treat a "too many" answer as retryable. It does not today, since every
+  refusal is final to it, so that is a change to both ends and is left
+  for its own section.
+- Not run against a live hub, on FreeBSD or anywhere else: the tests run
+  the real hub handler over real TLS on loopback, under `go test`.
+
 
 **Measured on beastie** (FreeBSD 15.1-RELEASE-p5) as root, with a tmpfs
 on a scratch directory and a scratch table given to `mount -F`:

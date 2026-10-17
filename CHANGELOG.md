@@ -21,6 +21,19 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Enrollment is bounded, and a bogus token can no longer hold a node's name
+
+`POST /v1/enroll`, which anybody who can reach the hub's port may call,
+now takes a body of at most 64 KiB within 10 s and a CSR of at most
+16 KiB. A new name is refused once 1,024 requests are pending, until an
+operator accepts or rejects some. A retry from a name already pending,
+and a request whose token spends, are not counted. In token mode, a
+request whose token spends now replaces a pending request for that name
+held by another key, and the hub logs the fingerprint it replaced. Before,
+a request with a bogus token left a pending record that refused the real
+node until an operator deleted it (issue 321, M-06). There is still no
+per-source rate limit. DIVERGENCE 5.336.
+
 ### `mount` works on FreeBSD, and refuses a table line it cannot write
 
 `mount.mounted`, `mount.mount` and `mount.remount` used Linux's spelling on

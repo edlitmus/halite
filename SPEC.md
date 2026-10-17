@@ -450,6 +450,9 @@ these is why a single malformed return can exhaust a master.
 | Limit | Default |
 |---|---|
 | Maximum request body | 64 MiB |
+| Maximum enrollment request body, and its read | 64 KiB, within 10 s |
+| Maximum CSR at enrollment | 16 KiB |
+| Maximum pending enrollment requests | 1,024 |
 | Maximum single return payload | 16 MiB, then the node paginates by chunk |
 | Maximum NDJSON line on the subscribe stream | 1 MiB |
 | Maximum concurrent HTTP/2 streams per node connection | 64 |
@@ -514,6 +517,15 @@ optional node-ID glob and an optional source CIDR, single-use by default, with a
 whose maximum is 24 hours. A token cannot be created without a TTL. Salt's `auto_accept: True`
 has no equivalent here and no configuration key produces it; `token` and `attested` are the
 supported automatic paths, and both are accountable.
+
+The first key to present a node ID holds it, in every state, with one exception: in `token`
+mode a request whose token spends for that node ID replaces a `pending` record held by another
+key, and the hub logs the fingerprint it replaced. A pending record is a decision nobody has
+made, and anybody who can reach the port can create one, so without the exception a request
+with a bogus token could hold a name against the node the token was minted for. An `accepted`,
+`rejected` or `revoked` record is never replaced this way. Enrollment is the one endpoint an
+unauthenticated caller reaches, so its request body, its CSR and its count of pending records
+are bounded (6.5); a new name past the pending bound is refused until an operator decides some.
 
 ### 7.4 Key lifecycle
 
