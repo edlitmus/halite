@@ -29781,8 +29781,7 @@ Two more in the same code, found while there:
 is not corrected. Salt's `E@` regular-expression form of the patterns is
 not supported, as it was not before. Not run on a host: the tests use a
 real file server over a temporary root, under `go test`.
-
-### 5.346 file.directory's recursive mode change followed a link swapped in after the plan
+### 5.348 file.directory's recursive mode change followed a link swapped in after the plan
 
 Issue 321 finding M-29, which the audit marked PLAUSIBLE ("race; not
 reproduced") and the triage widened. `recurse: [mode, user, group]`
@@ -29816,6 +29815,7 @@ for ownership there.
 **Not done.** The ownership half was not run against a swap: making one
 needs a second account, and the swapped-parent case is covered by the
 same root for both. Not run as root on a host.
+
 
 
 ## 6. Everything else not started

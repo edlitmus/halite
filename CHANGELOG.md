@@ -28,7 +28,7 @@ full path. A user who owned something in the tree could swap it, or a
 parent directory, for a symbolic link in between, and the node would set
 the mode, as root, on whatever the link named. The changes now go through
 the directory itself, and nothing outside it can be reached (issue 321,
-M-29). DIVERGENCE 5.346.
+M-29). DIVERGENCE 5.348.
 
 ### `file.recurse` keeps excluded files on `clean`, and applies a changed mode
 
