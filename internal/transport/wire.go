@@ -26,7 +26,13 @@ const (
 	// series per family, so this is generous; it is here because a
 	// client reading an unbounded body from a peer is a client that
 	// can be made to run out of memory by that peer.
-	MaxMetricsBody    = 8 << 20
+	MaxMetricsBody = 8 << 20
+	// MaxEnrollBody bounds /v1/enroll, which anybody who can reach the
+	// port may call: a CSR of at most keystore.MaxCSRBytes, escaped into
+	// JSON, and a token. It had MaxRequestBody's 64 MiB, which let one
+	// unauthenticated request hand the hub 64 MiB to parse and keep
+	// (issue 321, M-06).
+	MaxEnrollBody     = 64 << 10
 	HandshakeTimeout  = 10 * time.Second
 	IdleStreamTimeout = 90 * time.Second
 )

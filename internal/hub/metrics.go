@@ -793,6 +793,12 @@ func (w *countingWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Unwrap lets http.ResponseController reach the connection underneath.
+// Without it a handler's SetReadDeadline answered "feature not
+// supported" through this wrapper, and enrollment's read deadline was
+// never set (issue 321, M-06).
+func (w *countingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 // Flush and ReadFrom pass through, because http.ServeContent uses both
 // and a wrapper that hides them turns a sendfile into a copy.
 func (w *countingWriter) Flush() {

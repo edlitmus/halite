@@ -32,6 +32,10 @@ import (
 
 // Server holds what the endpoints need.
 type Server struct {
+	// EnrollReadTimeout bounds reading an enrollment request; zero is
+	// transport.HandshakeTimeout.
+	EnrollReadTimeout time.Duration
+
 	// pillarCompiles counts compilePillar calls, for the tests that hold
 	// a targeting path to compiling a node's pillar once rather than
 	// once per question asked about it.
@@ -356,9 +360,22 @@ func (s *Server) operator(next func(http.ResponseWriter, *http.Request, string))
 
 // enroll is SPEC 7.3. The request arrives without a client certificate,
 // because the whole purpose of it is to get one.
+//
+// It is the one route an unauthenticated caller reaches, so its body is
+// bounded to what a CSR needs and its read to HandshakeTimeout. The
+// listener sets only ReadHeaderTimeout, deliberately: a server-wide
+// ReadTimeout would also cut /v1/subscribe, which is a long-lived
+// request. So this request sets its own deadline, and a caller that
+// sends headers and then trickles a body is cut off rather than held
+// (issue 321, M-06).
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
+	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(s.enrollReadTimeout())); err != nil {
+		// Said rather than dropped: this is how the bound was first found
+		// doing nothing, because the metrics wrapper hid the connection.
+		s.warn("enrollment has no read deadline", "error", err.Error())
+	}
 	var req transport.EnrollRequest
-	if err := transport.ReadJSON(w, r, transport.MaxRequestBody, &req); err != nil {
+	if err := transport.ReadJSON(w, r, transport.MaxEnrollBody, &req); err != nil {
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
@@ -398,6 +415,11 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 	default:
 		s.countEnrollment("issued")
+		if res.Superseded != "" {
+			s.warn("a token's enrollment replaced a pending request by another key",
+				"node_id", res.NodeID, "fingerprint", res.Fingerprint,
+				"superseded", res.Superseded, "from", r.RemoteAddr)
+		}
 		s.info("enrollment issued",
 			"node_id", res.NodeID, "fingerprint", res.Fingerprint, "from", r.RemoteAddr)
 		s.emit(tagEnroll(res.NodeID, string(keystore.Accepted)), res.NodeID, map[string]any{
@@ -411,6 +433,15 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 			Fingerprint: res.Fingerprint,
 		})
 	}
+}
+
+// enrollReadTimeout is how long an enrollment request may take to
+// arrive; EnrollReadTimeout overrides it for a test.
+func (s *Server) enrollReadTimeout() time.Duration {
+	if s.EnrollReadTimeout > 0 {
+		return s.EnrollReadTimeout
+	}
+	return transport.HandshakeTimeout
 }
 
 // renew is SPEC 7.4's automatic renewal: no operator, no token, because

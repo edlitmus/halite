@@ -351,6 +351,28 @@ func (s *Store) Delete(nodeID string) error {
 	})
 }
 
+// countPending counts the pending records. The caller holds the lock.
+func (s *Store) countPending() (int, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return 0, fmt.Errorf("reading the key store at %s: %w", s.dir, err)
+	}
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		rec, err := s.get(e.Name()[:len(e.Name())-len(".json")])
+		if err != nil {
+			return 0, err
+		}
+		if rec.State == Pending {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // List returns every record, in node ID order.
 func (s *Store) List() ([]*Record, error) {
 	s.mu.Lock()
