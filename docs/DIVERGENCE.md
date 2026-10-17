@@ -30316,6 +30316,40 @@ leaves an old CA bundle, which the node can still use. No install was
 interrupted by a real crash or a full disk: the interrupted state is
 made by writing the files. Not run on a node of the fleet.
 
+### 5.361 An RPM pin without a release was never met
+
+Issue 321 finding M-34, Low. The triage found the floor path recorded
+(`allow_updates`, 5.177) and the exact pin not. rpm reports every
+installed package with its release, `1.8.0-10.el9`, and a tree pins the
+version it means, `version: 1.8.0`. `versionSatisfies` compared the two
+exactly, so the pin was never met: every run asked dnf to install the
+package again, and since M-33 checked what was installed against the pin
+(5.334), every run failed. Against main,
+`TestPkgInstalledTakesAnRPMPinWithoutARelease` ran
+`dnf install -y -q tree-1.8.0` over the installed 1.8.0-10.el9 and then
+reported "The package manager did not install the pinned version: tree
+is pinned to 1.8.0 and 1.8.0-10.el9 is installed".
+
+Salt meets it. Its rpm `version_cmp`, in Salt 3007.1's
+`salt/modules/rpm_lowpkg.py`, says so: "If one EVR is missing a release
+but not the other and they otherwise would be equal, ignore the release.
+This can happen if e.g. you are checking if a package version 3.2 is
+satisfied by 3.2-1." `rpmReleaseOmitted` is that rule. The epoch is
+still compared, as Salt compares it unless `ignore_epoch` is given:
+`1.8.0` does not meet `2:1.8.0-10.el9`, and `2:1.8.0` does. The test
+holds six pairs.
+
+It applies only to an `os_family` of RedHat or Suse. `versionScheme`
+gives an unknown family RPM's ordering, and Alpine's `2.3.2-r0` has the
+same shape, but neither Salt's apk module nor apk was looked at for it,
+so there the comparison stays exact;
+`TestAnApkPinWithoutAReleaseIsStillExact` fails when the family check
+is removed.
+
+**Not verified.** No RPM host was used: rpm's output is the fixture's,
+in the `(none):` spelling the parser already records. Whether
+`dnf install tree-1.8.0`, sent when the package is absent, installs the
+newest release of 1.8.0 was not run; that argv is unchanged.
 
 
 ## 6. Everything else not started
