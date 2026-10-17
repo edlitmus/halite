@@ -431,3 +431,49 @@ func assertRan(t *testing.T, c *exec.Context, want string) {
 	}
 	t.Errorf("%q was not run; ran %v", want, c.Runner.(*exec.RecordingRunner).RanCommands())
 }
+
+// **A table line needs its type** (issue 321, M-35). Without one the
+// fields close up, the options are read as the type, and neither FreeBSD
+// nor Linux mounts the line; this module's own reader misread it the same
+// way, so the entry was rewritten on every run. The state refuses before
+// mounting or writing anything, and says how to mount without a table
+// entry; mount.set_fstab refuses too.
+func TestATableEntryWithoutAnFstypeIsRefused(t *testing.T) {
+	r := New()
+	c, path := mountFixture(t, nil)
+	res, err := r.States.Call(c, "mount.mounted", value.MapOf(
+		"name", "/srv/data", "device", "/dev/sdb1", "config", path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result == nil || *res.Result {
+		t.Fatalf("a table entry with no fstype was accepted: %+v", res)
+	}
+	if !strings.Contains(res.Comment, "needs an fstype") || !strings.Contains(res.Comment, "persist: false") {
+		t.Errorf("the refusal does not say why or what to do: %s", res.Comment)
+	}
+	assertChangedNothing(t, c)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the table was written: %v", err)
+	}
+
+	if _, err := r.Exec.Call(c, "mount.set_fstab", value.MapOf(
+		"name", "/srv/data", "device", "/dev/sdb1", "config", path)); err == nil || !strings.Contains(err.Error(), "needs an fstype") {
+		t.Errorf("mount.set_fstab with no fstype = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("mount.set_fstab wrote the table: %v", err)
+	}
+
+	// Mounting without a table entry still needs no type: mount(8)
+	// probes for one.
+	res, err = r.States.Call(c, "mount.mounted", value.MapOf(
+		"name", "/srv/data", "device", "/dev/sdb1", "persist", false, "config", path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result == nil || !*res.Result {
+		t.Errorf("mounting with persist: false and no fstype failed: %s", res.Comment)
+	}
+	assertRan(t, c, "mount -o defaults /dev/sdb1 /srv/data")
+}

@@ -170,6 +170,9 @@ func registerMount(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
+				if err := want.tableReady(); err != nil {
+					return nil, err
+				}
 				return setFstab(c, fstabPathOf(args), want)
 			},
 		},
@@ -403,6 +406,29 @@ func entryFromArgs(args *value.Map) (fstabEntry, error) {
 	}
 	e.Opts = platformMountOpts(mountGOOS, e.Opts)
 	return e, nil
+}
+
+// tableReady refuses an entry that cannot be written as an fstab line.
+//
+// **A line needs its type.** The fields are separated by whitespace, so
+// an empty type is not an empty field: `tmpfs\t/mnt\t\tdefaults\t0 0`
+// closes up and reads as type `defaults` and options `0`. Both platforms
+// that matter refuse it -- FreeBSD 15.1's getfsent with "Inappropriate
+// file type or format" (beastie), util-linux 2.39.3's mount with "unknown
+// filesystem type 'defaults'" (Ubuntu 24.04) -- and this module's own
+// reader made the same mistake, so the entry never matched what was
+// declared and was rewritten on every run (issue 321, M-35).
+//
+// Refused rather than defaulted: Linux has `auto`, FreeBSD has nothing
+// like it, and Salt's own set_fstab takes the type as a required argument.
+// Mounting without a type is still allowed -- mount(8) probes for one --
+// so this is checked only where a table line is written.
+func (e fstabEntry) tableReady() error {
+	if strings.TrimSpace(e.Type) == "" {
+		return fmt.Errorf("an fstab entry for %s needs an fstype: without one the line's fields close up, "+
+			"the options are read as the type, and neither FreeBSD nor Linux will mount it", e.Point)
+	}
+	return nil
 }
 
 // readFstab parses the table. A line it cannot read is skipped rather
@@ -944,6 +970,11 @@ func mountMounted(c *exec.Context, args *value.Map) (states.Result, error) {
 	path := fstabPathOf(args)
 	persist := states.Bool(args, "persist", true)
 	shouldMount := states.Bool(args, "mount", true)
+	if persist {
+		if err := want.tableReady(); err != nil {
+			return states.False(fmt.Sprintf("Nothing was mounted or written: %v. Give `fstype`, or `persist: false` to mount without a table entry.", err)), nil
+		}
+	}
 
 	active, fromKernel, err := activeMountAt(c, want.Point)
 	if err != nil {
