@@ -30429,6 +30429,44 @@ through the same wait. A bus that accepts a job and then never sends
 one, as `systemctl start` does. The live test adds a minute and a half to
 the fleet's `linux` leg.
 
+### 5.364 iptables without `-w` waits for the lock anyway, measured
+
+Issue 321 finding M-47, which the triage marked PARTLY and Low: no
+firewall state guards against locking the node out, and the iptables
+commands carry no `-w`, so they would fail while another program held
+the xtables lock. The triage already said the first half is a design gap
+Salt shares and the second matters on legacy iptables only. This
+section is the measurement of the second half, and the reason nothing
+changed.
+
+**Measured as root on Ubuntu 24.04.5**, in a private network and mount
+namespace with its own tmpfs on /run, so the host's lock file was never
+touched. One process held `/run/xtables.lock` with `flock` for 3 s
+while `iptables-legacy` (v1.8.10) ran:
+
+- without `-w`, `-A INPUT ...` blocked for 2.69 s, until the lock was
+  let go, and exited 0;
+- with `-w 1`, it said "Another app is currently holding the xtables
+  lock. Stopped waiting after 1s." and exited 4.
+
+So 1.8.10 waits by default, and `-w` there only *bounds* the wait.
+`iptables-nft` accepted `-w` too and exited 0. Salt passes `--wait`
+whenever iptables lists it (Salt 3007.1, salt/modules/iptables.py); for
+the iptables this was measured on, that changes nothing. Adding `-w` to
+the module's fifteen command lines was not done, because the case it
+would fix, an iptables that fails at once on a held lock, was not seen
+on any machine here.
+
+**Left as found.** No firewall state checks that it leaves the node
+reachable. Salt does not either, and doing it well means knowing which
+connection the operator is on; it is a design question, not a defect
+with a fix.
+
+**Not verified.** Any iptables other than 1.8.10, legacy and nft. When
+waiting became the default was not looked up, so whether the fleet's
+other distributions wait too is open; the next host with an older
+iptables answers it with the same `flock` probe.
+
 
 ## 6. Everything else not started
 

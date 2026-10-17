@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 49 | 6: 3 mentioned and explicitly left, 2 half done, 1 not started |
+| Medium (55) | 49 | 6: 3 mentioned and explicitly left, 2 half done, 1 measured and left |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -137,12 +137,16 @@ Severities are this file's revised ones, from the tables below.
   (DIVERGENCE 5.338). Not done: a per-source rate limit, which needs
   `enroll --wait` to retry a refusal it treats as final today.
 
-**Medium, not started (1).** Ordered by area. The four marked FreeBSD, which came first because
-FreeBSD is tier 1 and carries about 80% of production, are all fixed.
+**Medium, not started.** None. The four marked FreeBSD, which came
+first because FreeBSD is tier 1 and carries about 80% of production,
+were fixed first.
 
-| ID | Finding | Revised |
-|---|---|---|
-| M-47 | firewall lockout, no `-w` | Low |
+**Medium, measured and left.**
+
+- **M-47**, Low: legacy iptables 1.8.10 waits for the xtables lock by
+  default, so the missing `-w` changes nothing there; no other iptables
+  was run. The lockout half is a design gap Salt shares
+  (DIVERGENCE 5.364).
 
 **M-56, runners are not scoped.** SPEC 23.5 still says nothing about it.
 Either a sentence there or scoping is owed.
