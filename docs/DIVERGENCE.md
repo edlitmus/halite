@@ -29441,8 +29441,7 @@ the chunk check the chunk test does.
 
 **Not done.** M-13's other half, a per-node quota on `/v1/event` and on
 return size, is its own item. Not run against a live hub or on FreeBSD.
-
-### 5.336 One enrolled node could push the fleet's history off the bus and the job cache
+### 5.341 One enrolled node could push the fleet's history off the bus and the job cache
 
 Issue 321 finding M-13. Both stores are bounded by size and prune
 oldest first: the job cache at 10 GiB and the event bus at 4 GiB.
@@ -29486,6 +29485,8 @@ volume.
 **Not done.** No quota on what operators submit, which is theirs to
 spend. The job cache's 10 GiB is still filled by legitimate returns over
 time, by design. Not run against a live hub or on FreeBSD.
+
+
 
 ## 6. Everything else not started
 

@@ -29,7 +29,7 @@ is refused with 429 and counted as
 `halite_events_dropped_total{reason="node_rate"}`. Before, one enrolled
 node could fill the bus until pruning deleted every node's oldest
 history. A return over 16 MiB, SPEC's stated bound, is now refused; it had
-been accepted up to 64 MiB (issue 321, M-13). DIVERGENCE 5.336.
+been accepted up to 64 MiB (issue 321, M-13). DIVERGENCE 5.341.
 
 ### A node can only return for a job it was sent
 
