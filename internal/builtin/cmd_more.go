@@ -259,7 +259,20 @@ func scriptRunAs(c *exec.Context, args *value.Map) string {
 func tempScript(body string, mode os.FileMode, suffix, owner string) (path string, cleanup func(), err error) {
 	// The suffix matters on a platform where what runs a file is its
 	// name rather than its first line. See scriptSuffix.
-	f, err := os.CreateTemp("", "halite-script-*"+suffix)
+	//
+	// A script another account runs is made in /tmp rather than in
+	// $TMPDIR. $TMPDIR is the caller's own, and is often private to it: on
+	// macOS it is /var/folders/…/T, 0700, and a node started from a shell
+	// under sudo inherits it. A script given to the account in there is
+	// still behind a directory the account cannot enter, and the run failed
+	// "permission denied", exit 126, on macOS CI. /tmp is sticky and open to
+	// every account on every unix this runs on, and CreateTemp's O_EXCL and
+	// random name are what make writing a root-owned file there safe.
+	dir := ""
+	if owner != "" && runtime.GOOS != "windows" {
+		dir = "/tmp"
+	}
+	f, err := os.CreateTemp(dir, "halite-script-*"+suffix)
 	if err != nil {
 		return "", func() {}, err
 	}

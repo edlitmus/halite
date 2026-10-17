@@ -25,7 +25,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 The temporary script was written as root, 0700, and not handed to the
 `runas` account, so the account could not open it and every run failed
-with "Permission denied". It is now given to that account and stays
+with "Permission denied". It is now made in `/tmp`, rather than a `$TMPDIR` the
+account may not be able to enter, and given to that account, and stays
 private to it (issue 321, M-27). DIVERGENCE 5.352.
 
 ### `enroll --force` no longer breaks a node it does not finish enrolling
