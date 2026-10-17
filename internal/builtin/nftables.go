@@ -1267,12 +1267,20 @@ func nftSaveFn(c *exec.Context, args *value.Map) (any, error) {
 	if path == "" {
 		path = NFTablesSavePath
 	}
-	res, err := c.Run(exec.Command{Argv: []string{"nft", "list", "ruleset"}, IgnoreExitCode: true})
+	// Stateless, `-s`: a rule with `counter` lists as `counter packets 2
+	// bytes 168`, and those numbers move with every packet, so comparing
+	// the file with a stateful listing found a change on every save of an
+	// unchanged ruleset on any host with traffic (issue 321, M-40;
+	// measured in a network namespace with nftables 1.0.9). `-s` keeps the
+	// `counter` and drops what it has counted, which is also all a restore
+	// at boot can use: a count restored from the last save is not a count
+	// of anything. Salt writes the stateful listing, and does not compare.
+	res, err := c.Run(exec.Command{Argv: []string{"nft", "-s", "list", "ruleset"}, IgnoreExitCode: true})
 	if err != nil {
-		return nil, fmt.Errorf("`nft list ruleset` could not be run: %w", err)
+		return nil, fmt.Errorf("`nft -s list ruleset` could not be run: %w", err)
 	}
 	if res.Code != 0 {
-		return nil, fmt.Errorf("`nft list ruleset` exited %d: %s", res.Code, strings.TrimSpace(firstLine(res.Stderr)))
+		return nil, fmt.Errorf("`nft -s list ruleset` exited %d: %s", res.Code, strings.TrimSpace(firstLine(res.Stderr)))
 	}
 	// The restore file flushes first so a boot-time reload is not additive
 	// on top of whatever an initramfs left.
