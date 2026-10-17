@@ -284,7 +284,7 @@
   "template": "{{ [1, 2, 3] | batch(2) | list }}"
  },
  {
-  "expected": "3.0",
+  "expected": "2.0",
   "id": "filter/round",
   "template": "{{ 2.5 | round }}"
  },

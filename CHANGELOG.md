@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `round` in templates rounds as Jinja does
+
+`round` now rounds half to even, as Python and Jinja do, on the number's
+exact value, and leaves an integer an integer: `2.5 | round` is `2.0`,
+not `3.0`; `2.675 | round(2)` is `2.67`; `5 | round` is `5`, not `5.0`
+(issue 321, M-52). DIVERGENCE 5.368.
+
 ### `dict()` in templates takes a list of pairs
 
 `dict([('a', 1)])` and `dict(mapping.items())` rendered an empty mapping

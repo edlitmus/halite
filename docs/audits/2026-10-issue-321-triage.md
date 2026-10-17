@@ -130,8 +130,8 @@ Severities are this file's revised ones, from the tables below.
   associative over unary operands, as Jinja does, against values
   captured from jinja2 3.1.2 (DIVERGENCE 5.359); #405 gives `~` Jinja's
   precedence (5.365); #406 escapes `tojson` as Salt's does (5.366); #407
-  lets `dict()` take a list of pairs (5.367). Not done: `str.format`
-  specs, `|format`'s `%s` idioms and `round`.
+  lets `dict()` take a list of pairs (5.367); #408 rounds as Python does
+  (5.368). Not done: `str.format` specs and `|format`'s `%s` idioms.
 - **M-06**, Medium: #378 bounds the enrollment body (64 KiB, read
   within 10 s), the CSR (16 KiB) and the pending records (1,024), and
   lets a spent token take a name from a pending record of another key

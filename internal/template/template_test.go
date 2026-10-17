@@ -612,3 +612,39 @@ func TestDictTakesPairsAsJinjaDoes(t *testing.T) {
 		}
 	}
 }
+
+// **round is Python's round**, which Jinja's `common` method calls
+// (issue 321, M-52): half to even, on the float's exact binary value, and
+// an integer stays an integer. It was math.Round(x*10^p)/10^p, half away
+// from zero over an inexact product, so 2.5 rounded to 3.0 and 2.675 to
+// 2.68 where Jinja gives 2.0 and 2.67. Values captured from jinja2 3.1.2.
+func TestRoundMatchesJinja(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`{{ 2.5 | round }}`, "2.0"},
+		{`{{ 3.5 | round }}`, "4.0"},
+		{`{{ -2.5 | round }}`, "-2.0"},
+		{`{{ 0.5 | round }}`, "0.0"},
+		{`{{ 1.5 | round }}`, "2.0"},
+		{`{{ -0.5 | round }}`, "-0.0"},
+		{`{{ 2.675 | round(2) }}`, "2.67"},
+		{`{{ 0.125 | round(2) }}`, "0.12"},
+		{`{{ 1234.5 | round(-2) }}`, "1200.0"},
+		{`{{ 1350.0 | round(-2) }}`, "1400.0"},
+		{`{{ 5 | round }}`, "5"},
+		{`{{ 5 | round(2) }}`, "5"},
+		{`{{ 1250 | round(-2) }}`, "1200"},
+		{`{{ 15 | round(-1) }}`, "20"},
+		{`{{ 25 | round(-1) }}`, "20"},
+		{`{{ -25 | round(-1) }}`, "-20"},
+		{`{{ true | round }}`, "1"},
+		{`{{ 1.5 | round | int }}`, "2"},
+		{`{{ 2.5 | round(method='common') }}`, "2.0"},
+		{`{{ 2.5 | round(0, 'floor') }}`, "2.0"},
+		{`{{ 2.4 | round(0, 'ceil') }}`, "3.0"},
+		{`{{ 5 | round(0, 'floor') }}`, "5.0"},
+	} {
+		if got := render(t, c.src, nil); got != c.want {
+			t.Errorf("%s -> %q, jinja2 3.1.2 gives %q", c.src, got, c.want)
+		}
+	}
+}
