@@ -29887,8 +29887,7 @@ command ran as "".
 **Not done.** The other git functions take no `user`. A clone as the
 account needs the target's parent to be writable by it, as it does for
 Salt. `git` has no evidence entry, and this does not add one.
-
-### 5.347 enroll --force broke the node's identity whenever the hub did not issue at once
+### 5.351 enroll --force broke the node's identity whenever the hub did not issue at once
 
 Issue 321 finding M-25, which the triage found worse than reported.
 `enroll --force` moved `node.key` aside and wrote a new one before it
@@ -29935,6 +29934,7 @@ with no identity to keep, writes `node.key` directly as before.
 with nothing between them to recover from, is the same shape at install
 time, and is still open. This install has the same window: the key is
 renamed and then the certificate written.
+
 
 
 ## 6. Everything else not started
