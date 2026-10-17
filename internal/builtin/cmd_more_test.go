@@ -106,7 +106,7 @@ func TestCmdExecCode(t *testing.T) {
 // A script is written where only its owner can read it, because many
 // carry a credential and the temporary directory is world-readable.
 func TestTempScriptIsPrivate(t *testing.T) {
-	path, cleanup, err := tempScript("#!/bin/sh\necho x\n", 0o700, "")
+	path, cleanup, err := tempScript("#!/bin/sh\necho x\n", 0o700, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

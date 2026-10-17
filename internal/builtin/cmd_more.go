@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -154,7 +155,7 @@ func registerCmdMore(r *Registries) {
 				// No suffix: the interpreter is named, so the file is an
 				// argument to it rather than something the platform has to
 				// recognise on its own.
-				path, cleanup, err := tempScript(states.Str(args, "code", ""), os.FileMode(scriptMode()), "")
+				path, cleanup, err := tempScript(states.Str(args, "code", ""), os.FileMode(scriptMode()), "", scriptRunAs(c, args))
 				if err != nil {
 					return nil, err
 				}
@@ -230,15 +231,32 @@ func scriptCommand(c *exec.Context, args *value.Map, argv []string) exec.Command
 	return cmd
 }
 
+// scriptRunAs is the account a script will run as: the state's runas, or
+// the context's.
+func scriptRunAs(c *exec.Context, args *value.Map) string {
+	if as := scriptCommand(c, args, nil).RunAs; as != "" {
+		return as
+	}
+	return c.RunAs
+}
+
 // tempScript writes a script to a file only its owner can read or run,
-// and returns a function that removes it.
+// and returns a function that removes it. owner, when given, is the
+// account that will run it, and it is given the file.
+//
+// **A script run as another account has to be that account's** (issue
+// 321, M-27). It was written as root, 0700, and never handed over, so
+// `cmd.script` and `cmd.exec_code` with `runas` could not work at all: the
+// child, running as the account, got "permission denied" opening its own
+// script. Salt chowns the script to runas, and so does this now. The mode
+// stays 0700, so it is still the one account's alone.
 //
 // The mode matters: a script that carries a credential, and many do,
 // must not be readable by every account on the node for the length of the
 // run. It goes in the system temporary directory rather than the target
 // directory, because a script is not a configuration file and leaving one
 // behind next to the files it manages is worse than a cross-device copy.
-func tempScript(body string, mode os.FileMode, suffix string) (path string, cleanup func(), err error) {
+func tempScript(body string, mode os.FileMode, suffix, owner string) (path string, cleanup func(), err error) {
 	// The suffix matters on a platform where what runs a file is its
 	// name rather than its first line. See scriptSuffix.
 	f, err := os.CreateTemp("", "halite-script-*"+suffix)
@@ -264,6 +282,12 @@ func tempScript(body string, mode os.FileMode, suffix string) (path string, clea
 		cleanup()
 		return "", func() {}, err
 	}
+	if owner != "" && runtime.GOOS != "windows" {
+		if err := applyOwnership(name, owner, ""); err != nil {
+			cleanup()
+			return "", func() {}, fmt.Errorf("the script could not be given to %s, who is to run it: %w", owner, err)
+		}
+	}
 	return name, cleanup, nil
 }
 
@@ -278,7 +302,7 @@ func runScript(c *exec.Context, args *value.Map, wantOutput bool) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, cleanup, err := tempScript(body, os.FileMode(scriptMode()), scriptSuffix(source))
+	path, cleanup, err := tempScript(body, os.FileMode(scriptMode()), scriptSuffix(source), scriptRunAs(c, args))
 	if err != nil {
 		return nil, err
 	}
