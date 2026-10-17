@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `tojson` escapes its output as Salt's does
+
+`tojson` now writes non-ASCII as `\uXXXX` and `<`, `>`, `&` and `'` as
+`\u003c`, `\u003e`, `\u0026` and `\u0027`, as Salt's own `tojson` does.
+A file rendered through it changes once, to what Salt wrote (issue 321,
+M-52). DIVERGENCE 5.366.
+
 ### `~` in templates binds as it does in Jinja
 
 `"a" ~ 1 + 2` rendered `a3`; in Jinja `~` binds tighter than `+` and `-`

@@ -129,8 +129,9 @@ Severities are this file's revised ones, from the tables below.
 - **M-52**, Medium: #399 makes comparisons chain and `**` left
   associative over unary operands, as Jinja does, against values
   captured from jinja2 3.1.2 (DIVERGENCE 5.359); #405 gives `~` Jinja's
-  precedence (5.365). Not done: `str.format` specs, `|format`'s `%s`
-  idioms, `round`, `dict([...])` and `tojson` escaping.
+  precedence (5.365); #406 escapes `tojson` as Salt's does (5.366). Not
+  done: `str.format` specs, `|format`'s `%s` idioms, `round` and
+  `dict([...])`.
 - **M-06**, Medium: #378 bounds the enrollment body (64 KiB, read
   within 10 s), the CSR (16 KiB) and the pending records (1,024), and
   lets a spent token take a name from a pending record of another key

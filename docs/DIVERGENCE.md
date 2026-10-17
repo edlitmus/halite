@@ -30495,6 +30495,31 @@ now describes what the parser does.
 **Not done.** The rest of what 5.359 lists: `str.format` specs,
 `|format`'s `%s` idioms, `round`, `dict([...])` and `tojson` escaping.
 
+### 5.366 `tojson` left out the escaping Salt's `tojson` does
+
+Issue 321 finding M-52, one more of 5.359's items, "`tojson` escaping".
+Salt does not use Jinja's `tojson`: it registers its own (Salt 3007.1,
+`salt/utils/jinja.py`), which is `json.dumps` with `ensure_ascii` on,
+followed by replacing `<`, `>`, `&` and `'` with `\u003c`, `\u003e`,
+`\u0026` and `\u0027`. halite's filter did neither. So
+`"</script>" | tojson` rendered `"</script>"` where Salt renders
+`"\u003c/script\u003e"`, and `"é" | tojson` rendered `"é"` where Salt
+renders `"\u00e9"`: equal JSON, a different file, and a change on the
+first run after a migration.
+
+The output is now escaped the same way. Non-ASCII can only stand inside
+a JSON string, so escaping it over the whole text is what
+`ensure_ascii` does; above the BMP it is a UTF-16 surrogate pair, and
+DEL is escaped too, both as Python writes them (`"😀"` is
+`"\ud83d\ude00"`, measured, and of 0x20 to 0x7f only 0x7f is escaped).
+`TestToJSONEscapesAsSaltDoes` holds eight values, each Salt's function
+body run with Python's `json` on the same input; six failed against
+main. Salt keeps insertion order, as halite already did, where Jinja's
+own `tojson` sorts the keys; that half needed nothing.
+
+**Not verified.** Salt itself was not run: the expected values come from
+its four-line function over Python's `json`, not from `salt-call`. The
+CI's Salt differential runs whatever cases its corpus has.
 
 ## 6. Everything else not started
 
