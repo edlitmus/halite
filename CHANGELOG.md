@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `enroll --force` no longer breaks a node it does not finish enrolling
+
+`halite-node enroll --force` replaced the node's key before the hub had
+issued a certificate for it. A pending or refused answer, or an
+interruption, left a key and certificate that did not match, and every
+later `enroll` and `connect` failed. The new key now waits as
+`node.key.pending` until a certificate arrives for it. A plain `enroll`
+continues the request, and a refusal drops the key and leaves the node as
+it was (issue 321, M-25). DIVERGENCE 5.351.
+
 ### `git.latest` runs as its `user`
 
 `git.latest`'s `user` parameter was ignored, so checkouts were made and
