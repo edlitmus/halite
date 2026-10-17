@@ -69,15 +69,15 @@ func Identity(ctx context.Context, client *transport.Client, files pki.Files, no
 	if err != nil {
 		return Renewed{}, err
 	}
-	aside, err := SetKeyAside(files, time.Now())
-	if err != nil {
-		return Renewed{}, err
-	}
-	out := Renewed{Aside: aside}
-	if err := files.WriteKey(pki.NodeKeyFile, key); err != nil {
-		return out, err
-	}
-	if err := WriteIdentity(files, got); err != nil {
+	var out Renewed
+	if err := InstallIdentity(files, got, func() error {
+		aside, err := SetKeyAside(files, time.Now())
+		if err != nil {
+			return err
+		}
+		out.Aside = aside
+		return files.WriteKey(pki.NodeKeyFile, key)
+	}); err != nil {
 		return out, err
 	}
 	if out.Cert, err = files.ReadCert(pki.NodeCertFile); err != nil {
@@ -85,8 +85,60 @@ func Identity(ctx context.Context, client *transport.Client, files pki.Files, no
 	}
 	// Only now, with the new key and its certificate both written and
 	// read back: until then an earlier key is still the way back.
-	out.Pruned, out.PruneErr = PruneKeysAside(files, aside)
+	out.Pruned, out.PruneErr = PruneKeysAside(files, out.Aside)
 	return out, nil
+}
+
+// NewCertFile is where an issued certificate waits while its key is put
+// in place. See InstallIdentity.
+const NewCertFile = pki.NodeCertFile + ".new"
+
+// InstallIdentity puts an issued certificate and its new key in place:
+// the certificate first, to node.crt.new, then the key (installKey),
+// then the certificate renamed over node.crt.
+//
+// **The issued certificate is never only in memory** (issue 321, M-26).
+// Renewal wrote the key and then the certificate, and the hub revokes the
+// old serial when it issues the new one: a node that died, filled its
+// disk or failed the write between the two held the new key, the old and
+// revoked certificate, and no copy of the one it had just been issued.
+// The triage found it recoverable by hand -- delete node.crt and enroll
+// again -- and this makes it recoverable on its own. Interrupted at any
+// point, the files are either the old pair, or the new key with the new
+// certificate in node.crt.new, which Recover installs when the node next
+// loads its identity.
+func InstallIdentity(files pki.Files, got *transport.Enrollment, installKey func() error) error {
+	if err := files.WriteCertPEM(NewCertFile, got.CertPEM); err != nil {
+		return err
+	}
+	if err := installKey(); err != nil {
+		return err
+	}
+	if err := atomicfile.Rename(files.Path(NewCertFile), files.Path(pki.NodeCertFile)); err != nil {
+		return err
+	}
+	if len(got.CAPEM) > 0 {
+		return files.WriteCertPEM(pki.CACertFile, got.CAPEM)
+	}
+	return nil
+}
+
+// Recover finishes an InstallIdentity that was interrupted: when
+// node.crt.new goes with node.key, it becomes node.crt. One that does not
+// go with the key is from an install that never reached the key, and the
+// pair already in place is the identity; it is removed. Recover reports
+// whether it installed anything.
+func Recover(files pki.Files) (bool, error) {
+	if !files.Exists(NewCertFile) || !files.Exists(pki.NodeKeyFile) {
+		return false, nil
+	}
+	if _, err := files.KeyPair(NewCertFile, pki.NodeKeyFile); err != nil {
+		return false, os.Remove(files.Path(NewCertFile))
+	}
+	if err := atomicfile.Rename(files.Path(NewCertFile), files.Path(pki.NodeCertFile)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // WriteIdentity writes the certificate an enrollment or a renewal
