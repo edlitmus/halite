@@ -29642,8 +29642,7 @@ third.
 is refused, with the advice to quote it. It never got the mode it wrote.
 beastie's production tree is empty. The repository's example trees and
 docs hold no unquoted mode.
-
-### 5.343 setuid, setgid and sticky never reached a file, and a new directory took the umask
+### 5.345 setuid, setgid and sticky never reached a file, and a new directory took the umask
 
 Issue 321 findings M-23 and M-31, in one section because the same run
 showed both.
@@ -29694,6 +29693,8 @@ does. A directory with setgid managed as `'0755'` loses setgid.
 
 **Not done.** `file.recurse`'s modes are M-22's, and `recurse: [mode]`
 following symlinks is M-29's.
+
+
 
 ## 6. Everything else not started
 

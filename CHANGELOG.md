@@ -30,7 +30,7 @@ was dropped (issue 321, M-23). It is now set and compared. And
 the process umask, so a `'0775'` came out 0750 and was corrected only on
 the next run (M-31). They are created with the modes asked for. **A
 special bit a state does not name is now cleared**, as Salt does: a
-setgid directory managed as `'0755'` loses setgid. DIVERGENCE 5.343.
+setgid directory managed as `'0755'` loses setgid. DIVERGENCE 5.345.
 
 ### An unquoted mode is refused everywhere, and `file.serialize` keeps a file's mode
 

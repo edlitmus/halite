@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 31 | 24: 3 mentioned and explicitly left, 2 half done, 19 not started |
+| Medium (55) | 33 | 22: 3 mentioned and explicitly left, 2 half done, 17 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -68,6 +68,8 @@ not do. Each has been checked to see whether it happened.
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
 | M-21 string-typed modes | #384 | `file.serialize` keeps a file's mode | **done** as root on beastie (5.344) |
+| M-23 setuid and friends | #385 | | **done** as root on beastie (5.345) |
+| M-31 directory umask | #385 | parents too | **done** as root on beastie under umask 027 (5.345) |
 | M-32 package name injection | #331 | | |
 | M-33 pkgng/apk pins | #375 | `pkg.installed` checks every provider's pin after installing | **done** on beastie (5.334). **Not done**: apk still drops the pin from its argv, so a pinned apk package now fails rather than converging; nothing here runs Alpine |
 | M-35 fstab without fstype | #377 | | **done**: FreeBSD and util-linux both refuse the line (5.337); no boot was tried |
@@ -117,21 +119,19 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (19).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (17).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
 |---|---|---|
 | M-19 | `file.managed` on a symlink | Medium |
 | M-22 | `file.recurse`, including `clean` deleting `exclude_pat` matches | Medium |
-| M-23 | setuid cannot be removed | Medium |
 | M-24 | `git.latest user` ignored | Medium |
 | M-25 | `enroll --force` leaves a key pair every later enroll dies on | Medium |
 | M-26 | renewal ordering (recoverable) | Low |
 | M-27 | script with runas | Low-Medium |
 | M-29 | recursive chmod/chown follows symlinks | Medium |
 | M-30 | `~/.ssh` symlink | Medium |
-| M-31 | directory umask | Low |
 | M-34 | pin without release | Low |
 | M-40 | `iptables.save` | Low |
 | M-42 | LVM alias with `-ff` | Medium |
