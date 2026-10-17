@@ -511,13 +511,21 @@ func installGlobals(e *Environment) {
 		return out, nil
 	}}
 
+	// dict is Python's: a mapping, or a sequence of pairs, then keywords
+	// over the top. It read only a mapping and returned {} for anything
+	// else, without a word, so `dict([('a', 1)])` -- the usual way to build
+	// a mapping from a loop -- rendered an empty one (issue 321, M-52).
+	// The errors are Python's, captured from jinja2 3.1.2. Keywords arrive
+	// here as a Go map, so they go in sorted where Python keeps the order
+	// they were written; that difference is still open.
 	e.Globals["dict"] = funcValue{"dict", func(args []any, kwargs map[string]any) (any, error) {
+		if len(args) > 1 {
+			return nil, fmt.Errorf("dict expected at most 1 argument, got %d", len(args))
+		}
 		m := value.NewMap(len(kwargs))
 		if len(args) == 1 {
-			if src, ok := args[0].(*value.Map); ok {
-				for _, en := range src.Entries() {
-					m.Set(en.Key, en.Val)
-				}
+			if err := dictUpdate(m, args[0]); err != nil {
+				return nil, err
 			}
 		}
 		for _, k := range sortedKeysOf(kwargs) {
@@ -544,4 +552,44 @@ func installGlobals(e *Environment) {
 	e.Globals["lipsum"] = funcValue{"lipsum", func([]any, map[string]any) (any, error) {
 		return nil, fmt.Errorf("lipsum() is not supported")
 	}}
+}
+
+// dictUpdate is the positional half of Python's dict(): a mapping is
+// copied, and any other sequence must hold pairs, each a two-element list,
+// tuple or string.
+func dictUpdate(m *value.Map, src any) error {
+	var items []any
+	switch v := src.(type) {
+	case *value.Map:
+		for _, en := range v.Entries() {
+			m.Set(en.Key, en.Val)
+		}
+		return nil
+	case []any:
+		items = v
+	case Tuple:
+		items = v
+	default:
+		return fmt.Errorf("dict() takes a mapping or a list of pairs, not %s", typeName(src))
+	}
+	for i, it := range items {
+		var pair []any
+		switch p := it.(type) {
+		case []any:
+			pair = p
+		case Tuple:
+			pair = p
+		case string:
+			for _, r := range p {
+				pair = append(pair, string(r))
+			}
+		default:
+			return fmt.Errorf("cannot convert dictionary update sequence element #%d to a sequence", i)
+		}
+		if len(pair) != 2 {
+			return fmt.Errorf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))
+		}
+		m.Set(pair[0], pair[1])
+	}
+	return nil
 }
