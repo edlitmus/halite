@@ -30,6 +30,10 @@ a backslash or a control character, and a name that is not a shell
 variable. `sysctl` and `debconf` likewise refuse a newline that would add
 a line to their configuration (issue 321, M-45). DIVERGENCE 5.355.
 
+**This breaks** a `sysrc` state whose value refers to another variable
+(`${foo_flags}`) or holds a backslash: it is refused where it was
+written. Such a value is shell, and is better in a file managed whole.
+
 ### modprobe, pkgrepo, nftables and fstab values are checked before they are written
 
 These modules spliced state values into files or scripts read as root,
