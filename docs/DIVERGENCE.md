@@ -30208,6 +30208,32 @@ fake server answers the listing and the GETs. A multipart ETag was not
 exercised. Environments that disappear entirely from a bucket stop being
 served, because the roots are rebuilt from the listing, but their
 directories are left on disk.
+### 5.358 govulncheck ran nowhere, and `make vuln` ran whichever version was newest
+
+Issue 321 finding M-03, which the triage left half done: the toolchain
+bump (#360) cleared the ten advisories, but no workflow ran `govulncheck`,
+so nothing would notice the next one. And `make vuln` ran
+`govulncheck@latest`, so "no vulnerabilities found" was a claim about a
+different tool on every day it was made.
+
+`make vuln` now runs `GOVULNCHECK_VERSION`, v1.9.0, and a new `vuln` job
+in ci.yml runs the same version on every push.
+`TestGovulncheckIsPinnedAndTheSameEverywhere` holds the two equal and
+refuses `@latest`; pointing ci.yml at v1.8.0 failed it. The tool has to
+be built with the module's own toolchain. Run plainly,
+`go run ...govulncheck@v1.9.0` built it with go1.26, from the tool's own
+go.mod, and it refused go1.27's standard library ("file requires newer Go
+version go1.27"). So the Makefile sets `GOTOOLCHAIN` from go.mod's
+`toolchain` line, and the job sets `GOTOOLCHAIN=local` over the toolchain
+setup-go installed. Run on Ubuntu with go1.27.2: "No vulnerabilities
+found", in 13 s. And on beastie (FreeBSD 15.1), where the Makefile is
+read by BSD make: `make -n vuln` printed `GOTOOLCHAIN=go1.27.2` and
+`govulncheck@v1.9.0`, so the `!=` read go.mod, and `make vuln` found
+none, in 32 s.
+
+**Not done.** The job needs the network and is not part of `make
+check`, by design. The pin will age, and moving it is a change like any
+other.
 
 
 

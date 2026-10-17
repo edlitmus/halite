@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 44 | 11: 3 mentioned and explicitly left, 2 half done, 6 not started |
+| Medium (55) | 45 | 10: 3 mentioned and explicitly left, 1 half done, 6 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -72,6 +72,7 @@ not do. Each has been checked to see whether it happened.
 | M-45 free-form values (modprobe, pkgrepo, nftables, fstab; sysrc, sysctl, debconf) | #394, #395 | ufw was already held by M-37 | **done** (5.354, 5.355): nft's reading of `;` measured on Ubuntu, sysrc's on beastie; the modules not driven against the tools |
 | M-53 gitfs buffers the archive | #396 | the file count and byte limits apply as entries arrive | **done** (5.356): main was killed buffering 3 GiB; not run against a real remote or on the hub |
 | M-51 s3fs staleness | #397 | truncation at the bound, deleted objects, in-place writes, colliding sanitised names | **done** (5.357) against the package's fake S3; not run against S3 |
+| M-03 govulncheck in CI | #398 | `make vuln` pinned to the same version | **done** (5.358): a `vuln` job; `make vuln` run on Ubuntu and under BSD make on beastie |
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
@@ -95,7 +96,7 @@ not do. Each has been checked to see whether it happened.
 | M-50 pillar `S@` targets | #334 | | beastie's pillar root is empty, so nothing there meets the refusal (5.329) |
 | M-54 SLS name spellings | #340 (state), #362 (policy) | | |
 | M-55 `file_ignore_glob` fnmatch | #342 | | |
-| Section 1.2, the toolchain's ten advisories | #360 (go1.27.2) | M-03 (below) | |
+| Section 1.2, the toolchain's ten advisories | #360 (go1.27.2) | M-03, by #398 | |
 
 Changes made while doing these, not findings of the audit: #369 holds
 an extension's `Version` to its code, and refuses a binary whose
@@ -126,9 +127,6 @@ Severities are this file's revised ones, from the tables below.
   lets a spent token take a name from a pending record of another key
   (DIVERGENCE 5.338). Not done: a per-source rate limit, which needs
   `enroll --wait` to retry a refusal it treats as final today.
-- **M-03**, Low: the toolchain bump (#360) removed the ten advisories,
-  but no workflow runs `govulncheck`. `make vuln` still runs
-  `govulncheck@latest`, unpinned.
 
 **Medium, not started (6).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
