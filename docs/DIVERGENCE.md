@@ -272,7 +272,7 @@ returns for what it claims. It cannot claim a node connected to the
 upstream itself; that check is explicit, because silently shadowing a
 real node would be the worst version of this.
 
-**Corrected by 5.336.** "It cannot claim a node connected to the
+**Corrected by 5.342.** "It cannot claim a node connected to the
 upstream itself" held for routing, at the moment of the claim, and for
 nothing else. A node merely offline could be claimed, and the claim
 replaced its cached grains, which targeting reads; and a relay's return
@@ -29495,8 +29495,7 @@ volume.
 **Not done.** No quota on what operators submit, which is theirs to
 spend. The job cache's 10 GiB is still filled by legitimate returns over
 time, by design. Not run against a live hub or on FreeBSD.
-
-### 5.336 A relay could claim any node the upstream did not have connected
+### 5.342 A relay could claim any node the upstream did not have connected
 
 Issue 321 finding M-15, which the triage marked as recorded but wrongly,
 in 1.9. A relay with `relay.proxy` names its subordinates when it
@@ -29546,6 +29545,8 @@ nothing there changes.
 **Not done.** A relay is still trusted for whatever it does claim:
 that is the arrangement, as 1.9 says. Not run with a real relay; the
 tests call the hub's handler directly.
+
+
 
 ## 6. Everything else not started
 

@@ -30,7 +30,7 @@ M-15). The new hub setting `relay_subordinates` maps each relay's node id
 to the node-id globs it may claim. **A relay with no entry now claims
 nothing**, so a hub with `accept_relays` needs one per relay. No relay
 can claim a node enrolled with the upstream directly. A refused name is
-logged and emitted as `halite/relay/<relay>/refused`. DIVERGENCE 5.336.
+logged and emitted as `halite/relay/<relay>/refused`. DIVERGENCE 5.342.
 
 ### A node's event data is rate limited, and a return is held to 16 MiB
 
