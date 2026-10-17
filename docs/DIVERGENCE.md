@@ -29973,6 +29973,48 @@ passed with it made in `/tmp`.
 **Not done.** `cmd.script` with a `salt://` source was not run as
 another account; it shares `tempScript` with `exec_code`. Windows keeps
 its own model and is not changed.
+### 5.353 An alias of a live LVM physical volume looked like a fresh disk
+
+Issue 321 finding M-42, which the triage marked PARTLY: the argv was
+reproduced, and whether LVM then wipes the label "needs a host".
+`lvm.pvcreate`, `pv_present`, `pvremove` and `lvmFindPV` compared the
+devices a state named with the names `pvs` printed, by exact string.
+`pvs` names a PV by the path LVM chose (`/dev/sdb`, `/dev/mapper/vg-lv`),
+and a state may name the same disk as `/dev/disk/by-id/...`, by-uuid, or
+`/dev/vg/lv`. Such an alias was "not a PV", and with `force` the next
+argv was `pvcreate -ff -y <alias>`, which writes a new label over the
+live one and the volume group metadata it carries.
+
+Every name, on both sides, is now resolved through its links
+(`lvmCanon`, `filepath.EvalSymlinks`) before it is compared. A name that
+does not resolve is compared as written, as before.
+`TestLVMPVCreateKnowsAnAliasOfAPV` names a link to the fixture's PV with
+`force`. Against main's `lvm.go` it ran `pvcreate -ff -y
+.../by-id-disk`; now nothing runs.
+
+**LVM does not refuse it.** The question the triage left for a host:
+as root on Ubuntu 24.04.5 (lvm2 2.03), a loop device was labelled and
+given a volume group, and `pvcreate -ff -y` named a link to it in /dev.
+It printed `Physical volume ... successfully created`, exited 0, and
+`vgs` no longer knew the group. `TestLiveLVMPVCreateLeavesAnAliasedPVAlone`,
+on the loopback leg, does that through `lvm.pvcreate` with `force`.
+Against main's `lvm.go` it failed, with `changed: true` and "the volume
+group on /dev/loop0 is gone"; now it passes, as root on the same host.
+
+The test took two attempts at being a test. A link in a temporary
+directory got "No device found" from pvcreate, because LVM scans only
+/dev, so it tested LVM's device filter. A link directly in /dev passed
+against main: `pvs` printed the PV *by that link's name*, so the exact
+comparison matched. LVM prefers the shorter path, which is why the
+alias that loses is a directory down, as `/dev/disk/by-id/...` is, and
+that is where the test puts it. It is the same fact from the other side:
+the name `pvs` prints is LVM's choice among the aliases, so no spelling
+of a state's device can be relied on to match it.
+
+**Not done.** `lv_remove` and `lv_absent` still always pass `-f`, which
+the triage records as Salt parity. A real `/dev/disk/by-id` link to a
+physical disk was not used; the loop device has no udev by-id name
+other than the `lvm-pv-uuid-` one LVM's own rules make.
 
 
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -591,6 +592,24 @@ func lvmPVList(c *exec.Context) ([]lvmPV, error) {
 	return out, nil
 }
 
+// lvmCanon is the device node a name refers to, so that two spellings of
+// one disk compare equal.
+//
+// **A PV was matched by its spelling** (issue 321, M-42). pvs names a PV
+// by the path LVM chose (/dev/sdb, /dev/mapper/vg-lv), and a state may
+// name the same disk as /dev/disk/by-id/..., by-uuid or /dev/vg/lv. The
+// exact-string comparison called such an alias "not a PV", and with
+// `force` the next argv was `pvcreate -ff -y <alias>`, which writes a new
+// label over a live PV and the volume group metadata on it. Each name is
+// resolved through its links first; a name that does not resolve is
+// compared as written, which is what happened before.
+func lvmCanon(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real
+	}
+	return filepath.Clean(path)
+}
+
 // lvmFindPV returns the PV record for a device, or nil if the device
 // carries no LVM label.
 func lvmFindPV(c *exec.Context, device string) (*lvmPV, error) {
@@ -598,8 +617,9 @@ func lvmFindPV(c *exec.Context, device string) (*lvmPV, error) {
 	if err != nil {
 		return nil, err
 	}
+	want := lvmCanon(device)
 	for i := range pvs {
-		if pvs[i].Name == device {
+		if lvmCanon(pvs[i].Name) == want {
 			return &pvs[i], nil
 		}
 	}
@@ -925,11 +945,11 @@ func lvmPVCreate(c *exec.Context, args *value.Map) (any, error) {
 	}
 	isPV := map[string]bool{}
 	for _, pv := range existing {
-		isPV[pv.Name] = true
+		isPV[lvmCanon(pv.Name)] = true
 	}
 	var todo []string
 	for _, d := range devices {
-		if !isPV[d] {
+		if !isPV[lvmCanon(d)] {
 			todo = append(todo, d)
 		}
 	}
@@ -964,15 +984,15 @@ func lvmPVRemove(c *exec.Context, args *value.Map) (any, error) {
 	group := map[string]string{}
 	isPV := map[string]bool{}
 	for _, pv := range existing {
-		isPV[pv.Name] = true
-		group[pv.Name] = pv.Group
+		isPV[lvmCanon(pv.Name)] = true
+		group[lvmCanon(pv.Name)] = pv.Group
 	}
 	var todo []string
 	for _, d := range devices {
-		if !isPV[d] {
+		if !isPV[lvmCanon(d)] {
 			continue
 		}
-		if g := group[d]; g != "" && !force {
+		if g := group[lvmCanon(d)]; g != "" && !force {
 			return nil, fmt.Errorf(
 				"%s is still in volume group %q; remove it from the group first, or pass force to wipe it anyway", d, g)
 		}

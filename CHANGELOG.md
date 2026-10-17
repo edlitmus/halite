@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An alias of an LVM physical volume is recognised as one
+
+`lvm.pvcreate` and `lvm.pv_present` compared device names by spelling, so
+a `/dev/disk/by-id/...` or `/dev/vg/lv` alias of an existing physical
+volume was taken for a new disk. With `force`, that meant `pvcreate -ff`
+over a live label. Names are now resolved to their device first (issue
+321, M-42). DIVERGENCE 5.353.
+
 ### `cmd.script` and `cmd.exec_code` work with `runas`
 
 The temporary script was written as root, 0700, and not handed to the

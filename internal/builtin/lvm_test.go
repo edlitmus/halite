@@ -1,7 +1,10 @@
 package builtin
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -602,5 +605,33 @@ func TestLVMVGExtendAddsOnlyWhatIsMissing(t *testing.T) {
 	}
 	if ran != "vgextend vgtest /dev/loop1" {
 		t.Errorf("vgextend ran %q; want it to add only /dev/loop1", ran)
+	}
+}
+
+// **An alias of a PV is that PV** (issue 321, M-42). pvs names
+// /dev/loop0; a state naming a link to it was told "not a PV", and with
+// force the argv was `pvcreate -ff -y <alias>` over a live label.
+func TestLVMPVCreateKnowsAnAliasOfAPV(t *testing.T) {
+	dir := t.TempDir()
+	dev := filepath.Join(dir, "loop0")
+	if err := os.WriteFile(dev, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(dir, "by-id-disk")
+	if err := os.Symlink(dev, alias); err != nil {
+		t.Fatal(err)
+	}
+	// Quoted, because the report is JSON and a Windows temporary path has
+	// backslashes in it.
+	report := strings.ReplaceAll(lvmPVsJSON, `"/dev/loop0"`, strconv.Quote(dev))
+	c := lvmTestContext(map[string]exec.Result{lvmPVReportKey(): {Stdout: report}})
+	args := value.MapOf("devices", []any{alias}, "force", true)
+	if _, err := lvmPVCreate(c, args); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range c.Runner.(*exec.RecordingRunner).RanCommands() {
+		if strings.HasPrefix(cmd, "pvcreate") {
+			t.Errorf("ran %q over an alias of a live PV", cmd)
+		}
 	}
 }
