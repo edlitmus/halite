@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Chained comparisons and `**` in templates now mean what they do in Jinja
+
+`{% if 0 < x < 10 %}` with x of 15 took the in-range branch, because the
+comparison was read as `(0 < x) < 10`. Comparisons now chain as in
+Jinja. `**` is now left associative and binds looser than unary minus, as
+in Jinja, so `2 ** 3 ** 2` is 64 and `-2 ** 2` is 4, where they were 512
+and -4. A template that relied on the old reading gets a different answer
+(issue 321, M-52). DIVERGENCE 5.359.
+
 ### s3fs serves what the bucket holds now
 
 The s3fs cache compared files by size only, so a change that kept the

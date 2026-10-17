@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 45 | 10: 3 mentioned and explicitly left, 1 half done, 6 not started |
+| Medium (55) | 45 | 10: 3 mentioned and explicitly left, 2 half done, 5 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -122,13 +122,18 @@ Severities are this file's revised ones, from the tables below.
 
 **Medium, half done.**
 
+- **M-52**, Medium: #399 makes comparisons chain and `**` left
+  associative over unary operands, as Jinja does, against values
+  captured from jinja2 3.1.2 (DIVERGENCE 5.359). Not done: `~`'s
+  precedence, `str.format` specs, `|format`'s `%s` idioms, `round`,
+  `dict([...])` and `tojson` escaping.
 - **M-06**, Medium: #378 bounds the enrollment body (64 KiB, read
   within 10 s), the CSR (16 KiB) and the pending records (1,024), and
   lets a spent token take a name from a pending record of another key
   (DIVERGENCE 5.338). Not done: a per-source rate limit, which needs
   `enroll --wait` to retry a refusal it treats as final today.
 
-**Medium, not started (6).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (5).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
@@ -138,7 +143,6 @@ FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 | M-40 | `iptables.save` | Low |
 | M-47 | firewall lockout, no `-w` | Low |
 | M-48 | D-Bus 90 s deadline | Low |
-| M-52 | template differences from Jinja2 | Medium |
 
 **M-56, runners are not scoped.** SPEC 23.5 still says nothing about it.
 Either a sentence there or scoping is owed.
