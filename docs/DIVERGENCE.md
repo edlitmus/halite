@@ -29170,6 +29170,76 @@ refusal had been run, FreeBSD's had not. `mount` is declared for Linux,
 FreeBSD, OpenBSD, NetBSD, DragonFly and macOS. Its `opts` default is
 `defaults`, and its remount is `mount -o remount,<opts>`. Both are
 Linux's.
+
+**Measured on beastie** (FreeBSD 15.1-RELEASE-p5) as root, with a tmpfs
+on a scratch directory and a scratch table given to `mount -F`:
+
+| What | FreeBSD said |
+|---|---|
+| `mount -t tmpfs -o defaults tmpfs <p>` | `mount option <defaults> is unknown: Invalid argument` |
+| `mount -o remount,ro <p>` | `unknown special file or file system` |
+| `mount -u -t tmpfs -o ro tmpfs <p>` | updated in place; `mount` then says `(tmpfs, local, read-only)` |
+| a table line with opts `defaults` | `Inappropriate file type or format` |
+| a table line with opts `noatime` | `Inappropriate file type or format` |
+| a table line with opts `defaults,rw` | read, then `mount option <defaults> is unknown` |
+| a table line with opts `rw`, or `ro` | mounted |
+
+`mount -F <table> -a` *exited 0* while skipping the line it called
+inappropriate. getfsent takes a line's type from its options, and only
+`rw`, `ro`, `rq`, `sw` and `xx` give it one, so a line with no mode is not
+a mount line at all.
+
+So on FreeBSD, `mount.mounted` with no `opts` failed to mount, with
+`defaults` named. That is the case most trees write. With `mount:
+false`, it wrote a table line that boot would skip without a word. Any
+remount failed.
+
+**The fix.** On a BSD, and on macOS, `defaults` is dropped and `rw` is
+put first where no mode is left. The same spelling goes into the table
+and onto the command line, so the comparison and the mount agree. A
+remount there is `mount -u`. Linux is unchanged. The platform is a
+package variable, `mountGOOS`, so the BSD spelling is held by unit tests
+on every CI platform. The existing fixtures are Linux-shaped (xfs,
+`UUID=` devices, /proc/self/mounts), so they are pinned to Linux.
+Without the pin, two of them failed when the suite ran as if on
+FreeBSD, which is how CI's native FreeBSD job would have run them.
+
+**Demonstrated.** `TestLiveMountMountedConvergesAndRemounts` drives the
+state on a scratch tmpfs, as root:
+
+1. no `opts`, applied twice, and the second run changes nothing;
+2. the line it wrote is handed back to mount(8) (`mount -F` or
+   `mount --fstab`), which has to mount it;
+3. `ro` is declared, which forces a remount, and the kernel's own table
+   must then say `ro`; then a second `ro` run.
+
+Results:
+
+- beastie at b6e9e7b: passed, writing `tmpfs <p> tmpfs rw 0 0`.
+- Ubuntu 24.04.5 (util-linux 2.39.3): passed, writing `defaults`, which
+  Linux accepts.
+- beastie, main's `mount.go`: failed on the first run with `mount
+  option <defaults> is unknown`.
+
+The mount unit tests also passed natively on beastie. Nothing was left
+mounted, and /etc/fstab was byte-identical to a copy taken first. The
+test joins the `linux` leg's filter, and `mount*.go` the fleet trigger
+paths, which it was in neither of. The `mount` evidence level goes from
+`captured` to `hardware` on these runs.
+
+I broke each half on purpose: keeping `defaults` failed
+`TestPlatformMountOpts` and `TestMountedOnFreeBSDWritesNoDefaults`, and
+`-o remount` on FreeBSD failed `TestMountedOnFreeBSDRemountsWithU`.
+
+**Not verified.**
+
+- macOS, OpenBSD, NetBSD and DragonFly get the same spelling and were
+  not run. The audit's own run on macOS found both `defaults` and
+  `remount` refused there, which is the case for the change, not proof
+  of the new argv.
+- A real block device, `mount.unmounted`, and a boot were not tried.
+- A filesystem type whose options differ (tmpfs refused `noatime` on
+  FreeBSD) was not explored.
 ### 5.337 An fstab line written without a type was unreadable, and rewritten for ever
 
 Issue 321 finding M-35. `entryFromArgs` requires a mount point and a
@@ -29284,79 +29354,57 @@ there meets a bound.
 - Not run against a live hub, on FreeBSD or anywhere else: the tests run
   the real hub handler over real TLS on loopback, under `go test`.
 
+### 5.339 A job or an event longer than a stream line was lost without a word
 
-**Measured on beastie** (FreeBSD 15.1-RELEASE-p5) as root, with a tmpfs
-on a scratch directory and a scratch table given to `mount -F`:
+Issue 321 finding M-11. Both NDJSON streams, a node's `/v1/subscribe`
+and an operator's `/v1/events`, are read a line at a time by a
+`bufio.Scanner` bounded at `MaxSubscribeLine`, 1 MiB. Measured: a line
+of 1,048,576 bytes with its newline reads, and one byte more is "token
+too long". Nothing on the writing side knew the bound.
 
-| What | FreeBSD said |
-|---|---|
-| `mount -t tmpfs -o defaults tmpfs <p>` | `mount option <defaults> is unknown: Invalid argument` |
-| `mount -o remount,ro <p>` | `unknown special file or file system` |
-| `mount -u -t tmpfs -o ro tmpfs <p>` | updated in place; `mount` then says `(tmpfs, local, read-only)` |
-| a table line with opts `defaults` | `Inappropriate file type or format` |
-| a table line with opts `noatime` | `Inappropriate file type or format` |
-| a table line with opts `defaults,rw` | read, then `mount option <defaults> is unknown` |
-| a table line with opts `rw`, or `ro` | mounted |
+- **A job.** `submit` takes 64 MiB, so a single keyword argument over
+  1 MiB made a job line no node could read. Each targeted node's stream
+  ended with ErrTooLong and the node reconnected. The triage corrected
+  the finding here: it is one reconnect per node, not a loop. The job,
+  already recorded as dispatched, never arrived, and nothing said so.
+  Dispatch now measures the job's wire line with the encoder the stream
+  uses (`wireLineLen`) and refuses it before it is recorded or sent,
+  saying to pass large data through the file server or pillar.
+- **An event.** A node may post 1 MiB of event data, and with the hub's
+  fields that is a longer line: the test's event was 1,048,689 bytes.
+  The stream reader then ended at that event. That reader is
+  `halite-hub events` and also halite-api, which relays the hub's
+  stream to SSE and WebSocket clients. A reader resuming from the last
+  offset it saw met the same event again, until the bus pruned it. The
+  triage had not reproduced this half; the test below does, with the
+  scanner's own "token too long". `eventStream` now sends such an event
+  as a stand-in. The stand-in keeps the tag, node, stamp, correlation,
+  schema and offset, and its data holds `_oversized`, `_bytes` and
+  `_limit`, so a reader sees what it missed and resumes past it. The
+  bus keeps the event whole, and reactors, which read the bus, see all
+  of it.
 
-`mount -F <table> -a` *exited 0* while skipping the line it called
-inappropriate. getfsent takes a line's type from its options, and only
-`rw`, `ro`, `rq`, `sw` and `xx` give it one, so a line with no mode is not
-a mount line at all.
+`TestAJobTooLongForANodeIsRefusedAndOneThatFitsArrives` connects a real
+node stream. It holds that a job with a 1 MiB argument is refused at
+submit, and that one 4 KiB inside the bound arrives with its argument
+intact. `TestAnEventTooLongForTheStreamIsSentAsAStandIn` posts a node
+event of 1 MiB less 64 bytes, then reads the stream from the start and
+gets the stand-in and the event after it, while the bus still holds the
+whole blob. Without the stand-in the reader fails with "bufio.Scanner:
+token too long", and without the Dispatch check the long job is
+accepted. Both were broken that way on purpose and watched failing.
+SPEC 6.5's row for the line now says both.
 
-So on FreeBSD, `mount.mounted` with no `opts` failed to mount, with
-`defaults` named. That is the case most trees write. With `mount:
-false`, it wrote a table line that boot would skip without a word. Any
-remount failed.
+**Breaking.** A job whose arguments are over about 1 MiB is now refused
+at submission. It never reached a node before.
 
-**The fix.** On a BSD, and on macOS, `defaults` is dropped and `rw` is
-put first where no mode is left. The same spelling goes into the table
-and onto the command line, so the comparison and the mount agree. A
-remount there is `mount -u`. Linux is unchanged. The platform is a
-package variable, `mountGOOS`, so the BSD spelling is held by unit tests
-on every CI platform. The existing fixtures are Linux-shaped (xfs,
-`UUID=` devices, /proc/self/mounts), so they are pinned to Linux.
-Without the pin, two of them failed when the suite ran as if on
-FreeBSD, which is how CI's native FreeBSD job would have run them.
-
-**Demonstrated.** `TestLiveMountMountedConvergesAndRemounts` drives the
-state on a scratch tmpfs, as root:
-
-1. no `opts`, applied twice, and the second run changes nothing;
-2. the line it wrote is handed back to mount(8) (`mount -F` or
-   `mount --fstab`), which has to mount it;
-3. `ro` is declared, which forces a remount, and the kernel's own table
-   must then say `ro`; then a second `ro` run.
-
-Results:
-
-- beastie at b6e9e7b: passed, writing `tmpfs <p> tmpfs rw 0 0`.
-- Ubuntu 24.04.5 (util-linux 2.39.3): passed, writing `defaults`, which
-  Linux accepts.
-- beastie, main's `mount.go`: failed on the first run with `mount
-  option <defaults> is unknown`.
-
-The mount unit tests also passed natively on beastie. Nothing was left
-mounted, and /etc/fstab was byte-identical to a copy taken first. The
-test joins the `linux` leg's filter, and `mount*.go` the fleet trigger
-paths, which it was in neither of. The `mount` evidence level goes from
-`captured` to `hardware` on these runs.
-
-I broke each half on purpose: keeping `defaults` failed
-`TestPlatformMountOpts` and `TestMountedOnFreeBSDWritesNoDefaults`, and
-`-o remount` on FreeBSD failed `TestMountedOnFreeBSDRemountsWithU`.
-
-**Not verified.**
-
-- macOS, OpenBSD, NetBSD and DragonFly get the same spelling and were
-  not run. The audit's own run on macOS found both `defaults` and
-  `remount` refused there, which is the case for the change, not proof
-  of the new argv.
-- A real block device, `mount.unmounted`, and a boot were not tried.
-- A filesystem type whose options differ (tmpfs refused `noatime` on
-  FreeBSD) was not explored.
-
-
-
+**Not done.** A node does not get a stand-in for a job line, because no
+job longer than the bound is sent any more. A hub older than this one
+can still send one, and a node reading it still reconnects. Events from
+other sources (`job/new` carries the node list, which grows with the
+estate) are covered by the same stand-in rather than bounded at their
+source. Not run on FreeBSD or against a live hub; the tests run the
+real handlers over loopback TLS.
 
 
 

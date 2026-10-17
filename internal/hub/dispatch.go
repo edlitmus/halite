@@ -1,7 +1,9 @@
 package hub
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -192,6 +194,25 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 	// past the nil-safety every method has.
 	if sc, ok := tracing.SpanContextOf(span); ok {
 		j.TraceParent = tracing.FormatTraceParent(sc)
+	}
+
+	// **A job a node cannot read is refused here**, before it is
+	// recorded or sent. A node reads its stream a line at a time with a
+	// bufio.Scanner bounded at MaxSubscribeLine, and a longer line is
+	// ErrTooLong: the node dropped the stream, reconnected, and never saw
+	// the job, which by then was recorded as dispatched to it. Nothing
+	// said so anywhere (issue 321, M-11). The submission is bounded at
+	// MaxRequestBody, 64 MiB, so a single keyword argument over 1 MiB was
+	// enough. The length is measured with the encoder the stream itself
+	// uses, so the two cannot disagree by an escaping rule.
+	if n, err := wireLineLen(messageFor(j)); err != nil {
+		span.Fail(err)
+		return nil, err
+	} else if n > transport.MaxSubscribeLine {
+		err := fmt.Errorf("the job is %d bytes on the wire and a node reads at most %d in one message; "+
+			"pass large data through the file server or pillar rather than as arguments", n, transport.MaxSubscribeLine)
+		span.Fail(err)
+		return nil, err
 	}
 
 	if s.Jobs != nil {
@@ -445,6 +466,20 @@ func (s *Server) targetPillar(matcher *target.Matcher, env string) (
 			return loaded
 		}
 	}, nil
+}
+
+// wireLineLen is how many bytes v takes as one line of an NDJSON stream,
+// newline included, with the encoder settings subscribe and the event
+// stream use. A bufio.Scanner bounded at n reads a line whose length,
+// newline included, is at most n.
+func wireLineLen(v any) (int, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return 0, err
+	}
+	return b.Len(), nil
 }
 
 // messageFor is the wire form of a job. One function, so that a batch

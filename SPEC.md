@@ -454,7 +454,7 @@ these is why a single malformed return can exhaust a master.
 | Maximum CSR at enrollment | 16 KiB |
 | Maximum pending enrollment requests | 1,024 |
 | Maximum single return payload | 16 MiB, then the node paginates by chunk |
-| Maximum NDJSON line on the subscribe stream | 1 MiB |
+| Maximum NDJSON line on the subscribe and event streams | 1 MiB; a longer job is refused at submission, and a longer event is streamed as a stand-in naming it |
 | Maximum concurrent HTTP/2 streams per node connection | 64 |
 | Maximum node connections per hub | 25,000, configured |
 | Maximum decompressed size ratio | 100:1, then the transfer is aborted |

@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A job too long for a node is refused, and a long event no longer ends the event stream
+
+A job whose wire form is longer than the 1 MiB a node reads in one message
+is now refused when it is submitted. Before, it was accepted, recorded as
+dispatched, and silently never arrived: each node's stream broke on it
+and reconnected without it. An event longer than a stream line, such as a
+node event near its 1 MiB limit, used to end `halite-hub events` and the
+API's SSE and WebSocket streams, and resuming met it again. It is now
+streamed as a stand-in carrying its tag, node and offset, with
+`_oversized: true` and its size in `data`. The bus and reactors still see
+the whole event (issue 321, M-11). DIVERGENCE 5.339.
+
 ### Enrollment is bounded, and a bogus token can no longer hold a node's name
 
 `POST /v1/enroll`, which anybody who can reach the hub's port may call,
