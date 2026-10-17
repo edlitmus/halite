@@ -29935,6 +29935,31 @@ with nothing between them to recover from, is the same shape at install
 time, and is still open. This install has the same window: the key is
 renamed and then the certificate written.
 
+### 5.347 A script run as another account could not be opened by it
+
+Issue 321 finding M-27, CONFIRMED by trace and "needs root to run"; it
+has now been run. `cmd.script` and `cmd.exec_code` write their script to
+a temporary file, mode 0700, so that a credential in it stays private.
+As root, which is how a node runs, the file was `root:root` and never
+handed over. With `runas`, the child, running as the account, could not
+open its own script. **As root on Ubuntu 24.04.5**, main's `cmd.exec_code`
+with `runas: nobody` failed with "/bin/sh: 0: cannot open
+/tmp/halite-script-473906871: Permission denied".
+
+The script is now given to the account it runs as before it runs, as
+Salt chowns it, and its mode stays 0700, so it is still that one
+account's. The account is the state's `runas`, or the context's when the
+state names none (SPEC 11.7).
+
+`TestLiveScriptRunsAsAnotherAccount` runs `id -un` through
+`cmd.exec_code` as `nobody` and requires "nobody". It passed as root on
+Ubuntu 24.04.5 and on beastie (FreeBSD 15.1) at aefba8a, and failed
+against main as above. It joins the `linux` and `macos` legs' filters;
+the `freebsd` leg runs every `TestLive*`.
+
+**Not done.** `cmd.script` with a `salt://` source was not run as
+another account; it shares `tempScript` with `exec_code`. Windows keeps
+its own model and is not changed.
 
 
 ## 6. Everything else not started
