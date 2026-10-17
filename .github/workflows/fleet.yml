@@ -86,6 +86,7 @@ on:
       - "internal/builtin/ps*.go"
       - "internal/builtin/at*.go"
       - "internal/builtin/tmpfs*.go"
+      - "internal/builtin/mount*.go"
       - "internal/builtin/reboot*.go"
       - "internal/builtin/mac_*.go"
       # `user.present` is driven by TestLiveUserGroups on the linux, freebsd
@@ -554,7 +555,7 @@ jobs:
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
+              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
             echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
           test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"

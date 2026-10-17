@@ -320,6 +320,7 @@ func TestMountedConvergesAgainstTheKernelsOwnTable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("mount.mounted does not run on Windows, and this build says so")
 	}
+	linuxMount(t)
 	r := New()
 	dir := t.TempDir()
 
@@ -363,6 +364,18 @@ func TestMountedConvergesAgainstTheKernelsOwnTable(t *testing.T) {
 // about options and the table, and they pass the comparison only
 // because the two strings are equal. The device comparison itself is
 // tested in mount_identity_test.go (DIVERGENCE 5.313).
+// linuxMount makes this module speak Linux's mount for one test, which
+// is what a fixture of xfs, UUID= devices, /proc/self/mounts and
+// `defaults` is. CI runs this suite natively on FreeBSD as well, where
+// mountGOOS would otherwise give the BSD spelling; that spelling is held
+// by mount_bsd_test.go.
+func linuxMount(t *testing.T) {
+	t.Helper()
+	old := mountGOOS
+	mountGOOS = "linux"
+	t.Cleanup(func() { mountGOOS = old })
+}
+
 func mountFixture(t *testing.T, active map[string]any) (*exec.Context, string) {
 	t.Helper()
 	// The states are declared for the platforms with a mount table, and
@@ -376,6 +389,7 @@ func mountFixture(t *testing.T, active map[string]any) (*exec.Context, string) {
 	oldProc := ProcMountsPath
 	ProcMountsPath = filepath.Join(t.TempDir(), "no-proc-mounts")
 	t.Cleanup(func() { ProcMountsPath = oldProc })
+	linuxMount(t)
 
 	var lines []string
 	for point, m := range active {

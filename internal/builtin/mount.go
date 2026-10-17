@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +23,68 @@ import (
 // is no `mount` to run: a mount.mounted that pretended otherwise would be
 // a state that reads plausibly and does nothing.
 var unixOnly = []string{"linux", "freebsd", "openbsd", "netbsd", "dragonfly", "darwin"}
+
+// mountGOOS is the platform whose mount(8) and fstab(5) this module
+// speaks, as a variable so a test on one platform can hold the other's
+// spelling.
+var mountGOOS = runtime.GOOS
+
+// bsdMount reports whether goos's mount is the BSD one: `-u` to update a
+// mount rather than Linux's `-o remount`, and no `defaults` option.
+// macOS's mount(8) is the BSD one too.
+func bsdMount(goos string) bool {
+	switch goos {
+	case "freebsd", "openbsd", "netbsd", "dragonfly", "darwin":
+		return true
+	}
+	return false
+}
+
+// platformMountOpts spells an option list the way goos's mount reads it.
+//
+// **`defaults` is Linux's word**, and it is this module's default, which
+// Salt's is too. FreeBSD knows neither it nor a table line without a mode.
+// Measured on beastie (FreeBSD 15.1-RELEASE-p5) with a tmpfs:
+//
+//	mount -t tmpfs -o defaults tmpfs /mnt
+//	  mount: tmpfs: mount option <defaults> is unknown: Invalid argument
+//	fstab line with opts `defaults`, or `noatime`
+//	  fstab: ...:1: Inappropriate file type or format
+//	fstab line with opts `defaults,rw`
+//	  mount: tmpfs: mount option <defaults> is unknown: Invalid argument
+//	fstab line with opts `rw` or `ro`
+//	  mounted
+//
+// and `mount -a` exits 0 after skipping the line it calls inappropriate,
+// so a state that omitted `opts` wrote a table entry FreeBSD silently
+// does not mount at boot (issue 321, M-44). fstab(5)'s getfsent takes the
+// line's type from its options, and only `rw`, `ro`, `rq`, `sw` and `xx`
+// give it one.
+//
+// So on a BSD `defaults` is dropped and, when no mode is left, `rw` is
+// put first, which is what `defaults` means there anyway. The same
+// spelling goes into the table and onto the command line, so the two
+// cannot disagree about what was declared. Linux is unchanged.
+func platformMountOpts(goos, opts string) string {
+	if !bsdMount(goos) {
+		return opts
+	}
+	var out []string
+	mode := false
+	for _, o := range splitOpts(opts) {
+		switch o {
+		case "defaults":
+			continue
+		case "rw", "ro", "rq", "sw", "xx":
+			mode = true
+		}
+		out = append(out, o)
+	}
+	if !mode {
+		out = append([]string{"rw"}, out...)
+	}
+	return strings.Join(out, ",")
+}
 
 // FstabPath is the mount table, as a variable so a test can point it
 // somewhere harmless.
@@ -338,6 +401,7 @@ func entryFromArgs(args *value.Map) (fstabEntry, error) {
 	if e.Opts == "" {
 		e.Opts = "defaults"
 	}
+	e.Opts = platformMountOpts(mountGOOS, e.Opts)
 	return e, nil
 }
 
@@ -621,7 +685,7 @@ func mountArgs(args *value.Map) mountRequest {
 		point:  states.Str(args, "name", ""),
 		device: states.Str(args, "device", ""),
 		fstype: states.Str(args, "fstype", ""),
-		opts:   optsArg(args),
+		opts:   platformMountOpts(mountGOOS, optsArg(args)),
 		mkmnt:  states.Bool(args, "mkmnt", false),
 	}
 }
@@ -637,12 +701,19 @@ func mountFilesystem(c *exec.Context, req mountRequest, remount bool) error {
 	}
 	opts := req.opts
 	if opts == "" {
-		opts = "defaults"
-	}
-	if remount {
-		opts = "remount," + opts
+		opts = platformMountOpts(mountGOOS, "defaults")
 	}
 	argv := []string{"mount"}
+	// A remount is `-u` on a BSD, where `-o remount` is refused: on
+	// beastie `mount -o remount,ro <point>` said "unknown special file or
+	// file system", and `mount -u -t tmpfs -o ro tmpfs <point>` updated
+	// it in place (issue 321, M-44).
+	switch {
+	case remount && bsdMount(mountGOOS):
+		argv = append(argv, "-u")
+	case remount:
+		opts = "remount," + opts
+	}
 	if req.fstype != "" {
 		argv = append(argv, "-t", req.fstype)
 	}
