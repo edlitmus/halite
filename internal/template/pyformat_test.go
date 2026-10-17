@@ -129,3 +129,104 @@ func TestFloatRendersAsJinjaDoes(t *testing.T) {
 		}
 	}
 }
+
+func decodePyArg(t *testing.T, enc string) any {
+	t.Helper()
+	kind, raw, ok := strings.Cut(enc, ":")
+	if !ok {
+		t.Fatalf("argument %q", enc)
+	}
+	switch kind {
+	case "s":
+		return raw
+	case "b":
+		return raw == "True"
+	case "n":
+		return nil
+	case "i":
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			t.Fatalf("int %q: %v", raw, err)
+		}
+		return n
+	case "f":
+		x, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			t.Fatalf("float %q: %v", raw, err)
+		}
+		return x
+	}
+	t.Fatalf("argument kind %q", kind)
+	return nil
+}
+
+func TestPercentFormatMatchesPython(t *testing.T) {
+	rows := readTSV(t, "percent.tsv", 3)
+	bad := 0
+	for _, r := range rows {
+		format, argtext, want := r[0], r[1], r[2]
+		var args []any
+		kwargs := map[string]any{}
+		if argtext != "" {
+			for _, a := range strings.Split(argtext, "\x1f") {
+				if k, v, ok := strings.Cut(a, "="); ok && !strings.Contains(k, ":") {
+					kwargs[k] = decodePyArg(t, v)
+					continue
+				}
+				args = append(args, decodePyArg(t, a))
+			}
+		}
+		got, err := pyPercent(format, args, kwargs)
+		switch {
+		case strings.HasPrefix(want, "!"):
+			if err == nil {
+				bad++
+				t.Errorf("%q %% %q = %q; Python raises %s", format, argtext, got, want[1:])
+			}
+		case err != nil || got != want:
+			bad++
+			t.Errorf("%q %% %q = %q, %v; Python gives %q", format, argtext, got, err, want)
+		}
+		if bad > 25 {
+			t.Fatal("too many differences")
+		}
+	}
+	if len(rows) < 3000 {
+		t.Fatalf("only %d cases were read", len(rows))
+	}
+}
+
+// **The format filter is Python's `%`**, through the filter a template
+// calls (issue 321, M-52). It was fmt.Sprintf: `%s` of a bool, `%r` and
+// `%(name)s` failed, `%g` printed Go's shortest digits, `%d` of a float
+// failed and `%x` of a string printed its bytes. Captured from jinja2
+// 3.1.2; an empty want is an error there.
+func TestFormatFilterIsPythonPercent(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`{{ "%s" | format(true) }}`, "True"},
+		{`{{ "%r" | format("a") }}`, "'a'"},
+		{`{{ "%(x)s-%(y)d" | format(x="a", y=2) }}`, "a-2"},
+		{`{{ "%g" | format(1/3) }}`, "0.333333"},
+		{`{{ "%d" | format(2.9) }}`, "2"},
+		{`{{ "%5.1f|%-4s|%03d" | format(3.14159, "ab", 7) }}`, "  3.1|ab  |007"},
+		{`{{ "%s" | format(none) }}`, "None"},
+		{`{{ "%s" | format([1, 2]) }}`, "[1, 2]"},
+		{`{{ "%x" | format("a") }}`, ""},
+		{`{{ "%s %s" | format("a") }}`, ""},
+	} {
+		res, err := NewEnvironment(nil, DefaultOptions()).RenderString(c.src, "t.sls", nil)
+		if c.want == "" {
+			if err == nil {
+				t.Errorf("%s -> %q, jinja2 3.1.2 fails it", c.src, res.Output)
+			}
+			continue
+		}
+		if err != nil || res.Output != c.want {
+			var got string
+			if err == nil {
+				got = res.Output
+			}
+			t.Errorf("%s -> %q, %v; jinja2 3.1.2 gives %q", c.src, got, err, c.want)
+		}
+	}
+}

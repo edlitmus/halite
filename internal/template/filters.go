@@ -235,7 +235,11 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if err != nil {
 			return nil, err
 		}
-		return sprintfPython(s, args)
+		out, err := pyPercent(s, args, kwargs)
+		if err != nil {
+			return nil, fc.Errorf("format: %v", err)
+		}
+		return out, nil
 	}
 
 	f["indent"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
@@ -779,31 +783,6 @@ func wordwrap(s string, width int) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
-}
-
-// sprintfPython implements the printf-style `format` filter for the
-// verbs SLS trees use.
-func sprintfPython(format string, args []any) (string, error) {
-	native := make([]any, len(args))
-	for i, a := range args {
-		switch t := a.(type) {
-		case int64:
-			native[i] = t
-		case float64:
-			native[i] = t
-		case string:
-			native[i] = t
-		case bool:
-			native[i] = t
-		default:
-			native[i] = renderValue(a)
-		}
-	}
-	out := fmt.Sprintf(format, native...)
-	if strings.Contains(out, "%!") {
-		return "", fmt.Errorf("format %q does not match its arguments", format)
-	}
-	return out, nil
 }
 
 // sortAny orders a mixed sequence the way Jinja's sort does: numbers
