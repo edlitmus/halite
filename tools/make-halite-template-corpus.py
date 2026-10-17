@@ -33,7 +33,11 @@ case("undefined/defined-name-wins", "{{ here | default('x') }}", "value", {"here
 case("undefined/attribute-of-missing", "{{ nope.attr }}", error="nope")
 
 # ---- SPEC 10.2.4, Salt-added filters that trees actually use.
-case("filter/yaml_encode-plain", "{{ 'a b' | yaml_encode }}", "a b")
+# Salt's yaml_encode double-quotes every string (salt/utils/yamlencoding.py,
+# 3007.1: a str node goes through yaml_dquote), so 'a b' is "a b" with its
+# quotes. This said a b, bare, and the checked-in JSON said "a b": the JSON
+# had been corrected and this had not (DIVERGENCE, issue 321 section 5).
+case("filter/yaml_encode-plain", "{{ 'a b' | yaml_encode }}", '"a b"')
 # A value that would resolve to a boolean has to come back quoted, or a
 # mode of 0644 or a version of "yes" changes type on the way into a file.
 # The spelling of the quote is halite's; PyYAML picks the single quote and
