@@ -99,7 +99,7 @@ Existing SLS trees are full of Jinja, and requiring a rewrite to Go's text/templ
 
 Two deliberate departures from Jinja are worth knowing before reading further. Undefined names are strict by default (section 10.2.6), so a missing pillar value is an error naming the file, line, and identifier rather than an empty string that produces a state which silently does the wrong thing. And the random filters are seeded deterministically per render (section 10.2.4), so a test=True run and the real run that follows it agree.
 
-**Files:** `ast.go`, `depth.go`, `env.go`, `eval.go`, `filters.go`, `filters_salt.go`, `filters_seq.go`, `lex.go`, `listmutate.go`, `methods.go`, `parse.go`, `parse_expr.go`, `runtime.go`, `tests.go`; with tests.
+**Files:** `ast.go`, `depth.go`, `env.go`, `eval.go`, `filters.go`, `filters_salt.go`, `filters_seq.go`, `lex.go`, `listmutate.go`, `methods.go`, `parse.go`, `parse_expr.go`, `pyformat.go`, `runtime.go`, `tests.go`; with tests.
 
 **Exports.**
 

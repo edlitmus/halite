@@ -566,7 +566,10 @@ func TestStringFormatEdgeCases(t *testing.T) {
 		{`{{ '{{literal}}'.format() }}`, "{literal}"},
 		{`{{ '{0}-{0}'.format('x') }}`, "x-x"},
 		{`{{ '{a}{b}'.format(a=1, b=2) }}`, "12"},
-		{`{{ '{:>5}'.format('x') }}`, "x"},
+		// The spec is applied, as Python applies it. This used to assert
+		// "x", the spec thrown away, which is what the code did and not
+		// what Jinja does (issue 321, M-52).
+		{`{{ '{:>5}'.format('x') }}`, "    x"},
 	}
 	for _, c := range cases {
 		if got := render(t, c.src, nil); got != c.want {
