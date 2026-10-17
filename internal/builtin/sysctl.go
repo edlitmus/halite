@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -159,6 +160,9 @@ func sysctlPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	if name == "" || want == "" {
 		return states.False("This state needs a parameter name and a value."), nil
 	}
+	if err := sysctlValid(name, want); err != nil {
+		return states.False(err.Error()), nil
+	}
 
 	running, runErr := sysctlGet(c, name)
 	// A parameter the kernel does not have is a state that cannot
@@ -241,8 +245,32 @@ func sysctlConfValue(path, name string) (string, string) {
 	return "", text
 }
 
+// sysctlValid refuses a name or a value that would not stay one line.
+//
+// The name and the value become a `name=value` line of a file the kernel
+// is configured from at boot, and a newline in either started another
+// line: `vm.swappiness` with a value of `10` and a newline and
+// `kernel.modules_disabled=1` set two keys (issue 321, M-45). A name is a
+// sysctl key's characters, and a value may hold spaces -- several keys
+// take a list -- and no control character. The state checks before it
+// sets the running value, so a refusal changes nothing at all.
+func sysctlValid(name, want string) error {
+	if name == "" || strings.IndexFunc(name, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-/*", r))
+	}) >= 0 {
+		return fmt.Errorf("%q is not a sysctl name", name)
+	}
+	if strings.IndexFunc(want, unicode.IsControl) >= 0 {
+		return fmt.Errorf("the value for %s holds a newline or another control character, which would start another line of the sysctl configuration", name)
+	}
+	return nil
+}
+
 // writeSysctlConf rewrites the setting in place, or appends it.
 func writeSysctlConf(path, text, name, want string) error {
+	if err := sysctlValid(name, want); err != nil {
+		return err
+	}
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	if text == "" {
 		lines = nil

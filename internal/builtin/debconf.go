@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -145,6 +146,12 @@ func (s debconfSelection) validate() error {
 	// The format is tab separated and debconf-set-selections splits on
 	// whitespace, so a tab inside a value truncates the answer and
 	// stores something else. A newline ends the record outright.
+	// The package was not checked at all, so a newline there started a
+	// record of its own (issue 321, M-45, which the triage narrowed to
+	// this field). A package name has no whitespace either.
+	if strings.IndexFunc(s.Package, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return fmt.Errorf("%q is not a package name: debconf records are one a line, separated by whitespace", s.Package)
+	}
 	if strings.ContainsAny(s.Question, "\t\n") || strings.ContainsAny(s.Value, "\t\n") {
 		return fmt.Errorf("%s %s: a debconf answer cannot contain a tab or a newline; the format is one record a line, tab separated",
 			s.Package, s.Question)
