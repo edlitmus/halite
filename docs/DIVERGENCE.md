@@ -29974,6 +29974,29 @@ passed with it made in `/tmp`.
 another account; it shares `tempScript` with `exec_code`. Windows keeps
 its own model and is not changed.
 
+### 5.348 An alias of a live LVM physical volume looked like a fresh disk
+
+Issue 321 finding M-42, which the triage marked PARTLY: the argv was
+reproduced, and whether LVM then wipes the label "needs a host".
+`lvm.pvcreate`, `pv_present`, `pvremove` and `lvmFindPV` compared the
+devices a state named with the names `pvs` printed, by exact string.
+`pvs` names a PV by the path LVM chose (`/dev/sdb`, `/dev/mapper/vg-lv`),
+and a state may name the same disk as `/dev/disk/by-id/...`, by-uuid, or
+`/dev/vg/lv`. Such an alias was "not a PV", and with `force` the next
+argv was `pvcreate -ff -y <alias>`, which writes a new label over the
+live one and the volume group metadata it carries.
+
+Every name, on both sides, is now resolved through its links
+(`lvmCanon`, `filepath.EvalSymlinks`) before it is compared. A name that
+does not resolve is compared as written, as before.
+`TestLVMPVCreateKnowsAnAliasOfAPV` names a link to the fixture's PV with
+`force`. Against main's `lvm.go` it ran `pvcreate -ff -y
+.../by-id-disk`; now nothing runs.
+
+**Not done.** Not run against real LVM: the loopback live test was not
+extended to an alias, so whether LVM itself would have refused `-ff` on
+an in-use device is not established here. `lv_remove` and `lv_absent`
+still always pass `-f`, which the triage records as Salt parity.
 
 
 ## 6. Everything else not started
