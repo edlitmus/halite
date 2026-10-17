@@ -23,7 +23,7 @@ well as what was.
 
 **Nothing.** `make release-gate` passes: every module that changes a machine as root has been run against the tool it drives.
 
-## `captured` — 8 modules
+## `captured` — 7 modules
 
 ### `dnsutil`
 
@@ -32,10 +32,6 @@ well as what was.
 ### `kmod`
 
 the readers were compared against the Salt on this project's reference host, function for function: `mod_list` returned the same 94 loaded modules and `available` the same 1440, from /proc/modules and /lib/modules directly rather than by parsing lsmod's columns. The comparison found one difference and it is Salt's: Salt normalises hyphens to underscores for loadable modules and not for built-in ones, so its `check_available('amba-pl011')` is true and `check_available('amba_pl011')` is false for the same module. **Nothing has watched this module change anything.** No module has been loaded or unloaded by it -- `modprobe` and `modprobe -r` are unrun, on the reasoning that unloading a protocol module on the host serving this project's own Salt is not a test, it is an outage. The persistence half writes real files, but only ones a test made; neither /etc/modules nor /etc/modules-load.d has been touched.
-
-### `mount`
-
-reads the real /proc/self/mounts and the real `mount` output on the platforms CI runs, and nothing has been mounted or unmounted by this module.
 
 ### `pam`
 
@@ -57,7 +53,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 59 modules
+## `hardware` — 60 modules
 
 ### `acl`
 
@@ -186,6 +182,10 @@ driven end to end against a real mdadm 4.3 on Ubuntu 24.04: a RAID1 with a spare
 ### `modprobe`
 
 driven against a real kernel on Ubuntu 24.04: `list`, `info` and `is_denylisted` read against whatever this host's kernel already has loaded, and the mutating half loaded and unloaded `netdevsim`, the kernel's own simulated networking device for testing (it creates no interface merely by loading), with idempotence checked on both load and remove, then wrote and removed its own modules-load.d and modprobe.d files in a redirected directory (DIVERGENCE 5.54). Not covered: a module with real dependents refusing `remove` -- `xt_conntrack`'s dependency chain is checked only against a fixture -- and `persist_load`'s options file surviving an actual reboot.
+
+### `mount`
+
+reads the real /proc/self/mounts and the real `mount` output on the platforms CI runs. The mutating half was first run on 2026-10-16, as root, by `TestLiveMountMountedConvergesAndRemounts` on a scratch tmpfs with a scratch table passed as `config`: on beastie (FreeBSD 15.1-RELEASE-p5) and on Ubuntu 24.04.5 (util-linux 2.39.3), `mount.mounted` with no `opts` mounted it and wrote the table, the second run changed nothing, the line it wrote was mounted by mount(8) itself (`mount -F` and `mount --fstab`), and declaring `ro` remounted it read-only and then converged. On FreeBSD that run is what found `defaults` and `-o remount` refused, so that nothing this module mounted with its default options had ever worked there (DIVERGENCE 5.335). Not covered: a real block device, UUID= or LABEL= devices outside fixtures, `mount.unmounted`, the machine's own /etc/fstab, a boot, and macOS, OpenBSD, NetBSD and DragonFly, whose `-u` and `rw` spelling follow FreeBSD's here without having been run.
 
 ### `netplan`
 

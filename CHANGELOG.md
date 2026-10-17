@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `mount` works on FreeBSD, and refuses a table line it cannot write
+
+`mount.mounted`, `mount.mount` and `mount.remount` used Linux's spelling on
+every platform. On FreeBSD, `defaults`, which is the default for `opts`,
+is refused by `mount`, and a table line with it is skipped at boot
+without an error. A remount was `-o remount`, which FreeBSD refuses. On
+the BSDs and macOS, `defaults` now becomes `rw`, and a remount is `mount
+-u` (issue 321, M-44). If an earlier run wrote a `defaults` line to a
+FreeBSD fstab, the next run rewrites it with `rw`. DIVERGENCE 5.335.
+
+`mount.mounted` (with `persist`, its default) and `mount.set_fstab` now
+refuse an entry without `fstype`. Such a line is refused by both FreeBSD
+and Linux, and was rewritten on every run (M-35). Give `fstype`, or
+`persist: false` to mount without a table entry. DIVERGENCE 5.336.
 ### `service.enabled` on FreeBSD sets the variable rc actually reads
 
 On FreeBSD, `service.enable`, `service.disable` and the `service.enabled`
