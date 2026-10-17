@@ -676,7 +676,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"mounted by mount(8) itself (`mount -F` and `mount --fstab`), and declaring `ro` " +
 		"remounted it read-only and then converged. On FreeBSD that run is what found " +
 		"`defaults` and `-o remount` refused, so that nothing this module mounted with its " +
-		"default options had ever worked there (DIVERGENCE 5.335). Not covered: a real block " +
+		"default options had ever worked there (DIVERGENCE 5.336). Not covered: a real block " +
 		"device, UUID= or LABEL= devices outside fixtures, `mount.unmounted`, the machine's " +
 		"own /etc/fstab, a boot, and macOS, OpenBSD, NetBSD and DragonFly, whose `-u` and " +
 		"`rw` spelling follow FreeBSD's here without having been run"},

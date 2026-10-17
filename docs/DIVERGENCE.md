@@ -29163,7 +29163,7 @@ same `sysrc -n` probe defect described above. None
 of the 39 real mismatched scripts was enabled or disabled, only the
 probes: several (`ipfw`, `securelevel`, `noshutdown`) would change how
 beastie boots.
-### 5.335 mount spoke Linux on the BSDs: `defaults` and `-o remount`
+### 5.336 mount spoke Linux on the BSDs: `defaults` and `-o remount`
 
 Issue 321 finding M-44, which the triage could only mark PARTLY: macOS's
 refusal had been run, FreeBSD's had not. `mount` is declared for Linux,
@@ -29240,8 +29240,7 @@ I broke each half on purpose: keeping `defaults` failed
 - A real block device, `mount.unmounted`, and a boot were not tried.
 - A filesystem type whose options differ (tmpfs refused `noatime` on
   FreeBSD) was not explored.
-
-### 5.336 An fstab line written without a type was unreadable, and rewritten for ever
+### 5.337 An fstab line written without a type was unreadable, and rewritten for ever
 
 Issue 321 finding M-35. `entryFromArgs` requires a mount point and a
 device; `fstype` is optional, because mount(8) can probe. But a table
@@ -29277,8 +29276,6 @@ mounts. Disabling the check failed it.
 
 **Not verified.** Neither platform was booted with such a line; their
 refusals were taken from `mount` reading a scratch table.
-
-
 
 
 
