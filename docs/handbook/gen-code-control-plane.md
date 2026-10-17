@@ -325,6 +325,7 @@ Path containment is the security property this package exists to guarantee. Salt
 - `EnvFromURI` (func): EnvFromURI reads the environment out of a halite:// or salt:// query string.
 - `Fetch` (type): Fetch is the part of the transport this package needs.
 - `Fetcher` (type): Fetcher adapts a roots file server to the interface a module uses to resolve a halite:// or salt:// source.
+- `Fnmatch` (func): Fnmatch is fnmatch for the states that take a Salt glob, so that they answer as Salt's do rather than as Go's path.Match does.
 - `IsManagedURI` (func): IsManagedURI reports whether a source string names a file this server serves, as opposed to an http:// or a local path.
 - `Manifest` (type): Manifest is a subtree's contents with hashes and sizes.
 - `NewFetcher` (func): NewFetcher wraps a roots file server.

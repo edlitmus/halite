@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `file.recurse` keeps excluded files on `clean`, and applies a changed mode
+
+`clean: True` deleted files that `exclude_pat` matched; they are now kept,
+as in Salt. A `file_mode`, `user` or `group` is now applied to files
+whose contents already match, where before only rewritten files got it,
+so changing the mode of a deployed tree did nothing. `include_pat` and
+`exclude_pat` now match as Salt's fnmatch does, where `*` crosses `/`. A
+rewritten file with no `file_mode` keeps its mode instead of becoming
+0644 (issue 321, M-22). DIVERGENCE 5.347.
+
 ### A file state writes through a symbolic link instead of replacing it
 
 `file.managed`, `file.replace`, `file.line`, `file.append` and the other
