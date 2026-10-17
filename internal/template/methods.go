@@ -427,29 +427,38 @@ func formatBraces(s string, args []any, kwargs map[string]any) (string, error) {
 			}
 			field := s[i+1 : i+end]
 			i += end
-			if spec := strings.IndexByte(field, ':'); spec >= 0 {
-				field = field[:spec]
+			// The spec after the colon is applied, as Python applies it.
+			// It used to be cut off and thrown away (see pyformat.go).
+			spec := ""
+			if c := strings.IndexByte(field, ':'); c >= 0 {
+				field, spec = field[:c], field[c+1:]
 			}
+			var v any
 			switch {
 			case field == "":
 				if auto >= len(args) {
 					return "", fmt.Errorf("format(): not enough positional arguments")
 				}
-				b.WriteString(renderValue(args[auto]))
+				v = args[auto]
 				auto++
 			case isAllDigits(field):
 				n, _ := strconv.Atoi(field)
 				if n >= len(args) {
 					return "", fmt.Errorf("format(): positional argument %d is missing", n)
 				}
-				b.WriteString(renderValue(args[n]))
+				v = args[n]
 			default:
-				v, ok := kwargs[field]
+				kv, ok := kwargs[field]
 				if !ok {
 					return "", fmt.Errorf("format(): keyword argument %q is missing", field)
 				}
-				b.WriteString(renderValue(v))
+				v = kv
 			}
+			out, err := pyFormatValue(v, spec)
+			if err != nil {
+				return "", fmt.Errorf("format(): %w", err)
+			}
+			b.WriteString(out)
 			continue
 		}
 		if c == '}' {
