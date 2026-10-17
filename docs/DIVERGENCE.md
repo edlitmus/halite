@@ -30234,8 +30234,7 @@ none, in 32 s.
 **Not done.** The job needs the network and is not part of `make
 check`, by design. The pin will age, and moving it is a change like any
 other.
-
-### 5.351 A chained comparison or a power gave a different answer from Jinja, silently
+### 5.359 A chained comparison or a power gave a different answer from Jinja, silently
 
 Issue 321 finding M-52, the half of it where a tree silently takes a
 different branch or computes a different number. The finding's
@@ -30277,6 +30276,7 @@ seven wrong:
 
 None of these changes the branch a comparison takes; each is a separate
 change.
+
 
 
 ## 6. Everything else not started
