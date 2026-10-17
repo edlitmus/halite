@@ -29934,8 +29934,7 @@ with no identity to keep, writes `node.key` directly as before.
 with nothing between them to recover from, is the same shape at install
 time, and is still open. This install has the same window: the key is
 renamed and then the certificate written.
-
-### 5.347 A script run as another account could not be opened by it
+### 5.352 A script run as another account could not be opened by it
 
 Issue 321 finding M-27, CONFIRMED by trace and "needs root to run"; it
 has now been run. `cmd.script` and `cmd.exec_code` write their script to
@@ -29960,6 +29959,7 @@ the `freebsd` leg runs every `TestLive*`.
 **Not done.** `cmd.script` with a `salt://` source was not run as
 another account; it shares `tempScript` with `exec_code`. Windows keeps
 its own model and is not changed.
+
 
 
 ## 6. Everything else not started
