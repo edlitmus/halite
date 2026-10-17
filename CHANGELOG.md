@@ -26,7 +26,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 `git.latest`'s `user` parameter was ignored, so checkouts were made and
 updated as root. That left root-owned files in the account's tree, and ran
 the checkout's hooks as root wherever git allowed it. git now runs as the
-named account, with its home (issue 321, M-24). DIVERGENCE 5.346.
+named account, with its home (issue 321, M-24). DIVERGENCE 5.350.
 
 ### `ssh_auth` and `ssh_known_hosts` refuse an account's linked `~/.ssh`
 

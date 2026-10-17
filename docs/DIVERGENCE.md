@@ -29857,8 +29857,7 @@ and `macos` legs' filters; the `freebsd` leg runs every `TestLive*`.
 **Not done.** A home directory that is itself a link, or is writable by
 others, is trusted, as `os.Root` opens it by path. A `config` path is the
 operator's choice and is still written by path. macOS was not run.
-
-### 5.346 git.latest's `user` was never read, so every checkout was root's
+### 5.350 git.latest's `user` was never read, so every checkout was root's
 
 Issue 321 finding M-24. `git.latest` declared `user` ("Run git as this
 account") and nothing read it, so the clone, fetch, checkout and reset
@@ -29888,6 +29887,7 @@ command ran as "".
 **Not done.** The other git functions take no `user`. A clone as the
 account needs the target's parent to be writable by it, as it does for
 Salt. `git` has no evidence entry, and this does not add one.
+
 
 
 ## 6. Everything else not started
