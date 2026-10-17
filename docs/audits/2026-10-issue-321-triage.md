@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 42 | 13: 3 mentioned and explicitly left, 2 half done, 8 not started |
+| Medium (55) | 43 | 12: 3 mentioned and explicitly left, 2 half done, 7 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -70,6 +70,7 @@ not do. Each has been checked to see whether it happened.
 | M-27 script with runas | #392 | | **done** as root on Ubuntu and beastie (5.352) |
 | M-42 LVM alias with `-ff` | #393 | `pvremove` and `lvmFindPV` too | **done** as root on Ubuntu against real LVM, which does not refuse `-ff` (5.353) |
 | M-45 free-form values (modprobe, pkgrepo, nftables, fstab; sysrc, sysctl, debconf) | #394, #395 | ufw was already held by M-37 | **done** (5.354, 5.355): nft's reading of `;` measured on Ubuntu, sysrc's on beastie; the modules not driven against the tools |
+| M-53 gitfs buffers the archive | #396 | the file count and byte limits apply as entries arrive | **done** (5.356): main was killed buffering 3 GiB; not run against a real remote or on the hub |
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
@@ -128,7 +129,7 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (8).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (7).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
@@ -140,7 +141,6 @@ FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 | M-48 | D-Bus 90 s deadline | Low |
 | M-51 | s3fs staleness (the ETag comment is not what the code does) | Medium |
 | M-52 | template differences from Jinja2 | Medium |
-| M-53 | gitfs buffers the whole archive | Medium |
 
 **M-56, runners are not scoped.** SPEC 23.5 still says nothing about it.
 Either a sentence there or scoping is owed.

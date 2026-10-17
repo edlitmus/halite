@@ -2,7 +2,6 @@ package gitfs
 
 import (
 	"archive/tar"
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -29,8 +28,8 @@ const MaxArchiveFiles = 200000
 // from a repository the hub did not write, and an unpacker that trusts
 // its input is the shape of bug that has been found in every archive
 // tool ever shipped.
-func extractTar(archive []byte, dest string) error {
-	reader := tar.NewReader(bytes.NewReader(archive))
+func extractTar(archive io.Reader, dest string) error {
+	reader := tar.NewReader(archive)
 	var written int64
 	files := 0
 
