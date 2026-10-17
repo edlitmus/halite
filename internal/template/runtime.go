@@ -784,10 +784,7 @@ func renderValue(v any) string {
 	case int:
 		return strconv.Itoa(t)
 	case float64:
-		if t == math.Trunc(t) && !math.IsInf(t, 0) && math.Abs(t) < 1e15 {
-			return strconv.FormatFloat(t, 'f', 1, 64)
-		}
-		return strconv.FormatFloat(t, 'g', -1, 64)
+		return pyFloatStr(t)
 	case []byte:
 		return string(t)
 	case []any:

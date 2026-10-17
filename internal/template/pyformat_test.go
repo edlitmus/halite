@@ -2,6 +2,7 @@ package template
 
 import (
 	"bufio"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -110,3 +111,21 @@ func TestStrFormatAppliesTheSpec(t *testing.T) {
 	mustContain(t, renderErr(t, `{{ "{:d}".format("a") }}`, nil).Error(), "format")
 }
 
+// **A float renders as Python's str() writes it** (issue 321, M-52).
+// Rendering was fixed point below 1e15 and Go's 'g' above, so 1e15 came
+// out "1e+15" and an infinity "+Inf". Captured from jinja2 3.1.2.
+func TestFloatRendersAsJinjaDoes(t *testing.T) {
+	inf := map[string]any{"pinf": math.Inf(1), "ninf": math.Inf(-1), "nan": math.NaN()}
+	for _, c := range []struct{ src, want string }{
+		{`{{ 1e15 }}`, "1000000000000000.0"},
+		{`{{ 1e16 }}`, "1e+16"},
+		{`{{ 1e-5 }}`, "1e-05"},
+		{`{{ 0.0001 }}`, "0.0001"},
+		{`{{ -0.0 }}`, "-0.0"},
+		{`{{ pinf }}|{{ ninf }}|{{ nan }}`, "inf|-inf|nan"},
+	} {
+		if got := render(t, c.src, inf); got != c.want {
+			t.Errorf("%s -> %q, jinja2 3.1.2 gives %q", c.src, got, c.want)
+		}
+	}
+}
