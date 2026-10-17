@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `~` in templates binds as it does in Jinja
+
+`"a" ~ 1 + 2` rendered `a3`; in Jinja `~` binds tighter than `+` and `-`
+and looser than `*`, so it is `("a" ~ 1) + 2`, an error. **A template that
+relied on the old order now fails** where it rendered, as it does under
+Salt (issue 321, M-52). DIVERGENCE 5.365.
+
 ### A systemd service that takes over 90 seconds to start is waited for
 
 `service.running`, `service.start` and the other job verbs gave up after
