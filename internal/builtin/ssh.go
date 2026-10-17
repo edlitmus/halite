@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -226,10 +227,45 @@ func keyBlobFrom(args *value.Map) authKey {
 	}
 }
 
+// checkAuthKey refuses a key whose fields would not stay on its one line.
+//
+// authorized_keys is a line per key, and String joins the fields with
+// spaces, so a newline or carriage return in a comment, an option, the
+// type or the key started a second line, and a second line is a second
+// key that sshd accepts: `comment: "x\nssh-ed25519 <key> attacker"` gave
+// an attacker a login, and the state reported the one key added (issue
+// 321, section 5). shadow already refused this; ssh did not. The type and
+// the key are single tokens, so whitespace in them is refused too; an
+// option may hold spaces inside its quotes (`command="..."`), and a
+// comment may hold spaces, as sshd allows.
+func checkAuthKey(k authKey) error {
+	for _, f := range []struct{ name, v string }{
+		{"enc", k.Type}, {"key", k.Key}, {"comment", k.Comment}, {"options", strings.Join(k.Options, ",")},
+	} {
+		if strings.IndexFunc(f.v, unicode.IsControl) >= 0 {
+			return fmt.Errorf("the %s holds a newline or another control character, which would start another line of authorized_keys", f.name)
+		}
+	}
+	if strings.ContainsAny(k.Type, " \t") || strings.ContainsAny(k.Key, " \t") {
+		return fmt.Errorf("the key type and the key are one word each, and %q %q are not", k.Type, k.Key)
+	}
+	return nil
+}
+
 func sshAuthPresent(c *exec.Context, args *value.Map) (states.Result, error) {
+	// The name is parsed into fields, and strings.Fields splits on a
+	// newline as readily as on a space, so "<key>\nssh-ed25519 <other>"
+	// came out as the other key, with the first as an option. It is
+	// checked as written, before it is parsed.
+	if strings.IndexFunc(strings.TrimSpace(states.Str(args, "name", "")), unicode.IsControl) >= 0 {
+		return states.False("The key was not written: the name holds a newline or another control character, which would start another line of authorized_keys."), nil
+	}
 	want := keyBlobFrom(args)
 	if want.Key == "" {
 		return states.False("This state needs a public key."), nil
+	}
+	if err := checkAuthKey(want); err != nil {
+		return states.False(fmt.Sprintf("The key was not written: %v.", err)), nil
 	}
 	path, err := authorizedKeysPath(states.Str(args, "user", ""), states.Str(args, "config", ""))
 	if err != nil {
