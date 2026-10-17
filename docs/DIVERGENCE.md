@@ -29742,6 +29742,46 @@ replaced. `file.copy`, `file.prepend`, `blockreplace`, `comment` and
 `uncomment` go through `editResult` too, and were not each run against a
 link. Linux as root was not run.
 
+### 5.345 file.recurse cleaned what it was told to exclude, and ignored a mode change
+
+Issue 321 finding M-22, three defects the audit reproduced. All three
+reproduce word for word against main's `file_treecopy.go` in the tests
+below:
+
+- **`clean` deleted excluded files.** `extraUnderTree` listed everything
+  under the destination the source did not have, without looking at
+  `exclude_pat`. So `clean: True` with `exclude_pat: '*.override'`
+  removed `local.override`, the file the pattern was written to keep.
+  Salt keeps a file `exclude_pat` matches when it cleans.
+  `TestFileRecurseCleanKeepsExcludedFiles`: main left only `a.conf`.
+- **A mode or owner change did nothing on a tree already copied.**
+  `file_mode`, `user` and `group` were applied only to files the run
+  rewrote. A second run with `file_mode: '0600'` reported "already
+  matches salt://app (2 files)" and left both files 0644. A file whose
+  contents match is now checked against what the state names, with
+  `plannedMode` and `plannedOwnership`, and corrected.
+  `TestFileRecurseCorrectsTheModeOfMatchingFiles`.
+- **`*` stopped at `/`.** The patterns were `filepath.Match`, so
+  `exclude_pat: '*.bak'` excluded `x.bak` and copied `sub/x.bak`. They
+  are Salt's fnmatch now, the port `file_ignore_glob` got in 5.295,
+  exported from internal/fileserver as `Fnmatch`.
+  `TestFileRecursePatternsCrossDirectories`: main placed
+  `a.conf,sub/x.bak`.
+
+Two more in the same code, found while there:
+
+- A rewritten existing file with no `file_mode` was forced to 0644. It
+  now keeps its own mode, as `file.managed`'s and, since 5.344,
+  `file.serialize`'s do. On main the same test's rewrite turned a 0600
+  file into 644.
+- Directories the state creates went through `os.MkdirAll`, so less the
+  umask, which is M-31's defect in this state. They go through
+  `fileperm.MkdirAll`, which sets a directory it creates to `dir_mode`.
+
+**Not done.** An existing directory whose mode differs from `dir_mode`
+is not corrected. Salt's `E@` regular-expression form of the patterns is
+not supported, as it was not before. Not run on a host: the tests use a
+real file server over a temporary root, under `go test`.
 
 
 ## 6. Everything else not started
