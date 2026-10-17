@@ -31,7 +31,7 @@ node event near its 1 MiB limit, used to end `halite-hub events` and the
 API's SSE and WebSocket streams, and resuming met it again. It is now
 streamed as a stand-in carrying its tag, node and offset, with
 `_oversized: true` and its size in `data`. The bus and reactors still see
-the whole event (issue 321, M-11). DIVERGENCE 5.336.
+the whole event (issue 321, M-11). DIVERGENCE 5.339.
 
 ### Enrollment is bounded, and a bogus token can no longer hold a node's name
 

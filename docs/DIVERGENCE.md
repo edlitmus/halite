@@ -29354,8 +29354,7 @@ I broke each half on purpose: keeping `defaults` failed
 - A real block device, `mount.unmounted`, and a boot were not tried.
 - A filesystem type whose options differ (tmpfs refused `noatime` on
   FreeBSD) was not explored.
-
-### 5.336 A job or an event longer than a stream line was lost without a word
+### 5.339 A job or an event longer than a stream line was lost without a word
 
 Issue 321 finding M-11. Both NDJSON streams, a node's `/v1/subscribe`
 and an operator's `/v1/events`, are read a line at a time by a
@@ -29406,9 +29405,6 @@ other sources (`job/new` carries the node list, which grows with the
 estate) are covered by the same stand-in rather than bounded at their
 source. Not run on FreeBSD or against a live hub; the tests run the
 real handlers over loopback TLS.
-
-
-
 
 
 
