@@ -30724,6 +30724,37 @@ with the file left as root's, and passes now. It joins the `linux` and
 **Not verified.** Windows, where `runas` and modes mean something else,
 is unchanged. The live test was not run on beastie.
 
+### 5.373 A newline in an ssh state added a key nobody asked for
+
+Issue 321, a section 5 (Low) finding: "`ssh_auth.present` writes
+`comment` and `options` unvalidated, so a newline injects a second
+`authorized_keys` line; `shadow.go` checks for this and ssh does not."
+Wider than that, and `ssh_known_hosts` has the same hole.
+
+- **ssh_auth.present.** `authKey.String` joins the fields with spaces,
+  and a newline or carriage return in any field ended the line. A second
+  line is a second key sshd accepts. `TestSSHAuthRefusesAValueThatAddsALine`
+  puts `"x\nssh-ed25519 <key> attacker"` in the comment, an option, a
+  carriage-return form, `enc` and `name`: against main all five wrote the
+  attacker's key and reported one key added. `name` needed its own
+  check, because it is parsed with `strings.Fields`, which splits on a
+  newline as on a space: `"<key>\nssh-ed25519 <other>"` came out as the
+  other key, with the first as an option, so the check on the parsed
+  fields alone did not catch it. A control character in any field, or
+  whitespace in the type or the key, is now refused; an option keeps its
+  quoted spaces (`command="..."`), and a comment its spaces.
+- **ssh_known_hosts.present**, found while fixing the first: a newline in
+  `name`, `key` or `enc` wrote a line for another host, `evil.example
+  ssh-ed25519 ...`, which ssh then trusts.
+  `TestSSHKnownHostsRefusesAValueThatAddsALine` failed all three against
+  main. Each of the three is one word, and is refused with whitespace or
+  a control character.
+
+**Not done.** A comma in a known_hosts `name` makes the line a pattern
+list, `web1,evil ...`, trusted for both; that is ssh's own syntax and
+stays on one line, and was left. `ssh_auth.absent` removes rather than
+writes and was not changed. Not run against sshd.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
