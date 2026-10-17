@@ -29156,8 +29156,10 @@ used to "succeed" on every run.
 
 **Not verified.** rc.conf.local and /etc/rc.conf.d were not involved:
 sysrc writes /etc/rc.conf by default, and that is all the tests read. A
-script inside a jail was not tried. The `freebsd` leg of fleet.yml will
-run the two new tests on its next run; they have not run there yet. None
+script inside a jail was not tried. The `freebsd` leg of fleet.yml ran
+both new tests as root on its FreeBSD 15.1-RELEASE VM and they passed
+(run 38989522452, at c010106); its run at 248cdee had failed on the
+same `sysrc -n` probe defect described above. None
 of the 39 real mismatched scripts was enabled or disabled, only the
 probes: several (`ipfw`, `securelevel`, `noshutdown`) would change how
 beastie boots.

@@ -68,7 +68,7 @@ not do. Each has been checked to see whether it happened.
 | M-37 firewall value validation | #355 | | **done**: beastie's hub serves no firewall states, so no `from`/`to` there meets the new refusal. pf parsed every accepted form (`pfctl -n`). Other hubs' trees not searched |
 | M-38 pf anchor order | #354 | | |
 | M-39 hostname short vs FQDN | #357 | | |
-| M-43 FreeBSD rcvar | #376 | a script with no rcvar is refused | **done** on beastie (5.335); the `freebsd` leg has not run the new live tests yet |
+| M-43 FreeBSD rcvar | #376 | a script with no rcvar is refused | **done** on beastie and on the `freebsd` leg's 15.1 VM (5.335) |
 | M-46 timezone traversal | #336 | | |
 | M-49 gitfs keeps served trees | #346 | two remotes, one unreachable: that one stops being listed (DIVERGENCE 5.293); a partly refused remote drops its environment | |
 | M-50 pillar `S@` targets | #334 | | beastie's pillar root is empty, so nothing there meets the refusal (5.329) |
