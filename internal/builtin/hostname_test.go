@@ -118,7 +118,7 @@ func hostnameFixture(t *testing.T) (c *exec.Context, where string, set func(name
 		runner := &exec.RecordingRunner{
 			// Unset is a non-zero exit, which is a node that has never
 			// had one configured rather than an error.
-			Responses: map[string]exec.Result{"sysrc -n hostname": {Code: 1}},
+			Responses: map[string]exec.Result{"sysrc -n hostname": {Code: 1, Stderr: "sysrc: unknown variable 'hostname'\n"}},
 		}
 		c.Runner = runner
 		return c, "rc.conf", func(name string) {

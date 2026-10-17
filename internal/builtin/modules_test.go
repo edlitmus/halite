@@ -504,7 +504,7 @@ func TestSysrcPresent(t *testing.T) {
 	r := New()
 	rec := &exec.RecordingRunner{
 		Responses: map[string]exec.Result{
-			"sysrc -n nginx_enable": {Code: 1},
+			"sysrc -n nginx_enable": {Code: 1, Stderr: "sysrc: unknown variable 'nginx_enable'\n"},
 		},
 	}
 	c := newCtx(false)
