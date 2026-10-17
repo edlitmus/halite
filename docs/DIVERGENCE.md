@@ -30167,8 +30167,7 @@ there is a second FreeBSD check, in an emulated VM.
 
 **Not done.** The limits are the existing constants, not configuration.
 Not run against a real remote or on the hub.
-
-### 5.350 s3fs served stale, truncated and deleted files
+### 5.357 s3fs served stale, truncated and deleted files
 
 Issue 321 finding M-51, CONFIRMED by trace and "not run against S3". The
 triage noted that "the ETag comment is not what the code does". Each
@@ -30209,6 +30208,7 @@ fake server answers the listing and the GETs. A multipart ETag was not
 exercised. Environments that disappear entirely from a bucket stop being
 served, because the roots are rebuilt from the listing, but their
 directories are left on disk.
+
 
 
 ## 6. Everything else not started

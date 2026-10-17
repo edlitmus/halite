@@ -30,7 +30,7 @@ compared too. An oversized object is refused, deleted objects leave the
 cache, and files are written atomically. Two environment names that
 sanitise alike (`base?` and `base`) no longer share a directory. The
 first update after upgrading fetches every object once (issue 321, M-51).
-DIVERGENCE 5.350.
+DIVERGENCE 5.357.
 
 ### gitfs no longer reads a whole branch into memory
 
