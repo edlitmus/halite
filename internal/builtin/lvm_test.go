@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -620,7 +621,9 @@ func TestLVMPVCreateKnowsAnAliasOfAPV(t *testing.T) {
 	if err := os.Symlink(dev, alias); err != nil {
 		t.Fatal(err)
 	}
-	report := strings.ReplaceAll(lvmPVsJSON, "/dev/loop0", dev)
+	// Quoted, because the report is JSON and a Windows temporary path has
+	// backslashes in it.
+	report := strings.ReplaceAll(lvmPVsJSON, `"/dev/loop0"`, strconv.Quote(dev))
 	c := lvmTestContext(map[string]exec.Result{lvmPVReportKey(): {Stdout: report}})
 	args := value.MapOf("devices", []any{alias}, "force", true)
 	if _, err := lvmPVCreate(c, args); err != nil {
