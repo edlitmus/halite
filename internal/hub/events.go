@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/ratelimit"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -113,6 +114,16 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, nodeID string) {
 	tag, err := nodeEventTag(nodeID, req.Tag)
 	if err != nil {
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
+		return
+	}
+	if !s.allowNodeEvent(nodeID, len(req.Tag)+len(req.Data)) {
+		// Counted rather than logged, as the evidence anchor's limit is:
+		// a node over its budget is posting fast, and a line for each
+		// refusal would be the flood moved into the hub's log.
+		s.m().eventsDropped.With("node_rate").Inc()
+		transport.WriteError(w, http.StatusTooManyRequests, transport.CodeRateLimited,
+			fmt.Errorf("this node has posted more event data than node_event_rate allows (%.0f bytes a second, %d at once)",
+				s.nodeEventRate(), s.nodeEventBurst()))
 		return
 	}
 	var data map[string]any
@@ -233,6 +244,54 @@ func (s *Server) streamable(e eventbus.Event) any {
 			"_limit":     transport.MaxSubscribeLine,
 		},
 	}
+}
+
+// DefaultNodeEventRate and DefaultNodeEventBurst are the bytes of event
+// data one node may post a second, sustained, and at once, unless
+// `node_event_rate` and `node_event_burst` say otherwise.
+//
+// The bus is bounded by size, 4 GiB by default, and pruned oldest first,
+// and nothing bounded what one node could put on it: an enrolled node
+// posting 1 MiB events as fast as the hub took them pushed the bus past
+// its cap and the next prune erased the oldest history, for every node
+// (issue 321, M-13). 64 KiB a second is a node emitting a beacon event a
+// few times a second with room to spare; 8 MiB at once is a burst of
+// eight of the largest events a node may post, and a node reconnecting
+// and catching up. At the default rate, filling a 4 GiB bus takes one
+// node about 18 hours, and a thousand nodes about a minute: a fleet-wide
+// flood is still possible, and it is an operator's estate doing it.
+const (
+	DefaultNodeEventRate  = 64 << 10
+	DefaultNodeEventBurst = 8 << 20
+)
+
+func (s *Server) nodeEventRate() float64 {
+	if s.NodeEventRate > 0 {
+		return s.NodeEventRate
+	}
+	return DefaultNodeEventRate
+}
+
+func (s *Server) nodeEventBurst() int {
+	if s.NodeEventBurst > 0 {
+		return s.NodeEventBurst
+	}
+	return DefaultNodeEventBurst
+}
+
+// allowNodeEvent takes n bytes from the node's bucket.
+func (s *Server) allowNodeEvent(nodeID string, n int) bool {
+	s.eventBucketsMu.Lock()
+	defer s.eventBucketsMu.Unlock()
+	if s.eventBuckets == nil {
+		s.eventBuckets = map[string]*ratelimit.Bucket{}
+	}
+	b := s.eventBuckets[nodeID]
+	if b == nil {
+		b = &ratelimit.Bucket{}
+		s.eventBuckets[nodeID] = b
+	}
+	return b.TakeN(s.now(), s.nodeEventRate(), s.nodeEventBurst(), n)
 }
 
 // eventStream is GET /v1/events: an operator following the bus.

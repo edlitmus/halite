@@ -404,6 +404,8 @@ func runServe(args *cli.Args) int {
 		Orch:           orchestrations,
 		Mine:           mineStore,
 		Anchors:        anchors,
+		NodeEventRate:  h.cfg.Float("node_event_rate", hub.DefaultNodeEventRate),
+		NodeEventBurst: int(h.cfg.Int("node_event_burst", hub.DefaultNodeEventBurst)),
 		Reactors:       reactors,
 		Nodegroups:     groups,
 		Files:          files,

@@ -29442,7 +29442,50 @@ the chunk check the chunk test does.
 **Not done.** M-13's other half, a per-node quota on `/v1/event` and on
 return size, is its own item. Not run against a live hub or on FreeBSD.
 
+### 5.336 One enrolled node could push the fleet's history off the bus and the job cache
 
+Issue 321 finding M-13. Both stores are bounded by size and prune
+oldest first: the job cache at 10 GiB and the event bus at 4 GiB.
+Nothing bounded what one node could add to either. A node can post an
+event of up to 1 MiB to `/v1/event`, as often as it likes. It could also
+file a return of up to 64 MiB against each job it was sent; a
+caller-chosen chunk number made that unlimited per job, but that half
+is closed by the membership and chunk checks of M-12. Past the cap, the
+next maintenance sweep deletes the oldest records, which are everybody's.
+
+- **Events.** Each node now has a token bucket in bytes:
+  `node_event_rate` (64 KiB a second) and `node_event_burst` (8 MiB).
+  An event over it is refused with 429 and counted as
+  `halite_events_dropped_total{reason="node_rate"}`. That metric is
+  already on the example dashboard, summed by reason, and
+  `HaliteEventsDropped` in docs/metrics.md fires on an increase of any
+  reason, so neither needed a change. The new reason is exported at 0. The shared
+  `ratelimit.Bucket` gained `TakeN` for this. An event larger than the
+  burst is allowed from a full bucket, so 1 MiB, the most a node may
+  post at all, always gets through eventually. At the default rate one
+  node takes about 18 hours to fill a 4 GiB bus. A thousand nodes at
+  once still take about a minute, and that is a fleet doing it, not one
+  node.
+- **Returns.** `/v1/return` now reads at most SPEC 6.5's 16 MiB
+  (`transport.MaxReturnBody`), which SPEC stated and the handler did not
+  enforce: it read MaxRequestBody, 64 MiB.
+
+`TestANodeOverItsEventBudgetIsRefusedAndOthersAreNot` gives web1 a
+4 KiB burst. Its second 3 KB event is refused, web2's is not, the bus
+holds exactly the two that were allowed, and the metric reads 1.
+`TestAReturnPastTheBoundIsRefused` files a return just over 16 MiB.
+Both were broken on purpose (no bucket, and the 64 MiB read) and watched
+failing. `TestTakeNMetersBytes` holds the bucket's arithmetic.
+
+**Breaking.** A node posting more than 64 KiB of event data a second,
+sustained, now has events refused. A return over 16 MiB is refused,
+which loses it, since nothing pages a return yet. Raising the limits is
+configuration. beastie's production hub was not checked for event
+volume.
+
+**Not done.** No quota on what operators submit, which is theirs to
+spend. The job cache's 10 GiB is still filled by legitimate returns over
+time, by design. Not run against a live hub or on FreeBSD.
 
 ## 6. Everything else not started
 

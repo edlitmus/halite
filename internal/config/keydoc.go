@@ -968,6 +968,14 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Identity and connection",
 		Detail: "Read by the hub. How many evidence-head reports one node may make at once before `evidence_anchor_rate` applies: a highstate's jobs finishing together, or a node reconnecting. Below one, the default of 60 is used.",
 	},
+	"node_event_rate": {
+		Group:  "Identity and connection",
+		Detail: "Read by the hub. How many bytes of event data (`event.send`, beacons) one node may post a second, sustained, as a token bucket; an event over it is refused with 429 and counted as `halite_events_dropped_total{reason=\"node_rate\"}`. The bus is bounded by size and pruned oldest first, so without this one node could push every node's history off it. The default, 64 KiB a second, is a node sending a beacon event several times a second with room to spare.",
+	},
+	"node_event_burst": {
+		Group:  "Identity and connection",
+		Detail: "Read by the hub. How many bytes of event data one node may post at once before `node_event_rate` applies. An event larger than the burst is allowed from a full bucket, so the largest event a node may post at all, 1 MiB, always gets through eventually. Below one, the default of 8 MiB is used.",
+	},
 	"extension_trust_keys": {
 		Group:  "Extensions",
 		Detail: "The keys whose signed bundles this node accepts, as `<name> <base64>`. An extension is code, so this is the same decision as trusting a package repository.",

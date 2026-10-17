@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A node's event data is rate limited, and a return is held to 16 MiB
+
+Each node may now post 64 KiB of event data a second, sustained, and
+8 MiB at once (`node_event_rate`, `node_event_burst`). Past that, an event
+is refused with 429 and counted as
+`halite_events_dropped_total{reason="node_rate"}`. Before, one enrolled
+node could fill the bus until pruning deleted every node's oldest
+history. A return over 16 MiB, SPEC's stated bound, is now refused; it had
+been accepted up to 64 MiB (issue 321, M-13). DIVERGENCE 5.336.
+
 ### A node can only return for a job it was sent
 
 The hub used to file a return from any enrolled node for any job it
@@ -5953,7 +5963,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 228 settings in the
+The configuration reference explains each of the 230 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

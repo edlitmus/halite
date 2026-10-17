@@ -32,7 +32,11 @@ const (
 	// JSON, and a token. It had MaxRequestBody's 64 MiB, which let one
 	// unauthenticated request hand the hub 64 MiB to parse and keep
 	// (issue 321, M-06).
-	MaxEnrollBody     = 64 << 10
+	MaxEnrollBody = 64 << 10
+	// MaxReturnBody is SPEC 6.5's maximum single return payload, which
+	// the hub enforces on /v1/return. SPEC's "then the node paginates
+	// by chunk" is not built; a chunked return is refused.
+	MaxReturnBody     = 16 << 20
 	HandshakeTimeout  = 10 * time.Second
 	IdleStreamTimeout = 90 * time.Second
 )

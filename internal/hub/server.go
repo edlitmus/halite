@@ -24,6 +24,7 @@ import (
 	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
+	"github.com/edlitmus/halite/internal/ratelimit"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/transport"
@@ -35,6 +36,13 @@ type Server struct {
 	// EnrollReadTimeout bounds reading an enrollment request; zero is
 	// transport.HandshakeTimeout.
 	EnrollReadTimeout time.Duration
+
+	// NodeEventRate and NodeEventBurst bound the event data one node may
+	// post, in bytes a second and bytes at once; zero is the default.
+	NodeEventRate  float64
+	NodeEventBurst int
+	eventBucketsMu sync.Mutex
+	eventBuckets   map[string]*ratelimit.Bucket
 
 	// pillarCompiles counts compilePillar calls, for the tests that hold
 	// a targeting path to compiling a node's pillar once rather than

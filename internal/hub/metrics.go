@@ -216,7 +216,7 @@ func (s *Server) setupMetrics() {
 	// with increase(); TestEveryAlertedHubSeriesStartsAtZero holds the
 	// list to the rules. The events alert sums every reason, so each
 	// reason is named; the orchestration alert reads one result.
-	for _, reason := range []string{"no_bus", "append_failed", "subscriber_lag", "returner_failed"} {
+	for _, reason := range []string{"no_bus", "append_failed", "subscriber_lag", "returner_failed", "node_rate"} {
 		m.eventsDropped.With(reason)
 	}
 	m.orchRuns.With("compile_failed")
