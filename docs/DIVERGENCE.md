@@ -30168,6 +30168,47 @@ there is a second FreeBSD check, in an emulated VM.
 **Not done.** The limits are the existing constants, not configuration.
 Not run against a real remote or on the hub.
 
+### 5.350 s3fs served stale, truncated and deleted files
+
+Issue 321 finding M-51, CONFIRMED by trace and "not run against S3". The
+triage noted that "the ETag comment is not what the code does". Each
+defect is now held by a test against the package's fake S3 server, and
+each test fails against main's `s3fs.go`:
+
+- **A same-sized change was never fetched.** `unchanged` compared the
+  cached file's size with the object's, and a comment above it said the
+  ETag was compared too. `TestASameSizedChangeIsFetched`: after
+  `port: 8080` became `port: 8081`, main still served 8080. The ETag
+  each file was fetched at is now recorded and compared. It is kept in
+  memory, so a restarted hub fetches every object once; writing a
+  manifest into a tree the file server publishes would be worse. The
+  fake now gives an MD5 ETag, as S3 does for a single-part object;
+  before, every object had the same ETag and the fake could not tell.
+- **An object over the bound was truncated.** `signedGet` read through
+  `io.LimitReader(limit)`, which stops quietly, and the body was written
+  as complete. It now reads one byte past the limit and refuses an
+  object that reaches it. `TestAnObjectOverTheBoundIsRefused`: main took
+  a 10-byte object under a 4-byte bound.
+- **A deleted object kept being served.** Nothing removed a cached file
+  the bucket no longer listed. After each listing, every environment it
+  produced is swept of what it did not name, once all the listed
+  objects are in place. `TestADeletedObjectLeavesTheCache`.
+- **Files were written in place.** They are written with
+  `atomicfile.Write` now, so a reader never sees half of one.
+- **Two names shared a directory.** `sanitiseName` mapped `base?` and
+  `base` both to `base`, while the allow and deny lists judged the raw
+  names. A name that needed changing now carries 8 hex digits of its
+  SHA-256. `TestSanitisedNamesDoNotCollide`.
+
+**Breaking, a little.** A hub's first update after upgrading fetches
+every object again. An environment or bucket whose name needed
+sanitising moves to a new cache directory.
+
+**Not verified.** Not run against S3 or any S3-compatible store; the
+fake server answers the listing and the GETs. A multipart ETag was not
+exercised. Environments that disappear entirely from a bucket stop being
+served, because the roots are rebuilt from the listing, but their
+directories are left on disk.
 
 
 ## 6. Everything else not started

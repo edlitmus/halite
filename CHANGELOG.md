@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### s3fs serves what the bucket holds now
+
+The s3fs cache compared files by size only, so a change that kept the
+size was never deployed. An object over 256 MB was served truncated, and
+an object deleted from the bucket kept being served. The ETag is now
+compared too. An oversized object is refused, deleted objects leave the
+cache, and files are written atomically. Two environment names that
+sanitise alike (`base?` and `base`) no longer share a directory. The
+first update after upgrading fetches every object once (issue 321, M-51).
+DIVERGENCE 5.350.
+
 ### gitfs no longer reads a whole branch into memory
 
 The hub read each gitfs branch's `git archive` fully into memory before
