@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/states"
@@ -61,4 +62,13 @@ func applyMode(path string, want os.FileMode) error {
 		return nil
 	}
 	return fileperm.Apply(path, want)
+}
+
+// applyModeIn is applyMode for a name inside a root. On Windows a mode is
+// an access control list, which os.Root does not set, so it goes by path,
+// after the caller has checked through the root that the name is not a
+// link. The window between the two is the one DIVERGENCE 5.300 records
+// for ownership here.
+func applyModeIn(root *os.Root, dir, name string, want os.FileMode) error {
+	return applyMode(filepath.Join(dir, name), want)
 }

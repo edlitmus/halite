@@ -201,8 +201,19 @@ func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) 
 	return out, nil
 }
 
-// applyRecurse makes the planned changes.
-func applyRecurse(targets []recurseTarget, args *value.Map, f recurseFlags) error {
+// applyRecurse makes the planned changes, inside dir.
+//
+// **Through an os.Root, not by path** (issue 321, M-29). The paths were
+// found by the plan and changed afterwards with os.Chmod and os.Lchown by
+// full path. Between the two, a user who owns a file in the tree could
+// swap it for a symbolic link to /etc/shadow, and os.Chmod, which follows
+// links, set the mode on the target as root; or swap a parent directory
+// for a link, which redirected even Lchown, because Lchown protects only
+// the last component. An os.Root resolves every component inside dir and
+// refuses to leave it, so the worst a swap can do is redirect a change to
+// another path in the tree being managed. A path that is a link by the
+// time it is reached is skipped, as the plan skipped links.
+func applyRecurse(dir string, targets []recurseTarget, args *value.Map, f recurseFlags) error {
 	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
 	if !f.user {
 		wantUser = ""
@@ -210,14 +221,30 @@ func applyRecurse(targets []recurseTarget, args *value.Map, f recurseFlags) erro
 	if !f.group {
 		wantGroup = ""
 	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	for _, t := range targets {
+		rel, err := filepath.Rel(dir, t.path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("%s is not under %s", t.path, dir)
+		}
+		info, err := root.Lstat(rel)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
 		if t.setMode {
-			if err := applyMode(t.path, t.mode); err != nil {
+			if err := applyModeIn(root, dir, rel, t.mode); err != nil {
 				return err
 			}
 		}
 		if t.setOwner {
-			if err := applyOwnership(t.path, wantUser, wantGroup); err != nil {
+			if err := applyOwnershipIn(root, rel, wantUser, wantGroup); err != nil {
 				return err
 			}
 		}

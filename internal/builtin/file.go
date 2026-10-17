@@ -813,7 +813,7 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 		verb = "created"
 	}
 	if len(below) > 0 {
-		if err := applyRecurse(below, args, recurse); err != nil {
+		if err := applyRecurse(path, below, args, recurse); err != nil {
 			return states.False(fmt.Sprintf("%s: recursing under %s failed: %v", path, path, err)), nil
 		}
 		return withWarnings(states.Changed(fmt.Sprintf(

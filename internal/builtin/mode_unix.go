@@ -27,3 +27,10 @@ func plannedMode(path string, info os.FileInfo, want os.FileMode) (differs bool,
 
 // applyMode sets a file's permissions to the requested mode.
 func applyMode(path string, want os.FileMode) error { return os.Chmod(path, want) }
+
+// applyModeIn is applyMode for a name inside an os.Root, which cannot be
+// led out of the root by a symbolic link. dir is the root's path, which
+// the Windows version needs and this one does not.
+func applyModeIn(root *os.Root, dir, name string, want os.FileMode) error {
+	return root.Chmod(name, want)
+}
