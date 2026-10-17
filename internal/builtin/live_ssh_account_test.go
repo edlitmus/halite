@@ -136,3 +136,94 @@ func TestLiveSSHFilesForAnotherAccount(t *testing.T) {
 		t.Errorf("ssh_known_hosts.absent left the host: %q", b)
 	}
 }
+
+// **A ~/.ssh the account replaced with a link is refused** (issue 321,
+// M-30). Root used to follow it: read the target's authorized_keys into
+// the file it wrote, put a file of that name in the target directory, and
+// chown it to the account. Here the target stands in for /etc, a root-owned
+// directory outside the home, and nothing may appear in it or change owner.
+func TestLiveSSHRefusesALinkedSSHDirectory(t *testing.T) {
+	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" {
+		t.Skip("set HALITE_SYSTEM_LIVE=1 on a machine you can throw away; this creates an account")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("these are the unix modules")
+	}
+	if os.Geteuid() != 0 {
+		t.Skip("writing another account's files needs root; run it under sudo")
+	}
+	c := realCtx(t)
+	r := New()
+	account := fmt.Sprintf("halsl%d", os.Getpid())
+	home := filepath.Join(os.TempDir(), account)
+	etc := filepath.Join(os.TempDir(), account+"-etc")
+	if _, err := user.Lookup(account); err == nil {
+		t.Fatalf("%s already exists on this machine; refusing to touch it", account)
+	}
+	t.Cleanup(func() {
+		if _, err := r.States.Call(c, "user.absent", value.MapOf("name", account, "purge", true)); err != nil {
+			t.Errorf("removing %s: %v", account, err)
+		}
+		os.RemoveAll(home)
+		os.RemoveAll(etc)
+	})
+	res, err := r.States.Call(c, "user.present", value.MapOf("name", account, "home", home,
+		"createhome", true, "shell", "/bin/sh", "fullname", "halite ssh link test"))
+	if err != nil || !res.Succeeded() {
+		t.Fatalf("user.present: %v %+v", err, res)
+	}
+	u, err := user.Lookup(account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	if err := os.MkdirAll(u.HomeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chown(u.HomeDir, uid, -1)
+	if err := os.MkdirAll(etc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(etc, "authorized_keys")
+	if err := os.WriteFile(secret, []byte("root-only line\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sshDir := filepath.Join(u.HomeDir, ".ssh")
+	_ = os.RemoveAll(sshDir)
+	if err := os.Symlink(etc, sshDir); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Lchown(sshDir, uid, -1) // the account's own link
+
+	for _, call := range []struct {
+		fn   string
+		args *value.Map
+	}{
+		{"ssh_auth.present", value.MapOf("name", "AAAAC3NzaC1lZDI1NTE5AAAAIGV4YW1wbGVrZXlmb3Jjb25mb3JtYW5jZXRlc3Rz",
+			"enc", "ssh-ed25519", "user", account)},
+		{"ssh_known_hosts.present", value.MapOf("name", "host.example.com",
+			"key", "AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3RrZXlmb3Jjb25mb3JtYW5jZXRlc3RpbmdY", "enc", "ssh-ed25519", "user", account)},
+	} {
+		res, err := r.States.Call(c, call.fn, call.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Result == nil || *res.Result || !strings.Contains(res.Comment, "symbolic link") {
+			t.Errorf("%s through a linked ~/.ssh: %+v", call.fn, res)
+		}
+	}
+	entries, _ := os.ReadDir(etc)
+	if len(entries) != 1 {
+		t.Errorf("the target directory now holds %d entries; nothing may be written there", len(entries))
+	}
+	info, err := os.Stat(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := info.Sys().(*syscall.Stat_t); int(st.Uid) != 0 {
+		t.Errorf("the target's file was given to uid %d", st.Uid)
+	}
+	if b, _ := os.ReadFile(secret); string(b) != "root-only line\n" {
+		t.Errorf("the target's file became %q", b)
+	}
+}
