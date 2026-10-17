@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A systemd service that takes over 90 seconds to start is waited for
+
+`service.running`, `service.start` and the other job verbs gave up after
+90 seconds on systemd's D-Bus API and reported failure, while systemd
+went on starting a unit whose `TimeoutStartSec` allowed longer. They now
+wait as long as systemd does, as `systemctl start` does; a state's own
+`timeout` still ends the wait (issue 321, M-48). DIVERGENCE 5.363.
+
 ### `iptables.save` and `nftables.save` stop reporting a change every run
 
 `iptables.save` compared the file including iptables-save's timestamp

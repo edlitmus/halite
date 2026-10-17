@@ -30394,6 +30394,40 @@ a real `iptables-persistent` or `iptables-services` path; stateful
 objects other than a rule's counter (quotas, named counters), which `-s`
 is documented to cover but which were not listed here.
 
+### 5.363 A systemd start longer than 90 s was reported failed while it went on
+
+Issue 321 finding M-48, Low; the triage corrected "shared" to "per
+operation" (each call dials afresh) and noted that a per-state `timeout:`
+may override. Both corrections hold. What is left is the defect itself:
+the D-Bus provider set a read deadline 90 s from the dial whenever the
+context had none, and used it for the wait on a job as well as for
+method calls. systemd bounds a job itself, per unit, by `TimeoutStartSec`
+and `TimeoutStopSec`. They default to 90 s and are raised for exactly the
+units that need it, a database, a migration. Such a unit was reported
+failed at 90 s while systemd carried on starting it, and `systemctl
+start`, which is the fallback and what Salt runs, waits for the job.
+
+**Measured as root on Ubuntu 24.04.5.**
+`TestLiveServiceWaitsForAStartLongerThanNinetySeconds` installs a
+`oneshot` in /run/systemd/system that sleeps 95 s, with
+`TimeoutStartSec=180`, and starts it with `service.start`. Against main
+it failed after 1m30s with "read unix @->/run/dbus/system_bus_socket:
+i/o timeout". Now it returns after 97.6 s with the unit `active`.
+
+`sdConn` now has two deadlines: method calls keep 90 s, since systemd
+answers them at once and a silence that long is a bus not answering; a
+job waits until systemd finishes it or until a deadline the caller set.
+`TestLiveServiceStartStopsAtTheCallersDeadline` gives the same unit a
+5 s context: `service.start` fails in 7.6 s. With the caller's deadline
+not passed to the job wait, it waited the whole 95 s and succeeded, so
+the test is the one that holds that half. The five existing live
+service tests pass beside them.
+
+**Not verified.** Stop, restart and reload of a slow unit, which go
+through the same wait. A bus that accepts a job and then never sends
+`JobRemoved` now waits until the caller's deadline, or for good without
+one, as `systemctl start` does. The live test adds a minute and a half to
+the fleet's `linux` leg.
 
 
 ## 6. Everything else not started
