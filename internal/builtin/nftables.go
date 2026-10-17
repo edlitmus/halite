@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
@@ -795,6 +796,9 @@ func nftMutateResult(c *exec.Context, changed bool, comment string, change *valu
 
 func nftTableChange(c *exec.Context, args *value.Map, present bool) (any, error) {
 	family := nftFamily(args)
+	if err := nftCheckArgs(args); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(states.Str(args, "name", ""))
 	if name == "" {
 		return nil, errors.New("a table must be named")
@@ -853,6 +857,9 @@ func nftChainSpec(args *value.Map) (string, error) {
 
 func nftChainChange(c *exec.Context, args *value.Map, present bool) (any, error) {
 	family := nftFamily(args)
+	if err := nftCheckArgs(args); err != nil {
+		return nil, err
+	}
 	table := strings.TrimSpace(states.Str(args, "table", ""))
 	name := strings.TrimSpace(states.Str(args, "name", ""))
 	if table == "" || name == "" {
@@ -925,6 +932,9 @@ func chainRef(family, table, name string) string { return family + " " + table +
 
 func nftSetPolicyFn(c *exec.Context, args *value.Map) (any, error) {
 	family := nftFamily(args)
+	if err := nftCheckArgs(args); err != nil {
+		return nil, err
+	}
 	table := strings.TrimSpace(states.Str(args, "table", ""))
 	name := strings.TrimSpace(states.Str(args, "name", ""))
 	policy := strings.TrimSpace(states.Str(args, "policy", ""))
@@ -963,6 +973,51 @@ func nftSetPolicyFn(c *exec.Context, args *value.Map) (any, error) {
 	return nftMutateResult(c, true, fmt.Sprintf("The chain %s policy became %s.", chainRef(family, table, name), policy), change), nil
 }
 
+// nftCheckArgs refuses a value that would not stay what it is in an
+// `nft -f -` script.
+//
+// **Every value is spliced into a script nft runs as root** (issue 321,
+// M-45). A newline ends one command and starts the next, and so does a
+// `;` outside a quoted string: a `rule` of `tcp dport 22 accept` followed
+// by a newline and `flush ruleset` flushed every table, which is what
+// `force` exists to guard. So: a table, chain, hook or type is an nft
+// identifier, with no whitespace, quote, `;`, brace or `#`; a priority
+// may hold spaces (`filter + 10`) and nothing else of those; a rule body
+// may hold no control character, and `;` or `#` only inside double
+// quotes; and a comment, which is written as a double-quoted string, may
+// hold no quote or control character.
+func nftCheckArgs(args *value.Map) error {
+	for _, field := range []string{"table", "chain", "name", "hook", "type"} {
+		v := strings.TrimSpace(states.Str(args, field, ""))
+		if strings.ContainsAny(v, " \t\n\r\";{}#") || strings.IndexFunc(v, unicode.IsControl) >= 0 {
+			return fmt.Errorf("%s %q is not an nft identifier: it holds whitespace, a quote, `;`, a brace, `#` or a control character", field, v)
+		}
+	}
+	if v := states.Str(args, "priority", ""); strings.ContainsAny(v, "\";{}#") || strings.IndexFunc(v, unicode.IsControl) >= 0 {
+		return fmt.Errorf("priority %q holds a quote, `;`, a brace, `#` or a control character", v)
+	}
+	if v := states.Str(args, "comment", ""); strings.ContainsRune(v, '"') || strings.IndexFunc(v, unicode.IsControl) >= 0 {
+		return fmt.Errorf("the comment %q holds a double quote or a control character, which nft's string cannot carry", v)
+	}
+	rule := states.Str(args, "rule", "")
+	if strings.IndexFunc(rule, unicode.IsControl) >= 0 {
+		return errors.New("the rule holds a newline or another control character, which would start another nft command")
+	}
+	quoted := false
+	for _, r := range rule {
+		switch {
+		case r == '"':
+			quoted = !quoted
+		case (r == ';' || r == '#') && !quoted:
+			return fmt.Errorf("the rule holds %q outside a quoted string, which ends it and starts another nft command", r)
+		}
+	}
+	if quoted {
+		return errors.New("the rule opens a double-quoted string and does not close it")
+	}
+	return nil
+}
+
 // nftRuleLine builds one `add rule` / `insert rule` script line.
 func nftRuleLine(verb, family, table, chain, body, comment string, index int64) string {
 	var b strings.Builder
@@ -974,6 +1029,10 @@ func nftRuleLine(verb, family, table, chain, body, comment string, index int64) 
 	}
 	b.WriteString(strings.TrimSpace(body))
 	if comment != "" {
+		// nftCheckArgs has refused a double quote or a control character
+		// in it, which are where Go's %q and nft's string part company.
+		// A backslash still differs (%q doubles it); how nft reads one was
+		// not checked, so it is left as it was.
 		fmt.Fprintf(&b, " comment %q", comment)
 	}
 	b.WriteString("\n")
@@ -982,6 +1041,9 @@ func nftRuleLine(verb, family, table, chain, body, comment string, index int64) 
 
 func nftAddRule(c *exec.Context, args *value.Map, mode string) (any, error) {
 	family := nftFamily(args)
+	if err := nftCheckArgs(args); err != nil {
+		return nil, err
+	}
 	table := strings.TrimSpace(states.Str(args, "table", ""))
 	chain := strings.TrimSpace(states.Str(args, "chain", ""))
 	body := strings.TrimSpace(states.Str(args, "rule", ""))
@@ -1032,6 +1094,9 @@ func nftAddRule(c *exec.Context, args *value.Map, mode string) (any, error) {
 
 func nftDeleteRule(c *exec.Context, args *value.Map) (any, error) {
 	family := nftFamily(args)
+	if err := nftCheckArgs(args); err != nil {
+		return nil, err
+	}
 	table := strings.TrimSpace(states.Str(args, "table", ""))
 	chain := strings.TrimSpace(states.Str(args, "chain", ""))
 	comment := strings.TrimSpace(states.Str(args, "comment", ""))
@@ -1074,6 +1139,9 @@ func nftDeleteRule(c *exec.Context, args *value.Map) (any, error) {
 
 func nftFlushFn(c *exec.Context, args *value.Map) (any, error) {
 	family := nftFamily(args)
+	if err := nftCheckArgs(args); err != nil {
+		return nil, err
+	}
 	table := strings.TrimSpace(states.Str(args, "table", ""))
 	chain := strings.TrimSpace(states.Str(args, "chain", ""))
 	force := states.Bool(args, "force", false)
@@ -1232,6 +1300,9 @@ func nftCheckFn(c *exec.Context, args *value.Map) (any, error) {
 
 	if body := strings.TrimSpace(states.Str(args, "rule", "")); body != "" {
 		family := nftFamily(args)
+		if err := nftCheckArgs(args); err != nil {
+			return nil, err
+		}
 		table := strings.TrimSpace(states.Str(args, "table", ""))
 		chain := strings.TrimSpace(states.Str(args, "chain", ""))
 		if table == "" || chain == "" {
@@ -1253,6 +1324,9 @@ func nftCheckFn(c *exec.Context, args *value.Map) (any, error) {
 
 	if comment := strings.TrimSpace(states.Str(args, "comment", "")); comment != "" {
 		family := nftFamily(args)
+		if err := nftCheckArgs(args); err != nil {
+			return nil, err
+		}
 		table := strings.TrimSpace(states.Str(args, "table", ""))
 		chain := strings.TrimSpace(states.Str(args, "chain", ""))
 		if table == "" || chain == "" {
