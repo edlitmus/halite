@@ -49,6 +49,13 @@ func (f *fakePkgDB) Run(_ context.Context, cmd exec.Command) (exec.Result, error
 			}
 			return "", "", false
 		}, "pkg: No packages available to install matching '%s' have been found in the repositories")
+	case len(argv) >= 2 && argv[0] == "rpm" && argv[1] == "-qa":
+		// rpm's own spelling of a missing epoch, which ListPkgs strips.
+		return exec.Result{Stdout: f.list("%s\t(none):%s\n")}, nil
+	case len(argv) >= 2 && argv[0] == "dnf" && argv[1] == "install":
+		// Recorded and not acted on: how dnf resolves a pin is not what
+		// these tests are about, and nobody has captured it here.
+		return exec.Result{}, nil
 	case len(argv) >= 2 && argv[0] == "apk" && argv[1] == "info":
 		return exec.Result{Stdout: f.list("%s-%s\n")}, nil
 	case len(argv) >= 2 && argv[0] == "apk" && argv[1] == "add":
@@ -225,5 +232,65 @@ func TestPkgInstalledAcceptsWhatThePinAllows(t *testing.T) {
 		if res.Result == nil || !*res.Result || !res.HasChanges() {
 			t.Errorf("pin %s: %+v", pin, res)
 		}
+	}
+}
+
+// **An RPM pin without a release is met by any release of that version**
+// (issue 321, M-34). rpm reports every installed package with its release
+// (`1.8.0-10.el9`), and a tree pins the version it cares about
+// (`1.8.0`). The comparison was exact, so the pin was never met: every run
+// asked dnf to install it again, and since M-33's check after the install,
+// failed with "tree is pinned to 1.8.0 and 1.8.0-10.el9 is installed".
+// Salt's rpm version_cmp ignores the release when one side has none (Salt
+// 3007.1, salt/modules/rpm_lowpkg.py), and so does this now. The epoch is
+// not ignored, as it is not in Salt without ignore_epoch.
+func TestPkgInstalledTakesAnRPMPinWithoutARelease(t *testing.T) {
+	rh := value.MapOf("os", "Rocky", "os_family", "RedHat")
+	for _, tc := range []struct {
+		pin, installed string
+		met            bool
+	}{
+		{"1.8.0", "1.8.0-10.el9", true},
+		{"1.8.0-10.el9", "1.8.0-10.el9", true},
+		{"1.8.0-9.el9", "1.8.0-10.el9", false},
+		{"1.8", "1.8.0-10.el9", false},
+		{"1.8.0", "2:1.8.0-10.el9", false},
+		{"2:1.8.0", "2:1.8.0-10.el9", true},
+	} {
+		db := &fakePkgDB{repo: map[string]string{}, installed: map[string]string{"tree": tc.installed}}
+		c := pinCtx(db, "dnf", rh)
+		c.Lookup = func(name string) string {
+			if name == "dnf" || name == "rpm" {
+				return "/usr/bin/" + name
+			}
+			return ""
+		}
+		res, err := New().States.Call(c, "pkg.installed", value.MapOf("name", "tree", "version", tc.pin))
+		if err != nil {
+			t.Fatal(err)
+		}
+		installed := false
+		for _, cmd := range db.ran {
+			if strings.HasPrefix(cmd, "dnf install") {
+				installed = true
+			}
+		}
+		if tc.met && (installed || res.Result == nil || !*res.Result || res.HasChanges()) {
+			t.Errorf("pin %s with %s installed: ran %q, %+v", tc.pin, tc.installed, db.ran, res)
+		}
+		if !tc.met && !installed {
+			t.Errorf("pin %s with %s installed was taken as met", tc.pin, tc.installed)
+		}
+	}
+}
+
+// Only RPM's: an apk version carries its release the same way
+// (`2.3.2-r0`), and neither Salt nor apk was seen to treat `2.3.2` as
+// meeting it, so on Alpine the comparison stays exact.
+func TestAnApkPinWithoutAReleaseIsStillExact(t *testing.T) {
+	c := newCtx(false)
+	c.Grains = value.MapOf("os", "Alpine", "os_family", "Alpine")
+	if versionSatisfies(c, "2.3.2-r0", "2.3.2", false) {
+		t.Error("an apk pin without a release was met by one with it")
 	}
 }

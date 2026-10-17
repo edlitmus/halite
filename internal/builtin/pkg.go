@@ -466,10 +466,46 @@ func versionSatisfies(c *exec.Context, installed, want string, allowUpdates bool
 	if installed == want {
 		return true
 	}
+	if rpmReleaseOmitted(c, installed, want) {
+		return true
+	}
 	if allowUpdates {
 		return installedIsAtLeast(c, installed, want)
 	}
 	return false
+}
+
+// rpmReleaseOmitted reports whether want names installed's version with
+// its release left off, on a node whose packages are RPM's.
+//
+// rpm reports every package with a release (`1.8.0-10.el9`), and a tree
+// pins the version it means (`1.8.0`). Compared exactly the pin was never
+// met, so every run installed it again, and since the check after an
+// install (M-33) failed every run (issue 321, M-34). Salt's rpm
+// version_cmp ignores the release when either side has none, "if e.g. you
+// are checking if a package version 3.2 is satisfied by 3.2-1" (Salt
+// 3007.1, salt/modules/rpm_lowpkg.py); this is that. The epoch is still
+// compared, as Salt compares it unless told ignore_epoch: `1.8.0` does
+// not meet `2:1.8.0-10.el9`.
+//
+// Only for the RPM families by name. versionScheme gives an unknown
+// family RPM's ordering, and Alpine's `2.3.2-r0` has the same shape, but
+// nothing here showed apk or Salt taking `2.3.2` to mean it.
+func rpmReleaseOmitted(c *exec.Context, installed, want string) bool {
+	if c == nil || c.Grains == nil || strings.Contains(want, "-") {
+		return false
+	}
+	family := ""
+	if v, ok := c.Grains.Get("os_family"); ok {
+		family = strings.ToLower(value.KeyString(v))
+	}
+	switch family {
+	case "redhat", "rhel", "suse":
+	default:
+		return false
+	}
+	i := strings.LastIndex(installed, "-")
+	return i > 0 && installed[:i] == want
 }
 
 // installedIsAtLeast orders two versions with the scheme this node's

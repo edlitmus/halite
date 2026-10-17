@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An RPM package pinned without its release converges
+
+On RedHat and SUSE, `pkg.installed` with `version: 1.8.0` never matched
+the installed `1.8.0-10.el9`, so it reinstalled the package and failed
+on every run. A pin without a release is now met by any release of that
+version, as in Salt; the epoch must still match (issue 321, M-34).
+DIVERGENCE 5.361.
+
 ### A certificate renewal that is interrupted finishes itself
 
 If a node stopped between writing its new key and writing its renewed
