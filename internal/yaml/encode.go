@@ -347,10 +347,50 @@ func Quote(s string) string {
 	return b.String()
 }
 
-// SingleQuote renders a string as a single-quoted YAML scalar. It backs
-// the yaml_squote filter.
+// SingleQuote renders a string as a single-quoted YAML scalar, as PyYAML's
+// Emitter.write_single_quoted does at unbounded width, which is Salt's
+// yaml_squote (salt/utils/yamlencoding.py). It backs that filter.
+//
+// It used to double the apostrophe and stop. But a single-quoted scalar
+// folds its line breaks -- one newline reads back as a space -- so "a\nb"
+// read back as "a b", and a PEM key or any multi-line secret through
+// yaml_squote came out mangled with no error (issue 321, section 5).
+// PyYAML writes a run of line breaks (\n, \x85, \u2028, \u2029) that
+// starts with \n with one more \n in front of it, which is exactly what
+// folding takes away; a carriage return is not a break to it and is
+// written as it stands. Held to PyYAML 6.0.1 by 2,011 cases
+// (testdata/squote.jsonl).
+//
+// The dumper never comes here with a line break -- needsEscaping sends
+// those to Quote -- so this matters to the filter alone.
 func SingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	isBreak := func(r rune) bool { return r == '\n' || r == '\u0085' || r == '\u2028' || r == '\u2029' }
+	var b strings.Builder
+	b.WriteByte('\'')
+	rs := []rune(s)
+	for i := 0; i < len(rs); {
+		r := rs[i]
+		switch {
+		case isBreak(r):
+			j := i
+			for j < len(rs) && isBreak(rs[j]) {
+				j++
+			}
+			if r == '\n' {
+				b.WriteByte('\n')
+			}
+			b.WriteString(string(rs[i:j]))
+			i = j
+			continue
+		case r == '\'':
+			b.WriteString("''")
+		default:
+			b.WriteRune(r)
+		}
+		i++
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 func needsQuoting(s string) bool {
