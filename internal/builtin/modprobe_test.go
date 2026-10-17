@@ -98,12 +98,15 @@ func TestModprobeParseInfo(t *testing.T) {
 
 func TestModprobeParamArgs(t *testing.T) {
 	args := value.MapOf("params", value.MapOf("debug", int64(1), "irq", int64(7)))
-	got := modprobeParamArgs(args, "params")
+	got, err := modprobeParamArgs(args, "params")
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := []string{"debug=1", "irq=7"}
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("params = %v, want %v (sorted by key)", got, want)
 	}
-	if got := modprobeParamArgs(value.NewMap(0), "params"); got != nil {
+	if got, _ := modprobeParamArgs(value.NewMap(0), "params"); got != nil {
 		t.Errorf("no params should give nil, got %v", got)
 	}
 }
@@ -282,5 +285,49 @@ func TestModprobeRefusesOnANonLinuxPlatform(t *testing.T) {
 	_, err := New().Exec.Call(&exec.Context{}, "modprobe.list", value.NewMap(0))
 	if err == nil || !strings.Contains(err.Error(), "this node is "+runtime.GOOS) {
 		t.Errorf("modprobe.list did not refuse by platform: %v", err)
+	}
+}
+
+// **A module name and its parameters cannot leave their line or their
+// directory** (issue 321, M-45). The name was joined into a path, so
+// `../x` wrote outside modprobe.d, and a parameter's newline started a
+// new modprobe.d line: `install <module> /bin/sh -c ...` is one modprobe
+// runs as root. Each is refused, and nothing is written; ordinary names,
+// numbers and a quoted value with spaces still go through.
+func TestModprobeRefusesANameOrParameterThatLeavesItsLine(t *testing.T) {
+	dir := t.TempDir()
+	oldLoad, oldOpt := ModulesLoadDir, ModProbeDir
+	ModulesLoadDir, ModProbeDir = filepath.Join(dir, "load"), filepath.Join(dir, "probe")
+	t.Cleanup(func() { ModulesLoadDir, ModProbeDir = oldLoad, oldOpt })
+	c := newCtx(false)
+	for _, args := range []*value.Map{
+		value.MapOf("name", "../../escape"),
+		value.MapOf("name", "a b"),
+		value.MapOf("name", "sample", "params", value.MapOf("debug", "1\ninstall sample /bin/sh -c id")),
+		value.MapOf("name", "sample", "params", value.MapOf("debug", "1 2")),
+		value.MapOf("name", "sample", "params", value.MapOf("bad key", "1")),
+	} {
+		if _, err := modprobePersistLoadFn(c, args); err == nil {
+			t.Errorf("%s was accepted", describePkgArgs(args))
+		}
+	}
+	var wrote []string
+	_ = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			wrote = append(wrote, p)
+		}
+		return nil
+	})
+	if len(wrote) != 0 {
+		t.Fatalf("refused calls wrote %v", wrote)
+	}
+	os.MkdirAll(ModulesLoadDir, 0o755)
+	os.MkdirAll(ModProbeDir, 0o755)
+	if _, err := modprobePersistLoadFn(c, value.MapOf("name", "snd-hda_intel",
+		"params", value.MapOf("model", `"auto mode"`, "probe_mask", int64(1)))); err != nil {
+		t.Errorf("an ordinary name and parameters were refused: %v", err)
+	}
+	if _, err := modprobeDenylistFn(c, value.MapOf("name", "../evil")); err == nil {
+		t.Error("denylist took a name with a path in it")
 	}
 }

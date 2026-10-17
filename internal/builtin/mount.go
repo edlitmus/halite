@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -403,6 +404,22 @@ func entryFromArgs(args *value.Map) (fstabEntry, error) {
 	}
 	if e.Opts == "" {
 		e.Opts = "defaults"
+	}
+	// **The other four fields go into the line as written** (issue 321,
+	// M-45). The device and the point are escaped, as fstab(5) says; the
+	// type, the options and the two numbers were not, so a space or a
+	// newline in any of them made more fields, or another line, of the
+	// table every boot reads. None of them has a legitimate space, so one
+	// is refused rather than escaped.
+	for _, f := range []struct{ name, v string }{{"fstype", e.Type}, {"opts", e.Opts}, {"dump", e.Dump}, {"pass_num", e.Pass}} {
+		if strings.IndexFunc(f.v, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 || strings.HasPrefix(f.v, "#") {
+			return e, fmt.Errorf("%s %q holds whitespace, a control character or a leading #, and would not stay one field of the table", f.name, f.v)
+		}
+	}
+	for _, f := range []struct{ name, v string }{{"dump", e.Dump}, {"pass_num", e.Pass}} {
+		if _, err := strconv.Atoi(f.v); err != nil {
+			return e, fmt.Errorf("%s %q is not a number", f.name, f.v)
+		}
 	}
 	e.Opts = platformMountOpts(mountGOOS, e.Opts)
 	return e, nil
@@ -965,7 +982,7 @@ func oppositeOfKernelFlag(o string) string {
 func mountMounted(c *exec.Context, args *value.Map) (states.Result, error) {
 	want, err := entryFromArgs(args)
 	if err != nil {
-		return states.False("This state needs a mount point and a device."), nil
+		return states.False(fmt.Sprintf("This state cannot be written as a table entry: %v.", err)), nil
 	}
 	path := fstabPathOf(args)
 	persist := states.Bool(args, "persist", true)

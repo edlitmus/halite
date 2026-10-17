@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### modprobe, pkgrepo, nftables and fstab values are checked before they are written
+
+These modules spliced state values into files or scripts read as root,
+without checking them. A newline in a modprobe parameter could add an
+`install` line, which modprobe runs as root. A module or repository name
+could hold a path, and write or delete outside its directory. A newline
+or `;` in an nftables rule could add `flush ruleset`. A newline in an
+fstab option could add a mount. Such values are now refused (issue 321,
+M-45). DIVERGENCE 5.354.
+
 ### An alias of an LVM physical volume is recognised as one
 
 `lvm.pvcreate` and `lvm.pv_present` compared device names by spelling, so

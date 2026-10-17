@@ -261,3 +261,55 @@ func TestNFTRefusesOnANonLinuxPlatform(t *testing.T) {
 		t.Errorf("nftables.list did not refuse by platform: %v", err)
 	}
 }
+
+// **No value can start another nft command** (issue 321, M-45). Each is
+// spliced into an `nft -f -` script: a rule ending in a newline and
+// `flush ruleset` flushed every table, which `force` exists to guard, and
+// a `;` outside quotes does the same on one line. Each is refused before
+// nft is asked anything.
+func TestNFTRefusesAValueThatStartsAnotherCommand(t *testing.T) {
+	base := func(kv ...any) *value.Map {
+		m := value.MapOf("family", "inet", "table", "filter", "chain", "input", "rule", "tcp dport 80 accept", "comment", "halite:web")
+		for i := 0; i+1 < len(kv); i += 2 {
+			m.Set(kv[i].(string), kv[i+1])
+		}
+		return m
+	}
+	for _, args := range []*value.Map{
+		base("rule", "tcp dport 22 accept\nflush ruleset"),
+		base("rule", "tcp dport 22 accept; flush ruleset"),
+		base("rule", `tcp dport 22 accept comment "open`),
+		base("table", "filter flush"),
+		base("chain", "input\nflush ruleset"),
+		base("comment", `a" ; flush ruleset ; "`),
+		base("comment", "two\nlines"),
+	} {
+		// The chain the captured ruleset holds, so that on main a bad
+		// value got as far as the script rather than failing to find it.
+		listChain := (exec.Command{Argv: []string{"nft", "-j", "list", "chain", "inet", "filter", "input"}}).String()
+		c := nftCtx(map[string]exec.Result{listChain: {Stdout: nftListSample}})
+		if _, err := nftAddRule(c, args, "append"); err == nil {
+			t.Errorf("%s was accepted", describePkgArgs(args))
+		}
+		if scripts := nftScriptsRun(c); len(scripts) != 0 {
+			t.Errorf("%s reached nft: %q", describePkgArgs(args), scripts)
+		}
+	}
+	// And the good one reaches nft, which is what makes the refusals above
+	// mean something.
+	listChain := (exec.Command{Argv: []string{"nft", "-j", "list", "chain", "inet", "filter", "input"}}).String()
+	c := nftCtx(map[string]exec.Result{listChain: {Stdout: nftListSample}})
+	if _, err := nftAddRule(c, base(), "append"); err != nil {
+		t.Fatalf("an ordinary rule was refused: %v", err)
+	}
+	if scripts := nftScriptsRun(c); len(scripts) != 1 {
+		t.Fatalf("an ordinary rule ran %q", scripts)
+	}
+	// A `;` or `#` inside a quoted string is the rule's own.
+	if err := nftCheckArgs(base("rule", `meta l4proto tcp log prefix "a;b #c" accept`)); err != nil {
+		t.Errorf("a quoted ; was refused: %v", err)
+	}
+	if err := nftCheckArgs(base("priority", "filter + 10")); err != nil {
+		t.Errorf("a priority with spaces was refused: %v", err)
+	}
+}

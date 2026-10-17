@@ -197,7 +197,10 @@ func registerPkgRepo(r *Registries) {
 				if c.Test {
 					return true, nil
 				}
-				name := repoKey(states.Str(args, "name", ""))
+				name, err := repoKey(states.Str(args, "name", ""))
+				if err != nil {
+					return nil, err
+				}
 				if err := p.Delete(c, name); err != nil {
 					return nil, err
 				}
@@ -286,10 +289,20 @@ func repoFields() []signature.Param {
 // instead — `deb https://apt.example.com/ubuntu noble main` becomes
 // `apt.example.com`, which is what an operator listing
 // `/etc/apt/sources.list.d/` would want to see.
-func repoKey(name string) string {
+//
+// **A short name is a file name too, and was not checked** (issue 321,
+// M-45). A source line's host is sanitised, but a short name was returned
+// as written, and the providers join it into a path under sources.list.d
+// or yum.repos.d: `mod_repo` with `../../etc/cron.d/x` wrote there, and
+// `del_repo` deleted there. It is refused rather than sanitised, because
+// sanitising would quietly rename a repository a tree already manages.
+func repoKey(name string) (string, error) {
 	trimmed := strings.TrimSpace(name)
 	if !looksLikeSourceLine(trimmed) {
-		return trimmed
+		if err := validRepoName(trimmed); err != nil {
+			return "", err
+		}
+		return trimmed, nil
 	}
 	fields := strings.Fields(trimmed)
 	for _, f := range fields[1:] {
@@ -297,11 +310,29 @@ func repoKey(name string) string {
 			_, rest, _ := strings.Cut(f, "://")
 			host, _, _ := strings.Cut(rest, "/")
 			if host != "" {
-				return sanitiseRepoName(host)
+				return sanitiseRepoName(host), nil
 			}
 		}
 	}
-	return sanitiseRepoName(trimmed)
+	return sanitiseRepoName(trimmed), nil
+}
+
+// validRepoName refuses a short repository name that is not a plain file
+// name: a path separator, `..`, a leading dot, or a control character.
+// Empty is the caller's to answer, with its own message.
+func validRepoName(name string) error {
+	if name == "" {
+		return nil
+	}
+	if strings.ContainsAny(name, `/\`) || name == "." || strings.Contains(name, "..") || strings.HasPrefix(name, ".") {
+		return fmt.Errorf("%q is not a repository name: it becomes a file name, and may not hold a path", name)
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("%q is not a repository name: it holds a control character", name)
+		}
+	}
+	return nil
 }
 
 // looksLikeSourceLine reports whether a name is a Debian source line
@@ -403,7 +434,11 @@ func repoFromArgs(args *value.Map) (string, *value.Map, error) {
 		return "", nil, fmt.Errorf(
 			"pkgrepo %q needs a baseurl, or a name that is a full source line", raw)
 	}
-	return repoKey(raw), config, nil
+	key, err := repoKey(raw)
+	if err != nil {
+		return "", nil, err
+	}
+	return key, config, nil
 }
 
 // parseSourceLine takes a Debian source line apart.
@@ -541,7 +576,10 @@ func pkgrepoAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(err.Error()), nil
 	}
-	name := repoKey(states.Str(args, "name", ""))
+	name, err := repoKey(states.Str(args, "name", ""))
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	if name == "" {
 		return states.False("pkgrepo.absent needs a name."), nil
 	}

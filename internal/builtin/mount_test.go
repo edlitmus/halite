@@ -477,3 +477,34 @@ func TestATableEntryWithoutAnFstypeIsRefused(t *testing.T) {
 	}
 	assertRan(t, c, "mount -o defaults /dev/sdb1 /srv/data")
 }
+
+// **A field cannot make more fields or another line of fstab** (issue
+// 321, M-45). The device and the point are escaped; the type, options and
+// numbers went in as written, so a newline in `opts` added a line to the
+// table every boot mounts.
+func TestAnFstabFieldThatLeavesItsColumnIsRefused(t *testing.T) {
+	r := New()
+	c, path := mountFixture(t, nil)
+	for _, extra := range [][]any{
+		{"opts", "defaults\n/dev/evil /mnt ext4 rw 0 0"},
+		{"fstype", "ext4 rw"},
+		{"dump", "0 1"},
+		{"pass_num", "x"},
+	} {
+		args := value.MapOf("name", "/srv/data", "device", "/dev/sdb1", "fstype", "xfs", "config", path)
+		args.Set(extra[0].(string), extra[1])
+		if _, err := r.Exec.Call(c, "mount.set_fstab", args); err == nil {
+			t.Errorf("set_fstab with %s=%q was accepted", extra[0], extra[1])
+		}
+		res, err := r.States.Call(c, "mount.mounted", args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Result == nil || *res.Result || !strings.Contains(res.Comment, extra[0].(string)) {
+			t.Errorf("mount.mounted with %s=%q: %s", extra[0], extra[1], res.Comment)
+		}
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the table was written: %v", err)
+	}
+}

@@ -30015,6 +30015,75 @@ of a state's device can be relied on to match it.
 the triage records as Salt parity. A real `/dev/disk/by-id` link to a
 physical disk was not used; the loop device has no udev by-id name
 other than the `lvm-pv-uuid-` one LVM's own rules make.
+### 5.354 Four modules spliced a free-form value into a root-read file or script
+
+Issue 321 finding M-45, the four sites that can run something as root or
+reach outside their directory. Each was reproduced against main's code
+by its test below, and each is now refused before anything is written
+or run.
+
+- **modprobe.** A module `name` is joined into `<dir>/<name>.conf`, so
+  `../../escape` wrote outside modprobe.d, and on removal deleted there.
+  A parameter's value went into an `options` line, where a newline
+  starts another line. `install <module> /bin/sh -c ...` is a line
+  modprobe runs as root. A name is now letters, digits, `_` and `-`, as
+  a module's are. A parameter name is letters, digits and `_`, as
+  `module_param` names are. A value may hold no control character, and
+  whitespace only inside double quotes, which is how modprobe.d takes
+  one. `TestModprobeRefusesANameOrParameterThatLeavesItsLine`: main
+  accepted `../../escape`.
+- **pkgrepo.** `repoKey` sanitised a source line's host into a file name
+  but returned a short name as written, and the providers join it under
+  sources.list.d or yum.repos.d. A short name with a path separator,
+  `..`, a leading dot or a control character is refused. It is not
+  sanitised, which would quietly rename a repository a tree already
+  manages. `TestARepositoryNameWithAPathIsRefused`: main took
+  `../../etc/cron.d/x` and `a/b`.
+- **nftables.** Every value goes into an `nft -f -` script run as root,
+  where a newline, or a `;` outside a quoted string, ends one command
+  and starts the next. `TestNFTRefusesAValueThatStartsAnotherCommand`
+  answers the chain listing from the captured ruleset, so a value gets
+  as far as the script. Against main, `tcp dport 22 accept` followed by
+  a newline and `flush ruleset` reached nft's script whole, as did the
+  `;` form and a comment carrying `" ; flush ruleset ; "`. Flushing the
+  ruleset is what `force` exists to guard. Identifiers now refuse
+  whitespace, quotes, `;`, braces and `#`. A priority may hold spaces
+  (`filter + 10`). A rule may hold no control character, and `;` or `#`
+  only inside double quotes. A comment may hold no quote or control
+  character. A first attempt also replaced the comment's Go `%q` with a
+  plain quoted string, on the claim that `%q` escapes non-ASCII. It does
+  not; that change was dropped, and a backslash, which `%q` doubles, is
+  left as it was, because how nft reads one was not checked.
+- **fstab.** The device and the point were escaped; the type, options,
+  dump and pass were not, so a newline in `opts` added a line to the
+  table every boot mounts. Those four may now hold no whitespace,
+  control character or leading `#`, and dump and pass must be numbers.
+  `mount.mounted` now says why it refused, where it used to say it
+  "needs a mount point and a device".
+  `TestAnFstabFieldThatLeavesItsColumnIsRefused`: main wrote the extra
+  line.
+
+**Not done.** The smaller sites M-45 lists:
+
+- `sysctl`'s `name=value`;
+- debconf's `Package` (the triage found its question and value already
+  validated);
+- `sysrc` (a leading `-` in the name, a newline in the value);
+- ufw (a leading `-` becomes an option).
+
+**How nft reads it, measured.** As root on Ubuntu 24.04.5, nftables
+1.0.9, in a network namespace of its own (`unshare -n`) so that the
+host's ruleset was not touched: `nft add rule inet t c tcp dport 22
+accept '; add table inet injected'`, the `;` arriving inside one argv
+element as the module passes it, exited 0 and `nft list ruleset` then
+held `table inet injected`. nft joins its arguments and parses them as
+one script, so an argv boundary is no boundary. A trailing `'# drop
+everything'` was taken as a comment and dropped without a word, and
+`comment "a ; b"` was kept whole, which is the line `nftCheckArgs`
+draws: `;` and `#` outside a quoted string.
+
+The module itself was not driven against nft, nor were modprobe, apt
+and mount: those tests use scripted runners and temporary directories.
 
 
 
