@@ -348,8 +348,22 @@ policy:
 # buildpolicy fails the build if that stops being true. That makes it a
 # check on the toolchain rather than on a supply chain, which is a
 # smaller claim than the name suggests and the one worth making.
+#
+# Pinned, rather than @latest, so that the scan CI runs and the one run
+# here are the same tool (issue 321, M-03): fleet and release decisions
+# rest on "no vulnerabilities found", and @latest made that a different
+# claim on every day it was made. ci.yml's `vuln` job runs this version,
+# and buildpolicy holds the two to each other.
+#
+# GOTOOLCHAIN is the module's own toolchain. `go run pkg@version` builds
+# the tool with the toolchain its go.mod asks for, and a govulncheck built
+# with an older Go cannot load this toolchain's standard library: v1.9.0
+# built with go1.26 refused go1.27's vendored tables outright.
+GOVULNCHECK_VERSION = v1.9.0
+GO_TOOLCHAIN != awk '/^toolchain /{print $$2}' go.mod
+
 vuln:
-	@env $(DEV_ENV) go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	@env $(DEV_ENV) GOTOOLCHAIN=$(GO_TOOLCHAIN) go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 # Build every binary twice and compare the digests.
 #
