@@ -29,7 +29,7 @@ whose contents already match, where before only rewritten files got it,
 so changing the mode of a deployed tree did nothing. `include_pat` and
 `exclude_pat` now match as Salt's fnmatch does, where `*` crosses `/`. A
 rewritten file with no `file_mode` keeps its mode instead of becoming
-0644 (issue 321, M-22). DIVERGENCE 5.345.
+0644 (issue 321, M-22). DIVERGENCE 5.347.
 
 ### A file state writes through a symbolic link instead of replacing it
 

@@ -29741,8 +29741,7 @@ path itself, is not offered, so a state cannot ask for the link to be
 replaced. `file.copy`, `file.prepend`, `blockreplace`, `comment` and
 `uncomment` go through `editResult` too, and were not each run against a
 link. Linux as root was not run.
-
-### 5.345 file.recurse cleaned what it was told to exclude, and ignored a mode change
+### 5.347 file.recurse cleaned what it was told to exclude, and ignored a mode change
 
 Issue 321 finding M-22, three defects the audit reproduced. All three
 reproduce word for word against main's `file_treecopy.go` in the tests
@@ -29782,6 +29781,7 @@ Two more in the same code, found while there:
 is not corrected. Salt's `E@` regular-expression form of the patterns is
 not supported, as it was not before. Not run on a host: the tests use a
 real file server over a temporary root, under `go test`.
+
 
 
 ## 6. Everything else not started
