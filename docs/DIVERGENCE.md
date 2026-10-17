@@ -30755,6 +30755,40 @@ list, `web1,evil ...`, trusted for both; that is ssh's own syntax and
 stays on one line, and was left. `ssh_auth.absent` removes rather than
 writes and was not changed. Not run against sshd.
 
+### 5.374 `yaml_squote` folded a multi-line value into one line
+
+Issue 321, a section 5 (Low) finding, "confirmed against PyYAML" there:
+"`yaml_squote` corrupts multi-line values: it only doubles `'`, so
+`"a\nb"|yaml_squote` parses back as `a b`. A PEM or multi-line secret is
+silently mangled." So it did. A single-quoted YAML scalar folds a line
+break into a space, and halite's `SingleQuote` wrote the break as it
+stood. `TestSingleQuoteRoundTrips` reads the output back through this
+package's parser: against main, `"a\nb"` came back `"a b"`, and a PEM
+block came back `"-----BEGIN KEY----- AAA BBB -----END KEY----- "`.
+
+Salt's `yaml_squote` is PyYAML's `Emitter.write_single_quoted` at
+unbounded width (`salt/utils/yamlencoding.py`, 3007.1). PyYAML writes a
+run of line breaks -- `\n`, `\x85`, `\u2028`, `\u2029` -- that starts
+with `\n` with one more `\n` in front of it, which is what folding takes
+away; a carriage return is not a break to it and stays as it is.
+`SingleQuote` now does exactly that. `tools/make-yamlquote-corpus.py`
+writes 2,011 cases with PyYAML 6.0.1's answers to
+`internal/yaml/testdata/squote.jsonl`, and `TestSingleQuoteMatchesPyYAML`
+requires every one; main matched none that held a newline. The dumper
+never reaches `SingleQuote` with a line break (`needsEscaping` sends
+those to double quotes), so only the filter changes.
+
+**The corpus drift 5.368 found, settled.** The same Salt file answers the
+question 5.368 left: `yaml_encode` sends every string through
+`yaml_dquote`, so `'a b' | yaml_encode` is `"a b"`, quotes included. The
+checked-in `halite.json` already said so; the generator said `a b`.
+The generator is corrected, and now reproduces the checked-in file byte
+for byte.
+
+**Not done.** `yaml_dquote`'s spelling differs from PyYAML's for non-ASCII
+(`é` is `"é"` here, `"\xE9"` there) and for `\u2028` and `\x85` (`\L`,
+`\N` there); the value read back is the same, the text is not.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -24,7 +24,8 @@ Issue 321 stays open, because what is below is not finished.
 | High (20) | 20 | none |
 | Medium (55) | 50 | 5: 3 mentioned and explicitly left, 1 half done, 1 measured and left |
 | M-56 (design note) | | not done |
-| Low (section 5) | 4 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 5 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 2 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
 ### Fixed
 
@@ -158,6 +159,7 @@ passing by the PRs above; that has not been looked for.
 | `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too |
 | `check_cmd` temp file chmod 0644 | #412 | 5.372; a `runas` checker gets the file |
 | `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts` |
+| `yaml_squote` corrupts multi-line values | #414 | 5.374, against PyYAML 6.0.1 |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
