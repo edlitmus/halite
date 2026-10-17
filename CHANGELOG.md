@@ -27,7 +27,7 @@ The hub read each gitfs branch's `git archive` fully into memory before
 checking its size, so a pushed branch of a few gigabytes could exhaust
 the hub's memory on every update. The archive is now unpacked as it
 streams, and refused as soon as it passes the 2 GiB or 200,000-file limit
-(issue 321, M-53). DIVERGENCE 5.350.
+(issue 321, M-53). DIVERGENCE 5.356.
 
 ### `sysrc` refuses a value that would run as code at boot
 

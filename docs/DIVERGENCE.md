@@ -30122,8 +30122,7 @@ only". One of them is not small.
 **Not verified.** sysctl and debconf were not driven against the real
 tools. The sysrc measurement used a scratch file, not /etc/rc.conf, and
 no boot.
-
-### 5.350 gitfs read a whole archive into memory before checking its size
+### 5.356 gitfs read a whole archive into memory before checking its size
 
 Issue 321 finding M-53. `materialise` ran `git archive` into a
 `bytes.Buffer` and handed the bytes to `extractTar`, which then checked
@@ -30146,8 +30145,29 @@ count and byte limits apply as entries arrive, and when the consumer
 stops early, git is killed and the pipe drained rather than waited on.
 What the tar reader holds at once is bounded by Go's own header limits.
 
+**The first version hung on FreeBSD.** It stopped reading at tar's end
+marker and waited for git. `git archive` pads its output to a whole
+10 KiB record, and on beastie (FreeBSD 15.1, git 2.56.0) a one-file tree
+was one record of which 7,168 bytes followed the marker. git did not
+exit with them unread, so the very first gitfs test,
+`TestABranchBecomesAnEnvironment`, hung until the package's timeout;
+main passed it in 0.12 s. On this Ubuntu workstation the same 7 KiB went
+into the pipe and git exited, so every test passed here. Why FreeBSD's
+pipe did not take it was not measured. `runStream` now reads what
+follows a consumer that finished, up to 1 MiB, and past that kills git
+and fails the update. `TestWhatFollowsTheArchiveIsDrained` has a git
+write 256 KiB after the archive, more than a pipe holds anywhere: before
+this it was killed at its ten-second timeout on Linux too, and now it
+unpacks at once. `TestWhatFollowsTheArchiveIsBounded` writes 4 MiB and
+is refused. On beastie all 24 gitfs tests now pass, in 3.4 s.
+
+This was found on beastie before the branch went to CI. CI's
+`test (freebsd)` job installs git and runs this package, so the PR's run
+there is a second FreeBSD check, in an emulated VM.
+
 **Not done.** The limits are the existing constants, not configuration.
 Not run against a real remote or on the hub.
+
 
 
 ## 6. Everything else not started
