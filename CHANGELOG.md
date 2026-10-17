@@ -21,6 +21,19 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `service.enabled` on FreeBSD sets the variable rc actually reads
+
+On FreeBSD, `service.enable`, `service.disable` and the `service.enabled`
+and `service.disabled` states wrote `<name>_enable` whatever the rc.d
+script's `rcvar` was. For `ipfw` (`firewall_enable`), `nfsd`
+(`nfs_server_enable`), any script with a hyphen in its name, 39 scripts in
+all on one 15.1 host, that wrote a variable rc never reads, enabled
+nothing, and repeated on every run (issue 321, M-43). The variable now
+comes from `service <name> rcvar`. Enabling a script that has no rcvar is
+refused, since rc runs it at every boot. If an earlier run left a line
+such as `ipfw_enable="YES"` or `avahi-daemon_enable="YES"` in rc.conf, it
+did nothing and can be removed. DIVERGENCE 5.335.
+
 ### A pinned package on FreeBSD is now installed at its pin, or fails
 
 `pkg.installed` with a `version` on FreeBSD installed whatever version the

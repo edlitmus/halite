@@ -29086,6 +29086,82 @@ always a pin that was not being honoured.
   machine.
 - A pin given with a FreeBSD origin (`www/nginx`) was not tried.
 
+### 5.335 FreeBSD's service.enable wrote `<name>_enable`, not the script's rcvar
+
+Issue 321 finding M-43. `freebsdRCProvider.Enable` and `Disable` wrote
+`sysrc <name>_enable=YES|NO`. That is the convention, not the rule: an
+rc.d script names its variable with `rcvar=`, and rc.subr's checkyesno
+reads that one only. `Enabled` asks `service <name> enabled`, which does
+read the script's rcvar, so the two halves of `service.enabled`
+disagreed. For a script whose rcvar is not `<name>_enable`, the state
+wrote a variable nothing reads, found the service still not enabled,
+and wrote it again on every run.
+
+**How common, on beastie** (FreeBSD 15.1-RELEASE-p5): 39 of the scripts
+in /etc/rc.d and /usr/local/etc/rc.d name another variable, by
+`service <name> rcvar`. Among them: `ipfw` reads `firewall_enable`,
+`nfsd` reads `nfs_server_enable`, `lockd` reads `rpc_lockd_enable`,
+`zpool` reads `zfs_enable`, and `bgfsck` reads `background_fsck`, which
+does not end in `_enable` at all. A hyphen makes it worse:
+`avahi-daemon` reads `avahi_daemon_enable`, and `sysrc
+avahi-daemon_enable=YES` exits 0 and writes that line literally. sysrc
+cannot read such a line back either: `sysrc -n
+halite-probe-rcvar_enable` printed `probe-rcvar_enable`, split at the
+hyphen.
+
+**A script with no rcvar** (`ldconfig`) prints only comments from
+`service <name> rcvar`, and exits 0. `service ldconfig enabled` exits 1
+and warns that `$` is not set. rc runs such a script at every boot, so
+there is nothing to enable. But `service.enabled` on one would write
+`ldconfig_enable=YES` on every run.
+
+**The fix.** Enable and Disable read the variable from `service <name>
+rcvar`: the first line that is a shell name followed by `=`. A script
+with no rcvar is refused by name ("declares no rcvar, so rc runs it at
+every boot"), and so is a script that does not exist, with service(8)'s
+own reason. The parser is held by fixtures captured on beastie: `ipfw`,
+`rwho` (whose line carries its default `"NO"`), `sshd`, `ldconfig`, and
+a missing script.
+
+**Demonstrated on beastie, as root.** Two new live tests install
+throwaway scripts in /usr/local/etc/rc.d:
+
+- `halite-probe-rcvar`, with rcvar `haliteprobe_other_on`;
+- `halite-probe-norcvar`, with no rcvar.
+
+At 22ff7e0 both passed, and so did the three existing live service
+tests. The `service.enabled` state set `haliteprobe_other_on=YES`.
+Its second run changed nothing, `service halite-probe-rcvar enabled`
+exited 0, and no `halite-probe-rcvar_enable` line was in rc.conf.
+`service.disable` set it to NO.
+
+The same tests against main's `service.go` failed:
+
+- the second run changed again;
+- the rcvar was never set;
+- rc.conf gained `halite-probe-rcvar_enable="YES"`;
+- the no-rcvar script was "enabled" by writing
+  `halite-probe-norcvar_enable="YES"`.
+
+rc.conf was backed up first and was byte-identical to the backup
+afterwards.
+
+The live tests read the wrong variable from /etc/rc.conf directly
+rather than through `sysrc -n`, because of the hyphen. The first version
+of the test asked sysrc, and reported a line on the fixed branch that
+was not there.
+
+**Breaking.** A tree that enables a no-rcvar script now fails where it
+used to "succeed" on every run.
+
+**Not verified.** rc.conf.local and /etc/rc.conf.d were not involved:
+sysrc writes /etc/rc.conf by default, and that is all the tests read. A
+script inside a jail was not tried. The `freebsd` leg of fleet.yml will
+run the two new tests on its next run; they have not run there yet. None
+of the 39 real mismatched scripts was enabled or disabled, only the
+probes: several (`ipfw`, `securelevel`, `noshutdown`) would change how
+beastie boots.
+
 
 
 

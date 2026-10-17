@@ -392,7 +392,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"enabled, started, restarted (checked by the pid changing), stopped and disabled, " +
 		"each read back from `sysrc -n` and the pidfile rather than from this module. That " +
 		"first run found start and stop doing nothing at all, without error, on any service " +
-		"rc.conf had not enabled (DIVERGENCE 5.123). The sysvinit provider is driven on the lab's " +
+		"rc.conf had not enabled (DIVERGENCE 5.123). That probe's rcvar was `<name>_enable`, so " +
+		"it could not see enable and disable writing that variable for every script; on " +
+		"2026-10-16, as root on beastie (FreeBSD 15.1-RELEASE-p5), two more probes did: one " +
+		"with a hyphenated file name and an unrelated rcvar, enabled by the `service.enabled` " +
+		"state twice with no change the second time and disabled, checked by `sysrc -n`, by " +
+		"`service <name> enabled` and by reading rc.conf for the wrong variable; and one with " +
+		"no rcvar, whose enable is refused. Main's provider failed both, writing " +
+		"`halite-probe-rcvar_enable` into rc.conf (DIVERGENCE 5.335). Not covered: a script " +
+		"in a jail, and rc.conf.d or rc.conf.local, which sysrc was not pointed at. " +
+		"The sysvinit provider is driven on the lab's " +
 		"`debian13sysv` row -- a Debian 13 converted to sysvinit and rebooted into it -- " +
 		"against a real `service(8)` and `update-rc.d`, on an LSB init script the test " +
 		"installs: started, restarted (checked by the pid changing), stopped, enabled and " +
