@@ -29594,6 +29594,55 @@ other modules. With `writeAtomic` restored, all ten fail.
 - `file.copy` and `restore_backup` were named in the finding and not
   run here. Both write through `writeAtomic`, and neither was driven.
 - Linux as root was not run; the root run was FreeBSD only.
+### 5.344 Five mode parameters read an unquoted mode as a decimal number
+
+Issue 321 finding M-21. The signature layer's `Mode` type refuses an
+integer and says to quote it, because YAML reads an unquoted `0600` as
+the octal integer 384. Five parameters were not typed `Mode`:
+
+- `file.recurse`'s `file_mode` and `dir_mode`;
+- `file.serialize`'s `mode`;
+- the `mode` of `x509.private_key_managed` and of
+  `x509.certificate_managed`.
+
+They were typed `String`, which turns the integer into its decimal text.
+What the audit reproduced:
+
+- `file_mode: 0600` arrived as "384", which does not parse as octal.
+  `modeOrDefault` swallowed the error and wrote 0644.
+- `0640` arrived as "416", which does parse, and wrote `-r----xrw-`.
+- The x509 states refused "384" but accepted "416", so a private key
+  could be written 0416.
+
+Separately, `file.serialize` with no `mode` forced 0644 on every rewrite,
+so a 0600 file came out world-readable. On beastie, as root, main turned
+a 0640 file into 0644 (in the table of the M-20 section).
+
+**The fix.** All five are typed `Mode`. `modeOrDefault` returns its
+parse error rather than the default; it is the second guard. And
+`file.serialize` with no `mode` keeps an existing file's mode, as
+`file.managed` does, and uses 0644 only for a new file.
+
+**Run as root on beastie** (FreeBSD 15.1) at d8f6420:
+
+- a `0640` file serialized with no mode stayed 640;
+- `mode: 0600` unquoted was refused with "quoted string, found the
+  integer 384; write it as '0600'", and the file was left as it was.
+
+The owner in that run still became `root:wheel`, because the branch did
+not yet carry the M-20 fix.
+
+**Tests.** `TestAnUnquotedModeIsRefusedEverywhere` covers all five
+parameters, `TestModeOrDefaultFailsOnABadMode` the fallback, and
+`TestSerializeKeepsTheFilesMode` the default. Retyping the parameters as
+`String` fails the first, and restoring the 0644 default fails the
+third.
+
+**Breaking.** A tree that wrote an unquoted mode for any of these five
+is refused, with the advice to quote it. It never got the mode it wrote.
+beastie's production tree is empty. The repository's example trees and
+docs hold no unquoted mode.
+
 
 
 ## 6. Everything else not started

@@ -36,7 +36,7 @@ func registerFileSerialize(r *Registries) {
 					"Salt's older name for `serializer`."),
 				opt("merge_if_exists", signature.Bool, false,
 					"Merge over what the file already holds rather than replacing it."),
-				opt("mode", signature.String, "", "The file mode."),
+				opt("mode", signature.Mode, "", "The file mode. Empty keeps an existing file's, and 0644 for a new one."),
 				opt("user", signature.String, "", "The owner."),
 				opt("group", signature.String, "", "The group."),
 				opt("makedirs", signature.Bool, false, "Create the parent directory."),
@@ -80,7 +80,7 @@ func fileSerialize(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(err.Error()), nil
 	}
 
-	_, statErr := os.Stat(path)
+	info, statErr := os.Stat(path)
 	exists := statErr == nil
 	if !exists && !states.Bool(args, "create", true) {
 		return states.True(fmt.Sprintf(
@@ -131,7 +131,17 @@ func fileSerialize(c *exec.Context, args *value.Map) (states.Result, error) {
 	if dir, missing, err := missingParent(path); err == nil && missing {
 		return parentNotPresent(dir), nil
 	}
-	mode := modeOrDefault(states.Str(args, "mode", ""), 0o644)
+	// No mode asked for keeps the file's own, as file.managed does. This
+	// forced 0644 on every rewrite, so a 0600 file of secrets serialized
+	// again came out world-readable (issue 321, M-21).
+	def := os.FileMode(0o644)
+	if exists {
+		def = info.Mode().Perm()
+	}
+	mode, err := modeOrDefault(states.Str(args, "mode", ""), def)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	if err := writeAtomic(path, want, mode); err != nil {
 		return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
 	}

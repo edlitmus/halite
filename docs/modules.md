@@ -10715,7 +10715,7 @@ file.prepend(name: path, text: list, backup: string = , show_changes: bool = tru
 Copy a directory from the file server, creating what is missing and replacing what differs.
 
 ```
-file.recurse(name: string, source: string, clean: bool = false, exclude_pat: string = , include_pat: string = , dir_mode: string = , file_mode: string = , user: string = , group: string = , makedirs: bool = true, template: string = , context: map, defaults: map)
+file.recurse(name: string, source: string, clean: bool = false, exclude_pat: string = , include_pat: string = , dir_mode: mode = , file_mode: mode = , user: string = , group: string = , makedirs: bool = true, template: string = , context: map, defaults: map)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10725,8 +10725,8 @@ file.recurse(name: string, source: string, clean: bool = false, exclude_pat: str
 | `clean` | bool | `false` | Remove files under the destination that the source does not have. |
 | `exclude_pat` | string | `` | Skip paths matching this glob, relative to the source. |
 | `include_pat` | string | `` | Copy only paths matching this glob, relative to the source. |
-| `dir_mode` | string | `` | Mode for directories this state creates. |
-| `file_mode` | string | `` | Mode for the files it writes. |
+| `dir_mode` | mode | `` | Mode for directories this state creates. |
+| `file_mode` | mode | `` | Mode for the files it writes. |
 | `user` | string | `` | Owner for what it writes. |
 | `group` | string | `` | Group for what it writes. |
 | `makedirs` | bool | `true` | Create the destination if it is absent. |
@@ -10783,7 +10783,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 Write a data structure to a file as JSON or YAML.
 
 ```
-file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer: string = , formatter: string = , merge_if_exists: bool = false, mode: string = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, check_cmd: any, tmp_dir: path, tmp_ext: string)
+file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer: string = , formatter: string = , merge_if_exists: bool = false, mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, check_cmd: any, tmp_dir: path, tmp_ext: string)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10794,7 +10794,7 @@ file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer
 | `serializer` | string | `` | json or yaml. Required, as it is in Salt: the format is not guessed from the file name. |
 | `formatter` | string | `` | Salt's older name for `serializer`. |
 | `merge_if_exists` | bool | `false` | Merge over what the file already holds rather than replacing it. |
-| `mode` | string | `` | The file mode. |
+| `mode` | mode | `` | The file mode. Empty keeps an existing file's, and 0644 for a new one. |
 | `user` | string | `` | The owner. |
 | `group` | string | `` | The group. |
 | `makedirs` | bool | `false` | Create the parent directory. |
@@ -12847,7 +12847,7 @@ win_task.present(name: string, command: string = , arguments: string = , working
 Ensure a certificate exists, is signed by the expected CA, carries the subject, names and usages asked for, and is not close to expiry.
 
 ```
-x509.certificate_managed(name: path, private_key: string = , public_key: string = , signing_cert: string = , signing_private_key: string = , days_valid: int = 365, days_remaining: int = 30, ca: bool = false, key_usage: list, ext_key_usage: list, mode: string = 0644, user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , basicConstraints: string = , keyUsage: string = , extendedKeyUsage: string = , subjectKeyIdentifier: string = , subjectAltName: string = , CN: string = , O: string = , OU: string = , C: string = , ST: string = , L: string = , subject_alt_names: list)
+x509.certificate_managed(name: path, private_key: string = , public_key: string = , signing_cert: string = , signing_private_key: string = , days_valid: int = 365, days_remaining: int = 30, ca: bool = false, key_usage: list, ext_key_usage: list, mode: mode = 0644, user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , basicConstraints: string = , keyUsage: string = , extendedKeyUsage: string = , subjectKeyIdentifier: string = , subjectAltName: string = , CN: string = , O: string = , OU: string = , C: string = , ST: string = , L: string = , subject_alt_names: list)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -12862,7 +12862,7 @@ x509.certificate_managed(name: path, private_key: string = , public_key: string 
 | `ca` | bool | `false` | Mark it a CA. |
 | `key_usage` | list | — | Key usages. |
 | `ext_key_usage` | list | — | Extended key usages. |
-| `mode` | string | `0644` | The file mode. |
+| `mode` | mode | `0644` | The file mode. |
 | `user` | string | `` | The owner. |
 | `group` | string | `` | The group. |
 | `makedirs` | bool | `false` | Create the directory the file goes in, and any above it, when they are missing. |
@@ -12887,13 +12887,13 @@ x509.certificate_managed(name: path, private_key: string = , public_key: string 
 Ensure a private key exists with the requested algorithm and size.
 
 ```
-x509.private_key_managed(name: path, mode: string = 0600, new: bool = false, user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , algo: string = rsa, keysize: int = 0)
+x509.private_key_managed(name: path, mode: mode = 0600, new: bool = false, user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , algo: string = rsa, keysize: int = 0)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | path | *required* | Where the key lives. |
-| `mode` | string | `0600` | The file mode. A key should not be readable by anyone else. |
+| `mode` | mode | `0600` | The file mode. A key should not be readable by anyone else. |
 | `new` | bool | `false` | Replace the key even when the existing one already matches. |
 | `user` | string | `` | The owner. |
 | `group` | string | `` | The group. |
