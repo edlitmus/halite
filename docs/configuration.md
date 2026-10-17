@@ -155,6 +155,22 @@ Listen address.
 
 The address the hub or the API binds. Bind to a specific address rather than every interface when the machine has a management network; there is no plaintext mode to fall back to, so this is the whole of the exposure.
 
+### `node_event_burst`
+
+*`halite-hub` · `8388608` · SPEC section 17.1*
+
+Bytes of event data one node may post at once before node_event_rate applies.
+
+Read by the hub. How many bytes of event data one node may post at once before `node_event_rate` applies. An event larger than the burst is allowed from a full bucket, so the largest event a node may post at all, 1 MiB, always gets through eventually. Below one, the default of 8 MiB is used.
+
+### `node_event_rate`
+
+*`halite-hub` · `65536` · SPEC section 17.1*
+
+Bytes of event data one node may post a second, sustained; over it an event is refused with 429.
+
+Read by the hub. How many bytes of event data (`event.send`, beacons) one node may post a second, sustained, as a token bucket; an event over it is refused with 429 and counted as `halite_events_dropped_total{reason="node_rate"}`. The bus is bounded by size and pruned oldest first, so without this one node could push every node's history off it. The default, 64 KiB a second, is a node sending a beacon event several times a second with room to spare.
+
 ### `node_id`
 
 *`halite-node` · no default · SPEC section 7.2*
@@ -2126,6 +2142,8 @@ Every setting, and which programs read it.
 | `mine_functions` | `halite-node` | — | Grains and the mine |
 | `mine_interval` | `halite-node` | `60` | Grains and the mine |
 | `node_data_cache` | `halite-hub` | `true` | Targeting and the job cache |
+| `node_event_burst` | `halite-hub` | `8388608` | Identity and connection |
+| `node_event_rate` | `halite-hub` | `65536` | Identity and connection |
 | `node_id` | `halite-node` | — | Identity and connection |
 | `node_id_caching` | `halite-node` | `true` | Identity and connection |
 | `node_id_lowercase` | `halite-node` | `false` | Identity and connection |

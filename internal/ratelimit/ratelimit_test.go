@@ -64,3 +64,29 @@ func TestANewLimitAppliesToABucketInUse(t *testing.T) {
 		t.Fatalf("after lowering the burst to 2, it gave %d", got)
 	}
 }
+
+// TakeN meters bytes: a full bucket gives what it holds and no more,
+// refills at the rate, and a request bigger than the whole burst is
+// possible from a full bucket rather than never.
+func TestTakeNMetersBytes(t *testing.T) {
+	var b Bucket
+	if !b.TakeN(start, 100, 1000, 600) || b.TakeN(start, 100, 1000, 600) {
+		t.Fatal("a bucket of 1000 gave 600 twice at once")
+	}
+	if !b.TakeN(start, 100, 1000, 400) {
+		t.Fatal("the 400 left was refused")
+	}
+	if b.TakeN(start.Add(time.Second), 100, 1000, 200) {
+		t.Fatal("a second at 100 a second refilled 200")
+	}
+	if !b.TakeN(start.Add(2*time.Second), 100, 1000, 200) {
+		t.Fatal("two seconds at 100 a second did not refill 200")
+	}
+	var big Bucket
+	if !big.TakeN(start, 100, 1000, 5000) {
+		t.Fatal("a request larger than the burst was refused from a full bucket")
+	}
+	if big.TakeN(start, 100, 1000, 1) {
+		t.Fatal("that request did not empty the bucket")
+	}
+}

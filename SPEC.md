@@ -461,6 +461,7 @@ these is why a single malformed return can exhaust a master.
 | Handshake timeout | 10 s |
 | Idle stream timeout | 90 s |
 | Maximum grains payload | 1 MiB |
+| Event data one node may post | 64 KiB/s sustained, 8 MiB at once, configured |
 
 ## 7. Identity, enrollment, and trust
 

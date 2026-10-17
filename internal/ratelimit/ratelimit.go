@@ -33,6 +33,15 @@ type Bucket struct {
 // A burst below one is taken as one: a bucket that can never hold a
 // whole token refuses everything, which no configuration means.
 func (b *Bucket) Take(now time.Time, rate float64, burst int) bool {
+	return b.TakeN(now, rate, burst, 1)
+}
+
+// TakeN is Take for n tokens at once, for a bucket that meters bytes
+// rather than requests. A request larger than the whole burst is taken
+// as the burst, so that the largest request a caller may make at all is
+// possible from a full bucket rather than refused for ever; the burst is
+// the operator's statement of how much one caller may spend at once.
+func (b *Bucket) TakeN(now time.Time, rate float64, burst int, n int) bool {
 	capacity := float64(burst)
 	if capacity < 1 {
 		capacity = 1
@@ -45,9 +54,16 @@ func (b *Bucket) Take(now time.Time, rate float64, burst int) bool {
 		b.tokens = capacity
 	}
 	b.filled = now
-	if b.tokens < 1 {
+	want := float64(n)
+	if want < 1 {
+		want = 1
+	}
+	if want > capacity {
+		want = capacity
+	}
+	if b.tokens < want {
 		return false
 	}
-	b.tokens--
+	b.tokens -= want
 	return true
 }

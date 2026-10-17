@@ -19,7 +19,11 @@ import (
 // return on another's behalf however it fills in the body.
 func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string) {
 	var ret job.Return
-	if err := transport.ReadJSON(w, r, transport.MaxRequestBody, &ret); err != nil {
+	// SPEC 6.5's return bound, which was written down and not enforced:
+	// this read MaxRequestBody, 64 MiB, and a node was sent the job, so
+	// it could file that much against every job it got (issue 321,
+	// M-13).
+	if err := transport.ReadJSON(w, r, transport.MaxReturnBody, &ret); err != nil {
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
