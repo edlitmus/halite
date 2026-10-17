@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -81,6 +82,9 @@ func registerSysrc(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				name, val := states.Str(args, "name", ""), states.Str(args, "value", "")
+				if err := sysrcValid(name, val); err != nil {
+					return nil, err
+				}
 				if c.Test {
 					return val, nil
 				}
@@ -166,8 +170,34 @@ func sysrcGet(c *exec.Context, name, file string) (string, bool, error) {
 }
 
 func sysrcSet(c *exec.Context, name, val, file string) error {
+	if err := sysrcValid(name, val); err != nil {
+		return err
+	}
 	_, err := c.Run(exec.Command{Argv: sysrcArgv(file, name+"="+val)})
 	return err
+}
+
+// sysrcValid refuses a setting that sysrc would write as code.
+//
+// **rc.conf is a shell script, sourced as root at every boot, and sysrc
+// does not escape what it writes into it** (issue 321, M-45). Measured on
+// beastie (FreeBSD 15.1) against a scratch file: `sysrc 'bar=x"; echo
+// pwned; "'` wrote `bar="x"; echo pwned; ""` and sourcing it printed
+// "pwned"; `baz=$(id)` ran id; a newline in a value put a second line in
+// the file. So a value holding `"`, `$`, a backquote, a backslash or a
+// control character is refused rather than handed over, and so is a name
+// that is not a shell variable's, which a leading `-` would make an
+// option to sysrc. Values a tree writes into rc.conf -- YES, NO, flags,
+// addresses, paths -- need none of these.
+func sysrcValid(name, val string) error {
+	if !isShellName(name) {
+		return fmt.Errorf("%q is not an rc.conf setting name: rc.conf variables are shell names", name)
+	}
+	if strings.ContainsAny(val, "\"$`\\") || strings.IndexFunc(val, unicode.IsControl) >= 0 {
+		return fmt.Errorf("the value for %s holds a quote, `$`, a backquote, a backslash or a control character; "+
+			"rc.conf is sourced as root at boot and sysrc does not escape it, so it would run as code", name)
+	}
+	return nil
 }
 
 func sysrcPresent(c *exec.Context, args *value.Map) (states.Result, error) {
@@ -176,6 +206,9 @@ func sysrcPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	file := states.Str(args, "file", "")
 	if name == "" {
 		return states.False("This state needs an rc.conf setting name."), nil
+	}
+	if err := sysrcValid(name, want); err != nil {
+		return states.False(err.Error()), nil
 	}
 	if c.Which("sysrc") == "" {
 		return states.False("Sysrc was not found on this node; the sysrc module manages FreeBSD's rc.conf."), nil
