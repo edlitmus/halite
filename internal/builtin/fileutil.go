@@ -58,6 +58,38 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	})
 }
 
+// followLink is the file a file state's write to path should replace:
+// path itself, or, when path is a symbolic link, the file it points to.
+//
+// **A file state edits through a link; it does not replace it** (issue
+// 321, M-19). writeAtomic renames a new file over the path, and over a
+// link that put a regular file where the link was: `file.managed` on
+// `sites-enabled/app.conf` left the real configuration stale, made a new
+// file with the link's 0777 (Lstat's mode, on Linux) and called it
+// converged, and the edit functions did the same after reading through
+// the link. Salt's file.managed follows by default (`follow_symlinks:
+// True`), and so do these now.
+//
+// Only the file states. writeAtomic itself does not follow, because some
+// of its callers must not: the timezone module writes /etc/localtime,
+// which on many systems is a link into the zoneinfo database, and
+// following it would rewrite the zone file every other process reads.
+//
+// A link that does not resolve is refused by name rather than replaced
+// or followed into a file nobody asked for.
+func followLink(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		to, _ := os.Readlink(path)
+		return "", fmt.Errorf("%s is a symbolic link to %s, which does not resolve: %w", path, to, err)
+	}
+	return real, nil
+}
+
 // hashFile digests a file with the named algorithm.
 func hashFile(path, algorithm string) (string, error) {
 	h, err := newHash(algorithm)
