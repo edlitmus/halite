@@ -30123,6 +30123,31 @@ only". One of them is not small.
 tools. The sysrc measurement used a scratch file, not /etc/rc.conf, and
 no boot.
 
+### 5.350 gitfs read a whole archive into memory before checking its size
+
+Issue 321 finding M-53. `materialise` ran `git archive` into a
+`bytes.Buffer` and handed the bytes to `extractTar`, which then checked
+`MaxArchiveBytes` (2 GiB). Every branch of a gitfs remote is an
+environment, so anyone who could push any branch could push a tree of
+several gigabytes, and the hub held all of it in memory on every update.
+
+**Reproduced.** `TestAnArchivePastTheBoundIsRefusedWithoutReadingIt`
+gives `Options` a fake `git` whose `archive` writes a tar header for a
+3 GiB file and then `cat /dev/zero`. Against main's `git.go` and
+`tar.go`, the test process was killed by a signal after six seconds of
+buffering: on this workstation, the memory filled before any check ran.
+With the fix the entry is refused at its header, in under a millisecond,
+and the test holds the allocation under 64 MiB and the refusal under
+five seconds.
+
+**The fix.** `runStream` starts git with its stdout as a pipe and hands
+the pipe to the consumer. `extractTar` takes an `io.Reader`. Its file
+count and byte limits apply as entries arrive, and when the consumer
+stops early, git is killed and the pipe drained rather than waited on.
+What the tar reader holds at once is bounded by Go's own header limits.
+
+**Not done.** The limits are the existing constants, not configuration.
+Not run against a real remote or on the hub.
 
 
 ## 6. Everything else not started
