@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The `format` filter formats as Python's `%` does
+
+`"%s" | format(true)`, `%r` and `%(name)s` used to fail, and other
+conversions rendered Go's answer rather than Python's: `%g` of 1/3 was
+`0.3333333333333333`, not `0.333333`, and `%x` of a string printed its
+bytes in hex. The filter is now Python's `%` operator, as in Jinja. **A
+file rendered through it may change** to what Salt wrote (issue 321,
+M-52). DIVERGENCE 5.370.
+
 ### `str.format` in templates applies its spec, and floats render as Python's
 
 `"{:>8}"`, `"{:.2f}"`, `"{:,}"` and every other format spec were
