@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 45 | 10: 3 mentioned and explicitly left, 2 half done, 5 not started |
+| Medium (55) | 46 | 9: 3 mentioned and explicitly left, 2 half done, 4 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -66,13 +66,14 @@ not do. Each has been checked to see whether it happened.
 | M-16 webhook ingress (`auth: mtls` now refused) | #359 | | |
 | M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
 | M-24 `git.latest user` ignored | #390 | | **done** as root on beastie (5.350) |
-| M-25 `enroll --force` pair | #391 | a refusal drops the new key | **done** against a real hub in-process (5.351); M-26, the same shape in renewal, is still open |
+| M-25 `enroll --force` pair | #391 | a refusal drops the new key | **done** against a real hub in-process (5.351); M-26, the same shape in renewal, by #400 |
 | M-27 script with runas | #392 | | **done** as root on Ubuntu and beastie (5.352) |
 | M-42 LVM alias with `-ff` | #393 | `pvremove` and `lvmFindPV` too | **done** as root on Ubuntu against real LVM, which does not refuse `-ff` (5.353) |
 | M-45 free-form values (modprobe, pkgrepo, nftables, fstab; sysrc, sysctl, debconf) | #394, #395 | ufw was already held by M-37 | **done** (5.354, 5.355): nft's reading of `;` measured on Ubuntu, sysrc's on beastie; the modules not driven against the tools |
 | M-53 gitfs buffers the archive | #396 | the file count and byte limits apply as entries arrive | **done** (5.356): main was killed buffering 3 GiB; not run against a real remote or on the hub |
 | M-51 s3fs staleness | #397 | truncation at the bound, deleted objects, in-place writes, colliding sanitised names | **done** (5.357) against the package's fake S3; not run against S3 |
 | M-03 govulncheck in CI | #398 | `make vuln` pinned to the same version | **done** (5.358): a `vuln` job; `make vuln` run on Ubuntu and under BSD make on beastie |
+| M-26 renewal install order | #400 | `enroll --force`'s pending install uses the same order | **done** (5.360) against a hub in-process; no real crash or full disk |
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
@@ -133,12 +134,11 @@ Severities are this file's revised ones, from the tables below.
   (DIVERGENCE 5.338). Not done: a per-source rate limit, which needs
   `enroll --wait` to retry a refusal it treats as final today.
 
-**Medium, not started (5).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (4).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
 |---|---|---|
-| M-26 | renewal ordering (recoverable) | Low |
 | M-34 | pin without release | Low |
 | M-40 | `iptables.save` | Low |
 | M-47 | firewall lockout, no `-w` | Low |

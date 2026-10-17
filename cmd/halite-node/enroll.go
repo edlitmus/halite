@@ -128,6 +128,13 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 	}
 
 	defer n.lockIdentity()()
+	// An install interrupted between its key and its certificate is
+	// finished here, before the pair is read. See renewal.InstallIdentity.
+	if installed, err := renewal.Recover(files); err != nil {
+		n.log.Warn("an interrupted certificate install could not be finished", "error", err.Error())
+	} else if installed {
+		n.log.Info("finished installing a certificate an earlier run was interrupted after issuing")
+	}
 	if files.Exists(pki.NodeCertFile) && files.Exists(pki.NodeKeyFile) {
 		pair, err := files.KeyPair(pki.NodeCertFile, pki.NodeKeyFile)
 		if err != nil {
@@ -209,11 +216,12 @@ func runEnroll(args *cli.Args) int {
 		}
 
 		if pending {
-			if err := installPendingKey(files); err != nil {
+			// The certificate first and the key second, so that an
+			// interruption leaves something Recover can finish.
+			if err := renewal.InstallIdentity(files, got, func() error { return installPendingKey(files) }); err != nil {
 				cli.Fatalf("%v", err)
 			}
-		}
-		if err := writeIdentity(files, got); err != nil {
+		} else if err := writeIdentity(files, got); err != nil {
 			cli.Fatalf("%v", err)
 		}
 		fmt.Printf("enrolled: %s\n", files.Path(pki.NodeCertFile))

@@ -30276,6 +30276,45 @@ seven wrong:
 
 None of these changes the branch a comparison takes; each is a separate
 change.
+### 5.360 A renewal interrupted between its key and its certificate lost the certificate
+
+Issue 321 finding M-26, Low; the triage corrected "unrecoverable" to
+"recoverable by hand". `renewal.Identity` asked the hub to renew, moved
+the old key aside, wrote the new key, then wrote the certificate. The hub
+revokes the old serial when it issues the new one. So a node that died,
+filled its disk or failed the certificate write between the last two
+steps held the new key beside the old, revoked certificate, and the newly
+issued certificate existed nowhere. Recovering meant deleting `node.crt`
+and enrolling again by hand.
+
+`InstallIdentity` now writes the certificate to `node.crt.new` before
+anything else, then installs the key, then renames the certificate into
+place. At every point the files are either the old pair, or the new key
+with its certificate in `node.crt.new`. `Recover`, which the node runs
+before it loads its identity, installs a `node.crt.new` that goes with
+`node.key`, and drops one that does not (an install that never reached
+the key). `enroll --force`'s pending-key install (5.351) has the same
+window and uses the same order.
+
+`TestAnInterruptedInstallIsFinishedByRecover` stops an install after the
+key and before the rename, confirms the pair no longer matches, and
+requires `Recover` to install the certificate. It then plants a stale
+`node.crt.new` and requires `Recover` to drop it and leave the working
+pair alone. Making `Recover` a no-op fails it.
+
+`TestARenewalInstallsAMatchingPairAndLeavesNothingStaged` takes the
+path a node takes, against a hub in the test's process: `renew --force`
+must leave a new serial, a pair that matches and no `node.crt.new`.
+Leaving out the final rename fails it ("tls: private key does not match
+public key"). It then makes an interrupted install by hand, the new key
+beside the old certificate with the new one staged, and requires a plain
+`renew` to come back with a matching pair. Making `Recover` a no-op fails
+that half with exit 1.
+
+**Not done.** A failure between the certificate rename and the CA write
+leaves an old CA bundle, which the node can still use. No install was
+interrupted by a real crash or a full disk: the interrupted state is
+made by writing the files. Not run on a node of the fleet.
 
 
 

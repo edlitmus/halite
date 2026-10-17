@@ -481,8 +481,10 @@ Two programs hold such an identity. A node renews its own from \`halite-node con
 **Exports.**
 
 - `Identity` (func): Identity renews the identity in files over client, which must be authenticated by the certificate being renewed.
+- `InstallIdentity` (func): InstallIdentity puts an issued certificate and its new key in place: the certificate first, to node.crt.new, then the key (installKey), then the certificate renamed over node.crt.
 - `Loop` (func): Loop checks the certificate current reads, at once and then on pki.RenewalCheckEvery, and calls renew once it is due (pki.DueForRenewal).
 - `PruneKeysAside` (func): PruneKeysAside removes every key an earlier renewal set aside, keeping keep -- the one this renewal just made, which is the way back if the new identity turns out to be bad.
+- `Recover` (func): Recover finishes an InstallIdentity that was interrupted: when node.crt.new goes with node.key, it becomes node.crt.
 - `Renewed` (type): Renewed is what a successful renewal produced.
 - `SetKeyAside` (func): SetKeyAside moves the current key to node.key.renewed.<UTC time> and returns where.
 - `WriteIdentity` (func): WriteIdentity writes the certificate an enrollment or a renewal returned, and the CA with it when the hub sent one.
