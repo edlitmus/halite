@@ -30276,8 +30276,7 @@ seven wrong:
 
 None of these changes the branch a comparison takes; each is a separate
 change.
-
-### 5.352 A renewal interrupted between its key and its certificate lost the certificate
+### 5.360 A renewal interrupted between its key and its certificate lost the certificate
 
 Issue 321 finding M-26, Low; the triage corrected "unrecoverable" to
 "recoverable by hand". `renewal.Identity` asked the hub to renew, moved
@@ -30303,9 +30302,21 @@ requires `Recover` to install the certificate. It then plants a stale
 `node.crt.new` and requires `Recover` to drop it and leave the working
 pair alone. Making `Recover` a no-op fails it.
 
+`TestARenewalInstallsAMatchingPairAndLeavesNothingStaged` takes the
+path a node takes, against a hub in the test's process: `renew --force`
+must leave a new serial, a pair that matches and no `node.crt.new`.
+Leaving out the final rename fails it ("tls: private key does not match
+public key"). It then makes an interrupted install by hand, the new key
+beside the old certificate with the new one staged, and requires a plain
+`renew` to come back with a matching pair. Making `Recover` a no-op fails
+that half with exit 1.
+
 **Not done.** A failure between the certificate rename and the CA write
-leaves an old CA bundle, which the node can still use. Not run against a
-hub: the test drives the files directly.
+leaves an old CA bundle, which the node can still use. No install was
+interrupted by a real crash or a full disk: the interrupted state is
+made by writing the files. Not run on a node of the fleet.
+
+
 
 ## 6. Everything else not started
 

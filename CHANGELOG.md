@@ -27,7 +27,7 @@ If a node stopped between writing its new key and writing its renewed
 certificate, it kept the new key, the old (already revoked) certificate,
 and no copy of the new one, and needed to be enrolled again by hand. The
 certificate is now written first, as `node.crt.new`, and the node
-installs it the next time it starts (issue 321, M-26). DIVERGENCE 5.352.
+installs it the next time it starts (issue 321, M-26). DIVERGENCE 5.360.
 
 ### Chained comparisons and `**` in templates now mean what they do in Jinja
 
