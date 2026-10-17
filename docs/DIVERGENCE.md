@@ -29888,6 +29888,53 @@ command ran as "".
 account needs the target's parent to be writable by it, as it does for
 Salt. `git` has no evidence entry, and this does not add one.
 
+### 5.347 enroll --force broke the node's identity whenever the hub did not issue at once
+
+Issue 321 finding M-25, which the triage found worse than reported.
+`enroll --force` moved `node.key` aside and wrote a new one before it
+asked the hub, while `node.crt` stayed. Whatever the hub then said, other
+than an immediate certificate, left a certificate and a key that did not
+go together:
+
+- pending, which is manual mode's normal answer;
+- refused, which is what it says to `--force` on a node it has accepted,
+  because a different key presents an established name;
+- unreachable, or the run interrupted.
+
+Every later `enroll`, with `--force` or without, and the next `connect`,
+then died at `files.KeyPair` with "do not go together". A second
+`--force` rotated the key again while the hub held a pending request for
+the first one.
+
+**Reproduced against a real hub.** `enroll_force_test.go` runs the
+`halite-node` binary against an in-process `hub.Server` in manual mode.
+Against main's `enroll.go`, both tests failed with the node's
+certificate and key "no longer go together": one after a pending
+`--force`, one after a refused one.
+
+**The fix.** A forced key is written as `node.key.pending`, and the node
+keeps the identity it had. A later plain `enroll`, which is what the
+pending message tells the operator to run, finds the pending key and
+continues the request with it, so the hub sees the fingerprint it is
+holding. When a certificate arrives for it, the old key is moved aside
+as `--force` always did, the pending key installed, and the certificate
+written, in renewal's order. A refusal deletes the pending key and says
+"this node keeps the certificate and key it had". A first enrollment,
+with no identity to keep, writes `node.key` directly as before.
+
+**Tests.**
+
+- `TestEnrollForceKeepsAWorkingIdentityUntilIssued`: enrol and accept,
+  delete the record as for a rebuilt node, `--force` (pending), a plain
+  `enroll` that must ask with the same fingerprint, accept, collect.
+  The pair must match at every step, and the installed key must be the
+  one the hub issued for.
+- `TestARefusedEnrollForceKeepsTheIdentity`.
+
+**Not done.** M-26, renewal writing the key and then the certificate
+with nothing between them to recover from, is the same shape at install
+time, and is still open. This install has the same window: the key is
+renamed and then the certificate written.
 
 
 ## 6. Everything else not started
