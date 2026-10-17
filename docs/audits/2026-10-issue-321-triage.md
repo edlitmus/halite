@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 49 | 6: 3 mentioned and explicitly left, 2 half done, 1 measured and left |
+| Medium (55) | 50 | 5: 3 mentioned and explicitly left, 1 half done, 1 measured and left |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -77,6 +77,7 @@ not do. Each has been checked to see whether it happened.
 | M-34 RPM pin without a release | #401 | RedHat and Suse only; the epoch still counts, as in Salt | **done** (5.361) against Salt 3007.1's rule; no RPM host |
 | M-40 `iptables.save` (and `nftables.save`) | #402 | nftables' counters, the same defect | **done** (5.362) against iptables 1.8.10 and nftables 1.0.9 in a network namespace |
 | M-48 D-Bus 90 s deadline | #403 | method calls keep 90 s; a job waits for systemd or the caller | **done** (5.363) as root on Ubuntu with a 95 s unit |
+| M-52 templates vs Jinja | #399, #405–#410 | chained comparisons, `**`, `~`, `tojson`, `dict()`, `round`, `str.format` specs, float rendering, `\|format` | **done** (5.359, 5.365–5.370), each against jinja2 3.1.2 or Python 3.12.3; the corpus's tuple cases and `dict()`'s keyword order left |
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
@@ -126,14 +127,6 @@ Severities are this file's revised ones, from the tables below.
 
 **Medium, half done.**
 
-- **M-52**, Medium: #399 makes comparisons chain and `**` left
-  associative over unary operands, as Jinja does, against values
-  captured from jinja2 3.1.2 (DIVERGENCE 5.359); #405 gives `~` Jinja's
-  precedence (5.365); #406 escapes `tojson` as Salt's does (5.366); #407
-  lets `dict()` take a list of pairs (5.367); #408 rounds as Python does
-  (5.368); #409 applies `str.format` specs and renders floats as Python's
-  `str()` (5.369). Not done: `|format`'s `%s` idioms, which fail loudly
-  rather than render something else.
 - **M-06**, Medium: #378 bounds the enrollment body (64 KiB, read
   within 10 s), the CSR (16 KiB) and the pending records (1,024), and
   lets a spent token take a name from a pending record of another key

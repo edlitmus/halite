@@ -94,3 +94,63 @@ with open(os.path.join(out, "str.tsv"), "w", encoding="utf-8") as f:
             xs.append(rnd.uniform(-1e6, 1e6) * 10 ** rnd.randint(-20, 20))
     for x in xs:
         f.write(f"{x!r}\t{x}\n")
+
+# percent.tsv: printf-style formatting, Jinja's `format` filter, which is
+# `str % args` (or `% kwargs`). Each line is the format, the arguments as
+# kind:value pairs joined by \x1f, and Python's result or "!" and the
+# exception's name. A keyword argument is written key=kind:value.
+PVALS = [("s", v) for v in ["", "a", "abc", "hello world", "é"]] + \
+        [("i", v) for v in [0, 1, -1, 7, 42, -42, 255, 1000, -1234567, 10**12]] + \
+        [("f", v) for v in [0.0, -0.0, 1.0, 0.5, 2.5, 3.14159, -3.14159, 100.0,
+                            1e16, 1.5e-7, 123456.789, 1 / 3, 2.675, math.inf,
+                            -math.inf, math.nan, 1e-5]] + \
+        [("b", True), ("b", False), ("n", None)]
+
+
+def penc(kind, v):
+    return kind + ":" + (repr(v) if kind == "f" else str(v))
+
+
+def conv():
+    s = "%"
+    for flag in "#0- +":
+        if rnd.random() < 0.15:
+            s += flag
+    if rnd.random() < 0.5:
+        s += str(rnd.randint(0, 12))
+    if rnd.random() < 0.35:
+        s += "." + str(rnd.randint(0, 7))
+    if rnd.random() < 0.05:
+        s += rnd.choice("hlL")
+    return s + rnd.choice("sssrdiuxXoeEfFgGc")
+
+
+with open(os.path.join(out, "percent.tsv"), "w", encoding="utf-8") as f:
+    n = 0
+    while n < 3000:
+        pre = rnd.choice(["", "", "x=", "[", "a b "])
+        post = rnd.choice(["", "", "]", " end", "%%"])
+        if rnd.random() < 0.15:
+            keys = rnd.sample(["a", "b", "name"], rnd.randint(1, 2))
+            fmt = pre + "".join("%(" + k + ")" + conv()[1:] for k in keys) + post
+            kw = {k: rnd.choice(PVALS) for k in ["a", "b", "name"] if rnd.random() < 0.8}
+            if not kw:
+                continue
+            argtext = "\x1f".join(k + "=" + penc(*kv) for k, kv in sorted(kw.items()))
+            try:
+                got = fmt % {k: kv[1] for k, kv in kw.items()}
+            except Exception as e:  # noqa: BLE001
+                got = "!" + type(e).__name__
+        else:
+            count = rnd.choice([1, 1, 1, 2, 3])
+            fmt = pre + " ".join(conv() for _ in range(count)) + post
+            args = [rnd.choice(PVALS) for _ in range(count + rnd.choice([0, 0, 0, 0, 1, -1]))]
+            argtext = "\x1f".join(penc(*a) for a in args)
+            try:
+                got = fmt % tuple(a[1] for a in args)
+            except Exception as e:  # noqa: BLE001
+                got = "!" + type(e).__name__
+        if any(ch in got for ch in "\t\n\r\x1f"):
+            continue
+        f.write(f"{fmt}\t{argtext}\t{got}\n")
+        n += 1

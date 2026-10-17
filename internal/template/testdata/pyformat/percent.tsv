@@ -1,0 +1,3000 @@
+%# 6X %#x %010s%%	s:i:1000	!TypeError
+x=%o	f:2.675	!TypeError
+a b %#9X]		!TypeError
+x=%-6d %#s	s:f:0.0	!TypeError
+x=%1o end	f:2.675	!TypeError
+x=%(name)0.4r end	a=f:123456.789b=i:-42name=i:255	x=255 end
+a b %7s %.4s%%	f:123456.789i:255	a b 123456.789 255%
+[%+6s	f:-3.14159	[-3.14159
+% 11.6r	f:inf	        inf
+%(b)0 7G%(name)12.5E	a=f:-0.0b=i:1name=f:-inf	 000001        -INF
+%7s %+i	f:123456.789	!TypeError
+a b % 7F	i:1	a b  1.000000
+[%.0G		!TypeError
+%-5.1f	f:1.0	1.0  
+x=% 7r%%	f:100.0	x=  100.0%
+x=%+10F %e]	f:-3.14159f:-inf	x= -3.141590 -inf]
+%-3r %7E %+.2s]	i:7f:-0.0f:1.5e-07	7   -0.000000E+00 1.]
+[%1s	f:2.5	[2.5
+%(name)1g%(a)8u]	a=i:1000000000000b=f:100.0name=i:1000	10001000000000000]
+%(a)+12.6E%(b)4.4X	a=i:0b=f:100.0name=b:True	!TypeError
+[%#4.7d	f:1.0	[0000001
+%r %0 s end	s:af:0.3333333333333333	'a' 0.3333333333333333 end
+[%+.6i %+10.0c]	f:-0.0i:42	[+000000          *]
+a b %.4f %7.5g end	f:0.5n:None	!TypeError
+%0Lc end		!TypeError
+a b %#- +2s	f:-0.0	a b -0.0
+%.5x%%		!TypeError
+x=%4r %6i %s	i:1000f:2.675f:1.0	x=1000      2 1.0
+a b %10.3i %.0s end	i:0f:0.0	a b        000  end
+%(a)g%(name)#d%%	a=f:-3.14159b=s:hello worldname=b:True	-3.141591%
+%7e end	s:abc	!TypeError
+%#.7r %u % 8.3F	f:0.0f:1e-05f:1e-05	0.0 0    0.000
+[%0-F %F %e end	i:-1234567s:abci:-1	!TypeError
+x=%6r	i:-1234567	x=-1234567
+[%g % +o %0.1E]	f:1e-05i:7	!TypeError
+[%#G%%	i:1000	[1000.00%
+%#11Lf%%	f:0.3333333333333333	   0.333333%
+x=%#0 4E %.2r %05.4x end	f:-0.0f:1e+16i:1000000000000	x=-0.000000E+00 1e e8d4a51000 end
+%s%%	s:	%
+x=%.0c % G %.6d]	i:-1f:1e+16f:123456.789	!OverflowError
+%-9s end	s:abc	abc       end
+% hX %.1e %#12.6o%%	s:éf:1e-05	!TypeError
+x=%F%%	i:7	x=7.000000%
+[%F %09o%%	f:1e-05s:abci:-1	!TypeError
+x=%X	f:1e+16	!TypeError
+x=%(b)x%(name)s%%	a=i:1000b=n:Nonename=f:0.0	!TypeError
+% 11u%%	f:-0.0	          0%
+a b %r	i:255	a b 255
+%0u	i:-1	-1
+a b %0-X	f:1e-05i:-1234567	!TypeError
+%- 12E]	i:42	 4.200000E+01]
+a b %10e%%	i:-1	a b -1.000000e+00%
+% c	f:1.0	!TypeError
+[% .4F	f:-0.0s:hello world	!TypeError
+x=%(a)+7x%(name)0x	a=i:255	!KeyError
+%6.0X	i:1000	   3E8
+% i	s:f:123456.789	!TypeError
+a b %F]	f:1.5e-07	a b 0.000000]
+[%0s	f:2.675	[2.675
+%9.1g %#+o %#5r	i:42f:100.0s:ai:42	!TypeError
+a b %(name)-d%(a) r	a=i:1000000000000b=f:0.5	!KeyError
+%.1i %#f	f:100.0f:-0.0	100 -0.000000
+x=%(a)e]	b=f:123456.789	!KeyError
+a b %-.2F %+5G	i:255s:	!TypeError
+a b %r end	i:-42i:-42	!TypeError
+[%-.3E]	i:42	[4.200E+01]
+[%.1g % 2x end	f:-3.14159f:100.0	!TypeError
+[%u]	i:42	[42]
+%-7F		!TypeError
+a b %d]	f:123456.789	a b 123456]
+x=%12x%%		!TypeError
+a b %#-e end	f:2.5	a b 2.500000e+00 end
+x=%0i % 9u %10u	f:2.5s:abci:-1234567	!TypeError
+x=%o		!TypeError
+[%3f]	f:1.0f:2.5	!TypeError
+% u%%	f:-infi:1000	!OverflowError
+[%03g]	f:2.675	[2.675]
+x=%.1i%%	s:é	!TypeError
+a b %(name)10f]	a=f:infname=f:1.0	a b   1.000000]
+a b %+.6f %1.7s %0 .0Ls	f:-infs:abcf:0.0	a b -inf abc 
+x=%05s%%		!TypeError
+x=%-F	i:7	x=7.000000
+x=%.7e %+.2E %0.7r	b:Truef:1e+16	!TypeError
+a b %0.5r]		!TypeError
+a b %+.7G]	f:100.0f:2.5	!TypeError
+%7.4e %2r	f:0.0s:	0.0000e+00 ''
+a b %#8r		!TypeError
+a b %s %0+10s %.3F]	f:1e+16i:1000f:0.0	a b 1e+16       1000 0.000]
+%+0g %e%%	i:255f:-0.0	+255 -0.000000e+00%
+a b %s %.6X	b:Truen:None	!TypeError
+a b %6.6r]		!TypeError
+x=%1r end	s:a	x='a' end
+%10e]	f:-inf	      -inf]
+%(a)0d	b=i:42	!KeyError
+x=%# 10x %.6F%%	f:-3.14159f:1e+16	!TypeError
+% 7s %#+r end	i:-1234567f:1.0	-1234567 1.0 end
+%r%%		!TypeError
+%(a).4s%(name)LE]	a=i:1000b=i:255name=i:0	10000.000000E+00]
+a b %(name)X%(b)+s end	a=b:Falseb=i:1000000000000name=i:7	a b 71000000000000 end
+%-+.6d]	f:1.5e-07	+000000]
+x=%c]	f:nan	!TypeError
+x=%12.3E %lg%%	s:s:	!TypeError
+[%0G		!TypeError
+a b %+.7lf %#3s%%	f:1e+16	!TypeError
+x=%(a)#- 3.1d%(name)11r	a=f:1e-05b=i:42name=f:0.3333333333333333	x= 0 0.3333333333333333
+x=%(b)#-c%%	a=n:Nonename=f:-0.0	!KeyError
+a b %(b)11c%(a)r%%	a=i:1b=f:-3.14159name=f:2.675	!TypeError
+%-0.7s %-.0e %-9g end	f:1.0f:0.3333333333333333s:f:inf	!TypeError
+%-+.4c%%	i:0s:hello world	!TypeError
+[%#0r	f:inf	[inf
+[%+X	f:-inf	!TypeError
+%G %-6.6f	b:True	!TypeError
+%#+9X % u %d]	f:1e-05i:-1f:123456.789	!TypeError
+x=%(b)-8Ld	a=b:Trueb=i:42	x=42      
+a b %i end	s:	!TypeError
+%s]	f:2.675	2.675]
+%.7r]	i:1000	1000]
+x=%#-4.1d	f:2.5	x=2   
+[%-6.0r %.2e%%	s:af:1.0f:1e-05	!TypeError
+x=%#5.5G %01r %d%%	f:1e+16s:i:-42	x=1.0000E+16 '' -42%
+%4g %#5.1X	i:255s:af:1.5e-07	!TypeError
+%(a)2s%(b).2F]	a=i:-1b=s:a	!TypeError
+%+2F]	f:0.0	+0.000000]
+[%.3s	f:100.0	[100
+[%(a)0u end	name=f:0.0	!KeyError
+%(a)10G%(b)#0e	a=i:-42b=f:0.5name=f:1.0	       -425.000000e-01
+%0r	i:1000000000000i:1000	!TypeError
+%.5hF %- f%%	f:100.0f:infi:-1234567	!TypeError
+a b %.7e%%		!TypeError
+[%0- +2.1i %+4.3s	s:	!TypeError
+%+0c %+s %-+d]	f:2.675f:0.3333333333333333f:100.0i:1000	!TypeError
+[%#.7F%%		!TypeError
+x=% .4c	f:3.14159f:-3.14159	!TypeError
+%u %5.7o %#- +8.0X%%	i:0f:1e+16f:nan	!TypeError
+a b %5.3e%%	s:é	!TypeError
+%(a)5r%(name)# o	a=n:Noneb=f:1.0name=f:-3.14159	!TypeError
+[%F%%	f:inf	[INF%
+[%5u	s:hello world	!TypeError
+x=%9r]	i:-1i:1	!TypeError
+%(a)02f%(name)+.4X%%	a=f:-infb=f:infname=s:hello world	!TypeError
+%(a).6X	a=s:ab=f:-0.0	!TypeError
+%.0F]	f:-inf	-INF]
+%08s %-3.2s]	i:7f:0.3333333333333333	       7 0. ]
+% .5f end	f:100.0	 100.00000 end
+%-12G		!TypeError
+[%(a)-c end	a=s:hello worldb=f:2.675name=f:100.0	!TypeError
+[%(a) .1s%(name) +.1u end	a=f:1e+16b=b:Truename=f:0.3333333333333333	[1+0 end
+[%8X]		!TypeError
+%0hu %5c	f:-0.0	!TypeError
+%#6lf]	s:hello world	!TypeError
+%(b)12.5s%%	a=n:Noneb=i:-1	          -1%
+x=%.0E end	i:-1234567	x=-1E+06 end
+[%11u %9i %2d%%	f:123456.789f:100.0s:abc	!TypeError
+[%9.1s	i:1000000000000	[        1
+x=%0X]	i:-1	x=-1]
+[%10.3g end	f:-infb:False	!TypeError
+a b %(a)0-10o%(name)08.7g%%	a=f:nanb=f:1e-05name=f:0.0	!TypeError
+a b % s %o %+d%%	f:inff:0.5s:éi:1000	!TypeError
+%#-.3o	s:af:0.3333333333333333	!TypeError
+[%+12.6X	i:1000	[     +0003E8
+a b %(b)0G]	a=i:-1234567b=f:0.5name=f:1.0	a b 0.5]
+[%#o end	i:1000	[0o1750 end
+a b %2.3f %#G %1c	f:inff:-3.14159i:1	a b inf -3.14159 
+[%0- 9.7i %Lf]	i:0i:1000000000000f:1.0	!TypeError
+%2.1x%%	f:1.5e-07	!TypeError
+x=%1x		!TypeError
+%9f %07.2E %7s end	f:1e+16f:1e+16f:-3.14159	10000000000000000.000000 1.00E+16 -3.14159 end
+a b %-4X %10.1F end	f:123456.789i:255	!TypeError
+a b %(name)-+10e%%	b=f:1e-05name=i:42	a b +4.200000e+01%
+%5.4x	b:False	 0000
+%(b)0i%(name).3d	a=i:42b=s:abcname=f:0.0	!TypeError
+a b %2f	f:2.5	a b 2.500000
+[%11.4g %.4X end	i:-1	!TypeError
+%#11c	f:-0.0f:2.675	!TypeError
+x=%#f %#0g %#e]	b:Falsei:1000000000000f:0.5b:True	!TypeError
+a b %#2.1G	i:255	a b 3.E+02
+x=%c%%	n:None	!TypeError
+[%#12F %#-+.4s	f:nanf:3.14159f:inf	!TypeError
+[%(name)#0-4f%%	a=f:1.5e-07b=i:-42name=f:-0.0	[-0.000000%
+%-0i %.2F %#+.0f end	i:1000000000000n:None	!TypeError
+[% F % 4.3r	i:1f:1.0	[ 1.000000  1.0
+x=%+E]		!TypeError
+x=%X %.0r end	f:0.5f:nan	!TypeError
+%(name)-+8d end	a=i:1b=f:infname=f:-0.0	+0       end
+a b %#0-11E	f:2.675	a b 2.675000E+00
+[%(a)-.2x%%	a=f:3.14159b=f:-3.14159name=f:1e+16	!TypeError
+[%#-s]	i:1000000000000	[1000000000000]
+x=%F	f:3.14159	x=3.141590
+[%(name) .5X%(b)5.4e]	name=f:2.675	!TypeError
+%0+3E %12u %-1x%%	b:Truef:0.3333333333333333	!TypeError
+a b %#3.7d	f:-inf	!OverflowError
+%-+g %-x%%	f:1e-05f:2.675	!TypeError
+%#-s	s:a	a
+%8.0r]	i:0f:1.5e-07	!TypeError
+% .6c%%	i:-1	!OverflowError
+x=% .7G	f:0.5	x= 0.5
+%7e%%		!TypeError
+% u end	f:0.5	 0 end
+%0+.1G	f:0.0	+0
+%1s %3i %6.4e%%	i:-42i:1000000000000f:2.675	-42 1000000000000 2.6750e+00%
+a b %(name)#0.5X]	a=f:1.0b=f:1e+16name=f:-3.14159	!TypeError
+%3E end		!TypeError
+%7.7F%%	f:3.14159	3.1415900%
+%#+2s%%	f:1.0	1.0%
+%#09.0d %i %# .3x%%	i:255s:af:123456.789	!TypeError
+[%7s %0+g %+8g	i:-1234567i:1000	!TypeError
+x=%5u %-+2.3g %#+G	s:af:-infi:1000	!TypeError
+%4Ld %f	f:-3.14159f:1.0	  -3 1.000000
+%r end	i:-1	-1 end
+[%3c		!TypeError
+%+.1LE %#.1G %8.2i	b:Truei:-42f:0.5	+1.0E+00 -4.E+01       00
+%x	f:2.675	!TypeError
+x=%(name).4F%(b) x]	b=i:-1234567name=f:-inf	x=-INF-12d687]
+x=%6ls end	s:a	x=     a end
+x=%-5.7hG %.4i%%	f:0.0	!TypeError
+x=%0s %0c%%	f:0.3333333333333333f:0.5	!TypeError
+[%3X %0.5c %010E end	f:2.675f:0.0i:-1	!TypeError
+[%8g %0E %7.0o	f:1.0i:1	!TypeError
+%12s end	f:infi:1	!TypeError
+%.7f %#09.5hr%%	n:None	!TypeError
+%(a)#r%(b).0i%%	b=s:aname=s:	!KeyError
+%(a)#-f]	a=f:1e-05name=i:255	0.000010]
+%o %s %4o	i:42s:abcs:	!TypeError
+x=%# 2r %+9g %.4lx end	f:123456.789i:7f:1.5e-07	!TypeError
+%12.3s	f:3.14159	         3.1
+x=%3X	i:-1s:é	!TypeError
+x=%#2s]		!TypeError
+x=%8.5s end	i:-1234567	x=   -1234 end
+% .6e % .1G end	s:abcf:0.0f:1.5e-07	!TypeError
+%#8o]	n:None	!TypeError
+[%.4e %6.3g %10.4r end	f:-3.14159f:1e-05f:-0.0	[-3.1416e+00  1e-05       -0.0 end
+%+7.4F	f:1.5e-07f:2.5	!TypeError
+%F %.7s %2s	f:-infi:-42i:-42	-INF -42 -42
+%u%%	f:1.0	1%
+%#+.7e %#7Le]	i:1000f:123456.789	+1.0000000e+03 1.234568e+05]
+a b %(a).7s	a=f:1e+16b=i:7name=i:1000	a b 1e+16
+[%7g	s:é	!TypeError
+a b % .5E %G end	s:hello worldf:123456.789	!TypeError
+%(name)+12s]	a=b:Trueb=b:Truename=i:-1234567	    -1234567]
+[%1e]	s:af:0.0	!TypeError
+%-6i end	b:False	0      end
+%.7i	f:nan	!ValueError
+%#0o	i:255i:7	!TypeError
+x=%- +2s	f:2.5	x=2.5
+x=%-o %#0-f	s:	!TypeError
+% .6d %0 2c %# 0f%%	f:100.0i:42f:123456.789i:-42	!TypeError
+a b % 0f%%		!TypeError
+a b %-7g %#5r end	f:1e-05f:-inf	a b 1e-05    -inf end
+[%0-+5s %#.1c]	s:é	!TypeError
+[%0 11hg	i:7i:0	!TypeError
+%+.0e%%	f:1e+16	+1e+16%
+x=%.7e end	f:0.3333333333333333	x=3.3333333e-01 end
+a b %(a)4i%(b)0 .3r	a=s:ab=f:1e+16name=s:hello world	!TypeError
+[%4s %06g	i:1000i:0	[1000 000000
+a b %d %-.7E]	f:-infi:1	!OverflowError
+[%.3s]	s:abc	[abc]
+a b %#04x %4G	b:Truei:1	a b 0x01    1
+x=%09.0E	s:éi:-42	!TypeError
+x=%(name)10.1c%(a)0-6F%%	a=f:1.0b=f:0.5name=i:-42	!OverflowError
+%1.1x%%		!TypeError
+x=%#05E%%	i:-1234567	x=-1.234567E+06%
+[%(a)d%(b) 6s]	a=i:0b=i:42name=i:42	[0    42]
+[%-6x	i:-42	[-2a   
+%.1f %+11G	n:Nonei:7	!TypeError
+a b %-s %5LG %.2c	f:1.0f:2.5f:0.5	!TypeError
+[%#1c]	f:1e+16	!TypeError
+x=%04F %# +E %0.0s	n:Nonef:0.0f:100.0	!TypeError
+%(a)-1s%(b)0-d end	a=s:abcb=f:-0.0name=s:hello world	abc0 end
+%(name)-G	a=s:ab=s:name=f:1e-05	1E-05
+x=%0-+9.5u %u %12.4o	f:inff:1e+16b:True	!OverflowError
+a b %E %s %d]	f:123456.789i:1000s:é	!TypeError
+%.7r %r %x%%	s:hello worldf:1e-05s:é	!TypeError
+[%(name)0 4e end	a=i:255b=s:name=f:2.5	[ 2.500000e+00 end
+%#+0f%%	i:1000	+1000.000000%
+[%d %c %3E	f:-3.14159f:2.5f:-inff:-inf	!TypeError
+a b %s	f:0.0f:2.675	!TypeError
+%#- E	f:1e+16	 1.000000E+16
+x=%+G end	f:3.14159	x=+3.14159 end
+%(a)o	a=b:Trueb=f:0.5name=f:1e-05	1
+%+7r %2F end	s:abcf:1.5e-07	  'abc' 0.000000 end
+%(a)-4u	a=i:0b=f:0.0name=f:100.0	0   
+a b %+3.6s %+8u %3f end	f:nani:-42f:nan	a b nan      -42 nan end
+[%10c		!TypeError
+[%6f	i:-1	[-1.000000
+[%-u	i:255	[255
+%12s		!TypeError
+%u %+2f]	i:-42b:False	-42 +0.000000]
+x=%9o]	f:1e+16	!TypeError
+%(name)#e%%	a=f:1.0b=f:1e+16name=f:-0.0	-0.000000e+00%
+%#+6.5X %0 x %0-6.0e%%	f:-0.0f:1e-05f:2.5	!TypeError
+[%(a)0- +12i%(b) 1s]	b=f:1e-05	!KeyError
+x=%X]	f:-0.0	!TypeError
+a b %-+5F%%	f:2.675	a b +2.675000%
+x=%-o		!TypeError
+%r end	s:é	'é' end
+a b % .4g]	i:-1	a b -1]
+a b %+12.4x % s	i:1000000000000f:1e+16	a b  +e8d4a51000 1e+16
+%6u	i:-1234567	-1234567
+a b %#F end	f:3.14159f:0.3333333333333333	!TypeError
+%(a)+3F end	a=f:123456.789b=f:nanname=f:-3.14159	+123456.789000 end
+a b %5.5g %6.4F %c	i:-1234567f:3.14159f:2.5	!TypeError
+%11x %9s %0s	f:1.0f:3.14159	!TypeError
+[%(b).6s	a=s:ab=f:1e-05name=b:False	[1e-05
+%+7X	i:7	     +7
+a b % 7c %+3.1E]	s:hello worldf:inf	!TypeError
+%07.3g	b:True	0000001
+[%11e	f:1e+16	[1.000000e+16
+[%(a)4g%(name)11.2e end	a=f:1.0name=f:2.5	[   1   2.50e+00 end
+%(b)x end	a=s:ab=f:123456.789name=i:1	!TypeError
+%0+6.3d	f:1e-05	+00000
+%0+x %06s %9F%%	b:Falsei:42b:Truef:2.675	!TypeError
+x=%#0o %6X %#12o]	i:-1234567s:abci:0	!TypeError
+%11x %-+u %+s end	f:2.5f:0.5f:0.5	!TypeError
+%0i%%	f:0.3333333333333333i:42	!TypeError
+x=%9G %2o %2.5Lf%%	i:-1234567f:0.3333333333333333	!TypeError
+a b %8u %#8u %0.5X	i:1000f:1e+16f:123456.789	!TypeError
+a b %.4i		!TypeError
+a b % F %- r % +8i]	i:0s:hello worldi:-42	a b  0.000000 'hello world'      -42]
+x=%s %0c %.7x	i:0i:0i:7	x=0   0000007
+a b %#0o	f:-3.14159	!TypeError
+%F %+g %e%%	f:100.0f:1.0n:None	!TypeError
+x=%12c%%	f:2.5	!TypeError
+x=%+s %i	s:f:1e-05	x= 0
+[%+g %#0-10F end	b:Truef:-3.14159n:None	!TypeError
+x=%0+1r %10x end	f:-3.14159f:-3.14159	!TypeError
+x=%(name).6e%(a).0u	a=b:Falseb=i:7name=b:True	x=1.000000e+000
+a b %.3e		!TypeError
+[%0g	i:-42	[-42
+x=%s%%	f:2.675s:a	!TypeError
+a b %(b)11g%(name)0 6g]	a=b:Falseb=f:100.0name=f:1.5e-07	a b         100 1.5e-07]
+[%.6s	i:255	[255
+%X end	f:0.0f:1.5e-07	!TypeError
+x=%7E %10g	f:infi:1	x=    INF          1
+%0G end	i:1000000000000	1E+12 end
+[%F end	f:1e+16	[10000000000000000.000000 end
+a b %(b)-+.0s	name=i:42	!KeyError
+%.4g	f:3.14159f:1e+16	!TypeError
+%1.1c %#+u end	s:é	!TypeError
+%.6x % 9i %0 8e	b:Trues:hello worldf:-3.14159	!TypeError
+[%E]	f:inf	[INF]
+[%#0x	i:42	[0x2a
+x=%(name)-e%(a)-s	b=i:1	!KeyError
+%6E %x %012.0g]	i:1000s:a	!TypeError
+[%#4c %2.7s %11s	f:2.675f:100.0s:	!TypeError
+%3g	b:False	  0
+x=%(a)0G%(b)+11u	a=f:2.5name=f:2.5	!KeyError
+%09e end	i:1000000000000	1.000000e+12 end
+[%1.4o %2X %s end	n:Nonef:1e-05f:infi:1	!TypeError
+%(b)-7s%%	name=i:1000	!KeyError
+%2.3i end	s:hello world	!TypeError
+%(name)- +12.6s%(b)0G]	a=s:éb=f:1e-05	!KeyError
+%#s end	f:3.14159	3.14159 end
+x=%#3.2i %10.3x%%	s:é	!TypeError
+[%012F end	i:1	[00001.000000 end
+[%0+0s	s:abc	[abc
+[% .6o	f:123456.789	!TypeError
+x=%4.5g %2.3d % +0.6x%%	f:-0.0f:0.3333333333333333f:2.5	!TypeError
+x=%G]	i:0f:100.0	!TypeError
+%03.0g %# 11F %#4u]	s:abci:-42i:-1234567	!TypeError
+%i end	n:None	!TypeError
+%#8d]	f:123456.789	  123456]
+%(a)9s%(name)g end	a=i:42	!KeyError
+x=%#+.3F	n:None	!TypeError
+[% 9.7r end	i:7	[        7 end
+a b %9.7X %0r end	f:0.5f:1e-05f:3.14159	!TypeError
+[%2i %11F end	f:1.5e-07	!TypeError
+[%(b)- 11F	a=f:1e+16b=f:infname=s:hello world	[ INF       
+[%-9.5Lx %r %04f]	f:-3.14159i:-1234567	!TypeError
+a b %s %+11r	f:nanf:-0.0	a b nan        -0.0
+a b %(name)F	a=f:0.0b=s:éname=f:123456.789	a b 123456.789000
+%-+o %3E %12e	f:2.5b:Falsef:-inf	!TypeError
+x=%3s%%	i:0i:-1	!TypeError
+%0-u %#0 .5d % E]	s:hello worldf:inf	!TypeError
+%1.4e end	i:1000f:1e-05	!TypeError
+%1u %2.6s %00s end	i:0f:1.0f:-infi:42	!TypeError
+a b %(a)-.6G%(name)9.1x]	a=n:Noneb=f:1e+16name=i:1000000000000	!TypeError
+a b % 11X %10Ls	n:Nonei:42	!TypeError
+%#0-7f		!TypeError
+x=%(name)+d	b=f:2.675name=f:1.5e-07	x=+0
+[%#x		!TypeError
+%#9u]	f:123456.789	   123456]
+%(name)0+.6d%(a)0X end	b=f:2.675	!KeyError
+x=%c %6.4g %-0.7s%%	f:3.14159f:1.0b:False	!TypeError
+a b %o %s %0r%%	f:0.3333333333333333i:42	!TypeError
+%e]	f:1e+16i:1000	!TypeError
+x=%00.2X	i:-1234567f:1e-05	!TypeError
+%.2s %11.5i %d end	s:ai:-42	!TypeError
+x=% 6E %lg]	i:-42s:abc	!TypeError
+% .2X %3.1d %6.7E%%	f:1.0f:100.0	!TypeError
+[%5F %-.2X %1F]	s:éf:123456.789b:False	!TypeError
+a b %0 F %+0.4s %#G end	b:Falsef:1.5e-07	!TypeError
+%#X%%	s:abcs:a	!TypeError
+[%.4i]	f:0.0	[0000]
+x=%+X%%	f:0.0	!TypeError
+x=%-3u % d%%	f:-inff:1e+16f:1e+16	!OverflowError
+x=%# 1s%%	f:1.5e-07	x=1.5e-07%
+a b %# f end	i:-1234567	a b -1234567.000000 end
+[%-o %i %0X%%	f:1.0s:abcf:0.0	!TypeError
+%+9.7x	f:nan	!TypeError
+%.3e %7i %s	f:1.0f:2.5	!TypeError
+[%-+10X %+4.7s %.7r end	f:2.675f:0.3333333333333333f:1e-05	!TypeError
+%-.4F]	f:0.0	0.0000]
+[%0+9f %4.2s %#hs%%	f:-3.14159f:1e+16f:-3.14159	[-3.141590   1e -3.14159%
+a b %(name)u	a=f:infname=f:inf	!OverflowError
+%+5i %+s %f]	i:7f:0.5s:abci:-1	!TypeError
+a b %0.3c	f:1e+16	!TypeError
+a b %10u %09.2X	f:-inff:-3.14159	!OverflowError
+a b %+9r %5.1c %G]	f:2.5s:hello worldb:Truei:255	!TypeError
+%0-7u]	i:-1234567i:1	!TypeError
+%-+r end	i:-42f:100.0	!TypeError
+[%10.0F end		!TypeError
+%#s %#-.3d end	n:None	!TypeError
+a b %(a)2.2G%(name)F	a=f:nanb=i:-1234567name=f:3.14159	a b NAN3.141590
+%# .0G end	f:1.5e-07s:é	!TypeError
+[%(b)012s	a=f:2.675b=f:-0.0	[        -0.0
+[%#04G%%	f:-inf	[-INF%
+%#0.0s%%	i:255f:0.3333333333333333	!TypeError
+a b %#X %-.2o %s%%	s:f:1.5e-07s:a	!TypeError
+%12s %+0i%%	i:0f:100.0s:	!TypeError
+%(b)2F%(name)9i end	a=i:255b=f:1.5e-07name=f:100.0	0.000000      100 end
+a b %5.0f %08.3c % +9G end	b:Trues:hello worldb:True	!TypeError
+%11u%%	f:nan	!ValueError
+x=% 2e % .7E]	s:abcs:a	!TypeError
+[%0g	i:255	[255
+[%8.4X end	s:é	!TypeError
+% .7s %8u]	i:1000000000000i:1000000000000	1000000 1000000000000]
+[%-+7r	i:7	[7      
+x=%E	i:-1	x=-1.000000E+00
+%.6d %#+9.7e %f]	f:123456.789b:Falses:	!TypeError
+[%#10o %0.4x%%	i:7s:hello world	!TypeError
+[%1f	n:None	!TypeError
+a b %#.7o end		!TypeError
+% 5.1f		!TypeError
+%+1X %c %-+5.1u%%	f:3.14159f:0.3333333333333333	!TypeError
+a b %(a) +f%(b)#F%%	a=f:3.14159b=f:1e+16name=f:0.0	a b +3.14159010000000000000000.000000%
+%+x %+x %06X%%	s:f:infs:abcf:inf	!TypeError
+%G%%	n:None	!TypeError
+a b %7.1g %8.0g %#08d	f:0.5s:abcf:0.3333333333333333	!TypeError
+[%08E%%	f:100.0	[1.000000E+02%
+%#+s %#X %0c	f:3.14159i:7f:0.0	!TypeError
+x=%(b)11.7x	a=i:0name=i:1000000000000	!KeyError
+a b %i %#-+s %.0c	f:100.0f:1.5e-07f:3.14159	!TypeError
+%#7.3c end	f:0.5	!TypeError
+%o%%	i:-1	-1%
+%(a)i%(b) 5g	a=i:1b=f:-3.14159name=f:123456.789	1-3.14159
+%(b) +5X%(a)#8.5g	name=i:1	!KeyError
+[% 10.6r%%	f:inf	[       inf%
+%3.6g	f:1.5e-07i:1000000000000	!TypeError
+a b %Lu %4s]	f:2.5f:0.5f:inf	!TypeError
+x=%4f %9.2f end	f:-3.14159f:1.0f:1e+16	!TypeError
+%G]		!TypeError
+[%g %-6G %# s]	f:1e+16s:hello worldn:None	!TypeError
+x=%#.7i%%	i:42	x=0000042%
+[%+s %0-i	i:1000	!TypeError
+[%#- .5u	f:123456.789	[ 123456
+%-i end	f:123456.789	123456 end
+[%5.2f %s % 7s end	f:0.5f:2.675f:2.5	[ 0.50 2.675     2.5 end
+[%0s]	s:abc	[abc]
+a b %1d	i:-1f:100.0	!TypeError
+x=%+u%%		!TypeError
+x=% .0e %0.7X]	b:Falsef:3.14159	!TypeError
+a b %8.0e	f:3.14159	a b    3e+00
+%#-2s	f:0.3333333333333333	0.3333333333333333
+%(name)01G	a=f:0.0b=s:éname=f:-0.0	-0
+%.3F end		!TypeError
+%0X	i:-42	-2A
+a b % .4e]		!TypeError
+a b %9.3Ls %#-f]	f:nanf:inf	a b       nan inf]
+x=%(name)1.4X%(a)-0.5c	a=f:0.3333333333333333b=f:0.3333333333333333name=f:-0.0	!TypeError
+[%F %-c %9d end	s:b:Falsef:-0.0	!TypeError
+%7.5F %07u %0 0.5X%%	f:1e-05f:0.3333333333333333i:1000	0.00001 0000000  003E8%
+%0+.5x end	f:1.5e-07	!TypeError
+a b %7s	f:0.0	a b     0.0
+a b %(a)1f%(name)4r%%	a=f:3.14159b=i:0name=i:-1	a b 3.141590  -1%
+[% 1s	n:None	[None
+%(a)011.6o%%	b=n:Nonename=f:2.675	!KeyError
+x=%#-+12x %.4e %0- 7s%%	i:42i:7i:42	x=+0x2a        7.0000e+00 42     %
+%-.0E end	f:-0.0i:1000	!TypeError
+[%e%%	s:é	!TypeError
+[%10.7r]	f:0.5	[       0.5]
+%9F end	f:100.0	100.000000 end
+% e %11F % 0s]	i:255i:42s:abc	 2.550000e+02   42.000000 abc]
+[%11s %+0.1s end	f:1e-05	!TypeError
+%11d %8r	f:2.5	!TypeError
+[%#r]	f:nan	[nan]
+[%u		!TypeError
+%+ld	b:False	+0
+x=%0e % +9r	f:0.5f:1e+16b:True	!TypeError
+[%.4X %x %0F%%	s:as:i:7	!TypeError
+%0-6.4o	f:1e+16	!TypeError
+%6s	f:1.0	   1.0
+[%-E	f:1.5e-07	[1.500000E-07
+x=%+u]	s:é	!TypeError
+x=%0X end	s:hello world	!TypeError
+%1d %-2f	b:Truef:100.0	1 100.000000
+[%(name) e end	b=s:name=f:0.5	[ 5.000000e-01 end
+% 6E %.1e]	f:0.3333333333333333s:hello world	!TypeError
+a b %0s %0u % .3i	s:ai:1000000000000i:7	a b a 1000000000000  007
+a b %- 9s %#+.1i	i:-42i:-42	a b -42       -42
+%0-6.6E % 5.5s % +F%%	f:-3.14159f:nan	!TypeError
+% 3.1u %#+6.7f %1E]	i:1i:7s:i:255	!TypeError
+a b %X]	f:1.5e-07	!TypeError
+a b %#c %-3s %-x	s:abci:7b:Falsef:-3.14159	!TypeError
+%(b)# .7c%(a)-E]	a=f:0.3333333333333333b=f:0.5name=i:7	!TypeError
+[%4G %u	s:abcf:2.5	!TypeError
+x=%(b)d%(name) g%%	a=n:Noneb=f:2.675name=b:True	x=2 1%
+a b %12F	i:7	a b     7.000000
+x=%+i end	f:3.14159	x=+3 end
+%(a)X	a=f:-3.14159b=i:1000name=i:255	!TypeError
+[%(a)Lu%(b)11F	a=i:42b=n:None	!TypeError
+%#10s %0 +d %+5s end	i:0s:af:3.14159	!TypeError
+[%0 +.7d %9.7G %G%%	i:-1f:infb:True	[-0000001       INF 1%
+%#o	f:123456.789	!TypeError
+a b %r %11.5i %+d%%	f:3.14159s:hello worldi:-1234567	!TypeError
+[%(b)+2d%(a)d	a=i:7b=i:-1234567name=f:0.5	[-12345677
+%04.7u %s	f:-inff:1e+16	!OverflowError
+%(name) +.0x%(a)-7g%%	b=f:3.14159name=f:2.5	!TypeError
+x=%(a)- 10d]	a=s:b=s:name=i:-42	!TypeError
+x=%(name).7hc%(a)0+d end	a=s:hello worldb=b:Truename=f:100.0	!TypeError
+%(a)0.4g%(b)u	a=i:1000000000000b=i:7name=i:-1	1e+127
+x=%.3r	i:0f:1.0	!TypeError
+[%01.6G%%	s:abci:0	!TypeError
+%-.2s %0s end	s:és:	é  end
+[% d %0x]	b:Truei:7	[ 1 7]
+x=%#0 .5f	i:1	x= 1.00000
+a b %(b)lE%(name)+lG%%	a=i:-1b=f:1.0name=s:hello world	!TypeError
+x=%(b)#8F	b=i:1	x=1.000000
+a b %#+.7d %10.4f end	i:1000	!TypeError
+[%10s %# +9.7e %-.4i end	s:af:0.3333333333333333f:-3.14159	[         a +3.3333333e-01 -0003 end
+a b %#r%%	f:0.5	a b 0.5%
+a b %#0+10.0g]	f:0.0	a b +00000000.]
+x=%4E %#.3s	f:3.14159s:a	x=3.141590E+00 a
+a b %+11.7u	f:1e+16	a b +10000000000000000
+a b %-4e%%	f:nan	a b nan %
+%- i %#6.1F %10.4e	i:1i:1f:0.0	 1    1.0 0.0000e+00
+[%12s % s	f:-0.0f:0.5	[        -0.0 0.5
+%#8s	b:Falsef:1e-05	!TypeError
+a b %#- 7e end		!TypeError
+%7X %-12.4E %-0G]	f:1.5e-07i:42f:0.3333333333333333	!TypeError
+a b %-+c %#-f %1i end	f:0.0b:Falsef:3.14159f:123456.789	!TypeError
+[%1d %#10i	f:2.675s:abc	!TypeError
+x=%.7G%%	i:-1234567i:7	!TypeError
+%+2.5o	i:42	+00052
+%+10hf %+7d % hx]	i:1f:nanf:1.0	!ValueError
+a b %X %7.3g %#.0d end	f:-0.0i:-1234567f:0.3333333333333333f:3.14159	!TypeError
+%(name)+o%(a)#5e]	b=i:42name=s:é	!TypeError
+%0 +F	f:-0.0	-0.000000
+[%8X end	i:0f:2.675	!TypeError
+a b %- G %0u	f:-inff:100.0i:-1	!TypeError
+%+11G end		!TypeError
+x=% +2s%%	f:-infs:hello world	!TypeError
+a b %+11d %he %#-8F]	f:1e-05s:a	!TypeError
+%-+10s]	i:42	42        ]
+a b %.3f%%	s:és:é	!TypeError
+%-Ls		!TypeError
+% 12.5d %.7X %#E]	b:Falsef:1e+16f:-3.14159	!TypeError
+% x end		!TypeError
+%2f %7f %- +F	f:1.5e-07f:0.3333333333333333i:-1234567	0.000000 0.333333 -1234567.000000
+[%+.4e	s:	!TypeError
+x=%(b)e%(name) +2F end	a=f:1.0name=f:100.0	!KeyError
+x=% 8.4o]		!TypeError
+a b %-E	s:abc	!TypeError
+a b % 8X	i:1000	a b      3E8
+%hs		!TypeError
+% d end	f:123456.789s:a	!TypeError
+%E % .0s %4o	f:inff:nanf:2.675	!TypeError
+a b %.6i%%	i:0	a b 000000%
+a b %-.7i end	b:False	a b 0000000 end
+%.5s %+8.0s]	f:-3.14159f:1e+16	-3.14         ]
+a b %(name)0-.0i%(b)+11s	a=s:b=b:False	!KeyError
+x=%12.6s %+0f]	s:a	!TypeError
+x=%11r]	f:1e-05	x=      1e-05]
+a b %-.5s %d % r	n:Nonef:1e-05b:Truef:1.0	!TypeError
+a b %#0x %0s end	i:0i:7	a b 0x0 7 end
+x=%11hG%%	f:nan	x=        NAN%
+[%-.1o %0 r % d	s:ai:-1234567f:1.5e-07b:True	!TypeError
+[%12e %-+E	i:42s:abcf:1e+16	!TypeError
+%4.1f%%		!TypeError
+%07r %5.4d end	f:0.5f:1.5e-07	    0.5  0000 end
+a b %.3E%%		!TypeError
+%f %#0-e %g end	f:123456.789f:inff:1e-05	123456.789000 inf 1e-05 end
+a b %#11s	f:nan	a b         nan
+[%c %i %#04Lf end	f:-3.14159s:és:abcf:1.0	!TypeError
+%(name)0- d]	a=i:-1b=f:0.5	!KeyError
+%F]	i:1000000000000	1000000000000.000000]
+a b %(b)+g%%	a=s:hello worldname=b:False	!KeyError
+[%F %0o]	f:inf	!TypeError
+x=%c	i:0	x= 
+x=%- 3.0E	s:hello world	!TypeError
+x=%e %9r]	i:-1f:1.0	x=-1.000000e+00       1.0]
+%(b)2r%%	a=f:1e-05b=f:-inf	-inf%
+[%.3r %#c	f:-infs:	!TypeError
+%9g end	s:é	!TypeError
+[%-+12s % f	f:-infs:é	!TypeError
+a b %#0G]		!TypeError
+[%5i %i %.3hu%%	n:Nonef:0.5f:1e+16	!TypeError
+a b %-+i %s	i:1i:1000000000000	a b +1 1000000000000
+x=%(b)#e	a=f:123456.789b=i:7name=f:-0.0	x=7.000000e+00
+%(a)X%%	b=f:nanname=f:0.5	!KeyError
+[%-.2f %Li %06X end	f:1e+16s:éf:1e+16	!TypeError
+x=% d	s:a	!TypeError
+[%7u%%	i:1i:-1234567	!TypeError
+%#6.3d %1G end	f:nans:a	!ValueError
+x=%10c	i:-42	!OverflowError
+[%07.0s	f:2.5	[       
+%-9G %LE %+F	f:-infs:as:hello world	!TypeError
+x=%+s %#0.6F%%	f:0.5	!TypeError
+a b %.4s]	n:Nones:	!TypeError
+a b %g	i:-1	a b -1
+%s	i:42	42
+[%1.5d		!TypeError
+x=%r end	i:0	x=0 end
+x=%11F	i:1000	x=1000.000000
+a b %0+d	f:2.675	a b +2
+[%3s end	f:0.3333333333333333f:-0.0	!TypeError
+a b %(b)x%(name).7G	a=f:-infb=f:-inf	!TypeError
+[%.5d %+u	f:-0.0i:-1234567	[00000 -1234567
+[%(a)0c%(b)- g	a=i:-1234567b=s:abcname=i:-1234567	!OverflowError
+x=%+.1f	f:1.0	x=+1.0
+[%5.6o	s:a	!TypeError
+a b %3.0g%%	f:0.5	a b 0.5%
+a b %-9f %s]	f:2.5f:1e-05	a b 2.500000  1e-05]
+x=%(a)0u	a=f:1.5e-07b=i:-1name=i:1	x=0
+%(b)#05.1Lu end	b=i:1000000000000name=f:-3.14159	1000000000000 end
+a b %(a)E%(name)#+8.6c%%	a=i:-1234567b=f:inf	!KeyError
+a b %X % i	f:1.5e-07i:7f:1.5e-07	!TypeError
+%i %#-.5F	i:0f:3.14159	0 3.14159
+%d	f:3.14159	3
+a b %+0X	f:0.0	!TypeError
+a b %.6o end	f:0.5s:abc	!TypeError
+a b %(b)0X%(a) 4.7s	a=f:-0.0b=f:0.0name=f:-inf	!TypeError
+a b %(b) +7e%(a)#1g%%	b=i:1name=f:-inf	!KeyError
+%0+5r	f:-0.0	 -0.0
+x=%0.3r %+10s	f:3.14159	!TypeError
+%+5.5r %-d]	b:Falsei:1000000000000	False 1000000000000]
+%08s		!TypeError
+[%E %.5o	n:Nonef:1e-05	!TypeError
+a b %E]	b:True	a b 1.000000E+00]
+%0+0.4o %s %6.2u	f:1.0f:0.5	!TypeError
+[% 1.3G		!TypeError
+%(name)+G%(b)+12.7X]	b=s:name=f:1.5e-07	!TypeError
+%3i %g]	f:1e-05	!TypeError
+%0-e	f:0.3333333333333333f:-0.0	!TypeError
+%s	i:42	42
+x=%+r end	f:-3.14159	x=-3.14159 end
+x=%#0 e %4.2x %011e%%	f:1.5e-07i:0s:abc	!TypeError
+[%#.2o %x %+3.3o	i:-1s:éi:1	!TypeError
+%00s %3X %#- e	b:Falsef:123456.789f:0.5	!TypeError
+a b %#+s%%	i:-1234567	a b -1234567%
+x=%#+i]		!TypeError
+%12r %9x	f:-3.14159	!TypeError
+[%(b)+0f%(name)+7r]	a=f:123456.789b=f:-3.14159name=f:1.0	[-3.141590    1.0]
+[%12X %+1e%%	f:0.0f:0.5	!TypeError
+x=%- 10d	i:-1234567	x=-1234567  
+%.3r % c	i:7s:é	7 é
+a b %-.5r	f:0.3333333333333333	a b 0.333
+a b %#-3.0c %u%%	i:1000i:0	a b Ϩ   0%
+x=%11.3s %2s	f:123456.789i:-1f:1e+16	!TypeError
+x=%.1o%%	f:-inff:1e-05	!TypeError
+%#f	f:2.5	2.500000
+a b %#8.0r]		!TypeError
+a b %#+.5x % 4.4Lx %.2e end	f:1e+16f:2.675f:1.5e-07	!TypeError
+a b % 1s % 7s end	i:1f:-inf	a b 1    -inf end
+a b % g	f:0.5	a b  0.5
+[%-s end	f:0.5f:0.3333333333333333	!TypeError
+%-d %+.0x end	f:100.0f:1.5e-07	!TypeError
+x=%4.3LX%%		!TypeError
+x=%8.6r %# 11.2g]	i:1f:2.675i:-1	!TypeError
+%#2s%%	s:és:a	!TypeError
+a b %03e	s:abc	!TypeError
+a b %-10.0E	f:nan	a b NAN       
+%#10.6G]	f:0.3333333333333333	  0.333333]
+% .6g	s:hello world	!TypeError
+[%7.2u %.2X	s:abc	!TypeError
+[%+0.7c %0+G	i:7f:100.0	[ +100
+%(b)g%(name)4.0s]	b=f:123456.789name=i:-1234567	123457    ]
+%r	i:42b:True	!TypeError
+%0+.4X %11g %+F]	f:0.0i:1f:1e-05i:1	!TypeError
+%+3.3d]	s:	!TypeError
+%0r	f:0.5s:a	!TypeError
+% 4d	f:123456.789	 123456
+x=%X end	f:0.5	!TypeError
+a b %#hX %03d %.3g	i:255i:0	!TypeError
+%3g %.4u%%	f:-3.14159n:None	!TypeError
+a b %#X %0+G % 3X	i:1s:abcf:0.0	!TypeError
+[%(b)-F	a=i:-42b=i:-42name=b:True	[-42.000000
+x=% 12F %.6E %-8d end	f:-0.0f:-0.0f:1e-05	x=   -0.000000 -0.000000E+00 0        end
+a b %01o]	f:1.5e-07	!TypeError
+x=%0 Ld	i:-42	x=-42
+% hE		!TypeError
+%.6r %0f]	f:100.0b:Falsef:123456.789	!TypeError
+[%.5o %5s]	f:1e-05f:2.5	!TypeError
+x=%(b)r	a=f:1e+16	!KeyError
+x=%.5s %+e	s:ai:-1	x=a -1.000000e+00
+%1.2r end	f:123456.789	12 end
+%(name)-1s]	a=f:nanb=i:-1234567name=i:42	42]
+%0+u end	i:1000	+1000 end
+%# +X %2f %-7o%%	f:-infs:af:inf	!TypeError
+%e%%	s:	!TypeError
+x=%-F		!TypeError
+a b %0-8d %d]	f:1.5e-07f:123456.789f:1.5e-07	!TypeError
+%r end	f:0.0	0.0 end
+x=%(a)o	b=i:7name=f:nan	!KeyError
+%r	f:3.14159	3.14159
+a b %7.5u	b:True	a b   00001
+x=%+12f %F %- 12f	f:100.0f:nans:é	!TypeError
+%09s %0-.6s	s:éi:-1	        é -1
+%(a)#-.0E]	a=f:1e+16name=f:2.675	1.E+16]
+[%(b) F%(name)+f end	a=f:-0.0b=n:Nonename=f:2.675	!TypeError
+%3.4E	i:42f:3.14159	!TypeError
+x=%F %6Lo %#0g%%	f:-inff:1e+16s:é	!TypeError
+%-.0s %g%%	i:1000000000000	!TypeError
+x=%03c % F	s:éi:255	x=  é  255.000000
+[%#E end	f:-3.14159	[-3.141590E+00 end
+x=%(name)r	a=s:ab=i:-42name=s:	x=''
+x=%#9.4s %5.1f %5s end	f:3.14159i:-1	!TypeError
+[%x %+4E %10g%%	s:hello worldi:7f:0.5i:42	!TypeError
+%#9.3g end	f:0.3333333333333333	    0.333 end
+a b %#.0s % 12r]	n:Nonef:1.0	a b           1.0]
+a b %0-F %0g %.5i%%	n:Nonei:-42f:1.0	!TypeError
+%0-X %5G %u%%	f:3.14159i:-42i:1000000000000f:-3.14159	!TypeError
+x=%.7u end		!TypeError
+%(name)8F	a=i:1000b=f:0.5	!KeyError
+x=%12s]	i:-1	x=          -1]
+a b %05G %E%%	i:-1f:1.0s:abc	!TypeError
+x=%6s %#+8.4g %+5f end	f:inff:0.0f:1e-05	x=   inf   +0.000 +0.000010 end
+a b %+12f]	i:0	a b    +0.000000]
+[%-.6G %0+.7o %-.2G	f:2.5s:éf:-inf	!TypeError
+[%#e %8.0i %#0 r	s:i:-1f:2.5	!TypeError
+a b %.5d	s:é	!TypeError
+%(name)+5.3f%(a)0 .5u%%	a=f:0.5	!KeyError
+[%0 +.5g %.5G	f:123456.789f:0.5	[+1.2346e+05 0.5
+%0-+.7e %5.1s %+4g%%	f:-3.14159i:7	!TypeError
+[%#7o %012d end	f:1e-05f:1.5e-07	!TypeError
+%s end	f:1.0	1.0 end
+a b %G %5f%%	f:0.3333333333333333s:hello world	!TypeError
+%# +X %-6E %+8E end	i:-1234567s:f:-inff:0.3333333333333333	!TypeError
+%#-F end	f:2.675	2.675000 end
+a b %9s	s:hello worldi:-1	!TypeError
+x=%(name)6.1g]	a=f:3.14159b=s:name=f:123456.789	x= 1e+05]
+%-7r]	i:42	42     ]
+x=%0X%%		!TypeError
+a b % 1.3g %.7x	f:-3.14159f:0.3333333333333333	!TypeError
+%+12X end	f:1e+16	!TypeError
+a b %-4E %#.4o	i:-42s:	!TypeError
+x=%# 1u %0i	f:infi:-1234567	!OverflowError
+%(a) 11.1d%%	a=f:-0.0b=f:-3.14159name=s:a	          0%
+% .7c %2c %01f	f:0.5f:1e+16	!TypeError
+%(b)+8s	a=f:1.0name=i:1000	!KeyError
+%.5s %6.3c]	f:3.14159f:1.5e-07	!TypeError
+a b %12.6g %-.3f]	f:-infb:False	a b         -inf 0.000]
+%(a)0 .3X end	a=i:1000000000000b=i:42name=i:-42	 E8D4A51000 end
+a b %-E%%	f:0.0	a b 0.000000E+00%
+x=%f %8s %r end	f:1.5e-07i:-1234567	!TypeError
+x=% c %5hX %s%%	f:1.5e-07f:-0.0i:255	!TypeError
+a b %(a)G	a=i:42b=i:1name=i:-1	a b 42
+a b %0-2f		!TypeError
+x=%i	f:0.5	x=0
+x=%(a)#00x%(b)# 10G	b=s:éname=i:1000000000000	!KeyError
+[% X	f:2.675	!TypeError
+x=%(a)11.3u%(name)#-+d%%	a=f:1e+16b=s:éname=i:-1	x=10000000000000000-1%
+%6.0g end	f:-3.14159s:hello world	!TypeError
+x=%(name)hg%(a) hs]	b=f:0.3333333333333333name=f:inf	!KeyError
+x=%(name) 6s%%	a=f:1e-05b=i:1000000000000name=f:100.0	x= 100.0%
+%#-8g]	s:	!TypeError
+%8.1o %.2G]	f:2.5f:inf	!TypeError
+x=%.5E %.1r % 1.1g end	f:1.0b:Truef:-3.14159	x=1.00000E+00 T -3 end
+x=%-6f	f:2.5	x=2.500000
+a b %3g end	f:2.5	a b 2.5 end
+[%#G %+4.1r%%	i:0f:123456.789	[0.00000    1%
+[%(name)-1.7d end	a=s:b=f:-0.0name=s:a	!TypeError
+%-7r %01c %#Lf%%	s:abcb:Truei:-42	'abc'    -42.000000%
+%-s %12s	i:255f:3.14159	255      3.14159
+%r	f:1.0	1.0
+x=% .2lX %s %0 1u	f:-infb:Trues:hello world	!TypeError
+[%#+d%%	f:2.675	[+2%
+a b %10.7f%%	s:	!TypeError
+x=%#Le %0e %X	i:42f:0.5	!TypeError
+%# 9.5c]	f:1.5e-07	!TypeError
+[%(b) E	b=f:0.5name=s:	[ 5.000000E-01
+x=%(name)-E%(a)-F	a=i:1000000000000b=i:0name=i:-1234567	x=-1.234567E+061000000000000.000000
+[%3o%%	i:-42	[-52%
+%8s%%		!TypeError
+%(b)-.2e	a=f:-3.14159	!KeyError
+a b %2.4hf	f:100.0f:inf	!TypeError
+[%d		!TypeError
+x=%#X	f:1.0	!TypeError
+%6E %0 12g%%	i:-1234567i:-1234567	-1.234567E+06 -1.23457e+06%
+%o end	f:1e-05f:1.0	!TypeError
+[%0-o %#-8e %+5F%%	s:hello worldi:-1f:100.0	!TypeError
+a b %012o		!TypeError
+%11.7F%%	f:2.5	  2.5000000%
+x=%(a)8f%(b)#E%%	a=s:ab=n:Nonename=i:1	!TypeError
+a b %0.3s		!TypeError
+%-9o %- +5.7s %+s]	f:1e+16i:1f:1.0	!TypeError
+%#E %i %s end	s:f:123456.789b:False	!TypeError
+a b %s %#5hi %.1e end	s:ai:42f:1.0	a b a    42 1.0e+00 end
+x=%Ls end	f:0.3333333333333333	x=0.3333333333333333 end
+x=%#12c end		!TypeError
+[%+3.3G % c%%	f:1.5e-07	!TypeError
+%3f end	f:-infn:None	!TypeError
+[%#0-+0x%%	i:255	[+0xff%
+%7F	f:0.3333333333333333f:-3.14159	!TypeError
+%#.3LF %e	f:100.0s:a	!TypeError
+%#+.3f	f:inf	+inf
+a b %0.5s % f]	s:hello worldf:-0.0	a b hello -0.000000]
+%o end	f:2.675	!TypeError
+a b %+4r end	f:nan	a b  nan end
+x=%.1r%%	f:1e-05	x=1%
+% s end	f:-0.0	-0.0 end
+%3.0e	i:1000000000000	1e+12
+%-ho	i:-1	-1
+a b %g%%	s:hello world	!TypeError
+[%g	f:nan	[nan
+a b %(b)-.2o	a=f:2.675b=i:42name=f:-3.14159	a b 52
+a b %0e %X %0+7.0c	f:1.0s:éf:-0.0s:abc	!TypeError
+%0.4i		!TypeError
+%1d %#.0G end	i:1000000000000f:1.0	1000000000000 1. end
+[%6X %00i %F]	f:100.0s:éi:0f:123456.789	!TypeError
+% 1r end		!TypeError
+[%7x %+.4r	f:1e+16f:1.0i:1000000000000	!TypeError
+x=%(name)E%(a).4i%%	a=i:1000b=f:-3.14159name=n:None	!TypeError
+%-12u%%	f:123456.789n:None	!TypeError
+x=% +1.6g		!TypeError
+% +11s]	i:-1234567	   -1234567]
+a b %G end	n:None	!TypeError
+%.5r		!TypeError
+a b %+6f %5s	f:0.0f:-3.14159	a b +0.000000 -3.14159
+%-g %8F]	b:Falsef:0.0	0 0.000000]
+%.4u	f:1.5e-07	0000
+x=%2.2c end	i:42	x= * end
+%0o end		!TypeError
+x=%-f %o end	i:1000000000000	!TypeError
+%08.3o	f:-0.0i:-1234567	!TypeError
+[%9E end	s:	!TypeError
+a b %#s %- +11s	s:a	!TypeError
+%7g % 9.6s %2.6d	i:1000f:-3.14159	!TypeError
+%-.7F		!TypeError
+%f end	f:-inf	-inf end
+%9e %05e %g	s:i:1000	!TypeError
+x=%# 12s % 4r]	s:af:1e-05	x=           a 1e-05]
+[% .2i	i:1i:-1234567	!TypeError
+x=%(b)2s%(a)E	a=i:42b=i:1name=f:0.5	x= 14.200000E+01
+%7lX]	i:0	      0]
+a b %(name).2E end	b=f:100.0name=f:nan	a b NAN end
+%(b)10d%%	a=f:123456.789b=f:2.675	         2%
+a b %+.3G % o	i:255f:-3.14159	!TypeError
+%7c	i:0	       
+% 4c %s	f:123456.789f:100.0	!TypeError
+%#-+.2E end	s:é	!TypeError
+x=%0r %#-x	f:1.0f:1e-05	!TypeError
+%4G %.2x end	f:100.0f:0.5	!TypeError
+[%#4s end	i:-42	[ -42 end
+[%- lo%%	f:0.3333333333333333n:None	!TypeError
+[% f %+.6Lf end	s:és:abc	!TypeError
+[%s end	f:1e+16	[1e+16 end
+%#c%%	n:None	!TypeError
+%.3u %0X end	f:-0.0i:1000000000000i:255	!TypeError
+%0- +g %0-5i %#12s]	s:hello worldf:2.5i:0	!TypeError
+%.5c	i:255	ÿ
+a b %02g %.5X %10d%%	i:42f:2.5	!TypeError
+x=%+F%%	f:3.14159	x=+3.141590%
+a b % o %10s]	s:f:-3.14159	!TypeError
+a b %+2E%%		!TypeError
+%-r]	s:hello worldi:1	!TypeError
+a b %(a)+5.1r%(b)- 3.6E end	a=i:-1b=f:3.14159name=f:123456.789	a b     - 3.141590E+00 end
+%#3.0s %#9x end	i:1i:1000	        0x3e8 end
+%#- g%%	i:-1	-1.00000%
+%09r %+1i]	f:1e+16f:100.0	    1e+16 +100]
+[%(b)0g%(a).6F]	a=f:2.675b=n:Nonename=f:1.0	!TypeError
+[%#c%%	i:1000000000000	!OverflowError
+%0 .7s %.4ho end	f:-3.14159b:Truef:1.5e-07	!TypeError
+[%0- s]		!TypeError
+%-.0s %hf %.2E	f:1.0f:infi:-42	 inf -4.20E+01
+[%#1X%%		!TypeError
+%+12.4r end	f:0.3333333333333333	        0.33 end
+[%(name)+12s%(a)-+x%%	a=f:2.5b=f:0.3333333333333333name=f:1e+16	!TypeError
+x=%+6.7E %+d	s:i:42	!TypeError
+% +7F]	f:1.0	+1.000000]
+[%2F end	f:1.5e-07	[0.000000 end
+a b %5E %#011d %c end	i:-1f:-0.0n:None	!TypeError
+%4.4i]	f:2.5	0002]
+a b %-9X %+1s end	f:1.5e-07i:-1	!TypeError
+a b %7.0o %+4d]	i:-1234567	!TypeError
+x=% .4c%%		!TypeError
+x=%09.4g %G]	b:Truei:1	x=000000001 1]
+x=%3.0s%%	s:abc	x=   %
+%0f %0-1o %04G]	f:nani:0	!TypeError
+%(b)-12r%(name).4g	b=f:-infname=f:1e+16	-inf        1e+16
+a b %u %9s %r	s:hello worldf:-0.0	!TypeError
+%0ls %#0.1hf]	s:ai:-42	a -42.0]
+x=%(name)-.4s%(a).1r	b=f:2.5name=f:2.5	!KeyError
+%7i %+12i%%	s:abcb:False	!TypeError
+%+g %.6E end	f:-0.0i:-1	-0 -1.000000E+00 end
+x=%8.4o %e	n:None	!TypeError
+%.4o	f:123456.789f:0.5	!TypeError
+a b % F	b:False	a b  0.000000
+x=%3.3g	f:1.5e-07	x=1.5e-07
+x=%E	s:hello world	!TypeError
+[%1f%%	f:3.14159	[3.141590%
+a b %e %d]	f:100.0f:-inf	!OverflowError
+x=%12o %#0- +6.1E %-3s%%	f:100.0f:1.0i:1000	!TypeError
+%# s %11f %e]	f:0.3333333333333333i:-1234567n:None	!TypeError
+x=%-+.4f %1.5r	i:255f:1.5e-07	x=+255.0000 1.5e-
+[%-+x%%	s:ai:1000000000000	!TypeError
+x=% .1G %+i %+r	i:1000i:1s:abc	x= 1E+03 +1 'abc'
+%+s]		!TypeError
+x=%#s	i:0s:é	!TypeError
+%s end	n:None	None end
+a b %(name)r%(b) 11x]	a=b:Falseb=i:1000000000000name=b:False	a b False e8d4a51000]
+a b %4e	f:nanf:2.5	!TypeError
+x=%5Ls % +.5r]	s:abcf:1.5e-07	x=  abc 1.5e-]
+a b %04G%%		!TypeError
+%# 6i]	i:0	     0]
+%+11s]		!TypeError
+%r %LF	s:a	!TypeError
+%#- 0s	i:7	7
+%12.4e %#g %0e	f:inff:inf	!TypeError
+x=%# 3c %#0- 4g%%	i:-1234567i:1000000000000	!OverflowError
+a b %#3i end		!TypeError
+a b %(name)- 1G%(b)5e	b=f:-0.0	!KeyError
+a b %-s		!TypeError
+[% X]	i:7	[ 7]
+a b %r %+12s %#.7r]	i:-42i:1i:42s:é	!TypeError
+%2.0hs %0+s]	i:255f:-inf	   -inf]
+[%-8e % G	s:abcs:	!TypeError
+%#.2e %0-10x	f:2.675s:é	!TypeError
+a b %-2g %#-i	i:-1f:2.5	a b -1 2
+a b %s end	f:2.675	a b 2.675 end
+%.2LX		!TypeError
+[%+4.5u %-X %2hi%%	f:2.675f:0.5f:inf	!TypeError
+%-12G %- f	i:7	!TypeError
+% .4f %3.0o end	f:0.3333333333333333f:3.14159	!TypeError
+%(b)#-9.3e%(a)#6.4G end	a=f:2.5name=f:0.3333333333333333	!KeyError
+%(b) 5X	a=f:3.14159b=f:0.5name=i:255	!TypeError
+[%.4E %5s	f:2.5f:-3.14159	[2.5000E+00 -3.14159
+x=%r %s %11r end	i:0f:1e+16f:nan	x=0 1e+16         nan end
+x=%6F	i:1000000000000	x=1000000000000.000000
+[%0s % r	f:-0.0i:42f:-inf	!TypeError
+a b %(a)#3.5r]	a=s:éb=s:abcname=f:0.3333333333333333	a b 'é']
+x=%11.2x	i:42	x=         2a
+[%0-6r %5G]	n:Nonei:255	[None     255]
+[%.1i]	b:False	[0]
+a b %1.1s %6.1s%%	f:nani:1000000000000	a b n      1%
+[%0s %-6c %#0- 2d	f:0.3333333333333333s:abci:1000000000000	!TypeError
+% E	i:0i:7	!TypeError
+[%(name)0 8c]	a=i:-1b=b:Truename=i:1000000000000	!OverflowError
+%+.7x %.1u]	f:inf	!TypeError
+%6.1f %+4c %G]	f:0.3333333333333333f:0.5	!TypeError
+a b %G	f:2.675	a b 2.675
+a b %0-+6.1x]		!TypeError
+%+.6F]	b:Truef:2.675	!TypeError
+%(a)r%(name)+f	a=f:0.5name=i:-1234567	0.5-1234567.000000
+%-5.0i	f:-0.0	0    
+%5f %#4.3d]	i:-1234567	!TypeError
+%+X	f:2.675	!TypeError
+[% 4x %#0g %10g end	f:-0.0i:1000s:abc	!TypeError
+%8.1E %#0-6.3F	f:0.3333333333333333i:42	 3.3E-01 42.000
+a b %F %-6.7i %c]	f:-inff:2.675f:0.5	!TypeError
+a b %0X%%	f:2.675	!TypeError
+x=%-g %#+f %07.4o%%	f:123456.789i:-1234567f:-3.14159	!TypeError
+% 10E%%	b:True	 1.000000E+00%
+[%+.1s % G %e%%	f:2.675f:1.5e-07f:-inf	[2  1.5E-07 -inf%
+%F end	i:-1234567	-1234567.000000 end
+a b %(a)+8o]	a=i:1name=i:-1	a b       +1]
+x=%x %#-d %+12f	f:-0.0f:-inf	!TypeError
+a b %0+.4o	i:255	a b +0377
+a b %7.5x % .1e % g%%	i:0f:1e-05f:inf	a b   00000  1.0e-05  inf%
+a b %0ho %12e]	f:123456.789f:1.0s:a	!TypeError
+x=%G %-.4r %11d%%	f:0.3333333333333333b:Truei:1	x=0.333333 True           1%
+x=%.2u end		!TypeError
+x=%1r % +X	i:-42s:a	!TypeError
+%0+.3r	i:1	1
+[%+7X %2.7F %3.2e]	s:b:True	!TypeError
+a b %(b) x]	a=i:7b=s:aname=b:False	!TypeError
+%0.5G	n:Nonef:1.0	!TypeError
+[% +.0lX %-s %0g end	f:0.3333333333333333s:éf:nan	!TypeError
+%(b)+9f%(a)#.7g%%	a=s:hello worldb=s:hello worldname=b:True	!TypeError
+[% 11r %-+.4f%%	f:infs:hello world	!TypeError
+[%.3d%%	f:-3.14159	[-003%
+x=%+.0F%%	i:-42s:abc	!TypeError
+%.0x]	f:1.5e-07i:1	!TypeError
+a b %+.1i%%	i:42	a b +42%
+%+12d % 5g	f:2.5	!TypeError
+x=%+x	i:-1	x=-1
+%0-E%%	i:1000000000000	1.000000E+12%
+%2G %8c	i:0	!TypeError
+%9.6G % 6s	s:	!TypeError
+%(name)0+0e	a=f:1e+16b=b:Truename=f:nan	+nan
+a b %11u %-0f %#2s]	f:2.675f:0.0s:hello world	a b           2 0.000000 hello world]
+x=% s	i:1000000000000	x=1000000000000
+%(a)+3s	a=f:infb=f:0.3333333333333333name=i:42	inf
+%0+7r%%	f:0.5	    0.5%
+%-4r %- 11s end	f:-inff:-3.14159	-inf -3.14159    end
+a b %s %0- 2u%%	s:af:2.5	a b a  2%
+[%#4c end	f:0.3333333333333333	!TypeError
+%6G		!TypeError
+%#6g	f:2.675	2.67500
+a b % +5.7u		!TypeError
+%0-+7G %c %#04.3G%%	s:abcs:hello worlds:é	!TypeError
+a b %0 5F %8d]	f:2.675	!TypeError
+x=%10.1f%%	s:é	!TypeError
+x=% .6u %x % .4d	s:i:1000000000000	!TypeError
+x=%e %0+9G end	i:42f:inf	x=4.200000e+01 +00000INF end
+%(name)10.4E	a=s:abcb=f:2.675name=i:1000000000000	1.0000E+12
+[%7.3E%%	i:1000	[1.000E+03%
+x=%-+g]	s:a	!TypeError
+x=%(a)- r%%	a=f:infb=n:Nonename=f:3.14159	x=inf%
+[%#9.6X %-6f	i:1000f:3.14159	[ 0X0003E8 3.141590
+x=%.5s %3c %08G	f:3.14159s:s:a	!TypeError
+x=%(b)11F%%	a=i:255b=f:1.5e-07name=i:1000000000000	x=   0.000000%
+%(b).5s%(name)07g	b=f:1e+16	!KeyError
+a b %7u]	b:False	a b       0]
+[%+r end	f:1.0	[1.0 end
+%.6u	s:a	!TypeError
+a b %10.0F	s:a	!TypeError
+[%+4.3G	f:3.14159	[+3.14
+%#08c]	i:0i:7	!TypeError
+a b %r end	f:0.3333333333333333	a b 0.3333333333333333 end
+%s %8d %g]	f:0.0f:1e-05f:1e+16	0.0        0 1e+16]
+%F %9Ls %#.7hG%%	f:nanb:Falses:hello world	!TypeError
+%- 4X %#g	i:7i:42	 7   42.0000
+%(a)-6X end	a=f:3.14159b=f:100.0	!TypeError
+x=%X %0c %# 7s%%	i:42f:2.5f:0.5	!TypeError
+x=%0e%%	f:3.14159f:-0.0	!TypeError
+% +9s %12.2E]	i:1000f:-3.14159	     1000    -3.14E+00]
+%0 +r	i:1000	1000
+%10o%%	i:42	        52%
+a b %-f	i:1	a b 1.000000
+%# x		!TypeError
+a b %0x	f:nan	!TypeError
+[%#Li %# 8E]	f:2.675i:1000000000000i:-1	!TypeError
+x=%+g %+6.6F end	f:0.3333333333333333f:1.0	x=+0.333333 +1.000000 end
+%-.7u	i:255	0000255
+x=%#.7hi end	f:-inf	!OverflowError
+% 4c	f:nan	!TypeError
+%(name) s]	a=i:-42b=f:123456.789name=f:1.0	1.0]
+[%7f	f:-0.0f:-3.14159	!TypeError
+a b % .2u%%	s:éf:-3.14159	!TypeError
+%-X	f:0.5	!TypeError
+a b %0.2F	f:1.0	a b 1.00
+%00X %G	b:True	!TypeError
+x=%9.7r%%	i:1000	x=     1000%
+a b % 1X	f:inf	!TypeError
+x=%x]	i:-1234567	x=-12d687]
+a b %2e]	b:Truei:1000	!TypeError
+a b %+.4X %11Le]	s:f:-0.0	!TypeError
+a b %2F %12s	f:1e-05	!TypeError
+[%0i]	f:1.5e-07	[0]
+%.6s %0-F	s:s:af:100.0	!TypeError
+a b %-0E %010X	n:Nonen:None	!TypeError
+%11.6u end	i:42	     000042 end
+[%c end	f:0.3333333333333333	!TypeError
+a b % 0.3f %.6u	f:0.0i:-1	a b  0.000 -000001
+%+8x %s %+E	f:0.3333333333333333i:0f:0.0b:True	!TypeError
+a b %#+3x	i:1000	a b +0x3e8
+a b %10s %#4F %0.5G	f:1.0i:1000f:-inf	a b        1.0 1000.000000 -INF
+x=%-u end		!TypeError
+a b %2.6s % +12o %12e	f:100.0f:infs:é	!TypeError
+x=%c end	s:hello world	!TypeError
+%-f%%	i:-1234567	-1234567.000000%
+x=%-.0G%%	f:-inf	x=-INF%
+x=%-9.2u %#.3u %.6r end	i:7f:0.0f:-infs:abc	!TypeError
+% 5s %.5e %-8.5g end	s:hello worldn:Nonei:-1234567f:1e+16	!TypeError
+%(b) .5o%(name)3s]	a=f:2.675b=f:3.14159name=f:1e-05	!TypeError
+a b %#+X	f:1e+16	!TypeError
+[%#5f %3.0s %0+.5E	i:1000000000000s:abci:255	[1000000000000.000000     +2.55000E+02
+[%5s end	i:-1	[   -1 end
+[%o]	f:1e+16	!TypeError
+a b %#0f%%	f:-3.14159	a b -3.141590%
+%(a)6f%%	a=f:-infb=f:1.0name=f:3.14159	  -inf%
+x=%s %e %+11.0c	n:Nonef:1.5e-07	!TypeError
+x=%0 .4u end	f:1.5e-07f:2.5	!TypeError
+%#11i end	f:123456.789	     123456 end
+a b %06F %#r %4.3e	b:Falsef:2.675	!TypeError
+%#10r%%	n:None	      None%
+[%-.2d %0.7E]	i:1000i:1000	[1000 1.0000000E+03]
+x=%10.5F]	f:inf	x=       INF]
+a b %9r %.3i %#g end	i:-1s:abcs:é	!TypeError
+[%#10F	f:-inf	[      -INF
+a b % i end	f:123456.789	a b  123456 end
+%#8F %0 4.1s%%	i:0f:0.0s:hello world	!TypeError
+a b %s %+.5x % 5G end	s:f:100.0f:2.5i:-42	!TypeError
+%6X %11e end	i:42s:éf:1e+16	!TypeError
+%4s end	f:1.0	 1.0 end
+a b %0-s %2F	s:ab:True	a b a 1.000000
+%8o end	i:42	      52 end
+[%#c %c %o	n:Nonef:-3.14159f:0.0	!TypeError
+%- 0i % 10.6g%%	f:nanb:True	!ValueError
+x=%10.4s%%	f:0.5	x=       0.5%
+%e%%		!TypeError
+%0f]	f:-0.0	-0.000000]
+%u%%		!TypeError
+%1E]	f:100.0	1.000000E+02]
+a b %0 10f	i:42	a b  42.000000
+[%X %- +2X %-8.7g end	i:1000000000000s:abc	!TypeError
+[%(a)0-2.6s%(name)#X%%	a=f:1.5e-07b=s:	!KeyError
+x=%(b)- .7G	a=i:-1b=i:42name=s:abc	x= 42
+x=%7e	f:100.0	x=1.000000e+02
+a b %+u end	f:2.675	a b +2 end
+a b %0.6u	i:-42f:2.675	!TypeError
+a b %01f	s:a	!TypeError
+%(name)- +8o	a=f:1e+16b=i:7name=i:1000000000000	+16432451210000
+%(name)-.0g%(a)0.0c%%	a=f:2.675b=i:-1name=s:	!TypeError
+[%(name)g]	a=f:infb=f:123456.789name=f:1.0	[1]
+a b %0u%%	f:2.675	a b 2%
+x=%(a)0 10s	a=f:123456.789name=f:1.0	x=123456.789
+% +d]	f:-3.14159	-3]
+a b %+9.0X %0-E end	i:-1234567	!TypeError
+x=% 3X%%	s:éi:42	!TypeError
+%#x end	i:1000	0x3e8 end
+%g end		!TypeError
+x=%.5o end		!TypeError
+x=%#+11E]	f:nan	x=       +NAN]
+a b %-+g %d %e end	i:-42f:2.675f:-3.14159	a b -42 2 -3.141590e+00 end
+x=%- 8.6s %12o end	f:123456.789s:hello world	!TypeError
+%08.2X end	f:2.5	!TypeError
+%.7X%%	f:0.0	!TypeError
+a b %0r %-+E	f:-inff:1.0f:0.5	!TypeError
+% x%%		!TypeError
+x=% 6.7F]	f:1e+16	x= 10000000000000000.0000000]
+%10E %F %0-+11.7f%%	f:1.5e-07f:-0.0i:-1234567	1.500000E-07 -0.000000 -1234567.0000000%
+[%10.1g	s:abc	!TypeError
+a b %(a)12u end	name=i:-42	!KeyError
+%+.5c		!TypeError
+x=%06.2g end	i:-1234567	x=-1.2e+06 end
+a b %6e end	f:1e+16	a b 1.000000e+16 end
+a b %(a) 10s%(name)7s end	a=i:7b=n:Nonename=f:-0.0	a b          7   -0.0 end
+x=%u	f:0.0	x=0
+a b %6s]	f:0.0	a b    0.0]
+[%11.1o %010.7G end	f:1e+16f:1.5e-07	!TypeError
+x=%E %10.6r	i:-1i:-1234567	x=-1.000000E+00     -12345
+%#10F]	f:-3.14159	 -3.141590]
+a b %g %+s %-+e end	b:Falsen:Nones:	!TypeError
+%-f	f:-0.0	-0.000000
+a b %(a)4E end	a=f:3.14159b=f:1.0name=i:-42	a b 3.141590E+00 end
+a b %-hX	f:0.3333333333333333	!TypeError
+%5.5r %r	f:0.3333333333333333	!TypeError
+[%X %c %- 1s end	b:Falsef:1.0s:a	!TypeError
+x=%+i	i:0s:a	!TypeError
+%+X%%	i:255	+FF%
+%0 4u %s	f:100.0i:-1234567	 100 -1234567
+%.1g	n:None	!TypeError
+%-7s % 12F	i:-1i:0i:1000	!TypeError
+a b %8Ld		!TypeError
+[%5.7s	s:a	[    a
+%8.2i%%	f:-3.14159	     -03%
+x=%0+s end	i:255	x=255 end
+x=%#2X%%	b:Falseb:True	!TypeError
+[%0E]	f:3.14159	[3.141590E+00]
+%+6f	f:0.0i:-1	!TypeError
+%-F]	f:123456.789	123456.789000]
+%0f %-hf	b:Falsef:2.675	0.000000 2.675000
+a b %F	s:hello world	!TypeError
+a b %11r	f:1e+16	a b       1e+16
+%.4c	f:2.5	!TypeError
+%E %5o	f:0.0s:hello world	!TypeError
+a b %0.4u %.3X]	i:-42i:0	a b -0042 000]
+a b %-9E	f:100.0	a b 1.000000E+02
+[%#7.1x %0+.0u	f:0.0i:42	!TypeError
+%+5g end	f:2.5	 +2.5 end
+%(a)2G	a=f:infb=f:1e-05name=f:1e-05	INF
+[%#c]	f:2.675i:42	!TypeError
+%(b).5E%(a)#0F%%	a=i:42b=f:-inf	-INF42.000000%
+%d %i %# 0X	s:hello worldf:1e+16i:-1234567	!TypeError
+%9s %0u %-10F	f:1e+16i:-42n:None	!TypeError
+a b %#1g	i:-1	a b -1.00000
+%10.2e]	n:None	!TypeError
+%i%%	b:False	0%
+[%- 7r % 12u %6s	f:2.5i:1f:1e-05	[2.5                1  1e-05
+x=%-6s %s %0.7F%%	b:Falsei:1f:2.5	x=False  1 2.5000000%
+[%#9.5s %#f	f:1.5e-07i:1000	[    1.5e- 1000.000000
+x=%(name)#7x end	a=i:1b=f:0.0name=f:1.5e-07	!TypeError
+%#E]	f:nan	NAN]
+a b %6i %s%%	i:1000n:None	a b   1000 None%
+%#X	s:a	!TypeError
+x=%#11.1s end	f:100.0	x=          1 end
+%G		!TypeError
+x=%+7s	s:an:None	!TypeError
+%r %2li %0o]	b:Falsen:None	!TypeError
+[%0.3s end		!TypeError
+%12c%%	f:2.5f:0.0	!TypeError
+a b %(a)4s%(b)s%%	b=s:hello worldname=s:a	!KeyError
+x=%#0F end	f:0.0	x=0.000000 end
+%d %i]	i:1000000000000i:1000f:nan	!TypeError
+%E]	i:0	0.000000E+00]
+[%(a)0-2.0G	a=f:0.5b=f:0.0name=n:None	[0.5
+[%(name)#03u%(a)+E	a=i:255	!KeyError
+%F %+.7lc % .6s]	i:-42b:True	!TypeError
+%s %#0+F %0F%%	f:1e-05f:0.3333333333333333b:Falsei:-42	!TypeError
+% i %f %12r	i:0n:Nonef:-inf	!TypeError
+a b %(a)0u	a=f:0.5b=f:-3.14159name=f:123456.789	a b 0
+%.2o%%		!TypeError
+%-.5G %01X %#s%%	f:-0.0f:-infi:0i:-1	!TypeError
+%5.5s %4s end	f:1e+16f:inf	1e+16  inf end
+%(a) 5s%(name) .7G]	a=f:123456.789b=f:0.0name=i:1000	123456.789 1000]
+x=%(name)12.6i%(b)#-E end	a=f:0.5b=f:-inf	!KeyError
+%2d %6s%%	f:3.14159	!TypeError
+[%#0- f end	i:1	[ 1.000000 end
+a b %-.2r	b:False	a b Fa
+%0u]	n:None	!TypeError
+[%.3hr	f:0.3333333333333333	[0.3
+x=%11d %-G %0c end	i:-1s:abci:-1	!TypeError
+a b %(a)0+x%(name)10X	a=i:1000b=f:123456.789name=i:-1234567	a b +3e8   -12D687
+%s end	i:1b:True	!TypeError
+%.1e%%	f:2.675	2.7e+00%
+x=%06.2d end	i:7	x=000007 end
+%o %9r %4g	s:éf:0.5b:True	!TypeError
+%hE end		!TypeError
+%1s	f:0.3333333333333333f:-0.0	!TypeError
+[%(a)5c%(name)8s]	b=f:2.675name=f:-3.14159	!KeyError
+%(a) .3u	a=f:123456.789b=f:100.0name=i:-42	 123456
+[%F %#0-11o %3.1i]	f:0.0s:hello worldi:42	!TypeError
+%#.3c	i:1s:abc	!TypeError
+%#4e%%	i:-1234567	-1.234567e+06%
+x=%(b).5ho end	a=s:abcb=i:1name=f:2.675	x=00001 end
+%(name)#.5d end	a=i:1000b=n:Nonename=i:255	00255 end
+%(a)+0.2r%%	b=i:0name=i:255	!KeyError
+a b %(b)08i	a=f:2.675b=f:100.0name=i:1000000000000	a b 00000100
+%00X%%	s:	!TypeError
+x=%7e end	f:1.5e-07	x=1.500000e-07 end
+[%#.4f %2.6E]	f:2.5	!TypeError
+%+i %7.0c]	f:0.0f:1e+16	!TypeError
+%#2G %2F %#12s	b:Falsei:-1f:2.675	0.00000 -1.000000        2.675
+x=%5s	i:1000	x= 1000
+[%- .2s	b:False	[Fa
+%+12.3s%%	s:hello world	         hel%
+[%#7f%%	i:1	[1.000000%
+a b %(name)d	a=s:abcb=s:abcname=i:7	a b 7
+a b %lg	f:1e+16n:None	!TypeError
+%(b)-+r%(a)6E	a=f:3.14159b=i:-1name=f:0.3333333333333333	-13.141590E+00
+a b %+s %0.5o %.7s]	i:1000000000000i:-1234567	!TypeError
+%.0i	i:1000s:a	!TypeError
+x=%7.1x %.1e %r end	i:1000000000000f:-inf	!TypeError
+x=%#d	f:-inf	!OverflowError
+%0 lc	i:7	
+%G	i:1	1
+x=%(name)7x	a=s:éb=i:-1234567name=f:1e-05	!TypeError
+[%3x %c%%	i:-1f:100.0	!TypeError
+[%9u %-10s	i:1i:-1234567	[        1 -1234567  
+%#.7e	f:123456.789	1.2345679e+05
+x=%#5.7i	f:3.14159s:	!TypeError
+[%Lr end	f:nan	[nan end
+%4.5u	i:42	00042
+%-3f end		!TypeError
+%+1X %x %# E end	f:123456.789f:-inff:inff:1e+16	!TypeError
+%(b)10c%%	a=f:0.0name=f:1.5e-07	!KeyError
+x=%7s %12g % +.4o end	n:Nonef:1e+16i:1s:abc	!TypeError
+%d end	i:-42	-42 end
+%012c		!TypeError
+[%(name)0+.5x%(a)3.2E]	a=f:2.5b=i:1name=f:2.675	!TypeError
+%3f%%	f:3.14159	3.141590%
+x=%#7.5o %he %#.7d end	i:7f:3.14159f:1e-05	x=0o00007 3.141590e+00 0000000 end
+[%-4.0s end	i:-1234567	[     end
+[%s %7.4s	s:f:1.5e-07	[    1.5e
+%r		!TypeError
+a b %.3i]	f:0.0	a b 000]
+%(name)#3u%(a)c]	a=s:hello worldb=n:Nonename=i:1000	!TypeError
+a b %-s	f:1.0	a b 1.0
+%+5s end	f:-0.0	 -0.0 end
+[%10.1f%%	i:42i:0	!TypeError
+%5u		!TypeError
+%0 .2e%%	b:True	 1.00e+00%
+%.7o end	b:False	0000000 end
+x=%(name).2f	a=f:2.5b=s:é	!KeyError
+%+2c % 10x %+i%%	b:Truef:2.675f:0.0	!TypeError
+x=% +3ld %.6c]	f:3.14159i:1000	x= +3 Ϩ]
+[%#05G]	f:nan	[00NAN]
+%+E]	i:-1	-1.000000E+00]
+x=%i	i:-1234567i:255	!TypeError
+%-g	f:0.3333333333333333	0.333333
+a b %.0r%%	b:True	a b %
+[%-.2F]	i:0	[0.00]
+x=%-10f end	i:255	x=255.000000 end
+a b %0.6g % +x %#0f	s:abcf:-inff:-inff:3.14159	!TypeError
+% o%%	f:nanb:True	!TypeError
+[%(b)+11.1o	a=i:7b=f:1e-05	!TypeError
+a b %6x end	i:255	a b     ff end
+x=%7o	f:inf	!TypeError
+%-7s	b:True	True   
+x=%0- +i end	f:3.14159f:-inf	!TypeError
+[%(a)#0.2hf%(name)1E	a=f:0.5b=f:1.5e-07name=i:0	[0.500.000000E+00
+[%0.0E	b:True	[1E+00
+%(b)#0+x	a=f:2.675b=i:0	+0x0
+a b %(b)+1F	b=i:42name=s:	a b +42.000000
+a b % 0.1E	s:hello world	!TypeError
+a b %-1c%%	n:None	!TypeError
+[%10x %+F%%	i:-42	!TypeError
+%8.5s]	i:0i:1000	!TypeError
+%9e %5c end	f:1.0i:255	1.000000e+00     ÿ end
+[%#+g end	f:1.5e-07	[+1.50000e-07 end
+%2s%%	s:	  %
+x=%.4g %s%%	f:1.0f:3.14159f:0.0	!TypeError
+[%4.4s	f:-3.14159	[-3.1
+x=% 12.3f %5o]	n:Nonei:42	!TypeError
+[%5s	f:0.0	[  0.0
+a b % 8.3o %# x %-s]	b:Falses:éf:inf	!TypeError
+a b %(b)10.0E%(a)0x end	a=i:-1b=s:hello world	!TypeError
+[%#-8.2F	i:-42	[-42.00  
+[%.0u end	f:100.0	[100 end
+%(b)# 7F%(name).1s%%	a=i:-42b=f:0.3333333333333333name=s:a	 0.333333a%
+[% .5f	f:inf	[ inf
+%8o]	f:2.5	!TypeError
+x=%#c%%	f:0.0	!TypeError
+x=%-+9.7s	s:abc	x=abc      
+[%+i end	i:-1i:255	!TypeError
+x=%(b)s	a=i:1000b=f:infname=b:True	x=inf
+x=%+7.0i%%	f:1e+16f:0.5	!TypeError
+x=%4x]	f:nan	!TypeError
+%#+1f]	i:-1234567	-1234567.000000]
+a b %-6.7F %012i	f:-0.0f:1.5e-07	a b -0.0000000 000000000000
+%0-+11u %s %#1E%%	f:inff:1e+16f:0.0	!OverflowError
+a b %-.6g %9o end	i:1f:2.675	!TypeError
+%G	i:-1234567	-1.23457E+06
+a b %9x	f:1e-05	!TypeError
+[%(a)#+7hf end	a=f:2.675b=i:1000	[+2.675000 end
+x=% .3he		!TypeError
+%.3s]		!TypeError
+x=%5g	b:True	x=    1
+% 1c]	f:2.5	!TypeError
+[%#7.6g]	i:1000	[1000.00]
+a b %04r%%	f:1e+16	a b 1e+16%
+x=%0o]	n:None	!TypeError
+%-1x end	i:1	1 end
+[%.6s %+x]	f:1e+16s:f:100.0	!TypeError
+[%e %r end	s:af:1.5e-07	!TypeError
+a b %(a) 11u	a=f:1e+16name=b:True	a b  10000000000000000
+%0+5c	f:0.5	!TypeError
+x=%5.2X	f:0.3333333333333333	!TypeError
+%#+0G end	s:af:100.0	!TypeError
+a b % .1s]	f:123456.789f:0.5	!TypeError
+a b %0- E	f:-0.0	a b -0.000000E+00
+%(a)-1s%(b)5X end	a=f:1e-05b=i:7name=f:nan	1e-05    7 end
+[%.5o end	f:-infi:42	!TypeError
+[%#+X	i:0f:-inf	!TypeError
+a b % 10e % 9Ls %1G	i:-1234567f:inff:2.675	a b -1.234567e+06       inf 2.675
+%5g]	s:a	!TypeError
+[%#.5E %s %12.4u end	s:f:1e+16i:1	!TypeError
+%#2.0g	i:1	1.
+%-G		!TypeError
+x=%(name)0s end	a=s:b=f:-infname=s:	x= end
+x=%(name)+3x%(b)#5o	a=i:1000b=f:1e+16name=i:7	!TypeError
+x=%(a)#+3G	b=f:0.5name=i:42	!KeyError
+a b %(b)+0.7s%(name)0 10E]	a=s:abcname=s:hello world	!KeyError
+%+8G	s:a	!TypeError
+x=%5F %5X %.4r	s:f:2.675f:100.0	!TypeError
+%(name)-0i%(a) 12o	b=f:0.3333333333333333name=f:1.0	!KeyError
+[%- 1.5G %-9d %1.2ls]	f:1.0b:False	!TypeError
+a b %6.6o	i:-1234567	a b -4553207
+%-.6e %0+2F end	s:éf:0.3333333333333333	!TypeError
+x=%#+0.6c]	n:None	!TypeError
+%+8o end	f:2.5	!TypeError
+x=% .0i %.7u %12.0u	i:1i:-42b:True	x= 1 -0000042            1
+%2.2X %6.5F %#0 5f	f:100.0f:0.3333333333333333i:-1234567	!TypeError
+%.6g	f:0.5	0.5
+[%- +hx%%	f:-0.0f:1.5e-07	!TypeError
+a b %.1f	n:None	!TypeError
+[%2F	f:3.14159	[3.141590
+[%01.3f % 4E	s:abcf:100.0f:1e+16	!TypeError
+[%o %# u %0s%%	i:7f:3.14159f:2.675	[7  3 2.675%
+%9f end	f:nan	      nan end
+%1x		!TypeError
+x=%10F %#g %0e%%	i:1000f:inff:2.675i:1	!TypeError
+%0s %1Ls	f:nani:0f:1.5e-07	!TypeError
+x=% F	b:False	x= 0.000000
+%05.2f %-1.7d end	s:af:1.0	!TypeError
+%- 3.5r %4.4f %4g]	f:123456.789f:0.5f:1.5e-07	12345 0.5000 1.5e-07]
+[% 6d]	f:-3.14159	[    -3]
+x=%+c %E end	s:af:0.0f:-3.14159	!TypeError
+%(b)11.4s%(name)11s end	name=f:0.5	!KeyError
+a b %2.1c %o %-4.6X	f:1.0f:0.5f:0.0	!TypeError
+x=%12.3X%%	f:0.0s:a	!TypeError
+%o end	f:1e+16	!TypeError
+[%-2.3Lg %0 d end	i:0b:True	[0   1 end
+x=%#+.0c		!TypeError
+a b %(b)#s end	a=i:-1b=i:0name=f:-3.14159	a b 0 end
+[%8E	s:	!TypeError
+%04.1F%%	f:100.0	100.0%
+%d	i:42	42
+[%# 12r %5X %2ls	i:-1i:255s:a	[          -1    FF  a
+%#0-1.2e	b:True	1.00e+00
+x=%(a) 5.7X%(name)#3.3g%%	a=f:2.5b=f:nanname=i:255	!TypeError
+[%-5.1s %.0F %10.3e]	i:42f:2.675f:inf	[4     3        inf]
+% X %5.3c]	i:1000b:False	 3E8      ]
+%(name)4.5s	name=f:100.0	100.0
+a b %#8X%%	i:-42	a b    -0X2A%
+[%-9s %s end	f:3.14159f:-3.14159	[3.14159   -3.14159 end
+%.2s end	i:-1234567	-1 end
+x=%#-3o	i:255	x=0o377
+%.6r	f:1.5e-07	1.5e-0
+%+c %12.5E end	b:Truef:0.3333333333333333	  3.33333E-01 end
+x=%2X %- +4.0e end	f:100.0f:0.5	!TypeError
+a b %4.1s]	i:0	a b    0]
+%0-12s %0d%%	f:-inff:1e-05	-inf         0%
+x=%0-X%%	f:-infb:False	!TypeError
+[%-4c %1.7F]	i:1000f:inff:3.14159	!TypeError
+%#- X %11.5s %#9.3i	b:Truef:123456.789	!TypeError
+%#r %8e end	i:1000000000000i:1	1000000000000 1.000000e+00 end
+[%G		!TypeError
+a b %#7c %#9d	f:100.0f:-inf	!TypeError
+x=%0 7X %11.1g %G	f:1e+16f:1e+16s:a	!TypeError
+a b %9F %-+F % d	s:abci:1f:0.3333333333333333f:2.675	!TypeError
+x=%(name)#f	a=f:100.0name=f:3.14159	x=3.141590
+%# 9.2g	f:0.0s:a	!TypeError
+[%(b)X%(a)4o	a=f:1e+16name=f:1e-05	!KeyError
+x=%4f]	i:-1	x=-1.000000]
+x=%-7.1X%%	i:1	x=1      %
+a b %(a)-F]	a=f:3.14159name=s:é	a b 3.141590]
+a b %.1E %s % 3.5u	i:-1234567i:0f:100.0i:-1	!TypeError
+x=%s end		!TypeError
+x=%0.5F %05f	i:1000	!TypeError
+x=%3d %u end	s:af:nanf:123456.789	!TypeError
+[%06.0o	i:1f:inf	!TypeError
+[%0 7x % +6d]	n:Nonei:1000000000000	!TypeError
+[%f end	f:1e+16s:abc	!TypeError
+a b % F%%	s:éi:1000	!TypeError
+x=%0g end	b:False	x=0 end
+%(a)0.1u	a=s:b=s:name=f:0.5	!TypeError
+a b %#-5.2hs %+4hf %1.2u end	b:Trues:abci:-1234567	!TypeError
+x=%#u	f:nan	!ValueError
+x=%e %10i	f:2.5b:True	x=2.500000e+00          1
+x=%5E %4.7d %-4s%%	s:hello worldf:1e+16f:123456.789	!TypeError
+%+hs	i:1	1
+%(a)#.4E]	a=f:2.5b=f:1.0name=i:1	2.5000E+00]
+x=%010F end	i:0f:123456.789	!TypeError
+[%#5.3G%%	n:None	!TypeError
+x=%2.2u %#6d	f:1.5e-07	!TypeError
+x=% 3s %- .3e%%	f:1.0b:True	x=1.0  1.000e+00%
+[%(name)c	a=f:3.14159name=i:1	[
+a b %.6d end	f:0.0f:2.5	!TypeError
+x=%2o %- i %G%%	i:0f:nani:1000	!ValueError
+%-0.5E %e end	i:1i:1000000000000s:a	!TypeError
+[%0.4E end	f:-0.0	[-0.0000E+00 end
+%9.5d%%		!TypeError
+%0.0r	i:1000000000000	
+[% 7d %0 4G	i:255i:1000000000000s:hello world	!TypeError
+x=%-.2d %-5.5i	f:3.14159f:inf	!OverflowError
+%.5u]		!TypeError
+a b %(b)05.0c%(a)- 2.2E end	a=i:-1b=b:Truename=n:None	a b     -1.00E+00 end
+x=%9E %d %04.4s%%	s:f:1e+16f:2.5	!TypeError
+%s %6E	f:2.5f:3.14159	2.5 3.141590E+00
+[%(name)6g	a=f:3.14159b=f:100.0name=i:1000000000000	[ 1e+12
+x=%10s]	i:1000000000000	x=1000000000000]
+[%0.2e%%		!TypeError
+a b %0-u	i:-1f:123456.789	!TypeError
+[%.7f %#10.5f	s:abc	!TypeError
+%5E %-s %12.1g]	n:Nonef:1.5e-07f:-inf	!TypeError
+x=%#-.4X %-d%%	i:1000000000000	!TypeError
+%(name).1s%(b)-g end	a=f:infname=i:255	!KeyError
+%.7F end	f:2.5	2.5000000 end
+a b %.1X	f:0.0	!TypeError
+%#3.6x %10e %0c	i:-1234567i:-1234567	!TypeError
+%+.1c end	n:None	!TypeError
+%10G	i:-1	        -1
+x=%#i	i:7	x=7
+a b %(b)#+0c	a=s:éb=i:255name=f:1e+16	a b ÿ
+%-1.0s end	i:1000	  end
+%(b)010g%(a).1F	a=i:1000b=s:hello worldname=b:True	!TypeError
+[%12x%%		!TypeError
+[%07.3c	f:1.5e-07	!TypeError
+[%010r %#+9Ls %.3G%%	f:1e-05f:123456.789n:None	!TypeError
+%-.3g	f:-3.14159	-3.14
+[%10o %i]	i:0	!TypeError
+x=%#07g %i %12.3o end	f:inff:0.5	!TypeError
+%li]		!TypeError
+%s%%	i:1000	1000%
+[%0.3s	f:-3.14159	[-3.
+%12.5i end	i:0	       00000 end
+[%.2o	i:-1234567	[-4553207
+x=%(name)2.0s%(b).3d end	a=i:255b=f:2.5name=n:None	x=  002 end
+%-7.2c %04g%%	i:0f:-3.14159s:abc	!TypeError
+a b %s]	i:42	a b 42]
+[%0.2x %11e]	b:Falseb:False	[00 0.000000e+00]
+[%12.4i % 1c %7u end	s:abcb:True	!TypeError
+[%.5f	i:-42	[-42.00000
+%#+G%%	f:-inf	-INF%
+a b %(name)4X	a=i:-1b=s:a	!KeyError
+[%#.1G	f:123456.789	[1.E+05
+%(name)+1i end	a=i:42name=s:hello world	!TypeError
+%10E %-r %X	s:abci:-42f:3.14159	!TypeError
+a b %-9o%%	f:1e+16	!TypeError
+a b %#-.7i	s:a	!TypeError
+[%-i %d	i:1000f:1e-05	[1000 0
+%#010E		!TypeError
+x=%.4E %0s	f:100.0	!TypeError
+%4.4r %-d %#F]	f:1e-05f:1e-05f:-inf	1e-0 0 -INF]
+x=%#12.6d	f:2.675	x=      000002
+x=%X %#2.0G % d	f:0.5i:1000000000000f:1.0	!TypeError
+x=%(b)#0-o]	a=f:0.3333333333333333b=i:-1name=f:0.0	x=-0o1]
+a b %+8s%%	i:-1n:None	!TypeError
+[%9.5X %#-.5E]	n:Nones:abc	!TypeError
+%.7x %g %4g]	b:Falsef:nanf:-3.14159	0000000 nan -3.14159]
+x=%0i %+10.0r end	i:-1f:-inf	x=-1            end
+%0+6LF%%	i:1	+1.000000%
+x=%#0+.5x	b:False	x=+0x00000
+%#f %#.7f]	f:1.0i:-42s:é	!TypeError
+a b %.6c]	f:100.0	!TypeError
+%3lg	i:1000000000000	1e+12
+x=%d %s]	f:1e-05i:7	x=0 7]
+%0x %+.3G	s:abcf:2.5	!TypeError
+x=%0G %.0c%%	i:42f:1.0f:-3.14159	!TypeError
+%#8r % .7s %0f%%	f:1.5e-07f:0.0f:1e+16f:1e-05	!TypeError
+%s %#8d	b:Falsei:-1	False       -1
+[% 11e%%	i:1000f:-3.14159	!TypeError
+x=%0 +10G]	f:0.0	x=+000000000]
+x=%0+G %e]	s:éf:-0.0	!TypeError
+%+8X]	i:1000000000000f:2.675	!TypeError
+%9.6o %-.0d %e end	f:1.0s:éi:-42	!TypeError
+x=%(a)# 5x%(name)1s%%	b=i:7	!KeyError
+%(b)#11.7x]	b=f:2.5name=i:7	!TypeError
+x=%i	i:1000000000000	x=1000000000000
+x=%#5u %12g end	f:nani:255	!ValueError
+%#o		!TypeError
+a b %0.6c %0+.5lo %-10i end	f:-0.0f:0.5i:-42	!TypeError
+x=%4F	i:-1234567	x=-1234567.000000
+x=%10G%%	s:abc	!TypeError
+%5.3G end		!TypeError
+%(name)e%(b) 10x	a=f:2.5b=b:Falsename=i:-1	-1.000000e+00         0
+%3c%%	i:255	  ÿ%
+a b %6r	i:1000b:False	!TypeError
+[%#s %10E	i:255f:1.0f:-0.0	!TypeError
+%4.7Li end	f:-inf	!OverflowError
+a b %.4e%%		!TypeError
+%4.2li %i%%	f:1e-05f:1e-05	  00 0%
+x=%i %lG %07.3s]	i:1000000000000f:infi:1000000000000	x=1000000000000 INF     100]
+[%-u %1o %7s]	f:1.0f:0.0s:a	!TypeError
+%+r	f:1.5e-07	1.5e-07
+x=%11g	s:abc	!TypeError
+[%#11.1s %#-e end	s:a	!TypeError
+[%4x %03u end	s:hello worldf:1.5e-07	!TypeError
+%s%%		!TypeError
+x=%3u	f:123456.789	x=123456
+%12i end		!TypeError
+%010o end		!TypeError
+%.3c]		!TypeError
+%X %#o % 9g%%	f:0.5f:1.5e-07f:0.0	!TypeError
+%0 9.3o %#5r %#.2c end	f:nanf:-3.14159s:a	!TypeError
+[% 6s %#+12g]	f:-0.0f:-0.0	[  -0.0     -0.00000]
+x=%E]	i:-1	x=-1.000000E+00]
+x=%0.6c %0u]	f:2.5f:100.0	!TypeError
+[%#-lF]	i:-1	[-1.000000]
+[%0lu %7.5u end	f:1e-05b:False	[0   00000 end
+%+10E %-+.4g %#-r%%	f:2.675s:af:1e-05n:None	!TypeError
+[%+6x	f:nanf:1e+16	!TypeError
+% 10u %9r	f:1e+16f:nan	 10000000000000000       nan
+% G	f:3.14159	 3.14159
+a b %0-+8.7lr]	i:-1234567	a b -123456 ]
+%0 +4e %8s	i:42f:nan	+4.200000e+01      nan
+%07.4e]		!TypeError
+a b % .5u %d end	i:-1234567i:1	a b -1234567 1 end
+x=%9.6ls		!TypeError
+%+.1r %X %-X	f:123456.789i:1000n:None	!TypeError
+%G % +.2x %3.3s	i:1000000000000f:1e+16i:1000	!TypeError
+%#+X end		!TypeError
+[%0-d %+.7u	s:f:1e-05	!TypeError
+a b %03.3f	f:0.0	a b 0.000
+x=%.5g %#4d %#G	f:3.14159f:1.5e-07f:inf	x=3.1416    0 INF
+%.7f%%	f:-inf	-inf%
+x=%-.2g	s:a	!TypeError
+%1d %0 7s %+1r end	i:1000i:7f:0.0	1000       7 0.0 end
+%+G	i:1000i:1000000000000	!TypeError
+x=%2i %u %-.5E	f:nanf:nan	!ValueError
+[%# +12X	b:True	[        +0X1
+%02F]	s:a	!TypeError
+%7.7u	i:1000	0001000
+a b %+.2X %.1c end	f:1e-05b:True	!TypeError
+%11.0E end	f:nan	        NAN end
+a b % +e]	s:a	!TypeError
+a b %2F end		!TypeError
+% +10d%%	b:False	        +0%
+[%+.7X end	f:1.0f:0.5	!TypeError
+%(b)0+s%(a)G	a=f:nanb=f:2.5name=i:-42	2.5NAN
+x=%04s end		!TypeError
+x=%+.3x %0F %0-4lr end	f:0.0f:1e+16	!TypeError
+%-+8.3o		!TypeError
+%r]	s:éi:-1234567	!TypeError
+%#.0x %#g %+3e%%	f:-3.14159f:3.14159	!TypeError
+%#2.1s]	f:1e-05	 1]
+a b %.4s %01u	n:Nonef:-3.14159	a b None -3
+x=%.3X %- 9o]	f:0.0i:7	!TypeError
+[%G%%	f:100.0	[100%
+a b % 7g %0 .0c %- +3.5u%%	f:-infs:af:-3.14159	a b    -inf a -00003%
+a b %(name)0-3c	b=f:2.5name=i:255	a b ÿ  
+%(name)- 3c%%	a=i:42b=f:1e-05name=s:é	é  %
+a b %0g %.2x %1G]	b:Truef:2.675f:inf	!TypeError
+%(a)#.3o%(b)00.6hF	b=s:aname=f:inf	!KeyError
+[%(a)6g end	a=f:2.5name=i:-1234567	[   2.5 end
+%0s%%	f:1.5e-07f:123456.789	!TypeError
+%6.5G	f:-3.14159f:123456.789	!TypeError
+a b %0+8o	i:1000000000000	a b +16432451210000
+[%+.4g	f:2.675f:100.0	!TypeError
+%(name)# 8o	a=f:0.0b=b:Falsename=f:2.675	!TypeError
+%0.3E %-2.2i %.1LG	f:123456.789n:Nonef:1.0	!TypeError
+a b %10s %+9f %9.1s	i:-1234567f:0.5	!TypeError
+x=%e %-9ls % +7d	f:3.14159b:False	!TypeError
+a b %.6E		!TypeError
+%0-X	i:-42	-2A
+[%(b).2x%%	a=f:0.0b=f:-infname=b:True	!TypeError
+%-10.1r %0-9.1F %-Le%%	f:infi:42s:hello world	!TypeError
+a b %0 .3s %0 X]	i:-42b:False	a b -42  0]
+a b %(a)s%(name)#0-G	a=b:Trueb=s:aname=f:inf	a b TrueINF
+%0e%%		!TypeError
+%0X%%	i:-1234567	-12D687%
+%-d end		!TypeError
+[%#7.2i end		!TypeError
+a b %.4i	b:False	a b 0000
+%#-.0r %#f	f:-3.14159	!TypeError
+%+g %0G %+10.6u%%	i:-42i:1000000000000f:1.5e-07	-42 1E+12    +000000%
+%#0.6X]	f:1.0	!TypeError
+x=%s %+2r	f:inff:1e+16	x=inf 1e+16
+a b %(name).4G	a=f:100.0name=f:3.14159	a b 3.142
+a b %#11X %-3i%%	i:1000i:0	a b       0X3E8 0  %
+%00X %+5o	f:3.14159i:1000	!TypeError
+[%F	f:2.675i:1	!TypeError
+%0c % 11G%%	f:inf	!TypeError
+%2.2o end	i:1	01 end
+[%.1u %0.0s %G	f:2.675i:-42f:0.0	[2  0
+%- .4i %+9f %1.2d	s:ai:1000000000000i:1000	!TypeError
+%(a)d%(b)-1u end	b=i:-1name=f:-3.14159	!KeyError
+x=%(name)#0-4s%%	a=f:123456.789b=f:-3.14159	!KeyError
+[%s	i:42	[42
+x=%G %#0 s %11s%%	i:-42f:1e+16	!TypeError
+%e	s:abc	!TypeError
+%4.6e %- G %7.6u end	i:255f:-0.0s:hello worldf:0.0	!TypeError
+x=%0- +11r	f:nan	x=nan        
+%+X	f:1.5e-07	!TypeError
+[%(name) s end	a=i:-42	!KeyError
+a b %(name)#c%(b)10.0o	a=s:ab=i:-42name=i:1000	a b Ϩ       -52
+%(b)9o]	a=i:1000000000000name=f:0.5	!KeyError
+a b %# .1G]	f:-inf	a b -INF]
+x=%1.4i %11.7lG]	i:7f:2.5	x=0007         2.5]
+%(b)0 .6X%(name)05.7d end	a=f:100.0b=f:-0.0name=f:0.3333333333333333	!TypeError
+a b %(a)u%(name)0o%%	name=i:-42	!KeyError
+%#r%%	f:3.14159	3.14159%
+[% +3.3d %4.4s %+.7r]	f:0.0f:nans:	[+000  nan '']
+x=%-9f %02X	f:1e-05f:0.0	!TypeError
+a b %u	f:inf	!OverflowError
+%4X	f:-0.0	!TypeError
+%10s end	f:2.675i:1000	!TypeError
+[%1r]	i:42	[42]
+a b %(b)#012E%%	a=f:123456.789b=s:hello worldname=f:123456.789	!TypeError
+a b %#- 2e]	f:3.14159	a b  3.141590e+00]
+[%#+.6Lx	f:100.0	!TypeError
+x=% .0s	i:0	x=
+[%#u end	s:abc	!TypeError
+a b %0- .1u%%	f:100.0	a b  100%
+%#.6x]	i:255	0x0000ff]
+%s %-10lG	i:255	!TypeError
+%.6f end	f:1e-05	0.000010 end
+%-8.3r end	f:2.675	2.6      end
+%#09.6LX %-+d %u	f:nani:-1234567f:-3.14159	!TypeError
+%+5G end		!TypeError
+%5.4r	f:2.675	 2.67
+[%+8.1F % +8i %.4Ls]	s:af:1.5e-07i:255	!TypeError
+%4.1F end	f:123456.789	123456.8 end
+a b %r %8i %12s end	f:1.5e-07b:False	!TypeError
+[% s %i %+4.0s	b:Falsef:100.0	!TypeError
+a b % 6F	f:-0.0	a b -0.000000
+[%1E % F %10d%%	f:1.0f:1e+16s:é	!TypeError
+x=% .0i %-10f %-+i	i:255i:-1234567	!TypeError
+a b %5r %#G%%	i:1000s:a	!TypeError
+a b %0.1u]	s:hello world	!TypeError
+a b %(b)E end	a=s:b=f:123456.789	a b 1.234568E+05 end
+x=%+10x		!TypeError
+a b % r %0r % F]	i:1i:255s:hello world	!TypeError
+%(a) .6s%(b)0-+8F%%	a=i:0name=i:1000	!KeyError
+x=%012f end	i:-1234567	x=-1234567.000000 end
+x=%-f	i:0	x=0.000000
+[%# .2G	f:123456.789	[ 1.2E+05
+x=%0 .7u	f:1.0f:nan	!TypeError
+a b %#E end	s:abc	!TypeError
+a b %0.2u	f:1e+16	a b 10000000000000000
+a b %1X	f:2.5	!TypeError
+a b %+5E %g %10g	i:42f:123456.789f:-0.0	a b +4.200000E+01 123457         -0
+a b %4.4c %0s	s:és:é	a b    é é
+%#.6d end	i:-42	-000042 end
+%2.2d end	f:2.675	02 end
+x=%(b) .1d	a=f:2.675b=f:nanname=i:255	!ValueError
+x=% .3s %3.6x % s	i:-42i:1000s:	x=-42 0003e8 
+a b %(b)08s end	a=f:1.5e-07b=f:123456.789name=b:False	a b 123456.789 end
+x=%+Lf %u %8s end	f:1.5e-07f:1e-05s:abcs:hello world	!TypeError
+%1E	f:123456.789	1.234568E+05
+x=%0- 11s	i:1	x=1          
+%f	i:-1234567	-1234567.000000
+[%4.3r %3.2u%%	f:3.14159f:nan	!ValueError
+x=%(b)# 0.1e%(a)s	a=i:-1234567b=s:abc	!TypeError
+x=%5o %0 3x%%	i:7	!TypeError
+%-o	f:2.5	!TypeError
+x=%(a) E%%	b=s:hello worldname=f:1e+16	!KeyError
+%-d %12.4d %0.6f	i:1000b:Falsef:inf	1000         0000 inf
+%(a) 2x]	b=i:1000name=i:255	!KeyError
+%.3X]	f:1.0	!TypeError
+%-g]	i:1000000000000	1e+12]
+x=%o]	f:0.5	!TypeError
+a b %-E		!TypeError
+a b %#7X %X	f:-0.0i:-1234567s:abc	!TypeError
+a b %c%%	f:2.5	!TypeError
+%-10G	s:é	!TypeError
+x=%-+0.2E end	f:1e+16	x=+1.00E+16 end
+x=%u %X	f:1.5e-07	!TypeError
+%(a)ls%(name)#-6s%%	a=f:1e+16name=s:a	1e+16a     %
+x=%#.4x %x	i:-1f:3.14159	!TypeError
+%- +3.1e end	i:-1	-1.0e+00 end
+a b %-10X]	f:infi:255	!TypeError
+%(b) +1.7g]	a=i:-1234567name=s:hello world	!KeyError
+[%(name)0X end	a=b:Trueb=i:7name=f:-inf	!TypeError
+x=%11f	f:nan	x=        nan
+a b %#-6.6X % 4.5u	i:1000000000000f:1e+16	a b 0XE8D4A51000  10000000000000000
+a b %.3F]	f:0.5	a b 0.500]
+x=%ls%%	i:255f:100.0	!TypeError
+x=%5G	f:0.5	x=  0.5
+%#- c end	i:1000000000000	!OverflowError
+a b %d	f:0.5	a b 0
+x=%#r %s end	f:123456.789i:42i:-1234567	!TypeError
+x=%0- 4s]		!TypeError
+[%#10o %0c %G]	f:2.675i:42f:100.0	!TypeError
+%#0.0f]	f:100.0f:100.0	!TypeError
+%-.3e end	f:0.0	0.000e+00 end
+a b %s %+7.3F %11s	f:-0.0f:1.5e-07f:0.0	a b -0.0  +0.000         0.0
+%+4X %-+4.5s %.3x%%	i:1i:0f:3.14159	!TypeError
+%#+10e %0+.3r %i end	f:1.5e-07f:3.14159i:7	+1.500000e-07 3.1 7 end
+%-5.2d%%	b:True	01   %
+a b %g		!TypeError
+x=% .7o]		!TypeError
+% .1d%%	i:-42	-42%
+x=%(a)#8.1i%(b)3.7e%%	a=s:name=i:0	!TypeError
+% .1s		!TypeError
+a b %-c %-f	b:Truei:0	a b  0.000000
+x=%.7F %#4lX %8.3d end	i:1n:Nonei:1000000000000f:-3.14159	!TypeError
+%(b)0.6e	a=f:100.0b=f:0.5name=f:2.675	5.000000e-01
+%.3s end	f:0.0	0.0 end
+%10.6F %0-e	s:é	!TypeError
+%-s]	f:3.14159	3.14159]
+[%(name)#0-8s%(a)-.1g	b=b:Truename=i:-42	!KeyError
+%(name)#0g	a=f:100.0b=n:Nonename=f:-inf	-inf
+%-.4s %#F %+.5d	f:2.5s:é	!TypeError
+%g	i:0	0
+%+8hx%%	b:True	      +1%
+a b %011s %#-7r % 1.5u	s:éf:1.0f:1e-05	a b           é 1.0      00000
+a b %+12.1X %010X %- G	i:-42f:1e-05f:2.5	!TypeError
+a b %#-f%%		!TypeError
+a b %2X end	f:1.5e-07f:3.14159	!TypeError
+%(a)-0.5X%(name).4d	name=f:0.5	!KeyError
+%# o]	f:2.5	!TypeError
+% 3X end	f:2.5	!TypeError
+a b %5.4o %lr %0.5f]	f:nans:abcs:a	!TypeError
+x=%#11f %#LG %-F%%	f:0.5f:123456.789f:1.5e-07	x=   0.500000 123457. 0.000000%
+[% 12s %f	f:0.0	!TypeError
+%u%%	f:123456.789	123456%
+%.6LG]	f:2.5	2.5]
+%#.3s %s %c]	i:42i:1i:7f:1.0	!TypeError
+x=% c	i:1	x=
+%8r	i:42f:2.675	!TypeError
+x=%2G	f:1e+16	x=1E+16
+x=%4E %#7c]	i:42f:-3.14159	!TypeError
+%.3o %#05s %-.5g%%	f:1.0f:1.0f:-0.0	!TypeError
+a b %x%%	i:-1	a b -1%
+x=%0c %r	i:-1s:abc	!OverflowError
+a b %012g%%	i:1000	a b 000000001000%
+a b %9e]	f:inf	a b       inf]
+a b %4s	f:-3.14159f:1.0	!TypeError
+[% 5.7X%%		!TypeError
+x=%12s %-6.1i %s]	i:1000000000000i:-42i:7f:1.5e-07	!TypeError
+%(b)6s	a=f:-0.0b=f:-3.14159name=f:-3.14159	-3.14159
+a b %0.6E	s:	!TypeError
+[%- +1d %0- .6G%%	f:1.5e-07f:-0.0	[+0 -0%
+%X]	s:hello worldf:2.675	!TypeError
+%(b)5F%(name)-2d end	a=i:1b=s:abc	!TypeError
+x=%(a)0-+6.6d%(b)#9.6f	a=i:0b=b:Truename=f:1.0	x=+000000 1.000000
+a b %(a)-.4F	a=i:1000000000000b=f:3.14159name=i:1000	a b 1000000000000.0000
+%4x end		!TypeError
+%0+c %+r %-.3d%%	i:7s:abcf:-inf	!OverflowError
+% +s]	s:abc	abc]
+a b %#0s %0 +o % 11E	i:-1234567i:42f:2.675	a b -1234567 +52  2.675000E+00
+[%(a)#-4i	a=f:0.5b=i:0	[0   
+%.3i %0d %.1f%%	f:0.3333333333333333f:123456.789i:1000	000 123456 1000.0%
+[%9i %#.1x]	i:-1234567s:é	!TypeError
+x=%0 11o end	f:0.0	!TypeError
+%(a)+.7i%(name)#-11s	a=f:infb=i:42name=s:é	!OverflowError
+%#E%%	f:2.675	2.675000E+00%
+%12i]		!TypeError
+%+r%%	b:True	True%
+%5.2E %0+.3s%%	f:nans:	  NAN %
+[%(a)- 10.6u]	a=f:2.675name=f:0.3333333333333333	[ 000002   ]
+x=%- .4e	f:1e-05f:-0.0	!TypeError
+a b %+11.4s end	f:0.5	a b         0.5 end
+%#.6g]	i:255	255.000]
+[%+.5u	f:1.0	[+00001
+%#9.2x		!TypeError
+[%i%%	i:0	[0%
+%-10u%%	f:0.3333333333333333	0         %
+a b %#r %+3G	s:i:-1234567f:-inf	!TypeError
+[%10.3i]	f:2.5	[       002]
+[%06.4c %G %12o end	s:hello worldi:1000000000000f:1.5e-07	!TypeError
+a b %012c %+12E %7X]	f:0.5i:1000f:1.0	!TypeError
+a b %#1.1i %-.3F % 6s	i:-1f:1e-05	!TypeError
+%.7F %+6.3f end	f:0.3333333333333333f:0.5	0.3333333 +0.500 end
+[%0+7hs end	s:hello worldf:0.5	!TypeError
+%(name)+.2G%(a)0-.6s]	a=f:-3.14159b=i:-42name=s:hello world	!TypeError
+[%# s end		!TypeError
+x=%#0X %- c %3F%%	f:2.675f:2.5f:nan	!TypeError
+a b %.4G %.1g	s:af:0.3333333333333333	!TypeError
+%.2F %#s	f:100.0s:af:-3.14159	!TypeError
+a b %(b)-5X]	a=f:1.5e-07b=n:Nonename=s:hello world	!TypeError
+%-6.3G	i:0	0     
+a b %3.2G		!TypeError
+a b %-12e %.4f	f:nani:0	a b nan          0.0000
+%5e	f:2.675i:42	!TypeError
+x=%#2F	f:100.0	x=100.000000
+%8.4F%%	f:1e-05	  0.0000%
+%10.2o		!TypeError
+a b %(name)07.5f	b=f:0.3333333333333333name=i:1000	a b 1000.00000
+%0+X %8.4u%%	i:1000000000000i:-42f:3.14159	!TypeError
+[%#0u		!TypeError
+%7E %-12s	s:s:	!TypeError
+x=%(b)0 .7c%(a)#-e end	a=f:1.0b=f:3.14159	!TypeError
+[%(b)e end	a=i:0b=i:-1name=s:é	[-1.000000e+00 end
+a b %s %8e]	f:2.675n:None	!TypeError
+x=%12F	n:None	!TypeError
+% .4E end	f:nanf:1e-05	!TypeError
+x=%10s %s end	f:1.5e-07f:3.14159	x=   1.5e-07 3.14159 end
+%#10e %F % i%%	f:-0.0f:nan	!TypeError
+a b %#0-10s %-+F%%	f:1.0	!TypeError
+[%11s %d end	f:100.0i:42i:1000000000000	!TypeError
+%+e end	i:255i:-1	!TypeError
+a b %0+7.2Ls		!TypeError
+[%+10.3hd %#+u %6X	f:0.5i:255f:100.0	!TypeError
+%#E %05x	f:1e+16f:-inf	!TypeError
+%(a)#04.2i%(b)02s	a=f:1.0b=f:0.0name=f:100.0	00010.0
+[%#+lu%%	i:1000000000000	[+1000000000000%
+x=%(b) .3s	a=s:éb=i:-42name=i:1000000000000	x=-42
+%(a)#6X%(name)G end	a=f:123456.789b=i:-1234567	!TypeError
+a b %.6f end	i:1	a b 1.000000 end
+%(name)0.4d%(a)0s	a=i:1000name=i:255	02551000
+%(name)3s	a=b:Trueb=i:7name=b:False	False
+[%+4s	s:hello world	[hello world
+x=%5x	f:0.3333333333333333	!TypeError
+%(b) +1d%(name)#G end	b=i:7name=f:1.0	+71.00000 end
+% 4.4X]	f:1e-05	!TypeError
+a b %-G%%	f:-3.14159	a b -3.14159%
+[%+.1r	f:1.0	[1
+x=% d%%	i:1000000000000	x= 1000000000000%
+x=%08X %0r %0he	f:1e+16f:-3.14159f:2.5	!TypeError
+% 4.4g %-1ld %3.2ls%%	i:1i:-1i:7	   1 -1   7%
+a b %-s%%	f:2.5	a b 2.5%
+% 9c %i	f:100.0i:255	!TypeError
+%5g	f:1e-05	1e-05
+[%G]	s:abc	!TypeError
+%12g]	i:7i:0	!TypeError
+x=%03.0x%%	f:3.14159	!TypeError
+%+e		!TypeError
+%#-3.7i%%		!TypeError
+[%E %-ls %-G	i:-42s:hello worldf:1e-05b:True	!TypeError
+%f %g %.7G	i:255i:255f:1e+16f:-3.14159	!TypeError
+x=%+c %0 5G%%	i:255i:7s:é	!TypeError
+a b % 10ho %1G	s:éf:1e-05	!TypeError
+[%1.2g %#-+7X %#-+.3ld%%	s:abcf:inff:1.5e-07i:255	!TypeError
+x=%.2g % .5u %7d	b:Truef:3.14159f:1e+16	x=1  00003 10000000000000000
+a b %(a)-+4.7f end	a=f:infb=f:-infname=i:-42	a b +inf end
+[%+.1hu %- .6g %#+X	i:255f:3.14159f:-0.0s:a	!TypeError
+%c]	f:inf	!TypeError
+%#hd end	f:0.5	0 end
+a b %#i end		!TypeError
+x=%6.4s	f:1e-05	x=  1e-0
+%-.3d	f:inf	!OverflowError
+[% .6c		!TypeError
+[%04o%%	f:inf	!TypeError
+a b %0.1s %u%%	f:123456.789f:0.5	a b 1 0%
+[%E	f:1.5e-07	[1.500000E-07
+[%(a)#00e%(name)0 +.3G	a=i:0b=f:2.675	!KeyError
+x=%#.0X%%		!TypeError
+x=%(name) E	a=i:0b=i:-1234567name=f:1e-05	x= 1.000000E-05
+a b %011f %f %010E	f:1.0f:123456.789b:True	a b 0001.000000 123456.789000 1.000000E+00
+[%(name)- 0.1r%(b)10d	a=f:nanb=f:2.675name=f:1.0	[1         2
+[%s]	f:2.5	[2.5]
+x=%7f	s:a	!TypeError
+[%11x%%	i:1000000000000	[ e8d4a51000%
+a b %12.7c]	f:0.0f:-inf	!TypeError
+%5s]	f:2.5	  2.5]
+x=% F	f:0.3333333333333333	x= 0.333333
+a b %F	i:7	a b 7.000000
+%s %.2E	b:Truef:0.3333333333333333i:-42	!TypeError
+a b %-+.2s	f:1e+16f:2.675	!TypeError
+a b %#X %4s %4f%%	b:Falsei:255f:3.14159	a b 0X0  255 3.141590%
+x=% +11o]		!TypeError
+[%#X		!TypeError
+%7e	i:1000	1.000000e+03
+x=%-.1G]		!TypeError
+x=%x %05E %11d	f:2.675i:255	!TypeError
+a b %6i	s:f:2.5	!TypeError
+%8.3e]	f:1e+16	1.000e+16]
+[%-c %5i	f:1e-05f:3.14159	!TypeError
+%(b)+6.2x%%	a=f:2.5b=i:1000000000000name=i:-42	+e8d4a51000%
+%(name)-0f%(a)#+11.6u	a=s:b=s:name=f:0.5	!TypeError
+a b %(a)0s]	a=f:100.0b=f:100.0name=i:1000	a b 100.0]
+[% u %010Lo %d end	f:1.5e-07f:-3.14159f:123456.789	!TypeError
+[% 10E%%		!TypeError
+a b % .1d %0.5c %-+.4o end	f:-0.0f:1.0f:100.0i:255	!TypeError
+%.0e]	b:True	1e+00]
+x=%#g %11d % E end	s:f:2.5i:1f:3.14159	!TypeError
+%(a) .2d]	a=f:-0.0b=f:2.675	 00]
+a b %#-9.3X%%	i:42i:0	!TypeError
+[%(b).0s end	a=f:-3.14159name=b:True	!KeyError
+%0r		!TypeError
+%# X	f:1.5e-07	!TypeError
+%+.4f %-3.1F %0X	f:-inff:123456.789f:1.5e-07	!TypeError
+[%#- Ls%%	f:1.5e-07	[1.5e-07%
+a b %- G%%	b:False	a b  0%
+x=%e %d%%	f:-0.0b:False	x=-0.000000e+00 0%
+x=%2.3s		!TypeError
+x=%0.6E %u %8s]	i:0s:hello world	!TypeError
+a b %-E%%	f:123456.789	a b 1.234568E+05%
+[%.5c	i:-42	!OverflowError
+a b % 3F %+10c]	f:1e-05f:2.5	!TypeError
+x=% 2.1X end	i:1000000000000	x= E8D4A51000 end
+%(name)3ls	b=i:-1name=i:7	  7
+a b % +11f %#-0u	f:1e-05f:2.675	a b   +0.000010 2
+%c]	f:1.0	!TypeError
+%#e]		!TypeError
+%6r end	s:a	   'a' end
+x=%#.2s end	n:None	x=No end
+a b %9g	f:-inf	a b      -inf
+x=%.6hE %-1hr %X	f:-3.14159f:2.5b:True	x=-3.141590E+00 2.5 1
+%-5.1u%%	f:0.0	0    %
+%#o]	i:1000	0o1750]
+a b %.0d end	f:3.14159n:None	!TypeError
+x=%12e]	f:1e-05	x=1.000000e-05]
+a b %i %7g%%	i:0b:False	a b 0       0%
+%05s %8.4E %#.5X	i:1000f:2.5f:1.0	!TypeError
+x=%e %x %#010s%%	f:-0.0i:-42i:1000000000000	x=-0.000000e+00 -2a 1000000000000%
+%4.1g %-+s end	f:-0.0f:inf	  -0 inf end
+a b %+i]	f:3.14159	a b +3]
+a b %.1s	s:hello world	a b h
+%#5o	f:2.5f:-3.14159	!TypeError
+x=%11r		!TypeError
+x=%2s %e]	f:123456.789i:255f:1.0	!TypeError
+x=%d end	f:-0.0	x=0 end
+%-r %# s % s	f:1.0f:1e-05	!TypeError
+%.0G %3.5i%%	s:	!TypeError
+[%5i %-3e %.2f end	f:-inff:-3.14159	!OverflowError
+%#+1G %0+.6s	f:2.5s:hello world	+2.50000 hello 
+x=%#s %#04G % 10c	f:-3.14159f:2.5i:7i:-1234567	!TypeError
+%.3c %01o	s:an:None	!TypeError
+%- +li%%	i:255	+255%
+[%(b)-d end	a=i:42b=f:2.5name=i:0	[2 end
+x=%f		!TypeError
+%#0f %c %.2G	s:abcb:False	!TypeError
+%(b) +7.7e%(name)-.0hs	a=n:Noneb=s:hello world	!TypeError
+[%0- +2d % o %-+2X]	f:0.3333333333333333i:1b:False	[+0  1 +0]
+%00u %0g%%	f:-0.0i:7i:1000000000000	!TypeError
+%(b)0x%(a)# s]	a=i:0b=f:-0.0name=i:7	!TypeError
+% 6o	f:-inff:3.14159	!TypeError
+[%+i	s:abc	!TypeError
+%i	f:2.675	2
+[%6o end	b:False	[     0 end
+%(a)2.3E%(b)F	a=f:1.0b=s:name=s:abc	!TypeError
+x=%3.3X%%		!TypeError
+a b %#- 7X	n:None	!TypeError
+%(name)s	a=s:ab=i:-1name=f:123456.789	123456.789
+x=%12.2s]		!TypeError
+[%-Lx %0.3d %1s	f:2.5f:-0.0	!TypeError
+x=%11G %06c %7G]	b:Falseb:Truef:2.5	x=          0           2.5]
+a b %#9r % +g]	f:-0.0f:-inf	a b      -0.0 -inf]
+a b %#8G %0+6F %G end	i:0f:0.5f:nan	a b  0.00000 +0.500000 NAN end
+%+5.4i %9s %3x	f:-3.14159f:1e+16n:None	!TypeError
+[%11c %#7.4X %9.3s]	f:1e-05f:nanf:1.5e-07	!TypeError
+[%11.0d %E %11F	f:1.0i:1s:abc	!TypeError
+a b %#01G %+11.3E % .7u]	b:Falsei:-42n:None	!TypeError
+[%0-r]		!TypeError
+x=%s%%	f:0.3333333333333333	x=0.3333333333333333%
+%s]	i:255	255]
+%(a)9G%(name).0d%%	a=f:-0.0b=i:-1234567name=s:abc	!TypeError
+a b %03s		!TypeError
+x=%-.1E]	f:1.5e-07f:0.5	!TypeError
+x=%(b) Ls end	a=f:0.5b=n:Nonename=i:-1	x=None end
+[%#-6X %05.7d end	n:None	!TypeError
+a b %- x %2.1o %# 7.3s]	f:3.14159s:s:	!TypeError
+a b %01F%%	f:0.0	a b 0.000000%
+%f %+.2f %0 8.5f end	f:-0.0b:Falsei:-1234567	-0.000000 +0.00 -1234567.00000 end
+x=%#12.6g end	i:-1	x=    -1.00000 end
+%0.5E	f:inf	INF
+a b %hx%%	f:0.3333333333333333f:3.14159	!TypeError
+a b %- r %e %08X%%	s:abcs:f:-inf	!TypeError
+a b %(a)5o%(name)-d]	a=i:1000000000000b=i:1000name=f:-inf	!OverflowError
+x=%#-.7e % .7E end	f:0.0f:3.14159f:0.5	!TypeError
+a b %2g]	s:	!TypeError
+a b %#0g end	f:inff:1.5e-07	!TypeError
+%+3X	i:1000000000000	+E8D4A51000
+%(a) .1r]	a=b:Falseb=s:aname=s:a	F]
+%u]	f:0.5	0]
+%(name) 3x%(a) 7.7x%%	a=f:0.0b=f:-infname=i:1	!TypeError
+%(b)0.5f%(name)8.1o%%	a=f:1.5e-07name=b:True	!KeyError
+%+8d	s:hello world	!TypeError
+%- 7.3f end	f:1e-05	 0.000  end
+[%-F%%	b:Trues:é	!TypeError
+%(b)3.6g end	b=i:-1234567name=f:0.3333333333333333	-1.23457e+06 end
+% 1r %-+6f %# +10s	s:abcb:False	!TypeError
+[%1.2X	f:infs:	!TypeError
+% r %x end	i:1i:1000	1 3e8 end
+a b %.6i	i:1	a b 000001
+%G end		!TypeError
+x=%i % +4.3E %#0.5i end	f:0.3333333333333333f:100.0f:-infs:a	!OverflowError
+x=%#7.1f end		!TypeError
+%(b).0Ls%(name) 12d	a=f:infb=f:3.14159	!KeyError
+%9.4r %0-u %4F%%	i:-1f:3.14159	!TypeError
+x=%9F		!TypeError
+x=%s%%	s:hello world	x=hello world%
+a b %.2r %0.1s %.3e end	f:0.5f:123456.789i:42	a b 0. 1 4.200e+01 end
+%- +12c end		!TypeError
+%(b)6.1g%(a) 1.7r end	a=f:1.0b=i:-42	-4e+011.0 end
+%s	i:1f:3.14159	!TypeError
+% 9c end	f:100.0i:1000	!TypeError
+%x	f:inf	!TypeError
+%0r %d % 9G	i:0s:ai:7	!TypeError
+%03.1s%%	f:100.0i:-42	!TypeError
+x=%0.2f %#0 +3G %F]	f:-3.14159s:abcs:abc	!TypeError
+%9.1X	i:0f:1e-05	!TypeError
+a b %2x end		!TypeError
+x=%(b)+.4x%(a)g%%	b=i:255name=i:1000	!KeyError
+%12s%%	f:-0.0	        -0.0%
+[%7r	i:-1	[     -1
+%.1o end	s:af:inf	!TypeError
+[%(a)- .7i end	b=i:7name=i:42	!KeyError
+%#+12x]	i:1000	      +0x3e8]
+%(b)04.6o%%	name=s:hello world	!KeyError
+%02X	s:a	!TypeError
+a b %9u]	b:True	a b         1]
+a b %0s%%	i:0	a b 0%
+%.7c %0E%%	f:2.675f:1.0f:100.0	!TypeError
+a b %0.2E	i:42	a b 4.20E+01
+[% +0.1f	f:100.0	[+100.0
+[%0-.5s	s:	[
+%(b)#- 7g%(a)10o%%	a=f:3.14159name=f:-0.0	!KeyError
+% .2s%%	f:1e+16	1e%
+a b %#x end	s:ai:1	!TypeError
+a b %x	f:1.5e-07f:1.0	!TypeError
+%10i %0.4r end	f:-0.0	!TypeError
+[%(name)+10E%(b)0 8.3X%%	b=s:hello worldname=f:0.0	!TypeError
+%-7G	i:42	42     
+[%#0+.3x end	i:1	[+0x001 end
+a b %6x%%	f:0.0i:-1	!TypeError
+a b %12.1F	i:1s:é	!TypeError
+%x end	f:100.0f:1e-05	!TypeError
+%s%%		!TypeError
+%10LE %10.2u %+i	i:1000000000000f:100.0n:None	!TypeError
+%6g %3e%%	i:-1	!TypeError
+%(a)-7s%(name).7G end	a=f:-3.14159b=i:1000name=i:-1	-3.14159-1 end
+x=%6.3f		!TypeError
+%0.7e	i:1000	1.0000000e+03
+[%(b)0-.7X	a=f:2.675b=s:aname=f:nan	!TypeError
+[%7X		!TypeError
+%g]	f:100.0	100]
+a b %+s]	f:0.5	a b 0.5]
+%g %-c %+3.5g]	s:hello worlds:és:	!TypeError
+[%Ls%%	s:abc	[abc%
+x=%11G		!TypeError
+%+0r]	s:abc	'abc']
+%8.2c		!TypeError
+[%#0e	f:3.14159i:-1	!TypeError
+%#.1G		!TypeError
+%11F %7G	i:1000000000000i:-1f:inf	!TypeError
+%-+8X%%	s:éf:-3.14159	!TypeError
+[%.3F]	i:7f:-inf	!TypeError
+%6X%%	f:inf	!TypeError
+%0+1.1G%%	s:hello world	!TypeError
+a b %-10.7x %11G	s:a	!TypeError
+%8s % 9e %-11X%%	f:0.0s:f:nan	!TypeError
+%s %F]	f:nann:None	!TypeError
+a b %11f]	f:2.5	a b    2.500000]
+x=%u %-11i]	f:0.5i:1000	x=0 1000       ]
+a b %11s %00g %11.4s%%	f:2.675f:123456.789b:False	a b       2.675 123457        Fals%
+%# .2f	n:None	!TypeError
+[%#o	f:-3.14159	!TypeError
+%01.0lg	f:123456.789	1e+05
+%(a) 5f%(b).5i	b=f:-3.14159name=f:1e-05	!KeyError
+%.4e	f:0.5	5.0000e-01
+a b %x	i:0	a b 0
+%08F %9.4s %9.2u]	s:f:0.5s:	!TypeError
+a b %(name)-0e	a=f:3.14159b=i:-1234567name=b:False	a b 0.000000e+00
+%5.2X %#05.2d % 8f end	f:123456.789f:100.0i:0	!TypeError
+[%5.0c end		!TypeError
+x=%-.3g	f:2.675	x=2.67
+%.7c]	f:-0.0	!TypeError
+%-r]	f:2.675	2.675]
+%e	f:0.5f:inf	!TypeError
+%2o %0-9G%%	n:Nonef:1e+16s:	!TypeError
+%i %5.4f]	i:1f:1.0	1 1.0000]
+%0.3x %e %-o]	f:1.5e-07f:-3.14159i:42f:0.5	!TypeError
+%- 0x end	f:-0.0	!TypeError
+% 2e%%	f:nan	 nan%
+[%(name)-.0u	a=f:0.0name=i:0	[0
+x=%.3s %4.6g	f:0.5b:True	x=0.5    1
+a b %04c	i:1000000000000	!OverflowError
+[%#+3c %+3u	f:1e-05s:abc	!TypeError
+%7.2G]		!TypeError
+a b %8.3E end		!TypeError
+[%-s %0F	f:1e+16f:-0.0	[1e+16 -0.000000
+a b %0+s	f:1e-05	a b 1e-05
+%12g	s:a	!TypeError
+%#10o end	i:0	       0o0 end
+%09e %+11s %.4Ls%%	f:2.675s:af:0.3333333333333333	2.675000e+00           a 0.33%
+%6f%%	i:-1	-1.000000%
+%+3g %#0-s end	i:0s:i:-42	!TypeError
+%#g%%	s:abc	!TypeError
+%12s		!TypeError
+a b %(b)5.2s%(name)# 11.2s	a=f:infb=f:2.675name=i:-42	a b    2.         -4
+%(b)0e	a=f:-0.0b=f:2.5name=f:nan	2.500000e+00
+a b %#9g	f:123456.789	a b   123457.
+%0r %3X %.6X	f:1.0f:infi:7	!TypeError
+x=%(a)-+11s%%	b=f:0.0name=i:-42	!KeyError
+a b % 7e %-.1x end	i:1000	!TypeError
+a b %(b)-+.7X%%	a=f:1.0	!KeyError
+[%d	f:100.0	[100
+x=%#-8X %11x	f:infi:1	!TypeError
+%+.5c end	f:1e-05	!TypeError
+%-f]	i:255f:0.3333333333333333	!TypeError
+%x%%		!TypeError
+[%5x	i:-1	[   -1
+x=%10s		!TypeError
+[%#+4s %-+G%%	n:None	!TypeError
+a b %#01.0c %.5hx %- .2d	i:1f:100.0b:Falsef:1e-05	!TypeError
+a b %(b)+g%%	b=f:2.5name=s:hello world	a b +2.5%
+[% x	f:100.0s:a	!TypeError
+x=% .6c	f:-inf	!TypeError
+[%+6s%%	f:123456.789	[123456.789%
+%01.4F %.2d%%	f:100.0i:42	100.0000 42%
+a b %.5hs%%	s:abcf:0.0	!TypeError
+%0 10.5G]		!TypeError
+[%(b) s]	a=b:Truename=f:0.3333333333333333	!KeyError
+x=%0-2r]	s:a	x='a']
+%-2.4g%%	f:1e+16	1e+16%
+a b %0c%%	b:True	a b %
+x=%#06.4g %c end	s:f:100.0	!TypeError
+x=% 8s%%	f:3.14159	x= 3.14159%
+a b %(a)#0g%%	a=i:1000000000000b=s:abcname=f:2.5	a b 1.00000e+12%
+x=%(b)1r%(a)10.6G	a=b:Trueb=f:2.5	x=2.5         1
+a b %#0-X %00d %5u end	i:42f:-inff:123456.789	!OverflowError
+a b %-6.4u %#012s %11o	i:255i:255f:0.3333333333333333	!TypeError
+a b %(name) +2.2g end	a=i:-42b=f:3.14159name=i:1000	a b +1e+03 end
+x=%(b)- i	b=f:3.14159name=f:0.3333333333333333	x= 3
+%10.0hi]	b:True	         1]
+x=%E]	i:-42	x=-4.200000E+01]
+[%#6d]	n:Noneb:False	!TypeError
+x=%- +F	s:hello world	!TypeError
+%-6f	f:-3.14159s:é	!TypeError
+a b %0.3u	s:abc	!TypeError
+%4s %7.0i	s:abc	!TypeError
+%(a)G%(name) .7s%%	a=f:1e-05b=s:abcname=f:0.5	1E-050.5%
+a b %1u %11o]	s:éi:-42	!TypeError
+[%r end	f:1e-05	[1e-05 end
+%+6f end	f:-3.14159	-3.141590 end
+%.3Lx %#+o	f:1.5e-07f:nan	!TypeError
+%3c %.2F	i:1	!TypeError
+%F % e%%	f:infi:-1234567	INF -1.234567e+06%
+%8.4s%%	b:False	    Fals%
+a b %0-s %.4r	f:inff:inf	a b inf inf
+%.1X %+7.2x %.6X	i:-1i:-42f:-0.0	!TypeError
+%i %d end	f:2.5b:Truei:-1	!TypeError
+[%#.1s %0.2x %011.0s]	i:-42i:1000000000000f:-inf	[- e8d4a51000            ]
+%g]	f:2.5	2.5]
+[%.0u	f:1e+16	[10000000000000000
+%o%%	i:7b:False	!TypeError
+[% +12x		!TypeError
+x=% .0F %-s % 9.2c end	f:-3.14159s:hello worldf:1e+16	!TypeError
+%11F end		!TypeError
+%0 c	f:1.0	!TypeError
+%E %10s %11.5c	f:-3.14159f:0.5	!TypeError
+[%(a)e%(name)+11c	a=s:hello worldb=f:-infname=i:1000	!TypeError
+%09G%%	i:255i:255	!TypeError
+[%#0.4s %#F %03c	i:-1i:-1s:abc	!TypeError
+% 6.0u %+X %.2r]	f:3.14159f:inff:1e+16	!TypeError
+%e end		!TypeError
+a b %r%%	f:123456.789	a b 123456.789%
+x=%+f %10x]	i:-42	!TypeError
+x=%-11E		!TypeError
+[%0+e %12.4r	i:1000i:-1234567	[+1.000000e+03         -123
+%u %10s	f:1.5e-07i:1000	0       1000
+a b %#-c %c	s:abc	!TypeError
+x=%11x %+G %-F]	s:éf:-inff:3.14159	!TypeError
+[%#0.0e]	b:Truei:1	!TypeError
+a b %i]	f:0.5	a b 0]
+%#- 4hX	f:-0.0	!TypeError
+[%012.6x	f:3.14159	!TypeError
+%+F		!TypeError
+%0+r %-6x %+G end	f:1e+16f:2.675i:7s:hello world	!TypeError
+[%8s %- +0.4X	f:0.0i:255	[     0.0 +00FF
+x=%(b)11.4u%(a)#+6c%%	a=n:Noneb=f:nanname=s:a	!ValueError
+%-+2.0g %-.5lr %-E]	i:-1f:-infi:-42	-1 -inf -4.200000E+01]
+%(a)g]	a=f:-3.14159	-3.14159]
+x=%x]		!TypeError
+%0-3E	f:1e-05f:-0.0	!TypeError
+%0- g%%	f:1e-05	 1e-05%
+a b %0e	f:3.14159	a b 3.141590e+00
+a b %#E %+5E]	s:hello worldf:3.14159	!TypeError
+%#4x	f:nan	!TypeError
+a b % 6s]	f:123456.789	a b 123456.789]
+[%(a)s	a=f:2.5b=f:nanname=f:-3.14159	[2.5
+[%0 0s %8E%%	f:1e+16i:0	[1e+16 0.000000E+00%
+[%3s%%	f:1e+16i:1	!TypeError
+a b %(b)#10he%%	a=i:255b=n:Nonename=i:1000000000000	!TypeError
+%0- s		!TypeError
+a b %-lG end	i:1	a b 1 end
+%- +8r %E %#8o%%	i:1i:1000	!TypeError
+%.5hg %3r %-3F	i:42i:0s:é	!TypeError
+a b %# x %s %0.0s	f:0.3333333333333333f:2.675f:1.5e-07	!TypeError
+%G % 11F %011i]	f:nani:1000f:1e-05	NAN  1000.000000 00000000000]
+x=%#0 0o]	f:0.5	!TypeError
+x=%#3i	b:True	x=  1
+[%0 .1x]	f:2.5	!TypeError
+[%.4r end	s:hello world	['hel end
+a b %#- 5.0i %012.2x	f:2.5f:3.14159	!TypeError
+x=%r%%	f:1e+16	x=1e+16%
+%10G % +s %x%%	f:infi:255i:0	       INF 255 0%
+%-i %0.3hx	f:0.3333333333333333i:255	0 0ff
+%0.6LX end	n:None	!TypeError
+%0E end	f:0.5	5.000000E-01 end
+a b %(name).7F	a=i:1000000000000b=f:infname=n:None	!TypeError
+x=%4.3s %x %2u end	f:123456.789f:1.0i:-1	!TypeError
+a b %(b)#- 7F	b=f:2.675name=i:-1	a b  2.675000
+x=%.2X]		!TypeError
+[%g	f:1.5e-07	[1.5e-07
+[%(a)8.7s end	a=f:2.5b=i:1name=f:0.0	[     2.5 end
+%s end	f:1.5e-07	1.5e-07 end
+x=%-x %#4g	i:-42s:é	!TypeError
+%F %#+3F %u]	i:1f:nanb:False	1.000000 +NAN 0]
+a b %#+5.3c%%	f:0.0	!TypeError
+a b %0.0F %0 10F%%	i:1f:2.5	a b 1  02.500000%
+%F	s:é	!TypeError
+%+F%%	i:7	+7.000000%
+%#-x end	b:True	0x1 end
+%#1G %- +12E % .2F	i:-42f:2.675	!TypeError
+[%.5F %3.5e %s]	i:7i:1000000000000i:0	[7.00000 1.00000e+12 0]
+%F end		!TypeError
+a b %+d]	f:1e-05	a b +0]
+%1F%%	f:inf	INF%
+%(a)5s%(name)-2c	a=i:42b=f:1e-05	!KeyError
+%11o %+9.2i]	f:2.5	!TypeError
+a b %0-.0c %5.2i end	i:1f:2.5	a b     02 end
+x=%5.5r end	b:True	x= True end
+a b %- g	f:-inf	a b -inf
+x=%#.5s	f:100.0	x=100.0
+%#-G]		!TypeError
+%#7f	f:0.5	0.500000
+x=%6s %.5X end	s:éb:Falsei:0	!TypeError
+a b %7f % 12X%%	f:inff:1.0	!TypeError
+a b %6E	f:inf	a b    INF
+[%f	f:1e+16i:1000	!TypeError
+a b %3F end		!TypeError
+a b %(a)12X]	a=s:hello worldb=i:0name=b:True	!TypeError
+% 0i % +0.0hg %#.3c	f:1e-05f:1e-05b:True	 0 +1e-05 
+a b %10.2d]	f:0.3333333333333333	a b         00]
+%e	n:None	!TypeError
+%-r]	f:1e-05	1e-05]
+[%(name)u%%	a=f:1e+16b=f:1e-05name=i:0	[0%
+a b %2g end		!TypeError
+x=%#- g]		!TypeError
+%02f %#d]	s:f:2.675f:nan	!TypeError
+%s end	i:1	1 end
+%+.5hf %i end	f:2.675i:-42	+2.67500 -42 end
+%#e]	f:2.675	2.675000e+00]
+%#0.1d end	i:1000000000000	1000000000000 end
+[%11E%%	i:1000000000000	[1.000000E+12%
+x=%#3.5i]	i:-42	x=-00042]
+%1i end	f:inf	!OverflowError
+a b %-10.6lo%%	f:0.0	!TypeError
+a b %.2u %-.1X %0+s%%	f:infs:i:255	!OverflowError
+%12o%%	i:1	           1%
+[%i	i:-42	[-42
+[%(name).3hs%(b)+Ls	a=i:7b=f:-infname=i:1	[1-inf
+x=%#0.6d %#-d end	s:i:-42i:42	!TypeError
+x=%#0X%%	i:-1	x=-0X1%
+%12i	i:-1234567	    -1234567
+x=%c	i:1000	x=Ϩ
+a b %0.2lx end	i:255	a b ff end
+x=%#2s	f:2.675	x=2.675
+%#.2s]	f:3.14159	3.]
+[%0 +7.6s end	i:1f:-0.0	!TypeError
+%4c %.7c %1.7s]	f:2.675f:1e-05i:1	!TypeError
+%01s%%	s:hello world	hello world%
+[%2.5s %+.3d %9.3c%%	f:0.0i:7i:7	[0.0 +007         %
+%(name)#7.3s%(b)-d	a=i:1000b=f:2.5name=n:None	    Non2
+a b %s	i:-42	a b -42
+%03.7u %.0F %.7i]	f:3.14159i:255f:123456.789	0000003 255 0123456]
+[%+i%%	s:é	!TypeError
+x=%o %F	i:0i:1000	x=0 1000.000000
+a b %4.1o]	f:0.5f:2.5	!TypeError
+x=%.0E	f:-infb:False	!TypeError
+[%#u %11.4x	f:2.675b:False	[2        0000
+%#.5G	f:2.675	2.6750
+a b %.2u	f:-0.0f:0.5	!TypeError
+%(a)0u%(name)09X	a=i:0b=i:1000name=f:2.675	!TypeError
+x=%+4E %.4f]	f:0.5f:1e-05	x=+5.000000E-01 0.0000]
+a b %(a)12.0g%(b) s end	a=f:123456.789b=f:3.14159name=b:True	a b        1e+053.14159 end
+%(a)00.0x%(name)e end	a=i:255b=s:a	!KeyError
+% +0s]	f:0.3333333333333333	0.3333333333333333]
+[%(name)0.2X%%	a=i:-1	!KeyError
+%7.2d	i:255i:-1234567	!TypeError
+x=%02e end	f:-3.14159	x=-3.141590e+00 end
+x=%-12X end	s:é	!TypeError
+a b %#.1r end	f:-3.14159	a b - end
+a b %(name)2F]	a=s:hello worldname=b:True	a b 1.000000]
+%5lX	f:0.3333333333333333	!TypeError
+%-11s	f:2.675	2.675      
+%(name)9F%(a)0.4g	b=i:1name=f:-3.14159	!KeyError
+%(a) +s end	name=i:255	!KeyError
+a b %(b)+.7c%(a)010X	a=s:hello world	!KeyError
+x=%.1f%%	f:inf	x=inf%
+a b %#1.2i end	f:nan	!ValueError
+a b % s %d %i end	i:-1234567i:42f:123456.789s:é	!TypeError
+a b %#6d%%	f:0.5	a b      0%
+x=%0.0u]	f:2.5i:42	!TypeError
+%-2lc %+5.6o end	f:-3.14159f:1.5e-07	!TypeError
+% 10f%%	f:1e+16	 10000000000000000.000000%
+%0 E %s %-.6g	f:0.0i:7s:é	!TypeError
+%+0e %+6g]	f:123456.789s:abc	!TypeError
+x=%0+7.3F %-11g%%	f:100.0f:1.0	x=+100.000 1          %
+a b %#+.0x	f:0.3333333333333333	!TypeError
+% g end	f:0.0	 0 end
+a b %.5F end	i:1	a b 1.00000 end
+%07.6s end	b:False	  False end
+%2d]	f:-0.0f:123456.789	!TypeError
+%(b)6G%(name).4s end	a=f:0.0b=f:-infname=n:None	  -INFNone end
+%(b)10.3u%(name).6i]	a=f:1e+16b=f:-3.14159	!KeyError
+x=%0- 5G		!TypeError
+x=%.4i]	i:7	x=0007]
+%3c %# +.5f %- 8x%%	f:2.5f:1.5e-07s:hello world	!TypeError
+x=%.5e %08.5Li % 2s]	f:infi:1000f:1.0i:1000000000000	!TypeError
+%09.2E end	s:	!TypeError
+%2c %.2Ls end	f:inff:123456.789b:False	!TypeError
+a b %.2o]	f:nan	!TypeError
+x=%(a)0+12E end	a=f:nanname=f:inf	x=+00000000NAN end
+%-3d %12s %s	f:2.675i:1000000000000i:7	2   1000000000000 7
+a b %(name)5.4i]	a=s:hello worldname=i:7	a b  0007]
+[%e]	f:1e+16	[1.000000e+16]
+[%.3s		!TypeError
+[%#0d]	s:hello worlds:	!TypeError
+%0d %.6u %3s]	f:0.3333333333333333f:2.675i:7	0 000002   7]
+x=%1.4s end	i:42	x=42 end
+a b %#0 7.6x %04e%%	f:123456.789i:0	!TypeError
+%#2G%%	f:3.14159	3.14159%
+%0e	s:hello world	!TypeError
+a b %#e]	i:1	a b 1.000000e+00]
+%X]	i:0	0]
+[%1.4o	f:1e+16f:3.14159	!TypeError
+%.3G end	i:-1	-1 end
+x=%#+6f %01.1e	f:0.0i:-1	x=+0.000000 -1.0e+00
+[%(b)o	a=b:False	!KeyError
+[%(a)x%%	b=i:0name=i:42	!KeyError
+[%.7u	f:1e+16	[10000000000000000
+x=%X	i:-1	x=-1
+[%+le		!TypeError
+%-+.6F end	f:1e-05	+0.000010 end
+%s end		!TypeError
+%0.6s %+2x % LE%%	f:0.0i:1f:2.675	0.0 +1  2.675000E+00%
+a b % 8d % s end	f:2.675i:1000000000000	a b        2 1000000000000 end
+%-.3s	f:1.5e-07	1.5
+%.3G	f:-3.14159i:-1234567	!TypeError
+a b %-u	s:a	!TypeError
+%4.4g end	f:inf	 inf end
+x=%-.7hx%%	b:False	x=0000000%
+%.5r	s:é	'é'
+%12e %o	f:0.3333333333333333i:-1	3.333333e-01 -1
+a b %(a)4.7F end	a=i:1000000000000b=b:Falsename=f:0.0	a b 1000000000000.0000000 end
+[% 3ls end	i:7	[  7 end
+[%6lo end	f:-inf	!TypeError
+%- 0.6s %# .6g	f:0.0b:Falsei:-1	!TypeError
+%10.3s %010.6f%%	f:0.5f:123456.789	       0.5 123456.789000%
+%LG]	f:-0.0	-0]
+%F	n:Nonei:255	!TypeError
+a b % 7c %7o]	i:-1s:a	!OverflowError
+x=%-7i%%		!TypeError
+x=%X %.6u %-.0G	s:éi:1s:abc	!TypeError
+[%#F %.0f %# 1.0x%%	f:0.0f:-0.0i:-1234567	[0.000000 -0 -0x12d687%
+%5.7x end		!TypeError
+[%u	i:-42	[-42
+a b %010E]	f:1e+16	a b 1.000000E+16]
+a b %(name)#0 8r%(a)+6.7x	a=f:0.5b=s:éname=f:1e+16	!TypeError
+[%#12.1g %+F%%	b:Truef:0.3333333333333333	[          1. +0.333333%
+x=%+f	i:1000000000000	x=+1000000000000.000000
+%(name)- 8s	b=f:-infname=i:-1	-1      
+%0 +4s %12g	i:0s:abcb:True	!TypeError
+a b %x end	i:-42	a b -2a end
+a b %12e%%	i:1000000000000	a b 1.000000e+12%
+x=%+.1i %0-12.0x %0.2x%%	n:Nonen:None	!TypeError
+x=%s]	f:inf	x=inf]
+x=%.7i %010.4u %0.2F	i:0i:1000000000000f:inf	x=0000000 1000000000000 INF
+x=%#2x %- +0e %.6e%%	f:1.0s:hello worldf:nani:-1	!TypeError
+%#5x%%	i:1000	0x3e8%
+% +.6F		!TypeError
+%# .7g %s	i:-42f:1e+16f:-inf	!TypeError
+[%9g]	f:123456.789i:0	!TypeError
+[%+s%%	f:0.0	[0.0%
+a b %.5u	s:abc	!TypeError
+%3d	f:2.675	  2
+x=%#-f %0.6i end	f:inff:1.0f:1e-05	!TypeError
+a b %7.5F %-+s %12s	s:i:1000	!TypeError
+%-.6g%%	n:None	!TypeError
+%5s % .4X end	i:-42f:1.0	!TypeError
+%s]	f:-inf	-inf]
+a b %i %-u]	s:f:3.14159	!TypeError
+[%.1s %#-+12s %0X%%	s:abcf:123456.789f:123456.789	!TypeError
+x=%10f %0-8.7o	f:0.5	!TypeError
+x=%0.0e %.5G %5c%%	i:255i:-42i:1000000000000i:7	!OverflowError
+x=%X]	i:-42	x=-2A]
+a b %0-+4x %+11.6s%%	s:af:3.14159	!TypeError
+a b % o%%	i:-1234567b:True	!TypeError
+a b %+F%%	f:1.5e-07	a b +0.000000%
+%+.5X	b:False	+00000
+[%+9s	f:0.3333333333333333	[0.3333333333333333
+a b %12.4c % .7E %+.0o	s:hello worldi:7b:True	!TypeError
+%+1c]		!TypeError
+x=%5.1r %g]	f:1e+16i:1000f:1e+16	!TypeError
+a b %-.7s	i:42	a b 42
+x=%+.5g	f:-0.0	x=-0
+x=%8s%%		!TypeError
+[% 3Lc % o %0.5r%%	s:as:f:0.3333333333333333	!TypeError
+a b %d	s:é	!TypeError
+[%5s %+.4G]	i:255	!TypeError
+%#9.6d	s:abc	!TypeError
+a b %+F		!TypeError
+%-4.1f end		!TypeError
+a b %(a)+7u%(b).6Lo]	a=f:-0.0b=s:name=f:-3.14159	!TypeError
+a b %i %0-11d %9E end	i:0f:0.5	!TypeError
+% +6E%%	i:-1234567	-1.234567E+06%
+x=% +d end	f:-inf	!OverflowError
+a b %7d % 2s %-10i end	f:2.675f:1e+16s:i:255	!TypeError
+x=%+9i end		!TypeError
+x=%0E % u]	i:1f:infb:False	!OverflowError
+a b %.1o %0.4f %#-3.3i]	f:0.0s:	!TypeError
+x=%#.3F %-7g %9o	i:7f:-inff:3.14159	!TypeError
+%#7F end	f:1e-05	0.000010 end
+%(b)#s%(name)+.5g%%	b=b:Truename=f:2.675	True+2.675%
+%s %G]	f:-3.14159i:1000	-3.14159 1000]
+%012r]	f:2.5	         2.5]
+[%7.1s]	i:-1234567	[      -]
+%-g]	f:123456.789	123457]
+%+2i]	f:1.0	+1]
+%f%%		!TypeError
+%#- 4.7i%%	f:0.3333333333333333	 0000000%
+[%0x %.3E end	i:0s:	!TypeError
+a b %#0.1c %#-s	f:-inf	!TypeError
+%#s %.2d % +G%%	i:1000000000000f:-0.0	!TypeError
+[% X end	n:None	!TypeError
+a b %5.3F	f:2.675	a b 2.675
+%+o		!TypeError
+[%(name)0s%%	a=i:-1234567	!KeyError
+a b %00F %s %-3g end	s:hello worlds:s:abc	!TypeError
+a b %o %.1F %7X	i:1000000000000f:0.3333333333333333s:hello world	!TypeError
+a b %12E]	f:1.5e-07	a b 1.500000E-07]
+x=%10i %0F % F	i:-42s:hello worldf:2.675	!TypeError
+a b %+.4e	i:-1	a b -1.0000e+00
+[% s %d%%	s:af:nann:None	!ValueError
+a b %s %+f]	b:Falsef:1e+16	a b False +10000000000000000.000000]
+%(a)+s	a=i:-1234567b=i:1000	-1234567
+%12.0s %d%%	i:1000f:3.14159f:1.0	!TypeError
+a b %X%%	i:-1234567	a b -12D687%
+x=%+.6s %-12r %2.4x end	i:1f:0.0f:100.0	!TypeError
+x=%(name)#.4r%%	a=i:7b=f:2.675name=f:0.5	x=0.5%
+% 2d%%	f:-inf	!OverflowError
+%+10g%%		!TypeError
+x=%(b)2F%(a)- +s end	b=s:éname=f:-3.14159	!TypeError
+a b % 12c	f:nan	!TypeError
+%-4s	i:0	0   
+x=%7f	i:-42b:True	!TypeError
+[%+2E % 7.1f%%	f:2.675s:	!TypeError
+[%.1E %+.4F end	f:0.5i:-1234567	[5.0E-01 -1234567.0000 end
+x=%(a)1E%(name)-.1o	b=s:abcname=f:inf	!KeyError
+[%-3hc % 0lo end	f:-3.14159i:-42	!TypeError
+a b %(a)12.6o%(b) 7r%%	a=i:-1b=s:hello worldname=n:None	a b      -000001'hello world'%
+a b %-i %-li	i:0i:-1	a b 0 -1
+%0.4s	i:1	1
+%12g end	f:3.14159	     3.14159 end
+x=%r%%	f:1.5e-07	x=1.5e-07%
+a b %-.1F %0-u %0-x]	f:0.5i:7	!TypeError
+x=%-10u %#.0s	f:3.14159s:abc	x=3          
+%s]	i:42i:7	!TypeError
+%07e	s:hello world	!TypeError
+x=%(name)#i%(a)#5.2u	a=f:1e+16b=f:1.0name=s:a	!TypeError
+a b %(b)+f%%	name=f:0.0	!KeyError
+a b %#-10g end	s:abcf:-inf	!TypeError
+a b %(b) +7.3g%(a)#+g	b=n:Nonename=b:False	!TypeError
+x=%s%%	i:1000	x=1000%
+a b %#-12c %6r %#X]	f:-3.14159f:100.0b:True	!TypeError
+%1s	i:1000000000000	1000000000000
+a b %g %-7i%%	f:3.14159s:hello world	!TypeError
+%-8s	s:i:-1	!TypeError
+a b %(name)r%%	a=b:Falseb=f:nan	!KeyError
+%#-hs %05.2s%%	i:1000000000000f:100.0	1000000000000    10%
+a b %10s	i:0	a b          0
+x=%6u%%		!TypeError
+a b % x end	f:2.675	!TypeError
+[% 9i %#-o %2r]	f:-inff:1.5e-07f:1.5e-07f:3.14159	!OverflowError
+%#0g]	f:2.5s:hello world	!TypeError
+[% .4d	i:42	[ 0042
+%5lu %# 10.6X %0X	i:1000000000000s:abci:7	!TypeError
+a b %#o %#6F %c]	f:-infi:42f:-3.14159	!TypeError
+a b %d %8f %+g%%	f:0.5i:255	!TypeError
+[%.7u %X %02r	i:1000000000000f:3.14159f:0.0	!TypeError
+%#F end		!TypeError
+a b %0 9.5s]		!TypeError
+%(b)5.0E%%	a=s:abcb=f:1.0name=i:1	1E+00%
+%011.0f%%	s:hello world	!TypeError
+%r end	i:1000000000000	1000000000000 end
+a b % x %10E %0+1.1e%%	f:-0.0f:-3.14159i:1	!TypeError
+%8.5d%%	f:-0.0	   00000%
+%10.3i		!TypeError
+%-.3LF end	i:1000000000000i:1	!TypeError
+[%#2x %7x	i:-1i:255f:1.5e-07	!TypeError
+%.5u]	f:1e+16f:1e-05	!TypeError
+x=%# 6f	i:-1	x=-1.000000
+[%1F	s:a	!TypeError
+[%.5s%%	f:2.5	[2.5%
+[%6.0X	f:-3.14159i:7	!TypeError
+[%#6.2s %10o %+5i end	b:Falsei:42i:7	[    Fa         52    +7 end
+%#.6s end	f:1.0i:1000000000000	!TypeError
+%(a)05.6G	b=i:1000000000000name=f:3.14159	!KeyError
+[%(b).4s%%	a=i:1000000000000b=i:-1name=f:-3.14159	[-1%
+%E		!TypeError
+%o end	f:100.0i:42	!TypeError
+%00X %#0F]	b:Truei:1	1 1.000000]
+% X]	f:0.3333333333333333f:2.675	!TypeError
+[%0.2X %F]	f:-0.0i:1000000000000	!TypeError
+%(name) Li%(b)9.5G end	a=i:-1name=f:123456.789	!KeyError
+x=%-.3c %# 9.6r	f:2.675	!TypeError
+%(b)#8F%(a).7X	a=f:1.5e-07b=i:7name=i:1000000000000	!TypeError
+[%3.0o	f:nanf:-0.0	!TypeError
+a b % c %o %-1.3i	f:1.0s:i:0f:1e+16	!TypeError
+x=%E		!TypeError
+x=%(name)u%(a) +6r end	a=f:2.675name=f:1.5e-07	x=0 2.675 end
+a b %-G end	s:	!TypeError
+x=%G %#8g %#.7X end	f:1e+16f:3.14159f:123456.789	!TypeError
+x=%+11s %12E	f:1.0s:abc	!TypeError
+[% 11.1r	f:1.5e-07	[          1
+x=%#0+.3g %0 0.3o%%	f:infs:hello worldf:-0.0	!TypeError
+%i	f:0.5	0
+[%+.3e]	f:0.3333333333333333	[+3.333e-01]
+a b %.3s%%	i:7	a b 7%
+%#-.0o %F	i:-42s:	!TypeError
+x=%G		!TypeError
+%011li	f:-inff:-3.14159	!OverflowError
+[%(b)u%(a) d	a=f:3.14159b=f:inf	!OverflowError
+[%- 6r	i:-1234567	[-1234567
+%#2s %1.0s end	b:Falsei:-1i:1000000000000	!TypeError
+x=%07s%%	s:é	x=      é%
+%-12.4c		!TypeError
+%(name)0E%(a)7.2lf end	a=i:255b=i:42	!KeyError
+x=%(a)#E%(b)-5.4hu]	a=i:1000000000000b=b:False	x=1.000000E+120000 ]
+%G]	i:-1234567	-1.23457E+06]
+x=%.1u	b:False	x=0
+%+3r	i:-1	 -1
+%0.4f]	f:0.0	0.0000]
+x=%G end	s:a	!TypeError
+x=%(name)0-+E	a=f:infb=i:7name=f:1e+16	x=+1.000000E+16
+% 11s %0f]	s:a	!TypeError
+[% r	f:0.5	[0.5
+%.2u %.2r	n:Nonef:0.0	!TypeError
+[%-+i		!TypeError
+a b %#9.2lx %+6F	f:nanf:0.3333333333333333	!TypeError
+[%u	i:-1234567	[-1234567
+[%.6s %+9F end	i:7f:1e+16	[7 +10000000000000000.000000 end
+%(name)r%(a)0 s]	a=f:infb=i:0name=b:False	Falseinf]
+[%#- 6.3s	i:255f:0.3333333333333333	!TypeError
+a b %f %o%%	s:hello worlds:f:-inf	!TypeError
+a b %-3.4s	f:1.0f:-inf	!TypeError
+a b %#0.5G	f:100.0	a b 100.00
+%2X end		!TypeError
+x=%- x%%	f:1e-05	!TypeError
+%(b)7.4X%(name)c end	a=f:0.0name=f:123456.789	!KeyError
+[% 11s	s:	[           
+%9r	s:	       ''
+a b %11r % +g	f:inff:1e-05	a b         inf +1e-05
+a b % 2d % +12X]	f:nan	!ValueError
+[%-5F end	f:2.675f:-inf	!TypeError
+%(a)#0 .0f%(name) +1G end	a=f:-0.0b=f:1e-05name=i:-1	-0.-1 end
+% 8.2X %G end	f:0.0	!TypeError
+x=%-6.3G %0s %c	s:éi:42f:0.5	!TypeError
+[%(b)d%(a).0E	a=b:Trueb=b:Falsename=i:42	[01E+00
+%#-+7E]	f:nans:hello world	!TypeError
+%#0.1c]	i:-1234567	!OverflowError
+x=%-+0r]		!TypeError
+%011X]	f:0.0	!TypeError
+x=%+.7g end		!TypeError
+% 4x end	f:0.5	!TypeError
+%.7s	f:-0.0	-0.0
+[%.7d %+7e %+F	f:1.5e-07s:as:	!TypeError
+%F %11d %0- g	f:1.0f:1e+16i:7f:123456.789	!TypeError
+x=%0lg]		!TypeError
+a b %+g%%	b:Falses:hello world	!TypeError
+[%#12s %11G %7x]	f:1e+16f:1.5e-07f:1e+16	!TypeError
+[%4o %0.7d	f:-3.14159f:0.3333333333333333	!TypeError
+a b %0X %-d % 7.4g]	f:infs:ai:42	!TypeError
+[%011i %-+0s %.4r end	b:Truei:255i:-1	[00000000001 255 -1 end
+x=%u	i:1000000000000f:-0.0	!TypeError
+%s%%	f:0.0	0.0%
+%.2f%%	s:hello world	!TypeError
+[%11F	i:1000000000000	[1000000000000.000000
+x=% 11c%%	f:0.3333333333333333	!TypeError
+x=%+8X %#F %6e%%	i:-1234567f:-infs:ab:False	!TypeError
+a b %+10o]	i:42i:1	!TypeError
+[%7X %0+.3s %+3X%%	f:nanf:2.5f:inf	!TypeError
+% 1.0e]	f:2.5	 2e+00]
+a b %.4e%%	i:42	a b 4.2000e+01%
+[% 11.2d end	f:-inf	!OverflowError
+x=%#1.6X %0c end	f:1e-05f:2.675	!TypeError
+x=%6s]		!TypeError
+%1G %09g	i:1000000000000f:nan	1E+12 000000nan
+%1Ld]	b:True	1]
+a b %12g %- 3f	i:42f:1e-05f:nan	!TypeError
+a b %-.4hu	f:-3.14159	a b -0003
+x=% 4f]	i:1000	x= 1000.000000]
+x=%i %6.5x %4lG%%	i:0f:1.0f:0.5	!TypeError
+%#0.4s]	f:1.5e-07	1.5e]
+%.6i%%	i:0	000000%
+% 2.1e %0-r %#1u	i:-1234567i:-1f:0.5	-1.2e+06 -1 0
+[%#.4G %0E end	f:100.0i:-42	[100.0 -4.200000E+01 end
+[% 1u %.4d %+u end	f:0.5b:Falsei:1000f:inf	!TypeError
+x=%7hs]	f:0.3333333333333333	x=0.3333333333333333]
+%.2r]		!TypeError
+x=%01s	i:255	x=255
+x=%1e	b:True	x=1.000000e+00
+a b % 11c	i:-42	!OverflowError
+%7c]	i:42f:0.5	!TypeError
+[% .4G	f:-3.14159	[-3.142
+x=% +X]	f:1e-05	!TypeError
+x=%1f %3r %0r end	s:éf:1e-05i:-1	!TypeError
+%c%%	f:2.675	!TypeError
+x=%#F %g]	f:infs:a	!TypeError
+[%4s%%	s:é	[   é%
+a b %0X %12.4s	f:-0.0s:é	!TypeError
+[%-6d %#.7G	f:0.5f:-0.0	[0      -0.000000
+x=%3E end	f:1e+16	x=1.000000E+16 end
+x=%#+7X	f:nan	!TypeError
+%11.3o end	f:0.0	!TypeError
+a b %11u	i:7	a b           7
+[%-3F end	i:1000	[1000.000000 end
+[%5.2F %+0F%%	f:1.5e-07f:123456.789	[ 0.00 +123456.789000%
+%-o%%	f:-inf	!TypeError
+x=% o % 11o end	f:1.5e-07b:True	!TypeError
+%-x		!TypeError
+a b %(b)g%(a)12.7LX end	a=i:0b=b:Truename=f:2.675	a b 1     0000000 end
+a b %(name)6X%(b)03.4d	a=f:0.0b=f:2.675	!KeyError
+%5d%%	f:3.14159	    3%
+a b % 0G %08.7s	i:7i:255f:0.0	!TypeError
+a b %(b)#s end	a=s:abcb=f:1e+16	a b 1e+16 end
+a b %7.0r]	s:abc	a b        ]
+[%s%%		!TypeError
+%.4ld	f:2.5	0002
+%d end	i:1000	1000 end
+[%(name)-3G%(a)0 8s%%	a=f:-3.14159b=f:nanname=f:100.0	[100-3.14159%
+%0-+2x]	s:é	!TypeError
+x=%F		!TypeError
+x=%(name)r%(a).2G	a=f:100.0name=s:abc	x='abc'1E+02
+x=%X %# X end	i:0s:	!TypeError
+[%-.6s		!TypeError
+a b %-s %- 0s %012c%%	f:0.0f:-3.14159i:0	a b 0.0 -3.14159             %
+a b %x	f:-3.14159	!TypeError
+%(name)9f end	a=f:0.0b=f:-inf	!KeyError
+[%9lG end	i:1i:7	!TypeError
+a b %(b)Ld	a=i:-1name=f:3.14159	!KeyError
+a b %+9.5s %+x	s:as:abc	!TypeError
+%2.3o %-s %0lx	s:af:0.5i:-1	!TypeError
+[%#12s%%	f:3.14159	[     3.14159%
+%2.1s]	f:3.14159	 3]
+x=%s		!TypeError
+%3c end	n:None	!TypeError
+%0+.2X %12E%%	f:-3.14159f:123456.789	!TypeError
+%- i	b:Truef:-3.14159	!TypeError
+%# 8.6s %+i %0s%%	f:0.3333333333333333i:7f:-0.0	  0.3333 +7 -0.0%
+%s%%	f:inff:2.5	!TypeError
+%+c %5.5G %0d end	f:0.5s:f:100.0f:1e-05	!TypeError
+x=%X		!TypeError
+[%2.7E % 10.5d	n:None	!TypeError
+%+i	f:1e+16	+10000000000000000
+[%(name)hc end	a=f:123456.789b=f:infname=f:1.0	!TypeError
+a b %7hi end	f:0.3333333333333333	a b       0 end
+x=%4.3s %4.4c	i:255	!TypeError
+[%0+s]		!TypeError
+a b %0+.1Lx %-F	f:0.3333333333333333f:1.5e-07	!TypeError
+a b %r %8d % 1s end	i:255b:Truef:2.675s:a	!TypeError
+%-i	i:0	0
+%-12.0s end	f:1e+16	             end
+[%08.3F %0 g %.5x	i:1000000000000i:-42f:-inf	!TypeError
+%0.2s %-o	s:hello worldb:True	he 1
+%#+x end		!TypeError
+[%F %+u%%	i:0s:é	!TypeError
+a b %0+8g %012s%%	i:1000b:True	a b +0001000         True%
+%5i end	f:0.0	    0 end
+%1d end	i:-42	-42 end
+x=%-d]	f:0.0	x=0]
+[%#.1d%%	f:-infs:abc	!OverflowError
+a b %05.7s end	i:1f:2.5	!TypeError
+[%-.3s %r%%	i:1000f:1.0	[100 1.0%
+a b %s %#0e %#+i]	s:éf:2.5	!TypeError
+a b %7f end	f:1e-05	a b 0.000010 end
+a b %lc	i:255	a b ÿ
+%(b)11r%(name)0-E	a=f:-3.14159b=f:3.14159name=i:7	    3.141597.000000E+00
+%02x %0+9s	f:2.675	!TypeError
+x=%2d %+o %.3F]	f:2.5s:é	!TypeError
+% s %9G end	s:hello world	!TypeError
+% 9.1lr%%	f:0.0	        0%
+a b %i]	f:123456.789	a b 123456]
+x=%(b)2c%(name)s%%	a=i:7name=i:-1	!KeyError
+%0 e %0.6c]	f:123456.789f:0.0	!TypeError
+%(b)X%(a)#-.6s	a=i:0b=s:éname=i:7	!TypeError
+%.6e]		!TypeError
+x=%09.5c %u %2d	f:100.0f:0.0	!TypeError
+a b %06s%%		!TypeError
+%00.2Li %3d]	i:0f:0.5	00   0]
+% 9X	i:1	        1
+a b %12E	i:-1234567	a b -1.234567E+06
+%11E end		!TypeError
+%1E	f:3.14159	3.141590E+00
+%# 11hx]	i:-1234567f:0.5	!TypeError
+% 6x	f:1.5e-07	!TypeError
+%+12.3d end		!TypeError
+x=%0r end	i:255	x=255 end
+%(name).4c%(b)G%%	a=s:b=i:1name=i:255	ÿ1%
+[%#2g %.3s %8X	n:Nonei:1i:-42i:-1234567	!TypeError
+[%.0c		!TypeError
+%3F end		!TypeError
+x=%0 8.6x % x %.2d	f:0.0s:a	!TypeError
+[%.3x %+g	f:1e+16	!TypeError
+x=%+2.3o%%		!TypeError
+[%#0+o %#0F	f:1.0f:nan	!TypeError
+x=%3.3i%%		!TypeError
+[%(name)s%(a)0-+d end	a=i:255b=b:True	!KeyError
+x=%-+.4u%%	i:1000	x=+1000%
+x=%+10E %10x %.5E%%	i:1000000000000f:2.5f:nan	!TypeError
+%.6o%%	f:-3.14159	!TypeError
+%(name)2d%%	a=s:éb=f:1.5e-07name=s:a	!TypeError
+x=%.3s %i %-X end	f:0.5b:Truef:1.0s:é	!TypeError
+%0+9r%%		!TypeError
+%g	f:1.5e-07	1.5e-07
+%0.0f]	f:0.0f:2.5	!TypeError
+x=%(name)s%(b)06s	a=i:1b=f:1e+16name=s:é	x=é 1e+16
+[%s		!TypeError
+%6.0s%%		!TypeError
+a b %(b)0i	a=f:-0.0b=i:-1234567name=f:nan	a b -1234567
+a b % o %#.1r %02u]	i:42i:255b:True	a b  52 2 01]
+a b %0x	f:1.5e-07	!TypeError
+%5x %8E %-0d]	f:0.0f:-infi:1000000000000f:1e+16	!TypeError
+x=%0 6g %0-E %00.5u]	f:-infi:-1234567	!TypeError
+%0.0u end	b:False	0 end
+x=%12E]	f:1e+16	x=1.000000E+16]
+x=%+7x %+e %i]	f:1e+16f:1e-05f:-3.14159	!TypeError
+a b %hg	f:-3.14159	a b -3.14159
+%0s %+2i	s:abci:0i:1000000000000	!TypeError
+a b %(a)#+.6X end	a=f:1.5e-07name=s:hello world	!TypeError
+[%- 9x%%	f:0.5	!TypeError
+%# 4s%%	i:-1i:42	!TypeError
+a b %+X %# X %d%%	f:1.0s:a	!TypeError
+%(a) 10E%(b)4d%%	a=f:2.675name=s:hello world	!KeyError
+%# 12.7X %s %6e]	b:Truef:-0.0f:3.14159	   0X0000001 -0.0 3.141590e+00]
+[%#+4F % d end	f:nani:-1	[+NAN -1 end
+x=%#0-+9.6ls		!TypeError
+x=%+9e%%	f:-3.14159	x=-3.141590e+00%
+%G %8E % s]	b:Trueb:True	!TypeError
+%#10X	i:1	       0X1
+% 5s%%	f:2.675	2.675%
+[%-11X %-s end	f:3.14159f:1.0	!TypeError
+[%s]	f:inff:inf	!TypeError
+a b %11.5e %.3s]	f:-3.14159i:255	a b -3.14159e+00 255]
+%-5c	i:1000000000000	!OverflowError
+a b %1.4u %#9e%%	b:Falseb:True	a b 0000 1.000000e+00%
+%(name)6F]	a=f:infb=b:Falsename=i:1000	1000.000000]
+%#-.7x	i:1000	0x00003e8
+%#+s %#.1f	i:42f:nanf:-inf	!TypeError
+x=%.1s end	s:é	x=é end
+%0-12u]	b:False	0           ]
+% 10E		!TypeError
+%-10f	f:3.14159	3.141590  
+x=%.1e %-E %0 5d	i:-1234567s:hello worldf:123456.789	!TypeError
+x=%-r %# 10x %+.5s	s:ai:7f:100.0	x='a'        0x7 100.0
+%+9u]	f:100.0i:0	!TypeError
+[%+.2X%%		!TypeError
+[%2E]	f:-3.14159	[-3.141590E+00]
+[%+i %#0u % .2s]	f:infi:7b:True	!OverflowError
+x=%o]	f:-0.0	!TypeError
+%(b)#2G%(a)F	a=f:100.0name=f:123456.789	!KeyError
+%.6f	s:a	!TypeError
+x=%5c end	b:True	x=     end
+x=%r		!TypeError
+%4.6i	f:0.5	000000
+[%(a).1E%(b)8hd	a=f:1e-05name=s:a	!KeyError
+x=%.7x	i:1000s:é	!TypeError
+[% 6s	i:7	[     7
+x=% +8d end	f:0.0	x=      +0 end
+[%+o end	i:42	[+52 end
+%9f]	i:1000	1000.000000]
+%#05s%%	f:100.0	100.0%
+x=%#4o %#0s %3d%%	f:100.0i:0i:0	!TypeError
+%#F end	f:1.5e-07	0.000000 end
+%c%%	i:0	 %
+%x % .3u	f:0.3333333333333333i:42	!TypeError
+%(b)10x	name=n:None	!KeyError
+%(a)#0r%%	a=s:éb=f:2.5name=i:1	'é'%
+%#7.4i	f:nani:0	!ValueError
+[%f%%	i:-1	[-1.000000%
+%F%%	s:a	!TypeError
+a b %7c]	i:1000	a b       Ϩ]
+[%d %4X end	s:abcb:False	!TypeError
+[%(name)+9i%(a)1r	a=s:b=s:éname=f:3.14159	[       +3''
+x=%4Lg%%	f:1.0	x=   1%
+x=%6g]	n:None	!TypeError
+%-s]		!TypeError
+x=%-7F		!TypeError
+[%(a)10lo%(name)+7g end	a=f:1e-05b=f:nanname=s:a	!TypeError
+%s]	f:2.5s:abc	!TypeError
+[%5E %.6s	s:	!TypeError
+[%0i	f:nan	!ValueError
+x=%#5.4s	f:3.14159	x= 3.14
+[%(name)#012G%(a)4X	a=f:1.0b=f:nanname=f:inf	!TypeError
+a b %#o %-.6o %1s%%	f:0.5f:123456.789b:Falsef:inf	!TypeError
+%2.0u	f:1e-05	 0
+[%F %#e % e]	b:Truef:nan	!TypeError
+x=%c	b:Falsef:1.5e-07	!TypeError
+%8hg]	f:1e-05	   1e-05]
+%7.7E %#Le]	f:3.14159f:-3.14159	3.1415900E+00 -3.141590e+00]
+x=%#0 12.3f]	f:3.14159	x= 0000003.142]
+x=%#r %7.2u %X	i:7f:-3.14159s:a	!TypeError
+%.0u %-9s %8c	i:7f:1e-05	!TypeError
+%1.7X	f:-0.0	!TypeError
+%#+2.6e%%	i:255f:2.675	!TypeError
+a b %#+.0E%%		!TypeError
+a b %012s%%	i:-42	a b          -42%
+a b %-+4c		!TypeError
+% +.0G %4s %+F end	f:1.5e-07f:2.5	!TypeError
+[%.4G%%		!TypeError
+x=%12.0c %.7G %0s	i:-42f:1e-05i:255	!OverflowError
+%F %12x %11X]	f:1.5e-07s:és:abc	!TypeError
+%12g %0+1.3s %.4f	i:0i:255	!TypeError
+%#0-s %# .7Li end	f:2.5f:inf	!OverflowError
+%2.1F % 12.0r	i:-1234567f:-3.14159	-1234567.0             
+a b %e %.6u end	s:abcn:Nonef:inf	!TypeError
+%5.5d]		!TypeError
+a b %o]		!TypeError
+%0G %6.3r %- .6x end	f:nani:0f:nan	!TypeError
+%.5hd %0s%%	i:-1f:100.0	-00001 100.0%
+%- 3u%%		!TypeError
+%LF%%		!TypeError
+%-0F %9.5x %+E	b:Falsef:100.0i:42	!TypeError
+%(b)5f%%	a=s:ab=f:-3.14159name=b:True	-3.141590%
+%#-1.5G %+E % E	i:-42f:2.5	!TypeError
+% +E%%		!TypeError
+x=%#0r %10.0o end	f:2.5s:abcs:abc	!TypeError
+[% +0r%%		!TypeError
+a b %5lf	f:3.14159	a b 3.141590
+%+u]	s:abc	!TypeError
+%-+.1o	i:1000000000000	+16432451210000
+a b %06.3o %F	f:1e-05f:0.5	!TypeError
+%0 +6F %12Lu %#4c end	b:Trues:ai:-42	!TypeError
+%0c%%	f:2.675	!TypeError
+%0.0s %+1u %F	i:255s:abci:-1	!TypeError
+a b %# c % .0f	f:100.0i:255	!TypeError
+[%0d % 0e %#9i]	i:-1234567f:100.0f:2.675	[-1234567  1.000000e+02         2]
+x=%11s %0 i	s:abci:-1234567	x=        abc -1234567
+%09.0x%%	s:hello world	!TypeError
+a b %1i %-.5d %#- 8i end	i:-1f:nan	!ValueError
+a b %s	s:a	a b a
+[%3.2hx %10r %0s end	f:0.5f:3.14159f:1.0f:123456.789	!TypeError
+%#r]	f:3.14159	3.14159]
+[%02s%%	f:1e-05	[1e-05%
+%(b)5s	a=f:0.5b=f:2.5name=n:None	  2.5
+%+s%%	f:2.5	2.5%
+[%#.6d%%	s:a	!TypeError
+a b % u %+2e	f:-0.0i:42i:1	!TypeError
+a b % e %f	s:abcf:3.14159	!TypeError
+%-10o	f:100.0	!TypeError
+%+.0s	s:i:-1234567	!TypeError
+%03F end	i:0	0.000000 end
+[%s %+2o % x	s:éf:1e-05f:-3.14159	!TypeError
+[%-+.4x end	f:2.675	!TypeError
+[%X	i:-42	[-2A
+%+2g end	s:é	!TypeError
+x=%0.3u %6d %3r	f:2.5s:abcs:abc	!TypeError
+x=%#10.5s	f:-infs:	!TypeError
+[%.4G %# +10x]	s:éf:-inf	!TypeError
+x=%.7r		!TypeError
+a b %.0f]	i:1000000000000f:2.5	!TypeError
+%(b).1G%(a)#3u%%	a=i:1000000000000b=i:1name=f:1.5e-07	11000000000000%
+%4G	i:-1	  -1
+a b %7c end	f:1.5e-07	!TypeError
+[% 5.6f %o %2.7r]	f:1.5e-07f:100.0f:1e+16	!TypeError
+[%#X end	s:f:1e+16	!TypeError
+%9u end	f:100.0	      100 end
+%0+g %.0X %0+o	f:3.14159s:af:-inf	!TypeError
+%7X %0e %.1u	f:1e+16f:0.5b:True	!TypeError
+x=%10.1F%%	f:-inf	x=      -INF%
+a b %E	n:Nonei:7	!TypeError
+a b %i %r end	f:2.5f:0.3333333333333333	a b 2 0.3333333333333333 end
+a b %#0+g%%		!TypeError
+%12.5s	f:0.3333333333333333	       0.333
+a b %0-G %#-i %0+e]	i:255i:42i:1000000000000	a b 255 42 +1.000000e+12]
+%#.4g	s:é	!TypeError
+x=%G	f:1e-05f:-inf	!TypeError
+[%12f]		!TypeError
+x=%#12g %# 3e %g	s:éf:1.0s:abc	!TypeError
+[%8F%%	b:False	[0.000000%
+a b %.5lE %G %3.1f]	f:2.675f:0.3333333333333333b:Truef:3.14159	!TypeError
+[%u	f:1.0	[1
+a b %#d		!TypeError
+%0+o %0 12.1s %.4F%%	f:-inff:inff:inf	!TypeError
+[%9.2G %-+1E	f:100.0f:1e-05	[    1E+02 +1.000000E-05
+[%c]	f:nan	!TypeError
+%#+0X %s	i:0i:7	+0X0 7
+[%-+6hG %#4o end	f:2.675	!TypeError
+x=%-.1E	i:42	x=4.2E+01
+x=%7Ld %2G %+5.6c end	i:0f:1.5e-07	!TypeError
+x=%(name)#-11.2f%(b)+G	b=f:0.3333333333333333	!KeyError
+x=%.6g end	f:1.5e-07	x=1.5e-07 end
+[%s	i:42	[42
+a b %(name) F%(a).2s	a=f:0.0b=i:-42name=s:	!TypeError
+%# 7.6s]		!TypeError
+a b %0f	i:-1234567	a b -1234567.000000
+a b %+u %0o	i:1000f:nan	!TypeError
+%+o %.5G]	i:1000000000000f:0.0	+16432451210000 0]
+%+.2d	f:0.3333333333333333	+00
+x=%+9.7x end	s:é	!TypeError
+[%010s%%		!TypeError
+x=%s end	f:1.0f:2.675	!TypeError
+x=%+F %12u %6f]	i:-1i:-1234567f:1.5e-07	x=-1.000000     -1234567 0.000000]
+x=%#.2s%%	f:3.14159i:1000000000000	!TypeError
+[%05.3hx %-f %.0F end	i:1000i:7i:-1234567	[003e8 7.000000 -1234567 end
+%-s%%	n:None	None%
+a b %#d	s:é	!TypeError
+a b %011Lu		!TypeError
+a b %u %F	i:1000000000000s:é	!TypeError
+x=%(b)2i%%	a=i:42b=i:-1234567name=f:-3.14159	x=-1234567%
+%(a).1r	a=f:3.14159b=s:a	3
+a b %5.3s end	f:2.675	a b   2.6 end
+[%2.1c end	n:None	!TypeError
+[% 2i %d]	i:1i:42	[ 1 42]
+[%0E]	f:-0.0	[-0.000000E+00]
+x=%f]		!TypeError
+%-+5.5d]		!TypeError
+x=%06F	n:None	!TypeError
+[%02i]		!TypeError
+a b %0x %x %.0d end	f:3.14159n:Nonei:1	!TypeError
+[% 12.0G]	i:1000	[       1E+03]
+%1.6s end	f:0.5	0.5 end
+a b %- 10G%%		!TypeError
+%+F %- .5G %0-e%%	b:Truef:2.675f:nani:1	!TypeError
+x=%(b)1r	a=f:0.3333333333333333b=i:255name=n:None	x=255
+%#.4s %Lc %3.0F end	i:-1234567i:-1234567s:a	!OverflowError
+[%# .2r%%	s:hello world	['h%
+[%1.3f	i:1000000000000	[1000000000000.000
+a b % G %- 10u]	f:100.0	!TypeError
+%(name)4s	a=f:nanb=f:2.5name=f:0.3333333333333333	0.3333333333333333
+%9X%%	b:True	        1%
+x=%-.5F]	f:123456.789	x=123456.78900]
+x=%.7G %01G %c]	n:Nonef:-0.0	!TypeError
+%s %2.2s %-5lF]	i:0i:7f:1e+16i:42	!TypeError
+[%0c end	f:1.5e-07s:hello world	!TypeError
+%(name)010s end	a=n:Noneb=b:Truename=i:1000000000000	1000000000000 end
+[%0-12E %0.2F %0-.2s end	f:0.0i:-1f:3.14159	[0.000000E+00 -1.00 3. end
+[%-f %.7s end	i:0f:nan	[0.000000 nan end
+a b %(name)u]	a=s:éb=f:1.0name=i:42	a b 42]
+% c%%	f:0.5	!TypeError
+x=%.2s %s %s end	f:2.675f:1e-05f:1e+16i:255	!TypeError
+%# .7E	i:1	 1.0000000E+00
+[%09.2f]	i:7	[000007.00]
+a b %.6u]	n:None	!TypeError
+%c%%	i:7	%
+%x]	f:0.5s:a	!TypeError
+[%+9c%%	i:255	[        ÿ%
+%-.6d %F	b:Truef:-infi:-42	!TypeError
+x=%+.1d %8x	i:0f:1e-05	!TypeError
+%(name)5s%(a)+F end	a=i:42b=i:1000name=f:1e+16	1e+16+42.000000 end
+%-.1E	i:1000000000000	1.0E+12
+[%#10o	i:0f:1e+16	!TypeError
+%0r %-7c %+5.6F end	f:2.675i:1f:2.5	2.675        +2.500000 end
+a b % 5.6d %+10s %#+1x	f:-inff:inff:-0.0	!OverflowError
+a b %+3.2e %0.7E]	i:0f:1.0	a b +0.00e+00 1.0000000E+00]
+[%o]	i:255	[377]
+%(b)F%(a)-LE]	a=i:42name=f:0.3333333333333333	!KeyError
+[%-0F %6F %.3x	f:3.14159f:3.14159b:False	[3.141590 3.141590 000
+a b %11g %0 .1E]	i:-42s:f:-3.14159	!TypeError
+%8.6F %.4F %.5s]	b:Falsef:-0.0f:nan	0.000000 -0.0000 nan]
+%0g %e %10x	i:1000000000000f:0.0i:-42	1e+12 0.000000e+00        -2a
+x=%(name).7F%(a)+E	b=i:255	!KeyError
+%#F%%	f:0.0	0.000000%
+[%+g	f:2.5	[+2.5
+%5E % 9s%%	f:-0.0s:é	-0.000000E+00         é%
+[%.2e]	s:hello world	!TypeError
+[%(name)-2F%(a)# x]	a=f:2.675	!KeyError
+%(b)# 4x end	a=f:infb=s:hello worldname=i:-1	!TypeError
+a b %8.1G %#11.5u %+11e]	f:1.5e-07i:255f:-inf	a b    1E-07       00255        -inf]
+[% 10E]	i:1000	[ 1.000000E+03]
+a b %0r]	i:1000000000000	a b 1000000000000]
+x=%.1s %- +5.5u%%	f:2.675f:inf	!OverflowError
+%12.1o%%		!TypeError
+[%-E	f:-inf	[-INF
+% s%%		!TypeError
+%(b)6s	a=f:nanb=i:7name=f:1e+16	     7
+a b %o	s:hello worldf:123456.789	!TypeError
+x=%(a).7r	a=s:abcb=i:7name=i:1000000000000	x='abc'
+%e]	i:1	1.000000e+00]
+[%#.6e		!TypeError
+%#0.2i	f:1e+16	10000000000000000
+a b %E	i:1000	a b 1.000000E+03

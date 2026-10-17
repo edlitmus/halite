@@ -30640,6 +30640,45 @@ silently (`"%s" | format(true)`, `%r`, `%(name)s`); conversions (`!r`,
 `!s`) and attribute or index fields (`{0.name}`, `{x[0]}`) in
 `str.format`, which already fail as missing arguments.
 
+### 5.370 The `format` filter was Go's `Sprintf`, not Python's `%`
+
+Issue 321 finding M-52, the last of 5.359's items: "`|format` is
+`fmt.Sprintf` underneath, and several common `%s` idioms fail loudly".
+Jinja's `format` filter is `value % args`, or `value % kwargs` with
+keywords. halite ran `fmt.Sprintf` and refused a result holding `%!`. The
+loud half was as the triage said: `"%s" | format(true)`, `%r` and
+`%(name)s` all failed. The quiet half was worse, and nobody had listed
+it, because Go's verbs differ from Python's without a word:
+
+| Source | main | jinja2 3.1.2 |
+|---|---|---|
+| `"%g" \| format(1/3)` | 0.3333333333333333 | 0.333333 |
+| `"%x" \| format("a")` | 61 | TypeError |
+| `"%d" \| format(x)`, x = 2.9 | error | 2 |
+| `"%s" \| format(true)` | error | True |
+| `"%(x)s-%(y)d" \| format(x="a", y=2)` | error | a-2 |
+
+`pypercent.go` is Python's `%`: mapping keys, the `#0- +` flags, width,
+precision, the ignored length modifiers, and the `s r a c d i u o x X e
+E f F g G` conversions, each built on the format-spec code of 5.369 with
+the differences between the two languages written out (`-` beats `0`; an
+integer's precision is a minimum digit count, so `%.3d` of -5 is
+`-005`). It is held to Python 3.12.3 by 3,000 generated cases in
+`testdata/pyformat/percent.tsv`, from the same generator, refusals
+included, and by ten cases through the filter captured from jinja2;
+putting `Sprintf` back fails six of those ten. The first version failed
+the differential on every integer conversion with a precision, writing
+the sign twice (`-00-3`), which is what a differential is for.
+
+Two things are refused rather than guessed: a `*` width or precision,
+and a conversion without a `(name)` beside keyword arguments, which
+Python would fill with the whole mapping.
+
+**Not done.** `*` widths. Nothing else of M-52's list remains; what 5.368
+found in the corpus (tuples as lists, `yaml_encode`'s drift) and
+`dict()`'s keyword order (5.367) are recorded where they were found.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
