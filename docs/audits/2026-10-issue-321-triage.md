@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 25 | 30: 3 mentioned and explicitly left, 1 half done, 26 not started |
+| Medium (55) | 25 | 30: 3 mentioned and explicitly left, 2 half done, 25 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -102,16 +102,20 @@ Severities are this file's revised ones, from the tables below.
 
 **Medium, half done.**
 
+- **M-06**, Medium: #378 bounds the enrollment body (64 KiB, read
+  within 10 s), the CSR (16 KiB) and the pending records (1,024), and
+  lets a spent token take a name from a pending record of another key
+  (DIVERGENCE 5.338). Not done: a per-source rate limit, which needs
+  `enroll --wait` to retry a refusal it treats as final today.
 - **M-03**, Low: the toolchain bump (#360) removed the ten advisories,
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (26).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (25).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
 |---|---|---|
-| M-06 | unbounded enrollment; a bogus token locks out the real node | Medium |
 | M-11 | 1 MiB line limit silently loses a job | Medium |
 | M-12 | returns from non-targets counted | Low-Medium |
 | M-13 | a flood of returns erases history | Medium |

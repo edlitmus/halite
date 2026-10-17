@@ -32,7 +32,7 @@ request whose token spends now replaces a pending request for that name
 held by another key, and the hub logs the fingerprint it replaced. Before,
 a request with a bogus token left a pending record that refused the real
 node until an operator deleted it (issue 321, M-06). There is still no
-per-source rate limit. DIVERGENCE 5.336.
+per-source rate limit. DIVERGENCE 5.338.
 
 ### `mount` works on FreeBSD, and refuses a table line it cannot write
 

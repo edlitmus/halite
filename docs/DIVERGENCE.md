@@ -29170,7 +29170,43 @@ refusal had been run, FreeBSD's had not. `mount` is declared for Linux,
 FreeBSD, OpenBSD, NetBSD, DragonFly and macOS. Its `opts` default is
 `defaults`, and its remount is `mount -o remount,<opts>`. Both are
 Linux's.
-### 5.336 Unauthenticated enrollment had no bounds, and a bogus token could hold a name
+### 5.337 An fstab line written without a type was unreadable, and rewritten for ever
+
+Issue 321 finding M-35. `entryFromArgs` requires a mount point and a
+device; `fstype` is optional, because mount(8) can probe. But a table
+line was then written with an empty third field:
+`/dev/sdb1\t/srv/data\t\tdefaults\t0 0`. The fields are separated by
+whitespace, so that is not an empty field. It closes up, and the
+options are read as the type.
+
+**Who reads it how.**
+
+- FreeBSD 15.1 (beastie) refused it with "Inappropriate file type or
+  format".
+- util-linux 2.39.3 on Ubuntu 24.04.5 refused it with "unknown
+  filesystem type 'defaults'" (exit 32).
+- This module's own `parseFstabLine` read type `defaults` and options
+  `0`. So the entry never matched what was declared, and `mount.mounted`
+  rewrote it and reported a change on every run, as the audit
+  reproduced.
+
+**The fix.** `mount.mounted` with `persist` (its default) and
+`mount.set_fstab` refuse an entry without `fstype`, before anything is
+mounted or written. The refusal names `persist: false` as the way to
+mount without a table entry, which still needs no type. It is not
+defaulted to `auto`: FreeBSD has nothing like it, and Salt's own
+`set_fstab` takes the type as a required argument.
+
+**Breaking.** A state that relied on omitting `fstype` while
+persisting now fails. It never produced a usable table line.
+
+`TestATableEntryWithoutAnFstypeIsRefused` holds both refusals, holds
+that the table is not created, and holds that `persist: false` still
+mounts. Disabling the check failed it.
+
+**Not verified.** Neither platform was booted with such a line; their
+refusals were taken from `mount` reading a scratch table.
+### 5.338 Unauthenticated enrollment had no bounds, and a bogus token could hold a name
 
 Issue 321 finding M-06. `POST /v1/enroll` is the one route a caller
 with no certificate reaches, because it is how a node gets one. It took
@@ -29318,42 +29354,8 @@ I broke each half on purpose: keeping `defaults` failed
 - A real block device, `mount.unmounted`, and a boot were not tried.
 - A filesystem type whose options differ (tmpfs refused `noatime` on
   FreeBSD) was not explored.
-### 5.337 An fstab line written without a type was unreadable, and rewritten for ever
 
-Issue 321 finding M-35. `entryFromArgs` requires a mount point and a
-device; `fstype` is optional, because mount(8) can probe. But a table
-line was then written with an empty third field:
-`/dev/sdb1\t/srv/data\t\tdefaults\t0 0`. The fields are separated by
-whitespace, so that is not an empty field. It closes up, and the
-options are read as the type.
 
-**Who reads it how.**
-
-- FreeBSD 15.1 (beastie) refused it with "Inappropriate file type or
-  format".
-- util-linux 2.39.3 on Ubuntu 24.04.5 refused it with "unknown
-  filesystem type 'defaults'" (exit 32).
-- This module's own `parseFstabLine` read type `defaults` and options
-  `0`. So the entry never matched what was declared, and `mount.mounted`
-  rewrote it and reported a change on every run, as the audit
-  reproduced.
-
-**The fix.** `mount.mounted` with `persist` (its default) and
-`mount.set_fstab` refuse an entry without `fstype`, before anything is
-mounted or written. The refusal names `persist: false` as the way to
-mount without a table entry, which still needs no type. It is not
-defaulted to `auto`: FreeBSD has nothing like it, and Salt's own
-`set_fstab` takes the type as a required argument.
-
-**Breaking.** A state that relied on omitting `fstype` while
-persisting now fails. It never produced a usable table line.
-
-`TestATableEntryWithoutAnFstypeIsRefused` holds both refusals, holds
-that the table is not created, and holds that `persist: false` still
-mounts. Disabling the check failed it.
-
-**Not verified.** Neither platform was booted with such a line; their
-refusals were taken from `mount` reading a scratch table.
 
 
 
