@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -474,7 +475,43 @@ func jsonFilter(fc *FilterContext, v any, args []any, kwargs map[string]any) (an
 	if err != nil {
 		return nil, fc.Errorf("tojson: %v", err)
 	}
-	return string(b), nil
+	return saltJSONEscape(string(b)), nil
+}
+
+// saltJSONEscape is what Salt's `tojson` does to json.dumps's output.
+//
+// Salt replaces Jinja's filter with its own (salt/utils/jinja.py, 3007.1):
+// json.dumps with `ensure_ascii` on, then `<`, `>`, `&` and `'` replaced
+// with `\u003c`, `\u003e`, `\u0026` and `\u0027`, so that the output is
+// safe inside HTML and inside a single-quoted YAML or shell string. Neither
+// was done here, so `"</script>" | tojson` and `"é" | tojson` rendered
+// differently from Salt, and a file written through them differed on the
+// first run after a migration (issue 321, M-52). Non-ASCII can only stand
+// inside a JSON string, so escaping it over the whole text is what
+// ensure_ascii does; above the BMP it is a UTF-16 surrogate pair, as
+// Python writes it.
+func saltJSONEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '<':
+			b.WriteString(`\u003c`)
+		case r == '>':
+			b.WriteString(`\u003e`)
+		case r == '&':
+			b.WriteString(`\u0026`)
+		case r == '\'':
+			b.WriteString(`\u0027`)
+		case r > 0xffff:
+			r1, r2 := utf16.EncodeRune(r)
+			fmt.Fprintf(&b, `\u%04x\u%04x`, r1, r2)
+		case r > 0x7e:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // saltJSONFilter is Salt's `json`, which is not Jinja's `tojson`.

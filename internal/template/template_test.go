@@ -551,3 +551,25 @@ func TestConcatPrecedenceMatchesJinja(t *testing.T) {
 		}
 	}
 }
+
+// **tojson is Salt's**, which escapes what Jinja's does not quite: Salt
+// replaces the filter with json.dumps under ensure_ascii, then `<`, `>`,
+// `&` and `'` as \u escapes (salt/utils/jinja.py, 3007.1). Each want is
+// that function's output, computed with Python's json for the same value;
+// Salt keeps insertion order, where Jinja's own filter would sort.
+func TestToJSONEscapesAsSaltDoes(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`{{ {'a': '<b>&\'"'} | tojson }}`, `{"a": "\u003cb\u003e\u0026\u0027\""}`},
+		{`{{ "</script>" | tojson }}`, `"\u003c/script\u003e"`},
+		{`{{ {'b': 1, 'a': 2} | tojson }}`, `{"b": 1, "a": 2}`},
+		{`{{ "é" | tojson }}`, `"\u00e9"`},
+		{`{{ "😀" | tojson }}`, `"\ud83d\ude00"`},
+		{"{{ \"a\x7fb\" | tojson }}", `"a\u007fb"`},
+		{`{{ {"k": [1, "x"]} | tojson }}`, `{"k": [1, "x"]}`},
+		{`{{ {"k": [1, "<"]} | tojson(indent=2) }}`, "{\n  \"k\": [\n    1,\n    \"\\u003c\"\n  ]\n}"},
+	} {
+		if got := render(t, c.src, nil); got != c.want {
+			t.Errorf("%s -> %s, Salt gives %s", c.src, got, c.want)
+		}
+	}
+}
