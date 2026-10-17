@@ -29693,6 +29693,54 @@ does. A directory with setgid managed as `'0755'` loses setgid.
 
 **Not done.** `file.recurse`'s modes are M-22's, and `recurse: [mode]`
 following symlinks is M-29's.
+### 5.346 A file state replaced a symbolic link instead of writing through it
+
+Issue 321 finding M-19. `writeAtomic` renames a new file over its path,
+and over a symbolic link that puts a regular file where the link was.
+`file.managed` on a linked configuration took its mode from `Lstat`,
+which is the link's own: 0777 on Linux, 0755 on FreeBSD. It replaced
+the link with a new file of that mode, left the real configuration
+stale, and called the next run converged. The edit functions read
+through the link (`os.ReadFile` follows it) and then wrote over it.
+
+**As root on beastie** (FreeBSD 15.1), with
+`sites-enabled/app.conf -> ../sites-available/app.conf` and the target
+`www:www 0640`:
+
+| Step | main (203cb18) | 03f17dd |
+|---|---|---|
+| `file.managed` | link became `-rwxr-xr-x`, target still `old` | link kept, target `managed`, `www:www 640` |
+| the same again | converged, wrongly | converged |
+| `file.replace` | wrote the new file, target still `old` | link kept, target `replaced` |
+| a link to nothing | replaced by a regular file | refused (rc 1), the link left alone |
+
+**The fix.** `followLink` resolves a link to the file it names. A link
+that does not resolve is refused, naming where it points.
+`file.managed`, the edit functions' shared `editResult`, `file.sed` and
+`file.serialize` call it first, so the stat, the read, the comparison,
+the write, the mode and the owner M-20 keeps all concern the target. Salt's
+`file.managed` follows by default (`follow_symlinks: True`).
+`writeAtomic` itself does not follow. Some of its callers must not: the
+timezone module writes `/etc/localtime`, which is often a link into the
+zoneinfo database, and following it would rewrite the zone file every
+process reads.
+
+**Tests.**
+
+- `TestFileManagedWritesThroughALink` runs twice and requires the link
+  to remain, the target to change and the second run to converge.
+- `TestEditsWriteThroughALink` covers `file.replace`, `append`, `line`,
+  `serialize` and `sed`.
+- `TestADanglingLinkIsRefused`.
+
+With `followLink` made a no-op, all of them fail, `file.managed`'s with
+the finding's own "replaced by a -rwxrwxrwx".
+
+**Not done.** Salt's `follow_symlinks: False`, which manages the link's
+path itself, is not offered, so a state cannot ask for the link to be
+replaced. `file.copy`, `file.prepend`, `blockreplace`, `comment` and
+`uncomment` go through `editResult` too, and were not each run against a
+link. Linux as root was not run.
 
 
 

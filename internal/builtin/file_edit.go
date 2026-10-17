@@ -579,6 +579,11 @@ func editResult(c *exec.Context, path string, before, after []byte, args *value.
 		return states.WouldChange(describe(true), changes), nil
 	}
 
+	// Through a link to the file it names: see followLink.
+	path, err := followLink(path)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	info, err := os.Stat(path)
 	mode := os.FileMode(0o644)
 	if err == nil {

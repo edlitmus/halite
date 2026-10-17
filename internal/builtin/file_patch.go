@@ -301,7 +301,11 @@ func hasReverseOption(options []string) bool {
 // ---- sed ----
 
 func fileSedFn(c *exec.Context, args *value.Map) (any, error) {
-	path := filepath.Clean(states.Str(args, "path", ""))
+	// Through a link to the file it names: see followLink.
+	path, err := followLink(filepath.Clean(states.Str(args, "path", "")))
+	if err != nil {
+		return nil, err
+	}
 	before := states.Str(args, "before", "")
 	if before == "" {
 		return nil, fmt.Errorf("file.sed needs `before`")

@@ -374,6 +374,10 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False("This state needs a file path."), nil
 	}
 	path = filepath.Clean(path)
+	path, err := followLink(path)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 
 	want, source, err := desiredContents(c, args)
 	if err != nil {

@@ -57,6 +57,11 @@ func fileSerialize(c *exec.Context, args *value.Map) (states.Result, error) {
 	if path == "" {
 		return states.False("file.serialize needs a file to write."), nil
 	}
+	// Through a link to the file it names: see followLink.
+	path, err := followLink(path)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 
 	format := states.Str(args, "serializer", "")
 	if format == "" {
