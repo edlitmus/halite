@@ -36,8 +36,8 @@ func registerFileTreeCopy(r *Registries) {
 					"Skip paths matching this glob, relative to the source."),
 				opt("include_pat", signature.String, "",
 					"Copy only paths matching this glob, relative to the source."),
-				opt("dir_mode", signature.String, "", "Mode for directories this state creates."),
-				opt("file_mode", signature.String, "", "Mode for the files it writes."),
+				opt("dir_mode", signature.Mode, "", "Mode for directories this state creates."),
+				opt("file_mode", signature.Mode, "", "Mode for the files it writes."),
 				opt("user", signature.String, "", "Owner for what it writes."),
 				opt("group", signature.String, "", "Group for what it writes."),
 				opt("makedirs", signature.Bool, true, "Create the destination if it is absent."),
@@ -206,8 +206,14 @@ func sameContents(body []byte, target string) (bool, error) {
 
 // apply writes the plan.
 func (p *treeCopyPlan) apply(args *value.Map, dest string) error {
-	dirMode := modeOrDefault(states.Str(args, "dir_mode", ""), 0o755)
-	fileMode := modeOrDefault(states.Str(args, "file_mode", ""), 0o644)
+	dirMode, err := modeOrDefault(states.Str(args, "dir_mode", ""), 0o755)
+	if err != nil {
+		return err
+	}
+	fileMode, err := modeOrDefault(states.Str(args, "file_mode", ""), 0o644)
+	if err != nil {
+		return err
+	}
 
 	if states.Bool(args, "makedirs", true) {
 		if err := os.MkdirAll(dest, dirMode); err != nil {
@@ -289,13 +295,19 @@ func filterTreePaths(paths []string, include, exclude string) []string {
 	return out
 }
 
-func modeOrDefault(spec string, def os.FileMode) os.FileMode {
+func modeOrDefault(spec string, def os.FileMode) (os.FileMode, error) {
 	if spec == "" {
-		return def
+		return def, nil
 	}
+	// A mode that does not parse is an error, not the default. This
+	// returned the default, so `file_mode: 0600` -- which the YAML parser
+	// had made the integer 384, and a String parameter then the text
+	// "384" -- quietly became 0644 (issue 321, M-21). The parameters are
+	// typed Mode now, which refuses the integer with a message saying to
+	// quote it; this is the second guard.
 	m, err := parseMode(spec)
 	if err != nil {
-		return def
+		return 0, fmt.Errorf("the mode %q is not one: %w", spec, err)
 	}
-	return m
+	return m, nil
 }

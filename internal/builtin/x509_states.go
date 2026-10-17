@@ -36,7 +36,7 @@ func registerX509States(r *Registries) {
 				Doc: "Ensure a private key exists with the requested algorithm and size.",
 				Params: append([]signature.Param{
 					req("name", signature.Path, "Where the key lives."),
-					opt("mode", signature.String, "0600", "The file mode. A key should not be readable by anyone else."),
+					opt("mode", signature.Mode, "0600", "The file mode. A key should not be readable by anyone else."),
 					opt("new", signature.Bool, false, "Replace the key even when the existing one already matches."),
 					opt("user", signature.String, "", "The owner."),
 					opt("group", signature.String, "", "The group."),
@@ -65,7 +65,7 @@ func registerX509States(r *Registries) {
 					opt("ca", signature.Bool, false, "Mark it a CA."),
 					opt("key_usage", signature.List, nil, "Key usages."),
 					opt("ext_key_usage", signature.List, nil, "Extended key usages."),
-					opt("mode", signature.String, "0644", "The file mode."),
+					opt("mode", signature.Mode, "0644", "The file mode."),
 					opt("user", signature.String, "", "The owner."),
 					opt("group", signature.String, "", "The group."),
 					opt("makedirs", signature.Bool, false, "Create the directory the file goes in, and any above it, when they are missing."),
