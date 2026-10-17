@@ -1,6 +1,8 @@
 package s3fs
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"context"
 	"encoding/xml"
 	"net/http"
@@ -103,7 +105,10 @@ func (f *fakeS3) writeListing(w http.ResponseWriter, r *http.Request) {
 		if prefix != "" && !strings.HasPrefix(k, prefix) {
 			continue
 		}
-		contents = append(contents, item{Key: k, ETag: `"x"`, Size: int64(len(f.objects[k]))})
+		// The MD5 of the body, quoted, as S3 gives a single-part
+		// object's: a change of contents changes it.
+		sum := md5.Sum([]byte(f.objects[k]))
+		contents = append(contents, item{Key: k, ETag: `"` + hex.EncodeToString(sum[:]) + `"`, Size: int64(len(f.objects[k]))})
 	}
 	out := struct {
 		XMLName     xml.Name `xml:"ListBucketResult"`
@@ -365,5 +370,83 @@ func TestAMisconfiguredBackendIsRefused(t *testing.T) {
 		} else if !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: the refusal is %v", c.name, err)
 		}
+	}
+}
+
+// served reads what the file server would serve for env at rel.
+func served(t *testing.T, b *Backend, env, rel string) (string, bool) {
+	t.Helper()
+	for _, dir := range b.Roots()[env] {
+		if body, err := os.ReadFile(filepath.Join(dir, rel)); err == nil {
+			return string(body), true
+		}
+	}
+	return "", false
+}
+
+// **A same-sized change is deployed** (issue 321, M-51). The cache was
+// compared by size alone, so `port: 8080` to `port: 8081` was never
+// fetched, while a comment above the comparison said the ETag was used.
+func TestASameSizedChangeIsFetched(t *testing.T) {
+	f := newFakeS3(t, map[string]string{"base/web.sls": "port: 8080\n"})
+	b := backendFor(t, f, nil)
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.objects["base/web.sls"] = "port: 8081\n"
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := served(t, b, "base", "web.sls"); got != "port: 8081\n" {
+		t.Errorf("after a same-sized change the cache serves %q", got)
+	}
+}
+
+// **A deleted object stops being served** (issue 321, M-51).
+func TestADeletedObjectLeavesTheCache(t *testing.T) {
+	f := newFakeS3(t, map[string]string{"base/top.sls": "base: {}\n", "base/old.sls": "x: {}\n"})
+	b := backendFor(t, f, nil)
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	delete(f.objects, "base/old.sls")
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := served(t, b, "base", "old.sls"); ok {
+		t.Error("a file deleted from the bucket is still served")
+	}
+	if _, ok := served(t, b, "base", "top.sls"); !ok {
+		t.Error("the file still in the bucket stopped being served")
+	}
+}
+
+// **An object over the bound is refused, not truncated** (issue 321,
+// M-51). io.LimitReader stops quietly, and the cut-off body was written
+// as if complete.
+func TestAnObjectOverTheBoundIsRefused(t *testing.T) {
+	f := newFakeS3(t, map[string]string{"base/big.sls": "0123456789"})
+	b := backendFor(t, f, nil)
+	creds, err := b.opts.Provider.Retrieve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucket := b.opts.Buckets[0]
+	if _, err := b.opts.signedGet(context.Background(), b.opts.objectURL(bucket, "base/big.sls"), bucket, creds, 4); err == nil {
+		t.Error("a 10-byte object was taken under a 4-byte bound")
+	}
+	if body, err := b.opts.signedGet(context.Background(), b.opts.objectURL(bucket, "base/big.sls"), bucket, creds, 10); err != nil || len(body) != 10 {
+		t.Errorf("an object exactly at the bound: %q, %v", body, err)
+	}
+}
+
+// **Two names, two directories** (issue 321, M-51): `base?` and `base`
+// shared one while the allow and deny lists judged them apart.
+func TestSanitisedNamesDoNotCollide(t *testing.T) {
+	if a, b := sanitiseName("base"), sanitiseName("base?"); a == b {
+		t.Errorf("base and base? both became %q", a)
+	}
+	if got := sanitiseName("base"); got != "base" {
+		t.Errorf("a name needing no change became %q", got)
 	}
 }

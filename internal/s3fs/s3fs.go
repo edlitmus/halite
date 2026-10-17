@@ -12,6 +12,8 @@ package s3fs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -25,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/awsauth"
 	"github.com/edlitmus/halite/internal/fileperm"
 )
@@ -248,12 +251,19 @@ func (o *Options) signedGet(ctx context.Context, endpoint string, b Bucket,
 		return nil, err
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, limit))
+	// One byte past the limit, so that an object larger than it is
+	// refused rather than cut off: io.LimitReader stops quietly, and an
+	// object over the limit was written truncated as if it were complete
+	// (issue 321, M-51).
+	body, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s answered %d", endpoint, res.StatusCode)
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("%s is larger than %d bytes, which is all this reads of one object", endpoint, limit)
 	}
 	return body, nil
 }
@@ -316,6 +326,12 @@ type Backend struct {
 	roots   map[string][]string
 	state   []BucketState
 	updated time.Time
+	// etags is the ETag each cached file was fetched at, by its path, so
+	// that a same-sized change is seen. In memory: a hub that restarts
+	// fetches everything once, which is the cost of not writing a
+	// manifest into a tree the file server publishes.
+	etagMu sync.Mutex
+	etags  map[string]string
 }
 
 // BucketState is what one bucket resolved to.
@@ -414,6 +430,7 @@ func (b *Backend) materialise(ctx context.Context, bucket Bucket,
 
 	base := filepath.Join(b.opts.CacheDir, sanitiseName(bucket.Name))
 	envs := map[string]string{}
+	listed := map[string]bool{}
 
 	for _, object := range objects {
 		env, rel, ok := bucket.envAndPath(object.Key)
@@ -432,12 +449,16 @@ func (b *Backend) materialise(ctx context.Context, bucket Bucket,
 		envDir := filepath.Join(base, sanitiseName(env))
 		envs[env] = envDir
 		target := filepath.Join(envDir, filepath.FromSlash(clean))
+		listed[target] = true
 
-		// Skipped when the cached copy matches what the bucket
-		// published. The ETag is a digest for an object that was not
-		// multipart-uploaded; when it is not, the size is still a cheap
-		// filter and the fetch below is correct either way.
-		if unchanged(target, object) {
+		// Skipped when the cached copy is the one the bucket published:
+		// the same size and the same ETag. The comment here said the ETag
+		// was compared and the code compared only the size, so an edit
+		// that kept the length -- `8080` to `8081` -- was never deployed
+		// (issue 321, M-51). An ETag is a digest for an object that was
+		// not multipart-uploaded and an opaque version otherwise; either
+		// way a change changes it.
+		if b.unchanged(target, object) {
 			continue
 		}
 		body, err := b.opts.signedGet(ctx, b.opts.objectURL(bucket, object.Key),
@@ -448,20 +469,57 @@ func (b *Backend) materialise(ctx context.Context, bucket Bucket,
 		if err := fileperm.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return nil, err
 		}
-		if err := fileperm.WriteFile(target, body, 0o600); err != nil {
+		// Staged and renamed, so a reader never sees half a file.
+		if err := atomicfile.Write(target, body, 0o600); err != nil {
+			return nil, err
+		}
+		b.etagMu.Lock()
+		if b.etags == nil {
+			b.etags = map[string]string{}
+		}
+		b.etags[target] = object.ETag
+		b.etagMu.Unlock()
+	}
+	// **What the bucket no longer has, the cache no longer serves.** A
+	// file removed or renamed in the bucket stayed in the cache, so a
+	// deleted SLS kept being served from it (issue 321, M-51). Only the
+	// environments this listing produced are swept, and only after every
+	// object in them is in place.
+	for _, envDir := range envs {
+		if err := pruneUnlisted(envDir, listed); err != nil {
 			return nil, err
 		}
 	}
 	return envs, nil
 }
 
-// unchanged reports whether the cached file matches the object.
-func unchanged(path string, object Object) bool {
+// unchanged reports whether the cached file is the object.
+func (b *Backend) unchanged(path string, object Object) bool {
 	info, err := os.Stat(path)
-	if err != nil {
+	if err != nil || info.Size() != object.Size {
 		return false
 	}
-	return info.Size() == object.Size
+	b.etagMu.Lock()
+	defer b.etagMu.Unlock()
+	etag, ok := b.etags[path]
+	return ok && etag == object.ETag
+}
+
+// pruneUnlisted removes the files under dir the listing did not name.
+func pruneUnlisted(dir string, listed map[string]bool) error {
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || listed[path] {
+			return nil
+		}
+		return os.Remove(path)
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // sanitiseName makes a bucket or environment name usable as a
@@ -479,7 +537,16 @@ func sanitiseName(name string) string {
 	}
 	out := strings.Trim(b.String(), "-.")
 	if out == "" {
-		return "bucket"
+		out = "bucket"
+	}
+	// **Two names, two directories.** The mapping was not one to one:
+	// `base?` and `base` both became `base`, so two environments shared a
+	// directory while the allow and deny lists judged them apart (issue
+	// 321, M-51). A name that needed changing carries a digest of what it
+	// was.
+	if out != name {
+		sum := sha256.Sum256([]byte(name))
+		out += "-" + hex.EncodeToString(sum[:4])
 	}
 	return out
 }
