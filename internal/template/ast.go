@@ -282,6 +282,16 @@ type BinaryExpr struct {
 	L, R Expr
 }
 
+// CompareExpr is a chain of comparisons. `a < b < c` means `a < b and
+// b < c`, with b evaluated once, as in Jinja and Python; a single
+// comparison is a chain of one.
+type CompareExpr struct {
+	baseNode
+	First Expr
+	Ops   []string // "==", "!=", "<", "<=", ">", ">=", "in", "not in"
+	Rest  []Expr
+}
+
 // UnaryExpr is a prefix operation: `-x` or `not x`.
 type UnaryExpr struct {
 	baseNode

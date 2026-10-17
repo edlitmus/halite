@@ -71,6 +71,8 @@ func exprChildren(e Expr) []Expr {
 		return []Expr{t.L, t.R}
 	case *UnaryExpr:
 		return []Expr{t.X}
+	case *CompareExpr:
+		return append([]Expr{t.First}, t.Rest...)
 	case *CondExpr:
 		return []Expr{t.Cond, t.True, t.False}
 	case *ListExpr:

@@ -1105,6 +1105,9 @@ func (r *renderer) eval(e Expr) (any, error) {
 	case *BinaryExpr:
 		return r.evalBinary(t)
 
+	case *CompareExpr:
+		return r.evalCompare(t)
+
 	case *UnaryExpr:
 		x, err := r.eval(t.X)
 		if err != nil {
@@ -1207,6 +1210,38 @@ func (r *renderer) evalBinary(t *BinaryExpr) (any, error) {
 		return nil, err
 	}
 	return r.binary(t.Op, l, rv, t.Pos())
+}
+
+// evalCompare evaluates a chain left to right, each operand once, and
+// stops at the first comparison that is false, as Jinja does.
+func (r *renderer) evalCompare(t *CompareExpr) (any, error) {
+	l, err := r.eval(t.First)
+	if err != nil {
+		return nil, err
+	}
+	for i, op := range t.Ops {
+		rv, err := r.eval(t.Rest[i])
+		if err != nil {
+			return nil, err
+		}
+		var res any
+		if op == "not in" {
+			res, err = r.binary("in", l, rv, t.Pos())
+			if err == nil {
+				res = !truthy(res)
+			}
+		} else {
+			res, err = r.binary(op, l, rv, t.Pos())
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !truthy(res) {
+			return false, nil
+		}
+		l = rv
+	}
+	return true, nil
 }
 
 func (r *renderer) evalSlice(t *SliceExpr) (any, error) {

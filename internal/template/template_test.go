@@ -66,7 +66,8 @@ func TestOutputAndLiterals(t *testing.T) {
 		{`{{ 7 % 3 }}`, "1"},
 		{`{{ -7 % 3 }}`, "2"},
 		{`{{ 2 ** 10 }}`, "1024"},
-		{`{{ 2 ** 3 ** 2 }}`, "512"},
+		// Jinja, not Python: `**` is left associative (jinja2 3.1.2: 64).
+		{`{{ 2 ** 3 ** 2 }}`, "64"},
 		{`{{ 'ab' * 3 }}`, "ababab"},
 		{`{{ [1,2] + [3] }}`, "[1, 2, 3]"},
 		{`{{ true }}`, "True"},
@@ -100,7 +101,8 @@ func TestOperatorPrecedence(t *testing.T) {
 		{`{{ 2 + 3 == 5 }}`, "True"},
 		{`{{ true or false and false }}`, "True"},
 		{`{{ not true and false }}`, "False"},
-		{`{{ -2 ** 2 }}`, "-4"},
+		// Jinja, not Python: unary minus binds tighter (jinja2 3.1.2: 4).
+		{`{{ -2 ** 2 }}`, "4"},
 	}
 	for _, c := range cases {
 		if got := render(t, c.src, nil); got != c.want {
@@ -487,4 +489,32 @@ func TestSyntaxErrorsCarryPositions(t *testing.T) {
 func TestEndblockNameMustMatch(t *testing.T) {
 	err := renderErr(t, `{% block a %}x{% endblock b %}`, nil)
 	mustContain(t, err.Error(), "does not match")
+}
+
+// **Comparisons chain, and `**` is Jinja's** (issue 321, M-52). Every
+// expected value was captured from jinja2 3.1.2 rendering the same
+// source with x=15, not written from the documentation. On main the
+// chain was folded left to right -- `0 < 15 < 10` was True and the `if`
+// took the "in" branch -- and `**` followed Python.
+func TestComparisonsAndPowerMatchJinja(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`{{ 0 < 15 < 10 }}`, "False"},
+		{`{{ 3 > 2 > 1 }}`, "True"},
+		{`{{ 1 < 2 < 3 }}`, "True"},
+		{`{{ 1 in [1] == true }}`, "False"},
+		{`{{ 1 == 1 == 1 }}`, "True"},
+		{`{{ 0 < 5 > 3 }}`, "True"},
+		{`{{ not 1 == 2 }}`, "True"},
+		{`{{ 1 < 2 and 2 < 3 }}`, "True"},
+		{`{{ 2 ** 3 ** 2 }}`, "64"},
+		{`{{ -2 ** 2 }}`, "4"},
+		{`{{ 2 ** -1 }}`, "0.5"},
+		{`{{ - 3 + 2 }}`, "-1"},
+		{`{{ 2 * 3 ** 2 }}`, "18"},
+		{`{% if 0 < x < 10 %}in{% else %}out{% endif %}`, "out"},
+	} {
+		if got := render(t, c.src, map[string]any{"x": 15}); got != c.want {
+			t.Errorf("%s -> %q, jinja2 3.1.2 gives %q", c.src, got, c.want)
+		}
+	}
 }

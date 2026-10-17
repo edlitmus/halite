@@ -517,7 +517,7 @@ func TestDepthWalkCoversEveryField(t *testing.T) {
 		&ExtendsNode{}, &BlockNode{}, &FilterNode{}, &DoNode{}, &BreakNode{},
 		&ContinueNode{}, &WithNode{}, &AutoescapeNode{},
 		&LiteralExpr{}, &NameExpr{}, &AttrExpr{}, &ItemExpr{}, &SliceExpr{}, &CallExpr{},
-		&FilterExpr{}, &TestExpr{}, &BinaryExpr{}, &UnaryExpr{}, &CondExpr{}, &ListExpr{},
+		&FilterExpr{}, &TestExpr{}, &BinaryExpr{}, &CompareExpr{}, &UnaryExpr{}, &CondExpr{}, &ListExpr{},
 		&TupleExpr{}, &DictExpr{},
 	} {
 		instances[reflect.TypeOf(v).Elem().Name()] = v

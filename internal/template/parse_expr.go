@@ -142,10 +142,24 @@ func (p *parser) parseNot() (Expr, error) {
 	return p.parseComparison()
 }
 
+// parseComparison reads a comparison, which **chains**: `0 < x < 10` is
+// `0 < x and x < 10`, with x evaluated once. It was folded left to right,
+// `(0 < x) < 10`, so with x of 15 it compared False with 10 and took the
+// "in range" branch; `3 > 2 > 1` was False; `1 in [1] == true` was True.
+// Captured from jinja2 3.1.2: False, True and False (issue 321, M-52).
 func (p *parser) parseComparison() (Expr, error) {
 	e, err := p.parseConcat()
 	if err != nil {
 		return nil, err
+	}
+	var chain *CompareExpr
+	link := func(pos Pos, op string, r Expr) {
+		if chain == nil {
+			chain = &CompareExpr{baseNode: baseNode{pos}, First: e}
+			e = chain
+		}
+		chain.Ops = append(chain.Ops, op)
+		chain.Rest = append(chain.Rest, r)
 	}
 	for {
 		t := p.peek()
@@ -157,7 +171,7 @@ func (p *parser) parseComparison() (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
-			e = &BinaryExpr{baseNode{t.pos}, t.val, e, r}
+			link(t.pos, t.val, r)
 
 		case t.kind == tokName && t.val == "in":
 			p.i++
@@ -165,7 +179,7 @@ func (p *parser) parseComparison() (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
-			e = &BinaryExpr{baseNode{t.pos}, "in", e, r}
+			link(t.pos, "in", r)
 
 		case t.kind == tokName && t.val == "not" &&
 			p.toks[p.i+1].kind == tokName && p.toks[p.i+1].val == "in":
@@ -174,7 +188,7 @@ func (p *parser) parseComparison() (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
-			e = &UnaryExpr{baseNode{t.pos}, "not", &BinaryExpr{baseNode{t.pos}, "in", e, r}}
+			link(t.pos, "not in", r)
 
 		case t.kind == tokName && t.val == "is":
 			p.i++
@@ -182,6 +196,8 @@ func (p *parser) parseComparison() (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+			// A test ends the chain it is applied to.
+			chain = nil
 
 		default:
 			return e, nil
@@ -294,7 +310,7 @@ func (p *parser) parseAdditive() (Expr, error) {
 }
 
 func (p *parser) parseMultiplicative() (Expr, error) {
-	e, err := p.parseUnary()
+	e, err := p.parsePower()
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +320,7 @@ func (p *parser) parseMultiplicative() (Expr, error) {
 			break
 		}
 		t := p.next()
-		r, err := p.parseUnary()
+		r, err := p.parsePower()
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +355,7 @@ func (p *parser) parseUnaryOperand(withFilter bool) (Expr, error) {
 		}
 		return node, nil
 	}
-	e, err := p.parsePower()
+	e, err := p.parsePostfix()
 	if err != nil {
 		return nil, err
 	}
@@ -365,23 +381,23 @@ func (p *parser) parseTrailingFilters(e Expr) (Expr, error) {
 	return e, nil
 }
 
+// parsePower reads `**`, as Jinja does rather than as Python does: left
+// associative, and over unary operands, so `2 ** 3 ** 2` is 64 and
+// `-2 ** 2` is 4. This followed Python, 512 and -4, and a tree written
+// against Salt got a different number with no error (issue 321, M-52;
+// captured from jinja2 3.1.2).
 func (p *parser) parsePower() (Expr, error) {
-	e, err := p.parsePostfix()
+	e, err := p.parseUnary()
 	if err != nil {
 		return nil, err
 	}
-	if p.peek().kind == tokOp && p.peek().val == "**" {
+	for p.peek().kind == tokOp && p.peek().val == "**" {
 		t := p.next()
-		// Right associative, as in Python.
-		if err := p.nest(); err != nil {
-			return nil, err
-		}
-		r, err := p.parseUnaryOperand(true)
-		p.unnest()
+		r, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
-		return &BinaryExpr{baseNode{t.pos}, "**", e, r}, nil
+		e = &BinaryExpr{baseNode{t.pos}, "**", e, r}
 	}
 	return e, nil
 }
