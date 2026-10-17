@@ -29,7 +29,7 @@ named. That return then appeared on the bus as `halite/job/<jid>/ret/<node>`
 watch), and was counted by a synchronous API run. Such a return is now
 refused with 403 and logged. A return with a chunk number other than 0 is
 refused too: nothing paginates returns, and a chunk let one node write
-unbounded files against a job (issue 321, M-12). DIVERGENCE 5.336.
+unbounded files against a job (issue 321, M-12). DIVERGENCE 5.340.
 
 ### A job too long for a node is refused, and a long event no longer ends the event stream
 
