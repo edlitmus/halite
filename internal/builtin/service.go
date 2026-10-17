@@ -590,13 +590,93 @@ func (freebsdRCProvider) Reload(c *exec.Context, name string) error {
 }
 
 func (freebsdRCProvider) Enable(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"sysrc", name + "_enable=YES"}})
-	return err
+	return freebsdSetRCVar(c, name, "YES")
 }
 
 func (freebsdRCProvider) Disable(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"sysrc", name + "_enable=NO"}})
+	return freebsdSetRCVar(c, name, "NO")
+}
+
+// freebsdSetRCVar writes the variable a script's rcvar names.
+//
+// **The variable is the script's, not `<name>_enable`.** This used to
+// write `<name>_enable`, which is the convention and not the rule: an
+// rc.d script names its own variable with `rcvar=`, and rc.subr's
+// checkyesno reads that one and nothing else. On beastie (FreeBSD
+// 15.1-RELEASE) 39 of the scripts in /etc/rc.d and /usr/local/etc/rc.d
+// differ -- `ipfw` reads `firewall_enable`, `nfsd` reads
+// `nfs_server_enable`, `bgfsck` reads `background_fsck` -- and a hyphen in
+// the name makes it worse: `avahi-daemon` reads `avahi_daemon_enable`,
+// and `sysrc avahi-daemon_enable=YES` exits 0 having written a line rc
+// never reads. So `service.enabled: ipfw` wrote `ipfw_enable=YES`,
+// enabled nothing, saw `service ipfw enabled` still fail, and did it again
+// on every run (issue 321, M-43).
+//
+// The name comes from `service <name> rcvar`, which is rc.subr asking the
+// script itself, so it is right for a port's script as much as for base.
+// Enabled keeps asking `service <name> enabled`, which reads the same
+// variable through checkyesno; the two now agree by construction.
+func freebsdSetRCVar(c *exec.Context, name, value string) error {
+	rcvar, err := freebsdRCVar(c, name)
+	if err != nil {
+		return err
+	}
+	_, err = c.Run(exec.Command{Argv: []string{"sysrc", rcvar + "=" + value}})
 	return err
+}
+
+// freebsdRCVar reads the variable an rc.d script is switched by.
+//
+// `service <name> rcvar` prints it as rc.conf would hold it, between
+// comments, measured on beastie:
+//
+//	# ipfw : Firewall, traffic shaper, packet scheduler, in-kernel NAT
+//	#
+//	firewall_enable="YES"
+//	#   (default: "")
+//
+// A script with no rcvar prints only the comments and exits 0, and such a
+// script runs at every boot: there is nothing to enable or disable, so
+// asking for either is refused by name rather than answered with a write
+// rc would ignore. (`service ldconfig enabled` exits 1 for one, so without
+// the refusal `service.enabled: ldconfig` would write on every run.) A
+// script that does not exist makes service(8) exit 1, with its reason on
+// stderr.
+func freebsdRCVar(c *exec.Context, name string) (string, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"service", name, "rcvar"}, IgnoreExitCode: true})
+	if err != nil {
+		return "", err
+	}
+	if res.Code != 0 {
+		return "", fmt.Errorf("service %s rcvar exited %d: %s", name, res.Code,
+			strings.TrimSpace(res.Stderr+" "+res.Stdout))
+	}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		v, _, ok := strings.Cut(line, "=")
+		if !ok || strings.HasPrefix(line, "#") || !isShellName(v) {
+			continue
+		}
+		return v, nil
+	}
+	return "", fmt.Errorf("the rc.d script %s declares no rcvar, so rc runs it at every boot and there is nothing to enable or disable", name)
+}
+
+// isShellName reports whether s is a name sh(1) would take as a
+// variable, which is what rc.conf holds.
+func isShellName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r == '_', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case i > 0 && r >= '0' && r <= '9':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // sysvProvider is the fallback for a Linux node without systemd.
