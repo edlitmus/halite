@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
+	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -85,7 +87,7 @@ func fileRecurse(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(err.Error()), nil
 	}
 	if states.Bool(args, "clean", false) {
-		extra, err := extraUnderTree(dest, paths)
+		extra, err := extraUnderTree(dest, paths, states.Str(args, "exclude_pat", ""))
 		if err != nil {
 			return states.False(fmt.Sprintf("%s could not be read: %v", dest, err)), nil
 		}
@@ -112,6 +114,9 @@ func fileRecurse(c *exec.Context, args *value.Map) (states.Result, error) {
 type treeCopyPlan struct {
 	write  []treeCopyFile
 	remove []string
+	// fix is files whose contents match and whose mode or owner does not
+	// match file_mode, user or group. See planTreeCopy.
+	fix []string
 }
 
 type treeCopyFile struct {
@@ -124,7 +129,9 @@ type treeCopyFile struct {
 	isNew bool
 }
 
-func (p *treeCopyPlan) empty() bool { return len(p.write) == 0 && len(p.remove) == 0 }
+func (p *treeCopyPlan) empty() bool {
+	return len(p.write) == 0 && len(p.remove) == 0 && len(p.fix) == 0
+}
 
 func (p *treeCopyPlan) changes() *value.Map {
 	changes := value.NewMap(len(p.write) + len(p.remove))
@@ -138,6 +145,9 @@ func (p *treeCopyPlan) changes() *value.Map {
 	for _, rel := range p.remove {
 		changes.Set(rel, states.Change("present", "removed"))
 	}
+	for _, rel := range p.fix {
+		changes.Set(rel, states.Change("mode or owner differs", "corrected"))
+	}
 	return changes
 }
 
@@ -149,6 +159,9 @@ func (p *treeCopyPlan) describe(dest, source string, would bool) string {
 	}
 	if n := len(p.remove); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s removed as `clean`", n, verb))
+	}
+	if n := len(p.fix); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s given the requested mode or owner", n, verb))
 	}
 	return strings.Join(parts, ", ") + " under " + dest + "."
 }
@@ -182,6 +195,17 @@ func planTreeCopy(c *exec.Context, args *value.Map, dest, source string, paths [
 			return nil, err
 		}
 		if same {
+			// **The contents match; the mode and owner may not.** They
+			// were applied only to files this run rewrote, so changing
+			// `file_mode` on a tree already copied reported "already
+			// matches" and left every file as it was (issue 321, M-22).
+			fix, err := treeFileNeedsFix(args, target)
+			if err != nil {
+				return nil, err
+			}
+			if fix {
+				plan.fix = append(plan.fix, rel)
+			}
 			continue
 		}
 		_, statErr := os.Lstat(target)
@@ -190,6 +214,27 @@ func planTreeCopy(c *exec.Context, args *value.Map, dest, source string, paths [
 		})
 	}
 	return plan, nil
+}
+
+// treeFileNeedsFix reports whether a file whose contents already match
+// differs from the file_mode, user or group the state names. Nothing named
+// is nothing to fix.
+func treeFileNeedsFix(args *value.Map, target string) (bool, error) {
+	info, err := os.Stat(target)
+	if err != nil {
+		return false, err
+	}
+	if spec := states.Str(args, "file_mode", ""); spec != "" {
+		want, err := modeOrDefault(spec, 0)
+		if err != nil {
+			return false, err
+		}
+		if differs, _, _ := plannedMode(target, info, want); differs {
+			return true, nil
+		}
+	}
+	_, differs, err := plannedOwnership(target, true, states.Str(args, "user", ""), states.Str(args, "group", ""))
+	return differs, err
 }
 
 // sameContents compares bytes already in hand with a file on disk.
@@ -215,17 +260,27 @@ func (p *treeCopyPlan) apply(args *value.Map, dest string) error {
 		return err
 	}
 
+	// fileperm.MkdirAll sets a directory it creates to dirMode exactly,
+	// where os.MkdirAll left it less the umask (as M-31 found in
+	// file.directory).
 	if states.Bool(args, "makedirs", true) {
-		if err := os.MkdirAll(dest, dirMode); err != nil {
+		if err := fileperm.MkdirAll(dest, dirMode); err != nil {
 			return err
 		}
 	}
+	modeNamed := states.Str(args, "file_mode", "") != ""
 	for _, f := range p.write {
 		target := filepath.Join(dest, filepath.FromSlash(f.rel))
-		if err := os.MkdirAll(filepath.Dir(target), dirMode); err != nil {
+		if err := fileperm.MkdirAll(filepath.Dir(target), dirMode); err != nil {
 			return err
 		}
-		if err := writeAtomic(target, f.body, fileMode); err != nil {
+		// An existing file rewritten with no file_mode keeps its own, as
+		// file.managed's does; it was forced to 0644.
+		mode := fileMode
+		if info, err := os.Stat(target); err == nil && !modeNamed {
+			mode = info.Mode().Perm()
+		}
+		if err := writeAtomic(target, f.body, mode); err != nil {
 			return err
 		}
 		if err := applyOwnership(target, states.Str(args, "user", ""),
@@ -238,12 +293,29 @@ func (p *treeCopyPlan) apply(args *value.Map, dest string) error {
 			return err
 		}
 	}
+	for _, rel := range p.fix {
+		target := filepath.Join(dest, filepath.FromSlash(rel))
+		if modeNamed {
+			if err := applyMode(target, fileMode); err != nil {
+				return err
+			}
+		}
+		if err := applyOwnership(target, states.Str(args, "user", ""),
+			states.Str(args, "group", "")); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // extraUnderTree lists what is under a destination that the source does not
 // have, which is what `clean` removes.
-func extraUnderTree(dest string, want []string) ([]string, error) {
+//
+// A file matching exclude_pat is not the state's to remove: Salt's clean
+// keeps it, and this deleted it, so `exclude_pat: '*.override'` with
+// `clean: True` removed the local override it was written to protect
+// (issue 321, M-22).
+func extraUnderTree(dest string, want []string, exclude string) ([]string, error) {
 	keep := make(map[string]bool, len(want))
 	for _, rel := range want {
 		keep[filepath.FromSlash(rel)] = true
@@ -263,7 +335,7 @@ func extraUnderTree(dest string, want []string) ([]string, error) {
 		if relErr != nil {
 			return relErr
 		}
-		if !keep[rel] {
+		if !keep[rel] && !(exclude != "" && fileserver.Fnmatch(exclude, filepath.ToSlash(rel))) {
 			extra = append(extra, filepath.ToSlash(rel))
 		}
 		return nil
@@ -277,18 +349,19 @@ func extraUnderTree(dest string, want []string) ([]string, error) {
 
 // filterTreePaths applies the include and exclude globs, which are
 // matched against the path relative to the source.
+//
+// With Salt's fnmatch, where `*` crosses `/`, rather than path.Match,
+// where it stops: `exclude_pat: '*.bak'` excluded `x.bak` and copied
+// `sub/x.bak` (issue 321, M-22). The same correction file_ignore_glob had
+// in DIVERGENCE 5.295.
 func filterTreePaths(paths []string, include, exclude string) []string {
 	out := make([]string, 0, len(paths))
 	for _, rel := range paths {
-		if include != "" {
-			if ok, _ := filepath.Match(include, rel); !ok {
-				continue
-			}
+		if include != "" && !fileserver.Fnmatch(include, rel) {
+			continue
 		}
-		if exclude != "" {
-			if ok, _ := filepath.Match(exclude, rel); ok {
-				continue
-			}
+		if exclude != "" && fileserver.Fnmatch(exclude, rel) {
+			continue
 		}
 		out = append(out, rel)
 	}

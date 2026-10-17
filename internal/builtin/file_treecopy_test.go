@@ -196,3 +196,36 @@ func TestFileRecurseFiltersWithIncludeAndExclude(t *testing.T) {
 		t.Errorf("exclude_pat placed %v, want only a.conf", got)
 	}
 }
+
+// **clean keeps what exclude_pat names** (issue 321, M-22). On main
+// `clean: True` with `exclude_pat: '*.override'` deleted the local
+// override that the pattern was written to protect; Salt keeps it.
+func TestFileRecurseCleanKeepsExcludedFiles(t *testing.T) {
+	l := newRecurseLab(t, map[string]string{"app/a.conf": "a\n"})
+	if err := os.MkdirAll(l.dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"local.override", "stranger.conf"} {
+		if err := os.WriteFile(filepath.Join(l.dest, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := l.run(t, "clean", true, "exclude_pat", "*.override"); !ok {
+		t.Fatal("the run failed")
+	}
+	if got := strings.Join(l.placed(t), ","); got != "a.conf,local.override" {
+		t.Errorf("after clean the destination holds %s, want a.conf,local.override", got)
+	}
+}
+
+// **A pattern's `*` crosses `/`**, as Salt's fnmatch does; path.Match's
+// stopped at it, so `*.bak` excluded x.bak and copied sub/x.bak.
+func TestFileRecursePatternsCrossDirectories(t *testing.T) {
+	l := newRecurseLab(t, map[string]string{"app/a.conf": "a\n", "app/x.bak": "b\n", "app/sub/x.bak": "c\n"})
+	if _, ok := l.run(t, "exclude_pat", "*.bak"); !ok {
+		t.Fatal("the run failed")
+	}
+	if got := strings.Join(l.placed(t), ","); got != "a.conf" {
+		t.Errorf("exclude_pat '*.bak' placed %s, want only a.conf", got)
+	}
+}

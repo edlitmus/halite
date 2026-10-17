@@ -39,6 +39,10 @@ func fnmatch(pattern, name string) bool {
 	return fnmatchRegexp(pattern).MatchString(name)
 }
 
+// Fnmatch is fnmatch for the states that take a Salt glob, so that they
+// answer as Salt's do rather than as Go's path.Match does.
+func Fnmatch(pattern, name string) bool { return fnmatch(pattern, name) }
+
 var fnmatchCache sync.Map // pattern -> *regexp.Regexp
 
 func fnmatchRegexp(pattern string) *regexp.Regexp {
