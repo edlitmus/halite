@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A node can only return for a job it was sent
+
+The hub used to file a return from any enrolled node for any job it
+named. That return then appeared on the bus as `halite/job/<jid>/ret/<node>`
+(and, for a state run, `halite/state/<jid>/<node>/ok`, which reactors
+watch), and was counted by a synchronous API run. Such a return is now
+refused with 403 and logged. A return with a chunk number other than 0 is
+refused too: nothing paginates returns, and a chunk let one node write
+unbounded files against a job (issue 321, M-12). DIVERGENCE 5.340.
+
 ### A job too long for a node is refused, and a long event no longer ends the event stream
 
 A job whose wire form is longer than the 1 MiB a node reads in one message

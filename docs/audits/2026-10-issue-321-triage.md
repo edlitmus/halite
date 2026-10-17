@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 26 | 29: 3 mentioned and explicitly left, 2 half done, 24 not started |
+| Medium (55) | 27 | 28: 3 mentioned and explicitly left, 2 half done, 23 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -60,6 +60,7 @@ not do. Each has been checked to see whether it happened.
 | M-08, M-09 login backoff by (source, name) | #352 | | |
 | M-10 login timing, equal work | #353 | | |
 | M-11 1 MiB stream line | #379 | events: an over-long one is streamed as a stand-in | **done** (5.339); not run on a live hub |
+| M-12 returns from non-targets | #380 | a chunk other than 0 is refused | **done** (5.340); not run on a live hub |
 | M-16 webhook ingress (`auth: mtls` now refused) | #359 | | |
 | M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
 | M-28 agentless `oneshot` tree | #358 | | |
@@ -112,12 +113,11 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (24).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (23).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
 |---|---|---|
-| M-12 | returns from non-targets counted | Low-Medium |
 | M-13 | a flood of returns erases history | Medium |
 | M-15 | a relay can claim node IDs (DIVERGENCE 1.9 is wrong about grains and `via`) | Medium |
 | M-19 | `file.managed` on a symlink | Medium |

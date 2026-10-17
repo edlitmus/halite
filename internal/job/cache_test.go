@@ -169,3 +169,45 @@ func TestRetentionBindsByAgeAndBySize(t *testing.T) {
 		t.Errorf("%d jobs survived a one-byte ceiling", len(left))
 	}
 }
+
+// **A return is filed only from a node the job was sent to** (issue 321,
+// M-12). On main this checked only that the job existed, so db1 below
+// could file an answer to a job sent to web1, and a reactor watching for
+// it saw it arrive.
+func TestAReturnFromANodeTheJobWasNotSentToIsRefused(t *testing.T) {
+	c := newCache(t)
+	j := dispatched(t, c, time.Now(), "web1.example")
+	r := &Return{JID: j.JID, NodeID: "db1.example", Fun: j.Fun, Success: true, Schema: ReturnSchema}
+	if _, err := c.AddReturn(r); !errors.Is(err, ErrNotTargeted) {
+		t.Fatalf("a return from a node outside the job: %v", err)
+	}
+	returns, err := c.Returns(j.JID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(returns) != 0 {
+		t.Errorf("%d returns filed", len(returns))
+	}
+}
+
+// **One return per node, chunk 0.** Nothing pages a return, and a
+// caller-chosen chunk let one node write a file per number against any
+// job it was sent (issue 321, M-12 and M-13).
+func TestAChunkedReturnIsRefused(t *testing.T) {
+	c := newCache(t)
+	j := dispatched(t, c, time.Now(), "web1.example")
+	for _, chunk := range []int{1, 7, -1} {
+		r := &Return{JID: j.JID, NodeID: "web1.example", Chunk: chunk, Schema: ReturnSchema}
+		if _, err := c.AddReturn(r); err == nil {
+			t.Errorf("chunk %d was filed", chunk)
+		}
+	}
+	dir, err := c.jobDir(j.JID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(filepath.Join(dir, "returns"))
+	if len(entries) != 0 {
+		t.Errorf("the returns directory holds %d files", len(entries))
+	}
+}
