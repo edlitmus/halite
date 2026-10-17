@@ -518,3 +518,36 @@ func TestComparisonsAndPowerMatchJinja(t *testing.T) {
 		}
 	}
 }
+
+// **`~` sits between `+` and `*`, as in Jinja** (issue 321, M-52). It
+// was above `+` and `-`, so `"a" ~ 1 + 2` added first and gave "a3", where
+// Jinja concatenates first and then fails adding 2 to "a1". Values
+// captured from jinja2 3.1.2; an empty want is an error there.
+func TestConcatPrecedenceMatchesJinja(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`{{ "a" ~ 1 + 2 }}`, ""},
+		{`{{ 1 + 2 ~ "a" }}`, ""},
+		{`{{ "-" ~ 3 - 1 }}`, ""},
+		{`{{ "a" ~ 2 * 3 }}`, "a6"},
+		{`{{ "x" ~ 1 == "x1" }}`, "True"},
+		{`{{ "a" ~ "b" in "zab" }}`, "True"},
+		{`{{ "a" ~ -1 }}`, "a-1"},
+		{`{{ 2 ~ 3 | string }}`, "23"},
+		{`{{ "a" ~ [1] | length }}`, "a1"},
+	} {
+		res, err := NewEnvironment(nil, DefaultOptions()).RenderString(c.src, "t.sls", nil)
+		var got string
+		if err == nil {
+			got = res.Output
+		}
+		if c.want == "" {
+			if err == nil {
+				t.Errorf("%s -> %q, jinja2 3.1.2 fails it", c.src, got)
+			}
+			continue
+		}
+		if err != nil || got != c.want {
+			t.Errorf("%s -> %q, %v; jinja2 3.1.2 gives %q", c.src, got, err, c.want)
+		}
+	}
+}
