@@ -321,3 +321,26 @@ func liveLVMFind(rows []*value.Map, key, want string) *value.Map {
 func liveLVMHas(rows []*value.Map, key, want string) bool {
 	return liveLVMFind(rows, key, want) != nil
 }
+
+// **A link to a live PV is that PV, to real LVM too** (issue 321, M-42).
+// The state names a symlink to a loop device that already carries a label
+// and a volume group, with `force`. On main the module called the alias
+// "not a PV" and ran `pvcreate -ff -y` over it; now it changes nothing,
+// and `vgs` still reports the group.
+func TestLiveLVMPVCreateLeavesAnAliasedPVAlone(t *testing.T) {
+	rig := liveLVMSetup(t)
+	liveLVMCall(t, rig, "lvm.pvcreate", "devices", []any{rig.devices[0]})
+	liveLVMCall(t, rig, "lvm.vgcreate", "name", rig.vg, "devices", []any{rig.devices[0]})
+
+	alias := filepath.Join(t.TempDir(), "by-id-disk")
+	if err := os.Symlink(rig.devices[0], alias); err != nil {
+		t.Fatal(err)
+	}
+	res := liveLVMCall(t, rig, "lvm.pvcreate", "devices", []any{alias}, "force", true)
+	if changed, _ := res.GetString("changed"); changed != false {
+		t.Errorf("pvcreate with force over an alias of a live PV changed something: %v", res)
+	}
+	if !liveLVMHas(liveLVMReport(t, rig, "lvm.vgs"), "vg_name", rig.vg) {
+		t.Fatalf("the volume group on %s is gone", rig.devices[0])
+	}
+}
