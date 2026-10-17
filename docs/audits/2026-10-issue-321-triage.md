@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 37 | 18: 3 mentioned and explicitly left, 2 half done, 13 not started |
+| Medium (55) | 38 | 17: 3 mentioned and explicitly left, 2 half done, 12 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -65,6 +65,7 @@ not do. Each has been checked to see whether it happened.
 | M-15 relay claims node IDs | #382 | 1.9 corrected | **done** (5.342): `relay_subordinates`, and nothing enrolled directly can be claimed; no real relay run |
 | M-16 webhook ingress (`auth: mtls` now refused) | #359 | | |
 | M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
+| M-24 `git.latest user` ignored | #390 | | **done** as root on beastie (5.350) |
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
@@ -123,12 +124,11 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (13).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (12).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
 |---|---|---|
-| M-24 | `git.latest user` ignored | Medium |
 | M-25 | `enroll --force` leaves a key pair every later enroll dies on | Medium |
 | M-26 | renewal ordering (recoverable) | Low |
 | M-27 | script with runas | Low-Medium |

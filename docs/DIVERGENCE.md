@@ -29857,6 +29857,36 @@ and `macos` legs' filters; the `freebsd` leg runs every `TestLive*`.
 **Not done.** A home directory that is itself a link, or is writable by
 others, is trusted, as `os.Root` opens it by path. A `config` path is the
 operator's choice and is still written by path. macOS was not run.
+### 5.350 git.latest's `user` was never read, so every checkout was root's
+
+Issue 321 finding M-24. `git.latest` declared `user` ("Run git as this
+account") and nothing read it, so the clone, fetch, checkout and reset
+all ran as root. The tree came out owned by root inside the account's
+directory. Worse, root running git inside an account's checkout runs
+that account's `.git/hooks` and `core.fsmonitor` as root, wherever
+`safe.directory` has been widened to let it. The triage notes that modern
+git's dubious-ownership check usually refuses instead.
+
+**As root on beastie** (FreeBSD 15.1, git 2.56.0), cloning a local
+`file://` repository into a `www`-owned directory with `user: www`:
+
+| | main (3ffc869) | 690663c |
+|---|---|---|
+| checkout directory | `root:www` | `www:www` |
+| a file in it | `root:www` | `www:www` |
+| `.git` | `root` | `www` |
+
+**The fix.** `gitLatest` runs on a copy of its context with `RunAs` set
+to the account. Every git command it makes goes through that context.
+`RunAs` also gives the child the account's `HOME`, `USER` and `LOGNAME`,
+and so its `~/.gitconfig` and credentials. `TestGitLatestRunsAsTheUser`
+records the commands for a clone and for an existing checkout and
+requires every one to carry `RunAs`. Against main's `git.go` every
+command ran as "".
+
+**Not done.** The other git functions take no `user`. A clone as the
+account needs the target's parent to be writable by it, as it does for
+Salt. `git` has no evidence entry, and this does not add one.
 
 
 
