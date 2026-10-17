@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### setuid, setgid and sticky work, and a new directory gets its mode
+
+`mode: '4755'` set 0755 and reported success, and a file with setuid
+was called converged at `'0755'` and kept the bit: the special digit
+was dropped (issue 321, M-23). It is now set and compared. And
+`file.directory` created the directory, and its `makedirs` parents, under
+the process umask, so a `'0775'` came out 0750 and was corrected only on
+the next run (M-31). They are created with the modes asked for. **A
+special bit a state does not name is now cleared**, as Salt does: a
+setgid directory managed as `'0755'` loses setgid. DIVERGENCE 5.343.
+
 ### An unquoted mode is refused everywhere, and `file.serialize` keeps a file's mode
 
 `file.recurse`'s `file_mode` and `dir_mode`, `file.serialize`'s `mode`, and

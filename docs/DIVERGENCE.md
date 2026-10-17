@@ -29643,7 +29643,57 @@ is refused, with the advice to quote it. It never got the mode it wrote.
 beastie's production tree is empty. The repository's example trees and
 docs hold no unquoted mode.
 
+### 5.343 setuid, setgid and sticky never reached a file, and a new directory took the umask
 
+Issue 321 findings M-23 and M-31, in one section because the same run
+showed both.
+
+**M-23.** `parseMode` returned the raw octal number. Go keeps setuid,
+setgid and sticky as flags of an `os.FileMode` (`ModeSetuid` and the
+rest), outside its permission bits, and `os.Chmod` reads the flags and
+ignores a raw 04000. So `mode: '4755'` set 0755. `plannedMode` compared
+only `Perm()`, so the state then called that converged. And a file that
+had setuid, managed with `mode: '0755'`, was "already in the requested
+state" and kept the bit. `parseMode` now translates the special digit to
+Go's flags and refuses anything above 7777. The comparison (`modeBits`)
+and `formatMode` include the flags.
+
+**M-31.** `file.directory` made the leaf with `os.Mkdir(path, mode)` and
+the `makedirs` parents with `os.MkdirAll`, and set neither afterwards.
+The umask took its bite, and the node does not set its own, so under a
+service manager's 027 a `mode: '0775'` came out 0750 on the creating run
+and was "updated" by the next. The parents now go through
+`makeParents`, which sets each to `dir_mode` exactly, and the leaf is set
+to its mode after it is made. Mkdir had also dropped the special bits
+on a new directory.
+
+**As root on beastie** (FreeBSD 15.1-RELEASE-p5), with `halite-node state
+sls --local`, under `umask 027`:
+
+| Case | main (924308e) | 12e4d3b |
+|---|---|---|
+| `'4755'` on a 0755 file | `-rwxr-xr-x`, the next run "converged" | `-rwsr-xr-x`, the next run converged |
+| `'0755'` on a setuid file | (setuid was never set) | cleared, `-rwxr-xr-x` |
+| `file.directory` `'0775'`, `makedirs`, `dir_mode` `'0755'` | leaf and parents 750, run 2 changed again | leaf 775, parents 755, run 2 converged |
+
+**Tests.**
+
+- `TestSetuidIsSetAndCleared`;
+- `TestStickyIsSetOnADirectory`, on a directory, since FreeBSD refuses
+  an unprivileged sticky bit on a file;
+- `TestParseModeTranslatesTheSpecialDigit`;
+- `TestADirectoryIsCreatedWithItsModeUnderAUmask`, which sets the
+  process umask to 027.
+
+Against main's code all four fail, the last with exactly the audit's
+"750, then updated".
+
+**Breaking.** A file that carries a special bit its state does not name
+now has the bit cleared, which is what the state says and what Salt
+does. A directory with setgid managed as `'0755'` loses setgid.
+
+**Not done.** `file.recurse`'s modes are M-22's, and `recurse: [mode]`
+following symlinks is M-29's.
 
 ## 6. Everything else not started
 
