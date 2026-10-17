@@ -29,7 +29,7 @@ the integer 384, as the decimal text "384". The file then got 0644, or,
 for `0640`, the nonsense `0416`. They now refuse an unquoted mode, as
 every other mode parameter does, and say to quote it. `file.serialize`
 with no `mode` now keeps an existing file's mode instead of forcing 0644,
-which made a 0600 file world-readable (issue 321, M-21). DIVERGENCE 5.343.
+which made a 0600 file world-readable (issue 321, M-21). DIVERGENCE 5.344.
 
 ### An edited file keeps its owner and group
 

@@ -29594,8 +29594,7 @@ other modules. With `writeAtomic` restored, all ten fail.
 - `file.copy` and `restore_backup` were named in the finding and not
   run here. Both write through `writeAtomic`, and neither was driven.
 - Linux as root was not run; the root run was FreeBSD only.
-
-### 5.343 Five mode parameters read an unquoted mode as a decimal number
+### 5.344 Five mode parameters read an unquoted mode as a decimal number
 
 Issue 321 finding M-21. The signature layer's `Mode` type refuses an
 integer and says to quote it, because YAML reads an unquoted `0600` as
@@ -29643,6 +29642,8 @@ third.
 is refused, with the advice to quote it. It never got the mode it wrote.
 beastie's production tree is empty. The repository's example trees and
 docs hold no unquoted mode.
+
+
 
 ## 6. Everything else not started
 
