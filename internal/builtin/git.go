@@ -180,6 +180,19 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	if c.Which("git") == "" {
 		return states.False("Git was not found on this node; the git module drives the system binary."), nil
 	}
+	// **`user` runs git as that account.** It was declared ("Run git as
+	// this account") and never read, so every clone, fetch, checkout and
+	// reset ran as root: the tree came out root's inside the account's
+	// directory, and root git in an account's checkout runs that
+	// account's hooks and core.fsmonitor as root wherever safe.directory
+	// lets it (issue 321, M-24). Every git command below goes through c,
+	// so a copy with RunAs set is the whole of it; RunAs also gives git
+	// the account's HOME, and so its ~/.gitconfig and credentials.
+	if account := states.Str(args, "user", ""); account != "" {
+		as := *c
+		as.RunAs = account
+		c = &as
+	}
 
 	_, err := os.Stat(filepath.Join(target, ".git"))
 	exists := err == nil

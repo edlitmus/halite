@@ -180,3 +180,37 @@ func TestGitLatestPassesTagsToFetch(t *testing.T) {
 		})
 	}
 }
+
+// **`user` runs every git command as that account** (issue 321, M-24).
+// The parameter was declared and never read, so the clone, the fetch and
+// the reset all ran as root. Recorded rather than run, for the clone and
+// for an existing checkout, so it holds on every platform.
+func TestGitLatestRunsAsTheUser(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		dir := filepath.Join(t.TempDir(), "checkout")
+		if existing {
+			if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		runner := &exec.RecordingRunner{}
+		c := newRunningCtx()
+		c.Runner = runner
+		c.Lookup = func(string) string { return "/usr/bin/git" }
+		if _, err := New().States.Call(c, "git.latest",
+			value.MapOf("name", "https://example.invalid/r.git", "target", dir, "rev", "main", "user", "deploy")); err != nil {
+			t.Fatal(err)
+		}
+		if len(runner.Ran) == 0 {
+			t.Fatalf("existing=%v: no git command ran", existing)
+		}
+		for _, cmd := range runner.Ran {
+			if cmd.RunAs != "deploy" {
+				t.Errorf("existing=%v: %q ran as %q, not deploy", existing, cmd.String(), cmd.RunAs)
+			}
+		}
+		if c.RunAs != "" {
+			t.Errorf("the state changed its caller's context: RunAs %q", c.RunAs)
+		}
+	}
+}
