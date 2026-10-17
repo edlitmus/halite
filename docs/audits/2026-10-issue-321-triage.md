@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 39 | 16: 3 mentioned and explicitly left, 2 half done, 11 not started |
+| Medium (55) | 40 | 15: 3 mentioned and explicitly left, 2 half done, 10 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -67,6 +67,7 @@ not do. Each has been checked to see whether it happened.
 | M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
 | M-24 `git.latest user` ignored | #390 | | **done** as root on beastie (5.350) |
 | M-25 `enroll --force` pair | #391 | a refusal drops the new key | **done** against a real hub in-process (5.351); M-26, the same shape in renewal, is still open |
+| M-27 script with runas | #392 | | **done** as root on Ubuntu and beastie (5.352) |
 | M-28 agentless `oneshot` tree | #358 | | |
 | M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
@@ -125,13 +126,12 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (11).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (10).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
 |---|---|---|
 | M-26 | renewal ordering (recoverable) | Low |
-| M-27 | script with runas | Low-Medium |
 | M-34 | pin without release | Low |
 | M-40 | `iptables.save` | Low |
 | M-42 | LVM alias with `-ff` | Medium |
