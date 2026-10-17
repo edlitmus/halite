@@ -24,7 +24,7 @@ Issue 321 stays open, because what is below is not finished.
 | High (20) | 20 | none |
 | Medium (55) | 50 | 5: 3 mentioned and explicitly left, 1 half done, 1 measured and left |
 | M-56 (design note) | | not done |
-| Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
+| Low (section 5) | 2 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
 ### Fixed
 
@@ -147,10 +147,16 @@ were fixed first.
 **M-56, runners are not scoped.** SPEC 23.5 still says nothing about it.
 Either a sentence there or scoping is owed.
 
-**Low (section 5 of the audit).** Not checked. The audit lists 60
-bullets and says there are about 90. None has been triaged, so none can
-be called fixed. Some may have been fixed in passing by the PRs above;
-that has not been looked for.
+**Low (section 5 of the audit).** The audit lists 60 bullets and says
+there are about 90. They are being taken one at a time, from the
+section 5 text in the issue's comment; each that is fixed is listed
+here. The rest have not been triaged, and some may have been fixed in
+passing by the PRs above; that has not been looked for.
+
+| Bullet | PR | Done |
+|---|---|---|
+| `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too |
+| `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
