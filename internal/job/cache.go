@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -51,6 +52,10 @@ type Cache struct {
 
 // ErrNoJob is returned for a jid the hub has no record of.
 var ErrNoJob = errors.New("no such job")
+
+// ErrNotTargeted is AddReturn refusing a return from a node the job was
+// never sent to.
+var ErrNotTargeted = errors.New("the job was not sent to this node")
 
 // OpenCache prepares the store.
 func OpenCache(dir string) (*Cache, error) {
@@ -255,13 +260,35 @@ func (c *Cache) Get(id ID) (*Job, error) {
 // retries because it lost the acknowledgement must not produce two
 // returns, and a hub that counted them twice would report a job
 // complete that is not.
+//
+// **Only from a node the job was sent to** (issue 321, M-12). This
+// checked only that the job existed, so any enrolled node could file a
+// return under its own name for any job whose identifier it guessed --
+// they are timestamps -- and it was stored, emitted as
+// `halite/job/<jid>/ret/<node>` and, for a state run,
+// `halite/state/<jid>/<node>/ok`, which is what a reactor watches. And
+// a synchronous run through the API could finish on it. A relay's
+// return names the node it ran on, which has to be a target too.
+//
+// **Chunk 0 only.** SPEC 6.5 describes a node paginating a return over
+// 16 MiB by chunk, and no node does: nothing in this tree sets Chunk.
+// What a caller-chosen chunk did do was let one node write a file per
+// number against any job, which is half of M-13. A pagination that is
+// built will say what it needs here.
 func (c *Cache) AddReturn(r *Return) (bool, error) {
 	dir, err := c.jobDir(r.JID)
 	if err != nil {
 		return false, err
 	}
-	if _, err := os.Stat(filepath.Join(dir, "job.json")); err != nil {
-		return false, fmt.Errorf("%s: %w", r.JID, ErrNoJob)
+	if r.Chunk != 0 {
+		return false, fmt.Errorf("the return from %s is chunk %d, and this hub takes one return per node, chunk 0", r.NodeID, r.Chunk)
+	}
+	j, err := c.Get(r.JID)
+	if err != nil {
+		return false, err
+	}
+	if !slices.Contains(j.Nodes, r.NodeID) {
+		return false, fmt.Errorf("%s: %w: %s", r.JID, ErrNotTargeted, r.NodeID)
 	}
 	name := returnFile(r.NodeID, r.Chunk)
 	if name == "" {

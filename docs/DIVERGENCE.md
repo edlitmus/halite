@@ -29406,7 +29406,42 @@ estate) are covered by the same stand-in rather than bounded at their
 source. Not run on FreeBSD or against a live hub; the tests run the
 real handlers over loopback TLS.
 
+### 5.336 Any enrolled node could answer a job it was never sent
 
+Issue 321 finding M-12. `Cache.AddReturn` checked only that `job.json`
+existed. So any enrolled node could file a return under its own name for
+any job whose identifier it knew or guessed, and job identifiers are
+timestamps. The return was stored, then emitted as
+`halite/job/<jid>/ret/<node>`; for a state run it was also emitted as
+`halite/state/<jid>/<node>/ok`, which is what a reactor watches. The
+API's synchronous run counted it. `Missing()` filtered correctly; that
+was the only reader that did.
+
+`AddReturn` now requires the return's node to be in the job's `Nodes`,
+and the hub answers 403 and logs the node and the certificate. A
+relay's return names the node it ran on, which must be a target too, so
+a relay gains nothing here; the relay tests pass unchanged. A node's
+scheduled jobs never reach the hub's cache (they go to the node's own
+returner), so no real path filed a return for a job it was not sent.
+
+**Chunks.** SPEC 6.5 says a return over 16 MiB is paginated by chunk.
+Nothing in this tree sets `Chunk`, and neither half of that is built:
+the 16 MiB bound is not enforced either, as `wire.go` says of SPEC
+6.5's unbuilt rows. What a caller-chosen chunk did allow was one node
+writing a file per number against any job it was sent, which is the
+cheap half of M-13. A return with a chunk other than 0 is now refused.
+Building pagination will have to undo that refusal deliberately.
+
+Held by `TestAReturnFromANodeTheJobWasNotSentToIsRefused` and
+`TestAChunkedReturnIsRefused` in the cache, and by
+`TestAReturnFromANodeOutsideTheJobIsRefused` over a real hub. In the hub
+test web2 is enrolled, the job goes to web1, and web2's return gets 403
+with no `ret/web2.example` on the bus. Each was broken on purpose:
+without the membership check both membership tests fail, and without
+the chunk check the chunk test does.
+
+**Not done.** M-13's other half, a per-node quota on `/v1/event` and on
+return size, is its own item. Not run against a live hub or on FreeBSD.
 
 ## 6. Everything else not started
 

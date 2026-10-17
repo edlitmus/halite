@@ -97,6 +97,12 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		transport.WriteError(w, http.StatusNotFound, transport.CodeRefused, err)
 		return
 	}
+	if errors.Is(err, job.ErrNotTargeted) {
+		s.warn("a return arrived from a node the job was not sent to",
+			"node_id", ran, "jid", string(ret.JID), "certificate", nodeID)
+		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused, err)
+		return
+	}
 	if err != nil {
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
