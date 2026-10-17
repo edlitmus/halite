@@ -144,7 +144,9 @@ func runEnroll(args *cli.Args) int {
 	client, files := n.hubClient(args)
 	ctx := context.Background()
 
-	if client.Cert != nil && !args.Bool("force", false) {
+	force := args.Bool("force", false)
+	resuming := files.Exists(pendingKeyFile)
+	if client.Cert != nil && !force && !resuming {
 		cert, err := files.ReadCert(pki.NodeCertFile)
 		if err != nil {
 			cli.Fatalf("%v", err)
@@ -155,9 +157,12 @@ func runEnroll(args *cli.Args) int {
 		return 0
 	}
 
-	key, err := nodeKey(files, args, args.Bool("force", false))
+	key, pending, err := nodeKey(files, args, force)
 	if err != nil {
 		cli.Fatalf("%v", err)
+	}
+	if pending && resuming && !force {
+		fmt.Fprintf(os.Stderr, "continuing the request for the key at %s\n", files.Path(pendingKeyFile))
 	}
 	fingerprint, err := pki.FingerprintKey(key.Public())
 	if err != nil {
@@ -192,9 +197,22 @@ func runEnroll(args *cli.Args) int {
 			}
 			continue
 		case err != nil:
+			// A refusal is final for this key, so it is dropped and the
+			// node keeps the identity it had; anything else -- the hub
+			// unreachable, a 5xx -- keeps it for the next attempt.
+			var refused *transport.RefusedError
+			if pending && errors.As(err, &refused) {
+				_ = os.Remove(files.Path(pendingKeyFile))
+				cli.Fatalf("%v\nthe new key was discarded; this node keeps the certificate and key it had", err)
+			}
 			cli.Fatalf("%v", err)
 		}
 
+		if pending {
+			if err := installPendingKey(files); err != nil {
+				cli.Fatalf("%v", err)
+			}
+		}
 		if err := writeIdentity(files, got); err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -210,34 +228,73 @@ func runEnroll(args *cli.Args) int {
 	}
 }
 
-// nodeKey loads the node's private key, or generates one. The key never
-// leaves the node, which is the property the whole section rests on.
-func nodeKey(files pki.Files, args *cli.Args, force bool) (crypto.Signer, error) {
+// pendingKeyFile holds a key `enroll --force` generated and the hub has
+// not yet issued a certificate for.
+const pendingKeyFile = pki.NodeKeyFile + ".pending"
+
+// nodeKey loads the node's private key, or generates one, and says
+// whether it is a pending one. The key never leaves the node, which is
+// the property the whole section rests on.
+//
+// **A forced key waits beside the identity, not in it** (issue 321,
+// M-25). --force moved node.key aside and wrote the new one before the
+// hub had answered, while node.crt stayed: if the hub said pending, was
+// unreachable, or the run was interrupted, the pair no longer matched,
+// and every later `enroll` -- with --force or without, which is what the
+// message tells the operator to run -- and the next `connect` died on
+// "do not go together". The new key now goes to node.key.pending and is
+// installed only when a certificate arrives for it, so the node keeps a
+// working identity throughout; a later `enroll` continues the request
+// with the same key, which is the fingerprint the hub is holding.
+func nodeKey(files pki.Files, args *cli.Args, force bool) (crypto.Signer, bool, error) {
+	if !force && files.Exists(pendingKeyFile) {
+		key, err := files.ReadKey(pendingKeyFile)
+		return key, true, err
+	}
 	if files.Exists(pki.NodeKeyFile) && !force {
-		return files.ReadKey(pki.NodeKeyFile)
+		key, err := files.ReadKey(pki.NodeKeyFile)
+		return key, false, err
 	}
 	alg, err := pki.ParseKeyAlgorithm(args.Flag("key-algorithm", string(pki.ECDSAP256)))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	key, err := pki.GenerateKey(alg)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	if force && files.Exists(pki.NodeKeyFile) {
+	if !files.Exists(pki.NodeKeyFile) && !files.Exists(pki.NodeCertFile) {
+		// A first enrollment: there is no identity to keep working, so
+		// the key goes where it will live.
+		if err := files.WriteKey(pki.NodeKeyFile, key); err != nil {
+			return nil, false, err
+		}
+		return key, false, nil
+	}
+	// --force again starts again: an older pending key was never issued
+	// against, so it is replaced rather than kept.
+	_ = os.Remove(files.Path(pendingKeyFile))
+	if err := files.WriteKey(pendingKeyFile, key); err != nil {
+		return nil, false, err
+	}
+	return key, true, nil
+}
+
+// installPendingKey makes the pending key the node's, once the hub has
+// issued against it, moving the previous key aside as --force always has.
+// The caller writes the certificate straight after, as renewal does.
+func installPendingKey(files pki.Files) error {
+	if files.Exists(pki.NodeKeyFile) {
 		// WriteKey refuses to overwrite, deliberately. --force is the
-		// operator saying to start again, so the old key is moved
-		// aside rather than destroyed.
+		// operator saying to start again, so the old key is moved aside
+		// rather than destroyed.
 		aside := files.Path(pki.NodeKeyFile) + "." + time.Now().UTC().Format("20060102T150405")
 		if err := atomicfile.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
-			return nil, err
+			return err
 		}
 		fmt.Fprintf(os.Stderr, "the previous key is at %s\n", aside)
 	}
-	if err := files.WriteKey(pki.NodeKeyFile, key); err != nil {
-		return nil, err
-	}
-	return key, nil
+	return atomicfile.Rename(files.Path(pendingKeyFile), files.Path(pki.NodeKeyFile))
 }
 
 func writeIdentity(files pki.Files, got *transport.Enrollment) error {
