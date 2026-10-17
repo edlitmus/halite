@@ -27,7 +27,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 a `/dev/disk/by-id/...` or `/dev/vg/lv` alias of an existing physical
 volume was taken for a new disk. With `force`, that meant `pvcreate -ff`
 over a live label. Names are now resolved to their device first (issue
-321, M-42). DIVERGENCE 5.348.
+321, M-42). DIVERGENCE 5.353.
 
 ### `cmd.script` and `cmd.exec_code` work with `runas`
 

@@ -332,7 +332,21 @@ func TestLiveLVMPVCreateLeavesAnAliasedPVAlone(t *testing.T) {
 	liveLVMCall(t, rig, "lvm.pvcreate", "devices", []any{rig.devices[0]})
 	liveLVMCall(t, rig, "lvm.vgcreate", "name", rig.vg, "devices", []any{rig.devices[0]})
 
-	alias := filepath.Join(t.TempDir(), "by-id-disk")
+	// The alias is in /dev, as /dev/disk/by-id is: LVM scans only /dev,
+	// and a link in a temporary directory got "No device found" from
+	// pvcreate, which tested LVM's device filter rather than the module.
+	// From /dev, main's `pvcreate -ff -y` succeeded and the group was gone.
+	//
+	// And it is a directory down, as by-id is. A link directly in /dev was
+	// the name `pvs` itself chose for the PV, so main's exact comparison
+	// matched it and the test passed against main; LVM prefers the
+	// shorter path, as it prefers /dev/sdb to /dev/disk/by-id/....
+	dir := filepath.Join("/dev", rig.vg+"-alias")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	alias := filepath.Join(dir, "disk")
 	if err := os.Symlink(rig.devices[0], alias); err != nil {
 		t.Fatal(err)
 	}
