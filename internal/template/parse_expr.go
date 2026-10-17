@@ -6,22 +6,26 @@ package template
 //	or           := and { "or" and }
 //	and          := not { "and" not }
 //	not          := "not" not | comparison
-//	comparison   := concat { ("==" | "!=" | "<" | "<=" | ">" | ">=" | "in" |
-//	                          "not in" | "is" [ "not" ] test) concat }
-//	concat       := additive { "~" additive }
-//	additive     := multiplicative { ("+" | "-") multiplicative }
-//	multiplicative := unary { ("*" | "/" | "//" | "%") unary }
-//	unary        := ("-" | "+") unary | power
-//	power        := postfix [ "**" unary ]
+//	comparison   := additive { ("==" | "!=" | "<" | "<=" | ">" | ">=" | "in" |
+//	                          "not in") additive | "is" [ "not" ] test }
+//	additive     := concat { ("+" | "-") concat }
+//	concat       := multiplicative { "~" multiplicative }
+//	multiplicative := power { ("*" | "/" | "//" | "%") power }
+//	power        := unary { "**" unary }
+//	unary        := ("-" | "+") unary filters | postfix filters
 //	postfix      := primary trailers
 //	trailers     := { "." name | "[" subscript "]" | "(" args ")" }
-//	filters      := unary { "|" name [ "(" args ")" ] trailers }
+//	filters      := { "|" name [ "(" args ")" ] trailers }
+//
+// This is Jinja's order, not Python's, in the two places they differ: `~`
+// sits between `+` and `*` (jinja2's parse_math1, parse_concat,
+// parse_math2), and `**` is left associative over unary operands, so
+// `2 ** 3 ** 2` is 64 and `-2 ** 2` is 4. Comparisons chain (see
+// CompareExpr).
 //
 // Filters sit above unary rather than inside postfix, which is what makes
 // `-5 | abs` evaluate to 5: the filter applies to the negation, not to the
 // operand of the negation.
-//
-// Python's associativity is followed, including `**` binding to the right.
 
 // maxExprDepth bounds how deeply one expression may nest, both in the
 // parser's recursion and in the height of the tree it builds.
@@ -148,7 +152,7 @@ func (p *parser) parseNot() (Expr, error) {
 // "in range" branch; `3 > 2 > 1` was False; `1 in [1] == true` was True.
 // Captured from jinja2 3.1.2: False, True and False (issue 321, M-52).
 func (p *parser) parseComparison() (Expr, error) {
-	e, err := p.parseConcat()
+	e, err := p.parseAdditive()
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +171,7 @@ func (p *parser) parseComparison() (Expr, error) {
 		case t.kind == tokOp && (t.val == "==" || t.val == "!=" || t.val == "<" ||
 			t.val == "<=" || t.val == ">" || t.val == ">="):
 			p.i++
-			r, err := p.parseConcat()
+			r, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
@@ -175,7 +179,7 @@ func (p *parser) parseComparison() (Expr, error) {
 
 		case t.kind == tokName && t.val == "in":
 			p.i++
-			r, err := p.parseConcat()
+			r, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
@@ -184,7 +188,7 @@ func (p *parser) parseComparison() (Expr, error) {
 		case t.kind == tokName && t.val == "not" &&
 			p.toks[p.i+1].kind == tokName && p.toks[p.i+1].val == "in":
 			p.i += 2
-			r, err := p.parseConcat()
+			r, err := p.parseAdditive()
 			if err != nil {
 				return nil, err
 			}
@@ -241,7 +245,7 @@ func (p *parser) parseTest(obj Expr, pos Pos) (Expr, error) {
 		return n, nil
 	}
 	if testTakesArgument(n.Name) && startsExpression(p.peek()) {
-		a, err := p.parseConcat()
+		a, err := p.parseAdditive()
 		if err != nil {
 			return nil, err
 		}
@@ -277,14 +281,19 @@ func startsExpression(t token) bool {
 	return false
 }
 
+// parseConcat is `~`, which Jinja places between `+`/`-` and `*`: `"a" ~ 1
+// + 2` is `("a" ~ 1) + 2`, an error, and `"a" ~ 2 * 3` is "a6". It was
+// above `+` and `-` here, so the first rendered "a3" (issue 321, M-52;
+// jinja2 3.1.2's parse_math1 calls parse_concat, which calls
+// parse_math2).
 func (p *parser) parseConcat() (Expr, error) {
-	e, err := p.parseAdditive()
+	e, err := p.parseMultiplicative()
 	if err != nil {
 		return nil, err
 	}
 	for p.peek().kind == tokOp && p.peek().val == "~" {
 		pos := p.next().pos
-		r, err := p.parseAdditive()
+		r, err := p.parseMultiplicative()
 		if err != nil {
 			return nil, err
 		}
@@ -294,13 +303,13 @@ func (p *parser) parseConcat() (Expr, error) {
 }
 
 func (p *parser) parseAdditive() (Expr, error) {
-	e, err := p.parseMultiplicative()
+	e, err := p.parseConcat()
 	if err != nil {
 		return nil, err
 	}
 	for p.peek().kind == tokOp && (p.peek().val == "+" || p.peek().val == "-") {
 		t := p.next()
-		r, err := p.parseMultiplicative()
+		r, err := p.parseConcat()
 		if err != nil {
 			return nil, err
 		}

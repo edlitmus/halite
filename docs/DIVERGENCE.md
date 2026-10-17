@@ -30467,6 +30467,34 @@ waiting became the default was not looked up, so whether the fleet's
 other distributions wait too is open; the next host with an older
 iptables answers it with the same `flock` probe.
 
+### 5.365 `~` bound looser than `+`, the reverse of Jinja
+
+Issue 321 finding M-52, one more of the items 5.359 left: "`~` binds
+tighter than `+` in Jinja (`"a" ~ 1 + 2` is an error there, `a3` here)".
+jinja2's parser goes `parse_math1` (`+`, `-`), which calls
+`parse_concat` (`~`), which calls `parse_math2` (`*`, `/`, `//`, `%`).
+halite had concat above additive, so it added first. Captured from
+jinja2 3.1.2 and held by `TestConcatPrecedenceMatchesJinja`:
+
+| Source | main | jinja2 3.1.2 |
+|---|---|---|
+| `{{ "a" ~ 1 + 2 }}` | a3 | TypeError |
+| `{{ 1 + 2 ~ "a" }}` | 3a | TypeError |
+| `{{ "-" ~ 3 - 1 }}` | -2 | TypeError |
+
+Six more cases agree on both sides and are held so they stay agreed:
+`"a" ~ 2 * 3` is a6, `"x" ~ 1 == "x1"` and `"a" ~ "b" in "zab"` are True,
+`"a" ~ -1` is a-1, `2 ~ 3 | string` is 23, `"a" ~ [1] | length` is a1.
+
+The difference is in the direction of failing rather than of a different
+answer: a template main rendered as `a3` now fails, as it does under
+Salt, and says where. The grammar comment at the head of
+`parse_expr.go`, which still said `**` binds to the right after 5.359,
+now describes what the parser does.
+
+**Not done.** The rest of what 5.359 lists: `str.format` specs,
+`|format`'s `%s` idioms, `round`, `dict([...])` and `tojson` escaping.
+
 
 ## 6. Everything else not started
 
