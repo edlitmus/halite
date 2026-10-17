@@ -30350,8 +30350,7 @@ is removed.
 in the `(none):` spelling the parser already records. Whether
 `dnf install tree-1.8.0`, sent when the package is absent, installs the
 newest release of 1.8.0 was not run; that argv is unchanged.
-
-### 5.361 iptables.save and nftables.save reported a change on every run
+### 5.362 iptables.save and nftables.save reported a change on every run
 
 Issue 321 finding M-40, Low; the triage found the iptables half
 reproduced, the nftables half partly, and the gap disclosed in 5.51
@@ -30394,6 +30393,8 @@ something.
 a real `iptables-persistent` or `iptables-services` path; stateful
 objects other than a rule's counter (quotas, named counters), which `-s`
 is documented to cover but which were not listed here.
+
+
 
 ## 6. Everything else not started
 

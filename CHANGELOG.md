@@ -28,7 +28,7 @@ lines, and `nftables.save` compared it including rule counters, so both
 rewrote the file and reported a change on every run. `iptables.save` now
 ignores comment lines. `nftables.save` now writes the ruleset stateless
 (`nft -s`), **so a saved file no longer carries counter values**: a
-restore starts every counter at zero (issue 321, M-40). DIVERGENCE 5.361.
+restore starts every counter at zero (issue 321, M-40). DIVERGENCE 5.362.
 
 ### An RPM package pinned without its release converges
 
