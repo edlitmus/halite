@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,8 +28,34 @@ import (
 // leaves a half-written configuration file behind. SPEC section 13.5.
 //
 // internal/atomicfile holds the idiom, which six packages had a copy of.
+//
+// **A replaced file keeps its owner and group.** The rename puts a new
+// file in place, owned by whoever ran the write, and nothing here used to
+// put the old owner back: only file.managed did, after DIVERGENCE 5.253,
+// so every other writer -- file.replace, file.line, file.append,
+// file.blockreplace, file.comment, file.sed, file.serialize, and the
+// modules that rewrite /etc/hosts, sysctl.conf, fstab and the rest --
+// turned a `postgres:postgres 0640` file into `root:root 0640` (issue 321,
+// M-20). That is the 5.253 outage, waiting in forty other places.
+//
+// The temporary file is given the owner before the rename, so there is no
+// moment at which the file is in place with the wrong one. A caller that
+// was asked for a user or group still applies it afterwards and wins. An
+// unprivileged run cannot give a file to another account, and that is
+// tolerated rather than failed, which is what it got before; as root, which
+// is how a node runs, it does not happen. What this does not keep is an
+// ACL or an extended attribute: those go with the old inode, as they did.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	return atomicfile.Write(path, data, mode)
+	was, err := os.Lstat(path)
+	if err != nil || !was.Mode().IsRegular() {
+		return atomicfile.Write(path, data, mode)
+	}
+	return atomicfile.WritePrepared(path, data, mode, func(tmp string) error {
+		if err := keepOwnership(tmp, was); err != nil && !errors.Is(err, fs.ErrPermission) {
+			return err
+		}
+		return nil
+	})
 }
 
 // hashFile digests a file with the named algorithm.

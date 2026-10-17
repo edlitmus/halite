@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An edited file keeps its owner and group
+
+`file.replace`, `file.line`, `file.blockreplace`, `file.append`,
+`file.prepend`, `file.comment`, `file.uncomment`, `file.serialize`,
+`file.sed`, and every module that rewrites a system file (`/etc/hosts`,
+sysctl.conf, fstab and others) gave the rewritten file to the account
+running the node: as root, a `postgres:postgres` configuration became
+`root:root`, and the service lost access to it. Only `file.managed` had
+been fixed. The owner and group of a replaced file are now kept by every
+writer (issue 321, M-20). DIVERGENCE 5.343.
+
 ### A relay claims only the nodes `relay_subordinates` gives it
 
 A relay could name any node id its upstream did not have connected at that

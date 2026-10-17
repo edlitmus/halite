@@ -29546,6 +29546,54 @@ nothing there changes.
 that is the arrangement, as 1.9 says. Not run with a real relay; the
 tests call the hub's handler directly.
 
+### 5.343 Every writer but file.managed gave a rewritten file to root
+
+Issue 321 finding M-20. DIVERGENCE 5.253 found `file.managed`
+rewriting Alertmanager's configuration as `root:wheel` and fixed that
+one state. The cause was not in the state. `writeAtomic` puts a new file
+in place by rename, owned by whoever ran the write, and nothing gave the
+old owner back. Forty-six callers go through it: every file edit
+function, and the modules that rewrite `/etc/hosts`, sysctl.conf, fstab,
+the timezone, netplan and the rest.
+
+**Reproduced as root on beastie** (FreeBSD 15.1-RELEASE-p5), with
+`halite-node state sls --local` built from main at 0925fa5. A scratch
+file was set to `www:www 0640`, then edited:
+
+| State | main | 79d7b56 |
+|---|---|---|
+| `file.line` | `root:wheel 640` | `www:www 640` |
+| `file.replace` | `root:wheel 640` | `www:www 640` |
+| `file.append` | `root:wheel 640` | `www:www 640` |
+| `file.serialize` | `root:wheel 644` | `www:www 644` |
+
+The 644 is issue 321's M-21, a separate defect, and it is still there
+in this run.
+
+**The fix is in `writeAtomic`**, not in each caller. When it replaces a
+regular file, it gives the temporary file that file's owner and group
+before the rename, so there is no moment at which the file is in place
+with the wrong one. A requested `user` or `group` that a caller applies
+afterwards still wins. A permission error is tolerated: an unprivileged
+run cannot give a file to another account, and that run got the
+writer's ownership before as well. As root it does not arise.
+`file.managed`'s own `keepOwnership` stays as the second guard it was.
+
+`TestEveryEditKeepsTheFilesGroup` runs `file.replace`, `line`,
+`blockreplace`, `append`, `prepend`, `comment`, `uncomment`, `serialize`
+and `sed` on a file moved into one of the account's supplementary
+groups. `TestWriteAtomicKeepsTheReplacedFilesGroup` stands in for the
+other modules. With `writeAtomic` restored, all ten fail.
+
+**Not done.**
+
+- An ACL or an extended attribute still goes with the old inode, as it
+  did.
+- `writeAtomic` still renames over a symlink, replacing the link with a
+  file; that is M-19's.
+- `file.copy` and `restore_backup` were named in the finding and not
+  run here. Both write through `writeAtomic`, and neither was driven.
+- Linux as root was not run; the root run was FreeBSD only.
 
 
 ## 6. Everything else not started
