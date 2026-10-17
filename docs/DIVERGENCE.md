@@ -30085,6 +30085,44 @@ draws: `;` and `#` outside a quoted string.
 The module itself was not driven against nft, nor were modprobe, apt
 and mount: those tests use scripted runners and temporary directories.
 
+### 5.350 rc.conf, sysctl and debconf took a value that became code or another line
+
+Issue 321 finding M-45's smaller sites, which the triage left "traced
+only". One of them is not small.
+
+- **sysrc.** rc.conf is a shell script, sourced as root at every boot,
+  and sysrc does not escape what it writes into it. **Measured on
+  beastie** (FreeBSD 15.1) against a scratch file:
+  - `sysrc 'bar=x"; echo pwned; "'` wrote `bar="x"; echo pwned; ""`,
+    and sourcing the file printed "pwned";
+  - `baz=$(id)` ran `id`;
+  - a newline put a second line in the file.
+
+  On main, `sysrc.managed` handed the first of these straight to sysrc
+  and reported it set. A value holding `"`, `$`, a backquote, a
+  backslash or a control character is now refused, and so is a name
+  that is not a shell variable's, which a leading `-` would make an
+  option. The exec function checks in test mode too, so a dry run gives
+  the real run's answer. `TestSysrcRefusesAValueThatWouldRunAsCode` calls
+  the functions directly, because the registry runs sysrc only on
+  FreeBSD.
+- **sysctl.** The name and value become a `name=value` line of the
+  boot-time configuration, so a newline in either set a second key. On
+  main, `vm.swappiness` set to `10`, a newline and
+  `kernel.modules_disabled=1` was set live, with that argv, and
+  persisted. The state now checks before it asks the kernel anything,
+  so a refusal changes nothing. A name is a sysctl key's characters, and
+  a value may hold spaces, since several keys take a list.
+  `TestSysctlRefusesANewlineBeforeItChangesAnything`.
+- **debconf.** The question and value were already checked for tabs and
+  newlines; the package was not. A package with whitespace is refused.
+  `TestDebconfRefusesAPackageWithWhitespace`.
+- **ufw** needed nothing: since 5.322 (M-37) every address, port and
+  protocol reaching it is held to an allowlist.
+
+**Not verified.** sysctl and debconf were not driven against the real
+tools. The sysrc measurement used a scratch file, not /etc/rc.conf, and
+no boot.
 
 
 ## 6. Everything else not started
