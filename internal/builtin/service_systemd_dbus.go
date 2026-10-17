@@ -140,13 +140,29 @@ func dialSystemd(ctx context.Context) (systemdBackend, error) {
 	d := &sdConn{conn: conn, deadline: time.Now().Add(90 * time.Second)}
 	if dl, ok := ctx.Deadline(); ok {
 		d.deadline = dl
+		d.jobDeadline = dl
 	}
 	return d, nil
 }
 
+// sdConn is one connection to systemd's Manager.
+//
+// Two deadlines, because two kinds of wait. A method call -- enable, mask,
+// a property read -- is answered at once, and 90 s without an answer is a
+// bus that is not answering. A job is different: it lasts as long as the
+// unit takes to start or stop, which systemd bounds itself, per unit, by
+// TimeoutStartSec and TimeoutStopSec. Those default to 90 s and are raised
+// for exactly the units that need it, a database or a migration. The job
+// wait shared the 90 s, so such a unit was reported failed at 90 s, with
+// "read unix @->/run/dbus/system_bus_socket: i/o timeout", while systemd
+// went on starting it (issue 321, M-48; measured on Ubuntu 24.04.5 with a
+// unit allowed 180 s). `systemctl start`, the fallback and what Salt runs,
+// waits for the job, and so does this now: only a deadline the caller set
+// -- a state's `timeout`, a job's -- ends the wait early.
 type sdConn struct {
-	conn     *dbus.Conn
-	deadline time.Time
+	conn        *dbus.Conn
+	deadline    time.Time // for method calls
+	jobDeadline time.Time // for a job; zero waits as long as systemd does
 }
 
 func (d *sdConn) Close() error { return d.conn.Close() }
@@ -160,7 +176,7 @@ func (d *sdConn) call(iface, member, sig string, args ...any) ([]any, error) {
 // outcome. The signal can arrive before the method return, so job
 // results are buffered by job path until the return names ours.
 func (d *sdConn) runJob(verb, unit string) error {
-	_ = d.conn.SetReadDeadline(d.deadline)
+	_ = d.conn.SetReadDeadline(d.jobDeadline)
 	serial, err := d.conn.SendCall(sdDest, sdObject, sdManager, verb, "ss", unit, "replace")
 	if err != nil {
 		return err
