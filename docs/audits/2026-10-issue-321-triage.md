@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 22 | 33: 3 mentioned and explicitly left, 1 half done, 29 not started |
+| Medium (55) | 23 | 32: 3 mentioned and explicitly left, 1 half done, 28 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -68,6 +68,7 @@ not do. Each has been checked to see whether it happened.
 | M-37 firewall value validation | #355 | | **done**: beastie's hub serves no firewall states, so no `from`/`to` there meets the new refusal. pf parsed every accepted form (`pfctl -n`). Other hubs' trees not searched |
 | M-38 pf anchor order | #354 | | |
 | M-39 hostname short vs FQDN | #357 | | |
+| M-43 FreeBSD rcvar | #376 | a script with no rcvar is refused | **done** on beastie and on the `freebsd` leg's 15.1 VM (5.335) |
 | M-46 timezone traversal | #336 | | |
 | M-49 gitfs keeps served trees | #346 | two remotes, one unreachable: that one stops being listed (DIVERGENCE 5.293); a partly refused remote drops its environment | |
 | M-50 pillar `S@` targets | #334 | | beastie's pillar root is empty, so nothing there meets the refusal (5.329) |
@@ -103,13 +104,12 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (29).** Ordered by area. FreeBSD is tier 1 and
-carries about 80% of production, so the three marked FreeBSD come first
+**Medium, not started (28).** Ordered by area. FreeBSD is tier 1 and
+carries about 80% of production, so the two marked FreeBSD come first
 when choosing.
 
 | ID | Finding | Revised |
 |---|---|---|
-| M-43 | FreeBSD rcvar not `<name>_enable` | Medium, leaning higher (FreeBSD) |
 | M-44 | BSD remount and `defaults` in fstab | Medium if FreeBSD rejects `defaults` (FreeBSD) |
 | M-35 | fstab without fstype | Medium (FreeBSD and Linux) |
 | M-06 | unbounded enrollment; a bogus token locks out the real node | Medium |

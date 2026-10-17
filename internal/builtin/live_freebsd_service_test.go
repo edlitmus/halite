@@ -382,3 +382,146 @@ func waitForRCPID(t *testing.T, c *exec.Context, wantRunning bool) int {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// **The variable is the script's rcvar, not `<name>_enable`** (issue
+// 321, M-43). The probe is named the way the base system's own exceptions
+// are: its file name has a hyphen, as `avahi-daemon` and `ftp-proxy` do,
+// and its rcvar is unrelated to that name, as `ipfw`'s `firewall_enable`
+// is. Before the fix `service.enable` wrote `halite-probe-rcvar_enable`,
+// which sysrc accepts and exits 0 on and rc never reads, and the
+// `service.enabled` state then wrote it again on every run.
+//
+// Checked against rc itself: `sysrc -n` of the rcvar, `service <name>
+// enabled`, and that the wrong variable was never written.
+func TestLiveFreeBSDServiceEnablesTheScriptsOwnRCVar(t *testing.T) {
+	c := freebsdServiceLive(t)
+	const (
+		file  = "halite-probe-rcvar"
+		rcvar = "haliteprobe_other_on"
+		wrong = file + "_enable"
+	)
+	installMinimalRCScript(t, c, file, `name="halite_probe_rcvar"
+rcvar="`+rcvar+`"
+start_cmd=":"
+stop_cmd=":"
+load_rc_config $name
+: ${`+rcvar+`:="NO"}
+`, rcvar, wrong)
+	r := New()
+
+	if enabled, err := r.Exec.Call(c, "service.enabled", value.MapOf("name", file)); err != nil || enabled != false {
+		t.Fatalf("service.enabled = %v, %v before anything was enabled", enabled, err)
+	}
+	for run := 1; run <= 2; run++ {
+		res, err := r.States.Call(c, "service.enabled", value.MapOf("name", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Result == nil || !*res.Result {
+			t.Fatalf("run %d of the service.enabled state failed: %s", run, res.Comment)
+		}
+		if run == 2 && res.HasChanges() {
+			t.Errorf("the second run of service.enabled changed something again: %v", res.Changes)
+		}
+	}
+	if got := liveSysrc(t, c, rcvar); !strings.EqualFold(got, "YES") {
+		t.Errorf("rc.conf says %s = %q after service.enabled", rcvar, got)
+	}
+	if line := liveRCConfLine(t, wrong); line != "" {
+		t.Errorf("rc.conf carries %q, a variable rc never reads", line)
+	}
+	if res, _ := c.Run(exec.Command{Argv: []string{"service", file, "enabled"}, IgnoreExitCode: true}); res.Code != 0 {
+		t.Errorf("`service %s enabled` exits %d after service.enabled", file, res.Code)
+	}
+
+	if _, err := r.Exec.Call(c, "service.disable", value.MapOf("name", file)); err != nil {
+		t.Fatalf("service.disable: %v", err)
+	}
+	if got := liveSysrc(t, c, rcvar); !strings.EqualFold(got, "NO") {
+		t.Errorf("rc.conf says %s = %q after service.disable", rcvar, got)
+	}
+	if res, _ := c.Run(exec.Command{Argv: []string{"service", file, "enabled"}, IgnoreExitCode: true}); res.Code == 0 {
+		t.Errorf("`service %s enabled` exits 0 after service.disable", file)
+	}
+}
+
+// **A script with no rcvar cannot be enabled**, and saying so is the
+// answer: rc runs it at every boot, `service <name> enabled` exits 1 for it
+// all the same, and without the refusal `service.enabled` would write a
+// variable nothing reads on every run.
+func TestLiveFreeBSDServiceRefusesToEnableAScriptWithNoRCVar(t *testing.T) {
+	c := freebsdServiceLive(t)
+	const file = "halite-probe-norcvar"
+	installMinimalRCScript(t, c, file, `name="halite_probe_norcvar"
+start_cmd=":"
+stop_cmd=":"
+load_rc_config $name
+`, file+"_enable")
+	_, err := New().Exec.Call(c, "service.enable", value.MapOf("name", file))
+	if err == nil || !strings.Contains(err.Error(), "declares no rcvar") {
+		t.Errorf("service.enable on a script with no rcvar = %v", err)
+	}
+	if line := liveRCConfLine(t, file+"_enable"); line != "" {
+		t.Errorf("rc.conf carries %q", line)
+	}
+}
+
+// installMinimalRCScript writes an rc.d script that does nothing when
+// started, and takes it and the named rc.conf variables back out.
+func installMinimalRCScript(t *testing.T, c *exec.Context, file, body string, vars ...string) {
+	t.Helper()
+	path := filepath.Join(liveRCScriptDir, file)
+	if _, err := os.Stat(path); err == nil {
+		t.Fatalf("%s already exists; this test will not overwrite it", path)
+	}
+	script := "#!/bin/sh\n#\n# PROVIDE: " + strings.ReplaceAll(file, "-", "_") +
+		"\n#\n# A throwaway script written by halite's live test; safe to remove.\n\n. /etc/rc.subr\n\n" +
+		body + "run_rc_command \"$1\"\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+	t.Cleanup(func() {
+		for _, v := range vars {
+			_, _ = c.Run(exec.Command{Argv: []string{"sysrc", "-x", v}, IgnoreExitCode: true})
+			if line := liveRCConfLine(t, v); line != "" {
+				t.Errorf("rc.conf still carries %q after cleanup", line)
+			}
+		}
+		_ = os.Remove(path)
+	})
+}
+
+// liveRCConfLine returns the line of /etc/rc.conf that sets name, or "".
+//
+// Read from the file rather than through `sysrc -n`, because sysrc does
+// not read a name with a hyphen: on beastie `sysrc -n
+// halite-probe-rcvar_enable` printed `probe-rcvar_enable`, having split
+// the name at the hyphen, whether or not the line was there. A hyphenated
+// variable is exactly what the old provider wrote, so the check has to be
+// able to see one.
+func liveRCConfLine(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile("/etc/rc.conf")
+	if err != nil {
+		t.Fatalf("reading rc.conf: %v", err)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), name+"=") {
+			return line
+		}
+	}
+	return ""
+}
+
+// liveSysrc reads one rc.conf variable, empty when it is not set.
+func liveSysrc(t *testing.T, c *exec.Context, name string) string {
+	t.Helper()
+	res, err := c.Run(exec.Command{Argv: []string{"sysrc", "-n", name}, IgnoreExitCode: true})
+	if err != nil {
+		t.Fatalf("sysrc: %v", err)
+	}
+	if res.Code != 0 {
+		return ""
+	}
+	return strings.TrimSpace(res.Stdout)
+}
