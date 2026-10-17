@@ -30521,6 +30521,31 @@ own `tojson` sorts the keys; that half needed nothing.
 its four-line function over Python's `json`, not from `salt-call`. The
 CI's Salt differential runs whatever cases its corpus has.
 
+### 5.367 `dict()` returned an empty mapping for a list of pairs
+
+Issue 321 finding M-52, another of 5.359's items. Python's `dict`, which
+is what Jinja's `dict` global is, takes a mapping or a sequence of pairs,
+then keywords over the top. halite's read only a mapping and returned
+`{}` for anything else, with no error. So `dict([('a', 1)])`, and
+`dict(some_mapping.items())`, the ordinary ways to build a mapping from a
+loop, rendered an empty one, and the state that used it went on with
+nothing in it.
+
+`TestDictTakesPairsAsJinjaDoes` holds fourteen cases captured from
+jinja2 3.1.2. Against main, seven gave the wrong mapping (`{}` where
+jinja2 gives `{'a': 1, 'b': 2}`, or `{'b': 2}` with the pairs dropped
+and the keyword kept), and the four that jinja2 refuses -- a triple, a
+non-sequence element, a number, two positional arguments -- each rendered
+`{}`. Pairs may be lists, tuples or two-character strings, as in
+Python, and a later pair wins over an earlier one with the same key. The
+errors say what Python's say.
+
+**Not done.** Keywords reach a template function as a Go map, so
+`dict(b=1, a=2)` comes out `{'a': 2, 'b': 1}`, where Python keeps the
+order they were written in, `{'b': 1, 'a': 2}`. Every function that
+takes keywords shares that, and changing it is a change to how calls are
+evaluated, not to `dict`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

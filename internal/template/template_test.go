@@ -573,3 +573,42 @@ func TestToJSONEscapesAsSaltDoes(t *testing.T) {
 		}
 	}
 }
+
+// **dict() takes a list of pairs, as Python's does** (issue 321, M-52).
+// It read only a mapping and silently returned {} for anything else, so
+// `dict([('a', 1)])`, a common way to build a mapping in a loop, rendered
+// an empty one with no error. Values captured from jinja2 3.1.2; an empty
+// want is an error there.
+func TestDictTakesPairsAsJinjaDoes(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`{{ dict([('a', 1), ('b', 2)]) }}`, "{'a': 1, 'b': 2}"},
+		{`{{ dict([('b', 1), ('a', 2)]) }}`, "{'b': 1, 'a': 2}"},
+		{`{{ dict([['a', 1]]) }}`, "{'a': 1}"},
+		{`{{ dict([('a', 1)], b=2) }}`, "{'a': 1, 'b': 2}"},
+		{`{{ dict({'a': 1}, a=2) }}`, "{'a': 2}"},
+		{`{{ dict([('a', 1), ('a', 2)]) }}`, "{'a': 2}"},
+		{`{{ dict({'a': 1}.items()) }}`, "{'a': 1}"},
+		{`{{ dict(['ab']) }}`, "{'a': 'b'}"},
+		{`{{ dict([]) }}`, "{}"},
+		{`{{ dict() }}`, "{}"},
+		{`{{ dict([('a', 1, 2)]) }}`, ""},
+		{`{{ dict([1]) }}`, ""},
+		{`{{ dict(5) }}`, ""},
+		{`{{ dict({'a': 1}, {'b': 2}) }}`, ""},
+	} {
+		res, err := NewEnvironment(nil, DefaultOptions()).RenderString(c.src, "t.sls", nil)
+		if c.want == "" {
+			if err == nil {
+				t.Errorf("%s -> %q, jinja2 3.1.2 fails it", c.src, res.Output)
+			}
+			continue
+		}
+		if err != nil || res.Output != c.want {
+			var got string
+			if err == nil {
+				got = res.Output
+			}
+			t.Errorf("%s -> %q, %v; jinja2 3.1.2 gives %q", c.src, got, err, c.want)
+		}
+	}
+}

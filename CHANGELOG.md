@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `dict()` in templates takes a list of pairs
+
+`dict([('a', 1)])` and `dict(mapping.items())` rendered an empty mapping
+without an error. They now build the mapping, as Python's `dict` does,
+and what Python refuses is refused (issue 321, M-52). DIVERGENCE 5.367.
+
 ### `tojson` escapes its output as Salt's does
 
 `tojson` now writes non-ASCII as `\uXXXX` and `<`, `>`, `&` and `'` as
