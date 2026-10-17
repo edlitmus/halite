@@ -101,6 +101,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`upgrade`, and `latest` against a package that is installed and outdated -- the " +
 		"case stages an absent package, which the state installs, so what it establishes " +
 		"is that the offered version and the installed version are spelled the same way. " +
+		"Pins, on 2026-10-16 as root on beastie (FreeBSD 15.1-RELEASE-p5, pkg 2.8.4): " +
+		"`pkg.installed` pinned `sl` to the repository's 5.02_1 installed it and converged " +
+		"on the second run; a pin the repository lacks failed with pkg's own refusal and " +
+		"installed nothing; a wildcard it did not meet failed on both runs. Before that " +
+		"run the pin never reached pkg at all (DIVERGENCE 5.334). Not covered: a pin " +
+		"spelled with an origin, and a downgrade, which a FreeBSD repository carrying one " +
+		"version cannot offer. apk's pins were not run. " +
 		"**apk too**: " +
 		"on Alpine 3.24 in the lab a package was installed through `pkg.install`, read " +
 		"back through `list_pkgs`, `version` and `file_list` -- the owner capability's " +

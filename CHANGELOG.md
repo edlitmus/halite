@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A pinned package on FreeBSD is now installed at its pin, or fails
+
+`pkg.installed` with a `version` on FreeBSD installed whatever version the
+repository carried, reported success, and did it again on every run: the
+pin never reached `pkg install` (issue 321, M-33). The pin is now passed
+as `name-version`. A pin the repository does not carry fails with pkg's
+own message, where it used to pass. On any platform, a pinned package
+whose installed version does not meet the pin after the install now fails
+and names the version that came instead. Alpine's apk still installs the
+repository's version, so a pinned apk package now fails until that is
+fixed, rather than reporting a change each run. DIVERGENCE 5.334.
+
 ### An extension's signature now covers its manifest; re-sign every bundle
 
 An extension bundle's signature covered its files and not what its
