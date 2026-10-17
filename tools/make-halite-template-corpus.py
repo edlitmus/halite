@@ -85,7 +85,9 @@ case("filter/tojson", '{{ {"a": 1} | tojson }}', '{"a": 1}')
 case("filter/tojson-list", "{{ [1, 2] | tojson }}", "[1, 2]")
 case("filter/first-last", "{{ [1, 2, 3] | first }}{{ [1, 2, 3] | last }}", "13")
 case("filter/batch", "{{ [1, 2, 3] | batch(2) | list }}", "[[1, 2], [3]]")
-case("filter/round", "{{ 2.5 | round }}", "3.0")
+# Python's round, half to even: jinja2 3.1.2 renders 2.0. This said 3.0,
+# written from math.Round rather than captured (DIVERGENCE, issue 321 M-52).
+case("filter/round", "{{ 2.5 | round }}", "2.0")
 case("filter/abs", "{{ -5 | abs }}", "5")
 
 # ---- SPEC 10.2.5, tests.

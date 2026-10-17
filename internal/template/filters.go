@@ -3,6 +3,7 @@ package template
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"sort"
 	"strconv"
 	"strings"
@@ -159,6 +160,16 @@ func addCoreFilters(f map[string]FilterFunc) {
 		return 0.0, nil
 	}
 
+	// round is Jinja's do_round: `common` is Python's round(value,
+	// precision), and `ceil` and `floor` are math.ceil and math.floor of
+	// value * 10**precision, over 10**precision.
+	//
+	// `common` was math.Round(x*10^p)/10^p: half away from zero, over a
+	// product that is itself rounded. Python's round is half to even, on
+	// the float's exact binary value, and an integer stays an integer. So
+	// 2.5 gave 3.0 where Jinja gives 2.0, 2.675 gave 2.68 where 2.675 is
+	// really 2.67499... and Jinja gives 2.67, and `5 | round` gave 5.0
+	// where Jinja gives 5 (issue 321, M-52; captured from jinja2 3.1.2).
 	f["round"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
 		x, ok := asFloat(v)
 		if !ok {
@@ -179,7 +190,10 @@ func addCoreFilters(f map[string]FilterFunc) {
 		case "floor":
 			return math.Floor(x*mul) / mul, nil
 		case "common":
-			return math.Round(x*mul) / mul, nil
+			if n, isInt := pyRoundInt(v, precision); isInt {
+				return n, nil
+			}
+			return pyRoundFloat(x, precision), nil
 		}
 		return nil, fc.Errorf("round method must be common, ceil, or floor")
 	}
@@ -827,4 +841,78 @@ func lessValue(a, b any, caseSensitive bool) bool {
 		return af < bf
 	}
 	return renderValue(a) < renderValue(b)
+}
+
+// pyRoundInt is Python's round() of an integer: unchanged at a precision
+// of zero or more, and to the nearest 10**-precision, half to even,
+// below. A bool is an int to Python. ok is false for anything else.
+func pyRoundInt(v any, precision int64) (int64, bool) {
+	var n int64
+	switch t := v.(type) {
+	case int64:
+		n = t
+	case int:
+		n = int64(t)
+	case bool:
+		if t {
+			n = 1
+		}
+	default:
+		return 0, false
+	}
+	if precision >= 0 {
+		return n, true
+	}
+	if precision < -18 {
+		return 0, true
+	}
+	d := new(big.Int).Exp(big.NewInt(10), big.NewInt(-precision), nil)
+	q := roundHalfEven(new(big.Rat).SetFrac(big.NewInt(n), d))
+	return new(big.Int).Mul(q, d).Int64(), true
+}
+
+// pyRoundFloat is Python's round() of a float: half to even, on the
+// float's exact value. strconv's 'f' formatting rounds that way; a
+// negative precision, which 'f' cannot take, is done in exact rationals.
+// Measured against Python 3's round on sixteen cases chosen for ties and
+// for decimals a float cannot hold (2.675, 1.005, 0.125, -0.5, 5e-324),
+// and on 3,000 random values at precisions -5 to 6, signed zeros
+// included: none differed.
+func pyRoundFloat(x float64, precision int64) float64 {
+	if math.IsInf(x, 0) || math.IsNaN(x) {
+		return x
+	}
+	if precision >= 0 {
+		if precision > 340 {
+			return x
+		}
+		r, _ := strconv.ParseFloat(strconv.FormatFloat(x, 'f', int(precision), 64), 64)
+		return r
+	}
+	if precision < -340 {
+		return math.Copysign(0, x)
+	}
+	d := new(big.Int).Exp(big.NewInt(10), big.NewInt(-precision), nil)
+	exact := new(big.Rat).SetFloat64(x)
+	q := roundHalfEven(new(big.Rat).Quo(exact, new(big.Rat).SetInt(d)))
+	r, _ := new(big.Rat).SetInt(new(big.Int).Mul(q, d)).Float64()
+	return math.Copysign(r, x)
+}
+
+// roundHalfEven rounds r to the nearest integer, a tie to the even one.
+func roundHalfEven(r *big.Rat) *big.Int {
+	num, den := r.Num(), r.Denom()
+	q, m := new(big.Int).QuoRem(num, den, new(big.Int))
+	// QuoRem truncates toward zero; compare twice the remainder with the
+	// denominator to see which side of the half it falls.
+	twice := new(big.Int).Mul(new(big.Int).Abs(m), big.NewInt(2))
+	switch twice.Cmp(den) {
+	case 1:
+		q.Add(q, big.NewInt(int64(num.Sign())))
+	case 0:
+		if q.Bit(0) == 1 {
+			q.Add(q, big.NewInt(int64(num.Sign())))
+		}
+	}
+	return q
 }
