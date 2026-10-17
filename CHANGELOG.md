@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `ssh_auth` and `ssh_known_hosts` refuse an account's linked `~/.ssh`
+
+As root, for `user: <account>`, these states followed a `~/.ssh` the
+account had replaced with a symbolic link. They wrote `authorized_keys` or
+`known_hosts` into the directory it named, and chowned an existing file
+there to the account, including a root-owned file. A named account's
+`~/.ssh` is now read and written through its home directory, and a link
+there is refused by name (issue 321, M-30). DIVERGENCE 5.349.
+
 ### `file.directory`'s recursive changes cannot be led outside the directory
 
 With `recurse:`, the paths were found first and changed afterwards by

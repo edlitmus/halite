@@ -29815,6 +29815,48 @@ for ownership there.
 **Not done.** The ownership half was not run against a swap: making one
 needs a second account, and the swapped-parent case is covered by the
 same root for both. Not run as root on a host.
+### 5.349 Root wrote a named account's ~/.ssh files wherever the account's link pointed
+
+Issue 321 finding M-30. The triage marked it CONFIRMED by trace, "needs
+root to run"; it now has been, on two platforms. `ssh_auth.present` and
+`ssh_known_hosts.present` for `user: deploy`, run as root, did all of
+this by path: created `~deploy/.ssh`, read the file in it, wrote a new
+one, and chowned both to deploy. deploy owns `~/.ssh` and can replace it
+with a link.
+
+**Reproduced as root on Ubuntu 24.04.5** with
+`TestLiveSSHRefusesALinkedSSHDirectory` against main's ssh code. A
+throwaway account's `~/.ssh` was linked to a root-owned directory, which
+stood in for /etc and held a root-only 0600 `authorized_keys`. Both
+states reported success. The directory gained a `known_hosts`. Its root
+file was **chowned to the account (uid 1002)**, and still held its
+root-only line, with the managed key appended. That is a root file handed
+to an unprivileged account on every highstate.
+
+**The fix.** For a named account's default path (not `config`, not the
+caller's own), the file is read and written through an `os.Root` on the
+home directory, in `sshAccountFile`. A `~/.ssh`, or a file in it, that
+is a link is refused by name. The temporary file, its mode, its owner,
+the rename and the directory's owner all go by names inside the root.
+So a swap made between the check and the write cannot lead it out
+either: `os.Root` refuses to resolve out of the home. A link that stays
+inside the home is refused too, which is simpler to reason about than
+deciding which are safe. The list functions (`ssh.auth_keys`,
+`ssh.known_hosts`) read the same way.
+
+**Run.** With the fix, as root, both `TestLiveSSHFilesForAnotherAccount`
+(files written, 0700/0600, owned by the account, converging) and the new
+test pass:
+
+- on Ubuntu 24.04.5 at 7ee09c0;
+- on beastie (FreeBSD 15.1-RELEASE-p5) at 7ee09c0.
+
+No account or directory was left behind. The new test joins the `linux`
+and `macos` legs' filters; the `freebsd` leg runs every `TestLive*`.
+
+**Not done.** A home directory that is itself a link, or is writable by
+others, is trusted, as `os.Root` opens it by path. A `config` path is the
+operator's choice and is still written by path. macOS was not run.
 
 
 

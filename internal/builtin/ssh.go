@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
-	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -36,7 +35,11 @@ func registerSSH(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
-				keys := parseAuthorizedKeys(readLines(path))
+				lines, err := sshReadLines(args, path)
+				if err != nil {
+					return nil, err
+				}
+				keys := parseAuthorizedKeys(lines)
 				out := value.NewMap(len(keys))
 				for _, k := range keys {
 					if k.Verbatim {
@@ -233,7 +236,11 @@ func sshAuthPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%v", err)), nil
 	}
 
-	existing := parseAuthorizedKeys(readLines(path))
+	lines, err := sshReadLines(args, path)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
+	existing := parseAuthorizedKeys(lines)
 	for i, k := range existing {
 		if k.Key != want.Key {
 			continue
@@ -274,7 +281,11 @@ func sshAuthAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%v", err)), nil
 	}
 
-	existing := parseAuthorizedKeys(readLines(path))
+	lines, err := sshReadLines(args, path)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
+	existing := parseAuthorizedKeys(lines)
 	kept := make([]authKey, 0, len(existing))
 	found := false
 	for _, k := range existing {
@@ -305,14 +316,10 @@ func writeAuthKeys(c *exec.Context, args *value.Map, path string, keys []authKey
 	}
 	// sshd refuses an authorized_keys file that is group or world
 	// writable, and refuses a .ssh directory that is either, so both modes
-	// are set rather than left to the umask.
-	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return states.False(fmt.Sprintf("%s could not be created: %v", filepath.Dir(path), err)), nil
-	}
-	if err := writeAtomic(path, []byte(b.String()), 0o600); err != nil {
-		return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
-	}
-	if err := giveToAccount(args, path); err != nil {
+	// are set rather than left to the umask. Through the account's home as
+	// an os.Root when the file is a named account's own: see
+	// sshAccountFile.
+	if err := sshWriteFile(args, path, []byte(b.String()), 0o600); err != nil {
 		return states.False(err.Error()), nil
 	}
 	return states.Changed(comment, changes), nil

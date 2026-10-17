@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
-	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -54,7 +53,11 @@ func registerSSHKnownHosts(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
-				entries := parseKnownHosts(readLines(path))
+				lines, err := sshReadLines(args, path)
+				if err != nil {
+					return nil, err
+				}
+				entries := parseKnownHosts(lines)
 				out := value.NewMap(len(entries))
 				for _, e := range entries {
 					if e.Verbatim {
@@ -254,7 +257,11 @@ func sshKnownHostsPresent(c *exec.Context, args *value.Map) (states.Result, erro
 		return res, nil
 	}
 
-	existing := parseKnownHosts(readLines(path))
+	lines, err := sshReadLines(args, path)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
+	existing := parseKnownHosts(lines)
 	for i, e := range existing {
 		if e.Verbatim || !matchesHost(e.Host, field) {
 			continue
@@ -376,7 +383,11 @@ func sshKnownHostsAbsent(c *exec.Context, args *value.Map) (states.Result, error
 	}
 	field := hostField(host, states.Int(args, "port", 22))
 
-	existing := parseKnownHosts(readLines(path))
+	lines, err := sshReadLines(args, path)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
+	existing := parseKnownHosts(lines)
 	kept := make([]knownHost, 0, len(existing))
 	var removed []string
 	for _, e := range existing {
@@ -405,18 +416,11 @@ func writeKnownHosts(c *exec.Context, args *value.Map, path string, entries []kn
 	if c.Test {
 		return states.WouldChange(strings.Replace(comment, " was ", " would be ", 1), changes), nil
 	}
-	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return states.False(fmt.Sprintf("%s could not be created: %v", filepath.Dir(path), err)), nil
-	}
 	// 0644 rather than authorized_keys' 0600: known_hosts is not a
-	// secret, and ssh does not refuse a readable one.
-	if err := writeAtomic(path, []byte(b.String()), 0o644); err != nil {
-		return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
-	}
-	// The same as authorized_keys: written as root for a named account,
-	// it was root's, in a ~/.ssh that account could not enter. See
-	// giveToAccount.
-	if err := giveToAccount(args, path); err != nil {
+	// secret, and ssh does not refuse a readable one. Given to a named
+	// account as authorized_keys is, and through its home as an os.Root:
+	// see sshAccountFile.
+	if err := sshWriteFile(args, path, []byte(b.String()), 0o644); err != nil {
 		return states.False(err.Error()), nil
 	}
 	return states.Changed(comment, changes), nil
