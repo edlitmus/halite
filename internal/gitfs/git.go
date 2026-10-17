@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -269,12 +270,23 @@ func (o *Options) materialise(ctx context.Context, mirror, target string, remote
 		// A repository that holds the tree under a subdirectory.
 		spec += ":" + root
 	}
-	archive, err := o.runBinary(ctx, mirror, "archive", "--format=tar", spec)
-	if err != nil {
+	// Streamed, not buffered. The archive was read whole into memory and
+	// only then checked against MaxArchiveBytes, so anyone who could push
+	// a branch -- every branch is an environment -- could push a tree of
+	// several gigabytes and exhaust the hub's memory on every update
+	// (issue 321, M-53). The tar reader now takes git's output as it
+	// comes, the limits stop it as soon as they are passed, and git is
+	// killed rather than left writing into a pipe nobody reads.
+	if err := o.runStream(ctx, mirror, func(r io.Reader) error {
+		if err := extractTar(r, staging); err != nil {
+			return fmt.Errorf("unpacking %s at %s: %w", remote.label(), ref.Name, err)
+		}
+		return nil
+	}, "archive", "--format=tar", spec); err != nil {
+		if strings.HasPrefix(err.Error(), "unpacking ") {
+			return err
+		}
 		return fmt.Errorf("reading %s at %s: %w", remote.label(), ref.Name, err)
-	}
-	if err := extractTar(archive, staging); err != nil {
-		return fmt.Errorf("unpacking %s at %s: %w", remote.label(), ref.Name, err)
 	}
 	if err := atomicfile.Rename(staging, target); err != nil {
 		return err
@@ -283,23 +295,39 @@ func (o *Options) materialise(ctx context.Context, mirror, target string, remote
 }
 
 // runBinary is `run` for output that is not text.
-func (o *Options) runBinary(ctx context.Context, dir string, args ...string) ([]byte, error) {
+func (o *Options) runStream(ctx context.Context, dir string, consume func(io.Reader) error, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, o.timeout())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, o.git(), args...)
 	cmd.Dir = dir
 	cmd.Env = o.environment()
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("git %s: %w", args[0], err)
+	}
+	consumeErr := consume(stdout)
+	if consumeErr != nil {
+		// The consumer stopped early, and git may still be writing: kill
+		// it rather than wait on a pipe nobody will read.
+		cancel()
+		_, _ = io.Copy(io.Discard, stdout)
+	}
+	waitErr := cmd.Wait()
+	if consumeErr != nil {
+		return consumeErr
+	}
+	if waitErr != nil {
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {
-			message = err.Error()
+			message = waitErr.Error()
 		}
-		return nil, fmt.Errorf("git %s: %s", args[0], message)
+		return fmt.Errorf("git %s: %s", args[0], message)
 	}
-	return stdout.Bytes(), nil
+	return nil
 }
