@@ -29355,6 +29355,58 @@ I broke each half on purpose: keeping `defaults` failed
 - A filesystem type whose options differ (tmpfs refused `noatime` on
   FreeBSD) was not explored.
 
+### 5.336 A job or an event longer than a stream line was lost without a word
+
+Issue 321 finding M-11. Both NDJSON streams, a node's `/v1/subscribe`
+and an operator's `/v1/events`, are read a line at a time by a
+`bufio.Scanner` bounded at `MaxSubscribeLine`, 1 MiB. Measured: a line
+of 1,048,576 bytes with its newline reads, and one byte more is "token
+too long". Nothing on the writing side knew the bound.
+
+- **A job.** `submit` takes 64 MiB, so a single keyword argument over
+  1 MiB made a job line no node could read. Each targeted node's stream
+  ended with ErrTooLong and the node reconnected. The triage corrected
+  the finding here: it is one reconnect per node, not a loop. The job,
+  already recorded as dispatched, never arrived, and nothing said so.
+  Dispatch now measures the job's wire line with the encoder the stream
+  uses (`wireLineLen`) and refuses it before it is recorded or sent,
+  saying to pass large data through the file server or pillar.
+- **An event.** A node may post 1 MiB of event data, and with the hub's
+  fields that is a longer line: the test's event was 1,048,689 bytes.
+  The stream reader then ended at that event. That reader is
+  `halite-hub events` and also halite-api, which relays the hub's
+  stream to SSE and WebSocket clients. A reader resuming from the last
+  offset it saw met the same event again, until the bus pruned it. The
+  triage had not reproduced this half; the test below does, with the
+  scanner's own "token too long". `eventStream` now sends such an event
+  as a stand-in. The stand-in keeps the tag, node, stamp, correlation,
+  schema and offset, and its data holds `_oversized`, `_bytes` and
+  `_limit`, so a reader sees what it missed and resumes past it. The
+  bus keeps the event whole, and reactors, which read the bus, see all
+  of it.
+
+`TestAJobTooLongForANodeIsRefusedAndOneThatFitsArrives` connects a real
+node stream. It holds that a job with a 1 MiB argument is refused at
+submit, and that one 4 KiB inside the bound arrives with its argument
+intact. `TestAnEventTooLongForTheStreamIsSentAsAStandIn` posts a node
+event of 1 MiB less 64 bytes, then reads the stream from the start and
+gets the stand-in and the event after it, while the bus still holds the
+whole blob. Without the stand-in the reader fails with "bufio.Scanner:
+token too long", and without the Dispatch check the long job is
+accepted. Both were broken that way on purpose and watched failing.
+SPEC 6.5's row for the line now says both.
+
+**Breaking.** A job whose arguments are over about 1 MiB is now refused
+at submission. It never reached a node before.
+
+**Not done.** A node does not get a stand-in for a job line, because no
+job longer than the bound is sent any more. A hub older than this one
+can still send one, and a node reading it still reconnects. Events from
+other sources (`job/new` carries the node list, which grows with the
+estate) are covered by the same stand-in rather than bounded at their
+source. Not run on FreeBSD or against a live hub; the tests run the
+real handlers over loopback TLS.
+
 
 
 

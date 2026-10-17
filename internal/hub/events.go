@@ -197,6 +197,44 @@ func trimTagPrefix(tag string) string {
 	return tag
 }
 
+// streamable is the event as one line of the stream: the event itself,
+// or, when it is longer than a reader takes, a stand-in that says so.
+//
+// A reader of this stream -- `halite-hub events`, and halite-api, which
+// relays it to SSE and WebSocket clients -- reads a line at a time with
+// a bufio.Scanner bounded at MaxSubscribeLine. One longer event ended
+// the stream with ErrTooLong, and a reader resuming from the last offset
+// it saw resumed into the same event, so the stream stopped there until
+// the bus pruned it, thirty days later by default. A node can post 1 MiB
+// of event data, which is a line of 1,048,714 bytes once the hub's
+// fields are added (issue 321, M-11).
+//
+// The stand-in keeps the tag, node, stamp, correlation, schema and
+// offset, so a reader can see what it missed and resume past it, and
+// says how long the event was. The bus keeps the event whole, and
+// reactors, which read the bus rather than this stream, see all of it.
+func (s *Server) streamable(e eventbus.Event) any {
+	n, err := wireLineLen(e)
+	if err == nil && n <= transport.MaxSubscribeLine {
+		return e
+	}
+	s.warn("an event is too long for the event stream and was sent as a stand-in",
+		"tag", e.Tag, "offset", e.Offset, "bytes", n)
+	return eventbus.Event{
+		Tag:         e.Tag,
+		Stamp:       e.Stamp,
+		Node:        e.Node,
+		Correlation: e.Correlation,
+		Schema:      e.Schema,
+		Offset:      e.Offset,
+		Data: map[string]any{
+			"_oversized": true,
+			"_bytes":     n,
+			"_limit":     transport.MaxSubscribeLine,
+		},
+	}
+}
+
 // eventStream is GET /v1/events: an operator following the bus.
 //
 // NDJSON, one object per line, unterminated — the same shape as the
@@ -270,7 +308,7 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, principal s
 		}
 		next = after
 		for _, e := range events {
-			if err := enc.Encode(e); err != nil {
+			if err := enc.Encode(s.streamable(e)); err != nil {
 				return
 			}
 			s.observeSubscriberLag(e.Stamp)
