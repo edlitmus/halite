@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `iptables.save` and `nftables.save` stop reporting a change every run
+
+`iptables.save` compared the file including iptables-save's timestamp
+lines, and `nftables.save` compared it including rule counters, so both
+rewrote the file and reported a change on every run. `iptables.save` now
+ignores comment lines. `nftables.save` now writes the ruleset stateless
+(`nft -s`), **so a saved file no longer carries counter values**: a
+restore starts every counter at zero (issue 321, M-40). DIVERGENCE 5.361.
+
 ### An RPM package pinned without its release converges
 
 On RedHat and SUSE, `pkg.installed` with `version: 1.8.0` never matched
