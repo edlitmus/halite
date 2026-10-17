@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
@@ -130,8 +131,8 @@ func registerModprobe(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				name := strings.TrimSpace(states.Str(args, "name", ""))
-				if name == "" {
-					return nil, errors.New("a module must be named")
+				if err := modprobeValidName(name); err != nil {
+					return nil, err
 				}
 				file, ok := modprobeDenylistedIn(name)
 				out := value.NewMap(2)
@@ -327,8 +328,8 @@ func modprobeInfoFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	name := strings.TrimSpace(states.Str(args, "name", ""))
-	if name == "" {
-		return nil, errors.New("a module must be named")
+	if err := modprobeValidName(name); err != nil {
+		return nil, err
 	}
 	res, err := c.Run(exec.Command{Argv: []string{"modinfo", name}, IgnoreExitCode: true})
 	if err != nil {
@@ -429,10 +430,10 @@ func modprobeMutateResult(c *exec.Context, changed bool, comment string, change 
 
 // modprobeParamArgs renders a params mapping as `key=value` tokens, in
 // sorted key order so the command this builds is the same on every run.
-func modprobeParamArgs(args *value.Map, key string) []string {
+func modprobeParamArgs(args *value.Map, key string) ([]string, error) {
 	m := states.Mapping(args, key)
 	if m == nil {
-		return nil
+		return nil, nil
 	}
 	keys := make([]string, 0, m.Len())
 	for _, e := range m.Entries() {
@@ -442,9 +443,64 @@ func modprobeParamArgs(args *value.Map, key string) []string {
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
 		v, _ := m.GetString(k)
-		out = append(out, fmt.Sprintf("%s=%s", k, value.KeyString(v)))
+		val := value.KeyString(v)
+		if err := modprobeValidParam(k, val); err != nil {
+			return nil, err
+		}
+		out = append(out, fmt.Sprintf("%s=%s", k, val))
 	}
-	return out
+	return out, nil
+}
+
+// modprobeValidName refuses a module name that is not one.
+//
+// **The name becomes a path and a line of a root-read file** (issue 321,
+// M-45). It is joined into <dir>/<name>.conf, so `../../etc/cron.d/x`
+// wrote, and on removal deleted, a file outside modprobe.d; and it opens
+// an `options <name> ...` line, where a newline starts another. A kernel
+// module's name is letters, digits, `_` and `-` (modprobe treats the last
+// two as one), so anything else is refused rather than escaped: there is
+// no module it could name.
+func modprobeValidName(name string) error {
+	if name == "" {
+		return errors.New("a module must be named")
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+		default:
+			return fmt.Errorf("%q is not a module name: a module is named with letters, digits, `_` and `-`", name)
+		}
+	}
+	return nil
+}
+
+// modprobeValidParam refuses a parameter that would not stay one word of
+// an `options` line. A newline there starts a new line of modprobe.d, and
+// `install <module> <command>` is a line modprobe runs as root; whitespace
+// splits one parameter into two. A key is letters, digits and `_`, as
+// module_param names are. A value may hold spaces only inside double
+// quotes, which is modprobe.d's own way to give one, and no control
+// character anywhere.
+func modprobeValidParam(key, val string) error {
+	if key == "" {
+		return errors.New("a module parameter needs a name")
+	}
+	for _, r := range key {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
+			return fmt.Errorf("%q is not a module parameter name: letters, digits and `_` only", key)
+		}
+	}
+	quoted := len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' && !strings.Contains(val[1:len(val)-1], `"`)
+	for _, r := range val {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("the value of %s holds a control character, which would end the options line", key)
+		}
+		if unicode.IsSpace(r) && !quoted {
+			return fmt.Errorf("the value of %s holds whitespace; quote it (\"a b\") for modprobe.d to read it as one value", key)
+		}
+	}
+	return nil
 }
 
 func modprobeLoadFn(c *exec.Context, args *value.Map) (any, error) {
@@ -452,8 +508,8 @@ func modprobeLoadFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	name := strings.TrimSpace(states.Str(args, "name", ""))
-	if name == "" {
-		return nil, errors.New("a module must be named")
+	if err := modprobeValidName(name); err != nil {
+		return nil, err
 	}
 	mods, err := modprobeReadModules()
 	if err != nil {
@@ -462,7 +518,10 @@ func modprobeLoadFn(c *exec.Context, args *value.Map) (any, error) {
 	if _, ok := mods[name]; ok {
 		return modprobeMutateResult(c, false, fmt.Sprintf("%s is already loaded.", name), nil), nil
 	}
-	params := modprobeParamArgs(args, "params")
+	params, err := modprobeParamArgs(args, "params")
+	if err != nil {
+		return nil, err
+	}
 	argv := append([]string{"modprobe", name}, params...)
 	change := value.MapOf(name, states.Change("not loaded", "loaded"))
 	if c.Test {
@@ -479,8 +538,8 @@ func modprobeRemoveFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	name := strings.TrimSpace(states.Str(args, "name", ""))
-	if name == "" {
-		return nil, errors.New("a module must be named")
+	if err := modprobeValidName(name); err != nil {
+		return nil, err
 	}
 	mods, err := modprobeReadModules()
 	if err != nil {
@@ -531,8 +590,8 @@ func modprobeDenylistFilePath(name string) string {
 
 func modprobePersistLoadFn(c *exec.Context, args *value.Map) (any, error) {
 	name := strings.TrimSpace(states.Str(args, "name", ""))
-	if name == "" {
-		return nil, errors.New("a module must be named")
+	if err := modprobeValidName(name); err != nil {
+		return nil, err
 	}
 	loadPath := modprobeLoadFilePath(name)
 	loadBody := name + "\n"
@@ -542,7 +601,10 @@ func modprobePersistLoadFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 
 	optPath := modprobeOptionsFilePath(name)
-	params := modprobeParamArgs(args, "params")
+	params, err := modprobeParamArgs(args, "params")
+	if err != nil {
+		return nil, err
+	}
 	var optChanged bool
 	if len(params) > 0 {
 		optBody := fmt.Sprintf("options %s %s\n", name, strings.Join(params, " "))
@@ -585,8 +647,8 @@ func modprobeWriteIfDifferent(c *exec.Context, path, body string, mode os.FileMo
 
 func modprobePersistRemoveFn(c *exec.Context, args *value.Map) (any, error) {
 	name := strings.TrimSpace(states.Str(args, "name", ""))
-	if name == "" {
-		return nil, errors.New("a module must be named")
+	if err := modprobeValidName(name); err != nil {
+		return nil, err
 	}
 	path := modprobeLoadFilePath(name)
 	if _, err := os.Stat(path); err != nil {
@@ -608,8 +670,8 @@ func modprobePersistRemoveFn(c *exec.Context, args *value.Map) (any, error) {
 // idea; only the line handed to modprobe cannot.
 func modprobeDenylistFn(c *exec.Context, args *value.Map) (any, error) {
 	name := strings.TrimSpace(states.Str(args, "name", ""))
-	if name == "" {
-		return nil, errors.New("a module must be named")
+	if err := modprobeValidName(name); err != nil {
+		return nil, err
 	}
 	if file, ok := modprobeDenylistedIn(name); ok {
 		return modprobeMutateResult(c, false, fmt.Sprintf("%s is already denylisted, in %s.", name, file), nil), nil
@@ -628,8 +690,8 @@ func modprobeDenylistFn(c *exec.Context, args *value.Map) (any, error) {
 
 func modprobeAllowlistFn(c *exec.Context, args *value.Map) (any, error) {
 	name := strings.TrimSpace(states.Str(args, "name", ""))
-	if name == "" {
-		return nil, errors.New("a module must be named")
+	if err := modprobeValidName(name); err != nil {
+		return nil, err
 	}
 	path := modprobeDenylistFilePath(name)
 	if _, err := os.Stat(path); err != nil {
