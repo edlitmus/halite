@@ -44,6 +44,11 @@ type Server struct {
 	eventBucketsMu sync.Mutex
 	eventBuckets   map[string]*ratelimit.Bucket
 
+	// RelaySubordinates is `relay_subordinates`: for each relay's node
+	// id, the globs of the node ids it may claim. A relay with no entry
+	// claims none. See relayMayNotClaim.
+	RelaySubordinates map[string][]string
+
 	// pillarCompiles counts compilePillar calls, for the tests that hold
 	// a targeting path to compiling a node's pillar once rather than
 	// once per question asked about it.

@@ -222,6 +222,7 @@ var Keys = []Key{
 	{"relay_upstream", hubOnly, "", "The hub this relay reports to.", "5.3"},
 	{"relay_upstream_port", hubOnly, "4510", "The upstream hub's port.", "5.3"},
 	{"accept_relays", hubOnly, "false", "Accept connections from relays as well as nodes.", "5.3"},
+	{"relay_subordinates", hubOnly, "", "For each relay's node id, the node-id globs it may claim. A relay with no entry claims none.", "5.3"},
 
 	// Observability.
 	{"log_level", all, "info", "error, warn, info, debug, or trace.", "26.1"},

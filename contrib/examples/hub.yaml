@@ -157,6 +157,12 @@ metrics: true
 # On the hub the relays report to, rather than on the relay itself:
 #
 # accept_relays: true
+#
+# And which nodes each relay may speak for. A relay with no entry claims
+# none, and none may claim a node enrolled with this hub directly.
+#
+# relay_subordinates:
+#   relay1.example: ['*.dmz.example']
 
 # External pillar, SPEC section 12.7, which is the extension model of
 # SPEC 24 applied to pillar. A source is a signed, pinned extension of

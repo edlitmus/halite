@@ -472,6 +472,10 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Relays",
 		Detail: "Bounds one upstream request.",
 	},
+	"relay_subordinates": {
+		Group:  "Relays",
+		Detail: "Read by the hub, and only with `accept_relays`. A mapping from each relay's node id to a list of node-id globs, such as `relay1.example: ['*.dmz.example']`. A relay claims only names matching its globs, and a relay with no entry claims none; no relay claims a name enrolled with this hub directly, in any state. A refused name is logged and emitted as `halite/relay/<relay>/refused`, and the rest of the relay's list is kept. The policy's `relay.proxy` says a node may relay; this says for whom, which the policy cannot.",
+	},
 	"accept_relays": {
 		Group:  "Relays",
 		Detail: "Set on the hub relays report to, not on the relay. Off by default: a hub does not accept a relay's word about which nodes it proxies for unless it has been told to.",

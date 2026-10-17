@@ -863,12 +863,18 @@ between them going down.
 The relay enrols with its upstream as an ordinary node, then runs as a
 hub. Set it up in this order.
 
-**1. On the upstream hub**, accept relays, and grant this one the right
-to proxy. In the hub configuration:
+**1. On the upstream hub**, accept relays, say which nodes this one may
+speak for, and grant it the right to proxy. In the hub configuration:
 
 ```yaml
 accept_relays: true
+relay_subordinates:
+  relay1.example: ['*.dmz.example']
 ```
+
+A relay with no `relay_subordinates` entry claims no nodes at all, and
+no relay can claim a node enrolled with the upstream directly. A name
+that is refused is logged and emitted as `halite/relay/<relay>/refused`.
 
 and in its policy, a role holding `relay.proxy` and a binding for the
 relay's node certificate:
