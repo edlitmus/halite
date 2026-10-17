@@ -776,12 +776,22 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 			if err != nil {
 				return states.False(fmt.Sprintf("The dir_mode for %s is invalid: %v", path, err)), nil
 			}
-			if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
+			// makeParents sets each parent it creates to dir_mode exactly;
+			// os.MkdirAll left them at dir_mode less the umask.
+			if err := makeParents(filepath.Dir(path), dirMode, "", ""); err != nil {
 				return states.False(fmt.Sprintf("The parent directories of %s could not be created: %v", path, err)), nil
 			}
 		}
 		if err := os.Mkdir(path, wantMode); err != nil {
 			return states.False(fmt.Sprintf("%s could not be created: %v", path, err)), nil
+		}
+		// Mkdir's mode is less the umask, and the node does not set its
+		// own: under a service manager's 027 a `mode: '0775'` came out 0750
+		// on the run that created it and was "updated" to 0775 by the next
+		// (issue 321, M-31). Setting it here makes the first run the one
+		// that converges. Mkdir also drops setuid, setgid and sticky.
+		if err := applyMode(path, wantMode); err != nil {
+			return states.False(fmt.Sprintf("%s was created and its mode could not be set: %v", path, err)), nil
 		}
 	} else if modeDiffers {
 		if err := applyMode(path, wantMode); err != nil {

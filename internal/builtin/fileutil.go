@@ -116,12 +116,48 @@ func parseMode(s string) (os.FileMode, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%q is not an octal file mode", s)
 	}
-	return os.FileMode(n), nil
+	if n > 0o7777 {
+		return 0, fmt.Errorf("%q is more than a file mode: the highest is 7777", s)
+	}
+	// The setuid, setgid and sticky digits are not bits of an
+	// os.FileMode's permissions: Go keeps them as flags of their own, and
+	// os.Chmod reads the flags and ignores a raw 04000. This returned the
+	// raw number, so `mode: '4755'` set 0755, and a file that had setuid
+	// compared equal to 0755 because only Perm() was compared (issue 321,
+	// M-23). They are translated here, and modeBits compares them.
+	m := os.FileMode(n & 0o777)
+	if n&0o4000 != 0 {
+		m |= os.ModeSetuid
+	}
+	if n&0o2000 != 0 {
+		m |= os.ModeSetgid
+	}
+	if n&0o1000 != 0 {
+		m |= os.ModeSticky
+	}
+	return m, nil
 }
 
-// formatMode renders a mode the way an operator writes it.
+// modeBits is the part of a mode a state manages: the permissions and the
+// setuid, setgid and sticky flags, and not the file's type.
+func modeBits(m os.FileMode) os.FileMode {
+	return m & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
+}
+
+// formatMode renders a mode the way an operator writes it, special digit
+// included.
 func formatMode(m os.FileMode) string {
-	return fmt.Sprintf("%04o", m.Perm())
+	n := uint32(m.Perm())
+	if m&os.ModeSetuid != 0 {
+		n |= 0o4000
+	}
+	if m&os.ModeSetgid != 0 {
+		n |= 0o2000
+	}
+	if m&os.ModeSticky != 0 {
+		n |= 0o1000
+	}
+	return fmt.Sprintf("%04o", n)
 }
 
 // unifiedDiff renders a minimal unified diff between two texts.

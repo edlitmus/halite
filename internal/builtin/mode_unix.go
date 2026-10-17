@@ -19,7 +19,7 @@ import (
 // requested mode, and what to record when they do not. An empty warning
 // means the platform can carry the request out.
 func plannedMode(path string, info os.FileInfo, want os.FileMode) (differs bool, change *value.Map, warning string) {
-	if info.Mode().Perm() == want.Perm() {
+	if modeBits(info.Mode()) == modeBits(want) {
 		return false, nil, ""
 	}
 	return true, states.Change(formatMode(info.Mode()), formatMode(want)), ""
