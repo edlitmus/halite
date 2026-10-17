@@ -1,9 +1,9 @@
 package s3fs
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
-	"context"
 	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
