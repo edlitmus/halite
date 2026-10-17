@@ -2,7 +2,7 @@
 
 <!-- abstract: How big a hub needs to be, what has and has not been measured, the knobs that matter, and how to add a relay for a distant or isolated segment. -->
 <!-- kind: runbook -->
-<!-- index: scaling; sizing; capacity; performance; performance targets; relay; halite-hub serve --relay; accept_relays; relay.proxy; relay_upstream; relay_pki_dir; relay_spool_dir; relay_event_tags; relay_max_depth; reactor_workers; job_queue_depth; splay; simfleet; make perf; thundering herd; hub high availability -->
+<!-- index: scaling; sizing; capacity; performance; performance targets; relay; halite-hub serve --relay; accept_relays; relay.proxy; relay_upstream; relay_pki_dir; relay_spool_dir; relay_event_tags; relay_max_depth; relay_subordinates; reactor_workers; job_queue_depth; splay; simfleet; make perf; thundering herd; hub high availability -->
 
 **Use this runbook to** size a hub, spread a fleet's load, and add a **relay**
 for a segment that cannot reach the main hub or whose returns must survive a
@@ -146,11 +146,15 @@ must survive the link between them going down:
 The relay enrols with its upstream *as an ordinary node*, then runs as a hub.
 In order:
 
-**1. On the upstream hub**, accept relays and grant this one the right to proxy:
+**1. On the upstream hub**, accept relays, say which nodes this one may
+speak for, and grant it the right to proxy. A relay with no
+`relay_subordinates` entry claims no nodes at all:
 
 ```yaml
 # hub.yaml
 accept_relays: true
+relay_subordinates:
+  relay1.example: ['*.dmz.example']
 ```
 ```yaml
 # policy.yaml
@@ -254,6 +258,7 @@ while the hub is away.
 | `halite/reactor/overflow` events | A burst larger than `reactor_queue_depth` | Rate-limit/debounce the reactor; raise depth |
 | Returns arrive slowly or go missing | The hub is saturated; or `halite_jobs_missing_returns` rising | Cores; fewer simultaneous jobs; batches |
 | A relay does not connect upstream | The relay's node was not accepted, `accept_relays` is off, or the binding is missing | Steps 1 and 2; `policy test` |
+| A relay connects and its nodes are untargetable | `relay_subordinates` has no entry for it, or its globs miss them, or a name is enrolled with the upstream directly | `halite/relay/<relay>/refused` events say which and why |
 | The relay's spool does not shrink | Returns are being **refused** upstream, not lost | The relay's log says which JID and why |
 | `serve` refuses a relay start | `relay_upstream` is an address not in the upstream's certificate | Set `relay_server_name` to a name that is |
 

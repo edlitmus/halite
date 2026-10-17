@@ -272,6 +272,16 @@ returns for what it claims. It cannot claim a node connected to the
 upstream itself; that check is explicit, because silently shadowing a
 real node would be the worst version of this.
 
+**Corrected by 5.342.** "It cannot claim a node connected to the
+upstream itself" held for routing, at the moment of the claim, and for
+nothing else. A node merely offline could be claimed, and the claim
+replaced its cached grains, which targeting reads; and a relay's return
+for a node that connected directly afterwards was still accepted while
+the stale route stood. "Bounded by policy" was bounded by `relay.proxy`,
+which says a node may relay and not for whom. Both are now bounded:
+`relay_subordinates` names what each relay may claim, and nothing
+enrolled here directly can be claimed at all.
+
 ### 1.10 `GODEBUG=fips140=on` does not enforce, so this build does
 
 SPEC 27.4 has the service unit run with `GODEBUG=fips140=on` and then
@@ -29485,6 +29495,56 @@ volume.
 **Not done.** No quota on what operators submit, which is theirs to
 spend. The job cache's 10 GiB is still filled by legitimate returns over
 time, by design. Not run against a live hub or on FreeBSD.
+### 5.342 A relay could claim any node the upstream did not have connected
+
+Issue 321 finding M-15, which the triage marked as recorded but wrongly,
+in 1.9. A relay with `relay.proxy` names its subordinates when it
+connects and when its fleet changes. For each name the upstream did not
+have connected at that moment, the upstream:
+
+- routed that node's jobs to the relay;
+- took the relay's returns for it;
+- wrote the relay's grains for it into the node cache. Targeting reads
+  that cache, so a relay could make a database server match a web role.
+
+The policy grant says a node may relay; nothing said for whom.
+
+**Two rules now, in `relayMayNotClaim`.**
+
+- A relay claims only names matching its globs in the new
+  `relay_subordinates` setting (a mapping from relay node id to a list
+  of node-id globs), and a relay with no entry claims none.
+- No relay claims a name with its own record in the upstream's key
+  store, in any state, connected or not. That node holds a key here.
+
+A refused name is logged and emitted as
+`halite/relay/<relay>/refused`. The rest of the relay's list is kept, so
+one stray name does not take every other node behind it out of reach.
+The table is read at start, and a malformed one stops the hub, because
+a relay whose entry did not parse would claim nothing and that would be
+found when its nodes went missing.
+
+**No existing test exercised a claim.** Each relay test calls
+`Fleet.Relay` directly, below `acceptRelay`, so none failed when the
+rule went in. The new tests go through `acceptRelay`:
+
+- `TestARelayClaimsOnlyItsOwnSubordinates`: `web*.dmz` claims
+  `web1.dmz` and not `db1.prod`, and a relay with no entry claims
+  nothing.
+- `TestARelayCannotClaimANodeEnrolledHere`: an accepted, disconnected
+  `db1.prod` is not claimed, and its cached grains are unchanged.
+
+Each rule was broken on purpose and its test failed.
+`TestRelaySubordinatesIsReadOrRefusedAtLoad` holds the parser.
+
+**Breaking.** A hub that accepts relays now needs `relay_subordinates`
+for each relay, or the relay's nodes are untargetable. beastie's
+production hub has relays commented out and no `relay.proxy` grant, so
+nothing there changes.
+
+**Not done.** A relay is still trusted for whatever it does claim:
+that is the arrangement, as 1.9 says. Not run with a real relay; the
+tests call the hub's handler directly.
 
 
 

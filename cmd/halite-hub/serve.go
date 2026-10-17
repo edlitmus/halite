@@ -283,6 +283,11 @@ func runServe(args *cli.Args) int {
 		h.log.Warn(msg, append([]any{"component", "evidence"}, kv...)...)
 	}
 
+	relaySubordinates, err := relaySubordinatesFrom(h.cfg)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	groups, err := nodegroupsFrom(h.cfg)
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -395,28 +400,29 @@ func runServe(args *cli.Args) int {
 	defer stopTracer(tracer, h.log)
 
 	server := &hub.Server{
-		Tracer:         tracer,
-		Authority:      h.auth,
-		Log:            h.log,
-		PingInterval:   h.cfg.Duration("hub_alive_interval", 30*time.Second),
-		Jobs:           jobs,
-		Nodes:          nodes,
-		Orch:           orchestrations,
-		Mine:           mineStore,
-		Anchors:        anchors,
-		NodeEventRate:  h.cfg.Float("node_event_rate", hub.DefaultNodeEventRate),
-		NodeEventBurst: int(h.cfg.Int("node_event_burst", hub.DefaultNodeEventBurst)),
-		Reactors:       reactors,
-		Nodegroups:     groups,
-		Files:          files,
-		HashType:       h.cfg.String("hash_type", "sha256"),
-		Pillar:         pillarOpts,
-		Policy:         loaded,
-		Events:         bus,
-		EventTagCompat: h.cfg.Bool("event_tag_compat", false),
-		Metrics:        metricsRegistry(h.cfg),
-		AcceptRelays:   h.cfg.Bool("accept_relays", false),
-		MaxRelayDepth:  int(h.cfg.Int("relay_max_depth", transport.MaxRelayDepth)),
+		Tracer:            tracer,
+		Authority:         h.auth,
+		Log:               h.log,
+		PingInterval:      h.cfg.Duration("hub_alive_interval", 30*time.Second),
+		Jobs:              jobs,
+		Nodes:             nodes,
+		Orch:              orchestrations,
+		Mine:              mineStore,
+		Anchors:           anchors,
+		NodeEventRate:     h.cfg.Float("node_event_rate", hub.DefaultNodeEventRate),
+		NodeEventBurst:    int(h.cfg.Int("node_event_burst", hub.DefaultNodeEventBurst)),
+		Reactors:          reactors,
+		Nodegroups:        groups,
+		Files:             files,
+		HashType:          h.cfg.String("hash_type", "sha256"),
+		Pillar:            pillarOpts,
+		Policy:            loaded,
+		Events:            bus,
+		EventTagCompat:    h.cfg.Bool("event_tag_compat", false),
+		Metrics:           metricsRegistry(h.cfg),
+		AcceptRelays:      h.cfg.Bool("accept_relays", false),
+		RelaySubordinates: relaySubordinates,
+		MaxRelayDepth:     int(h.cfg.Int("relay_max_depth", transport.MaxRelayDepth)),
 	}
 	if fetching.any() {
 		// Set before the first fetch, which is why that fetch happens
@@ -693,6 +699,36 @@ func contains(outer, inner string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// relaySubordinatesFrom reads `relay_subordinates`, refusing at load a
+// table that is not a mapping of strings to lists of strings: a relay
+// whose globs did not parse would claim nothing, and finding that when
+// its nodes go missing is finding it late.
+func relaySubordinatesFrom(cfg *config.Config) (map[string][]string, error) {
+	m := cfg.Map("relay_subordinates")
+	if m == nil || m.Len() == 0 {
+		return nil, nil
+	}
+	out := map[string][]string{}
+	for _, e := range m.Entries() {
+		relay, ok := e.Key.(string)
+		if !ok || relay == "" {
+			return nil, fmt.Errorf("relay_subordinates: a relay must be named by its node id, and %v is not one", e.Key)
+		}
+		list, ok := e.Val.([]any)
+		if !ok {
+			return nil, fmt.Errorf("relay_subordinates: %s must be a list of node-id globs", relay)
+		}
+		for _, item := range list {
+			g, ok := item.(string)
+			if !ok || g == "" {
+				return nil, fmt.Errorf("relay_subordinates: %s holds %v, which is not a node-id glob", relay, item)
+			}
+			out[relay] = append(out[relay], g)
+		}
+	}
+	return out, nil
 }
 
 // nodegroupsFrom reads the nodegroup table, checked at load rather than

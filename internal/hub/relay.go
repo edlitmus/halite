@@ -9,6 +9,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/policy"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -83,6 +84,17 @@ func (s *Server) recordSubordinates(relayID string, subordinates []transport.Sub
 			// The id becomes a cache path and a tag segment.
 			return nil, fmt.Errorf("%q is not a usable node id", sub.NodeID)
 		}
+		if why := s.relayMayNotClaim(relayID, sub.NodeID); why != "" {
+			// Left out rather than failing the relay's whole list: one
+			// stray name must not take every other node behind it out of
+			// reach. Said, because a node nobody can target is an
+			// incident if nobody is told.
+			s.warn("a relay named a node it may not claim", "relay", relayID, "node_id", sub.NodeID, "reason", why)
+			s.emit("halite/relay/"+relayID+"/refused", relayID, map[string]any{
+				"node_id": sub.NodeID, "reason": why,
+			})
+			continue
+		}
 		names = append(names, sub.NodeID)
 
 		if len(sub.Grains) == 0 {
@@ -97,6 +109,46 @@ func (s *Server) recordSubordinates(relayID string, subordinates []transport.Sub
 		}
 	}
 	return names, nil
+}
+
+// relayMayNotClaim says why relayID may not claim nodeID, or "".
+//
+// **A relay is bound to the names it was given** (issue 321, M-15). It
+// used to be bound by nothing but the policy's `relay.proxy`, which says
+// a node may relay and not for whom, so a relay could name any node id
+// the upstream did not have connected at that moment: the upstream then
+// routed that node's jobs to the relay, took returns for it, and wrote
+// the relay's grains for it into the node cache, which is what targeting
+// reads. DIVERGENCE 1.9 said a relay "cannot claim a node connected to
+// the upstream itself"; it held for routing at the instant of the claim
+// and for nothing else.
+//
+// Two rules now. A relay claims only names matching its globs in
+// `relay_subordinates`, and a relay with no entry claims nothing. And no
+// relay claims a name that has its own record in this hub's key store,
+// in any state, connected or not: that node holds a key here, and a
+// relay's say-so is not a substitute for it.
+func (s *Server) relayMayNotClaim(relayID, nodeID string) string {
+	globs := s.RelaySubordinates[relayID]
+	if len(globs) == 0 {
+		return fmt.Sprintf("relay_subordinates names no nodes for %s", relayID)
+	}
+	matched := false
+	for _, g := range globs {
+		if target.MatchGlob(g, nodeID) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return fmt.Sprintf("%s matches none of %s's relay_subordinates %v", nodeID, relayID, globs)
+	}
+	if s.Authority != nil && s.Authority.Store != nil {
+		if _, err := s.Authority.Store.Get(nodeID); err == nil {
+			return fmt.Sprintf("%s is enrolled with this hub directly", nodeID)
+		}
+	}
+	return ""
 }
 
 // relayUpdate is POST /v1/relay: a relay saying its fleet changed.

@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A relay claims only the nodes `relay_subordinates` gives it
+
+A relay could name any node id its upstream did not have connected at that
+moment. The upstream would then route that node's jobs to the relay, take
+the relay's returns for it, and replace its cached grains (issue 321,
+M-15). The new hub setting `relay_subordinates` maps each relay's node id
+to the node-id globs it may claim. **A relay with no entry now claims
+nothing**, so a hub with `accept_relays` needs one per relay. No relay
+can claim a node enrolled with the upstream directly. A refused name is
+logged and emitted as `halite/relay/<relay>/refused`. DIVERGENCE 5.342.
+
 ### A node's event data is rate limited, and a return is held to 16 MiB
 
 Each node may now post 64 KiB of event data a second, sustained, and
@@ -5963,7 +5974,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 230 settings in the
+The configuration reference explains each of the 231 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

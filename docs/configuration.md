@@ -883,6 +883,14 @@ Bytes of undelivered returns to hold before refusing.
 
 The ceiling on undelivered returns. Past it the relay refuses a new return rather than dropping the oldest, because the oldest is the one most likely to be the answer somebody is waiting for.
 
+### `relay_subordinates`
+
+*`halite-hub` · no default · SPEC section 5.3*
+
+For each relay's node id, the node-id globs it may claim. A relay with no entry claims none.
+
+Read by the hub, and only with `accept_relays`. A mapping from each relay's node id to a list of node-id globs, such as `relay1.example: ['*.dmz.example']`. A relay claims only names matching its globs, and a relay with no entry claims none; no relay claims a name enrolled with this hub directly, in any state. A refused name is logged and emitted as `halite/relay/<relay>/refused`, and the rest of the relay's list is kept. The policy's `relay.proxy` says a node may relay; this says for whom, which the policy cannot.
+
 ### `relay_timeout`
 
 *`halite-hub` · `60s` · SPEC section 5.3*
@@ -2186,6 +2194,7 @@ Every setting, and which programs read it.
 | `relay_server_name` | `halite-hub` | — | Relays |
 | `relay_spool_dir` | `halite-hub` | — | Relays |
 | `relay_spool_max_size` | `halite-hub` | `536870912` | Relays |
+| `relay_subordinates` | `halite-hub` | — | Relays |
 | `relay_timeout` | `halite-hub` | `60s` | Relays |
 | `relay_upstream` | `halite-hub` | — | Relays |
 | `relay_upstream_port` | `halite-hub` | `4510` | Relays |
