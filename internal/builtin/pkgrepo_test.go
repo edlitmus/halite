@@ -324,3 +324,29 @@ func TestPkgrepoManagedConvergesAgainstAProvider(t *testing.T) {
 		t.Error("adding a component reported no change")
 	}
 }
+
+// **A short repository name cannot hold a path** (issue 321, M-45). It
+// is joined into a file under sources.list.d or yum.repos.d, and was
+// returned as written, so `../../etc/cron.d/x` wrote and deleted there.
+// A source line's host was always sanitised; a short name is refused
+// rather than renamed, since a renaming would orphan a managed repo.
+func TestARepositoryNameWithAPathIsRefused(t *testing.T) {
+	for _, bad := range []string{"../../etc/cron.d/x", "a/b", `a\b`, ".hidden", "..", "x\ny"} {
+		if _, err := repoKey(bad); err == nil {
+			t.Errorf("repoKey took %q", bad)
+		}
+		if _, _, err := repoFromArgs(value.MapOf("name", bad, "baseurl", "https://x.example/repo", "dist", "noble")); err == nil {
+			t.Errorf("repoFromArgs took %q", bad)
+		}
+	}
+	for name, want := range map[string]string{
+		"docker-ce": "docker-ce",
+		"epel.next": "epel.next",
+		"deb https://apt.example.com/ubuntu noble main": "apt.example.com",
+	} {
+		got, err := repoKey(name)
+		if err != nil || got != want {
+			t.Errorf("repoKey(%q) = %q, %v; want %q", name, got, err, want)
+		}
+	}
+}
