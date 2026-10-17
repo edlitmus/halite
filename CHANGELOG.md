@@ -28,7 +28,7 @@ it unescaped. A value containing `"`, `$(...)` or a newline ran as root at
 the next boot. `sysrc` now refuses a value holding `"`, `$`, a backquote,
 a backslash or a control character, and a name that is not a shell
 variable. `sysctl` and `debconf` likewise refuse a newline that would add
-a line to their configuration (issue 321, M-45). DIVERGENCE 5.350.
+a line to their configuration (issue 321, M-45). DIVERGENCE 5.355.
 
 ### modprobe, pkgrepo, nftables and fstab values are checked before they are written
 

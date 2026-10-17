@@ -30084,8 +30084,7 @@ draws: `;` and `#` outside a quoted string.
 
 The module itself was not driven against nft, nor were modprobe, apt
 and mount: those tests use scripted runners and temporary directories.
-
-### 5.350 rc.conf, sysctl and debconf took a value that became code or another line
+### 5.355 rc.conf, sysctl and debconf took a value that became code or another line
 
 Issue 321 finding M-45's smaller sites, which the triage left "traced
 only". One of them is not small.
@@ -30123,6 +30122,7 @@ only". One of them is not small.
 **Not verified.** sysctl and debconf were not driven against the real
 tools. The sysrc measurement used a scratch file, not /etc/rc.conf, and
 no boot.
+
 
 
 ## 6. Everything else not started
