@@ -29781,6 +29781,40 @@ Two more in the same code, found while there:
 is not corrected. Salt's `E@` regular-expression form of the patterns is
 not supported, as it was not before. Not run on a host: the tests use a
 real file server over a temporary root, under `go test`.
+### 5.348 file.directory's recursive mode change followed a link swapped in after the plan
+
+Issue 321 finding M-29, which the audit marked PLAUSIBLE ("race; not
+reproduced") and the triage widened. `recurse: [mode, user, group]`
+found its paths when it planned, skipping links, and changed them
+afterwards by full path. It used `os.Chmod`, which follows a link, and
+`os.Lchown`, which protects only the last component. A user who owns a
+file in the tree could swap it for a link to a file elsewhere, between
+the two halves, and root set the mode of whatever the link named.
+Swapping a parent directory for a link redirected even the `Lchown`.
+
+**Reproduced, with the race made certain.** The two tests plan, make
+the swap by hand, then apply. Run against the change by path (the
+fixed code with `os.Chmod` by path put back):
+
+- `TestARecursiveModeChangeDoesNotFollowASwappedLink`: "the file
+  outside the tree became 644 through the swapped link";
+- `TestARecursiveModeChangeDoesNotFollowASwappedParent`: "a file
+  outside the tree became 644 through the swapped parent".
+
+**The fix.** `applyRecurse` opens an `os.Root` on the managed directory
+and makes every change through it, with `root.Chmod` and
+`applyOwnershipIn`'s `root.Lchown`. The root resolves every component
+inside the directory and refuses to leave it, so the most a swap can do
+is redirect a change to another path in the same tree. A path that is a
+link by the time it is reached is skipped, as the plan skips links.
+Windows sets its mode as an access control list, which `os.Root` does
+not, so there the mode still goes by path after the check through the
+root. The window between the two is the one DIVERGENCE 5.300 records
+for ownership there.
+
+**Not done.** The ownership half was not run against a swap: making one
+needs a second account, and the swapped-parent case is covered by the
+same root for both. Not run as root on a host.
 
 
 
