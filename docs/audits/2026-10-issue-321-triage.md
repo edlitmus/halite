@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 33 | 22: 3 mentioned and explicitly left, 2 half done, 17 not started |
+| Medium (55) | 34 | 21: 3 mentioned and explicitly left, 2 half done, 16 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -66,6 +66,7 @@ not do. Each has been checked to see whether it happened.
 | M-16 webhook ingress (`auth: mtls` now refused) | #359 | | |
 | M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
 | M-28 agentless `oneshot` tree | #358 | | |
+| M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
 | M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
 | M-21 string-typed modes | #384 | `file.serialize` keeps a file's mode | **done** as root on beastie (5.344) |
 | M-23 setuid and friends | #385 | | **done** as root on beastie (5.345) |
@@ -119,12 +120,11 @@ Severities are this file's revised ones, from the tables below.
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
 
-**Medium, not started (17).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (16).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
 |---|---|---|
-| M-19 | `file.managed` on a symlink | Medium |
 | M-22 | `file.recurse`, including `clean` deleting `exclude_pat` matches | Medium |
 | M-24 | `git.latest user` ignored | Medium |
 | M-25 | `enroll --force` leaves a key pair every later enroll dies on | Medium |

@@ -28,7 +28,7 @@ edit states, `file.sed` and `file.serialize` used to replace a symbolic
 link with a regular file. That left the real file stale, and gave the new
 file the link's own 0777 or 0755. They now write the file the link names
 and keep the link, as Salt's `file.managed` does. A link to nothing is
-refused (issue 321, M-19). DIVERGENCE 5.345.
+refused (issue 321, M-19). DIVERGENCE 5.346.
 
 ### setuid, setgid and sticky work, and a new directory gets its mode
 

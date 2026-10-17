@@ -29693,8 +29693,7 @@ does. A directory with setgid managed as `'0755'` loses setgid.
 
 **Not done.** `file.recurse`'s modes are M-22's, and `recurse: [mode]`
 following symlinks is M-29's.
-
-### 5.345 A file state replaced a symbolic link instead of writing through it
+### 5.346 A file state replaced a symbolic link instead of writing through it
 
 Issue 321 finding M-19. `writeAtomic` renames a new file over its path,
 and over a symbolic link that puts a regular file where the link was.
@@ -29742,6 +29741,7 @@ path itself, is not offered, so a state cannot ask for the link to be
 replaced. `file.copy`, `file.prepend`, `blockreplace`, `comment` and
 `uncomment` go through `editResult` too, and were not each run against a
 link. Linux as root was not run.
+
 
 
 ## 6. Everything else not started
