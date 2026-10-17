@@ -427,8 +427,8 @@ load_rc_config $name
 	if got := liveSysrc(t, c, rcvar); !strings.EqualFold(got, "YES") {
 		t.Errorf("rc.conf says %s = %q after service.enabled", rcvar, got)
 	}
-	if got := liveSysrc(t, c, wrong); got != "" {
-		t.Errorf("rc.conf carries %s = %q, a variable rc never reads", wrong, got)
+	if line := liveRCConfLine(t, wrong); line != "" {
+		t.Errorf("rc.conf carries %q, a variable rc never reads", line)
 	}
 	if res, _ := c.Run(exec.Command{Argv: []string{"service", file, "enabled"}, IgnoreExitCode: true}); res.Code != 0 {
 		t.Errorf("`service %s enabled` exits %d after service.enabled", file, res.Code)
@@ -461,8 +461,8 @@ load_rc_config $name
 	if err == nil || !strings.Contains(err.Error(), "declares no rcvar") {
 		t.Errorf("service.enable on a script with no rcvar = %v", err)
 	}
-	if got := liveSysrc(t, c, file+"_enable"); got != "" {
-		t.Errorf("rc.conf carries %s_enable = %q", file, got)
+	if line := liveRCConfLine(t, file+"_enable"); line != "" {
+		t.Errorf("rc.conf carries %q", line)
 	}
 }
 
@@ -483,12 +483,34 @@ func installMinimalRCScript(t *testing.T, c *exec.Context, file, body string, va
 	t.Cleanup(func() {
 		for _, v := range vars {
 			_, _ = c.Run(exec.Command{Argv: []string{"sysrc", "-x", v}, IgnoreExitCode: true})
-			if got := liveSysrc(t, c, v); got != "" {
-				t.Errorf("rc.conf still carries %s = %q after cleanup", v, got)
+			if line := liveRCConfLine(t, v); line != "" {
+				t.Errorf("rc.conf still carries %q after cleanup", line)
 			}
 		}
 		_ = os.Remove(path)
 	})
+}
+
+// liveRCConfLine returns the line of /etc/rc.conf that sets name, or "".
+//
+// Read from the file rather than through `sysrc -n`, because sysrc does
+// not read a name with a hyphen: on beastie `sysrc -n
+// halite-probe-rcvar_enable` printed `probe-rcvar_enable`, having split
+// the name at the hyphen, whether or not the line was there. A hyphenated
+// variable is exactly what the old provider wrote, so the check has to be
+// able to see one.
+func liveRCConfLine(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile("/etc/rc.conf")
+	if err != nil {
+		t.Fatalf("reading rc.conf: %v", err)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), name+"=") {
+			return line
+		}
+	}
+	return ""
 }
 
 // liveSysrc reads one rc.conf variable, empty when it is not set.
