@@ -30015,8 +30015,7 @@ of a state's device can be relied on to match it.
 the triage records as Salt parity. A real `/dev/disk/by-id` link to a
 physical disk was not used; the loop device has no udev by-id name
 other than the `lvm-pv-uuid-` one LVM's own rules make.
-
-### 5.349 Four modules spliced a free-form value into a root-read file or script
+### 5.354 Four modules spliced a free-form value into a root-read file or script
 
 Issue 321 finding M-45, the four sites that can run something as root or
 reach outside their directory. Each was reproduced against main's code
@@ -30072,9 +30071,20 @@ or run.
 - `sysrc` (a leading `-` in the name, a newline in the value);
 - ufw (a leading `-` becomes an option).
 
-None of these four was run against the real tool: nft, modprobe, apt
-and mount were not driven, and the tests use scripted runners and
-temporary directories.
+**How nft reads it, measured.** As root on Ubuntu 24.04.5, nftables
+1.0.9, in a network namespace of its own (`unshare -n`) so that the
+host's ruleset was not touched: `nft add rule inet t c tcp dport 22
+accept '; add table inet injected'`, the `;` arriving inside one argv
+element as the module passes it, exited 0 and `nft list ruleset` then
+held `table inet injected`. nft joins its arguments and parses them as
+one script, so an argv boundary is no boundary. A trailing `'# drop
+everything'` was taken as a comment and dropped without a word, and
+`comment "a ; b"` was kept whole, which is the line `nftCheckArgs`
+draws: `;` and `#` outside a quoted string.
+
+The module itself was not driven against nft, nor were modprobe, apt
+and mount: those tests use scripted runners and temporary directories.
+
 
 
 ## 6. Everything else not started

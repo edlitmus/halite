@@ -29,7 +29,7 @@ without checking them. A newline in a modprobe parameter could add an
 could hold a path, and write or delete outside its directory. A newline
 or `;` in an nftables rule could add `flush ruleset`. A newline in an
 fstab option could add a mount. Such values are now refused (issue 321,
-M-45). DIVERGENCE 5.349.
+M-45). DIVERGENCE 5.354.
 
 ### An alias of an LVM physical volume is recognised as one
 

@@ -22,7 +22,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 41 | 14: 3 mentioned and explicitly left, 2 half done, 9 not started |
+| Medium (55) | 41 | 14: 3 mentioned and explicitly left, 3 half done, 8 not started |
 | M-56 (design note) | | not done |
 | Low (section 5) | | 60 bullets listed (the audit says about 90); none checked |
 
@@ -126,8 +126,13 @@ Severities are this file's revised ones, from the tables below.
 - **M-03**, Low: the toolchain bump (#360) removed the ten advisories,
   but no workflow runs `govulncheck`. `make vuln` still runs
   `govulncheck@latest`, unpinned.
+- **M-45**, Medium: #394 checks modprobe's names and parameters,
+  pkgrepo's short names, nftables' identifiers and rule, and fstab's
+  type, options, dump and pass (DIVERGENCE 5.354); nft's reading of `;`
+  in an argv was measured. Not done: sysctl, sysrc, debconf's
+  `Package` and ufw.
 
-**Medium, not started (9).** Ordered by area. The four marked FreeBSD, which came first because
+**Medium, not started (8).** Ordered by area. The four marked FreeBSD, which came first because
 FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 
 | ID | Finding | Revised |
@@ -135,7 +140,6 @@ FreeBSD is tier 1 and carries about 80% of production, are all fixed.
 | M-26 | renewal ordering (recoverable) | Low |
 | M-34 | pin without release | Low |
 | M-40 | `iptables.save` | Low |
-| M-45 | free-form values in modprobe, nftables, fstab, pkgrepo and others | Medium |
 | M-47 | firewall lockout, no `-w` | Low |
 | M-48 | D-Bus 90 s deadline | Low |
 | M-51 | s3fs staleness (the ETag comment is not what the code does) | Medium |
