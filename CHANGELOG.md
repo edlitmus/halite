@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A PKCS#12 bundle is private while it is written
+
+`openssl_cert.pkcs12_create` let openssl write the bundle at its own path
+under the process umask, and only then made it 0600, so the bundle, and
+the private key in it, was readable by other accounts while it was
+written. It is now written privately beside it and moved into place
+(issue 321, section 5). DIVERGENCE 5.378.
+
 ### `file.rename` with `force` keeps the destination until the move works
 
 With `force: true`, `file.rename` deleted the destination first. Renaming
