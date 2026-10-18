@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The policy file refuses a list item that is not a string
+
+An item that was not a string in a policy list, `deny_kwargs: [pillar,
+5]` or `roles: [ops, 7]`, was dropped, so the rule was weaker than
+written. **Such a policy now fails to load**, saying where (issue 321,
+section 5). DIVERGENCE 5.380.
+
 ### `file.recurse` writes nothing outside its destination
 
 A file-server listing holding `..` placed files outside `file.recurse`'s
