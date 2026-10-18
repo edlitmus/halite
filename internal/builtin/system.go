@@ -89,9 +89,11 @@ func registerNetworkModule(r *Registries) {
 				port := states.Int(args, "port", 0)
 				timeout := 5 * time.Second
 				if v, ok := args.Get("timeout"); ok && v != nil {
-					if d, err := durationOf(v); err == nil {
-						timeout = d
+					d, err := durationOf(v)
+					if err != nil {
+						return nil, fmt.Errorf("timeout: %w", err)
 					}
+					timeout = d
 				}
 				addr := net.JoinHostPort(host, strconv.FormatInt(port, 10))
 				conn, err := net.DialTimeout("tcp", addr, timeout)

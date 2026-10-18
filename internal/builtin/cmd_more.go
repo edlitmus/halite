@@ -52,7 +52,10 @@ func registerCmdMore(r *Registries) {
 				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				cmd := buildShellCommand(c, args, states.Str(args, "cmd", ""))
+				cmd, err := buildShellCommand(c, args, states.Str(args, "cmd", ""))
+				if err != nil {
+					return nil, err
+				}
 				c.Logf("warn", "cmd.shell is running through a shell: %s", cmd.String())
 				res, err := c.Run(cmd)
 				if err != nil {
@@ -162,7 +165,11 @@ func registerCmdMore(r *Registries) {
 				defer cleanup()
 
 				argv := append([]string{lang, path}, states.Strings(args, "args")...)
-				res, err := c.Run(scriptCommand(c, args, argv))
+				cmd, err := scriptCommand(c, args, argv)
+				if err != nil {
+					return nil, err
+				}
+				res, err := c.Run(cmd)
 				if err != nil {
 					return nil, err
 				}
@@ -199,7 +206,7 @@ func registerCmdMore(r *Registries) {
 
 // buildShellCommand assembles the shell form, which only cmd.shell and
 // cmd.run with shell set may use.
-func buildShellCommand(c *exec.Context, args *value.Map, line string) exec.Command {
+func buildShellCommand(c *exec.Context, args *value.Map, line string) (exec.Command, error) {
 	cmd := exec.Command{
 		Argv:           []string{line},
 		Shell:          true,
@@ -216,25 +223,35 @@ func buildShellCommand(c *exec.Context, args *value.Map, line string) exec.Comma
 		}
 		cmd.Env = env
 	}
+	// An unreadable timeout is refused, as cmd.run refuses it. It was
+	// `if d, err := durationOf(v); err == nil`, so `timeout: banana`, or a
+	// template that rendered something else, ran the command with no
+	// deadline at all: the 5.139 defect, fixed in cmd.run and not here
+	// (issue 321, section 5).
 	if v, ok := args.Get("timeout"); ok && v != nil {
-		if d, err := durationOf(v); err == nil {
-			cmd.Timeout = d
+		d, err := durationOf(v)
+		if err != nil {
+			return exec.Command{}, fmt.Errorf("timeout: %w", err)
 		}
+		cmd.Timeout = d
 	}
-	return cmd
+	return cmd, nil
 }
 
-func scriptCommand(c *exec.Context, args *value.Map, argv []string) exec.Command {
-	cmd := buildShellCommand(c, args, "")
+func scriptCommand(c *exec.Context, args *value.Map, argv []string) (exec.Command, error) {
+	cmd, err := buildShellCommand(c, args, "")
+	if err != nil {
+		return exec.Command{}, err
+	}
 	cmd.Shell = false
 	cmd.Argv = argv
-	return cmd
+	return cmd, nil
 }
 
 // scriptRunAs is the account a script will run as: the state's runas, or
 // the context's.
 func scriptRunAs(c *exec.Context, args *value.Map) string {
-	if as := scriptCommand(c, args, nil).RunAs; as != "" {
+	if as := states.Str(args, "runas", ""); as != "" {
 		return as
 	}
 	return c.RunAs
@@ -333,7 +350,10 @@ func runScript(c *exec.Context, args *value.Map, wantOutput bool) (any, error) {
 	argv = append(argv, path)
 	argv = append(argv, states.Strings(args, "args")...)
 
-	cmd := scriptCommand(c, args, argv)
+	cmd, err := scriptCommand(c, args, argv)
+	if err != nil {
+		return nil, err
+	}
 	cmd.IgnoreExitCode = true
 	res, err := c.Run(cmd)
 	if err != nil {

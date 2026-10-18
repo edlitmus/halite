@@ -30678,6 +30678,28 @@ Python would fill with the whole mapping.
 found in the corpus (tuples as lists, `yaml_encode`'s drift) and
 `dict()`'s keyword order (5.367) are recorded where they were found.
 
+### 5.371 An unreadable timeout ran the script with no deadline
+
+Issue 321, a section 5 (Low) finding, reproduced there: "`timeout:
+banana` gives `cmd.Timeout == 0`". It is the 5.139 defect a second time.
+5.139 fixed `cmd.run`, whose builder refuses a timeout it cannot read;
+`buildShellCommand`, which `cmd.shell`, `cmd.script`,
+`cmd.script_retcode` and `cmd.exec_code` share, kept the pattern 5.139
+removed, `if d, err := durationOf(v); err == nil`, and so ran the command
+with no deadline at all. `network.connect` did the same with its
+default of five seconds.
+
+The two now return the parse error before anything runs.
+`TestAnUnparseableTimeoutIsRefused` gives `cmd.exec_code` and
+`network.connect` `timeout: banana`: against main, `cmd.exec_code` ran
+`/bin/sh /tmp/halite-script-...` and `network.connect` returned no
+error. `cmd.shell` was already refused by its signature's duration check,
+and is in the test so that it stays that way.
+`TestAReadableTimeoutStillStopsTheScript` runs a five-second sleep
+through the real runner under `timeout: "1"`: it ends in 1.00 s.
+
+**Not verified.** `cmd.script` with a `salt://` source was not run with a
+bad timeout; it builds its command through the same `scriptCommand`.
 
 ## 6. Everything else not started
 

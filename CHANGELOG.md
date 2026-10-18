@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `cmd.shell`, `cmd.exec_code` and `network.connect` refuse an unreadable `timeout`
+
+A `timeout` that did not parse, `banana` or a template that rendered
+something else, was dropped: the command ran with no deadline, and
+`network.connect` with its default. It is now an error, as it already
+was for `cmd.run` (issue 321, section 5). DIVERGENCE 5.371.
+
 ### The `format` filter formats as Python's `%` does
 
 `"%s" | format(true)`, `%r` and `%(name)s` used to fail, and other
