@@ -30789,6 +30789,38 @@ for byte.
 (`é` is `"é"` here, `"\xE9"` there) and for `\u2028` and `\x85` (`\L`,
 `\N` there); the value read back is the same, the text is not.
 
+### 5.375 sysrc read a broken rc.conf as "not set"
+
+Issue 321, a section 5 (Low) finding: "`sysrc.get`/`present` treat any
+non-zero `sysrc -n` exit as 'unset'". **Measured on beastie** (FreeBSD
+15.1, as an ordinary account, against scratch files): an unset variable
+answers exit 1 and "sysrc: unknown variable 'bar_enable'"; a file that
+does not exist answers the same; and an rc.conf with a syntax error
+(`bad="unterminated`) answers **every** read with exit 1 and
+"Syntax error: Unterminated quoted string", a variable the file does set
+included. So `sysrc.get` reported a set variable unset, and
+`sysrc.absent` reported it already absent while the line stayed in the
+file. A write to that file fails loudly ("Exiting due to previous syntax
+errors"), so only the reads were wrong, and the reads were wrong
+silently. An unreadable file answers exit 1 too, with sh's "cannot open
+...: Permission denied".
+
+`sysrcGet` now takes only sysrc's "unknown variable" for unset, and
+returns anything else as an error carrying sysrc's first line. The
+persistent-hostname read in `hostname.go` had its own copy of the old
+rule and now uses `sysrcGet`. `TestSysrcTellsUnsetFromABrokenFile`
+holds the outputs captured on beastie, and failed against main;
+`TestLiveSysrcTellsUnsetFromABrokenFile` drives the real sysrc on
+FreeBSD with a good file and a broken one, and passed on beastie.
+
+Two existing fixtures answered an unset variable with a bare `{Code:
+1}`, written rather than captured; they now carry sysrc's own message.
+One of them, `TestSysrcPresent`, runs only where sysrc is installed, so
+it failed on beastie and nowhere else.
+
+**Not verified.** `jail.go` reads `jail_enable` and `jail_list` through
+`sysrcGet` and so changes the same way; no jail test was run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

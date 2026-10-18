@@ -164,7 +164,19 @@ func sysrcGet(c *exec.Context, name, file string) (string, bool, error) {
 		return "", false, err
 	}
 	if res.Code != 0 {
-		return "", false, nil
+		// Only sysrc's own "unknown variable" means unset. Any non-zero
+		// exit used to, and on beastie (FreeBSD 15.1) an rc.conf with a
+		// syntax error answers every read with exit 1 and "Syntax error:
+		// Unterminated quoted string" -- a variable the file does set
+		// included -- so sysrc.get said unset and sysrc.absent said
+		// already absent with the line still there (issue 321, section
+		// 5). A file that does not exist answers "unknown variable" too,
+		// which is right: nothing in it is set.
+		msg := strings.TrimSpace(res.Stderr)
+		if strings.Contains(msg, "unknown variable") {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("sysrc could not read %s: %s", name, firstLine(msg))
 	}
 	return strings.TrimRight(res.Stdout, "\n"), true, nil
 }

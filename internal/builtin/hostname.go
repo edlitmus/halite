@@ -239,20 +239,16 @@ func persistentHostname(c *exec.Context) (name, where string, err error) {
 		return darwinPersistentHostname(c)
 	}
 	if runtime.GOOS == "freebsd" {
-		res, err := c.Run(exec.Command{
-			Argv:           []string{"sysrc", "-n", "hostname"},
-			IgnoreExitCode: true,
-		})
+		// Unset is not an error: a node that has never had one configured
+		// has an empty persistent name, and that is the difference the
+		// state exists to close. An rc.conf sysrc cannot read is one, and
+		// sysrcGet tells the two apart, where any non-zero exit used to
+		// read as unset (issue 321, section 5).
+		v, _, err := sysrcGet(c, "hostname", "")
 		if err != nil {
 			return "", "rc.conf", err
 		}
-		if res.Code != 0 {
-			// Unset is not an error: a node that has never had one
-			// configured has an empty persistent name, and that is the
-			// difference the state exists to close.
-			return "", "rc.conf", nil
-		}
-		return strings.TrimSpace(res.Stdout), "rc.conf", nil
+		return strings.TrimSpace(v), "rc.conf", nil
 	}
 
 	body, err := os.ReadFile(EtcHostnamePath)

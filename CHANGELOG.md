@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `sysrc` states fail on an rc.conf they cannot read
+
+An `rc.conf` with a syntax error made every `sysrc -n` read fail, and
+halite took each failure for an unset variable: `sysrc.get` said a set
+variable was unset and `sysrc.absent` said it was already absent. Only
+sysrc's own "unknown variable" now means unset; anything else is an error
+that says what sysrc said (issue 321, section 5). DIVERGENCE 5.375.
+
 ### `yaml_squote` keeps a multi-line value's line breaks
 
 A multi-line string through `yaml_squote` -- a PEM key, a certificate, a
