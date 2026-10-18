@@ -230,3 +230,28 @@ func TestASpacedTOTPSecretIsRead(t *testing.T) {
 		t.Error("a spaced, lower-case secret was not read")
 	}
 }
+
+// TOTPSteps accepts a step once, and never one at or before the last;
+// two logins racing with the same code cannot both have it.
+func TestTOTPStepsAcceptsAStepOnce(t *testing.T) {
+	var g TOTPSteps
+	if !g.Use("a", 100) || g.Use("a", 100) || g.Use("a", 99) {
+		t.Error("a step was accepted twice, or an earlier one after it")
+	}
+	if !g.Use("a", 101) || !g.Use("b", 100) {
+		t.Error("a later step, or another account's, was refused")
+	}
+	results := make(chan bool, 50)
+	for i := 0; i < 50; i++ {
+		go func() { results <- g.Use("c", 7) }()
+	}
+	won := 0
+	for i := 0; i < 50; i++ {
+		if <-results {
+			won++
+		}
+	}
+	if won != 1 {
+		t.Errorf("%d of 50 racing uses of one step were accepted", won)
+	}
+}

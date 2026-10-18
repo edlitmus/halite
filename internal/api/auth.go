@@ -137,8 +137,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if ok && acct.Disabled {
 		ok = false
 	}
-	if ok && acct.NeedsSecondFactor() && !acct.VerifyTOTP(req.Code, s.now()) {
-		ok = false
+	if ok && acct.NeedsSecondFactor() {
+		// A code is good once: a step already used to log in is refused,
+		// as RFC 6238 5.2 requires. See account.TOTPSteps.
+		step, valid := acct.MatchTOTP(req.Code, s.now())
+		if !valid || !s.totpSteps.Use(req.Username, step) {
+			ok = false
+		}
 	}
 	s.logins().release()
 	if !ok {
