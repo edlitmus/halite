@@ -30966,8 +30966,7 @@ listing never went through it.
 
 **Not done.** The audit's "`cacheFile` accepts a body with no published
 digest" was not looked at. Not run against a real hub.
-
-### 5.380 A policy list dropped the items that were not strings
+### 5.387 A policy list dropped the items that were not strings
 
 Issue 321, a section 5 (Low) finding: "`policy.go` `stringList` silently
 drops non-string items (`deny_kwargs: [pillar, 5]`, a YAML-bool
@@ -30992,6 +30991,8 @@ warnings.
 
 **Not done.** `matchPrincipal`'s use of `path.Match`, where `/` in a
 principal can defeat a `*` (PLAUSIBLE in the audit), was not looked at.
+
+
 
 ## 6. Everything else not started
 

@@ -26,7 +26,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 An item that was not a string in a policy list, `deny_kwargs: [pillar,
 5]` or `roles: [ops, 7]`, was dropped, so the rule was weaker than
 written. **Such a policy now fails to load**, saying where (issue 321,
-section 5). DIVERGENCE 5.380.
+section 5). DIVERGENCE 5.387.
 
 ### `file.recurse` writes nothing outside its destination
 
