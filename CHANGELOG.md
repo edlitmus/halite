@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The `ps` user filter matches long user names on Linux
+
+`ps.pgrep`, `ps.pkill` and `ps.psaux` with a `user` longer than eight
+characters matched nothing, because procps truncated the name
+(`systemd+`). The whole name is now read (issue 321, section 5).
+DIVERGENCE 5.376.
+
 ### `sysrc` states fail on an rc.conf they cannot read
 
 An `rc.conf` with a syntax error made every `sysrc -n` read fail, and
