@@ -52,9 +52,12 @@ type session struct {
 	// cannot be made as exactly that.
 	stdinRead *os.File
 
-	mu      sync.Mutex
-	stderr  []string
-	exited  chan struct{}
+	mu     sync.Mutex
+	stderr []string
+	exited chan struct{}
+	// pipes are the read ends of stdout and stderr, which are this
+	// package's to close, not Wait's (see start).
+	pipes   []*os.File
 	waitErr error
 	// sentFirst counts what was written before the first answer, so
 	// the probe can tell "none of it was read" from "some of it was".
@@ -129,25 +132,47 @@ func start(ctx context.Context, opts Options) (*session, error) {
 		_ = stdin.Close()
 	}
 	cmd.Stdin = stdinRead
-	stdout, err := cmd.StdoutPipe()
+	// os.Pipe, not cmd.StdoutPipe. Wait runs beside the reads below, to
+	// notice an exit, and Wait closes the read end of a StdoutPipe as soon
+	// as the child has gone -- os/exec says it is "incorrect to call Wait
+	// before all reads from the pipe have completed". An extension that
+	// writes its answer as it exits, which is the buffering case this
+	// package exists to name, had that answer lost in the pipe: the read
+	// failed "read |0: file already closed", the diagnosis said it "sent
+	// something unreadable", and the test of exactly that case failed in
+	// CI's fips-test job. With the read end ours, it is closed when we are
+	// done with it, and what the child wrote before it exited is still
+	// there to read.
+	stdout, stdoutW, err := os.Pipe()
 	if err != nil {
 		abandon()
 		return nil, err
 	}
-	stderrPipe, err := cmd.StderrPipe()
+	stderrPipe, stderrW, err := os.Pipe()
 	if err != nil {
 		abandon()
+		stdout.Close()
+		stdoutW.Close()
 		return nil, err
 	}
+	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
 	if err := cmd.Start(); err != nil {
 		abandon()
+		for _, f := range []*os.File{stdout, stdoutW, stderrPipe, stderrW} {
+			f.Close()
+		}
 		return nil, fmt.Errorf("starting %s: %w", opts.Path, err)
 	}
+	// The child holds its own copies; ours would keep the pipes open past
+	// its exit, and EOF would never come.
+	stdoutW.Close()
+	stderrW.Close()
 
 	s := &session{
 		cmd:          cmd,
 		stdin:        stdin,
 		stdout:       bufio.NewReader(stdout),
+		pipes:        []*os.File{stdout, stderrPipe},
 		timeout:      opts.timeout(),
 		startTimeout: opts.startTimeout(),
 		stdinRead:    stdinRead,
@@ -440,6 +465,10 @@ func (s *session) close() {
 	}
 	if !s.waitForExit(2 * time.Second) {
 		_ = s.cmd.Process.Kill()
+		s.waitForExit(2 * time.Second)
+	}
+	for _, f := range s.pipes {
+		_ = f.Close()
 	}
 }
 
