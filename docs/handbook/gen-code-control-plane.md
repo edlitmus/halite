@@ -111,6 +111,7 @@ The rule the whole package follows is that a node's identity comes from the cert
 - `OrchStore` (type): OrchStore keeps the runs on disk.
 - `ParseReactors` (func): ParseReactors reads the `reactor` configuration of SPEC 18.1.
 - `PillarOptions` (type): PillarOptions is what the hub needs to compile pillar for a node.
+- `Reach` (type): Reach says what a runner touches of the nodes (issue 321, M-56).
 - `Reaction` (type): Reaction is one declaration in a reaction SLS: what to run and how.
 - `ReactionContextNames` (func): ReactionContextNames is what a reaction template may read without defining it.
 - `ReactionResult` (type): ReactionResult is what one reaction did.
@@ -229,7 +230,7 @@ Package eventbus is the hub's event bus: SPEC section 17's durable append-only l
 
 Salt's bus is in-memory ZeroMQ IPC and is lossy by construction — every mature Salt estate has learned this during an incident, when the events that would have explained what happened were the ones that were dropped. This one is a file. A reactor that restarts loses nothing, and an incident can be reconstructed afterwards.
 
-**Files:** `bus.go`, `event.go`; with tests.
+**Files:** `bus.go`, `event.go`, `nodeof.go`; with tests.
 
 **Exports.**
 
@@ -238,6 +239,7 @@ Salt's bus is in-memory ZeroMQ IPC and is lossy by construction — every mature
 - `LagError` (type): LagError says how far behind a subscriber fell, because "your offset is gone" without a number cannot be acted on.
 - `MatchAny` (func): MatchAny reports whether a tag matches any of the globs.
 - `MatchTag` (func): MatchTag reports whether a tag matches a glob.
+- `NodeOf` (func): NodeOf is the node an event is about, or "" for one about no node: the envelope's, or failing that the one its tag names.
 - `Open` (func): Open prepares a bus.
 - `SaltTag` (func): SaltTag is the `salt/...` spelling of a halite tag, for `event_tag_compat` — a transition period where an existing consumer cannot be changed at the same time as the estate.
 - `ValidTag` (func): ValidTag reports whether a tag is one the bus will accept.
@@ -498,7 +500,7 @@ Package policy is the RBAC of SPEC section 23.5: one file, one grammar, deny by 
 
 Salt has publisher\_acl, external\_auth, peer, peer\_run, and client\_acl as five overlapping mechanisms with different syntaxes and different failure modes, which is why Salt authorization is so often wrong in practice. There is one mechanism here and a request must match one rule entirely -- target and function together, not separately.
 
-**Files:** `policy.go`; with tests.
+**Files:** `policy.go`, `runnerscope.go`; with tests.
 
 **Exports.**
 
@@ -509,6 +511,7 @@ Salt has publisher\_acl, external\_auth, peer, peer\_run, and client\_acl as fiv
 - `Policy` (type): Policy is a loaded policy file.
 - `Request` (type): Request is what is being asked for.
 - `Rule` (type): Rule is one grant: a target pattern, the functions permitted against it, and any argument-level constraints.
+- `Scope` (type): Scope is the set of nodes a principal may reach through one runner.
 
 ## `internal/api`
 

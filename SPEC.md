@@ -2179,6 +2179,16 @@ Properties that are requirements, not suggestions:
   Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
   `.*`.
 - **Wildcards are explicit.** `'*'` matches; a missing field does not.
+- **A runner reaches the nodes its rule's target covers.** A runner runs on the hub with the hub's
+  reach over every node's pillar, cache, key and job returns, so a runner rule may name a `target`,
+  and a runner that reads or changes what the hub holds about a node -- `pillar.show_pillar`,
+  `key.delete`, `cache.grains`, `jobs.lookup_jid` -- is refused for a node outside it and lists
+  only the nodes inside it. A runner rule with no target grants the runner and reaches no node. A
+  runner that acts on every node at once (`cache.clear_all`, `jobs.prune`) needs `target: '*'`;
+  one that reaches nodes only by sending jobs is held to them by the jobs' own authorization; one
+  that touches no node needs no target. Salt grants a runner with no target and runs it with the
+  master's whole reach, so this is stricter than Salt. Through the API, a runner is held to the
+  operator's scope as well as the API's own.
 - **Every decision is logged**, allowed or denied, with the rule that matched.
 - **`halite-hub policy test`** evaluates a hypothetical request against the policy and prints the
   matching rule or the reason for denial, so a policy can be tested in CI rather than in production.

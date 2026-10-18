@@ -81,7 +81,11 @@ func runPolicy(args *cli.Args) int {
 			fmt.Printf("role %s\n", role)
 			for i, r := range rules {
 				if len(r.Runners) > 0 {
-					fmt.Printf("  %d. runners %s\n", i, strings.Join(r.Runners, ", "))
+					on := r.Target
+					if on == "" {
+						on = "no node (no target)"
+					}
+					fmt.Printf("  %d. runners %s on %s\n", i, strings.Join(r.Runners, ", "), on)
 				} else {
 					fmt.Printf("  %d. %s on %s\n", i, strings.Join(r.Functions, ", "), r.Target)
 				}
@@ -129,6 +133,18 @@ func runPolicy(args *cli.Args) int {
 		}
 		decision := loaded.Authorize(req)
 		fmt.Println(decision.String())
+		// A runner granted is not a runner that reaches every node: the
+		// targets of the rules granting it are what it reaches, and an
+		// operator testing a policy needs to be told which.
+		if decision.Allowed && req.Runner {
+			scope := loaded.RunnerScope(req.Principal, req.Fun, false)
+			switch {
+			case len(scope.Targets) == 0:
+				fmt.Println("it reaches no node: no rule granting it names a target")
+			default:
+				fmt.Printf("it reaches the nodes %s covers\n", strings.Join(scope.Targets, ", "))
+			}
+		}
 		if decision.Allowed {
 			return 0
 		}
@@ -204,7 +220,10 @@ roles:
         # so each one is named. Removing a line here removes the
         # permission; that is the point of them being separate.
 %s
-    - runners: ['*']
+    # A runner reaches the nodes its rule's target covers, and a rule
+    # with no target reaches none of them (issue 321, M-56).
+    - target: '*'
+      runners: ['*']
 
 bindings:
 %s`, name, strings.Join(arbitrary, "\n"), adminStanza(name))

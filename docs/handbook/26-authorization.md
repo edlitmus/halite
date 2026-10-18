@@ -173,11 +173,33 @@ A **rule** is one list item in a role. There are two shapes:
 - **A fleet rule**: `target` and `functions`. It permits running those
   execution functions against nodes that match that target
   ([chapter 13](13-targeting.md)).
-- **A runner rule**: `runners`. It permits calling those hub-side
-  functions ([chapter 22](22-runners-and-mine.md)). Permission to ask the
-  hub something and permission to run a command everywhere are different
-  permissions, and they are written in different places so that one is
-  never mistaken for the other.
+- **A runner rule**: `runners`, and a `target`. It permits calling those
+  hub-side functions ([chapter 22](22-runners-and-mine.md)) for the nodes
+  the target covers. Permission to ask the hub something and permission
+  to run a command everywhere are different permissions, and they are
+  written in different places so that one is never mistaken for the
+  other.
+
+A runner runs on the hub, with the hub's reach over every node's pillar,
+cache, key and job returns, so a runner rule's `target` is what keeps
+that reach to the nodes the role is for. This is stricter than Salt,
+where a runner grant has no target and reads any managed machine's data. Each
+runner says what it touches:
+
+| A runner that... | For example | Is held to the target by |
+|---|---|---|
+| touches no node | `fileserver.*`, `event.send`, `reactor.list` | nothing; it needs no target |
+| reaches nodes by sending jobs | `state.orchestrate`, `saltutil.refresh_pillar`, `mine.update` | each job, which is authorized against the role's fleet rules as it is sent |
+| names one node, or takes a target | `pillar.show_pillar`, `key.delete`, `cache.grains web1`, `mine.get` | refusing a node, or an expression reaching a node, outside it |
+| lists what it holds about nodes | `manage.status`, `key.list`, `jobs.list_jobs`, `event.replay` | listing only the nodes inside it; a job only if it went to one, and only that node's part |
+| acts on every node at once | `cache.clear_all`, `jobs.prune` | requiring `target: '*'`, written |
+
+A runner rule with no target grants the runner and reaches **no node**:
+`manage.status` lists nothing, and `pillar.show_pillar` is refused for
+every node. A missing field is not a wildcard, here as everywhere. An
+orchestration run, or a runner's own job, is seen only by the principal
+who started it, and by a role whose runner rule says `target: '*'`.
+`halite-hub policy test --runner` says which nodes a runner reaches.
 
 A request must match **one rule entirely**: the target *and* the function
 *and* any argument limits, together. This is the central safety: a role
@@ -333,7 +355,8 @@ roles:
   api-service:
     - target: '*'
       functions: ['test.ping', 'state.apply']
-    - runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
+    - target: '*'
+      runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']
