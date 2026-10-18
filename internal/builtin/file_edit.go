@@ -437,7 +437,7 @@ func fileRenameState(c *exec.Context, args *value.Map) (states.Result, error) {
 	aside := ""
 	if destExists {
 		aside = filepath.Join(filepath.Dir(dest), "."+filepath.Base(dest)+".halite-old-"+randomSuffix())
-		if err := os.Rename(dest, aside); err != nil {
+		if err := atomicfile.Rename(dest, aside); err != nil {
 			return states.False(fmt.Sprintf("%s could not be moved aside to make way for the move: %v", dest, err)), nil
 		}
 	}
@@ -446,7 +446,7 @@ func fileRenameState(c *exec.Context, args *value.Map) (states.Result, error) {
 			return
 		}
 		_ = os.RemoveAll(dest)
-		_ = os.Rename(aside, dest)
+		_ = atomicfile.Rename(aside, dest)
 	}
 
 	parent := filepath.Dir(dest)
