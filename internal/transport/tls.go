@@ -121,18 +121,27 @@ func ServerConfig(cert tls.Certificate, ca *x509.Certificate, denied *Denylist) 
 // approvedCurves restricts key exchange to P-256 and P-384 in FIPS mode,
 // per SPEC 25.3 and 27.4.
 //
-// Applied here rather than left to the module. GODEBUG=fips140=on, which
-// SPEC 27.4 has the service unit set, routes approved algorithms through
-// the module without rejecting the rest — X25519 stays reachable under
-// it. Setting the preference explicitly makes the restriction a property
-// of this build rather than of a setting somebody can leave off.
+// Applied here as well as by Go. This said that GODEBUG=fips140=on
+// "routes approved algorithms through the module without rejecting the
+// rest — X25519 stays reachable under it". Measured with go1.27.2, it does
+// not: a TLS 1.3 listener with no curve list refuses a client offering
+// only X25519 under fips140=on ("tls: no supported key exchange methods"),
+// and negotiates X25519 without it (issue 321, section 5). The explicit
+// preference stays, so that the restriction is this build's and does not
+// rest on what a toolchain's FIPS mode happens to do; it no longer claims
+// to be the only thing standing in the way.
 //
 // TLS 1.3 cipher suites are not part of this: Go selects them itself and
 // ignores tls.Config.CipherSuites for 1.3. The two SPEC 25.3 names are
 // two of the three Go offers, and the module drops the third in FIPS
 // mode. DIVERGENCE 1.10 records that this half is the module's to
 // enforce and not this build's.
-func approvedCurves(cfg *tls.Config) *tls.Config {
+func approvedCurves(cfg *tls.Config) *tls.Config { return ApprovedCurves(cfg) }
+
+// ApprovedCurves is approvedCurves for a listener outside this package:
+// the API's, which must hold to the same rule (SPEC 25.3, 27.4) and did
+// not (issue 321, section 5).
+func ApprovedCurves(cfg *tls.Config) *tls.Config {
 	if fips.Restricted() {
 		cfg.CurvePreferences = []tls.CurveID{tls.CurveP256, tls.CurveP384}
 	}

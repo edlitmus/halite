@@ -439,14 +439,19 @@ func Listen(addr string, getCertificate func(*tls.ClientHelloInfo) (*tls.Certifi
 	if addr == "" {
 		addr = ":4511"
 	}
-	ln, err := tls.Listen("tcp", addr, &tls.Config{
+	// FIPS mode restricts key exchange to P-256 and P-384, as the hub's
+	// listener does. The API's did not: X25519 stayed on offer under
+	// GODEBUG=fips140=on, which routes approved algorithms through the
+	// module without refusing the rest (SPEC 25.3, 27.4; issue 321,
+	// section 5).
+	ln, err := tls.Listen("tcp", addr, transport.ApprovedCurves(&tls.Config{
 		GetCertificate: getCertificate,
 		// 1.3 only. Everything that talks to this is a program or a
 		// current browser, so there is nothing to be compatible with
 		// and nothing to gain by offering less.
 		MinVersion: tls.VersionTLS13,
 		NextProtos: []string{"h2", "http/1.1"},
-	})
+	}))
 	if err != nil {
 		return nil, fmt.Errorf("listening on %s: %w", addr, err)
 	}

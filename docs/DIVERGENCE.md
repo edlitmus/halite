@@ -31029,6 +31029,31 @@ something after the JSON value", which covers both.
 Nothing was reachable through it but a login that also carried rubbish;
 it is recorded because the hub and the API are meant to read a body the
 same way.
+### 5.390 The API listener left its curves to Go in FIPS mode
+
+Issue 321, a section 5 (Low) finding: "The API listener does not restrict
+curves in FIPS mode (`api/server.go:436`, versus
+`transport.approvedCurves` on the hub), contrary to SPEC 25.3/27.4." The
+first half holds; the consequence does not, on this toolchain.
+`TestTheAPIListenerRefusesAnUnapprovedCurveInFIPSMode`, under
+`GODEBUG=fips140=on` with go1.27.2, dials the API listener offering only
+X25519: it is refused against the old listener as well as the new. A
+plain TLS 1.3 listener with no curve list was measured the same way: it
+negotiates X25519 without fips140, and with it answers "tls: no
+supported key exchange methods (CurveIDs)". So nothing was reachable,
+and the test holds the property, not the change.
+
+The API now sets the curves itself, through an exported
+`transport.ApprovedCurves`, so the restriction is this build's and does
+not rest on what a toolchain's FIPS mode does. And the comment on
+`approvedCurves`, which said fips140=on "routes approved algorithms
+through the module without rejecting the rest — X25519 stays reachable
+under it", is corrected to what was measured. It came from 5.15's
+finding that `fips140=on` "enforces nothing", which was about HMAC-SHA-1
+on an earlier toolchain; 5.15's own table measured a hub that set its
+curves itself, and does not show what Go's TLS did without that.
+
+**Not verified.** `fips140=only`, and toolchains other than go1.27.2.
 
 
 
