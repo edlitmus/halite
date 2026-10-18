@@ -104,12 +104,23 @@ func TestWriteAtomicKeepsTheReplacedFilesGroup(t *testing.T) {
 	if got := gidOf(t, path); got != gid {
 		t.Errorf("writeAtomic left the file in group %d; it was %d", got, gid)
 	}
-	// A new file is the writer's, as it always was.
-	fresh := filepath.Join(t.TempDir(), "new")
+	// A new file gets the group any new file there gets, as it always
+	// did: not the replaced file's. Which group that is belongs to the
+	// platform -- the writer's on Linux, the directory's on the BSDs and
+	// macOS -- so it is asked of a file created plainly beside it. This
+	// used to compare with the writer's group, and on beastie (FreeBSD
+	// 15.1), where t.TempDir() is under /tmp, group wheel, every new file
+	// is wheel's, which was also the "other" group otherGroup picked.
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "plain")
+	if err := os.WriteFile(plain, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(dir, "new")
 	if err := writeAtomic(fresh, []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := gidOf(t, fresh); got == gid && gid != os.Getgid() {
-		t.Errorf("a new file took the other group %d", got)
+	if got, want := gidOf(t, fresh), gidOf(t, plain); got != want {
+		t.Errorf("a new file is in group %d; a file created plainly there is in %d", got, want)
 	}
 }
