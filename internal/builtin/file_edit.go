@@ -1,6 +1,8 @@
 package builtin
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -403,13 +405,21 @@ func fileRenameState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%s is not an absolute path.", dest)), nil
 	}
 
-	if _, err := os.Lstat(source); err != nil {
+	srcInfo, err := os.Lstat(source)
+	if err != nil {
 		// Lstat, not Stat: a dangling symlink is still something to move.
 		return states.True(fmt.Sprintf("%s has already been moved out of place.", source)), nil
 	}
 
-	_, destErr := os.Lstat(dest)
+	destInfo, destErr := os.Lstat(dest)
 	destExists := destErr == nil
+	// The source is the destination -- the same path, or the same file
+	// reached another way. There is nothing to move, and with force the
+	// removal below would have deleted the only copy before the move
+	// failed on it (issue 321, section 5).
+	if destExists && os.SameFile(srcInfo, destInfo) {
+		return states.True(fmt.Sprintf("%s is already %s.", source, dest)), nil
+	}
 	force := states.Bool(args, "force", false)
 	if destExists && !force {
 		return states.True(fmt.Sprintf("%s exists and will not be overwritten.", dest)), nil
@@ -420,10 +430,23 @@ func fileRenameState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.WouldChange(fmt.Sprintf("%s would be moved to %s.", source, dest), changes), nil
 	}
 
+	// The old destination is moved aside, not removed, and removed only
+	// once the move has worked. It was removed first, as Salt removes it,
+	// so a move that then failed -- a read-only source directory, a full
+	// disk on the copy across filesystems -- had already lost it.
+	aside := ""
 	if destExists {
-		if err := os.RemoveAll(dest); err != nil {
-			return states.False(fmt.Sprintf("%s could not be removed to make way for the move: %v", dest, err)), nil
+		aside = filepath.Join(filepath.Dir(dest), "."+filepath.Base(dest)+".halite-old-"+randomSuffix())
+		if err := atomicfile.Rename(dest, aside); err != nil {
+			return states.False(fmt.Sprintf("%s could not be moved aside to make way for the move: %v", dest, err)), nil
 		}
+	}
+	restore := func() {
+		if aside == "" {
+			return
+		}
+		_ = os.RemoveAll(dest)
+		_ = atomicfile.Rename(aside, dest)
 	}
 
 	parent := filepath.Dir(dest)
@@ -438,7 +461,18 @@ func fileRenameState(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if err := movePath(source, dest); err != nil {
+		// What the move left at dest is not the source: remove it and put
+		// the old destination back. If the source is gone too, the copy
+		// at dest is the only one, and it stays.
+		if _, srcErr := os.Lstat(source); srcErr == nil {
+			restore()
+		} else if aside != "" {
+			_ = os.RemoveAll(aside)
+		}
 		return states.False(fmt.Sprintf("%s could not be moved to %s: %v", source, dest, err)), nil
+	}
+	if aside != "" {
+		_ = os.RemoveAll(aside)
 	}
 	return states.Changed(fmt.Sprintf("%s was moved to %s.", source, dest), changes), nil
 }
@@ -938,4 +972,12 @@ func fileCopyState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%s could not be written: %v", dst, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s was copied from %s.", dst, src), changes), nil
+}
+
+// randomSuffix is twelve hex digits, for a name beside a file that must
+// not collide with one already there.
+func randomSuffix() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
