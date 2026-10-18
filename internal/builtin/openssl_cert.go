@@ -1,9 +1,13 @@
 package builtin
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -689,9 +693,30 @@ func openSSLPKCS12Create(c *exec.Context, args *value.Map) (any, error) {
 		return out, nil
 	}
 
+	// A bundle holds a private key -- in the clear, with an empty
+	// password -- so it is never readable by anyone else, not even while
+	// it is written. openssl was handed the bundle's own path under the
+	// process umask and chmodded 0600 afterwards: a new bundle sat at
+	// 0644 for the length of the run, and an existing one was truncated
+	// and rewritten in place at whatever mode it had (issue 321, section
+	// 5). It now writes a new file beside the bundle, under umask 077, and
+	// that is renamed over the bundle once openssl has finished with it.
+	suffix := make([]byte, 6)
+	if _, err := rand.Read(suffix); err != nil {
+		return nil, err
+	}
+	tmp := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".halite-"+hex.EncodeToString(suffix))
+	for i, a := range argv {
+		if a == "-out" && i+1 < len(argv) {
+			argv[i+1] = tmp
+			break
+		}
+	}
+	defer os.Remove(tmp)
 	res, err := c.Run(exec.Command{
 		Argv:           argv,
 		Stdin:          states.Str(args, "password", "") + "\n",
+		Umask:          "0077",
 		IgnoreExitCode: true,
 	})
 	if err != nil {
@@ -704,11 +729,11 @@ func openSSLPKCS12Create(c *exec.Context, args *value.Map) (any, error) {
 		}
 		return nil, fmt.Errorf("%s could not be written: %s", path, reason)
 	}
-	// A bundle holds a private key, so it is nobody's business but its
-	// owner's. openssl creates it with the process umask, which on a node
-	// running a highstate is whatever the agent was started with.
-	if err := os.Chmod(path, 0o600); err != nil {
-		return nil, fmt.Errorf("%s was written and its mode could not be tightened to 0600: %w", path, err)
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		return nil, fmt.Errorf("%s was written and its mode could not be set to 0600: %w", path, err)
+	}
+	if err := atomicfile.Rename(tmp, path); err != nil {
+		return nil, fmt.Errorf("%s could not be put in place: %w", path, err)
 	}
 
 	out := value.NewMap(3)
