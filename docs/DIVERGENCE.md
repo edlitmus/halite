@@ -30966,6 +30966,31 @@ listing never went through it.
 
 **Not done.** The audit's "`cacheFile` accepts a body with no published
 digest" was not looked at. Not run against a real hub.
+### 5.387 A policy list dropped the items that were not strings
+
+Issue 321, a section 5 (Low) finding: "`policy.go` `stringList` silently
+drops non-string items (`deny_kwargs: [pillar, 5]`, a YAML-bool
+`functions: [on]`), so a deny list ends up weaker than written with only
+a parser warning." The first half holds: `stringList` kept the strings
+of a list and dropped the rest, and returned nothing for a field that
+was neither a string nor a list. `TestAPolicyListOfNonStringsIsRefused`
+loads four such policies: against main, `deny_kwargs: [pillar, 5]` (pillar
+alone denied) and `roles: [ops, 7]` loaded; a bool or a mapping for
+`functions` were already refused, as a rule granting nothing. All four
+are now refused, naming the file, the role, the rule and the field.
+
+The `on` example does not happen here. halite reads YAML 1.2 by default,
+where `on` is the string "on", with a lint warning; with the fix
+`functions: [on]` still loads, granting a function called `on`. The test
+uses `true`, which is a bool in both.
+
+**Breaking.** A hub whose policy holds such an item no longer starts. The
+production policy on beastie was loaded with the new parser, from a copy
+removed afterwards: it loads, with six roles, three bindings and no
+warnings.
+
+**Not done.** `matchPrincipal`'s use of `path.Match`, where `/` in a
+principal can defeat a `*` (PLAUSIBLE in the audit), was not looked at.
 
 
 
