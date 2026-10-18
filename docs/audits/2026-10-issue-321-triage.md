@@ -166,7 +166,7 @@ passing by the PRs above; that has not been looked for.
 | policy `stringList` drops non-string items | #421 | 5.387; YAML 1.2 reads `on` as a string, so that example does not occur |
 | TOTP codes replayable inside their window | #422 | 5.388; in memory, so a restart forgets |
 | `readJSON` accepts trailing non-JSON | #423 | 5.389 |
-| API listener does not restrict curves in FIPS mode | #424 | 5.383; go1.27.2 refuses X25519 under fips140=on anyway, measured; a comment saying otherwise corrected |
+| API listener does not restrict curves in FIPS mode | #424 | 5.390; go1.27.2 refuses X25519 under fips140=on anyway, measured; a comment saying otherwise corrected |
 | `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too |
 | `check_cmd` temp file chmod 0644 | #412 | 5.372; a `runas` checker gets the file |
 | `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts` |

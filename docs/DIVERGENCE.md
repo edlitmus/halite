@@ -31029,8 +31029,7 @@ something after the JSON value", which covers both.
 Nothing was reachable through it but a login that also carried rubbish;
 it is recorded because the hub and the API are meant to read a body the
 same way.
-
-### 5.383 The API listener left its curves to Go in FIPS mode
+### 5.390 The API listener left its curves to Go in FIPS mode
 
 Issue 321, a section 5 (Low) finding: "The API listener does not restrict
 curves in FIPS mode (`api/server.go:436`, versus
@@ -31055,6 +31054,8 @@ on an earlier toolchain; 5.15's own table measured a hub that set its
 curves itself, and does not show what Go's TLS did without that.
 
 **Not verified.** `fips140=only`, and toolchains other than go1.27.2.
+
+
 
 ## 6. Everything else not started
 
