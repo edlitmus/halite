@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -267,7 +268,12 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return errRequestBody{err}
 	}
-	if err := dec.Decode(new(json.RawMessage)); err == nil {
+	// Nothing may follow but whitespace: the second decode must reach the
+	// end. It was `err == nil`, so text that was not JSON -- `{...}
+	// garbage` -- failed the second decode and was taken for nothing
+	// more (issue 321, section 5). transport.ReadJSON, the hub's, asks
+	// for io.EOF, and the two agree now.
+	if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
 		return errRequestBody{errTrailing{}}
 	}
 	return nil
@@ -279,4 +285,4 @@ func (e errRequestBody) Error() string { return "the request body: " + e.err.Err
 
 type errTrailing struct{}
 
-func (errTrailing) Error() string { return "there is more than one value in it" }
+func (errTrailing) Error() string { return "there is something after the JSON value" }

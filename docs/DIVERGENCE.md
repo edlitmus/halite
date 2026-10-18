@@ -31013,6 +31013,22 @@ logins racing with one code cannot both have it
 **Not done.** It is in memory: a restart forgets it, and a code accepted
 in the ninety seconds before a restart can be used once more after it.
 LDAP and OIDC logins do not use TOTP and are unchanged.
+### 5.389 The API took a request body with text after the JSON
+
+Issue 321, a section 5 (Low) finding: "`readJSON` (`api/auth.go`) accepts
+trailing non-JSON (`{} garbage`); `transport.ReadJSON` checks `!=
+io.EOF` correctly." Two paths that must agree, and did not. After the
+first value the API decoded once more and refused only if that
+succeeded; text that was not JSON failed the second decode, and the
+failure was read as "nothing more". `TestARequestBodyWithTrailingTextIsRefused`
+posts a login with ` garbage` and with `]` after it: against main both
+answered 200, and logged in. Both are now 400, as a second value already
+was; a trailing newline is still fine. The error now says "there is
+something after the JSON value", which covers both.
+
+Nothing was reachable through it but a login that also carried rubbish;
+it is recorded because the hub and the API are meant to read a body the
+same way.
 
 
 
