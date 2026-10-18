@@ -30938,7 +30938,35 @@ this writes.
 
 **Not verified.** LibreSSL, and FreeBSD's base openssl; neither was run.
 
+### 5.379 A file listing could place a file outside file.recurse's destination
 
+Issue 321, a section 5 (Low) finding: "`file.recurse` joins hub-listed
+relative paths with no `..` check ... `web/x/../y` yields `rel="../y"`
+and writes outside `dest` ... Defence in depth under the SPEC 25.6
+'compromised hub' model." `Remote.cachePath` refuses a path that leaves
+the cache, and its comment says a compromised hub should not be able to
+write to the node's /etc; that is true of the cache, and `file.recurse`'s
+listing never went through it.
+
+- **The listing.** `relativeTo`, which both the hub's lister and the
+  local one use, trimmed the prefix and kept what was left. Called on
+  main with prefix `web` and entries `web/a`, `webby/x`,
+  `web/x/../../../etc/cron.d/evil` and `web/../y`, it returned `"../y"`,
+  `"a"`, `"by/x"` and `"x/../../../etc/cron.d/evil"`. Two defects: the
+  `..`, and the prefix trimmed as a string rather than a path, so
+  `webby/x` under `web` came back as `by/x`, a file of another directory
+  copied in. The prefix is now a directory matched on a path boundary,
+  and an entry that leaves it fails the listing.
+  `TestRelativeToRefusesWhatLeavesTheDestination`.
+- **The state.** `file.recurse` now refuses a listed path that is not
+  `filepath.IsLocal` before writing anything, for any lister.
+  `TestFileRecurseRefusesAListingThatLeavesTheDestination` gives it a
+  lister that adds `../escape`: against main's `file_treecopy.go` it
+  reported "2 file(s) were copied" and wrote `escape` beside the
+  destination.
+
+**Not done.** The audit's "`cacheFile` accepts a body with no published
+digest" was not looked at. Not run against a real hub.
 
 ## 6. Everything else not started
 

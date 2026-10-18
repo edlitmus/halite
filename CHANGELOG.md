@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `file.recurse` writes nothing outside its destination
+
+A file-server listing holding `..` placed files outside `file.recurse`'s
+destination, and a prefix such as `web` also matched `webby/`. A listing
+that leaves its directory is now refused, and the prefix is matched as a
+directory (issue 321, section 5). DIVERGENCE 5.379.
+
 ### A PKCS#12 bundle is private while it is written
 
 `openssl_cert.pkcs12_create` let openssl write the bundle at its own path
