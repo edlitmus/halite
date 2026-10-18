@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `yaml_squote` keeps a multi-line value's line breaks
+
+A multi-line string through `yaml_squote` -- a PEM key, a certificate, a
+script -- came back on one line, each line break turned into a space,
+when the YAML was read. It is now written as PyYAML writes it, and reads
+back as it was (issue 321, section 5). DIVERGENCE 5.374.
+
 ### `ssh_auth` and `ssh_known_hosts` refuse a value that adds a line
 
 A newline in an `ssh_auth.present` comment, option, key type or name, or

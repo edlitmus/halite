@@ -85,7 +85,7 @@ Mappings preserve declaration order, because state run order follows declaration
 - `ParseStream` (func): ParseStream reads every document in a stream.
 - `Quote` (func): Quote renders a string as a double-quoted YAML scalar with the escapes the parser accepts.
 - `Related` (type): Related is a second position that explains an error, such as the first occurrence of a duplicate key.
-- `SingleQuote` (func): SingleQuote renders a string as a single-quoted YAML scalar.
+- `SingleQuote` (func): SingleQuote renders a string as a single-quoted YAML scalar, as PyYAML's Emitter.write_single_quoted does at unbounded width, which is Salt's yaml_squote (salt/utils/yamlencoding.py).
 - `WarnKind` (type): WarnKind classifies a lint warning the parser emits while still producing a value.
 - `Warning` (type): Warning is a diagnostic that does not stop parsing.
 
