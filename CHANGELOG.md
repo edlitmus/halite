@@ -26,7 +26,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 A local account's TOTP code could be used again for as long as it was
 valid, up to ninety seconds. A code is now accepted once, and an earlier
 one is refused after a later one has been used, as RFC 6238 requires
-(issue 321, section 5). DIVERGENCE 5.381.
+(issue 321, section 5). DIVERGENCE 5.388.
 
 ### The policy file refuses a list item that is not a string
 

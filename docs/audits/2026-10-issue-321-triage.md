@@ -164,7 +164,7 @@ passing by the PRs above; that has not been looked for.
 | `openssl.pkcs12_export` writes under the umask | #419 | 5.385; an existing bundle was rewritten in place |
 | `file.recurse` joins listed paths with no `..` check | #420 | 5.386; the prefix was matched as a string too |
 | policy `stringList` drops non-string items | #421 | 5.387; YAML 1.2 reads `on` as a string, so that example does not occur |
-| TOTP codes replayable inside their window | #422 | 5.381; in memory, so a restart forgets |
+| TOTP codes replayable inside their window | #422 | 5.388; in memory, so a restart forgets |
 | `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too |
 | `check_cmd` temp file chmod 0644 | #412 | 5.372; a `runas` checker gets the file |
 | `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts` |

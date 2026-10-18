@@ -30991,8 +30991,7 @@ warnings.
 
 **Not done.** `matchPrincipal`'s use of `path.Match`, where `/` in a
 principal can defeat a `*` (PLAUSIBLE in the audit), was not looked at.
-
-### 5.381 A TOTP code could be used to log in more than once
+### 5.388 A TOTP code could be used to log in more than once
 
 Issue 321, a section 5 (Low) finding: "TOTP codes are replayable inside
 their window (`account/account.go:290`): no last-used-step tracking, ±1
@@ -31014,6 +31013,8 @@ logins racing with one code cannot both have it
 **Not done.** It is in memory: a restart forgets it, and a code accepted
 in the ninety seconds before a restart can be used once more after it.
 LDAP and OIDC logins do not use TOTP and are unchanged.
+
+
 
 ## 6. Everything else not started
 
