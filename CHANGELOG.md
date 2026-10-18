@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `file.rename` with `force` keeps the destination until the move works
+
+With `force: true`, `file.rename` deleted the destination first. Renaming
+a file onto itself, or onto the same file by another path, deleted it,
+and a move that failed had already lost the old destination. The
+destination is now kept until the move has worked, and put back if it
+did not (issue 321, section 5). DIVERGENCE 5.377.
+
 ### The `ps` user filter matches long user names on Linux
 
 `ps.pgrep`, `ps.pkill` and `ps.psaux` with a `user` longer than eight

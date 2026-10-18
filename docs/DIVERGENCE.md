@@ -30858,6 +30858,37 @@ on beastie `ps -axwwo user` printed `alertmanager`, `prometheus` and
 Alpine host was run. The test skips, saying so, on a machine where no
 running account has a long name.
 
+### 5.377 file.rename with force could delete the only copy
+
+Issue 321, a section 5 (Low) finding: "`file.rename force: True` deletes
+the destination before knowing the move will succeed; with `source ==
+name` it deletes the only copy." Both reproduced.
+
+- **The same file.** `TestFileRenameForceOntoItselfKeepsTheFile` renames
+  a file onto itself, once by the same path and once through a symlinked
+  directory. Against main the first removed it and then failed with
+  "rename ...: no such file or directory", the file gone. The two are now
+  compared with `os.SameFile`, and a source that is the destination is
+  already in place.
+- **A move that fails.** `TestFileRenameForceThatFailsKeepsTheDestination`
+  makes the move fail with a read-only source directory, so the source
+  cannot be unlinked. Against main the destination had already been
+  removed, and the copy fallback then put the source's contents there:
+  the state failed, and the old destination was "new". The old
+  destination is now renamed aside, beside it, removed once the move has
+  worked, and put back, with whatever the move left removed, if it has
+  not; if the source is gone too, what the move wrote is the only copy and
+  stays. As root a directory's mode stops nothing, so that test skips
+  there.
+
+Salt removes the destination first as well; on success the result is
+the same, and only a failure differs.
+
+**Not done.** `movePath` still falls back to a copy on any rename error,
+not only a cross-filesystem one, as the audit also noted; with the old
+destination kept aside, a copy that fails part-way no longer costs it.
+Not run as root or on FreeBSD.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
