@@ -30917,6 +30917,28 @@ child has gone. The package passes, with `-race` too.
 
 **Not verified.** That the CI failure was this and nothing else: it was
 seen once, and the fix was not run on a loaded CI runner before merge.
+### 5.385 A pkcs12 bundle was readable while openssl wrote it
+
+Issue 321, a section 5 (Low) finding: "`openssl.pkcs12_export` writes the
+bundle under the process umask and chmods 0600 only afterwards; with an
+empty password the private key is unencrypted and world-readable for the
+window, and permanently if chmod fails." (The function is
+`openssl_cert.pkcs12_create` here.) Worse than the window: an existing
+bundle is truncated and rewritten in place, keeping whatever mode it had,
+so a bundle at 0644 stayed readable for the whole write.
+
+`TestPKCS12BundleIsPrivateWhileWritten` gives the module an `openssl`
+that writes the `-out` file and records its mode while still running.
+Against main it saw `-rw-r--r-- ... b.p12`: the bundle itself, at 0644.
+openssl now writes a new file beside the bundle, under umask 077, and
+that file is renamed over the bundle once openssl has exited 0; the test
+sees `-rw-------` on a temporary name. The real-openssl tests in
+`live_openssl_cert_test.go` (OpenSSL 3.0.13 here) still read back what
+this writes.
+
+**Not verified.** LibreSSL, and FreeBSD's base openssl; neither was run.
+
+
 
 ## 6. Everything else not started
 
