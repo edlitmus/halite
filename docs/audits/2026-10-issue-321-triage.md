@@ -12,10 +12,13 @@ this file to the code, so it drifts as work lands.
 
 ## Status on 2026-10-16
 
-Checked against `main` at `d8ceba1`, after every PR that references
-issue 321 had merged. H-02 was fixed later the same day, at `9ce448e`
-(#372); the rows for it below are updated. The status comes from the merged PRs and the
-commit log, with each PR's body read for parts it said it left unfixed.
+First checked against `main` at `d8ceba1`, after every PR that
+references issue 321 had merged. Rows for work merged since were added
+as it landed, the latest being M-56 (#426, `461f958`); the table was
+tidied at `cdc1183` (#427). Only the rows up to `d8ceba1` were rechecked
+against each PR's body for parts it said it left unfixed. H-02 was fixed
+the same day, at `9ce448e` (#372). The status comes from the merged PRs
+and the commit log.
 The fixes were not re-run for this update, except where a row says so.
 Issue 321 stays open, because what is below is not finished.
 
