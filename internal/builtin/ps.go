@@ -508,8 +508,21 @@ func psArgv(c *exec.Context) psLayout {
 				Header:  true,
 			}
 		}
+		// `user:256`, because procps prints `user` eight wide and a longer
+		// name as its first seven characters and a `+`: `systemd+` for
+		// systemd-resolve, so the user filter never matched an account
+		// with a longer name, and every process listing showed the
+		// truncation (issue 321, section 5). The width suffix is procps's
+		// alone; the column is still read as `user`.
+		cols := make([]string, len(psColumns))
+		for i, c := range psColumns {
+			if c == "user" {
+				c = "user:256"
+			}
+			cols[i] = c
+		}
 		return psLayout{
-			Argv:     []string{"ps", "-eww", "--no-headers", "-o", strings.Join(psColumns, ",")},
+			Argv:     []string{"ps", "-eww", "--no-headers", "-o", strings.Join(cols, ",")},
 			Columns:  psColumns,
 			Percents: true,
 		}

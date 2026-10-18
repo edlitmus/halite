@@ -30836,6 +30836,28 @@ it failed on beastie and nowhere else.
 **Not verified.** `jail.go` reads `jail_enable` and `jail_list` through
 `sysrcGet` and so changes the same way; no jail test was run.
 
+### 5.376 The ps user filter never matched a name longer than eight
+
+Issue 321, a section 5 (Low) finding, CONFIRMED there: "`ps` `user`
+filter never matches names longer than 8 characters on Linux; procps
+prints `systemd+`". procps sizes `user` eight wide and shows a longer
+name as its first seven characters and a `+`. So `ps.pgrep`, `ps.pkill`
+and `ps.psaux` with `user: systemd-network` matched nothing, and every
+process listing reported the truncated name.
+`TestPsUserFilterMatchesALongName`, against this workstation's real ps
+(procps-ng, Ubuntu 24.04.5), found `systemd-network` running and no
+process matching it on main; it matches now.
+
+The Linux argv asks for `user:256`, procps's width suffix; the column is
+still read as `user`, and the output is split on whitespace, so the
+padding costs nothing. BusyBox's argv is unchanged, and so is FreeBSD's:
+on beastie `ps -axwwo user` printed `alertmanager`, `prometheus` and
+`_reticulum` whole.
+
+**Not verified.** BusyBox's `ps -o user`, which may truncate too; no
+Alpine host was run. The test skips, saying so, on a machine where no
+running account has a long name.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
