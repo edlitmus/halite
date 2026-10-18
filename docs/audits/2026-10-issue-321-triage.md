@@ -24,7 +24,7 @@ Issue 321 stays open, because what is below is not finished.
 | High (20) | 20 | none |
 | Medium (55) | 50 | 5: 3 mentioned and explicitly left, 1 half done, 1 measured and left |
 | M-56 (design note) | | not done |
-| Low (section 5) | 12 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 13 | 60 bullets listed (the audit says about 90); being taken one at a time |
 | Low (section 5) | 2 | 60 bullets listed (the audit says about 90); being taken one at a time |
 | Low (section 5) | 3 | 60 bullets listed (the audit says about 90); being taken one at a time |
 | Low (section 5) | 4 | 60 bullets listed (the audit says about 90); being taken one at a time |
@@ -165,6 +165,7 @@ passing by the PRs above; that has not been looked for.
 | `file.recurse` joins listed paths with no `..` check | #420 | 5.386; the prefix was matched as a string too |
 | policy `stringList` drops non-string items | #421 | 5.387; YAML 1.2 reads `on` as a string, so that example does not occur |
 | TOTP codes replayable inside their window | #422 | 5.388; in memory, so a restart forgets |
+| `readJSON` accepts trailing non-JSON | #423 | 5.382 |
 | `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too |
 | `check_cmd` temp file chmod 0644 | #412 | 5.372; a `runas` checker gets the file |
 | `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts` |
