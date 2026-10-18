@@ -23,14 +23,8 @@ Issue 321 stays open, because what is below is not finished.
 |---|---|---|
 | High (20) | 20 | none |
 | Medium (55) | 50 | 5: 3 mentioned and explicitly left, 1 half done, 1 measured and left |
-| M-56 (design note) | | not done |
+| M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
 | Low (section 5) | 14 | 60 bullets listed (the audit says about 90); being taken one at a time |
-| M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391) |
-| Low (section 5) | 10 | 60 bullets listed (the audit says about 90); being taken one at a time |
-| Low (section 5) | 2 | 60 bullets listed (the audit says about 90); being taken one at a time |
-| Low (section 5) | 3 | 60 bullets listed (the audit says about 90); being taken one at a time |
-| Low (section 5) | 4 | 60 bullets listed (the audit says about 90); being taken one at a time |
-| Low (section 5) | 5 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
 ### Fixed
 
