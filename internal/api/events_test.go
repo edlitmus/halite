@@ -33,8 +33,8 @@ func TestTheNodeIsReadOutOfTheTag(t *testing.T) {
 		"not-a-halite-tag":                          "",
 	}
 	for tag, want := range cases {
-		if got := nodeFromTag(tag); got != want {
-			t.Errorf("nodeFromTag(%q) = %q, want %q", tag, got, want)
+		if got := eventbus.NodeOf(&eventbus.Event{Tag: tag}); got != want {
+			t.Errorf("NodeOf(tag %q) = %q, want %q", tag, got, want)
 		}
 	}
 }
