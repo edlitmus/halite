@@ -20,12 +20,12 @@ func (s *Server) nodeList(w http.ResponseWriter, r *http.Request, token *apitoke
 	if !s.authorize(w, token, requestFor("cache.grains", "", nil, nil, true)) {
 		return
 	}
-	cached, err := s.runner(r, "cache.grains", nil, nil)
+	cached, err := s.runner(r, token, "cache.grains", nil, nil)
 	if err != nil {
 		s.hubError(w, "reading the node cache", err)
 		return
 	}
-	up, err := s.runner(r, "manage.up", nil, nil)
+	up, err := s.runner(r, token, "manage.up", nil, nil)
 	if err != nil {
 		s.hubError(w, "reading the connected set", err)
 		return
@@ -80,7 +80,7 @@ func (s *Server) nodeDetail(w http.ResponseWriter, r *http.Request, token *apito
 		if !s.authorize(w, token, requestFor("cache.grains", "", []string{id}, nil, true)) {
 			return
 		}
-		s.forwardRunner(w, r, "cache.grains", []string{id}, nil)
+		s.forwardRunner(w, r, token, "cache.grains", []string{id}, nil)
 
 	case action == "state" && r.Method == http.MethodPost:
 		s.applyState(w, r, token, id)
@@ -147,7 +147,7 @@ func (s *Server) keys(w http.ResponseWriter, r *http.Request, token *apitoken.To
 		if !s.authorize(w, token, requestFor("key.list", "", nil, nil, true)) {
 			return
 		}
-		s.forwardRunner(w, r, "key.list", nil, nil)
+		s.forwardRunner(w, r, token, "key.list", nil, nil)
 
 	case http.MethodPost:
 		var req struct {
@@ -178,7 +178,7 @@ func (s *Server) keys(w http.ResponseWriter, r *http.Request, token *apitoken.To
 		if req.Reason != "" {
 			kwargs["reason"] = req.Reason
 		}
-		s.forwardRunner(w, r, fun, []string{req.Node}, kwargs)
+		s.forwardRunner(w, r, token, fun, []string{req.Node}, kwargs)
 
 	case http.MethodDelete:
 		if id == "" {
@@ -188,7 +188,7 @@ func (s *Server) keys(w http.ResponseWriter, r *http.Request, token *apitoken.To
 		if !s.authorize(w, token, requestFor("key.delete", "", []string{id}, nil, true)) {
 			return
 		}
-		s.forwardRunner(w, r, "key.delete", []string{id}, nil)
+		s.forwardRunner(w, r, token, "key.delete", []string{id}, nil)
 
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "keys take GET, POST, and DELETE")
@@ -237,7 +237,7 @@ func (s *Server) orchestrate(w http.ResponseWriter, r *http.Request, token *apit
 	if !s.authorize(w, token, requestFor("state.orchestrate", "", nil, kwargs, true)) {
 		return
 	}
-	s.forwardRunner(w, r, "state.orchestrate", nil, kwargs)
+	s.forwardRunner(w, r, token, "state.orchestrate", nil, kwargs)
 }
 
 // orchDetail is `GET /v1/orch/{jid}`: the timeline.
@@ -250,7 +250,7 @@ func (s *Server) orchDetail(w http.ResponseWriter, r *http.Request, token *apito
 	if !s.authorize(w, token, requestFor("state.orch_show", "", []string{jid}, nil, true)) {
 		return
 	}
-	s.forwardRunner(w, r, "state.orch_show", []string{jid}, nil)
+	s.forwardRunner(w, r, token, "state.orch_show", []string{jid}, nil)
 }
 
 // pillar is `GET /v1/pillar/{id}`.
@@ -270,13 +270,13 @@ func (s *Server) pillar(w http.ResponseWriter, r *http.Request, token *apitoken.
 	if !s.authorize(w, token, req) {
 		return
 	}
-	s.forwardRunner(w, r, "pillar.show_pillar", []string{id}, nil)
+	s.forwardRunner(w, r, token, "pillar.show_pillar", []string{id}, nil)
 }
 
 // runner calls a hub runner and decodes the answer, for a handler that
 // needs the value rather than the response.
-func (s *Server) runner(r *http.Request, fun string, arg []string, kwarg map[string]any) (any, error) {
-	res, err := s.Hub.Runner(r.Context(), transport.RunnerRequest{Fun: fun, Arg: arg, Kwarg: kwarg})
+func (s *Server) runner(r *http.Request, token *apitoken.Token, fun string, arg []string, kwarg map[string]any) (any, error) {
+	res, err := s.Hub.Runner(r.Context(), s.runnerRequest(token, fun, arg, kwarg))
 	if err != nil {
 		return nil, err
 	}

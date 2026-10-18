@@ -314,6 +314,14 @@ type RunnerRequest struct {
 	Fun   string         `json:"fun"`
 	Arg   []string       `json:"arg,omitempty"`
 	Kwarg map[string]any `json:"kwarg,omitempty"`
+	// Narrow is the scope of the person a caller acts for -- the targets
+	// of their rules granting this runner -- which the hub applies as
+	// well as the caller's own. It can only narrow, so the hub need not
+	// trust it: the API sends its operator's, so that a runner called
+	// through the API reaches what the operator may and not what the
+	// API may (issue 321, M-56). Absent, the caller's scope alone; an
+	// empty list, no node at all.
+	Narrow *[]string `json:"narrow,omitempty"`
 }
 
 // RunnerResponse is what the runner returned.
