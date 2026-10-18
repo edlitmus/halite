@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/fips"
@@ -329,8 +330,15 @@ func TOTPAvailable() bool { return !fips.Restricted() }
 // a clock that is slightly out. More than that turns a thirty-second
 // code into a minute-and-a-half one.
 func (a *Account) VerifyTOTP(code string, now time.Time) bool {
+	_, ok := a.MatchTOTP(code, now)
+	return ok
+}
+
+// MatchTOTP is VerifyTOTP, saying which time step the code was for, so a
+// caller can refuse a step it has already accepted (TOTPSteps).
+func (a *Account) MatchTOTP(code string, now time.Time) (int64, bool) {
 	if a == nil || a.TOTP == "" {
-		return false
+		return 0, false
 	}
 	if !TOTPAvailable() {
 		// Refused, not downgraded. RFC 6238 is HMAC-SHA-1 and SPEC 27.4
@@ -342,21 +350,55 @@ func (a *Account) VerifyTOTP(code string, now time.Time) bool {
 		// It must fail closed. Reporting that the account no longer
 		// needs a second factor would let a password alone through on
 		// exactly the accounts that asked for two.
-		return false
+		return 0, false
 	}
 	secret, err := decodeBase32(a.TOTP)
 	if err != nil {
-		return false
+		return 0, false
 	}
 	counter := now.Unix() / 30
-	match := 0
+	match, step := 0, int64(0)
 	for _, skew := range []int64{-1, 0, 1} {
 		want := totpCode(secret, counter+skew)
-		// Every candidate is compared, and in constant time, so the
-		// answer does not say which step matched.
-		match |= subtle.ConstantTimeCompare([]byte(want), []byte(code))
+		// Every candidate is compared, and in constant time, and the step
+		// is chosen without a branch, so the time taken does not say
+		// which step matched.
+		eq := subtle.ConstantTimeCompare([]byte(want), []byte(code))
+		step = int64(eq)*(counter+skew) + int64(1-eq)*step
+		match |= eq
 	}
-	return match == 1
+	return step, match == 1
+}
+
+// TOTPSteps remembers, per account, the last time step a code was
+// accepted for, and refuses that step and every earlier one.
+//
+// RFC 6238 5.2: "the verifier MUST NOT accept the second attempt of the
+// OTP after the successful validation has been issued for the first OTP".
+// Nothing did, so a code seen over a shoulder or in a proxy's log logged
+// in again for as long as its window lasted -- with the one step of skew
+// either side, up to ninety seconds (issue 321, section 5). It is kept in
+// memory, so a restart forgets it: a code accepted in the ninety seconds
+// before a restart can be used once more after it.
+type TOTPSteps struct {
+	mu   sync.Mutex
+	last map[string]int64
+}
+
+// Use reports whether step is later than any accepted for name, and
+// records it if so. It is one decision under the lock, so two logins
+// racing with the same code cannot both have it.
+func (g *TOTPSteps) Use(name string, step int64) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.last == nil {
+		g.last = map[string]int64{}
+	}
+	if prev, seen := g.last[name]; seen && step <= prev {
+		return false
+	}
+	g.last[name] = step
+	return true
 }
 
 // totpCode is HMAC-SHA-1 over the counter, truncated as RFC 4226 says.

@@ -81,7 +81,9 @@ type Server struct {
 	pendingOnce  sync.Once
 
 	loginLimiter *loginLimit
-	loginOnce    sync.Once
+	// totpSteps refuses a TOTP code for a step already used to log in.
+	totpSteps account.TOTPSteps
+	loginOnce sync.Once
 }
 
 func (s *Server) logins() *loginLimit {
