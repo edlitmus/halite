@@ -112,7 +112,8 @@ func TestARunnerCannotDispatchWhatItsPrincipalMayNotRun(t *testing.T) {
 	loaded, _, err := policy.Load([]byte(`
 roles:
   runners-only:
-    - runners: ['*']
+    - target: '*'
+      runners: ['*']
 bindings:
   - principal: 'cert:CN=ed'
     roles: ['runners-only']

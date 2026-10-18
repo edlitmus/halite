@@ -31,6 +31,7 @@ func registerManageRunner(r *Runners) {
 
 	r.Add(
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "status",
 				"The connected and disconnected halves of the accepted fleet.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
@@ -49,30 +50,36 @@ func registerManageRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
-			Sig: runnerSig("manage", "up", "The accepted nodes holding a stream to this hub.", "19.2"),
-			Fn:  connected,
+			Reach: ReachNodes,
+			Sig:   runnerSig("manage", "up", "The accepted nodes holding a stream to this hub.", "19.2"),
+			Fn:    connected,
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "present",
 				"The accepted nodes holding a stream to this hub. The same set as "+
 					"`up`: a node here is connected or it is not.", "19.2"),
 			Fn: connected,
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "alived",
 				"The accepted nodes holding a stream to this hub. The same set as `up`.", "19.2"),
 			Fn: connected,
 		},
 		RunnerModule{
-			Sig: runnerSig("manage", "down", "The accepted nodes with no stream to this hub.", "19.2"),
-			Fn:  absent,
+			Reach: ReachNodes,
+			Sig:   runnerSig("manage", "down", "The accepted nodes with no stream to this hub.", "19.2"),
+			Fn:    absent,
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "not_alived",
 				"The accepted nodes with no stream to this hub. The same set as `down`.", "19.2"),
 			Fn: absent,
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "list_state",
 				"The nodes in one presence state.", "19.2",
 				signature.Param{
@@ -84,6 +91,7 @@ func registerManageRunner(r *Runners) {
 			Fn: func(c *RunnerContext) (any, error) { return c.inPresenceState(c.arg("state"), true) },
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "list_not_state",
 				"The nodes not in one presence state.", "19.2",
 				signature.Param{
@@ -95,6 +103,7 @@ func registerManageRunner(r *Runners) {
 			Fn: func(c *RunnerContext) (any, error) { return c.inPresenceState(c.arg("state"), false) },
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "versions",
 				"The build each node last reported, against this hub's own.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
@@ -131,12 +140,14 @@ func registerManageRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("manage", "safe_accept",
 				"Accept a pending key only after the node confirms its own "+
 					"fingerprint over an already-trusted channel.", "19.2"),
 			Pending: "it needs a node-side key module to confirm the fingerprint (SPEC section 7.3)",
 		},
 		RunnerModule{
+			Reach: ReachEstate,
 			Sig: runnerSig("manage", "bootstrap",
 				"Install halite-node on a machine that does not have one.", "19.2"),
 			Pending: "phase 5, with agentless mode (SPEC section 21)",
@@ -150,7 +161,8 @@ func registerManageRunner(r *Runners) {
 func registerKeyRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
-			Sig: runnerSig("key", "list", "Every key request, grouped by lifecycle state.", "19.2"),
+			Reach: ReachNodes,
+			Sig:   runnerSig("key", "list", "Every key request, grouped by lifecycle state.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
 				records, err := c.keys()
 				if err != nil {
@@ -159,6 +171,9 @@ func registerKeyRunner(r *Runners) {
 				now := c.Server.now()
 				byState := map[string][]string{}
 				for _, rec := range records {
+					if !c.Visible(rec.NodeID) {
+						continue
+					}
 					state := string(rec.Status(now))
 					byState[state] = append(byState[state], rec.NodeID)
 				}
@@ -172,6 +187,8 @@ func registerKeyRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("key", "finger", "One node's public key fingerprint.", "19.2",
 				runnerArg("node", signature.String, "The node identifier."),
 			),
@@ -184,6 +201,8 @@ func registerKeyRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("key", "accept", "Accept a pending key and issue its certificate.", "19.2",
 				runnerArg("node", signature.String, "The node identifier."),
 			),
@@ -199,6 +218,8 @@ func registerKeyRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("key", "reject", "Refuse a pending key.", "19.2",
 				runnerArg("node", signature.String, "The node identifier."),
 				runnerOpt("reason", signature.String, "", "Why, for the audit record."),
@@ -215,6 +236,8 @@ func registerKeyRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("key", "revoke", "Withdraw an acceptance and denylist the certificate.", "19.2",
 				runnerArg("node", signature.String, "The node identifier."),
 				runnerOpt("reason", signature.String, "", "Why, for the audit record."),
@@ -231,6 +254,8 @@ func registerKeyRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("key", "delete",
 				"Remove a key record. An accepted node is revoked first, so that "+
 					"deleting the record cannot leave a live certificate behind.", "19.2",
@@ -254,11 +279,13 @@ func registerKeyRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("key", "gen_signature",
 				"Produce the hub's key signature for a node to pin before enrolling.", "19.2"),
 			Pending: "the pinning it would produce exists as --hub-fingerprint (SPEC section 7.3)",
 		},
 		RunnerModule{
+			Reach: ReachEstate,
 			Sig: runnerSig("key", "token",
 				"Mint a bootstrap enrollment token.", "19.2"),
 			Pending: "`halite-hub keys token create` mints one today; the runner does not (SPEC section 7.3)",
@@ -271,7 +298,8 @@ func registerKeyRunner(r *Runners) {
 func registerNodegroupsRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
-			Sig: runnerSig("nodegroups", "list", "Every configured nodegroup and its expression.", "19.2"),
+			Reach: ReachHub,
+			Sig:   runnerSig("nodegroups", "list", "Every configured nodegroup and its expression.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
 				groups := c.Server.nodegroups()
 				out := value.NewMap(len(groups))
@@ -287,6 +315,7 @@ func registerNodegroupsRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("nodegroups", "show", "One nodegroup's expression.", "19.2",
 				runnerArg("name", signature.String, "The nodegroup name."),
 			),
@@ -299,6 +328,7 @@ func registerNodegroupsRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("nodegroups", "expand",
 				"The nodes a nodegroup matches right now.", "19.2",
 				runnerArg("name", signature.String, "The nodegroup name."),
@@ -312,7 +342,7 @@ func registerNodegroupsRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				return stringList(matched), nil
+				return stringList(c.visibleOnly(matched)), nil
 			},
 		},
 	)
@@ -344,16 +374,19 @@ func registerSaltutilRunner(r *Runners) {
 
 	r.Add(
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("saltutil", "refresh_pillar",
 				"Tell the matched nodes to recompile their pillar.", "19.2", targetParams...),
 			Fn: refresh("pillar.refresh"),
 		},
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("saltutil", "refresh_grains",
 				"Tell the matched nodes to re-collect and re-push their grains.", "19.2", targetParams...),
 			Fn: refresh("saltutil.refresh_grains"),
 		},
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("saltutil", "sync_all",
 				"Distribute the extension bundles the matched nodes are entitled to.", "19.2"),
 			// The node-side `saltutil.sync_all` is built and is what
@@ -448,8 +481,27 @@ func (c *RunnerContext) keyRecord(node string) (*keystore.Record, error) {
 // current.
 // acceptedNodes is what the fleet runners report on: the nodes this hub
 // accepted, plus the ones its relays vouch for.
+//
+// Only the nodes in the caller's scope: a manage runner granted against
+// `web*` reports on web* and says nothing of the rest of the estate
+// (issue 321, M-56). Every manage runner lists through here.
 func (c *RunnerContext) acceptedNodes() ([]string, error) {
-	return c.Server.targetableNodes()
+	all, err := c.Server.targetableNodes()
+	if err != nil {
+		return nil, err
+	}
+	return c.visibleOnly(all), nil
+}
+
+// visibleOnly keeps the nodes in the caller's scope.
+func (c *RunnerContext) visibleOnly(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if c.Visible(id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (c *RunnerContext) connectedNodes() ([]any, error) {

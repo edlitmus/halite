@@ -11,6 +11,7 @@ import (
 func registerReactorRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("reactor", "list",
 				"The configured tag globs, the files each runs, and the principal "+
 					"each runs as.", "18.1"),
@@ -19,6 +20,8 @@ func registerReactorRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("reactor", "test",
 				"Render the reactions a tag would fire and print what they would "+
 					"dispatch, without dispatching any.", "18.2",

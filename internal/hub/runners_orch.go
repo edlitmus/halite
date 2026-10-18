@@ -3,6 +3,7 @@ package hub
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/edlitmus/halite/internal/job"
 	"sort"
 	"time"
 
@@ -22,17 +23,20 @@ func registerStateRunner(r *Runners) {
 
 	r.Add(
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("state", "orchestrate",
 				"Compile an orchestration SLS on the hub and run it.", "19.1", orchParams...),
 			Fn: runOrchestration,
 		},
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("state", "orch",
 				"Compile an orchestration SLS on the hub and run it. Salt's short name for "+
 					"`state.orchestrate`.", "19.1", orchParams...),
 			Fn: runOrchestration,
 		},
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("state", "orchestrate_show_sls",
 				"Compile an orchestration and print the steps it would run, in order, "+
 					"without running any.", "19.1",
@@ -74,6 +78,7 @@ func registerStateRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("state", "orch_show",
 				"The timeline of one orchestration run: every step, in the order it ran, "+
 					"with its result and the nodes it reached.", "19.1",
@@ -88,10 +93,18 @@ func registerStateRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
+				// A run's timeline holds the nodes every step reached, so
+				// only the principal who ran it, and a scope of '*', see
+				// it; anyone else is told there is no such run (issue
+				// 321, M-56).
+				if !c.Scope.Everything() && run.Principal != c.Principal {
+					return nil, fmt.Errorf("%s: %w", id, job.ErrNoJob)
+				}
 				return orchJSON(run, true), nil
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("state", "orch_list",
 				"Recent orchestration runs, newest first.", "19.1",
 				runnerOpt("limit", signature.Int, 20, "How many to list."),
@@ -103,12 +116,15 @@ func registerStateRunner(r *Runners) {
 				}
 				out := value.NewMap(len(runs))
 				for _, run := range runs {
-					out.Set(string(run.JID), orchJSON(run, false))
+					if c.Scope.Everything() || run.Principal == c.Principal {
+						out.Set(string(run.JID), orchJSON(run, false))
+					}
 				}
 				return out, nil
 			},
 		},
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("state", "orch_resume",
 				"Run an orchestration again from a named step, carrying the steps before "+
 					"it forward as they finished. Salt cannot do this, and it is what makes "+
@@ -148,22 +164,26 @@ func registerStateRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("state", "single",
 				"Run one state against the hub itself.", "19.2"),
 			Pending: "the phase that gives the hub a state surface of its own; SPEC 25.5 " +
 				"keeps the modules that would need off it (SPEC section 19.2)",
 		},
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("state", "event",
 				"Fire an event from inside an orchestration.", "19.2"),
 			Pending: "`event.send` fires an event today; firing one from inside a step does not (SPEC section 19.2)",
 		},
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("state", "pause",
 				"Hold a running orchestration at its next step.", "19.2"),
 			Pending: "it needs the durable work queue of SPEC section 19.4",
 		},
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("state", "resume",
 				"Let a held orchestration continue.", "19.2"),
 			Pending: "it needs the durable work queue of SPEC section 19.4",

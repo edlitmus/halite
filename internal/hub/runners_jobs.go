@@ -16,6 +16,7 @@ import (
 func registerJobsRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("jobs", "list_jobs",
 				"List recent jobs, most recent first.", "19.2",
 				runnerOpt("limit", signature.Int, 20, "How many to list."),
@@ -31,12 +32,15 @@ func registerJobsRunner(r *Runners) {
 				}
 				out := value.NewMap(len(list))
 				for _, j := range list {
-					out.Set(string(j.JID), jobSummary(j))
+					if c.jobVisible(j) {
+						out.Set(string(j.JID), c.scopedSummary(j))
+					}
 				}
 				return out, nil
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("jobs", "list_job",
 				"The record of one job, with its returns.", "19.2",
 				runnerArg("jid", signature.String, "The job identifier."),
@@ -44,6 +48,7 @@ func registerJobsRunner(r *Runners) {
 			Fn: func(c *RunnerContext) (any, error) { return c.jobDetail(c.arg("jid")) },
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("jobs", "print_job",
 				"The record of one job, with its returns. The same as list_job, "+
 					"which is what Salt's two names amount to.", "19.2",
@@ -52,6 +57,7 @@ func registerJobsRunner(r *Runners) {
 			Fn: func(c *RunnerContext) (any, error) { return c.jobDetail(c.arg("jid")) },
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("jobs", "lookup_jid",
 				"What each node returned for a job.", "19.2",
 				runnerArg("jid", signature.String, "The job identifier."),
@@ -69,6 +75,7 @@ func registerJobsRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("jobs", "active",
 				"Jobs the hub is still expecting returns for.", "19.2",
 				runnerOpt("limit", signature.Int, 50, "How many recent jobs to consider."),
@@ -87,18 +94,22 @@ func registerJobsRunner(r *Runners) {
 					if j.State != job.Dispatched && j.State != job.Batching {
 						continue
 					}
+					if !c.jobVisible(j) {
+						continue
+					}
 					missing, err := jobs.Missing(j.JID)
 					if err != nil {
 						return nil, err
 					}
-					summary := jobSummary(j)
-					summary.Set("missing", stringList(missing))
+					summary := c.scopedSummary(j)
+					summary.Set("missing", stringList(c.visibleOnly(missing)))
 					out.Set(string(j.JID), summary)
 				}
 				return out, nil
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("jobs", "missing",
 				"The nodes a job has not heard from.", "19.2",
 				runnerArg("jid", signature.String, "The job identifier."),
@@ -108,7 +119,7 @@ func registerJobsRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				id, err := parseJID(c.arg("jid"))
+				id, err := c.visibleJID(c.arg("jid"))
 				if err != nil {
 					return nil, err
 				}
@@ -116,10 +127,11 @@ func registerJobsRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				return stringList(missing), nil
+				return stringList(c.visibleOnly(missing)), nil
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("jobs", "exit_success",
 				"Whether every expected node returned success. A node that "+
 					"never answered is not a success, which is the distinction "+
@@ -131,7 +143,10 @@ func registerJobsRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				id, err := parseJID(c.arg("jid"))
+				// Over the nodes in the caller's scope: whether the
+				// nodes it may see all succeeded, which is the question
+				// it can be told the answer to.
+				id, err := c.visibleJID(c.arg("jid"))
 				if err != nil {
 					return nil, err
 				}
@@ -139,25 +154,32 @@ func registerJobsRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				if len(missing) > 0 {
+				if len(c.visibleOnly(missing)) > 0 {
 					return false, nil
 				}
 				returns, err := jobs.Returns(id)
 				if err != nil {
 					return nil, err
 				}
-				if len(returns) == 0 {
-					return false, nil
+				j, err := jobs.Get(id)
+				if err != nil {
+					return nil, err
 				}
+				seen := 0
 				for _, ret := range returns {
+					if !c.returnVisible(j, ret.NodeID) {
+						continue
+					}
+					seen++
 					if !ret.Success {
 						return false, nil
 					}
 				}
-				return true, nil
+				return seen > 0, nil
 			},
 		},
 		RunnerModule{
+			Reach: ReachEstate,
 			Sig: runnerSig("jobs", "prune",
 				"Drop cached jobs past the retention policy, and report how many.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
@@ -180,6 +202,7 @@ func registerJobsRunner(r *Runners) {
 func registerSurveyRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("survey", "hash",
 				"Group a job's nodes by the digest of what they returned.", "19.2",
 				runnerArg("jid", signature.String, "The job identifier."),
@@ -197,6 +220,7 @@ func registerSurveyRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("survey", "diff",
 				"Group a job's nodes by what they returned, and show one "+
 					"representative return per group.", "19.2",
@@ -225,6 +249,7 @@ func registerSurveyRunner(r *Runners) {
 // orchestration or a reaction can fail on purpose.
 func registerErrorRunner(r *Runners) {
 	r.Add(RunnerModule{
+		Reach: ReachHub,
 		Sig: runnerSig("error", "error",
 			"Raise an error. Used by an orchestration that has decided to stop.", "19.2",
 			runnerOpt("message", signature.String, "an error raised by error.error",
@@ -253,16 +278,38 @@ func parseJID(s string) (job.ID, error) {
 	return id, nil
 }
 
+// returns is a visible job's returns from the nodes the caller may see.
 func (c *RunnerContext) returns(jid string) ([]*job.Return, error) {
 	jobs, err := c.jobs()
 	if err != nil {
 		return nil, err
 	}
-	id, err := parseJID(jid)
+	id, err := c.visibleJID(jid)
 	if err != nil {
 		return nil, err
 	}
-	return jobs.Returns(id)
+	j, err := jobs.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	all, err := jobs.Returns(id)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0:0]
+	for _, ret := range all {
+		if c.returnVisible(j, ret.NodeID) {
+			out = append(out, ret)
+		}
+	}
+	return out, nil
+}
+
+// returnVisible reports whether one node's return to a visible job may
+// be shown: one from a node in scope, or any return to a runner call,
+// which only its caller can see at all.
+func (c *RunnerContext) returnVisible(j *job.Job, node string) bool {
+	return j.Target == RunnerTarget || c.Visible(node)
 }
 
 func (c *RunnerContext) jobDetail(jid string) (any, error) {
@@ -270,7 +317,7 @@ func (c *RunnerContext) jobDetail(jid string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	id, err := parseJID(jid)
+	id, err := c.visibleJID(jid)
 	if err != nil {
 		return nil, err
 	}
@@ -286,14 +333,68 @@ func (c *RunnerContext) jobDetail(jid string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := jobSummary(j)
+	out := c.scopedSummary(j)
 	rets := value.NewMap(len(returns))
 	for _, ret := range returns {
-		rets.Set(ret.NodeID, decodedReturn(ret))
+		if c.returnVisible(j, ret.NodeID) {
+			rets.Set(ret.NodeID, decodedReturn(ret))
+		}
 	}
 	out.Set("returns", rets)
-	out.Set("missing", stringList(missing))
+	out.Set("missing", stringList(c.visibleOnly(missing)))
 	return out, nil
+}
+
+// jobVisible reports whether the caller may see a job at all: one that
+// went to a node in its scope, or a runner call it made itself. A runner
+// call's arguments name nodes -- `pillar.show_pillar db1` -- and it went
+// to the hub, which is no node in anybody's scope, so only its caller and
+// a scope of '*' see it (issue 321, M-56).
+func (c *RunnerContext) jobVisible(j *job.Job) bool {
+	if c.Scope.Everything() {
+		return true
+	}
+	if j.Target == RunnerTarget {
+		return j.Submitter == c.Principal
+	}
+	for _, n := range j.Nodes {
+		if c.Visible(n) {
+			return true
+		}
+	}
+	return false
+}
+
+// visibleJID is parseJID for a job the caller may see. One it may not
+// is answered as one that does not exist, so that asking is not a way to
+// learn which jobs there are.
+func (c *RunnerContext) visibleJID(jid string) (job.ID, error) {
+	id, err := parseJID(jid)
+	if err != nil {
+		return "", err
+	}
+	jobs, err := c.jobs()
+	if err != nil {
+		return "", err
+	}
+	j, err := jobs.Get(id)
+	if err != nil {
+		return "", err
+	}
+	if !c.jobVisible(j) {
+		return "", fmt.Errorf("%s: %w", id, job.ErrNoJob)
+	}
+	return id, nil
+}
+
+// scopedSummary is jobSummary with the node list cut to the caller's
+// scope.
+func (c *RunnerContext) scopedSummary(j *job.Job) *value.Map {
+	out := jobSummary(j)
+	if len(j.Nodes) > 0 && j.Target != RunnerTarget {
+		out.Set("nodes", stringList(c.visibleOnly(j.Nodes)))
+	}
+	return out
 }
 
 // surveyGroup is one set of nodes that returned the same thing.

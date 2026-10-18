@@ -28,6 +28,8 @@ func registerPillarRunner(r *Runners) {
 
 	r.Add(
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("pillar", "show_pillar",
 				"The pillar this hub would compile for one node.", "19.2", nodeAndEnv...),
 			Fn: func(c *RunnerContext) (any, error) {
@@ -39,6 +41,8 @@ func registerPillarRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("pillar", "show_top",
 				"The pillar files the top file selects for one node, in merge order.",
 				"19.2", nodeAndEnv...),
@@ -51,6 +55,7 @@ func registerPillarRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachEstate,
 			Sig: runnerSig("pillar", "clear_cache",
 				"Drop the hub's compiled-pillar cache.", "19.2"),
 			Pending: "the phase that gives the hub a compiled-pillar cache; today it " +
@@ -64,6 +69,8 @@ func registerPillarRunner(r *Runners) {
 func registerCacheRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("cache", "grains",
 				"The grains this hub last received from a node, or from every node "+
 					"when none is named.", "19.2",
@@ -81,6 +88,11 @@ func registerCacheRunner(r *Runners) {
 				}
 				out := value.NewMap(len(known))
 				for _, id := range known {
+					// Every node in the caller's scope, not every node
+					// (issue 321, M-56).
+					if !c.Visible(id) {
+						continue
+					}
 					entry, err := c.Server.cachedNode(id)
 					if err != nil {
 						// One unreadable record must not hide the
@@ -96,6 +108,8 @@ func registerCacheRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("cache", "clear_grains",
 				"Forget one node's cached grains, so the next match on a grain "+
 					"waits for the node to push again.", "19.2",
@@ -109,6 +123,7 @@ func registerCacheRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachEstate,
 			Sig: runnerSig("cache", "clear_all",
 				"Forget every node's cached grains. The mine is cleared with "+
 					"`cache.clear_mine`, which names the node.", "19.2"),
@@ -128,10 +143,14 @@ func registerCacheRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig:     runnerSig("cache", "pillar", "One node's cached pillar.", "19.2"),
 			Pending: "the phase that gives the hub a compiled-pillar cache; `pillar.show_pillar` compiles it now (SPEC section 12.8)",
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("cache", "mine", "One node's published mine data.", "19.2",
 				runnerArg("node", signature.String, "The node identifier."),
 			),
@@ -152,10 +171,13 @@ func registerCacheRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachEstate,
 			Sig:     runnerSig("cache", "clear_pillar", "Drop cached pillar.", "19.2"),
 			Pending: "the phase that gives the hub a compiled-pillar cache (SPEC section 12.8)",
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("cache", "clear_mine", "Drop one node's published mine data.", "19.2",
 				runnerArg("node", signature.String, "The node identifier."),
 			),
@@ -176,7 +198,8 @@ func registerFileserverRunner(r *Runners) {
 
 	r.Add(
 		RunnerModule{
-			Sig: runnerSig("fileserver", "envs", "The environments this hub serves.", "19.2"),
+			Reach: ReachHub,
+			Sig:   runnerSig("fileserver", "envs", "The environments this hub serves.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
 				roots, err := c.roots()
 				if err != nil {
@@ -186,7 +209,8 @@ func registerFileserverRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
-			Sig: runnerSig("fileserver", "file_list", "The files in one environment.", "19.2", envParam),
+			Reach: ReachHub,
+			Sig:   runnerSig("fileserver", "file_list", "The files in one environment.", "19.2", envParam),
 			Fn: func(c *RunnerContext) (any, error) {
 				files, err := c.fileList()
 				if err != nil {
@@ -196,7 +220,8 @@ func registerFileserverRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
-			Sig: runnerSig("fileserver", "dir_list", "The directories in one environment.", "19.2", envParam),
+			Reach: ReachHub,
+			Sig:   runnerSig("fileserver", "dir_list", "The directories in one environment.", "19.2", envParam),
 			Fn: func(c *RunnerContext) (any, error) {
 				files, err := c.fileList()
 				if err != nil {
@@ -217,12 +242,14 @@ func registerFileserverRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("fileserver", "symlink_list",
 				"The symbolic links in one environment.", "19.2", envParam),
 			Pending: "the phase that adds symlink reporting to the roots backend; " +
 				"it resolves links today and does not list them (SPEC section 13.5)",
 		},
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("fileserver", "update",
 				"Fetch every remote file server backend and report what each ref resolved to.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
@@ -237,18 +264,22 @@ func registerFileserverRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachHub,
 			Sig:     runnerSig("fileserver", "clear_cache", "Drop a remote backend's cache.", "19.2"),
 			Pending: "phase 5, with gitfs and s3fs (SPEC section 13.2)",
 		},
 		RunnerModule{
+			Reach:   ReachHub,
 			Sig:     runnerSig("fileserver", "lock", "Take a remote backend's update lock.", "19.2"),
 			Pending: "phase 5, with gitfs and s3fs (SPEC section 13.2)",
 		},
 		RunnerModule{
+			Reach:   ReachHub,
 			Sig:     runnerSig("fileserver", "clear_lock", "Release a remote backend's update lock.", "19.2"),
 			Pending: "phase 5, with gitfs and s3fs (SPEC section 13.2)",
 		},
 		RunnerModule{
+			Reach:   ReachHub,
 			Sig:     runnerSig("fileserver", "versions", "The revision each backend is serving.", "19.2"),
 			Pending: "phase 5, with gitfs and s3fs (SPEC section 13.2)",
 		},
@@ -260,6 +291,7 @@ func registerFileserverRunner(r *Runners) {
 func registerEventRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
+			Reach: ReachHub,
 			Sig: runnerSig("event", "send", "Put an event on this hub's bus.", "19.2",
 				runnerArg("tag", signature.String, "The tag, rooted at halite/."),
 				runnerOpt("data", signature.Map, nil, "The payload."),
@@ -297,6 +329,7 @@ func registerEventRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("event", "replay",
 				"Read events already on the bus, from an offset.", "19.2",
 				runnerOpt("tag", signature.String, "halite/**", "A tag glob, or a comma list of them."),
@@ -312,10 +345,11 @@ func registerEventRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				return eventPage(events, next)
+				return eventPage(c.visibleEvents(events), next)
 			},
 		},
 		RunnerModule{
+			Reach: ReachNodes,
 			Sig: runnerSig("event", "listen",
 				"Wait for events on the bus and return what arrived.", "19.2",
 				runnerOpt("tag", signature.String, "halite/**", "A tag glob, or a comma list of them."),
@@ -341,7 +375,10 @@ func registerEventRunner(r *Runners) {
 					if err != nil {
 						return nil, err
 					}
-					if len(events) > 0 {
+					// Only what the caller may see counts as an arrival:
+					// an event about a node outside its scope neither
+					// answers nor ends the wait.
+					if events = c.visibleEvents(events); len(events) > 0 {
 						return eventPage(events, next)
 					}
 					from = next
@@ -523,4 +560,18 @@ func eventPage(events []eventbus.Event, next string) (any, error) {
 	out.Set("events", list)
 	out.Set("next", next)
 	return out, nil
+}
+
+// visibleEvents keeps the events the caller may see: one about a node
+// outside its scope is dropped, as the API's event stream drops it, by
+// the same eventbus.NodeOf. One about no node -- a job's creation, the
+// reactor's own -- is kept.
+func (c *RunnerContext) visibleEvents(events []eventbus.Event) []eventbus.Event {
+	out := events[:0:0]
+	for i := range events {
+		if node := eventbus.NodeOf(&events[i]); node == "" || c.Visible(node) {
+			out = append(out, events[i])
+		}
+	}
+	return out
 }
