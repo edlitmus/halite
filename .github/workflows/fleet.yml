@@ -555,7 +555,7 @@ jobs:
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveScriptRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
+              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
             echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
           test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"
@@ -862,7 +862,7 @@ jobs:
         run: |
           set -e
           sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
-            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveScriptRunsAs|TestLiveCronForAnotherAccount|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveConformance' ./internal/builtin/
+            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveConformance' ./internal/builtin/
 
       # The account tests create and remove a real account. If one is
       # left behind the machine is thrown away anyway, but a leg that

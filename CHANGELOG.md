@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A `check_cmd` no longer exposes the pending contents
+
+The temporary file a `check_cmd` reads was world-readable while the
+checker ran, so the contents about to be written to a private file
+could be read from `/tmp`. It is now private, and given to the `runas`
+account when the checker runs as one (issue 321, section 5). DIVERGENCE
+5.372.
+
 ### `cmd.shell`, `cmd.exec_code` and `network.connect` refuse an unreadable `timeout`
 
 A `timeout` that did not parse, `banana` or a template that rendered

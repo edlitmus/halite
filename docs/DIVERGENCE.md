@@ -30701,6 +30701,29 @@ through the real runner under `timeout: "1"`: it ends in 1.00 s.
 **Not verified.** `cmd.script` with a `salt://` source was not run with a
 bad timeout; it builds its command through the same `scriptCommand`.
 
+### 5.372 A check_cmd's temporary file was readable by every account
+
+Issue 321, a section 5 (Low) finding: "The `check_cmd` temp file is chmod
+0644 before the checker runs; pending contents of a 0600 target are
+world-readable in `/tmp` or `tmp_dir` for the duration." It was, and on
+purpose: the comment said a checker run through `runas` must be able to
+read it. `TestTheCheckCmdFileIsPrivate` uses a checker that prints what
+it was handed: against main, `-rw-r--r-- 1 1000 1000 8 ...
+/tmp/halite-check-457887807`, the contents of a `mode: '0600'` file.
+
+The file now stays 0600, as `CreateTemp` makes it. For a checker run as
+another account it is given to that account, and made in `/tmp` rather
+than `$TMPDIR`, which is often private to the caller (5.352). The reason
+the 0644 gave did not hold in that case either:
+`TestLiveCheckCmdRunsAsAnotherAccount`, as root on Ubuntu 24.04.5 with a
+`$TMPDIR` nobody cannot enter and `cat` as the checker run as `nobody`,
+failed against main ("rejected the contents ... exit status 1"), failed
+with the file left as root's, and passes now. It joins the `linux` and
+`macos` legs' filters; the `freebsd` leg runs every `TestLive*`.
+
+**Not verified.** Windows, where `runas` and modes mean something else,
+is unchanged. The live test was not run on beastie.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

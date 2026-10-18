@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -58,6 +59,11 @@ func checkCmdParams() []signature.Param {
 func runFileCheckCmd(c *exec.Context, args *value.Map, path string, want []byte) (states.Result, bool) {
 	dir := states.Str(args, "tmp_dir", "")
 	pattern := "halite-check-*" + states.Str(args, "tmp_ext", "")
+	// A checker run as another account is handed the file, and needs to
+	// reach it: $TMPDIR is often the caller's own and private (5.352).
+	if dir == "" && c.RunAs != "" && runtime.GOOS != "windows" {
+		dir = "/tmp"
+	}
 
 	f, err := os.CreateTemp(dir, pattern)
 	if err != nil {
@@ -74,12 +80,17 @@ func runFileCheckCmd(c *exec.Context, args *value.Map, path string, want []byte)
 			"The check_cmd for %s could not write its temporary file: %v",
 			path, firstErr(writeErr, closeErr))), false
 	}
-	// Readable by the checker, which may drop privileges: visudo is the
-	// documented case and runs as root, but a checker invoked through
-	// `runas` is not.
-	if err := os.Chmod(tmp, 0o644); err != nil {
-		return states.False(fmt.Sprintf(
-			"The check_cmd for %s could not set the mode on its temporary file: %v", path, err)), false
+	// Private, as CreateTemp makes it, and given to the account the
+	// checker runs as when that is another one. It was chmod 0644 so that
+	// such a checker could read it, which made the pending contents of a
+	// 0600 target -- a sudoers fragment, a key -- readable from /tmp by
+	// every account while the checker ran (issue 321, section 5).
+	if c.RunAs != "" && runtime.GOOS != "windows" {
+		if err := applyOwnership(tmp, c.RunAs, ""); err != nil {
+			return states.False(fmt.Sprintf(
+				"The check_cmd for %s could not give its temporary file to %s, who runs the check: %v",
+				path, c.RunAs, err)), false
+		}
 	}
 
 	for _, cmd := range c.CheckCmd {
