@@ -29594,6 +29594,21 @@ other modules. With `writeAtomic` restored, all ten fail.
 - `file.copy` and `restore_backup` were named in the finding and not
   run here. Both write through `writeAtomic`, and neither was driven.
 - Linux as root was not run; the root run was FreeBSD only.
+
+#### Corrected: the new-file half of the test assumed Linux
+
+`TestWriteAtomicKeepsTheReplacedFilesGroup` then checked that a new file
+did *not* take the other group, by comparing with the writer's group.
+That is Linux's rule. On FreeBSD a new file takes its directory's group,
+and on beastie, as an ordinary account, `t.TempDir()` is under /tmp,
+group wheel, which was also the other group the test picked: so it
+failed there, on main, with "a new file took the other group 0". It
+passed in CI's FreeBSD VM, whose temporary directory's group is evidently
+the account's own. Found while running the package on beastie for an
+unrelated change. The test now compares with a file created plainly
+beside the new one, which is the platform's answer on every platform,
+and passes on beastie.
+
 ### 5.344 Five mode parameters read an unquoted mode as a decimal number
 
 Issue 321 finding M-21. The signature layer's `Mode` type refuses an
