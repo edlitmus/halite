@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -244,6 +245,18 @@ func sshKnownHostsPresent(c *exec.Context, args *value.Map) (states.Result, erro
 	host := strings.TrimSpace(states.Str(args, "name", ""))
 	if host == "" {
 		return states.False("This state needs a host."), nil
+	}
+	// One line per host, written from these three as given: a newline in
+	// any of them started a second line, and a second line is a second
+	// host key that ssh trusts, `name: "web1\nevil ssh-ed25519 <key>"`
+	// among them (issue 321, section 5, the ssh_auth finding's twin here).
+	// Each is one word, so whitespace is refused as well.
+	for _, f := range []string{"name", "key", "enc"} {
+		v := strings.TrimSpace(states.Str(args, f, ""))
+		if strings.IndexFunc(v, unicode.IsControl) >= 0 || strings.ContainsAny(v, " \t") {
+			return states.False(fmt.Sprintf(
+				"The host key was not written: the %s %q is not one word, and would start another line of known_hosts.", f, v)), nil
+		}
 	}
 	port := states.Int(args, "port", 22)
 	path, err := knownHostsPath(states.Str(args, "user", ""), states.Str(args, "config", ""))

@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `ssh_auth` and `ssh_known_hosts` refuse a value that adds a line
+
+A newline in an `ssh_auth.present` comment, option, key type or name, or
+in an `ssh_known_hosts.present` name, key or type, wrote a second key
+into `authorized_keys` or a second host into `known_hosts`, and the state
+reported success. Such a value is now refused (issue 321, section 5).
+DIVERGENCE 5.373.
+
 ### A `check_cmd` no longer exposes the pending contents
 
 The temporary file a `check_cmd` reads was world-readable while the
