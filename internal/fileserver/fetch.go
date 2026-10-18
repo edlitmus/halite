@@ -2,6 +2,7 @@ package fileserver
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -69,23 +70,44 @@ func (f *Fetcher) ListUnder(env, prefix string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return relativeTo(StripScheme(prefix), m), nil
+	return relativeTo(StripScheme(prefix), m)
 }
 
 // relativeTo trims the prefix from a manifest's entries, so a caller
 // gets the paths as they will be laid out under a destination rather
 // than as they sit in the tree.
-func relativeTo(prefix string, m *Manifest) []string {
+func relativeTo(prefix string, m *Manifest) ([]string, error) {
 	prefix = strings.Trim(prefix, "/")
 	out := make([]string, 0, len(m.Files))
 	for _, e := range m.Files {
-		rel := strings.TrimPrefix(strings.Trim(e.Path, "/"), prefix)
-		rel = strings.TrimPrefix(rel, "/")
+		p := strings.Trim(e.Path, "/")
+		// The prefix is a directory, matched on a path boundary. It was
+		// trimmed as a string, so under "web" an entry "webby/x" came back
+		// as "by/x": a file of another directory, copied in.
+		var rel string
+		switch {
+		case prefix == "":
+			rel = p
+		case p == prefix:
+			continue
+		case strings.HasPrefix(p, prefix+"/"):
+			rel = p[len(prefix)+1:]
+		default:
+			continue
+		}
 		if rel == "" {
 			continue
 		}
-		out = append(out, rel)
+		// A path that leaves the destination is refused, not laid out.
+		// Only a hub that is lying sends one, and SPEC 25.6 does not trust
+		// the hub: "x/../../../etc/cron.d/evil" went to file.recurse as it
+		// stood and was written there (issue 321, section 5).
+		if !path.IsAbs(rel) && path.Clean(rel) == rel && !strings.HasPrefix(rel, "../") && rel != ".." {
+			out = append(out, rel)
+			continue
+		}
+		return nil, fmt.Errorf("the listing of %q holds %q, which is not a path inside it", prefix, e.Path)
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }

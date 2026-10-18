@@ -400,5 +400,5 @@ func (r *Remote) ListUnder(env, prefix string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return relativeTo(StripScheme(prefix), m), nil
+	return relativeTo(StripScheme(prefix), m)
 }
