@@ -31055,6 +31055,76 @@ curves itself, and does not show what Go's TLS did without that.
 
 **Not verified.** `fips140=only`, and toolchains other than go1.27.2.
 
+### 5.389 A runner reached every node, whatever its holder's other rules said
+
+Issue 321 design note M-56: "runners are not scoped. SPEC 23.5 does not
+address it; a sentence there, or scoping, is owed." Scoping, stricter
+than Salt, by the operator's decision.
+
+**What Salt does,** read from Salt 3007.1's `salt/utils/minions.py`
+rather than remembered: `runner_check` and `wheel_check` both go to
+`spec_check`, which matches the function name -- `@runner`, `@<module>`,
+or a list of functions with `args` and `kwargs` patterns -- and consults
+no target. A runner runs with the whole reach of Salt's server, so a
+grant of `pillar.show_pillar` reads any machine's pillar, and the only
+narrowing is an argument pattern written per function. halite had the
+same model: a runner rule had no target, and a role scoped to `web*` for
+its functions read db1's pillar, listed db1 in `manage.status`, and saw
+db1's jobs and their returns. `TestARunnerIsConfinedToItsRulesTarget`,
+`TestARunnerListsOnlyTheNodesInScope` and
+`TestARunnerShowsOnlyTheJobsInScope` fail every one of their assertions
+against main.
+
+**What halite does now.** A runner rule may name a `target`, and
+`policy.Scope` is the targets of the rules granting a runner to a
+principal; a rule with no target grants the runner and reaches no node,
+as a missing field is a wildcard nowhere else either. Each of the 83
+runners declares its `Reach`, and `Runners.Add` refuses a built runner
+that declares none:
+
+| Reach | Runners | Held by |
+|---|---|---|
+| hub | fileserver, `event.send`, `reactor.list`, `nodegroups.list`/`show`, `error.error` | nothing; no node is touched |
+| dispatch | `state.orchestrate`/`orch`/`orch_resume`, `saltutil.refresh_*`, `mine.update` | each job, authorized against the function rules as it is sent, as before |
+| nodes | `pillar.show_*`, `key.*`, `cache.*` naming a node, `mine.get`/`flush`/`delete`/`valid`, `reactor.test`, and everything that lists: `manage.*`, `key.list`, `jobs.*`, `survey.*`, `nodegroups.expand`, `event.replay`/`listen`, `state.orch_show`/`orch_list` | a named node or a target expression reaching outside the scope is refused before the runner runs; what is listed is cut to the scope |
+| estate | `cache.clear_all`, `jobs.prune`, and the unbuilt `cache.clear_pillar`, `pillar.clear_cache`, `key.token`, `manage.bootstrap` | `target: '*'`, written |
+
+A job is listed only if it went to a node in scope, and then only that
+node's part of it; one that did not is answered as one that does not
+exist. A runner call's own job, and an orchestration run, are seen only
+by the principal who made them and by a scope of `*`, because their
+arguments and timelines name nodes. Events are cut by
+`eventbus.NodeOf`, now one function shared with the API's event stream.
+
+**Through the API.** The hub runs every API call as the API's
+certificate, so an operator scoped to `web*` would have reached what the
+API's role reaches. The API now sends the operator's scope, from the
+roles in the token, as `RunnerRequest.Narrow`, and the hub holds the
+call to both (`Scope.Within`). A narrowing can only make the scope
+smaller, so the hub need not trust the API for it.
+`TestARunnerThroughTheAPICarriesTheOperatorsScope` fails when the API
+does not send it; `TestARunnerCallIsHeldToItsNarrowing` holds the hub.
+
+**Found on the way.** The bootstrap administrator policy that `keys
+operator create --admin` writes granted `runners: ['*']` with no target,
+which would now have reached nothing; it says `target: '*'`. And the
+example policy's `deployer` granted `jobs.lookup`, which is no runner
+(it is `jobs.lookup_jid`) and so granted nothing; beastie's production
+policy carries the same line.
+
+**Breaking.** A runner rule that grants node-touching runners needs a
+target. beastie's production policy was read: `administrator`'s
+`- runners: ['*']` needs `target: '*'`, and `deployer`'s `jobs.lookup`
+grants nothing either way. Its `relay.proxy` and `metrics.show` rules
+are not runners of this registry and are unaffected. The production file
+was not changed.
+
+**Not done.** Through the API every operator's runner calls are the
+API's principal, so an orchestration run or a runner call made through
+the API is visible to every operator whose scope is `*`, and to the
+API's other callers as "their own"; the API does not yet pass who it
+acts for. A webhook's runner call carries no narrowing and is held to
+the API's scope alone. Not run against the production hub.
 
 
 ## 6. Everything else not started
