@@ -26,7 +26,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 A file-server listing holding `..` placed files outside `file.recurse`'s
 destination, and a prefix such as `web` also matched `webby/`. A listing
 that leaves its directory is now refused, and the prefix is matched as a
-directory (issue 321, section 5). DIVERGENCE 5.379.
+directory (issue 321, section 5). DIVERGENCE 5.386.
 
 ### A PKCS#12 bundle is private while it is written
 

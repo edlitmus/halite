@@ -30937,8 +30937,7 @@ sees `-rw-------` on a temporary name. The real-openssl tests in
 this writes.
 
 **Not verified.** LibreSSL, and FreeBSD's base openssl; neither was run.
-
-### 5.379 A file listing could place a file outside file.recurse's destination
+### 5.386 A file listing could place a file outside file.recurse's destination
 
 Issue 321, a section 5 (Low) finding: "`file.recurse` joins hub-listed
 relative paths with no `..` check ... `web/x/../y` yields `rel="../y"`
@@ -30967,6 +30966,8 @@ listing never went through it.
 
 **Not done.** The audit's "`cacheFile` accepts a body with no published
 digest" was not looked at. Not run against a real hub.
+
+
 
 ## 6. Everything else not started
 
