@@ -74,6 +74,16 @@ func fileRecurse(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("%s could not be listed: %v", source, err)), nil
 	}
+	// Each is joined to dest and written as root. The fileserver's
+	// listers refuse a path that leaves the listing, and this refuses it
+	// again, for any lister: a hub is not trusted to say where files go
+	// (SPEC 25.6; issue 321, section 5).
+	for _, rel := range paths {
+		if !filepath.IsLocal(filepath.FromSlash(rel)) {
+			return states.False(fmt.Sprintf(
+				"%s lists %q, which is not a path inside %s; nothing was written.", source, rel, dest)), nil
+		}
+	}
 	paths = filterTreePaths(paths, states.Str(args, "include_pat", ""),
 		states.Str(args, "exclude_pat", ""))
 	if len(paths) == 0 {
