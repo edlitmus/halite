@@ -14,8 +14,10 @@ this file to the code, so it drifts as work lands.
 
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
-as it landed, the latest being M-56 (#426, `461f958`); the table was
-tidied at `cdc1183` (#427). The rows up to `d8ceba1` were first
+as it landed, the latest being M-56 (#426, `461f958`). Checked again
+against `main` at `1da3b82` on 2026-10-18: nothing but documentation has
+merged since #426 (#427 to #432), so no row's status has changed under
+it. The rows up to `d8ceba1` were first
 rechecked against each PR's body for parts it said it left unfixed, and
 the later rows (#375 to #426) were rechecked the same way on
 2026-10-18, which added the caveats now in their "Left by the PR" and
