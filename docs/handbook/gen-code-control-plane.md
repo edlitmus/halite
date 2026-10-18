@@ -574,6 +574,7 @@ Deliberately not the primary operator path. OIDC is that, and a local account ex
 - `Hash` (func): Hash produces a verifier for a password.
 - `Load` (func): Load reads an account file.
 - `TOTPAvailable` (func): TOTPAvailable reports whether this build can check a TOTP code.
+- `TOTPSteps` (type): TOTPSteps remembers, per account, the last time step a code was accepted for, and refuses that step and every earlier one.
 
 ## `internal/oidc`
 

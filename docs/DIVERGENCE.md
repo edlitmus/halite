@@ -30992,7 +30992,28 @@ warnings.
 **Not done.** `matchPrincipal`'s use of `path.Match`, where `/` in a
 principal can defeat a `*` (PLAUSIBLE in the audit), was not looked at.
 
+### 5.381 A TOTP code could be used to log in more than once
 
+Issue 321, a section 5 (Low) finding: "TOTP codes are replayable inside
+their window (`account/account.go:290`): no last-used-step tracking, ±1
+step accepted, contrary to RFC 6238 §5.2", which says "the verifier MUST
+NOT accept the second attempt of the OTP after the successful validation
+has been issued for the first OTP". `TestATOTPCodeLogsInOnce` logs in
+through the API with a code computed from the RFC in the test, then
+again with the same code: against main's handler the second answered
+200, and so did a code for the previous step after the next step's had
+been used.
+
+`Account.MatchTOTP` now says which step a code was for -- the step chosen
+without a branch, so the time taken still does not say which of the
+three matched -- and `account.TOTPSteps` refuses a step at or before the
+last one accepted for the account, as one decision under a lock, so two
+logins racing with one code cannot both have it
+(`TestTOTPStepsAcceptsAStepOnce`, under `-race`).
+
+**Not done.** It is in memory: a restart forgets it, and a code accepted
+in the ninety seconds before a restart can be used once more after it.
+LDAP and OIDC logins do not use TOTP and are unchanged.
 
 ## 6. Everything else not started
 
