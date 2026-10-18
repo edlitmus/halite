@@ -29,6 +29,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 
 **Exports.**
 
+- `ApprovedCurves` (func): ApprovedCurves is approvedCurves for a listener outside this package: the API's, which must hold to the same rule (SPEC 25.3, 27.4) and did not (issue 321, section 5).
 - `Client` (type): Client is a node's connection to its hub.
 - `ClientConfig` (func): ClientConfig builds a node's TLS configuration.
 - `CodeOf` (func): CodeOf answers with the stable code the hub attached to a failure, or an empty string when it attached none.
