@@ -21,7 +21,8 @@ roles:
   administrator:
     - target: '*'
       functions: ['*']
-    - runners: ['*']
+    - target: '*'
+      runners: ['*']
   backends-may-be-read:
     - target: 'web*.example'
       functions: ['backend']

@@ -45,7 +45,8 @@ halite:
         admin:
           - target: '*'
             functions: ['*']
-          - runners: ['*']
+          - target: '*'
+            runners: ['*']
         api-service:
           - runners: ['metrics.show']
       bindings:

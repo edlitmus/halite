@@ -86,7 +86,8 @@ roles:
   api-service:
     - target: '*'
       functions: ['test.ping', 'status.uptime', 'grains.item', 'state.apply']
-    - runners: ['manage.status', 'manage.up', 'manage.down', 'jobs.list_jobs',
+    - target: '*'
+      runners: ['manage.status', 'manage.up', 'manage.down', 'jobs.list_jobs',
                 'jobs.list_job', 'cache.grains', 'event.listen', 'event.send']
 bindings:
   - principal: 'cert:CN=api'

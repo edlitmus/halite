@@ -75,10 +75,16 @@ roles:
         - 'sys.*'
         - 'state.show_*'
 
-  # Runners execute on the hub, so a runner rule names `runners` and no
-  # target. allow_mods bounds which orchestrations may be started.
+  # Runners execute on the hub. A runner rule's target is the nodes its
+  # runners may read or change what the hub holds about -- a pillar, a
+  # key, a job's returns -- and a rule with no target reaches none of
+  # them. An orchestration's own jobs are authorized as jobs, against
+  # the role's function rules, so state.orchestrate needs no target;
+  # reading a job's returns does. allow_mods bounds which orchestrations
+  # may be started.
   deployer:
-    - runners: ['state.orchestrate', 'jobs.lookup']
+    - target: 'web*.prod'
+      runners: ['state.orchestrate', 'jobs.lookup_jid']
       args:
         'state.orchestrate':
           allow_mods: ['deploy.*']
@@ -88,7 +94,8 @@ roles:
   administrator:
     - target: '*'
       functions: ['*']
-    - runners: ['*']
+    - target: '*'
+      runners: ['*']
 
   # cmd.run and its relatives run arbitrary code, so they are a distinct
   # permission and are never granted by a wildcard. `functions: ['*']`

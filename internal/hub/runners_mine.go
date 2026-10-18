@@ -16,6 +16,9 @@ import (
 func registerMineRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
+			Reach:         ReachNodes,
+			TargetArg:     "tgt",
+			TargetKindArg: "tgt_type",
 			Sig: runnerSig("mine", "get",
 				"What the matched nodes published for one function.", "19.5",
 				runnerArg("tgt", signature.String, "Which nodes."),
@@ -30,10 +33,20 @@ func registerMineRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
+				// The target was held to the caller's scope before this
+				// ran; a publisher outside it is dropped here as well,
+				// for a mine entry from a node the expression matched
+				// that is no longer accepted.
+				for node := range got {
+					if !c.Visible(node) {
+						delete(got, node)
+					}
+				}
 				return mineJSON(got), nil
 			},
 		},
 		RunnerModule{
+			Reach: ReachDispatch,
 			Sig: runnerSig("mine", "update",
 				"Tell the matched nodes to recompute and republish their mine data.", "19.5",
 				runnerOpt("tgt", signature.String, "*", "Which nodes."),
@@ -55,6 +68,8 @@ func registerMineRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("mine", "flush",
 				"Drop everything one node has published.", "19.5",
 				runnerArg("node", signature.String, "The node identifier."),
@@ -67,6 +82,8 @@ func registerMineRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("mine", "delete",
 				"Drop one function's entry for one node.", "19.5",
 				runnerArg("node", signature.String, "The node identifier."),
@@ -80,6 +97,8 @@ func registerMineRunner(r *Runners) {
 			},
 		},
 		RunnerModule{
+			Reach:   ReachNodes,
+			NodeArg: "node",
 			Sig: runnerSig("mine", "valid",
 				"What each node has published, with when it last did and who may read it. "+
 					"An entry nobody has refreshed is what a stale answer looks like before "+
@@ -87,14 +106,14 @@ func registerMineRunner(r *Runners) {
 				runnerOpt("node", signature.String, "", "One node, or every node."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
-				return c.Server.mineValid(c.arg("node"))
+				return c.Server.mineValid(c.arg("node"), c.Visible)
 			},
 		},
 	)
 }
 
 // mineValid describes what the mine holds.
-func (s *Server) mineValid(only string) (any, error) {
+func (s *Server) mineValid(only string, visible func(string) bool) (any, error) {
 	nodes, err := s.mine().Nodes()
 	if err != nil {
 		return nil, err
@@ -102,6 +121,9 @@ func (s *Server) mineValid(only string) (any, error) {
 	out := value.NewMap(len(nodes))
 	for _, id := range nodes {
 		if only != "" && id != only {
+			continue
+		}
+		if visible != nil && !visible(id) {
 			continue
 		}
 		data, err := s.mine().Get(id)

@@ -1436,7 +1436,8 @@ roles:
   api-service:
     - target: '*'
       functions: ['test.ping', 'state.apply']
-    - runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
+    - target: '*'
+      runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']

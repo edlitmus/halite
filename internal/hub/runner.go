@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/job"
+	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/signature"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -31,7 +33,13 @@ type RunnerContext struct {
 	Principal string
 	JID       job.ID
 	Args      *value.Map
+	// Scope is the nodes the caller may reach through this runner.
+	Scope policy.Scope
 }
+
+// Visible reports whether a node is inside the caller's scope, which a
+// ReachNodes runner asks of everything it would list.
+func (c *RunnerContext) Visible(node string) bool { return c.Scope.Covers(node) }
 
 // arg reads a bound argument as a string.
 func (c *RunnerContext) arg(name string) string {
@@ -84,10 +92,54 @@ type RunnerModule struct {
 	// typo; a name that answers "manage.bootstrap arrives in phase 5"
 	// is not.
 	Pending string
+	// Reach is what the runner touches of the nodes, which decides how
+	// the caller's scope applies to it (see Reach). Every built runner
+	// declares one; Add refuses a runner that does not.
+	Reach Reach
+	// NodeArg names the argument that holds one node, for a ReachNodes
+	// runner that takes one: a node outside the caller's scope is
+	// refused before the runner runs. Empty, or the argument not given,
+	// and the runner filters what it returns by RunnerContext.Visible.
+	NodeArg string
+	// TargetArg and TargetKindArg name the arguments that hold a target
+	// expression and its kind: every node it matches must be in scope.
+	TargetArg, TargetKindArg string
 }
+
+// Reach says what a runner touches of the nodes (issue 321, M-56).
+//
+// A runner runs on the hub with the hub's whole reach. Salt grants one
+// with no target at all -- `spec_check` in salt/utils/minions.py consults
+// none for `@runner` -- so a grant of `pillar.show_pillar` there reads
+// any node's pillar whatever the caller's other rules name. halite
+// confines a runner to the nodes the targets of the rules granting it
+// cover (policy.Scope), and what that means depends on the runner, so
+// each says.
+type Reach int
+
+const (
+	// reachUnset is no declaration, which Add refuses.
+	reachUnset Reach = iota
+	// ReachHub runners touch nothing of any node: the file server,
+	// sending an event, an error for a test.
+	ReachHub
+	// ReachDispatch runners reach nodes only by sending jobs, and every
+	// job is authorized against the caller's function rules as it is
+	// sent (DispatchAs), so the scope adds nothing.
+	ReachDispatch
+	// ReachNodes runners read or change what the hub holds about
+	// particular nodes. A node or target named in NodeArg or TargetArg
+	// must be in scope; what they list is filtered to it.
+	ReachNodes
+	// ReachEstate runners act on every node at once, with no node to
+	// name: clearing every cache, pruning every job, minting a token any
+	// new node can enroll with. They need a scope of `*`, written.
+	ReachEstate
+)
 
 // Runners is the runner registry a hub serves.
 type Runners struct {
+	mods    map[string]RunnerModule
 	fns     map[string]RunnerFunc
 	pending map[string]string
 	sigs    *signature.Registry
@@ -95,7 +147,7 @@ type Runners struct {
 
 // NewRunners builds the registry this build ships. SPEC section 19.2.
 func NewRunners() *Runners {
-	r := &Runners{fns: map[string]RunnerFunc{}, pending: map[string]string{}, sigs: signature.NewRegistry()}
+	r := &Runners{mods: map[string]RunnerModule{}, fns: map[string]RunnerFunc{}, pending: map[string]string{}, sigs: signature.NewRegistry()}
 	registerJobsRunner(r)
 	registerStateRunner(r)
 	registerReactorRunner(r)
@@ -136,7 +188,11 @@ func (r *Runners) Add(mods ...RunnerModule) {
 		if fn == nil {
 			panic("hub: runner " + name + " has no implementation")
 		}
+		if m.Reach == reachUnset && m.Pending == "" {
+			panic("hub: runner " + name + " declares no Reach; say what it touches of the nodes")
+		}
 		r.fns[name] = fn
+		r.mods[name] = m
 		r.sigs.Add(m.Sig)
 	}
 }
@@ -203,6 +259,8 @@ type RunnerCall struct {
 	Fun       string
 	Arg       []string
 	Kwarg     map[string]any
+	// Narrow is transport.RunnerRequest.Narrow.
+	Narrow *[]string
 }
 
 // RunnerOutcome is what came back.
@@ -260,6 +318,16 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		return nil, fmt.Errorf("%s: %s", call.Fun, strings.Join(msgs, "; "))
 	}
 
+	scope := s.Policy.RunnerScope(call.Principal, call.Fun, false)
+	if call.Narrow != nil {
+		scope = scope.Within(policy.Scope{Targets: *call.Narrow})
+	}
+	if err := s.checkRunnerReach(reg.mods[call.Fun], scope, bound); err != nil {
+		s.warn("runner refused: outside the caller's scope",
+			"principal", call.Principal, "fun", call.Fun, "reason", err.Error())
+		return nil, &policyRefusal{reason: err.Error()}
+	}
+
 	jid := s.clock().Next()
 	started := s.now()
 	s.emit(tagRunNew(string(jid)), "", map[string]any{
@@ -277,6 +345,7 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		Principal: call.Principal,
 		JID:       jid,
 		Args:      bound,
+		Scope:     scope,
 	})
 	out.Duration = s.now().Sub(started)
 	// The value and the error both, when a runner produced both. An
@@ -394,6 +463,7 @@ func (s *Server) runnerCall(w http.ResponseWriter, r *http.Request, principal st
 		Fun:       req.Fun,
 		Arg:       req.Arg,
 		Kwarg:     req.Kwarg,
+		Narrow:    req.Narrow,
 	})
 	switch e := err.(type) {
 	case nil:
@@ -456,4 +526,75 @@ func runnerSig(module, function, doc, section string, params ...signature.Param)
 		TestMode: signature.TestNotApplicable,
 		Section:  section,
 	}
+}
+
+// checkRunnerReach applies the caller's scope to what a runner is about
+// to touch, before it runs.
+func (s *Server) checkRunnerReach(m RunnerModule, scope policy.Scope, args *value.Map) error {
+	switch m.Reach {
+	case ReachHub, ReachDispatch:
+		return nil
+	case ReachEstate:
+		if !scope.Everything() {
+			return fmt.Errorf("%s acts on every node at once, and the rules granting it do not name "+
+				"target '*'; it needs a runner rule with target: '*'", m.Sig.Name())
+		}
+		return nil
+	case ReachNodes:
+		if m.NodeArg != "" {
+			if node := argString(args, m.NodeArg); node != "" && !scope.Covers(node) {
+				return fmt.Errorf("%s may be called here, but not for %s: no rule granting it has a target "+
+					"that covers that node", m.Sig.Name(), node)
+			}
+		}
+		if m.TargetArg != "" {
+			if expr := argString(args, m.TargetArg); expr != "" {
+				nodes, err := s.runnerTargetNodes(expr, argString(args, m.TargetKindArg))
+				if err != nil {
+					return err
+				}
+				for _, n := range nodes {
+					if !scope.Covers(n) {
+						return fmt.Errorf("%s may be called here, but %q reaches %s, which no rule "+
+							"granting it covers", m.Sig.Name(), expr, n)
+					}
+				}
+			}
+		}
+		return nil
+	}
+	if m.Pending != "" {
+		return nil
+	}
+	return fmt.Errorf("%s declares no reach, and is refused rather than guessed at", m.Sig.Name())
+}
+
+func argString(args *value.Map, name string) string {
+	if args == nil {
+		return ""
+	}
+	v, ok := args.Get(name)
+	if !ok || v == nil {
+		return ""
+	}
+	return value.KeyString(v)
+}
+
+// runnerTargetNodes is the nodes a runner's target expression matches,
+// by the same compile and resolve dispatch uses, so that "every node it
+// reaches" means for a runner what it means for a job.
+func (s *Server) runnerTargetNodes(expr, kindFlag string) ([]string, error) {
+	kind := target.Glob
+	if kindFlag != "" {
+		k, ok := target.KindFromFlag(kindFlag)
+		if !ok {
+			return nil, fmt.Errorf("%q is not a target kind", kindFlag)
+		}
+		kind = k
+	}
+	m, err := target.Compile(kind, expr, s.nodegroups())
+	if err != nil {
+		return nil, err
+	}
+	return s.resolve(m, "")
 }

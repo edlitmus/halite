@@ -220,7 +220,8 @@ roles:
   administrator:
     - target: '*'
       functions: ['*']
-    - runners: ['*']
+    - target: '*'
+      runners: ['*']
 bindings:
   - principal: 'cert:CN=alice'
     roles: ['administrator']

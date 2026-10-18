@@ -227,9 +227,7 @@ func (s *Server) runRunner(w http.ResponseWriter, r *http.Request, token *apitok
 	if !s.authorize(w, token, requestFor(req.Function, "", req.Arg, req.Kwarg, true)) {
 		return
 	}
-	res, err := s.Hub.Runner(r.Context(), transport.RunnerRequest{
-		Fun: req.Function, Arg: req.Arg, Kwarg: req.Kwarg,
-	})
+	res, err := s.Hub.Runner(r.Context(), s.runnerRequest(token, req.Function, req.Arg, req.Kwarg))
 	if err != nil {
 		s.hubError(w, "calling the runner", err)
 		return
@@ -277,7 +275,7 @@ func (s *Server) jobList(w http.ResponseWriter, r *http.Request, token *apitoken
 	if limit := r.URL.Query().Get("limit"); limit != "" {
 		kwargs["limit"] = limit
 	}
-	s.forwardRunner(w, r, "jobs.list_jobs", nil, kwargs)
+	s.forwardRunner(w, r, token, "jobs.list_jobs", nil, kwargs)
 }
 
 // jobDetail is `GET /v1/jobs/{jid}` and `DELETE /v1/jobs/{jid}`.
@@ -304,12 +302,12 @@ func (s *Server) jobDetail(w http.ResponseWriter, r *http.Request, token *apitok
 	if !s.authorize(w, token, requestFor("jobs.list_job", "", []string{jid}, nil, true)) {
 		return
 	}
-	s.forwardRunner(w, r, "jobs.list_job", []string{jid}, nil)
+	s.forwardRunner(w, r, token, "jobs.list_job", []string{jid}, nil)
 }
 
 // forwardRunner calls a hub runner and returns what it said.
-func (s *Server) forwardRunner(w http.ResponseWriter, r *http.Request, fun string, arg []string, kwarg map[string]any) {
-	res, err := s.Hub.Runner(r.Context(), transport.RunnerRequest{Fun: fun, Arg: arg, Kwarg: kwarg})
+func (s *Server) forwardRunner(w http.ResponseWriter, r *http.Request, token *apitoken.Token, fun string, arg []string, kwarg map[string]any) {
+	res, err := s.Hub.Runner(r.Context(), s.runnerRequest(token, fun, arg, kwarg))
 	if err != nil {
 		s.hubError(w, "calling "+fun, err)
 		return
@@ -323,4 +321,23 @@ func (s *Server) forwardRunner(w http.ResponseWriter, r *http.Request, fun strin
 		return
 	}
 	writeJSON(w, http.StatusOK, decoded)
+}
+
+// runnerRequest is a runner call to the hub, carrying the operator's
+// scope for it: the targets of the operator's own rules granting the
+// runner, by the roles in the token. The hub runs the call as this
+// service's certificate, so without it every operator reached what the
+// service's role reaches; with it the hub holds the runner to both, and
+// an operator scoped to web* reads web* through the API as directly
+// (issue 321, M-56).
+func (s *Server) runnerRequest(token *apitoken.Token, fun string, arg []string, kwarg map[string]any) transport.RunnerRequest {
+	req := transport.RunnerRequest{Fun: fun, Arg: arg, Kwarg: kwarg}
+	if token != nil {
+		targets := s.Policy.RunnerScopeFor(token.Roles, fun, false).Targets
+		if targets == nil {
+			targets = []string{}
+		}
+		req.Narrow = &targets
+	}
+	return req
 }

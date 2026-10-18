@@ -25,6 +25,8 @@ Issue 321 stays open, because what is below is not finished.
 | Medium (55) | 50 | 5: 3 mentioned and explicitly left, 1 half done, 1 measured and left |
 | M-56 (design note) | | not done |
 | Low (section 5) | 14 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391) |
+| Low (section 5) | 10 | 60 bullets listed (the audit says about 90); being taken one at a time |
 | Low (section 5) | 2 | 60 bullets listed (the audit says about 90); being taken one at a time |
 | Low (section 5) | 3 | 60 bullets listed (the audit says about 90); being taken one at a time |
 | Low (section 5) | 4 | 60 bullets listed (the audit says about 90); being taken one at a time |
@@ -148,8 +150,11 @@ were fixed first.
   was run. The lockout half is a design gap Salt shares
   (DIVERGENCE 5.364).
 
-**M-56, runners are not scoped.** SPEC 23.5 still says nothing about it.
-Either a sentence there or scoping is owed.
+**M-56, runners are not scoped.** Done by scoping, stricter than Salt
+(#426, DIVERGENCE 5.391): a runner rule's target is the nodes its runners
+reach, and SPEC 23.5 says so. Not done: who the API acts for is not
+passed, so a run made through the API is visible to the API's other
+callers.
 
 **Low (section 5 of the audit).** The audit lists 60 bullets and says
 there are about 90. They are being taken one at a time, from the

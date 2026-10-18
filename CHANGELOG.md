@@ -21,6 +21,31 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A runner reaches only the nodes its rule's target covers
+
+**Breaking.** A runner rule may now name a `target`, and a runner that
+reads or changes what the hub holds about a node -- `pillar.show_pillar`,
+`key.*`, `cache.grains`, `mine.get`, `jobs.*`, `manage.*` -- is refused
+for a node outside it and lists only the nodes inside it. **A runner
+rule with no target reaches no node.** Runners that act on every node at
+once (`cache.clear_all`, `jobs.prune`) need `target: '*'`. Through the
+API, a runner is held to the operator's scope as well as the API's
+(issue 321, M-56). DIVERGENCE 5.391.
+
+Before upgrading, give each role that uses such runners a target. An
+administrator role becomes:
+
+```yaml
+  administrator:
+    - target: '*'
+      functions: ['*']
+    - target: '*'
+      runners: ['*']
+```
+
+`halite-hub policy test --runner=true <principal> hub <runner>` says
+which nodes a runner reaches.
+
 ### A TOTP code logs in once
 
 A local account's TOTP code could be used again for as long as it was

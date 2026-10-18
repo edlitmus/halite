@@ -440,7 +440,8 @@ deploy_web:
 	loaded, _, err := policy.Load([]byte(`
 roles:
   orchestrator:
-    - runners: ['*']
+    - target: '*'
+      runners: ['*']
     - target: '*'
       functions: ['test.ping']
 bindings:

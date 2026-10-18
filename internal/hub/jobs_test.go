@@ -44,7 +44,8 @@ roles:
   administrator:
     - target: '*'
       functions: ['*', 'cmd.run']
-    - runners: ['*']
+    - target: '*'
+      runners: ['*']
 bindings:
   - principal: 'cert:CN=ed'
     roles: ['administrator']
