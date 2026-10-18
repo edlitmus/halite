@@ -74,7 +74,7 @@ not do. Each has been checked to see whether it happened.
 | M-24 `git.latest user` ignored | #390 | | **done** as root on beastie (5.350) |
 | M-25 `enroll --force` pair | #391 | a refusal drops the new key | **done** against a real hub in-process (5.351); M-26, the same shape in renewal, by #400 |
 | M-27 script with runas | #392 | `cmd.script` with a `salt://` source not run as another account | **done** as root on Ubuntu and beastie (5.352) |
-| M-42 LVM alias with `-ff` | #393 | `pvremove` and `lvmFindPV` too; `lv_remove` and `lv_absent` still pass `-f` (Salt parity) | **done** as root on Ubuntu against real LVM, which does not refuse `-ff` (5.353) |
+| M-42 LVM alias with `-ff` (also `pvremove` and `lvmFindPV`, which compared the same way) | #393 | `lv_remove` and `lv_absent` still pass `-f` (Salt parity) | **done** as root on Ubuntu against real LVM, which does not refuse `-ff` (5.353) |
 | M-45 free-form values (modprobe, pkgrepo, nftables, fstab; sysrc, sysctl, debconf) | #394, #395 | ufw was already held by M-37; sysctl and debconf not driven against the real tools | **done** (5.354, 5.355): nft's reading of `;` measured on Ubuntu, sysrc's on beastie; the modules not driven against the tools |
 | M-53 gitfs buffers the archive | #396 | the file count and byte limits apply as entries arrive; the limits are constants, not configuration | **done** (5.356): main was killed buffering 3 GiB; not run against a real remote or on the hub |
 | M-51 s3fs staleness | #397 | truncation at the bound, deleted objects, in-place writes, colliding sanitised names; multipart ETags not exercised | **done** (5.357) against the package's fake S3; not run against S3 |
