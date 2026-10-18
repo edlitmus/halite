@@ -30,7 +30,7 @@ for a node outside it and lists only the nodes inside it. **A runner
 rule with no target reaches no node.** Runners that act on every node at
 once (`cache.clear_all`, `jobs.prune`) need `target: '*'`. Through the
 API, a runner is held to the operator's scope as well as the API's
-(issue 321, M-56). DIVERGENCE 5.389.
+(issue 321, M-56). DIVERGENCE 5.391.
 
 Before upgrading, give each role that uses such runners a target. An
 administrator role becomes:

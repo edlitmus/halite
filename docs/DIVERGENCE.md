@@ -31054,8 +31054,7 @@ on an earlier toolchain; 5.15's own table measured a hub that set its
 curves itself, and does not show what Go's TLS did without that.
 
 **Not verified.** `fips140=only`, and toolchains other than go1.27.2.
-
-### 5.389 A runner reached every node, whatever its holder's other rules said
+### 5.391 A runner reached every node, whatever its holder's other rules said
 
 Issue 321 design note M-56: "runners are not scoped. SPEC 23.5 does not
 address it; a sentence there, or scoping, is owed." Scoping, stricter
@@ -31125,6 +31124,7 @@ the API is visible to every operator whose scope is `*`, and to the
 API's other callers as "their own"; the API does not yet pass who it
 acts for. A webhook's runner call carries no narrowing and is held to
 the API's scope alone. Not run against the production hub.
+
 
 
 ## 6. Everything else not started
