@@ -162,7 +162,11 @@ func Load(src []byte, path string) (*Policy, []yaml.Warning, error) {
 			if b.Principal == "" {
 				return nil, warnings, fmt.Errorf("%s: binding %d names no principal", path, i)
 			}
-			b.Roles = stringList(m, "roles")
+			roles, err := stringList(m, "roles")
+			if err != nil {
+				return nil, warnings, fmt.Errorf("%s: binding for %q: %v", path, b.Principal, err)
+			}
+			b.Roles = roles
 			for _, role := range b.Roles {
 				if _, ok := p.Roles[role]; !ok {
 					// A binding to a role that does not exist grants
@@ -193,8 +197,13 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 		if v, ok := m.Get("target"); ok {
 			r.Target, _ = v.(string)
 		}
-		r.Functions = stringList(m, "functions")
-		r.Runners = stringList(m, "runners")
+		var err error
+		if r.Functions, err = stringList(m, "functions"); err != nil {
+			return nil, fmt.Errorf("%s: role %q rule %d: %v", path, role, i, err)
+		}
+		if r.Runners, err = stringList(m, "runners"); err != nil {
+			return nil, fmt.Errorf("%s: role %q rule %d: %v", path, role, i, err)
+		}
 		if len(r.Functions) == 0 && len(r.Runners) == 0 {
 			return nil, fmt.Errorf("%s: role %q rule %d grants no functions and no runners", path, role, i)
 		}
@@ -215,12 +224,19 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 				if !ok {
 					return nil, fmt.Errorf("%s: role %q rule %d: args for %q is not a mapping", path, role, i, fn)
 				}
-				r.Args[fn] = ArgRule{
-					AllowSLS:   stringList(cm, "allow_sls"),
-					DenySLS:    stringList(cm, "deny_sls"),
-					AllowMods:  stringList(cm, "allow_mods"),
-					DenyKwargs: stringList(cm, "deny_kwargs"),
+				var ar ArgRule
+				for _, f := range []struct {
+					key string
+					dst *[]string
+				}{
+					{"allow_sls", &ar.AllowSLS}, {"deny_sls", &ar.DenySLS},
+					{"allow_mods", &ar.AllowMods}, {"deny_kwargs", &ar.DenyKwargs},
+				} {
+					if *f.dst, err = stringList(cm, f.key); err != nil {
+						return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
+					}
 				}
+				r.Args[fn] = ar
 			}
 		}
 		out = append(out, r)
@@ -228,24 +244,34 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 	return out, nil
 }
 
-func stringList(m *value.Map, key string) []string {
+// stringList reads a field that is a string or a list of strings.
+//
+// Anything else is an error. An item that was not a string used to be
+// dropped, and a field that was neither left empty, with at most a parser
+// warning: `deny_kwargs: [pillar, 5]` denied pillar alone, and
+// `functions: [on]` -- a YAML 1.1 bool, not the string "on" -- granted
+// nothing and said so nowhere. A deny list weaker than the one written is
+// the failure a policy file must not have (issue 321, section 5).
+func stringList(m *value.Map, key string) ([]string, error) {
 	v, ok := m.Get(key)
-	if !ok {
-		return nil
+	if !ok || v == nil {
+		return nil, nil
 	}
 	switch t := v.(type) {
 	case string:
-		return []string{t}
+		return []string{t}, nil
 	case []any:
 		out := make([]string, 0, len(t))
-		for _, item := range t {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
+		for i, item := range t {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("`%s` item %d is %v, which is not a string; quote it", key, i, item)
 			}
+			out = append(out, s)
 		}
-		return out
+		return out, nil
 	}
-	return nil
+	return nil, fmt.Errorf("`%s` is %v, which is neither a string nor a list of strings", key, v)
 }
 
 // RolesFor lists the roles bound to a principal, in a stable order.
