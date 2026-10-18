@@ -15,8 +15,11 @@ this file to the code, so it drifts as work lands.
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
 as it landed, the latest being M-56 (#426, `461f958`); the table was
-tidied at `cdc1183` (#427). Only the rows up to `d8ceba1` were rechecked
-against each PR's body for parts it said it left unfixed. H-02 was fixed
+tidied at `cdc1183` (#427). The rows up to `d8ceba1` were first
+rechecked against each PR's body for parts it said it left unfixed, and
+the later rows (#375 to #426) were rechecked the same way on
+2026-10-18, which added the caveats now in their "Left by the PR" and
+"Done" cells. H-02 was fixed
 the same day, at `9ce448e` (#372). The status comes from the merged PRs
 and the commit log.
 The fixes were not re-run for this update, except where a row says so.
@@ -62,7 +65,7 @@ not do. Each has been checked to see whether it happened.
 | M-04 typed job signing (breaking) | #337 | | live mixed-version run on beastie (5.330) |
 | M-08, M-09 login backoff by (source, name) | #352 | | |
 | M-10 login timing, equal work | #353 | | |
-| M-11 1 MiB stream line | #379 | events: an over-long one is streamed as a stand-in | **done** (5.339); not run on a live hub |
+| M-11 1 MiB stream line | #379 | events: an over-long one is streamed as a stand-in; no node-side stand-in, so an older hub can still send a node an over-long job line | **done** (5.339); not run on a live hub |
 | M-12 returns from non-targets | #380 | a chunk other than 0 is refused | **done** (5.340); not run on a live hub |
 | M-13 one node erases history | #381, with #380's chunk refusal | a return is held to 16 MiB | **done** (5.341): `node_event_rate` and `node_event_burst`; not run on a live hub |
 | M-15 relay claims node IDs | #382 | 1.9 corrected | **done** (5.342): `relay_subordinates`, and nothing enrolled directly can be claimed; no real relay run |
@@ -70,25 +73,25 @@ not do. Each has been checked to see whether it happened.
 | M-17 `/v1/orch` kwargs; `allow_mods` keyword | #367 | | |
 | M-24 `git.latest user` ignored | #390 | | **done** as root on beastie (5.350) |
 | M-25 `enroll --force` pair | #391 | a refusal drops the new key | **done** against a real hub in-process (5.351); M-26, the same shape in renewal, by #400 |
-| M-27 script with runas | #392 | | **done** as root on Ubuntu and beastie (5.352) |
-| M-42 LVM alias with `-ff` | #393 | `pvremove` and `lvmFindPV` too | **done** as root on Ubuntu against real LVM, which does not refuse `-ff` (5.353) |
-| M-45 free-form values (modprobe, pkgrepo, nftables, fstab; sysrc, sysctl, debconf) | #394, #395 | ufw was already held by M-37 | **done** (5.354, 5.355): nft's reading of `;` measured on Ubuntu, sysrc's on beastie; the modules not driven against the tools |
-| M-53 gitfs buffers the archive | #396 | the file count and byte limits apply as entries arrive | **done** (5.356): main was killed buffering 3 GiB; not run against a real remote or on the hub |
-| M-51 s3fs staleness | #397 | truncation at the bound, deleted objects, in-place writes, colliding sanitised names | **done** (5.357) against the package's fake S3; not run against S3 |
+| M-27 script with runas | #392 | `cmd.script` with a `salt://` source not run as another account | **done** as root on Ubuntu and beastie (5.352) |
+| M-42 LVM alias with `-ff` | #393 | `pvremove` and `lvmFindPV` too; `lv_remove` and `lv_absent` still pass `-f` (Salt parity) | **done** as root on Ubuntu against real LVM, which does not refuse `-ff` (5.353) |
+| M-45 free-form values (modprobe, pkgrepo, nftables, fstab; sysrc, sysctl, debconf) | #394, #395 | ufw was already held by M-37; sysctl and debconf not driven against the real tools | **done** (5.354, 5.355): nft's reading of `;` measured on Ubuntu, sysrc's on beastie; the modules not driven against the tools |
+| M-53 gitfs buffers the archive | #396 | the file count and byte limits apply as entries arrive; the limits are constants, not configuration | **done** (5.356): main was killed buffering 3 GiB; not run against a real remote or on the hub |
+| M-51 s3fs staleness | #397 | truncation at the bound, deleted objects, in-place writes, colliding sanitised names; multipart ETags not exercised | **done** (5.357) against the package's fake S3; not run against S3 |
 | M-03 govulncheck in CI | #398 | `make vuln` pinned to the same version | **done** (5.358): a `vuln` job; `make vuln` run on Ubuntu and under BSD make on beastie |
 | M-26 renewal install order | #400 | `enroll --force`'s pending install uses the same order | **done** (5.360) against a hub in-process; no real crash or full disk |
-| M-34 RPM pin without a release | #401 | RedHat and Suse only; the epoch still counts, as in Salt | **done** (5.361) against Salt 3007.1's rule; no RPM host |
+| M-34 RPM pin without a release | #401 | RedHat and Suse only; the epoch still counts, as in Salt; `dnf install` of a bare version, with the package absent, not run | **done** (5.361) against Salt 3007.1's rule; no RPM host |
 | M-40 `iptables.save` (and `nftables.save`) | #402 | nftables' counters, the same defect | **done** (5.362) against iptables 1.8.10 and nftables 1.0.9 in a network namespace |
 | M-48 D-Bus 90 s deadline | #403 | method calls keep 90 s; a job waits for systemd or the caller | **done** (5.363) as root on Ubuntu with a 95 s unit |
-| M-52 templates vs Jinja | #399, #405–#410 | chained comparisons, `**`, `~`, `tojson`, `dict()`, `round`, `str.format` specs, float rendering, `\|format` | **done** (5.359, 5.365–5.370), each against jinja2 3.1.2 or Python 3.12.3; the corpus's tuple cases and `dict()`'s keyword order left |
+| M-52 templates vs Jinja | #399, #405–#410 | chained comparisons, `**`, `~`, `tojson`, `dict()`, `round`, `str.format` specs, float rendering, `\|format`; `tojson`'s expected values come from Salt's source, Salt not run; which `yaml_encode` answer is Salt's; `!r`, `!s` and attribute fields in `str.format`; `*` widths in `format` | **done** (5.359, 5.365–5.370), each against jinja2 3.1.2 or Python 3.12.3; the corpus's tuple cases and `dict()`'s keyword order left |
 | M-28 agentless `oneshot` tree | #358 | | |
-| M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic` | **done** as root on beastie (5.346) |
-| M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer | **done** as root on beastie (5.343); ACLs and xattrs still lost |
+| M-19 `file.managed` on a symlink | #386 | every file state, not `writeAtomic`; `follow_symlinks: False` not offered; `copy`, `prepend`, `blockreplace`, `comment`, `uncomment` not each run through a link; no Linux root run | **done** as root on beastie (5.346) |
+| M-20 edits drop owner/group | #383 | in `writeAtomic`, so every writer; `file.copy` and `restore_backup` not driven; no Linux root run | **done** as root on beastie (5.343); ACLs and xattrs still lost |
 | M-21 string-typed modes | #384 | `file.serialize` keeps a file's mode | **done** as root on beastie (5.344) |
-| M-22 `file.recurse` | #387 | rewrites keep their mode; created directories get `dir_mode` | **done** (5.347); not run on a host |
+| M-22 `file.recurse` | #387 | rewrites keep their mode; created directories get `dir_mode`; an existing directory whose mode differs from `dir_mode` is not corrected; the `E@` regex form is unsupported | **done** (5.347); not run on a host |
 | M-23 setuid and friends | #385 | | **done** as root on beastie (5.345) |
-| M-29 recursive chmod follows links | #388 | ownership too, through the same root | **done** (5.348); the race made certain in tests, not run as root on a host |
-| M-30 `~/.ssh` symlink | #389 | the list functions too | **done** as root on Ubuntu and beastie (5.349); main gave a root file to the account |
+| M-29 recursive chmod follows links | #388 | ownership too, through the same root; the ownership half not run against a swap (needs a second account) | **done** (5.348); the race made certain in tests, not run as root on a host |
+| M-30 `~/.ssh` symlink | #389 | the list functions too; a home that is itself a link is trusted; macOS not run | **done** as root on Ubuntu and beastie (5.349); main gave a root file to the account |
 | M-31 directory umask | #385 | parents too | **done** as root on beastie under umask 027 (5.345) |
 | M-32 package name injection | #331 | | |
 | M-33 pkgng/apk pins | #375 | `pkg.installed` checks every provider's pin after installing | **done** on beastie (5.334). **Not done**: apk still drops the pin from its argv, so a pinned apk package now fails rather than converging; nothing here runs Alpine |
@@ -151,7 +154,8 @@ were fixed first.
 (#426, DIVERGENCE 5.391): a runner rule's target is the nodes its runners
 reach, and SPEC 23.5 says so. Not done: who the API acts for is not
 passed, so a run made through the API is visible to the API's other
-callers.
+callers; a webhook's runner call carries no narrowing; not run against a
+live hub.
 
 **Low (section 5 of the audit).** The audit lists 60 bullets and says
 there are about 90. They are being taken one at a time, from the
@@ -161,19 +165,19 @@ passing by the PRs above; that has not been looked for.
 
 | Bullet | PR | Done |
 |---|---|---|
-| `ps` user filter never matches names longer than 8 | #417 | 5.376; FreeBSD already printed them whole |
-| `file.rename force` deletes the destination before the move | #418 | 5.377; onto itself too |
-| `openssl.pkcs12_export` writes under the umask | #419 | 5.385; an existing bundle was rewritten in place |
-| `file.recurse` joins listed paths with no `..` check | #420 | 5.386; the prefix was matched as a string too |
-| policy `stringList` drops non-string items | #421 | 5.387; YAML 1.2 reads `on` as a string, so that example does not occur |
-| TOTP codes replayable inside their window | #422 | 5.388; in memory, so a restart forgets |
+| `ps` user filter never matches names longer than 8 | #417 | 5.376; FreeBSD already printed them whole; BusyBox `ps` not run |
+| `file.rename force` deletes the destination before the move | #418 | 5.377; onto itself too; `movePath` still copies on any rename error, not only EXDEV; not run as root or on FreeBSD |
+| `openssl.pkcs12_export` writes under the umask | #419 | 5.385; an existing bundle was rewritten in place; LibreSSL and FreeBSD's base openssl not run |
+| `file.recurse` joins listed paths with no `..` check | #420 | 5.386; the prefix was matched as a string too; `cacheFile` accepting a body with no published digest not looked at; no hub run |
+| policy `stringList` drops non-string items | #421 | 5.387; YAML 1.2 reads `on` as a string, so that example does not occur; `matchPrincipal`'s `path.Match` and `/` in principals not fixed |
+| TOTP codes replayable inside their window | #422 | 5.388; in memory, so a restart forgets; LDAP and OIDC logins unchanged |
 | `readJSON` accepts trailing non-JSON | #423 | 5.389 |
 | API listener does not restrict curves in FIPS mode | #424 | 5.390; go1.27.2 refuses X25519 under fips140=on anyway, measured; a comment saying otherwise corrected |
-| `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too |
-| `check_cmd` temp file chmod 0644 | #412 | 5.372; a `runas` checker gets the file |
-| `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts` |
-| `yaml_squote` corrupts multi-line values | #414 | 5.374, against PyYAML 6.0.1 |
-| `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too |
+| `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too; `cmd.script` with a `salt://` source not run |
+| `check_cmd` temp file chmod 0644 | #412 | 5.372; a `runas` checker gets the file; Windows and beastie not run |
+| `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts`; a comma in a known_hosts `name` left (ssh's own syntax); not run against sshd |
+| `yaml_squote` corrupts multi-line values | #414 | 5.374, against PyYAML 6.0.1; `yaml_dquote` spells non-ASCII differently from PyYAML |
+| `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
