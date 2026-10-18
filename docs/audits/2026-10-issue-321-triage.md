@@ -14,15 +14,14 @@ this file to the code, so it drifts as work lands.
 
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
-as it landed, the latest being M-56 (#426, `461f958`). Checked again
-against `main` at `1da3b82` on 2026-10-18: nothing but documentation has
-merged since #426 (#427 to #432), so no row's status has changed under
-it. The rows up to `d8ceba1` were first
+as it landed, the latest being M-56 (#426, `461f958`). The status is
+as of #426, checked again on 2026-10-18; PRs after it that change only
+this file or other documentation do not move it. The rows up to `d8ceba1` were first
 rechecked against each PR's body for parts it said it left unfixed, and
 the later rows (#375 to #426) were rechecked the same way on
 2026-10-18, which added the caveats now in their "Left by the PR" and
 "Done" cells. H-02 was fixed
-the same day, at `9ce448e` (#372). The status comes from the merged PRs
+on 2026-10-16, at `9ce448e` (#372). The status comes from the merged PRs
 and the commit log.
 The fixes were not re-run for this update, except where a row says so.
 Issue 321 stays open, because what is below is not finished.
