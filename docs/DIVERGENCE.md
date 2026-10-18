@@ -30917,8 +30917,7 @@ child has gone. The package passes, with `-race` too.
 
 **Not verified.** That the CI failure was this and nothing else: it was
 seen once, and the fix was not run on a loaded CI runner before merge.
-
-### 5.378 A pkcs12 bundle was readable while openssl wrote it
+### 5.385 A pkcs12 bundle was readable while openssl wrote it
 
 Issue 321, a section 5 (Low) finding: "`openssl.pkcs12_export` writes the
 bundle under the process umask and chmods 0600 only afterwards; with an
@@ -30938,6 +30937,8 @@ sees `-rw-------` on a temporary name. The real-openssl tests in
 this writes.
 
 **Not verified.** LibreSSL, and FreeBSD's base openssl; neither was run.
+
+
 
 ## 6. Everything else not started
 

@@ -160,7 +160,7 @@ passing by the PRs above; that has not been looked for.
 |---|---|---|
 | `ps` user filter never matches names longer than 8 | #417 | 5.376; FreeBSD already printed them whole |
 | `file.rename force` deletes the destination before the move | #418 | 5.377; onto itself too |
-| `openssl.pkcs12_export` writes under the umask | #419 | 5.378; an existing bundle was rewritten in place |
+| `openssl.pkcs12_export` writes under the umask | #419 | 5.385; an existing bundle was rewritten in place |
 | `cmd.shell`/`exec_code`/script functions ignore an unparseable `timeout` | #411 | 5.371; `network.connect` too |
 | `check_cmd` temp file chmod 0644 | #412 | 5.372; a `runas` checker gets the file |
 | `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts` |
