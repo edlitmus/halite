@@ -30889,6 +30889,35 @@ not only a cross-filesystem one, as the audit also noted; with the old
 destination kept aside, a copy that fails part-way no longer costs it.
 Not run as root or on FreeBSD.
 
+### 5.384 The conformance checker could lose an answer to Wait
+
+Not an audit finding: a CI failure on an unrelated PR (#417's `fips-test`
+job). `TestItCatchesAnExtensionThatBuffersItsOutput` expected the
+diagnosis "its answer arrived only once its stdin was closed ... flush
+after every frame" and got "once its stdin was closed it sent something
+unreadable: read |0: file already closed". The session ran `cmd.Wait` in
+a goroutine, to notice an exit, beside its reads of a `cmd.StdoutPipe`,
+and `Wait` closes a `StdoutPipe`'s read end as soon as the child has
+exited -- os/exec says it is "incorrect to call Wait before all reads
+from the pipe have completed". An extension that writes its answer as it
+exits, the very case the check exists to name, could have the answer
+lost and be misdiagnosed.
+
+It did not reproduce here in 280 runs, 200 of them eight at a time
+under `GOMAXPROCS=1`, so the mechanism was shown on its own: a child
+that prints and exits, read after `Wait`, gives `"", read |0: file
+already closed` from a `StdoutPipe`, the string CI printed, and
+`"answer"` from an `os.Pipe` whose read end the parent owns. The session
+now makes its stdout and stderr pipes with `os.Pipe`, closes its copies
+of the write ends after `Start`, and closes the read ends itself once the
+child has gone. The package passes, with `-race` too.
+
+`bridge.Process`, the real extension host, waits with
+`cmd.Process.Wait`, which does not touch the pipes, and was not changed.
+
+**Not verified.** That the CI failure was this and nothing else: it was
+seen once, and the fix was not run on a loaded CI runner before merge.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
