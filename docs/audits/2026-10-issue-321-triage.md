@@ -170,6 +170,8 @@ passing by the PRs above; that has not been looked for.
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | SigV4 canonical URI for S3 keys with `: @ + = $ &` | #444 | 5.401; held to AWS's published `PUT /test$file.text` vector, not to S3 itself; S3-compatible stores not tried |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
+| websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
+
 | CI's FreeBSD Go tarball and saltdiff's Salt onedir fetched unverified | #446 | 5.403; run on beastie and under dash, not in CI's VM or a Docker build; fleet.yml not run |
 | `status.uptime` `extractBootSeconds` takes the first `sec = ` | #447 | 5.404; latent, FreeBSD prints `sec` first (beastie); macOS not run |
 | `file.touch` documents updating times and changes nothing | #453 | 5.405; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
