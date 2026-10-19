@@ -20625,7 +20625,8 @@ password, allowed:
 
 SPEC 23.2 said nothing about it. SPEC 25.1's "unauthenticated network
 attacker" row covered only the hub's port, where mutual TLS stops one
-before any application code runs.
+before any application code runs. *(Not so: enrollment parses a CSR before
+any authentication, by design; see 5.399.)*
 
 The owner chose two limits, in `internal/api/loginlimit.go`:
 - **A bound on password checks in flight**, half the CPUs. A login past
@@ -29289,7 +29290,8 @@ refusals were taken from `mount` reading a scratch table.
 ### 5.338 Unauthenticated enrollment had no bounds, and a bogus token could hold a name
 
 Issue 321 finding M-06. `POST /v1/enroll` is the one route a caller
-with no certificate reaches, because it is how a node gets one. It took
+with no certificate reaches, because it is how a node gets one. *(Health
+is reached too, though it reads nothing: 5.399.)* It took
 MaxRequestBody's 64 MiB. It had no read deadline beyond the listener's
 ReadHeaderTimeout. Every new name wrote a pending record holding the
 CSR verbatim, and nothing bounded how many. The audit reproduced three
@@ -31642,6 +31644,79 @@ as for pending. The client puts `Retry-After` on `StatusError`, and
 **Not verified.** Not run against the production hub, or with IPv6 or
 NAT for real: the beastie run is loopback, one address. The defaults are
 a judgement, not a measurement of any estate.
+
+### 5.399 SPEC said nothing on the hub port parsed before authentication
+
+Found while fixing M-06 (5.398). SPEC 25.1's row for a network attacker
+on the hub's port said "TLS 1.3 mutual auth terminated by the standard
+library before any application code; … no pre-auth application
+parsing". 25.2 answered CVE-2020-11651 with "No application code
+processes unauthenticated input". SPEC 6.2, handbook chapters 12 and 28,
+`transport.ServerConfig`'s comment and the hub's `health` comment all
+said `/v1/health` was the only thing reachable without a certificate.
+
+None of it was true, and the code says why. The listener asks for a
+client certificate but does not require one
+(`tls.VerifyClientCertIfGiven`), because enrollment is how a node gets
+its certificate. Each route then decides. So the router runs for every
+anonymous request. `POST /v1/enroll`, mounted with no certificate check,
+reads a JSON body, parses the CSR in it, checks a token and may write a
+pending record. 5.338 and 5.398 bounded exactly that, and 7.3 already
+called enrollment the endpoint an unauthenticated caller reaches. The
+threat model had not caught up with the section it summarised.
+
+**Measured on beastie** (FreeBSD 15.1), against the production hub at
+`f9cee0e`, with a client built as an unenrolled node's is: TLS 1.3, ALPN
+`halite/1` then `h2`, the CA pinned, no certificate.
+
+| Request | Answer |
+|---|---|
+| `GET /v1/health` | 200, `halite-hub 0.1.1-127-gf9cee0e436c2+f9cee0e436c2 ok` |
+| `PUT /v1/grains`, `GET /v1/files/base/top.sls`, `POST /v1/jobs` | 401, "the request carries no client certificate" |
+| `GET /v1/no-such-route` | 404 |
+| `POST /v1/enroll`, a PEM block that is not a CSR | 400, `asn1: structure error: tags don't match … certificateRequest @2`, which is the CSR parser's own error |
+
+The hub logged the last as `enrollment failed` from `[::1]`. It cost one
+of the address's 32 enrollment charges and wrote no record.
+
+**The change** is to what is claimed, not to the hub. SPEC 25.1 now says
+the certificate is checked per route, names the two routes that take a
+caller without one, and says what enrollment does with that caller's
+bytes. 25.2's CVE-2020-11651 row says the same. The 7.3 sentence, 6.2's
+health row, the two handbook chapters and six comments say "two",
+or "the one that reads input", where they said "the only".
+
+**Held by a test** rather than by the sentence.
+`TestOnlyTheNamedRoutesTakeACallerWithoutACertificate` reads `Handler`
+out of `server.go` and fails on a route mounted without `s.authenticated`
+or `s.operator` in front of it, unless that route is in a list that
+says why. `TestACallerWithoutACertificateOverTheWire` then sends every
+route an anonymous request, as the beastie run did. Each was broken on
+purpose and seen to fail:
+
+- a bare `GET /v1/peek` added to `Handler`: both fail, the second
+  with a 200;
+- the listener set to `RequireAndVerifyClientCert`: the wire test fails
+  at health with "certificate required", so the test measures the
+  property and does not merely restate the code;
+- `authenticated` passing a certificate-less `PUT /v1/grains` through:
+  the wire test fails with the handler's own 400.
+
+**Not changed.** The guards are where they were: a request without a
+certificate still costs the hub the handshake, the router and its
+metrics before the 401. The health answer names the build, as its
+comment says it means to. Two other things this run showed are left for
+their own changes:
+
+- `enroll` returns an unexpected keystore error to the anonymous caller
+  verbatim. The production hub's log holds one from 2026-08-30 naming a
+  record path under `/var/db/halite/keys` and "permission denied", and
+  that text went to the node too. The CSR parser's error above is the
+  same path.
+- The API's port, 25.1's next row, was not looked at here.
+
+**Not verified.** The probe ran from beastie to itself, not from another
+host on the network.
 
 ## 6. Everything else not started
 

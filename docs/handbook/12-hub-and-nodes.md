@@ -23,10 +23,14 @@ the picture that makes those procedures make sense.
 This has consequences worth stating plainly:
 
 - The hub opens **one TCP port**, by default `4510`. The first thing that
-  happens on it is a mutual TLS handshake handled by the Go standard
-  library. No application code reads a byte from a peer that has not
-  authenticated. The only thing reachable without a certificate is a
-  health check that returns a fixed string.
+  happens on it is a TLS handshake handled by the Go standard library,
+  in which a node presents its certificate. Two things are reachable
+  without one: a health check that returns the hub's version, and
+  enrollment, which is how a node gets a certificate in the first place.
+  Enrollment does read what an unknown caller sends, a small request
+  holding a certificate signing request, and the most it can do with it
+  is leave a pending request for you to accept or reject. Everything
+  else refuses a caller without a certificate.
 - A node listens on **nothing**. (Optionally, a node can serve Prometheus
   metrics on a port you choose; that is the one exception and is off
   until you set an address.)

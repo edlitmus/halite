@@ -12,8 +12,8 @@ import (
 // enrollLimit is the per-source half of issue 321's M-06, which 5.338
 // left: how fast one address may spend the enrollment bounds.
 //
-// `POST /v1/enroll` is the one route a caller with no certificate
-// reaches. 5.338 bounded what one request may cost (the body, the CSR,
+// `POST /v1/enroll` is the one route that reads the input of a caller
+// with no certificate. 5.338 bounded what one request may cost (the body, the CSR,
 // the read) and what all of them may hold (1,024 pending records), but
 // not how fast one caller may reach the second bound. On beastie one
 // address made 1,024 names pending in 30 s, sixteen requests at a time,

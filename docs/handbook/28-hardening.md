@@ -14,7 +14,7 @@ establishes and, just as importantly, what it does not.
 
 | Who or what has been compromised | What an attacker has | The answers |
 |---|---|---|
-| **A network attacker** | The ability to send bytes to the hub's port | TLS 1.3 mutual authentication terminated by the standard library; one port; no application parsing before authentication; a health check that returns a constant |
+| **A network attacker** | The ability to send bytes to the hub's port | TLS 1.3 in the standard library; one port; every endpoint refuses a caller without a certificate except two: a health check that returns the hub's version, and enrollment, which reads a bounded request and at most leaves a pending request for you to decide |
 | **One node** | That node's key, its grains, its pillar | Hub-side targeting (it sees only its own jobs); trusted-grain allowlist for pillar; events confined to its own prefix; deny-by-default mine access; short-lived, revocable certificate; evidence chain anchored at the hub |
 | **The hub** | The hub's process and files, including its CA key | Optional **detached job signing** with a key the hub does not hold; node-side expiry and replay caches; signed and pinned extensions; signed git refs; node-local evidence the hub cannot rewrite |
 | **A state tree** (someone who can push to it) | The ability to put states, templates and files in front of every node | Signature verification on git refs; strict undefined names; render sandbox and limits; no YAML object construction; `cmd.run` as a distinct permission |

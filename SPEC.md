@@ -384,7 +384,7 @@ multiplexing and per-stream flow control, so a large file transfer cannot stall 
 | `/v1/grains` | PUT | Node to hub | Grain refresh push. |
 | `/v1/mine` | POST | Node to hub | Mine update and mine query, subject to the peer policy in section 19.5. |
 | `/v1/evidence/anchor` | POST | Node to hub | The head of the node's evidence chain, answered with a signed receipt or a conflict. Section 25.7. |
-| `/v1/health` | GET | Any to hub | Liveness. The only endpoint reachable without a client certificate, and it returns a fixed string with no state. |
+| `/v1/health` | GET | Any to hub | Liveness. One of two endpoints reachable without a client certificate, the other being enrollment (7.3). It returns a fixed string, the build's version and `ok`, and holds no state. |
 
 The `/v1/subscribe` stream carries NDJSON messages. One JSON object per line, no trailing state, so
 a truncated stream is unambiguous.
@@ -525,9 +525,9 @@ mode a request whose token spends for that node ID replaces a `pending` record h
 key, and the hub logs the fingerprint it replaced. A pending record is a decision nobody has
 made, and anybody who can reach the port can create one, so without the exception a request
 with a bogus token could hold a name against the node the token was minted for. An `accepted`,
-`rejected` or `revoked` record is never replaced this way. Enrollment is the one endpoint an
-unauthenticated caller reaches, so its request body, its CSR and its count of pending records
-are bounded (6.5); a new name past the pending bound is refused until an operator decides some.
+`rejected` or `revoked` record is never replaced this way. Enrollment is the one endpoint that
+reads input from an unauthenticated caller, so its request body, its CSR and its count of pending
+records are bounded (6.5); a new name past the pending bound is refused until an operator decides some.
 
 ### 7.4 Key lifecycle
 
@@ -2358,7 +2358,7 @@ number. Changing it is a decision recorded here, not an implementation detail.
 
 | Adversary | Capability assumed | Primary controls |
 |---|---|---|
-| Unauthenticated network attacker reaching the hub port | Can send arbitrary TCP bytes | TLS 1.3 mutual auth terminated by the standard library before any application code; one port; no pre-auth application parsing; `/v1/health` returns a constant |
+| Unauthenticated network attacker reaching the hub port | Can send arbitrary TCP bytes | TLS 1.3 in the standard library, refusing a peer that does not offer `halite/1` or presents a revoked certificate; one port. A client certificate is verified when presented but not required at the handshake, because enrollment must reach a node that has none; each route checks it instead. Every route but two refuses a peer without one before its handler runs. `/v1/health` returns the build's version. `POST /v1/enroll` is application parsing before authentication by design: it reads a bounded JSON body, parses a CSR, checks a token and may write a pending record, under the bounds of 6.5. A test reads the hub's router and fails on a third such route |
 | Unauthenticated network attacker reaching the API port | Can call the endpoints that issue a token | TLS 1.3; one answer for every failed login; a per-source-and-name login backoff that does not reveal which names exist, and a per-source budget of failed logins; a bound on password checks in flight and on OIDC logins in flight (section 23.2) |
 | Compromised node | Full control of one node, its key, its grains | Hub-side targeting so it sees only its own jobs; trusted-grain allowlist for pillar; event tag restrictions; deny-by-default peer access; rate limits; its certificate is revocable and short-lived; its evidence chain anchored at the hub, so a rewrite of anything it had reported contradicts the hub's record |
 | Compromised hub | Full control of the hub process | Optional detached job signing by an operator key the hub does not hold; node-side job expiry and replay caches; signed and pinned extensions; signed gitfs refs; append-only local evidence on the node, holding receipts the hub signed for the heads it anchored |
@@ -2374,7 +2374,7 @@ should be able to check the answer against the question.
 
 | Class | Salt example | Answer here |
 |---|---|---|
-| Pre-authentication authentication bypass on the master | CVE-2020-11651 | No application code processes unauthenticated input. Authentication is TLS mutual auth in the standard library. |
+| Pre-authentication authentication bypass on the master | CVE-2020-11651 | Every route but two requires a client certificate the standard library verified, checked before the handler runs. The two are health, which reads nothing, and enrollment, which reads a bounded request and can at most create a pending record that an operator, or a token minted in advance, must decide (7.3, 25.1). |
 | Directory traversal in the file server | CVE-2020-11652 | Path containment after symlink resolution on every request, with a dedicated fuzz target and a property test |
 | Writing to `file_roots` through the API leading to code execution | CVE-2021-25281 and neighbours | Wheel write functions disabled by default, separately permissioned, and event-logged |
 | Unauthenticated or weakly authenticated webhook ingress | Repeated `salt-api` findings | No unauthenticated hook path is expressible |

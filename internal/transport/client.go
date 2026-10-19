@@ -381,7 +381,7 @@ func Permanent(err error) bool {
 	return errors.As(err, &refused)
 }
 
-// Health asks the one endpoint that needs no certificate.
+// Health asks the endpoint that needs no certificate and reads nothing.
 func (c *Client) Health(ctx context.Context) (string, error) {
 	client, err := c.client()
 	if err != nil {

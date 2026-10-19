@@ -257,6 +257,7 @@ the fix that touches it.
 | DIVERGENCE near line 11076 | agentless runs on a machine whose staging directory is discarded | the oneshot temp tree is never removed | M-28 |
 | DIVERGENCE near line 24206 | mtls hooks are refused when no client certificate is presented | the API never requests one, so no mtls hook can ever succeed | M-16c |
 | `internal/job/guard.go:44-46` | replay window bounded by the job's own expiry | not across a restart, and expiry may be zero | M-02, M-04 |
+| SPEC 25.1 and 25.2, 6.2's health row, handbook 12 and 28 | no application parsing before authentication on the hub port; health is the only route without a certificate | `POST /v1/enroll` parses a CSR for an anonymous caller, by design | none; found fixing M-06, corrected in #442 (5.399) |
 
 ## High findings
 

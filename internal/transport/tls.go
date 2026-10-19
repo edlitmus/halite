@@ -98,10 +98,13 @@ func (d *Denylist) Serials() map[string]string {
 
 // ServerConfig builds the hub's TLS configuration.
 //
-// Client certificates are requested and verified. `/v1/health` is the
-// one endpoint reachable without one, which is why the requirement is
-// VerifyClientCertIfGiven rather than RequireAndVerify: the handler
-// decides, and everything except health refuses an anonymous peer.
+// Client certificates are requested and verified. Two endpoints are
+// reachable without one, `/v1/health` and `/v1/enroll`, which is why the
+// requirement is VerifyClientCertIfGiven rather than RequireAndVerify:
+// the route decides, and every other one refuses an anonymous peer.
+// This said health was the only one, and SPEC 25.1 that nothing parsed
+// before authentication, while enroll was parsing a CSR for anyone
+// (DIVERGENCE 5.399). internal/hub's anonymous_test holds the list.
 func ServerConfig(cert tls.Certificate, ca *x509.Certificate, denied *Denylist) *tls.Config {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)

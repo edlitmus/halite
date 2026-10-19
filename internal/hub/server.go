@@ -269,9 +269,10 @@ func (s *Server) warn(msg string, kv ...any) {
 
 // Handler routes SPEC 6.2's endpoints.
 //
-// Everything except health requires a client certificate, and enroll is
-// the one exception in the other direction: it is reached without one
-// because that is what it is for.
+// Everything except health and enroll requires a client certificate:
+// health because a load balancer holds none, and enroll because getting
+// one is what it is for. anonymous_test reads this function and fails
+// on a third route mounted without s.authenticated or s.operator.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+transport.PathHealth, s.health)
@@ -308,8 +309,9 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 		fmt.Errorf("%s %s is not an endpoint this hub serves", r.Method, r.URL.Path))
 }
 
-// health is the only endpoint reachable without a client certificate,
-// and it returns a fixed string with no state, per SPEC 6.2. It says
+// health is one of the two endpoints reachable without a client
+// certificate, enroll being the other, and it returns a fixed string
+// with no state, per SPEC 6.2. It says
 // the version because a load balancer's health check is the one request
 // that is guaranteed to be made, and "which build is behind this
 // address" is otherwise a question that needs a login.
@@ -382,7 +384,8 @@ func (s *Server) operator(next func(http.ResponseWriter, *http.Request, string))
 // enroll is SPEC 7.3. The request arrives without a client certificate,
 // because the whole purpose of it is to get one.
 //
-// It is the one route an unauthenticated caller reaches, so its body is
+// It is the one route that reads an unauthenticated caller's input
+// (health reads nothing; anonymous_test holds the list), so its body is
 // bounded to what a CSR needs and its read to HandshakeTimeout. The
 // listener sets only ReadHeaderTimeout, deliberately: a server-wide
 // ReadTimeout would also cut /v1/subscribe, which is a long-lived
