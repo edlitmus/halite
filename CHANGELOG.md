@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `keys operator create --admin` writes a policy the hub can read
+
+Run as root, as the handbook says, it wrote `policy.yaml` owned by root
+with mode 0600. A hub running as its own account then failed to start
+with "permission denied". The policy now takes the owner of the
+directory it is written into, as accepted key records already do.
+DIVERGENCE 5.402.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which
