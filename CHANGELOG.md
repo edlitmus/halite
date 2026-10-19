@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A renewed node's old certificate stays refused after a hub restart
+
+When a node renews, the certificate it replaces is refused. That
+refusal used to live only in the serving hub's memory, so a hub restart
+forgot it and the old certificate worked again until it expired, up to
+45 days at the default lifetime. A renewal made from the command line
+never reached the running hub at all. Each node's record in the key
+store now keeps the serials its renewals replaced, until each would
+have expired, and the hub loads them at start and every two seconds
+after. `revocations_loaded` in the hub's start-up line counts them.
+`keys export-crl` does not list them yet. DIVERGENCE 5.392.
+
 ### A runner reaches only the nodes its rule's target covers
 
 **Breaking.** A runner rule may now name a `target`, and a runner that

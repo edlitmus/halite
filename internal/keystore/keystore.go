@@ -85,6 +85,31 @@ type Record struct {
 	// TokenID names the bootstrap token that admitted this node, when
 	// one did, so that revoking a leaked token can name what it let in.
 	TokenID string `json:"token_id,omitempty"`
+	// Superseded holds the serials renewals replaced, for as long as
+	// their certificates would otherwise still be valid. The record
+	// used to keep only the current serial, so the denylist entry a
+	// renewal made for the old one lived in the hub's memory alone: a
+	// restart forgot it, and a key rotated because it leaked worked
+	// again for the rest of its life (issue 321, M-05). Keeping them
+	// here is what lets LoadDenylist and the hub's reconcile loop put
+	// them back. An entry is dropped once its certificate has expired,
+	// because the handshake refuses it from then on regardless.
+	Superseded []SupersededCert `json:"superseded,omitempty"`
+}
+
+// SupersededCert is a certificate a renewal replaced before it expired.
+type SupersededCert struct {
+	Serial   string    `json:"serial"`
+	NotAfter time.Time `json:"not_after"`
+	// At is when it was replaced.
+	At time.Time `json:"at"`
+}
+
+// Live reports whether the certificate could still be presented at now:
+// whether it still belongs on the denylist. An unknown notAfter is
+// treated as live, so a record written without one fails closed.
+func (s SupersededCert) Live(now time.Time) bool {
+	return s.NotAfter.IsZero() || now.Before(s.NotAfter)
 }
 
 // Status is the record's state with the clock applied: an accepted

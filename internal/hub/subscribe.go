@@ -199,7 +199,19 @@ func (s *Server) reconcileOnce() error {
 		return err
 	}
 	revoker := s.Authority.Revoker
+	now := s.now()
 	for _, rec := range records {
+		// A serial a renewal replaced, whichever process renewed it.
+		// The one that did denylisted it in its own memory, which is
+		// not this hub's when the renewal came from the command line
+		// or from before a restart (issue 321, M-05).
+		if revoker != nil {
+			for _, sup := range rec.Superseded {
+				if sup.Live(now) {
+					revoker.Revoke(sup.Serial, keystore.ReasonSuperseded)
+				}
+			}
+		}
 		if rec.Serial == "" {
 			continue
 		}

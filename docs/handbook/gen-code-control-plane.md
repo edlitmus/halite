@@ -451,6 +451,7 @@ One JSON file per node, named for the node, written atomically. A directory rath
 - `Source` (type): Source is how a node came to be enrolled, per SPEC 7.3.
 - `State` (type): State is a key's position in the lifecycle of SPEC 7.4.
 - `Store` (type): Store is a directory of records.
+- `SupersededCert` (type): SupersededCert is a certificate a renewal replaced before it expired.
 - `Token` (type): Token is a bootstrap token's record on the hub.
 - `TokenOptions` (type): TokenOptions is what an operator asks for when minting one.
 - `ValidState` (func): ValidState reports whether s is a state a record may be stored in.

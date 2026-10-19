@@ -451,6 +451,51 @@ func TestTheServerFollowsTheStoreForRevocations(t *testing.T) {
 	}
 }
 
+// A renewal made by another process over the same store -- the command
+// line, or a hub that has since restarted -- denylists the serial it
+// replaces in that process's memory only. The record keeps it, and the
+// running hub has to follow the record, or the old certificate keeps
+// working here until it expires (issue 321, M-05).
+func TestTheServerFollowsTheStoreForSupersededSerials(t *testing.T) {
+	l := newLab(t)
+	client := l.enrolled(t, "web1.example")
+	rec, err := l.server.Authority.Store.Get("web1.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := pki.DecodeCert([]byte(rec.Cert))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	other := &keystore.Authority{Store: l.server.Authority.Store, CA: l.ca, Mode: keystore.ModeManual}
+	key, err := pki.GenerateKey(pki.ECDSAP256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := pki.NewNodeCSR(key, "web1.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Renew(peer, pki.EncodeCSR(der)); err != nil {
+		t.Fatal(err)
+	}
+	if _, denied := l.denied.Revoked(rec.Serial); denied {
+		t.Fatal("the running hub cannot have seen this yet; the test proves nothing")
+	}
+
+	if err := l.server.reconcileOnce(); err != nil {
+		t.Fatal(err)
+	}
+	if reason, denied := l.denied.Revoked(rec.Serial); !denied || reason != keystore.ReasonSuperseded {
+		t.Errorf("the running hub did not follow the store: denied %v, %q", denied, reason)
+	}
+	client.Reset()
+	if _, err := client.Health(context.Background()); err == nil {
+		t.Error("a superseded certificate still completed a handshake")
+	}
+}
+
 // The lab found this and the tests above did not: they call Reset
 // before checking, which drops the pooled connection and forces a fresh
 // handshake. A real node reconnecting reuses the HTTP/2 connection it

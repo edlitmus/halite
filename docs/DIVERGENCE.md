@@ -31125,6 +31125,75 @@ API's other callers as "their own"; the API does not yet pass who it
 acts for. A webhook's runner call carries no narrowing and is held to
 the API's scope alone. Not run against the production hub.
 
+### 5.392 A renewed node's old certificate worked again after a hub restart
+
+Issue 321 finding M-05, confirmed. `issue`, the one place a certificate
+is made, put the serial it replaced on the denylist and wrote the record
+with the new serial alone. The denylist is memory. `LoadDenylist`
+rebuilds it at start from the records, and took only the serial of a
+record in state revoked. So a restart forgot every superseded serial,
+and the certificate a renewal replaced was accepted again for the rest
+of its life: a node renews at half-life, so up to 45 days at the default
+90. A key rotated because it leaked was a key that worked again after the
+next restart.
+
+The audit's reproduction was in-process. It is wider than that. The
+command line is a second `Authority` over the same store with its own
+denylist, and the hub's reconcile loop (5.323) followed the store for
+revoked records only. A renewal made anywhere but the serving process
+never reached that process's denylist at all, restart or not.
+
+**The change.** A record keeps `superseded`: each replaced serial, its
+notAfter and when it was replaced. `issue` appends to it and drops any
+entry whose certificate has expired, since the handshake refuses those
+regardless; an entry with no notAfter is kept, so a record without one
+fails closed. `LoadDenylist` puts every live superseded serial back on
+the denylist, of a record in any state, and so does `reconcileOnce`
+every two seconds, so a renewal made by another process reaches the
+running hub as a revocation does. The reason on the denylist is
+`keystore.ReasonSuperseded`. The hub's `revocations_loaded` at start now
+counts these too.
+
+The audit offered a second fix: compare the presented serial with the
+record's on every request. That reads the store per request, where the
+denylist is a map lookup, and it would not reach the handshake.
+
+**Demonstrated.** `TestASupersededSerialStaysDeniedAfterARestart` and
+`TestTheServerFollowsTheStoreForSupersededSerials` fail against `main`;
+the first named the serial that came back. `TestAnExpiredSupersededSerialIsDropped`
+holds the pruning. Writing nothing into the record fails all three, and
+taking the loop out of `reconcileOnce` fails the second, where the old
+certificate completed a handshake.
+
+On beastie (FreeBSD 15.1, go1.27.2), throwaway hubs on a loopback port,
+one built from `main` at `8fd9c2f` and one with this change: a node
+enrolled by hand, was accepted, and renewed with `halite-node renew
+--force`; a copy of the old certificate and key was presented with
+`halite-node pillar items`, before and after a restart of the hub.
+
+| | old cert, before restart | old cert, after restart | new cert, after restart |
+|---|---|---|---|
+| `main` | `tls: bad certificate` | **accepted** (`{"m05node":{}}`) | accepted |
+| this change | `tls: bad certificate` | `tls: bad certificate` | accepted |
+
+The record on disk held the one superseded serial with the old
+certificate's notAfter.
+
+**Not done.**
+
+- **`keys export-crl` still lists revoked records only.** A CRL's number
+  here is the count of revocations, which the comment says never falls;
+  superseded entries are dropped as they expire, so counting them would
+  make it fall. That wants a number that does not depend on what is
+  listed, and is its own change.
+- **Found, not fixed: `keys delete` has the same shape.** It revokes an
+  accepted node and then removes the record. The running hub keeps the
+  serial on its denylist, but after a restart no record names it, so
+  `LoadDenylist` does not either, and the certificate is valid again
+  until it expires. Traced, not run.
+- Not run against the production hub, or with a node renewing at
+  half-life over `connect` rather than by `renew --force`.
+
 
 
 ## 6. Everything else not started

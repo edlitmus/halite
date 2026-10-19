@@ -29,7 +29,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 50 | 5: 3 mentioned and explicitly left, 1 half done, 1 measured and left |
+| Medium (55) | 51 | 4: 2 mentioned and explicitly left, 1 half done, 1 measured and left |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
 | Low (section 5) | 14 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
@@ -62,6 +62,7 @@ not do. Each has been checked to see whether it happened.
 | H-19 gitfs verifies the served commit | #325 | | |
 | H-20 aws-secrets region | #329 | `internal/s3fs` and `internal/awskms` build hosts from regions too (hub configuration, not a node) | |
 | M-01 `allow_sls` refuses the highstate | #366 | `allow_mods`'s keyword gap, closed by #367 | **not done**: no job was dispatched hub to node under a narrowed role. The fleet's policies were not read for a role that relies on the old behaviour |
+| M-05 superseded serials after a restart | M-05 fix | `keys export-crl` still omits them; `keys delete` has the same shape (found, not fixed) | **done** on beastie: `main` accepted the old certificate after a restart, and this refused it (5.392). Not on the production hub |
 | M-02 signed-job replay | #339 | | on FreeBSD since: 0.75–0.82 ms per signed job on beastie's ZFS (5.328) |
 | M-04 typed job signing (breaking) | #337 | | live mixed-version run on beastie (5.330) |
 | M-08, M-09 login backoff by (source, name) | #352 | | |
@@ -125,8 +126,6 @@ Severities are this file's revised ones, from the tables below.
 
 **Medium, mentioned by a PR and explicitly left.**
 
-- **M-05**, Medium: serials superseded by a renewal are denylisted in
-  memory only, and a hub restart forgets them (#338).
 - **M-07**, Medium or higher: `Redeem` parses every token file on every
   API request (#335).
 - **M-14**, Medium if the hub's ssh is older than 9.6: ssh option
