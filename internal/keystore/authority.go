@@ -505,6 +505,40 @@ func (a *Authority) Revoke(nodeID, reason string) (*Record, error) {
 	return out, err
 }
 
+// Delete removes a node's record and denies every certificate it named
+// that has not yet expired: the current one, whatever the record's state,
+// and the ones its renewals replaced. They are kept on disk apart from
+// the records (DeletedCert), which is what lets a restart, and a hub
+// that did not do the deleting, deny them too.
+//
+// This replaces a revoke-then-delete in each caller. The revocation was
+// a state on the record that the delete then removed, so it lasted as
+// long as the denylist of whichever process ran it: for the CLI, until
+// the command exited, which meant a running hub never heard of it at all.
+//
+// Entries already expired are pruned here, because a delete is the one
+// operation that adds to them.
+func (a *Authority) Delete(nodeID string) ([]DeletedCert, error) {
+	var kept []DeletedCert
+	err := a.Store.locked(func() error {
+		now := a.now()
+		var err error
+		kept, err = a.Store.delete(nodeID, now)
+		if err != nil {
+			return err
+		}
+		if a.Revoker != nil {
+			for _, d := range kept {
+				if d.Live(now) {
+					a.Revoker.Revoke(d.Serial, d.Reason)
+				}
+			}
+		}
+		return a.Store.pruneDeleted(now)
+	})
+	return kept, err
+}
+
 // Renew reissues to a node that already holds a valid certificate,
 // without an operator. SPEC 7.4: renewal needs no token and no
 // decision, because the node has already authenticated as itself.
@@ -566,9 +600,9 @@ func (a *Authority) Renew(peer *x509.Certificate, csrPEM []byte) (*Result, error
 const ReasonSuperseded = "superseded by a renewal"
 
 // LoadDenylist puts every revoked serial on the handshake denylist, and
-// every superseded one whose certificate has not yet expired. A hub that
-// restarts and forgets what it revoked is a hub that lets a revoked node
-// back in, so this runs before the listener opens.
+// every superseded or deleted one whose certificate has not yet expired.
+// A hub that restarts and forgets what it revoked is a hub that lets a
+// revoked node back in, so this runs before the listener opens.
 func (a *Authority) LoadDenylist() (int, error) {
 	if a.Revoker == nil {
 		return 0, nil
@@ -577,8 +611,18 @@ func (a *Authority) LoadDenylist() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	deleted, err := a.Store.ListDeleted()
+	if err != nil {
+		return 0, err
+	}
 	now := a.now()
 	n := 0
+	for _, d := range deleted {
+		if d.Live(now) {
+			a.Revoker.Revoke(d.Serial, d.Reason)
+			n++
+		}
+	}
 	for _, rec := range records {
 		for _, s := range rec.Superseded {
 			if s.Live(now) {

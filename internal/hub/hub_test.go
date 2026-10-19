@@ -496,6 +496,38 @@ func TestTheServerFollowsTheStoreForSupersededSerials(t *testing.T) {
 	}
 }
 
+// `halite-hub keys delete` is another process. It revoked in its own
+// memory and then removed the record, so the running hub's reconcile
+// loop found nothing to follow and the deleted node went on connecting.
+func TestTheServerFollowsTheStoreForDeletedNodes(t *testing.T) {
+	l := newLab(t)
+	client := l.enrolled(t, "web1.example")
+	rec, err := l.server.Authority.Store.Get("web1.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cli := &keystore.Authority{Store: l.server.Authority.Store, CA: l.ca, Mode: keystore.ModeManual,
+		Revoker: transport.NewDenylist()}
+	if _, err := cli.Delete("web1.example"); err != nil {
+		t.Fatal(err)
+	}
+	if _, denied := l.denied.Revoked(rec.Serial); denied {
+		t.Fatal("the running hub cannot have seen this yet; the test proves nothing")
+	}
+
+	if err := l.server.reconcileOnce(); err != nil {
+		t.Fatal(err)
+	}
+	if reason, denied := l.denied.Revoked(rec.Serial); !denied || reason != keystore.ReasonDeleted {
+		t.Errorf("the running hub did not follow the store: denied %v, %q", denied, reason)
+	}
+	client.Reset()
+	if _, err := client.Health(context.Background()); err == nil {
+		t.Error("a deleted node's certificate still completed a handshake")
+	}
+}
+
 // The lab found this and the tests above did not: they call Reset
 // before checking, which drops the pooled connection and forces a fresh
 // handshake. A real node reconnecting reuses the HTTP/2 connection it

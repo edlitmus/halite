@@ -360,20 +360,48 @@ func (s *Store) put(rec *Record) error {
 // Delete removes a record entirely. SPEC 7.4 lists it as an operator
 // action; it is the only one that loses the audit trail, so the caller
 // is expected to have said so out loud.
+//
+// The serials the record names are written to the deleted certificates
+// first, in the same critical section, so that no caller can delete a
+// record and lose a certificate that still works. Authority.Delete is
+// what the hub and the CLI call, because it also denylists them in this
+// process; this is the floor under it.
 func (s *Store) Delete(nodeID string) error {
+	return s.locked(func() error {
+		_, err := s.delete(nodeID, time.Now())
+		return err
+	})
+}
+
+// delete is Delete for a caller that holds the lock. It returns what it
+// kept.
+func (s *Store) delete(nodeID string, now time.Time) ([]DeletedCert, error) {
 	path, err := s.path(nodeID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return s.locked(func() error {
-		if err := os.Remove(path); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("%s: %w", nodeID, ErrNotFound)
-			}
-			return fmt.Errorf("deleting the record for %s: %w", nodeID, err)
+	rec, err := s.get(nodeID)
+	if err != nil {
+		return nil, err
+	}
+	kept := tombstones(rec, now)
+	if len(kept) > 0 {
+		if err := mkdirOwned(s.deletedDir()); err != nil {
+			return nil, fmt.Errorf("creating the deleted certificates directory: %w", err)
 		}
-		return nil
-	})
+	}
+	for _, d := range kept {
+		if err := s.putDeleted(d); err != nil {
+			return nil, err
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%s: %w", nodeID, ErrNotFound)
+		}
+		return nil, fmt.Errorf("deleting the record for %s: %w", nodeID, err)
+	}
+	return kept, nil
 }
 
 // countPending counts the pending records. The caller holds the lock.
