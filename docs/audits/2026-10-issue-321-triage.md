@@ -198,6 +198,7 @@ passing by the PRs above; that has not been looked for.
 | buildpolicy text greps with gaps (cross/fips-cross flags, `matrix.go`, dead `ext.Confine`, attest wording) | #457 | 5.426; each gap reproduced and closed; still text checks; flow-form YAML permissions not read |
 | systemd node unit `ProtectKernelModules=yes` | #460 | 5.427; worse than the audit said: the module tree is hidden, so `kmod` reads answered False; measured under a user manager, not as root under the system manager; the hub unit's writable PKI is by design and unchanged |
 | leaks: `job.Cache.locks` never freed | #455 | 5.431; no hub run long enough to see it; the bullet's `certreload` part not changed |
+| leaks: `eventbus.Wait` a channel per idle stream per 25 s | #458 | 5.432; the hub's stream also registered its wait after its read, missing an event for up to 25 s, fixed with it; a closed stream still leaves one channel; not run on a live hub |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
