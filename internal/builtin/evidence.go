@@ -479,7 +479,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`live_iptables_test.go` runs in the ordinary suite -- the namespace needs no privilege on a kernel with " +
 		"unprivileged user namespaces -- and skips where the kernel forbids one. Not covered: ip6tables (the " +
 		"argument vector is pinned but nothing has driven it), the `nat`/`mangle`/`raw` tables, and `save` against " +
-		"a real `iptables-persistent` layout"},
+		"a real `iptables-persistent` layout. `iptables.append` was also run through `halite-node call` against " +
+		"Ubuntu 22.04's iptables 1.8.7 (legacy backend) with the xtables lock held: it fails at once without " +
+		"`-w`, and waits with the `-w 30` every lock-taking command now carries (DIVERGENCE 5.397)"},
 	"nftables": {Level: exec.Hardware, Note: "driven against a real nft 1.0.9 inside a throwaway network " +
 		"namespace on Ubuntu 24.04: tables and chains created and removed, a base chain's policy updated in " +
 		"place, rules added idempotently by their comment and removed by comment, `check` run against nft's own " +

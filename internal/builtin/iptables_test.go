@@ -2,10 +2,12 @@ package builtin
 
 import (
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -149,7 +151,7 @@ func iptablesSaveKey() string {
 
 // append checks with -C first and only runs -A when the rule is absent.
 func TestIPTablesAppendIsIdempotent(t *testing.T) {
-	present := "iptables -t filter -C INPUT -p tcp --dport 22 -j ACCEPT"
+	present := "iptables -w 30 -t filter -C INPUT -p tcp --dport 22 -j ACCEPT"
 
 	// -C exits 0: the rule is there, nothing runs.
 	c := iptablesCtx(map[string]exec.Result{present: {Code: 0}})
@@ -177,7 +179,7 @@ func TestIPTablesAppendIsIdempotent(t *testing.T) {
 	}
 	var appended bool
 	for _, ran := range c2.Runner.(*exec.RecordingRunner).RanCommands() {
-		if ran == "iptables -t filter -A INPUT -p tcp --dport 22 -j ACCEPT" {
+		if ran == "iptables -w 30 -t filter -A INPUT -p tcp --dport 22 -j ACCEPT" {
 			appended = true
 		}
 	}
@@ -271,5 +273,71 @@ func TestIPTablesRefusesOnANonLinuxPlatform(t *testing.T) {
 	_, err := New().Exec.Call(&exec.Context{}, "iptables.get_rules", value.NewMap(0))
 	if err == nil || !strings.Contains(err.Error(), "this node is "+runtime.GOOS) {
 		t.Errorf("iptables.get_rules did not refuse by platform: %v", err)
+	}
+}
+
+// Every command that takes the xtables lock waits for it, bounded.
+// Issue 321, M-47: iptables 1.8.7 on the legacy backend fails at once,
+// exit 4, while another program holds the lock and `-w` was not passed
+// (DIVERGENCE 5.397). Driven through each writer and the rule states,
+// both families, so a call site added without iptablesArgv shows here.
+func TestEveryIPTablesCommandWaitsForTheLock(t *testing.T) {
+	var ran []string
+	for _, family := range []string{"ipv4", "ipv6"} {
+		// code is what -C answers: 1 so the adders add, 0 so the
+		// deleters delete. The save lists a user chain and a policy, so
+		// the chain and flush paths have something to act on.
+		run := func(code int, fn func(c *exec.Context, args *value.Map) error, kv ...any) {
+			c := iptablesCtx(nil)
+			rr := c.Runner.(*exec.RecordingRunner)
+			rr.Default = exec.Result{Code: code}
+			rr.Responses = map[string]exec.Result{
+				(exec.Command{Argv: []string{"iptables-save"}}).String():  {Stdout: iptablesSaveSample},
+				(exec.Command{Argv: []string{"ip6tables-save"}}).String(): {Stdout: iptablesSaveSample},
+			}
+			args := value.MapOf(append([]any{"family", family}, kv...)...)
+			_ = fn(c, args)
+			ran = append(ran, rr.RanCommands()...)
+		}
+		ignore := func(f func(c *exec.Context, args *value.Map) (any, error)) func(*exec.Context, *value.Map) error {
+			return func(c *exec.Context, a *value.Map) error { _, err := f(c, a); return err }
+		}
+		rule := []any{"chain", "INPUT", "rule", "-p tcp --dport 22 -j ACCEPT"}
+		run(1, ignore(func(c *exec.Context, a *value.Map) (any, error) { return iptablesAddRule(c, a, "append") }), rule...)
+		run(1, ignore(func(c *exec.Context, a *value.Map) (any, error) { return iptablesAddRule(c, a, "insert") }), append(rule, "position", 1)...)
+		run(0, ignore(iptablesDeleteRule), rule...)
+		run(1, ignore(func(c *exec.Context, a *value.Map) (any, error) { return iptablesChainChange(c, a, true) }), "chain", "new-chain")
+		run(1, ignore(func(c *exec.Context, a *value.Map) (any, error) { return iptablesChainChange(c, a, false) }), "chain", "halite-in")
+		run(1, ignore(iptablesSetPolicyFn), "chain", "FORWARD", "policy", "ACCEPT")
+		run(1, ignore(iptablesFlushFn), "chain", "halite-in")
+		state := func(f func(c *exec.Context, args *value.Map) (states.Result, error)) func(*exec.Context, *value.Map) error {
+			return func(c *exec.Context, a *value.Map) error { _, err := f(c, a); return err }
+		}
+		run(1, state(func(c *exec.Context, a *value.Map) (states.Result, error) { return iptablesRuleState(c, a, "append") }), rule...)
+		run(0, state(func(c *exec.Context, a *value.Map) (states.Result, error) { return iptablesRuleState(c, a, "delete") }), rule...)
+		run(1, state(func(c *exec.Context, a *value.Map) (states.Result, error) { return iptablesChainState(c, a, true) }), "chain", "new-chain")
+		run(1, state(func(c *exec.Context, a *value.Map) (states.Result, error) { return iptablesChainState(c, a, false) }), "chain", "halite-in")
+	}
+
+	var locking int
+	for _, cmd := range ran {
+		bin, rest, _ := strings.Cut(cmd, " ")
+		if bin != "iptables" && bin != "ip6tables" || rest == "--version" {
+			continue
+		}
+		locking++
+		if !strings.HasPrefix(rest, "-w "+iptablesWait+" ") {
+			t.Errorf("%q does not wait for the xtables lock", cmd)
+		}
+	}
+	// Each writer's own verb must have been reached, or this passes on
+	// a run that never got past -C.
+	for _, verb := range []string{" -C ", " -A ", " -I ", " -D ", " -N ", " -X ", " -P ", " -F "} {
+		if !slices.ContainsFunc(ran, func(cmd string) bool { return strings.Contains(cmd, verb) }) {
+			t.Errorf("no command ran %q, so its call site went unchecked; ran %q", verb, ran)
+		}
+	}
+	if locking == 0 {
+		t.Fatal("no iptables command ran at all")
 	}
 }

@@ -496,6 +496,32 @@ func iptablesBin(family string) (string, error) {
 	return "", fmt.Errorf("%q is not an address family; it is ipv4 or ipv6", family)
 }
 
+// iptablesWait is how long a command waits for the xtables lock before
+// it gives up, in seconds, passed as `-w`.
+//
+// Issue 321, M-47. Without `-w`, iptables 1.8.7 on the legacy backend,
+// which is Ubuntu 22.04's when a machine uses it, fails at once with
+// exit 4 while another program (fail2ban, Docker, a second state run)
+// holds `/run/xtables.lock`; measured in DIVERGENCE 5.397. 1.8.10 waits
+// without being asked, and without a limit. 5.364 measured only 1.8.10
+// and concluded `-w` changed nothing.
+//
+// Bounded rather than a bare `-w`, which is what Salt passes: a lock
+// holder that never lets go would otherwise hang the state run with no
+// word about why, and iptables' own message on giving up names the lock.
+// The nf_tables backend, 1.8.7 and 1.8.10, accepts `-w 30` and added its
+// rule while another process held the lock.
+//
+// Nothing older than 1.8.7 was run; an iptables that takes `-w` without
+// a number would read the 30 as an argument it does not expect.
+const iptablesWait = "30"
+
+// iptablesArgv is a command line for a family's iptables that takes the
+// lock: every one except `--version` and the `-save` reads.
+func iptablesArgv(bin string, rest ...string) []string {
+	return append([]string{bin, "-w", iptablesWait}, rest...)
+}
+
 func iptablesSaveBin(family string) (string, error) {
 	bin, err := iptablesBin(family)
 	if err != nil {
@@ -835,7 +861,7 @@ func iptablesRulePresent(c *exec.Context, family, table, chain string, spec []st
 		return false, nil, errors.New("A chain must be named")
 	}
 	bin, _ := iptablesBin(family)
-	argv := append([]string{bin, "-t", table, "-C", chain}, spec...)
+	argv := append(iptablesArgv(bin, "-t", table, "-C", chain), spec...)
 	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
 		return false, argv, fmt.Errorf("`%s -C` could not be run: %w", bin, err)
@@ -878,9 +904,9 @@ func iptablesAddRule(c *exec.Context, args *value.Map, mode string) (any, error)
 	switch mode {
 	case "insert":
 		pos := states.Int(args, "position", 1)
-		argv = append([]string{bin, "-t", table, "-I", chain, strconv.FormatInt(pos, 10)}, spec...)
+		argv = append(iptablesArgv(bin, "-t", table, "-I", chain, strconv.FormatInt(pos, 10)), spec...)
 	default:
-		argv = append([]string{bin, "-t", table, "-A", chain}, spec...)
+		argv = append(iptablesArgv(bin, "-t", table, "-A", chain), spec...)
 	}
 	change := value.MapOf(shown, states.Change(nil, "present in "+table+"/"+chain))
 	if c.Test {
@@ -909,7 +935,7 @@ func iptablesDeleteRule(c *exec.Context, args *value.Map) (any, error) {
 		return iptablesMutateResult(c, false, fmt.Sprintf("`%s` is not in %s/%s.", shown, table, chain), nil), nil
 	}
 	bin, _ := iptablesBin(family)
-	argv := append([]string{bin, "-t", table, "-D", chain}, spec...)
+	argv := append(iptablesArgv(bin, "-t", table, "-D", chain), spec...)
 	change := value.MapOf(shown, states.Change("present in "+table+"/"+chain, nil))
 	if c.Test {
 		return iptablesMutateResult(c, true, fmt.Sprintf("`%s` would be removed from %s/%s.", shown, table, chain), change), nil
@@ -953,7 +979,7 @@ func iptablesChainChange(c *exec.Context, args *value.Map, create bool) (any, er
 	if c.Test {
 		return iptablesMutateResult(c, true, fmt.Sprintf("The chain %s/%s would be %s.", table, chain, verb), change), nil
 	}
-	if err := iptablesRun(c, []string{bin, "-t", table, flag, chain}); err != nil {
+	if err := iptablesRun(c, iptablesArgv(bin, "-t", table, flag, chain)); err != nil {
 		return nil, err
 	}
 	return iptablesMutateResult(c, true, fmt.Sprintf("The chain %s/%s %s.", table, chain, past), change), nil
@@ -996,7 +1022,7 @@ func iptablesSetPolicy(c *exec.Context, args *value.Map) (*value.Map, bool, erro
 	if c.Test {
 		return iptablesMutateResult(c, true, fmt.Sprintf("%s/%s policy would be set to %s.", table, chain, policy), change), true, nil
 	}
-	if err := iptablesRun(c, []string{bin, "-t", table, "-P", chain, policy}); err != nil {
+	if err := iptablesRun(c, iptablesArgv(bin, "-t", table, "-P", chain, policy)); err != nil {
 		return nil, false, err
 	}
 	return iptablesMutateResult(c, true, fmt.Sprintf("%s/%s policy was set to %s.", table, chain, policy), change), true, nil
@@ -1039,7 +1065,7 @@ func iptablesFlushFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 
 	bin, _ := iptablesBin(family)
-	argv := []string{bin, "-t", table, "-F"}
+	argv := iptablesArgv(bin, "-t", table, "-F")
 	target := "every chain in " + table
 	removed := 0
 	if chain != "" {
@@ -1206,7 +1232,7 @@ func iptablesChainState(c *exec.Context, args *value.Map, present bool) (states.
 			return states.WouldChange(fmt.Sprintf("The chain %s/%s would be created.", table, chain), changes), nil
 		}
 		bin, _ := iptablesBin(family)
-		if err := iptablesRun(c, []string{bin, "-t", table, "-N", chain}); err != nil {
+		if err := iptablesRun(c, iptablesArgv(bin, "-t", table, "-N", chain)); err != nil {
 			return states.False(err.Error()), nil
 		}
 		return states.Changed(fmt.Sprintf("The chain %s/%s was created.", table, chain), changes), nil
@@ -1220,10 +1246,10 @@ func iptablesChainState(c *exec.Context, args *value.Map, present bool) (states.
 		return states.WouldChange(fmt.Sprintf("The chain %s/%s would be flushed and removed.", table, chain), changes), nil
 	}
 	bin, _ := iptablesBin(family)
-	if err := iptablesRun(c, []string{bin, "-t", table, "-F", chain}); err != nil {
+	if err := iptablesRun(c, iptablesArgv(bin, "-t", table, "-F", chain)); err != nil {
 		return states.False(err.Error()), nil
 	}
-	if err := iptablesRun(c, []string{bin, "-t", table, "-X", chain}); err != nil {
+	if err := iptablesRun(c, iptablesArgv(bin, "-t", table, "-X", chain)); err != nil {
 		return states.False(fmt.Sprintf("The chain was flushed but not removed (it may still be a jump target): %v", err)), nil
 	}
 	return states.Changed(fmt.Sprintf("The chain %s/%s was removed.", table, chain), changes), nil
@@ -1255,7 +1281,7 @@ func iptablesRuleState(c *exec.Context, args *value.Map, mode string) (states.Re
 		if c.Test {
 			return states.WouldChange(fmt.Sprintf("`%s` would be removed from %s/%s.", shown, table, chain), changes), nil
 		}
-		if err := iptablesRun(c, append([]string{bin, "-t", table, "-D", chain}, spec...)); err != nil {
+		if err := iptablesRun(c, append(iptablesArgv(bin, "-t", table, "-D", chain), spec...)); err != nil {
 			return states.False(err.Error()), nil
 		}
 		return states.Changed(fmt.Sprintf("`%s` was removed from %s/%s.", shown, table, chain), changes), nil
@@ -1271,9 +1297,9 @@ func iptablesRuleState(c *exec.Context, args *value.Map, mode string) (states.Re
 	var argv []string
 	if mode == "insert" {
 		pos := states.Int(args, "position", 1)
-		argv = append([]string{bin, "-t", table, "-I", chain, strconv.FormatInt(pos, 10)}, spec...)
+		argv = append(iptablesArgv(bin, "-t", table, "-I", chain, strconv.FormatInt(pos, 10)), spec...)
 	} else {
-		argv = append([]string{bin, "-t", table, "-A", chain}, spec...)
+		argv = append(iptablesArgv(bin, "-t", table, "-A", chain), spec...)
 	}
 	if err := iptablesRun(c, argv); err != nil {
 		return states.False(err.Error()), nil
