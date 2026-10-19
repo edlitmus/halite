@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An API request with an unknown token no longer reads every token
+
+The API looked a bearer token up by reading and parsing every token it
+had issued, on every request. A request carrying a made-up token, which
+anybody who can reach the API can send, cost time in proportion to the
+token store: 257 ms at 5,000 tokens on a FreeBSD host. Tokens are now
+found through an index (`tokens/by-digest/` under the API's state
+directory), in about 9 µs at any size. The first start after upgrading
+indexes the tokens already issued, which takes a few seconds for a
+large store, and logs how many. DIVERGENCE 5.395.
+
 ### `keys export-crl` lists everything the hub refuses
 
 The CRL listed revoked nodes only, so a renewed node's old certificate

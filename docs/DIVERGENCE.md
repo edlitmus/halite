@@ -31333,6 +31333,71 @@ against the second.
 - Nothing publishes the CRL; an operator runs `export-crl`, as before.
   Not run against the production hub.
 
+### 5.395 A made-up API token cost time in proportion to the token store
+
+Issue 321 finding M-07, which 5.303 left alone by name. `Redeem` found
+the token a bearer secret belonged to by listing the token store and
+parsing every record until one's digest matched. It did that on every
+authenticated API request. A request carrying a token nobody issued read
+every record, and the API answers that request to anybody who can reach
+its port, before any credential has been checked. The cost grew with the
+store, and nothing bounded the store but `token prune`.
+
+The audit measured 78 ms a request at 5,000 tokens, and the triage
+4.2 s on macOS. On beastie (FreeBSD 15.1, go1.27.2),
+`BenchmarkRedeemAGarbageToken` on `main` at `53cc40b`:
+
+| tokens | `main` | this change |
+|---|---|---|
+| 10 | 0.50 ms | 9.1 µs |
+| 1,000 | 46 ms | 9.5 µs |
+| 5,000 | 257 ms | 9.2 µs |
+
+**The change.** `Issue` writes `by-digest/<digest>` beside the records,
+holding the token's identifier, after the record. `Redeem` reads that
+entry and the one record it names, and checks the record's digest
+against the presented secret's. So an entry that is wrong, edited or
+naming a record since replaced, refuses the secret rather than admitting
+it as another token. A missing entry is "not one this service issued",
+as before. `Prune` removes the entry with its record. The secret is
+still never a filename. The digest already sits in every record in the
+clear, and is SHA-256 of 256 random bits.
+
+Tokens issued before this have no entry, so `halite-api serve` runs
+`Store.Reindex` at start and logs how many it indexed. It is there and
+not in `Open`, because `halite-api token` also opens the store and
+usually runs as root. An entry it wrote would be root's, 0600, and
+unreadable to the API, so a working token would be refused.
+
+**Demonstrated.** `TestRedeemDoesNotListTheStore` makes the store's
+directory unlistable (0300) and redeems through it. With `main`'s
+`Redeem` put back it fails with `permission denied`, and that version
+also fails the reindex test and the index test. Making `Reindex` write
+nothing, dropping the digest check, and leaving the entry behind in
+`Prune` each fail their own test. The digest check, removed, admitted
+one operator's secret as `local:root`'s token.
+
+A running `halite-api` on beastie, against a store of 5,000 tokens
+written by `main`'s `Issue`, with `curl` timing `GET /v1/token`. Each
+request is a fresh TLS connection:
+
+| | `main` | this change |
+|---|---|---|
+| made-up token, three requests | 401 in 0.260 to 0.265 s | 401 in 0.015 to 0.018 s |
+| real token | 200 in 0.268 s | 200 in 0.021 s |
+| start | about 1 s | about 9 s the first time, logging `indexed ... tokens=5000`; about 1 s after |
+
+**Not done.**
+
+- The first start after upgrading indexes every record, one atomic write
+  each: about 8 s at 5,000 tokens on beastie's ZFS. The API does not
+  listen until it is done.
+- `List` still reads every record. Its callers are `token list`,
+  `RevokePrincipal` and the `halite_api_tokens_live` gauge. None of them
+  runs on an unauthenticated request.
+- Not run on Linux, macOS or Windows hosts, or against the production
+  API. The 0300 test skips on Windows and as root.
+
 
 ## 6. Everything else not started
 

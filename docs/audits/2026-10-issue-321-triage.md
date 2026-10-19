@@ -14,8 +14,8 @@ this file to the code, so it drifts as work lands.
 
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
-as it landed, the latest being the CRL follow-up to M-05 (#437). The
-status is as of #437, checked again on 2026-10-19; PRs after it that change only
+as it landed, the latest being M-07 (#438). The
+status is as of #438, checked again on 2026-10-19; PRs after it that change only
 this file or other documentation do not move it. The rows up to `d8ceba1` were first
 rechecked against each PR's body for parts it said it left unfixed, and
 the later rows (#375 to #426) were rechecked the same way on
@@ -29,7 +29,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 51 | 4: 2 mentioned and explicitly left, 1 half done, 1 measured and left |
+| Medium (55) | 52 | 3: 1 mentioned and explicitly left, 1 half done, 1 measured and left |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
 | Low (section 5) | 14 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
@@ -63,6 +63,7 @@ not do. Each has been checked to see whether it happened.
 | H-20 aws-secrets region | #329 | `internal/s3fs` and `internal/awskms` build hosts from regions too (hub configuration, not a node) | |
 | M-01 `allow_sls` refuses the highstate | #366 | `allow_mods`'s keyword gap, closed by #367 | **not done**: no job was dispatched hub to node under a narrowed role. The fleet's policies were not read for a role that relies on the old behaviour |
 | M-05 superseded serials after a restart | #435, #436, #437 | none | **done** on beastie: `main` accepted the old certificate after a restart, and this refused it (5.392). `keys delete` had the same shape and worse: `main` accepted a deleted node on the running hub; #436 refused it, running and restarted (5.393). #437 put both on the CRL, which `openssl verify -crl_check` then refused, under a number that no longer falls (5.394). Not on the production hub |
+| M-07 token lookup reads every token | #438 | `List` still reads every record, off the unauthenticated path | **done** on beastie: a made-up token cost 257 ms at 5,000 tokens on `main` and 9 µs with this; through a running API, 0.26 s against 0.016 s (5.395). Not on the production API |
 | M-02 signed-job replay | #339 | | on FreeBSD since: 0.75–0.82 ms per signed job on beastie's ZFS (5.328) |
 | M-04 typed job signing (breaking) | #337 | | live mixed-version run on beastie (5.330) |
 | M-08, M-09 login backoff by (source, name) | #352 | | |
@@ -126,8 +127,6 @@ Severities are this file's revised ones, from the tables below.
 
 **Medium, mentioned by a PR and explicitly left.**
 
-- **M-07**, Medium or higher: `Redeem` parses every token file on every
-  API request (#335).
 - **M-14**, Medium if the hub's ssh is older than 9.6: ssh option
   injection through a roster's host or user (#326).
 
