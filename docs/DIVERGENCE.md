@@ -32815,6 +32815,39 @@ change.
 **Not verified.** No jid from a running hub was checked. Nothing was
 looked for that might have stored a jid in the `+` form. `NewID` cannot
 produce one.
+### 5.423 A merge to main could leave its commit with no CI result
+
+Issue 321, a Low finding in section 5: ci.yml's `concurrency` grouped
+runs by ref with `cancel-in-progress: true`, which applies to pushes to
+`main` as well as to pull requests, so a second merge in quick
+succession cancels CI on the first.
+
+**Measured.** `gh run list --workflow CI --branch main --event push
+--status cancelled` listed ten cancelled runs, the most it was asked
+for, between 2026-10-09 and 2026-10-18, among them the merges of #362,
+#363, #364, #365, #367 and #413. Those commits have no CI result. It
+happened again while this waited: the merge of #446 (`b968e9b`, run
+39370683108) was cancelled by #447's.
+
+**The change.** A pull request's runs are still grouped by ref and
+still cancel each other. A push is grouped by its commit
+(`github.sha`), and `cancel-in-progress` is true only for
+`pull_request`. Turning off `cancel-in-progress` alone would not be enough:
+GitHub documents one running and one pending run per group, so a third
+push still cancels the pending one. `internal/buildpolicy`'s
+`TestAPushToMainIsNotCancelledByTheNext` holds both halves for every
+workflow triggered by a push that declares a group.
+
+**Demonstrated.** The test fails on `main`'s ci.yml, naming both
+halves, and passes with this change.
+
+**Not verified.** No push to `main` has run under this yet: PR CI
+evaluates only the `pull_request` branch of the two expressions. The
+first two merges close together after this lands are the test of it.
+Several main runs now run at once where they used to replace each
+other, which costs runners; that was not measured.
+
+
 
 
 

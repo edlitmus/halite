@@ -191,6 +191,7 @@ passing by the PRs above; that has not been looked for.
 | LDAP `ParseFilter` finds `>=`/`<=`/`~=` in the value | #451 | 5.420; fake directory only; the `MapRoles` case-fold half left, as `cn` is `caseIgnoreMatch` in RFC 4519 |
 | Actions pinned by mutable tag; VM checkouts keep the token | #449 | 5.421; the token reached the VM as a `_temp` credentials file rsync copies, not in `.git/config`; fleet.yml ran on the PR, release.yml not run |
 | `job.ID.Valid()` accepts non-digits | #452 | 5.422; only the `+` in the fraction got through `time.Parse`; no stored jid checked |
+| CI's `cancel-in-progress` cancels pushes to main | #450 | 5.423; at least eleven main commits had no result, #446's among them; pushes now grouped by commit; no push to main run under it yet |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions

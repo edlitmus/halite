@@ -25,9 +25,20 @@ on:
 
 # A second push to a pull request cancels the first. The gates are long
 # and the answer for a superseded commit is not worth the runner.
+#
+# Only to a pull request. On `main` every commit is a merge somebody
+# will build from, and its result is the only record that it passed;
+# one group per ref cancelled at least ten of them between 2026-10-09
+# and 2026-10-18 whenever two PRs merged close together, so those
+# commits have no CI result at all (DIVERGENCE 5.423).
+#
+# So a push is grouped by its commit, not its ref. Turning off
+# `cancel-in-progress` alone would not do: a group holds one running and
+# one pending run, and a third push in the same group still cancels the
+# pending one.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
