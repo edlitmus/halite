@@ -21,6 +21,19 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `halite-hub ssh` refuses a host, user or jump host that is not a name
+
+The `cache` roster takes a target's host from the grains its node
+reports. With an ssh older than 9.6 on the hub, a node reporting
+`fqdn: -oProxyCommand=<cmd>`, or `localhost$(<cmd>)` where the ssh
+config has a `ProxyCommand` using `%h`, ran the command on the hub when
+an operator ran `halite-hub ssh --roster cache`. ssh and scp now get
+`--` before the destination. A host, user or `proxy_jump` that begins
+with `-` or contains anything but letters, digits and `._-` (plus `:` in
+a host, `@` in a user, `@:/` in a jump host) is refused for that target,
+with the reason, and the other targets still run. **Breaking** for a
+roster that used `%` or `@` in a host. DIVERGENCE 5.396.
+
 ### An API request with an unknown token no longer reads every token
 
 The API looked a bearer token up by reading and parsing every token it
