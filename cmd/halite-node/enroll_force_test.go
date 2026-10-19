@@ -23,9 +23,11 @@ type enrollLab struct {
 	root   string
 	files  pki.Files
 	nodeID string
+	// hub is the address the hub listens on.
+	hub string
 }
 
-func newEnrollLab(t *testing.T) *enrollLab {
+func newEnrollLab(t *testing.T, configure ...func(*hub.Server)) *enrollLab {
 	t.Helper()
 	ca, err := pki.NewCA(pki.ECDSAP256, "enroll test CA", time.Hour)
 	if err != nil {
@@ -51,6 +53,9 @@ func newEnrollLab(t *testing.T) *enrollLab {
 		t.Fatal(err)
 	}
 	srv := &hub.Server{Authority: auth, Fleet: hub.NewFleet(), PingInterval: time.Second}
+	for _, f := range configure {
+		f(srv)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); _ = srv.Serve(ctx, ln) }()
@@ -69,7 +74,7 @@ func newEnrollLab(t *testing.T) *enrollLab {
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return &enrollLab{auth: auth, cfg: cfg, root: t.TempDir(), files: files, nodeID: "web1.example"}
+	return &enrollLab{auth: auth, cfg: cfg, root: t.TempDir(), files: files, nodeID: "web1.example", hub: ln.Addr().String()}
 }
 
 func (l *enrollLab) enroll(t *testing.T, extra ...string) result {

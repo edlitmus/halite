@@ -411,6 +411,8 @@ func runServe(args *cli.Args) int {
 		Anchors:           anchors,
 		NodeEventRate:     h.cfg.Float("node_event_rate", hub.DefaultNodeEventRate),
 		NodeEventBurst:    int(h.cfg.Int("node_event_burst", hub.DefaultNodeEventBurst)),
+		EnrollSourceRate:  h.cfg.Float("enroll_source_rate", hub.DefaultEnrollSourceRate),
+		EnrollSourceBurst: int(h.cfg.Int("enroll_source_burst", hub.DefaultEnrollSourceBurst)),
 		Reactors:          reactors,
 		Nodegroups:        groups,
 		Files:             files,

@@ -203,6 +203,26 @@ func runEnroll(args *cli.Args) int {
 				return 1
 			}
 			continue
+		case err != nil && isRateLimited(err):
+			// The hub is limiting enrollment from this address (issue
+			// 321, M-06), and has decided nothing about this request: a
+			// wait is the answer, not a refusal. Under --wait it waits
+			// as long as the hub asked, and at least its own interval;
+			// without, it says so and stops, as a pending answer does.
+			after, _ := transport.RateLimited(err)
+			if !wait {
+				fmt.Printf("the hub is limiting enrollment requests from this address: %v\n", err)
+				fmt.Println("run this again later, or pass --wait to retry until it is admitted.")
+				return 2
+			}
+			after = max(after, interval)
+			fmt.Printf("the hub is limiting enrollment from this address; trying again in %s\n", after)
+			select {
+			case <-time.After(after):
+			case <-ctx.Done():
+				return 1
+			}
+			continue
 		case err != nil:
 			// A refusal is final for this key, so it is dropped and the
 			// node keeps the identity it had; anything else -- the hub
@@ -1009,4 +1029,10 @@ func (n *node) handle(msg transport.Message) error {
 		n.log.Info("message", "type", msg.T)
 	}
 	return nil
+}
+
+// isRateLimited is transport.RateLimited's yes or no.
+func isRateLimited(err error) bool {
+	_, ok := transport.RateLimited(err)
+	return ok
 }

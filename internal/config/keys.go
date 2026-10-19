@@ -62,6 +62,8 @@ var Keys = []Key{
 
 	// Enrollment.
 	{"enrollment_mode", hubOnly, "manual", "manual or token. `attested` is named and refused; it is not built. There is no auto_accept.", "7.3"},
+	{"enroll_source_rate", hubOnly, "0.1", "Enrollment requests one address may make a second, sustained, counting only those that leave a new pending record or are refused; over it the hub answers 429.", "7.3"},
+	{"enroll_source_burst", hubOnly, "32", "Enrollment requests one address may make at once before enroll_source_rate applies.", "7.3"},
 	{"certificate_lifetime", hubOnly, "2160h", "Issued certificate lifetime; renewal happens at half of it.", "7.4"},
 	{"key_algorithm", hubOnly, "ecdsa-p256", "ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or ed25519 in non-FIPS builds.", "7.1"},
 

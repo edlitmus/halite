@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,6 +37,13 @@ type Server struct {
 	// EnrollReadTimeout bounds reading an enrollment request; zero is
 	// transport.HandshakeTimeout.
 	EnrollReadTimeout time.Duration
+	// EnrollSourceRate and EnrollSourceBurst bound how fast one address
+	// may make enrollment requests that are charged, a second and at
+	// once; zero is the default. See enrollLimit.
+	EnrollSourceRate  float64
+	EnrollSourceBurst int
+	enrollLimitOnce   sync.Once
+	enrollLimit       *enrollLimit
 
 	// NodeEventRate and NodeEventBurst bound the event data one node may
 	// post, in bytes a second and bytes at once; zero is the default.
@@ -382,6 +390,26 @@ func (s *Server) operator(next func(http.ResponseWriter, *http.Request, string))
 // sends headers and then trickles a body is cut off rather than held
 // (issue 321, M-06).
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
+	// Before the body is read: a source over its budget costs the hub
+	// a TLS handshake and nothing else. Counted rather than logged, as
+	// the event limit is, because a line per refusal would move the
+	// flood into the hub's log.
+	s.enrollLimitOnce.Do(func() { s.enrollLimit = newEnrollLimit() })
+	source := enrollSource(r)
+	rate := s.enrollSourceRate()
+	if wait := s.enrollLimit.admit(source, s.now(), rate, s.enrollSourceBurst()); wait > 0 {
+		s.countEnrollment("rate_limited")
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)))
+		transport.WriteError(w, http.StatusTooManyRequests, transport.CodeRateLimited,
+			fmt.Errorf("this address has made more enrollment requests than enroll_source_rate allows "+
+				"(%d at once, then one every %s); try again in %s", s.enrollSourceBurst(),
+				time.Duration(float64(time.Second)/rate).Round(time.Second), wait))
+		return
+	}
+	// The two outcomes an honest fleet repeats are given back; see
+	// enrollLimit.
+	refund := func() { s.enrollLimit.refund(source, s.now(), rate) }
+
 	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(s.enrollReadTimeout())); err != nil {
 		// Said rather than dropped: this is how the bound was first found
 		// doing nothing, because the metrics wrapper hid the connection.
@@ -400,6 +428,9 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case errors.Is(err, keystore.ErrPending):
+		if !res.Recorded {
+			refund()
+		}
 		s.countEnrollment("pending")
 		s.info("enrollment request is pending",
 			"node_id", res.NodeID, "fingerprint", res.Fingerprint, "from", r.RemoteAddr)
@@ -427,6 +458,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		s.warn("enrollment failed", "from", r.RemoteAddr, "error", err.Error())
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 	default:
+		refund()
 		s.countEnrollment("issued")
 		if res.Superseded != "" {
 			s.warn("a token's enrollment replaced a pending request by another key",

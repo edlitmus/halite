@@ -972,6 +972,14 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Identity and connection",
 		Detail: "Read by the hub. How many evidence-head reports one node may make at once before `evidence_anchor_rate` applies: a highstate's jobs finishing together, or a node reconnecting. Below one, the default of 60 is used.",
 	},
+	"enroll_source_rate": {
+		Group:  "Identity and connection",
+		Detail: "Read by the hub. How many enrollment requests one address may make a second, sustained, as a leaky budget; over it the hub answers 429 with a Retry-After before reading the request, and counts it as `halite_hub_enrollments_total{result=\"rate_limited\"}`. Only requests that leave a new pending record, are refused, or are malformed are charged: a certificate issued and a node asking again about its own pending request are not, so a token-mode bootstrap and nodes running `enroll --wait` are never held. An IPv6 address is held by its /64. The default, one every ten seconds after `enroll_source_burst`, means one address takes hours rather than seconds to fill the 1,024 pending records. `halite-node enroll --wait` waits and retries when it is held. Zero or below uses the default.",
+	},
+	"enroll_source_burst": {
+		Group:  "Identity and connection",
+		Detail: "Read by the hub. How many charged enrollment requests one address may make at once before `enroll_source_rate` applies: a rack of machines behind one address enrolled in manual mode. Below one, the default of 32 is used.",
+	},
 	"node_event_rate": {
 		Group:  "Identity and connection",
 		Detail: "Read by the hub. How many bytes of event data (`event.send`, beacons) one node may post a second, sustained, as a token bucket; an event over it is refused with 429 and counted as `halite_events_dropped_total{reason=\"node_rate\"}`. The bus is bounded by size and pruned oldest first, so without this one node could push every node's history off it. The default, 64 KiB a second, is a node sending a beacon event several times a second with room to spare.",

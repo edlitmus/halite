@@ -707,7 +707,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Enrollment requests the hub answered. `refused` climbing without `pending` is something asking that has no business asking.",
+      "description": "Enrollment requests the hub answered. `refused` climbing without `pending` is something asking that has no business asking. `rate_limited` is one address over `enroll_source_rate`, turned away before it was read: a flood, or a large manual-mode rollout behind one address.",
       "fieldConfig": {
         "defaults": {
           "color": {
