@@ -297,7 +297,7 @@ Related commands:
 | `keys reject <node>... --reason` | Refuse a request and **keep it**, for the record. |
 | `keys revoke <node>... --reason` | Withdraw an issued certificate. |
 | `keys delete <node>...` | Forget a node entirely. Its certificates stay refused until they expire, kept under `keys/deleted/` in the key store, so deleting a record can never leave a live certificate. |
-| `keys export-crl [--out <path>]` | Write a signed revocation list for anything outside halite that wants one. |
+| `keys export-crl [--out <path>]` | Write a signed revocation list for anything outside halite that wants one. It lists every certificate the hub refuses (revoked, replaced by a renewal, or belonging to a deleted node), and its number only rises. |
 
 To bring a revoked or lost node back: delete its record, make a new token (or
 repeat the manual enrolment), and enrol it again from a new key.

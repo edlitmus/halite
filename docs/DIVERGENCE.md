@@ -31265,6 +31265,74 @@ The restarted hub with this change logged `revocations_loaded=2`, and
   is the disconnect of a node still holding a stream when it is deleted.
 - Not run against the production hub.
 
+### 5.394 The CRL listed less than the hub denied, under a number that fell
+
+The two halves 5.392 and 5.393 left in their "Not done" lists. `keys
+export-crl` built its list from records in state revoked. The hub's
+denylist has two more sources: the serials renewals replaced (5.392) and
+the certificates of deleted records (5.393). So anything reading the CRL,
+a load balancer or an OpenSSL command line, accepted certificates the
+hub refused. Before 5.393 a revoked record that was deleted dropped off
+the CRL as well as off the hub's denylist.
+
+The CRL's number was the count of revoked records plus one. Its comment
+said that "rises whenever the list changes and never falls". It fell
+whenever a revoked record was deleted, and listing superseded and
+deleted serials, which leave the list as they expire, would have made it
+fall routinely. RFC 5280 section 5.2.3 has the number increase
+monotonically, because a reader decides which of two lists is newer by
+it.
+
+**The change.** `Authority.CRL` builds the list and numbers it, under
+the store's lock. The list is what `LoadDenylist` denies: revoked
+records whatever their notAfter, as before, plus every live superseded
+and deleted serial. Entries carry RFC 5280 reason codes: `superseded` for a
+renewal's old serial, including one whose record was later deleted;
+`cessationOfOperation` for a record deleted without being revoked; and
+none, as before, for a revocation. A deleted revoked record keeps its
+revocation time, which `DeletedCert` now records. The number is kept in
+`keys/crl-number` and each list takes one more than the last, or the
+Unix time in seconds if that is larger. The time floor is for the first
+list after this change: the count-based numbers already handed out are
+unknown, but every one is smaller than a time. After that the stored
+number carries it, so a clock stepped back cannot make it fall. A number
+file that does not parse is refused rather than started again from zero.
+`keys export-crl --out` now prints the number.
+
+**Demonstrated.** `TestTheCRLListsWhatARestartedHubDenies` holds the
+CRL and a restarted hub's denylist to the same set of serials;
+`TestTheCRLSaysWhyAndWhen`, `TestTheCRLNumberNeverFalls` and two more
+hold the rest. Listing revoked records only, or dropping superseded
+serials, fails the first two. The count-based number, the stored number
+without the time floor, and the time without the stored number each fail
+the third. Treating a deleted superseded serial as a deletion fails the
+second. That case was found missing when that break first passed.
+
+On beastie (FreeBSD 15.1, go1.27.2, OpenSSL 3.5.6), throwaway hubs on a
+loopback port, one built from `main` at `b1f5490` and one with this
+change. Five nodes were enrolled and accepted. `ren` was renewed with
+`renew --force`, and its old certificate kept. `rev` and `revdel` were
+revoked, a CRL exported, `del` and `revdel` deleted, and a second CRL
+exported. Each certificate was checked with `openssl verify -crl_check`
+against the second.
+
+| | `main` | this change |
+|---|---|---|
+| first CRL: number, entries | 3, 2 | 1792416426, 3 |
+| second CRL: number, entries | **2**, 1 | 1792416427, 4 |
+| `rev`, revoked | revoked | revoked |
+| `ren`'s old certificate, superseded | **OK** | revoked (Superseded) |
+| `del`, deleted | **OK** | revoked (Cessation Of Operation) |
+| `revdel`, revoked then deleted | **OK** | revoked |
+| `ren`'s current certificate, and an untouched node | OK | OK |
+
+**Not done.**
+
+- A revoked record is still listed after its certificate expires, as it
+  always was. RFC 5280 allows dropping it; nothing here needed to.
+- Nothing publishes the CRL; an operator runs `export-crl`, as before.
+  Not run against the production hub.
+
 
 ## 6. Everything else not started
 

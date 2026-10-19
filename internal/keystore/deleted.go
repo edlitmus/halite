@@ -33,6 +33,10 @@ type DeletedCert struct {
 	// record that had been revoked, and otherwise that it was deleted.
 	Reason  string    `json:"reason"`
 	Deleted time.Time `json:"deleted"`
+	// Revoked is when a record that had been revoked was, so that the
+	// CRL can say when the revocation happened rather than when the
+	// record was tidied away. Zero for a record deleted without one.
+	Revoked time.Time `json:"revoked,omitempty"`
 }
 
 // Live reports whether the certificate could still be presented at now,
@@ -71,12 +75,13 @@ func evenHex(s string) string {
 func tombstones(rec *Record, now time.Time) []DeletedCert {
 	var out []DeletedCert
 	if rec.Serial != "" {
-		reason := ReasonDeleted
+		d := DeletedCert{Serial: rec.Serial, NodeID: rec.NodeID,
+			NotAfter: rec.NotAfter, Reason: ReasonDeleted, Deleted: now}
 		if rec.State == Revoked {
-			reason = reasonOr(rec.Reason, "revoked")
+			d.Reason = reasonOr(rec.Reason, "revoked")
+			d.Revoked = rec.Updated
 		}
-		out = append(out, DeletedCert{Serial: rec.Serial, NodeID: rec.NodeID,
-			NotAfter: rec.NotAfter, Reason: reason, Deleted: now})
+		out = append(out, d)
 	}
 	for _, sup := range rec.Superseded {
 		out = append(out, DeletedCert{Serial: sup.Serial, NodeID: rec.NodeID,
