@@ -62,6 +62,14 @@ func runServe(args *cli.Args) int {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	// Tokens issued before the digest index existed have no entry in it,
+	// and Redeem looks nowhere else. Here and not in Open, because this is
+	// the account the entries must belong to (Store.Reindex).
+	if n, err := tokens.Reindex(); err != nil {
+		cli.Fatalf("indexing the token store: %v", err)
+	} else if n > 0 {
+		s.log.Info("indexed tokens issued before the digest index", "tokens", n)
+	}
 
 	accounts := loadAccounts(s, args)
 	loaded := loadPolicy(s, args)

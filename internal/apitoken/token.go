@@ -10,6 +10,7 @@ package apitoken
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -230,6 +231,12 @@ func (s *Store) Issue(opts Options) (*Token, string, error) {
 	if err := s.put(t); err != nil {
 		return nil, "", err
 	}
+	// After the record, so that an entry never names a record that is
+	// not there yet. A failure here leaves a record nothing can redeem,
+	// and the secret is not handed out.
+	if err := s.index(t); err != nil {
+		return nil, "", err
+	}
 	return t, secret, nil
 }
 
@@ -237,6 +244,80 @@ func (s *Store) Issue(opts Options) (*Token, string, error) {
 func Digest(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// indexDir holds one file per token, named for the token's digest and
+// holding its identifier, so that Redeem can go from a presented secret to
+// its record without reading any other.
+//
+// The digest is SHA-256 of a 256-bit secret, and it is already in every
+// record in the clear; a file named for it puts nothing in a directory
+// listing that reading the records did not. The secret itself is still
+// never a filename.
+const indexDir = "by-digest"
+
+func (s *Store) indexPath(digest string) (string, error) {
+	if !isHex(digest) || len(digest) != sha256.Size*2 {
+		return "", fmt.Errorf("that is not a token digest")
+	}
+	return filepath.Join(s.dir, indexDir, digest), nil
+}
+
+// index writes a token's entry in the digest index.
+func (s *Store) index(t *Token) error {
+	path, err := s.indexPath(t.Digest)
+	if err != nil {
+		return err
+	}
+	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating the token index: %w", err)
+	}
+	return writeAtomic(path, []byte(t.ID), 0o600)
+}
+
+// Reindex writes the index entry of every record that has none, and
+// reports how many it wrote. The API runs it at start, so that a token
+// issued before the index existed still works.
+//
+// It is the API's to run and not the command line's: the command line is
+// usually root, and an entry it wrote would be root's, 0600, and
+// unreadable to the API it was written for -- a working token refused.
+func (s *Store) Reindex() (int, error) {
+	tokens, err := s.List()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range tokens {
+		path, err := s.indexPath(t.Digest)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		if err := s.index(t); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// lookup returns the identifier the index holds for a digest.
+func (s *Store) lookup(digest string) (string, error) {
+	path, err := s.indexPath(digest)
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(raw)), nil
 }
 
 func (s *Store) put(t *Token) error {
@@ -277,11 +358,15 @@ func (s *Store) Get(id string) (*Token, error) {
 // Redeem finds the token a secret belongs to, checks it, and moves its
 // idle clock.
 //
-// The lookup is by digest across the store rather than by an index, and
-// the secret never becomes a filename: a filename reaches a log, a
-// backup, and a directory listing. That also means every request reads
-// and parses every token file in the store (M-07); it is a cost, not a
-// correctness problem, and it is not addressed here.
+// The lookup goes through the digest index: one small file and one
+// record, whatever the size of the store. It used to list and parse every
+// token file in the store to find the one whose digest matched, on every
+// request, and a request carrying a made-up token is one the API answers
+// to anybody who can reach its port: 257 ms a request at 5,000 tokens on
+// beastie, growing with the store (issue 321, M-07; DIVERGENCE 5.395).
+// The record the index names is still checked against the digest, so an
+// entry that is wrong -- edited, or naming a record since replaced --
+// refuses the secret rather than admitting it as another token.
 //
 // Redeem never writes the token's record. It used to: it set LastUsed
 // and wrote the whole record back, on every authenticated request. A
@@ -299,32 +384,43 @@ func (s *Store) Redeem(secret, remote string) (*Token, error) {
 	if secret == "" {
 		return nil, fmt.Errorf("no token was presented")
 	}
+	if s == nil || s.dir == "" {
+		return nil, fmt.Errorf("this service keeps no tokens")
+	}
+	notOurs := errors.New("that token is not one this service issued")
 	want := Digest(secret)
-	tokens, err := s.List()
+	id, err := s.lookup(want)
+	if errors.Is(err, ErrNotFound) {
+		return nil, notOurs
+	}
 	if err != nil {
 		return nil, err
 	}
-	for _, t := range tokens {
-		if t.Digest != want {
-			continue
-		}
-		now := s.now()
-		if why := t.Why(now); why != "" {
-			return nil, errors.New(why)
-		}
-		if !t.AllowsSource(remote) {
-			return nil, fmt.Errorf("this token is bound to %s", t.SourceCIDR)
-		}
-		if s.between != nil {
-			s.between("redeem", t.ID)
-		}
-		if err := s.touch(t.ID, now); err != nil {
-			return nil, err
-		}
-		t.LastUsed = now
-		return t, nil
+	t, err := s.Get(id)
+	if errors.Is(err, ErrNotFound) {
+		return nil, notOurs
 	}
-	return nil, fmt.Errorf("that token is not one this service issued")
+	if err != nil {
+		return nil, err
+	}
+	if subtle.ConstantTimeCompare([]byte(t.Digest), []byte(want)) != 1 {
+		return nil, notOurs
+	}
+	now := s.now()
+	if why := t.Why(now); why != "" {
+		return nil, errors.New(why)
+	}
+	if !t.AllowsSource(remote) {
+		return nil, fmt.Errorf("this token is bound to %s", t.SourceCIDR)
+	}
+	if s.between != nil {
+		s.between("redeem", t.ID)
+	}
+	if err := s.touch(t.ID, now); err != nil {
+		return nil, err
+	}
+	t.LastUsed = now
+	return t, nil
 }
 
 // lastUsedSuffix names the file beside a record that carries its idle
@@ -460,6 +556,12 @@ func (s *Store) Prune(keepAfterExpiry time.Duration) (int, error) {
 		// timestamp and nothing else, List does not read it, and it is
 		// not a reason to fail a prune.
 		_ = os.Remove(strings.TrimSuffix(path, ".json") + lastUsedSuffix)
+		// So does its index entry. One left behind names a record that
+		// is gone, which Redeem refuses; it is not a reason to fail
+		// either.
+		if ipath, err := s.indexPath(t.Digest); err == nil {
+			_ = os.Remove(ipath)
+		}
 		n++
 	}
 	return n, nil
