@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `file.touch` updates the times of a file that exists
+
+The execution function `file.touch` said it would create a file or
+update its times, and on a file that existed it returned success and
+changed nothing. It now sets the access and modification times to now,
+as touch(1) and Salt's `file.touch` do, and `--test` says it would. The
+`file.touch` state is unchanged: it ensures the file exists, so it does
+not report a change on every run. DIVERGENCE 5.402.
+
 ### The hub no longer sends its own enrollment errors to the node
 
 When the hub failed on its own side during enrollment, for example on a
