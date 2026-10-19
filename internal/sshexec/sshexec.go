@@ -119,11 +119,77 @@ func (o *Options) sshArgs(t roster.Target) []string {
 }
 
 // destination is `user@host` or `host`.
+//
+// It goes on the command line after `--`, and only after checkTarget
+// has passed it. Both are needed. Without `--`, a host of
+// `-oProxyCommand=touch /tmp/x` is an option to an ssh older than 9.6,
+// which runs the command on the hub as whoever ran `halite-hub ssh`; the
+// cache roster takes the host from a grain the node reports, so the node
+// chooses it (issue 321, M-14). `--` ends that, and checkTarget ends the
+// half `--` cannot reach: an estate whose ssh config says `ProxyCommand
+// nc %h %p` hands the host to a shell, where `$(...)` in it runs.
 func destination(t roster.Target) string {
 	if t.User != "" {
 		return t.User + "@" + t.Host
 	}
 	return t.Host
+}
+
+// checkTarget refuses a host, user or jump host that ssh could read as
+// an option or a shell could read as code.
+//
+// The permitted set is what a host name, an address and an account name
+// contain, as shellSafe's is for a path. OpenSSH 9.6 makes a narrower
+// check of its own (CVE-2023-51385), but the hub's ssh is whatever the
+// operator's machine has, and Debian 12, Ubuntu 22.04, RHEL 9 and
+// FreeBSD 13 ship older ones. A refusal is per target: one node
+// reporting a hostile `fqdn` must not stop an agentless run against the
+// rest of the cache roster.
+//
+// Not permitted, and knowingly: `%` (an IPv6 zone, `fe80::1%em0`),
+// because ssh expands `%` tokens in a host taken from the command line
+// and nothing here needs it; brackets, which ssh does not take around
+// an address outside an `ssh://` URI.
+func checkTarget(t roster.Target) error {
+	if err := destinationSafe("host", t.Host, "._-:"); err != nil {
+		return err
+	}
+	if t.Host == "" {
+		return errors.New("the roster gives no host")
+	}
+	// `@` because a directory account is `ed@corp.example`; ssh splits
+	// `user@host` at the last one.
+	if err := destinationSafe("user", t.User, "._-@"); err != nil {
+		return err
+	}
+	if t.ProxyJump != "" {
+		// `[user@]host[:port]` hops, comma-separated, or `ssh://` URIs.
+		for _, hop := range strings.Split(t.ProxyJump, ",") {
+			if err := destinationSafe("proxy_jump", hop, "._-@:/"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// destinationSafe is checkTarget's test for one value.
+func destinationSafe(name, v, extra string) error {
+	if strings.HasPrefix(v, "-") {
+		return fmt.Errorf("%s is %q, which begins with `-`; ssh would read it as an "+
+			"option, and `-oProxyCommand=...` runs a command on this machine", name, v)
+	}
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r < 0x80 && strings.ContainsRune(extra, r):
+		default:
+			return fmt.Errorf("%s is %q, and %q is not a character a %s holds; it is "+
+				"refused because ssh hands the %s to ProxyCommand and Match exec through "+
+				"a shell", name, v, string(r), name, name)
+		}
+	}
+	return nil
 }
 
 // Result is what one target answered.
@@ -145,6 +211,13 @@ type Result struct {
 // job.
 func (o *Options) Run(ctx context.Context, t roster.Target, request []byte) Result {
 	result := Result{Target: t}
+
+	// First, because every step below puts the destination on an ssh
+	// or scp command line, the --clean removal included.
+	if err := checkTarget(t); err != nil {
+		result.Err = fmt.Errorf("%s: %w", t.ID, err)
+		return result
+	}
 
 	binary, err := o.binaryFor(t)
 	if err != nil {
@@ -457,10 +530,7 @@ func (o *Options) push(ctx context.Context, t roster.Target, binary, dir, remote
 		return err
 	}
 
-	args := append([]string{"-q", "-B"}, o.scpArgs(t)...)
-	args = append(args, binary, destination(t)+":"+staging)
-
-	cmd := exec.CommandContext(ctx, o.scp(), args...)
+	cmd := exec.CommandContext(ctx, o.scp(), o.copyArgs(t, binary, staging)...)
 	cmd.Env = o.Env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -737,8 +807,7 @@ func (o *Options) exec(ctx context.Context, t roster.Target, command string, std
 	ctx, cancel := context.WithTimeout(ctx, o.timeout())
 	defer cancel()
 
-	args := append(o.sshArgs(t), destination(t), command)
-	cmd := exec.CommandContext(ctx, o.ssh(), args...)
+	cmd := exec.CommandContext(ctx, o.ssh(), o.execArgs(t, command)...)
 	cmd.Env = o.Env
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
@@ -748,6 +817,22 @@ func (o *Options) exec(ctx context.Context, t roster.Target, command string, std
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.String(), stderr.String(), err
+}
+
+// execArgs is ssh's whole command line for one command on the target.
+func (o *Options) execArgs(t roster.Target, command string) []string {
+	return append(o.sshArgs(t), "--", destination(t), command)
+}
+
+// copyArgs is scp's whole command line for the push.
+//
+// `--` for scp as for ssh. scp stops at its first operand, which is the
+// binary's path, so a hostile host is not read as an option without it;
+// that rests on the order of the two and on scp's getopt not permuting,
+// and costs nothing to stop resting on.
+func (o *Options) copyArgs(t roster.Target, binary, staging string) []string {
+	args := append([]string{"-q", "-B"}, o.scpArgs(t)...)
+	return append(args, "--", binary, destination(t)+":"+staging)
 }
 
 func (o *Options) scpArgs(t roster.Target) []string {
