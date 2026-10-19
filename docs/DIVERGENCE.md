@@ -31842,8 +31842,7 @@ key holding these characters has not been fetched by a running hub,
 and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
-
-### 5.401 `status.uptime` and the reboot module read kern.boottime two ways
+### 5.402 `status.uptime` and the reboot module read kern.boottime two ways
 
 Issue 321, section 5, an Info bullet: `extractBootSeconds` in
 `system.go` took the first `sec = ` in `sysctl -n kern.boottime`, and
@@ -31872,6 +31871,8 @@ fifty-six-year answer.
 **Not verified.** macOS and the other BSDs, which also take this path,
 were not run; Linux reads `/proc/uptime` first and never gets here.
 `status.uptime` was not called on beastie, only the sysctl read by hand.
+
+
 
 ## 6. Everything else not started
 

@@ -373,7 +373,7 @@ func uptimeSeconds(c *exec.Context) (int64, error) {
 // already met this and matched the key on a word boundary, so two
 // readers of one sysctl disagreed about what it said -- the pair this
 // project's bugs usually come in. There is one reader now. Issue 321,
-// section 5; DIVERGENCE 5.401.
+// section 5; DIVERGENCE 5.402.
 func uptimeFromBoottime(out string, now int64) (int64, bool) {
 	sec, ok := rebootParseBoottime(out)
 	if !ok || sec <= 0 || sec > now {
