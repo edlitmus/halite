@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The ufw firewall reports a change when only the IPv6 rule was added
+
+When a rule's IPv4 half was already present and its IPv6 half was not,
+ufw added the IPv6 rule and `firewall.allowed`, `firewall.denied` and
+`firewall.allow` reported that nothing
+changed, under `--test` too. Any line from ufw saying a rule was added,
+inserted, updated or deleted now counts as a change. DIVERGENCE 5.405.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which

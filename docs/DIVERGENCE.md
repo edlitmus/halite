@@ -31843,6 +31843,45 @@ and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
 
+### 5.405 ufw added the IPv6 twin and the state said nothing changed
+
+Issue 321, section 5: `ufwChanged` returns "unchanged" when the v4 rule
+was skipped but the v6 twin was added.
+
+**What was established, and how.** Not by running ufw: it refuses to
+run as anything but root, `--dry-run` included, and there is no root on
+this host. By reading the ufw this host has installed (0.36.2-6, Ubuntu
+24.04's), which is the tool rather than its documentation. A rule with
+no address is set for both families, and `frontend.py`'s `set_rule`
+joins the two answers as `tmp + "\n" + self.backend.set_rule(r)`, v4
+first. `backend_iptables.py` decides each one separately and returns
+"Skipping adding existing rule", "Skipping inserting existing rule" or
+"Could not delete non-existent rule" for one that needs nothing, with
+" (v6)" appended for the v6 one, and otherwise one of "Rules updated",
+"Rule added", "Rule inserted", "Rule updated" or "Rule deleted". So a
+host whose v4 rule is present and v6 twin is not prints
+`Skipping adding existing rule` then `Rule added (v6)`. `ufwChanged`
+returned false as soon as it found a skip message anywhere, so that run
+added a rule and reported no change, and `--test` (whose dry run
+prints `Rules updated (v6)` on the same path) predicted none.
+
+**The change.** A line beginning with one of the five change messages
+means changed, whatever else is printed. Otherwise a skip line means
+unchanged. Output with neither still reads as changed, as before.
+
+**Demonstrated.** `TestUFWSaysWhetherItChangedAnything` gains four
+mixed outputs, composed from the lines it already held in the order the
+frontend joins them. With the old `ufwChanged` restored all four fail;
+the existing single-family cases pass either way.
+
+**Not verified.** The mixed output was not captured from a ufw; the
+fixtures are composed, which is what this project's rules warn about,
+and they say so where they stand. The conformance cases on the fleet
+`linux` leg drive ufw for real but never produce a mixed answer. How a
+host comes to have one family of a rule and not the other (IPv6 turned
+on in `/etc/default/ufw` after rules were added, or a numbered delete
+of one twin) was not tried.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
