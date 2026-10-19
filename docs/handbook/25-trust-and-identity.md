@@ -296,7 +296,7 @@ Related commands:
 | `keys accept <node>... \| --all` | Issue to pending requests. (`--all` is for when you have verified a batch; use it knowingly.) |
 | `keys reject <node>... --reason` | Refuse a request and **keep it**, for the record. |
 | `keys revoke <node>... --reason` | Withdraw an issued certificate. |
-| `keys delete <node>...` | Forget a node entirely. An accepted node is revoked first, so deleting a record can never leave a live certificate. |
+| `keys delete <node>...` | Forget a node entirely. Its certificates stay refused until they expire, kept under `keys/deleted/` in the key store, so deleting a record can never leave a live certificate. |
 | `keys export-crl [--out <path>]` | Write a signed revocation list for anything outside halite that wants one. |
 
 To bring a revoked or lost node back: delete its record, make a new token (or

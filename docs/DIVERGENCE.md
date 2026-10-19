@@ -31195,6 +31195,76 @@ certificate's notAfter.
   half-life over `connect` rather than by `renew --force`.
 
 
+### 5.393 A deleted node's certificate worked until it expired
+
+Found while fixing 5.392, whose "Not done" list traced it and got the
+running case wrong: it said the running hub kept the serial on its
+denylist. It did not, when the delete came from the command line, which
+is where `keys delete` runs.
+
+`keys delete`, and the `key.delete` runner, revoked an accepted node and
+then removed its record. The revocation went to the deleting process's
+denylist and into the record's state. The record was then gone, so
+`LoadDenylist` had nothing to reload at the next start, and the hub's
+reconcile loop (5.323), which follows the store, found no record to
+follow. The CLI's denylist is the CLI's memory, so a running hub never
+heard of the delete at all, unless its two-second loop happened to read
+the store in the microseconds between the revoke and the delete. The
+deleted node's certificate worked until it expired, up to 90 days at the
+default. A record that was already revoked lost its serial the same way,
+so revoke-then-delete, which handbook chapter 31 gives as the way to
+remove a node, undid the revocation at the next restart. The serials a
+record's renewals had replaced (5.392) went with it too.
+
+**The change.** `Authority.Delete` replaces the revoke-then-delete in
+both callers. Under the store's lock it writes every serial the record
+names, its current one and its `superseded` ones, to
+`keys/deleted/<serial>.json` with the certificate's notAfter, the node
+and a reason, then removes the record and denies them in its own
+process. They are kept apart from the records because the node may
+enrol again under the same name, and its new record must not inherit the
+old certificate's denial. `Store.Delete` writes them too, so a caller
+that goes round the `Authority` cannot lose a serial either.
+`LoadDenylist` loads every unexpired one at start and `reconcileOnce`
+every two seconds; the loop also tells the node to disconnect, unless an
+accepted record has since taken its name. A deleted revoked record keeps
+its revocation's reason; anything else is
+`keystore.ReasonDeleted`. Expired entries are pruned at the next delete.
+`keys delete` now prints each serial it keeps denied and until when.
+
+**Demonstrated.** Five keystore tests and
+`TestTheServerFollowsTheStoreForDeletedNodes`. Making the store keep
+nothing fails all six; taking the loop out of `LoadDenylist` fails the
+four that restart; taking it out of `reconcileOnce` fails the hub test,
+where the deleted node's certificate completed a handshake.
+
+On beastie (FreeBSD 15.1, go1.27.2), throwaway hubs on a loopback port,
+one built from `main` at `5351de7` and one with this change. Two nodes
+were enrolled by hand and accepted. `delnode` was deleted with `keys
+delete`; `revnode` was revoked with `keys revoke`, and deleted after
+that. Each presented its certificate with `halite-node pillar items`,
+five seconds after each command and again after a restart of the hub.
+
+| | `main` | this change |
+|---|---|---|
+| `delnode` deleted, hub running | **accepted** | `tls: bad certificate` |
+| `revnode` revoked, hub running | `tls: bad certificate` | `tls: bad certificate` |
+| `revnode` then deleted, hub running | `tls: bad certificate` | `tls: bad certificate` |
+| `delnode` after restart | **accepted** | `tls: bad certificate` |
+| `revnode` after restart | **accepted** | `tls: bad certificate` |
+
+The restarted hub with this change logged `revocations_loaded=2`, and
+`main`'s `0`.
+
+**Not done.**
+
+- **`keys export-crl` lists revoked records only**, as 5.392 says, so a
+  deleted node's serial is not in the CRL. Same reason, same change.
+- A node enrolling again after a delete is held by
+  `TestANodeCanEnrolAgainAfterItIsDeleted`, not run on beastie. Neither
+  is the disconnect of a node still holding a stream when it is deleted.
+- Not run against the production hub.
+
 
 ## 6. Everything else not started
 

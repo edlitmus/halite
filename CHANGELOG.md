@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A deleted node's certificate stays refused
+
+`keys delete` revoked a node and then removed the record that said so.
+The revocation lived only in the deleting command's memory, so the
+running hub never refused the deleted node's certificate, and after a
+restart neither did any hub, until the certificate expired. Deleting a
+node that had been revoked undid the revocation at the next restart.
+A delete now keeps every certificate the record named, under
+`keys/deleted/` in the key store, until each expires; the hub loads them
+at start and every two seconds after, and `keys delete` prints what it
+kept. A node can still enrol again under the same name. DIVERGENCE 5.393.
+
 ### A renewed node's old certificate stays refused after a hub restart
 
 When a node renews, the certificate it replaces is refused. That
