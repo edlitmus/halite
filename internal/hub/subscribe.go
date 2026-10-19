@@ -198,8 +198,34 @@ func (s *Server) reconcileOnce() error {
 	if err != nil {
 		return err
 	}
+	deleted, err := s.Authority.Store.ListDeleted()
+	if err != nil {
+		return err
+	}
 	revoker := s.Authority.Revoker
 	now := s.now()
+	// A certificate whose record was deleted, by whichever process. The
+	// node is told only while no accepted record has taken its name: one
+	// that has enrolled again is holding a different certificate, and its
+	// stream is not the one to end.
+	accepted := map[string]bool{}
+	for _, rec := range records {
+		if rec.State == keystore.Accepted {
+			accepted[rec.NodeID] = true
+		}
+	}
+	for _, d := range deleted {
+		if !d.Live(now) {
+			continue
+		}
+		if revoker != nil {
+			revoker.Revoke(d.Serial, d.Reason)
+		}
+		if !accepted[d.NodeID] && s.fleet().Disconnect(d.NodeID, d.Reason) {
+			s.info("a node's record was deleted elsewhere; the node has been told",
+				"node_id", d.NodeID, "reason", d.Reason)
+		}
+	}
 	for _, rec := range records {
 		// A serial a renewal replaced, whichever process renewed it.
 		// The one that did denylisted it in its own memory, which is

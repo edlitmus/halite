@@ -257,22 +257,18 @@ func registerKeyRunner(r *Runners) {
 			Reach:   ReachNodes,
 			NodeArg: "node",
 			Sig: runnerSig("key", "delete",
-				"Remove a key record. An accepted node is revoked first, so that "+
-					"deleting the record cannot leave a live certificate behind.", "19.2",
+				"Remove a key record. The certificates it named stay denied until "+
+					"they expire, so that deleting the record cannot leave a live one behind.", "19.2",
 				runnerArg("node", signature.String, "The node identifier."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
 				if err := c.needAuthority(); err != nil {
 					return nil, err
 				}
-				node := c.arg("node")
-				store := c.Server.Authority.Store
-				if rec, err := store.Get(node); err == nil && rec.State == keystore.Accepted {
-					if _, err := c.Server.Authority.Revoke(node, "deleted"); err != nil {
-						return nil, err
-					}
-				}
-				if err := store.Delete(node); err != nil {
+				// Authority.Delete keeps the record's certificates
+				// denied after the record is gone; revoking and then
+				// deleting kept them only in this hub's memory.
+				if _, err := c.Server.Authority.Delete(c.arg("node")); err != nil {
 					return nil, err
 				}
 				return true, nil

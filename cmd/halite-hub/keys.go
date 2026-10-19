@@ -310,25 +310,27 @@ func keysDecide(h *hubContext, names []string, reason string, decide func(string
 
 func keysDelete(h *hubContext, names []string) int {
 	failed := 0
+	now := time.Now()
+	if h.auth.Now != nil {
+		now = h.auth.Now()
+	}
 	for _, name := range names {
-		// A delete of an accepted node revokes first, or the
-		// certificate stays valid with nothing recording that it
-		// exists -- which is the one way to lose a credential
-		// completely.
-		if rec, err := h.store.Get(name); err == nil && rec.State == keystore.Accepted {
-			if _, err := h.auth.Revoke(name, "deleted"); err != nil {
-				fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
-				failed++
-				continue
-			}
-			fmt.Printf("revoked %s before deleting it\n", name)
-		}
-		if err := h.store.Delete(name); err != nil {
+		// The certificates the record named stay denied until they
+		// expire, which Authority.Delete keeps on disk: the old
+		// revoke-then-delete here lasted only as long as this command.
+		kept, err := h.auth.Delete(name)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
 			failed++
 			continue
 		}
 		fmt.Printf("deleted %s\n", name)
+		for _, d := range kept {
+			if d.Live(now) {
+				fmt.Printf("  serial %s stays denied until it expires at %s\n",
+					d.Serial, d.NotAfter.UTC().Format(time.RFC3339))
+			}
+		}
 	}
 	if failed > 0 {
 		return 1
