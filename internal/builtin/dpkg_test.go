@@ -246,6 +246,48 @@ func TestOnlyAMovedSelectionIsAChange(t *testing.T) {
 	}
 }
 
+// A Multi-Arch: same package is printed with its architecture, even on a
+// host with only one, and a hold asked for by its plain name is still
+// seen to move. The lines are `dpkg --get-selections` as Ubuntu 24.04
+// printed them on an amd64 host with no foreign architecture
+// (`bind9-libs:amd64` and `tzdata` captured; the `hold` and the i386
+// line are the same shape with the word or the suffix changed).
+// DIVERGENCE 5.406.
+func TestAnArchQualifiedSelectionIsFoundByItsPlainName(t *testing.T) {
+	// The same split dpkgGetSelections makes, so that this runs on a
+	// node with no dpkg.
+	read := func(out string) *value.Map {
+		m := value.NewMap(4)
+		for _, line := range strings.Split(out, "\n") {
+			if f := strings.Fields(line); len(f) >= 2 {
+				m.Set(f[0], f[1])
+			}
+		}
+		return m
+	}
+	before := read("bind9-libs:amd64\t\t\t\tinstall\ntzdata\t\t\t\t\t\tinstall\n")
+	after := read("bind9-libs:amd64\t\t\t\thold\ntzdata\t\t\t\t\t\tinstall\n")
+
+	got := dpkgSelectionDiff(before, after, []string{"bind9-libs", "tzdata"})
+	if _, ok := got.Get("bind9-libs"); !ok || got.Len() != 1 {
+		t.Errorf("holding bind9-libs reported %v", got)
+	}
+	// Under --test the diff is against the request itself.
+	if got := dpkgSelectionDiff(after, value.MapOf("bind9-libs", "hold"), []string{"bind9-libs"}); got.Len() != 0 {
+		t.Errorf("a hold already in place was predicted as a change: %v", got)
+	}
+
+	// Two architectures of one package: a plain name is ambiguous and is
+	// not resolved to either; a qualified one is exact.
+	two := read("libc6:amd64\t\t\t\tinstall\nlibc6:i386\t\t\t\thold\n")
+	if k := dpkgSelectionKey(two, "libc6"); k != "libc6" {
+		t.Errorf("an ambiguous name resolved to %q", k)
+	}
+	if k := dpkgSelectionKey(two, "libc6:i386"); k != "libc6:i386" {
+		t.Errorf("a qualified name resolved to %q", k)
+	}
+}
+
 // Where dpkg is not installed, every function says so by name.
 //
 // The message names the tool rather than the platform: a RHEL node is

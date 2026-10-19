@@ -308,6 +308,48 @@ func TestLiveDpkgHoldsAPackageAndDpkgAgrees(t *testing.T) {
 	}
 }
 
+// **A hold on a package dpkg lists with its architecture.**
+//
+// `libc6` is Multi-Arch: same, so `dpkg --get-selections` prints it as
+// `libc6:amd64` even with no foreign architecture. A tree holds it as
+// `libc6`, and the diff once looked for that name and found neither the
+// old selection nor the new one, so a hold that took effect reported no
+// change. This holds it by the plain name and asks for the change, and
+// asks dpkg whether the plain name was accepted at all. DIVERGENCE 5.406.
+func TestLiveDpkgHoldsAnArchQualifiedPackageByItsPlainName(t *testing.T) {
+	c := live(t)
+	r := New()
+	const pkg = "libc6"
+
+	res, err := c.Run(exec.Command{Argv: []string{"dpkg", "--get-selections", pkg}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(res.Stdout), pkg+":") {
+		t.Skipf("dpkg lists %s unqualified here (%q), so this case does not arise", pkg, res.Stdout)
+	}
+
+	t.Cleanup(func() {
+		_, _ = r.Exec.Call(c, "dpkg.set_selections",
+			value.MapOf("selections", value.MapOf(pkg, "install")))
+	})
+	out, err := r.Exec.Call(c, "dpkg.set_selections",
+		value.MapOf("selections", value.MapOf(pkg, "hold")))
+	if err != nil {
+		t.Fatalf("set_selections: %v", err)
+	}
+	if _, ok := out.(*value.Map).Get(pkg); !ok {
+		t.Errorf("holding %s reported no change: %v", pkg, out)
+	}
+	res, err = c.Run(exec.Command{Argv: []string{"dpkg", "--get-selections", pkg}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Stdout, "hold") {
+		t.Errorf("dpkg does not report the hold placed by the plain name: %q", res.Stdout)
+	}
+}
+
 // ---- debconf ----
 
 // **A real answer written into the real debconf database, and read

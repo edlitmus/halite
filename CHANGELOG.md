@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `dpkg.set_selections` reports a hold on a library package
+
+dpkg prints a Multi-Arch: same package such as `libc6` with its
+architecture, `libc6:amd64`, even on a host with only one. Holding it as
+`libc6` placed the hold and reported no change, and `--test` predicted a
+change for a hold already in place. The plain name now finds the
+qualified one. DIVERGENCE 5.406.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which
