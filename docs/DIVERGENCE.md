@@ -32609,6 +32609,73 @@ row, and this host has no root; adding the Linux swap path to that leg
 is its own change. The `freebsd` leg runs every `TestLive*` and so
 picks this one up. A GEOM label spelling.
 
+### 5.419 OIDC checked the first URL for https, and followed a redirect off it
+
+Issue 321, Low, three parts. `fetchKeys` checks that the key set URL is
+`https://`, and the client then follows a redirect to `http://`. The
+discovery document's `authorization_endpoint` and `token_endpoint` are
+not required to be https, though the client secret goes to the token
+endpoint in Basic auth. And `oidcStart`, which is unauthenticated,
+re-runs discovery on every call while the provider is down.
+
+**Measured**, against the package's own fake issuer (an `httptest` TLS
+server). No real identity provider was available. A plain `http`
+listener stood in for whoever is on the path. Against `main`:
+
+| Case | `main` |
+|---|---|
+| discovery names an `http://` `jwks_uri`, `token_endpoint` or `authorization_endpoint` | accepted, all three |
+| the `jwks_uri` is https and 307s to http | the plain listener was asked for the keys |
+| the `token_endpoint` is https and 307s to http | the plain listener was sent the POST with `Authorization: Basic aGFsaXRlOnMzY3JldA==`, the test's client id and secret |
+| five logins started while discovery answers 503 | five discovery requests |
+
+The third row is the one that matters. A 307 keeps the method and the
+body. Go forwards `Authorization` on a redirect to the same host, and
+an https-to-http downgrade on the same host counts as the same host.
+
+**The change.**
+
+- Every client the package uses, whether built or passed in, is copied
+  with a `CheckRedirect` that refuses any target that is not `https`. It
+  then applies the caller's own check, or the standard limit of ten
+  redirects. A copy, so that a client the caller passed in is not
+  changed for anyone else using it.
+- Discovery refuses a `jwks_uri`, `token_endpoint` or
+  `authorization_endpoint` (when one is given) that does not parse as an
+  `https` URL with a host.
+- A failed discovery is remembered for `DiscoveryRetryInterval` (ten
+  seconds) and returned without asking the provider again. A cancelled
+  request is not remembered, because a caller giving up is not the
+  provider failing. Ten seconds is a judgement. The key set's
+  out-of-turn bound is sixty, but while this one holds nobody can start
+  an OIDC login, even after the provider is back.
+
+**Demonstrated.** All of the following are in `internal/oidc/https_test.go`.
+Each failed on `main` as in the table, passes now, and failed again
+when its part of the fix was disabled:
+
+- `TestADiscoveryDocumentNamingAPlaintextEndpointIsRefused`, one subtest
+  per URL. It fails with `requireHTTPS` returning nil.
+- `TestAKeySetRedirectToPlaintextIsNotFollowed` and
+  `TestATokenEndpointRedirectToPlaintextIsNotFollowed` fail with the
+  scheme check in `httpsOnly` disabled.
+- `TestAFailedDiscoveryIsNotRepeatedAtOnce` fails with the hold
+  disabled. `TestACancelledDiscoveryIsNotHeldAgainstTheNext` fails
+  with the cancellation exemption removed.
+- `TestAKeySetRedirectThatStaysOnHTTPSIsFollowed` shows that a redirect
+  from https to https is still followed.
+
+**Not done.** Concurrent logins during an outage still each make a
+discovery request until the first one fails. There is no single-flight.
+The key set's scheduled refresh was not changed. Nothing here protects
+against a provider whose https certificate the configured CA trusts but
+which is itself hostile.
+
+**Not verified.** No real identity provider (Keycloak, Entra, Okta) was
+used. None of them is known to redirect a discovery, key set or token
+URL, so a provider that relies on an http redirect would now fail. That
+was not looked for.
+
 
 
 
