@@ -31843,6 +31843,46 @@ and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
 
+### 5.402 The OIDC log took a login's state and any length of caller text
+
+Issue 321, Low: in `halite-api`, `oidcCallback` logs `req.Error` and
+`req.Description` with no bound, and `oidc login started` logs the
+`state` handle that completes the login.
+
+**Measured.** `POST /v1/login/oidc/callback` is unauthenticated. A body
+with an `error` field is logged at warn as "the provider refused a
+login", with `error` and `error_description` taken whole from the body.
+Nothing bounded them below the request body limit,
+`transport.MaxRequestBody`, which is 64 MiB. A test that posted 200,000
+bytes in each field found all 400,000 in the log.
+
+`oidc login started` logged `state` at info. The state alone does not
+finish a login, because the code from the provider is needed too. But
+the callback takes a pending login out of the table for any state it is
+given, before it looks at the code. So anybody who can read the log
+could cancel a login while it was in progress.
+
+**The change.** Each field is cut to 256 bytes on a rune boundary, with
+its original length appended. RFC 6749's error codes are a few words
+and its descriptions a sentence, so 256 keeps a real one whole. The start of a
+login is logged as `login`, the first six bytes of the state's SHA-256
+in hex. That is enough to match the start with what is logged after it,
+and it does not let anyone finish or cancel the login.
+
+**Demonstrated.** `TestTheOIDCLogHoldsNeitherTheStateNorAnUnboundedError`
+fails with the two log calls put back as they were (the helpers kept),
+on all four of its checks: the state is in the log, the digest is not,
+400,000 bytes of caller text, and no note of the cut.
+`TestClipForLogCutsOnARuneBoundary` covers the cut.
+
+**Not done.** Other unauthenticated paths were not looked at for the
+same thing. The `login` field replaces `state` in the log line, so a log
+query on `state` stops matching it.
+
+**Not verified.** No real identity provider's refusal was logged. The
+256-byte bound was not checked against a real provider's
+`error_description`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

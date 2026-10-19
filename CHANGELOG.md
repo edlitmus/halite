@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The OIDC login log no longer holds the state or unbounded text
+
+`halite-api` logged an OIDC login's `state` when the login started.
+Anyone who could read the log could use it to cancel the login. The log
+line now carries `login`, a short digest of the state, in place of
+`state`, so a log query on `state` stops matching it. A provider
+refusal's `error` and `error_description` come from an unauthenticated
+request, and they are now cut to 256 bytes in the log. DIVERGENCE 5.402.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which
