@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An S3 state tree whose keys hold `$ : @ + = &` now updates
+
+The S3 file server signed an object's path as Go escapes it, which
+leaves those characters literal, while S3 checks the signature against
+the path with them percent-encoded. A bucket holding a key such as
+`top+base.sls` failed its whole update with SignatureDoesNotMatch. The
+path is now encoded the way S3 does; the signature agrees with AWS's
+own published example. Not yet run against S3 itself. DIVERGENCE 5.401.
+
 ### The hub no longer sends its own enrollment errors to the node
 
 When the hub failed on its own side during enrollment, for example on a
