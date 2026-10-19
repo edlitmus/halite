@@ -30,6 +30,16 @@ the path with them percent-encoded. A bucket holding a key such as
 path is now encoded the way S3 does; the signature agrees with AWS's
 own published example. Not yet run against S3 itself. DIVERGENCE 5.401.
 
+### `halite-hub ssh` makes its cache directory private from the start
+
+On a target whose login umask is 002, which Ubuntu gives an ordinary
+account, `halite-hub ssh` made `thin_dir` group-writable for a moment
+before tightening it. A second run against the same machine at that
+moment was refused. A directory `mkdir -p` made above `thin_dir` was
+never tightened, so a `thin_dir` under a directory that did not exist
+yet, such as `~/.cache/halite-thin`, was refused on every run. Both are
+now made private when they are created. DIVERGENCE 5.402.
+
 ### The hub no longer sends its own enrollment errors to the node
 
 When the hub failed on its own side during enrollment, for example on a
