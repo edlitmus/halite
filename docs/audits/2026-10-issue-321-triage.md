@@ -14,8 +14,8 @@ this file to the code, so it drifts as work lands.
 
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
-as it landed, the latest being M-05 (#435). The status is
-as of #435, checked again on 2026-10-18; PRs after it that change only
+as it landed, the latest being the `keys delete` follow-up to M-05
+(#436). The status is as of #436, checked again on 2026-10-18; PRs after it that change only
 this file or other documentation do not move it. The rows up to `d8ceba1` were first
 rechecked against each PR's body for parts it said it left unfixed, and
 the later rows (#375 to #426) were rechecked the same way on
@@ -62,7 +62,7 @@ not do. Each has been checked to see whether it happened.
 | H-19 gitfs verifies the served commit | #325 | | |
 | H-20 aws-secrets region | #329 | `internal/s3fs` and `internal/awskms` build hosts from regions too (hub configuration, not a node) | |
 | M-01 `allow_sls` refuses the highstate | #366 | `allow_mods`'s keyword gap, closed by #367 | **not done**: no job was dispatched hub to node under a narrowed role. The fleet's policies were not read for a role that relies on the old behaviour |
-| M-05 superseded serials after a restart | #435 | `keys export-crl` still omits them; `keys delete` has the same shape (found, not fixed) | **done** on beastie: `main` accepted the old certificate after a restart, and this refused it (5.392). Not on the production hub |
+| M-05 superseded serials after a restart | #435, #436 | `keys export-crl` still omits them, and deleted nodes' serials | **done** on beastie: `main` accepted the old certificate after a restart, and this refused it (5.392). `keys delete` had the same shape and worse: `main` accepted a deleted node on the running hub; #436 refused it, running and restarted (5.393). Not on the production hub |
 | M-02 signed-job replay | #339 | | on FreeBSD since: 0.75–0.82 ms per signed job on beastie's ZFS (5.328) |
 | M-04 typed job signing (breaking) | #337 | | live mixed-version run on beastie (5.330) |
 | M-08, M-09 login backoff by (source, name) | #352 | | |
