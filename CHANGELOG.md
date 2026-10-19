@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The security model says what reaches the hub without a certificate
+
+SPEC 25.1 and the handbook's hardening chapter said nothing on the
+hub's port parsed a request before authentication, and that the health
+check was the only thing reachable without a certificate. Enrollment is
+reachable too, by design, and it reads the caller's request and parses
+the certificate signing request in it before anybody is authenticated.
+The SPEC and handbook chapters 12 and 28 now say so, and a test fails if a
+third route is mounted without a certificate check. Nothing the hub does
+changed. DIVERGENCE 5.399.
+
 ### The hub limits enrollment requests from one address
 
 Anybody who can reach the hub's port can ask to enrol, and one address
