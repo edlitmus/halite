@@ -283,7 +283,16 @@ func ParseSerial(s string) (*big.Int, error) {
 type RevokedCert struct {
 	Serial string
 	At     time.Time
+	// Reason is an RFC 5280 section 5.3.1 reason code; zero leaves the
+	// extension out, which a reader takes as unspecified.
+	Reason int
 }
+
+// The RFC 5280 reason codes this hub gives.
+const (
+	ReasonSuperseded           = 4
+	ReasonCessationOfOperation = 5
+)
 
 // CRL signs a certificate revocation list.
 //
@@ -307,6 +316,7 @@ func (ca *CA) CRL(revoked []RevokedCert, number int64, lifetime time.Duration) (
 		list = append(list, x509.RevocationListEntry{
 			SerialNumber:   serial,
 			RevocationTime: at.UTC(),
+			ReasonCode:     r.Reason,
 		})
 	}
 	tmpl := &x509.RevocationList{

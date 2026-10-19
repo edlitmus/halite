@@ -430,6 +430,11 @@ func (s *Store) countPending() (int, error) {
 func (s *Store) List() ([]*Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.list()
+}
+
+// list is List for a caller that holds the lock.
+func (s *Store) list() ([]*Record, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, fmt.Errorf("reading the key store at %s: %w", s.dir, err)

@@ -339,20 +339,9 @@ func keysDelete(h *hubContext, names []string) int {
 }
 
 func keysExportCRL(h *hubContext, args *cli.Args) int {
-	records, err := h.store.List()
-	if err != nil {
-		cli.Fatalf("%v", err)
-	}
-	var revoked []pki.RevokedCert
-	for _, rec := range records {
-		if rec.State == keystore.Revoked && rec.Serial != "" {
-			revoked = append(revoked, pki.RevokedCert{Serial: rec.Serial, At: rec.Updated})
-		}
-	}
-	// The number is the count of revocations, which rises whenever the
-	// list changes and never falls: a consumer can tell an older list
-	// from a newer one.
-	crl, err := h.auth.CA.CRL(revoked, int64(len(revoked)+1), 7*24*time.Hour)
+	// Everything the hub denies, not only revoked records, under a number
+	// that never falls. Authority.CRL says why each half changed.
+	crl, n, number, err := h.auth.CRL(7 * 24 * time.Hour)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -364,7 +353,7 @@ func keysExportCRL(h *hubContext, args *cli.Args) int {
 	if err := os.WriteFile(out, crl, 0o644); err != nil {
 		cli.Fatalf("%v", err)
 	}
-	fmt.Printf("wrote %d revocation(s) to %s\n", len(revoked), out)
+	fmt.Printf("wrote %d revocation(s) to %s, CRL number %d\n", n, out, number)
 	return 0
 }
 
