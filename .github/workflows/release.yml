@@ -241,7 +241,13 @@ jobs:
   #
   # Verify an artifact with:
   #
-  #   gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite
+  #   gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite \
+  #       --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+  #       --source-ref refs/tags/v<version>
+  #
+  # Both flags are needed: this workflow runs by dispatch from any
+  # branch and this job then mints a real attestation for it, which
+  # `--repo` alone accepts (DIVERGENCE 5.425).
   attest:
     name: provenance for what two builders agreed on
     needs: [gate, compare]
@@ -336,7 +342,12 @@ jobs:
           download, then its provenance:
 
               sha256sum --ignore-missing -c SHA256SUMS
-              gh attestation verify halite-${version}-linux-amd64.tar.gz --repo ${GITHUB_REPOSITORY}
+              gh attestation verify halite-${version}-linux-amd64.tar.gz --repo ${GITHUB_REPOSITORY} \\
+                  --signer-workflow ${GITHUB_REPOSITORY}/.github/workflows/release.yml \\
+                  --source-ref refs/tags/${TAG}
+
+          Without --signer-workflow and --source-ref, gh accepts an attestation
+          from any workflow or branch of the repository.
 
           The provenance is keyless SLSA, signed by this repository's release
           workflow through Sigstore. Detached signatures, SHA256SUMS.sig and one
