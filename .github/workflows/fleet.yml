@@ -709,8 +709,22 @@ jobs:
           set -e
           version=$(awk '/^toolchain /{print $2; exit}' go.mod)
           test -n "$version" || { echo "go.mod names no toolchain" >&2; exit 1; }
+          # Pinned and checked, as ci.yml's FreeBSD leg says why
+          # (DIVERGENCE 5.403); internal/buildpolicy holds these two
+          # values to go.mod and to contrib/tofu's go_sha256_freebsd.
+          want_version=go1.27.2
+          want_sha256=3baf61eec549b0c3f638d82636388e36abf94aa14814a011f011d2648ad1eded
+          if [ "$version" != "$want_version" ]; then
+            echo "go.mod pins $version and this step has the digest of $want_version; move both" >&2
+            exit 1
+          fi
           mkdir -p "$HOME/toolchain"
           fetch -q -o /tmp/go.tar.gz "https://go.dev/dl/${version}.freebsd-amd64.tar.gz"
+          got_sha256=$(sha256 -q /tmp/go.tar.gz)
+          if [ "$got_sha256" != "$want_sha256" ]; then
+            echo "checksum mismatch for ${version}.freebsd-amd64.tar.gz: got $got_sha256, want $want_sha256" >&2
+            exit 1
+          fi
           tar -C "$HOME/toolchain" -xzf /tmp/go.tar.gz
 
       # What this machine is, before anything writes to it, for the same

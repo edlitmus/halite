@@ -31842,7 +31842,6 @@ key holding these characters has not been fetched by a running hub,
 and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
-
 ### 5.402 The agentless cache directory was made under the login's umask
 
 Found when `make check` failed once on
@@ -31911,6 +31910,82 @@ still refused, as it should be.
 **Not verified.** Not run against FreeBSD or macOS targets. Their login
 umask is usually 022, which never opened the window. Not run as root
 with `sudo`.
+### 5.403 CI unpacked a Go tarball and ran a Salt bundle it never checked
+
+Issue 321, a Low finding in section 5: the FreeBSD legs of `ci.yml` and
+`fleet.yml` fetched `go.dev/dl/<version>.freebsd-amd64.tar.gz` and
+untarred it with no checksum, while `contrib/tofu`'s bootstrap checked
+the same file against a pinned sha256; and the saltdiff image curled
+Salt's onedir bundle from Broadcom's Artifactory and executed it
+unchecked. The first is the commonest shape here, two paths that must
+agree: two installers of one toolchain, one of them verifying it.
+
+**Measured.** At `757f01f` both workflow steps were `fetch` then
+`tar -xzf`, and `contrib/docker/saltdiff/Dockerfile` was `curl` then
+`tar -xJf` then `/opt/salt/salt-call --version`. Nothing between them
+looked at the bytes beyond TLS.
+
+**The change.**
+
+- Both FreeBSD steps pin `want_version` and `want_sha256`, refuse a
+  go.mod whose toolchain differs from `want_version`, and compare
+  `sha256 -q` before `tar`. The digest is go.dev's own, from
+  `https://go.dev/dl/?mode=json&include=all` for
+  `go1.27.2.freebsd-amd64.tar.gz`, and it is the value contrib/tofu
+  already had.
+- The saltdiff Dockerfile maps each Salt release to a sha256 and
+  refuses one it has no digest for, before fetching it, then runs
+  `sha256sum -c` before unpacking. The digests are Broadcom's
+  Artifactory storage API's for each file
+  (`/artifactory/api/storage/saltproject-generic/onedir/<v>/<file>`).
+  For 3006.28 and 3008.3 the `digest` GitHub records for the same
+  asset on saltstack/salt's release agreed. 3007.1's GitHub release has
+  no onedir asset, so its digest has the one source.
+- `internal/buildpolicy`'s `TestTheFreeBSDToolchainDownloadIsVerified`
+  holds, per workflow step, that a step fetching the tarball pins a
+  version and digest and compares against it before `tar`, that the
+  version is go.mod's and the digest is contrib/tofu's
+  `go_sha256_freebsd`, and that contrib/tofu's `go_version` is go.mod's
+  too, which nothing held before.
+  `TestTheSaltdiffImagePinsEveryReleaseItRuns` holds that every release
+  in ci.yml's saltdiff matrix and the Makefile's default has a digest,
+  and that the check precedes the unpack.
+
+A toolchain bump now has to move four places (go.mod, contrib/tofu's
+two values, the two workflow steps). The test names whichever was
+forgotten.
+
+**Demonstrated.**
+
+- The ci.yml step's body, verbatim, on beastie (FreeBSD
+  15.1-RELEASE-p5, real `fetch` and `sha256`), with `HOME` in a
+  throwaway directory: installed go1.27.2 and printed its version. With
+  the digest altered by one character it stopped with "checksum
+  mismatch", exit 1, and unpacked nothing. With go.mod moved to
+  go1.27.3 it stopped before fetching.
+- The Dockerfile's `RUN` line under dash on Ubuntu, with the unpack
+  replaced by a message: all three releases downloaded and passed
+  `sha256sum -c`; 3007.1 with its digest's first character changed
+  failed it; 3006.9 was refused before any download.
+- The two tests against `main`'s workflows and Dockerfile: both fail,
+  saying the steps pin nothing and the Dockerfile pins no digest. With
+  fleet.yml's digest altered, the comparison in ci.yml replaced by
+  `if false`, and 3008.3 renamed in the Dockerfile, each was named.
+
+**Not verified.**
+
+- In CI, on the PR (#446): ci.yml's `test (freebsd)` installed
+  `go1.27.2 freebsd/amd64` through the new step and passed; fleet.yml,
+  triggered by the change to its own path, ran its `freebsd` leg's new
+  step and passed; the three saltdiff legs built the image, each
+  printing `/tmp/salt.tar.xz: OK`, and passed. A mismatch was shown
+  only on beastie and under dash, not inside CI's VM or a Docker build.
+- The digests trust go.dev and Broadcom's servers, over TLS, as the
+  publishers. No signature was checked: the Artifactory directories
+  for the three releases list no `.asc` beside the onedir files, and
+  whether go.dev publishes one for the tarball was not looked at.
+
+
 
 
 ## 6. Everything else not started
