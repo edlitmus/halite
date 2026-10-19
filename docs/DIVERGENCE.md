@@ -31786,6 +31786,63 @@ permissions are right today. The failure was made with a corrupt record,
 not a permission or a full disk, because that fails the same way as
 root. Those take the same path in the code but were not run.
 
+### 5.401 SigV4 signed an S3 key's `$ : @ + = &` as Go escapes them, not as S3 does
+
+Issue 321, a Low finding marked plausible: `awsauth.canonicalURI` used
+`url.URL.EscapedPath()` verbatim as the canonical URI. `s3fs` builds
+an object's URL with `url.PathEscape` per segment, which leaves
+`: @ + = $ & ! ' ( ) *` literal because RFC 3986 allows them in a path.
+SigV4 for S3 percent-encodes every byte outside `A-Za-z0-9-_.~`. So
+the request was signed over `/a+b.sls` and S3 checked it against
+`/a%2Bb.sls`: SignatureDoesNotMatch, for one object, and `s3fs` does not
+serve half a tree, so the whole bucket update failed.
+
+**Measured** against AWS's own published vector rather than AWS, since
+there is no AWS account here: the S3 "PUT Object" example in the
+Signature Version 4 header documentation, `PUT /test$file.text` on
+`examplebucket`, with AWS's example credentials, signed 2013-05-24. The
+documentation page would not fetch from here; the request, credentials
+and signature were taken from another implementation's suite that
+carries the example verbatim (ytsaurus, `yt/yt/library/s3/unittests/
+http_ut.cpp`), which agrees with the documentation as recalled. A
+signature is a hash of the canonical request, so matching it is not a
+coincidence:
+
+| | signature |
+|---|---|
+| AWS's published value | `98ad7217…ece108bd` |
+| `main` at `757f01f` | `b34099c0…a81c6ecf4`, the canonical URI being `/test$file.text` |
+| this change | `98ad7217…ece108bd`, the canonical URI being `/test%24file.text` |
+
+**The change.** `canonicalURI` still splits `EscapedPath`, so a key
+holding a literal `%2F` stays distinct from one holding `/`; it decodes
+each segment and encodes it again with SigV4's `uriEncode`. What goes on
+the wire is unchanged. S3 decodes the path it receives before encoding
+it for its own canonical request, so the wire form does not need to
+match.
+
+**Demonstrated.** `TestTheS3PutObjectVectorSigns` signs AWS's example
+end to end. `TestTheCanonicalPathEncodesWhatGoLeavesLiteral` checks
+`: @ + = $ &`, an encoded slash, a trailing slash, the unreserved set and
+a UTF-8 key. With the old `canonicalURI` put back, both fail, the first
+with the `b34099c0…` signature above; restored, both pass. The existing
+`encoded slash in the path` case passes either way.
+
+**Not done.** S3's single encoding is the only one implemented. AWS's
+generic suite double-encodes and normalises the path for other
+services; KMS and Secrets Manager are only ever sent `/`, so nothing
+reaches that, and a caller that sends them a path will need it. For the
+same reason `halite-ext-aws-secrets` and `halite-ext-signer-kms`, which
+import `awsauth`, keep their versions and only have their digests
+re-recorded: `/`, and a configured `endpoint` path of unreserved
+characters, canonicalise as before.
+
+**Not verified.** Nothing was sent to S3 or an S3-compatible store. A
+key holding these characters has not been fetched by a running hub,
+and whether any production bucket holds one was not looked at. Some
+S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
+none was tried.
+
 ### 5.401 `status.uptime` and the reboot module read kern.boottime two ways
 
 Issue 321, section 5, an Info bullet: `extractBootSeconds` in
