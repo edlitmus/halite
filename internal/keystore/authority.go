@@ -133,6 +133,18 @@ var ErrPending = errors.New("the enrollment request is waiting for an operator")
 // that it is not getting in.
 var ErrRefused = errors.New("enrollment refused")
 
+// ErrMalformed marks a request the hub could not read: a CSR too large,
+// not PEM, not a CSR, unsigned, or naming no node. It is the caller's own
+// bytes described back to it, so the hub sends the text to the node.
+//
+// Every other error out of Enroll is the hub's own -- a record it cannot
+// read, a disk it cannot write, a CA that will not sign -- and the hub
+// must not send that text to a caller nobody has authenticated: it names
+// paths under the key store and how they failed. It did, as a 400, and a
+// 400 also told `enroll --force` the hub had refused its new key for
+// good, so the node deleted it (DIVERGENCE 5.400).
+var ErrMalformed = errors.New("the enrollment request is malformed")
+
 // Request is what arrives at /v1/enroll.
 type Request struct {
 	// CSR is PEM.
@@ -171,19 +183,19 @@ type Result struct {
 // token doing it.
 func (a *Authority) Enroll(req Request) (*Result, error) {
 	if len(req.CSR) > MaxCSRBytes {
-		return nil, fmt.Errorf("the CSR is %d bytes, and a node's is under %d", len(req.CSR), MaxCSRBytes)
+		return nil, fmt.Errorf("%w: the CSR is %d bytes, and a node's is under %d", ErrMalformed, len(req.CSR), MaxCSRBytes)
 	}
 	csr, err := pki.DecodeCSR(req.CSR)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 	nodeID, err := pki.NodeIDFromCSR(csr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 	fingerprint, err := pki.FingerprintCSR(csr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 	now := a.now()
 

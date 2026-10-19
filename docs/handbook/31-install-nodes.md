@@ -227,6 +227,12 @@ Remove it with `halite-hub keys delete web2.lab.example.com` and retry. A good
 token with a fresh name enrolled at once, and `keys token list` then showed
 `spent (1 of 1 uses)` and `admitted web3.lab.example.com`.
 
+A failure that is the hub's own, such as a record in `state_dir/keys` it cannot
+read, reaches the node as `the hub could not complete this enrollment request;
+its log says why`. That is not a refusal: `enroll --force` keeps its new key as
+`node.key.pending`, and a plain `enroll` continues with it once the hub is put
+right.
+
 **Write the token as `--token=SECRET`**: a token is random
 base64 and can begin with `-`, and `--token -abc…` is then taken for a flag
 (this was seen: `--BLy… is not a flag of halite-node enroll`). The FreeBSD rc

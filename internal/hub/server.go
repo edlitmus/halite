@@ -456,10 +456,24 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		})
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
 			errors.New("enrollment refused; the hub's log says why"))
-	case err != nil:
+	case errors.Is(err, keystore.ErrMalformed):
+		// The caller's own bytes, described back to it: worth saying, and
+		// nothing of the hub's in it.
 		s.countEnrollment("failed")
 		s.warn("enrollment failed", "from", r.RemoteAddr, "error", err.Error())
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
+	case err != nil:
+		// The hub's own failure. The text names key store paths and how
+		// they failed, and this caller is unauthenticated, so it stays in
+		// the log, as a refusal's detail does. A 500 rather than the 400
+		// this was: the request may be fine, and a 4xx tells the node the
+		// hub has refused it for good, which made `enroll --force` delete
+		// the key it was enrolling (DIVERGENCE 5.400). Still charged to the
+		// source: what failed is not known to be the hub's alone.
+		s.countEnrollment("failed")
+		s.warn("enrollment failed", "from", r.RemoteAddr, "error", err.Error())
+		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal,
+			errors.New("the hub could not complete this enrollment request; its log says why"))
 	default:
 		refund()
 		s.countEnrollment("issued")
