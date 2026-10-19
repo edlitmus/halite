@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A shutdown message beginning with `-` is refused
+
+On Linux, `shutdown` reads options wherever they stand, so a broadcast
+message given to `reboot.schedule`, `reboot.scheduled`, `system.reboot`
+or `system.shutdown` that began with `-` was read as options: `-h`
+turned a reboot into a halt. Such a message is now refused with an
+error saying why. FreeBSD was not affected. DIVERGENCE 5.404.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which

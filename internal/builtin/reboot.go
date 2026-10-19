@@ -346,6 +346,9 @@ func rebootScheduleArgv(goos string, delayMinutes int64, message string) ([]stri
 				"Rebooting now is `system.reboot`, which is a different function on purpose: "+
 				"this one exists so that there is time to countermand it", delayMinutes)
 	}
+	if err := shutdownMessageCheck(message); err != nil {
+		return nil, err
+	}
 	switch goos {
 	case "linux", "freebsd":
 		argv := []string{"shutdown", "-r", fmt.Sprintf("+%d", delayMinutes)}
@@ -355,6 +358,35 @@ func rebootScheduleArgv(goos string, delayMinutes int64, message string) ([]stri
 		return argv, nil
 	}
 	return nil, fmt.Errorf("this build does not know how to schedule a reboot on %s", goos)
+}
+
+// shutdownMessageCheck refuses a broadcast message that shutdown(8)
+// would read as options.
+//
+// The message is the last argument, after the time, and systemd's
+// shutdown (systemctl) parses its arguments with getopt_long, which
+// permutes: an option is found wherever it stands. Measured on Ubuntu
+// 24.04's systemd 255, with the system bus pointed at nothing so that
+// nothing could be scheduled: `shutdown -r +5 -halite-probe` stopped at
+// "invalid option -- 'l'", having taken `-h` and `-a` as options on
+// the way, and `shutdown -r +5 -h` was accepted and went on to dial the
+// bus. So a message of `-h` turns a reboot into a halt, and a message of
+// `-c` cancels instead of scheduling. FreeBSD's shutdown uses getopt
+// without permutation and stops at the time (read in
+// /usr/src/sbin/shutdown/shutdown.c on 15.1, not run: it needs root and
+// would take the machine down).
+//
+// Refused rather than escaped. `--` before the time would also work on
+// systemd -- measured the same way -- but the argument vector would then
+// differ on the platform this project runs most of its fleet on, for a
+// message nobody needs to start with a dash. Issue 321, section 5;
+// DIVERGENCE 5.404.
+func shutdownMessageCheck(message string) error {
+	if m := strings.TrimSpace(message); strings.HasPrefix(m, "-") {
+		return fmt.Errorf("the message %q begins with '-', which shutdown(8) would read as options; "+
+			"reword it so that it does not", m)
+	}
+	return nil
 }
 
 // rebootCancelArgv builds the command that countermands a pending
@@ -780,6 +812,11 @@ func rebootScheduledState(c *exec.Context, args *value.Map) (states.Result, erro
 	delay := states.Int(args, "delay", rebootDefaultDelayMinutes)
 	message := states.Str(args, "message", "")
 	onlyIfRequired := states.Bool(args, "only_if_required", true)
+	// Checked before anything else, so that `--test` says the same as
+	// the run would rather than "would be scheduled".
+	if err := shutdownMessageCheck(message); err != nil {
+		return states.False(err.Error()), nil
+	}
 
 	if onlyIfRequired {
 		required, err := rebootRequired(c)

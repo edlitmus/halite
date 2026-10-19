@@ -325,3 +325,41 @@ func TestAPendingShutdownIsFoundThroughThePSModule(t *testing.T) {
 		t.Errorf("a `grep shutdown` was read as a pending reboot: %v", quiet.comment)
 	}
 }
+
+// A broadcast message beginning with `-` is refused, because systemd's
+// shutdown reads it as options wherever it stands: measured on systemd
+// 255, `shutdown -r +5 -h` is accepted, so the message `-h` turns a
+// reboot into a halt. Every builder that puts a message on shutdown's
+// command line refuses it, and the state refuses it under --test too.
+// DIVERGENCE 5.404.
+func TestAShutdownMessageThatLooksLikeAnOptionIsRefused(t *testing.T) {
+	for _, goos := range []string{"linux", "freebsd"} {
+		for _, msg := range []string{"-h", " -c", "--halt"} {
+			if argv, err := rebootScheduleArgv(goos, 5, msg); err == nil {
+				t.Errorf("reboot.schedule on %s built %q for message %q", goos, argv, msg)
+			}
+			for _, verb := range []string{"reboot", "shutdown"} {
+				if argv, err := systemPowerArgv(goos, verb, 5, msg); err == nil {
+					t.Errorf("system.%s on %s built %q for message %q", verb, goos, argv, msg)
+				}
+			}
+		}
+		// A dash inside the message is ordinary text.
+		argv, err := rebootScheduleArgv(goos, 5, "kernel update - back soon")
+		if err != nil || argv[len(argv)-1] != "kernel update - back soon" {
+			t.Errorf("an ordinary message on %s: %q, %v", goos, argv, err)
+		}
+	}
+
+	c := newCtx(true)
+	res, err := rebootScheduledState(c, value.MapOf("message", "-h", "only_if_required", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() || !strings.Contains(res.Comment, "begins with '-'") {
+		t.Errorf("the state under --test said %q", res.Comment)
+	}
+	if ran := c.Runner.(*exec.RecordingRunner).Ran; len(ran) != 0 {
+		t.Errorf("the state ran %d command(s) before refusing", len(ran))
+	}
+}
