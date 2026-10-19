@@ -147,15 +147,42 @@ func canonicalRequest(req *http.Request, payloadHash string) (string, string) {
 // canonicalURI is the path, each segment encoded, with `/` for an empty
 // path.
 //
-// `EscapedPath` is used rather than re-encoding `Path`, because a key
-// containing a literal `%2F` and a key containing `/` are different
-// objects in S3 and re-encoding would make them the same request.
+// The segments are taken from `EscapedPath` rather than from `Path`,
+// because a key containing a literal `%2F` and a key containing `/` are
+// different objects in S3, and `Path` has already made them the same
+// string. Each segment is then decoded and encoded again with SigV4's
+// own rule — everything but `A-Za-z0-9-_.~` percent-encoded.
+//
+// That second step is the one that was missing. `EscapedPath` is Go's
+// idea of a valid path, which leaves `: @ + = $ & ! ' ( ) * , ;` literal
+// because RFC 3986 allows them there; S3 canonicalises them encoded.
+// So a key such as `top:sls` or `a+b.sls` was signed with one canonical
+// URI and checked against another, and S3 answered SignatureDoesNotMatch
+// for that object — failing the whole bucket update, since s3fs does not
+// serve half a tree. AWS's own `PUT /test$file.text` example is the
+// published vector for it (DIVERGENCE 5.401).
+//
+// This is S3's single encoding. The other services in AWS's generic
+// test suite encode the path twice and normalise it; nothing here sends
+// them a path but `/`, so that rule is not implemented, and a caller
+// that starts to will need it.
 func canonicalURI(u *url.URL) string {
 	path := u.EscapedPath()
 	if path == "" {
 		return "/"
 	}
-	return path
+	segments := strings.Split(path, "/")
+	for i, seg := range segments {
+		decoded, err := url.PathUnescape(seg)
+		if err != nil {
+			// EscapedPath only returns valid escapes, so this is not
+			// reached; signing the bytes as they are is the answer
+			// that fails at S3 rather than here.
+			decoded = seg
+		}
+		segments[i] = uriEncode(decoded, true)
+	}
+	return strings.Join(segments, "/")
 }
 
 // canonicalQuery is the query sorted by name, then by value, with both

@@ -31,7 +31,7 @@ Issue 321 stays open, because what is below is not finished.
 | High (20) | 20 | none |
 | Medium (55) | 54 | 1, half done (M-47) |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
-| Low (section 5) | 14 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 15 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
 ### Fixed
 
@@ -168,6 +168,7 @@ passing by the PRs above; that has not been looked for.
 | `ssh_auth.present` newline in `comment`/`options` | #413 | 5.373; `enc` and `name` too, and `ssh_known_hosts`; a comma in a known_hosts `name` left (ssh's own syntax); not run against sshd |
 | `yaml_squote` corrupts multi-line values | #414 | 5.374, against PyYAML 6.0.1; `yaml_dquote` spells non-ASCII differently from PyYAML |
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
+| SigV4 canonical URI for S3 keys with `: @ + = $ &` | #444 | 5.401; held to AWS's published `PUT /test$file.text` vector, not to S3 itself; S3-compatible stores not tried |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
