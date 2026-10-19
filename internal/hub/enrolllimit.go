@@ -15,9 +15,10 @@ import (
 // `POST /v1/enroll` is the one route a caller with no certificate
 // reaches. 5.338 bounded what one request may cost (the body, the CSR,
 // the read) and what all of them may hold (1,024 pending records), but
-// not how fast one caller may reach the second bound. One address could
-// make 1,024 names pending in a few seconds, and every honest node in
-// manual mode was then refused until an operator cleared them.
+// not how fast one caller may reach the second bound. On beastie one
+// address made 1,024 names pending in 30 s, sixteen requests at a time,
+// and a real node from anywhere was then refused until an operator
+// cleared them; this held the same flood to 32 (DIVERGENCE 5.398).
 //
 // It is a leaky budget, as the API's login source budget is (5.304): a
 // level that rises by one for each request that is charged and drains
@@ -61,8 +62,8 @@ const (
 	// enroll_source_rate and enroll_source_burst. Thirty-two at once is
 	// room for a rack being racked behind one address in manual mode;
 	// one every ten seconds after that is 8,640 a day, so one address
-	// takes about two and a half hours to fill the 1,024 pending
-	// records, where it took seconds. Both are a judgement, not a
+	// takes nearly three hours to fill the 1,024 pending
+	// records, where it took thirty seconds. Both are a judgement, not a
 	// measurement of any estate, and a token-mode bootstrap is not
 	// metered at all.
 	DefaultEnrollSourceRate  = 0.1

@@ -29360,7 +29360,7 @@ there meets a bound.
   it quickly. A per-source limit needs the node's `enroll --wait` to
   treat a "too many" answer as retryable. It does not today, since every
   refusal is final to it, so that is a change to both ends and is left
-  for its own section.
+  for its own section. *(Done in 5.398.)*
 - Not run against a live hub, on FreeBSD or anywhere else: the tests run
   the real hub handler over real TLS on loopback, under `go test`.
 
@@ -31559,6 +31559,89 @@ state checks that it leaves the node reachable, as 5.364 says.
   1.8.10 (nf_tables) with `-w 30`, and passed. The fleet `linux` leg
   was not run.
 - ip6tables was driven only on the recording runner.
+
+### 5.398 One address could fill the pending enrollment bound in thirty seconds
+
+Issue 321 finding M-06, the half 5.338 left: a per-source rate limit on
+`POST /v1/enroll`. 5.338 bounded what one request may cost and how many
+names may be pending (1,024), not how fast one caller may reach that
+bound. Once it is reached, manual mode refuses every new name, the real
+ones included, until an operator clears the records.
+
+**Measured on beastie** (FreeBSD 15.1), with a throwaway hub in manual
+mode on loopback. One address sent 1,100 requests for new names, 16 at a
+time, using the transport client with a fresh key each. Then a real
+`halite-node enroll` came from the same address:
+
+| | `main` at `ddd8e92` | this change |
+|---|---|---|
+| the flood | 1,024 pending after 29.9 s, then refused | 32 pending, 1,068 answered 429, all in 1.93 s |
+| the real node, no `--wait` | "enrollment refused", exit 1 | "the hub is limiting enrollment requests from this address", exit 2 |
+| the real node, `--wait` | not run: the bound stays full until an operator clears it | limited, waited 8 s, pending, accepted by the operator about 10 s in, enrolled 19 s in |
+
+**The change, at the hub.** `enrollLimit` is a leaky budget per source
+address: `enroll_source_burst` (32) deep, draining at
+`enroll_source_rate` (0.1 a second). An IPv6 peer is held by its /64. The
+key is the connection's peer, because relays do not carry enrollment and
+no header is trusted. Over the budget, the hub answers 429 with
+`Retry-After`, the code `rate_limited`, and a message naming the setting.
+It does this before reading the body, and counts the refusal as
+`halite_hub_enrollments_total{result="rate_limited"}` without logging it.
+The table holds 4,096 sources. A full table drops the ones that have
+drained, then the one that has spent least, so a flood of new addresses
+cannot evict one at its limit.
+
+**What is charged.** The charge is taken on the way in, and given back
+for the two outcomes an honest fleet repeats: a certificate issued, and
+a pending answer for a record the request did not create
+(`Result.Recorded`, new). So `enroll --wait`, which asks every five
+seconds, and a token-mode rollout behind one NAT address are not held,
+while a new pending record, a refusal and a malformed request are.
+Charging on entry matters. A version that checked on entry and charged
+after the outcome, built to test this, let 20 of 20 concurrent requests
+through a budget of 4; this lets 4 through.
+
+**At the node.** `enroll --wait` looped on "pending" and ended on every
+other answer, so it would have given up at the first 429. It now waits
+as long as `Retry-After` says, and at least its own five seconds, and
+tries again. Without `--wait` it says the hub is limiting it and exits 2,
+as for pending. The client puts `Retry-After` on `StatusError`, and
+`transport.RateLimited` reads it.
+
+**Demonstrated.** Each test was broken on purpose and seen to fail:
+
+- `TestOneAddressIsHeldToItsEnrollmentBudget`: the 429, its
+  `Retry-After` of 10 s, its code, no record, and the drain. It fails
+  with the limit removed, and with `Retry-After` not read.
+- `TestWaitingAndCollectingAreNotCharged` and
+  `TestASpentTokenIsNotCharged`: they fail with the refund removed.
+- `TestConcurrentRequestsCannotOverrunTheBudget`: it fails against the
+  charge-after version.
+- `TestEnrollWaitRetriesWhenTheHubLimitsIt`: a real hub and the
+  `halite-node` binary. It fails with the node's new case removed.
+- `TestAnIPv6SourceIsHeldByItsSlash64` and
+  `TestTheEnrollSourceTableIsBounded`.
+
+**What it does not do.**
+
+- An address at its limit is held for everything until a request
+  drains, the honest node's polls included, because nothing is known
+  about a request before it is read. The beastie run shows `--wait`
+  absorbing that. A node from another address is not affected.
+- Many addresses still fill the pending bound. One address now takes
+  nearly three hours where it took thirty seconds, but 32 addresses
+  fill it at once with their bursts. A connection cap, the audit's
+  other suggestion, was not added.
+- A manual-mode rollout of more than 32 machines behind one address
+  takes ten seconds for each one after the 32nd, unless the operator
+  raises the limit. Nodes without `--wait` get exit 2 and must be run
+  again.
+- An older `halite-node` with `--wait` still gives up at the first 429,
+  with the hub's message.
+
+**Not verified.** Not run against the production hub, or with IPv6 or
+NAT for real: the beastie run is loopback, one address. The defaults are
+a judgement, not a measurement of any estate.
 
 ## 6. Everything else not started
 

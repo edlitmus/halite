@@ -58,6 +58,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `Permanent` (func): Permanent reports whether retrying an error is pointless.
 - `PillarRequest` (type): PillarRequest is POST /v1/pillar: a node asking for its own pillar.
 - `PillarResponse` (type): PillarResponse is the compiled pillar, already encoded.
+- `RateLimited` (func): RateLimited reports whether err is the hub saying "not so fast", and how long it asked for.
 - `ReadJSON` (func): ReadJSON decodes a request body under a limit, refusing anything after the first value so that a request cannot smuggle a second one.
 - `RefusedError` (type): RefusedError is an answer that will not change on a retry: the hub understood the request and said no.
 - `RelayUpdate` (type): RelayUpdate is a relay telling its upstream that its fleet changed, at POST /v1/relay.
@@ -81,7 +82,7 @@ Package hub is the control plane of SPEC section 6: the endpoints a node talks t
 
 The rule the whole package follows is that a node's identity comes from the certificate the TLS layer verified and never from the request body. A body says what a node wants; the certificate says who is asking.
 
-**Files:** `anchors.go`, `batch.go`, `dispatch.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
+**Files:** `anchors.go`, `batch.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
 
 **Exports.**
 
