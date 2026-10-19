@@ -30470,7 +30470,8 @@ whenever iptables lists it (Salt 3007.1, salt/modules/iptables.py); for
 the iptables this was measured on, that changes nothing. Adding `-w` to
 the module's fifteen command lines was not done, because the case it
 would fix, an iptables that fails at once on a held lock, was not seen
-on any machine here.
+on any machine here. *(Wrong for 1.8.7, which fails at once without
+`-w`: see 5.397, which adds it.)*
 
 **Left as found.** No firewall state checks that it leaves the node
 reachable. Salt does not either, and doing it well means knowing which
@@ -31493,6 +31494,71 @@ ran `cmd.run`.
   `ssh` and `ssh_known_hosts` modules, are not this path and were not
   looked at.
 
+
+### 5.397 iptables 1.8.7 fails at once on a held lock, and the module passed no `-w`
+
+Issue 321 finding M-47, the half 5.364 measured and left. 5.364 ran
+iptables 1.8.10 only, found that it waits for the xtables lock without
+being asked, and concluded that adding `-w` "changes nothing". Its own
+"Not verified" said the next older iptables would answer it. It does
+not hold for the iptables in Ubuntu 22.04, a tier 1 platform.
+
+**Measured as root on Ubuntu 24.04.5**, in a private network and mount
+namespace with its own tmpfs on `/run`, as 5.364 did. The 1.8.7 binary
+and its libraries are Ubuntu 22.04's packages (`iptables
+1.8.7-1ubuntu5.2` and its dependencies), checked against the SHA-256 in
+jammy's `Packages` index and unpacked, not installed. The index was
+fetched over http, and its `InRelease` signature was not checked. One
+process held `/run/xtables.lock` for 3 s:
+
+| | no `-w` | `-w` | `-w 1` |
+|---|---|---|---|
+| 1.8.7 legacy | **exit 4 at once**: "Another app is currently holding the xtables lock. Perhaps you want to use the -w option?" | exit 0 after 2.70 s | exit 4 after 1.00 s |
+| 1.8.10 legacy | exit 0 after 2.70 s | exit 0 after 2.70 s | exit 4 after 1.00 s |
+
+Through the module, `halite-node call iptables.append chain=INPUT
+rule='-p tcp --dport 2222 -j ACCEPT'` with 1.8.7 first on `PATH` and the
+lock held for 3 s:
+
+- `main` at `7609057`: failed in 0.02 s, on its `-C` check, with
+  1.8.7's message above. No rule.
+- this change: waited, then added the rule. 3.03 s.
+- this change with the lock held 40 s: iptables gave up at 30 s,
+  saying "Stopped waiting after 30s.", and the call failed with that.
+
+Ubuntu 22.04's default backend is nf_tables, so the machines this
+reaches are those switched to legacy with `update-alternatives`, which
+is what some Docker and Kubernetes setups do. Which fleet hosts that
+is was not looked at.
+
+**The change.** Every iptables command that takes the lock, which is
+every one but `--version` and the `-save` reads, is built by
+`iptablesArgv` and gets `-w 30`. The limit is there because a bare
+`-w`, which is what Salt passes, waits for good, and 1.8.10 already
+waits for good with no `-w`. So a lock holder that never lets go would
+hang the state run with no word about why. Both nf_tables builds, 1.8.7
+and 1.8.10, accepted `-w 30` and added their rule while the lock was
+held.
+
+**Demonstrated.** `TestEveryIPTablesCommandWaitsForTheLock` drives
+every writer and the rule and chain states, for both families, on a
+recording runner. It checks each verb was reached, so a run that stops
+at `-C` cannot pass it. With `iptablesArgv` emptied it flags 28
+commands. With the flush's one call site written back as a bare
+literal, it flags that site, for both families.
+
+**Left as found.** The other half of M-47 is unchanged. No firewall
+state checks that it leaves the node reachable, as 5.364 says.
+
+**Not verified.**
+
+- Nothing older than 1.8.7. An iptables whose `-w` takes no number
+  would read the `30` as a stray argument.
+- The live tests run 1.8.10, which cannot tell this change from
+  `main`. Here they ran in their user namespace against the host's
+  1.8.10 (nf_tables) with `-w 30`, and passed. The fleet `linux` leg
+  was not run.
+- ip6tables was driven only on the recording runner.
 
 ## 6. Everything else not started
 
