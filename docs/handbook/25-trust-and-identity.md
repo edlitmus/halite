@@ -145,6 +145,29 @@ that the request the hub is looking at came from the machine you are
 looking at. Skipping it, and accepting whatever is pending, throws away the
 reason for having approval at all.
 
+### When the hub says "limiting enrollment requests from this address"
+
+Anybody who can reach the hub's port can ask to enrol, so the hub holds
+each address (each /64, for IPv6) to a budget: 32 requests at once, then
+one every ten seconds (`enroll_source_burst`, `enroll_source_rate`). Only
+requests that create a new pending request, are refused, or are malformed
+count. A certificate being issued does not, and neither does a node asking
+again about its own pending request. So a token-mode rollout is never held,
+and neither are nodes waiting under `--wait`. An address over its budget
+gets this, and the command exits with status `2`, as for a pending request:
+
+```
+the hub is limiting enrollment requests from this address: /v1/enroll: this address has made more enrollment requests than enroll_source_rate allows (32 at once, then one every 10s); try again in 10s
+run this again later, or pass --wait to retry until it is admitted.
+```
+
+With `--wait`, the node waits as long as the hub asks and tries again.
+Machines behind one NAT address share a budget. A manual-mode rollout of
+more than 32 of them from one address takes ten seconds for each one after
+the 32nd, unless you raise the limit for the rollout. The hub counts these
+refusals as `halite_hub_enrollments_total{result="rate_limited"}` and does
+not log each one.
+
 ### By token (for machines nobody is watching)
 
 An autoscaling fleet cannot wait for an operator. A **bootstrap token**

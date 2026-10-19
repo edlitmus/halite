@@ -255,7 +255,12 @@ func (c *Client) post(ctx context.Context, path string, body, out any) (status i
 		return res.StatusCode, fmt.Errorf("%s: %w", path, err)
 	}
 	if res.StatusCode >= 400 {
-		return res.StatusCode, decodeError(path, payload, res.StatusCode)
+		err := decodeError(path, payload, res.StatusCode)
+		var status *StatusError
+		if errors.As(err, &status) {
+			status.RetryAfter = retryAfter(res.Header.Get("Retry-After"))
+		}
+		return res.StatusCode, err
 	}
 	if out != nil {
 		if err := json.Unmarshal(payload, out); err != nil {
@@ -300,9 +305,35 @@ type StatusError struct {
 	Status int
 	Code   string
 	Msg    string
+	// RetryAfter is what the hub's Retry-After said, in seconds, or zero
+	// when it said nothing a caller can use. A 429 from enrollment
+	// carries one (issue 321, M-06).
+	RetryAfter time.Duration
 }
 
 func (e *StatusError) Error() string { return e.Path + ": " + e.Msg }
+
+// retryAfter reads Retry-After's delay-seconds form, the only one the
+// hub writes. An HTTP date, a negative number or nonsense is zero, which
+// leaves the caller to its own interval.
+func retryAfter(v string) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
+}
+
+// RateLimited reports whether err is the hub saying "not so fast", and
+// how long it asked for. A caller that can wait should; the request was
+// not decided, so it is not a refusal.
+func RateLimited(err error) (time.Duration, bool) {
+	var status *StatusError
+	if errors.As(err, &status) && status.Status == http.StatusTooManyRequests {
+		return status.RetryAfter, true
+	}
+	return 0, false
+}
 
 // CodeOf answers with the stable code the hub attached to a failure, or
 // an empty string when it attached none.

@@ -75,6 +75,22 @@ Who a program is and what it talks to. A node dials the hub
 and the hub never dials a node, so these are the settings that decide
 whether anything talks at all.
 
+### `enroll_source_burst`
+
+*`halite-hub` · `32` · SPEC section 7.3*
+
+Enrollment requests one address may make at once before enroll_source_rate applies.
+
+Read by the hub. How many charged enrollment requests one address may make at once before `enroll_source_rate` applies: a rack of machines behind one address enrolled in manual mode. Below one, the default of 32 is used.
+
+### `enroll_source_rate`
+
+*`halite-hub` · `0.1` · SPEC section 7.3*
+
+Enrollment requests one address may make a second, sustained, counting only those that leave a new pending record or are refused; over it the hub answers 429.
+
+Read by the hub. How many enrollment requests one address may make a second, sustained, as a leaky budget; over it the hub answers 429 with a Retry-After before reading the request, and counts it as `halite_hub_enrollments_total{result="rate_limited"}`. Only requests that leave a new pending record, are refused, or are malformed are charged: a certificate issued and a node asking again about its own pending request are not, so a token-mode bootstrap and nodes running `enroll --wait` are never held. An IPv6 address is held by its /64. The default, one every ten seconds after `enroll_source_burst`, means one address takes nearly three hours rather than half a minute to fill the 1,024 pending records. `halite-node enroll --wait` waits and retries when it is held. Zero or below uses the default.
+
 ### `evidence_anchor_burst`
 
 *`halite-hub` · `60` · SPEC section 25.7*
@@ -2051,6 +2067,8 @@ Every setting, and which programs read it.
 | `cloud_grains_timeout` | `halite-node` | `10s` | Grains and the mine |
 | `cmd_default_shell` | `halite-node` | `true` | Node execution controls |
 | `config_file` | all three programs | — | Filesystem layout |
+| `enroll_source_burst` | `halite-hub` | `32` | Identity and connection |
+| `enroll_source_rate` | `halite-hub` | `0.1` | Identity and connection |
 | `enrollment_mode` | `halite-hub` | `manual` | Enrollment and certificates |
 | `env` | all three programs | `base` | The tree: states and pillar |
 | `env_allowlist` | `halite-node`, `halite-hub` | — | The tree: states and pillar |

@@ -453,6 +453,7 @@ these is why a single malformed return can exhaust a master.
 | Maximum enrollment request body, and its read | 64 KiB, within 10 s |
 | Maximum CSR at enrollment | 16 KiB |
 | Maximum pending enrollment requests | 1,024 |
+| Enrollment requests from one source address that create a pending request or are refused | 32 at once, then one every 10 s, configured; an IPv6 source is its /64 |
 | Maximum single return payload | 16 MiB, then the node paginates by chunk |
 | Maximum NDJSON line on the subscribe and event streams | 1 MiB; a longer job is refused at submission, and a longer event is streamed as a stand-in naming it |
 | Maximum concurrent HTTP/2 streams per node connection | 64 |

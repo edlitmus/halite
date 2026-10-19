@@ -21,6 +21,23 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The hub limits enrollment requests from one address
+
+Anybody who can reach the hub's port can ask to enrol, and one address
+could make the 1,024 pending requests the hub allows in about thirty
+seconds, after which manual mode refused every new node until an
+operator cleared them. The hub now holds each address (each /64 for
+IPv6) to 32 requests at once, then one every ten seconds
+(`enroll_source_burst`, `enroll_source_rate`), and answers 429 over it.
+Only requests that create a pending request, are refused or are
+malformed count: certificates being issued and nodes waiting under
+`--wait` do not. `halite-node enroll --wait` now waits and retries when
+the hub limits it, and without `--wait` it exits 2 with a message.
+**Breaking** for a manual-mode rollout of more than 32 machines behind
+one address, which now takes ten seconds for each one after the 32nd
+unless the limit is raised, and for an older node, whose `--wait` stops
+at the first 429. DIVERGENCE 5.398.
+
 ### iptables commands wait for the xtables lock, up to 30 s
 
 The `iptables` module ran its commands without `-w`. iptables 1.8.7 on
@@ -6382,7 +6399,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 231 settings in the
+The configuration reference explains each of the 233 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

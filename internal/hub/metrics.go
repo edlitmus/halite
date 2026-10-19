@@ -173,7 +173,7 @@ func (s *Server) setupMetrics() {
 			"Time to answer one request, by route.", nil, "route"),
 
 		enrollments: r.Counter("halite_hub_enrollments_total",
-			"Enrollment requests, by what the hub did with one.", "result"),
+			"Enrollment requests, by what the hub did with one, or rate_limited for one turned away by enroll_source_rate before it was read.", "result"),
 		evidenceAnchors: r.Counter("halite_hub_evidence_anchors_total",
 			"Evidence heads reported by nodes, by whether the hub accepted one, found it "+
 				"contradicted an earlier one, refused it as over the node's rate, or failed "+

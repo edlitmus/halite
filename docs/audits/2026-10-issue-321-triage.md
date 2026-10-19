@@ -14,8 +14,8 @@ this file to the code, so it drifts as work lands.
 
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
-as it landed, the latest being M-47's `-w` half (#440). The
-status is as of #440, checked again on 2026-10-19; PRs after it that change only
+as it landed, the latest being M-06's per-source limit (#441). The
+status is as of #441, checked again on 2026-10-19; PRs after it that change only
 this file or other documentation do not move it. The rows up to `d8ceba1` were first
 rechecked against each PR's body for parts it said it left unfixed, and
 the later rows (#375 to #426) were rechecked the same way on
@@ -29,7 +29,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 53 | 2, both half done |
+| Medium (55) | 54 | 1, half done (M-47) |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
 | Low (section 5) | 14 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
@@ -65,6 +65,7 @@ not do. Each has been checked to see whether it happened.
 | M-05 superseded serials after a restart | #435, #436, #437 | none | **done** on beastie: `main` accepted the old certificate after a restart, and this refused it (5.392). `keys delete` had the same shape and worse: `main` accepted a deleted node on the running hub; #436 refused it, running and restarted (5.393). #437 put both on the CRL, which `openssl verify -crl_check` then refused, under a number that no longer falls (5.394). Not on the production hub |
 | M-07 token lookup reads every token | #438 | `List` still reads every record, off the unauthenticated path | **done** on beastie: a made-up token cost 257 ms at 5,000 tokens on `main` and 9 µs with this; through a running API, 0.26 s against 0.016 s (5.395). Not on the production API |
 | M-14 ssh destination injection | #439 | `Match exec` not tried; operator rosters now refused `%` and `@` in a host | **done** on beastie with an OpenSSH 9.5p1 client: a cached node's `fqdn` grain ran a command on the hub on `main`, both as an ssh option and through a `ProxyCommand` shell, and was refused with this (5.396). No distribution's older ssh run |
+| M-06 unbounded enrollment | #378, #441 | no connection cap; many addresses still fill the pending bound, 32 of them at once | **done** on beastie: one address made 1,024 names pending in 29.9 s on `main`, and 32 with #441, whose real node then enrolled under `--wait` (5.338, 5.398). Not on the production hub, not over IPv6 or NAT |
 | M-02 signed-job replay | #339 | | on FreeBSD since: 0.75–0.82 ms per signed job on beastie's ZFS (5.328) |
 | M-04 typed job signing (breaking) | #337 | | live mixed-version run on beastie (5.330) |
 | M-08, M-09 login backoff by (source, name) | #352 | | |
@@ -128,11 +129,6 @@ Severities are this file's revised ones, from the tables below.
 
 **Medium, half done.**
 
-- **M-06**, Medium: #378 bounds the enrollment body (64 KiB, read
-  within 10 s), the CSR (16 KiB) and the pending records (1,024), and
-  lets a spent token take a name from a pending record of another key
-  (DIVERGENCE 5.338). Not done: a per-source rate limit, which needs
-  `enroll --wait` to retry a refusal it treats as final today.
 - **M-47**, Low: #440 gives every iptables command `-w 30`. 5.364 had
   left it because 1.8.10 waits unasked; Ubuntu 22.04's 1.8.7 on the
   legacy backend fails at once, exit 4, and `main`'s `iptables.append`
@@ -298,7 +294,7 @@ the fix that touches it.
 | M-03 no govulncheck in CI | CONFIRMED | Low | argued near 1904 | |
 | M-04 signing expiry and scalar encoding | CONFIRMED (repro), **worse** | Medium-High | not recorded | The node honours test mode only as a Go bool (`execute.go:80`), and `"true"` and `true` sign identically, so a compromised hub can turn a signed dry run into a real run. Traced end to end; canonical equality reproduced. |
 | M-05 superseded certs after restart | CONFIRMED (repro) | Medium | not recorded | CRL also omits superseded serials. |
-| M-06 unbounded enrollment | CONFIRMED (repro), wider | Medium | 5.284 mentions pending records as operability only | **Wider:** in token mode a bogus token still leaves a pending record that locks out the real node. |
+| M-06 unbounded enrollment | CONFIRMED (repro), wider | Medium | 5.284 mentions pending records as operability only | **Wider:** in token mode a bogus token still leaves a pending record that locks out the real node. Bounds by #378 (5.338); per-source limit by #441 (5.398). |
 | M-07 token lookup cost | CONFIRMED (repro) | Medium or higher | not recorded | ~4.2 s per garbage request at 5,000 tokens on macOS (the audit measured 78 ms). |
 | M-08 unbounded login username | CONFIRMED (trace) | Low-Medium | not recorded | PBKDF2 slot limit slows filling the table. |
 | M-09 backoff is a lockout | CONFIRMED (simulation) | Medium | contradicts 5.232 | 105 requests per day held a name blocked for the whole day. 5.232 already records the cross-name half. |

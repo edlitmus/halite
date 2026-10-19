@@ -158,6 +158,10 @@ type Result struct {
 	// name that a spent token replaced, so the hub can say so. Empty
 	// otherwise.
 	Superseded string
+	// Recorded is true when this request wrote a pending record that was
+	// not there before, which is what the hub's per-source enrollment
+	// limit charges for; asking again about one is not.
+	Recorded bool
 }
 
 // Enroll records a request and, in an automatic mode, issues.
@@ -309,7 +313,7 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 	if err := a.Store.put(rec); err != nil {
 		return nil, err
 	}
-	return &Result{NodeID: nodeID, State: Pending, Fingerprint: fingerprint}, ErrPending
+	return &Result{NodeID: nodeID, State: Pending, Fingerprint: fingerprint, Recorded: isNew}, ErrPending
 }
 
 // roomForPending refuses a new pending record once there are
