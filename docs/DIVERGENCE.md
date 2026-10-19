@@ -31398,6 +31398,101 @@ request is a fresh TLS connection:
 - Not run on Linux, macOS or Windows hosts, or against the production
   API. The 0300 test skips on Windows and as root.
 
+### 5.396 A node's grain could run a command on the hub through ssh
+
+Issue 321 finding M-14, which 5.306 named and left, and which the triage
+marked PARTLY: "halite's argv shape is rejected by 10.3; older OpenSSH
+needs a host", a machine to try it on. This is that run, and it went
+through. The agentless runner built
+
+    ssh -o BatchMode=yes -o ConnectTimeout=N [options] <user@host> <command>
+
+with nothing between the options and the destination, and nothing
+checked the host, the user or `proxy_jump`. The `cache` roster takes the
+host from the `fqdn`, `host` or `nodename` grain a node reports, so it is
+the node's choice. Two ways in:
+
+- **The host is an option.** `fqdn: -oProxyCommand=<cmd>` is read by ssh
+  as `-o`, and the command after it becomes the host. 9.5p1 runs the
+  proxy command, on the hub, as whoever ran `halite-hub ssh`. 10.0p2
+  on beastie refuses the host that is left, `/bin/sh -s`, and runs
+  nothing, which is what the triage saw 10.3 do.
+- **The host goes to a shell.** An estate whose ssh config or
+  `ssh_options` says `ProxyCommand nc %h %p`, or uses `Match exec` with
+  `%h`, hands the host to `/bin/sh -c`. `fqdn: localhost$(<cmd>)` runs
+  the command. `--` does nothing for this one. OpenSSH 9.6 refuses such a
+  host from the command line (CVE-2023-51385); older ones do not.
+
+Debian 12, Ubuntu 22.04, RHEL 9 and FreeBSD 13 ship an ssh older than
+9.6.
+
+**Reproduced on beastie** (FreeBSD 15.1) with an OpenSSH 9.5p1 client
+built from the release tarball (its SHA-256 checked against the release
+notes; built `--without-openssl`, because 9.5p1 refuses OpenSSL 3.5). A
+throwaway hub root, `ssh_command` set to that client, `roster: cache`,
+and one cached node whose `fqdn` grain was hostile. `halite-hub ssh evil
+test.ping` from `main` at `7609057`:
+
+| node's `fqdn` | `ssh_options` | `main` | this change |
+|---|---|---|---|
+| `-oProxyCommand=touch <file>` | none | file made | refused, nothing run |
+| `localhost$(touch <file>)` | `ProxyCommand=nc %h 22` | file made | refused, nothing run |
+
+Two things a reproduction has to know. ssh keeps the first value it is
+given for an option, so a `ProxyCommand` in `ssh_options` wins over one
+in the host; the two cases need two hub roots. And ssh lower-cases the
+host before `%h` reaches the shell: the first attempt's `touch` ran and
+failed on a path with capitals in it, which reads like a refusal and is
+not one.
+
+**The change.**
+
+- ssh gets `--` before the destination, and scp before its two
+  operands. Run by hand on beastie, 9.5p1 ran a hostile host given in
+  halite's shape without `--`, and did not with it.
+- `checkTarget` runs first in `Run`, before `--clean`'s removal and
+  every other ssh or scp. It refuses a host, user or `proxy_jump` hop
+  that begins with `-` or holds a character outside what a host or
+  account name contains: letters, digits and `._-`, plus `:` in a host,
+  `@` in a user (`ed@corp.example`), and `@:/` in a jump hop (`ssh://`
+  URIs). A host must not be empty. The refusal is that target's result
+  and says why. The rest of the roster still runs, so one hostile node
+  in the cache cannot stop agentless runs against the others.
+
+Not permitted, and knowingly: `%` in a host, so no IPv6 zone
+(`fe80::1%em0`), because ssh expands `%` tokens in it; `@` in a host,
+because `root@` in a grain would choose the account.
+
+**scp was not a way in, and now does not depend on that.** halite's scp
+line puts the binary's path first, and scp's getopt stops at the first
+operand. With the system scp (OpenSSH 10.0p2) on beastie, a hostile
+destination after the source ran nothing, and the same string as the
+first operand ran its command. The 9.5p1 scp could not be checked: it
+looks for ssh at `/usr/local/bin/ssh`, which is not there.
+
+**Demonstrated.** `TestAHostileDestinationIsRefused` holds eleven
+values, among them both of the above. `TestOrdinaryDestinationsAreAccepted`
+holds what rosters contain. `TestTheDestinationFollowsTheEndOfOptions`
+checks both command lines, and fails with the `--` removed.
+`TestAHostileDestinationNeverReachesSSH` runs `Run` with `--clean` and a
+stand-in ssh that leaves a mark; with the check bypassed it fails. The
+good path, the fix's hub against beastie itself with the system ssh and
+scp (10.0p2), pushed the binary, reused the cache on a second run, and
+ran `cmd.run`.
+
+**Not verified.**
+
+- Only 9.5p1 among the older clients, and only without OpenSSL. The
+  distributions named above were not run.
+- `Match exec` was not tried; it takes `%h` through a shell as
+  `ProxyCommand` does, by ssh_config(5).
+- The `flat`, `sshconfig` and `ansible` rosters are written by the
+  operator. A value in them the check now refuses was legal before;
+  nothing here knows of a real roster that holds one.
+- Hosts and users reaching ssh elsewhere, from a state through the
+  `ssh` and `ssh_known_hosts` modules, are not this path and were not
+  looked at.
+
 
 ## 6. Everything else not started
 

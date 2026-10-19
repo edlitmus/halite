@@ -176,6 +176,26 @@ Do not just delete the directory. If another account made it, find out why
 first. Then remove it as root, or set `thin_dir` in the roster to a
 directory that passes the check. `thin_dir` must be an absolute path.
 
+### When a host is refused
+
+A target's host, user and `proxy_jump` go on ssh's command line, and with
+the `cache` roster the host is whatever the node reported in its `fqdn`,
+`host` or `nodename` grain. So each must look like a name: letters,
+digits and `._-`, plus `:` in a host (an IPv6 address), `@` in a user,
+and `@:/` in a jump host. None may begin with `-`. Anything else is
+refused for that target only, before ssh runs, and the other targets
+still run:
+
+```
+evil: host is "-oProxyCommand=touch /tmp/x", which begins with `-`; ssh
+would read it as an option, and `-oProxyCommand=...` runs a command on
+this machine
+```
+
+With the `cache` roster that value came from the node. A real host name
+never looks like that, so find out how it got into the node's grains
+before you do anything else.
+
 ## What agentless mode cannot do
 
 This is inherent to having no persistent connection, not a gap in the
