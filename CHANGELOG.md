@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A followed event stream no longer misses an event for 25 seconds
+
+An event appended at the wrong instant could reach `halite-hub event
+listen`, or an API event stream, only at the next 25-second heartbeat.
+An idle stream also left the hub holding one more waiting channel at
+every heartbeat. Both came from the stream asking to be woken after it
+had read, not before. DIVERGENCE 5.402.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which

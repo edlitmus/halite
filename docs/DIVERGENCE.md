@@ -31843,6 +31843,62 @@ and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
 
+### 5.402 A followed event stream registered its wait after its read
+
+Issue 321, Low (one of three leaks in one bullet): `eventbus.Wait`
+leaks a channel every 25 seconds for each idle stream until the next
+append.
+
+**Measured.** `Wait` hands out a channel that the bus holds until the
+next `Append` closes it. The hub's `GET /v1/events?follow=true` handler
+called `Wait` on every pass of its loop, and a pass ends either on that
+channel or on the 25-second heartbeat. On a quiet bus every heartbeat
+left one channel behind. With the heartbeat shortened to 2 ms, one idle
+stream held 122 to 174 channels after half a second, varying by run.
+At the real interval that is 144 an hour per idle follower, freed only
+when something is appended. The other `Wait` callers (the reactor, the
+event returner, orchestration's `wait_for_event`, the `listen` runner)
+each call `Wait` once per pass and leave the loop on a timeout. They
+were not changed.
+
+The same loop had a second defect that the comment above it denied. It
+called `Wait` after its `Read`, while the comment said "the
+registration happens before the read above on the next turn, so a
+record written in between is not missed". A record appended between
+the `Read` and the `Wait` closed no channel the stream held, so the
+stream did not see it until the heartbeat: up to 25 seconds late for
+`halite-hub event listen` and for the API's event streams, which follow
+through this handler.
+
+**The change.** The stream asks for its channel before it reads. It
+keeps the channel across heartbeats until the channel fires, and asks
+only while following, so a request that does not follow registers
+nothing. `Bus.Waiting` reports how many channels are outstanding. The
+heartbeat interval and a hook between the read and the wait are
+unexported `Server` fields, so a test can shorten the one and use the
+other. The first version made them package variables, and `-race`
+caught one test's setting being read by another test's stream as it
+closed.
+
+**Demonstrated.** Both tests fail against the old order, with the new
+seams kept, and pass with the change:
+
+- `TestAnIdleStreamDoesNotPileUpWaiters`: "one idle stream holds 122
+  channels on the bus", where the fixed stream holds one.
+- `TestARecordAppendedAfterTheReadIsNotMissed` appends from the hook,
+  with the heartbeat at 30 seconds. On the old order the event had not
+  arrived after five seconds.
+
+`internal/hub`'s event tests and `internal/eventbus` pass under
+`-race`.
+
+**Not done.** A stream that is closed still leaves its one channel
+until the next append. The bus has no way to withdraw a channel; that
+is one per closed stream, not one per heartbeat.
+
+**Not verified.** Not run against a live hub. The 25-second delay was
+shown with the hook, not seen in the field.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

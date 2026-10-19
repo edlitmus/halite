@@ -294,6 +294,15 @@ func (s *Server) allowNodeEvent(nodeID string, n int) bool {
 	return b.TakeN(s.now(), s.nodeEventRate(), s.nodeEventBurst(), n)
 }
 
+// heartbeat is how long a followed stream may be silent before a blank
+// line is sent.
+func (s *Server) heartbeat() time.Duration {
+	if s.streamHeartbeat > 0 {
+		return s.streamHeartbeat
+	}
+	return 25 * time.Second
+}
+
 // eventStream is GET /v1/events: an operator following the bus.
 //
 // NDJSON, one object per line, unterminated — the same shape as the
@@ -360,7 +369,22 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, principal s
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	next := from
+	// wait is the bus's promise to say when something is appended. It
+	// is asked for before the read, so that a record appended between
+	// the read and the select still wakes this stream, and it is kept
+	// across heartbeats until it fires, because each Wait registers a
+	// channel the bus holds until the next append.
+	//
+	// It was asked for after the read, every time round. So an event
+	// appended in between waited for the heartbeat, up to 25 seconds,
+	// though the comment here said the registration came first; and an
+	// idle stream added a channel to the bus every 25 seconds that only
+	// an append would free.
+	var wait <-chan struct{}
 	for {
+		if follow && wait == nil {
+			wait = s.Events.Wait()
+		}
 		events, after, err := s.Events.Read(next, tags, limit)
 		if err != nil {
 			return
@@ -378,15 +402,17 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, principal s
 		if !follow {
 			return
 		}
+		if s.streamAfterRead != nil {
+			s.streamAfterRead()
+		}
 		// Woken by an append rather than polling a file that is not
-		// changing. The registration happens before the read above on
-		// the next turn, so a record written in between is not missed.
-		wait := s.Events.Wait()
+		// changing.
 		select {
 		case <-r.Context().Done():
 			return
 		case <-wait:
-		case <-time.After(25 * time.Second):
+			wait = nil
+		case <-time.After(s.heartbeat()):
 			// A comment line keeps a proxy from closing an idle
 			// stream, and tells a reader the hub is still there.
 			if _, err := w.Write([]byte("\n")); err != nil {

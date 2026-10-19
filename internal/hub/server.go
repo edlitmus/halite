@@ -186,6 +186,15 @@ type Server struct {
 	// heard from: what `halite_jobs_missing_returns` is the sum of.
 	// See owedReturns.
 	owed owedReturns
+
+	// streamHeartbeat, when set, replaces the 25 seconds a followed
+	// event stream may be silent before a blank line is sent, and
+	// streamAfterRead runs between such a stream's read and its wait,
+	// which is the window a record can be appended in. Both are for
+	// tests; a field rather than a package variable so that one test's
+	// setting is not read by another test's stream still closing.
+	streamHeartbeat time.Duration
+	streamAfterRead func()
 }
 
 // goBackground runs work that outlives the request that started it,
