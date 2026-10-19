@@ -14,8 +14,8 @@ this file to the code, so it drifts as work lands.
 
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
-as it landed, the latest being M-14 (#439). The
-status is as of #439, checked again on 2026-10-19; PRs after it that change only
+as it landed, the latest being M-47's `-w` half (#440). The
+status is as of #440, checked again on 2026-10-19; PRs after it that change only
 this file or other documentation do not move it. The rows up to `d8ceba1` were first
 rechecked against each PR's body for parts it said it left unfixed, and
 the later rows (#375 to #426) were rechecked the same way on
@@ -29,7 +29,7 @@ Issue 321 stays open, because what is below is not finished.
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 53 | 2: 1 half done, 1 measured and left |
+| Medium (55) | 53 | 2, both half done |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
 | Low (section 5) | 14 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
@@ -133,17 +133,16 @@ Severities are this file's revised ones, from the tables below.
   lets a spent token take a name from a pending record of another key
   (DIVERGENCE 5.338). Not done: a per-source rate limit, which needs
   `enroll --wait` to retry a refusal it treats as final today.
+- **M-47**, Low: #440 gives every iptables command `-w 30`. 5.364 had
+  left it because 1.8.10 waits unasked; Ubuntu 22.04's 1.8.7 on the
+  legacy backend fails at once, exit 4, and `main`'s `iptables.append`
+  did (DIVERGENCE 5.397). Not done: the lockout half, a firewall state
+  that would leave the node unreachable. That is a design gap Salt
+  shares (5.364), not a defect with a fix.
 
 **Medium, not started.** None. The four marked FreeBSD, which came
 first because FreeBSD is tier 1 and carries about 80% of production,
 were fixed first.
-
-**Medium, measured and left.**
-
-- **M-47**, Low: legacy iptables 1.8.10 waits for the xtables lock by
-  default, so the missing `-w` changes nothing there; no other iptables
-  was run. The lockout half is a design gap Salt shares
-  (DIVERGENCE 5.364).
 
 **M-56, runners are not scoped.** Done by scoping, stricter than Salt
 (#426, DIVERGENCE 5.391): a runner rule's target is the nodes its runners
@@ -351,7 +350,7 @@ the fix that touches it.
 | M-44 BSD/macOS remount and `defaults` | PARTLY | Medium if FreeBSD rejects `defaults` in fstab | not recorded | macOS `mount` rejects both `remount` and `defaults` (run here). FreeBSD **needs a host**. |
 | M-45 free-form values in configs | PARTLY (most repro) | Medium | not recorded | modprobe `install` line and path traversal, nftables `flush ruleset`, fstab, pkgrepo reproduced. **Partly refuted:** debconf validates question and value; only `Package` is open. sysctl, sysrc, ufw traced only. |
 | M-46 timezone traversal | CONFIRMED (repro, FreeBSD semantics) | Medium | not recorded | Linux with timedatectl likely validates first; FreeBSD always reaches it. |
-| M-47 firewall lockout, no `-w` | PARTLY | Low | not recorded | Lockout is a design gap Salt shares; `-w` matters on legacy iptables only. |
+| M-47 firewall lockout, no `-w` | PARTLY | Low | not recorded | Lockout is a design gap Salt shares; `-w` matters on legacy iptables only. Since measured: 1.8.10 waits unasked, 1.8.7 (Ubuntu 22.04) fails at once; `-w 30` added (#440, 5.397). |
 | M-48 D-Bus 90 s deadline | PARTLY (trace) | Low | cited as a design bound near 10563 | "Shared" overstated: per operation. Per-state `timeout:` may override. |
 
 ### Engine, pillar, gitfs, s3fs, templates (M-49 to M-55)

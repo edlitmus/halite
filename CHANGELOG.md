@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### iptables commands wait for the xtables lock, up to 30 s
+
+The `iptables` module ran its commands without `-w`. iptables 1.8.7 on
+the legacy backend, Ubuntu 22.04's, then fails at once with exit 4 when
+another program holds the xtables lock, so a state could fail because
+fail2ban or Docker was changing the firewall at the same moment. Every
+command that takes the lock now passes `-w 30`, so it waits, and gives
+up after 30 s with iptables' own message rather than waiting for ever.
+DIVERGENCE 5.397.
+
 ### `halite-hub ssh` refuses a host, user or jump host that is not a name
 
 The `cache` roster takes a target's host from the grains its node
