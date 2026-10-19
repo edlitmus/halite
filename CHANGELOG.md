@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `keys export-crl` lists everything the hub refuses
+
+The CRL listed revoked nodes only, so a renewed node's old certificate
+and a deleted node's certificate passed `openssl verify -crl_check`
+while the hub refused them. It now lists both, with RFC 5280 reason
+codes (`superseded`, `cessationOfOperation`). Its CRL number was a
+count, which fell when a revoked node was deleted, so a reader could
+keep an older list. It is now kept in the key store (`keys/crl-number`)
+and only rises. The first list after upgrading jumps to the current Unix
+time, so that it is above every number issued before. `--out` prints the
+number. DIVERGENCE 5.394.
+
 ### A deleted node's certificate stays refused
 
 `keys delete` revoked a node and then removed the record that said so.
