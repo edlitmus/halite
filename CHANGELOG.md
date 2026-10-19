@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The node's systemd units no longer hide the kernel's modules
+
+`halite-node.service` and `halite-highstate.service` set
+`ProtectKernelModules=yes`, which makes `/usr/lib/modules` inaccessible
+to the node. Under it `kmod.check_available` answered False for modules
+that exist, without an error; systemd documents the setting as
+refusing module loads too, which was not tried. Both now set
+`ProtectKernelModules=no`. A unit already installed from an earlier
+archive keeps the old line until it is replaced: copy the new one and
+run `systemctl daemon-reload`. DIVERGENCE 5.427.
+
 ### Verify a release's provenance against the release workflow and its tag
 
 The release notes, README, handbook chapters 30 and 36 and

@@ -20,7 +20,9 @@ SuccessExitStatus=0 2
 
 PrivateTmp=yes
 ProtectKernelLogs=yes
-ProtectKernelModules=yes
+# No: a highstate applies kmod, modprobe and kernelpkg states, and `yes`
+# hides /usr/lib/modules from them. halite-node.service says more.
+ProtectKernelModules=no
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 

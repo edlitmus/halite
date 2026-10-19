@@ -40,6 +40,35 @@ func readServiceFiles(t *testing.T) map[string]string {
 	return out
 }
 
+// A unit that runs the node leaves the kernel's module tree reachable.
+//
+// The node manages kernel modules -- kmod and modprobe load and unload
+// them, kernelpkg installs kernels -- and halite-node.service and
+// halite-highstate.service both set `ProtectKernelModules=yes`, which
+// denies loading and makes /usr/lib/modules inaccessible. Run under
+// that setting by a user manager (systemd 255), `halite-node call
+// kmod.check_available mod=loop` answered False on a machine where it
+// answers True, and gave no error. DIVERGENCE 5.427. The hub and API do
+// not manage modules and keep the setting.
+func TestTheNodeUnitsLeaveKernelModulesReachable(t *testing.T) {
+	checked := 0
+	on := regexp.MustCompile(`(?m)^\s*ProtectKernelModules\s*=\s*(?i:yes|true|on|1)\s*$`)
+	for path, body := range readServiceFiles(t) {
+		if !strings.HasSuffix(path, ".service") || !strings.Contains(body, "/halite-node ") {
+			continue
+		}
+		checked++
+		if on.MatchString(body) {
+			t.Errorf("%s runs the node with ProtectKernelModules on, which hides "+
+				"/usr/lib/modules from kmod, modprobe and kernelpkg", path)
+		}
+	}
+	if checked < 2 {
+		t.Fatalf("found %d units running halite-node, want the node and highstate units; "+
+			"this check has stopped checking", checked)
+	}
+}
+
 // rc.subr reserves `${name}_program`: it assigns it over `command`.
 //
 // A FIPS switch was added as `halite_hub_program`, which silently
