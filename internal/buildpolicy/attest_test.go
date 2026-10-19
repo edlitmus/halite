@@ -51,9 +51,19 @@ func TestTheReleaseAttestsOnlyWhatTwoBuildersAgreed(t *testing.T) {
 	if !strings.Contains(attest, "actions/attest-build-provenance@") || !strings.Contains(attest, "subject-checksums:") {
 		t.Error("the attest job does not attest the agreed checksum manifest")
 	}
+	// The permissions are matched as YAML spells them, not as one
+	// string. `strings.Contains(body, "id-token: write")` missed
+	// `id-token:  write`, `id-token: 'write'` and `permissions:
+	// write-all`, each of which grants the same thing, so another job
+	// could have taken the signing permission in any of those spellings
+	// and passed (issue 321, Low; DIVERGENCE 5.426).
+	if regexp.MustCompile(`(?m)^\s*permissions:\s*['"]?write-all`).MatchString(wf) {
+		t.Error("release.yml grants write-all somewhere, which includes id-token and attestations")
+	}
 	for name, body := range jobs {
 		for _, perm := range []string{"id-token: write", "attestations: write"} {
-			has := strings.Contains(body, perm)
+			key := strings.TrimSuffix(perm, ": write")
+			has := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `:\s*['"]?write['"]?\s*(#.*)?$`).MatchString(body)
 			if name == "attest" && !has {
 				t.Errorf("the attest job lacks %s", perm)
 			}
