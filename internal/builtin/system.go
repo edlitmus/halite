@@ -353,29 +353,33 @@ func uptimeSeconds(c *exec.Context) (int64, error) {
 	// The BSDs and macOS: kern.boottime, which sysctl prints as a struct.
 	res, err := c.Run(exec.Command{Argv: []string{"sysctl", "-n", "kern.boottime"}, IgnoreExitCode: true})
 	if err == nil && res.Code == 0 {
-		if sec := extractBootSeconds(res.Stdout); sec > 0 {
-			return time.Now().Unix() - sec, nil
+		if up, ok := uptimeFromBoottime(res.Stdout, time.Now().Unix()); ok {
+			return up, nil
 		}
 	}
 	return 0, fmt.Errorf("this node's uptime could not be read")
 }
 
-// extractBootSeconds pulls the epoch out of `{ sec = 1755..., usec = ... }`.
-func extractBootSeconds(s string) int64 {
-	i := strings.Index(s, "sec = ")
-	if i < 0 {
-		return 0
+// uptimeFromBoottime turns `sysctl -n kern.boottime` into seconds up.
+//
+// **It reads the number through rebootParseBoottime, and that is the
+// whole of it.** This file had its own reader, which searched for the
+// substring `sec = ` and took whatever followed the first one. `usec`
+// ends in `sec`, so that search found whichever of the two keys came
+// first rather than the one it wanted: on a real kern.boottime `sec`
+// is printed first and the answer was right by luck of the ordering;
+// against `{ usec = 1, sec = ... }` it read the microseconds as the boot
+// epoch and reported an uptime of fifty-six years. `reboot.go` had
+// already met this and matched the key on a word boundary, so two
+// readers of one sysctl disagreed about what it said -- the pair this
+// project's bugs usually come in. There is one reader now. Issue 321,
+// section 5; DIVERGENCE 5.401.
+func uptimeFromBoottime(out string, now int64) (int64, bool) {
+	sec, ok := rebootParseBoottime(out)
+	if !ok || sec <= 0 || sec > now {
+		return 0, false
 	}
-	rest := s[i+len("sec = "):]
-	end := strings.IndexAny(rest, ", }")
-	if end < 0 {
-		end = len(rest)
-	}
-	n, err := strconv.ParseInt(strings.TrimSpace(rest[:end]), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
+	return now - sec, true
 }
 
 func loadAverages(c *exec.Context) (*value.Map, error) {

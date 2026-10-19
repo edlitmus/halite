@@ -31786,6 +31786,36 @@ permissions are right today. The failure was made with a corrupt record,
 not a permission or a full disk, because that fails the same way as
 root. Those take the same path in the code but were not run.
 
+### 5.401 `status.uptime` and the reboot module read kern.boottime two ways
+
+Issue 321, section 5, an Info bullet: `extractBootSeconds` in
+`system.go` took the first `sec = ` in `sysctl -n kern.boottime`, and
+was right only because `sec` is printed before `usec`. `reboot.go`
+already had a reader that matches the key on a word boundary, written
+after its own test caught the same mistake.
+
+**Measured.** beastie (FreeBSD 15.1) printed
+`{ sec = 1792418572, usec = 59811 } Mon Oct 19 07:02:52 2026`, with `sec`
+first, so on a real FreeBSD the old reader gave the right answer. Given
+`{ usec = 59811, sec = 1792418572 }`, it read 59811 as the boot epoch
+and reported 1,792,360,189 seconds up, about fifty-six years. Nothing
+prints that order today; the defect was two readers of one sysctl that
+did not agree, waiting for one of them to be wrong.
+
+**The change.** `extractBootSeconds` is gone. `status.uptime` reads
+kern.boottime through `uptimeFromBoottime`, which takes the number from
+`rebootParseBoottime`, the boundary-safe reader, and refuses a boot time
+in the future rather than reporting a negative uptime.
+
+**Demonstrated.** `TestUptimeReadsTheSecondsKeyNotTheFirstMatch` holds
+beastie's line and the reversed one. With the old substring search put
+back inside `uptimeFromBoottime`, it fails on the reversed line with the
+fifty-six-year answer.
+
+**Not verified.** macOS and the other BSDs, which also take this path,
+were not run; Linux reads `/proc/uptime` first and never gets here.
+`status.uptime` was not called on beastie, only the sysctl read by hand.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
