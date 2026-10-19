@@ -473,3 +473,10 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		return inheritOwner(tmp, filepath.Dir(path))
 	})
 }
+
+// InheritOwner gives a file its directory's owner and group, when this
+// process is root and the directory belongs to someone else. It is
+// inheritOwner, for a file outside the store that a root command writes
+// and the hub's own account must read: the policy that
+// `keys operator create --admin` writes is the one there is.
+func InheritOwner(path, dir string) error { return inheritOwner(path, dir) }

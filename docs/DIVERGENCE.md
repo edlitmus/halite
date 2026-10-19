@@ -33234,6 +33234,52 @@ query on `state` stops matching it.
 **Not verified.** No real identity provider's refusal was logged. The
 256-byte bound was not checked against a real provider's
 `error_description`.
+### 5.434 `keys operator create --admin` wrote a policy the hub could not read
+
+Issue 321, Low, marked plausible: `bootstrapAdmin` writes the bootstrap
+policy as root with mode 0600. A hub running as its own account cannot
+read it, and `loadPolicy` is fatal. Compare the key store's
+`inheritOwner` (5.285).
+
+**Measured on beastie** (FreeBSD 15.1), with a throwaway hub at `main`
+(`757f01f`). The configuration root was a directory owned by an
+ordinary user, standing in for the `halite` account that owns
+`/usr/local/etc/halite` on the production hub. That user started the hub
+once, to make its CA. Then `sudo halite-hub keys operator create alice
+--admin` wrote `policy.yaml` as `-rw------- root wheel`. The hub,
+started again as that user, exited with `reading the policy at …:
+permission denied`. Nothing was run against the production hub, but
+its policy is `halite`-owned, which is what this makes the bootstrap
+produce.
+
+**The change.** After writing the policy, `bootstrapAdmin` gives it the
+owner and group of its directory, using the key store's `inheritOwner`.
+It is exported as `keystore.InheritOwner` and does nothing unless the
+process is root and the directory belongs to someone else. The mode
+stays 0600.
+
+**Demonstrated.**
+
+- The same beastie run with this branch (`a3f3e82`): `policy.yaml` was
+  written `-rw------- ed wheel`, and the hub started and logged `policy
+  loaded bindings=1`. The throwaway directory and worktree were removed
+  afterwards.
+- `TestTheBootstrapPolicyTakesItsDirectorysOwner` checks that the
+  ownership change is asked for with the policy's path and directory.
+  It fails with the call removed. The chown itself needs root. The key
+  store's own tests hold that through their seams (5.285), and the
+  beastie run is the only time it was exercised as root.
+
+**Not done.** If `--admin` creates the configuration directory itself
+(`MkdirAll`), that directory is root's, so there is no other owner to
+inherit from. The operator's certificate and key written beside it stay
+root's. That is right, since `halite-hub run` presents them as the
+operator, not as the hub.
+
+**Not verified.** Linux, and the Linux service account a package would
+create, were not run.
+
+
 
 
 
