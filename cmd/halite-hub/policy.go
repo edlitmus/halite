@@ -9,6 +9,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/fileperm"
+	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
 )
@@ -186,8 +187,22 @@ func bootstrapAdmin(cfg *config.Config, name string) (string, error) {
 	if err := fileperm.WriteFile(path, []byte(adminPolicy(name)), 0o600); err != nil {
 		return "", err
 	}
+	// The handbook has an operator run this as root, and the hub runs
+	// as its own account. A root-owned 0600 policy is one that account
+	// cannot read, and loadPolicy is fatal on that: the hub the operator
+	// was bootstrapping would not start. Measured on beastie (FreeBSD
+	// 15.1). So the file takes its directory's owner, as the key store's
+	// records do (DIVERGENCE 5.285): the configuration directory is the
+	// hub account's on a hub that runs as one.
+	if err := adoptOwner(path, filepath.Dir(path)); err != nil {
+		return "", fmt.Errorf("%s was written but could not be given to its directory's owner: %w", path, err)
+	}
 	return path, nil
 }
+
+// adoptOwner is keystore.InheritOwner, a variable so that a test that is
+// not root can see it asked for.
+var adoptOwner = keystore.InheritOwner
 
 func adminStanza(name string) string {
 	return fmt.Sprintf(`  - principal: '%s'
