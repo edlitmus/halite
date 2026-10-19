@@ -111,6 +111,69 @@ func TestTheCanonicalRequestMatchesTheDocumentedForm(t *testing.T) {
 	}
 }
 
+// AWS's S3 "PUT Object" example from the Signature Version 4 header
+// documentation, whose key is `test$file.text`. It is the published
+// vector that pins how S3 canonicalises a path character Go leaves
+// unescaped: AWS's canonical URI is `/test%24file.text`, and only that
+// form produces the published signature. Go's EscapedPath keeps the `$`
+// literal (as it does `: @ + = &`), and signing that gave a different
+// signature, which S3 answers with SignatureDoesNotMatch.
+//
+// The credentials and signature are AWS's documentation values, and
+// the same bytes appear in other SigV4 implementations' suites (for
+// instance ytsaurus's yt/library/s3 http_ut.cpp), which is how they
+// were checked here rather than recalled.
+func TestTheS3PutObjectVectorSigns(t *testing.T) {
+	creds := Credentials{
+		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+	}
+	req, err := http.NewRequest(http.MethodPut, "https://examplebucket.s3.amazonaws.com/test$file.text", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "examplebucket.s3.amazonaws.com"
+	req.Header.Set("Date", "Fri, 24 May 2013 00:00:00 GMT")
+	req.Header.Set("X-Amz-Storage-Class", "REDUCED_REDUNDANCY")
+
+	body := HexSHA256([]byte("Welcome to Amazon S3."))
+	if body != "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072" {
+		t.Fatalf("the payload hash is %s", body)
+	}
+	signer := Signer{Region: "us-east-1", Service: "s3"}
+	if err := signer.Sign(req, creds, body, time.Date(2013, 5, 24, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	const want = "SignedHeaders=date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class, " +
+		"Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd"
+	if got := req.Header.Get("Authorization"); !strings.HasSuffix(got, want) {
+		t.Errorf("the header is\n%s\nwant it to end\n%s", got, want)
+	}
+}
+
+// Every byte outside SigV4's unreserved set is percent-encoded in the
+// canonical path, whatever the URL carried on the wire, and an encoded
+// slash stays one: it is part of a key, not a separator.
+func TestTheCanonicalPathEncodesWhatGoLeavesLiteral(t *testing.T) {
+	cases := map[string]string{
+		"https://b.example/a:b@c+d=e$f&g":       "/a%3Ab%40c%2Bd%3De%24f%26g",
+		"https://b.example/a%3Ab/c%24d":         "/a%3Ab/c%24d",
+		"https://b.example/env/a%2Fb/x%20y.sls": "/env/a%2Fb/x%20y.sls",
+		"https://b.example/a/b/":                "/a/b/",
+		"https://b.example/-_.~AZaz09":          "/-_.~AZaz09",
+		"https://b.example/caf%C3%A9":           "/caf%C3%A9",
+	}
+	for raw, want := range cases {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := canonicalURI(u); got != want {
+			t.Errorf("canonicalURI(%s) = %s, want %s", raw, got, want)
+		}
+	}
+}
+
 // A session token that is not signed can be stripped in flight, and the
 // signature still verifies.
 func TestASessionTokenIsSigned(t *testing.T) {
