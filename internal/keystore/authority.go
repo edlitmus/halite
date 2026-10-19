@@ -358,10 +358,26 @@ func (a *Authority) issue(rec *Record, csr *x509.CertificateRequest, now time.Ti
 		return nil, fmt.Errorf("the certificate just issued for %s does not parse: %w", rec.NodeID, err)
 	}
 	// A reissue leaves the old serial valid until it expires, so it is
-	// revoked here: a node holds one certificate at a time.
-	if rec.Serial != "" && rec.Serial != pki.SerialString(cert) && a.Revoker != nil {
-		a.Revoker.Revoke(rec.Serial, "superseded by a renewal")
+	// revoked here: a node holds one certificate at a time. It is also
+	// written into the record, or the revocation lasts only as long as
+	// this process (issue 321, M-05): the denylist is memory, and
+	// LoadDenylist rebuilds it from the store at every start.
+	var kept []SupersededCert
+	for _, s := range rec.Superseded {
+		if s.Live(now) {
+			kept = append(kept, s)
+		}
 	}
+	if rec.Serial != "" && rec.Serial != pki.SerialString(cert) {
+		old := SupersededCert{Serial: rec.Serial, NotAfter: rec.NotAfter, At: now}
+		if old.Live(now) {
+			kept = append(kept, old)
+		}
+		if a.Revoker != nil {
+			a.Revoker.Revoke(rec.Serial, ReasonSuperseded)
+		}
+	}
+	rec.Superseded = kept
 	rec.State = Accepted
 	rec.Cert = string(pki.EncodeCert(der))
 	rec.Serial = pki.SerialString(cert)
@@ -545,9 +561,14 @@ func (a *Authority) Renew(peer *x509.Certificate, csrPEM []byte) (*Result, error
 	return res, err
 }
 
-// LoadDenylist puts every revoked serial on the handshake denylist. A
-// hub that restarts and forgets what it revoked is a hub that lets a
-// revoked node back in, so this runs before the listener opens.
+// ReasonSuperseded is the denylist's reason for a serial a renewal
+// replaced.
+const ReasonSuperseded = "superseded by a renewal"
+
+// LoadDenylist puts every revoked serial on the handshake denylist, and
+// every superseded one whose certificate has not yet expired. A hub that
+// restarts and forgets what it revoked is a hub that lets a revoked node
+// back in, so this runs before the listener opens.
 func (a *Authority) LoadDenylist() (int, error) {
 	if a.Revoker == nil {
 		return 0, nil
@@ -556,8 +577,15 @@ func (a *Authority) LoadDenylist() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	now := a.now()
 	n := 0
 	for _, rec := range records {
+		for _, s := range rec.Superseded {
+			if s.Live(now) {
+				a.Revoker.Revoke(s.Serial, ReasonSuperseded)
+				n++
+			}
+		}
 		if rec.State == Revoked && rec.Serial != "" {
 			reason := rec.Reason
 			if reason == "" {
