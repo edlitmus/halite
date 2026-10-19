@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `git.latest` refuses an argument git would read as an option
+
+A `remote` beginning with `-`, such as `--upload-pack=<command>`, was
+given to `git fetch` as an option, and on a checkout that already
+existed git ran the command. `git.latest` now refuses a `name`,
+`remote`, `rev` or `branch` that begins with `-`, and the clone puts
+`--` before the URL. DIVERGENCE 5.403.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which

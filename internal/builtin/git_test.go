@@ -214,3 +214,58 @@ func TestGitLatestRunsAsTheUser(t *testing.T) {
 		}
 	}
 }
+
+// A `remote`, `rev`, `name` or `branch` beginning with `-` is refused
+// before git sees it.
+//
+// git reads an argument with a leading dash as an option wherever it
+// stands. The fetch was `git fetch --quiet --tags <remote>`, so a remote
+// of `--upload-pack=<command>` made git fetch the configured origin
+// with that command as its upload-pack, which git runs through the
+// shell. The remote case ran the command on the git on this host
+// before the check existed: the marker file appeared. DIVERGENCE 5.403.
+func TestGitLatestRefusesAnArgumentGitWouldReadAsAnOption(t *testing.T) {
+	skipWithoutGit(t)
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote")
+	work := filepath.Join(dir, "work")
+	target := filepath.Join(dir, "target")
+
+	if err := os.MkdirAll(remote, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, remote, "init", "-q", "--bare", ".")
+	runGit(t, dir, "clone", "-q", remote, work)
+	if err := os.WriteFile(filepath.Join(work, "f"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, work, "add", "f")
+	runGit(t, work, "commit", "-qm", "one")
+	runGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+
+	r := New()
+	res, err := r.States.Call(newRunningCtx(), "git.latest",
+		value.MapOf("name", remote, "target", target, "rev", "main"))
+	if err != nil || !res.Succeeded() {
+		t.Fatalf("the clone: %v %v", err, res.Comment)
+	}
+
+	for _, key := range []string{"remote", "rev", "branch", "name"} {
+		t.Run(key, func(t *testing.T) {
+			marker := filepath.Join(dir, "ran-"+key)
+			hostile := "--upload-pack=touch " + marker + "; git-upload-pack"
+			args := value.MapOf("name", remote, "target", target, "rev", "main")
+			args.Set(key, hostile)
+			res, err := r.States.Call(newRunningCtx(), "git.latest", args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, statErr := os.Stat(marker); statErr == nil {
+				t.Fatalf("git ran the command smuggled in as %s", key)
+			}
+			if res.Succeeded() {
+				t.Errorf("%s = %q was accepted: %s", key, hostile, res.Comment)
+			}
+		})
+	}
+}
