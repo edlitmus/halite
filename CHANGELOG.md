@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The hub no longer sends its own enrollment errors to the node
+
+When the hub failed on its own side during enrollment, for example on a
+record in its key store it could not read, it sent the error, with the
+record's path, to the node as a 400. That node had not been
+authenticated. A 400 also tells a node it has been refused for good, so
+`halite-node enroll --force` discarded the new key it was enrolling. Such
+a failure is now a 500 saying `the hub could not complete this
+enrollment request; its log says why`, and `enroll --force` keeps the
+new key for the next attempt. A request the hub could not read, such as
+a broken CSR, is still a 400 with the reason. DIVERGENCE 5.400.
+
 ### The security model says what reaches the hub without a certificate
 
 SPEC 25.1 and the handbook's hardening chapter said nothing on the

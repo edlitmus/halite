@@ -25,6 +25,8 @@ type enrollLab struct {
 	nodeID string
 	// hub is the address the hub listens on.
 	hub string
+	// keys is the hub's key store directory.
+	keys string
 }
 
 func newEnrollLab(t *testing.T, configure ...func(*hub.Server)) *enrollLab {
@@ -33,7 +35,8 @@ func newEnrollLab(t *testing.T, configure ...func(*hub.Server)) *enrollLab {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := keystore.Open(t.TempDir())
+	keys := t.TempDir()
+	store, err := keystore.Open(keys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +77,7 @@ func newEnrollLab(t *testing.T, configure ...func(*hub.Server)) *enrollLab {
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return &enrollLab{auth: auth, cfg: cfg, root: t.TempDir(), files: files, nodeID: "web1.example", hub: ln.Addr().String()}
+	return &enrollLab{auth: auth, cfg: cfg, root: t.TempDir(), files: files, nodeID: "web1.example", hub: ln.Addr().String(), keys: keys}
 }
 
 func (l *enrollLab) enroll(t *testing.T, extra ...string) result {
@@ -199,5 +202,62 @@ func TestARefusedEnrollForceKeepsTheIdentity(t *testing.T) {
 	}
 	if again := l.enroll(t); again.code != 0 {
 		t.Errorf("a plain enroll after the refusal: exit %d\n%s%s", again.code, again.stdout, again.stderr)
+	}
+}
+
+// **A hub that fails keeps the new key** (DIVERGENCE 5.400). The hub
+// answered its own failures, a record it could not read among them, with
+// a 400 carrying the failure's text. A 4xx is a refusal to the node, so
+// `enroll --force` deleted the key it was enrolling, and the node was
+// told something about the hub's key store it had no business knowing.
+// Now the hub says 500 and keeps the detail, and the node keeps the key
+// for the next attempt, which a plain `enroll` makes once the hub is
+// mended.
+func TestAnEnrollForceAgainstAFailingHubKeepsTheNewKey(t *testing.T) {
+	l := newEnrollLab(t)
+	if got := l.enroll(t); got.code != 2 {
+		t.Fatalf("first enroll: exit %d\n%s%s", got.code, got.stdout, got.stderr)
+	}
+	if _, err := l.auth.Accept(l.nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.enroll(t); got.code != 0 {
+		t.Fatalf("collecting the certificate: exit %d\n%s%s", got.code, got.stdout, got.stderr)
+	}
+
+	// The node is rebuilt, and the hub's record for it is damaged: not
+	// JSON, which fails the same way as root.
+	record := filepath.Join(l.keys, l.nodeID+".json")
+	if err := os.WriteFile(record, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := l.enroll(t, "--force")
+	out := got.stdout + got.stderr
+	if got.code == 0 || got.code == 2 {
+		t.Fatalf("enroll --force against a failing hub: exit %d\n%s", got.code, out)
+	}
+	if strings.Contains(out, l.keys) || strings.Contains(out, "not readable") {
+		t.Errorf("the hub's own error reached the node:\n%s", out)
+	}
+	if strings.Contains(out, "discarded") || !l.files.Exists(pki.NodeKeyFile+".pending") {
+		t.Fatalf("the new key was dropped for the hub's failure:\n%s", out)
+	}
+	l.pairMatches(t, "after a failing hub")
+
+	// Mended: the record is gone, as an operator deleting it would leave
+	// it, and a plain enroll carries on with the key that was kept.
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+	pendingKey, err := l.files.ReadKey(pki.NodeKeyFile + ".pending")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := pki.FingerprintKey(pendingKey.Public())
+	if again := l.enroll(t); again.code != 2 {
+		t.Fatalf("enroll once the hub is mended: exit %d\n%s%s", again.code, again.stdout, again.stderr)
+	}
+	if fp := l.pendingFingerprint(t); fp != want {
+		t.Errorf("the hub holds %s, not the key that was kept (%s)", fp, want)
 	}
 }

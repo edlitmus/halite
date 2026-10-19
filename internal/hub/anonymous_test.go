@@ -3,11 +3,13 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -229,5 +231,34 @@ func TestACallerWithoutACertificateOverTheWire(t *testing.T) {
 	// certificateRequest @2".
 	if !strings.Contains(e.Error, "asn1:") {
 		t.Errorf("enroll's refusal is not the CSR parser's: %q", e.Error)
+	}
+}
+
+// **The hub's own failure stays in its log** (DIVERGENCE 5.400). A
+// record the hub cannot read is the hub's problem, not the caller's: it
+// used to go back verbatim as a 400, naming the record's path under the
+// key store, to a caller nobody had authenticated. A record that is not
+// JSON is the failure here because it fails the same way as root, which
+// a permission would not.
+func TestAnInternalEnrollmentErrorIsNotSentToTheCaller(t *testing.T) {
+	l := newLab(t)
+	keys := l.files.Dir + "/keys"
+	if err := os.WriteFile(keys+"/web1.example.json", []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client, key := l.node(t)
+	_, err := client.Enroll(context.Background(), key, "web1.example", "")
+	var se *transport.StatusError
+	if !errors.As(err, &se) || se.Status != http.StatusInternalServerError {
+		t.Fatalf("a record the hub cannot read: %v, want a 500", err)
+	}
+	if transport.CodeOf(err) != transport.CodeInternal {
+		t.Errorf("code %q, want %q", transport.CodeOf(err), transport.CodeInternal)
+	}
+	if strings.Contains(err.Error(), keys) || strings.Contains(err.Error(), "not readable") {
+		t.Errorf("the hub's own error reached the caller: %v", err)
+	}
+	if transport.Permanent(err) {
+		t.Error("the hub's own failure reads as a refusal, so a node gives up on its key")
 	}
 }

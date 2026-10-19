@@ -31709,7 +31709,7 @@ comment says it means to. Two other things this run showed are left for
 their own changes:
 
 - `enroll` returns an unexpected keystore error to the anonymous caller
-  verbatim. The production hub's log holds one from 2026-08-30 naming a
+  verbatim. *(Fixed in 5.400.)* The production hub's log holds one from 2026-08-30 naming a
   record path under `/var/db/halite/keys` and "permission denied", and
   that text went to the node too. The CSR parser's error above is the
   same path.
@@ -31717,6 +31717,74 @@ their own changes:
 
 **Not verified.** The probe ran from beastie to itself, not from another
 host on the network.
+
+### 5.400 Enrollment sent the hub's own errors to an unauthenticated caller
+
+Found while correcting SPEC 25.1 (5.399). `enroll` answered every
+keystore error that was neither "pending" nor "refused" with a 400 and
+the error's text. Some of those are the caller's own bytes described
+back to it: a CSR too large, not PEM, not a CSR, unsigned, naming no
+node. The rest are the hub's: a record it cannot read, a disk it cannot
+write, a CA that will not sign. Their text names paths under the key
+store and how they failed, and it went to a caller nobody had
+authenticated. A refusal already kept its detail in the log, and said
+"the hub's log says why".
+
+The production hub on beastie has one in its log, from 2026-08-30:
+`reading the record for freebsd-s-1vcpu-1gb-sfo2-01: open
+/var/db/halite/keys/freebsd-s-1vcpu-1gb-sfo2-01.json: permission denied`,
+from 172.29.187.31. That text went to the node as well.
+
+The 400 did a second thing. To a node, every 4xx except 408 and 429 is a
+refusal that will not change on a retry (`transport.permanentStatus`).
+`enroll --force` drops its new key on a refusal, so a hub that failed on
+its own disk made the node throw away the key it was enrolling.
+
+**Measured on beastie** (FreeBSD 15.1), throwaway hubs at `main`
+(`f12b7ed`) and this change. A real node enrolled and was accepted, its
+record on the hub was overwritten with `not json`, and the node ran
+`enroll --force`:
+
+| | `main` | this change |
+|---|---|---|
+| the node printed | `the record for web1.example at /tmp/leak.43je/hub-main/state/keys/web1.example.json is not readable: invalid character 'o' …`, then "the new key was discarded" | `the hub could not complete this enrollment request; its log says why` |
+| exit | 1 | 1 |
+| `node.key.pending` | gone | kept |
+| a plain `enroll` once the record was removed | exit 0, "this node already holds a certificate": the rebuild the operator asked for was lost | exit 2, pending under the kept key |
+
+Both hubs logged the full error.
+
+**The change.** `keystore.ErrMalformed` marks the request errors, the
+four checks `Enroll` makes before the store is touched. `enroll` sends
+those as before: 400, `malformed`, the text. Everything else is a 500
+with the code `internal` and a fixed message, and the detail is logged as
+it was. Both still count as `failed` in `halite_hub_enrollments_total`,
+whose description in `docs/metrics.md` and the example dashboard now
+says what `failed` covers. Both are still charged to the source's
+enrollment budget (5.398), because a failure is not known to be the
+hub's alone.
+
+**Demonstrated.** Each test was broken on purpose and seen to fail:
+
+- `TestAnInternalEnrollmentErrorIsNotSentToTheCaller`: a damaged record
+  gives a 500, `internal`, no path, and an error a node does not take as
+  a refusal. It fails with the old `case err != nil`.
+- `TestAnEnrollForceAgainstAFailingHubKeepsTheNewKey`: the real
+  `halite-node` binary, as on beastie. It fails with the old case, on
+  both the leaked text and the dropped key.
+- `TestACallerWithoutACertificateOverTheWire` (5.399): with the
+  `ErrMalformed` wrapping removed, a broken CSR becomes a 500 and the
+  test fails, so the caller's own errors still reach it.
+
+**Not done.** The other routes still return their handlers' errors as
+they did. Those callers hold a certificate, so the exposure is not the
+same, and they were not looked at. An honest node with `--wait` still
+stops at a 500; it does not retry.
+
+**Not verified.** Not run against the production hub, whose record
+permissions are right today. The failure was made with a corrupt record,
+not a permission or a full disk, because that fails the same way as
+root. Those take the same path in the code but were not run.
 
 ## 6. Everything else not started
 
