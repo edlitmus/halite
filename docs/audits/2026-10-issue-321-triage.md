@@ -169,6 +169,7 @@ passing by the PRs above; that has not been looked for.
 | `yaml_squote` corrupts multi-line values | #414 | 5.374, against PyYAML 6.0.1; `yaml_dquote` spells non-ASCII differently from PyYAML |
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
+| `status.uptime` `extractBootSeconds` takes the first `sec = ` | #447 | 5.401; latent, FreeBSD prints `sec` first (beastie); macOS not run |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
