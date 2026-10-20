@@ -256,8 +256,34 @@ func TestLiveLVMBuildsAGroupAndAVolumeARealLVMReportsBack(t *testing.T) {
 		t.Errorf("the refused shrink still changed the volume to %v bytes", still)
 	}
 
-	// lv_present at the current size is a satisfied no-op.
+	// A size that is not a whole number of extents. LVM rounds it up to
+	// the next extent, so the volume ends larger than the number in the
+	// tree, and the next run must take that number to mean the size it
+	// rounded to -- not a shrink to refuse, and not a volume to warn
+	// about. DIVERGENCE 5.409.
+	liveLVMCall(t, rig, "lvm.lvresize", "name", rig.vg+"/data", "size", "34M")
+	lv = liveLVMFind(liveLVMReport(t, rig, "lvm.lvs"), "lv_name", "data")
+	rounded, _ := lv.GetString("lv_size")
+	t.Logf("lvresize to 34M left the volume at %v bytes", rounded)
+	if n, _ := rounded.(int64); n < 34<<20 {
+		t.Errorf("after a resize to 34M the volume is %v bytes", rounded)
+	}
+	_, err = rig.r.Exec.Call(rig.c, "lvm.lvresize", value.MapOf("name", rig.vg+"/data", "size", "34M"))
+	if err != nil {
+		t.Errorf("the same lvresize a second time failed: %v", err)
+	}
 	pres, err := rig.r.States.Call(rig.c, "lvm.lv_present",
+		value.MapOf("name", "data", "vgname", rig.vg, "size", "34M"))
+	if err != nil {
+		t.Fatalf("lvm.lv_present: %v", err)
+	}
+	if !pres.Succeeded() || pres.HasChanges() || len(pres.Warnings) > 0 {
+		t.Errorf("lvm.lv_present at the size LVM rounded to reported work or a warning: %+v", pres)
+	}
+	liveLVMCall(t, rig, "lvm.lvresize", "name", rig.vg+"/data", "size", "32M", "force", true)
+
+	// lv_present at the current size is a satisfied no-op.
+	pres, err = rig.r.States.Call(rig.c, "lvm.lv_present",
 		value.MapOf("name", "data", "vgname", rig.vg, "size", "32M"))
 	if err != nil {
 		t.Fatalf("lvm.lv_present: %v", err)
