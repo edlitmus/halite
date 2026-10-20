@@ -32016,6 +32016,7 @@ fifty-six-year answer.
 **Not verified.** macOS and the other BSDs, which also take this path,
 were not run; Linux reads `/proc/uptime` first and never gets here.
 `status.uptime` was not called on beastie, only the sysctl read by hand.
+
 ### 5.405 `file.touch` said it updated a file's times and did not
 
 Issue 321, section 5: `file.touch` documents "update its times if it
@@ -32048,7 +32049,53 @@ nothing. With the registration pointed back at `fileTouch` it fails:
 times rather than now, are not accepted; the signature has only `name`,
 as before. **Not verified.** Run on Linux only, as an ordinary user, in
 a temporary directory; not on FreeBSD.
+
 ### 5.406 Two goroutines writing one websocket could split a frame
+
+Issue 321, Low: `websocket.Conn.writeFrame` writes a frame as two
+`conn.Write` calls, a header and then a payload, with nothing between
+them, and three goroutines in `api/wsevents.go` write to the same
+connection: the event writer, the 30-second heartbeat ping, and the pong
+that `Read` sends from the reader. The audit marked it plausible.
+
+**Measured.** A test with four goroutines writing to one `Conn` over
+`net.Pipe` (one sending pings, three sending 300-byte text frames) and
+a client reading the frames back. Against `main` it failed at the 51st
+frame: a text frame's payload began `\x81~\x01,`, which is another text
+frame's header. From that point a client reads payload bytes as headers,
+so the stream is corrupt, not one message. `net.Pipe` makes each `Write`
+whole, so the split is the framing's and not the transport's.
+
+On the API this needs a ping, a pong or an event to be written in the
+same instant as another. The heartbeat is every 30 seconds and a pong
+only follows a client's ping, so it is rare on a quiet stream. It is
+more likely on a busy one.
+
+**The change.** `Conn` has a write mutex, held for the whole of
+`writeFrame`, deadline included. The two writes are left as they were.
+One buffer and one `Write` would also fix this on a transport whose
+`Write` is atomic, which `net.Conn` does not promise. It would also
+leave the write deadline shared between writers. The lock is the
+contract.
+
+**Demonstrated.** `TestConcurrentWritersDoNotInterleaveFrames` fails on
+`main` as above and passes with the lock, 50 runs out of 50. With the
+lock removed again it failed in 4 runs of 5, at a different frame each
+time. `internal/websocket` and `internal/api` pass under `-race`.
+
+The test's first version hung once in twenty runs with the lock in
+place. A ping's empty payload is still a `Write`, and `net.Pipe` blocks
+an empty `Write` until a `Read` takes it. The reader had stopped after
+the last header. The test now closes its end when it is done reading.
+A TCP connection does not wait for the peer to read, which is why the
+API's empty heartbeat pings have never hung a stream, so this was the
+test and not the server.
+
+**Not verified.** No browser or real websocket client was connected
+while this was tested. The interleaving was not seen on the production
+API; it was only shown with the test.
+
+### 5.407 Two overlapping secrets left the tail of one in the text
 
 Issue 321, part of the Low "redaction gaps" bullet: overlapping secrets
 leave a tail in clear. `Set.Scrub` replaced each secret with
@@ -32099,49 +32146,6 @@ self-overlapping case alone.
 **Not verified.** Only the unit tests; no node or hub was run with
 overlapping secrets in its pillar.
 
-Issue 321, Low: `websocket.Conn.writeFrame` writes a frame as two
-`conn.Write` calls, a header and then a payload, with nothing between
-them, and three goroutines in `api/wsevents.go` write to the same
-connection: the event writer, the 30-second heartbeat ping, and the pong
-that `Read` sends from the reader. The audit marked it plausible.
-
-**Measured.** A test with four goroutines writing to one `Conn` over
-`net.Pipe` (one sending pings, three sending 300-byte text frames) and
-a client reading the frames back. Against `main` it failed at the 51st
-frame: a text frame's payload began `\x81~\x01,`, which is another text
-frame's header. From that point a client reads payload bytes as headers,
-so the stream is corrupt, not one message. `net.Pipe` makes each `Write`
-whole, so the split is the framing's and not the transport's.
-
-On the API this needs a ping, a pong or an event to be written in the
-same instant as another. The heartbeat is every 30 seconds and a pong
-only follows a client's ping, so it is rare on a quiet stream. It is
-more likely on a busy one.
-
-**The change.** `Conn` has a write mutex, held for the whole of
-`writeFrame`, deadline included. The two writes are left as they were.
-One buffer and one `Write` would also fix this on a transport whose
-`Write` is atomic, which `net.Conn` does not promise. It would also
-leave the write deadline shared between writers. The lock is the
-contract.
-
-**Demonstrated.** `TestConcurrentWritersDoNotInterleaveFrames` fails on
-`main` as above and passes with the lock, 50 runs out of 50. With the
-lock removed again it failed in 4 runs of 5, at a different frame each
-time. `internal/websocket` and `internal/api` pass under `-race`.
-
-The test's first version hung once in twenty runs with the lock in
-place. A ping's empty payload is still a `Write`, and `net.Pipe` blocks
-an empty `Write` until a `Read` takes it. The reader had stopped after
-the last header. The test now closes its end when it is done reading.
-A TCP connection does not wait for the peer to read, which is why the
-API's empty heartbeat pings have never hung a stream, so this was the
-test and not the server.
-
-**Not verified.** No browser or real websocket client was connected
-while this was tested. The interleaving was not seen on the production
-API; it was only shown with the test.
-### 5.407 Two overlapping secrets left the tail of one in the text
 ### 5.408 A log field holding an error was written unscrubbed, or as `{}`
 
 Issue 321, Low, part of the "redaction gaps" bullet: `log.ScrubValue`
@@ -32178,6 +32182,7 @@ that half of the finding is left, and the choice is the owner's.
 in both formats, with the outputs above, and passes with the change.
 
 **Not verified.** Only the unit test.
+
 ### 5.409 A node-named secret could replace a hub-configured one by nesting
 
 Issue 321, Low, from the aws-secrets bullet: a node-supplied dotted
@@ -32229,6 +32234,7 @@ documented, and changing a default is the owner's decision.
 local server. A hub whose block already holds overlapping keys will now
 fail that pillar where it used to drop one; whether the production
 estate has one was not looked at.
+
 ### 5.410 The template directory loader followed a symlink out of its root
 
 Issue 321, Low: `template.DirLoader` does not resolve symlinks
@@ -32262,6 +32268,7 @@ be made.
 
 **Not verified.** Run on Linux only; Windows, where the test needs the
 privilege to make a symlink, was left to CI.
+
 ### 5.411 Ordering a low state was quadratic in its size
 
 Issue 321, Low: `state/order.go` is O(n²) (linear scan plus
@@ -32310,6 +32317,7 @@ one, which was not checked against Salt here; it is left.
 
 **Not verified.** The equivalence was measured on generated graphs, not
 on a real estate's low states.
+
 ### 5.412 The local signer signed a digest of any length; the KMS signer refused
 
 Issue 321, Low, from the signer bullet: the local signer signs digests
@@ -32347,6 +32355,7 @@ key file beside the CLI is the thing SPEC 25.6 rules out).
 
 **Not verified.** Only through the handler and the existing end-to-end
 test; no deployed signer.
+
 ### 5.413 A Python module's names were spliced into its bridge skeleton as Go
 
 Issue 321, Low: in `migrate/skeleton.go`, module and function names go
@@ -32395,6 +32404,7 @@ test still builds a skeleton.
 
 **Not verified.** The `migrate` command was not run end to end over a
 tree holding such a file; the test drives the two functions it calls.
+
 ### 5.414 `git.latest` passed a remote beginning with `-` to `git fetch`
 
 Issue 321, section 5: `git.latest` passes URL, rev and remote with no
@@ -32437,6 +32447,7 @@ kept it fails the same way, so the `--` alone does not cover it.
 **Not done.** `git.remote_get` passes its `remote` to `git remote
 get-url` the same way; it only reads, and was not changed. **Not
 verified.** git on FreeBSD was not run.
+
 ### 5.415 A shutdown message beginning with `-` was read as options
 
 Issue 321, section 5: a `shutdown -r +N <message>` message starting with
@@ -32480,6 +32491,7 @@ commands before it got to scheduling.
 
 **Not verified.** No shutdown was scheduled anywhere; the systemd
 measurement stopped at the bus. FreeBSD's parse is read from source.
+
 ### 5.416 ufw added the IPv6 twin and the state said nothing changed
 
 Issue 321, section 5: `ufwChanged` returns "unchanged" when the v4 rule
@@ -32518,6 +32530,7 @@ and they say so where they stand. The conformance cases on the fleet
 host comes to have one family of a rule and not the other (IPv6 turned
 on in `/etc/default/ufw` after rules were added, or a numbered delete
 of one twin) was not tried.
+
 ### 5.417 `dpkg.set_selections` lost a hold on a package dpkg names with its architecture
 
 Issue 321, section 5, the multi-arch bullet, which has two halves: apt's
@@ -32560,6 +32573,7 @@ installed was not measured.
 **Not verified.** The live test was written here and runs only in the
 `debian` leg (root, in a container); this host has no root. The fleet
 run's result is in the PR, not here.
+
 ### 5.418 `swap.on` through a symlink ran `swapon` again on every run
 
 Issue 321, section 5: `swap.on`/`off` compare the caller's path with
