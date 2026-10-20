@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -321,4 +322,63 @@ func TestABadUpgradeIsRefused(t *testing.T) {
 			t.Errorf("%s answered %d", name, res.StatusCode)
 		}
 	}
+}
+
+// Frames written from several goroutines arrive whole. The event stream
+// writes from three: the event writer, the heartbeat ping, and the pong
+// that Read sends from inside the reader. A frame written as a header
+// and then a payload, unguarded, lets another goroutine's header land
+// between the two, and the client then reads a payload byte as an
+// opcode -- the stream is corrupt from there on, not merely one message.
+//
+// net.Pipe makes each Write atomic and unbuffered, which is the
+// friendliest the transport can be: whatever interleaving shows up here
+// is the framing's own doing.
+func TestConcurrentWritersDoNotInterleaveFrames(t *testing.T) {
+	server, client := net.Pipe()
+	t.Cleanup(func() { server.Close(); client.Close() })
+	c := &Conn{conn: server, r: bufio.NewReader(server), MaxMessage: 1 << 20}
+
+	const writers, each = 4, 200
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		for w := 0; w < writers; w++ {
+			wg.Add(1)
+			go func(w int) {
+				defer wg.Done()
+				payload := []byte(strings.Repeat(string(rune('a'+w)), 300))
+				for i := 0; i < each; i++ {
+					if w == 0 {
+						_ = c.Ping()
+						continue
+					}
+					_ = c.WriteText(payload)
+				}
+			}(w)
+		}
+		wg.Wait()
+	}()
+
+	for n := 0; n < writers*each; n++ {
+		opcode, payload := readFrameFrom(t, client)
+		switch opcode {
+		case opPing:
+			if len(payload) != 0 {
+				t.Fatalf("frame %d: a ping arrived carrying %d bytes", n, len(payload))
+			}
+		case opText:
+			if len(payload) != 300 || strings.Trim(string(payload), string(payload[:1])) != "" {
+				t.Fatalf("frame %d: a text frame arrived mixed: %q", n, payload)
+			}
+		default:
+			t.Fatalf("frame %d: opcode %#x, so a frame was split by another", n, opcode)
+		}
+	}
+	// A ping's empty payload is still a Write, and net.Pipe blocks an
+	// empty Write until a Read takes it; the reader above stops at the
+	// last header. Closing ends that write rather than leaving it hung.
+	client.Close()
+	<-done
 }

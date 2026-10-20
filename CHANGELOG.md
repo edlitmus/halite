@@ -49,6 +49,13 @@ never tightened, so a `thin_dir` under a directory that did not exist
 yet, such as `~/.cache/halite-thin`, was refused on every run. Both are
 now made private when they are created. DIVERGENCE 5.402.
 
+### A websocket event stream no longer risks a corrupt frame
+
+`GET /v1/ws/events` could send two frames mixed together when an event,
+the heartbeat ping and a pong were written at the same moment. A client
+then lost the stream from that frame on. Each frame now goes out whole.
+DIVERGENCE 5.406.
+
 ### The hub no longer sends its own enrollment errors to the node
 
 When the hub failed on its own side during enrollment, for example on a
