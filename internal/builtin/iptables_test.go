@@ -204,7 +204,7 @@ func TestIPTablesAppendIsIdempotent(t *testing.T) {
 // insert's position is where a missing rule goes, not where a present
 // one must be: presence is `-C`, which matches anywhere in the chain. The
 // docs said "at a position" and now say the position is not enforced;
-// this holds the two together. DIVERGENCE 5.408.
+// this holds the two together. DIVERGENCE 5.419.
 func TestIPTablesInsertDoesNotMoveARuleThatIsPresentElsewhere(t *testing.T) {
 	present := "iptables -w 30 -t filter -C INPUT -p tcp --dport 22 -j ACCEPT"
 	c := iptablesCtx(map[string]exec.Result{present: {Code: 0}})
