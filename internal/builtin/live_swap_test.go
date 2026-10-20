@@ -269,6 +269,62 @@ func TestLiveSwapOnAndOffRoundTripARealDevice(t *testing.T) {
 	}
 }
 
+// TestLiveSwapThroughASymlinkIsIdempotent names the device by a symbolic
+// link to it, as `/dev/disk/by-uuid/...` and `/dev/mapper/...` do on
+// Linux.
+//
+// The kernel lists a swap area by its real path, so a spelling through a
+// link never matched what `activeSwaps` read back: the second `swap.on`
+// was not "already on" and ran `swapon` again, which fails with the
+// device busy, every run; and `swap.off` said "already off" while the
+// device stayed on. DIVERGENCE 5.407.
+func TestLiveSwapThroughASymlinkIsIdempotent(t *testing.T) {
+	path, c := liveSwapSetup(t)
+	r := New()
+
+	link := filepath.Join(t.TempDir(), "swap-link")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	byLink := value.MapOf("name", link)
+
+	out, err := r.Exec.Call(c, "swap.on", byLink)
+	if err != nil {
+		t.Fatalf("swap.on through the link: %v", err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != true {
+		t.Errorf("enabling swap through a link reported no change: %v", out)
+	}
+	swaps, err := r.Exec.Call(c, "mount.swaps", value.NewMap(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("the kernel lists: %v", swaps.(*value.Map).StringKeys())
+
+	again, err := r.Exec.Call(c, "swap.on", byLink)
+	if err != nil {
+		t.Fatalf("the second swap.on through the link: %v", err)
+	}
+	if changed, _ := again.(*value.Map).GetString("changed"); changed != false {
+		t.Errorf("enabling an active swap through a link reported a change: %v", again)
+	}
+
+	out, err = r.Exec.Call(c, "swap.off", byLink)
+	if err != nil {
+		t.Fatalf("swap.off through the link: %v", err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != true {
+		t.Errorf("disabling an active swap through a link reported no change: %v", out)
+	}
+	swaps, err = r.Exec.Call(c, "mount.swaps", value.NewMap(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := swaps.(*value.Map).Len(); liveSwapPathIsActive(t, c, path) {
+		t.Errorf("swap.off through the link left %s on (%d active)", path, n)
+	}
+}
+
 // TestLiveSwapOnRefusesAPriorityOnFreeBSD pins the one platform
 // difference `swapOnArgv`'s doc comment claims, against the real tool
 // rather than only against the argv table.
