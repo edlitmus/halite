@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `swap.on` and `swap.off` recognise a device named through a link
+
+The kernel lists a swap device by its real path. A tree that named it
+through a symbolic link, such as `/dev/mapper/…` or a link of its own,
+had `swap.on` run `swapon` again on every run after the first and fail
+"Device already in use", and `swap.off` report "already off" with the
+device still on. Both now compare the resolved paths too. Measured on
+FreeBSD. DIVERGENCE 5.407.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which
