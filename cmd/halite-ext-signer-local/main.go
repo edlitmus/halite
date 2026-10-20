@@ -33,6 +33,7 @@ package main
 import (
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -44,7 +45,7 @@ import (
 )
 
 // Version is what the handshake and `sys.list_extensions` report.
-const Version = "1.0.0"
+const Version = "1.0.1"
 
 func main() {
 	// SPEC 24.3's self-applied limits, the way every extension in this
@@ -140,6 +141,15 @@ func (h *handler) handle(call ext.Call) (any, error) {
 		digest, err := base64.StdEncoding.DecodeString(req.Digest)
 		if err != nil {
 			return nil, fmt.Errorf("the digest is not base64: %w", err)
+		}
+		// A SHA-256 digest and nothing else, as the signature declares
+		// and as halite-ext-signer-kms requires. ECDSA itself signs any
+		// length, truncating a long one to the curve's size, so without
+		// this the two signers disagreed on what a valid request is
+		// (DIVERGENCE 5.412).
+		if len(digest) != sha256.Size {
+			return nil, fmt.Errorf("the digest is %d bytes; this signer signs a %d-byte SHA-256 digest",
+				len(digest), sha256.Size)
 		}
 		der, err := ecdsa.SignASN1(rand.Reader, h.key, digest)
 		if err != nil {

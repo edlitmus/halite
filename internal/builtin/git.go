@@ -177,6 +177,31 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	if url == "" || target == "" {
 		return states.False("This state needs a repository URL and a target directory."), nil
 	}
+	// **Nothing git will take as an option.** git reads an argument
+	// that begins with `-` as an option wherever it stands, and these
+	// four are spliced into positional slots: `fetch <remote>`,
+	// `ls-remote <remote> <rev>`, `rev-parse <rev>`, `clone <url>`,
+	// `checkout -B <branch>`. The audit (issue 321, section 5) called
+	// this mostly neutralised, because the next positional becomes the
+	// repository. Measured against the real git, that holds for a clone
+	// and not for a checkout that already exists: `fetch --quiet --tags
+	// --upload-pack=<cmd>` has no positional left, so git fetches the
+	// configured origin and runs <cmd> through the shell to do it. The
+	// test made it create a file. A leading dash is not a URL, a remote
+	// name, a revision or a branch git would accept in any other
+	// spelling, so refusing it costs nothing real. DIVERGENCE 5.414.
+	//
+	// `target` is not checked: it is a path, the clone below puts it
+	// after `--`, and every other command runs with it as the working
+	// directory rather than as an argument.
+	for _, a := range []struct{ key, val string }{
+		{"name", url}, {"remote", remote}, {"rev", rev}, {"branch", branch},
+	} {
+		if strings.HasPrefix(a.val, "-") {
+			return states.False(fmt.Sprintf(
+				"%s %q begins with '-', which git would read as an option; it is refused.", a.key, a.val)), nil
+		}
+	}
 	if c.Which("git") == "" {
 		return states.False("Git was not found on this node; the git module drives the system binary."), nil
 	}
@@ -218,7 +243,7 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 		if branch != "" && branch != rev {
 			argv = append(argv, "--branch", branch)
 		}
-		argv = append(argv, url, target)
+		argv = append(argv, "--", url, target)
 		if _, err := gitRun(c, "", argv...); err != nil {
 			return states.False(fmt.Sprintf("%s could not be cloned: %v", url, err)), nil
 		}

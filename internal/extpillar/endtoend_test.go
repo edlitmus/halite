@@ -64,7 +64,7 @@ func buildExtension(t *testing.T) string {
 // awsSecretsVersion is cmd/halite-ext-aws-secrets's Version. It moves
 // with it: a bump there fails this test until it does, which is the
 // same decision the release has to make.
-const awsSecretsVersion = "1.1.0"
+const awsSecretsVersion = "1.1.1"
 
 // installBundle writes a signed bundle into a cache the way
 // `halite-hub extensions sync` would, and returns the cache directory
