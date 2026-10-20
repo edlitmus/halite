@@ -32310,6 +32310,43 @@ one, which was not checked against Salt here; it is left.
 
 **Not verified.** The equivalence was measured on generated graphs, not
 on a real estate's low states.
+### 5.412 The local signer signed a digest of any length; the KMS signer refused
+
+Issue 321, Low, from the signer bullet: the local signer signs digests
+of any length while KMS requires 32 bytes; the local signer reads its key
+file with no mode check.
+
+Both `signer` extensions declare `sign` as taking a base64 SHA-256
+digest. `halite-ext-signer-kms` refuses anything but 32 bytes before it
+calls KMS. `halite-ext-signer-local` passed the bytes straight to
+`ecdsa.SignASN1`, which signs any length (truncating a long one to the
+curve's size), so the two signers the host can be pointed at disagreed
+on what a valid request is.
+
+**Measured** on `main` at `39b9f22`, through the handler: digests of 20,
+31, 33, 48 and 64 bytes were all signed by the local signer, and a 1-byte
+one too. The host (`internal/extsigner`) only ever sends a `[32]byte`,
+so no request the host makes was affected; a host bug that sent the
+wrong bytes would have been signed by one signer and refused by the
+other.
+
+**The change.** The local signer refuses a digest that is not 32 bytes,
+with the KMS signer's message. It is now 1.0.1, since a request it used
+to answer it now refuses; its digest is recorded.
+
+**Demonstrated.** `TestHandleSignRefusesADigestThatIsNotSHA256` fails
+on `main`, every one of the six lengths signed, and
+passes with the change. `internal/extsigner`'s end-to-end test, which
+builds and runs the real binary, still passes.
+
+**Not done.** The key file's mode is still not checked. What to refuse
+(group-readable, world-readable, owned by someone else) and what that
+means on Windows is a policy choice for the owner, and this extension is
+the reference bridge, not a production signer (its own comment says a
+key file beside the CLI is the thing SPEC 25.6 rules out).
+
+**Not verified.** Only through the handler and the existing end-to-end
+test; no deployed signer.
 
 
 
