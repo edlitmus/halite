@@ -31842,6 +31842,179 @@ key holding these characters has not been fetched by a running hub,
 and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
+### 5.402 The agentless cache directory was made under the login's umask
+
+Found when `make check` failed once on
+`TestConcurrentRunsAgainstOneMachineBothSucceed`, in a run for 5.400:
+
+    halite: refusing …/halite-thin: accounts other than its owner may
+    write to it (drwxrwxr-x)
+
+5.306's `prepareScript` makes `thin_dir` with `mkdir -p` and then makes it
+private with `chmod 700`. Between the two, the directory has whatever
+mode the login's umask gives it. On Ubuntu that is 002 for an ordinary
+account: pam_umask with user private groups. A non-interactive
+`ssh localhost` session on this Ubuntu 24.04 host reports `0002`. CI's is
+022, so CI never saw it. Two things follow:
+
+- **The race.** A second run's `checkScript`, landing between the
+  first's `mkdir` and its `chmod`, finds `thin_dir` group-writable and
+  refuses the run. In the test, with the test process's umask of 0002,
+  it failed 57 times in 1,000.
+- **A missing parent is refused every time.** `mkdir -p` makes any
+  missing parent under the same umask, and nothing tightens it. So a
+  `thin_dir` such as `~/.cache/halite-thin`, on an account with no
+  `~/.cache`, gets a group-writable `.cache`, which the check above it
+  refuses, on every run.
+
+Neither lets another account's binary run. The window is a directory the
+connecting account owns, and anything written into it by another
+account fails the owner check on the binary. Both are refusals of a run
+that should have gone ahead. Both also contradict 5.306's claim that
+nobody else can write anywhere on the path.
+
+**Measured** on this Ubuntu 24.04 host, `halite-hub ssh self test.ping`
+against `ssh localhost` (session umask 0002), main at `757f01f` and this
+change:
+
+| | `main` | this change |
+|---|---|---|
+| `thin_dir` under a missing `.cache` | refused, `.cache` left `drwxrwxr-x` | `True`, `.cache` is `drwx------` |
+| 20 rounds of 6 concurrent runs, each round on a fresh `thin_dir` | 0 of 120 refused | 0 of 120 refused |
+
+The race did not show over real ssh. Each connection takes long enough
+that six runs started together do not reach the window together. It is
+measured in the test harness, where the fake ssh is a local shell.
+
+**The change.** `umask 077` before the `mkdir`, so the directory and any
+parent it makes are private from the moment they exist. The `chmod 700`
+stays for a directory that was already there.
+
+**Demonstrated.** The harness's fake ssh now can set the target's
+umask, so the tests no longer depend on the umask of whoever runs them:
+
+- `TestAThinDirUnderAMissingDirectoryIsMadePrivate`: the run succeeds
+  and the parent is 0700. Without the `umask` line the run is refused.
+- `TestTheThinDirIsPrivateBeforeItsChmod`: a `chmod` shim on the
+  target's `PATH` records `thin_dir`'s mode when it is called. That is
+  the end of the window, so the race is now tested deterministically.
+  Without the `umask` line it records `drwxrwxr-x`.
+- The concurrent test: 0 failures in 2,000 runs with the change, 57 in
+  1,000 without, both under umask 0002.
+
+**Not changed.** A parent that already exists keeps its mode, and is
+refused if another account can write to it. An account's own home
+directory can be group-writable under some umask setups, and that is
+still refused, as it should be.
+
+**Not verified.** Not run against FreeBSD or macOS targets. Their login
+umask is usually 022, which never opened the window. Not run as root
+with `sudo`.
+### 5.403 CI unpacked a Go tarball and ran a Salt bundle it never checked
+
+Issue 321, a Low finding in section 5: the FreeBSD legs of `ci.yml` and
+`fleet.yml` fetched `go.dev/dl/<version>.freebsd-amd64.tar.gz` and
+untarred it with no checksum, while `contrib/tofu`'s bootstrap checked
+the same file against a pinned sha256; and the saltdiff image curled
+Salt's onedir bundle from Broadcom's Artifactory and executed it
+unchecked. The first is the commonest shape here, two paths that must
+agree: two installers of one toolchain, one of them verifying it.
+
+**Measured.** At `757f01f` both workflow steps were `fetch` then
+`tar -xzf`, and `contrib/docker/saltdiff/Dockerfile` was `curl` then
+`tar -xJf` then `/opt/salt/salt-call --version`. Nothing between them
+looked at the bytes beyond TLS.
+
+**The change.**
+
+- Both FreeBSD steps pin `want_version` and `want_sha256`, refuse a
+  go.mod whose toolchain differs from `want_version`, and compare
+  `sha256 -q` before `tar`. The digest is go.dev's own, from
+  `https://go.dev/dl/?mode=json&include=all` for
+  `go1.27.2.freebsd-amd64.tar.gz`, and it is the value contrib/tofu
+  already had.
+- The saltdiff Dockerfile maps each Salt release to a sha256 and
+  refuses one it has no digest for, before fetching it, then runs
+  `sha256sum -c` before unpacking. The digests are Broadcom's
+  Artifactory storage API's for each file
+  (`/artifactory/api/storage/saltproject-generic/onedir/<v>/<file>`).
+  For 3006.28 and 3008.3 the `digest` GitHub records for the same
+  asset on saltstack/salt's release agreed. 3007.1's GitHub release has
+  no onedir asset, so its digest has the one source.
+- `internal/buildpolicy`'s `TestTheFreeBSDToolchainDownloadIsVerified`
+  holds, per workflow step, that a step fetching the tarball pins a
+  version and digest and compares against it before `tar`, that the
+  version is go.mod's and the digest is contrib/tofu's
+  `go_sha256_freebsd`, and that contrib/tofu's `go_version` is go.mod's
+  too, which nothing held before.
+  `TestTheSaltdiffImagePinsEveryReleaseItRuns` holds that every release
+  in ci.yml's saltdiff matrix and the Makefile's default has a digest,
+  and that the check precedes the unpack.
+
+A toolchain bump now has to move four places (go.mod, contrib/tofu's
+two values, the two workflow steps). The test names whichever was
+forgotten.
+
+**Demonstrated.**
+
+- The ci.yml step's body, verbatim, on beastie (FreeBSD
+  15.1-RELEASE-p5, real `fetch` and `sha256`), with `HOME` in a
+  throwaway directory: installed go1.27.2 and printed its version. With
+  the digest altered by one character it stopped with "checksum
+  mismatch", exit 1, and unpacked nothing. With go.mod moved to
+  go1.27.3 it stopped before fetching.
+- The Dockerfile's `RUN` line under dash on Ubuntu, with the unpack
+  replaced by a message: all three releases downloaded and passed
+  `sha256sum -c`; 3007.1 with its digest's first character changed
+  failed it; 3006.9 was refused before any download.
+- The two tests against `main`'s workflows and Dockerfile: both fail,
+  saying the steps pin nothing and the Dockerfile pins no digest. With
+  fleet.yml's digest altered, the comparison in ci.yml replaced by
+  `if false`, and 3008.3 renamed in the Dockerfile, each was named.
+
+**Not verified.**
+
+- In CI, on the PR (#446): ci.yml's `test (freebsd)` installed
+  `go1.27.2 freebsd/amd64` through the new step and passed; fleet.yml,
+  triggered by the change to its own path, ran its `freebsd` leg's new
+  step and passed; the three saltdiff legs built the image, each
+  printing `/tmp/salt.tar.xz: OK`, and passed. A mismatch was shown
+  only on beastie and under dash, not inside CI's VM or a Docker build.
+- The digests trust go.dev and Broadcom's servers, over TLS, as the
+  publishers. No signature was checked: the Artifactory directories
+  for the three releases list no `.asc` beside the onedir files, and
+  whether go.dev publishes one for the tarball was not looked at.
+### 5.404 `status.uptime` and the reboot module read kern.boottime two ways
+
+Issue 321, section 5, an Info bullet: `extractBootSeconds` in
+`system.go` took the first `sec = ` in `sysctl -n kern.boottime`, and
+was right only because `sec` is printed before `usec`. `reboot.go`
+already had a reader that matches the key on a word boundary, written
+after its own test caught the same mistake.
+
+**Measured.** beastie (FreeBSD 15.1) printed
+`{ sec = 1792418572, usec = 59811 } Mon Oct 19 07:02:52 2026`, with `sec`
+first, so on a real FreeBSD the old reader gave the right answer. Given
+`{ usec = 59811, sec = 1792418572 }`, it read 59811 as the boot epoch
+and reported 1,792,360,189 seconds up, about fifty-six years. Nothing
+prints that order today; the defect was two readers of one sysctl that
+did not agree, waiting for one of them to be wrong.
+
+**The change.** `extractBootSeconds` is gone. `status.uptime` reads
+kern.boottime through `uptimeFromBoottime`, which takes the number from
+`rebootParseBoottime`, the boundary-safe reader, and refuses a boot time
+in the future rather than reporting a negative uptime.
+
+**Demonstrated.** `TestUptimeReadsTheSecondsKeyNotTheFirstMatch` holds
+beastie's line and the reversed one. With the old substring search put
+back inside `uptimeFromBoottime`, it fails on the reversed line with the
+fifty-six-year answer.
+
+**Not verified.** macOS and the other BSDs, which also take this path,
+were not run; Linux reads `/proc/uptime` first and never gets here.
+`status.uptime` was not called on beastie, only the sysctl read by hand.
+
+
 
 ### 5.402 `file.touch` said it updated a file's times and did not
 

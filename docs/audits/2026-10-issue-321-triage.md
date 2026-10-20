@@ -47,7 +47,7 @@ not do. Each has been checked to see whether it happened.
 | H-04 template limits (+ L-engine-1, L-engine-3) | #332 | a value nested in a loop (`{% set ns.x = [ns.x] %}`) still overflows the stack; chained `set` filters, `truncate` leeway, `zfill`; SPEC 10.2.8's sandbox claim | |
 | H-05 background `runas` | #327 | | |
 | H-06 `listen` reactions | #347 | | |
-| H-07 agentless cache trust | #326 | M-14 (below) | |
+| H-07 agentless cache trust | #326 | M-14 (below) | its directory had the login's umask until `chmod`, so under umask 002 a concurrent run, or a missing parent, was refused: fixed in #456 (5.402) |
 | H-08 `file.line` regex (+ empty delete) | #343 | | |
 | H-09 `ArbitraryCode` flags | #330 | | |
 | H-10 token revoke race | #335 | M-07 (below) | |
@@ -170,6 +170,8 @@ passing by the PRs above; that has not been looked for.
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | SigV4 canonical URI for S3 keys with `: @ + = $ &` | #444 | 5.401; held to AWS's published `PUT /test$file.text` vector, not to S3 itself; S3-compatible stores not tried |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
+| CI's FreeBSD Go tarball and saltdiff's Salt onedir fetched unverified | #446 | 5.403; run on beastie and under dash, not in CI's VM or a Docker build; fleet.yml not run |
+| `status.uptime` `extractBootSeconds` takes the first `sec = ` | #447 | 5.404; latent, FreeBSD prints `sec` first (beastie); macOS not run |
 | `file.touch` documents updating times and changes nothing | #453 | 5.402; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).

@@ -891,7 +891,9 @@ clean:
 #
 # The image carries Salt's own onedir bundle, pinned, so that the version
 # a deviation row names is the version that was run. SALT_VERSION picks
-# another: `make saltdiff SALT_VERSION=3006.9`.
+# another: `make saltdiff SALT_VERSION=3006.28`. The bundle is checked
+# against a sha256 the Dockerfile pins per version, so a version it has
+# no digest for is refused until one is added there (DIVERGENCE 5.403).
 SALT_VERSION ?= 3007.1
 SALTDIFF_IMAGE ?= halite-saltdiff:$(SALT_VERSION)
 
