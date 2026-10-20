@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Bridge skeletons quote the names they are built from
+
+`halite-hub migrate --bridge-skeleton` copied a Python module's
+`__virtualname__`, function names and file path into the generated Go
+unescaped, so a module could choose code that the skeleton would
+compile and run. Names are now quoted string arguments and comments are
+kept to one line. A generated stub's error text is unchanged.
+DIVERGENCE 5.413.
+
 ### `halite-ext-signer-local` signs only a SHA-256 digest
 
 The reference local signer signed a digest of any length, while the KMS
