@@ -32347,6 +32347,54 @@ key file beside the CLI is the thing SPEC 25.6 rules out).
 
 **Not verified.** Only through the handler and the existing end-to-end
 test; no deployed signer.
+### 5.413 A Python module's names were spliced into its bridge skeleton as Go
+
+Issue 321, Low: in `migrate/skeleton.go`, module and function names go
+unescaped into `fmt.Errorf("%s.%s…")`, so a crafted Python file yields
+Go that does not compile, or Go an attacker chose, once an operator
+builds it.
+
+`halite-hub migrate --bridge-skeleton DIR` writes one Go command per
+custom Salt module it finds in a formula. The module's name is its
+`__virtualname__` if it sets one, and the reader is a line scanner, not
+Python: whatever sits between the quotes is the name. Three places put
+the Python file's text into the Go source as it was:
+
+- each stub's `fmt.Errorf("<module>.<function> is not written yet")`,
+  inside a Go string literal;
+- the package comment's `generated from <path>` and each stub's
+  `// From <path>:<line>`, inside line comments;
+- each parameter's `//   <name> = <default>`, also a comment.
+
+**Measured** with `ReadPyModule` and `GenerateSkeleton` on `main` at
+`39b9f22`. A module whose `__virtualname__` is
+`x"); os.RemoveAll("/srv"); return nil, fmt.Errorf("` produces a stub
+that parses as Go and calls `os.RemoveAll("/srv")` when the function is
+invoked. A file path holding a newline put `func init() { … }` on a line
+of its own; in the stub that is a parse error, not code, and in the
+package comment it lands before `package` and is a parse error too.
+Function names cannot hold `(` (the reader cuts there), so the module
+name is the practical route. An operator reviews generated code before
+building it, which is the mitigation that existed; nothing else did.
+
+**The change.** The stub passes the name as a quoted argument,
+`fmt.Errorf("%s is not written yet", "<module>.<function>")`, built
+with `%q`. The path and each parameter description go through
+`oneLine`, which the docstring already went through. What a built stub
+returns at run time is the same text as before.
+
+**Demonstrated.** `TestANameCannotWriteCodeIntoTheSkeleton` builds a
+skeleton from that virtual name and a path with a newline, parses it,
+and walks the tree for any function other than `main` and `handle` and
+any call to `RemoveAll`. On `main` it fails to parse. With only the
+`Errorf` line put back, it parses and the test reports the `RemoveAll`
+call; with only the stub's path comment put back, it fails to parse
+again. `TestAGeneratedSkeletonParsesAsGo` now looks for the quoted name
+rather than the spliced text, and the existing compile-outside-the-repo
+test still builds a skeleton.
+
+**Not verified.** The `migrate` command was not run end to end over a
+tree holding such a file; the test drives the two functions it calls.
 
 
 
