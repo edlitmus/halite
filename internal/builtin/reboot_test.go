@@ -363,3 +363,32 @@ func TestAShutdownMessageThatLooksLikeAnOptionIsRefused(t *testing.T) {
 		t.Errorf("the state ran %d command(s) before refusing", len(ran))
 	}
 }
+
+// `status.uptime` reads kern.boottime through the same reader as the
+// reboot module, so the two cannot disagree about which key is `sec`.
+//
+// The first fixture is what beastie (FreeBSD 15.1) printed on
+// 2026-10-19. The second has the keys the other way round: no FreeBSD
+// prints that, and it is here because the reader this replaced took
+// the first `sec = ` in the string, which in that order is the
+// microseconds -- an uptime of fifty-six years. DIVERGENCE 5.404.
+func TestUptimeReadsTheSecondsKeyNotTheFirstMatch(t *testing.T) {
+	const now = int64(1792420000)
+	for _, tc := range []struct {
+		out  string
+		want int64
+	}{
+		{"{ sec = 1792418572, usec = 59811 } Mon Oct 19 07:02:52 2026\n", now - 1792418572},
+		{"{ usec = 59811, sec = 1792418572 }\n", now - 1792418572},
+	} {
+		got, ok := uptimeFromBoottime(tc.out, now)
+		if !ok || got != tc.want {
+			t.Errorf("uptimeFromBoottime(%q) = %d, %v; want %d", strings.TrimSpace(tc.out), got, ok, tc.want)
+		}
+	}
+	for _, bad := range []string{"", "{ usec = 1 }", "{ sec = 1892418572, usec = 0 }"} {
+		if got, ok := uptimeFromBoottime(bad, now); ok {
+			t.Errorf("%q was read as an uptime of %d", bad, got)
+		}
+	}
+}

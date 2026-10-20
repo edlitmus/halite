@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -59,6 +60,19 @@ type Conn struct {
 	// WriteTimeout bounds a single write, so a peer that stops reading
 	// does not hold the connection open for ever.
 	WriteTimeout time.Duration
+
+	// writeMu makes a frame one unit on the wire. Three goroutines
+	// write to an event stream -- the event writer, the heartbeat ping,
+	// and the pong Read sends from inside the reader -- and a frame is
+	// a header write and a payload write. Unguarded, another
+	// goroutine's header can land between the two, and the client
+	// reads a payload byte as the next opcode: the stream is corrupt
+	// from there on, not merely one message. Building the frame into
+	// one buffer would hide this on a transport whose Write happens to
+	// be atomic, but the write deadline set before it would still be
+	// shared between writers, so the lock is the contract rather than
+	// the buffer.
+	writeMu sync.Mutex
 }
 
 // Accept completes the handshake and takes over the connection.
@@ -144,6 +158,8 @@ func (c *Conn) WriteText(payload []byte) error {
 // writeFrame writes one frame. A server never masks, per RFC 6455
 // section 5.1.
 func (c *Conn) writeFrame(opcode byte, payload []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	if c.WriteTimeout > 0 {
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.WriteTimeout))
 	}

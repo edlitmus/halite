@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
@@ -37,6 +38,58 @@ func TestTheFileEditsAreExecutionFunctions(t *testing.T) {
 		if _, ok := New().Exec.Signatures().Lookup("file." + name); ok {
 			t.Errorf("file.%s is an execution function here and is a state in Salt", name)
 		}
+	}
+}
+
+// `file.touch` the execution function is touch(1): on a file that is
+// already there it moves the times to now, which its doc said and it
+// did not do. A dry run leaves them alone, and the state still only
+// ensures existence, so it does not report a change on every run.
+// DIVERGENCE 5.405.
+func TestFileTouchAsExecMovesTheTimesOfAnExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stamp")
+	if err := os.WriteFile(path, []byte("kept\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	r := New()
+	if _, err := r.Exec.Call(&exec.Context{Test: true}, "file.touch", value.MapOf("name", path)); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(path); !fi.ModTime().Equal(old) {
+		t.Errorf("a dry run moved the time to %s", fi.ModTime())
+	}
+
+	before := time.Now().Add(-time.Minute)
+	if _, err := callFileExec(t, "touch", value.MapOf("name", path)); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.ModTime().Before(before) {
+		t.Errorf("file.touch left the modification time at %s", fi.ModTime())
+	}
+	if body, _ := os.ReadFile(path); string(body) != "kept\n" {
+		t.Errorf("file.touch changed the contents to %q", body)
+	}
+
+	// The state is unchanged: an existing file is converged.
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	res, err := fileTouch(&exec.Context{}, value.MapOf("name", path))
+	if err != nil || res.HasChanges() {
+		t.Errorf("the state reported %v, %v for a file that exists", res, err)
+	}
+	if fi, _ := os.Stat(path); !fi.ModTime().Equal(old) {
+		t.Errorf("the state moved the time to %s", fi.ModTime())
 	}
 }
 

@@ -29,6 +29,56 @@ or `system.shutdown` that began with `-` was read as options: `-h`
 turned a reboot into a halt. Such a message is now refused with an
 error saying why. FreeBSD was not affected. DIVERGENCE 5.404.
 
+### Bridge skeletons quote the names they are built from
+
+`halite-hub migrate --bridge-skeleton` copied a Python module's
+`__virtualname__`, function names and file path into the generated Go
+unescaped, so a module could choose code that the skeleton would
+compile and run. Names are now quoted string arguments and comments are
+kept to one line. A generated stub's error text is unchanged.
+DIVERGENCE 5.413.
+
+### `halite-ext-signer-local` signs only a SHA-256 digest
+
+The reference local signer signed a digest of any length, while the KMS
+signer refuses anything but 32 bytes. It now refuses the same requests
+the KMS signer does. The hub only ever sends 32 bytes, so a working
+setup sees no difference, but **the extension is now 1.0.1**: re-sign
+its bundle and move its pin. DIVERGENCE 5.412.
+
+### `aws_secrets_manager` refuses two pillar keys where one nests in the other
+
+A secret named `db` beside one named `db.password` used to compile
+with whichever came last replacing the other, and the node's own
+`node_grain` list comes last, so a node could replace a secret the hub
+configured. That pillar now fails, naming both keys, as two equal keys
+already did. **The extension is now 1.1.1**: re-sign the bundle with
+`--ext-version 1.1.1` and move its pin. DIVERGENCE 5.409.
+
+### Two overlapping secrets no longer leave part of one in a log
+
+When two secret values overlapped in a message, such as a password that
+is the start of a longer token, redaction replaced one and printed the
+remainder of the other. Every byte any secret covers is now replaced.
+DIVERGENCE 5.407.
+
+### `file.touch` updates the times of a file that exists
+
+The execution function `file.touch` said it would create a file or
+update its times, and on a file that existed it returned success and
+changed nothing. It now sets the access and modification times to now,
+as touch(1) and Salt's `file.touch` do, and `--test` says it would. The
+`file.touch` state is unchanged: it ensures the file exists, so it does
+not report a change on every run. DIVERGENCE 5.405.
+
+### `git.latest` refuses an argument git would read as an option
+
+A `remote` beginning with `-`, such as `--upload-pack=<command>`, was
+given to `git fetch` as an option, and on a checkout that already
+existed git ran the command. `git.latest` now refuses a `name`,
+`remote`, `rev` or `branch` that begins with `-`, and the clone puts
+`--` before the URL. DIVERGENCE 5.414.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which
@@ -37,6 +87,23 @@ the path with them percent-encoded. A bucket holding a key such as
 `top+base.sls` failed its whole update with SignatureDoesNotMatch. The
 path is now encoded the way S3 does; the signature agrees with AWS's
 own published example. Not yet run against S3 itself. DIVERGENCE 5.401.
+
+### `halite-hub ssh` makes its cache directory private from the start
+
+On a target whose login umask is 002, which Ubuntu gives an ordinary
+account, `halite-hub ssh` made `thin_dir` group-writable for a moment
+before tightening it. A second run against the same machine at that
+moment was refused. A directory `mkdir -p` made above `thin_dir` was
+never tightened, so a `thin_dir` under a directory that did not exist
+yet, such as `~/.cache/halite-thin`, was refused on every run. Both are
+now made private when they are created. DIVERGENCE 5.402.
+
+### A websocket event stream no longer risks a corrupt frame
+
+`GET /v1/ws/events` could send two frames mixed together when an event,
+the heartbeat ping and a pong were written at the same moment. A client
+then lost the stream from that frame on. Each frame now goes out whole.
+DIVERGENCE 5.406.
 
 ### The hub no longer sends its own enrollment errors to the node
 

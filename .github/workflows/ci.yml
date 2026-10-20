@@ -482,6 +482,22 @@ jobs:
             echo "go.mod names no toolchain; this job reads it from there" >&2
             exit 1
           fi
+          # The digest of the tarball, pinned rather than trusted. This
+          # step used to fetch and untar whatever go.dev answered with,
+          # while contrib/tofu checked the same file against a pinned
+          # sha256: two paths installing one toolchain, one of them
+          # verifying it (DIVERGENCE 5.403). The value is go.dev's own,
+          # from https://go.dev/dl/?mode=json&include=all, and it is
+          # held equal to contrib/tofu's go_sha256_freebsd and to the
+          # version go.mod pins by internal/buildpolicy, so a toolchain
+          # bump that forgets this line fails there, before CI, rather
+          # than here as a checksum mismatch.
+          want_version=go1.27.2
+          want_sha256=3baf61eec549b0c3f638d82636388e36abf94aa14814a011f011d2648ad1eded
+          if [ "$version" != "$want_version" ]; then
+            echo "go.mod pins $version and this step has the digest of $want_version; move both" >&2
+            exit 1
+          fi
           # Into $HOME rather than /usr/local: the VM's account is not
           # root, and asking for sudo would make this depend on how the
           # image is built rather than on anything about FreeBSD.
@@ -493,6 +509,11 @@ jobs:
           # to populate.
           mkdir -p "$HOME/toolchain"
           fetch -q -o /tmp/go.tar.gz "https://go.dev/dl/${version}.freebsd-amd64.tar.gz"
+          got_sha256=$(sha256 -q /tmp/go.tar.gz)
+          if [ "$got_sha256" != "$want_sha256" ]; then
+            echo "checksum mismatch for ${version}.freebsd-amd64.tar.gz: got $got_sha256, want $want_sha256" >&2
+            exit 1
+          fi
           tar -C "$HOME/toolchain" -xzf /tmp/go.tar.gz
           "$HOME/toolchain/go/bin/go" version
 

@@ -61,6 +61,23 @@ func TestHandleSignRejectsAMissingDigest(t *testing.T) {
 	}
 }
 
+// The signature declares a SHA-256 digest, and halite-ext-signer-kms
+// refuses anything but 32 bytes. This one signed whatever it was given,
+// so the two signers the host can be pointed at disagreed on what a
+// valid request is, and a host bug that sent the wrong bytes would have
+// been signed here and refused there.
+func TestHandleSignRefusesADigestThatIsNotSHA256(t *testing.T) {
+	h := &handler{key: testKey(t)}
+	for _, n := range []int{1, 20, 31, 33, 48, 64} {
+		kwargs, _ := json.Marshal(signRequest{Digest: base64.StdEncoding.EncodeToString(make([]byte, n))})
+		if _, err := h.handle(ext.Call{Function: "sign", Kwargs: kwargs}); err == nil {
+			t.Errorf("a %d-byte digest was signed", n)
+		} else if !strings.Contains(err.Error(), "32-byte") {
+			t.Errorf("a %d-byte digest: %v", n, err)
+		}
+	}
+}
+
 func TestHandleSignRejectsANonBase64Digest(t *testing.T) {
 	h := &handler{key: testKey(t)}
 	kwargs, _ := json.Marshal(signRequest{Digest: "not base64!!"})
