@@ -189,7 +189,7 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	// configured origin and runs <cmd> through the shell to do it. The
 	// test made it create a file. A leading dash is not a URL, a remote
 	// name, a revision or a branch git would accept in any other
-	// spelling, so refusing it costs nothing real. DIVERGENCE 5.406.
+	// spelling, so refusing it costs nothing real. DIVERGENCE 5.411.
 	//
 	// `target` is not checked: it is a path, the clone below puts it
 	// after `--`, and every other command runs with it as the working

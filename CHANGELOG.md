@@ -52,7 +52,7 @@ A `remote` beginning with `-`, such as `--upload-pack=<command>`, was
 given to `git fetch` as an option, and on a checkout that already
 existed git ran the command. `git.latest` now refuses a `name`,
 `remote`, `rev` or `branch` that begins with `-`, and the clone puts
-`--` before the URL. DIVERGENCE 5.406.
+`--` before the URL. DIVERGENCE 5.411.
 
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
