@@ -333,7 +333,7 @@ func TestAPendingShutdownIsFoundThroughThePSModule(t *testing.T) {
 // 2026-10-19. The second has the keys the other way round: no FreeBSD
 // prints that, and it is here because the reader this replaced took
 // the first `sec = ` in the string, which in that order is the
-// microseconds -- an uptime of fifty-six years. DIVERGENCE 5.403.
+// microseconds -- an uptime of fifty-six years. DIVERGENCE 5.404.
 func TestUptimeReadsTheSecondsKeyNotTheFirstMatch(t *testing.T) {
 	const now = int64(1792420000)
 	for _, tc := range []struct {

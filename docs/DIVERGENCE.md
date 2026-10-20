@@ -31984,8 +31984,7 @@ forgotten.
   publishers. No signature was checked: the Artifactory directories
   for the three releases list no `.asc` beside the onedir files, and
   whether go.dev publishes one for the tarball was not looked at.
-
-### 5.403 `status.uptime` and the reboot module read kern.boottime two ways
+### 5.404 `status.uptime` and the reboot module read kern.boottime two ways
 
 Issue 321, section 5, an Info bullet: `extractBootSeconds` in
 `system.go` took the first `sec = ` in `sysctl -n kern.boottime`, and
@@ -32014,6 +32013,8 @@ fifty-six-year answer.
 **Not verified.** macOS and the other BSDs, which also take this path,
 were not run; Linux reads `/proc/uptime` first and never gets here.
 `status.uptime` was not called on beastie, only the sysctl read by hand.
+
+
 
 ## 6. Everything else not started
 
