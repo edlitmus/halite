@@ -32229,9 +32229,39 @@ documented, and changing a default is the owner's decision.
 local server. A hub whose block already holds overlapping keys will now
 fail that pillar where it used to drop one; whether the production
 estate has one was not looked at.
+### 5.410 The template directory loader followed a symlink out of its root
 
+Issue 321, Low: `template.DirLoader` does not resolve symlinks
+(`env.go:98`); dev and test use only.
 
+`DirLoader.Load` cleaned the name, joined it to the root, and checked
+the absolute path string began with the root before `os.ReadFile`. A
+symlink under the root passes a string check and is then followed.
 
+**Measured** on `main` at `39b9f22`, in a temporary root: `link.jinja`,
+a symlink to a file beside the root, loaded and returned that file's
+contents; so did `sub/up/outside.jinja` through `sub/up`, a symlink to
+the root's parent.
+
+**Who uses it.** Nothing outside `internal/template`'s own tests
+constructs a `DirLoader`; a node's templates come through the file
+server, which this does not touch. The comment on the type promised
+"refusing any name that escapes the root", and that was not true.
+
+**The change.** `Load` opens the root with `os.OpenRoot` and reads the
+cleaned name through it, so every component, links included, is
+resolved inside the root and one that leaves it is refused. A link that
+stays inside still loads. A missing file is still `ErrNotFound`, so
+`ignore missing` behaves as before; an escape is a different error, so
+`ignore missing` does not hide it.
+
+**Demonstrated.** `TestDirLoaderDoesNotFollowASymlinkOut` fails on
+`main` with both escapes served ("secret") and passes with the change,
+along with the existing loader tests. It skips where a symlink cannot
+be made.
+
+**Not verified.** Run on Linux only; Windows, where the test needs the
+privilege to make a symlink, was left to CI.
 
 
 
