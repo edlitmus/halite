@@ -243,7 +243,7 @@ func ufwAddedListHas(out string, r firewallRule) bool {
 // written, firewall inactive or a dry run), "Rule added", "Rule
 // inserted", "Rule updated" and "Rule deleted". Output with neither kind
 // of line reads as changed, as before, because an answer this cannot
-// read is not evidence that nothing happened. DIVERGENCE 5.405.
+// read is not evidence that nothing happened. DIVERGENCE 5.416.
 func ufwChanged(out string) bool {
 	skipped := false
 	for _, line := range strings.Split(out, "\n") {

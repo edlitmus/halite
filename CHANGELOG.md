@@ -27,7 +27,7 @@ When a rule's IPv4 half was already present and its IPv6 half was not,
 ufw added the IPv6 rule and `firewall.allowed`, `firewall.denied` and
 `firewall.allow` reported that nothing
 changed, under `--test` too. Any line from ufw saying a rule was added,
-inserted, updated or deleted now counts as a change. DIVERGENCE 5.405.
+inserted, updated or deleted now counts as a change. DIVERGENCE 5.416.
 
 ### A shutdown message beginning with `-` is refused
 
