@@ -237,7 +237,7 @@ metrics: true
 # root is printed by `halite-hub extensions sync`.
 # extension_pins:
 #   aws_secrets_manager:
-#     version: 1.1.0
+#     version: 1.1.1
 #     root: 9f2c...
 # The unprivileged account an extension drops to. It needs nothing but
 # its own working directory.

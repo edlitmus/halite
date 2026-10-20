@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `aws_secrets_manager` refuses two pillar keys where one nests in the other
+
+A secret named `db` beside one named `db.password` used to compile
+with whichever came last replacing the other, and the node's own
+`node_grain` list comes last, so a node could replace a secret the hub
+configured. That pillar now fails, naming both keys, as two equal keys
+already did. **The extension is now 1.1.1**: re-sign the bundle with
+`--ext-version 1.1.1` and move its pin. DIVERGENCE 5.409.
+
 ### Two overlapping secrets no longer leave part of one in a log
 
 When two secret values overlapped in a message, such as a password that
