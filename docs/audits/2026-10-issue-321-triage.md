@@ -178,6 +178,7 @@ passing by the PRs above; that has not been looked for.
 | Local signer signs any digest length | #473 | 5.412; extension 1.0.1; the host only sends 32 bytes; key-file mode check left (owner policy) |
 | `migrate/skeleton.go` names unescaped in generated Go | #464 | 5.413; a `__virtualname__` produced a stub that compiled and called `os.RemoveAll`; `migrate --bridge-skeleton` not run end to end |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
+| `shutdown -r +N <message>` message starting with `-` read as an option | #465 | 5.415; systemd 255 measured with no bus (`-h` accepted); FreeBSD unaffected, read from shutdown.c, not run; refused rather than `--` |
 | websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
 
 | CI's FreeBSD Go tarball and saltdiff's Salt onedir fetched unverified | #446 | 5.403; run on beastie and under dash, not in CI's VM or a Docker build; fleet.yml not run |
