@@ -170,6 +170,7 @@ passing by the PRs above; that has not been looked for.
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | SigV4 canonical URI for S3 keys with `: @ + = $ &` | #444 | 5.401; held to AWS's published `PUT /test$file.text` vector, not to S3 itself; S3-compatible stores not tried |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
+| `swap.on`/`off` compare the caller's path with the kernel's keys | #472 | 5.407; measured and fixed on beastie (FreeBSD `swapctl -l`), live test passed there; Linux not run; GEOM labels not links |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
