@@ -937,7 +937,7 @@ func fileTouch(c *exec.Context, args *value.Map) (states.Result, error) {
 // touch expects -- a stamp file whose time is the point, a make target,
 // a log rotation trigger. Called on a file that existed, it returned
 // true and left the times where they were. Issue 321, section 5;
-// DIVERGENCE 5.402.
+// DIVERGENCE 5.405.
 //
 // The state keeps its meaning. A state that rewrote a timestamp on
 // every run would report a change on every run, and "ensure it exists"

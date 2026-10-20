@@ -45,7 +45,7 @@ func TestTheFileEditsAreExecutionFunctions(t *testing.T) {
 // already there it moves the times to now, which its doc said and it
 // did not do. A dry run leaves them alone, and the state still only
 // ensures existence, so it does not report a change on every run.
-// DIVERGENCE 5.402.
+// DIVERGENCE 5.405.
 func TestFileTouchAsExecMovesTheTimesOfAnExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "stamp")

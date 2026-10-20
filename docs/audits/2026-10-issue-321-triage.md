@@ -172,7 +172,7 @@ passing by the PRs above; that has not been looked for.
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 | CI's FreeBSD Go tarball and saltdiff's Salt onedir fetched unverified | #446 | 5.403; run on beastie and under dash, not in CI's VM or a Docker build; fleet.yml not run |
 | `status.uptime` `extractBootSeconds` takes the first `sec = ` | #447 | 5.404; latent, FreeBSD prints `sec` first (beastie); macOS not run |
-| `file.touch` documents updating times and changes nothing | #453 | 5.402; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
+| `file.touch` documents updating times and changes nothing | #453 | 5.405; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions

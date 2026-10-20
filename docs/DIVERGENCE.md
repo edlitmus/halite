@@ -32013,10 +32013,7 @@ fifty-six-year answer.
 **Not verified.** macOS and the other BSDs, which also take this path,
 were not run; Linux reads `/proc/uptime` first and never gets here.
 `status.uptime` was not called on beastie, only the sysctl read by hand.
-
-
-
-### 5.402 `file.touch` said it updated a file's times and did not
+### 5.405 `file.touch` said it updated a file's times and did not
 
 Issue 321, section 5: `file.touch` documents "update its times if it
 does [exist]" but returns "already exists" and changes nothing.
@@ -32048,6 +32045,10 @@ nothing. With the registration pointed back at `fileTouch` it fails:
 times rather than now, are not accepted; the signature has only `name`,
 as before. **Not verified.** Run on Linux only, as an ordinary user, in
 a temporary directory; not on FreeBSD.
+
+
+
+
 
 ## 6. Everything else not started
 

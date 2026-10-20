@@ -28,7 +28,7 @@ update its times, and on a file that existed it returned success and
 changed nothing. It now sets the access and modification times to now,
 as touch(1) and Salt's `file.touch` do, and `--test` says it would. The
 `file.touch` state is unchanged: it ensures the file exists, so it does
-not report a change on every run. DIVERGENCE 5.402.
+not report a change on every run. DIVERGENCE 5.405.
 
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
