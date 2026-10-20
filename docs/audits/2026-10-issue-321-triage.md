@@ -178,6 +178,7 @@ passing by the PRs above; that has not been looked for.
 | Local signer signs any digest length | #473 | 5.412; extension 1.0.1; the host only sends 32 bytes; key-file mode check left (owner policy) |
 | `migrate/skeleton.go` names unescaped in generated Go | #464 | 5.413; a `__virtualname__` produced a stub that compiled and called `os.RemoveAll`; `migrate --bridge-skeleton` not run end to end |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
+| Multi-arch: `dpkg.set_selections` diff compares bare names with `name:arch` | #470 | 5.417; happens on a single-arch host too (941 qualified lines on Ubuntu 24.04); apt `ListPkgs` keyed on `${Package}` not fixed (needs a foreign-arch host to capture) |
 | `ufwChanged` unchanged when v4 skipped and v6 added | #467 | 5.416; established from ufw 0.36.2's source, fixtures composed, not captured (ufw needs root) |
 | `shutdown -r +N <message>` message starting with `-` read as an option | #465 | 5.415; systemd 255 measured with no bus (`-h` accepted); FreeBSD unaffected, read from shutdown.c, not run; refused rather than `--` |
 | websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
