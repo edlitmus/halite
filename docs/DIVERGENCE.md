@@ -32262,7 +32262,54 @@ be made.
 
 **Not verified.** Run on Linux only; Windows, where the test needs the
 privilege to make a symlink, was left to CI.
+### 5.411 Ordering a low state was quadratic in its size
 
+Issue 321, Low: `state/order.go` is O(n²) (linear scan plus
+`append(ready[:best], ready[best+1:]…)`); self-requisites are dropped
+silently.
+
+`order` keeps the chunks whose requisites are met in a ready set and
+places the best one each round. The set was a slice, scanned end to end
+for the best chunk and then closed up, on the stated grounds that it is
+small in practice. Every chunk with nothing constraining it is ready
+from the start, so a large state with few requisites is exactly the
+case where it is not small.
+
+**Measured** on `main` at `39b9f22` with unconstrained chunks declared
+in reverse, on this host under a load average of about 32: 1,000 chunks
+3 ms, 10,000 0.30 s, 40,000 10.8 s, 100,000 92 s. With the change,
+100,000 take 0.12 s.
+
+**The change.** The ready set is a binary heap. The order it produces
+must be the one the scan produced, ties included, and `less` has ties:
+the chunks of one declaration with several functions share every key.
+The scan broke those by position in its slice, which was arrival order
+(the initial set in index order, since its sort was stable, then each
+chunk as it became ready), so each heap entry carries an arrival number
+and ties are broken on it.
+
+**Demonstrated.**
+
+- Equivalence, measured once and not kept as a test: 20,000 random low
+  states from the property suite's generator, each up to 40 chunks with
+  random requisites, and with declaration order, sequence and `order:`
+  drawn from small ranges so ties are frequent. A SHA-256 over every
+  resulting order was `b4e5b165…` on `main` and `b4e5b165…` with the
+  change. With the arrival tiebreak reversed it was `32193afa…`, so the
+  digest does see a change in how ties fall.
+- `TestOrderingALargeLowStateIsNotQuadratic` orders 100,000 chunks
+  under a 10 s bound and checks the result. With the old `order.go` it
+  failed after 92 s; with the change it passes in 0.12 s. The bound is
+  loose for loaded race runs; the scan is nowhere near it.
+- The existing ordering and property tests pass unchanged.
+
+**Not done.** Self-requisites: `addEdge` ignores an edge from a chunk to
+itself, so `require` naming the chunk's own ID is dropped without a
+word. Whether that should be a diagnostic depends on what Salt does with
+one, which was not checked against Salt here; it is left.
+
+**Not verified.** The equivalence was measured on generated graphs, not
+on a real estate's low states.
 
 
 
