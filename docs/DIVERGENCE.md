@@ -32016,7 +32016,6 @@ fifty-six-year answer.
 **Not verified.** macOS and the other BSDs, which also take this path,
 were not run; Linux reads `/proc/uptime` first and never gets here.
 `status.uptime` was not called on beastie, only the sysctl read by hand.
-
 ### 5.405 `file.touch` said it updated a file's times and did not
 
 Issue 321, section 5: `file.touch` documents "update its times if it
@@ -32143,6 +32142,44 @@ test and not the server.
 while this was tested. The interleaving was not seen on the production
 API; it was only shown with the test.
 ### 5.407 Two overlapping secrets left the tail of one in the text
+### 5.408 A log field holding an error was written unscrubbed, or as `{}`
+
+Issue 321, Low, part of the "redaction gaps" bullet: `log.ScrubValue`
+ignores `error` and `Stringer` field values; latent, since all 122
+current call sites pass `err.Error()`.
+
+`Logger.Log` scrubs every field through `redact.Set.ScrubValue`, which
+walks strings, slices and maps and returns anything else unchanged. An
+`error` passed as a field went out as it was.
+
+**Measured** on `main` at `39b9f22` with a secret registered and
+`l.Info("a state failed", "error", errors.New("mysql -p <secret>: access denied"))`:
+
+| format | output |
+|---|---|
+| console | `info: a state failed error=mysql -p <secret>: access denied`, the secret in clear |
+| JSON | `{"error":{},…}`: no leak, and no message either |
+
+A grep of `cmd` and `internal` for an `"err"` or `"error"` field found
+126 passing `err.Error()` and none passing an error, so nothing was
+leaking; the count differs from the audit's 122 because the tree has
+moved.
+
+**The change.** `Log` turns an `error` field into its text with
+`fmt.Sprint` before scrubbing; `fmt` recovers from a typed nil whose
+`Error` method dereferences it. Only `error`: a `fmt.Stringer` such as
+`time.Duration` is written to JSON in its own form today, and turning
+it into its `String()` would change every such record. A Stringer that
+carries a secret, such as a `*url.URL` with a password, still reaches
+the console form through `%v` unscrubbed and the JSON form as a struct;
+that half of the finding is left, and the choice is the owner's.
+
+**Demonstrated.** `TestAnErrorFieldIsScrubbedAndKept` fails on `main`
+in both formats, with the outputs above, and passes with the change.
+
+**Not verified.** Only the unit test.
+
+
 
 
 
