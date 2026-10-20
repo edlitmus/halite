@@ -51,7 +51,7 @@ func registerFileEditAsExec(r *Registries) {
 
 	r.Exec.Add(
 		edit("touch", "Create a file if it does not exist, and update its times if it does.",
-			[]signature.Param{pathParam("The file to touch.")}, nil, fileTouch),
+			[]signature.Param{pathParam("The file to touch.")}, nil, fileTouchExec),
 
 		edit("symlink", "Create a symbolic link.",
 			[]signature.Param{

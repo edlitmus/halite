@@ -60,6 +60,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/ext"
@@ -67,7 +68,7 @@ import (
 
 // Version is what the handshake and `sys.list_extensions` report. It is
 // also what a pin names, so it changes when behaviour does.
-const Version = "1.1.0"
+const Version = "1.1.1"
 
 func main() {
 	// The resource limits of SPEC 24.3, applied by the extension to
@@ -209,6 +210,16 @@ func handle(call ext.Call) (any, error) {
 		}
 		if _, dup := flat[s.Key]; dup {
 			return nil, fmt.Errorf("two secrets both claim the pillar key %q", s.Key)
+		}
+		// A key that is a dotted path inside another claims the same
+		// place in the pillar, and `nest` would let the later one
+		// replace the earlier: a node-named `db` after the hub's
+		// `db.password` dropped the password (DIVERGENCE 5.409). The
+		// equality check above did not see it.
+		for _, other := range order {
+			if strings.HasPrefix(other, s.Key+".") || strings.HasPrefix(s.Key, other+".") {
+				return nil, fmt.Errorf("the pillar keys %q and %q overlap: one would replace the other", other, s.Key)
+			}
 		}
 		val, err := cache.fetch(ctx, client, s, region, cfg.cacheTTL())
 		if err != nil {

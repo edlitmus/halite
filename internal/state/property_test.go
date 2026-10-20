@@ -98,6 +98,32 @@ func TestRequisiteResolutionAlwaysTerminates(t *testing.T) {
 	}
 }
 
+// Ordering is not quadratic in the low state. Every chunk with nothing
+// constraining it is ready at once, and the ready set was a slice
+// scanned end to end for each chunk placed: 40,000 chunks took 10.8 s.
+// A heap places 100,000 in a fraction of a second; the bound is loose so
+// that a loaded race run does not trip it, and the quadratic version
+// does not come near it.
+func TestOrderingALargeLowStateIsNotQuadratic(t *testing.T) {
+	const n = 100_000
+	chunks := make([]*Chunk, n)
+	for i := range chunks {
+		// Declared in reverse, so the best ready chunk is always the
+		// last one a scan would reach.
+		chunks[i] = &Chunk{ID: fmt.Sprintf("s%d", i), DeclOrder: n - i}
+	}
+	start := time.Now()
+	out := order(chunks, &Diags{})
+	if took := time.Since(start); took > 10*time.Second {
+		t.Fatalf("ordering %d chunks took %v", n, took)
+	}
+	for i, c := range out {
+		if c.DeclOrder != i+1 {
+			t.Fatalf("position %d holds declaration %d", i, c.DeclOrder)
+		}
+	}
+}
+
 // A self-referential requisite is the smallest cycle and the one an
 // operator writes by accident.
 func TestSelfReferenceTerminates(t *testing.T) {

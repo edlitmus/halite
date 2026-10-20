@@ -518,12 +518,51 @@ func dpkgSetSelections(c *exec.Context, want *value.Map) (*value.Map, error) {
 	return dpkgSelectionDiff(before, after, names), nil
 }
 
+// dpkgSelectionKey finds the key `dpkg --get-selections` printed for a
+// package the caller named.
+//
+// **dpkg qualifies a Multi-Arch: same package with its architecture,
+// even on a host with one.** Captured on Ubuntu 24.04 (amd64, no foreign
+// architecture configured): `dpkg --get-selections` printed 941 of its
+// lines as `bind9-libs:amd64`, `binutils-common:amd64` and so on, and
+// the rest bare; `dpkg --get-selections bind9-libs`, asked by the plain
+// name, answered with the qualified one. A caller holds a package by the
+// name it knows, `bind9-libs`, and the diff looked that name up in a map
+// keyed by `bind9-libs:amd64`: it found nothing before and nothing
+// after, so `dpkg.set_selections` reported no change for a hold it had
+// placed, and under `--test` predicted one for a hold already in place.
+// Issue 321, section 5; DIVERGENCE 5.417.
+//
+// The exact name wins, so `libc6:i386` asked for is `libc6:i386`. A bare
+// name with no exact key takes the one qualified key there is. With two
+// or more -- the same package installed for two architectures -- the
+// name is ambiguous and is left unresolved, as before, rather than
+// guessed.
+func dpkgSelectionKey(selections *value.Map, name string) string {
+	if _, ok := selections.Get(name); ok || strings.Contains(name, ":") {
+		return name
+	}
+	found := ""
+	for _, key := range selections.StringKeys() {
+		if strings.HasPrefix(key, name+":") {
+			if found != "" {
+				return name
+			}
+			found = key
+		}
+	}
+	if found == "" {
+		return name
+	}
+	return found
+}
+
 // dpkgSelectionDiff reports only the packages whose selection moved.
 func dpkgSelectionDiff(before, after *value.Map, names []string) *value.Map {
 	out := value.NewMap(len(names))
 	for _, name := range names {
-		wasRaw, _ := before.Get(name)
-		nowRaw, _ := after.Get(name)
+		wasRaw, _ := before.Get(dpkgSelectionKey(before, name))
+		nowRaw, _ := after.Get(dpkgSelectionKey(after, name))
 		was, _ := wasRaw.(string)
 		now, _ := nowRaw.(string)
 		if was == now {
