@@ -32178,6 +32178,59 @@ that half of the finding is left, and the choice is the owner's.
 in both formats, with the outputs above, and passes with the change.
 
 **Not verified.** Only the unit test.
+### 5.409 A node-named secret could replace a hub-configured one by nesting
+
+Issue 321, Low, from the aws-secrets bullet: a node-supplied dotted
+`name` can replace a nested hub-configured secret.
+
+`aws_secrets_manager` builds its pillar from flat dotted keys with
+`nest`, in order: the block's own `secrets`, then the tree's
+`pillar_list`, then the node's `node_grain` list. It refused two
+secrets claiming the *same* key, but not a key that is a dotted path
+inside another, and `nest` lets the later one win.
+
+**Measured** through the handler with the test's local Secrets Manager,
+on `main` at `39b9f22`. The block configures `db.password` from
+`hub/db`; the node's grain names a secret its `node_grain_allow`
+permits:
+
+| node's key | the node's `aws_secrets` pillar |
+|---|---|
+| `db` | `{db: node-value}`: the hub's password gone |
+| `db.password.x` | `{db: {password: {x: node-value}}}`: the hub's string replaced |
+
+Neither failed or logged. The pillar is that node's own, so the node
+changes what it is told, not what another node is told; the hub's
+value is what the tree meant it to have.
+
+**The change.** Before fetching, each key is checked against those
+already taken, and one that is a dotted prefix of another (`a` and
+`a.b`) is refused, as an equal one was, naming both keys. Keys that
+merely share characters (`db.password`, `db.passwords`) are separate
+and both kept. This applies between the block's own keys too, which
+nested the same way. The extension is now 1.1.1, because a pillar that
+used to compile with a silent overwrite now fails; the docs' signing
+examples and pins name 1.1.1.
+
+**Demonstrated.** `TestAKeyThatContainsAnotherIsRefused` fails on
+`main` with the two pillars above and passes with the change. With the
+prefix check made always false, it reports both acceptances again. The
+end-to-end tests that build and load the real extension binary
+(`internal/extpillar`, `TestAgentlessPillar*`) pass at 1.1.1.
+
+**Not done.** The bullet's other two parts are left. The cache never
+evicts and is keyed by node-influenced values; only successful fetches
+are cached, so it is bounded by the secrets, regions and stages that
+exist and that `node_grain_allow` and `node_region_allow` admit, not by
+what a node asks for. `node_grain_allow` defaulting to allow-all is
+documented, and changing a default is the owner's decision.
+
+**Not verified.** No AWS; the handler was driven against the test's
+local server. A hub whose block already holds overlapping keys will now
+fail that pillar where it used to drop one; whether the production
+estate has one was not looked at.
+
+
 
 
 
