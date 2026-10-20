@@ -21,6 +21,22 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `aws_secrets_manager` refuses two pillar keys where one nests in the other
+
+A secret named `db` beside one named `db.password` used to compile
+with whichever came last replacing the other, and the node's own
+`node_grain` list comes last, so a node could replace a secret the hub
+configured. That pillar now fails, naming both keys, as two equal keys
+already did. **The extension is now 1.1.1**: re-sign the bundle with
+`--ext-version 1.1.1` and move its pin. DIVERGENCE 5.409.
+
+### Two overlapping secrets no longer leave part of one in a log
+
+When two secret values overlapped in a message, such as a password that
+is the start of a longer token, redaction replaced one and printed the
+remainder of the other. Every byte any secret covers is now replaced.
+DIVERGENCE 5.407.
+
 ### `file.touch` updates the times of a file that exists
 
 The execution function `file.touch` said it would create a file or
@@ -56,6 +72,13 @@ moment was refused. A directory `mkdir -p` made above `thin_dir` was
 never tightened, so a `thin_dir` under a directory that did not exist
 yet, such as `~/.cache/halite-thin`, was refused on every run. Both are
 now made private when they are created. DIVERGENCE 5.402.
+
+### A websocket event stream no longer risks a corrupt frame
+
+`GET /v1/ws/events` could send two frames mixed together when an event,
+the heartbeat ping and a pong were written at the same moment. A client
+then lost the stream from that frame on. Each frame now goes out whole.
+DIVERGENCE 5.406.
 
 ### The hub no longer sends its own enrollment errors to the node
 

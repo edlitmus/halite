@@ -31,7 +31,7 @@ func installAWSExtension(t *testing.T) string {
 	// cmd/halite-ext-aws-secrets's Version: the hub refuses an
 	// executable laid out as any other version, signed or not
 	// (DIVERGENCE 5.325).
-	const version = "1.1.0"
+	const version = "1.1.1"
 	dir := filepath.Join(cache, "aws_secrets_manager", version)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

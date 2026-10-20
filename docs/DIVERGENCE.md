@@ -31842,6 +31842,7 @@ key holding these characters has not been fetched by a running hub,
 and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
+
 ### 5.402 The agentless cache directory was made under the login's umask
 
 Found when `make check` failed once on
@@ -31910,6 +31911,7 @@ still refused, as it should be.
 **Not verified.** Not run against FreeBSD or macOS targets. Their login
 umask is usually 022, which never opened the window. Not run as root
 with `sudo`.
+
 ### 5.403 CI unpacked a Go tarball and ran a Salt bundle it never checked
 
 Issue 321, a Low finding in section 5: the FreeBSD legs of `ci.yml` and
@@ -31984,6 +31986,7 @@ forgotten.
   publishers. No signature was checked: the Artifactory directories
   for the three releases list no `.asc` beside the onedir files, and
   whether go.dev publishes one for the tarball was not looked at.
+
 ### 5.404 `status.uptime` and the reboot module read kern.boottime two ways
 
 Issue 321, section 5, an Info bullet: `extractBootSeconds` in
@@ -32088,8 +32091,220 @@ kept it fails the same way, so the `--` alone does not cover it.
 get-url` the same way; it only reads, and was not changed. **Not
 verified.** git on FreeBSD was not run.
 
+### 5.406 Two goroutines writing one websocket could split a frame
 
+Issue 321, part of the Low "redaction gaps" bullet: overlapping secrets
+leave a tail in clear. `Set.Scrub` replaced each secret with
+`strings.ReplaceAll` in turn, longest first. When two secrets overlap in
+a message, the first replacement consumes the shared bytes and the
+second no longer occurs, so its remainder is printed. `ScrubExcept`
+marked replaced bytes and skipped an occurrence starting on one, which
+lost the same tail. A secret that overlaps itself lost its last bytes
+too, because the search resumed after each match.
 
+**Measured** on `main` at `757f01f`, with secrets `alpha-shared` and
+`shared-omega`:
+
+| text | `Scrub` and `ScrubExcept` on `main` |
+|---|---|
+| `x alpha-shared-omega y` | `x **********-omega y` |
+| `alpha-shared-omega-shared-omega` | `**********-omega-**********` |
+| `abcabcabc!`, secret `abcabc` | `**********abc!` |
+
+How often a pillar holds two secrets that overlap in one message was not
+looked at; a password that is a prefix of a longer token is the likely
+shape.
+
+**The change.** One function does both: every occurrence of every
+secret, overlapping ones included, is found in the original text, and
+each run they cover becomes one placeholder. Scrub now calls it with no
+protected spans. Secrets that only touch remain two placeholders, and a
+secret inside a longer one is covered by it, so the existing tests'
+outputs are unchanged.
+
+**Demonstrated.** `TestOverlappingSecretsLeaveNoTail` fails on `main`
+with the outputs in the table, and passes with the change. With only the
+search step put back to resuming after the match, it fails on the
+self-overlapping case alone.
+
+**Not done.** The bullet's two other parts:
+
+- A multi-line secret is matched only when contiguous, and
+  `render.Error` prints the rendered window line by line with numbers
+  in front, so no line holds the whole secret. Fixing it means either
+  scrubbing the window before it is numbered, which needs the set where
+  the error is built rather than at the sink, or registering each line
+  of a multi-line secret as a secret of its own, which would also scrub
+  a PEM's `-----BEGIN …-----` line everywhere. That is the owner's call.
+- `log` passing an `error` field to `ScrubValue`, which only knows
+  strings and containers: a separate change.
+
+**Not verified.** Only the unit tests; no node or hub was run with
+overlapping secrets in its pillar.
+
+Issue 321, Low: `websocket.Conn.writeFrame` writes a frame as two
+`conn.Write` calls, a header and then a payload, with nothing between
+them, and three goroutines in `api/wsevents.go` write to the same
+connection: the event writer, the 30-second heartbeat ping, and the pong
+that `Read` sends from the reader. The audit marked it plausible.
+
+**Measured.** A test with four goroutines writing to one `Conn` over
+`net.Pipe` (one sending pings, three sending 300-byte text frames) and
+a client reading the frames back. Against `main` it failed at the 51st
+frame: a text frame's payload began `\x81~\x01,`, which is another text
+frame's header. From that point a client reads payload bytes as headers,
+so the stream is corrupt, not one message. `net.Pipe` makes each `Write`
+whole, so the split is the framing's and not the transport's.
+
+On the API this needs a ping, a pong or an event to be written in the
+same instant as another. The heartbeat is every 30 seconds and a pong
+only follows a client's ping, so it is rare on a quiet stream. It is
+more likely on a busy one.
+
+**The change.** `Conn` has a write mutex, held for the whole of
+`writeFrame`, deadline included. The two writes are left as they were.
+One buffer and one `Write` would also fix this on a transport whose
+`Write` is atomic, which `net.Conn` does not promise. It would also
+leave the write deadline shared between writers. The lock is the
+contract.
+
+**Demonstrated.** `TestConcurrentWritersDoNotInterleaveFrames` fails on
+`main` as above and passes with the lock, 50 runs out of 50. With the
+lock removed again it failed in 4 runs of 5, at a different frame each
+time. `internal/websocket` and `internal/api` pass under `-race`.
+
+The test's first version hung once in twenty runs with the lock in
+place. A ping's empty payload is still a `Write`, and `net.Pipe` blocks
+an empty `Write` until a `Read` takes it. The reader had stopped after
+the last header. The test now closes its end when it is done reading.
+A TCP connection does not wait for the peer to read, which is why the
+API's empty heartbeat pings have never hung a stream, so this was the
+test and not the server.
+
+**Not verified.** No browser or real websocket client was connected
+while this was tested. The interleaving was not seen on the production
+API; it was only shown with the test.
+### 5.407 Two overlapping secrets left the tail of one in the text
+### 5.408 A log field holding an error was written unscrubbed, or as `{}`
+
+Issue 321, Low, part of the "redaction gaps" bullet: `log.ScrubValue`
+ignores `error` and `Stringer` field values; latent, since all 122
+current call sites pass `err.Error()`.
+
+`Logger.Log` scrubs every field through `redact.Set.ScrubValue`, which
+walks strings, slices and maps and returns anything else unchanged. An
+`error` passed as a field went out as it was.
+
+**Measured** on `main` at `39b9f22` with a secret registered and
+`l.Info("a state failed", "error", errors.New("mysql -p <secret>: access denied"))`:
+
+| format | output |
+|---|---|
+| console | `info: a state failed error=mysql -p <secret>: access denied`, the secret in clear |
+| JSON | `{"error":{},…}`: no leak, and no message either |
+
+A grep of `cmd` and `internal` for an `"err"` or `"error"` field found
+126 passing `err.Error()` and none passing an error, so nothing was
+leaking; the count differs from the audit's 122 because the tree has
+moved.
+
+**The change.** `Log` turns an `error` field into its text with
+`fmt.Sprint` before scrubbing; `fmt` recovers from a typed nil whose
+`Error` method dereferences it. Only `error`: a `fmt.Stringer` such as
+`time.Duration` is written to JSON in its own form today, and turning
+it into its `String()` would change every such record. A Stringer that
+carries a secret, such as a `*url.URL` with a password, still reaches
+the console form through `%v` unscrubbed and the JSON form as a struct;
+that half of the finding is left, and the choice is the owner's.
+
+**Demonstrated.** `TestAnErrorFieldIsScrubbedAndKept` fails on `main`
+in both formats, with the outputs above, and passes with the change.
+
+**Not verified.** Only the unit test.
+### 5.409 A node-named secret could replace a hub-configured one by nesting
+
+Issue 321, Low, from the aws-secrets bullet: a node-supplied dotted
+`name` can replace a nested hub-configured secret.
+
+`aws_secrets_manager` builds its pillar from flat dotted keys with
+`nest`, in order: the block's own `secrets`, then the tree's
+`pillar_list`, then the node's `node_grain` list. It refused two
+secrets claiming the *same* key, but not a key that is a dotted path
+inside another, and `nest` lets the later one win.
+
+**Measured** through the handler with the test's local Secrets Manager,
+on `main` at `39b9f22`. The block configures `db.password` from
+`hub/db`; the node's grain names a secret its `node_grain_allow`
+permits:
+
+| node's key | the node's `aws_secrets` pillar |
+|---|---|
+| `db` | `{db: node-value}`: the hub's password gone |
+| `db.password.x` | `{db: {password: {x: node-value}}}`: the hub's string replaced |
+
+Neither failed or logged. The pillar is that node's own, so the node
+changes what it is told, not what another node is told; the hub's
+value is what the tree meant it to have.
+
+**The change.** Before fetching, each key is checked against those
+already taken, and one that is a dotted prefix of another (`a` and
+`a.b`) is refused, as an equal one was, naming both keys. Keys that
+merely share characters (`db.password`, `db.passwords`) are separate
+and both kept. This applies between the block's own keys too, which
+nested the same way. The extension is now 1.1.1, because a pillar that
+used to compile with a silent overwrite now fails; the docs' signing
+examples and pins name 1.1.1.
+
+**Demonstrated.** `TestAKeyThatContainsAnotherIsRefused` fails on
+`main` with the two pillars above and passes with the change. With the
+prefix check made always false, it reports both acceptances again. The
+end-to-end tests that build and load the real extension binary
+(`internal/extpillar`, `TestAgentlessPillar*`) pass at 1.1.1.
+
+**Not done.** The bullet's other two parts are left. The cache never
+evicts and is keyed by node-influenced values; only successful fetches
+are cached, so it is bounded by the secrets, regions and stages that
+exist and that `node_grain_allow` and `node_region_allow` admit, not by
+what a node asks for. `node_grain_allow` defaulting to allow-all is
+documented, and changing a default is the owner's decision.
+
+**Not verified.** No AWS; the handler was driven against the test's
+local server. A hub whose block already holds overlapping keys will now
+fail that pillar where it used to drop one; whether the production
+estate has one was not looked at.
+### 5.410 The template directory loader followed a symlink out of its root
+
+Issue 321, Low: `template.DirLoader` does not resolve symlinks
+(`env.go:98`); dev and test use only.
+
+`DirLoader.Load` cleaned the name, joined it to the root, and checked
+the absolute path string began with the root before `os.ReadFile`. A
+symlink under the root passes a string check and is then followed.
+
+**Measured** on `main` at `39b9f22`, in a temporary root: `link.jinja`,
+a symlink to a file beside the root, loaded and returned that file's
+contents; so did `sub/up/outside.jinja` through `sub/up`, a symlink to
+the root's parent.
+
+**Who uses it.** Nothing outside `internal/template`'s own tests
+constructs a `DirLoader`; a node's templates come through the file
+server, which this does not touch. The comment on the type promised
+"refusing any name that escapes the root", and that was not true.
+
+**The change.** `Load` opens the root with `os.OpenRoot` and reads the
+cleaned name through it, so every component, links included, is
+resolved inside the root and one that leaves it is refused. A link that
+stays inside still loads. A missing file is still `ErrNotFound`, so
+`ignore missing` behaves as before; an escape is a different error, so
+`ignore missing` does not hide it.
+
+**Demonstrated.** `TestDirLoaderDoesNotFollowASymlinkOut` fails on
+`main` with both escapes served ("secret") and passes with the change,
+along with the existing loader tests. It skips where a symlink cannot
+be made.
+
+**Not verified.** Run on Linux only; Windows, where the test needs the
+privilege to make a symlink, was left to CI.
 
 
 
