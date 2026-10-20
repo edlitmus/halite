@@ -31,7 +31,7 @@ Issue 321 stays open, because what is below is not finished.
 | High (20) | 20 | none |
 | Medium (55) | 54 | 1, half done (M-47) |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
-| Low (section 5) | 19 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 20 | 60 bullets listed (the audit says about 90); being taken one at a time |
 | Low (section 5) | 18 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
 ### Fixed
@@ -173,6 +173,7 @@ passing by the PRs above; that has not been looked for.
 | Redaction: overlapping secrets leave a tail in clear | #462 | 5.407; the multi-line secret in `render.Error`'s numbered window is left for the owner (two options in the entry); `log.ScrubValue` and `error` fields separate |
 | `log` field holding an `error` not scrubbed | #466 | 5.408; latent, no call site passed one; JSON wrote `{}`; `fmt.Stringer` fields left (a `*url.URL` still prints its password) |
 | aws-secrets: node `name` nests over a hub secret | #468 | 5.409; extension 1.1.1; cache eviction (bounded by what exists) and the `node_grain_allow` default (owner decision) left |
+| `template.DirLoader` follows symlinks | #469 | 5.410; test and dev use only; Linux only |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 | websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
 

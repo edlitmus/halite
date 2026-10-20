@@ -97,21 +97,22 @@ var ErrNotFound = fmt.Errorf("template not found")
 type DirLoader struct{ Root string }
 
 // Load implements Loader.
+//
+// The file is opened through os.Root, which resolves every component
+// inside the root, symlinks included, and refuses one that leaves it.
+// The containment check this replaced compared cleaned path strings, so
+// a symlink under the root — `link.jinja -> /etc/shadow`, or a directory
+// link to the parent — passed it, and os.ReadFile followed the link
+// (DIVERGENCE 5.410). Only development and the tests use this loader; a
+// node's templates come through the file server.
 func (d DirLoader) Load(name string) (string, string, error) {
 	clean := path.Clean("/" + strings.ReplaceAll(name, "\\", "/"))
-	full := filepath.Join(d.Root, filepath.FromSlash(clean))
-	root, err := filepath.Abs(d.Root)
+	root, err := os.OpenRoot(d.Root)
 	if err != nil {
 		return "", "", err
 	}
-	abs, err := filepath.Abs(full)
-	if err != nil {
-		return "", "", err
-	}
-	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("template %q resolves outside the template root", name)
-	}
-	b, err := os.ReadFile(abs)
+	defer root.Close()
+	b, err := root.ReadFile(filepath.FromSlash(strings.TrimPrefix(clean, "/")))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", fmt.Errorf("%w: %s", ErrNotFound, name)
