@@ -151,7 +151,7 @@ jobs:
     # itself is seconds.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Built here rather than pulled, so that what runs is what the
       # tree says. An image from a registry is one more thing that can
@@ -251,7 +251,7 @@ jobs:
           - distro: leap16
             tools: zypper, chattr
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The same command a person runs, so the two cannot diverge. It
       # builds the image from the tree rather than pulling one, for the
@@ -291,8 +291,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.27.2"
 
@@ -691,10 +691,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      # Without the token, for the reason ci.yml's FreeBSD leg gives: the
+      # VM gets a copy of the work directory, credentials file included.
+      # DIVERGENCE 5.421.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Start the virtual machine
-        uses: cross-platform-actions/action@v1.6.0
+        uses: cross-platform-actions/action@e0b9770014ba65d5e0815f15b74031c3a635f641 # v1.6.0
         with:
           operating_system: freebsd
           version: '15.1'
@@ -842,8 +847,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See ci.yml's first setup-go step.
           go-version: "1.27.2"
@@ -967,8 +972,8 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See ci.yml's first setup-go step.
           go-version: "1.27.2"

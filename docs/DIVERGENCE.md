@@ -32675,7 +32675,6 @@ which is itself hostile.
 used. None of them is known to redirect a discovery, key set or token
 URL, so a provider that relies on an http redirect would now fail. That
 was not looked for.
-
 ### 5.420 An LDAP filter item found its operator in the value
 
 Issue 321, Low (LDAP, second half): `ParseFilter` split an item on `>=`,
@@ -32724,6 +32723,69 @@ becomes `Smith\`. This was noticed in passing and not fixed.
 asked. The fake parses the BER this client sends, so it shows the
 encoding is the assertion intended, not that every server answers it
 alike.
+### 5.421 Every action was named by a tag its owner could move
+
+Issue 321, a Low finding in section 5: the workflows named their
+actions by tag (`checkout@v7`, `setup-go@v7`, `upload-artifact@v7`,
+`download-artifact@v8`, `attest-build-provenance@v4`, and the
+third-party `cross-platform-actions/action@v1.6.0`), and the FreeBSD
+VM legs handed the VM a checkout with its token.
+
+**Measured.** At `757f01f`, 39 `uses:` lines across ci.yml, fleet.yml
+and release.yml, none pinned to a commit. `attest-build-provenance`
+runs in the one job holding `id-token: write` and
+`attestations: write`, so whoever moves its tag runs code that can
+sign provenance for this repository.
+
+The token half is not quite as the audit put it. The log of ci.yml's
+`test (freebsd)` job on `main` (run 39328108027) shows checkout v7 with
+`persist-credentials: true` writing the token to
+`/home/runner/work/_temp/git-credentials-<uuid>.config`, with an
+`includeIf` in `.git/config` pointing at it, rather than into
+`.git/config` itself. The VM action then ran
+`rsync -auz ... /home/runner/work/ runner@cross_platform_actions_host:/home/runner/work`,
+whose `--exclude`s name five `_temp/<uuid>` directories and not that
+file. So the token file is in what is copied into the VM, by the
+exclusions the log prints. The token is the job's, scoped
+`contents: read`, and expires with the job. Its presence inside the VM
+was not looked at.
+
+**The change.** Each `uses:` names the commit its tag resolved to on
+2026-10-19, with the tag in a trailing comment. Each was resolved with
+`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`; the two annotated
+tags (`attest-build-provenance` v4, `cross-platform-actions` v1.6.0)
+were dereferenced through `git/tags/<sha>`, and all six agreed with
+`gh api repos/<owner>/<repo>/commits/<tag>`. The two checkouts that
+precede the VM action set `persist-credentials: false`.
+
+`internal/buildpolicy`'s `TestEveryActionIsPinnedByCommit` holds every
+`uses:` to `owner/repo@<40 hex> # v<version>`, and
+`TestTheVMJobsCheckOutWithoutTheToken` holds every checkout in a job
+using cross-platform-actions to `persist-credentials: false`. The first
+cannot check that a commit is the one its comment names; that needs
+the network.
+
+**Demonstrated.** Against `main`'s workflows the first test names all
+39 references and the second both FreeBSD jobs; with this change both
+pass.
+
+On the PR (#449), every ci.yml leg and, triggered by the change to its
+own path, every fleet.yml leg ran with the pinned actions and without
+the token in the two VM jobs, and passed: 24 checks, the two FreeBSD
+VM jobs among them. So `checkout`, `setup-go` and
+`cross-platform-actions` resolve and run at their pinned commits, and
+neither FreeBSD job needed the token.
+
+**Not verified.**
+
+- release.yml is not run by PR CI and was not dispatched, so
+  `upload-artifact`, `download-artifact` and `attest-build-provenance`
+  at their pinned commits have not run. A pin that does not resolve
+  would show on the next release run.
+- Nothing updates the pins. A bump is by hand, and the test does not
+  notice a stale one.
+
+
 
 
 
