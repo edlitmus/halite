@@ -27,7 +27,7 @@ LVM rounds a size up to a whole extent, so `lvm.lvresize` with `34M` on
 4 MiB extents made a 36 MiB volume, and the same call on the next run
 was refused as a shrink; `lvm.lv_present` warned that the volume was
 larger than declared. A size is now compared as LVM rounds it.
-DIVERGENCE 5.409.
+DIVERGENCE 5.419.
 
 ### `swap.on` and `swap.off` recognise a device named through a link
 
