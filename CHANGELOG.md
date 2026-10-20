@@ -63,6 +63,14 @@ as touch(1) and Salt's `file.touch` do, and `--test` says it would. The
 `file.touch` state is unchanged: it ensures the file exists, so it does
 not report a change on every run. DIVERGENCE 5.405.
 
+### `git.latest` refuses an argument git would read as an option
+
+A `remote` beginning with `-`, such as `--upload-pack=<command>`, was
+given to `git fetch` as an option, and on a checkout that already
+existed git ran the command. `git.latest` now refuses a `name`,
+`remote`, `rev` or `branch` that begins with `-`, and the clone puts
+`--` before the URL. DIVERGENCE 5.414.
+
 ### An S3 state tree whose keys hold `$ : @ + = &` now updates
 
 The S3 file server signed an object's path as Go escapes it, which
