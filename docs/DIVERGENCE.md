@@ -32305,8 +32305,139 @@ kept it fails the same way, so the `--` alone does not cover it.
 get-url` the same way; it only reads, and was not changed. **Not
 verified.** git on FreeBSD was not run.
 
+### 5.411 Ordering a low state was quadratic in its size
 
+Issue 321, Low: `state/order.go` is O(n²) (linear scan plus
+`append(ready[:best], ready[best+1:]…)`); self-requisites are dropped
+silently.
 
+`order` keeps the chunks whose requisites are met in a ready set and
+places the best one each round. The set was a slice, scanned end to end
+for the best chunk and then closed up, on the stated grounds that it is
+small in practice. Every chunk with nothing constraining it is ready
+from the start, so a large state with few requisites is exactly the
+case where it is not small.
+
+**Measured** on `main` at `39b9f22` with unconstrained chunks declared
+in reverse, on this host under a load average of about 32: 1,000 chunks
+3 ms, 10,000 0.30 s, 40,000 10.8 s, 100,000 92 s. With the change,
+100,000 take 0.12 s.
+
+**The change.** The ready set is a binary heap. The order it produces
+must be the one the scan produced, ties included, and `less` has ties:
+the chunks of one declaration with several functions share every key.
+The scan broke those by position in its slice, which was arrival order
+(the initial set in index order, since its sort was stable, then each
+chunk as it became ready), so each heap entry carries an arrival number
+and ties are broken on it.
+
+**Demonstrated.**
+
+- Equivalence, measured once and not kept as a test: 20,000 random low
+  states from the property suite's generator, each up to 40 chunks with
+  random requisites, and with declaration order, sequence and `order:`
+  drawn from small ranges so ties are frequent. A SHA-256 over every
+  resulting order was `b4e5b165…` on `main` and `b4e5b165…` with the
+  change. With the arrival tiebreak reversed it was `32193afa…`, so the
+  digest does see a change in how ties fall.
+- `TestOrderingALargeLowStateIsNotQuadratic` orders 100,000 chunks
+  under a 10 s bound and checks the result. With the old `order.go` it
+  failed after 92 s; with the change it passes in 0.12 s. The bound is
+  loose for loaded race runs; the scan is nowhere near it.
+- The existing ordering and property tests pass unchanged.
+
+**Not done.** Self-requisites: `addEdge` ignores an edge from a chunk to
+itself, so `require` naming the chunk's own ID is dropped without a
+word. Whether that should be a diagnostic depends on what Salt does with
+one, which was not checked against Salt here; it is left.
+
+**Not verified.** The equivalence was measured on generated graphs, not
+on a real estate's low states.
+### 5.412 The local signer signed a digest of any length; the KMS signer refused
+
+Issue 321, Low, from the signer bullet: the local signer signs digests
+of any length while KMS requires 32 bytes; the local signer reads its key
+file with no mode check.
+
+Both `signer` extensions declare `sign` as taking a base64 SHA-256
+digest. `halite-ext-signer-kms` refuses anything but 32 bytes before it
+calls KMS. `halite-ext-signer-local` passed the bytes straight to
+`ecdsa.SignASN1`, which signs any length (truncating a long one to the
+curve's size), so the two signers the host can be pointed at disagreed
+on what a valid request is.
+
+**Measured** on `main` at `39b9f22`, through the handler: digests of 20,
+31, 33, 48 and 64 bytes were all signed by the local signer, and a 1-byte
+one too. The host (`internal/extsigner`) only ever sends a `[32]byte`,
+so no request the host makes was affected; a host bug that sent the
+wrong bytes would have been signed by one signer and refused by the
+other.
+
+**The change.** The local signer refuses a digest that is not 32 bytes,
+with the KMS signer's message. It is now 1.0.1, since a request it used
+to answer it now refuses; its digest is recorded.
+
+**Demonstrated.** `TestHandleSignRefusesADigestThatIsNotSHA256` fails
+on `main`, every one of the six lengths signed, and
+passes with the change. `internal/extsigner`'s end-to-end test, which
+builds and runs the real binary, still passes.
+
+**Not done.** The key file's mode is still not checked. What to refuse
+(group-readable, world-readable, owned by someone else) and what that
+means on Windows is a policy choice for the owner, and this extension is
+the reference bridge, not a production signer (its own comment says a
+key file beside the CLI is the thing SPEC 25.6 rules out).
+
+**Not verified.** Only through the handler and the existing end-to-end
+test; no deployed signer.
+### 5.413 A Python module's names were spliced into its bridge skeleton as Go
+
+Issue 321, Low: in `migrate/skeleton.go`, module and function names go
+unescaped into `fmt.Errorf("%s.%s…")`, so a crafted Python file yields
+Go that does not compile, or Go an attacker chose, once an operator
+builds it.
+
+`halite-hub migrate --bridge-skeleton DIR` writes one Go command per
+custom Salt module it finds in a formula. The module's name is its
+`__virtualname__` if it sets one, and the reader is a line scanner, not
+Python: whatever sits between the quotes is the name. Three places put
+the Python file's text into the Go source as it was:
+
+- each stub's `fmt.Errorf("<module>.<function> is not written yet")`,
+  inside a Go string literal;
+- the package comment's `generated from <path>` and each stub's
+  `// From <path>:<line>`, inside line comments;
+- each parameter's `//   <name> = <default>`, also a comment.
+
+**Measured** with `ReadPyModule` and `GenerateSkeleton` on `main` at
+`39b9f22`. A module whose `__virtualname__` is
+`x"); os.RemoveAll("/srv"); return nil, fmt.Errorf("` produces a stub
+that parses as Go and calls `os.RemoveAll("/srv")` when the function is
+invoked. A file path holding a newline put `func init() { … }` on a line
+of its own; in the stub that is a parse error, not code, and in the
+package comment it lands before `package` and is a parse error too.
+Function names cannot hold `(` (the reader cuts there), so the module
+name is the practical route. An operator reviews generated code before
+building it, which is the mitigation that existed; nothing else did.
+
+**The change.** The stub passes the name as a quoted argument,
+`fmt.Errorf("%s is not written yet", "<module>.<function>")`, built
+with `%q`. The path and each parameter description go through
+`oneLine`, which the docstring already went through. What a built stub
+returns at run time is the same text as before.
+
+**Demonstrated.** `TestANameCannotWriteCodeIntoTheSkeleton` builds a
+skeleton from that virtual name and a path with a newline, parses it,
+and walks the tree for any function other than `main` and `handle` and
+any call to `RemoveAll`. On `main` it fails to parse. With only the
+`Errorf` line put back, it parses and the test reports the `RemoveAll`
+call; with only the stub's path comment put back, it fails to parse
+again. `TestAGeneratedSkeletonParsesAsGo` now looks for the quoted name
+rather than the spliced text, and the existing compile-outside-the-repo
+test still builds a skeleton.
+
+**Not verified.** The `migrate` command was not run end to end over a
+tree holding such a file; the test drives the two functions it calls.
 
 
 

@@ -1,8 +1,10 @@
 package migrate
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -127,7 +129,7 @@ func TestAGeneratedSkeletonParsesAsGo(t *testing.T) {
 	// Every function is a stub that fails, so a bridge generated and
 	// forgotten fails loudly rather than answering nothing.
 	for _, fn := range module.Functions {
-		want := fn.Name + " is not written yet"
+		want := `"%s is not written yet", ` + strconv.Quote(module.Name+"."+fn.Name)
 		if !strings.Contains(skeleton.Source, want) {
 			t.Errorf("the skeleton does not stub %s", fn.Name)
 		}
@@ -204,4 +206,39 @@ func TestTheCommandNameIsAlwaysUsable(t *testing.T) {
 			t.Errorf("bridgeCommandName(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+// The names a skeleton is built from are the Python file's: its path,
+// its `__virtualname__`, its function names. A Python interpreter would
+// refuse most of what can be written there, but the reader here is a
+// line scanner, and the skeleton is Go an operator compiles. Each name
+// used to be spliced in unescaped: into `fmt.Errorf("%s.%s …")`, where a
+// virtual name holding a quote ended the string and its remainder was
+// code, and into `//` comments, where a path holding a newline started
+// a line of its own.
+func TestANameCannotWriteCodeIntoTheSkeleton(t *testing.T) {
+	src := "__virtualname__ = 'x\"); os.RemoveAll(\"/srv\"); return nil, fmt.Errorf(\"'\n" +
+		"def run(a):\n" +
+		"    return a\n"
+	file := "_modules/evil.py\nfunc init() { os.Exit(3) }\n//"
+	module := ReadPyModule(file, []byte(src))
+	skeleton := GenerateSkeleton(module, "module")
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "main.go", skeleton.Source, parser.AllErrors)
+	if err != nil {
+		t.Fatalf("the skeleton does not parse: %v\n%s", err, skeleton.Source)
+	}
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncDecl:
+			if n.Name.Name != "main" && n.Name.Name != "handle" {
+				t.Errorf("the skeleton declares %s, which came from a name", n.Name.Name)
+			}
+		case *ast.SelectorExpr:
+			if n.Sel.Name == "RemoveAll" {
+				t.Errorf("the skeleton calls %s, which came from a name", n.Sel.Name)
+			}
+		}
+		return true
+	})
 }
