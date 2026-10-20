@@ -32676,6 +32676,55 @@ used. None of them is known to redirect a discovery, key set or token
 URL, so a provider that relies on an http redirect would now fail. That
 was not looked for.
 
+### 5.420 An LDAP filter item found its operator in the value
+
+Issue 321, Low (LDAP, second half): `ParseFilter` split an item on `>=`,
+`<=` and `~=` before `=`, so a username holding one of them could not
+log in.
+
+**Measured** against the package's own fake directory, since no real
+directory was available. `parseItem` searched the whole item for each
+two-character operator before it looked for `=`. With the default user
+filter `(uid=%s)`, the username `a>=b` became `(uid=a>=b)`, which was
+encoded as "attribute `uid=a` greater than or equal to `b`". `Escape`
+does not touch `>`, `<`, `~` or `=`, and neither does RFC 4515, which
+reserves only `*`, `(`, `)`, `\` and NUL in a value. The fake answered
+"no such user in the directory" for an account that exists. The same
+version accepted `(>=1)`, an operator with no attribute.
+
+Nothing was widened. The misparsed filter names an attribute no
+directory has, so it matched nothing. The failure was a login refused,
+not a login granted.
+
+**The change.** The operator is the first `=` in the item and the
+character before it. RFC 4515's attribute description cannot contain
+`=`, `>`, `<` or `~`, so the first `=` always belongs to the operator
+and everything after it is the value. An empty attribute is now refused
+for the comparison operators as it was for equality.
+
+**Demonstrated.** `TestAComparisonInTheValueIsPartOfTheValue` compares
+the BER encoding with the assertion it should be, and still checks that
+`>=`, `<=` and `~=` parse as operators when they are the operator.
+`TestAUsernameHoldingAComparisonCanLogIn` logs `a>=b` in against the
+fake directory. Both fail on `main` as described and pass with the
+change.
+
+**Not changed.** The other half of the bullet, `MapRoles` folding the
+case of group names in every directory, was left alone. The group name
+is the first RDN's value, normally `cn`, and RFC 4519 gives `cn`
+`caseIgnoreMatch`, so OpenLDAP and 389-ds compare it without case as
+Active Directory does. The fold is looser only for a schema that names
+groups by a case-exact attribute. `strings.EqualFold` is also not RFC
+4518's string preparation (it does not fold runs of spaces, for
+example), and that was not changed either. `groupName` cuts the DN at
+its first `,` without honouring `\,`, so `cn=Smith\, J,ou=groups`
+becomes `Smith\`. This was noticed in passing and not fixed.
+
+**Not verified.** No real directory (OpenLDAP, Active Directory) was
+asked. The fake parses the BER this client sends, so it shows the
+encoding is the assertion intended, not that every server answers it
+alike.
+
 
 
 

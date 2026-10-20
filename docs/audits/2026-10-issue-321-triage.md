@@ -188,6 +188,7 @@ passing by the PRs above; that has not been looked for.
 | `file.touch` documents updating times and changes nothing | #453 | 5.405; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
 | `git.latest` passes URL, rev and remote with no `--` | #459 | 5.414; not neutralised for `remote` on an existing checkout: the command ran; `git.remote_get` left; FreeBSD git not run |
 | OIDC: redirects to `http://` followed, discovery endpoints not required https, discovery re-run while the IdP is down | #448 | 5.419; the token endpoint redirect sent the client secret to plaintext, measured; fake issuer only, no real IdP; no single-flight for concurrent discoveries |
+| LDAP `ParseFilter` finds `>=`/`<=`/`~=` in the value | #451 | 5.420; fake directory only; the `MapRoles` case-fold half left, as `cn` is `caseIgnoreMatch` in RFC 4519 |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions

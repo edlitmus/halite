@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An LDAP username holding `>=`, `<=` or `~=` can log in
+
+The user filter read a comparison inside the username as the filter's
+operator. `(uid=a>=b)` became a search on an attribute called `uid=a`,
+so no such operator could log in. The operator is now the first `=`
+in the filter item. DIVERGENCE 5.420.
+
 ### `swap.on` and `swap.off` recognise a device named through a link
 
 The kernel lists a swap device by its real path. A tree that named it
