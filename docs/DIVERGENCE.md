@@ -32785,6 +32785,37 @@ neither FreeBSD job needed the token.
 - Nothing updates the pins. A bump is by hand, and the test does not
   notice a stale one.
 
+### 5.422 `job.ID.Valid` accepted a sign where a digit belongs
+
+Issue 321, Low: `job.ID.Valid()` accepts characters that are not
+digits. `20260819T142211+23456` is the same time as `...023456`, but
+not the same string. The audit found no traversal, and fuzzed it.
+
+**Measured.** `Valid` checked the length, 21, and that `time.Parse`
+accepted the ID with a `.` put in before the fraction. `time.Parse` read
+the `+` in `142211.+23456` as part of the fraction, so the ID was
+accepted. Its neighbours were already refused by `time.Parse`: a space
+or `-` in the fraction, a leading `+`, and a lower-case `t`. The
+`+` one was the only spelling found that got through.
+
+A jid is a key by its string: the job cache directory, the replay
+cache, and what an operator types. A second spelling of one moment is
+not a path escape, since `+` is not a separator. It is a string that
+`NewID` never writes being treated as if it had.
+
+**The change.** `Valid` requires a digit at every position except the
+ninth, which must be `T`, before it parses the time.
+
+**Demonstrated.** `TestIdentifiersAreSortableReadableAndDistinct` lists
+the `+` spelling and its four neighbours among the identifiers that
+must be refused. With `job.go` reverted to `main` it fails on the `+`
+spelling alone, which is the measurement above. It passes with the
+change.
+
+**Not verified.** No jid from a running hub was checked. Nothing was
+looked for that might have stored a jid in the `+` form. `NewID` cannot
+produce one.
+
 
 
 

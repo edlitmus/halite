@@ -51,6 +51,24 @@ func (id ID) Valid() bool {
 	if len(id) != 21 {
 		return false
 	}
+	// Digits, and the T, before the time is parsed. time.Parse reads a
+	// sign where a digit should be, so `20260819T142211+23456` parsed
+	// as the same moment as `...023456` and was accepted. Both are one
+	// path segment and neither escapes the cache, but a jid is used as
+	// a key by its string, and this was a second spelling of a moment
+	// that NewID never writes. NewID writes only digits.
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		if i == 8 {
+			if c != 'T' {
+				return false
+			}
+			continue
+		}
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
 	_, err := id.Time()
 	return err == nil
 }
