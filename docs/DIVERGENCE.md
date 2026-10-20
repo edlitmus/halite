@@ -31874,6 +31874,76 @@ were not run; Linux reads `/proc/uptime` first and never gets here.
 
 
 
+### 5.402 The agentless cache directory was made under the login's umask
+
+Found when `make check` failed once on
+`TestConcurrentRunsAgainstOneMachineBothSucceed`, in a run for 5.400:
+
+    halite: refusing …/halite-thin: accounts other than its owner may
+    write to it (drwxrwxr-x)
+
+5.306's `prepareScript` makes `thin_dir` with `mkdir -p` and then makes it
+private with `chmod 700`. Between the two, the directory has whatever
+mode the login's umask gives it. On Ubuntu that is 002 for an ordinary
+account: pam_umask with user private groups. A non-interactive
+`ssh localhost` session on this Ubuntu 24.04 host reports `0002`. CI's is
+022, so CI never saw it. Two things follow:
+
+- **The race.** A second run's `checkScript`, landing between the
+  first's `mkdir` and its `chmod`, finds `thin_dir` group-writable and
+  refuses the run. In the test, with the test process's umask of 0002,
+  it failed 57 times in 1,000.
+- **A missing parent is refused every time.** `mkdir -p` makes any
+  missing parent under the same umask, and nothing tightens it. So a
+  `thin_dir` such as `~/.cache/halite-thin`, on an account with no
+  `~/.cache`, gets a group-writable `.cache`, which the check above it
+  refuses, on every run.
+
+Neither lets another account's binary run. The window is a directory the
+connecting account owns, and anything written into it by another
+account fails the owner check on the binary. Both are refusals of a run
+that should have gone ahead. Both also contradict 5.306's claim that
+nobody else can write anywhere on the path.
+
+**Measured** on this Ubuntu 24.04 host, `halite-hub ssh self test.ping`
+against `ssh localhost` (session umask 0002), main at `757f01f` and this
+change:
+
+| | `main` | this change |
+|---|---|---|
+| `thin_dir` under a missing `.cache` | refused, `.cache` left `drwxrwxr-x` | `True`, `.cache` is `drwx------` |
+| 20 rounds of 6 concurrent runs, each round on a fresh `thin_dir` | 0 of 120 refused | 0 of 120 refused |
+
+The race did not show over real ssh. Each connection takes long enough
+that six runs started together do not reach the window together. It is
+measured in the test harness, where the fake ssh is a local shell.
+
+**The change.** `umask 077` before the `mkdir`, so the directory and any
+parent it makes are private from the moment they exist. The `chmod 700`
+stays for a directory that was already there.
+
+**Demonstrated.** The harness's fake ssh now can set the target's
+umask, so the tests no longer depend on the umask of whoever runs them:
+
+- `TestAThinDirUnderAMissingDirectoryIsMadePrivate`: the run succeeds
+  and the parent is 0700. Without the `umask` line the run is refused.
+- `TestTheThinDirIsPrivateBeforeItsChmod`: a `chmod` shim on the
+  target's `PATH` records `thin_dir`'s mode when it is called. That is
+  the end of the window, so the race is now tested deterministically.
+  Without the `umask` line it records `drwxrwxr-x`.
+- The concurrent test: 0 failures in 2,000 runs with the change, 57 in
+  1,000 without, both under umask 0002.
+
+**Not changed.** A parent that already exists keeps its mode, and is
+refused if another account can write to it. An account's own home
+directory can be group-writable under some umask setups, and that is
+still refused, as it should be.
+
+**Not verified.** Not run against FreeBSD or macOS targets. Their login
+umask is usually 022, which never opened the window. Not run as root
+with `sudo`.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -47,7 +47,7 @@ not do. Each has been checked to see whether it happened.
 | H-04 template limits (+ L-engine-1, L-engine-3) | #332 | a value nested in a loop (`{% set ns.x = [ns.x] %}`) still overflows the stack; chained `set` filters, `truncate` leeway, `zfill`; SPEC 10.2.8's sandbox claim | |
 | H-05 background `runas` | #327 | | |
 | H-06 `listen` reactions | #347 | | |
-| H-07 agentless cache trust | #326 | M-14 (below) | |
+| H-07 agentless cache trust | #326 | M-14 (below) | its directory had the login's umask until `chmod`, so under umask 002 a concurrent run, or a missing parent, was refused: fixed in #456 (5.402) |
 | H-08 `file.line` regex (+ empty delete) | #343 | | |
 | H-09 `ArbitraryCode` flags | #330 | | |
 | H-10 token revoke race | #335 | M-07 (below) | |
