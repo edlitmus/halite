@@ -3594,7 +3594,7 @@ iptables.get_rules(family: string = ipv4, table: string = )
 
 #### `iptables.insert`
 
-Add a rule at a position in a chain, if it is not already there.
+Insert a rule at a position in a chain, if the chain does not already hold it. A rule already anywhere in the chain is left where it is; the position is not enforced.
 
 ```
 iptables.insert(chain: string, rule: any, protocol: string = , dport: string = , sport: string = , source: string = , destination: string = , in_interface: string = , out_interface: string = , ctstate: string = , match: list, comment: string = , jump: string = , extra: string = , table: string = filter, family: string = ipv4, position: int = 1)
@@ -11250,7 +11250,7 @@ iptables.flush(name: string, force: bool = false, table: string = filter, family
 
 #### `iptables.insert`
 
-Ensure a rule is present at a position in a chain.
+Ensure a rule is present in a chain, inserting it at a position when it is not. A rule already anywhere in the chain is converged; the position is not enforced.
 
 ```
 iptables.insert(name: string, chain: string, rule: any, protocol: string = , dport: string = , sport: string = , source: string = , destination: string = , in_interface: string = , out_interface: string = , ctstate: string = , match: list, comment: string = , jump: string = , extra: string = , table: string = filter, family: string = ipv4, position: int = 1)
