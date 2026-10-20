@@ -234,7 +234,7 @@ func indexFunctionSource(t *testing.T) funcSourceIndex {
 //     where the Module and Function are literals and the work is the
 //     argument; and
 //   - a helper that builds the whole registration, `maskModule(r,
-//     "mask", …, func…)` or file's `edit("touch", …, fileTouch)`, where
+//     "mask", …, func…)` or file's `edit("touch", …, fileTouchExec)`, where
 //     the Function is one of the helper's parameters and the work is
 //     another. The helper's call sites name the function as a string
 //     literal, which is how the two are paired.

@@ -84,6 +84,14 @@ func TestUFWSaysWhetherItChangedAnything(t *testing.T) {
 		{"Skipping adding existing rule\nSkipping adding existing rule (v6)\n", false},
 		{"Could not delete non-existent rule\n", false},
 		{"Rule deleted\n", true},
+		// The two families are decided apart, and ufw prints one line
+		// for each. These are composed from the lines above in the order
+		// ufw 0.36.2's frontend joins them, not captured from a ufw in
+		// that state. DIVERGENCE 5.416.
+		{"Skipping adding existing rule\nRule added (v6)\n", true},
+		{"Rule added\nSkipping adding existing rule (v6)\n", true},
+		{"Could not delete non-existent rule\nRule deleted (v6)\n", true},
+		{"Skipping adding existing rule\nRules updated (v6)\n", true},
 	} {
 		if got := ufwChanged(tc.out); got != tc.want {
 			t.Errorf("ufwChanged(%q) = %v, want %v", strings.TrimSpace(tc.out), got, tc.want)

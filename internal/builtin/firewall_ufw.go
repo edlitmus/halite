@@ -223,17 +223,47 @@ func ufwAddedListHas(out string, r firewallRule) bool {
 // there and "Could not delete non-existent rule" when it is already
 // gone. Both are successes with a zero exit — the state asked for is the
 // state that holds — and both mean nothing changed.
+//
+// # One line per address family, and they can disagree
+//
+// A rule with no address is added for IPv4 and IPv6 both, and ufw prints
+// one line for each: the v4 answer, then the v6 one with " (v6)" after
+// it (`frontend.py`, `set_rule`, in ufw 0.36.2 as Ubuntu 24.04 ships it:
+// `tmp + "\n" + backend.set_rule(r)`). The two are decided separately,
+// so a v4 rule that is there and a v6 twin that is not prints
+//
+//	Skipping adding existing rule
+//	Rule added (v6)
+//
+// This read "Skipping" anywhere in the output as "nothing changed", so
+// that run reported no change while it added a rule (issue 321, section
+// 5). So a line saying something changed now wins over a line saying
+// something was skipped. The change lines are the five `backend_
+// iptables.py` writes on the path past the skips: "Rules updated" (rules
+// written, firewall inactive or a dry run), "Rule added", "Rule
+// inserted", "Rule updated" and "Rule deleted". Output with neither kind
+// of line reads as changed, as before, because an answer this cannot
+// read is not evidence that nothing happened. DIVERGENCE 5.416.
 func ufwChanged(out string) bool {
-	for _, unchanged := range []string{
-		"Skipping adding existing rule",
-		"Skipping inserting existing rule",
-		"Could not delete non-existent rule",
-	} {
-		if strings.Contains(out, unchanged) {
-			return false
+	skipped := false
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		for _, changed := range []string{"Rules updated", "Rule added", "Rule inserted", "Rule updated", "Rule deleted"} {
+			if strings.HasPrefix(line, changed) {
+				return true
+			}
+		}
+		for _, unchanged := range []string{
+			"Skipping adding existing rule",
+			"Skipping inserting existing rule",
+			"Could not delete non-existent rule",
+		} {
+			if strings.HasPrefix(line, unchanged) {
+				skipped = true
+			}
 		}
 	}
-	return true
+	return !skipped
 }
 
 // ufwRuleArgs renders a rule as ufw's own grammar.

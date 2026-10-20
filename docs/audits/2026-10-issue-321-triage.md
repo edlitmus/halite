@@ -31,7 +31,8 @@ Issue 321 stays open, because what is below is not finished.
 | High (20) | 20 | none |
 | Medium (55) | 54 | 1, half done (M-47) |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
-| Low (section 5) | 15 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 23 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 18 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
 ### Fixed
 
@@ -169,8 +170,25 @@ passing by the PRs above; that has not been looked for.
 | `yaml_squote` corrupts multi-line values | #414 | 5.374, against PyYAML 6.0.1; `yaml_dquote` spells non-ASCII differently from PyYAML |
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | SigV4 canonical URI for S3 keys with `: @ + = $ &` | #444 | 5.401; held to AWS's published `PUT /test$file.text` vector, not to S3 itself; S3-compatible stores not tried |
+| Redaction: overlapping secrets leave a tail in clear | #462 | 5.407; the multi-line secret in `render.Error`'s numbered window is left for the owner (two options in the entry); `log.ScrubValue` and `error` fields separate |
+| `log` field holding an `error` not scrubbed | #466 | 5.408; latent, no call site passed one; JSON wrote `{}`; `fmt.Stringer` fields left (a `*url.URL` still prints its password) |
+| aws-secrets: node `name` nests over a hub secret | #468 | 5.409; extension 1.1.1; cache eviction (bounded by what exists) and the `node_grain_allow` default (owner decision) left |
+| `template.DirLoader` follows symlinks | #469 | 5.410; test and dev use only; Linux only |
+| `state/order.go` is O(n²) | #471 | 5.411; heap, same order on 20,000 random graphs with ties; self-requisites still dropped silently (needs a Salt check) |
+| Local signer signs any digest length | #473 | 5.412; extension 1.0.1; the host only sends 32 bytes; key-file mode check left (owner policy) |
+| `migrate/skeleton.go` names unescaped in generated Go | #464 | 5.413; a `__virtualname__` produced a stub that compiled and called `os.RemoveAll`; `migrate --bridge-skeleton` not run end to end |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 | `lvm.lvresize` calls a rounded-up size a shrink | #475 | 5.409; measured on the fleet `linux` leg (LVM2 2.03.16): failed before, passed after; `lv_present` warned too; only 4 MiB extents |
+| `swap.on`/`off` compare the caller's path with the kernel's keys | #472 | 5.418; measured and fixed on beastie (FreeBSD `swapctl -l`), live test passed there; Linux not run; GEOM labels not links |
+| Multi-arch: `dpkg.set_selections` diff compares bare names with `name:arch` | #470 | 5.417; happens on a single-arch host too (941 qualified lines on Ubuntu 24.04); apt `ListPkgs` keyed on `${Package}` not fixed (needs a foreign-arch host to capture) |
+| `ufwChanged` unchanged when v4 skipped and v6 added | #467 | 5.416; established from ufw 0.36.2's source, fixtures composed, not captured (ufw needs root) |
+| `shutdown -r +N <message>` message starting with `-` read as an option | #465 | 5.415; systemd 255 measured with no bus (`-h` accepted); FreeBSD unaffected, read from shutdown.c, not run; refused rather than `--` |
+| websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
+
+| CI's FreeBSD Go tarball and saltdiff's Salt onedir fetched unverified | #446 | 5.403; run on beastie and under dash, not in CI's VM or a Docker build; fleet.yml not run |
+| `status.uptime` `extractBootSeconds` takes the first `sec = ` | #447 | 5.404; latent, FreeBSD prints `sec` first (beastie); macOS not run |
+| `file.touch` documents updating times and changes nothing | #453 | 5.405; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
+| `git.latest` passes URL, rev and remote with no `--` | #459 | 5.414; not neutralised for `remote` on an existing checkout: the command ran; `git.remote_get` left; FreeBSD git not run |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions

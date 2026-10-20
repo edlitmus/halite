@@ -95,7 +95,7 @@ func main() {
 		// choices are ext.DeclareRoot and ext.DeclareNetwork.
 		Declares: nil,
 		Functions: []ext.Signature{
-`, bridgeCommandName(module.Name), module.File, module.Name, kind)
+`, bridgeCommandName(module.Name), oneLine(module.File), module.Name, kind)
 
 	for _, fn := range module.Functions {
 		// A quoted literal rather than a raw one: a docstring may hold
@@ -130,12 +130,18 @@ func handle(call ext.Call) (any, error) {
 		if fn.Doc != "" {
 			fmt.Fprintf(&b, "\t\t// %s\n", oneLine(fn.Doc))
 		}
-		fmt.Fprintf(&b, "\t\t// From %s:%d\n", module.File, fn.Line)
+		fmt.Fprintf(&b, "\t\t// From %s:%d\n", oneLine(module.File), fn.Line)
 		for _, param := range fn.Params {
-			fmt.Fprintf(&b, "\t\t//   %s\n", describeParam(param))
+			fmt.Fprintf(&b, "\t\t//   %s\n", oneLine(describeParam(param)))
 		}
-		fmt.Fprintf(&b, "\t\treturn nil, fmt.Errorf(\"%s.%s is not written yet\")\n",
-			module.Name, fn.Name)
+		// The name is a quoted argument, never part of the format. It
+		// is the Python file's to choose (its `__virtualname__` and its
+		// `def`s), and spliced into the format as it was, a quote in it
+		// ended the string and what followed was Go that the operator
+		// would compile (DIVERGENCE 5.413). A `%` in it would have been
+		// a verb, too.
+		fmt.Fprintf(&b, "\t\treturn nil, fmt.Errorf(\"%%s is not written yet\", %q)\n",
+			module.Name+"."+fn.Name)
 		if fn.Name != module.Functions[len(module.Functions)-1].Name {
 			b.WriteString("\n")
 		}

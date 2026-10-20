@@ -325,3 +325,70 @@ func TestAPendingShutdownIsFoundThroughThePSModule(t *testing.T) {
 		t.Errorf("a `grep shutdown` was read as a pending reboot: %v", quiet.comment)
 	}
 }
+
+// A broadcast message beginning with `-` is refused, because systemd's
+// shutdown reads it as options wherever it stands: measured on systemd
+// 255, `shutdown -r +5 -h` is accepted, so the message `-h` turns a
+// reboot into a halt. Every builder that puts a message on shutdown's
+// command line refuses it, and the state refuses it under --test too.
+// DIVERGENCE 5.415.
+func TestAShutdownMessageThatLooksLikeAnOptionIsRefused(t *testing.T) {
+	for _, goos := range []string{"linux", "freebsd"} {
+		for _, msg := range []string{"-h", " -c", "--halt"} {
+			if argv, err := rebootScheduleArgv(goos, 5, msg); err == nil {
+				t.Errorf("reboot.schedule on %s built %q for message %q", goos, argv, msg)
+			}
+			for _, verb := range []string{"reboot", "shutdown"} {
+				if argv, err := systemPowerArgv(goos, verb, 5, msg); err == nil {
+					t.Errorf("system.%s on %s built %q for message %q", verb, goos, argv, msg)
+				}
+			}
+		}
+		// A dash inside the message is ordinary text.
+		argv, err := rebootScheduleArgv(goos, 5, "kernel update - back soon")
+		if err != nil || argv[len(argv)-1] != "kernel update - back soon" {
+			t.Errorf("an ordinary message on %s: %q, %v", goos, argv, err)
+		}
+	}
+
+	c := newCtx(true)
+	res, err := rebootScheduledState(c, value.MapOf("message", "-h", "only_if_required", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() || !strings.Contains(res.Comment, "begins with '-'") {
+		t.Errorf("the state under --test said %q", res.Comment)
+	}
+	if ran := c.Runner.(*exec.RecordingRunner).Ran; len(ran) != 0 {
+		t.Errorf("the state ran %d command(s) before refusing", len(ran))
+	}
+}
+
+// `status.uptime` reads kern.boottime through the same reader as the
+// reboot module, so the two cannot disagree about which key is `sec`.
+//
+// The first fixture is what beastie (FreeBSD 15.1) printed on
+// 2026-10-19. The second has the keys the other way round: no FreeBSD
+// prints that, and it is here because the reader this replaced took
+// the first `sec = ` in the string, which in that order is the
+// microseconds -- an uptime of fifty-six years. DIVERGENCE 5.404.
+func TestUptimeReadsTheSecondsKeyNotTheFirstMatch(t *testing.T) {
+	const now = int64(1792420000)
+	for _, tc := range []struct {
+		out  string
+		want int64
+	}{
+		{"{ sec = 1792418572, usec = 59811 } Mon Oct 19 07:02:52 2026\n", now - 1792418572},
+		{"{ usec = 59811, sec = 1792418572 }\n", now - 1792418572},
+	} {
+		got, ok := uptimeFromBoottime(tc.out, now)
+		if !ok || got != tc.want {
+			t.Errorf("uptimeFromBoottime(%q) = %d, %v; want %d", strings.TrimSpace(tc.out), got, ok, tc.want)
+		}
+	}
+	for _, bad := range []string{"", "{ usec = 1 }", "{ sec = 1892418572, usec = 0 }"} {
+		if got, ok := uptimeFromBoottime(bad, now); ok {
+			t.Errorf("%q was read as an uptime of %d", bad, got)
+		}
+	}
+}
