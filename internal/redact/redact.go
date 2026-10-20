@@ -178,14 +178,7 @@ func (s *Set) Scrub(text string) string {
 	if s == nil {
 		return text
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, v := range s.values {
-		if strings.Contains(text, v) {
-			text = strings.ReplaceAll(text, v, Placeholder)
-		}
-	}
-	return text
+	return s.replaceOutside(text, nil)
 }
 
 // Holds reports whether v, whole, is a recorded secret -- including one
@@ -349,8 +342,23 @@ func (s *Set) ScrubExcept(text string, keep []string) string {
 }
 
 // replaceOutside applies the value set to every occurrence that is not
-// wholly inside a protected span, longest secret first so that a secret
-// containing another is replaced whole.
+// wholly inside a protected span. Scrub calls it with no spans.
+//
+// Every occurrence of every secret is found in the original text first,
+// and only then is anything replaced: each run of bytes that one or more
+// overlapping occurrences cover becomes one placeholder. Replacing as it
+// went was the defect (DIVERGENCE 5.407). Scrub ran strings.ReplaceAll
+// per secret, so with secrets "alpha-shared" and "shared-omega" the
+// first replacement consumed "shared" and the second no longer matched,
+// leaving "-omega" — a tail of a secret — in the text. This function
+// marked replaced bytes and skipped an occurrence that started on one,
+// which lost the same tail. A secret overlapping itself ("abcabc" in
+// "abcabcabc") lost its last bytes the same way, because the search
+// resumed after each match rather than one byte on.
+//
+// A secret that contains another is covered whole by the longer one's
+// occurrence, which is what "longest first" used to buy. Two secrets
+// that merely touch are two placeholders, as they were.
 func (s *Set) replaceOutside(text string, spans []span) string {
 	if s == nil {
 		return text
@@ -358,10 +366,7 @@ func (s *Set) replaceOutside(text string, spans []span) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// done marks bytes already replaced, so two secrets cannot overlap.
-	done := make([]bool, len(text))
-	type edit struct{ start, end int }
-	var edits []edit
+	var hits []span
 	for _, v := range s.values {
 		for from := 0; from <= len(text)-len(v); {
 			i := strings.Index(text[from:], v)
@@ -369,32 +374,29 @@ func (s *Set) replaceOutside(text string, spans []span) string {
 				break
 			}
 			at := from + i
-			from = at + len(v)
+			from = at + 1
 			if containedBy(spans, at, at+len(v)) {
 				continue
 			}
-			if done[at] {
-				continue
-			}
-			for j := at; j < at+len(v); j++ {
-				done[j] = true
-			}
-			edits = append(edits, edit{at, at + len(v)})
+			hits = append(hits, span{at, at + len(v)})
 		}
 	}
-	if len(edits) == 0 {
+	if len(hits) == 0 {
 		return text
 	}
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+	sort.Slice(hits, func(i, j int) bool { return hits[i].start < hits[j].start })
 	var b strings.Builder
 	at := 0
-	for _, e := range edits {
-		if e.start < at {
-			continue
+	for i := 0; i < len(hits); {
+		run := hits[i]
+		for i++; i < len(hits) && hits[i].start < run.end; i++ {
+			if hits[i].end > run.end {
+				run.end = hits[i].end
+			}
 		}
-		b.WriteString(text[at:e.start])
+		b.WriteString(text[at:run.start])
 		b.WriteString(Placeholder)
-		at = e.end
+		at = run.end
 	}
 	b.WriteString(text[at:])
 	return b.String()

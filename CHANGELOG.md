@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Two overlapping secrets no longer leave part of one in a log
+
+When two secret values overlapped in a message, such as a password that
+is the start of a longer token, redaction replaced one and printed the
+remainder of the other. Every byte any secret covers is now replaced.
+DIVERGENCE 5.407.
+
 ### `file.touch` updates the times of a file that exists
 
 The execution function `file.touch` said it would create a file or

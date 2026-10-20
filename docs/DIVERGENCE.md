@@ -32049,8 +32049,56 @@ nothing. With the registration pointed back at `fileTouch` it fails:
 times rather than now, are not accepted; the signature has only `name`,
 as before. **Not verified.** Run on Linux only, as an ordinary user, in
 a temporary directory; not on FreeBSD.
-
 ### 5.406 Two goroutines writing one websocket could split a frame
+
+Issue 321, part of the Low "redaction gaps" bullet: overlapping secrets
+leave a tail in clear. `Set.Scrub` replaced each secret with
+`strings.ReplaceAll` in turn, longest first. When two secrets overlap in
+a message, the first replacement consumes the shared bytes and the
+second no longer occurs, so its remainder is printed. `ScrubExcept`
+marked replaced bytes and skipped an occurrence starting on one, which
+lost the same tail. A secret that overlaps itself lost its last bytes
+too, because the search resumed after each match.
+
+**Measured** on `main` at `757f01f`, with secrets `alpha-shared` and
+`shared-omega`:
+
+| text | `Scrub` and `ScrubExcept` on `main` |
+|---|---|
+| `x alpha-shared-omega y` | `x **********-omega y` |
+| `alpha-shared-omega-shared-omega` | `**********-omega-**********` |
+| `abcabcabc!`, secret `abcabc` | `**********abc!` |
+
+How often a pillar holds two secrets that overlap in one message was not
+looked at; a password that is a prefix of a longer token is the likely
+shape.
+
+**The change.** One function does both: every occurrence of every
+secret, overlapping ones included, is found in the original text, and
+each run they cover becomes one placeholder. Scrub now calls it with no
+protected spans. Secrets that only touch remain two placeholders, and a
+secret inside a longer one is covered by it, so the existing tests'
+outputs are unchanged.
+
+**Demonstrated.** `TestOverlappingSecretsLeaveNoTail` fails on `main`
+with the outputs in the table, and passes with the change. With only the
+search step put back to resuming after the match, it fails on the
+self-overlapping case alone.
+
+**Not done.** The bullet's two other parts:
+
+- A multi-line secret is matched only when contiguous, and
+  `render.Error` prints the rendered window line by line with numbers
+  in front, so no line holds the whole secret. Fixing it means either
+  scrubbing the window before it is numbered, which needs the set where
+  the error is built rather than at the sink, or registering each line
+  of a multi-line secret as a secret of its own, which would also scrub
+  a PEM's `-----BEGIN …-----` line everywhere. That is the owner's call.
+- `log` passing an `error` field to `ScrubValue`, which only knows
+  strings and containers: a separate change.
+
+**Not verified.** Only the unit tests; no node or hub was run with
+overlapping secrets in its pillar.
 
 Issue 321, Low: `websocket.Conn.writeFrame` writes a frame as two
 `conn.Write` calls, a header and then a payload, with nothing between
@@ -32094,6 +32142,9 @@ test and not the server.
 **Not verified.** No browser or real websocket client was connected
 while this was tested. The interleaving was not seen on the production
 API; it was only shown with the test.
+### 5.407 Two overlapping secrets left the tail of one in the text
+
+
 
 ## 6. Everything else not started
 
