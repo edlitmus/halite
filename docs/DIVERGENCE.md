@@ -32045,12 +32045,7 @@ nothing. With the registration pointed back at `fileTouch` it fails:
 times rather than now, are not accepted; the signature has only `name`,
 as before. **Not verified.** Run on Linux only, as an ordinary user, in
 a temporary directory; not on FreeBSD.
-
-
-
-
-
-### 5.403 `git.latest` passed a remote beginning with `-` to `git fetch`
+### 5.406 `git.latest` passed a remote beginning with `-` to `git fetch`
 
 Issue 321, section 5: `git.latest` passes URL, rev and remote with no
 `--` and no leading-`-` check; "mostly neutralised because the next
@@ -32092,6 +32087,12 @@ kept it fails the same way, so the `--` alone does not cover it.
 **Not done.** `git.remote_get` passes its `remote` to `git remote
 get-url` the same way; it only reads, and was not changed. **Not
 verified.** git on FreeBSD was not run.
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
