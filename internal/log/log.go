@@ -195,7 +195,21 @@ func (l *Logger) Log(level Level, msg string, kv ...any) {
 	}
 	// Every field, not only the message: a secret arrives in whichever
 	// one the caller happened to put it in.
+	//
+	// An error is made its text first. The redactor walks strings and
+	// containers and returns anything else as it was, so an error field
+	// went out unscrubbed: the console form printed it through %v with
+	// any secret in it, and the JSON form wrote `{}`, because an error's
+	// fields are unexported (DIVERGENCE 5.408). Only error, not every
+	// fmt.Stringer: a time.Duration or time.Time field is written as
+	// JSON in its own form, and turning it into its String() would
+	// change what every such record says. fmt.Sprint rather than
+	// Error(), because fmt recovers from a typed nil whose Error method
+	// dereferences it, and a log line should not be what panics.
 	for k, v := range rec {
+		if err, ok := v.(error); ok {
+			v = fmt.Sprint(err)
+		}
 		rec[k] = l.secrets.ScrubValue(v)
 	}
 	rec["ts"] = l.now().UTC().Format("2006-01-02T15:04:05.000000Z07:00")

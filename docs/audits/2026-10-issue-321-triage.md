@@ -31,7 +31,8 @@ Issue 321 stays open, because what is below is not finished.
 | High (20) | 20 | none |
 | Medium (55) | 54 | 1, half done (M-47) |
 | M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
-| Low (section 5) | 17 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 18 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Low (section 5) | 18 | 60 bullets listed (the audit says about 90); being taken one at a time |
 
 ### Fixed
 
@@ -170,6 +171,7 @@ passing by the PRs above; that has not been looked for.
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | SigV4 canonical URI for S3 keys with `: @ + = $ &` | #444 | 5.401; held to AWS's published `PUT /test$file.text` vector, not to S3 itself; S3-compatible stores not tried |
 | Redaction: overlapping secrets leave a tail in clear | #462 | 5.407; the multi-line secret in `render.Error`'s numbered window is left for the owner (two options in the entry); `log.ScrubValue` and `error` fields separate |
+| `log` field holding an `error` not scrubbed | #466 | 5.408; latent, no call site passed one; JSON wrote `{}`; `fmt.Stringer` fields left (a `*url.URL` still prints its password) |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 | websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
 
