@@ -531,7 +531,7 @@ func dpkgSetSelections(c *exec.Context, want *value.Map) (*value.Map, error) {
 // keyed by `bind9-libs:amd64`: it found nothing before and nothing
 // after, so `dpkg.set_selections` reported no change for a hold it had
 // placed, and under `--test` predicted one for a hold already in place.
-// Issue 321, section 5; DIVERGENCE 5.406.
+// Issue 321, section 5; DIVERGENCE 5.417.
 //
 // The exact name wins, so `libc6:i386` asked for is `libc6:i386`. A bare
 // name with no exact key takes the one qualified key there is. With two

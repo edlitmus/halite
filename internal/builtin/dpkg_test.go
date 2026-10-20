@@ -252,7 +252,7 @@ func TestOnlyAMovedSelectionIsAChange(t *testing.T) {
 // printed them on an amd64 host with no foreign architecture
 // (`bind9-libs:amd64` and `tzdata` captured; the `hold` and the i386
 // line are the same shape with the word or the suffix changed).
-// DIVERGENCE 5.406.
+// DIVERGENCE 5.417.
 func TestAnArchQualifiedSelectionIsFoundByItsPlainName(t *testing.T) {
 	// The same split dpkgGetSelections makes, so that this runs on a
 	// node with no dpkg.

@@ -315,7 +315,7 @@ func TestLiveDpkgHoldsAPackageAndDpkgAgrees(t *testing.T) {
 // `libc6`, and the diff once looked for that name and found neither the
 // old selection nor the new one, so a hold that took effect reported no
 // change. This holds it by the plain name and asks for the change, and
-// asks dpkg whether the plain name was accepted at all. DIVERGENCE 5.406.
+// asks dpkg whether the plain name was accepted at all. DIVERGENCE 5.417.
 func TestLiveDpkgHoldsAnArchQualifiedPackageByItsPlainName(t *testing.T) {
 	c := live(t)
 	r := New()

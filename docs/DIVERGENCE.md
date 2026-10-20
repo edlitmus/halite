@@ -31843,49 +31843,6 @@ and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
 
-### 5.406 `dpkg.set_selections` lost a hold on a package dpkg names with its architecture
-
-Issue 321, section 5, the multi-arch bullet, which has two halves: apt's
-`ListPkgs` keys on bare `${Package}` so the last architecture wins, and
-the `dpkg.set_selections` diff compares bare names with `name:arch`
-keys. This is the second half.
-
-**Measured on Ubuntu 24.04, amd64, with no foreign architecture
-configured** (`dpkg --print-foreign-architectures` prints nothing). The
-bullet's premise is that it takes a multi-arch host. It does not:
-`dpkg --get-selections` printed 941 lines qualified, as
-`bind9-libs:amd64\t\t\t\tinstall`, because a Multi-Arch: same package is
-always printed with its architecture. Asked by the plain name,
-`dpkg --get-selections bind9-libs` answered with the qualified line. So
-on any Debian or Ubuntu host a caller holding `bind9-libs` or `libc6`
-had the diff look up `bind9-libs` in a map keyed `bind9-libs:amd64`,
-find nothing on either side, and report no change for a hold it had
-placed; under `--test` it compared against the request and predicted a
-change for a hold already in place.
-
-**The change.** `dpkgSelectionKey` looks a name up as given, and when
-a plain name is not there, takes the one key qualified from it. Two or
-more (the package installed for two architectures) is ambiguous and is
-left unresolved, as before.
-
-**Demonstrated.** `TestAnArchQualifiedSelectionIsFoundByItsPlainName`
-holds the captured lines; with the diff looking names up directly again
-it fails both ways, reporting nothing for the hold and a change for the
-hold already in place. `TestLiveDpkgHoldsAnArchQualifiedPackageByItsPlainName`
-holds `libc6` by its plain name in the fleet's Debian container and asks
-for the change and for dpkg's own reading.
-
-**Not done.** The first half. apt's `ListPkgs` keying on `${Package}`
-needs a host with a foreign architecture installed to capture, and Salt
-keys a foreign package as `name:arch` there, which is a change to what
-`pkg.list_pkgs` returns; it was left. Whether `dpkg --set-selections`
-with a plain name resolves to the native instance when two are
-installed was not measured.
-
-**Not verified.** The live test was written here and runs only in the
-`debian` leg (root, in a container); this host has no root. The fleet
-run's result is in the PR, not here.
-
 ### 5.402 The agentless cache directory was made under the login's umask
 
 Found when `make check` failed once on
@@ -32561,6 +32518,50 @@ and they say so where they stand. The conformance cases on the fleet
 host comes to have one family of a rule and not the other (IPv6 turned
 on in `/etc/default/ufw` after rules were added, or a numbered delete
 of one twin) was not tried.
+### 5.417 `dpkg.set_selections` lost a hold on a package dpkg names with its architecture
+
+Issue 321, section 5, the multi-arch bullet, which has two halves: apt's
+`ListPkgs` keys on bare `${Package}` so the last architecture wins, and
+the `dpkg.set_selections` diff compares bare names with `name:arch`
+keys. This is the second half.
+
+**Measured on Ubuntu 24.04, amd64, with no foreign architecture
+configured** (`dpkg --print-foreign-architectures` prints nothing). The
+bullet's premise is that it takes a multi-arch host. It does not:
+`dpkg --get-selections` printed 941 lines qualified, as
+`bind9-libs:amd64\t\t\t\tinstall`, because a Multi-Arch: same package is
+always printed with its architecture. Asked by the plain name,
+`dpkg --get-selections bind9-libs` answered with the qualified line. So
+on any Debian or Ubuntu host a caller holding `bind9-libs` or `libc6`
+had the diff look up `bind9-libs` in a map keyed `bind9-libs:amd64`,
+find nothing on either side, and report no change for a hold it had
+placed; under `--test` it compared against the request and predicted a
+change for a hold already in place.
+
+**The change.** `dpkgSelectionKey` looks a name up as given, and when
+a plain name is not there, takes the one key qualified from it. Two or
+more (the package installed for two architectures) is ambiguous and is
+left unresolved, as before.
+
+**Demonstrated.** `TestAnArchQualifiedSelectionIsFoundByItsPlainName`
+holds the captured lines; with the diff looking names up directly again
+it fails both ways, reporting nothing for the hold and a change for the
+hold already in place. `TestLiveDpkgHoldsAnArchQualifiedPackageByItsPlainName`
+holds `libc6` by its plain name in the fleet's Debian container and asks
+for the change and for dpkg's own reading.
+
+**Not done.** The first half. apt's `ListPkgs` keying on `${Package}`
+needs a host with a foreign architecture installed to capture, and Salt
+keys a foreign package as `name:arch` there, which is a change to what
+`pkg.list_pkgs` returns; it was left. Whether `dpkg --set-selections`
+with a plain name resolves to the native instance when two are
+installed was not measured.
+
+**Not verified.** The live test was written here and runs only in the
+`debian` leg (root, in a container); this host has no root. The fleet
+run's result is in the PR, not here.
+
+
 
 
 

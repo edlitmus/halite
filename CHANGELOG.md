@@ -27,7 +27,7 @@ dpkg prints a Multi-Arch: same package such as `libc6` with its
 architecture, `libc6:amd64`, even on a host with only one. Holding it as
 `libc6` placed the hold and reported no change, and `--test` predicted a
 change for a hold already in place. The plain name now finds the
-qualified one. DIVERGENCE 5.406.
+qualified one. DIVERGENCE 5.417.
 
 ### The ufw firewall reports a change when only the IPv6 rule was added
 
