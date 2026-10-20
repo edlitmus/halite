@@ -223,7 +223,7 @@ func TestGitLatestRunsAsTheUser(t *testing.T) {
 // of `--upload-pack=<command>` made git fetch the configured origin
 // with that command as its upload-pack, which git runs through the
 // shell. The remote case ran the command on the git on this host
-// before the check existed: the marker file appeared. DIVERGENCE 5.411.
+// before the check existed: the marker file appeared. DIVERGENCE 5.414.
 func TestGitLatestRefusesAnArgumentGitWouldReadAsAnOption(t *testing.T) {
 	skipWithoutGit(t)
 	dir := t.TempDir()

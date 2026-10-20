@@ -32262,49 +32262,6 @@ be made.
 
 **Not verified.** Run on Linux only; Windows, where the test needs the
 privilege to make a symlink, was left to CI.
-### 5.411 `git.latest` passed a remote beginning with `-` to `git fetch`
-
-Issue 321, section 5: `git.latest` passes URL, rev and remote with no
-`--` and no leading-`-` check; "mostly neutralised because the next
-positional becomes the repository".
-
-**Measured** with git 2.43.0 on Ubuntu 24.04. The test clones a local
-bare repository, then runs the state again with each of `remote`,
-`rev`, `branch` and `name` set to `--upload-pack=touch <marker>;
-git-upload-pack`:
-
-| Argument | `main` |
-|---|---|
-| `remote` | **the command ran**: the marker file was created |
-| `rev` | refused by git (the revision did not resolve) |
-| `branch` | accepted; the checkout was already at the commit, so git was never given it |
-| `name` | accepted, for the same reason |
-
-So "mostly neutralised" held for a fresh clone and not for a checkout
-that already existed. There the fetch is `git fetch --quiet --tags
-<remote>`, and with `<remote>` read as an option nothing positional is
-left: git fetches the configured origin and runs the upload-pack it was
-given through the shell. Anybody who can set a state's `remote` can
-already set its `name` to a repository of their choosing, so this is a
-second way to something reachable anyway rather than a new privilege;
-it is still a command run by a state that says it fetches.
-
-**The change.** `name`, `remote`, `rev` and `branch` beginning with `-`
-are refused before git is run, with a message naming the argument.
-None of them has a legitimate spelling that begins with a dash. The
-clone also puts `--` before the URL and target. `target` is not
-checked: it is a path, it is after `--` in the clone, and every other
-command takes it as the working directory.
-
-**Demonstrated.** `TestGitLatestRefusesAnArgumentGitWouldReadAsAnOption`
-is the table above, against the real git; it fails on `main` for
-`remote`, `branch` and `name`. With the check disabled and the `--`
-kept it fails the same way, so the `--` alone does not cover it.
-
-**Not done.** `git.remote_get` passes its `remote` to `git remote
-get-url` the same way; it only reads, and was not changed. **Not
-verified.** git on FreeBSD was not run.
-
 ### 5.411 Ordering a low state was quadratic in its size
 
 Issue 321, Low: `state/order.go` is O(n²) (linear scan plus
@@ -32438,6 +32395,50 @@ test still builds a skeleton.
 
 **Not verified.** The `migrate` command was not run end to end over a
 tree holding such a file; the test drives the two functions it calls.
+### 5.414 `git.latest` passed a remote beginning with `-` to `git fetch`
+
+Issue 321, section 5: `git.latest` passes URL, rev and remote with no
+`--` and no leading-`-` check; "mostly neutralised because the next
+positional becomes the repository".
+
+**Measured** with git 2.43.0 on Ubuntu 24.04. The test clones a local
+bare repository, then runs the state again with each of `remote`,
+`rev`, `branch` and `name` set to `--upload-pack=touch <marker>;
+git-upload-pack`:
+
+| Argument | `main` |
+|---|---|
+| `remote` | **the command ran**: the marker file was created |
+| `rev` | refused by git (the revision did not resolve) |
+| `branch` | accepted; the checkout was already at the commit, so git was never given it |
+| `name` | accepted, for the same reason |
+
+So "mostly neutralised" held for a fresh clone and not for a checkout
+that already existed. There the fetch is `git fetch --quiet --tags
+<remote>`, and with `<remote>` read as an option nothing positional is
+left: git fetches the configured origin and runs the upload-pack it was
+given through the shell. Anybody who can set a state's `remote` can
+already set its `name` to a repository of their choosing, so this is a
+second way to something reachable anyway rather than a new privilege;
+it is still a command run by a state that says it fetches.
+
+**The change.** `name`, `remote`, `rev` and `branch` beginning with `-`
+are refused before git is run, with a message naming the argument.
+None of them has a legitimate spelling that begins with a dash. The
+clone also puts `--` before the URL and target. `target` is not
+checked: it is a path, it is after `--` in the clone, and every other
+command takes it as the working directory.
+
+**Demonstrated.** `TestGitLatestRefusesAnArgumentGitWouldReadAsAnOption`
+is the table above, against the real git; it fails on `main` for
+`remote`, `branch` and `name`. With the check disabled and the `--`
+kept it fails the same way, so the `--` alone does not cover it.
+
+**Not done.** `git.remote_get` passes its `remote` to `git remote
+get-url` the same way; it only reads, and was not changed. **Not
+verified.** git on FreeBSD was not run.
+
+
 
 
 
