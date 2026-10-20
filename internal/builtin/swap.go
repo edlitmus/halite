@@ -3,6 +3,7 @@ package builtin
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -169,12 +170,45 @@ func swapOffArgv(goos, path string) ([]string, error) {
 // map built by hand in a test, without going through a real read of
 // /proc/swaps — which, on a machine that has one, `activeSwaps` reads
 // directly from the filesystem and no test double can intercept.
+//
+// # The same device by another name
+//
+// The kernel lists a swap area by its real path, not by the name it was
+// switched on with. Measured on beastie (FreeBSD 15.1): `swap.on`
+// through a symbolic link to /dev/md0 succeeded, `swapctl -l` then
+// listed /dev/md0, and the second `swap.on` through the link did not
+// find the link's name there, ran `swapon` again, and failed "Device
+// already in use" -- every run after the first, for as long as the tree
+// names the link. `swap.off` the same way said "already off" and left it
+// on. Linux has the same shape: /proc/swaps lists /dev/dm-1 for a swap
+// named /dev/mapper/vg-swap, which is a link to ../dm-1. Issue 321,
+// section 5; DIVERGENCE 5.407.
+//
+// So both sides are compared through filepath.EvalSymlinks as well as
+// as written. A name that does not resolve is compared as written,
+// which is what this did before. A GEOM label on FreeBSD
+// (/dev/gpt/swap0) is a device node of its own, not a link, and this
+// does not see through it.
 func swapPathActive(active *value.Map, path string) bool {
 	if active == nil {
 		return false
 	}
-	_, ok := active.GetString(path)
-	return ok
+	if _, ok := active.GetString(path); ok {
+		return true
+	}
+	want, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		want = path
+	}
+	for _, key := range active.StringKeys() {
+		if key == want {
+			return true
+		}
+		if got, err := filepath.EvalSymlinks(key); err == nil && got == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- mutating ----

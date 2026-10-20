@@ -1,6 +1,8 @@
 package builtin
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -85,6 +87,40 @@ func TestSwapPathActiveFindsAnExactKeyOnly(t *testing.T) {
 	}
 	if swapPathActive(value.NewMap(0), "/dev/md0") {
 		t.Error("an empty map was reported as having an active path")
+	}
+}
+
+// The kernel lists a swap area by its real path; a tree may name it
+// through a link (`/dev/mapper/...`, `/dev/disk/by-uuid/...`). Both
+// spellings are the same device. The live test on beastie is
+// TestLiveSwapThroughASymlinkIsIdempotent; this is the same question
+// without root. DIVERGENCE 5.407.
+func TestSwapPathActiveSeesThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "swap.img")
+	if err := os.WriteFile(real, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	real, _ = filepath.EvalSymlinks(real)
+	link := filepath.Join(dir, "by-uuid")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "other")
+	if err := os.WriteFile(other, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	listed := value.MapOf(real, value.MapOf("size", int64(65536)))
+	if !swapPathActive(listed, link) {
+		t.Error("a link to the listed device was reported as not active")
+	}
+	if swapPathActive(listed, other) {
+		t.Error("a different file was reported as active")
+	}
+	// And the other way round: the table holding a link's spelling.
+	if !swapPathActive(value.MapOf(link, value.NewMap(0)), real) {
+		t.Error("the real path of a listed link was reported as not active")
 	}
 }
 
