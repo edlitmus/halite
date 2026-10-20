@@ -31843,6 +31843,34 @@ and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
 
+### 5.408 `iptables.insert` said "at a position" and did not hold one
+
+Issue 321, section 5, an Info bullet: `iptables.insert` does not enforce
+`position`.
+
+**Read, and held by a test.** Both the execution function and the
+state decide presence with `iptables -C`, which matches the rule
+anywhere in the chain, and run `-I <chain> <position>` only when it is
+absent. A rule at position 3 asked for at 1 is reported as already
+there and is not moved. The docs said "Add a rule at a position" and
+"Ensure a rule is present at a position", which promised more.
+
+**The change** is to the two docs, not the behaviour: they now say the
+position is where a missing rule goes and is not enforced. Enforcing it
+would mean deleting and reinserting a rule on a live firewall to move
+it, which is a decision about what a state may do to traffic in flight,
+not a correction. Salt's `iptables.insert` state is understood to check
+presence the same way (`iptables.check`), from memory of its source; that
+was not checked here, since this host has no Salt.
+
+**Demonstrated.** `TestIPTablesInsertDoesNotMoveARuleThatIsPresentElsewhere`
+asks for position 3 on a rule `-C` reports present, sees no change and no
+`-I` or `-D`, and reads both docs for the sentence. With `main`'s
+`iptables.go` it fails on both docs. `docs/modules.md` is regenerated.
+
+**Not verified.** No real iptables was run for this; the behaviour is
+the recorded runner's.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
