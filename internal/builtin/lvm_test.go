@@ -100,6 +100,23 @@ func TestLVMParsesAJSONReportIntoRows(t *testing.T) {
 	}
 }
 
+// LVM rounds an absolute size up to a whole extent, so a request is
+// compared as the size LVM will make. The extent is the 4 MiB the
+// captured `vgs` report above carries. DIVERGENCE 5.409.
+func TestAnLVMSizeIsRoundedUpToAWholeExtent(t *testing.T) {
+	const mib = int64(1 << 20)
+	for _, tc := range []struct{ want, extent, got int64 }{
+		{10 * mib, 4 * mib, 12 * mib},
+		{12 * mib, 4 * mib, 12 * mib},
+		{34 * mib, 4 * mib, 36 * mib},
+		{10 * mib, 0, 10 * mib},
+	} {
+		if got := lvmRoundToExtent(tc.want, tc.extent); got != tc.got {
+			t.Errorf("lvmRoundToExtent(%d, %d) = %d, want %d", tc.want, tc.extent, got, tc.got)
+		}
+	}
+}
+
 // A row rendered for a caller has its size and count columns as integers
 // and its names and uuids as strings.
 func TestLVMRowValuePresentsBytesAsIntegers(t *testing.T) {
