@@ -32013,6 +32013,40 @@ fifty-six-year answer.
 **Not verified.** macOS and the other BSDs, which also take this path,
 were not run; Linux reads `/proc/uptime` first and never gets here.
 `status.uptime` was not called on beastie, only the sysctl read by hand.
+### 5.405 `file.touch` said it updated a file's times and did not
+
+Issue 321, section 5: `file.touch` documents "update its times if it
+does [exist]" but returns "already exists" and changes nothing.
+
+**Measured.** The execution function was registered as a wrapper round
+the state's implementation, `fileTouch`, whose own doc is "ensure a file
+exists". A file with its times set to 2001 was passed to
+`file.touch` through the registry; the call returned true and the
+modification time was still 2001. So the execution function and its
+doc were the pair that disagreed. The state and its doc agreed.
+
+**The change.** The execution function has its own implementation,
+`fileTouchExec`: a missing file is created as before, through
+`fileTouch`; an existing one has its access and modification times set
+to now with `os.Chtimes`, which follows a symlink as touch(1) without
+`-h` does. Under `--test` it says it would and touches nothing. Salt's
+`file.touch` execution function does the same (`os.utime`). The state
+is left as it was: a state that moved a timestamp would report a change
+on every run, and "ensure it exists" is the part of touch that
+converges.
+
+**Demonstrated.** `TestFileTouchAsExecMovesTheTimesOfAnExistingFile`
+checks the dry run leaves the time alone, the real call moves it and
+keeps the contents, and the state still reports no change and moves
+nothing. With the registration pointed back at `fileTouch` it fails:
+"file.touch left the modification time at 2001-02-02 20:05:06".
+
+**Not done.** Salt's `atime` and `mtime` arguments, which set given
+times rather than now, are not accepted; the signature has only `name`,
+as before. **Not verified.** Run on Linux only, as an ordinary user, in
+a temporary directory; not on FreeBSD.
+
+
 
 
 
