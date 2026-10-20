@@ -436,3 +436,34 @@ func TestScrubValueScrubsTheOrderedMap(t *testing.T) {
 		t.Errorf("the input was modified: %v", v)
 	}
 }
+
+// Two secrets that overlap in the text are both removed, through Scrub
+// and through ScrubExcept. Replacing one first used to destroy the
+// other's match: in "alpha-shared-omega", once "alpha-shared" was gone
+// "shared-omega" no longer occurred, and "-omega" was printed. In
+// ScrubExcept the second occurrence started on a byte already replaced
+// and was skipped, with the same tail left.
+func TestOverlappingSecretsLeaveNoTail(t *testing.T) {
+	s := New()
+	s.Add("alpha-shared")
+	s.Add("shared-omega")
+	cases := map[string]string{
+		"x alpha-shared-omega y":          "x " + Placeholder + " y",
+		"shared-omega alpha-shared":       Placeholder + " " + Placeholder,
+		"alpha-shared-omega-shared-omega": Placeholder + "-" + Placeholder,
+	}
+	for in, want := range cases {
+		if got := s.Scrub(in); got != want {
+			t.Errorf("Scrub(%q) = %q, want %q", in, got, want)
+		}
+		if got := s.ScrubExcept(in, []string{"file.recurse"}); got != want {
+			t.Errorf("ScrubExcept(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// A secret that overlaps itself: "abcabc" at 0 and at 3.
+	self := New()
+	self.Add("abcabc")
+	if got := self.Scrub("abcabcabc!"); got != Placeholder+"!" {
+		t.Errorf("a self-overlapping secret left %q", got)
+	}
+}

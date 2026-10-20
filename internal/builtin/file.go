@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileserver"
@@ -921,4 +922,40 @@ func fileTouch(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%s could not be created: %v", path, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s was created empty.", path), changes), nil
+}
+
+// fileTouchExec is `file.touch` the execution function, which is
+// touch(1): create the file if it is missing, and set its access and
+// modification times to now if it is there.
+//
+// **It is not the state, and used to be.** The execution function was
+// registered as a thin wrapper round fileTouch, whose doc says "ensure a
+// file exists" and which does exactly that: an existing file is
+// "already exists" and nothing is written. The execution function's own
+// doc said "and update its times if it does", which is what Salt's
+// `file.touch` does (`os.utime` on the path) and what anybody calling
+// touch expects -- a stamp file whose time is the point, a make target,
+// a log rotation trigger. Called on a file that existed, it returned
+// true and left the times where they were. Issue 321, section 5;
+// DIVERGENCE 5.405.
+//
+// The state keeps its meaning. A state that rewrote a timestamp on
+// every run would report a change on every run, and "ensure it exists"
+// is the convergent half of touch.
+//
+// os.Chtimes follows a symlink, as touch(1) does without -h.
+func fileTouchExec(c *exec.Context, args *value.Map) (states.Result, error) {
+	path := filepath.Clean(states.Str(args, "name", ""))
+	if _, err := os.Lstat(path); err != nil {
+		return fileTouch(c, args)
+	}
+	changes := value.MapOf("file", states.Change(nil, "touched"))
+	if c.Test {
+		return states.WouldChange(fmt.Sprintf("%s would have its times set to now.", path), changes), nil
+	}
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		return states.False(fmt.Sprintf("%s could not be touched: %v", path, err)), nil
+	}
+	return states.Changed(fmt.Sprintf("%s had its times set to now.", path), changes), nil
 }

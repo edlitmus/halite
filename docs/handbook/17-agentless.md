@@ -176,6 +176,11 @@ Do not just delete the directory. If another account made it, find out why
 first. Then remove it as root, or set `thin_dir` in the roster to a
 directory that passes the check. `thin_dir` must be an absolute path.
 
+halite makes `thin_dir`, and any directory above it that does not exist
+yet, private to the connecting account, whatever that login's umask is. A
+directory above it that already exists keeps its mode. A home directory
+that is group-writable is refused like any other.
+
 ### When a host is refused
 
 A target's host, user and `proxy_jump` go on ssh's command line, and with

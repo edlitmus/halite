@@ -3,6 +3,7 @@ package log
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,6 +171,31 @@ func TestSecretsAreScrubbedAtTheSink(t *testing.T) {
 	// The diagnostic is still a diagnostic.
 	if !strings.Contains(out.String(), "mysql -p") {
 		t.Errorf("the message was mangled:\n%s", out.String())
+	}
+}
+
+// An error passed as a field is scrubbed like a string. The redactor
+// knows strings and containers, and an error is neither, so it came
+// back untouched: the console form printed its text, secret and all,
+// through %v, and the JSON form wrote `{}` because an error's fields are
+// unexported, losing the message instead. Every call site so far
+// passes err.Error(), so this was latent.
+func TestAnErrorFieldIsScrubbedAndKept(t *testing.T) {
+	secrets := redact.New()
+	secrets.Add("s3cret-pillar-value")
+	err := errors.New("mysql -p s3cret-pillar-value: access denied")
+
+	for _, form := range []Format{Console, JSON} {
+		var out strings.Builder
+		l, _ := New(Options{Level: Info, Format: form, Stderr: &out, Secrets: secrets})
+		fixed(l)
+		l.Info("a state failed", "error", err)
+		if strings.Contains(out.String(), "s3cret-pillar-value") {
+			t.Errorf("format %d: a secret in an error field reached the sink:\n%s", form, out.String())
+		}
+		if !strings.Contains(out.String(), "access denied") {
+			t.Errorf("format %d: the error's text was lost:\n%s", form, out.String())
+		}
 	}
 }
 
