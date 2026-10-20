@@ -380,7 +380,7 @@ func rebootScheduleArgv(goos string, delayMinutes int64, message string) ([]stri
 // systemd -- measured the same way -- but the argument vector would then
 // differ on the platform this project runs most of its fleet on, for a
 // message nobody needs to start with a dash. Issue 321, section 5;
-// DIVERGENCE 5.404.
+// DIVERGENCE 5.415.
 func shutdownMessageCheck(message string) error {
 	if m := strings.TrimSpace(message); strings.HasPrefix(m, "-") {
 		return fmt.Errorf("the message %q begins with '-', which shutdown(8) would read as options; "+

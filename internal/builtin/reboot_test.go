@@ -331,7 +331,7 @@ func TestAPendingShutdownIsFoundThroughThePSModule(t *testing.T) {
 // 255, `shutdown -r +5 -h` is accepted, so the message `-h` turns a
 // reboot into a halt. Every builder that puts a message on shutdown's
 // command line refuses it, and the state refuses it under --test too.
-// DIVERGENCE 5.404.
+// DIVERGENCE 5.415.
 func TestAShutdownMessageThatLooksLikeAnOptionIsRefused(t *testing.T) {
 	for _, goos := range []string{"linux", "freebsd"} {
 		for _, msg := range []string{"-h", " -c", "--halt"} {

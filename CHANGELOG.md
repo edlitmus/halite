@@ -27,7 +27,7 @@ On Linux, `shutdown` reads options wherever they stand, so a broadcast
 message given to `reboot.schedule`, `reboot.scheduled`, `system.reboot`
 or `system.shutdown` that began with `-` was read as options: `-h`
 turned a reboot into a halt. Such a message is now refused with an
-error saying why. FreeBSD was not affected. DIVERGENCE 5.404.
+error saying why. FreeBSD was not affected. DIVERGENCE 5.415.
 
 ### Bridge skeletons quote the names they are built from
 

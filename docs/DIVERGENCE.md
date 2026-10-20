@@ -31843,50 +31843,6 @@ and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
 
-### 5.404 A shutdown message beginning with `-` was read as options
-
-Issue 321, section 5: a `shutdown -r +N <message>` message starting with
-`-` is parsed as an option (`reboot.go` `rebootScheduleArgv`,
-`system_module.go` `systemPowerArgv`).
-
-**Measured on Linux** (Ubuntu 24.04, systemd 255.4, where `shutdown` is
-`systemctl`), as an ordinary user with `DBUS_SYSTEM_BUS_ADDRESS`
-pointed at a socket that does not exist, so that nothing could be
-scheduled whatever the parse:
-
-| Command | Answer |
-|---|---|
-| `shutdown -r +5 -halite-probe` | `invalid option -- 'l'`: `-h` and `-a` were taken as options first |
-| `shutdown -r +5 -h` | accepted; went on to dial the bus |
-| `shutdown -r -- +5 -halite-probe` | accepted; went on to dial the bus |
-
-getopt_long permutes, so an option is found after the time. A message
-of `-h` makes the reboot a halt, `-c` cancels whatever is pending
-instead of scheduling, and the rest fail with systemd's usage error.
-
-**On FreeBSD** the bullet does not hold, by reading rather than by
-running: `/usr/src/sbin/shutdown/shutdown.c` on beastie (FreeBSD 15.1) calls
-`getopt(argc, argv, "-cfhknopqr")`, the BSD getopt does not permute,
-and so option parsing stops at the time. Running it needs root and
-would take the host down, so it was not run.
-
-**The change.** `shutdownMessageCheck` refuses a message whose first
-non-blank character is `-`, in `rebootScheduleArgv`, in
-`systemPowerArgv` for `reboot` and `shutdown` (`halt` and `poweroff`
-take no message), and at the top of `reboot.scheduled`, so that
-`--test` says the same as the run. The measured `--` form was not used:
-it would change the argument vector on FreeBSD too, where nothing is
-wrong, to allow messages nobody needs.
-
-**Demonstrated.** `TestAShutdownMessageThatLooksLikeAnOptionIsRefused`
-covers both platforms' builders, an ordinary message with a dash inside
-it, and the state under `--test` running no command. With the check made
-a no-op it fails 20 times, the last being the state running two
-commands before it got to scheduling.
-
-**Not verified.** No shutdown was scheduled anywhere; the systemd
-measurement stopped at the bus. FreeBSD's parse is read from source.
-
 ### 5.402 The agentless cache directory was made under the login's umask
 
 Found when `make check` failed once on
@@ -32481,6 +32437,51 @@ kept it fails the same way, so the `--` alone does not cover it.
 **Not done.** `git.remote_get` passes its `remote` to `git remote
 get-url` the same way; it only reads, and was not changed. **Not
 verified.** git on FreeBSD was not run.
+### 5.415 A shutdown message beginning with `-` was read as options
+
+Issue 321, section 5: a `shutdown -r +N <message>` message starting with
+`-` is parsed as an option (`reboot.go` `rebootScheduleArgv`,
+`system_module.go` `systemPowerArgv`).
+
+**Measured on Linux** (Ubuntu 24.04, systemd 255.4, where `shutdown` is
+`systemctl`), as an ordinary user with `DBUS_SYSTEM_BUS_ADDRESS`
+pointed at a socket that does not exist, so that nothing could be
+scheduled whatever the parse:
+
+| Command | Answer |
+|---|---|
+| `shutdown -r +5 -halite-probe` | `invalid option -- 'l'`: `-h` and `-a` were taken as options first |
+| `shutdown -r +5 -h` | accepted; went on to dial the bus |
+| `shutdown -r -- +5 -halite-probe` | accepted; went on to dial the bus |
+
+getopt_long permutes, so an option is found after the time. A message
+of `-h` makes the reboot a halt, `-c` cancels whatever is pending
+instead of scheduling, and the rest fail with systemd's usage error.
+
+**On FreeBSD** the bullet does not hold, by reading rather than by
+running: `/usr/src/sbin/shutdown/shutdown.c` on beastie (FreeBSD 15.1) calls
+`getopt(argc, argv, "-cfhknopqr")`, the BSD getopt does not permute,
+and so option parsing stops at the time. Running it needs root and
+would take the host down, so it was not run.
+
+**The change.** `shutdownMessageCheck` refuses a message whose first
+non-blank character is `-`, in `rebootScheduleArgv`, in
+`systemPowerArgv` for `reboot` and `shutdown` (`halt` and `poweroff`
+take no message), and at the top of `reboot.scheduled`, so that
+`--test` says the same as the run. The measured `--` form was not used:
+it would change the argument vector on FreeBSD too, where nothing is
+wrong, to allow messages nobody needs.
+
+**Demonstrated.** `TestAShutdownMessageThatLooksLikeAnOptionIsRefused`
+covers both platforms' builders, an ordinary message with a dash inside
+it, and the state under `--test` running no command. With the check made
+a no-op it fails 20 times, the last being the state running two
+commands before it got to scheduling.
+
+**Not verified.** No shutdown was scheduled anywhere; the systemd
+measurement stopped at the bus. FreeBSD's parse is read from source.
+
+
 
 
 
