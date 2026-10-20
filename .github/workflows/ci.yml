@@ -79,7 +79,7 @@ jobs:
       code: ${{ steps.what.outputs.code }}
       test-os: ${{ steps.what.outputs.test-os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # The whole history, because the comparison needs the base
           # commit and a shallow clone does not have it.
@@ -142,8 +142,8 @@ jobs:
     name: fmt, vet, policy
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The toolchain version, not go.mod's `go` directive.
           #
@@ -190,8 +190,8 @@ jobs:
     name: govulncheck
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.27.2"
       - name: govulncheck
@@ -206,8 +206,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.27.2"
@@ -241,8 +241,8 @@ jobs:
         # by platform.
         os: ${{ fromJSON(needs.changes.outputs.test-os) }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.27.2"
@@ -354,8 +354,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-15]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.27.2"
@@ -437,10 +437,17 @@ jobs:
     # measurement behind it.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      # Without the token. checkout v7 keeps it by default, in
+      # _temp/git-credentials-*.config with an includeIf in .git/config,
+      # and the next step rsyncs /home/runner/work/ -- _temp's root
+      # included -- into a VM run by a third-party action. Nothing in
+      # the VM talks to GitHub. DIVERGENCE 5.421.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Start the virtual machine
-        uses: cross-platform-actions/action@v1.6.0
+        uses: cross-platform-actions/action@e0b9770014ba65d5e0815f15b74031c3a635f641 # v1.6.0
         with:
           operating_system: freebsd
           version: '15.1'
@@ -539,8 +546,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.27.2"
@@ -575,7 +582,7 @@ jobs:
       matrix:
         salt: ['3006.28', '3007.1', '3008.3']
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: make saltdiff SALT_VERSION=${{ matrix.salt }}
 
   # Two builds of the same source on one machine, from two paths.
@@ -589,13 +596,13 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # `make release` stamps the commit through -buildvcs, and a
           # shallow clone with no tags makes `git describe` answer
           # differently than it will anywhere else.
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.27.2"

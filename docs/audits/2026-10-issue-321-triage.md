@@ -189,6 +189,7 @@ passing by the PRs above; that has not been looked for.
 | `git.latest` passes URL, rev and remote with no `--` | #459 | 5.414; not neutralised for `remote` on an existing checkout: the command ran; `git.remote_get` left; FreeBSD git not run |
 | OIDC: redirects to `http://` followed, discovery endpoints not required https, discovery re-run while the IdP is down | #448 | 5.419; the token endpoint redirect sent the client secret to plaintext, measured; fake issuer only, no real IdP; no single-flight for concurrent discoveries |
 | LDAP `ParseFilter` finds `>=`/`<=`/`~=` in the value | #451 | 5.420; fake directory only; the `MapRoles` case-fold half left, as `cn` is `caseIgnoreMatch` in RFC 4519 |
+| Actions pinned by mutable tag; VM checkouts keep the token | #449 | 5.421; the token reached the VM as a `_temp` credentials file rsync copies, not in `.git/config`; fleet.yml ran on the PR, release.yml not run |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
