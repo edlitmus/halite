@@ -44,8 +44,27 @@ RUN apt-get update \
 # an estate actually installs. Comparing against it rather than against a
 # hand-assembled environment is also the more honest test: the reference
 # implementation is what the reference implementation ships as.
-RUN curl -fsSL -o /tmp/salt.tar.xz \
+#
+# Checked against a pinned sha256 before it is unpacked and run. This
+# used to execute whatever the mirror answered with (DIVERGENCE 5.403).
+# The digests are the publisher's: Broadcom's Artifactory storage API
+# (`/artifactory/api/storage/saltproject-generic/onedir/<v>/<file>`)
+# for all three, and, for 3006.28 and 3008.3, the `digest` GitHub
+# records for the same file on saltstack/salt's release, which agrees.
+# 3007.1's release on GitHub carries no onedir asset, so it has the one
+# source. A version not listed here is refused rather than fetched
+# unchecked: add its digest, from the same place, to run it.
+# internal/buildpolicy holds this list to the versions ci.yml's matrix
+# and the Makefile's default name.
+RUN case "${SALT_VERSION}-${SALT_ARCH}" in \
+      3006.28-x86_64) sha=29e7f436b2ac04e6ddaf025020e39d7b60c5a1e259dbf23235d613870465096a ;; \
+      3007.1-x86_64)  sha=a8e48e5b8ef41574ea7bfd3f532e1b81f6805edb5ff3a7c77b364641a00a56c9 ;; \
+      3008.3-x86_64)  sha=b26eecbf0c44b1db9c183b7f129a28e16848e6b5f7ee33a71d1057ac98168df6 ;; \
+      *) echo "no pinned sha256 for salt ${SALT_VERSION} ${SALT_ARCH}; add one to contrib/docker/saltdiff/Dockerfile" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/salt.tar.xz \
       "https://packages.broadcom.com/artifactory/saltproject-generic/onedir/${SALT_VERSION}/salt-${SALT_VERSION}-onedir-linux-${SALT_ARCH}.tar.xz" \
+    && echo "${sha}  /tmp/salt.tar.xz" | sha256sum -c - \
     && mkdir -p /opt \
     && tar -C /opt -xJf /tmp/salt.tar.xz \
     && rm /tmp/salt.tar.xz \

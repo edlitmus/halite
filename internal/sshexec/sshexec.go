@@ -580,9 +580,21 @@ func (o *Options) push(ctx context.Context, t roster.Target, binary, dir, remote
 // Its last line names a staging file made by `mktemp`, which the copy
 // is written to. The previous `<digest>.partial` was a name anybody
 // could compute and make first.
+//
+// `umask 077` before the `mkdir`, so the directory, and any parent
+// `mkdir -p` makes on the way, is private from the moment it exists.
+// The `chmod` alone left a window: `mkdir` made it under the login's
+// umask, which on Ubuntu is 002 for an ordinary account (pam_umask with
+// user private groups; measured over `ssh localhost`), so between the
+// two it was group-writable. A second run's checkScript landing in that
+// window refused the directory, and the concurrent test failed about one
+// run in 300 under that umask. A parent `mkdir -p` made was never
+// `chmod`ed at all, so a thin_dir under a missing directory was refused
+// on every run (DIVERGENCE 5.402).
 func prepareScript(dir string) string {
 	quoted := shellQuote(dir)
 	return trustFunctions +
+		"umask 077\n" +
 		"mkdir -p " + quoted + " || exit 1\n" +
 		"halite_trust_dir " + quoted + " owner\n" +
 		"chmod 700 " + quoted + " || exit 1\n" +
