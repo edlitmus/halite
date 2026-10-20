@@ -182,7 +182,7 @@ func swapOffArgv(goos, path string) ([]string, error) {
 // names the link. `swap.off` the same way said "already off" and left it
 // on. Linux has the same shape: /proc/swaps lists /dev/dm-1 for a swap
 // named /dev/mapper/vg-swap, which is a link to ../dm-1. Issue 321,
-// section 5; DIVERGENCE 5.407.
+// section 5; DIVERGENCE 5.418.
 //
 // So both sides are compared through filepath.EvalSymlinks as well as
 // as written. A name that does not resolve is compared as written,

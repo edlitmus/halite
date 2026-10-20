@@ -277,7 +277,7 @@ func TestLiveSwapOnAndOffRoundTripARealDevice(t *testing.T) {
 // link never matched what `activeSwaps` read back: the second `swap.on`
 // was not "already on" and ran `swapon` again, which fails with the
 // device busy, every run; and `swap.off` said "already off" while the
-// device stayed on. DIVERGENCE 5.407.
+// device stayed on. DIVERGENCE 5.418.
 func TestLiveSwapThroughASymlinkIsIdempotent(t *testing.T) {
 	path, c := liveSwapSetup(t)
 	r := New()

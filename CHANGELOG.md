@@ -28,7 +28,7 @@ through a symbolic link, such as `/dev/mapper/…` or a link of its own,
 had `swap.on` run `swapon` again on every run after the first and fail
 "Device already in use", and `swap.off` report "already off" with the
 device still on. Both now compare the resolved paths too. Measured on
-FreeBSD. DIVERGENCE 5.407.
+FreeBSD. DIVERGENCE 5.418.
 
 ### `dpkg.set_selections` reports a hold on a library package
 

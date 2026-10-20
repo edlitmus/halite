@@ -754,7 +754,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"Checked by making swapoff a no-op and watching the test catch it. The host had no swap " +
 		"at all to begin with, so the empty reading is exercised too. On 2026-10-19 the same host " +
 		"drove it through a symbolic link to the memory disk: `swapctl -l` lists the real /dev/md0, " +
-		"and before DIVERGENCE 5.407 the second `swap.on` failed \"Device already in use\"; after it, " +
+		"and before DIVERGENCE 5.418 the second `swap.on` failed \"Device already in use\"; after it, " +
 		"on, on again and off through the link were idempotent. Not covered: Linux, whose " +
 		"`mkswap`/`swapon -p` path is a platform-table row nothing has run; and persistence, " +
 		"which is deliberately `mount.mounted`'s job rather than this module's"},

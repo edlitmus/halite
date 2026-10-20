@@ -31843,41 +31843,6 @@ and whether any production bucket holds one was not looked at. Some
 S3-compatible stores (MinIO, Ceph) canonicalise paths their own way;
 none was tried.
 
-### 5.407 `swap.on` through a symlink ran `swapon` again on every run
-
-Issue 321, section 5: `swap.on`/`off` compare the caller's path with
-`/proc/swaps` keys; a symlink spelling means `swapon` fails "busy" every
-run.
-
-**Measured on beastie** (FreeBSD 15.1, root, a 64 MiB swap-backed memory
-disk), with a new live test that names the device through a symbolic
-link. At `95d38d8`, which is `main`'s `swap.go`: the first `swap.on`
-through the link succeeded, `mount.swaps` (`swapctl -l`) listed
-`/dev/md0`, and the second `swap.on` failed with `swapon: …/swap-link:
-Device already in use`. The bullet named Linux's `/proc/swaps`;
-FreeBSD's `swapctl -l` reader has the same shape, and that is the one
-measured. On Linux the kernel lists the resolved device too (`/dev/dm-1`
-for `/dev/mapper/…`), which was not run.
-
-**The change.** `swapPathActive` matches the name as written first, as
-before, then compares the caller's path and every listed key through
-`filepath.EvalSymlinks`. A name that does not resolve is compared as
-written. A FreeBSD GEOM label (`/dev/gpt/…`) is a device node of its own
-rather than a link, and this does not see through it.
-
-**Demonstrated.** On beastie at `cb83817`, the live test passed: on,
-on again (no change), off (changed, and the kernel agreed), with the two
-existing swap live tests still passing and no memory disk, swap or
-directory left behind. `TestSwapPathActiveSeesThroughASymlink` asks the
-same without root, both ways round; with `main`'s `swap.go` it fails
-both. The `swap` evidence note says what was run.
-
-**Not verified.** Linux. The fleet `linux` leg's filter does not
-include the swap live tests, as the evidence note already says of the Linux
-row, and this host has no root; adding the Linux swap path to that leg
-is its own change. The `freebsd` leg runs every `TestLive*` and so
-picks this one up. A GEOM label spelling.
-
 ### 5.402 The agentless cache directory was made under the login's umask
 
 Found when `make check` failed once on
@@ -32595,6 +32560,42 @@ installed was not measured.
 **Not verified.** The live test was written here and runs only in the
 `debian` leg (root, in a container); this host has no root. The fleet
 run's result is in the PR, not here.
+### 5.418 `swap.on` through a symlink ran `swapon` again on every run
+
+Issue 321, section 5: `swap.on`/`off` compare the caller's path with
+`/proc/swaps` keys; a symlink spelling means `swapon` fails "busy" every
+run.
+
+**Measured on beastie** (FreeBSD 15.1, root, a 64 MiB swap-backed memory
+disk), with a new live test that names the device through a symbolic
+link. At `95d38d8`, which is `main`'s `swap.go`: the first `swap.on`
+through the link succeeded, `mount.swaps` (`swapctl -l`) listed
+`/dev/md0`, and the second `swap.on` failed with `swapon: …/swap-link:
+Device already in use`. The bullet named Linux's `/proc/swaps`;
+FreeBSD's `swapctl -l` reader has the same shape, and that is the one
+measured. On Linux the kernel lists the resolved device too (`/dev/dm-1`
+for `/dev/mapper/…`), which was not run.
+
+**The change.** `swapPathActive` matches the name as written first, as
+before, then compares the caller's path and every listed key through
+`filepath.EvalSymlinks`. A name that does not resolve is compared as
+written. A FreeBSD GEOM label (`/dev/gpt/…`) is a device node of its own
+rather than a link, and this does not see through it.
+
+**Demonstrated.** On beastie at `cb83817`, the live test passed: on,
+on again (no change), off (changed, and the kernel agreed), with the two
+existing swap live tests still passing and no memory disk, swap or
+directory left behind. `TestSwapPathActiveSeesThroughASymlink` asks the
+same without root, both ways round; with `main`'s `swap.go` it fails
+both. The `swap` evidence note says what was run.
+
+**Not verified.** Linux. The fleet `linux` leg's filter does not
+include the swap live tests, as the evidence note already says of the Linux
+row, and this host has no root; adding the Linux swap path to that leg
+is its own change. The `freebsd` leg runs every `TestLive*` and so
+picks this one up. A GEOM label spelling.
+
+
 
 
 

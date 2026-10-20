@@ -94,7 +94,7 @@ func TestSwapPathActiveFindsAnExactKeyOnly(t *testing.T) {
 // through a link (`/dev/mapper/...`, `/dev/disk/by-uuid/...`). Both
 // spellings are the same device. The live test on beastie is
 // TestLiveSwapThroughASymlinkIsIdempotent; this is the same question
-// without root. DIVERGENCE 5.407.
+// without root. DIVERGENCE 5.418.
 func TestSwapPathActiveSeesThroughASymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "swap.img")
