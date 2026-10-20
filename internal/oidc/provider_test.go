@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -27,7 +28,17 @@ type fakeIssuer struct {
 	// issuerOverride makes the discovery document describe someone
 	// else, which is the redirect-to-another-provider case.
 	issuerOverride string
-	t              *testing.T
+	// adjustDiscovery changes the discovery document before it is
+	// served.
+	adjustDiscovery func(*Discovery)
+	// discoveryStatus, when set, is answered instead of the document.
+	discoveryStatus int
+	// discoveries counts discovery requests.
+	discoveries atomic.Int32
+	// redirects maps a path on the issuer to a URL it redirects to,
+	// with a 307 so that a POST stays a POST.
+	redirects map[string]string
+	t         *testing.T
 }
 
 func newFakeIssuer(t *testing.T) *fakeIssuer {
@@ -35,17 +46,31 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 	f := &fakeIssuer{signer: newRSASigner(t, "k1"), t: t}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		f.discoveries.Add(1)
+		if f.discoveryStatus != 0 {
+			w.WriteHeader(f.discoveryStatus)
+			return
+		}
 		issuer := f.server.URL
 		if f.issuerOverride != "" {
 			issuer = f.issuerOverride
 		}
-		writeJSON(w, Discovery{
+		doc := Discovery{
 			Issuer:        issuer,
 			AuthEndpoint:  f.server.URL + "/authorize",
 			TokenEndpoint: f.server.URL + "/token",
 			JWKSURI:       f.server.URL + "/keys",
-		})
+		}
+		if f.adjustDiscovery != nil {
+			f.adjustDiscovery(&doc)
+		}
+		writeJSON(w, doc)
 	})
+	for _, from := range []string{"/keys-moved", "/token-moved"} {
+		mux.HandleFunc(from, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, f.redirects[r.URL.Path], http.StatusTemporaryRedirect)
+		})
+	}
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "max-age=3600")
 		pub := &f.signer.rsaKey.PublicKey

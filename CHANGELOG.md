@@ -87,6 +87,18 @@ is the start of a longer token, redaction replaced one and printed the
 remainder of the other. Every byte any secret covers is now replaced.
 DIVERGENCE 5.407.
 
+### OIDC refuses plaintext endpoints and redirects to them
+
+`halite-api` already required the OIDC issuer to be https, but it
+accepted a discovery document naming `http://` key set, token or
+authorization endpoints. It also followed an https URL that redirected
+to http. In a test, that sent the client secret to the plaintext
+address. Every one of those URLs must now be https, and a redirect away
+from https is refused. **A provider configured that way now fails to
+log anybody in.** While the provider is down, a failed discovery is
+also retried no more than once every ten seconds, not on every login
+attempt. DIVERGENCE 5.419.
+
 ### `file.touch` updates the times of a file that exists
 
 The execution function `file.touch` said it would create a file or
