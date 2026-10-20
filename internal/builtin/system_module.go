@@ -223,6 +223,13 @@ func systemPowerArgv(goos, verb string, delayMinutes int64, message string) ([]s
 		return nil, fmt.Errorf("this build does not know how to %s %s", verb, goos)
 	}
 	message = strings.TrimSpace(message)
+	// halt and poweroff take no message, so only the two verbs that pass
+	// one to shutdown(8) are checked.
+	if verb == "reboot" || verb == "shutdown" {
+		if err := shutdownMessageCheck(message); err != nil {
+			return nil, err
+		}
+	}
 	switch verb {
 	case "halt":
 		return []string{"halt"}, nil

@@ -286,6 +286,40 @@ func TestTheNodeGrainAndItsAllowList(t *testing.T) {
 	}
 }
 
+// A pillar key that is a dotted prefix of another is refused, as two
+// equal keys are. The equality check missed it: `nest` builds the keys
+// in order, so a node-named `db` written after the hub's `db.password`
+// replaced the mapping holding it, and a node-named `db.password.x`
+// replaced the hub's string with a mapping. Either way a value the hub
+// configured was gone from the pillar, and nothing said so.
+func TestAKeyThatContainsAnotherIsRefused(t *testing.T) {
+	f := newFakeSecrets(t, map[string]string{"hub/db": "hunter22", "vmop/x": "node-value"})
+	block := `{"secrets":[{"name":"db.password","secret_id":"hub/db"}],` +
+		`"node_grain":"aws_secrets_ext_pillar","node_grain_allow":["vmop/*"]}`
+	for _, nodeKey := range []string{"db", "db.password.x"} {
+		grains := `{"aws_secrets_ext_pillar":[{"pillar_key":"` + nodeKey + `","secret_id":"vmop/x","region":"us-east-1"}]}`
+		out, err := f.call(t, block, grains, "")
+		if err == nil {
+			t.Errorf("the node's %q was accepted beside the hub's db.password: %v", nodeKey, out)
+			continue
+		}
+		if !strings.Contains(err.Error(), "db.password") || !strings.Contains(err.Error(), nodeKey) {
+			t.Errorf("the error does not name both keys: %v", err)
+		}
+	}
+	// Keys that share only a prefix of characters, not a dotted path,
+	// are separate and both kept.
+	out, err := f.call(t, `{"secrets":[{"name":"db.password","secret_id":"hub/db"},`+
+		`{"name":"db.passwords","secret_id":"vmop/x"}]}`, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := out["aws_secrets"].(map[string]any)["db"].(map[string]any)
+	if db["password"] != "hunter22" || db["passwords"] != "node-value" {
+		t.Errorf("got %v", db)
+	}
+}
+
 // The grain is read only when the block asks for it. A node that sets
 // it on a hub that did not ask gets nothing.
 func TestTheNodeGrainIsIgnoredUnlessConfigured(t *testing.T) {

@@ -49,6 +49,44 @@ func TestDirLoaderResolvesAndContains(t *testing.T) {
 	}
 }
 
+// A symlink inside the root that points outside it is not a way out.
+// The containment check compared cleaned path strings, which a link
+// passes, and os.ReadFile then followed it to whatever it named.
+func TestDirLoaderDoesNotFollowASymlinkOut(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "root")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(parent, "outside.jinja")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link.jinja")); err != nil {
+		t.Skipf("cannot make a symlink here: %v", err)
+	}
+	if err := os.Symlink(parent, filepath.Join(root, "sub", "up")); err != nil {
+		t.Fatal(err)
+	}
+	// A link that stays inside is still served.
+	if err := os.WriteFile(filepath.Join(root, "real.jinja"), []byte("inside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.jinja", filepath.Join(root, "alias.jinja")); err != nil {
+		t.Fatal(err)
+	}
+
+	l := DirLoader{Root: root}
+	for _, name := range []string{"link.jinja", "sub/up/outside.jinja"} {
+		if src, _, err := l.Load(name); err == nil {
+			t.Errorf("%s was served through a symlink out of the root: %q", name, src)
+		}
+	}
+	if src, _, err := l.Load("alias.jinja"); err != nil || src != "inside" {
+		t.Errorf("a symlink inside the root: %q, %v", src, err)
+	}
+}
+
 func TestDirLoaderBacksAnInclude(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "p.jinja"), []byte("from disk: {{ who }}"), 0o644); err != nil {

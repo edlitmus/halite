@@ -31878,6 +31878,734 @@ row, and this host has no root; adding the Linux swap path to that leg
 is its own change. The `freebsd` leg runs every `TestLive*` and so
 picks this one up. A GEOM label spelling.
 
+### 5.402 The agentless cache directory was made under the login's umask
+
+Found when `make check` failed once on
+`TestConcurrentRunsAgainstOneMachineBothSucceed`, in a run for 5.400:
+
+    halite: refusing …/halite-thin: accounts other than its owner may
+    write to it (drwxrwxr-x)
+
+5.306's `prepareScript` makes `thin_dir` with `mkdir -p` and then makes it
+private with `chmod 700`. Between the two, the directory has whatever
+mode the login's umask gives it. On Ubuntu that is 002 for an ordinary
+account: pam_umask with user private groups. A non-interactive
+`ssh localhost` session on this Ubuntu 24.04 host reports `0002`. CI's is
+022, so CI never saw it. Two things follow:
+
+- **The race.** A second run's `checkScript`, landing between the
+  first's `mkdir` and its `chmod`, finds `thin_dir` group-writable and
+  refuses the run. In the test, with the test process's umask of 0002,
+  it failed 57 times in 1,000.
+- **A missing parent is refused every time.** `mkdir -p` makes any
+  missing parent under the same umask, and nothing tightens it. So a
+  `thin_dir` such as `~/.cache/halite-thin`, on an account with no
+  `~/.cache`, gets a group-writable `.cache`, which the check above it
+  refuses, on every run.
+
+Neither lets another account's binary run. The window is a directory the
+connecting account owns, and anything written into it by another
+account fails the owner check on the binary. Both are refusals of a run
+that should have gone ahead. Both also contradict 5.306's claim that
+nobody else can write anywhere on the path.
+
+**Measured** on this Ubuntu 24.04 host, `halite-hub ssh self test.ping`
+against `ssh localhost` (session umask 0002), main at `757f01f` and this
+change:
+
+| | `main` | this change |
+|---|---|---|
+| `thin_dir` under a missing `.cache` | refused, `.cache` left `drwxrwxr-x` | `True`, `.cache` is `drwx------` |
+| 20 rounds of 6 concurrent runs, each round on a fresh `thin_dir` | 0 of 120 refused | 0 of 120 refused |
+
+The race did not show over real ssh. Each connection takes long enough
+that six runs started together do not reach the window together. It is
+measured in the test harness, where the fake ssh is a local shell.
+
+**The change.** `umask 077` before the `mkdir`, so the directory and any
+parent it makes are private from the moment they exist. The `chmod 700`
+stays for a directory that was already there.
+
+**Demonstrated.** The harness's fake ssh now can set the target's
+umask, so the tests no longer depend on the umask of whoever runs them:
+
+- `TestAThinDirUnderAMissingDirectoryIsMadePrivate`: the run succeeds
+  and the parent is 0700. Without the `umask` line the run is refused.
+- `TestTheThinDirIsPrivateBeforeItsChmod`: a `chmod` shim on the
+  target's `PATH` records `thin_dir`'s mode when it is called. That is
+  the end of the window, so the race is now tested deterministically.
+  Without the `umask` line it records `drwxrwxr-x`.
+- The concurrent test: 0 failures in 2,000 runs with the change, 57 in
+  1,000 without, both under umask 0002.
+
+**Not changed.** A parent that already exists keeps its mode, and is
+refused if another account can write to it. An account's own home
+directory can be group-writable under some umask setups, and that is
+still refused, as it should be.
+
+**Not verified.** Not run against FreeBSD or macOS targets. Their login
+umask is usually 022, which never opened the window. Not run as root
+with `sudo`.
+
+### 5.403 CI unpacked a Go tarball and ran a Salt bundle it never checked
+
+Issue 321, a Low finding in section 5: the FreeBSD legs of `ci.yml` and
+`fleet.yml` fetched `go.dev/dl/<version>.freebsd-amd64.tar.gz` and
+untarred it with no checksum, while `contrib/tofu`'s bootstrap checked
+the same file against a pinned sha256; and the saltdiff image curled
+Salt's onedir bundle from Broadcom's Artifactory and executed it
+unchecked. The first is the commonest shape here, two paths that must
+agree: two installers of one toolchain, one of them verifying it.
+
+**Measured.** At `757f01f` both workflow steps were `fetch` then
+`tar -xzf`, and `contrib/docker/saltdiff/Dockerfile` was `curl` then
+`tar -xJf` then `/opt/salt/salt-call --version`. Nothing between them
+looked at the bytes beyond TLS.
+
+**The change.**
+
+- Both FreeBSD steps pin `want_version` and `want_sha256`, refuse a
+  go.mod whose toolchain differs from `want_version`, and compare
+  `sha256 -q` before `tar`. The digest is go.dev's own, from
+  `https://go.dev/dl/?mode=json&include=all` for
+  `go1.27.2.freebsd-amd64.tar.gz`, and it is the value contrib/tofu
+  already had.
+- The saltdiff Dockerfile maps each Salt release to a sha256 and
+  refuses one it has no digest for, before fetching it, then runs
+  `sha256sum -c` before unpacking. The digests are Broadcom's
+  Artifactory storage API's for each file
+  (`/artifactory/api/storage/saltproject-generic/onedir/<v>/<file>`).
+  For 3006.28 and 3008.3 the `digest` GitHub records for the same
+  asset on saltstack/salt's release agreed. 3007.1's GitHub release has
+  no onedir asset, so its digest has the one source.
+- `internal/buildpolicy`'s `TestTheFreeBSDToolchainDownloadIsVerified`
+  holds, per workflow step, that a step fetching the tarball pins a
+  version and digest and compares against it before `tar`, that the
+  version is go.mod's and the digest is contrib/tofu's
+  `go_sha256_freebsd`, and that contrib/tofu's `go_version` is go.mod's
+  too, which nothing held before.
+  `TestTheSaltdiffImagePinsEveryReleaseItRuns` holds that every release
+  in ci.yml's saltdiff matrix and the Makefile's default has a digest,
+  and that the check precedes the unpack.
+
+A toolchain bump now has to move four places (go.mod, contrib/tofu's
+two values, the two workflow steps). The test names whichever was
+forgotten.
+
+**Demonstrated.**
+
+- The ci.yml step's body, verbatim, on beastie (FreeBSD
+  15.1-RELEASE-p5, real `fetch` and `sha256`), with `HOME` in a
+  throwaway directory: installed go1.27.2 and printed its version. With
+  the digest altered by one character it stopped with "checksum
+  mismatch", exit 1, and unpacked nothing. With go.mod moved to
+  go1.27.3 it stopped before fetching.
+- The Dockerfile's `RUN` line under dash on Ubuntu, with the unpack
+  replaced by a message: all three releases downloaded and passed
+  `sha256sum -c`; 3007.1 with its digest's first character changed
+  failed it; 3006.9 was refused before any download.
+- The two tests against `main`'s workflows and Dockerfile: both fail,
+  saying the steps pin nothing and the Dockerfile pins no digest. With
+  fleet.yml's digest altered, the comparison in ci.yml replaced by
+  `if false`, and 3008.3 renamed in the Dockerfile, each was named.
+
+**Not verified.**
+
+- In CI, on the PR (#446): ci.yml's `test (freebsd)` installed
+  `go1.27.2 freebsd/amd64` through the new step and passed; fleet.yml,
+  triggered by the change to its own path, ran its `freebsd` leg's new
+  step and passed; the three saltdiff legs built the image, each
+  printing `/tmp/salt.tar.xz: OK`, and passed. A mismatch was shown
+  only on beastie and under dash, not inside CI's VM or a Docker build.
+- The digests trust go.dev and Broadcom's servers, over TLS, as the
+  publishers. No signature was checked: the Artifactory directories
+  for the three releases list no `.asc` beside the onedir files, and
+  whether go.dev publishes one for the tarball was not looked at.
+
+### 5.404 `status.uptime` and the reboot module read kern.boottime two ways
+
+Issue 321, section 5, an Info bullet: `extractBootSeconds` in
+`system.go` took the first `sec = ` in `sysctl -n kern.boottime`, and
+was right only because `sec` is printed before `usec`. `reboot.go`
+already had a reader that matches the key on a word boundary, written
+after its own test caught the same mistake.
+
+**Measured.** beastie (FreeBSD 15.1) printed
+`{ sec = 1792418572, usec = 59811 } Mon Oct 19 07:02:52 2026`, with `sec`
+first, so on a real FreeBSD the old reader gave the right answer. Given
+`{ usec = 59811, sec = 1792418572 }`, it read 59811 as the boot epoch
+and reported 1,792,360,189 seconds up, about fifty-six years. Nothing
+prints that order today; the defect was two readers of one sysctl that
+did not agree, waiting for one of them to be wrong.
+
+**The change.** `extractBootSeconds` is gone. `status.uptime` reads
+kern.boottime through `uptimeFromBoottime`, which takes the number from
+`rebootParseBoottime`, the boundary-safe reader, and refuses a boot time
+in the future rather than reporting a negative uptime.
+
+**Demonstrated.** `TestUptimeReadsTheSecondsKeyNotTheFirstMatch` holds
+beastie's line and the reversed one. With the old substring search put
+back inside `uptimeFromBoottime`, it fails on the reversed line with the
+fifty-six-year answer.
+
+**Not verified.** macOS and the other BSDs, which also take this path,
+were not run; Linux reads `/proc/uptime` first and never gets here.
+`status.uptime` was not called on beastie, only the sysctl read by hand.
+### 5.405 `file.touch` said it updated a file's times and did not
+
+Issue 321, section 5: `file.touch` documents "update its times if it
+does [exist]" but returns "already exists" and changes nothing.
+
+**Measured.** The execution function was registered as a wrapper round
+the state's implementation, `fileTouch`, whose own doc is "ensure a file
+exists". A file with its times set to 2001 was passed to
+`file.touch` through the registry; the call returned true and the
+modification time was still 2001. So the execution function and its
+doc were the pair that disagreed. The state and its doc agreed.
+
+**The change.** The execution function has its own implementation,
+`fileTouchExec`: a missing file is created as before, through
+`fileTouch`; an existing one has its access and modification times set
+to now with `os.Chtimes`, which follows a symlink as touch(1) without
+`-h` does. Under `--test` it says it would and touches nothing. Salt's
+`file.touch` execution function does the same (`os.utime`). The state
+is left as it was: a state that moved a timestamp would report a change
+on every run, and "ensure it exists" is the part of touch that
+converges.
+
+**Demonstrated.** `TestFileTouchAsExecMovesTheTimesOfAnExistingFile`
+checks the dry run leaves the time alone, the real call moves it and
+keeps the contents, and the state still reports no change and moves
+nothing. With the registration pointed back at `fileTouch` it fails:
+"file.touch left the modification time at 2001-02-02 20:05:06".
+
+**Not done.** Salt's `atime` and `mtime` arguments, which set given
+times rather than now, are not accepted; the signature has only `name`,
+as before. **Not verified.** Run on Linux only, as an ordinary user, in
+a temporary directory; not on FreeBSD.
+### 5.406 Two goroutines writing one websocket could split a frame
+
+Issue 321, part of the Low "redaction gaps" bullet: overlapping secrets
+leave a tail in clear. `Set.Scrub` replaced each secret with
+`strings.ReplaceAll` in turn, longest first. When two secrets overlap in
+a message, the first replacement consumes the shared bytes and the
+second no longer occurs, so its remainder is printed. `ScrubExcept`
+marked replaced bytes and skipped an occurrence starting on one, which
+lost the same tail. A secret that overlaps itself lost its last bytes
+too, because the search resumed after each match.
+
+**Measured** on `main` at `757f01f`, with secrets `alpha-shared` and
+`shared-omega`:
+
+| text | `Scrub` and `ScrubExcept` on `main` |
+|---|---|
+| `x alpha-shared-omega y` | `x **********-omega y` |
+| `alpha-shared-omega-shared-omega` | `**********-omega-**********` |
+| `abcabcabc!`, secret `abcabc` | `**********abc!` |
+
+How often a pillar holds two secrets that overlap in one message was not
+looked at; a password that is a prefix of a longer token is the likely
+shape.
+
+**The change.** One function does both: every occurrence of every
+secret, overlapping ones included, is found in the original text, and
+each run they cover becomes one placeholder. Scrub now calls it with no
+protected spans. Secrets that only touch remain two placeholders, and a
+secret inside a longer one is covered by it, so the existing tests'
+outputs are unchanged.
+
+**Demonstrated.** `TestOverlappingSecretsLeaveNoTail` fails on `main`
+with the outputs in the table, and passes with the change. With only the
+search step put back to resuming after the match, it fails on the
+self-overlapping case alone.
+
+**Not done.** The bullet's two other parts:
+
+- A multi-line secret is matched only when contiguous, and
+  `render.Error` prints the rendered window line by line with numbers
+  in front, so no line holds the whole secret. Fixing it means either
+  scrubbing the window before it is numbered, which needs the set where
+  the error is built rather than at the sink, or registering each line
+  of a multi-line secret as a secret of its own, which would also scrub
+  a PEM's `-----BEGIN …-----` line everywhere. That is the owner's call.
+- `log` passing an `error` field to `ScrubValue`, which only knows
+  strings and containers: a separate change.
+
+**Not verified.** Only the unit tests; no node or hub was run with
+overlapping secrets in its pillar.
+
+Issue 321, Low: `websocket.Conn.writeFrame` writes a frame as two
+`conn.Write` calls, a header and then a payload, with nothing between
+them, and three goroutines in `api/wsevents.go` write to the same
+connection: the event writer, the 30-second heartbeat ping, and the pong
+that `Read` sends from the reader. The audit marked it plausible.
+
+**Measured.** A test with four goroutines writing to one `Conn` over
+`net.Pipe` (one sending pings, three sending 300-byte text frames) and
+a client reading the frames back. Against `main` it failed at the 51st
+frame: a text frame's payload began `\x81~\x01,`, which is another text
+frame's header. From that point a client reads payload bytes as headers,
+so the stream is corrupt, not one message. `net.Pipe` makes each `Write`
+whole, so the split is the framing's and not the transport's.
+
+On the API this needs a ping, a pong or an event to be written in the
+same instant as another. The heartbeat is every 30 seconds and a pong
+only follows a client's ping, so it is rare on a quiet stream. It is
+more likely on a busy one.
+
+**The change.** `Conn` has a write mutex, held for the whole of
+`writeFrame`, deadline included. The two writes are left as they were.
+One buffer and one `Write` would also fix this on a transport whose
+`Write` is atomic, which `net.Conn` does not promise. It would also
+leave the write deadline shared between writers. The lock is the
+contract.
+
+**Demonstrated.** `TestConcurrentWritersDoNotInterleaveFrames` fails on
+`main` as above and passes with the lock, 50 runs out of 50. With the
+lock removed again it failed in 4 runs of 5, at a different frame each
+time. `internal/websocket` and `internal/api` pass under `-race`.
+
+The test's first version hung once in twenty runs with the lock in
+place. A ping's empty payload is still a `Write`, and `net.Pipe` blocks
+an empty `Write` until a `Read` takes it. The reader had stopped after
+the last header. The test now closes its end when it is done reading.
+A TCP connection does not wait for the peer to read, which is why the
+API's empty heartbeat pings have never hung a stream, so this was the
+test and not the server.
+
+**Not verified.** No browser or real websocket client was connected
+while this was tested. The interleaving was not seen on the production
+API; it was only shown with the test.
+### 5.407 Two overlapping secrets left the tail of one in the text
+### 5.408 A log field holding an error was written unscrubbed, or as `{}`
+
+Issue 321, Low, part of the "redaction gaps" bullet: `log.ScrubValue`
+ignores `error` and `Stringer` field values; latent, since all 122
+current call sites pass `err.Error()`.
+
+`Logger.Log` scrubs every field through `redact.Set.ScrubValue`, which
+walks strings, slices and maps and returns anything else unchanged. An
+`error` passed as a field went out as it was.
+
+**Measured** on `main` at `39b9f22` with a secret registered and
+`l.Info("a state failed", "error", errors.New("mysql -p <secret>: access denied"))`:
+
+| format | output |
+|---|---|
+| console | `info: a state failed error=mysql -p <secret>: access denied`, the secret in clear |
+| JSON | `{"error":{},…}`: no leak, and no message either |
+
+A grep of `cmd` and `internal` for an `"err"` or `"error"` field found
+126 passing `err.Error()` and none passing an error, so nothing was
+leaking; the count differs from the audit's 122 because the tree has
+moved.
+
+**The change.** `Log` turns an `error` field into its text with
+`fmt.Sprint` before scrubbing; `fmt` recovers from a typed nil whose
+`Error` method dereferences it. Only `error`: a `fmt.Stringer` such as
+`time.Duration` is written to JSON in its own form today, and turning
+it into its `String()` would change every such record. A Stringer that
+carries a secret, such as a `*url.URL` with a password, still reaches
+the console form through `%v` unscrubbed and the JSON form as a struct;
+that half of the finding is left, and the choice is the owner's.
+
+**Demonstrated.** `TestAnErrorFieldIsScrubbedAndKept` fails on `main`
+in both formats, with the outputs above, and passes with the change.
+
+**Not verified.** Only the unit test.
+### 5.409 A node-named secret could replace a hub-configured one by nesting
+
+Issue 321, Low, from the aws-secrets bullet: a node-supplied dotted
+`name` can replace a nested hub-configured secret.
+
+`aws_secrets_manager` builds its pillar from flat dotted keys with
+`nest`, in order: the block's own `secrets`, then the tree's
+`pillar_list`, then the node's `node_grain` list. It refused two
+secrets claiming the *same* key, but not a key that is a dotted path
+inside another, and `nest` lets the later one win.
+
+**Measured** through the handler with the test's local Secrets Manager,
+on `main` at `39b9f22`. The block configures `db.password` from
+`hub/db`; the node's grain names a secret its `node_grain_allow`
+permits:
+
+| node's key | the node's `aws_secrets` pillar |
+|---|---|
+| `db` | `{db: node-value}`: the hub's password gone |
+| `db.password.x` | `{db: {password: {x: node-value}}}`: the hub's string replaced |
+
+Neither failed or logged. The pillar is that node's own, so the node
+changes what it is told, not what another node is told; the hub's
+value is what the tree meant it to have.
+
+**The change.** Before fetching, each key is checked against those
+already taken, and one that is a dotted prefix of another (`a` and
+`a.b`) is refused, as an equal one was, naming both keys. Keys that
+merely share characters (`db.password`, `db.passwords`) are separate
+and both kept. This applies between the block's own keys too, which
+nested the same way. The extension is now 1.1.1, because a pillar that
+used to compile with a silent overwrite now fails; the docs' signing
+examples and pins name 1.1.1.
+
+**Demonstrated.** `TestAKeyThatContainsAnotherIsRefused` fails on
+`main` with the two pillars above and passes with the change. With the
+prefix check made always false, it reports both acceptances again. The
+end-to-end tests that build and load the real extension binary
+(`internal/extpillar`, `TestAgentlessPillar*`) pass at 1.1.1.
+
+**Not done.** The bullet's other two parts are left. The cache never
+evicts and is keyed by node-influenced values; only successful fetches
+are cached, so it is bounded by the secrets, regions and stages that
+exist and that `node_grain_allow` and `node_region_allow` admit, not by
+what a node asks for. `node_grain_allow` defaulting to allow-all is
+documented, and changing a default is the owner's decision.
+
+**Not verified.** No AWS; the handler was driven against the test's
+local server. A hub whose block already holds overlapping keys will now
+fail that pillar where it used to drop one; whether the production
+estate has one was not looked at.
+### 5.410 The template directory loader followed a symlink out of its root
+
+Issue 321, Low: `template.DirLoader` does not resolve symlinks
+(`env.go:98`); dev and test use only.
+
+`DirLoader.Load` cleaned the name, joined it to the root, and checked
+the absolute path string began with the root before `os.ReadFile`. A
+symlink under the root passes a string check and is then followed.
+
+**Measured** on `main` at `39b9f22`, in a temporary root: `link.jinja`,
+a symlink to a file beside the root, loaded and returned that file's
+contents; so did `sub/up/outside.jinja` through `sub/up`, a symlink to
+the root's parent.
+
+**Who uses it.** Nothing outside `internal/template`'s own tests
+constructs a `DirLoader`; a node's templates come through the file
+server, which this does not touch. The comment on the type promised
+"refusing any name that escapes the root", and that was not true.
+
+**The change.** `Load` opens the root with `os.OpenRoot` and reads the
+cleaned name through it, so every component, links included, is
+resolved inside the root and one that leaves it is refused. A link that
+stays inside still loads. A missing file is still `ErrNotFound`, so
+`ignore missing` behaves as before; an escape is a different error, so
+`ignore missing` does not hide it.
+
+**Demonstrated.** `TestDirLoaderDoesNotFollowASymlinkOut` fails on
+`main` with both escapes served ("secret") and passes with the change,
+along with the existing loader tests. It skips where a symlink cannot
+be made.
+
+**Not verified.** Run on Linux only; Windows, where the test needs the
+privilege to make a symlink, was left to CI.
+### 5.411 Ordering a low state was quadratic in its size
+
+Issue 321, Low: `state/order.go` is O(n²) (linear scan plus
+`append(ready[:best], ready[best+1:]…)`); self-requisites are dropped
+silently.
+
+`order` keeps the chunks whose requisites are met in a ready set and
+places the best one each round. The set was a slice, scanned end to end
+for the best chunk and then closed up, on the stated grounds that it is
+small in practice. Every chunk with nothing constraining it is ready
+from the start, so a large state with few requisites is exactly the
+case where it is not small.
+
+**Measured** on `main` at `39b9f22` with unconstrained chunks declared
+in reverse, on this host under a load average of about 32: 1,000 chunks
+3 ms, 10,000 0.30 s, 40,000 10.8 s, 100,000 92 s. With the change,
+100,000 take 0.12 s.
+
+**The change.** The ready set is a binary heap. The order it produces
+must be the one the scan produced, ties included, and `less` has ties:
+the chunks of one declaration with several functions share every key.
+The scan broke those by position in its slice, which was arrival order
+(the initial set in index order, since its sort was stable, then each
+chunk as it became ready), so each heap entry carries an arrival number
+and ties are broken on it.
+
+**Demonstrated.**
+
+- Equivalence, measured once and not kept as a test: 20,000 random low
+  states from the property suite's generator, each up to 40 chunks with
+  random requisites, and with declaration order, sequence and `order:`
+  drawn from small ranges so ties are frequent. A SHA-256 over every
+  resulting order was `b4e5b165…` on `main` and `b4e5b165…` with the
+  change. With the arrival tiebreak reversed it was `32193afa…`, so the
+  digest does see a change in how ties fall.
+- `TestOrderingALargeLowStateIsNotQuadratic` orders 100,000 chunks
+  under a 10 s bound and checks the result. With the old `order.go` it
+  failed after 92 s; with the change it passes in 0.12 s. The bound is
+  loose for loaded race runs; the scan is nowhere near it.
+- The existing ordering and property tests pass unchanged.
+
+**Not done.** Self-requisites: `addEdge` ignores an edge from a chunk to
+itself, so `require` naming the chunk's own ID is dropped without a
+word. Whether that should be a diagnostic depends on what Salt does with
+one, which was not checked against Salt here; it is left.
+
+**Not verified.** The equivalence was measured on generated graphs, not
+on a real estate's low states.
+### 5.412 The local signer signed a digest of any length; the KMS signer refused
+
+Issue 321, Low, from the signer bullet: the local signer signs digests
+of any length while KMS requires 32 bytes; the local signer reads its key
+file with no mode check.
+
+Both `signer` extensions declare `sign` as taking a base64 SHA-256
+digest. `halite-ext-signer-kms` refuses anything but 32 bytes before it
+calls KMS. `halite-ext-signer-local` passed the bytes straight to
+`ecdsa.SignASN1`, which signs any length (truncating a long one to the
+curve's size), so the two signers the host can be pointed at disagreed
+on what a valid request is.
+
+**Measured** on `main` at `39b9f22`, through the handler: digests of 20,
+31, 33, 48 and 64 bytes were all signed by the local signer, and a 1-byte
+one too. The host (`internal/extsigner`) only ever sends a `[32]byte`,
+so no request the host makes was affected; a host bug that sent the
+wrong bytes would have been signed by one signer and refused by the
+other.
+
+**The change.** The local signer refuses a digest that is not 32 bytes,
+with the KMS signer's message. It is now 1.0.1, since a request it used
+to answer it now refuses; its digest is recorded.
+
+**Demonstrated.** `TestHandleSignRefusesADigestThatIsNotSHA256` fails
+on `main`, every one of the six lengths signed, and
+passes with the change. `internal/extsigner`'s end-to-end test, which
+builds and runs the real binary, still passes.
+
+**Not done.** The key file's mode is still not checked. What to refuse
+(group-readable, world-readable, owned by someone else) and what that
+means on Windows is a policy choice for the owner, and this extension is
+the reference bridge, not a production signer (its own comment says a
+key file beside the CLI is the thing SPEC 25.6 rules out).
+
+**Not verified.** Only through the handler and the existing end-to-end
+test; no deployed signer.
+### 5.413 A Python module's names were spliced into its bridge skeleton as Go
+
+Issue 321, Low: in `migrate/skeleton.go`, module and function names go
+unescaped into `fmt.Errorf("%s.%s…")`, so a crafted Python file yields
+Go that does not compile, or Go an attacker chose, once an operator
+builds it.
+
+`halite-hub migrate --bridge-skeleton DIR` writes one Go command per
+custom Salt module it finds in a formula. The module's name is its
+`__virtualname__` if it sets one, and the reader is a line scanner, not
+Python: whatever sits between the quotes is the name. Three places put
+the Python file's text into the Go source as it was:
+
+- each stub's `fmt.Errorf("<module>.<function> is not written yet")`,
+  inside a Go string literal;
+- the package comment's `generated from <path>` and each stub's
+  `// From <path>:<line>`, inside line comments;
+- each parameter's `//   <name> = <default>`, also a comment.
+
+**Measured** with `ReadPyModule` and `GenerateSkeleton` on `main` at
+`39b9f22`. A module whose `__virtualname__` is
+`x"); os.RemoveAll("/srv"); return nil, fmt.Errorf("` produces a stub
+that parses as Go and calls `os.RemoveAll("/srv")` when the function is
+invoked. A file path holding a newline put `func init() { … }` on a line
+of its own; in the stub that is a parse error, not code, and in the
+package comment it lands before `package` and is a parse error too.
+Function names cannot hold `(` (the reader cuts there), so the module
+name is the practical route. An operator reviews generated code before
+building it, which is the mitigation that existed; nothing else did.
+
+**The change.** The stub passes the name as a quoted argument,
+`fmt.Errorf("%s is not written yet", "<module>.<function>")`, built
+with `%q`. The path and each parameter description go through
+`oneLine`, which the docstring already went through. What a built stub
+returns at run time is the same text as before.
+
+**Demonstrated.** `TestANameCannotWriteCodeIntoTheSkeleton` builds a
+skeleton from that virtual name and a path with a newline, parses it,
+and walks the tree for any function other than `main` and `handle` and
+any call to `RemoveAll`. On `main` it fails to parse. With only the
+`Errorf` line put back, it parses and the test reports the `RemoveAll`
+call; with only the stub's path comment put back, it fails to parse
+again. `TestAGeneratedSkeletonParsesAsGo` now looks for the quoted name
+rather than the spliced text, and the existing compile-outside-the-repo
+test still builds a skeleton.
+
+**Not verified.** The `migrate` command was not run end to end over a
+tree holding such a file; the test drives the two functions it calls.
+### 5.414 `git.latest` passed a remote beginning with `-` to `git fetch`
+
+Issue 321, section 5: `git.latest` passes URL, rev and remote with no
+`--` and no leading-`-` check; "mostly neutralised because the next
+positional becomes the repository".
+
+**Measured** with git 2.43.0 on Ubuntu 24.04. The test clones a local
+bare repository, then runs the state again with each of `remote`,
+`rev`, `branch` and `name` set to `--upload-pack=touch <marker>;
+git-upload-pack`:
+
+| Argument | `main` |
+|---|---|
+| `remote` | **the command ran**: the marker file was created |
+| `rev` | refused by git (the revision did not resolve) |
+| `branch` | accepted; the checkout was already at the commit, so git was never given it |
+| `name` | accepted, for the same reason |
+
+So "mostly neutralised" held for a fresh clone and not for a checkout
+that already existed. There the fetch is `git fetch --quiet --tags
+<remote>`, and with `<remote>` read as an option nothing positional is
+left: git fetches the configured origin and runs the upload-pack it was
+given through the shell. Anybody who can set a state's `remote` can
+already set its `name` to a repository of their choosing, so this is a
+second way to something reachable anyway rather than a new privilege;
+it is still a command run by a state that says it fetches.
+
+**The change.** `name`, `remote`, `rev` and `branch` beginning with `-`
+are refused before git is run, with a message naming the argument.
+None of them has a legitimate spelling that begins with a dash. The
+clone also puts `--` before the URL and target. `target` is not
+checked: it is a path, it is after `--` in the clone, and every other
+command takes it as the working directory.
+
+**Demonstrated.** `TestGitLatestRefusesAnArgumentGitWouldReadAsAnOption`
+is the table above, against the real git; it fails on `main` for
+`remote`, `branch` and `name`. With the check disabled and the `--`
+kept it fails the same way, so the `--` alone does not cover it.
+
+**Not done.** `git.remote_get` passes its `remote` to `git remote
+get-url` the same way; it only reads, and was not changed. **Not
+verified.** git on FreeBSD was not run.
+### 5.415 A shutdown message beginning with `-` was read as options
+
+Issue 321, section 5: a `shutdown -r +N <message>` message starting with
+`-` is parsed as an option (`reboot.go` `rebootScheduleArgv`,
+`system_module.go` `systemPowerArgv`).
+
+**Measured on Linux** (Ubuntu 24.04, systemd 255.4, where `shutdown` is
+`systemctl`), as an ordinary user with `DBUS_SYSTEM_BUS_ADDRESS`
+pointed at a socket that does not exist, so that nothing could be
+scheduled whatever the parse:
+
+| Command | Answer |
+|---|---|
+| `shutdown -r +5 -halite-probe` | `invalid option -- 'l'`: `-h` and `-a` were taken as options first |
+| `shutdown -r +5 -h` | accepted; went on to dial the bus |
+| `shutdown -r -- +5 -halite-probe` | accepted; went on to dial the bus |
+
+getopt_long permutes, so an option is found after the time. A message
+of `-h` makes the reboot a halt, `-c` cancels whatever is pending
+instead of scheduling, and the rest fail with systemd's usage error.
+
+**On FreeBSD** the bullet does not hold, by reading rather than by
+running: `/usr/src/sbin/shutdown/shutdown.c` on beastie (FreeBSD 15.1) calls
+`getopt(argc, argv, "-cfhknopqr")`, the BSD getopt does not permute,
+and so option parsing stops at the time. Running it needs root and
+would take the host down, so it was not run.
+
+**The change.** `shutdownMessageCheck` refuses a message whose first
+non-blank character is `-`, in `rebootScheduleArgv`, in
+`systemPowerArgv` for `reboot` and `shutdown` (`halt` and `poweroff`
+take no message), and at the top of `reboot.scheduled`, so that
+`--test` says the same as the run. The measured `--` form was not used:
+it would change the argument vector on FreeBSD too, where nothing is
+wrong, to allow messages nobody needs.
+
+**Demonstrated.** `TestAShutdownMessageThatLooksLikeAnOptionIsRefused`
+covers both platforms' builders, an ordinary message with a dash inside
+it, and the state under `--test` running no command. With the check made
+a no-op it fails 20 times, the last being the state running two
+commands before it got to scheduling.
+
+**Not verified.** No shutdown was scheduled anywhere; the systemd
+measurement stopped at the bus. FreeBSD's parse is read from source.
+### 5.416 ufw added the IPv6 twin and the state said nothing changed
+
+Issue 321, section 5: `ufwChanged` returns "unchanged" when the v4 rule
+was skipped but the v6 twin was added.
+
+**What was established, and how.** Not by running ufw: it refuses to
+run as anything but root, `--dry-run` included, and there is no root on
+this host. By reading the ufw this host has installed (0.36.2-6, Ubuntu
+24.04's), which is the tool rather than its documentation. A rule with
+no address is set for both families, and `frontend.py`'s `set_rule`
+joins the two answers as `tmp + "\n" + self.backend.set_rule(r)`, v4
+first. `backend_iptables.py` decides each one separately and returns
+"Skipping adding existing rule", "Skipping inserting existing rule" or
+"Could not delete non-existent rule" for one that needs nothing, with
+" (v6)" appended for the v6 one, and otherwise one of "Rules updated",
+"Rule added", "Rule inserted", "Rule updated" or "Rule deleted". So a
+host whose v4 rule is present and v6 twin is not prints
+`Skipping adding existing rule` then `Rule added (v6)`. `ufwChanged`
+returned false as soon as it found a skip message anywhere, so that run
+added a rule and reported no change, and `--test` (whose dry run
+prints `Rules updated (v6)` on the same path) predicted none.
+
+**The change.** A line beginning with one of the five change messages
+means changed, whatever else is printed. Otherwise a skip line means
+unchanged. Output with neither still reads as changed, as before.
+
+**Demonstrated.** `TestUFWSaysWhetherItChangedAnything` gains four
+mixed outputs, composed from the lines it already held in the order the
+frontend joins them. With the old `ufwChanged` restored all four fail;
+the existing single-family cases pass either way.
+
+**Not verified.** The mixed output was not captured from a ufw; the
+fixtures are composed, which is what this project's rules warn about,
+and they say so where they stand. The conformance cases on the fleet
+`linux` leg drive ufw for real but never produce a mixed answer. How a
+host comes to have one family of a rule and not the other (IPv6 turned
+on in `/etc/default/ufw` after rules were added, or a numbered delete
+of one twin) was not tried.
+### 5.417 `dpkg.set_selections` lost a hold on a package dpkg names with its architecture
+
+Issue 321, section 5, the multi-arch bullet, which has two halves: apt's
+`ListPkgs` keys on bare `${Package}` so the last architecture wins, and
+the `dpkg.set_selections` diff compares bare names with `name:arch`
+keys. This is the second half.
+
+**Measured on Ubuntu 24.04, amd64, with no foreign architecture
+configured** (`dpkg --print-foreign-architectures` prints nothing). The
+bullet's premise is that it takes a multi-arch host. It does not:
+`dpkg --get-selections` printed 941 lines qualified, as
+`bind9-libs:amd64\t\t\t\tinstall`, because a Multi-Arch: same package is
+always printed with its architecture. Asked by the plain name,
+`dpkg --get-selections bind9-libs` answered with the qualified line. So
+on any Debian or Ubuntu host a caller holding `bind9-libs` or `libc6`
+had the diff look up `bind9-libs` in a map keyed `bind9-libs:amd64`,
+find nothing on either side, and report no change for a hold it had
+placed; under `--test` it compared against the request and predicted a
+change for a hold already in place.
+
+**The change.** `dpkgSelectionKey` looks a name up as given, and when
+a plain name is not there, takes the one key qualified from it. Two or
+more (the package installed for two architectures) is ambiguous and is
+left unresolved, as before.
+
+**Demonstrated.** `TestAnArchQualifiedSelectionIsFoundByItsPlainName`
+holds the captured lines; with the diff looking names up directly again
+it fails both ways, reporting nothing for the hold and a change for the
+hold already in place. `TestLiveDpkgHoldsAnArchQualifiedPackageByItsPlainName`
+holds `libc6` by its plain name in the fleet's Debian container and asks
+for the change and for dpkg's own reading.
+
+**Not done.** The first half. apt's `ListPkgs` keying on `${Package}`
+needs a host with a foreign architecture installed to capture, and Salt
+keys a foreign package as `name:arch` there, which is a change to what
+`pkg.list_pkgs` returns; it was left. Whether `dpkg --set-selections`
+with a plain name resolves to the native instance when two are
+installed was not measured.
+
+**Not verified.** The live test was written here and runs only in the
+`debian` leg (root, in a container); this host has no root. The fleet
+run's result is in the PR, not here.
+
+
+
+
+
+
+
+
+
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

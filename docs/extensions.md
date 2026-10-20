@@ -278,7 +278,7 @@ signs -- not the hub; see below:
 ```sh
 halite-hub extensions key create release        # once; prints the trust line
 halite-hub extensions sign ./build \
-  --name aws_secrets_manager --ext-version 1.1.0 --kind pillar \
+  --name aws_secrets_manager --ext-version 1.1.1 --kind pillar \
   --exe aws-secrets --declares network --key release \
   --publish /srv/halite/states                  # optional: step 4 as well
 ```
@@ -297,7 +297,7 @@ from one command:
 go run ./tools/extbundle \
   -dir      ./build \
   -name     aws_secrets_manager \
-  -version  1.1.0 \
+  -version  1.1.1 \
   -kind     pillar \
   -exe      aws-secrets \
   -declares network \
@@ -366,7 +366,7 @@ old root is reported as exactly that, with the new root to move it to.
 file server already serves everything else:
 
 ```
-/srv/halite/states/_ext/aws_secrets_manager/1.1.0/
+/srv/halite/states/_ext/aws_secrets_manager/1.1.1/
     aws-secrets
     manifest.json
     manifest.sig
@@ -381,7 +381,7 @@ extension_trust_keys:
 extension_require_signature: true
 extension_pins:
   aws_secrets_manager:
-    version: 1.1.0
+    version: 1.1.1
     root: 9f2c...        # printed by extbundle, and by `extensions sync`
 ```
 

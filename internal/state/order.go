@@ -91,28 +91,76 @@ func order(chunks []*Chunk, diags *Diags) []*Chunk {
 		}
 	}
 
-	ready := make([]int, 0, n)
-	for i := 0; i < n; i++ {
-		if indegree[i] == 0 {
-			ready = append(ready, i)
+	// The ready set is a binary heap. It was a slice scanned linearly
+	// for the best chunk and then closed up with append, on the grounds
+	// that "the set is small in practice"; with nothing constraining
+	// them every chunk is ready at once, so that was quadratic in the
+	// low state: 10,000 chunks took 0.3 s and 40,000 took 10.8 s
+	// (DIVERGENCE 5.411).
+	//
+	// The order must be exactly the one the scan produced, ties
+	// included. `less` is not a total order: the chunks of one
+	// declaration with several functions share every key. The scan
+	// broke such a tie by position in its slice, and that position was
+	// the order of entry — the initial set in index order (its sort was
+	// stable), then each chunk as it became ready. So each entry carries
+	// its arrival number, and the heap breaks a tie on that.
+	type entry struct{ idx, seq int }
+	var ready []entry
+	before := func(a, b entry) bool {
+		if less(a.idx, b.idx) {
+			return true
+		}
+		if less(b.idx, a.idx) {
+			return false
+		}
+		return a.seq < b.seq
+	}
+	push := func(e entry) {
+		ready = append(ready, e)
+		for i := len(ready) - 1; i > 0; {
+			parent := (i - 1) / 2
+			if !before(ready[i], ready[parent]) {
+				break
+			}
+			ready[i], ready[parent] = ready[parent], ready[i]
+			i = parent
 		}
 	}
-	sort.SliceStable(ready, func(a, b int) bool { return less(ready[a], ready[b]) })
+	pop := func() entry {
+		top := ready[0]
+		last := len(ready) - 1
+		ready[0] = ready[last]
+		ready = ready[:last]
+		for i := 0; ; {
+			smallest, l, r := i, 2*i+1, 2*i+2
+			if l < len(ready) && before(ready[l], ready[smallest]) {
+				smallest = l
+			}
+			if r < len(ready) && before(ready[r], ready[smallest]) {
+				smallest = r
+			}
+			if smallest == i {
+				break
+			}
+			ready[i], ready[smallest] = ready[smallest], ready[i]
+			i = smallest
+		}
+		return top
+	}
+
+	seq := 0
+	for i := 0; i < n; i++ {
+		if indegree[i] == 0 {
+			push(entry{i, seq})
+			seq++
+		}
+	}
 
 	out := make([]*Chunk, 0, n)
 	placed := make([]bool, n)
 	for len(ready) > 0 {
-		// Take the highest-priority ready chunk. The set is small in
-		// practice, so a linear scan beats a heap and keeps the ordering
-		// obviously stable.
-		best := 0
-		for i := 1; i < len(ready); i++ {
-			if less(ready[i], ready[best]) {
-				best = i
-			}
-		}
-		idx := ready[best]
-		ready = append(ready[:best], ready[best+1:]...)
+		idx := pop().idx
 
 		placed[idx] = true
 		chunks[idx].RunNum = len(out)
@@ -121,7 +169,8 @@ func order(chunks []*Chunk, diags *Diags) []*Chunk {
 		for _, dep := range dependents[idx] {
 			indegree[dep]--
 			if indegree[dep] == 0 {
-				ready = append(ready, dep)
+				push(entry{dep, seq})
+				seq++
 			}
 		}
 	}
