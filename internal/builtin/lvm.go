@@ -693,7 +693,7 @@ func lvmVGExtentSize(c *exec.Context, vg string) int64 {
 // declared. The request is rounded the way LVM rounds it before it is
 // compared. An extent size that cannot be read leaves the request as
 // written, which is what happened before. Issue 321, section 5;
-// DIVERGENCE 5.419.
+// DIVERGENCE 5.429.
 func lvmRoundToExtent(want, extent int64) int64 {
 	if extent <= 0 || want%extent == 0 {
 		return want

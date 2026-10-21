@@ -260,7 +260,7 @@ func TestLiveLVMBuildsAGroupAndAVolumeARealLVMReportsBack(t *testing.T) {
 	// the next extent, so the volume ends larger than the number in the
 	// tree, and the next run must take that number to mean the size it
 	// rounded to -- not a shrink to refuse, and not a volume to warn
-	// about. DIVERGENCE 5.419.
+	// about. DIVERGENCE 5.429.
 	liveLVMCall(t, rig, "lvm.lvresize", "name", rig.vg+"/data", "size", "34M")
 	lv = liveLVMFind(liveLVMReport(t, rig, "lvm.lvs"), "lv_name", "data")
 	rounded, _ := lv.GetString("lv_size")

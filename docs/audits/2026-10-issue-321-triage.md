@@ -178,7 +178,7 @@ passing by the PRs above; that has not been looked for.
 | Local signer signs any digest length | #473 | 5.412; extension 1.0.1; the host only sends 32 bytes; key-file mode check left (owner policy) |
 | `migrate/skeleton.go` names unescaped in generated Go | #464 | 5.413; a `__virtualname__` produced a stub that compiled and called `os.RemoveAll`; `migrate --bridge-skeleton` not run end to end |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
-| `lvm.lvresize` calls a rounded-up size a shrink | #475 | 5.419; measured on the fleet `linux` leg (LVM2 2.03.16): failed before, passed after; `lv_present` warned too; only 4 MiB extents |
+| `lvm.lvresize` calls a rounded-up size a shrink | #475 | 5.429; measured on the fleet `linux` leg (LVM2 2.03.16): failed before, passed after; `lv_present` warned too; only 4 MiB extents |
 | `iptables.insert` does not enforce `position` | #474 | 5.428; docs corrected, behaviour unchanged (moving a live rule is a decision); Salt parity recalled, not checked |
 | `swap.on`/`off` compare the caller's path with the kernel's keys | #472 | 5.418; measured and fixed on beastie (FreeBSD `swapctl -l`), live test passed there; Linux not run; GEOM labels not links |
 | Multi-arch: `dpkg.set_selections` diff compares bare names with `name:arch` | #470 | 5.417; happens on a single-arch host too (941 qualified lines on Ubuntu 24.04); apt `ListPkgs` keyed on `${Package}` not fixed (needs a foreign-arch host to capture) |
