@@ -47,7 +47,14 @@ type Cache struct {
 	// Update, which is what to use instead of Get and Put for anything
 	// that changes a record that already exists.
 	mu    sync.Mutex
-	locks map[ID]*sync.Mutex
+	locks map[ID]*jobLock
+}
+
+// jobLock is one job's mutex and how many callers hold or wait for it,
+// so that the last one out can remove it.
+type jobLock struct {
+	mu    sync.Mutex
+	users int
 }
 
 // ErrNoJob is returned for a jid the hub has no record of.
@@ -219,19 +226,36 @@ func (c *Cache) Update(id ID, mutate func(*Job) error) (*Job, error) {
 // Per job rather than one for the store: the hub delivers to many jobs
 // at once and a single lock would serialise a busy hub's whole
 // bookkeeping behind whichever record was slowest to write.
+//
+// The entry is removed when the last caller holding or waiting for it
+// lets go. It was kept for ever, one for every job the hub had updated
+// since it started, for a hub whose uptime is measured in months. The
+// count is taken under the store's mutex before waiting on the job's,
+// so an entry somebody is queued on is never removed from under them,
+// and the next caller for that job finds the same mutex rather than a
+// fresh one that would let two of them in at once.
 func (c *Cache) lock(id ID) func() {
 	c.mu.Lock()
 	if c.locks == nil {
-		c.locks = map[ID]*sync.Mutex{}
+		c.locks = map[ID]*jobLock{}
 	}
-	m, ok := c.locks[id]
+	l, ok := c.locks[id]
 	if !ok {
-		m = &sync.Mutex{}
-		c.locks[id] = m
+		l = &jobLock{}
+		c.locks[id] = l
 	}
+	l.users++
 	c.mu.Unlock()
-	m.Lock()
-	return m.Unlock
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		c.mu.Lock()
+		l.users--
+		if l.users == 0 {
+			delete(c.locks, id)
+		}
+		c.mu.Unlock()
+	}
 }
 
 // Get reads a job's record.
