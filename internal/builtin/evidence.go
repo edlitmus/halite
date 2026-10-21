@@ -523,7 +523,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"a fresh `pvs`/`vgs`/`lvs` read rather than the module's own answer, and the shrink " +
 		"guard shown to refuse a smaller size before `lvresize` was called (DIVERGENCE 5.50). " +
 		"On 2026-10-20 the fleet `linux` leg (LVM2 2.03.16, Ubuntu 24.04 runner) resized to 34M " +
-		"on 4 MiB extents: LVM made 36 MiB, and before DIVERGENCE 5.429 the same call a second " +
+		"on 4 MiB extents: LVM made 36 MiB, and before DIVERGENCE 5.430 the same call a second " +
 		"time was refused as a shrink and `lv_present` warned; after it, both were quiet " +
 		"(runs 39369621233 and 39369749566). " +
 		"That run found a defect in the live harness -- a `[]string` device list reaching the " +

@@ -27,7 +27,7 @@ LVM rounds a size up to a whole extent, so `lvm.lvresize` with `34M` on
 4 MiB extents made a 36 MiB volume, and the same call on the next run
 was refused as a shrink; `lvm.lv_present` warned that the volume was
 larger than declared. A size is now compared as LVM rounds it.
-DIVERGENCE 5.429.
+DIVERGENCE 5.430.
 
 ### The node's systemd units no longer hide the kernel's modules
 
