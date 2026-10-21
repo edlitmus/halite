@@ -54,8 +54,12 @@ func TestEnrollWaitRetriesWhenTheHubLimitsIt(t *testing.T) {
 		}
 	}
 
+	// `--token=`, as the handbook says to write it: a minted token is
+	// random base64 and begins with `-` about one time in 64, and
+	// `--token <secret>` then reads it as a flag. Written with a space,
+	// this test failed that often in CI.
 	spend()
-	got := l.enroll(t, "--token", secret)
+	got := l.enroll(t, "--token="+secret)
 	if got.code != 2 || !strings.Contains(got.stdout, "limiting enrollment requests from this address") {
 		t.Fatalf("enroll over the limit: exit %d\n%s%s", got.code, got.stdout, got.stderr)
 	}
@@ -66,7 +70,7 @@ func TestEnrollWaitRetriesWhenTheHubLimitsIt(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 	spend()
 	start := time.Now()
-	got = l.enroll(t, "--token", secret, "--wait")
+	got = l.enroll(t, "--token="+secret, "--wait")
 	if got.code != 0 {
 		t.Fatalf("enroll --wait over the limit: exit %d\n%s%s", got.code, got.stdout, got.stderr)
 	}

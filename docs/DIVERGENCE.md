@@ -33086,6 +33086,26 @@ get wrong. Extents other than 4 MiB, and `extents` given as a count or a
 percentage, which are not compared here at all. Not run on this host,
 which has no root.
 
+### 5.429 5.398's enrollment test passed a token the way the handbook says not to
+
+`TestEnrollWaitRetriesWhenTheHubLimitsIt`, added with 5.398, failed
+intermittently on main and on PR CI. The build and release agent's run
+on the Low findings traced the cause. The test passed the token as
+`--token <secret>`. A minted token is random base64, and it begins with
+`-` about one time in 64. `internal/cli` then reads the token as a
+flag, refuses it, and exits 64. The handbook (chapter 31) and the ledger
+already say to write `--token=SECRET` for exactly this reason. The test
+did not.
+
+**Measured** with a throwaway test that minted tokens until one began
+with `-`. `--token <secret>` exited 64 with "--zO2-Bl1eE… is not a flag
+of `halite-node enroll`". `--token=<secret>` enrolled.
+
+**The change:** the test writes `--token=`. The CLI is not changed: a
+value that begins with `-` is still taken for a flag after a space, as
+the handbook documents.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
