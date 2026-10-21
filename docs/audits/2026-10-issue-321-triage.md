@@ -113,7 +113,7 @@ not do. Each has been checked to see whether it happened.
 | M-50 pillar `S@` targets | #334 | | beastie's pillar root is empty, so nothing there meets the refusal (5.329) |
 | M-54 SLS name spellings | #340 (state), #362 (policy) | | |
 | M-55 `file_ignore_glob` fnmatch | #342 | | |
-| Section 1.2, the toolchain's ten advisories | #360 (go1.27.2) | M-03, by #398 | |
+| Section 1.2, the toolchain's ten advisories | #360 (go1.27.2) | M-03, by #398 | GO-2026-6809 against go1.27.2 then failed the gate #398 added; go1.27.3 (5.424) |
 
 Changes made while doing these, not findings of the audit: #369 holds
 an extension's `Version` to its code, and refuses a binary whose

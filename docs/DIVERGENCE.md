@@ -32863,6 +32863,47 @@ other, which costs runners; that was not measured.
 
 
 
+### 5.424 A new advisory against go1.27.2 stopped every merge
+
+On 2026-10-21 CI's `govulncheck` job, which 5.358 added, began failing on
+`main` (run 39530289862, at `a4b1878`) and on every open PR:
+GO-2026-6809 (CVE-2026-111943), "Distrust compromised intermediate
+certificates in crypto/x509", reached through `Certificate.Verify`, found
+in go1.27.2 and fixed in go1.27.3. Nothing in the tree had changed. The
+advisory was published against the pinned toolchain, and the gate did
+what it was added to do.
+
+The advisory adds a denylist of public intermediates to `Verify`. The
+fleet's own TLS verifies against halite's CA and no public intermediate,
+so that path is not what it is about. The paths that verify against the
+system roots are: OIDC discovery and keys, the AWS and S3 clients, and
+`http.query` and remote `source`. Which of those an attacker could reach
+with a certificate under one of the distrusted intermediates was not
+worked out.
+
+**The change** moves the pin from go1.27.2 to go1.27.3 at every site #360
+named: `go.mod`'s `toolchain`, the 12 setup-go steps in the three
+workflows, the three Dockerfiles' `golang:` base, and `contrib/tofu`'s
+`go_version`, `go_sha256` and `go_sha256_freebsd`. It also moves the
+FreeBSD tarball digest that #446 (5.403) pinned in `ci.yml` and
+`fleet.yml`. The digests come from `go.dev/dl/?mode=json&include=all`.
+The same file gave go1.27.2's three digests exactly as the repository
+pinned them.
+
+**Measured** on this Ubuntu host. govulncheck v1.9.0 (the version
+`make vuln` pins) under `GOTOOLCHAIN=go1.27.2` reports GO-2026-6809.
+Under go1.27.3, `make vuln` reports "No vulnerabilities found". One
+trap: `make vuln` sets `GOTOOLCHAIN` from `go.mod` itself, so passing
+`GOTOOLCHAIN=go1.27.2` to it scans with go1.27.3 and says nothing is
+wrong. The comparison was run with govulncheck directly.
+`internal/buildpolicy` fails when one `fleet.yml` step is set back to
+1.27.2, and passes restored.
+
+**Not verified.** The release workflow and the fleet legs are not run by
+a PR. The FreeBSD tarball digest is checked by CI's FreeBSD leg, which
+is. The Docker images were not built. The mentions of go1.27.2 in code
+comments say what was measured with it, and are left.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

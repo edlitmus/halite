@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Built with go1.27.3
+
+go1.27.2 has GO-2026-6809: crypto/x509 did not refuse some public
+intermediate certificates that are no longer trusted. That matters where
+halite checks certificates against the system's roots: OIDC, AWS and S3,
+and `http.query`. The fleet's own connections use halite's CA. CI's
+vulnerability check failed on it, and every build is now go1.27.3.
+DIVERGENCE 5.424.
+
 ### An LDAP username holding `>=`, `<=` or `~=` can log in
 
 The user filter read a comparison inside the username as the filter's
