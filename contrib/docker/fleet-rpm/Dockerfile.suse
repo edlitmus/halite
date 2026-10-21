@@ -14,7 +14,7 @@
 
 # The pinned toolchain, copied from the image go.mod's pin names; see
 # Dockerfile.el for why this rather than a download.
-FROM golang:1.27.2-bookworm AS toolchain
+FROM golang:1.27.3-bookworm AS toolchain
 
 FROM opensuse/leap:16.0
 

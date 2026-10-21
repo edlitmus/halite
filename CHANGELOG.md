@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Built with Go 1.27.3, for GO-2026-6809 in `crypto/x509`
+
+`govulncheck` v1.9.0 reports GO-2026-6809, fixed in `crypto/x509` in Go
+1.27.3, as reachable from halite: the LDAP client's StartTLS handshake
+verifies the directory's certificate through it
+(`internal/ldap/conn.go`). The pin is now `toolchain go1.27.3`, and CI,
+the fleet images and the lab move with it. DIVERGENCE 5.424.
+
 ### An LDAP username holding `>=`, `<=` or `~=` can log in
 
 The user filter read a comparison inside the username as the filter's
