@@ -32863,6 +32863,33 @@ other, which costs runners; that was not measured.
 
 
 
+### 5.424 A Go advisory published mid-flight failed every PR's govulncheck
+
+Not an audit finding: on 2026-10-20 the `govulncheck` job (v1.9.0,
+pinned by 5.358) started failing on every branch with GO-2026-6809,
+fixed in `crypto/x509@go1.27.3`, reached from
+`internal/ldap/conn.go:191` (`ldap.Conn.startTLS` calls
+`tls.Conn.Handshake`, which reaches `x509.Certificate.Verify`). Seen on
+#454's run 39530409287. The pin was go1.27.2.
+
+**The change.** `toolchain go1.27.3`, and everything 5.403 and the
+toolchain tests hold to it: the workflows' `go-version`, the FreeBSD
+legs' `want_version` and `want_sha256`, contrib/tofu's `go_version`,
+`go_sha256` and `go_sha256_freebsd`, and the three fleet images'
+`golang:1.27.3-bookworm`. The digests are go.dev's
+(`https://go.dev/dl/?mode=json&include=all`); the image tag was checked
+to exist on Docker Hub. Comments that record a measurement made with
+go1.27.2 keep saying so.
+
+**Demonstrated.** `make vuln` on Ubuntu: GO-2026-6809 with go.mod at
+go1.27.2, "No vulnerabilities found." at go1.27.3. `internal/buildpolicy`
+passes, which holds the workflows, the images, the lab and the FreeBSD
+digests to the new pin.
+
+**Not verified.** The FreeBSD digest and the images are first exercised
+by this PR's CI. The lab was not raised. What else changed between
+1.27.2 and 1.27.3 was not read.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

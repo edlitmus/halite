@@ -180,7 +180,7 @@ jobs:
           # drifting below go.mod's -- `auto` would download and say
           # nothing, `local` would fail -- and buildpolicy already makes
           # that drift impossible.
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
       - run: make fmt-check
       - run: make vet
@@ -204,7 +204,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
       - name: govulncheck
         env:
           GOTOOLCHAIN: local
@@ -221,7 +221,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
       - run: make build-all
 
@@ -256,7 +256,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
 
       - name: test (make)
@@ -369,7 +369,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
 
       - name: race (make)
@@ -510,8 +510,8 @@ jobs:
           # version go.mod pins by internal/buildpolicy, so a toolchain
           # bump that forgets this line fails there, before CI, rather
           # than here as a checksum mismatch.
-          want_version=go1.27.2
-          want_sha256=3baf61eec549b0c3f638d82636388e36abf94aa14814a011f011d2648ad1eded
+          want_version=go1.27.3
+          want_sha256=c15c88d07d6b2d2db5df7b65d9b9c73d631ac4e787da04e2bef2a5b6952c2cbb
           if [ "$version" != "$want_version" ]; then
             echo "go.mod pins $version and this step has the digest of $want_version; move both" >&2
             exit 1
@@ -561,7 +561,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
       # fips-test builds with GOPROXY=off, and fetching a toolchain
       # needs the proxy. So if the runner's Go is older than the pinned
@@ -616,7 +616,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
       - name: the runner's Go is the pinned toolchain
         run: .github/toolchain-check.sh
