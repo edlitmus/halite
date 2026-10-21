@@ -21,6 +21,21 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Verify a release's provenance against the release workflow and its tag
+
+The release notes, README, handbook chapters 30 and 36 and
+`docs/releasing.md` told you to check provenance with
+`gh attestation verify <file> --repo edlitmus/halite`. That accepts an
+attestation made by any workflow, from any branch, in the repository,
+and `release.yml` can be dispatched from any branch and attests what it
+builds. They now say:
+
+    gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite \
+        --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+        --source-ref refs/tags/v$v
+
+Releases already published verify with the new flags. DIVERGENCE 5.425.
+
 ### Built with Go 1.27.3, for GO-2026-6809 in `crypto/x509`
 
 `govulncheck` v1.9.0 reports GO-2026-6809, fixed in `crypto/x509` in Go

@@ -48,7 +48,9 @@ a record of what changed, and a rehearsed way back.
 ```sh
 v=0.2.0; p=linux-amd64
 sha256sum --ignore-missing -c SHA256SUMS
-gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite
+gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite \
+    --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+    --source-ref refs/tags/v$v
 openssl dgst -sha256 -verify halite-release.pub -signature SHA256SUMS.sig SHA256SUMS
 ```
 

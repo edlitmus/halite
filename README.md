@@ -27,7 +27,9 @@ v=X.Y.Z; p=linux-amd64    # set these: the release, and your platform
 curl -LO https://github.com/edlitmus/halite/releases/download/v$v/halite-$v-$p.tar.gz
 curl -LO https://github.com/edlitmus/halite/releases/download/v$v/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
-gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite
+gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite \
+    --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+    --source-ref refs/tags/v$v
 tar -xzf halite-$v-$p.tar.gz
 sudo install -m 0755 halite-$v-$p/bin/halite-node /usr/local/bin/
 ```
@@ -428,7 +430,14 @@ only if the release gate passed, it signs SLSA build provenance for those
 digests through Sigstore, with no long-lived key. A release archive is
 checked with:
 
-    gh attestation verify halite-$v-linux-amd64.tar.gz --repo edlitmus/halite
+    gh attestation verify halite-$v-linux-amd64.tar.gz --repo edlitmus/halite \
+        --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+        --source-ref refs/tags/v$v
+
+`--repo` alone accepts an attestation made by any workflow, from any
+ref, in this repository, and `release.yml` can be run by hand from any
+branch; the other two flags hold it to the release workflow run for
+that tag.
 
 On a `v*` tag, it then publishes the release: one archive per platform,
 holding the licence, the binaries, the example configuration, the

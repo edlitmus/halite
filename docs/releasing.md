@@ -63,8 +63,16 @@ sha256sum --ignore-missing -c SHA256SUMS
 The provenance, which needs the network and Sigstore's trust root:
 
 ```sh
-gh attestation verify halite-0.1.0-linux-amd64.tar.gz --repo edlitmus/halite
+gh attestation verify halite-0.1.0-linux-amd64.tar.gz --repo edlitmus/halite \
+    --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+    --source-ref refs/tags/v0.1.0
 ```
+
+Both flags matter. `--repo` alone accepts an attestation from any
+workflow and any ref in the repository, and `release.yml` can be
+dispatched from any branch, so a manual run on an unreviewed branch
+mints a real attestation that `--repo` alone would accept. The two
+flags hold it to the release workflow, run for that tag.
 
 And, once a release carries them, the detached signatures, which need
 nothing but the public key and an `openssl`. The public key is
@@ -213,7 +221,9 @@ artifact:
 ```sh
 rm -rf dist
 gh run download <run id> --repo edlitmus/halite -n dist-ubuntu-24.04 -D dist
-gh attestation verify dist/halite-0.1.0-linux-amd64.tar.gz --repo edlitmus/halite
+gh attestation verify dist/halite-0.1.0-linux-amd64.tar.gz --repo edlitmus/halite \
+    --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+    --source-ref refs/heads/<the branch the run was dispatched from>
 ```
 
 `gh attestation` needs GitHub CLI 2.49 or later. Ubuntu 24.04's own

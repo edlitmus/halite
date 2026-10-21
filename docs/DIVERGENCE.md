@@ -32890,6 +32890,52 @@ digests to the new pin.
 by this PR's CI. The lab was not raised. What else changed between
 1.27.2 and 1.27.3 was not read.
 
+### 5.425 The provenance check accepted an attestation from any branch
+
+Issue 321, a Low finding in section 5: the release notes said
+`gh attestation verify <file> --repo edlitmus/halite`, which accepts an
+attestation from any workflow or ref in the repository, while
+`release.yml` can be dispatched from any branch and its `attest` job
+then mints a real Sigstore attestation for that commit. The audit asked
+for `--signer-workflow` and `--source-ref`.
+
+**Measured.** The bare command appeared in release.yml's generated
+notes and its comment, the README (twice), handbook chapters 30 and 36,
+and `docs/releasing.md` (twice). `gh run list --workflow release.yml`
+shows five dispatched runs that succeeded, from `main`,
+`feat/release-tarballs` and `ci/attest-provenance`, so attestations
+from refs other than a tag exist. None was found covering a published
+file; that was not looked for beyond `v0.1.1`'s linux-amd64 archive,
+whose one attestation is from `refs/tags/v0.1.1`.
+
+**The change.** Every place that tells somebody to verify a release
+now adds `--signer-workflow edlitmus/halite/.github/workflows/release.yml`
+and `--source-ref refs/tags/v<version>`, and says why both are needed.
+The notes take the tag from the run's `TAG`. `docs/releasing.md`'s check
+of a dispatched run's own artifact names `refs/heads/<branch>`, since
+that is the ref such a run attests.
+`internal/buildpolicy`'s `TestEveryProvenanceCheckNamesTheWorkflowAndRef`
+reads every `gh attestation verify` command, with its continuation
+lines, in the README, `docs/`, the handbook and the workflows (not the
+changelog or this ledger, which quote history), and fails one missing
+either flag. On `main`'s documents it names all eight commands, twice
+each.
+
+**Demonstrated.** With gh 2.102.0 against the published
+`halite-0.1.1-linux-amd64.tar.gz`: the new command passed, and its
+certificate's `sourceRepositoryRef` was `refs/tags/v0.1.1`;
+`--source-ref refs/tags/v0.1.0` failed with "expected
+SourceRepositoryRef to be refs/tags/v0.1.0, got refs/tags/v0.1.1";
+`--signer-workflow edlitmus/halite/.github/workflows/ci.yml` failed.
+The notes' heredoc, run under FreeBSD's sh with `TAG=v0.1.1`, printed
+the command with its continuation lines intact.
+
+**Not verified.** That `--repo` alone accepts a branch attestation is
+gh's documented behaviour and was not shown with one. No release was
+cut with the new notes. The repository
+settings that would stop a dispatch from a branch were not changed:
+that needs admin rights.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

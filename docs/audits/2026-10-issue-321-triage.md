@@ -192,6 +192,7 @@ passing by the PRs above; that has not been looked for.
 | Actions pinned by mutable tag; VM checkouts keep the token | #449 | 5.421; the token reached the VM as a `_temp` credentials file rsync copies, not in `.git/config`; fleet.yml ran on the PR, release.yml not run |
 | `job.ID.Valid()` accepts non-digits | #452 | 5.422; only the `+` in the fraction got through `time.Parse`; no stored jid checked |
 | CI's `cancel-in-progress` cancels pushes to main | #450 | 5.423; at least eleven main commits had no result, #446's among them; pushes now grouped by commit; no push to main run under it yet |
+| Provenance guidance `--repo` only | #454 | 5.425; checked against v0.1.1's attestation; no branch attestation shown accepted; repository settings for dispatch not changed (admin) |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
