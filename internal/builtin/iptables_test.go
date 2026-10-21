@@ -201,6 +201,42 @@ func TestIPTablesAppendIsIdempotent(t *testing.T) {
 	}
 }
 
+// insert's position is where a missing rule goes, not where a present
+// one must be: presence is `-C`, which matches anywhere in the chain. The
+// docs said "at a position" and now say the position is not enforced;
+// this holds the two together. DIVERGENCE 5.428.
+func TestIPTablesInsertDoesNotMoveARuleThatIsPresentElsewhere(t *testing.T) {
+	present := "iptables -w 30 -t filter -C INPUT -p tcp --dport 22 -j ACCEPT"
+	c := iptablesCtx(map[string]exec.Result{present: {Code: 0}})
+	out, err := iptablesAddRule(c, value.MapOf("chain", "INPUT", "rule", "-p tcp --dport 22 -j ACCEPT",
+		"position", int64(3)), "insert")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != false {
+		t.Errorf("insert of a rule present elsewhere reported a change: %v", out)
+	}
+	for _, ran := range c.Runner.(*exec.RecordingRunner).RanCommands() {
+		if strings.Contains(ran, " -I ") || strings.Contains(ran, " -D ") {
+			t.Errorf("insert ran %q for a rule already in the chain", ran)
+		}
+	}
+	r := New()
+	for _, sig := range []string{"exec", "state"} {
+		var doc string
+		if sig == "exec" {
+			s, _ := r.Exec.Signatures().Lookup("iptables.insert")
+			doc = s.Doc
+		} else {
+			s, _ := r.States.Signatures().Lookup("iptables.insert")
+			doc = s.Doc
+		}
+		if !strings.Contains(doc, "position is not enforced") {
+			t.Errorf("the %s doc does not say the position is not enforced: %q", sig, doc)
+		}
+	}
+}
+
 // flush refuses to strip a built-in chain that is holding traffic out,
 // and refuses a whole-table flush, unless force is set.
 func TestIPTablesFlushRefusesADangerousFlush(t *testing.T) {

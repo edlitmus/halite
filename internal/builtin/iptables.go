@@ -127,7 +127,7 @@ func registerIPTables(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "iptables", Function: "insert",
-				Doc: "Add a rule at a position in a chain, if it is not already there.",
+				Doc: "Insert a rule at a position in a chain, if the chain does not already hold it. A rule already anywhere in the chain is left where it is; the position is not enforced.",
 				Params: append(iptablesRuleFnParams(),
 					opt("position", signature.Int, int64(1), "The 1-based position to insert at.")),
 				Mutates:    true,
@@ -340,7 +340,7 @@ func registerIPTables(r *Registries) {
 		states.Module{
 			Sig: signature.Signature{
 				Module: "iptables", Function: "insert",
-				Doc: "Ensure a rule is present at a position in a chain.",
+				Doc: "Ensure a rule is present in a chain, inserting it at a position when it is not. A rule already anywhere in the chain is converged; the position is not enforced.",
 				Params: append(iptablesRuleStateParams(),
 					opt("position", signature.Int, int64(1), "The 1-based position.")),
 				Mutates:    true,
