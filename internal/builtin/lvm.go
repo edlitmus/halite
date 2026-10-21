@@ -667,6 +667,40 @@ func lvmFindLV(c *exec.Context, vg, lv string) (*lvmLV, error) {
 	return nil, nil
 }
 
+// lvmVGExtentSize is a volume group's extent size in bytes, 0 when it
+// cannot be read.
+func lvmVGExtentSize(c *exec.Context, vg string) int64 {
+	rows, err := lvmReport(c, "vg", "")
+	if err != nil {
+		return 0
+	}
+	for _, row := range rows {
+		if row["vg_name"] == vg {
+			return lvmBytes(row["vg_extent_size"])
+		}
+	}
+	return 0
+}
+
+// lvmRoundToExtent is the size LVM will make for an absolute request:
+// the next whole extent up.
+//
+// **A size that is not a whole number of extents was compared as
+// written.** LVM rounds `-L 10M` on 4 MiB extents up to 12 MiB, so the
+// volume ends larger than the tree says, and the next run compared 10M
+// with 12M: `lvm.lvresize` refused it as a shrink, every run after the
+// first, and `lvm.lv_present` warned that the volume was larger than
+// declared. The request is rounded the way LVM rounds it before it is
+// compared. An extent size that cannot be read leaves the request as
+// written, which is what happened before. Issue 321, section 5;
+// DIVERGENCE 5.430.
+func lvmRoundToExtent(want, extent int64) int64 {
+	if extent <= 0 || want%extent == 0 {
+		return want
+	}
+	return (want/extent + 1) * extent
+}
+
 // ---- argument vectors ----
 //
 // Each of these is a pure function of its inputs, the fix plan.md §1.4
@@ -1258,6 +1292,7 @@ func lvmLVResize(c *exec.Context, args *value.Map) (any, error) {
 	// percentage size cannot be judged from here and is left to LVM,
 	// which has its own prompt.
 	if want, ok := lvmParseSize(size); ok {
+		want = lvmRoundToExtent(want, lvmVGExtentSize(c, vg))
 		switch {
 		case want == current.Bytes:
 			return lvmMutateResult(c, false, fmt.Sprintf("The logical volume %s is already %d bytes.", ref, want), nil), nil
@@ -1545,6 +1580,9 @@ func lvmLVPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 	// did it because a number in a tree got smaller would be a bad
 	// surprise. lvm.lvresize with force is the deliberate path for that.
 	want, absolute := lvmParseSize(size)
+	if absolute {
+		want = lvmRoundToExtent(want, lvmVGExtentSize(c, vg))
+	}
 	if size == "" || !absolute || want <= current.Bytes {
 		res := states.True(fmt.Sprintf("The logical volume %s/%s exists.", vg, lvName))
 		if absolute && want < current.Bytes {

@@ -33069,6 +33069,42 @@ of `halite-node enroll`". `--token=<secret>` enrolled.
 **The change:** the test writes `--token=`. The CLI is not changed: a
 value that begins with `-` is still taken for a flag after a space, as
 the handbook documents.
+### 5.430 `lvm.lvresize` called LVM's own rounding a shrink
+
+Issue 321, section 5, an Info bullet: `lvm.lvresize` calls a rounded-up
+size a "shrink" (`10M` on 4 MiB extents becomes 12M and the next run
+refuses).
+
+**Measured on real LVM**, the fleet `linux` leg (LVM2 2.03.16 on an
+Ubuntu 24.04 runner, two loop devices, the default 4 MiB extent). The
+live test was extended to resize to 34M, a size that is not whole
+extents, and then do it again. At the test-only commit (run
+39369621233), LVM made the volume 37,748,736 bytes (36 MiB); the second
+`lvm.lvresize` to 34M failed "logical volume … is 37748736 bytes and the
+target is 35651584: a shrink can outrun the filesystem … pass force";
+and `lvm.lv_present` at 34M succeeded with a warning that the volume was
+larger than declared. Both would repeat on every run of a tree that
+names the size.
+
+**The change.** `lvmRoundToExtent` rounds an absolute request up to the
+volume group's extent size, read from `vgs` as `vg_extent_size`, before
+`lvm.lvresize`'s shrink guard and `lvm.lv_present`'s comparison see it.
+An extent size that cannot be read leaves the request as written, as
+before. A real shrink is still refused: 8M against 32M is a shrink after
+rounding too, and the existing check of that still passes.
+
+**Demonstrated.** With the change (run 39369749566) the live test
+passed: the second resize was a no-op and `lv_present` was quiet.
+`TestAnLVMSizeIsRoundedUpToAWholeExtent` pins the arithmetic, with the
+4 MiB extent the captured `vgs` fixture carries, and fails with the
+rounding removed. The `lvm` evidence note names both runs.
+
+**Not verified.** `lvm.lvcreate` is unchanged; it has no comparison to
+get wrong. Extents other than 4 MiB, and `extents` given as a count or a
+percentage, which are not compared here at all. Not run on this host,
+which has no root.
+
+
 
 
 ## 6. Everything else not started
