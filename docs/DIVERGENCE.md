@@ -32608,36 +32608,6 @@ include the swap live tests, as the evidence note already says of the Linux
 row, and this host has no root; adding the Linux swap path to that leg
 is its own change. The `freebsd` leg runs every `TestLive*` and so
 picks this one up. A GEOM label spelling.
-### 5.419 `iptables.insert` said "at a position" and did not hold one
-
-Issue 321, section 5, an Info bullet: `iptables.insert` does not enforce
-`position`.
-
-**Read, and held by a test.** Both the execution function and the
-state decide presence with `iptables -C`, which matches the rule
-anywhere in the chain, and run `-I <chain> <position>` only when it is
-absent. A rule at position 3 asked for at 1 is reported as already
-there and is not moved. The docs said "Add a rule at a position" and
-"Ensure a rule is present at a position", which promised more.
-
-**The change** is to the two docs, not the behaviour: they now say the
-position is where a missing rule goes and is not enforced. Enforcing it
-would mean deleting and reinserting a rule on a live firewall to move
-it, which is a decision about what a state may do to traffic in flight,
-not a correction. Salt's `iptables.insert` state is understood to check
-presence the same way (`iptables.check`), from memory of its source; that
-was not checked here, since this host has no Salt.
-
-**Demonstrated.** `TestIPTablesInsertDoesNotMoveARuleThatIsPresentElsewhere`
-asks for position 3 on a rule `-C` reports present, sees no change and no
-`-I` or `-D`, and reads both docs for the sentence. With `main`'s
-`iptables.go` it fails on both docs. `docs/modules.md` is regenerated.
-
-**Not verified.** No real iptables was run for this; the behaviour is
-the recorded runner's.
-
-
-
 ### 5.419 OIDC checked the first URL for https, and followed a redirect off it
 
 Issue 321, Low, three parts. `fetchKeys` checks that the key set URL is
@@ -33051,6 +33021,35 @@ setting on; on `main`'s units it names both.
   kernel package install.
 - The FIPS drop-in replaces only `ExecStart`, so it inherits this; it
   was not run either.
+### 5.428 `iptables.insert` said "at a position" and did not hold one
+
+Issue 321, section 5, an Info bullet: `iptables.insert` does not enforce
+`position`.
+
+**Read, and held by a test.** Both the execution function and the
+state decide presence with `iptables -C`, which matches the rule
+anywhere in the chain, and run `-I <chain> <position>` only when it is
+absent. A rule at position 3 asked for at 1 is reported as already
+there and is not moved. The docs said "Add a rule at a position" and
+"Ensure a rule is present at a position", which promised more.
+
+**The change** is to the two docs, not the behaviour: they now say the
+position is where a missing rule goes and is not enforced. Enforcing it
+would mean deleting and reinserting a rule on a live firewall to move
+it, which is a decision about what a state may do to traffic in flight,
+not a correction. Salt's `iptables.insert` state is understood to check
+presence the same way (`iptables.check`), from memory of its source; that
+was not checked here, since this host has no Salt.
+
+**Demonstrated.** `TestIPTablesInsertDoesNotMoveARuleThatIsPresentElsewhere`
+asks for position 3 on a rule `-C` reports present, sees no change and no
+`-I` or `-D`, and reads both docs for the sentence. With `main`'s
+`iptables.go` it fails on both docs. `docs/modules.md` is regenerated.
+
+**Not verified.** No real iptables was run for this; the behaviour is
+the recorded runner's.
+
+
 
 ## 6. Everything else not started
 
