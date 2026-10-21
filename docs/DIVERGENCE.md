@@ -32016,6 +32016,7 @@ fifty-six-year answer.
 **Not verified.** macOS and the other BSDs, which also take this path,
 were not run; Linux reads `/proc/uptime` first and never gets here.
 `status.uptime` was not called on beastie, only the sysctl read by hand.
+
 ### 5.405 `file.touch` said it updated a file's times and did not
 
 Issue 321, section 5: `file.touch` documents "update its times if it
@@ -32048,7 +32049,53 @@ nothing. With the registration pointed back at `fileTouch` it fails:
 times rather than now, are not accepted; the signature has only `name`,
 as before. **Not verified.** Run on Linux only, as an ordinary user, in
 a temporary directory; not on FreeBSD.
+
 ### 5.406 Two goroutines writing one websocket could split a frame
+
+Issue 321, Low: `websocket.Conn.writeFrame` writes a frame as two
+`conn.Write` calls, a header and then a payload, with nothing between
+them, and three goroutines in `api/wsevents.go` write to the same
+connection: the event writer, the 30-second heartbeat ping, and the pong
+that `Read` sends from the reader. The audit marked it plausible.
+
+**Measured.** A test with four goroutines writing to one `Conn` over
+`net.Pipe` (one sending pings, three sending 300-byte text frames) and
+a client reading the frames back. Against `main` it failed at the 51st
+frame: a text frame's payload began `\x81~\x01,`, which is another text
+frame's header. From that point a client reads payload bytes as headers,
+so the stream is corrupt, not one message. `net.Pipe` makes each `Write`
+whole, so the split is the framing's and not the transport's.
+
+On the API this needs a ping, a pong or an event to be written in the
+same instant as another. The heartbeat is every 30 seconds and a pong
+only follows a client's ping, so it is rare on a quiet stream. It is
+more likely on a busy one.
+
+**The change.** `Conn` has a write mutex, held for the whole of
+`writeFrame`, deadline included. The two writes are left as they were.
+One buffer and one `Write` would also fix this on a transport whose
+`Write` is atomic, which `net.Conn` does not promise. It would also
+leave the write deadline shared between writers. The lock is the
+contract.
+
+**Demonstrated.** `TestConcurrentWritersDoNotInterleaveFrames` fails on
+`main` as above and passes with the lock, 50 runs out of 50. With the
+lock removed again it failed in 4 runs of 5, at a different frame each
+time. `internal/websocket` and `internal/api` pass under `-race`.
+
+The test's first version hung once in twenty runs with the lock in
+place. A ping's empty payload is still a `Write`, and `net.Pipe` blocks
+an empty `Write` until a `Read` takes it. The reader had stopped after
+the last header. The test now closes its end when it is done reading.
+A TCP connection does not wait for the peer to read, which is why the
+API's empty heartbeat pings have never hung a stream, so this was the
+test and not the server.
+
+**Not verified.** No browser or real websocket client was connected
+while this was tested. The interleaving was not seen on the production
+API; it was only shown with the test.
+
+### 5.407 Two overlapping secrets left the tail of one in the text
 
 Issue 321, part of the Low "redaction gaps" bullet: overlapping secrets
 leave a tail in clear. `Set.Scrub` replaced each secret with
@@ -32099,49 +32146,6 @@ self-overlapping case alone.
 **Not verified.** Only the unit tests; no node or hub was run with
 overlapping secrets in its pillar.
 
-Issue 321, Low: `websocket.Conn.writeFrame` writes a frame as two
-`conn.Write` calls, a header and then a payload, with nothing between
-them, and three goroutines in `api/wsevents.go` write to the same
-connection: the event writer, the 30-second heartbeat ping, and the pong
-that `Read` sends from the reader. The audit marked it plausible.
-
-**Measured.** A test with four goroutines writing to one `Conn` over
-`net.Pipe` (one sending pings, three sending 300-byte text frames) and
-a client reading the frames back. Against `main` it failed at the 51st
-frame: a text frame's payload began `\x81~\x01,`, which is another text
-frame's header. From that point a client reads payload bytes as headers,
-so the stream is corrupt, not one message. `net.Pipe` makes each `Write`
-whole, so the split is the framing's and not the transport's.
-
-On the API this needs a ping, a pong or an event to be written in the
-same instant as another. The heartbeat is every 30 seconds and a pong
-only follows a client's ping, so it is rare on a quiet stream. It is
-more likely on a busy one.
-
-**The change.** `Conn` has a write mutex, held for the whole of
-`writeFrame`, deadline included. The two writes are left as they were.
-One buffer and one `Write` would also fix this on a transport whose
-`Write` is atomic, which `net.Conn` does not promise. It would also
-leave the write deadline shared between writers. The lock is the
-contract.
-
-**Demonstrated.** `TestConcurrentWritersDoNotInterleaveFrames` fails on
-`main` as above and passes with the lock, 50 runs out of 50. With the
-lock removed again it failed in 4 runs of 5, at a different frame each
-time. `internal/websocket` and `internal/api` pass under `-race`.
-
-The test's first version hung once in twenty runs with the lock in
-place. A ping's empty payload is still a `Write`, and `net.Pipe` blocks
-an empty `Write` until a `Read` takes it. The reader had stopped after
-the last header. The test now closes its end when it is done reading.
-A TCP connection does not wait for the peer to read, which is why the
-API's empty heartbeat pings have never hung a stream, so this was the
-test and not the server.
-
-**Not verified.** No browser or real websocket client was connected
-while this was tested. The interleaving was not seen on the production
-API; it was only shown with the test.
-### 5.407 Two overlapping secrets left the tail of one in the text
 ### 5.408 A log field holding an error was written unscrubbed, or as `{}`
 
 Issue 321, Low, part of the "redaction gaps" bullet: `log.ScrubValue`
@@ -32178,6 +32182,7 @@ that half of the finding is left, and the choice is the owner's.
 in both formats, with the outputs above, and passes with the change.
 
 **Not verified.** Only the unit test.
+
 ### 5.409 A node-named secret could replace a hub-configured one by nesting
 
 Issue 321, Low, from the aws-secrets bullet: a node-supplied dotted
@@ -32229,6 +32234,7 @@ documented, and changing a default is the owner's decision.
 local server. A hub whose block already holds overlapping keys will now
 fail that pillar where it used to drop one; whether the production
 estate has one was not looked at.
+
 ### 5.410 The template directory loader followed a symlink out of its root
 
 Issue 321, Low: `template.DirLoader` does not resolve symlinks
@@ -32262,6 +32268,7 @@ be made.
 
 **Not verified.** Run on Linux only; Windows, where the test needs the
 privilege to make a symlink, was left to CI.
+
 ### 5.411 Ordering a low state was quadratic in its size
 
 Issue 321, Low: `state/order.go` is O(n²) (linear scan plus
@@ -32310,6 +32317,7 @@ one, which was not checked against Salt here; it is left.
 
 **Not verified.** The equivalence was measured on generated graphs, not
 on a real estate's low states.
+
 ### 5.412 The local signer signed a digest of any length; the KMS signer refused
 
 Issue 321, Low, from the signer bullet: the local signer signs digests
@@ -32347,6 +32355,7 @@ key file beside the CLI is the thing SPEC 25.6 rules out).
 
 **Not verified.** Only through the handler and the existing end-to-end
 test; no deployed signer.
+
 ### 5.413 A Python module's names were spliced into its bridge skeleton as Go
 
 Issue 321, Low: in `migrate/skeleton.go`, module and function names go
@@ -32395,6 +32404,7 @@ test still builds a skeleton.
 
 **Not verified.** The `migrate` command was not run end to end over a
 tree holding such a file; the test drives the two functions it calls.
+
 ### 5.414 `git.latest` passed a remote beginning with `-` to `git fetch`
 
 Issue 321, section 5: `git.latest` passes URL, rev and remote with no
@@ -32437,6 +32447,7 @@ kept it fails the same way, so the `--` alone does not cover it.
 **Not done.** `git.remote_get` passes its `remote` to `git remote
 get-url` the same way; it only reads, and was not changed. **Not
 verified.** git on FreeBSD was not run.
+
 ### 5.415 A shutdown message beginning with `-` was read as options
 
 Issue 321, section 5: a `shutdown -r +N <message>` message starting with
@@ -32480,6 +32491,7 @@ commands before it got to scheduling.
 
 **Not verified.** No shutdown was scheduled anywhere; the systemd
 measurement stopped at the bus. FreeBSD's parse is read from source.
+
 ### 5.416 ufw added the IPv6 twin and the state said nothing changed
 
 Issue 321, section 5: `ufwChanged` returns "unchanged" when the v4 rule
@@ -32518,6 +32530,7 @@ and they say so where they stand. The conformance cases on the fleet
 host comes to have one family of a rule and not the other (IPv6 turned
 on in `/etc/default/ufw` after rules were added, or a numbered delete
 of one twin) was not tried.
+
 ### 5.417 `dpkg.set_selections` lost a hold on a package dpkg names with its architecture
 
 Issue 321, section 5, the multi-arch bullet, which has two halves: apt's
@@ -32560,6 +32573,7 @@ installed was not measured.
 **Not verified.** The live test was written here and runs only in the
 `debian` leg (root, in a container); this host has no root. The fleet
 run's result is in the PR, not here.
+
 ### 5.418 `swap.on` through a symlink ran `swapon` again on every run
 
 Issue 321, section 5: `swap.on`/`off` compare the caller's path with
@@ -32624,6 +32638,243 @@ the recorded runner's.
 
 
 
+### 5.419 OIDC checked the first URL for https, and followed a redirect off it
+
+Issue 321, Low, three parts. `fetchKeys` checks that the key set URL is
+`https://`, and the client then follows a redirect to `http://`. The
+discovery document's `authorization_endpoint` and `token_endpoint` are
+not required to be https, though the client secret goes to the token
+endpoint in Basic auth. And `oidcStart`, which is unauthenticated,
+re-runs discovery on every call while the provider is down.
+
+**Measured**, against the package's own fake issuer (an `httptest` TLS
+server). No real identity provider was available. A plain `http`
+listener stood in for whoever is on the path. Against `main`:
+
+| Case | `main` |
+|---|---|
+| discovery names an `http://` `jwks_uri`, `token_endpoint` or `authorization_endpoint` | accepted, all three |
+| the `jwks_uri` is https and 307s to http | the plain listener was asked for the keys |
+| the `token_endpoint` is https and 307s to http | the plain listener was sent the POST with `Authorization: Basic aGFsaXRlOnMzY3JldA==`, the test's client id and secret |
+| five logins started while discovery answers 503 | five discovery requests |
+
+The third row is the one that matters. A 307 keeps the method and the
+body. Go forwards `Authorization` on a redirect to the same host, and
+an https-to-http downgrade on the same host counts as the same host.
+
+**The change.**
+
+- Every client the package uses, whether built or passed in, is copied
+  with a `CheckRedirect` that refuses any target that is not `https`. It
+  then applies the caller's own check, or the standard limit of ten
+  redirects. A copy, so that a client the caller passed in is not
+  changed for anyone else using it.
+- Discovery refuses a `jwks_uri`, `token_endpoint` or
+  `authorization_endpoint` (when one is given) that does not parse as an
+  `https` URL with a host.
+- A failed discovery is remembered for `DiscoveryRetryInterval` (ten
+  seconds) and returned without asking the provider again. A cancelled
+  request is not remembered, because a caller giving up is not the
+  provider failing. Ten seconds is a judgement. The key set's
+  out-of-turn bound is sixty, but while this one holds nobody can start
+  an OIDC login, even after the provider is back.
+
+**Demonstrated.** All of the following are in `internal/oidc/https_test.go`.
+Each failed on `main` as in the table, passes now, and failed again
+when its part of the fix was disabled:
+
+- `TestADiscoveryDocumentNamingAPlaintextEndpointIsRefused`, one subtest
+  per URL. It fails with `requireHTTPS` returning nil.
+- `TestAKeySetRedirectToPlaintextIsNotFollowed` and
+  `TestATokenEndpointRedirectToPlaintextIsNotFollowed` fail with the
+  scheme check in `httpsOnly` disabled.
+- `TestAFailedDiscoveryIsNotRepeatedAtOnce` fails with the hold
+  disabled. `TestACancelledDiscoveryIsNotHeldAgainstTheNext` fails
+  with the cancellation exemption removed.
+- `TestAKeySetRedirectThatStaysOnHTTPSIsFollowed` shows that a redirect
+  from https to https is still followed.
+
+**Not done.** Concurrent logins during an outage still each make a
+discovery request until the first one fails. There is no single-flight.
+The key set's scheduled refresh was not changed. Nothing here protects
+against a provider whose https certificate the configured CA trusts but
+which is itself hostile.
+
+**Not verified.** No real identity provider (Keycloak, Entra, Okta) was
+used. None of them is known to redirect a discovery, key set or token
+URL, so a provider that relies on an http redirect would now fail. That
+was not looked for.
+### 5.420 An LDAP filter item found its operator in the value
+
+Issue 321, Low (LDAP, second half): `ParseFilter` split an item on `>=`,
+`<=` and `~=` before `=`, so a username holding one of them could not
+log in.
+
+**Measured** against the package's own fake directory, since no real
+directory was available. `parseItem` searched the whole item for each
+two-character operator before it looked for `=`. With the default user
+filter `(uid=%s)`, the username `a>=b` became `(uid=a>=b)`, which was
+encoded as "attribute `uid=a` greater than or equal to `b`". `Escape`
+does not touch `>`, `<`, `~` or `=`, and neither does RFC 4515, which
+reserves only `*`, `(`, `)`, `\` and NUL in a value. The fake answered
+"no such user in the directory" for an account that exists. The same
+version accepted `(>=1)`, an operator with no attribute.
+
+Nothing was widened. The misparsed filter names an attribute no
+directory has, so it matched nothing. The failure was a login refused,
+not a login granted.
+
+**The change.** The operator is the first `=` in the item and the
+character before it. RFC 4515's attribute description cannot contain
+`=`, `>`, `<` or `~`, so the first `=` always belongs to the operator
+and everything after it is the value. An empty attribute is now refused
+for the comparison operators as it was for equality.
+
+**Demonstrated.** `TestAComparisonInTheValueIsPartOfTheValue` compares
+the BER encoding with the assertion it should be, and still checks that
+`>=`, `<=` and `~=` parse as operators when they are the operator.
+`TestAUsernameHoldingAComparisonCanLogIn` logs `a>=b` in against the
+fake directory. Both fail on `main` as described and pass with the
+change.
+
+**Not changed.** The other half of the bullet, `MapRoles` folding the
+case of group names in every directory, was left alone. The group name
+is the first RDN's value, normally `cn`, and RFC 4519 gives `cn`
+`caseIgnoreMatch`, so OpenLDAP and 389-ds compare it without case as
+Active Directory does. The fold is looser only for a schema that names
+groups by a case-exact attribute. `strings.EqualFold` is also not RFC
+4518's string preparation (it does not fold runs of spaces, for
+example), and that was not changed either. `groupName` cuts the DN at
+its first `,` without honouring `\,`, so `cn=Smith\, J,ou=groups`
+becomes `Smith\`. This was noticed in passing and not fixed.
+
+**Not verified.** No real directory (OpenLDAP, Active Directory) was
+asked. The fake parses the BER this client sends, so it shows the
+encoding is the assertion intended, not that every server answers it
+alike.
+### 5.421 Every action was named by a tag its owner could move
+
+Issue 321, a Low finding in section 5: the workflows named their
+actions by tag (`checkout@v7`, `setup-go@v7`, `upload-artifact@v7`,
+`download-artifact@v8`, `attest-build-provenance@v4`, and the
+third-party `cross-platform-actions/action@v1.6.0`), and the FreeBSD
+VM legs handed the VM a checkout with its token.
+
+**Measured.** At `757f01f`, 39 `uses:` lines across ci.yml, fleet.yml
+and release.yml, none pinned to a commit. `attest-build-provenance`
+runs in the one job holding `id-token: write` and
+`attestations: write`, so whoever moves its tag runs code that can
+sign provenance for this repository.
+
+The token half is not quite as the audit put it. The log of ci.yml's
+`test (freebsd)` job on `main` (run 39328108027) shows checkout v7 with
+`persist-credentials: true` writing the token to
+`/home/runner/work/_temp/git-credentials-<uuid>.config`, with an
+`includeIf` in `.git/config` pointing at it, rather than into
+`.git/config` itself. The VM action then ran
+`rsync -auz ... /home/runner/work/ runner@cross_platform_actions_host:/home/runner/work`,
+whose `--exclude`s name five `_temp/<uuid>` directories and not that
+file. So the token file is in what is copied into the VM, by the
+exclusions the log prints. The token is the job's, scoped
+`contents: read`, and expires with the job. Its presence inside the VM
+was not looked at.
+
+**The change.** Each `uses:` names the commit its tag resolved to on
+2026-10-19, with the tag in a trailing comment. Each was resolved with
+`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`; the two annotated
+tags (`attest-build-provenance` v4, `cross-platform-actions` v1.6.0)
+were dereferenced through `git/tags/<sha>`, and all six agreed with
+`gh api repos/<owner>/<repo>/commits/<tag>`. The two checkouts that
+precede the VM action set `persist-credentials: false`.
+
+`internal/buildpolicy`'s `TestEveryActionIsPinnedByCommit` holds every
+`uses:` to `owner/repo@<40 hex> # v<version>`, and
+`TestTheVMJobsCheckOutWithoutTheToken` holds every checkout in a job
+using cross-platform-actions to `persist-credentials: false`. The first
+cannot check that a commit is the one its comment names; that needs
+the network.
+
+**Demonstrated.** Against `main`'s workflows the first test names all
+39 references and the second both FreeBSD jobs; with this change both
+pass.
+
+On the PR (#449), every ci.yml leg and, triggered by the change to its
+own path, every fleet.yml leg ran with the pinned actions and without
+the token in the two VM jobs, and passed: 24 checks, the two FreeBSD
+VM jobs among them. So `checkout`, `setup-go` and
+`cross-platform-actions` resolve and run at their pinned commits, and
+neither FreeBSD job needed the token.
+
+**Not verified.**
+
+- release.yml is not run by PR CI and was not dispatched, so
+  `upload-artifact`, `download-artifact` and `attest-build-provenance`
+  at their pinned commits have not run. A pin that does not resolve
+  would show on the next release run.
+- Nothing updates the pins. A bump is by hand, and the test does not
+  notice a stale one.
+
+### 5.422 `job.ID.Valid` accepted a sign where a digit belongs
+
+Issue 321, Low: `job.ID.Valid()` accepts characters that are not
+digits. `20260819T142211+23456` is the same time as `...023456`, but
+not the same string. The audit found no traversal, and fuzzed it.
+
+**Measured.** `Valid` checked the length, 21, and that `time.Parse`
+accepted the ID with a `.` put in before the fraction. `time.Parse` read
+the `+` in `142211.+23456` as part of the fraction, so the ID was
+accepted. Its neighbours were already refused by `time.Parse`: a space
+or `-` in the fraction, a leading `+`, and a lower-case `t`. The
+`+` one was the only spelling found that got through.
+
+A jid is a key by its string: the job cache directory, the replay
+cache, and what an operator types. A second spelling of one moment is
+not a path escape, since `+` is not a separator. It is a string that
+`NewID` never writes being treated as if it had.
+
+**The change.** `Valid` requires a digit at every position except the
+ninth, which must be `T`, before it parses the time.
+
+**Demonstrated.** `TestIdentifiersAreSortableReadableAndDistinct` lists
+the `+` spelling and its four neighbours among the identifiers that
+must be refused. With `job.go` reverted to `main` it fails on the `+`
+spelling alone, which is the measurement above. It passes with the
+change.
+
+**Not verified.** No jid from a running hub was checked. Nothing was
+looked for that might have stored a jid in the `+` form. `NewID` cannot
+produce one.
+### 5.423 A merge to main could leave its commit with no CI result
+
+Issue 321, a Low finding in section 5: ci.yml's `concurrency` grouped
+runs by ref with `cancel-in-progress: true`, which applies to pushes to
+`main` as well as to pull requests, so a second merge in quick
+succession cancels CI on the first.
+
+**Measured.** `gh run list --workflow CI --branch main --event push
+--status cancelled` listed ten cancelled runs, the most it was asked
+for, between 2026-10-09 and 2026-10-18, among them the merges of #362,
+#363, #364, #365, #367 and #413. Those commits have no CI result. It
+happened again while this waited: the merge of #446 (`b968e9b`, run
+39370683108) was cancelled by #447's.
+
+**The change.** A pull request's runs are still grouped by ref and
+still cancel each other. A push is grouped by its commit
+(`github.sha`), and `cancel-in-progress` is true only for
+`pull_request`. Turning off `cancel-in-progress` alone would not be enough:
+GitHub documents one running and one pending run per group, so a third
+push still cancels the pending one. `internal/buildpolicy`'s
+`TestAPushToMainIsNotCancelledByTheNext` holds both halves for every
+workflow triggered by a push that declares a group.
+
+**Demonstrated.** The test fails on `main`'s ci.yml, naming both
+halves, and passes with this change.
+
+**Not verified.** No push to `main` has run under this yet: PR CI
+evaluates only the `pull_request` branch of the two expressions. The
+first two merges close together after this lands are the test of it.
+Several main runs now run at once where they used to replace each
+other, which costs runners; that was not measured.
 
 
 
@@ -32635,6 +32886,171 @@ the recorded runner's.
 
 
 
+
+
+
+
+
+
+### 5.424 A Go advisory published mid-flight failed every PR's govulncheck
+
+Not an audit finding: on 2026-10-20 the `govulncheck` job (v1.9.0,
+pinned by 5.358) started failing on every branch with GO-2026-6809,
+fixed in `crypto/x509@go1.27.3`, reached from
+`internal/ldap/conn.go:191` (`ldap.Conn.startTLS` calls
+`tls.Conn.Handshake`, which reaches `x509.Certificate.Verify`). Seen on
+#454's run 39530409287. The pin was go1.27.2.
+
+**The change.** `toolchain go1.27.3`, and everything 5.403 and the
+toolchain tests hold to it: the workflows' `go-version`, the FreeBSD
+legs' `want_version` and `want_sha256`, contrib/tofu's `go_version`,
+`go_sha256` and `go_sha256_freebsd`, and the three fleet images'
+`golang:1.27.3-bookworm`. The digests are go.dev's
+(`https://go.dev/dl/?mode=json&include=all`); the image tag was checked
+to exist on Docker Hub. Comments that record a measurement made with
+go1.27.2 keep saying so.
+
+**Demonstrated.** `make vuln` on Ubuntu: GO-2026-6809 with go.mod at
+go1.27.2, "No vulnerabilities found." at go1.27.3. `internal/buildpolicy`
+passes, which holds the workflows, the images, the lab and the FreeBSD
+digests to the new pin.
+
+**Not verified.** The FreeBSD digest and the images are first exercised
+by this PR's CI. The lab was not raised. What else changed between
+1.27.2 and 1.27.3 was not read.
+
+### 5.425 The provenance check accepted an attestation from any branch
+
+Issue 321, a Low finding in section 5: the release notes said
+`gh attestation verify <file> --repo edlitmus/halite`, which accepts an
+attestation from any workflow or ref in the repository, while
+`release.yml` can be dispatched from any branch and its `attest` job
+then mints a real Sigstore attestation for that commit. The audit asked
+for `--signer-workflow` and `--source-ref`.
+
+**Measured.** The bare command appeared in release.yml's generated
+notes and its comment, the README (twice), handbook chapters 30 and 36,
+and `docs/releasing.md` (twice). `gh run list --workflow release.yml`
+shows five dispatched runs that succeeded, from `main`,
+`feat/release-tarballs` and `ci/attest-provenance`, so attestations
+from refs other than a tag exist. None was found covering a published
+file; that was not looked for beyond `v0.1.1`'s linux-amd64 archive,
+whose one attestation is from `refs/tags/v0.1.1`.
+
+**The change.** Every place that tells somebody to verify a release
+now adds `--signer-workflow edlitmus/halite/.github/workflows/release.yml`
+and `--source-ref refs/tags/v<version>`, and says why both are needed.
+The notes take the tag from the run's `TAG`. `docs/releasing.md`'s check
+of a dispatched run's own artifact names `refs/heads/<branch>`, since
+that is the ref such a run attests.
+`internal/buildpolicy`'s `TestEveryProvenanceCheckNamesTheWorkflowAndRef`
+reads every `gh attestation verify` command, with its continuation
+lines, in the README, `docs/`, the handbook and the workflows (not the
+changelog or this ledger, which quote history), and fails one missing
+either flag. On `main`'s documents it names all eight commands, twice
+each.
+
+**Demonstrated.** With gh 2.102.0 against the published
+`halite-0.1.1-linux-amd64.tar.gz`: the new command passed, and its
+certificate's `sourceRepositoryRef` was `refs/tags/v0.1.1`;
+`--source-ref refs/tags/v0.1.0` failed with "expected
+SourceRepositoryRef to be refs/tags/v0.1.0, got refs/tags/v0.1.1";
+`--signer-workflow edlitmus/halite/.github/workflows/ci.yml` failed.
+The notes' heredoc, run under FreeBSD's sh with `TAG=v0.1.1`, printed
+the command with its continuation lines intact.
+
+**Not verified.** That `--repo` alone accepts a branch attestation is
+gh's documented behaviour and was not shown with one. No release was
+cut with the new notes. The repository
+settings that would stop a dispatch from a branch were not changed:
+that needs admin rights.
+
+### 5.426 Four buildpolicy checks passed on the defects they were for
+
+Issue 321, a Low finding in section 5: `internal/buildpolicy`'s checks
+are text greps with gaps. The audit named four, and each was reproduced
+by breaking the thing the check guards and running `main`'s test, which
+passed every time.
+
+| Check | The gap | Broken on purpose | `main`'s test | This change |
+|---|---|---|---|---|
+| `TestBuildRecipePinsIntegrityFlags` | held `RELEASE_ENV` and `BUILDFLAGS` in the `release` target only; shipped binaries come from `cross` and `fips-cross` via `dist` | `env $(RELEASE_ENV)` removed from `cross`, `$(BUILDFLAGS)` from `fips-cross` | pass | fails, naming both commands |
+| `TestTheWorkflowsInstallTheToolchainGoModPins` | matched only a literal numeric `go-version:` | ci.yml's first `go-version` set to `${{ matrix.go }}` | pass ("11 workflow steps install Go 1.27.2") | fails, naming the line |
+| `TestEveryShippedExtensionAppliesTheLimits` | any `ext.Confine` call anywhere in `main`, dead code included | aws-secrets' call wrapped in `if false { }` | pass | fails |
+| `TestTheReleaseAttestsOnlyWhatTwoBuildersAgreed` | `strings.Contains(job, "id-token: write")` | `id-token:  write` (two spaces) added to `publish` | pass | fails, "job publish holds id-token: write" |
+
+**The changes.**
+
+- The recipe test now reads `dist`'s prerequisites, splits each one's
+  recipe into commands, and requires every `go build` to have
+  `$(BUILDFLAGS)` after it and `env $(RELEASE_ENV)` or
+  `env $(FIPS_ENV)` before it, and `FIPS_ENV` to include
+  `$(RELEASE_ENV)`. It fails if `cross` or `fips-cross` stops being
+  among what it checked.
+- The toolchain test fails any `go-version:` line its literal pattern
+  cannot read.
+- The extension test accepts only `ext.Confine()` as a statement of
+  `main`'s own body, before any top-level `return`.
+- The attest test matches each permission as a YAML key with optional
+  spacing, quoting and comment, and fails `permissions: write-all`
+  anywhere in release.yml.
+
+Nothing the checks guard was wrong at `757f01f`: `cross` and
+`fips-cross` had the flags, every `go-version` was literal, every
+shipped extension calls `ext.Confine()` as a statement of `main`, and only `attest`
+held the signing permissions.
+
+**Not verified, and still text.** The checks still read text, not
+YAML, Make or the built artifact. `go build` reached through a variable
+or a sub-make would not be seen. The extension test would still accept
+a call after an `os.Exit` or inside a `main` that panics first. The
+attest test does not parse permissions written in YAML's flow form
+(`permissions: {id-token: write}`), and the top-level check is still a
+substring. The audit's note that `TestDependencyAllowlist` is sound was
+not re-examined.
+
+### 5.427 The node's own unit hid the kernel's modules from it
+
+Issue 321, a Low finding in section 5: `halite-node.service` sets
+`ProtectKernelModules=yes` while the node ships modules that load
+kernel modules. The audit called it functional rather than a
+vulnerability, and plausible, not tested under systemd.
+
+**Measured.** On Ubuntu 24.04 (kernel 6.18.7, systemd 255), as an
+ordinary user through `systemd-run --user`, with `halite-node` built
+from `39b9f22`, `halite-node call kmod.check_available mod=loop`:
+
+| | answer |
+|---|---|
+| no sandbox | True |
+| `ProtectKernelModules=yes` alone | False |
+| the unit's other settings (`PrivateTmp`, `ProtectKernelLogs`, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictRealtime`) with `ProtectKernelModules=yes` | False |
+| the same with `ProtectKernelModules=no` | True |
+
+`ls /usr/lib/modules` under `ProtectKernelModules=yes` gave
+"Permission denied". So it is wider than loading: the setting makes the
+module tree inaccessible, `kmod`'s readers read nothing there and
+answer as though no module existed, with no error, and a kernel package
+installed by `kernelpkg` or `pkg` writes into the same tree.
+`halite-highstate.service` had the same line.
+
+**The change.** Both units that run the node set
+`ProtectKernelModules=no`, with the reason beside it. The hub and API
+units, which manage no modules, keep `yes`.
+`internal/config`'s `TestTheNodeUnitsLeaveKernelModulesReachable` fails
+any `.service` under `contrib/systemd` that runs `halite-node` with the
+setting on; on `main`'s units it names both.
+
+**Not verified.**
+
+- Not run under the system manager as root, which is how the unit runs.
+  systemd documents the setting as also dropping `CAP_SYS_MODULE` and
+  filtering the module system calls there; that was not watched, and
+  how the user manager's application differs was not looked at. Loading a module
+  (`kmod.load`, `modprobe`) under the old unit was not tried, nor a
+  kernel package install.
+- The FIPS drop-in replaces only `ExecStart`, so it inherits this; it
+  was not run either.
 
 ## 6. Everything else not started
 

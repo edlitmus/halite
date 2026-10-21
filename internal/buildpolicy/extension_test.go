@@ -78,24 +78,33 @@ func callsConfineFromMain(t *testing.T, dir string) bool {
 				if !ok || fn.Recv != nil || fn.Name.Name != "main" || fn.Body == nil {
 					continue
 				}
-				found := false
-				ast.Inspect(fn.Body, func(n ast.Node) bool {
-					call, ok := n.(*ast.CallExpr)
+				// A statement of main's own body, not a call anywhere
+				// inside it. This walked the whole body with ast.Inspect,
+				// so `if false { ext.Confine() }`, or a call in a closure
+				// nobody invokes, passed -- dead code read as a call that
+				// happens, which is the defect this function's comment
+				// says it exists to refuse (issue 321, Low; DIVERGENCE
+				// 5.426). A top-level `return` before it ends the search,
+				// since the call after it does not run either.
+				for _, stmt := range fn.Body.List {
+					if _, ok := stmt.(*ast.ReturnStmt); ok {
+						break
+					}
+					expr, ok := stmt.(*ast.ExprStmt)
 					if !ok {
-						return true
+						continue
+					}
+					call, ok := expr.X.(*ast.CallExpr)
+					if !ok {
+						continue
 					}
 					sel, ok := call.Fun.(*ast.SelectorExpr)
 					if !ok || sel.Sel.Name != "Confine" {
-						return true
+						continue
 					}
 					if pkgIdent, ok := sel.X.(*ast.Ident); ok && pkgIdent.Name == "ext" {
-						found = true
-						return false
+						return true
 					}
-					return true
-				})
-				if found {
-					return true
 				}
 			}
 		}

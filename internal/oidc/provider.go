@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,19 @@ import (
 
 // MaxDiscoveryBody bounds the discovery document.
 const MaxDiscoveryBody = 1 << 20
+
+// DiscoveryRetryInterval is how long a failed discovery is remembered
+// before the provider is asked again.
+//
+// Discovery is fetched on first use and kept once it succeeds, but a
+// failure was kept for nothing: every `POST /v1/login/oidc`, which is
+// unauthenticated, made a fresh request to a provider that was down, so
+// anybody could aim a stream of requests through this service at an
+// identity provider that was already struggling. MinRefreshInterval is
+// the same kind of bound on the key set. This one is shorter, because
+// while it holds nobody can log in by OIDC even once the provider is
+// back.
+const DiscoveryRetryInterval = 10 * time.Second
 
 // Discovery is the part of the provider's metadata this build uses.
 type Discovery struct {
@@ -83,6 +97,10 @@ type Provider struct {
 	mu        sync.Mutex
 	discovery Discovery
 	fetched   bool
+	// failed and failedAt are the last discovery failure, held for
+	// DiscoveryRetryInterval.
+	failed   error
+	failedAt time.Time
 }
 
 // New builds a provider. Discovery happens on first use rather than
@@ -115,7 +133,58 @@ func New(cfg Config) (*Provider, error) {
 			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		}
 	}
-	return &Provider{cfg: cfg, built: client}, nil
+	if cfg.Client != nil {
+		client = cfg.Client
+	}
+	return &Provider{cfg: cfg, built: httpsOnly(client)}, nil
+}
+
+// httpsOnly is a copy of a client that refuses to follow a redirect to
+// anything but https.
+//
+// Each URL this package fetches was checked for https before it was
+// asked, and only that first URL: the standard library's client follows
+// a 302 from https to http without a word. So a key set at an https
+// address that redirected to a plaintext one was fetched in plaintext,
+// and the keys that decide who an operator is came from whoever was on
+// the path. The token endpoint is worse: a 307 keeps the method and the
+// body.
+//
+// A copy, because the client may be one the caller passed in, and
+// changing that one would change it for whatever else holds it.
+func httpsOnly(c *http.Client) *http.Client {
+	copied := *c
+	next := c.CheckRedirect
+	copied.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" {
+			return fmt.Errorf("%s redirected to %s, and this service only follows a redirect to https",
+				via[len(via)-1].URL.Redacted(), req.URL.Redacted())
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		// The standard library's own limit, which setting a
+		// CheckRedirect replaces.
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &copied
+}
+
+// requireHTTPS refuses a URL the discovery document names that is not
+// https, for the reason the issuer itself must be: the key set says
+// which tokens are genuine, the token endpoint is sent the client
+// secret, and the authorization endpoint is where an operator types a
+// password. The issuer was checked and these were not, so a document
+// served over https could send all three somewhere in plaintext.
+func requireHTTPS(endpoint, name, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("%s names %s %q, which is not an https URL", endpoint, name, raw)
+	}
+	return nil
 }
 
 // certPool reads a CA bundle.
@@ -132,9 +201,6 @@ func certPool(path string) (*x509.CertPool, error) {
 }
 
 func (p *Provider) client() *http.Client {
-	if p.cfg.Client != nil {
-		return p.cfg.Client
-	}
 	return p.built
 }
 
@@ -145,15 +211,40 @@ func (p *Provider) now() time.Time {
 	return time.Now()
 }
 
-// discover fetches the provider's metadata once.
+// discover fetches the provider's metadata once, and after a failure
+// asks again no sooner than DiscoveryRetryInterval.
 func (p *Provider) discover(ctx context.Context) (Discovery, error) {
 	p.mu.Lock()
 	if p.fetched {
 		defer p.mu.Unlock()
 		return p.discovery, nil
 	}
+	if p.failed != nil && p.now().Sub(p.failedAt) < DiscoveryRetryInterval {
+		defer p.mu.Unlock()
+		return Discovery{}, fmt.Errorf("%w (not asked again until %s has passed)",
+			p.failed, DiscoveryRetryInterval)
+	}
 	p.mu.Unlock()
 
+	doc, err := p.fetchDiscovery(ctx)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err != nil {
+		// A caller that gave up is not the provider failing, and
+		// holding one impatient client's cancellation against
+		// everybody else would be an outage made of nothing.
+		if ctx.Err() == nil {
+			p.failed, p.failedAt = err, p.now()
+		}
+		return Discovery{}, err
+	}
+	p.discovery, p.fetched, p.failed = doc, true, nil
+	p.keys = &KeySet{URL: doc.JWKSURI, Client: p.client(), Now: p.cfg.Now}
+	return doc, nil
+}
+
+// fetchDiscovery asks the provider for its metadata and checks it.
+func (p *Provider) fetchDiscovery(ctx context.Context) (Discovery, error) {
 	endpoint := strings.TrimSuffix(p.cfg.Issuer, "/") + "/.well-known/openid-configuration"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -186,11 +277,20 @@ func (p *Provider) discover(ctx context.Context) (Discovery, error) {
 	if doc.JWKSURI == "" || doc.TokenEndpoint == "" {
 		return Discovery{}, fmt.Errorf("%s names no jwks_uri or token_endpoint", endpoint)
 	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.discovery, p.fetched = doc, true
-	p.keys = &KeySet{URL: doc.JWKSURI, Client: p.client(), Now: p.cfg.Now}
+	if err := requireHTTPS(endpoint, "jwks_uri", doc.JWKSURI); err != nil {
+		return Discovery{}, err
+	}
+	if err := requireHTTPS(endpoint, "token_endpoint", doc.TokenEndpoint); err != nil {
+		return Discovery{}, err
+	}
+	// Optional: a provider used only for client credentials or for
+	// presented tokens has no interactive login, and StartAuth refuses
+	// its absence. A plaintext one is refused here.
+	if doc.AuthEndpoint != "" {
+		if err := requireHTTPS(endpoint, "authorization_endpoint", doc.AuthEndpoint); err != nil {
+			return Discovery{}, err
+		}
+	}
 	return doc, nil
 }
 

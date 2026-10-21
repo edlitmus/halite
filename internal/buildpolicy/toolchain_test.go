@@ -115,6 +115,7 @@ func TestTheWorkflowsInstallTheToolchainGoModPins(t *testing.T) {
 	}
 	version := regexp.MustCompile(`(?m)^\s*go-version:\s*"?([0-9][^"\s]*)"?\s*$`)
 	fromFile := regexp.MustCompile(`(?m)^\s*go-version-file:`)
+	anyVersion := regexp.MustCompile(`(?m)^\s*go-version:.*$`)
 
 	steps := 0
 	for _, e := range entries {
@@ -140,6 +141,17 @@ func TestTheWorkflowsInstallTheToolchainGoModPins(t *testing.T) {
 				t.Errorf("%s installs Go %s and go.mod pins %s. A runner on a different "+
 					"toolchain than the pin fetches the pin over the network, which is "+
 					"the download this arrangement exists to remove.", name, m[1], want)
+			}
+		}
+		// Every `go-version:` must be one the line above can read. It
+		// matched only a literal number, so `go-version: ${{ matrix.go }}`
+		// or a quoted `'stable'` was skipped silently, and the version
+		// that step installs went unchecked while the count above still
+		// found other steps to report (issue 321, Low; DIVERGENCE 5.426).
+		for _, line := range anyVersion.FindAllString(body, -1) {
+			if !version.MatchString(line) {
+				t.Errorf("%s has `%s`, which is not a literal version this test can hold "+
+					"to go.mod's pin; name %s there", name, strings.TrimSpace(line), want)
 			}
 		}
 	}

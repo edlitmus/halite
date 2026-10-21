@@ -66,12 +66,16 @@ Linux commands first; FreeBSD differences are in each step.
 ```sh
 v=0.1.0; p=linux-amd64        # the release and the platform: linux-arm64, freebsd-amd64, …
 sha256sum --ignore-missing -c SHA256SUMS
-gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite
+gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite \
+    --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+    --source-ref refs/tags/v$v
 openssl dgst -sha256 -verify halite-release.pub -signature SHA256SUMS.sig SHA256SUMS
 ```
 
 The first checks the file against the manifest. The second checks the
-provenance (that this workflow built it from this repository). The third
+provenance: that the release workflow built it, from this repository, at
+that release's tag. Without the last two flags it accepts an attestation
+from any workflow or any branch of the repository. The third
 checks the maintainers' detached signature, using the public key from the
 repository (`contrib/keys/halite-release.pub`, fingerprint in
 `docs/releasing.md`). FreeBSD 14.5 and 15.1 have `sha256sum` in the base system

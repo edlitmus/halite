@@ -58,11 +58,14 @@ func (k *KeySet) now() time.Time {
 	return time.Now()
 }
 
+// client is how the set is fetched, never following a redirect off
+// https (httpsOnly): fetchKeys checks the URL it was given, and a
+// redirect is a URL it was not.
 func (k *KeySet) client() *http.Client {
 	if k.Client != nil {
-		return k.Client
+		return httpsOnly(k.Client)
 	}
-	return &http.Client{Timeout: 10 * time.Second}
+	return httpsOnly(&http.Client{Timeout: 10 * time.Second})
 }
 
 // find returns the key a token names.

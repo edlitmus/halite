@@ -21,6 +21,47 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The node's systemd units no longer hide the kernel's modules
+
+`halite-node.service` and `halite-highstate.service` set
+`ProtectKernelModules=yes`, which makes `/usr/lib/modules` inaccessible
+to the node. Under it `kmod.check_available` answered False for modules
+that exist, without an error; systemd documents the setting as
+refusing module loads too, which was not tried. Both now set
+`ProtectKernelModules=no`. A unit already installed from an earlier
+archive keeps the old line until it is replaced: copy the new one and
+run `systemctl daemon-reload`. DIVERGENCE 5.427.
+
+### Verify a release's provenance against the release workflow and its tag
+
+The release notes, README, handbook chapters 30 and 36 and
+`docs/releasing.md` told you to check provenance with
+`gh attestation verify <file> --repo edlitmus/halite`. That accepts an
+attestation made by any workflow, from any branch, in the repository,
+and `release.yml` can be dispatched from any branch and attests what it
+builds. They now say:
+
+    gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite \
+        --signer-workflow edlitmus/halite/.github/workflows/release.yml \
+        --source-ref refs/tags/v$v
+
+Releases already published verify with the new flags. DIVERGENCE 5.425.
+
+### Built with Go 1.27.3, for GO-2026-6809 in `crypto/x509`
+
+`govulncheck` v1.9.0 reports GO-2026-6809, fixed in `crypto/x509` in Go
+1.27.3, as reachable from halite: the LDAP client's StartTLS handshake
+verifies the directory's certificate through it
+(`internal/ldap/conn.go`). The pin is now `toolchain go1.27.3`, and CI,
+the fleet images and the lab move with it. DIVERGENCE 5.424.
+
+### An LDAP username holding `>=`, `<=` or `~=` can log in
+
+The user filter read a comparison inside the username as the filter's
+operator. `(uid=a>=b)` became a search on an attribute called `uid=a`,
+so no such operator could log in. The operator is now the first `=`
+in the filter item. DIVERGENCE 5.420.
+
 ### `swap.on` and `swap.off` recognise a device named through a link
 
 The kernel lists a swap device by its real path. A tree that named it
@@ -86,6 +127,18 @@ When two secret values overlapped in a message, such as a password that
 is the start of a longer token, redaction replaced one and printed the
 remainder of the other. Every byte any secret covers is now replaced.
 DIVERGENCE 5.407.
+
+### OIDC refuses plaintext endpoints and redirects to them
+
+`halite-api` already required the OIDC issuer to be https, but it
+accepted a discovery document naming `http://` key set, token or
+authorization endpoints. It also followed an https URL that redirected
+to http. In a test, that sent the client secret to the plaintext
+address. Every one of those URLs must now be https, and a redirect away
+from https is refused. **A provider configured that way now fails to
+log anybody in.** While the provider is down, a failed discovery is
+also retried no more than once every ten seconds, not on every login
+attempt. DIVERGENCE 5.419.
 
 ### `file.touch` updates the times of a file that exists
 
