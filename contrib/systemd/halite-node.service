@@ -39,7 +39,12 @@ NoNewPrivileges=no
 # Kernel tunables are managed by the sysctl module, so /proc/sys stays
 # writable; the rest of the kernel surface does not.
 ProtectKernelLogs=yes
-ProtectKernelModules=yes
+# Kernel modules are managed too: kmod and modprobe load and unload them,
+# and kernelpkg installs kernels, whose packages write the module tree.
+# `yes` here made /usr/lib/modules inaccessible to the agent, and
+# kmod.check_available answered False for a module that is there,
+# without an error (DIVERGENCE 5.427).
+ProtectKernelModules=no
 ProtectClock=no
 RestrictSUIDSGID=no
 LockPersonality=yes

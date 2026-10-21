@@ -32980,6 +32980,49 @@ attest test does not parse permissions written in YAML's flow form
 substring. The audit's note that `TestDependencyAllowlist` is sound was
 not re-examined.
 
+### 5.427 The node's own unit hid the kernel's modules from it
+
+Issue 321, a Low finding in section 5: `halite-node.service` sets
+`ProtectKernelModules=yes` while the node ships modules that load
+kernel modules. The audit called it functional rather than a
+vulnerability, and plausible, not tested under systemd.
+
+**Measured.** On Ubuntu 24.04 (kernel 6.18.7, systemd 255), as an
+ordinary user through `systemd-run --user`, with `halite-node` built
+from `39b9f22`, `halite-node call kmod.check_available mod=loop`:
+
+| | answer |
+|---|---|
+| no sandbox | True |
+| `ProtectKernelModules=yes` alone | False |
+| the unit's other settings (`PrivateTmp`, `ProtectKernelLogs`, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictRealtime`) with `ProtectKernelModules=yes` | False |
+| the same with `ProtectKernelModules=no` | True |
+
+`ls /usr/lib/modules` under `ProtectKernelModules=yes` gave
+"Permission denied". So it is wider than loading: the setting makes the
+module tree inaccessible, `kmod`'s readers read nothing there and
+answer as though no module existed, with no error, and a kernel package
+installed by `kernelpkg` or `pkg` writes into the same tree.
+`halite-highstate.service` had the same line.
+
+**The change.** Both units that run the node set
+`ProtectKernelModules=no`, with the reason beside it. The hub and API
+units, which manage no modules, keep `yes`.
+`internal/config`'s `TestTheNodeUnitsLeaveKernelModulesReachable` fails
+any `.service` under `contrib/systemd` that runs `halite-node` with the
+setting on; on `main`'s units it names both.
+
+**Not verified.**
+
+- Not run under the system manager as root, which is how the unit runs.
+  systemd documents the setting as also dropping `CAP_SYS_MODULE` and
+  filtering the module system calls there; that was not watched, and
+  how the user manager's application differs was not looked at. Loading a module
+  (`kmod.load`, `modprobe`) under the old unit was not tried, nor a
+  kernel package install.
+- The FIPS drop-in replaces only `ExecStart`, so it inherits this; it
+  was not run either.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
