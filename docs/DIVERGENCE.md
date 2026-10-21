@@ -32608,6 +32608,7 @@ include the swap live tests, as the evidence note already says of the Linux
 row, and this host has no root; adding the Linux swap path to that leg
 is its own change. The `freebsd` leg runs every `TestLive*` and so
 picks this one up. A GEOM label spelling.
+
 ### 5.419 OIDC checked the first URL for https, and followed a redirect off it
 
 Issue 321, Low, three parts. `fetchKeys` checks that the key set URL is
@@ -33049,6 +33050,7 @@ asks for position 3 on a rule `-C` reports present, sees no change and no
 
 **Not verified.** No real iptables was run for this; the behaviour is
 the recorded runner's.
+
 ### 5.429 `lvm.lvresize` called LVM's own rounding a shrink
 
 Issue 321, section 5, an Info bullet: `lvm.lvresize` calls a rounded-up
@@ -33083,8 +33085,6 @@ rounding removed. The `lvm` evidence note names both runs.
 get wrong. Extents other than 4 MiB, and `extents` given as a count or a
 percentage, which are not compared here at all. Not run on this host,
 which has no root.
-
-
 
 ## 6. Everything else not started
 
