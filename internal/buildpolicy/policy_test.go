@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -284,6 +285,78 @@ func TestBuildRecipePinsIntegrityFlags(t *testing.T) {
 				"the artifact:\n%s", use, target)
 		}
 	}
+
+	// And so do the targets the shipped artifacts actually come from.
+	//
+	// `release` builds three host binaries into bin/. What a tag ships
+	// is `make dist`, whose binaries are built by `cross` and
+	// `fips-cross`, and neither was held: either could have dropped
+	// `$(RELEASE_ENV)` and this test would have stayed green, checking
+	// the one target whose output is not published (issue 321, Low;
+	// DIVERGENCE 5.426). Every `go build` in every target `dist`
+	// depends on is held now, command by command rather than "the
+	// target mentions the variable somewhere", and FIPS_ENV must carry
+	// RELEASE_ENV, since that is how fips-cross gets the flags.
+	fipsEnv := makeAssignment(recipe, "FIPS_ENV")
+	if !strings.Contains(fipsEnv, "$(RELEASE_ENV)") {
+		t.Errorf("FIPS_ENV does not include $(RELEASE_ENV), so the FIPS artifacts are built "+
+			"without SPEC 4.3's flags:\n\tFIPS_ENV = %s", fipsEnv)
+	}
+	prereqs := makePrerequisites(recipe, "dist")
+	checked := map[string]bool{}
+	for _, name := range prereqs {
+		body := makeTargetBody(recipe, name)
+		builds := 0
+		for _, cmd := range shellCommands(body) {
+			if !strings.Contains(cmd, "go build") {
+				continue
+			}
+			builds++
+			at := strings.Index(cmd, "go build")
+			if !strings.Contains(cmd[at:], "$(BUILDFLAGS)") {
+				t.Errorf("target %s, which dist depends on, runs `go build` without "+
+					"$(BUILDFLAGS):\n\t%s", name, strings.TrimSpace(cmd))
+			}
+			env := cmd[:at]
+			if !strings.Contains(env, "env $(RELEASE_ENV)") && !strings.Contains(env, "env $(FIPS_ENV)") {
+				t.Errorf("target %s, which dist depends on, runs `go build` without "+
+					"$(RELEASE_ENV) or $(FIPS_ENV) in its environment:\n\t%s", name, strings.TrimSpace(cmd))
+			}
+		}
+		if builds > 0 {
+			checked[name] = true
+		}
+	}
+	for _, want := range []string{"cross", "fips-cross"} {
+		if !checked[want] {
+			t.Errorf("dist does not build through %s, or it has no `go build`; this check "+
+				"is reading the wrong targets (dist depends on %v)", want, prereqs)
+		}
+	}
+}
+
+// makePrerequisites returns the names after `target:` on its rule line.
+func makePrerequisites(recipe, name string) []string {
+	for _, line := range strings.Split(recipe, "\n") {
+		if strings.HasPrefix(line, name+":") {
+			return strings.Fields(strings.TrimPrefix(line, name+":"))
+		}
+	}
+	return nil
+}
+
+// shellCommands joins a recipe's continuation lines and cuts the result
+// at `;`, `&&` and `||`, which is enough to put each `go build` in a
+// piece of its own with the `env` that precedes it.
+func shellCommands(body string) []string {
+	joined := strings.ReplaceAll(body, "\\\n", " ")
+	var out []string
+	for _, line := range strings.Split(joined, "\n") {
+		for _, part := range regexp.MustCompile(`;|&&|\|\|`).Split(line, -1) {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // stripMakeComments removes whole-line comments, which is what let the

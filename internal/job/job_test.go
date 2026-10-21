@@ -28,7 +28,13 @@ func TestIdentifiersAreSortableReadableAndDistinct(t *testing.T) {
 
 	// A jid is a key and a path segment, so what arrives from the
 	// network is checked rather than trusted.
-	for _, bad := range []string{"", "../../etc/passwd", "20260822T14221112345", "not-a-jid-at-all!!!!!!", "20261322T142211123456"} {
+	for _, bad := range []string{"", "../../etc/passwd", "20260822T14221112345", "not-a-jid-at-all!!!!!!", "20261322T142211123456",
+		// time.Parse read the `+` in the fraction as a sign and this
+		// was accepted, as the same moment as ...023456. The rest are
+		// its neighbours, which time.Parse already refused; they are
+		// here so the digit check is held to them too.
+		"20260819T142211+23456", "20260819T142211 23456", "20260819T14221-123456",
+		"+0260819T142211123456", "20260819t142211123456"} {
 		if ID(bad).Valid() {
 			t.Errorf("%q was accepted as a job identifier", bad)
 		}

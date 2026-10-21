@@ -179,26 +179,41 @@ func expectClose(s string) (string, error) {
 }
 
 // parseItem reads one `attribute<op>value` assertion.
+//
+// The operator is found from the first `=`, and the character before it
+// says which: RFC 4515's attribute description cannot hold `=`, `>`, `<`
+// or `~`, so the first `=` is always the operator's and everything after
+// it is the value. Searching the whole item for `>=`, `<=` and `~=`
+// first, as this did, found them in the value: `(uid=a>=b)` became
+// "attribute `uid=a` greater than or equal to `b`". Escape leaves those
+// characters alone, as RFC 4515 does, so a username holding one became
+// a different filter and that operator could never log in.
 func parseItem(item string) ([]byte, error) {
-	for _, op := range []struct {
-		token string
-		tag   int
-	}{
-		{">=", filterGreaterOrEqual},
-		{"<=", filterLessOrEqual},
-		{"~=", filterApproxMatch},
-	} {
-		if attr, value, ok := strings.Cut(item, op.token); ok {
-			return ctxSeq(op.tag, str(strings.TrimSpace(attr)), str(unescapeValue(value))), nil
-		}
-	}
-	attr, value, ok := strings.Cut(item, "=")
-	if !ok {
+	eq := strings.IndexByte(item, '=')
+	if eq < 0 {
 		return nil, fmt.Errorf("%q is not an assertion; a filter item is attribute=value", item)
+	}
+	attr, value := item[:eq], item[eq+1:]
+	tag := filterEqualityMatch
+	if eq > 0 {
+		switch item[eq-1] {
+		case '>':
+			tag = filterGreaterOrEqual
+		case '<':
+			tag = filterLessOrEqual
+		case '~':
+			tag = filterApproxMatch
+		}
+		if tag != filterEqualityMatch {
+			attr = item[:eq-1]
+		}
 	}
 	attr = strings.TrimSpace(attr)
 	if attr == "" {
 		return nil, fmt.Errorf("a filter item with no attribute: %q", item)
+	}
+	if tag != filterEqualityMatch {
+		return ctxSeq(tag, str(attr), str(unescapeValue(value))), nil
 	}
 	if value == "*" {
 		return ctxStr(filterPresent, attr), nil

@@ -179,16 +179,24 @@ passing by the PRs above; that has not been looked for.
 | `migrate/skeleton.go` names unescaped in generated Go | #464 | 5.413; a `__virtualname__` produced a stub that compiled and called `os.RemoveAll`; `migrate --bridge-skeleton` not run end to end |
 | `make vuln` runs `govulncheck@latest` | #398 | M-03, 5.358 |
 | `lvm.lvresize` calls a rounded-up size a shrink | #475 | 5.419; measured on the fleet `linux` leg (LVM2 2.03.16): failed before, passed after; `lv_present` warned too; only 4 MiB extents |
+| `iptables.insert` does not enforce `position` | #474 | 5.428; docs corrected, behaviour unchanged (moving a live rule is a decision); Salt parity recalled, not checked |
 | `swap.on`/`off` compare the caller's path with the kernel's keys | #472 | 5.418; measured and fixed on beastie (FreeBSD `swapctl -l`), live test passed there; Linux not run; GEOM labels not links |
 | Multi-arch: `dpkg.set_selections` diff compares bare names with `name:arch` | #470 | 5.417; happens on a single-arch host too (941 qualified lines on Ubuntu 24.04); apt `ListPkgs` keyed on `${Package}` not fixed (needs a foreign-arch host to capture) |
 | `ufwChanged` unchanged when v4 skipped and v6 added | #467 | 5.416; established from ufw 0.36.2's source, fixtures composed, not captured (ufw needs root) |
 | `shutdown -r +N <message>` message starting with `-` read as an option | #465 | 5.415; systemd 255 measured with no bus (`-h` accepted); FreeBSD unaffected, read from shutdown.c, not run; refused rather than `--` |
 | websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
-
 | CI's FreeBSD Go tarball and saltdiff's Salt onedir fetched unverified | #446 | 5.403; run on beastie and under dash, not in CI's VM or a Docker build; fleet.yml not run |
 | `status.uptime` `extractBootSeconds` takes the first `sec = ` | #447 | 5.404; latent, FreeBSD prints `sec` first (beastie); macOS not run |
 | `file.touch` documents updating times and changes nothing | #453 | 5.405; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
 | `git.latest` passes URL, rev and remote with no `--` | #459 | 5.414; not neutralised for `remote` on an existing checkout: the command ran; `git.remote_get` left; FreeBSD git not run |
+| OIDC: redirects to `http://` followed, discovery endpoints not required https, discovery re-run while the IdP is down | #448 | 5.419; the token endpoint redirect sent the client secret to plaintext, measured; fake issuer only, no real IdP; no single-flight for concurrent discoveries |
+| LDAP `ParseFilter` finds `>=`/`<=`/`~=` in the value | #451 | 5.420; fake directory only; the `MapRoles` case-fold half left, as `cn` is `caseIgnoreMatch` in RFC 4519 |
+| Actions pinned by mutable tag; VM checkouts keep the token | #449 | 5.421; the token reached the VM as a `_temp` credentials file rsync copies, not in `.git/config`; fleet.yml ran on the PR, release.yml not run |
+| `job.ID.Valid()` accepts non-digits | #452 | 5.422; only the `+` in the fraction got through `time.Parse`; no stored jid checked |
+| CI's `cancel-in-progress` cancels pushes to main | #450 | 5.423; at least eleven main commits had no result, #446's among them; pushes now grouped by commit; no push to main run under it yet |
+| Provenance guidance `--repo` only | #454 | 5.425; checked against v0.1.1's attestation; no branch attestation shown accepted; repository settings for dispatch not changed (admin) |
+| buildpolicy text greps with gaps (cross/fips-cross flags, `matrix.go`, dead `ext.Confine`, attest wording) | #457 | 5.426; each gap reproduced and closed; still text checks; flow-form YAML permissions not read |
+| systemd node unit `ProtectKernelModules=yes` | #460 | 5.427; worse than the audit said: the module tree is hidden, so `kmod` reads answered False; measured under a user manager, not as root under the system manager; the hub unit's writable PKI is by design and unchanged |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
