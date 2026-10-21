@@ -32936,6 +32936,50 @@ cut with the new notes. The repository
 settings that would stop a dispatch from a branch were not changed:
 that needs admin rights.
 
+### 5.426 Four buildpolicy checks passed on the defects they were for
+
+Issue 321, a Low finding in section 5: `internal/buildpolicy`'s checks
+are text greps with gaps. The audit named four, and each was reproduced
+by breaking the thing the check guards and running `main`'s test, which
+passed every time.
+
+| Check | The gap | Broken on purpose | `main`'s test | This change |
+|---|---|---|---|---|
+| `TestBuildRecipePinsIntegrityFlags` | held `RELEASE_ENV` and `BUILDFLAGS` in the `release` target only; shipped binaries come from `cross` and `fips-cross` via `dist` | `env $(RELEASE_ENV)` removed from `cross`, `$(BUILDFLAGS)` from `fips-cross` | pass | fails, naming both commands |
+| `TestTheWorkflowsInstallTheToolchainGoModPins` | matched only a literal numeric `go-version:` | ci.yml's first `go-version` set to `${{ matrix.go }}` | pass ("11 workflow steps install Go 1.27.2") | fails, naming the line |
+| `TestEveryShippedExtensionAppliesTheLimits` | any `ext.Confine` call anywhere in `main`, dead code included | aws-secrets' call wrapped in `if false { }` | pass | fails |
+| `TestTheReleaseAttestsOnlyWhatTwoBuildersAgreed` | `strings.Contains(job, "id-token: write")` | `id-token:  write` (two spaces) added to `publish` | pass | fails, "job publish holds id-token: write" |
+
+**The changes.**
+
+- The recipe test now reads `dist`'s prerequisites, splits each one's
+  recipe into commands, and requires every `go build` to have
+  `$(BUILDFLAGS)` after it and `env $(RELEASE_ENV)` or
+  `env $(FIPS_ENV)` before it, and `FIPS_ENV` to include
+  `$(RELEASE_ENV)`. It fails if `cross` or `fips-cross` stops being
+  among what it checked.
+- The toolchain test fails any `go-version:` line its literal pattern
+  cannot read.
+- The extension test accepts only `ext.Confine()` as a statement of
+  `main`'s own body, before any top-level `return`.
+- The attest test matches each permission as a YAML key with optional
+  spacing, quoting and comment, and fails `permissions: write-all`
+  anywhere in release.yml.
+
+Nothing the checks guard was wrong at `757f01f`: `cross` and
+`fips-cross` had the flags, every `go-version` was literal, every
+shipped extension calls `ext.Confine()` as a statement of `main`, and only `attest`
+held the signing permissions.
+
+**Not verified, and still text.** The checks still read text, not
+YAML, Make or the built artifact. `go build` reached through a variable
+or a sub-make would not be seen. The extension test would still accept
+a call after an `os.Exit` or inside a `main` that panics first. The
+attest test does not parse permissions written in YAML's flow form
+(`permissions: {id-token: write}`), and the top-level check is still a
+substring. The audit's note that `TestDependencyAllowlist` is sound was
+not re-examined.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
