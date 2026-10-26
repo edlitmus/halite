@@ -33289,6 +33289,43 @@ create, were not run.
 
 
 
+### 5.435 The API sent a failing hub's own words to its callers
+
+Issue 321, Low: `hubError` relays raw hub error text, including
+filesystem paths, to API clients, "against SPEC 22.3".
+
+**Measured.** `hubError` (`internal/api/execute.go`) logged the error and
+then answered 502 with `doing + ": " + err.Error()`. With a stub hub that
+fails the way a hub with a broken disk does, a caller of `GET /v1/jobs`
+received `calling jobs.list_jobs: /v1/runners: reading the job cache:
+open /var/lib/halite/hub/jobs/20260824: permission denied`. With the hub
+unreachable it received `Post "https://127.0.0.1:36567/v1/runners": dial
+tcp 127.0.0.1:36567: connect: connection refused`, which is the hub's
+address and port. Both tests failed on `main` for exactly those reasons.
+
+**What the audit got wrong.** SPEC 22.3 says "no stack trace in a
+response body". It does not say no path and no address, so the text did
+not break that sentence; it broke the intent of it, and the finding
+stands on the intent. The 403 branch is different and was left alone:
+`TestAHubRefusalIsReportedAsOne` pins that a hub's refusal is sent whole
+because it names whose grant was too narrow, and the caller can fix that.
+
+**The change.** The 502 branch answers `<what was being done> failed at
+the hub; the API's log has the detail`. The detail was already logged on
+the line above, with the principal, so nothing is lost to the person who
+can act on it.
+
+**Demonstrated.** `TestAHubFailureDoesNotReachTheCallerWithItsDetail` and
+`TestAnUnreachableHubDoesNotReachTheCallerWithItsAddress` fail on `main`
+as quoted above and pass with the change; `TestAHubRefusalIsReportedAsOne`
+passes before and after, which is what it is for. The `internal/api`
+package passes.
+
+**Not done.** `hook.go` answers 502 with `res.Error` from the hub's own
+reply, and was not looked at for the same text. Other handlers that
+return `err.Error()` from their own code (not from the hub) were not
+audited. Not run against a live hub.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

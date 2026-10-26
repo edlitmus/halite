@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The API no longer sends a failing hub's error text to its callers
+
+When the hub failed or could not be reached, an API call answered 502
+with the hub's own words: a path on the hub's disk, or its address and
+port. It now says what was being attempted and that the API's log has the
+detail. A hub's refusal (403) is unchanged. DIVERGENCE 5.435.
+
 ### `keys operator create --admin` writes a policy the hub can read
 
 Run as root, as the handbook says, it wrote `policy.yaml` owned by root
