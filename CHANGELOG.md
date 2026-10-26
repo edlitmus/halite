@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `halite-node enroll --token-file`: a bootstrap token out of the process table
+
+`--token SECRET` is listed by `ps` to every account on the node while
+`enroll` runs, which with `--wait` can be hours. `--token-file PATH` reads
+it from a file instead, and the FreeBSD rc script has
+`halite_node_token_file`. `--token` still works and now says on stderr that
+it is visible. A token beginning with `-` is no trouble in a file.
+DIVERGENCE 5.438.
+
 ### A grain provider's output limit now stops the provider
 
 The 1 MiB limit on a bridged grain provider was checked after the node had

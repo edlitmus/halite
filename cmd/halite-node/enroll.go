@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -145,6 +146,54 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 	return client, files
 }
 
+// enrollToken is the bootstrap token from --token or --token-file.
+//
+// --token puts the secret on the command line, where `ps` shows it to
+// every account on the node for as long as the process runs, which with
+// --wait is until an operator accepts the request. --token-file is the
+// way that does not; --token stays, because a tree and a handbook written
+// for it exist, and says so on stderr rather than being removed.
+func enrollToken(args *cli.Args) string {
+	inline, path := args.Flag("token", ""), args.Flag("token-file", "")
+	if inline != "" && path != "" {
+		cli.Usagef("--token and --token-file both give the token; give one")
+	}
+	if path == "" {
+		if inline != "" {
+			fmt.Fprintln(os.Stderr, "note: --token is visible to every account on this node in the process table while this runs; --token-file keeps it out of it")
+		}
+		return inline
+	}
+	token, warning, err := readTokenFile(path)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if warning != "" {
+		fmt.Fprintln(os.Stderr, "warning: "+warning)
+	}
+	return token
+}
+
+// readTokenFile reads a bootstrap token from a file, trimmed of the
+// newline an editor adds. The warning is a file others can read: that
+// is the exposure --token-file exists to avoid, moved to the disk. It is
+// a warning and not a refusal because a token is short-lived and
+// single-use (SPEC 7.3) and a provisioning tool often makes 0644 files.
+func readTokenFile(path string) (token, warning string, err error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", fmt.Errorf("reading the token file: %w", err)
+	}
+	token = strings.TrimSpace(string(raw))
+	if token == "" {
+		return "", "", fmt.Errorf("the token file %s is empty", path)
+	}
+	if info, serr := os.Stat(path); serr == nil && runtime.GOOS != "windows" && info.Mode().Perm()&0o044 != 0 {
+		warning = fmt.Sprintf("%s is readable by other accounts (%v); the token in it is a credential until it is used", path, info.Mode().Perm())
+	}
+	return token, warning, nil
+}
+
 // runEnroll is SPEC 7.3 from the node's side.
 func runEnroll(args *cli.Args) int {
 	n := setup(args)
@@ -179,7 +228,7 @@ func runEnroll(args *cli.Args) int {
 	fmt.Printf("fingerprint %s\n", fingerprint)
 	fmt.Printf("hub         %s\n\n", client.HubURL)
 
-	token := args.Flag("token", "")
+	token := enrollToken(args)
 	wait := args.Bool("wait", false)
 	interval := 5 * time.Second
 

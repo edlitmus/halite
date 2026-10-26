@@ -712,7 +712,7 @@ CIDR, and a record of what it admitted — none of which Salt's
 
 ```sh
 halite-hub keys token create --ttl 1h --nodes 'web*.example' --cidr 10.0.0.0/8
-halite-node enroll --token '<secret>' --hub-fingerprint 'ab:cd:...'
+halite-node enroll --token-file /root/enroll-token --hub-fingerprint 'ab:cd:...'
 ```
 
 The token does not replace the fingerprint. A node enrolling for the
