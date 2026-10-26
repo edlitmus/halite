@@ -465,12 +465,25 @@ func (b *Bus) wake() {
 
 // Wait returns a channel closed when the next record is appended, so a
 // follower blocks rather than polling a file that is not changing.
+//
+// Each call registers a channel that is kept until the next append, so
+// a follower that stops waiting -- a timeout, a heartbeat -- and calls
+// again before anything is appended holds two. Ask once and keep the
+// channel until it fires.
 func (b *Bus) Wait() <-chan struct{} {
 	ch := make(chan struct{})
 	b.waitMu.Lock()
 	b.waiters = append(b.waiters, ch)
 	b.waitMu.Unlock()
 	return ch
+}
+
+// Waiting is how many channels Wait has handed out that no append has
+// closed yet.
+func (b *Bus) Waiting() int {
+	b.waitMu.Lock()
+	defer b.waitMu.Unlock()
+	return len(b.waiters)
 }
 
 // Prune enforces retention by age and by total size, whichever binds
