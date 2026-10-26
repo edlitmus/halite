@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `pkg.installed` fails when the package is still not there afterwards
+
+A package manager that exits 0 and installs nothing (a held, excluded or
+filtered package) left the state reporting "installed" and Changed, and the
+next run did it again. The state now re-reads the package list and fails,
+naming the package, if it is absent. If the list cannot be re-read the
+state stays Changed and says so. DIVERGENCE 5.438.
+
 ### A grain provider's output limit now stops the provider
 
 The 1 MiB limit on a bridged grain provider was checked after the node had

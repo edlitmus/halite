@@ -160,7 +160,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"is not a gap here. Before the `list_pkgs` fix, `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac and everything " +
 		"passed but `list_pkgs`, for the cask reason above, and a build with the account switch removed failed it. **On CI** the `macos` leg ran it as root on a " +
 		"hosted macOS 15.7.9 runner, brew owned by `runner` in 17 groups -- past the sixteen the credential " +
-		"switch caps (5.120) -- and it passed, install through removal (Fleet run 36911071275)"},
+		"switch caps (5.120) -- and it passed, install through removal (Fleet run 36911071275). **`pkg.installed` checks, after an " +
+		"install, that each package it installed is present** (DIVERGENCE 5.438): shown against a scripted manager " +
+		"that exits 0 and installs nothing, and against one whose list cannot be re-read; never against a real " +
+		"manager doing that, which nobody here has induced. The ordinary install-and-confirm path runs on the " +
+		"fleet's live legs"},
 	// `cmd` had no row at all until the gate could see it. It was outside
 	// the selection because that read `strings.Contains(p, "root")` over
 	// the free-text Privileges field, and `cmd` says "whatever the command

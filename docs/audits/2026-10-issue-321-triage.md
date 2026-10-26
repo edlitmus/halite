@@ -204,6 +204,7 @@ passing by the PRs above; that has not been looked for.
 | `hubError` relays raw hub error text to API clients | #482 | 5.435; the SPEC 22.3 citation is weaker than the audit said (it names stack traces only); the 403 refusal text is kept on purpose; `hook.go`'s 502 not looked at; not run on a live hub |
 | `ps.pkill` has no guard against signalling PID 1, the node agent or sshd | #483 | 5.436; init and the node's own pid refused, `force: True` overrides, signal 0 exempt; sshd deliberately not guarded; tests are a scripted procps table and skip on FreeBSD; nothing real was signalled |
 | `maxProviderOutput` does not bound memory; the runner buffers all stdout | #484 | 5.437; fixed for grain providers via a new `Command.MaxOutput`; `cmd.run` and every other command deliberately still unbounded, a decision not made; tests unix-only, run on Ubuntu only |
+| `pkg.installed` reports Changed without verifying presence or the pin | #PRNUM | 5.438; the pin half was M-33, this is presence; shown only against scripted managers, no real manager made to install nothing |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
