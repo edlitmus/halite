@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -16,6 +17,11 @@ import (
 // asked for at all.
 func psProtectedCtx(t *testing.T) (*exec.Context, *exec.RecordingRunner) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		// ps is unixOnly, so the registry's platform gate answers before
+		// the function is reached and these would test the gate.
+		t.Skip("ps does not run on Windows")
+	}
 	if psUsesLibxo() {
 		// FreeBSD's ps is read as libxo JSON, so this table would not
 		// parse there. The rule is not platform-specific; the fixture is.
