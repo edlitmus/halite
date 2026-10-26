@@ -32675,6 +32675,7 @@ which is itself hostile.
 used. None of them is known to redirect a discovery, key set or token
 URL, so a provider that relies on an http redirect would now fail. That
 was not looked for.
+
 ### 5.420 An LDAP filter item found its operator in the value
 
 Issue 321, Low (LDAP, second half): `ParseFilter` split an item on `>=`,
@@ -33103,6 +33104,43 @@ rounding removed. The `lvm` evidence note names both runs.
 get wrong. Extents other than 4 MiB, and `extents` given as a count or a
 percentage, which are not compared here at all. Not run on this host,
 which has no root.
+### 5.431 The job cache kept a mutex for every job it had ever updated
+
+Issue 321, Low (one of three leaks in one bullet): `job.Cache.locks` is
+never freed.
+
+**Measured.** `Cache.lock` put a mutex in a map keyed by jid on first
+use and never removed it. Every `Update` takes the lock, so a hub holds
+one entry (a jid string and a mutex) for every job it has updated since
+it started. A new test updated fifty jobs and found fifty entries left
+on `main`. The size on a production hub was not measured; it grows with
+the job count and is only reset by a restart.
+
+**The change.** Each entry counts the callers that hold or are waiting
+for it, and the last one to release it deletes it. The count is raised
+under the store's mutex before waiting on the job's, so an entry with
+somebody queued on it is never removed.
+
+**Demonstrated.**
+
+- `TestAJobsLockIsFreedWhenNobodyHoldsIt`: fifty jobs, four concurrent
+  updates each, then an empty map. On `main` it fails with fifty
+  entries.
+- `TestAJobsLockIsNotFreedFromUnderAWaiter` forces the order A holds,
+  B waits, A releases, B holds, C arrives, and checks that C does not
+  get in while B holds the lock. Removing the entry on every release,
+  ignoring the count, fails it with "C took the job's lock while B held
+  it". The existing concurrency tests (`TestEveryWritersChangeLands`
+  and others) passed ten runs in a row with that defect put in, which
+  is why the order is forced instead of raced for.
+- `internal/job` passes under `-race`.
+
+**Not done.** The bullet's other two parts are in their own entries or
+not changed: `eventbus.Wait` and `certreload.Load`.
+
+**Not verified.** No hub was run long enough to see the map grow, or to
+see it stay flat.
+
 
 
 
