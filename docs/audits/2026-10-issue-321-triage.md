@@ -201,6 +201,7 @@ passing by the PRs above; that has not been looked for.
 | leaks: `eventbus.Wait` a channel per idle stream per 25 s | #458 | 5.432; the hub's stream also registered its wait after its read, missing an event for up to 25 s, fixed with it; a closed stream still leaves one channel; not run on a live hub |
 | logs: `oidcCallback` error text unbounded; `oidc login started` logs `state` | #461 | 5.433; the state let a log reader cancel a login, not finish one; other unauthenticated paths not looked at |
 | `keys operator create --admin` writes a root-owned 0600 policy | #463 | 5.434; reproduced and fixed on beastie with a throwaway hub; a directory `--admin` creates itself stays root's; Linux not run |
+| `maxProviderOutput` does not bound memory; the runner buffers all stdout | #PRNUM | 5.435; fixed for grain providers via a new `Command.MaxOutput`; `cmd.run` and every other command deliberately still unbounded, a decision not made; tests unix-only, run on Ubuntu only |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
