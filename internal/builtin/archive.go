@@ -168,6 +168,50 @@ func closeAll(f *os.File, closers []io.Closer) {
 // same kind of limit on the wire.
 const maxArchiveEntry = 1 << 30
 
+// archiveLimits bound an archive as a whole. maxArchiveEntry bounds one
+// file, and a bomb is not one file: it is a quarter of a million empty
+// ones, or nine entries each just inside the limit. Neither number comes
+// from a measurement of a real tree. They are set well above the largest
+// source tree anyone has put in a state (a kernel is under 100,000 files
+// and about a gigabyte) and low enough to be a limit at all, and they are
+// constants rather than arguments because an argument is one more thing
+// a tree can set to nothing.
+type archiveLimits struct {
+	entries int
+	bytes   int64
+}
+
+func defaultArchiveLimits() archiveLimits {
+	return archiveLimits{entries: 250_000, bytes: 8 << 30}
+}
+
+// archiveBudget is what is left of the limits as an archive is read.
+// Entries are counted from the header, whatever becomes of the entry, and
+// bytes by what the entry declares or, for a zip whose declaration is not
+// trusted, what was actually read: a dry run therefore refuses what a real
+// run would, which is the point of a dry run.
+type archiveBudget struct {
+	limits archiveLimits
+	n      int
+	bytes  int64
+}
+
+func (b *archiveBudget) entry(name string) error {
+	b.n++
+	if b.n > b.limits.entries {
+		return fmt.Errorf("archive holds more than %d entries; stopped at %q", b.limits.entries, name)
+	}
+	return nil
+}
+
+func (b *archiveBudget) add(name string, n int64) error {
+	b.bytes += n
+	if b.bytes > b.limits.bytes {
+		return fmt.Errorf("archive entries total more than %d bytes; stopped at %q", b.limits.bytes, name)
+	}
+	return nil
+}
+
 // extractArchive writes an archive's contents into dest, refusing any
 // entry that would land outside it.
 //
@@ -184,6 +228,15 @@ const maxArchiveEntry = 1 << 30
 // handed to, or left by an older run -- cannot steer a write either.
 // DIVERGENCE 5.300.
 func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) {
+	return extractArchiveWith(src, dest, overwrite, dryRun, defaultArchiveLimits())
+}
+
+// extractArchiveWith is extractArchive with its limits named, so that a
+// test can use small ones. The limits are a parameter and not a package
+// variable because a package variable set by one test is read by another
+// that is running beside it.
+func extractArchiveWith(src, dest string, overwrite, dryRun bool, limits archiveLimits) ([]string, error) {
+	budget := &archiveBudget{limits: limits}
 	absDest, err := filepath.Abs(dest)
 	if err != nil {
 		return nil, err
@@ -196,7 +249,7 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 		defer root.Close()
 	}
 	if isZip(src) {
-		return extractZip(src, absDest, root, overwrite, dryRun)
+		return extractZip(src, absDest, root, overwrite, dryRun, budget)
 	}
 
 	f, tr, closers, err := openTar(src)
@@ -212,6 +265,9 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 			break
 		}
 		if err != nil {
+			return written, err
+		}
+		if err := budget.entry(h.Name); err != nil {
 			return written, err
 		}
 		target, err := containedEntry(absDest, h.Name)
@@ -274,6 +330,9 @@ func extractArchive(src, dest string, overwrite, dryRun bool) ([]string, error) 
 		case tar.TypeReg:
 			if h.Size > maxArchiveEntry {
 				return written, fmt.Errorf("archive entry %q is %d bytes, past the %d byte limit", h.Name, h.Size, maxArchiveEntry)
+			}
+			if err := budget.add(h.Name, h.Size); err != nil {
+				return written, err
 			}
 			if !overwrite {
 				exists, err := entryExists(root, rel)
@@ -389,7 +448,7 @@ func linkStaysInside(root *os.Root, rel string) error {
 	return err
 }
 
-func extractZip(src, absDest string, root *os.Root, overwrite, dryRun bool) ([]string, error) {
+func extractZip(src, absDest string, root *os.Root, overwrite, dryRun bool, budget *archiveBudget) ([]string, error) {
 	zr, err := zip.OpenReader(src)
 	if err != nil {
 		return nil, err
@@ -398,6 +457,9 @@ func extractZip(src, absDest string, root *os.Root, overwrite, dryRun bool) ([]s
 
 	var written []string
 	for _, zf := range zr.File {
+		if err := budget.entry(zf.Name); err != nil {
+			return written, err
+		}
 		target, err := containedEntry(absDest, zf.Name)
 		if err != nil {
 			return written, err
@@ -418,10 +480,16 @@ func extractZip(src, absDest string, root *os.Root, overwrite, dryRun bool) ([]s
 				return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)
 			}
 			if exists {
+				if err := budget.add(zf.Name, int64(zf.UncompressedSize64)); err != nil {
+					return written, err
+				}
 				continue
 			}
 		}
 		if dryRun {
+			if err := budget.add(zf.Name, int64(zf.UncompressedSize64)); err != nil {
+				return written, err
+			}
 			written = append(written, zf.Name)
 			continue
 		}
@@ -436,6 +504,12 @@ func extractZip(src, absDest string, root *os.Root, overwrite, dryRun bool) ([]s
 		}
 		if int64(len(data)) > maxArchiveEntry {
 			return written, fmt.Errorf("archive entry %q exceeds the %d byte limit", zf.Name, maxArchiveEntry)
+		}
+		// What was read, not what the entry declared: a zip's declared
+		// size is the archive's own claim and the read is bounded by
+		// maxArchiveEntry, not by it.
+		if err := budget.add(zf.Name, int64(len(data))); err != nil {
+			return written, err
 		}
 		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 			return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)

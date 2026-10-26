@@ -204,6 +204,7 @@ passing by the PRs above; that has not been looked for.
 | `hubError` relays raw hub error text to API clients | #482 | 5.435; the SPEC 22.3 citation is weaker than the audit said (it names stack traces only); the 403 refusal text is kept on purpose; `hook.go`'s 502 not looked at; not run on a live hub |
 | `ps.pkill` has no guard against signalling PID 1, the node agent or sshd | #483 | 5.436; init and the node's own pid refused, `force: True` overrides, signal 0 exempt; sshd deliberately not guarded; tests are a scripted procps table and skip on FreeBSD; nothing real was signalled |
 | `maxProviderOutput` does not bound memory; the runner buffers all stdout | #484 | 5.437; fixed for grain providers via a new `Command.MaxOutput`; `cmd.run` and every other command deliberately still unbounded, a decision not made; tests unix-only, run on Ubuntu only |
+| archive entries read whole into memory, no entry-count or total-size limit | #PRNUM | 5.438; 250,000 entries and 8 GiB per archive added, numbers chosen not derived; the memory half is not done (an entry is still read whole, up to 1 GiB); not run beyond unit tests |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions

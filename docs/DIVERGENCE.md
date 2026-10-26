@@ -33410,6 +33410,50 @@ with a limit. Nothing was run on a node with a real provider.
 
 
 
+### 5.438 An archive had a limit on one file and none on all of them
+
+Issue 321, Low: archive entries are read fully into memory (up to 1 GiB
+via `io.ReadAll`) with no entry-count or total-size limit.
+
+**Measured.** `extractArchive` refused one entry past `maxArchiveEntry`
+(1 GiB) and counted nothing across entries. A gzip tar of 300,000 empty
+files, read as a dry run so that nothing was created, was accepted and
+all 300,000 names were planned. A real run would have created them. The
+same holds for nine entries each just inside the per-entry limit.
+
+**The change.** An archive is limited as a whole: 250,000 entries and
+8 GiB of entries in all, for tar and zip alike. Entries are counted from
+the header whatever becomes of them. Bytes are counted from the declared
+size for a tar, and for a zip from what was read when the entry is read
+(a zip's declared size is the archive's own claim) and from the declared
+size when the entry is skipped or planned, so a dry run refuses what a
+real run would. The run stops at the entry that crosses a limit and
+names it; entries before it are already extracted, as they are for the
+per-entry limit.
+
+**The numbers are chosen, not derived.** A kernel source tree is under
+100,000 files and about a gigabyte, so these are well above any tree a
+state is likely to hold and still a limit. They are constants and not
+arguments to `archive.extracted`, so a tree cannot set them to nothing.
+If a real tree is refused, they are the thing to change.
+
+**Demonstrated.** On `main`,
+`TestAnArchiveOfTooManyEntriesIsRefusedBeforeItIsExtracted` failed with
+"an archive of 300,000 entries was accepted and 300000 names planned";
+with the change it is refused. With small limits injected through
+`extractArchiveWith`, a tar past either limit stops at the entry that
+crosses it and that entry is not written; the byte limit holds in a dry
+run; a zip is refused at its entry limit; and an archive inside both
+extracts as before.
+
+**Not done.** Memory. An entry is still read whole into memory before
+it is written, so one entry just inside 1 GiB still costs 1 GiB of
+resident memory; the new limits bound the disk and the count, not that.
+Streaming it needs a write path in `internal/atomicfile` that takes a
+reader, which is a larger change than this. The zip byte limit trusts
+`UncompressedSize64` for entries it does not read. Not run on FreeBSD,
+macOS or Windows beyond CI's unit tests.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
