@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An archive is limited in how many entries and bytes it may hold
+
+`archive.extracted` refused one file past 1 GiB but counted nothing
+across files, so a gzip of 300,000 empty files was accepted. An archive
+may now hold 250,000 entries and 8 GiB in all, tar or zip, and is refused
+at the entry that crosses either. A tree that extracts something larger
+will be refused. DIVERGENCE 5.438.
+
 ### A grain provider's output limit now stops the provider
 
 The 1 MiB limit on a bridged grain provider was checked after the node had
