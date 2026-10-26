@@ -442,6 +442,7 @@ One JSON file per node, named for the node, written atomically. A directory rath
 
 - `Authority` (type)
 - `DeletedCert` (type): DeletedCert is a certificate whose record was deleted while it could still be presented.
+- `InheritOwner` (func): InheritOwner gives a file its directory's owner and group, when this process is root and the directory belongs to someone else.
 - `Mode` (type): Mode is the enrollment mode of SPEC 7.3.
 - `NeedsRenewal` (func): NeedsRenewal reports whether a certificate has passed the halfway point of its life.
 - `Open` (func): Open prepares a store, creating the directory if it is absent.
