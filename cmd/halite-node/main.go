@@ -62,7 +62,10 @@ enroll and connect flags:
   --hub <address>      the hub to dial, default from the hub setting
   --ca-file <path>     the hub CA to pin, for a node enrolling for the first time
   --hub-fingerprint <fp>  the CA digest this node expects, checked before enrolling
-  --token <secret>     a bootstrap token, for the token mode of SPEC 7.3
+  --token <secret>     a bootstrap token, for the token mode of SPEC 7.3; it is visible
+                       in the process table while this runs
+  --token-file <path>  read the bootstrap token from a file; unlike --token it is
+                       not in the process table
   --wait               keep asking until an operator accepts the request
   --pki-dir <dir>      key material, default ` + config.DefaultPKIDir + `
   --force              enrol again from a new key, moving the old one aside

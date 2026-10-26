@@ -240,6 +240,15 @@ script passes the token with a space, so if you use `halite_node_token`
 regenerate any token that begins with a hyphen. Both are recorded in the
 ledger.
 
+**Prefer `--token-file PATH`.** A token given as `--token` is on the command
+line for as long as `enroll` runs, which with `--wait` is until an operator
+accepts the request, and `ps` shows it to every account on the node. A token
+read from a file is not in the process table, and a file has no trouble with
+a token that begins with a hyphen. Keep the file mode 0600; `enroll` warns if
+it is readable by others. The FreeBSD rc script takes it as
+`halite_node_token_file`, read by `halite_node_user`, and `halite_node_token`
+has the same exposure in `rc.conf`, which is world-readable by default.
+
 **4. Afterwards**, `halite-hub keys token list` shows what each token
 admitted. Revoke rather than delete a token you suspect:
 

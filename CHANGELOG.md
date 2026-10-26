@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `halite-node enroll --token-file`: a bootstrap token out of the process table
+
+`--token SECRET` is listed by `ps` to every account on the node while
+`enroll` runs, which with `--wait` can be hours. `--token-file PATH` reads
+it from a file instead, and the FreeBSD rc script has
+`halite_node_token_file`. `--token` still works and now says on stderr that
+it is visible. A token beginning with `-` is no trouble in a file.
+DIVERGENCE 5.439.
+
+
 ### An archive is limited in how many entries and bytes it may hold
 
 `archive.extracted` refused one file past 1 GiB but counted nothing
