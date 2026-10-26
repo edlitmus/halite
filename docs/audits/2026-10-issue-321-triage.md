@@ -202,6 +202,7 @@ passing by the PRs above; that has not been looked for.
 | logs: `oidcCallback` error text unbounded; `oidc login started` logs `state` | #461 | 5.433; the state let a log reader cancel a login, not finish one; other unauthenticated paths not looked at |
 | `keys operator create --admin` writes a root-owned 0600 policy | #463 | 5.434; reproduced and fixed on beastie with a throwaway hub; a directory `--admin` creates itself stays root's; Linux not run |
 | `hubError` relays raw hub error text to API clients | #482 | 5.435; the SPEC 22.3 citation is weaker than the audit said (it names stack traces only); the 403 refusal text is kept on purpose; `hook.go`'s 502 not looked at; not run on a live hub |
+| `ps.pkill` has no guard against signalling PID 1, the node agent or sshd | #483 | 5.436; init and the node's own pid refused, `force: True` overrides, signal 0 exempt; sshd deliberately not guarded; tests are a scripted procps table and skip on FreeBSD; nothing real was signalled |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
