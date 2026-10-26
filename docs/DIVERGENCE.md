@@ -33492,6 +33492,50 @@ run on FreeBSD: the rc script was parse-checked with `sh -n` only, and its
 `--token-file` flag was never exercised under `rc.d`. The node was not
 enrolled against a real hub with a token file; the run above stopped at
 the connection.
+### 5.440 `pkg.installed` reported Changed for a package that was still absent
+
+Issue 321, Low: `pkg.installed` reports Changed without verifying the
+package is present or at the pin. M-33 (5.334) fixed the pin half: after an
+install, a pinned package that did not reach its pin fails the state.
+
+**Measured.** The other half was open. After `p.Install`, the state re-read
+the package list and checked only pinned packages; an unpinned package that
+was not in the list afterwards fell through to `states.Changed("The
+following packages were installed: tree.")`. With a scripted `dnf` that
+exits 0 and installs nothing (the fake's `dnf install`, "recorded and not
+acted on"), the state said exactly that for a `tree` that was absent. A
+manager does this for a held, excluded or filtered package, or one its
+repository no longer carries, and the next run finds the package absent and
+changes it again, for ever, which is the loop M-33 closed for pins.
+`pkg.installed` with `pkgs: [curl, tree]`, `curl` already there, named only
+`tree`.
+
+**The change.** After the install, a package the state asked for that is
+not in the re-read list fails the state: "The package manager reported
+success but these packages are not installed afterwards: tree." It is
+reported with the pin failure when both apply, and `Changes` still lists
+what was seen. If the list cannot be re-read at all, nothing can be said
+about presence, so the state is not failed on a guess: it stays Changed
+and its comment says the list could not be read back to confirm it. That
+case used to be Changed with no comment.
+
+**Demonstrated.** On `main`, `TestAnInstallThatLeavesThePackageAbsentIsNotChanged`
+and `TestOnlyThePackageThatIsAbsentIsNamed` failed with the comment "The
+following packages were installed: tree." and
+`TestAnUnreadableListAfterTheInstallIsSaidNotHidden` with the bare comment.
+All pass now, together with `TestAnInstallThatLandsIsStillChanged` (pkgng
+fake, install lands) and the existing M-33 and pin tests, and the package
+under `-race`.
+
+**Not verified.** Only against scripted managers. No real apt, dnf, pkg or
+apk was made to exit 0 and install nothing, so the claim that a real
+manager does is from the audit and the managers' documented behaviour for
+held and excluded packages. The ordinary path (install, confirm) runs on
+the fleet's live legs and was not rerun by hand. A pinned package that is
+absent now reads "not installed" rather than "pinned to X and nothing is
+installed"; no tree is known to match on that text.
+
+
 
 
 

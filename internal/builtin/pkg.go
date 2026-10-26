@@ -405,29 +405,49 @@ func pkgInstalled(c *exec.Context, args *value.Map) (states.Result, error) {
 	// is the point: an install that the next run would redo is exactly one
 	// that this check refuses.
 	after, err := p.ListPkgs(c)
-	if err == nil {
-		var unmet []string
-		for _, name := range missing {
-			cur, _ := after.Get(name)
-			old, _ := installed.Get(name)
-			changes.Set(name, states.Change(value.KeyString(old), value.KeyString(cur)))
-			if want, pinned := versions[name]; pinned {
-				got := value.KeyString(cur)
-				if cur == nil {
-					got = "nothing"
-				}
-				if !versionSatisfies(c, got, want, allowUpdates) {
-					unmet = append(unmet, fmt.Sprintf("%s is pinned to %s and %s is installed", name, want, got))
-				}
+	if err != nil {
+		// Presence cannot be checked, so it is neither claimed nor denied.
+		// The install reported success; the comment says the list that
+		// would have confirmed it could not be read.
+		return states.Changed(
+			fmt.Sprintf("The following packages were installed: %s. (The package list could not be read back to confirm it: %v.)",
+				states.SortedNames(missing), err), changes), nil
+	}
+	var unmet, absent []string
+	for _, name := range missing {
+		cur, _ := after.Get(name)
+		old, _ := installed.Get(name)
+		changes.Set(name, states.Change(value.KeyString(old), value.KeyString(cur)))
+		if cur == nil {
+			// Nothing was installed under this name, pinned or not. A
+			// manager that exits 0 for a held, excluded or filtered
+			// package, or one the repository no longer carries, lands
+			// here, and the state used to call it Changed: the next run
+			// found the package absent and changed it again, for ever
+			// (issue 321, section 5).
+			absent = append(absent, name)
+			continue
+		}
+		if want, pinned := versions[name]; pinned {
+			got := value.KeyString(cur)
+			if !versionSatisfies(c, got, want, allowUpdates) {
+				unmet = append(unmet, fmt.Sprintf("%s is pinned to %s and %s is installed", name, want, got))
 			}
 		}
-		if len(unmet) > 0 {
-			sort.Strings(unmet)
-			res := states.False(fmt.Sprintf("The package manager did not install the pinned version: %s.",
-				strings.Join(unmet, "; ")))
-			res.Changes = changes
-			return res, nil
+	}
+	if len(unmet) > 0 || len(absent) > 0 {
+		sort.Strings(unmet)
+		sort.Strings(absent)
+		var parts []string
+		if len(absent) > 0 {
+			parts = append(parts, fmt.Sprintf("The package manager reported success but these packages are not installed afterwards: %s.", strings.Join(absent, ", ")))
 		}
+		if len(unmet) > 0 {
+			parts = append(parts, fmt.Sprintf("The package manager did not install the pinned version: %s.", strings.Join(unmet, "; ")))
+		}
+		res := states.False(strings.Join(parts, " "))
+		res.Changes = changes
+		return res, nil
 	}
 	return states.Changed(
 		fmt.Sprintf("The following packages were installed: %s.", states.SortedNames(missing)), changes), nil
