@@ -1,11 +1,15 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/edlitmus/halite/internal/apitoken"
 	"github.com/edlitmus/halite/internal/oidc"
@@ -113,6 +117,43 @@ type AuthStartResponse struct {
 	Expires string `json:"expires"`
 }
 
+// maxProviderErrorLog bounds what the callback's `error` and
+// `error_description` put in the log. They are said to be the
+// provider's words, but they arrive in an unauthenticated request body
+// from whoever sent it, and nothing else bounded them below the request
+// body limit (transport.MaxRequestBody, 64 MiB): that much of anybody's
+// text per request, logged at warn.
+// RFC 6749's error codes are a few words and its descriptions a
+// sentence; 256 bytes keeps those whole.
+const maxProviderErrorLog = 256
+
+// clipForLog shortens a string from a request to at most max bytes,
+// cut on a rune boundary, and says how long it was when it cuts.
+func clipForLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s… (%d bytes)", s[:cut], len(s))
+}
+
+// stateRef names a login in the log without being its state.
+//
+// The state is the handle the callback presents, and logging it put
+// the handle where everybody who reads the logs could see it while the
+// login was still open. The code from the provider is needed as well to
+// finish a login, so the handle alone does not complete one; but `take`
+// removes a pending login on any callback that names its state, so a
+// reader of the log could cancel a login in progress. A digest is enough
+// to tie the start of a login to whatever is said about it later.
+func stateRef(state string) string {
+	sum := sha256.Sum256([]byte(state))
+	return hex.EncodeToString(sum[:6])
+}
+
 // oidcStart is `POST /v1/login/oidc`: begin an interactive login.
 //
 // Unauthenticated, like `/v1/login` — it is how somebody with no token
@@ -139,7 +180,7 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 			"too many logins are in progress; try again in a few minutes")
 		return
 	}
-	s.info("oidc login started", "state", req.State, "remote", remoteHost(r))
+	s.info("oidc login started", "login", stateRef(req.State), "remote", remoteHost(r))
 	writeJSON(w, http.StatusOK, AuthStartResponse{
 		URL:     req.URL,
 		State:   req.State,
@@ -172,7 +213,9 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	if req.Error != "" {
 		s.m().authAttempts.With("oidc", "refused").Inc()
 		s.warn("the provider refused a login",
-			"error", req.Error, "description", req.Description, "remote", remoteHost(r))
+			"error", clipForLog(req.Error, maxProviderErrorLog),
+			"description", clipForLog(req.Description, maxProviderErrorLog),
+			"remote", remoteHost(r))
 		writeError(w, http.StatusUnauthorized, "the identity provider refused this login")
 		return
 	}

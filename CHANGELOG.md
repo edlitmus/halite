@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The OIDC login log no longer holds the state or unbounded text
+
+`halite-api` logged an OIDC login's `state` when the login started.
+Anyone who could read the log could use it to cancel the login. The log
+line now carries `login`, a short digest of the state, in place of
+`state`, so a log query on `state` stops matching it. A provider
+refusal's `error` and `error_description` come from an unauthenticated
+request, and they are now cut to 256 bytes in the log. DIVERGENCE 5.433.
+
+
 ### A followed event stream no longer misses an event for 25 seconds
 
 An event appended at the wrong instant could reach `halite-hub event
