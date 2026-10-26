@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A grain provider's output limit now stops the provider
+
+The 1 MiB limit on a bridged grain provider was checked after the node had
+read everything the provider wrote: a provider that wrote without end was
+held in memory until its timeout (320 MiB for a 64 MiB flood, measured).
+It is now stopped when it passes the limit. `cmd.run` and every other
+command are unchanged. DIVERGENCE 5.437.
+
+
 ### `ps.pkill` and `ps.kill_pid` refuse to signal init or the node itself
 
 A pattern a little too wide, `.*` or the name of the node's own agent,

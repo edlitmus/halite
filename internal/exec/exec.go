@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/edlitmus/halite/internal/render"
@@ -543,6 +544,40 @@ func (r *Registry) nearMisses(name string) []string {
 // ---- running external commands ----
 
 // Result is the outcome of an external command.
+// ErrOutputLimit is why a run failed when the command wrote more than
+// Command.MaxOutput. Test for it with errors.Is.
+var ErrOutputLimit = errors.New("output exceeded the limit")
+
+// limitedBuffer is a stream's buffer with a ceiling. Past the ceiling it
+// stops keeping bytes, says so, and cancels the run, so the command is
+// killed rather than read to its end. It still reports every write as
+// taken, because refusing a write would stop the copy and leave the child
+// blocked on a full pipe until the kill landed.
+type limitedBuffer struct {
+	buf    strings.Builder
+	max    int64
+	over   *atomic.Bool
+	cancel context.CancelFunc
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b.max <= 0 {
+		return b.buf.Write(p)
+	}
+	room := b.max - int64(b.buf.Len())
+	if int64(len(p)) > room {
+		if room > 0 {
+			b.buf.Write(p[:room])
+		}
+		b.over.Store(true)
+		b.cancel()
+		return len(p), nil
+	}
+	return b.buf.Write(p)
+}
+
+func (b *limitedBuffer) String() string { return b.buf.String() }
+
 type Result struct {
 	Stdout   string
 	Stderr   string
@@ -604,6 +639,17 @@ type Command struct {
 	// os/exec.Cmd to run something in the background would be a second,
 	// quietly different implementation of all three.
 	Background bool
+	// MaxOutput, when positive, is the most bytes the runner keeps of
+	// either stream. A command that writes more is stopped, with its
+	// whole tree, and the run fails with ErrOutputLimit; what was read up
+	// to the limit is still returned. Zero is no limit, which is what
+	// every command had, and still has unless its caller asks.
+	//
+	// It is not a default because a limit that truncated `cmd.run` would
+	// change what a state sees from a command that was always allowed to
+	// be large. A caller that has a number of its own, as the grain
+	// providers of SPEC 24 do, says it.
+	MaxOutput int64
 }
 
 // String renders the command for a log line or a comment.
@@ -743,6 +789,13 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 		return Result{}, err
 	}
 
+	// The run's own cancel, for the output limit to fire. It is derived
+	// after the timeout so that a limit and a deadline are told apart by
+	// which flag is set, not by which error context returns first.
+	ctx, stopRun := context.WithCancel(ctx)
+	defer stopRun()
+	var overLimit atomic.Bool
+
 	var c *exec.Cmd
 	if cmd.Shell {
 		// The interpreter is the platform's own: /bin/sh, or whatever
@@ -787,9 +840,10 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	defer cleanup()
 	c.WaitDelay = waitDelay
 
-	var stdout, stderr strings.Builder
-	c.Stdout = &stdout
-	c.Stderr = &stderr
+	stdout := &limitedBuffer{max: cmd.MaxOutput, over: &overLimit, cancel: stopRun}
+	stderr := &limitedBuffer{max: cmd.MaxOutput, over: &overLimit, cancel: stopRun}
+	c.Stdout = stdout
+	c.Stderr = stderr
 
 	start := time.Now()
 	// Start and Wait rather than Run, so that a platform which can only
@@ -803,6 +857,12 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
 		Duration: time.Since(start),
+	}
+	if overLimit.Load() {
+		// Before the context test: stopping the run is how the limit is
+		// enforced, so the context is always cancelled by now and would
+		// otherwise be reported as a cancellation nobody asked for.
+		return res, fmt.Errorf("%s: %w (%d bytes)", cmd.String(), ErrOutputLimit, cmd.MaxOutput)
 	}
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {

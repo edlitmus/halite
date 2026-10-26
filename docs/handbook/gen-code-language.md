@@ -386,7 +386,7 @@ A module function receives its arguments already bound and type-checked against 
 - `PendingPlatformModules` (func): PendingPlatformModules is every module SPEC 15.3 names that this build does not have, for the audit that holds the two together.
 - `RecordingRunner` (type): RecordingRunner records commands instead of running them, and answers from a scripted table.
 - `Registry` (type): Registry holds the execution modules a build ships.
-- `Result` (type): Result is the outcome of an external command.
+- `Result` (type)
 - `ScheduleControl` (type): ScheduleControl is the runtime management of SPEC 20.1.
 - `TemplateDispatcher` (type): TemplateDispatcher adapts a registry and a context to the `salt` object a template sees, so that `salt['pillar.get']('a:b')` in an SLS file calls the same function `halite-node call pillar.get a:b` does.
 - `UnknownFunctionError` (type): UnknownFunctionError names the functions a caller may have meant.

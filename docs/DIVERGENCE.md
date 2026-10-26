@@ -33361,6 +33361,52 @@ tests (`HALITE_SYSTEM_LIVE=1`, Ubuntu 24.04, no root) pass with it.
 libxo JSON; the rule is not platform-specific but the fixture is. No real
 init or node process was signalled. As root, another account's process is
 still the case nothing has run.
+### 5.437 A grain provider's output limit bounded nothing
+
+Issue 321, Low: `maxProviderOutput` does not bound memory as its comment
+claims; the runner has already buffered all stdout into an unbounded
+`strings.Builder`. "The same holds for every `cmd.run`."
+
+**Measured.** `runGrainProvider` ran the provider through the command
+runner and then compared `len(res.Stdout)` with 1 MiB. The runner
+(`internal/exec/exec.go`) read both streams into `strings.Builder`s until
+the process ended. A provider that wrote 64 MiB and then hung was waited
+out to its timeout (3 s in the probe, 8 s in the test), and collection
+allocated 320 MiB (`TotalAlloc`) on the way. The limit was real as to what
+was decoded and false as to memory, which is what its comment said it
+was for.
+
+**The change.** `exec.Command` has a `MaxOutput`. When it is positive,
+each stream is held in a buffer with that ceiling; the write that passes
+it keeps what fits, cancels the run (the whole tree is killed, as on a
+timeout) and the run fails with `exec.ErrOutputLimit`. The grain provider
+sets it to the limit it already had, and turns that error into the
+warning it already gave, "emitted more than 1 MiB and was skipped".
+Output of exactly the limit is kept.
+
+**What it does not do.** `MaxOutput` is zero, no limit, for every other
+caller, so `cmd.run` and every module that runs a command behave as they
+did. The audit's "every `cmd.run`" is true and was left true: SPEC 24
+asks for an output limit on bridged grain providers and names none for
+`cmd.run`, and a default would change what a state sees from a command
+that was always allowed to be large. Whether `cmd.run` should have a cap,
+and what it should be, is a decision and not made here.
+
+**Demonstrated.** `TestAProviderPastTheOutputLimitIsStoppedNotBuffered`
+failed on `main` ("timed out and was skipped" after the 8 s timeout) and
+passes: the provider is stopped at the limit, in under five seconds, with
+under 24 MiB allocated. In `internal/exec`, a command past its limit is
+stopped with `ErrOutputLimit` and exactly the limit kept, on stdout and on
+stderr; output at the limit is kept; and with no limit 4 MiB comes back
+whole, which pins the part above. `internal/exec` and `internal/grains`
+pass under `-race` on Linux, and both `go vet` clean for Windows, FreeBSD
+and macOS.
+
+**Not verified.** The new tests are unix-only (`head`, `sh`) and were run
+on Ubuntu 24.04 only; the Windows runner's tree kill was not exercised
+with a limit. Nothing was run on a node with a real provider.
+
+
 
 
 

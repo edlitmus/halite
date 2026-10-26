@@ -9,6 +9,7 @@ package grains
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/netip"
 	"os"
@@ -521,8 +522,15 @@ func runGrainProvider(path string, timeout time.Duration) (*value.Map, *Warning)
 		// credentials any more than a cmd.run may.
 		Env:     exec.CleanEnv(),
 		Timeout: timeout,
+		// Read no more than it may emit. Checking the length after the
+		// run, as this did, bounded what was decoded and nothing else:
+		// the runner had already held every byte the provider wrote.
+		MaxOutput: maxProviderOutput,
 	})
 	if err != nil {
+		if errors.Is(err, exec.ErrOutputLimit) {
+			return nil, &Warning{Source: path, Msg: "emitted more than 1 MiB and was skipped"}
+		}
 		if strings.Contains(err.Error(), "timed out") {
 			return nil, &Warning{Source: path, Msg: "timed out and was skipped"}
 		}
