@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `ps.pkill` and `ps.kill_pid` refuse to signal init or the node itself
+
+A pattern a little too wide, `.*` or the name of the node's own agent,
+signalled PID 1 and the process running the call. They are now refused,
+whole, naming which; `force: True` signals them anyway. Signal 0 is
+unaffected, and sshd is not guarded. DIVERGENCE 5.435.
+
 ### `keys operator create --admin` writes a policy the hub can read
 
 Run as root, as the handbook says, it wrote `policy.yaml` owned by root

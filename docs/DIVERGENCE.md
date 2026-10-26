@@ -33289,6 +33289,43 @@ create, were not run.
 
 
 
+### 5.435 `ps.pkill` and `ps.kill_pid` would signal init and the node itself
+
+Issue 321, Low: `ps.pkill` has no guard against signalling PID 1, the node
+agent, or sshd.
+
+**Measured.** With a scripted procps table (init, the test process
+standing for the node, and an nginx worker) and a recording runner,
+`ps.pkill` with the pattern `.*` ran `kill -TERM` for all three, and
+`ps.kill_pid` for pid 1 and for the node's own pid each ran `kill -TERM`.
+That is Salt's behaviour too. The tests failed on `main` for those
+reasons.
+
+**The change.** A call that would signal PID 1 or the process running the
+function is refused, whole, before `kill` is asked for anything, and the
+refusal names which and says `force: True` is how to mean it. `force` is a
+new optional argument on both functions; Salt has no such argument, so a
+tree written for Salt is unchanged until it names init. Signal `0` is
+exempt, since it signals nothing. The check sits before the test-mode
+branch, so a dry run refuses too.
+
+**Not done: sshd.** The audit also named sshd. It is not guarded: a guard
+by name would refuse `pkill -HUP sshd`, the usual way to reload it, and
+whether to guard by name is a policy decision that init and the node's own
+pid are not. Say if it should be.
+
+**Demonstrated.** `TestPkillRefusesInitAndTheNodeItself`,
+`TestKillPIDRefusesInitAndTheNodeItself` and
+`TestForceSignalsAProtectedProcess` fail on `main` and pass with the
+change; `TestPkillStillSignalsAnOrdinaryProcess` and
+`TestSignalZeroIsNotRefusedForInit` pass before and after. The live `ps`
+tests (`HALITE_SYSTEM_LIVE=1`, Ubuntu 24.04, no root) pass with it.
+
+**Not verified.** The new tests skip on FreeBSD, whose `ps` is read as
+libxo JSON; the rule is not platform-specific but the fixture is. No real
+init or node process was signalled. As root, another account's process is
+still the case nothing has run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

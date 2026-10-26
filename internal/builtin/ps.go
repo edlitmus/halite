@@ -3,6 +3,7 @@ package builtin
 import (
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -165,6 +166,7 @@ func registerPS(r *Registries) {
 				Params: []signature.Param{
 					req("pid", signature.Int, "The process ID."),
 					opt("signal", signature.String, "TERM", "A signal name or number."),
+					opt("force", signature.Bool, false, "Signal init, or this node's own process, which are refused otherwise."),
 				},
 				Returns:    "true when the signal was delivered",
 				Mutates:    true,
@@ -186,6 +188,7 @@ func registerPS(r *Registries) {
 					opt("signal", signature.String, "TERM", "A signal name or number."),
 					opt("full", signature.Bool, false, "Match the whole command line."),
 					opt("user", signature.String, "", "Only this account's processes."),
+					opt("force", signature.Bool, false, "Signal init, or this node's own process, which are refused otherwise."),
 				},
 				Returns:    "a mapping of the process IDs signalled",
 				Mutates:    true,
@@ -729,6 +732,9 @@ func psKillPIDFn(c *exec.Context, args *value.Map) (any, error) {
 	if target == nil {
 		return nil, fmt.Errorf("no process %d is running", pid)
 	}
+	if err := psRefuseProtected(signal, []psProcess{*target}, states.Bool(args, "force", false)); err != nil {
+		return nil, err
+	}
 	if c.Test {
 		c.Logf("info", "would send %s to %d (%s)", signal, pid, target.Name())
 		return true, nil
@@ -751,6 +757,10 @@ func psPkillFn(c *exec.Context, args *value.Map) (any, error) {
 		// tidy machine, and `pgrep` is how a tree asks the question
 		// without the answer being an action.
 		return nil, fmt.Errorf("no process matches %q", states.Str(args, "pattern", ""))
+	}
+
+	if err := psRefuseProtected(signal, matched, states.Bool(args, "force", false)); err != nil {
+		return nil, err
 	}
 
 	killed := value.NewMap(len(matched))
@@ -778,6 +788,43 @@ func psPkillFn(c *exec.Context, args *value.Map) (any, error) {
 // signalled through a Go handle that was never opened. `kill` is also
 // where a permission failure comes back in the words an operator will
 // recognise.
+// psRefuseProtected refuses a signal that would reach init or the process
+// running this function, unless the caller said `force`.
+//
+// Neither is ever the intended target of a pattern. A `pkill` whose
+// pattern is a little wide -- `.*`, or the name of the tree's own agent --
+// matched them, and Salt's ps.pkill signalled them without a word: init's
+// answer to TERM is a reboot or nothing, and the node's own process is
+// the one that would have reported the result. The refusal is of the
+// whole call, not a quiet skip of those two, because a call that did half
+// of what its pattern said is harder to read afterwards than one that
+// did none.
+//
+// Signal 0 is exempt: it signals nothing and is how a process is asked
+// about. sshd is not on the list. Whether to guard a process by its name
+// is a different decision from guarding two that are never right, and it
+// would refuse `pkill -HUP sshd`, which is the usual way to reload it.
+func psRefuseProtected(signal string, procs []psProcess, force bool) error {
+	if force || signal == "0" {
+		return nil
+	}
+	self := int64(os.Getpid())
+	var hit []string
+	for _, p := range procs {
+		switch p.PID {
+		case 1:
+			hit = append(hit, "1 (init)")
+		case self:
+			hit = append(hit, fmt.Sprintf("%d (this node)", p.PID))
+		}
+	}
+	if len(hit) == 0 {
+		return nil
+	}
+	return fmt.Errorf("refusing to send %s to %s; `force: True` says it was meant",
+		signal, strings.Join(hit, " and "))
+}
+
 func psSignalPID(c *exec.Context, pid int64, signal string) (any, error) {
 	res, err := c.Run(exec.Command{Argv: []string{"kill", "-" + signal, strconv.FormatInt(pid, 10)},
 		IgnoreExitCode: true})

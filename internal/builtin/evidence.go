@@ -204,7 +204,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"and the mutating half is demonstrated against processes the test started and " +
 		"marked, killed by pid and by pattern, with test mode shown to change nothing. " +
 		"No root is involved, which is the limit worth naming: signalling *another " +
-		"account's* process is the case that needs privilege and it has not been run"},
+		"account's* process is the case that needs privilege and it has not been run. " +
+		"The refusal to signal init or the node's own process (DIVERGENCE 5.435) is shown " +
+		"against a scripted procps table only, which is the column format and so does not " +
+		"run on FreeBSD; the live tests above were rerun on Ubuntu 24.04 with it in place " +
+		"and pass, but no real init or node process was ever signalled, on purpose"},
 	"zpool": {Level: exec.Hardware, Note: "driven against real pools on Linux with " +
 		"OpenZFS 2.2.2, which found two defects in reading `zpool list` that the fixtures had agreed with " +
 		"(DIVERGENCE 4.7). On FreeBSD, `zpool.present` and `zpool.absent` run through the conformance " +

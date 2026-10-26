@@ -7063,13 +7063,14 @@ pro.version()
 Signal one process. The default is TERM, which asks; KILL, which does not, has to be named.
 
 ```
-ps.kill_pid(pid: int, signal: string = TERM)
+ps.kill_pid(pid: int, signal: string = TERM, force: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `pid` | int | *required* | The process ID. |
 | `signal` | string | `TERM` | A signal name or number. |
+| `force` | bool | `false` | Signal init, or this node's own process, which are refused otherwise. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
@@ -7104,7 +7105,7 @@ ps.pid_list()
 Signal every process matching a pattern. Refuses a pattern that matches nothing, so a tree cannot report success for a name it has misspelled.
 
 ```
-ps.pkill(pattern: string, signal: string = TERM, full: bool = false, user: string = )
+ps.pkill(pattern: string, signal: string = TERM, full: bool = false, user: string = , force: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -7113,6 +7114,7 @@ ps.pkill(pattern: string, signal: string = TERM, full: bool = false, user: strin
 | `signal` | string | `TERM` | A signal name or number. |
 | `full` | bool | `false` | Match the whole command line. |
 | `user` | string | `` | Only this account's processes. |
+| `force` | bool | `false` | Signal init, or this node's own process, which are refused otherwise. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
