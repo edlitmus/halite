@@ -33104,10 +33104,7 @@ rounding removed. The `lvm` evidence note names both runs.
 get wrong. Extents other than 4 MiB, and `extents` given as a count or a
 percentage, which are not compared here at all. Not run on this host,
 which has no root.
-
-
-
-### 5.430 The job cache kept a mutex for every job it had ever updated
+### 5.431 The job cache kept a mutex for every job it had ever updated
 
 Issue 321, Low (one of three leaks in one bullet): `job.Cache.locks` is
 never freed.
@@ -33143,6 +33140,10 @@ not changed: `eventbus.Wait` and `certreload.Load`.
 
 **Not verified.** No hub was run long enough to see the map grow, or to
 see it stay flat.
+
+
+
+
 
 ## 6. Everything else not started
 

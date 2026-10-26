@@ -197,7 +197,7 @@ passing by the PRs above; that has not been looked for.
 | Provenance guidance `--repo` only | #454 | 5.425; checked against v0.1.1's attestation; no branch attestation shown accepted; repository settings for dispatch not changed (admin) |
 | buildpolicy text greps with gaps (cross/fips-cross flags, `matrix.go`, dead `ext.Confine`, attest wording) | #457 | 5.426; each gap reproduced and closed; still text checks; flow-form YAML permissions not read |
 | systemd node unit `ProtectKernelModules=yes` | #460 | 5.427; worse than the audit said: the module tree is hidden, so `kmod` reads answered False; measured under a user manager, not as root under the system manager; the hub unit's writable PKI is by design and unchanged |
-| leaks: `job.Cache.locks` never freed | #455 | 5.430; no hub run long enough to see it; the bullet's `certreload` part not changed |
+| leaks: `job.Cache.locks` never freed | #455 | 5.431; no hub run long enough to see it; the bullet's `certreload` part not changed |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions
