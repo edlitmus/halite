@@ -28,7 +28,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 it from a file instead, and the FreeBSD rc script has
 `halite_node_token_file`. `--token` still works and now says on stderr that
 it is visible. A token beginning with `-` is no trouble in a file.
-DIVERGENCE 5.438.
+DIVERGENCE 5.439.
+
+
+### An archive is limited in how many entries and bytes it may hold
+
+`archive.extracted` refused one file past 1 GiB but counted nothing
+across files, so a gzip of 300,000 empty files was accepted. An archive
+may now hold 250,000 entries and 8 GiB in all, tar or zip, and is refused
+at the entry that crosses either. A tree that extracts something larger
+will be refused. DIVERGENCE 5.438.
 
 ### A grain provider's output limit now stops the provider
 
