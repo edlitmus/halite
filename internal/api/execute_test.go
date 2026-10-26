@@ -27,6 +27,9 @@ type stubHub struct {
 	// runnerFails makes the hub refuse, as it would for a grant this
 	// service does not have.
 	runnerFails string
+	// runnerBreaks makes the hub fail the way a hub with a broken disk
+	// does: a 500 whose message is the operating system's, path and all.
+	runnerBreaks string
 	// eventLines is what the hub's event stream answers with.
 	eventLines []string
 	// metricsBody is the hub's exposition; metricsFails makes the hub
@@ -75,6 +78,11 @@ func newStubHub(t *testing.T) *stubHub {
 				fmt.Fprintln(w, line)
 			}
 		case transport.PathRunners:
+			if h.runnerBreaks != "" {
+				writeJSON(w, http.StatusInternalServerError,
+					transport.Error{Error: h.runnerBreaks})
+				return
+			}
 			if h.runnerFails != "" {
 				writeJSON(w, http.StatusForbidden,
 					transport.Error{Error: h.runnerFails, Code: transport.CodeRefused})
@@ -425,5 +433,46 @@ bindings:
 				t.Errorf("reached the hub: %v", reached)
 			}
 		})
+	}
+}
+
+// A hub that fails, as opposed to refusing, says things only the hub's
+// operator should read: a path on the hub's disk, an address, a system
+// call's complaint. The API's callers are not that operator, and the
+// failure is already in the API's log with the detail (issue 321,
+// section 5), so what they get is that it failed, and where to look.
+func TestAHubFailureDoesNotReachTheCallerWithItsDetail(t *testing.T) {
+	l, hub := executeLab(t, operatorPolicy)
+	hub.runnerBreaks = "reading the job cache: open /var/lib/halite/hub/jobs/20260824: permission denied"
+	out := l.login(t, "ed", "hunter2")
+
+	res, body := l.get(t, PathJobs, out.Token)
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("a failing hub answered %d: %s", res.StatusCode, body)
+	}
+	for _, leak := range []string{"/var/lib/halite", "permission denied"} {
+		if strings.Contains(body, leak) {
+			t.Errorf("the hub's detail %q reached the caller: %s", leak, body)
+		}
+	}
+	if !strings.Contains(body, "calling jobs.list_jobs") {
+		t.Errorf("the caller should still be told what was being attempted: %s", body)
+	}
+}
+
+// And the same hub's failure on a node is not a leak of the dial, which
+// names the hub's address and port.
+func TestAnUnreachableHubDoesNotReachTheCallerWithItsAddress(t *testing.T) {
+	l, hub := executeLab(t, operatorPolicy)
+	out := l.login(t, "ed", "hunter2")
+	addr := strings.TrimPrefix(hub.server.URL, "https://")
+	hub.server.Close()
+
+	res, body := l.get(t, PathJobs, out.Token)
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("an unreachable hub answered %d: %s", res.StatusCode, body)
+	}
+	if strings.Contains(body, addr) || strings.Contains(body, "dial") {
+		t.Errorf("the hub's address reached the caller: %s", body)
 	}
 }

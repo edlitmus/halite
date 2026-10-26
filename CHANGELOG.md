@@ -26,7 +26,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 A pattern a little too wide, `.*` or the name of the node's own agent,
 signalled PID 1 and the process running the call. They are now refused,
 whole, naming which; `force: True` signals them anyway. Signal 0 is
-unaffected, and sshd is not guarded. DIVERGENCE 5.435.
+unaffected, and sshd is not guarded. DIVERGENCE 5.436.
+
+
+### The API no longer sends a failing hub's error text to its callers
+
+When the hub failed or could not be reached, an API call answered 502
+with the hub's own words: a path on the hub's disk, or its address and
+port. It now says what was being attempted and that the API's log has the
+detail. A hub's refusal (403) is unchanged. DIVERGENCE 5.435.
 
 ### `keys operator create --admin` writes a policy the hub can read
 

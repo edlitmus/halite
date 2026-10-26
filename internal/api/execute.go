@@ -263,7 +263,15 @@ func (s *Server) hubError(w http.ResponseWriter, doing string, err error) {
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	writeError(w, http.StatusBadGateway, doing+": "+err.Error())
+	// Not err.Error(). A hub that failed, or could not be reached, speaks
+	// in the operating system's words: a path on the hub's disk, the
+	// hub's address and port from a dial, a system call's complaint. The
+	// caller is an API client, not the hub's operator, and cannot act on
+	// any of it; the same text is in the log above, with the principal
+	// and the time, where the person who can act on it reads. A refusal,
+	// above, is different and is still sent whole: it names whose grant
+	// was too narrow, which the caller can fix (issue 321, section 5).
+	writeError(w, http.StatusBadGateway, doing+" failed at the hub; the API's log has the detail")
 }
 
 // jobList is `GET /v1/jobs`.

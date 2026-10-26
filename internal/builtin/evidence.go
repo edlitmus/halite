@@ -205,7 +205,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"marked, killed by pid and by pattern, with test mode shown to change nothing. " +
 		"No root is involved, which is the limit worth naming: signalling *another " +
 		"account's* process is the case that needs privilege and it has not been run. " +
-		"The refusal to signal init or the node's own process (DIVERGENCE 5.435) is shown " +
+		"The refusal to signal init or the node's own process (DIVERGENCE 5.436) is shown " +
 		"against a scripted procps table only, which is the column format and so does not " +
 		"run on FreeBSD; the live tests above were rerun on Ubuntu 24.04 with it in place " +
 		"and pass, but no real init or node process was ever signalled, on purpose"},
