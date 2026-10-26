@@ -33410,7 +33410,89 @@ with a limit. Nothing was run on a node with a real provider.
 
 
 
-### 5.438 `pkg.installed` reported Changed for a package that was still absent
+### 5.438 An archive had a limit on one file and none on all of them
+
+Issue 321, Low: archive entries are read fully into memory (up to 1 GiB
+via `io.ReadAll`) with no entry-count or total-size limit.
+
+**Measured.** `extractArchive` refused one entry past `maxArchiveEntry`
+(1 GiB) and counted nothing across entries. A gzip tar of 300,000 empty
+files, read as a dry run so that nothing was created, was accepted and
+all 300,000 names were planned. A real run would have created them. The
+same holds for nine entries each just inside the per-entry limit.
+
+**The change.** An archive is limited as a whole: 250,000 entries and
+8 GiB of entries in all, for tar and zip alike. Entries are counted from
+the header whatever becomes of them. Bytes are counted from the declared
+size for a tar, and for a zip from what was read when the entry is read
+(a zip's declared size is the archive's own claim) and from the declared
+size when the entry is skipped or planned, so a dry run refuses what a
+real run would. The run stops at the entry that crosses a limit and
+names it; entries before it are already extracted, as they are for the
+per-entry limit.
+
+**The numbers are chosen, not derived.** A kernel source tree is under
+100,000 files and about a gigabyte, so these are well above any tree a
+state is likely to hold and still a limit. They are constants and not
+arguments to `archive.extracted`, so a tree cannot set them to nothing.
+If a real tree is refused, they are the thing to change.
+
+**Demonstrated.** On `main`,
+`TestAnArchiveOfTooManyEntriesIsRefusedBeforeItIsExtracted` failed with
+"an archive of 300,000 entries was accepted and 300000 names planned";
+with the change it is refused. With small limits injected through
+`extractArchiveWith`, a tar past either limit stops at the entry that
+crosses it and that entry is not written; the byte limit holds in a dry
+run; a zip is refused at its entry limit; and an archive inside both
+extracts as before.
+
+**Not done.** Memory. An entry is still read whole into memory before
+it is written, so one entry just inside 1 GiB still costs 1 GiB of
+resident memory; the new limits bound the disk and the count, not that.
+Streaming it needs a write path in `internal/atomicfile` that takes a
+reader, which is a larger change than this. The zip byte limit trusts
+`UncompressedSize64` for entries it does not read. Not run on FreeBSD,
+macOS or Windows beyond CI's unit tests.
+### 5.439 The enrollment token could only be given where `ps` shows it
+
+Issue 321, Low: the enrollment token is accepted only as `--token <secret>`
+on argv, visible in `ps`; `contrib/rc.d/halite_node` puts
+`halite_node_token` on a command line from `/etc/rc.conf`.
+
+**Measured.** On this Linux host (Ubuntu 24.04), `halite-node enroll
+--hub … --token=SECRETTOKENVALUE123 --wait` was listed by `ps -eo
+pid,user,args` to an ordinary account with the token in the line. With
+`--wait` that is until an operator accepts the request, which can be
+hours. The rc script has the same exposure twice over: on the command
+line, and in `rc.conf`, which is world-readable by default.
+
+**The change.** `halite-node enroll` takes `--token-file PATH`. The file's
+contents are the token, trimmed of surrounding whitespace; an empty file
+is refused; a file readable by group or others is warned about and used,
+not refused, since a token is short-lived and single-use (SPEC 7.3) and a
+provisioning tool often makes 0644 files. `--token` and `--token-file`
+together are refused. `--token` still works, and now prints a note on
+stderr that it is visible in the process table, because the handbook and
+existing trees use it. The rc script has `halite_node_token_file`. A token
+in a file may begin with a hyphen, which `--token SECRET` cannot (the
+handbook's `--token=SECRET` advice, and the rc script's space-separated
+form that it records as broken).
+
+**Demonstrated.** With `--token-file`, the same run's line in the process
+table is `… enroll --hub … --token-file /tmp/…/tokfile --wait`, and no
+process line holds the token's value. The unit tests cover trimming, a
+leading hyphen, an empty file, a missing file, and the warning on a 0644
+file.
+
+**Not done.** `--token` is not removed or made to refuse. `rc.conf`'s
+`halite_node_token` still works and still has its exposure; the script's
+comment now says so. An environment variable was not added: on BSD,
+`ps -E` shows an owner's environment, so it only moves the problem. Not
+run on FreeBSD: the rc script was parse-checked with `sh -n` only, and its
+`--token-file` flag was never exercised under `rc.d`. The node was not
+enrolled against a real hub with a token file; the run above stopped at
+the connection.
+### 5.440 `pkg.installed` reported Changed for a package that was still absent
 
 Issue 321, Low: `pkg.installed` reports Changed without verifying the
 package is present or at the pin. M-33 (5.334) fixed the pin half: after an
@@ -33452,6 +33534,10 @@ held and excluded packages. The ordinary path (install, confirm) runs on
 the fleet's live legs and was not rerun by hand. A pinned package that is
 absent now reads "not installed" rather than "pinned to X and nothing is
 installed"; no tree is known to match on that text.
+
+
+
+
 
 ## 6. Everything else not started
 

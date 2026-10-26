@@ -27,7 +27,11 @@
 #                                set in the configuration, or once the CA is
 #                                on disk.
 #   halite_node_token (str):     A bootstrap token, for the token enrollment
-#                                mode of SPEC 7.3.
+#                                mode of SPEC 7.3. Visible in the process
+#                                table, and in rc.conf, which is world-readable
+#                                by default; prefer halite_node_token_file.
+#   halite_node_token_file (str): A file holding the bootstrap token, read by
+#                                halite_node_user. Keep it mode 0600.
 #
 # `connect` holds the subscribe stream open to the hub, runs the jobs
 # that arrive on it, and carries this node's beacons and schedule. It
@@ -68,6 +72,7 @@ halite_node_flags=""
 : ${halite_node_enroll="YES"}
 : ${halite_node_ca_file=""}
 : ${halite_node_token=""}
+: ${halite_node_token_file=""}
 : ${halite_node_fips="NO"}
 if checkyesno halite_node_fips; then
 	: ${halite_node_binary="/usr/local/bin/halite-node-fips"}
@@ -148,6 +153,7 @@ halite_node_enrol()
 	_flags="--config ${halite_node_config}"
 	[ -n "${halite_node_ca_file}" ] && _flags="${_flags} --ca-file ${halite_node_ca_file}"
 	[ -n "${halite_node_token}" ] && _flags="${_flags} --token ${halite_node_token}"
+	[ -n "${halite_node_token_file}" ] && _flags="${_flags} --token-file ${halite_node_token_file}"
 
 	if [ "${halite_node_user}" = "root" ]; then
 		"${halite_node_binary}" enroll ${_flags}

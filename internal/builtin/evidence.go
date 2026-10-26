@@ -161,7 +161,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"passed but `list_pkgs`, for the cask reason above, and a build with the account switch removed failed it. **On CI** the `macos` leg ran it as root on a " +
 		"hosted macOS 15.7.9 runner, brew owned by `runner` in 17 groups -- past the sixteen the credential " +
 		"switch caps (5.120) -- and it passed, install through removal (Fleet run 36911071275). **`pkg.installed` checks, after an " +
-		"install, that each package it installed is present** (DIVERGENCE 5.438): shown against a scripted manager " +
+		"install, that each package it installed is present** (DIVERGENCE 5.440): shown against a scripted manager " +
 		"that exits 0 and installs nothing, and against one whose list cannot be re-read; never against a real " +
 		"manager doing that, which nobody here has induced. The ordinary install-and-confirm path runs on the " +
 		"fleet's live legs"},
