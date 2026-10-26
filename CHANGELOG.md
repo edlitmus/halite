@@ -27,7 +27,23 @@ The 1 MiB limit on a bridged grain provider was checked after the node had
 read everything the provider wrote: a provider that wrote without end was
 held in memory until its timeout (320 MiB for a 64 MiB flood, measured).
 It is now stopped when it passes the limit. `cmd.run` and every other
-command are unchanged. DIVERGENCE 5.435.
+command are unchanged. DIVERGENCE 5.437.
+
+
+### `ps.pkill` and `ps.kill_pid` refuse to signal init or the node itself
+
+A pattern a little too wide, `.*` or the name of the node's own agent,
+signalled PID 1 and the process running the call. They are now refused,
+whole, naming which; `force: True` signals them anyway. Signal 0 is
+unaffected, and sshd is not guarded. DIVERGENCE 5.436.
+
+
+### The API no longer sends a failing hub's error text to its callers
+
+When the hub failed or could not be reached, an API call answered 502
+with the hub's own words: a path on the hub's disk, or its address and
+port. It now says what was being attempted and that the API's log has the
+detail. A hub's refusal (403) is unchanged. DIVERGENCE 5.435.
 
 ### `keys operator create --admin` writes a policy the hub can read
 

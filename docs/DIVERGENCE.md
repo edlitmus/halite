@@ -33289,7 +33289,79 @@ create, were not run.
 
 
 
-### 5.435 A grain provider's output limit bounded nothing
+### 5.435 The API sent a failing hub's own words to its callers
+
+Issue 321, Low: `hubError` relays raw hub error text, including
+filesystem paths, to API clients, "against SPEC 22.3".
+
+**Measured.** `hubError` (`internal/api/execute.go`) logged the error and
+then answered 502 with `doing + ": " + err.Error()`. With a stub hub that
+fails the way a hub with a broken disk does, a caller of `GET /v1/jobs`
+received `calling jobs.list_jobs: /v1/runners: reading the job cache:
+open /var/lib/halite/hub/jobs/20260824: permission denied`. With the hub
+unreachable it received `Post "https://127.0.0.1:36567/v1/runners": dial
+tcp 127.0.0.1:36567: connect: connection refused`, which is the hub's
+address and port. Both tests failed on `main` for exactly those reasons.
+
+**What the audit got wrong.** SPEC 22.3 says "no stack trace in a
+response body". It does not say no path and no address, so the text did
+not break that sentence; it broke the intent of it, and the finding
+stands on the intent. The 403 branch is different and was left alone:
+`TestAHubRefusalIsReportedAsOne` pins that a hub's refusal is sent whole
+because it names whose grant was too narrow, and the caller can fix that.
+
+**The change.** The 502 branch answers `<what was being done> failed at
+the hub; the API's log has the detail`. The detail was already logged on
+the line above, with the principal, so nothing is lost to the person who
+can act on it.
+
+**Demonstrated.** `TestAHubFailureDoesNotReachTheCallerWithItsDetail` and
+`TestAnUnreachableHubDoesNotReachTheCallerWithItsAddress` fail on `main`
+as quoted above and pass with the change; `TestAHubRefusalIsReportedAsOne`
+passes before and after, which is what it is for. The `internal/api`
+package passes.
+
+**Not done.** `hook.go` answers 502 with `res.Error` from the hub's own
+reply, and was not looked at for the same text. Other handlers that
+return `err.Error()` from their own code (not from the hub) were not
+audited. Not run against a live hub.
+### 5.436 `ps.pkill` and `ps.kill_pid` would signal init and the node itself
+
+Issue 321, Low: `ps.pkill` has no guard against signalling PID 1, the node
+agent, or sshd.
+
+**Measured.** With a scripted procps table (init, the test process
+standing for the node, and an nginx worker) and a recording runner,
+`ps.pkill` with the pattern `.*` ran `kill -TERM` for all three, and
+`ps.kill_pid` for pid 1 and for the node's own pid each ran `kill -TERM`.
+That is Salt's behaviour too. The tests failed on `main` for those
+reasons.
+
+**The change.** A call that would signal PID 1 or the process running the
+function is refused, whole, before `kill` is asked for anything, and the
+refusal names which and says `force: True` is how to mean it. `force` is a
+new optional argument on both functions; Salt has no such argument, so a
+tree written for Salt is unchanged until it names init. Signal `0` is
+exempt, since it signals nothing. The check sits before the test-mode
+branch, so a dry run refuses too.
+
+**Not done: sshd.** The audit also named sshd. It is not guarded: a guard
+by name would refuse `pkill -HUP sshd`, the usual way to reload it, and
+whether to guard by name is a policy decision that init and the node's own
+pid are not. Say if it should be.
+
+**Demonstrated.** `TestPkillRefusesInitAndTheNodeItself`,
+`TestKillPIDRefusesInitAndTheNodeItself` and
+`TestForceSignalsAProtectedProcess` fail on `main` and pass with the
+change; `TestPkillStillSignalsAnOrdinaryProcess` and
+`TestSignalZeroIsNotRefusedForInit` pass before and after. The live `ps`
+tests (`HALITE_SYSTEM_LIVE=1`, Ubuntu 24.04, no root) pass with it.
+
+**Not verified.** The new tests skip on FreeBSD, whose `ps` is read as
+libxo JSON; the rule is not platform-specific but the fixture is. No real
+init or node process was signalled. As root, another account's process is
+still the case nothing has run.
+### 5.437 A grain provider's output limit bounded nothing
 
 Issue 321, Low: `maxProviderOutput` does not bound memory as its comment
 claims; the runner has already buffered all stdout into an unbounded
@@ -33333,6 +33405,10 @@ and macOS.
 **Not verified.** The new tests are unix-only (`head`, `sh`) and were run
 on Ubuntu 24.04 only; the Windows runner's tree kill was not exercised
 with a limit. Nothing was run on a node with a real provider.
+
+
+
+
 
 ## 6. Everything else not started
 
