@@ -303,7 +303,7 @@ func netplanManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%s could not be created: %v", NetplanDir, err)), nil
 	}
 	if !unchanged {
-		if err := writeAtomic(path, []byte(want), 0o600); err != nil {
+		if err := writeConfigFile(path, []byte(want), 0o600); err != nil {
 			return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
 		}
 	} else if modeWrong {
@@ -392,7 +392,7 @@ func netplanManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 func netplanRestore(c *exec.Context, path string, prev []byte, existed bool, mode os.FileMode) string {
 	var put string
 	if existed {
-		if err := writeAtomic(path, prev, mode); err != nil {
+		if err := writeConfigFile(path, prev, mode); err != nil {
 			return fmt.Sprintf("The previous file could not be put back (%v), and %s is still on disk.", err, path)
 		}
 		put = "The previous file has been put back"

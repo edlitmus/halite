@@ -168,6 +168,30 @@ func closeAll(f *os.File, closers []io.Closer) {
 // same kind of limit on the wire.
 const maxArchiveEntry = 1 << 30
 
+// entryReader hands an archive entry to the writer a buffer at a time and
+// holds the two limits as the bytes pass: one entry past maxArchiveEntry,
+// and, when there is a budget, the archive past its total.
+type entryReader struct {
+	r      io.Reader
+	name   string
+	budget *archiveBudget
+	n      int64
+}
+
+func (e *entryReader) Read(p []byte) (int, error) {
+	n, err := e.r.Read(p)
+	e.n += int64(n)
+	if e.n > maxArchiveEntry {
+		return n, fmt.Errorf("archive entry %q exceeds the %d byte limit", e.name, maxArchiveEntry)
+	}
+	if e.budget != nil && n > 0 {
+		if berr := e.budget.add(e.name, int64(n)); berr != nil {
+			return n, berr
+		}
+	}
+	return n, err
+}
+
 // archiveLimits bound an archive as a whole. maxArchiveEntry bounds one
 // file, and a bomb is not one file: it is a quarter of a million empty
 // ones, or nine entries each just inside the limit. Neither number comes
@@ -350,18 +374,14 @@ func extractArchiveWith(src, dest string, overwrite, dryRun bool, limits archive
 			if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 				return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
 			}
-			data, err := io.ReadAll(io.LimitReader(tr, maxArchiveEntry+1))
-			if err != nil {
-				return written, err
-			}
-			if int64(len(data)) > maxArchiveEntry {
-				return written, fmt.Errorf("archive entry %q exceeds the %d byte limit", h.Name, maxArchiveEntry)
-			}
 			mode := os.FileMode(h.Mode).Perm()
 			if mode == 0 {
 				mode = 0o644
 			}
-			if err := atomicfile.WriteIn(root, rel, data, mode); err != nil {
+			// Streamed into the temporary file: an entry used to be read
+			// whole into memory first, up to maxArchiveEntry of it, so a
+			// one-gigabyte entry cost a gigabyte (issue 321).
+			if err := atomicfile.WriteInFrom(root, rel, &entryReader{r: tr, name: h.Name}, mode); err != nil {
 				return written, fmt.Errorf("archive entry %q: %w", h.Name, err)
 			}
 			written = append(written, h.Name)
@@ -497,28 +517,21 @@ func extractZip(src, absDest string, root *os.Root, overwrite, dryRun bool, budg
 		if err != nil {
 			return written, err
 		}
-		data, err := io.ReadAll(io.LimitReader(rc, maxArchiveEntry+1))
-		rc.Close()
-		if err != nil {
-			return written, err
-		}
-		if int64(len(data)) > maxArchiveEntry {
-			return written, fmt.Errorf("archive entry %q exceeds the %d byte limit", zf.Name, maxArchiveEntry)
-		}
-		// What was read, not what the entry declared: a zip's declared
-		// size is the archive's own claim and the read is bounded by
-		// maxArchiveEntry, not by it.
-		if err := budget.add(zf.Name, int64(len(data))); err != nil {
-			return written, err
-		}
 		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+			rc.Close()
 			return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)
 		}
 		mode := zf.Mode().Perm()
 		if mode == 0 {
 			mode = 0o644
 		}
-		if err := atomicfile.WriteIn(root, rel, data, mode); err != nil {
+		// What is read is what is counted, as it is read: a zip's declared
+		// size is the archive's own claim, so the budget follows the bytes
+		// that actually arrive, and a bomb is stopped at the limit rather
+		// than after the whole entry is in memory.
+		err = atomicfile.WriteInFrom(root, rel, &entryReader{r: rc, name: zf.Name, budget: budget}, mode)
+		rc.Close()
+		if err != nil {
 			return written, fmt.Errorf("archive entry %q: %w", zf.Name, err)
 		}
 		written = append(written, zf.Name)

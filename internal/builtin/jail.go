@@ -720,7 +720,20 @@ func jailRun(c *exec.Context, conf, verb, name string) error {
 		return err
 	}
 	if res.Code != 0 {
-		return fmt.Errorf("jail %s %s: %s", verb, name, firstLine(res.Stderr+res.Stdout))
+		msg := firstLine(res.Stderr + res.Stdout)
+		if strings.Contains(name, ".") {
+			// A dot in a jail's name is the hierarchy separator (jail(8):
+			// "a full name being an MIB-type string separated by dots"),
+			// so `jail -c web.example` looks for a jail "web" to be the
+			// parent. Measured on FreeBSD 15.1: jail.conf defining
+			// `web.example { ... }` is listed by `jail -e` with the dot
+			// intact, and starting it answers `jail: web.example: jail
+			// "web" not found`. The audit's guess was that the dot became
+			// an underscore; it does not.
+			msg += " (a dot in a jail's name separates it from its parent in jail(8), " +
+				"so a top-level jail cannot be named with one; rename it in jail.conf)"
+		}
+		return fmt.Errorf("jail %s %s: %s", verb, name, msg)
 	}
 	return nil
 }

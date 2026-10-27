@@ -1,9 +1,11 @@
 package atomicfile
 
 import (
+	"bytes"
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,6 +40,16 @@ import (
 // The rename replaces whatever is at name, including a symlink, rather
 // than writing through it: rename(2) does not follow its last component.
 func WriteIn(root *os.Root, name string, data []byte, mode os.FileMode) error {
+	return WriteInFrom(root, name, bytes.NewReader(data), mode)
+}
+
+// WriteInFrom is WriteIn for contents that are read as they are written,
+// so that an archive entry of a gigabyte costs a buffer and not a
+// gigabyte. A read error, or a reader that gives up part way, removes the
+// temporary file and leaves whatever was at name alone -- the same
+// guarantee as a failed write, and the reason this reads into the
+// temporary file rather than into memory first.
+func WriteInFrom(root *os.Root, name string, r io.Reader, mode os.FileMode) error {
 	dir, base := filepath.Dir(name), filepath.Base(name)
 	var (
 		tmp     *os.File
@@ -59,7 +71,7 @@ func WriteIn(root *os.Root, name string, data []byte, mode os.FileMode) error {
 		tmp.Close()
 		return fmt.Errorf("writing %s: %w", name, err)
 	}
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := io.Copy(tmp, r); err != nil {
 		tmp.Close()
 		return fmt.Errorf("writing %s: %w", name, err)
 	}

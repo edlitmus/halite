@@ -3,6 +3,7 @@ package builtin
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -222,4 +223,32 @@ func netplanArgs(apply bool) *value.Map {
 		)),
 		"apply", apply,
 	)
+}
+
+// The state read the file through a link and wrote it by renaming over
+// it, as the other configuration modules did before 5.446.
+func TestANetplanFileThatIsALinkIsEditedThroughIt(t *testing.T) {
+	skipOffPlatform(t, debianOnly)
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links need privilege on Windows")
+	}
+	dir, c := netplanFixture(t, false)
+	real := filepath.Join(t.TempDir(), "real.yaml")
+	if err := os.WriteFile(real, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "01-halite.yaml")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	res, err := New().States.Call(c, "netplan.managed", netplanArgs(false))
+	if err != nil || !res.Succeeded() {
+		t.Fatalf("the state: %v, %+v", err, res)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link was replaced: %v, %v", fi, err)
+	}
+	if b, _ := os.ReadFile(real); string(b) == "old\n" {
+		t.Error("the file the link points to was not written")
+	}
 }

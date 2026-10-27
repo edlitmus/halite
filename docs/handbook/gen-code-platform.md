@@ -255,6 +255,7 @@ which are the two sides of one race. MoveFileEx has to open the destination for 
 - `Rename` (func): Rename is rename(2), which is atomic and does not care who has the destination open.
 - `Write` (func): Write replaces path with data, atomically as far as any reader is concerned: a reader sees either the old contents or the new, never a partial write and never an empty file.
 - `WriteIn` (func): WriteIn is Write for a name inside an os.Root: every component of name is resolved by the root, so a symlink anywhere on the way -- one that was already on disk, or one an archive created a moment earlier -- is followed only while it stays inside the root, and refused when it leaves.
+- `WriteInFrom` (func): WriteInFrom is WriteIn for contents that are read as they are written, so that an archive entry of a gigabyte costs a buffer and not a gigabyte.
 - `WritePrepared` (func): WritePrepared is Write with one step inserted between the finished temporary file and the rename.
 
 ## `internal/fileperm`
