@@ -1,0 +1,8 @@
+# Lines below here are managed by Salt, do not edit
+MAILTO=ops@example.org
+# first job SALT_CRON_IDENTIFIER:myjob
+5 * * * * /usr/bin/true one
+# SALT_CRON_IDENTIFIER:/usr/bin/true two
+10 * * * * /usr/bin/true two
+# SALT_CRON_IDENTIFIER:boot
+@reboot /usr/bin/true three
