@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `cmd.run` has an output limit; LDAP role mapping is case-exact (breaking)
+
+`cmd.run`, `cmd.run_all`, `cmd.shell` and `cmd.script` now stop a command that
+writes more than 64 MiB to stdout or stderr and fail the call, instead of
+buffering it in the node. `max_output` (bytes) raises the limit and `0`
+removes it (DIVERGENCE 5.450). **Breaking:** the LDAP role map is matched
+against the directory's group names exactly, as Salt matches eauth groups; a
+map written `PLATFORM` no longer grants a role for a group the directory calls
+`platform` (5.449); nothing logs that, so check the map after upgrading.
+
 ### `dnf_module` says so on dnf5; the authselect live tests accept `local`
 
 On a node whose `dnf` is dnf5 (Fedora 41 and later) `dnf_module` now refuses,

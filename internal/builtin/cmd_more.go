@@ -39,6 +39,7 @@ func registerCmdMore(r *Registries) {
 					opt("env", signature.Map, nil, "Environment, replacing the clean default."),
 					opt("stdin", signature.String, "", "Text written to the process."),
 					opt("timeout", signature.Duration, nil, "How long it may run."),
+					cmdMaxOutputParam,
 					opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
 				},
 				Mutates: true,
@@ -57,7 +58,7 @@ func registerCmdMore(r *Registries) {
 					return nil, err
 				}
 				c.Logf("warn", "cmd.shell is running through a shell: %s", cmd.String())
-				res, err := c.Run(cmd)
+				res, err := runCapped(c, cmd)
 				if err != nil {
 					return nil, err
 				}
@@ -78,6 +79,7 @@ func registerCmdMore(r *Registries) {
 					opt("umask", signature.String, "", "Umask for the child."),
 					opt("env", signature.Map, nil, "Environment, replacing the clean default."),
 					opt("timeout", signature.Duration, nil, "How long it may run."),
+					cmdMaxOutputParam,
 					opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
 				},
 				Mutates: true,
@@ -106,6 +108,7 @@ func registerCmdMore(r *Registries) {
 					opt("cwd", signature.Path, "", "Working directory."),
 					opt("runas", signature.String, "", "Account to run as."),
 					opt("timeout", signature.Duration, nil, "How long it may run."),
+					cmdMaxOutputParam,
 				},
 				Mutates: true,
 				// cmd.script under another name: the same runScript, only
@@ -136,6 +139,7 @@ func registerCmdMore(r *Registries) {
 					opt("cwd", signature.Path, "", "Working directory."),
 					opt("runas", signature.String, "", "Account to run as."),
 					opt("timeout", signature.Duration, nil, "How long it may run."),
+					cmdMaxOutputParam,
 				},
 				Mutates: true,
 				// The caller supplies the code and the interpreter. There is
@@ -169,7 +173,7 @@ func registerCmdMore(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
-				res, err := c.Run(cmd)
+				res, err := runCapped(c, cmd)
 				if err != nil {
 					return nil, err
 				}
@@ -234,6 +238,9 @@ func buildShellCommand(c *exec.Context, args *value.Map, line string) (exec.Comm
 			return exec.Command{}, fmt.Errorf("timeout: %w", err)
 		}
 		cmd.Timeout = d
+	}
+	if err := applyMaxOutput(&cmd, args); err != nil {
+		return exec.Command{}, err
 	}
 	return cmd, nil
 }
@@ -355,7 +362,7 @@ func runScript(c *exec.Context, args *value.Map, wantOutput bool) (any, error) {
 		return nil, err
 	}
 	cmd.IgnoreExitCode = true
-	res, err := c.Run(cmd)
+	res, err := runCapped(c, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -462,6 +469,7 @@ func registerCmdScriptState(r *Registries) {
 				opt("umask", signature.String, "", "Umask for the child."),
 				opt("env", signature.Map, nil, "Environment, replacing the clean default."),
 				opt("timeout", signature.Duration, nil, "How long it may run."),
+				cmdMaxOutputParam,
 				opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
 			},
 			Mutates:       true,

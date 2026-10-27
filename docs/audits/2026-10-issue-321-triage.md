@@ -190,7 +190,7 @@ passing by the PRs above; that has not been looked for.
 | `file.touch` documents updating times and changes nothing | #453 | 5.405; the execution function only; the state still only ensures existence; Salt's `atime`/`mtime` not added; FreeBSD not run |
 | `git.latest` passes URL, rev and remote with no `--` | #459 | 5.414; not neutralised for `remote` on an existing checkout: the command ran; `git.remote_get` left; FreeBSD git not run |
 | OIDC: redirects to `http://` followed, discovery endpoints not required https, discovery re-run while the IdP is down | #448 | 5.419; the token endpoint redirect sent the client secret to plaintext, measured; fake issuer only, no real IdP; no single-flight for concurrent discoveries |
-| LDAP `ParseFilter` finds `>=`/`<=`/`~=` in the value | #451 | 5.420; fake directory only; the `MapRoles` case-fold half left, as `cn` is `caseIgnoreMatch` in RFC 4519 |
+| LDAP `ParseFilter` finds `>=`/`<=`/`~=` in the value | #451 | 5.420; fake directory only; the `MapRoles` case-fold half was left then, and is made exact by 5.449 |
 | Actions pinned by mutable tag; VM checkouts keep the token | #449 | 5.421; the token reached the VM as a `_temp` credentials file rsync copies, not in `.git/config`; fleet.yml ran on the PR, release.yml not run |
 | `job.ID.Valid()` accepts non-digits | #452 | 5.422; only the `+` in the fraction got through `time.Parse`; no stored jid checked |
 | CI's `cancel-in-progress` cancels pushes to main | #450 | 5.423; at least eleven main commits had no result, #446's among them; pushes now grouped by commit; no push to main run under it yet |
@@ -215,6 +215,10 @@ passing by the PRs above; that has not been looked for.
 | `atomicfile.Write` replaces a symlinked target, constants for mode and label | #489 | 5.446; the symlink half for the system config modules; mode, SELinux label and netplan not done; Ubuntu temp dir only |
 | `dnf_module` reports "no streams" on dnf5 (L-pkg-31); `TestLiveDnfModuleReadersAgree` under-gated | #490 | 5.447; dnf5 refused by name from `dnf --version`; dnf5 and dnf 4 outputs captured from containers; no module state driven on dnf5; no Fedora fleet leg |
 | `TestLiveAuthselectReads` expects `minimal`; docs say `minimal` | #490 | 5.448; the profile is chosen from `authselect list`; list and list-features captured on fedora:42; the tests were not run on Fedora |
+| `cmd.run` buffers all output in memory (`maxProviderOutput` for everything else) | PRNUM | 5.450; 64 MiB default, `max_output` overrides, 0 removes it; the operator's decision; Ubuntu only |
+| LDAP `MapRoles` folds group-name case | PRNUM | 5.449; exact match, as Salt's eauth; breaking for an estate relying on the fold; fake directory only |
+| `ps.pkill` does not guard sshd | decision | 5.451; Salt guards nothing, so sshd stays unguarded; the PID 1 and self guard (5.436) stays |
+| M-47 firewall lockout | decision | 5.451; do nothing, as Salt; `-w 30` (#440) is the only change |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 The two live tests with wrong assumptions on current distributions (1.1)
@@ -222,8 +226,7 @@ are fixed in #490 (5.447, 5.448).
 
 **Ledger and comment statements found to be false** (the table below).
 Each was to be corrected with the fix that touches it. The row for
-M-15 (DIVERGENCE 1.9) belongs to a finding not fixed, so that statement
-is presumably still false. The H-02 row's comments (declarations are
+M-15 (DIVERGENCE 1.9) is corrected by 5.342 (#382), which the section now carries. The H-02 row's comments (declarations are
 signed) are true since #372, and `Runtime.Add`'s says when it became so. The others were not re-checked
 for this update.
 

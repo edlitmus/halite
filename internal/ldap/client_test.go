@@ -361,10 +361,10 @@ func TestAnUnmappedGroupGrantsNothing(t *testing.T) {
 	}
 }
 
-// Group names are case-insensitive in Active Directory, and an estate
-// writing `Platform` should not be defeated by a directory answering
-// `platform`.
-func TestGroupNamesMatchCaseInsensitively(t *testing.T) {
+// The match is exact, as Salt's eauth is. A key that differs from the
+// directory's answer only in case grants nothing; the key in the case the
+// directory used grants the role.
+func TestGroupNamesMatchExactlyAsSaltDoes(t *testing.T) {
 	d := directoryWith(t)
 	c := clientFor(t, d, func(cfg *Config) {
 		cfg.RoleMap = map[string][]string{"PLATFORM": {"operator"}}
@@ -373,8 +373,25 @@ func TestGroupNamesMatchCaseInsensitively(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(identity.Roles) != 0 {
+		t.Errorf("a key differing only in case granted %v from %v", identity.Roles, identity.Groups)
+	}
+	var exact string
+	for _, g := range identity.Groups {
+		if strings.EqualFold(g, "platform") {
+			exact = g
+		}
+	}
+	if exact == "" {
+		t.Fatalf("the directory returned no platform group: %v", identity.Groups)
+	}
+	c = clientFor(t, d, func(cfg *Config) { cfg.RoleMap = map[string][]string{exact: {"operator"}} })
+	identity, err = c.Authenticate("ed", "hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(identity.Roles) != 1 {
-		t.Errorf("case-insensitive matching granted %v from %v", identity.Roles, identity.Groups)
+		t.Errorf("the exact key granted %v from %v", identity.Roles, identity.Groups)
 	}
 }
 
