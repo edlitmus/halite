@@ -139,6 +139,21 @@ func dnfPresent(c *exec.Context) error {
 	if c.Which("dnf") == "" {
 		return errors.New("this node has no `dnf`; module streams exist only on EL8 and later")
 	}
+	// dnf5 -- Fedora 41 and later -- dropped modularity, and its `dnf
+	// module list` exits 0 with nothing on stdout, which this module read
+	// as "no such streams" (issue 321, L-pkg-31): a state asking for a
+	// stream would be told there was none rather than that the node
+	// cannot have one. The first line of `dnf --version` is how the two
+	// are told apart; "dnf5 version 5.2.18.0" is what Fedora 42's prints
+	// (captured 2026-10-27 on fedora:42), where EL8 and EL9's dnf 4
+	// prints a bare version number. A version that cannot be read is not
+	// taken for dnf5: the module goes on as it did.
+	res, err := c.Run(exec.Command{Argv: []string{"dnf", "--version"}, IgnoreExitCode: true})
+	if err == nil && strings.HasPrefix(strings.TrimSpace(res.Stdout), "dnf5") {
+		return errors.New("this node's dnf is dnf5, which has no module streams (Fedora 41 dropped " +
+			"modularity); `dnf module list` answers with nothing there, so a stream cannot be " +
+			"reported or changed")
+	}
 	return nil
 }
 

@@ -25,6 +25,12 @@ func requireDnf(t *testing.T) *exec.Context {
 	if c.Which("dnf") == "" {
 		t.Skip("this host has no dnf")
 	}
+	// dnf5 has no module streams, and `dnf module list` answers with
+	// nothing; this test used to fail there for a reason that was the
+	// host's, not the module's (issue 321, section 1).
+	if err := dnfPresent(c); err != nil {
+		t.Skip(err.Error())
+	}
 	return c
 }
 

@@ -33673,6 +33673,58 @@ the previous code (the link was replaced; the target still held `a=1`).
 constants and the old file's label is not kept, which is the rest of the
 audit's bullet and is not done. Netplan's writes are not covered.
 
+### 5.447 `dnf_module` on dnf5 answered "no streams" instead of "no modules"
+
+Issue 321, L-pkg-31 and the second of the two wrong live tests: dnf5 has no
+module streams, and the module checked only that a `dnf` binary existed.
+
+**Measured.** On a `fedora:42` container (dnf5 5.2.18.0, captured 2026-10-27
+from a scratch CI run), `dnf -q module list` and `dnf module list` both exit 0
+with nothing on stdout. The module read that as a table with no rows, so
+`dnf_module.list` returned an empty list and a state asking for a stream was
+told there was none, not that the node cannot have one. EL8 and EL9's dnf 4
+print a bare version (`4.14.0`, `4.7.0`) as the first line of `dnf --version`
+and dnf5 prints `dnf5 version 5.2.18.0`.
+
+**The change.** `dnfPresent` runs `dnf --version` and refuses, naming dnf5, when
+the output starts with `dnf5`. A version that cannot be read is not taken for
+dnf5, so a node where the probe fails behaves as before. The live test's
+`requireDnf` skips on that refusal, so `TestLiveDnfModuleReadersAgree` no longer
+fails on a host whose problem is that it is Fedora.
+
+**Demonstrated.** `TestDnf5IsSaidToHaveNoModulesRatherThanNoStreams` failed on
+the previous code (list answered with no error) and passes now, using the
+captured dnf5 output as a fixture; `TestDnf4IsNotTakenForDnf5` holds the two
+captured dnf 4 outputs, which are not refused. The two existing tests that
+counted commands now ignore the probe.
+
+**Not verified.** No module state was driven on dnf5, and the fleet has no
+Fedora leg, so the live test's new skip was not run on one. Only the first four
+lines of each `--version` were captured, so a dnf5 build whose first line
+differs would not be recognised; none is known. The probe adds one command to
+every `dnf_module` call.
+
+### 5.448 `authselect`'s stock profile is `local` on current Fedora
+
+Issue 321, section 1, and its Info bullet about the docs.
+
+**Measured.** On `fedora:42`, `authselect list` prints `local nis sssd winbind`;
+there is no `minimal`, and `authselect list-features minimal` exits 2 with
+"Unable to get profile information". `local` lists `with-silent-lastlog` and
+`with-pwhistory`, the two features the live tests use. The module itself passes
+a profile name through and was not wrong; the live tests demanded `minimal` and
+the parameter help said "such as minimal or sssd".
+
+**The change.** Both live tests take the profile from `authselect.list`:
+`minimal` where listed, `local` otherwise. The parameter help now says
+"`minimal` (named `local` on Fedora 42)".
+
+**Not verified.** The live tests were not run on Fedora, so `select local`,
+the feature toggles and the restore were not driven there; only `list` and
+`list-features` were captured. On the fleet's EL8 and EL9 legs `minimal` is
+still chosen, which is the path that already ran. The version at which
+authselect renamed the profile is not known and is not claimed.
+
 
 ## 6. Everything else not started
 

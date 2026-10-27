@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `dnf_module` says so on dnf5; the authselect live tests accept `local`
+
+On a node whose `dnf` is dnf5 (Fedora 41 and later) `dnf_module` now refuses,
+naming dnf5, instead of listing no streams (DIVERGENCE 5.447). The authselect
+parameter help and the two live tests no longer assume the local-users profile
+is called `minimal`, which Fedora 42 calls `local` (5.448).
+
 ### TLS certificates are re-read at most every 5 seconds; `range()` is bounded per render; config modules edit through a symlink
 
 `certreload` no longer reads the certificate and key on every handshake

@@ -1135,7 +1135,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"more than one repository (both hosts had AppStream alone) and third-party modular " +
 		"repos; `switch_to` with packages installed, which is where it does real work; globs " +
 		"in a spec; RHEL proper, CentOS Stream and Fedora (whose dnf5 dropped modularity " +
-		"entirely -- nothing here has run dnf5). " +
+		"entirely). dnf5 is recognised, not exercised: its `dnf --version` (first line `dnf5 version`) and " +
+		"an empty, exit-0 `module list` were captured from a fedora:42 container on 2026-10-27, and the " +
+		"module now refuses there in words; no module state was driven on dnf5. " +
 		"`fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) now re-run this on every change to the module, nightly, and on demand, each in a container of the real distribution on an ubuntu-24.04 runner -- rocky9 (dnf 4.14.0) and alma8 (dnf 4.7.0), reading and writing modules.d and " +
 		"installing redis from the distributions' real AppStream mirrors; all three tests passed on both on " +
 		"Fleet run 36778900509"},
