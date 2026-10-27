@@ -213,12 +213,12 @@ passing by the PRs above; that has not been looked for.
 | `certreload.Load` re-reads both files on every handshake | #489 | 5.444; throttled to once per 5 s; contents still compared; no flood measured |
 | `range()` materialises 10M items with no byte budget | #489 | 5.445; worse than the audit said (24 bytes an item, and the limit was per call: 30 calls allocated 6.2 GB); now counted across the render; only `range()` charged |
 | `atomicfile.Write` replaces a symlinked target, constants for mode and label | #489 | 5.446; the symlink half for the system config modules; mode, SELinux label and netplan not done; Ubuntu temp dir only |
-| `dnf_module` reports "no streams" on dnf5 (L-pkg-31); `TestLiveDnfModuleReadersAgree` under-gated | PRNUM | 5.447; dnf5 refused by name from `dnf --version`; dnf5 and dnf 4 outputs captured from containers; no module state driven on dnf5; no Fedora fleet leg |
-| `TestLiveAuthselectReads` expects `minimal`; docs say `minimal` | PRNUM | 5.448; the profile is chosen from `authselect list`; list and list-features captured on fedora:42; the tests were not run on Fedora |
+| `dnf_module` reports "no streams" on dnf5 (L-pkg-31); `TestLiveDnfModuleReadersAgree` under-gated | #490 | 5.447; dnf5 refused by name from `dnf --version`; dnf5 and dnf 4 outputs captured from containers; no module state driven on dnf5; no Fedora fleet leg |
+| `TestLiveAuthselectReads` expects `minimal`; docs say `minimal` | #490 | 5.448; the profile is chosen from `authselect list`; list and list-features captured on fedora:42; the tests were not run on Fedora |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 The two live tests with wrong assumptions on current distributions (1.1)
-are fixed in PRNUM (5.447, 5.448).
+are fixed in #490 (5.447, 5.448).
 
 **Ledger and comment statements found to be false** (the table below).
 Each was to be corrected with the fix that touches it. The row for
