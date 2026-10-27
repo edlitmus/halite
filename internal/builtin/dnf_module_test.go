@@ -298,10 +298,30 @@ type dnfScriptedRunner struct {
 
 func (r *dnfScriptedRunner) Run(ctx context.Context, cmd exec.Command) (exec.Result, error) {
 	res, err := r.RecordingRunner.Run(ctx, cmd)
+	if isDnfVersionProbe(cmd) {
+		return res, err
+	}
 	if res.Code == 0 && r.file != "" {
 		_ = os.WriteFile(filepath.Join(r.dir, r.file), []byte(r.text), 0o644)
 	}
 	return res, err
+}
+
+// isDnfVersionProbe is the `dnf --version` that dnfPresent runs to tell
+// dnf5 from dnf 4. It is not one of the commands these tests are about.
+func isDnfVersionProbe(cmd exec.Command) bool {
+	return len(cmd.Argv) == 2 && cmd.Argv[0] == "dnf" && cmd.Argv[1] == "--version"
+}
+
+// dnfRan is what ran, without the version probe.
+func dnfRan(r *exec.RecordingRunner) []exec.Command {
+	var out []exec.Command
+	for _, cmd := range r.Ran {
+		if !isDnfVersionProbe(cmd) {
+			out = append(out, cmd)
+		}
+	}
+	return out
 }
 
 func TestDnfModuleEnableReportsTheChangeModulesDotDRecorded(t *testing.T) {
@@ -312,7 +332,7 @@ func TestDnfModuleEnableReportsTheChangeModulesDotDRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := runner.RanCommands(); len(got) != 1 || got[0] != "dnf -y -q module enable nginx:1.24" {
+	if got := dnfRan(&runner.RecordingRunner); len(got) != 1 || got[0].String() != "dnf -y -q module enable nginx:1.24" {
 		t.Errorf("ran %v", got)
 	}
 	changes, _ := out.(*value.Map).Get("changes")
@@ -357,10 +377,11 @@ func TestDnfModuleCommandsAskForTheirExitCode(t *testing.T) {
 	c := &exec.Context{Runner: runner, Lookup: func(n string) string { return "/usr/bin/" + n }}
 	_, _ = dnfModuleMutate(c, "reset", []string{"nginx"})
 	_, _ = dnfModuleListFn(c, value.NewMap(0))
-	if len(runner.Ran) != 2 {
+	ran := dnfRan(&runner.RecordingRunner)
+	if len(ran) != 2 {
 		t.Fatalf("ran %v", runner.RanCommands())
 	}
-	for _, cmd := range runner.Ran {
+	for _, cmd := range ran {
 		if !cmd.IgnoreExitCode {
 			t.Errorf("`%s` reads its exit code without asking for it", cmd.String())
 		}
@@ -383,5 +404,44 @@ func TestDnfModuleRefusesWithoutDnf(t *testing.T) {
 	if _, err := dnfModuleMutate(c, "enable", []string{"nginx:1.24"}); err == nil ||
 		!strings.Contains(err.Error(), "dnf") {
 		t.Fatalf("err = %v, want it to name dnf", err)
+	}
+}
+
+// dnf5 -- Fedora 41 and later -- has no module streams, and its `dnf
+// module list` exits 0 with nothing, which read as "no such streams". The
+// version outputs are captured from fedora:42, rockylinux:9 and
+// almalinux:8 containers on 2026-10-27 (the first four lines of each).
+func TestDnf5IsSaidToHaveNoModulesRatherThanNoStreams(t *testing.T) {
+	runner := &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"dnf --version": {Stdout: dnfFixture(t, "fedora42", "version.stdout")},
+	}}
+	c := &exec.Context{Runner: runner, Lookup: func(n string) string { return "/usr/bin/" + n }}
+
+	_, err := dnfModuleListFn(c, value.NewMap(0))
+	if err == nil || !strings.Contains(err.Error(), "dnf5") {
+		t.Fatalf("list on dnf5: err = %v, want it to say dnf5 has no module streams", err)
+	}
+	if _, err := dnfModuleMutate(c, "enable", []string{"nginx:1.24"}); err == nil || !strings.Contains(err.Error(), "dnf5") {
+		t.Errorf("enable on dnf5: err = %v, want the same refusal", err)
+	}
+	for _, cmd := range runner.RanCommands() {
+		if strings.Contains(cmd, "module") {
+			t.Errorf("a module command ran on dnf5: %s", cmd)
+		}
+	}
+}
+
+func TestDnf4IsNotTakenForDnf5(t *testing.T) {
+	for _, host := range []string{"rocky9", "alma8"} {
+		runner := &exec.RecordingRunner{Responses: map[string]exec.Result{
+			"dnf --version": {Stdout: dnfFixture(t, host, "version.stdout")},
+		}}
+		c := &exec.Context{Runner: runner, Lookup: func(n string) string { return "/usr/bin/" + n }}
+		if _, err := dnfModuleListFn(c, value.NewMap(0)); err != nil {
+			t.Errorf("%s: list refused: %v", host, err)
+		}
+		if got := dnfRan(runner); len(got) != 1 || !strings.Contains(got[0].String(), "module list") {
+			t.Errorf("%s: ran %v, want the module list", host, got)
+		}
 	}
 }

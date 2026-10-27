@@ -78,15 +78,16 @@ func TestLiveAuthselectReads(t *testing.T) {
 		id, _ := p.(*value.Map).GetString("id")
 		ids = append(ids, id.(string))
 	}
-	if !slices.Contains(ids, "minimal") {
-		t.Fatalf("authselect.list = %v, want the stock minimal profile among them", ids)
+	stock := authselectStockProfile(ids)
+	if stock == "" {
+		t.Fatalf("authselect.list = %v, want the stock local-users profile (`minimal` or `local`) among them", ids)
 	}
-	features, err := r.Exec.Call(c, "authselect.list_features", value.MapOf("profile", "minimal"))
+	features, err := r.Exec.Call(c, "authselect.list_features", value.MapOf("profile", stock))
 	if err != nil {
 		t.Fatalf("authselect.list_features: %v", err)
 	}
 	if !slices.Contains(anyStrings(features), "with-silent-lastlog") {
-		t.Errorf("minimal's features = %v, want with-silent-lastlog among them", features)
+		t.Errorf("%s's features = %v, want with-silent-lastlog among them", stock, features)
 	}
 	if _, err := r.Exec.Call(c, "authselect.list_features", value.MapOf("profile", "no-such-profile")); err == nil {
 		t.Error("list_features of a profile that does not exist was not refused")
@@ -123,6 +124,20 @@ func TestLiveAuthselectSelectAndFeatures(t *testing.T) {
 	}
 	r, c := authselectHere(t)
 
+	listed, err := r.Exec.Call(c, "authselect.list", value.NewMap(0))
+	if err != nil {
+		t.Fatalf("authselect.list: %v", err)
+	}
+	var ids []string
+	for _, p := range listed.([]any) {
+		id, _ := p.(*value.Map).GetString("id")
+		ids = append(ids, id.(string))
+	}
+	stock := authselectStockProfile(ids)
+	if stock == "" {
+		t.Fatalf("authselect.list = %v, want the stock local-users profile (`minimal` or `local`) among them", ids)
+	}
+
 	before := authselectLiveCall(t, r, c, "authselect.current", nil)
 	wasConfigured, _ := before.Get("configured")
 	startProfile, _ := before.GetString("profile")
@@ -146,7 +161,7 @@ func TestLiveAuthselectSelectAndFeatures(t *testing.T) {
 		}
 		// Without force the real tool refuses, because the files are
 		// not its own, and the refusal must reach the caller.
-		_, err := r.Exec.Call(c, "authselect.select", value.MapOf("profile", "minimal"))
+		_, err := r.Exec.Call(c, "authselect.select", value.MapOf("profile", stock))
 		if err == nil || !strings.Contains(err.Error(), "force: true") {
 			t.Fatalf("select on an unconfigured node without force: err = %v, want the refusal naming force", err)
 		}
@@ -154,12 +169,12 @@ func TestLiveAuthselectSelectAndFeatures(t *testing.T) {
 			t.Fatalf("a refused select changed the node: %v", still)
 		}
 		authselectChanged(t, authselectLiveCall(t, r, c, "authselect.select",
-			value.MapOf("profile", "minimal", "force", true)), true, "select minimal --force on an unconfigured node")
+			value.MapOf("profile", stock, "force", true)), true, "select "+stock+" --force on an unconfigured node")
 		defer t.Log("this node was unconfigured and is left on the minimal profile; " +
 			"authselect.backup_list names the backup of what was there")
 	}
 
-	minimal := value.MapOf("profile", "minimal")
+	minimal := value.MapOf("profile", stock)
 	authselectLiveCall(t, r, c, "authselect.select", minimal)
 
 	// A repeat select must not run authselect at all: the tool rewrites
@@ -183,9 +198,9 @@ func TestLiveAuthselectSelectAndFeatures(t *testing.T) {
 	authselectChanged(t, authselectLiveCall(t, r, c, "authselect.enable_feature", enable), true, "enable with-silent-lastlog")
 	authselectChanged(t, authselectLiveCall(t, r, c, "authselect.enable_feature", enable), false, "enable it again")
 
-	both := value.MapOf("profile", "minimal", "features", []any{"with-pwhistory", "with-silent-lastlog"})
+	both := value.MapOf("profile", stock, "features", []any{"with-pwhistory", "with-silent-lastlog"})
 	authselectChanged(t, authselectLiveCall(t, r, c, "authselect.select", both), true, "select with two features")
-	reordered := value.MapOf("profile", "minimal", "features", []any{"with-silent-lastlog", "with-pwhistory"})
+	reordered := value.MapOf("profile", stock, "features", []any{"with-silent-lastlog", "with-pwhistory"})
 	authselectChanged(t, authselectLiveCall(t, r, c, "authselect.select", reordered), false,
 		"the same two features in the other order")
 
@@ -212,4 +227,18 @@ func TestLiveAuthselectSelectAndFeatures(t *testing.T) {
 func mustGet(m *value.Map, key string) any {
 	v, _ := m.Get(key)
 	return v
+}
+
+// authselectStockProfile is the profile for local users only, which is
+// `minimal` on authselect 1.2 (EL8 and EL9) and `local` where it was
+// renamed (Fedora 42: its `authselect list` has no `minimal`, and
+// `list-features minimal` exits 2, both captured 2026-10-27). It is ""
+// when neither is listed.
+func authselectStockProfile(ids []string) string {
+	for _, name := range []string{"minimal", "local"} {
+		if slices.Contains(ids, name) {
+			return name
+		}
+	}
+	return ""
 }

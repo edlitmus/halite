@@ -400,7 +400,7 @@ authselect.list_features(profile: string)
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `profile` | string | *required* | The profile, such as minimal or sssd. |
+| `profile` | string | *required* | The profile, such as sssd, or `minimal` (named `local` on Fedora 42). |
 
 *SPEC section 15.3*
 
@@ -414,7 +414,7 @@ authselect.select(profile: string, features: list, force: bool = false)
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `profile` | string | *required* | The profile, such as minimal or sssd. |
+| `profile` | string | *required* | The profile, such as sssd, or `minimal` (named `local` on Fedora 42). |
 | `features` | list | — | The features to enable, such as with-mkhomedir. Any not listed are turned off. |
 | `force` | bool | `false` | Overwrite files authselect did not write, or that were edited since. authselect backs them up under /var/lib/authselect/backups first. |
 

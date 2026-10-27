@@ -120,7 +120,7 @@ func registerAuthselect(r *Registries) {
 				Module: "authselect", Function: "list_features",
 				Doc: "List the optional features a profile offers.",
 				Params: []signature.Param{
-					req("profile", signature.String, "The profile, such as minimal or sssd."),
+					req("profile", signature.String, "The profile, such as sssd, or `minimal` (named `local` on Fedora 42)."),
 				},
 				TestMode:  signature.TestNotApplicable,
 				Platforms: linuxOnly,
@@ -144,7 +144,7 @@ func registerAuthselect(r *Registries) {
 				Doc: "Select a profile and exactly this set of features. Does nothing when that is " +
 					"already the selection and the generated files are unmodified.",
 				Params: []signature.Param{
-					req("profile", signature.String, "The profile, such as minimal or sssd."),
+					req("profile", signature.String, "The profile, such as sssd, or `minimal` (named `local` on Fedora 42)."),
 					opt("features", signature.List, nil,
 						"The features to enable, such as with-mkhomedir. Any not listed are turned off."),
 					opt("force", signature.Bool, false,
