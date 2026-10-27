@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -38,9 +37,6 @@ import (
 func TestLiveSSHFilesForAnotherAccount(t *testing.T) {
 	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" {
 		t.Skip("set HALITE_SYSTEM_LIVE=1 on a machine you can throw away; this creates an account")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("these are the unix modules")
 	}
 	if os.Geteuid() != 0 {
 		t.Skip("writing another account's files needs root; run it under sudo")
@@ -145,9 +141,6 @@ func TestLiveSSHFilesForAnotherAccount(t *testing.T) {
 func TestLiveSSHRefusesALinkedSSHDirectory(t *testing.T) {
 	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" {
 		t.Skip("set HALITE_SYSTEM_LIVE=1 on a machine you can throw away; this creates an account")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("these are the unix modules")
 	}
 	if os.Geteuid() != 0 {
 		t.Skip("writing another account's files needs root; run it under sudo")

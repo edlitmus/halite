@@ -180,7 +180,7 @@ func mineUpdate(c *exec.Context, args *value.Map) (any, error) {
 	}
 	// `mine_functions` refreshes a subset on its own schedule; without
 	// it, everything this node is configured to publish.
-	configured := map[string]MineSpec{}
+	var configured map[string]MineSpec
 	if raw, ok := args.Get("mine_functions"); ok && raw != nil {
 		configured, err = parseMineFunctions(raw)
 	} else {

@@ -139,10 +139,5 @@ func helperCommand(args ...string) Command {
 	return Command{Argv: helperArgv(args...)}
 }
 
-// helperEnv is the environment the helper needs on top of whatever the
-// test is checking. The test binary's own flag parsing needs nothing,
-// so this is empty; it exists so a reader does not go looking.
-func helperEnv() []string { return nil }
-
 var _ = strings.TrimSpace
 var _ = testing.Verbose

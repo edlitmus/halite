@@ -77,29 +77,6 @@ func winDACLProbe(path *string) func() (string, error) {
 	}
 }
 
-// winOwnerProbe reports a path's owner, asked of Windows rather than of the
-// module. `icacls` does not print the owner, so this is PowerShell's Get-Acl.
-func winOwnerProbe(path *string) func() (string, error) {
-	root := liveRoot()
-	return func() (string, error) {
-		if *path == "" {
-			return "no path", nil
-		}
-		res, err := root.Run(hexec.Command{
-			Argv: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command",
-				"(Get-Acl -LiteralPath '" + *path + "').Owner"},
-			IgnoreExitCode: true,
-		})
-		if err != nil {
-			return "", err
-		}
-		if res.Code != 0 {
-			return "owner unreadable: " + strings.TrimSpace(res.Stderr), nil
-		}
-		return strings.TrimSpace(res.Stdout), nil
-	}
-}
-
 // winDACLCases builds the four. They are appended to the in-process list, so
 // each needs its own temporary path and must clean it up itself: the harness
 // gives a case Setup and Cleanup and nothing else.

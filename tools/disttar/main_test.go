@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -353,5 +354,46 @@ func TestTheInstallChapterListsWhatTheArchiveHolds(t *testing.T) {
 	sort.Strings(listed)
 	if strings.Join(have, " ") != strings.Join(listed, " ") {
 		t.Errorf("chapter 30 lists %v; an archive holds %v", listed, have)
+	}
+}
+
+// A file under contrib that git does not track -- a scratch file from a
+// local build -- was packaged with the rest, into an archive that is then
+// signed. Where the directories are in a repository, only tracked files go.
+func TestAnUntrackedFileIsNotPackaged(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	o := fixture(t)
+	root := filepath.Dir(o.dist)
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "ex", "man", "rcd", "sd")
+	scratch := filepath.Join(root, "rcd", "halite_hub.orig")
+	if err := os.WriteFile(scratch, []byte("scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := sharedEntries(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawTracked bool
+	for _, e := range entries {
+		if strings.HasSuffix(e.path, "halite_hub.orig") {
+			t.Errorf("the untracked file was packaged as %s", e.path)
+		}
+		if strings.HasSuffix(e.path, "service/rc.d/halite_hub") {
+			sawTracked = true
+		}
+	}
+	if !sawTracked {
+		t.Error("the tracked rc script is missing")
 	}
 }

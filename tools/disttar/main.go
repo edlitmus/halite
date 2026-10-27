@@ -45,6 +45,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -205,8 +206,12 @@ func sharedEntries(o options) ([]entry, error) {
 	// tree, and it shipped as nothing at all while this read one level
 	// (DIVERGENCE 5.262). The manual pages do not, and a directory there
 	// is not one of them.
-	var files func(dir, into string, deep bool) (int, error)
-	files = func(dir, into string, deep bool) (int, error) {
+	//
+	// Where the directory is under version control, only the files git
+	// tracks are packaged (see trackedUnder). The handbook is built, not
+	// committed, so it is added without a list.
+	var files func(dir, into string, deep bool, tracked map[string]bool) (int, error)
+	files = func(dir, into string, deep bool, tracked map[string]bool) (int, error) {
 		listing, err := os.ReadDir(dir)
 		if err != nil {
 			return 0, err
@@ -215,7 +220,7 @@ func sharedEntries(o options) ([]entry, error) {
 		for _, f := range listing {
 			path := filepath.Join(dir, f.Name())
 			if f.IsDir() && deep {
-				got, err := files(path, into+"/"+f.Name(), deep)
+				got, err := files(path, into+"/"+f.Name(), deep, tracked)
 				if err != nil {
 					return 0, err
 				}
@@ -223,6 +228,10 @@ func sharedEntries(o options) ([]entry, error) {
 				continue
 			}
 			if !f.Type().IsRegular() {
+				continue
+			}
+			if tracked != nil && !tracked[path] {
+				fmt.Fprintf(os.Stderr, "disttar: not packaging %s: git does not track it\n", path)
 				continue
 			}
 			body, err := os.ReadFile(path)
@@ -235,7 +244,11 @@ func sharedEntries(o options) ([]entry, error) {
 		return n, nil
 	}
 	add := func(dir, into string, deep bool) error {
-		n, err := files(dir, into, deep)
+		var tracked map[string]bool
+		if dir != o.handbook {
+			tracked = trackedUnder(dir)
+		}
+		n, err := files(dir, into, deep, tracked)
 		if err != nil {
 			return err
 		}
@@ -278,8 +291,13 @@ func sharedEntries(o options) ([]entry, error) {
 		return nil, err
 	}
 	nman := 0
+	trackedPages := trackedUnder(man)
 	for _, f := range pages {
 		if !f.Type().IsRegular() {
+			continue
+		}
+		if trackedPages != nil && !trackedPages[filepath.Join(man, f.Name())] {
+			fmt.Fprintf(os.Stderr, "disttar: not packaging %s: git does not track it\n", filepath.Join(man, f.Name()))
 			continue
 		}
 		sec := strings.TrimPrefix(filepath.Ext(f.Name()), ".")
@@ -315,6 +333,30 @@ func sharedEntries(o options) ([]entry, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// trackedUnder is the set of files git tracks under dir, as paths joined to
+// dir the way the walk joins them, or nil when git cannot say (no git, or
+// dir is not in a repository), in which case the caller packages what is
+// there, as it always did.
+//
+// It asks because the packager used to take whatever lay under
+// contrib/examples, rc.d and systemd: a scratch file left in one of them
+// by a local build ended up in an archive that is then signed and
+// attested. CI builds from a clean checkout and never met it; a release
+// built on a working machine could (issue 321, build section).
+func trackedUnder(dir string) map[string]bool {
+	out, err := exec.Command("git", "-C", dir, "ls-files", "-z").Output()
+	if err != nil {
+		return nil
+	}
+	set := map[string]bool{}
+	for _, rel := range strings.Split(string(out), "\x00") {
+		if rel != "" {
+			set[filepath.Join(dir, filepath.FromSlash(rel))] = true
+		}
+	}
+	return set
 }
 
 // dirsOf lists every directory the entries sit in, top first, each once,

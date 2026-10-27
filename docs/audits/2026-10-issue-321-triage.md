@@ -205,6 +205,9 @@ passing by the PRs above; that has not been looked for.
 | `ps.pkill` has no guard against signalling PID 1, the node agent or sshd | #483 | 5.436; init and the node's own pid refused, `force: True` overrides, signal 0 exempt; sshd deliberately not guarded; tests are a scripted procps table and skip on FreeBSD; nothing real was signalled |
 | `maxProviderOutput` does not bound memory; the runner buffers all stdout | #484 | 5.437; fixed for grain providers via a new `Command.MaxOutput`; `cmd.run` and every other command deliberately still unbounded, a decision not made; tests unix-only, run on Ubuntu only |
 | archive entries read whole into memory, no entry-count or total-size limit | #485 | 5.438; 250,000 entries and 8 GiB per archive added, numbers chosen not derived; the memory half was done in 5.454; not run beyond unit tests |
+| staticcheck results (1.3) | #493 | 5.456; dead code removed (121 hits to 108); the "bug-shaped" hits were harmless; `wintask` is used on Windows, so the audit's "unused XML reader" is true only off Windows; `ST1005` (61), deprecations and simplifications not done |
+| cron comments claim Salt's crontabs are recognised (found by `U1000`) | #493 | 5.455; they are not (different markers, nothing reads Salt's); comments corrected, adoption not implemented |
+| `disttar` packages untracked files | #493 | 5.457; only git-tracked files under the source directories; `make dist` not run; the `make dist` sums-`*` half not changed |
 | enrollment token only as `--token <secret>` on argv, and `halite_node_token` on a command line | #486 | 5.439; `--token-file` and `halite_node_token_file` added, `--token` kept with a stderr note; measured with `ps` on Linux; the rc script was only `sh -n` checked, not run on FreeBSD; not enrolled against a real hub |
 | `pkg.installed` reports Changed without verifying presence or the pin | #487 | 5.440; the pin half was M-33, this is presence; shown only against scripted managers, no real manager made to install nothing |
 | `hook.go` 502 relays the runner's error text to the webhook sender | #488 | 5.441; sender now gets a fixed sentence, detail logged; not run against a live hub |
@@ -223,7 +226,7 @@ passing by the PRs above; that has not been looked for.
 | `netplan.managed` replaces a symlinked file | #492 | 5.453; follows the link now; Ubuntu temp dir only |
 | archive entries read whole into memory | #492 | 5.454; streamed; 96 MiB entry allocated 236 MiB before; `TotalAlloc`, not peak RSS |
 
-**Also from section 1, not addressed.** The staticcheck results (1.3).
+**Also from section 1.** The staticcheck results (1.3) are taken in 5.456, in part.
 The two live tests with wrong assumptions on current distributions (1.1)
 are fixed in #490 (5.447, 5.448).
 

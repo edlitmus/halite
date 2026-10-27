@@ -621,13 +621,6 @@ func consultsTest(e ast.Expr, named map[string]*ast.FuncDecl, depth int) bool {
 	return consultsNode(e, named, depth, nil)
 }
 
-func consultsBody(fd *ast.FuncDecl, named map[string]*ast.FuncDecl, depth int) bool {
-	if fd.Body == nil {
-		return false
-	}
-	return consultsNode(fd.Body, named, depth, fd)
-}
-
 func consultsNode(root ast.Node, named map[string]*ast.FuncDecl, depth int, self *ast.FuncDecl) bool {
 	if depth > 4 {
 		return false
