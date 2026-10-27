@@ -33725,6 +33725,79 @@ the feature toggles and the restore were not driven there; only `list` and
 still chosen, which is the path that already ran. The version at which
 authselect renamed the profile is not known and is not claimed.
 
+### 5.449 LDAP role mapping matches group names exactly, as Salt does
+
+Issue 321, Low: `MapRoles` folded the case of group names in every directory.
+
+**Measured.** `RoleMap: {"PLATFORM": [operator]}` granted `operator` to a user
+whose directory group was `platform`. 5.420 left this alone, reasoning that
+`cn` is `caseIgnoreMatch` (RFC 4519), so folding matches the directory. It is
+looser than the directory only where groups are named by a case-exact
+attribute, but the group name is the string an attacker with any rights in
+the directory chooses, so the looseness is an authorisation question, not a
+spelling one.
+
+**The decision.** Match what Salt does. Salt's eauth compares
+`match.rstrip("%") in groups` (`salt/utils/minions.py`, `fill_auth_list`),
+and `salt/auth/ldap.py` returns group names unchanged (`entry["cn"][0]`,
+no `lower()`), both read from Salt's default branch on 2026-10-27. That is
+an exact, case-sensitive comparison.
+
+**The change.** `MapRoles` looks the group up by the exact string the
+directory returned. A map written in another case now grants nothing. Nothing reports it:
+`UnmappedGroups` exists but no caller uses it, so the first sign is a user
+who signs in with no role. This **breaks** an estate whose role map
+relied on the fold; it is in the CHANGELOG. The OIDC mapping was not looked at.
+
+**Demonstrated.** `TestGroupNamesMatchExactlyAsSaltDoes` failed on the previous
+code (the upper-case key granted the role) and passes now, with the exact key
+granting it.
+
+**Not verified.** Against a real directory, and the Salt reading is of its
+source, not a run of Salt.
+
+### 5.450 `cmd.run` and its siblings stop a command at 64 MiB of output
+
+Issue 321, Low: the runner buffers all of a command's stdout in memory.
+
+**Measured.** Before 5.437, a 64 MiB flood allocated 320 MiB in the node and
+waited out its timeout. 5.437 bounded grain providers and deliberately left
+`cmd.run` unbounded, as a decision for the operator.
+
+**The decision.** A large default with an override.
+
+**The change.** `cmd.run`, `cmd.run_all`, `cmd.shell`, `cmd.script` and their
+state forms take `max_output` (bytes, default 64 MiB, `0` for no limit). A
+command that writes more than that to stdout or to stderr is stopped, its
+process tree killed, and the call fails with "output exceeded the limit",
+followed by how to raise it. Salt has no such limit, so this departs from it;
+64 MiB is the template output limit's number, chosen and not derived.
+`cmd.run_bg` collects nothing and is not affected.
+
+**Demonstrated.** `TestCmdRunPastMaxOutputIsStoppedAndSaysHowToRaiseIt` fails
+with the ceiling disabled (it waits out the 60-second command) and passes in
+under a second with it; `TestCmdRunMaxOutputZeroAndTheDefault` shows 2 MiB
+passing with `0`, an ordinary command under the default, and a negative value
+refused.
+
+**Not verified.** Run on Ubuntu only (unix test, `OSRunner`); not on FreeBSD,
+macOS or Windows. A state that legitimately writes more than 64 MiB now fails
+until it sets `max_output`; none is known.
+
+### 5.451 Two issue 321 findings closed by decision, not by code
+
+**`ps.pkill` and sshd.** The audit noted that `ps.pkill` does not guard sshd.
+Decision: do what the latest Salt does. Salt's `ps.pkill` and `ps.kill_pid`
+(read from `salt/modules/ps.py` on its default branch, 2026-10-27) have no
+protection of any process, not even the agent's own or init. So halite's refusal of PID 1
+and itself (5.436) already goes further than Salt, and sshd stays unguarded
+like everything else. Nothing was changed.
+
+**M-47, firewall lockout.** Decision: do nothing. `iptables.set_policy INPUT
+DROP`, `ufw --force enable`, `pfctl -e` and firewalld `prune_*` plus a reload
+can still cut off SSH with no guard and no rollback, as in Salt. The only
+change is #440's `-w 30` on iptables (5.397).
+
 
 ## 6. Everything else not started
 

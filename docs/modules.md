@@ -653,7 +653,7 @@ chattr.remove(paths: list, attributes: string)
 Run a snippet of code with an interpreter, without leaving it on disk any longer than the run.
 
 ```
-cmd.exec_code(lang: string, code: string, args: list, cwd: path = , runas: string = , timeout: duration)
+cmd.exec_code(lang: string, code: string, args: list, cwd: path = , runas: string = , timeout: duration, max_output: int = 67108864)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -664,6 +664,7 @@ cmd.exec_code(lang: string, code: string, args: list, cwd: path = , runas: strin
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as. |
 | `timeout` | duration | — | How long it may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
@@ -686,7 +687,7 @@ cmd.has_exec(name: string)
 Run a command and return only its exit status.
 
 ```
-cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
+cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -700,6 +701,7 @@ cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = 
 | `env` | map | — | Environment for the child, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 | `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
@@ -710,7 +712,7 @@ cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = 
 Run a command and return its stdout.
 
 ```
-cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
+cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -724,6 +726,7 @@ cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , um
 | `env` | map | — | Environment for the child, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 | `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
@@ -734,7 +737,7 @@ cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , um
 Run a command and return its stdout, stderr, and exit status.
 
 ```
-cmd.run_all(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
+cmd.run_all(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -748,6 +751,7 @@ cmd.run_all(name: string, args: list, shell: any, cwd: path = , runas: string = 
 | `env` | map | — | Environment for the child, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 | `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
@@ -776,7 +780,7 @@ cmd.run_bg(name: string, args: list, cwd: path = , runas: string = , env: map)
 Run a command and return its stderr.
 
 ```
-cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
+cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -790,6 +794,7 @@ cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string
 | `env` | map | — | Environment for the child, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 | `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
@@ -800,7 +805,7 @@ cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string
 Run a command and return its stdout, whatever the exit status.
 
 ```
-cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
+cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -814,6 +819,7 @@ cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string
 | `env` | map | — | Environment for the child, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 | `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
@@ -824,7 +830,7 @@ cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string
 Fetch a script, run it, and remove it. The source may be a salt:// URI or a local path.
 
 ```
-cmd.script(source: string, args: list, shell: string = , cwd: path = , runas: string = , umask: string = , env: map, timeout: duration, ignore_retcode: bool = false)
+cmd.script(source: string, args: list, shell: string = , cwd: path = , runas: string = , umask: string = , env: map, timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -837,6 +843,7 @@ cmd.script(source: string, args: list, shell: string = , cwd: path = , runas: st
 | `umask` | string | `` | Umask for the child. |
 | `env` | map | — | Environment, replacing the clean default. |
 | `timeout` | duration | — | How long it may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
@@ -846,7 +853,7 @@ cmd.script(source: string, args: list, shell: string = , cwd: path = , runas: st
 Run a script and return only its exit code.
 
 ```
-cmd.script_retcode(source: string, args: list, shell: string = , cwd: path = , runas: string = , timeout: duration)
+cmd.script_retcode(source: string, args: list, shell: string = , cwd: path = , runas: string = , timeout: duration, max_output: int = 67108864)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -857,6 +864,7 @@ cmd.script_retcode(source: string, args: list, shell: string = , cwd: path = , r
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as. |
 | `timeout` | duration | — | How long it may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
@@ -865,7 +873,7 @@ cmd.script_retcode(source: string, args: list, shell: string = , cwd: path = , r
 Run a command line through a shell. The explicit form of `cmd.run` with shell set; prefer an argument vector, which cannot be reinterpreted by anything.
 
 ```
-cmd.shell(cmd: string, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.shell(cmd: string, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -877,6 +885,7 @@ cmd.shell(cmd: string, cwd: path = , runas: string = , umask: string = , env: ma
 | `env` | map | — | Environment, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long it may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
@@ -10363,7 +10372,7 @@ beacon.present(name: string, beacon_data: map, save: bool = true)
 Run a command. Use unless, onlyif, or creates to make it idempotent.
 
 ```
-cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
+cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10377,6 +10386,7 @@ cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , um
 | `env` | map | — | Environment for the child, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 | `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
@@ -10387,7 +10397,7 @@ cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , um
 Fetch a script, run it, and remove it. Use unless, onlyif, or creates to make it idempotent.
 
 ```
-cmd.script(name: string, source: string = , args: list, shell: string = , cwd: path = , runas: string = , umask: string = , env: map, timeout: duration, ignore_retcode: bool = false)
+cmd.script(name: string, source: string = , args: list, shell: string = , cwd: path = , runas: string = , umask: string = , env: map, timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10401,6 +10411,7 @@ cmd.script(name: string, source: string = , args: list, shell: string = , cwd: p
 | `umask` | string | `` | Umask for the child. |
 | `env` | map | — | Environment, replacing the clean default. |
 | `timeout` | duration | — | How long it may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.5*
@@ -10410,7 +10421,7 @@ cmd.script(name: string, source: string = , args: list, shell: string = , cwd: p
 Run a command only when a watch requisite fires. On its own it does nothing, which is the whole point: the reaction is the state.
 
 ```
-cmd.wait(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
+cmd.wait(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10424,6 +10435,7 @@ cmd.wait(name: string, args: list, shell: any, cwd: path = , runas: string = , u
 | `env` | map | — | Environment for the child, replacing the clean default. |
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
+| `max_output` | int | `67108864` | The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 | `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 

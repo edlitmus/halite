@@ -342,6 +342,15 @@ func groupName(dn string) string {
 // A group with no entry grants nothing, for the reason it does in
 // SPEC 23.4's mapping: the directory is not this estate's authorization
 // model, and a group appearing there must not become a role here.
+//
+// The match is exact, in the case the directory answered. It used to
+// fold case, on the ground that Active Directory does; but a directory
+// that tells `Admins` from `admins` then granted both the role written
+// for one, and the group name is the one string here that an attacker
+// with any rights in the directory can choose. Salt's eauth does the
+// same exact comparison (`match.rstrip("%") in groups`, no lower() or
+// casefold, checked in salt/utils/minions.py on 2026-10-27), so a tree
+// carried over from Salt keeps its meaning. DIVERGENCE 5.449.
 func MapRoles(groups []string, table map[string][]string) []string {
 	if len(table) == 0 {
 		return nil
@@ -350,17 +359,6 @@ func MapRoles(groups []string, table map[string][]string) []string {
 	for _, group := range groups {
 		for _, role := range table[group] {
 			seen[role] = true
-		}
-		// Group names are case-insensitive in Active Directory, and an
-		// estate writing `Platform-Team` in its map should not be
-		// defeated by a directory answering `platform-team`.
-		for name, roles := range table {
-			if !equalFold(name, group) {
-				continue
-			}
-			for _, role := range roles {
-				seen[role] = true
-			}
 		}
 	}
 	out := make([]string, 0, len(seen))

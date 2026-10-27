@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -38,6 +39,7 @@ func registerCmd(r *Registries) {
 			opt("env", signature.Map, nil, "Environment for the child, replacing the clean default."),
 			opt("stdin", signature.String, "", "Text written to the process."),
 			opt("timeout", signature.Duration, nil, "How long the command may run."),
+			cmdMaxOutputParam,
 			opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
 			opt("bg", signature.Bool, false,
 				"Start the command and do not wait for it. Nothing collects its output or its exit status."),
@@ -183,6 +185,9 @@ func registerCmd(r *Registries) {
 			}
 			cmd.Timeout = d
 		}
+		if err := applyMaxOutput(&cmd, args); err != nil {
+			return exec.Command{}, err
+		}
 		return cmd, nil
 	}
 
@@ -201,7 +206,7 @@ func registerCmd(r *Registries) {
 		if cmd.Shell {
 			c.Logf("warn", "cmd is running through a shell: %s", cmd.String())
 		}
-		res, err := c.Run(cmd)
+		res, err := runCapped(c, cmd)
 		if err != nil {
 			return nil, err
 		}
@@ -356,7 +361,7 @@ func registerCmd(r *Registries) {
 			c.Logf("warn", "cmd.run is running through a shell: %s", cmd.String())
 		}
 		start := time.Now()
-		res, err := c.Run(cmd)
+		res, err := runCapped(c, cmd)
 		if err != nil {
 			// The state's Name line already carries the command, and
 			// the error names it again, so this does not. Repeating it
@@ -436,3 +441,37 @@ func durationOf(v any) (time.Duration, error) { return value.ParseDuration(v) }
 // changes, an `unless` comparison, and anything a template did with the
 // output — invisibly, since a stray \r does not show in a log line.
 func trimOutput(s string) string { return strings.TrimRight(s, "\r\n") }
+
+// defaultCmdMaxOutput is the most a command's stdout and stderr may each
+// reach before the run is stopped and failed. The runner buffers what a
+// command writes in the node's memory until it exits, so a command that
+// writes without end filled the node: measured, a 64 MiB flood allocated
+// 320 MiB and waited out its timeout (issue 321, section 5; DIVERGENCE
+// 5.437 did this for grain providers). Salt has no limit, so this is a
+// departure from it, large enough that no ordinary state meets it --
+// `max_output` raises it, and 0 removes it.
+const defaultCmdMaxOutput = int64(64 << 20)
+
+// cmdMaxOutputParam is the argument that overrides it.
+var cmdMaxOutputParam = opt("max_output", signature.Int, defaultCmdMaxOutput,
+	"The most bytes of stdout, and of stderr, the command may write before it is stopped and the call fails. 0 means no limit.")
+
+// applyMaxOutput sets the command's output ceiling from `max_output`.
+func applyMaxOutput(cmd *exec.Command, args *value.Map) error {
+	n := states.Int(args, "max_output", defaultCmdMaxOutput)
+	if n < 0 {
+		return fmt.Errorf("max_output is %d; give a number of bytes, or 0 for no limit", n)
+	}
+	cmd.MaxOutput = n
+	return nil
+}
+
+// runCapped is c.Run with the output limit's failure told in the terms a
+// state can act on.
+func runCapped(c *exec.Context, cmd exec.Command) (exec.Result, error) {
+	res, err := c.Run(cmd)
+	if errors.Is(err, exec.ErrOutputLimit) {
+		err = fmt.Errorf("%w; raise the limit with `max_output` (bytes), or give 0 for none", err)
+	}
+	return res, err
+}
