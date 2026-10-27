@@ -210,6 +210,9 @@ passing by the PRs above; that has not been looked for.
 | `hook.go` 502 relays the runner's error text to the webhook sender | #488 | 5.441; sender now gets a fixed sentence, detail logged; not run against a live hub |
 | `merge.go` silently drops `dst` past depth 100 | #488 | 5.442; bound raised to 10000, so the drop moves rather than goes (`Merge` has no error to report it with); stack cost reasoned, not measured |
 | `snap.installed` compares the channel as text | #488 | 5.443; short forms (`stable`, `5.0`) normalised before comparing; the rule is from memory of snapd, not checked on a machine with snapd |
+| `certreload.Load` re-reads both files on every handshake | PRNUM | 5.444; throttled to once per 5 s; contents still compared; no flood measured |
+| `range()` materialises 10M items with no byte budget | PRNUM | 5.445; worse than the audit said (24 bytes an item, and the limit was per call: 30 calls allocated 6.2 GB); now counted across the render; only `range()` charged |
+| `atomicfile.Write` replaces a symlinked target, constants for mode and label | PRNUM | 5.446; the symlink half for the system config modules; mode, SELinux label and netplan not done; Ubuntu temp dir only |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 Two live tests whose assumptions are wrong on current distributions

@@ -49,6 +49,9 @@ func (f *fixture) writeNodePair(t *testing.T, nodeID, certPath, keyPath string) 
 // handler answers with the serial of the connection the request came in
 // on rather than anything the client says about itself.
 func TestARenewedClientCertificateIsPresentedOnANewConnection(t *testing.T) {
+	old := certreload.Interval
+	certreload.Interval = 0 // a renewal must show on the next connection
+	t.Cleanup(func() { certreload.Interval = old })
 	f := newFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%s %s", pki.SerialString(r.TLS.PeerCertificates[0]), r.RemoteAddr)
 	}))

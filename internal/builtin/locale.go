@@ -377,7 +377,7 @@ func localeGenDebian(c *exec.Context, name, charmap string) (bool, error) {
 		if fi, err := os.Stat(localeGenPath); err == nil {
 			mode = fi.Mode().Perm()
 		}
-		if err := writeAtomic(localeGenPath, []byte(updated), mode); err != nil {
+		if err := writeConfigFile(localeGenPath, []byte(updated), mode); err != nil {
 			return false, err
 		}
 	}

@@ -90,6 +90,27 @@ func followLink(path string) (string, error) {
 	return real, nil
 }
 
+// writeConfigFile is writeAtomic for the system configuration files the
+// modules own (/etc/hosts, hostname, sysctl, fstab, locale.gen, modprobe
+// and the package repositories): it writes through a symbolic link at
+// path rather than replacing it. Those modules read the file with
+// os.ReadFile, which follows a link, and wrote it with a rename, which
+// does not -- so on a host where /etc/hostname or /etc/hosts points into
+// a managed directory, the module read the real file, compared, and then
+// put a regular file where the link was, leaving the real one stale and
+// the link gone (issue 321, Low, `atomicfile.Write`). The file states had
+// this fixed as M-19; these are the same defect in the other writers.
+// The timezone module, which must replace /etc/localtime, does not come
+// through here. What is still not kept is the old file's mode, which
+// each caller sets, and its SELinux label.
+func writeConfigFile(path string, data []byte, mode os.FileMode) error {
+	real, err := followLink(path)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(real, data, mode)
+}
+
 // hashFile digests a file with the named algorithm.
 func hashFile(path, algorithm string) (string, error) {
 	h, err := newHash(algorithm)

@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### TLS certificates are re-read at most every 5 seconds; `range()` is bounded per render; config modules edit through a symlink
+
+`certreload` no longer reads the certificate and key on every handshake
+(DIVERGENCE 5.444). Lists built by `range()` are counted across a whole
+render, so thirty 9M-item ranges no longer allocate 6 GB (5.445). The hosts,
+hostname, sysctl, locale, fstab, modprobe, environment and repository modules
+write through a symbolic link at their path instead of replacing it (5.446).
+A template that builds more than 10M items with `range()` in all now fails.
+
 ### A webhook sender no longer receives the hub's error text; deep merges keep both sides; `snap.installed` accepts short channels
 
 The hook endpoint's 502 now says the hub declined the delivery and logs the

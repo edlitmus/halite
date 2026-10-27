@@ -293,5 +293,5 @@ func writeSysctlConf(path, text, name, want string) error {
 	if err := os.MkdirAll(dirOf(path), 0o755); err != nil {
 		return err
 	}
-	return writeAtomic(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	return writeConfigFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }

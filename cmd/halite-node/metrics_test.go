@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"github.com/edlitmus/halite/internal/certreload"
 	"io"
 	"math/big"
 	"net"
@@ -635,6 +636,9 @@ func moveInto(t *testing.T, src, dst string) {
 // Before, the listener served the pair it loaded at startup for as long as
 // the agent ran, so a renewal reached no scraper. DIVERGENCE 5.248.
 func TestARenewedMetricsCertificateIsServedWithoutARestart(t *testing.T) {
+	old := certreload.Interval
+	certreload.Interval = 0 // a renewal must show on the next connection
+	t.Cleanup(func() { certreload.Interval = old })
 	ca := newTestCA(t)
 	dir := t.TempDir()
 	certFile, keyFile := ca.serving(t, dir, "node")
@@ -675,6 +679,9 @@ func TestARenewedMetricsCertificateIsServedWithoutARestart(t *testing.T) {
 // many handshakes meet it, and a good pair written afterwards is picked up.
 // The key arriving before its certificate is the ordinary case of this.
 func TestAnUnloadableReplacementKeepsThePreviousCertificate(t *testing.T) {
+	old := certreload.Interval
+	certreload.Interval = 0 // a renewal must show on the next connection
+	t.Cleanup(func() { certreload.Interval = old })
 	ca := newTestCA(t)
 	dir := t.TempDir()
 	certFile, keyFile := ca.serving(t, dir, "node")

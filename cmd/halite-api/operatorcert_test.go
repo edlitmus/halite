@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/edlitmus/halite/internal/certreload"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,6 +45,9 @@ func issueOperatorFiles(t *testing.T, ca *pki.CA, files pki.Files, name string) 
 // restarted, and an API left running was refused by the hub once the
 // certificate it started with expired. DIVERGENCE 5.271.
 func TestAReissuedOperatorCertificateIsPresentedWithoutARestart(t *testing.T) {
+	old := certreload.Interval
+	certreload.Interval = 0 // a renewal must show on the next connection
+	t.Cleanup(func() { certreload.Interval = old })
 	ca, err := pki.NewCA(pki.ECDSAP256, "hub CA", time.Hour)
 	if err != nil {
 		t.Fatal(err)

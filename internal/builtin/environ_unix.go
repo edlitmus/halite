@@ -108,9 +108,9 @@ func (s etcEnvironStore) rewrite(key, val string, remove bool) error {
 		out = append(out, environLine(key, val))
 	}
 	if len(out) == 0 {
-		return writeAtomic(s.path, nil, 0o644)
+		return writeConfigFile(s.path, nil, 0o644)
 	}
-	return writeAtomic(s.path, []byte(strings.Join(out, "\n")+"\n"), 0o644)
+	return writeConfigFile(s.path, []byte(strings.Join(out, "\n")+"\n"), 0o644)
 }
 
 // parseEnvironLine reads one KEY=value line, in both the bare and the

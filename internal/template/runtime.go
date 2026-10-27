@@ -349,6 +349,15 @@ func (r *renderer) callValue(fn any, args []any, kwargs map[string]any, pos Pos)
 			}
 			return nil, &Error{Pos: pos, Msg: err.Error(), Cause: err}
 		}
+		// range() is the one global that builds a list from nothing, so
+		// it is the one charged here (see budget.materialise).
+		if f, ok := fn.(funcValue); ok && f.name == "range" {
+			if l, ok := v.([]any); ok {
+				if err := r.budget.materialise(int64(len(l)), f.name+"()", pos); err != nil {
+					return nil, err
+				}
+			}
+		}
 		return v, nil
 	case *LoopInfo:
 		if t.recurse == nil {

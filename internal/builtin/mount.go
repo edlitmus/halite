@@ -539,7 +539,7 @@ func setFstab(c *exec.Context, path string, want fstabEntry) (string, error) {
 	if result == "present" || c.Test {
 		return result, nil
 	}
-	if err := writeAtomic(path, []byte(strings.Join(out, "\n")+"\n"), 0o644); err != nil {
+	if err := writeConfigFile(path, []byte(strings.Join(out, "\n")+"\n"), 0o644); err != nil {
 		return "", err
 	}
 	return result, nil
@@ -572,7 +572,7 @@ func rmFstab(c *exec.Context, path, point, device string) (bool, error) {
 	if len(out) > 0 {
 		body = strings.Join(out, "\n") + "\n"
 	}
-	return true, writeAtomic(path, []byte(body), 0o644)
+	return true, writeConfigFile(path, []byte(body), 0o644)
 }
 
 // fstab escapes a space, a tab, a newline and a backslash as octal, and

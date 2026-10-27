@@ -98,6 +98,7 @@ func TestAReplacedPairIsServedFromTheNextConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.recheck = 0 // these tests look for a change on the very next connection
 	addr := serve(t, r)
 	if got := served(t, addr); got != first {
 		t.Fatalf("served %s, the file holds %s", got, first)
@@ -136,6 +137,7 @@ func TestAnUnloadablePairKeepsThePreviousOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.recheck = 0 // these tests look for a change on the very next connection
 	addr := serve(t, r)
 
 	staged := t.TempDir()
@@ -167,5 +169,32 @@ func TestAnUnusablePairAtStartupIsAnError(t *testing.T) {
 	certPath, keyPath := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
 	if _, err := New(certPath, keyPath, nil, nil); err == nil {
 		t.Error("missing files were accepted at startup")
+	}
+}
+
+// Every handshake used to read both files. Within the interval a changed
+// pair is not looked for; once it has passed, it is.
+func TestTheDiskIsNotReadOnEveryHandshake(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
+	writePair(t, certPath, keyPath)
+	clock := time.Now()
+	r, err := New(certPath, keyPath, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.now = func() time.Time { return clock }
+	r.checked = clock
+	before := r.Load()
+
+	writePair(t, certPath, keyPath)
+	for i := 0; i < 50; i++ {
+		if r.Load() != before {
+			t.Fatalf("handshake %d read the disk inside the interval", i)
+		}
+	}
+	clock = clock.Add(Interval + time.Second)
+	if r.Load() == before {
+		t.Error("the replaced pair was not picked up once the interval had passed")
 	}
 }
