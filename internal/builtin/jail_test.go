@@ -470,3 +470,28 @@ func hasRun(r *hexec.RecordingRunner, want string) bool {
 	}
 	return false
 }
+
+// Captured on beastie (FreeBSD 15.1-RELEASE-p6) on 2026-10-27: a jail.conf
+// defining `web.example { ... }` is listed by `jail -e` with its dot, and
+// `jail -c web.example` answers
+//
+//	jail: web.example: jail "web" not found
+//
+// because a dot in a jail name is the hierarchy separator. The state
+// reports jail's own words and now says why.
+func TestAJailNamedWithADotIsSaidToBeAHierarchyNotMissing(t *testing.T) {
+	c, _ := jailFixture(t, map[string]hexec.Result{
+		"jail -c web.example": {Code: 1, Stderr: "jail: web.example: jail \"web\" not found\n"},
+	})
+	err := jailRun(c, "", "-c", "web.example")
+	if err == nil || !strings.Contains(err.Error(), `jail "web" not found`) ||
+		!strings.Contains(err.Error(), "separates it from its parent") {
+		t.Fatalf("err = %v, want jail's own words and the reason for them", err)
+	}
+	c, _ = jailFixture(t, map[string]hexec.Result{
+		"jail -c plain": {Code: 1, Stderr: "jail: plain: something else\n"},
+	})
+	if err := jailRun(c, "", "-c", "plain"); err == nil || strings.Contains(err.Error(), "parent") {
+		t.Errorf("a name with no dot got the hierarchy hint: %v", err)
+	}
+}

@@ -33798,6 +33798,77 @@ DROP`, `ufw --force enable`, `pfctl -e` and firewalld `prune_*` plus a reload
 can still cut off SSH with no guard and no rollback, as in Salt. The only
 change is #440's `-w 30` on iptables (5.397).
 
+### 5.452 A dot in a jail's name is the hierarchy separator, not an underscore
+
+Issue 321, unverified item: "`.` in jail.conf names becomes `_` in the `name`
+parameter, which would make `jail.running` report 'not defined'." Marked
+"worth one FreeBSD check"; this is the check.
+
+**Measured** on beastie (FreeBSD 15.1-RELEASE-p6), 2026-10-27, with a
+throwaway jail.conf defining `web.example { ... }` and `plain { ... }` and
+nothing started that survived: `jail -f conf -e ,` lists
+`name=web.example` with the dot intact, so `jail.configured` and the
+"not defined" check are not affected. Starting it is what fails:
+`jail -c web.example` answers `jail: web.example: jail "web" not found`.
+jail(8): "Jail names reflect this hierarchy, with a full name being an
+MIB-type string separated by dots", so `web.example` is a child `example` of
+a jail `web`, and a top-level jail cannot be named that way. No underscore
+appears anywhere.
+
+**The change.** When `jail -c` or `-r` fails on a name containing a dot, the
+error keeps jail's own words and adds why: a dot separates a jail from its
+parent, so rename it in jail.conf.
+
+**Demonstrated.** `TestAJailNamedWithADotIsSaidToBeAHierarchyNotMissing`, with
+the stderr captured above as its fixture, failed on the previous code (the
+explanation was absent) and passes now; a name without a dot gets no hint.
+
+**Not verified.** A hierarchical jail started from inside another jail was
+not tried, so the hint says what the name cannot be, not what a legitimate
+`parent.child` needs. Only 15.1 was tried.
+
+### 5.453 `netplan.managed` replaced a symlink instead of editing it
+
+Issue 321, Low (5.446's remainder): netplan was left out of the
+config-module fix.
+
+**The change.** `netplan.managed` writes, and restores on a failed apply,
+through `writeConfigFile`, which follows a symlink at the path as the other
+configuration modules now do.
+
+**Demonstrated.** `TestANetplanFileThatIsALinkIsEditedThroughIt` failed on the
+previous code (the link was replaced by a file and its target not written)
+and passes now.
+
+**Not verified.** Ubuntu with a temporary directory only; no real
+`/etc/netplan` link, and `netplan generate`/`apply` were scripted. The mode
+and SELinux label half of the `atomicfile` finding is still open.
+
+### 5.454 Archive entries are streamed to disk, not held in memory
+
+Issue 321: 5.438 limited an archive's entries and bytes and left each entry
+read whole into memory, up to `maxArchiveEntry` (1 GiB).
+
+**Measured.** Extracting one 96 MiB entry allocated 236 MiB (tar and zip
+alike) before the change.
+
+**The change.** `atomicfile.WriteInFrom` copies a reader into the temporary
+file; `WriteIn` is now that over a byte slice. Tar and zip entries go through
+it with a reader that enforces `maxArchiveEntry` as the bytes pass and, for
+zip, adds each read to the archive's byte budget as it arrives, so a bomb is
+stopped at the limit and not after the entry is in memory. A reader that
+fails removes the temporary file and leaves the destination alone.
+
+**Demonstrated.** `TestATarEntryIsStreamedNotHeldInMemory` and
+`TestAZipEntryIsStreamedAndCountedAsItArrives` failed on the previous code
+(236 MiB allocated for 96 MiB) and pass now; the zip test also shows an
+extraction stopped by a byte limit below the entry leaves no half-written
+file. The existing archive, limits and atomicfile tests pass.
+
+**Not verified.** Allocation was measured with `TotalAlloc`, not peak
+resident size, and only for a 96 MiB entry on Ubuntu. Tar's up-front
+`h.Size` check is unchanged.
+
 
 ## 6. Everything else not started
 

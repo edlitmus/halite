@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Archives extract in a stream; netplan follows a link; a dotted jail name is explained
+
+Archive entries are written to disk as they are read instead of being held
+whole in memory (DIVERGENCE 5.454). `netplan.managed` edits through a symbolic
+link at its path (5.453). Starting a jail whose name contains a dot now says
+that a dot separates a jail from its parent, as FreeBSD's jail(8) defines it
+(5.452).
+
 ### `cmd.run` has an output limit; LDAP role mapping is case-exact (breaking)
 
 `cmd.run`, `cmd.run_all`, `cmd.shell` and `cmd.script` now stop a command that
