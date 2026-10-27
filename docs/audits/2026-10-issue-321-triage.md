@@ -219,9 +219,9 @@ passing by the PRs above; that has not been looked for.
 | LDAP `MapRoles` folds group-name case | #491 | 5.449; exact match, as Salt's eauth; breaking for an estate relying on the fold; fake directory only |
 | `ps.pkill` does not guard sshd | decision | 5.451; Salt guards nothing, so sshd stays unguarded; the PID 1 and self guard (5.436) stays |
 | M-47 firewall lockout | decision | 5.451; do nothing, as Salt; `-w 30` (#440) is the only change |
-| jail.conf: a dot in a name becomes an underscore (UNVERIFIED) | PRNUM | 5.452; **not true**: measured on beastie, FreeBSD 15.1, the dot is kept and means a child jail, so starting fails with jail's own message, which now has the reason added |
-| `netplan.managed` replaces a symlinked file | PRNUM | 5.453; follows the link now; Ubuntu temp dir only |
-| archive entries read whole into memory | PRNUM | 5.454; streamed; 96 MiB entry allocated 236 MiB before; `TotalAlloc`, not peak RSS |
+| jail.conf: a dot in a name becomes an underscore (UNVERIFIED) | #492 | 5.452; **not true**: measured on beastie, FreeBSD 15.1, the dot is kept and means a child jail, so starting fails with jail's own message, which now has the reason added |
+| `netplan.managed` replaces a symlinked file | #492 | 5.453; follows the link now; Ubuntu temp dir only |
+| archive entries read whole into memory | #492 | 5.454; streamed; 96 MiB entry allocated 236 MiB before; `TotalAlloc`, not peak RSS |
 
 **Also from section 1, not addressed.** The staticcheck results (1.3).
 The two live tests with wrong assumptions on current distributions (1.1)
