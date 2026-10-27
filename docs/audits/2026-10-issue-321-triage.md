@@ -215,8 +215,8 @@ passing by the PRs above; that has not been looked for.
 | `atomicfile.Write` replaces a symlinked target, constants for mode and label | #489 | 5.446; the symlink half for the system config modules; mode, SELinux label and netplan not done; Ubuntu temp dir only |
 | `dnf_module` reports "no streams" on dnf5 (L-pkg-31); `TestLiveDnfModuleReadersAgree` under-gated | #490 | 5.447; dnf5 refused by name from `dnf --version`; dnf5 and dnf 4 outputs captured from containers; no module state driven on dnf5; no Fedora fleet leg |
 | `TestLiveAuthselectReads` expects `minimal`; docs say `minimal` | #490 | 5.448; the profile is chosen from `authselect list`; list and list-features captured on fedora:42; the tests were not run on Fedora |
-| `cmd.run` buffers all output in memory (`maxProviderOutput` for everything else) | PRNUM | 5.450; 64 MiB default, `max_output` overrides, 0 removes it; the operator's decision; Ubuntu only |
-| LDAP `MapRoles` folds group-name case | PRNUM | 5.449; exact match, as Salt's eauth; breaking for an estate relying on the fold; fake directory only |
+| `cmd.run` buffers all output in memory (`maxProviderOutput` for everything else) | #491 | 5.450; 64 MiB default, `max_output` overrides, 0 removes it; the operator's decision; Ubuntu only |
+| LDAP `MapRoles` folds group-name case | #491 | 5.449; exact match, as Salt's eauth; breaking for an estate relying on the fold; fake directory only |
 | `ps.pkill` does not guard sshd | decision | 5.451; Salt guards nothing, so sshd stays unguarded; the PID 1 and self guard (5.436) stays |
 | M-47 firewall lockout | decision | 5.451; do nothing, as Salt; `-w 30` (#440) is the only change |
 
