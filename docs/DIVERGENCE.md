@@ -33945,6 +33945,44 @@ and passes now; the existing archive tests pass unchanged.
 dist` sums `*` of `dist/`) is not changed. A gitignored-but-wanted file would
 now be left out with a warning.
 
+### 5.458 The cron module adopts a crontab Salt manages
+
+5.455 found that the cron module's comments claimed to recognise Salt's
+crontabs and did not. Decision: adopt them.
+
+**Captured.** `crontab -l` after Salt's `cron.present` (with and without an
+identifier, with a comment, and with `special: @reboot`) and
+`cron.env_present`, under Salt 3006.28 and 3008.3 in the saltdiff image on
+2026-10-27. Both wrote the same bytes, now `testdata/cron/salt-3008.3.crontab`:
+a marker line `# Lines below here are managed by Salt, do not edit`, and above
+each job one comment line holding the comment and then
+`SALT_CRON_IDENTIFIER:<id>`, with the command itself as the identifier of a job
+given none.
+
+**Measured.** With the parser as it was, `cron.present` with `identifier:
+myjob` and the job's spec, command and comment against that crontab answered
+"The crontab entry for myjob was added" and wrote a second copy, and the same
+for `boot`. That is the duplication 5.455 reasoned from the code and did not
+run; it is now shown. A job without an identifier was already matched, because
+halite also takes the command as the identity of a job with none.
+
+**The change.** The parser skips Salt's marker as it skips halite's, and reads
+a comment line containing `SALT_CRON_IDENTIFIER:` as the comment before it and
+the identifier after it. The first change halite makes rewrites the adopted
+entries in its own spelling (`#HALITE_CRON_IDENTIFIER:`, the comment on its own
+line) and drops Salt's marker, so adoption runs one way: a Salt run against the
+file afterwards would not recognise them.
+
+**Demonstrated.** `TestASaltCrontabIsReadAsManaged`,
+`TestTheSameJobsDeclaredInATreeChangeNothing` and
+`TestAChangeRewritesSaltsEntriesInHalitesSpelling` failed with the two parser
+cases removed and pass with them. The existing cron tests pass.
+
+**Not verified.** `cron.env_present`'s variables are kept as lines halite did
+not write, not adopted as managed variables. Only the shapes captured above
+were tried; a Salt `cron.file`, or a crontab Salt wrote with `commented: True`,
+was not. Not run against a real crontab on a node.
+
 
 ## 6. Everything else not started
 

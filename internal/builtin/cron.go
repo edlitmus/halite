@@ -120,17 +120,34 @@ type cronEntry struct {
 
 // managedMarker is the comment halite writes above an entry it owns.
 //
-// It does not match Salt's, and a crontab Salt manages is not adopted:
-// Salt writes "# Lines below here are managed by Salt, do not edit" and
-// "# SALT_CRON_IDENTIFIER:<id>" (read from salt/modules/cron.py,
-// 2026-10-27), neither of which is read here, so a Salt-managed entry is
-// kept as a line halite did not write and the same job declared in a tree
-// is added beside it. This comment used to claim the opposite, and a
-// second constant for "what Salt writes" was declared and never used
-// (DIVERGENCE 5.455).
+// A crontab Salt manages is adopted: Salt's marker and identifier comments
+// (saltManagedMarker, saltIdentifier) are read as halite's own, so a tree
+// carried over from Salt finds the jobs Salt wrote and converges on them
+// rather than adding a copy beside each (DIVERGENCE 5.458). On the first
+// change halite rewrites them in its own spelling, so the adoption runs one
+// way.
 const managedMarker = "# Lines below here are managed by halite, do not edit"
 
 const identifierPrefix = "#HALITE_CRON_IDENTIFIER:"
+
+// saltManagedMarker and saltIdentifier are what Salt writes, captured from
+// `crontab -l` after `cron.present` and `cron.env_present` under Salt
+// 3006.28 and 3008.3 on 2026-10-27, byte-identical on both:
+//
+//	# Lines below here are managed by Salt, do not edit
+//	MAILTO=ops@example.org
+//	# first job SALT_CRON_IDENTIFIER:myjob
+//	5 * * * * /usr/bin/true one
+//	# SALT_CRON_IDENTIFIER:/usr/bin/true two
+//	10 * * * * /usr/bin/true two
+//
+// The comment and the identifier share one line, the comment first; a job
+// given no identifier carries its command as one, which is also what
+// halite takes as the identity of a job with none.
+const (
+	saltManagedMarker = "# Lines below here are managed by Salt, do not edit" // lexicon:allow
+	saltIdentifier    = "SALT_CRON_IDENTIFIER:"                               // lexicon:allow
+)
 
 // crontabIsTheCallers reports whether user names the account crontab(1)
 // will run as, which is the only case where `crontab` without -u means the
@@ -241,7 +258,12 @@ func parseCrontab(text string) []cronEntry {
 		case strings.HasPrefix(trimmed, identifierPrefix):
 			pendingID = strings.TrimSpace(strings.TrimPrefix(trimmed, identifierPrefix))
 			continue
-		case trimmed == managedMarker:
+		case trimmed == managedMarker, trimmed == saltManagedMarker:
+			continue
+		case strings.HasPrefix(trimmed, "#") && strings.Contains(trimmed, saltIdentifier):
+			before, after, _ := strings.Cut(strings.TrimPrefix(trimmed, "#"), saltIdentifier)
+			pendingID = strings.TrimSpace(after)
+			pendingComment = strings.TrimSpace(before)
 			continue
 		case strings.HasPrefix(trimmed, "#"):
 			if pendingID != "" {

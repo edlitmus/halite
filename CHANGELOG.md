@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `cron.present` adopts the jobs Salt wrote
+
+A crontab Salt manages is now read as managed: Salt's marker and
+`SALT_CRON_IDENTIFIER` comments are understood, so the same jobs declared in a
+tree change nothing instead of being added a second time. The first change
+rewrites them in halite's own markers (DIVERGENCE 5.458).
+
 ### The release packager skips untracked files; the cron module no longer claims to adopt Salt's crontabs
 
 `disttar` packages only the files git tracks under `contrib/examples`, `man`,
