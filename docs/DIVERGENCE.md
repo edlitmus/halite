@@ -33535,9 +33535,68 @@ the fleet's live legs and was not rerun by hand. A pinned package that is
 absent now reads "not installed" rather than "pinned to X and nothing is
 installed"; no tree is known to match on that text.
 
+### 5.441 The hook endpoint relayed the hub's error text to the sender
 
+Issue 321, Low: `hook.go`'s 502 path. 5.435 stopped `hubError` relaying the
+hub's words to an API client and noted that the hook's own 502 had not been
+looked at.
 
+**Measured.** When the runner answered `success: false` for the `event.send`
+a delivery makes, the hook wrote `res.Error` to the sender as the body. A
+stub runner declining with "open /var/lib/halite/bus/ring.db: disk I/O error"
+reached the webhook caller verbatim. The caller is whatever system the sender
+runs, with a secret that may be shared among several people.
 
+**The change.** The sender is told "the hub declined the delivery; the API's
+log has the detail", and the detail is logged with the hook's path. The
+refusals of `refuseHook` (the sender's own signature and replay errors) are
+unchanged: they say nothing about the hub.
+
+**Demonstrated.** `TestAHubDeclinedDeliveryDoesNotReachTheSenderWithItsDetail`
+failed on the previous code with the path in the body and passes now.
+
+**Not verified.** Not run against a live hub with a real bus failure.
+
+### 5.442 Merging two deep trees silently dropped one of them
+
+Issue 321, Low: `merge.go` stopped merging at depth 100 and returned `src`.
+
+**Measured.** The bound was justified as matching the parser's nesting limit,
+which holds for a tree read from a file but not for one a template or runner
+builds. Merging two maps nested 120 deep lost every key `dst` held at that
+depth, with no error: the result was `[from_src]` where it should be
+`[from_dst from_src]`.
+
+**The change.** The bound is 10000, a number chosen to be beyond anything an
+honest tree reaches and cheap in stack (a frame is a couple of hundred bytes).
+Past it `src` still replaces `dst`, so the drop is moved, not removed: `Merge`
+returns no error to report it with, and changing every caller's signature was
+not done.
+
+**Demonstrated.** `TestMergeKeepsBothSidesBelowTheParsersDepth` failed on the
+previous code and passes now.
+
+**Not verified.** The 10000 bound's stack cost was reasoned, not measured.
+
+### 5.443 `snap.installed` switched a short-form channel on every run
+
+Issue 321, Low: the channel was compared as text.
+
+**Measured.** `snap list` prints `latest/stable`; a tree may say `stable`,
+`edge` or `5.0`, which `snap install --channel=` accepts. With chromium
+tracking `latest/stable` and a tree saying `stable`, the state ran `snap
+refresh --channel=stable chromium` and reported "switched from latest/stable
+to stable", on every run.
+
+**The change.** Both sides are put in whole `track/risk[/branch]` form before
+comparing: one part is a risk if it is a risk name and a track otherwise, and
+two parts whose first is a risk name are a risk and a branch on `latest`.
+
+**Demonstrated.** `TestASnapAlreadyOnTheChannelNamedInShortFormIsLeftAlone`
+failed on the previous code with the refresh above and passes now.
+
+**Not verified.** The normalisation rule is from memory of snapd's channel
+parsing, not checked against snapd or run on a machine with a snap installed.
 
 ## 6. Everything else not started
 

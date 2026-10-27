@@ -347,6 +347,24 @@ func TestADeliveryThatFailedDownstreamCanBeRetried(t *testing.T) {
 	}
 }
 
+// A runner that declines the event speaks in the hub's words, which can
+// name a path or an address. The sender of a webhook is not the hub's
+// operator and must not receive them; the log must.
+func TestAHubDeclinedDeliveryDoesNotReachTheSenderWithItsDetail(t *testing.T) {
+	l, hub := hookLab(t, hmacHook)
+	hub.runnerDeclines = "open /var/lib/halite/bus/ring.db: disk I/O error"
+
+	body := `{"a":1}`
+	stamp := time.Now().UTC().Format(time.RFC3339)
+	res, out := l.deliver(t, "deploy", body, stamp, sign("s3cret", stamp, body))
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("a declined delivery answered %d: %s", res.StatusCode, out)
+	}
+	if strings.Contains(string(out), "/var/lib") || strings.Contains(string(out), "disk I/O") {
+		t.Errorf("the hub's detail reached the sender: %s", out)
+	}
+}
+
 // `auth: mtls` could never succeed -- the API asks no client for a
 // certificate -- and would have accepted any certificate if it had. It is
 // refused when the configuration loads, saying why. DIVERGENCE 5.327.
