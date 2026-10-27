@@ -514,3 +514,37 @@ func TestTheWholeChannelComesFromSnapInfo(t *testing.T) {
 		t.Errorf("a failed `snap info` produced %q rather than nothing", v)
 	}
 }
+
+// `snap list` prints `latest/stable`; a tree may say `stable`. Compared
+// as text they differed, so the state switched channel on every run.
+func TestSnapChannelShortFormsNameTheChannelsSnapListPrints(t *testing.T) {
+	for _, tc := range []struct {
+		listed, wanted string
+		same           bool
+	}{
+		{"latest/stable", "stable", true},
+		{"latest/edge", "edge", true},
+		{"5.0/stable", "5.0", true},
+		{"latest/edge/hotfix", "edge/hotfix", true},
+		{"latest/stable", "edge", false},
+		{"5.0/stable", "stable", false},
+		{"5.0/stable", "latest/stable", false},
+	} {
+		if got := snapSameChannel(tc.listed, tc.wanted); got != tc.same {
+			t.Errorf("snapSameChannel(%q, %q) = %v, want %v", tc.listed, tc.wanted, got, tc.same)
+		}
+	}
+}
+
+// The state, not only the comparison: chromium tracks latest/stable, the
+// tree says `stable`, and nothing should be refreshed.
+func TestASnapAlreadyOnTheChannelNamedInShortFormIsLeftAlone(t *testing.T) {
+	c, runner := snapFixture(t, snapListOutput)
+	res, err := snapInstalledState(c, value.MapOf("name", "chromium", "channel", "stable"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasChanges() || len(runner.Ran) != 1 {
+		t.Errorf("`stable` on a snap tracking latest/stable acted: %+v, ran %v", res, runner.RanCommands())
+	}
+}

@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A webhook sender no longer receives the hub's error text; deep merges keep both sides; `snap.installed` accepts short channels
+
+The hook endpoint's 502 now says the hub declined the delivery and logs the
+detail (DIVERGENCE 5.441). `Merge` no longer drops one side past 100 levels
+of nesting (5.442). `snap.installed` with `channel: stable` no longer
+refreshes a snap already on `latest/stable` on every run (5.443).
+
 ### `pkg.installed` fails when the package is still not there afterwards
 
 A package manager that exits 0 and installs nothing (a held, excluded or

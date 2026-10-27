@@ -30,6 +30,9 @@ type stubHub struct {
 	// runnerBreaks makes the hub fail the way a hub with a broken disk
 	// does: a 500 whose message is the operating system's, path and all.
 	runnerBreaks string
+	// runnerDeclines makes the runner itself answer success: false with
+	// a message, as event.send does when the bus will not take an event.
+	runnerDeclines string
 	// eventLines is what the hub's event stream answers with.
 	eventLines []string
 	// metricsBody is the hub's exposition; metricsFails makes the hub
@@ -81,6 +84,13 @@ func newStubHub(t *testing.T) *stubHub {
 			if h.runnerBreaks != "" {
 				writeJSON(w, http.StatusInternalServerError,
 					transport.Error{Error: h.runnerBreaks})
+				return
+			}
+			if h.runnerDeclines != "" {
+				writeJSON(w, http.StatusOK, transport.RunnerResponse{
+					JID: "20260824T101500.000001", Fun: "stub",
+					Success: false, Error: h.runnerDeclines,
+				})
 				return
 			}
 			if h.runnerFails != "" {

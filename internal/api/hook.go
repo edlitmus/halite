@@ -353,7 +353,14 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	}
 	if !res.Success {
 		s.m().hookDeliveries.With(path, "hub_refused").Inc()
-		writeError(w, http.StatusBadGateway, res.Error)
+		// Not res.Error. A hook is called by whatever system the sender
+		// runs, often with a secret shared among several people, and the
+		// runner's message can name a path or an address on the hub.
+		// The log has it, with the hook's path; the sender can only
+		// retry (issue 321, section 5; DIVERGENCE 5.435 did the same
+		// for the rest of the API).
+		s.warn("the hub declined a hook delivery", "hook", path, "error", res.Error)
+		writeError(w, http.StatusBadGateway, "the hub declined the delivery; the API's log has the detail")
 		return
 	}
 

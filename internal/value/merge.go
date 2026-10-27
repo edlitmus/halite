@@ -77,10 +77,19 @@ func Merge(dst, src any, opts MergeOpts) any {
 	return mergeValue(dst, src, opts, 0)
 }
 
+// maxMergeDepth is how far a merge recurses before it stops merging.
+const maxMergeDepth = 10000
+
 func mergeValue(dst, src any, opts MergeOpts, depth int) any {
-	// A pathological pillar tree should not blow the stack. 100 matches
-	// the alias depth limit the parser enforces.
-	if depth > 100 {
+	// A pathological tree should not blow the stack, and past this depth
+	// src replaces dst whole -- which silently drops whatever dst held
+	// there, so the bound has to be one that no honest tree reaches.
+	// It used to be 100, "to match the parser". The parser bounds what is
+	// read from a file, but a tree built by a template or a runner is not
+	// read from one, and a merge of two such trees 120 levels down lost
+	// every sibling key of dst without a word. A frame here is a couple
+	// of hundred bytes, so this costs a few megabytes of stack at worst.
+	if depth > maxMergeDepth {
 		return src
 	}
 	if opts.Strategy == Overwrite && depth == 0 {

@@ -608,7 +608,7 @@ func snapInstalledState(c *exec.Context, args *value.Map) (states.Result, error)
 
 	// Installed. The only thing left that a state can hold is the
 	// channel, and only if the tree named one.
-	if o.Channel == "" || current.Channel == o.Channel {
+	if o.Channel == "" || snapSameChannel(current.Channel, o.Channel) {
 		return states.True(fmt.Sprintf("%s is installed at %s, tracking %s.",
 			name, current.Version, current.Channel)), nil
 	}
@@ -622,6 +622,35 @@ func snapInstalledState(c *exec.Context, args *value.Map) (states.Result, error)
 	}
 	return states.Changed(fmt.Sprintf("%s switched from %s to %s.",
 		name, current.Channel, o.Channel), changes), nil
+}
+
+// snapSameChannel reports whether two spellings name one channel. `snap
+// list` always prints the whole `track/risk[/branch]`, but `snap install
+// --channel=` accepts the short forms, so a tree saying `stable` or
+// `edge` was compared as text against `latest/stable` and reported as
+// drifting, and switched, on every run. snapd's own rule, which this
+// follows, is: one part is a risk if it is a risk name and a track
+// otherwise (the other half defaulting to latest or stable); two parts
+// whose first is a risk name are a risk and a branch on latest.
+func snapSameChannel(a, b string) bool {
+	return snapChannelWhole(a) == snapChannelWhole(b)
+}
+
+func snapChannelWhole(ch string) string {
+	ch = strings.TrimSpace(ch)
+	risk := func(s string) bool {
+		return s == "stable" || s == "candidate" || s == "beta" || s == "edge"
+	}
+	parts := strings.Split(ch, "/")
+	switch {
+	case len(parts) == 1 && risk(parts[0]):
+		return "latest/" + ch
+	case len(parts) == 1 && ch != "":
+		return ch + "/stable"
+	case len(parts) == 2 && risk(parts[0]):
+		return "latest/" + ch
+	}
+	return ch
 }
 
 func snapWanted(o snapOptions) string {
