@@ -78,16 +78,3 @@ func netnsReexec(t *testing.T) {
 	t.Logf("ran inside a network namespace:\n%s", strings.TrimSpace(text))
 	t.SkipNow()
 }
-
-// netnsRun runs a command inside the namespace and fails the test on a
-// non-zero exit, which the setup steps need and the module's own Run
-// does not do.
-func netnsRun(t *testing.T, argv ...string) string {
-	t.Helper()
-	cmd := exec.Command(argv[0], argv[1:]...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("%s: %v\n%s", strings.Join(argv, " "), err, out)
-	}
-	return string(out)
-}

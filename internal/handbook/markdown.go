@@ -109,7 +109,6 @@ type renderer struct {
 	// pending is the example directive waiting for the next fence.
 	pending *Directive
 	err     error
-	line0   int
 }
 
 // Render converts one document.

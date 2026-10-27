@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The release packager skips untracked files; the cron module no longer claims to adopt Salt's crontabs
+
+`disttar` packages only the files git tracks under `contrib/examples`, `man`,
+`rc.d` and `systemd`, and names what it skips (DIVERGENCE 5.457). Comments in
+the cron module said a crontab Salt manages is recognised; it is not, and they
+now say so (5.455). Dead code staticcheck found was removed (5.456).
+
 ### Archives extract in a stream; netplan follows a link; a dotted jail name is explained
 
 Archive entries are written to disk as they are read instead of being held

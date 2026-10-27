@@ -8,7 +8,6 @@ import (
 	osexec "os/exec"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -52,9 +51,6 @@ import (
 func TestLiveCronForAnotherAccount(t *testing.T) {
 	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" {
 		t.Skip("set HALITE_SYSTEM_LIVE=1 on a machine you can throw away; this creates an account")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("cron is a unix module")
 	}
 	if os.Geteuid() != 0 {
 		t.Skip("writing another account's crontab needs root; run it under sudo")

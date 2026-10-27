@@ -309,7 +309,7 @@ func TestPFApplyIsIdempotent(t *testing.T) {
 		}
 	}
 
-	c, runner = pfFixture(t, map[string]exec.Result{
+	c, _ = pfFixture(t, map[string]exec.Result{
 		"pfctl -a halite -s rules": {Stdout: existing},
 	})
 	changed, err = pfp.Apply(c, firewallRule{Action: "allow", Port: "9999", Protocol: "tcp"}, true, false)

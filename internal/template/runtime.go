@@ -123,14 +123,12 @@ func newNamespace() *Namespace { return &Namespace{m: value.NewMap(4)} }
 
 // LoopInfo is the `loop` variable inside a for body.
 type LoopInfo struct {
-	Index0   int
-	Length   int
-	Depth0   int
-	Items    []any
-	cycleIdx int
-	prev     any
-	changed  any
-	hasPrev  bool
+	Index0  int
+	Length  int
+	Depth0  int
+	Items   []any
+	changed any
+	hasPrev bool
 	// recurse re-enters the loop body for `{% for %}...recursive`.
 	recurse func(items any) (string, error)
 }

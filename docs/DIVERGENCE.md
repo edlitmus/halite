@@ -33869,6 +33869,82 @@ file. The existing archive, limits and atomicfile tests pass.
 resident size, and only for a 96 MiB entry on Ubuntu. Tar's up-front
 `h.Size` check is unchanged.
 
+### 5.455 The cron module claimed to recognise Salt's crontabs, and does not
+
+Found by staticcheck's `U1000` on `legacyIdentifierPrefix`, an unused constant
+whose comment said "it is recognised on read so that a crontab a Salt run
+already manages is adopted rather than duplicated", beside a `managedMarker`
+comment saying its "spelling matches Salt's so that a crontab already managed
+by Salt is recognised rather than duplicated".
+
+**Measured.** Neither is true. Salt writes
+`# Lines below here are managed by Salt, do not edit` and an identifier comment
+`# SALT_CRON_IDENTIFIER:<id>` (read from `salt/modules/cron.py` on 2026-10-27);
+halite writes and reads `# Lines below here are managed by halite, do not edit`
+and `#HALITE_CRON_IDENTIFIER:`. The constant held a string that is not Salt's
+marker at all, and nothing read it. A crontab Salt manages is therefore parsed
+as lines halite did not write and preserved verbatim, and the same job declared
+in a tree is added beside it: the duplication the comments said was prevented.
+
+**The change.** The two comments say what is true and the unused constant is
+gone. Adoption itself is **not implemented**: it would mean reading Salt's two
+markers as halite's own, and nothing here has a captured Salt crontab to test
+it against.
+
+**Not verified.** That duplication happens: it follows from the code and from
+Salt's source, and no cron state was run against a Salt-written crontab. A
+migration from Salt that meets cron entries should treat them as unmanaged.
+
+### 5.456 staticcheck's findings, taken one by one (issue 321, 1.3)
+
+The audit called all 98 hits low value. Run again on `main` with staticcheck
+2026.2.2 under the repo's go1.27.3 (the first build, under an older Go,
+could not read the standard library): 121 hits.
+
+**Not what they looked like.** The bug-shaped ones were harmless. `SA4006`
+(`mine.go`, two tests) was a dead initialiser; `SA4032` (two live tests) was a
+Windows skip in files that build only on unix, so it could never run;
+`SA5012` and `SA5000` are tests that do the odd thing on purpose (a panic
+test). The audit said the Windows scheduled-task XML reader in
+`internal/wintask` is unused: on a Windows build staticcheck finds all of it
+used, and it is unused only off Windows, so it stays.
+
+**The change.** Removed what is dead on linux, darwin, freebsd and windows
+alike (`U1000` under each `GOOS`, intersected): `winOwnerProbe`, `netnsRun`,
+`consultsBody`, `helperEnv`, the `line0`, `cycleIdx` and `prev` fields and the
+cron constant of 5.455; the two dead Windows skips; the dead initialiser in
+`mine.go` and a dead assignment in `firewall_pf_test.go`. 121 hits became 108.
+
+**Not done.** The 61 `ST1005` error-string style hits, the `SA1019`
+deprecations (`go/parser.ParseDir`, `strings.Title`, `ecdsa.PublicKey.X/Y`),
+the `wintask` hits off Windows, `modeBits`, `blocks` and `firstLineOf` (dead on
+Windows only, so possibly used elsewhere and not checked) and the `S*`
+simplifications. No behaviour changed, so no new test; the existing suite and
+vet on linux, darwin, freebsd and windows pass.
+
+### 5.457 The release packager takes only files git tracks
+
+Issue 321, build section: `disttar` packaged whatever lay under
+`contrib/examples`, `rc.d` and `systemd`, so a scratch file in one of them on
+a working machine ended up in an archive that is then signed and attested.
+
+**Measured.** A `halite_hub.orig` beside the rc script was packaged as
+`service/rc.d/halite_hub.orig`. In the real repository every file on disk under
+those directories and `contrib/man` is tracked (54, 6, 4 and 8), so a clean
+checkout, which CI builds from, packages the same files as before.
+
+**The change.** Where `git ls-files` can answer for a source directory, only
+tracked files are packaged and each skipped file is named on stderr. The
+handbook, which is built and not committed, is added whole as before. Without
+git, or outside a repository, it packages what is there, as it did.
+
+**Demonstrated.** `TestAnUntrackedFileIsNotPackaged` failed on the previous code
+and passes now; the existing archive tests pass unchanged.
+
+**Not verified.** `make dist` was not run, and the audit's other half (`make
+dist` sums `*` of `dist/`) is not changed. A gitignored-but-wanted file would
+now be left out with a warning.
+
 
 ## 6. Everything else not started
 
