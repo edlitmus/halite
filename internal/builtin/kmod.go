@@ -690,7 +690,7 @@ func writeConf(path string, lines []string) error {
 	if len(lines) > 0 {
 		body = strings.Join(lines, "\n") + "\n"
 	}
-	return writeAtomic(path, []byte(body), 0o644)
+	return writeConfigFile(path, []byte(body), 0o644)
 }
 
 // ---- small set helpers, order preserved from the first argument ----

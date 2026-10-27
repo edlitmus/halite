@@ -33,9 +33,8 @@ import (
 // every node, about ninety days after the state first ran, unless the
 // agent happened to be restarted in between. DIVERGENCE 5.248.
 //
-// It reads both files on every handshake and compares them with the bytes
-// of the pair it last loaded; for a scrape target that is two reads of
-// about a kilobyte each interval. The contents and not the file's metadata,
+// It reads both files, at most once every few seconds, when a handshake
+// asks, and compares them with the bytes of the pair it last loaded. The contents and not the file's metadata,
 // because the metadata was not enough: the first version compared
 // identity, modification time and size, and on Windows a key replaced by
 // rename passed all three -- os.SameFile resolves a stored os.Stat result
@@ -57,7 +56,19 @@ type Reloader struct {
 	// is done with it: a server serves one, a client presents one.
 	what, verb string
 
+	// recheck is the least time between two looks at the disk. Every
+	// handshake used to read both files, under the lock, so a client
+	// that could reach the port -- no certificate needed to start a
+	// handshake -- made the listener do two file reads and serialise on
+	// the mutex for each attempt (issue 321). A renewal is written 30
+	// days before expiry, so noticing it a few seconds later costs
+	// nothing; noticing it on every handshake cost a read per attempt.
+	// now is the clock, so a test can step over the interval.
+	recheck time.Duration
+	now     func() time.Time
+
 	mu              sync.Mutex
+	checked         time.Time
 	pair            *tls.Certificate
 	certPEM, keyPEM []byte
 	lastProblem     string
@@ -78,7 +89,23 @@ func NewClient(certFile, keyFile string, info, warn func(string, ...any)) (*Relo
 		what: "client certificate", verb: "presented"})
 }
 
+// Interval is how often the files are looked at: often enough that a
+// renewal is served within seconds, rarely enough that a flood of
+// handshakes is not a flood of reads. It is a variable so that a test of
+// a caller, which reaches its Reloader only through the caller's own
+// startup code, can set it to zero and see a renewal on the next
+// connection; nothing in the program changes it.
+var Interval = 5 * time.Second
+
+func (r *Reloader) clock() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
 func load(r *Reloader) (*Reloader, error) {
+	r.recheck = Interval
 	certPEM, keyPEM, err := r.read()
 	if err != nil {
 		return nil, err
@@ -88,6 +115,7 @@ func load(r *Reloader) (*Reloader, error) {
 		return nil, err
 	}
 	r.pair, r.certPEM, r.keyPEM = &pair, certPEM, keyPEM
+	r.checked = r.clock()
 	return r, nil
 }
 
@@ -114,6 +142,11 @@ func (r *Reloader) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error
 func (r *Reloader) Load() *tls.Certificate {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if now := r.clock(); now.Sub(r.checked) < r.recheck {
+		return r.pair
+	} else {
+		r.checked = now
+	}
 	certPEM, keyPEM, err := r.read()
 	if err != nil {
 		r.problem(err)

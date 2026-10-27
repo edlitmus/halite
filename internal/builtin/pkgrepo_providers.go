@@ -186,7 +186,7 @@ func (p aptRepoProvider) Set(c *exec.Context, name string, config *value.Map) (b
 	// World-readable: a source list is not a secret, and apt runs as
 	// whatever account the operator's tooling uses. `signed-by` names a
 	// keyring rather than carrying a key, so nothing here is sensitive.
-	if err := writeAtomic(path, []byte(body), 0o644); err != nil {
+	if err := writeConfigFile(path, []byte(body), 0o644); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -377,7 +377,7 @@ func (p yumRepoProvider) Set(c *exec.Context, name string, config *value.Map) (b
 	if err := os.MkdirAll(p.dir(), 0o755); err != nil {
 		return false, fmt.Errorf("creating %s: %w", p.dir(), err)
 	}
-	if err := writeAtomic(path, []byte(body), 0o644); err != nil {
+	if err := writeConfigFile(path, []byte(body), 0o644); err != nil {
 		return false, err
 	}
 	return true, nil

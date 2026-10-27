@@ -311,7 +311,7 @@ func setHostname(c *exec.Context, want string) error {
 		// images.
 	}
 
-	if err := writeAtomic(EtcHostnamePath, []byte(want+"\n"), 0o644); err != nil {
+	if err := writeConfigFile(EtcHostnamePath, []byte(want+"\n"), 0o644); err != nil {
 		return fmt.Errorf("%s could not be written: %w", EtcHostnamePath, err)
 	}
 	if _, err := c.Run(exec.Command{Argv: []string{"hostname", want}}); err != nil {

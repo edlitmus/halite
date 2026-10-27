@@ -58,6 +58,9 @@ func writeServingPair(t *testing.T, certPath, keyPath string) string {
 // less. It used to be handed one loaded pair and serve it for the life of
 // the process. DIVERGENCE 5.250.
 func TestTheAPIServesARenewedCertificateWithoutARestart(t *testing.T) {
+	old := certreload.Interval
+	certreload.Interval = 0 // a renewal must show on the next connection
+	t.Cleanup(func() { certreload.Interval = old })
 	dir := t.TempDir()
 	certPath, keyPath := filepath.Join(dir, "api.crt"), filepath.Join(dir, "api.key")
 	first := writeServingPair(t, certPath, keyPath)

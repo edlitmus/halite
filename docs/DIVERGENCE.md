@@ -33598,6 +33598,82 @@ failed on the previous code with the refresh above and passes now.
 **Not verified.** The normalisation rule is from memory of snapd's channel
 parsing, not checked against snapd or run on a machine with a snap installed.
 
+### 5.444 `certreload` read both files on every TLS handshake
+
+Issue 321, Low: `certreload.Load` re-read the certificate and key under a
+mutex on every handshake.
+
+**Measured.** Reading was the design: the file's metadata had failed to
+detect a replacement on Windows (5.248), so contents are compared. But a
+handshake needs no credential, so any client that could reach the port made
+the listener do two reads and queue on the lock per attempt.
+
+**The change.** The disk is looked at at most once per `certreload.Interval`
+(5 seconds), by whichever handshake arrives after it. A renewal is written 30
+days before expiry, so a few seconds' delay costs nothing. Contents are still
+what is compared. The interval is a package variable only so that the four
+tests of callers, which reach a Reloader through startup code, can set it to
+zero; nothing in the program changes it.
+
+**Demonstrated.** `TestTheDiskIsNotReadOnEveryHandshake` failed with the
+throttle disabled (handshake 0 read the disk) and passes with it. The four
+existing renewal tests in `halite-node`, `halite-api` and `transport` failed
+with the throttle until they set the interval to zero, which is how it was
+found that they depended on immediate pickup. Race detector clean on the
+touched packages.
+
+**Not verified.** No measurement of the read cost under a real flood, so the
+claim is about reads per handshake, not about latency.
+
+### 5.445 `range()` was bounded per call, not per render
+
+Issue 321, Low: `range()` materialises up to 10M items with no byte budget.
+
+**Measured.** The 10M item limit applied to each call. A template with thirty
+`set x = range(9000000)` allocated 6.2 GB in one render and was allowed; each
+item costs about 24 bytes as an interface holding an int64, not the 16 the
+audit estimated. The overflow half of the audit's `range()` bullet had
+already been fixed (`rangeLen`).
+
+**The change.** The items of every list `range()` builds are added up across
+the render, and the call that takes the total past the iteration limit fails
+with "lists built in this render would hold more than N items in all". Only
+`range()` is charged; other list builders (`batch`, `slice`, `*`) keep their
+per-call checks.
+
+**Demonstrated.** `TestRangeListsAreChargedToTheRenderNotOnlyToTheCall`
+failed on the previous code (two 6M lists were allowed) and passes now;
+ordinary `range` uses are unchanged.
+
+**Not verified.** A pillar that legitimately builds several large ranges now
+fails; none is known. The limit is the existing 10M, not a number derived from
+memory.
+
+### 5.446 System configuration modules replaced a symlink instead of editing it
+
+Issue 321, Low: `atomicfile.Write` renames over the path, so a symlinked
+target becomes a regular file.
+
+**Measured.** The file states had this fixed as M-19 (`followLink`), and
+`writeAtomic` keeps the owner (M-20). The modules that own hosts, hostname,
+sysctl, locale.gen, fstab, modprobe, environment and the package repository
+files still read through a link and wrote by renaming over it: with
+`/etc/sysctl.conf` a link, the link was replaced by a copy and the file it
+pointed to was left as it was.
+
+**The change.** A new `writeConfigFile` follows the link before writing, and
+those modules use it. `timezone` is excluded on purpose: it must replace
+`/etc/localtime`. `netplan` is not changed.
+
+**Demonstrated.** `TestAConfigFileWrittenThroughALinkEditsTheTarget` failed on
+the previous code (the link was replaced; the target still held `a=1`).
+
+**Not verified.** Run only on Ubuntu with a temporary directory; no real
+`/etc` link was involved. Mode and SELinux label are still the caller's
+constants and the old file's label is not kept, which is the rest of the
+audit's bullet and is not done. Netplan's writes are not covered.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -271,7 +271,7 @@ func hostPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.WouldChange(
 			fmt.Sprintf("%s would map %s to %s.", HostsPath, shown, strings.Join(names, ", ")), changes), nil
 	}
-	if err := writeAtomic(HostsPath, []byte(after), 0o644); err != nil {
+	if err := writeConfigFile(HostsPath, []byte(after), 0o644); err != nil {
 		return states.False(fmt.Sprintf("%s could not be written: %v", HostsPath, err)), nil
 	}
 	return states.Changed(
@@ -323,7 +323,7 @@ func hostAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.WouldChange(
 			fmt.Sprintf("%s would drop %s.", HostsPath, strings.Join(names, ", ")), changes), nil
 	}
-	if err := writeAtomic(HostsPath, []byte(after), 0o644); err != nil {
+	if err := writeConfigFile(HostsPath, []byte(after), 0o644); err != nil {
 		return states.False(fmt.Sprintf("%s could not be written: %v", HostsPath, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s dropped %s.", HostsPath, strings.Join(names, ", ")), changes), nil
@@ -474,7 +474,7 @@ func hostsAppend(c *exec.Context, args *value.Map) (any, error) {
 			path, addr, strings.Join(adding, " ")), nil
 	}
 	entries = append(entries, hostEntry{Address: addr, Names: adding})
-	if err := writeAtomic(path, []byte(renderHosts(entries)), 0o644); err != nil {
+	if err := writeConfigFile(path, []byte(renderHosts(entries)), 0o644); err != nil {
 		return nil, err
 	}
 	return fmt.Sprintf("The following line was added to %s:\n%s %s",
@@ -502,7 +502,7 @@ func hostsRemove(c *exec.Context, args *value.Map) (any, error) {
 		// way, which is Salt's answer and is kept.
 		return before != renderHosts(entries), nil
 	}
-	if err := writeAtomic(path, []byte(renderHosts(entries)), 0o644); err != nil {
+	if err := writeConfigFile(path, []byte(renderHosts(entries)), 0o644); err != nil {
 		return nil, err
 	}
 	return true, nil

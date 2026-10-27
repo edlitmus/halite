@@ -342,6 +342,21 @@ type budget struct {
 	output        int64
 	maxOutput     int64
 	checks        int
+	// materialised counts the items of lists built by range() across the
+	// whole render. The per-call limit alone let a template hold as many
+	// 10M-item lists as it had variables: thirty `range(9000000)` calls
+	// in one render allocated 6.2 GB, each call individually allowed.
+	materialised int64
+}
+
+// materialise charges n items of a freshly built list to the render and
+// refuses the call that takes the total past the iteration limit.
+func (b *budget) materialise(n int64, what string, pos Pos) error {
+	b.materialised += n
+	if b.materialised > b.maxIterations {
+		return errorf(pos, "%s: lists built in this render would hold more than %d items in all", what, b.maxIterations)
+	}
+	return nil
 }
 
 func (b *budget) tick(pos Pos) error {
