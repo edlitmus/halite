@@ -34427,6 +34427,33 @@ mode (`GODEBUG=fips140=on`) was not run with it; sha3-256 is an approved
 FIPS 202 function, but that is read, not measured. The node does not check
 its own `hash_type`; an unknown one only stops it sending an entity tag.
 
+### 5.470 `git.remote_get` read a remote beginning with `-` as an option
+
+Issue 321, section 5, left by 5.414: `git.remote_get` passes its `remote`
+to `git remote get-url` the same way `git.latest` did.
+
+**Measured** with git 2.43.0 on Ubuntu 24.04. `get-url` takes only `--push`
+and `--all`, so nothing could be made to run: `--upload-pack=touch <file>`
+was an unknown option and no file appeared, and `--push` and `--all` gave
+the usage text, exit 129. What it did break is a real remote: `git remote
+add -- -dash <url>` makes a remote called `-dash`, and `remote_get` with
+`remote: -dash` failed with `unknown switch 'd'`.
+
+That also makes one sentence in 5.414 false. `git.latest` refuses a
+leading dash in `name`, `remote`, `rev` and `branch`, on the grounds that
+none "has a legitimate spelling that begins with a dash". A remote does.
+The refusal is kept: it is safe, a remote named so is a curiosity, and
+`git.latest`'s fetch takes more options than `get-url` does. Its comment
+now says what it refuses.
+
+**The change.** `remote_get` puts `--` before the remote. A remote named
+`-dash` is read; `--push` is a name that does not exist (`No such remote
+'--push'`). `TestGitRemoteGetReadsARemoteThatBeginsWithADash` holds both
+against the real git, and failed on the first with the `--` removed.
+
+**Not verified.** git on FreeBSD was not run; that `get-url` accepts `--`
+is from git 2.43's common option parser, as 5.414's other uses were.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

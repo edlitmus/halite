@@ -224,6 +224,32 @@ func TestGitLatestRunsAsTheUser(t *testing.T) {
 // with that command as its upload-pack, which git runs through the
 // shell. The remote case ran the command on the git on this host
 // before the check existed: the marker file appeared. DIVERGENCE 5.414.
+// git.remote_get reads a remote whose name begins with a dash, which
+// git allows, and reads an option-shaped one as a name. Without the
+// `--` git 2.43 printed get-url's usage for both and exited 129.
+// DIVERGENCE 5.470.
+func TestGitRemoteGetReadsARemoteThatBeginsWithADash(t *testing.T) {
+	skipWithoutGit(t)
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q", ".")
+	runGit(t, dir, "remote", "add", "--", "-dash", "https://example.invalid/dash.git")
+
+	r := New()
+	got, err := r.Exec.Call(newRunningCtx(), "git.remote_get", value.MapOf("cwd", dir, "remote", "-dash"))
+	if err != nil {
+		t.Fatalf("a remote git made was not read: %v", err)
+	}
+	if got != "https://example.invalid/dash.git" {
+		t.Errorf("remote_get = %v", got)
+	}
+
+	if got, err := r.Exec.Call(newRunningCtx(), "git.remote_get", value.MapOf("cwd", dir, "remote", "--push")); err == nil {
+		t.Errorf("--push, which names no remote here, answered %v", got)
+	} else if !strings.Contains(err.Error(), "No such remote") {
+		t.Errorf("--push was not read as a remote name: %v", err)
+	}
+}
+
 func TestGitLatestRefusesAnArgumentGitWouldReadAsAnOption(t *testing.T) {
 	skipWithoutGit(t)
 	dir := t.TempDir()
