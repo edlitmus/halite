@@ -1,4 +1,9 @@
-package fileserver
+// Package fnmatch is Python's fnmatch.fnmatchcase, the glob Salt means
+// wherever it takes one: file_ignore_glob, file.recurse's include and
+// exclude, eauth names and requisite targets. It was in fileserver, which
+// the state compiler cannot import (fileserver imports state), so it was
+// moved here when requisites needed it (DIVERGENCE 5.467).
+package fnmatch
 
 import (
 	"fmt"
@@ -7,7 +12,7 @@ import (
 	"sync"
 )
 
-// fnmatch is Python's fnmatch.fnmatchcase, which is what Salt's
+// Match is Python's fnmatch.fnmatchcase, which is what Salt's
 // file_ignore_glob means.
 //
 // Salt applies the setting in salt/fileserver/__init__.py
@@ -35,13 +40,14 @@ import (
 // `[z-a]`, which 3.10 and later treat as empty, as this does. The tests hold its answers against Python's own,
 // captured by running fnmatch.fnmatchcase, not written from the
 // documentation.
-func fnmatch(pattern, name string) bool {
+func Match(pattern, name string) bool {
 	return fnmatchRegexp(pattern).MatchString(name)
 }
 
-// Fnmatch is fnmatch for the states that take a Salt glob, so that they
-// answer as Salt's do rather than as Go's path.Match does.
-func Fnmatch(pattern, name string) bool { return fnmatch(pattern, name) }
+// HasMeta reports whether a pattern holds any of fnmatch's special
+// characters. A name without them matches only itself, so a caller that
+// looks names up exactly can skip the glob for it.
+func HasMeta(pattern string) bool { return strings.ContainsAny(pattern, "*?[") }
 
 var fnmatchCache sync.Map // pattern -> *regexp.Regexp
 

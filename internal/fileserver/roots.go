@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
 )
@@ -220,7 +221,7 @@ func within(root, p string) bool {
 func (r *Roots) ignored(clean string) bool {
 	rel := strings.TrimPrefix(clean, "/")
 	for _, g := range r.IgnoreGlobs {
-		if fnmatch(g, rel) || fnmatch(g, path.Base(clean)) {
+		if fnmatch.Match(g, rel) || fnmatch.Match(g, path.Base(clean)) {
 			return true
 		}
 	}

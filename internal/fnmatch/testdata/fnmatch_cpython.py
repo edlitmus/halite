@@ -1,5 +1,5 @@
 # Captures Python's fnmatch.fnmatchcase over a table of patterns and
-# names, for fnmatch_test.go to hold internal/fileserver/fnmatch.go to.
+# names, for fnmatch_test.go to hold internal/fnmatch/fnmatch.go to.
 # Salt's file_ignore_glob is fnmatch.fnmatch, which is fnmatchcase on a
 # POSIX hub. Regenerate with:
 #

@@ -34272,6 +34272,56 @@ removing them, it built again.
 builders start from a clean checkout and never met this. GNU make was not
 tried: the Makefile refuses it already (`make-supports-bang`).
 
+### 5.467 A requisite may name its target with a glob
+
+Found while capturing 5.461: `require: [test: '*']` was refused by halite as
+naming a state "not declared in this run", where Salt resolved it. Salt
+resolves a requisite target with fnmatch when it is not an exact name.
+
+**Measured, Salt.** `salt-call --local state.apply`, 3006.28 and 3008.3 onedir
+on GitHub's ubuntu-24.04 runner, 2026-10-28, `test.*` states, reading
+`__run_num__`, result and comment for each:
+
+| requisite on `x` | Salt |
+|---|---|
+| `test: 'b*'`, b1 passes, b2 fails | b1, b2, then x, failed: `One or more requisite failed: g_fail.b2` |
+| the same, both pass | b1, b2, x, all pass, though x is declared first |
+| `test: '/tmp/*'`, state `c` named `/tmp/foo` | c, then x: the name matched |
+| `test: 'b[12]'`, with b3 too | b1, b2, x, b3 |
+| bare `'b*'` | as `test: 'b*'`: IDs matched |
+| `onchanges: [test: 'b*']` | b1, b2, x |
+| `test: 'zz*'` | 3008.3 refuses at compile time (`Referenced state does not exist for requisite`); 3006.28 fails x (`The following requisites were not found`) |
+| `cmd: 'b*'` where the b's are `test` | the same refusals |
+
+**The change.** When a `module: target` or bare target is not an exact ID or
+name and holds `*`, `?` or `[`, it resolves to every chunk it matches, in
+declaration order: of that module, by ID or name, for `module: target`; by ID,
+for the bare form. Exact names are tried first, as Salt's are. A glob that
+matches nothing is a compilation error, as 3008.3 has it and as an unknown name
+already was; it is not retried by ID across modules, as an exact name is. A glob
+that matches its own state is the self-requisite of 5.461 and is refused.
+
+The fnmatch port moved from `internal/fileserver` to its own `internal/fnmatch`,
+because `state` cannot import `fileserver` (which imports `state`). Its CPython
+fixture and generator moved with it; the two `Roots` tests that were in the same
+file stayed in `fileserver`. `policy` (5.465), `file.recurse` and
+`file_ignore_glob` use it from there.
+
+SPEC 11.3 says so, and its sentence that a bare ID matching more than one state
+is "an ambiguity error" is corrected: the code has taken every state with the ID
+since that was found to be what Salt does, and the comment in `resolveOneRef`
+says why; the SPEC was not changed then.
+
+**Demonstrated.** `TestARequisiteGlobResolvesAsSaltDoes` holds the run order of
+five captured cases (the `set` case runs `b1 b2 x b3`, as Salt numbered them),
+refuses the three that Salt refuses, and refuses a glob matching its own state
+as a cycle. With glob detection disabled it failed at the first case; it passes.
+
+**Not verified.** `sls:` globs and `_in` requisites with globs were not
+captured or changed. Execution was not run: the failure of a matched state
+reaching `x` is the existing requisite path, given the edge, and was not shown
+on a glob.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

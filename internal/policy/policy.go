@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/target"
@@ -303,10 +303,10 @@ func (p *Policy) RolesFor(principal string) []string {
 // that may hold one, so `hook:*` gave nothing to `hook:github/push` and
 // said nothing (issue 321; DIVERGENCE 5.465). Salt matches eauth names
 // with fnmatch, and file_ignore_glob was moved off path.Match for the
-// same reason (5.295); fileserver.Fnmatch is that port. It widens as
+// same reason (5.295); fnmatch.Match is that port. It widens as
 // well as fixes: `hook:github/*` now also matches `hook:github/a/b`.
 func matchPrincipal(pattern, principal string) bool {
-	return pattern == principal || fileserver.Fnmatch(pattern, principal)
+	return pattern == principal || fnmatch.Match(pattern, principal)
 }
 
 // Authorize decides one request, resolving the principal's roles from

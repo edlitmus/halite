@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A requisite may name its target with a glob
+
+`require: [pkg: 'nginx*']` and the bare `require: ['nginx*']` now depend on
+every matching state, as Salt resolves them, where halite refused them as
+undeclared. A glob that matches nothing is still an error (DIVERGENCE 5.467).
+
 ### `make dist` stops on files in `dist/` it did not make
 
 A leftover binary or any other file in `dist/` was summed into the release

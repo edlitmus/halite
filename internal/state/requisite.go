@@ -3,6 +3,7 @@ package state
 import (
 	"strings"
 
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -231,6 +232,23 @@ func resolveOneRef(
 
 			case ref.State != "":
 				i, ok := byStateID[ref.State+"|"+ref.ID]
+				if !ok && fnmatch.HasMeta(ref.ID) {
+					// A glob: every chunk of that module whose ID or name
+					// it matches, as Salt resolves `test: 'b*'`. Exact
+					// names are tried first, as Salt does, so an ID that
+					// happens to hold a `[` still finds itself. A glob
+					// that matches nothing is refused, not retried by ID
+					// alone: Salt 3008.3 refuses it at compile time and
+					// 3006.28 fails the state (DIVERGENCE 5.467).
+					matches := globRef(chunks, ref.ID, func(o *Chunk) bool { return o.State == ref.State }, true)
+					if len(matches) == 0 {
+						diags.Add(ref.Pos, c.SLS, c.ID,
+							"%s names `%s: %s`, a glob that matches no %s state in this run", req.Kind, ref.State, ref.ID, ref.State)
+						return
+					}
+					req.Resolved = append(req.Resolved, matches...)
+					return
+				}
 				if !ok {
 					// Fall back to matching by ID alone, which is what an
 					// operator means when the module name is stale.
@@ -267,6 +285,10 @@ func resolveOneRef(
 				// when the answer is *all* of them: waiting for both
 				// halves of an id is what the tree means by naming it.
 				matches := byID[ref.ID]
+				if len(matches) == 0 && fnmatch.HasMeta(ref.ID) {
+					// The bare form globs IDs, as Salt's does.
+					matches = globRef(chunks, ref.ID, func(*Chunk) bool { return true }, false)
+				}
 				if len(matches) == 0 {
 					diags.Add(ref.Pos, c.SLS, c.ID,
 						"%s names %q, which is not declared in this run", req.Kind, ref.ID)
@@ -276,6 +298,24 @@ func resolveOneRef(
 			}
 		}
 	}
+}
+
+// globRef lists, in declaration order, the chunks a requisite glob
+// matches: by ID, and by name too when byName is set. Salt matches a
+// `module: glob` requisite against both, captured on 3006.28 and 3008.3:
+// `test: '/tmp/*'` found the state whose ID was `c` and whose name was
+// `/tmp/foo`. The bare form was captured matching IDs only.
+func globRef(chunks []*Chunk, pattern string, keep func(*Chunk) bool, byName bool) []int {
+	var out []int
+	for i, o := range chunks {
+		if !keep(o) {
+			continue
+		}
+		if fnmatch.Match(pattern, o.ID) || (byName && fnmatch.Match(pattern, o.Name)) {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // applyUse copies arguments from a `use` target into the chunk that
