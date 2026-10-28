@@ -107,3 +107,74 @@ func TestAChangeRewritesSaltsEntriesInHalitesSpelling(t *testing.T) {
 		t.Errorf("Salt's identifier survived the rewrite:\n%s", written)
 	}
 }
+
+// workstationCrontab is `crontab -l` for root on the Ubuntu workstation
+// system76-pc, captured on 2026-10-27: a production crontab rather than
+// a lab one, as Salt wrote it from edlitmus/salt's state/drake.sls (last
+// written 2025-03-04; Salt has since been removed from the host, so the
+// version that wrote it is not known).
+func workstationCrontab(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "cron", "system76-pc-salt.crontab"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// drake.sls's job, with its arguments as written there, changes nothing.
+//
+// This half would pass without the adoption, and it is worth saying why
+// so nobody reads it as proof of it: drake.sls names no identifier, so
+// Salt used the command as one, and parseCrontab gives an untagged line
+// its command as identifier too. The two agree whether or not Salt's
+// comment is understood. The rewrite below is what the adoption decides.
+func TestTheWorkstationsSaltJobChangesNothing(t *testing.T) {
+	rec := &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"crontab -u root -l": {Stdout: workstationCrontab(t)},
+	}}
+	c := newCtx(false)
+	c.Runner = rec
+	res, err := New().States.Call(c, "cron.present", value.MapOf(
+		"name", "/root/service-restart.sh", "user", "root", "special", "@daily"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasChanges() || !res.Succeeded() {
+		t.Errorf("drake.sls's job against the crontab Salt wrote: %+v", res)
+	}
+	for _, cmd := range rec.Ran {
+		if strings.HasSuffix(cmd.String(), " -") {
+			t.Errorf("the crontab was rewritten:\n%s", cmd.Stdin)
+		}
+	}
+}
+
+// Changing the job's schedule leaves one entry in halite's spelling, and
+// none of Salt's lines behind as stale comments. halite writes no
+// identifier line for a job whose identifier is its command, so the
+// entry is the bare cron line.
+func TestReschedulingTheWorkstationsJobLeavesNoSaltLines(t *testing.T) {
+	rec := &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"crontab -u root -l": {Stdout: workstationCrontab(t)},
+	}}
+	c := newCtx(false)
+	c.Runner = rec
+	res, err := New().States.Call(c, "cron.present", value.MapOf(
+		"name", "/root/service-restart.sh", "user", "root", "special", "@weekly"))
+	if err != nil || !res.HasChanges() {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+	var written string
+	for _, cmd := range rec.Ran {
+		if strings.HasSuffix(cmd.String(), " -") {
+			written = cmd.Stdin
+		}
+	}
+	if strings.Count(written, "/root/service-restart.sh") != 1 || !strings.Contains(written, "@weekly /root/service-restart.sh\n") {
+		t.Errorf("want the one @weekly entry:\n%s", written)
+	}
+	if strings.Contains(written, saltIdentifier) || strings.Contains(written, saltManagedMarker) {
+		t.Errorf("Salt's lines survived the rewrite:\n%s", written)
+	}
+}
