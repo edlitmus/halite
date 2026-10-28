@@ -34,27 +34,63 @@ func (aptProvider) Available(c *exec.Context) bool {
 
 func (aptProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
 	res, err := c.Run(exec.Command{
-		Argv: []string{"dpkg-query", "-W", "-f=${Package}\\t${Version}\\t${Status}\\n"},
+		Argv: []string{"dpkg-query", "-W", "-f=${Package}\\t${Architecture}\\t${Version}\\t${Status}\\n"},
 		Env:  aptEnv(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	out := value.NewMap(256)
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		fields := strings.Split(line, "\t")
-		if len(fields) < 3 {
+	return aptListPkgs(res.Stdout), nil
+}
+
+// aptListPkgs reads dpkg-query's package, architecture, version and status
+// lines into Salt's `pkg.list_pkgs` keys: a package of the native
+// architecture or of `all` under its bare name, and one of a foreign
+// architecture as `name:arch`.
+//
+// It keyed every line by `${Package}` alone, so on a host with a foreign
+// architecture the last line for a name won, and a package installed only
+// for the foreign one answered for the bare name: with `hello:i386` and no
+// native hello, `pkg.installed: hello` said it was there and
+// `pkg.installed: hello:i386` never found it. Salt 3006.28 and 3008.3 list
+// `hello:i386`, `libc6` and `libc6:i386` on that host, and plan to install
+// `hello` (captured in a debian:bookworm container with i386 added,
+// 2026-10-28; DIVERGENCE 5.464).
+//
+// The native architecture is the `dpkg` package's own, from the same
+// listing rather than a second command: dpkg is Multi-Arch: foreign and
+// exists only for the architecture it was built for, which is what
+// `dpkg --print-architecture` prints (both read amd64 in the capture).
+// Without a dpkg line every name is bare, as it always was.
+func aptListPkgs(listing string) *value.Map {
+	type line struct{ name, arch, version string }
+	var lines []line
+	native := ""
+	for _, raw := range strings.Split(listing, "\n") {
+		fields := strings.Split(raw, "\t")
+		if len(fields) < 4 {
 			continue
 		}
 		// Only packages that are actually installed count; dpkg lists
 		// removed-but-configured ones too, and treating those as present
 		// makes a pkg.installed state a no-op forever.
-		if !strings.HasSuffix(fields[2], " installed") {
+		if !strings.HasSuffix(fields[3], " installed") {
 			continue
 		}
-		out.Set(fields[0], fields[1])
+		if fields[0] == "dpkg" {
+			native = fields[1]
+		}
+		lines = append(lines, line{fields[0], fields[1], fields[2]})
 	}
-	return out, nil
+	out := value.NewMap(len(lines))
+	for _, l := range lines {
+		name := l.name
+		if native != "" && l.arch != native && l.arch != "all" && l.arch != "" {
+			name += ":" + l.arch
+		}
+		out.Set(name, l.version)
+	}
+	return out
 }
 
 func (aptProvider) Install(c *exec.Context, names []string, versions map[string]string, refresh bool) error {

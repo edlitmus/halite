@@ -34105,6 +34105,113 @@ whole tree's tests pass.
 forms were not captured. A self-requisite reached through an `include`d file's
 `sls:` was not tried. The saltdiff differential was not given a case.
 
+### 5.462 A log field that is a fmt.Stringer is scrubbed, and a URL's password redacted
+
+Issue 321, Low, the half of the redaction bullet 5.408 left: `log.ScrubValue`
+ignores `fmt.Stringer` field values, and a `*url.URL` prints its password.
+
+**Measured.** With a secret registered and `l.Info("fetching", "remote", u,
+"db", s)`, where `u` is `https://deploy:<password>@git.example.org/repo.git`
+and `s` is a Stringer whose text carries the secret, the console form wrote
+both in clear: `db=dsn mysql://app:<secret>@db
+remote=https://deploy:<password>@git.example.org/repo.git`. The JSON form
+leaked neither, but wrote `"db":{}` and the URL as a struct, so the text was
+lost instead.
+
+**The change.** 5.408 did not turn every Stringer into its text, because a
+`time.Duration` is written to JSON as a number and every such record would
+change. This does not either. A Stringer's text is scrubbed, and the field is
+replaced by the scrubbed text only when that removed something; one with no
+secret in it is written exactly as before. A `*url.URL` is written as
+`Redacted()` whatever its password is, since a URL's userinfo is a credential
+whether or not anybody registered it. The redactor's own userinfo pattern then
+takes the user name as well.
+
+**Demonstrated.** `TestAStringerFieldIsScrubbed` failed three ways on the
+previous `log.go` (both secrets on the console, the text lost from JSON) and
+passes. `TestAStringerWithoutASecretIsUnchanged` holds a duration at
+`"took":1500000000`; it passes before and after, so it holds the property, not
+the change.
+
+**Not verified.** No call site was found passing a URL or a secret-bearing
+Stringer as a field, so this is latent, like 5.408. A struct that is not a
+Stringer still goes to JSON by its exported fields, unscrubbed.
+
+### 5.463 Container base images are pinned by digest
+
+Issue 321, build section: "Docker bases are tag-pinned, not digest-pinned".
+Every base the repository builds from named a tag: `golang:1.27.3-bookworm`,
+`golang:1.25-bookworm` (twice, once through `mirror.gcr.io`), `opensuse/leap:16.0`,
+`ubuntu:24.04`, and the EL base `rockylinux/rockylinux:9` or `almalinux:8`
+given as a build argument. A tag is whatever the registry says on the day, so
+the fleet and saltdiff images CI drives as root could change under an unchanged
+commit. Nothing is known to have moved yet: the `rockylinux/rockylinux:9`
+digest 5.319 recorded from two runs, `sha256:8101994123cf…`, is the one pinned
+here.
+
+**The change.** Each reference is now `<tag>@sha256:<index digest>`: the eight
+`FROM` lines, the `ARG BASE` default and the two `--build-arg BASE=` in the
+Makefile. The digests were read on 2026-10-28 from the registries' manifest
+endpoints (`Docker-Content-Digest`, asking for an index), and each is the
+multi-arch index, so one line serves amd64 and arm64. `mirror.gcr.io` returned
+the same digest as Docker Hub for `golang:1.25-bookworm`. The tag stays beside
+the digest: it says what the digest is, and the toolchain checks read it.
+
+`TestContainerBasesArePinnedByDigest` in `internal/buildpolicy` holds every
+`FROM`, `ARG BASE` and Makefile `--build-arg BASE=` to a digest. On the
+previous files it reported all eleven; it passes now. It counts what it checked
+and fails if that falls below ten, so a rename does not quietly empty it.
+
+**Not verified.** Nothing was built here, which has no container runtime: the
+pinned lines are proven only by the PR's own CI, which builds the fleet, rpm and
+saltdiff images. `contrib/docker/race` and `contrib/vm/zfs` are not built by CI
+and were not built. Updating a digest is now a manual step, with no tool for
+it.
+
+### 5.464 apt's package list keys a foreign-architecture package as Salt does
+
+Issue 321, section 5, the multi-arch bullet's first half, which 5.417 left
+because it needed a host with a foreign architecture: apt's `ListPkgs` keyed
+every package by bare `${Package}`, so the last architecture won.
+
+**Measured.** A `debian:bookworm` container on GitHub's ubuntu-24.04 runner,
+2026-10-28, with `dpkg --add-architecture i386` and `hello:i386` and
+`libc6:i386` installed (hello has no native install; libc6 has both).
+`dpkg-query -W -f='${Package}\t${Version}\t${Status}\n'`, the form halite
+used, printed `hello` once and `libc6` twice with nothing to tell them apart.
+Salt's `pkg.list_pkgs`, 3006.28 and 3008.3 alike, returned `hello:i386`,
+`libc6`, `libc6:i386`, `gcc-12-base`, `gcc-12-base:i386` and `tzdata` (an
+`all` package, bare), and no `hello`. `pkg.version hello` answered empty and
+`hello:i386` its version. Under `test=True`, `pkg.installed: hello` would
+install it, and `pkg.installed: hello:i386` was already in place. halite's list
+had `hello` and no `hello:i386`, so it answered the opposite of both: the bare
+name read as installed when only the i386 one was, and the qualified name was
+never found. Read from 5.440's presence check rather than run, a
+`pkg.installed: hello:i386` would then fail after apt installed it, because
+the check looks for a name the list did not have.
+
+**The change.** The query adds `${Architecture}`, and a package of neither the
+native architecture nor `all` is keyed `name:arch`. The native architecture is
+the `dpkg` package's own, read from the same listing (dpkg is `Multi-Arch:
+foreign` and installed only for the architecture it was built for; in the
+capture it read `amd64`, as `dpkg --print-architecture` did), so no second
+command. Without a `dpkg` line every name is bare, as before.
+
+**Demonstrated.** `TestAForeignArchitecturePackageIsKeyedAsSaltKeysIt` reads
+the whole captured listing (117 packages) and wants Salt's keys for the eight
+names above and none of `hello`, `tzdata:all` or `libc6:amd64`. With the
+qualification disabled it failed for all four i386 keys and for the bare
+`hello`; it passes.
+
+**Breaking,** for a caller on a multi-arch host that read `pkg.list_pkgs` and
+expected a foreign package under its bare name. That is what Salt returns, and
+on a single-architecture host nothing changes.
+
+**Not verified.** No live test drives it; the fleet `debian` leg has no foreign
+architecture. Only i386 beside amd64 was captured. A package held or pinned by
+its qualified name through the other apt paths (`pkg.latest`, `pkg.hold`, the
+version reads) was not checked against this list.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

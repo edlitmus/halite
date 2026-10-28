@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -245,5 +246,53 @@ func TestConsolePrintsAMultiLineValueAsABlock(t *testing.T) {
 	}
 	if lines[1] != "  rendered:" || lines[2] != "    web:" || lines[3] != "      pkg.installed: []" {
 		t.Errorf("the block is %q", lines[1:])
+	}
+}
+
+// stringerSecret is a field type whose String() carries what it holds,
+// as a connection description or a URL does.
+type stringerSecret struct{ dsn string }
+
+func (s stringerSecret) String() string { return "dsn " + s.dsn }
+
+// A fmt.Stringer field reached the console through %v unscrubbed, and a
+// *url.URL printed its password (DIVERGENCE 5.408 left this half). Both
+// formats, and the text that is not secret survives.
+func TestAStringerFieldIsScrubbed(t *testing.T) {
+	secrets := redact.New()
+	secrets.Add("s3cret-pillar-value")
+	u, err := url.Parse("https://deploy:hunter2-url-password@git.example.org/repo.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, form := range []Format{Console, JSON} {
+		var out strings.Builder
+		l, _ := New(Options{Level: Info, Format: form, Stderr: &out, Secrets: secrets})
+		fixed(l)
+		l.Info("fetching", "remote", u, "db", stringerSecret{"mysql://app:s3cret-pillar-value@db"})
+		for _, secret := range []string{"s3cret-pillar-value", "hunter2-url-password"} {
+			if strings.Contains(out.String(), secret) {
+				t.Errorf("format %d: %s reached the sink:\n%s", form, secret, out.String())
+			}
+		}
+		// The redactor's own pattern takes a URL's whole userinfo, so
+		// the user name goes with the password; the rest is kept.
+		if !strings.Contains(out.String(), "git.example.org/repo.git") || !strings.Contains(out.String(), "@db") {
+			t.Errorf("format %d: the field's text was lost:\n%s", form, out.String())
+		}
+	}
+}
+
+// A Stringer with nothing secret in it is written as it always was: a
+// duration stays a number in JSON, as dashboards and queries expect.
+func TestAStringerWithoutASecretIsUnchanged(t *testing.T) {
+	secrets := redact.New()
+	secrets.Add("s3cret-pillar-value")
+	var out strings.Builder
+	l, _ := New(Options{Level: Info, Format: JSON, Stderr: &out, Secrets: secrets})
+	fixed(l)
+	l.Info("done", "took", 1500*time.Millisecond)
+	if !strings.Contains(out.String(), `"took":1500000000`) {
+		t.Errorf("a duration was not written as before:\n%s", out.String())
 	}
 }

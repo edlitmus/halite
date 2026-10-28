@@ -1007,14 +1007,14 @@ fleetcheck: fleetcheck-image
 FLEETCHECK_RPM_DIR = contrib/docker/fleet-rpm
 
 fleetcheck-rocky9:
-	docker build --build-arg BASE=rockylinux/rockylinux:9 \
+	docker build --build-arg BASE=rockylinux/rockylinux:9@sha256:8101994123cf3d0a8fee517bee7f39e555c7d92bd2d9eb3303cc988a0eeed00f \
 		-f $(FLEETCHECK_RPM_DIR)/Dockerfile.el -t halite-fleet-rpm:rocky9 $(FLEETCHECK_RPM_DIR)
 	docker run --rm --cap-add LINUX_IMMUTABLE \
 		-v "$(CURDIR)":/src -v halite-gocache:/gocache \
 		halite-fleet-rpm:rocky9
 
 fleetcheck-alma8:
-	docker build --build-arg BASE=almalinux:8 \
+	docker build --build-arg BASE=almalinux:8@sha256:2d0f2eb2a83cc09dbc2eb92fade4dbe8f709628149e81aa00aec70630406603b \
 		-f $(FLEETCHECK_RPM_DIR)/Dockerfile.el -t halite-fleet-rpm:alma8 $(FLEETCHECK_RPM_DIR)
 	docker run --rm --cap-add LINUX_IMMUTABLE \
 		-v "$(CURDIR)":/src -v halite-gocache:/gocache \

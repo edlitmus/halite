@@ -13,9 +13,9 @@
 # same version the rest of the project is. go.mod pins a newer toolchain
 # than any base image ships, so GOTOOLCHAIN is left on auto to let it
 # fetch one, as contrib/docker/saltdiff does.
-FROM golang:1.25-bookworm AS toolchain
+FROM golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS toolchain
 
-FROM ubuntu:24.04
+FROM ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c
 
 COPY --from=toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH

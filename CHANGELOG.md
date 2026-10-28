@@ -21,6 +21,20 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A foreign-architecture Debian package is listed as `name:arch` (breaking on multi-arch hosts)
+
+On a Debian or Ubuntu host with a foreign architecture, `pkg.list_pkgs` now
+lists a package of that architecture as `name:arch`, as Salt does, so
+`pkg.installed: hello` no longer counts `hello:i386` as installed, and
+`hello:i386` is found. Single-architecture hosts are unchanged
+(DIVERGENCE 5.464).
+
+### Log fields that print a secret are scrubbed
+
+A log field whose printed form carries a registered secret is now written
+scrubbed, and a URL field has its password redacted; other fields are written
+as before (DIVERGENCE 5.462).
+
 ### A state that is its own requisite fails to compile (breaking)
 
 A requisite that names its own state, directly, through `require_in`, or by an

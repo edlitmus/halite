@@ -761,8 +761,8 @@ func TestPkgInstalledPlansAndReports(t *testing.T) {
 	r := New()
 	rec := &exec.RecordingRunner{
 		Responses: map[string]exec.Result{
-			`dpkg-query -W "-f=\${Package}\\t\${Version}\\t\${Status}\\n"`: {
-				Stdout: "curl\t7.81.0\tinstall ok installed\n",
+			`dpkg-query -W "-f=\${Package}\\t\${Architecture}\\t\${Version}\\t\${Status}\\n"`: {
+				Stdout: "curl\tamd64\t7.81.0\tinstall ok installed\n",
 			},
 		},
 	}

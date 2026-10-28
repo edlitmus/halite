@@ -171,7 +171,10 @@ passing by the PRs above; that has not been looked for.
 | `sysrc.get`/`present` treat any non-zero exit as unset | #415 | 5.375, measured on beastie; the hostname read too; `jail.go` reads through `sysrcGet` too; no jail test run |
 | SigV4 canonical URI for S3 keys with `: @ + = $ &` | #444 | 5.401; held to AWS's published `PUT /test$file.text` vector, not to S3 itself; S3-compatible stores not tried |
 | Redaction: overlapping secrets leave a tail in clear | #462 | 5.407; the multi-line secret in `render.Error`'s numbered window is left for the owner (two options in the entry); `log.ScrubValue` and `error` fields separate |
-| `log` field holding an `error` not scrubbed | #466 | 5.408; latent, no call site passed one; JSON wrote `{}`; `fmt.Stringer` fields left (a `*url.URL` still prints its password) |
+| `log` field holding an `error` not scrubbed | #466 | 5.408; latent, no call site passed one; JSON wrote `{}`; `fmt.Stringer` fields left (a `*url.URL` still prints its password), done in 5.462 |
+| `log` field that is a `fmt.Stringer` not scrubbed; `*url.URL` prints its password | #497 | 5.462; console leaked both, measured; scrubbed text replaces a Stringer only when it held a secret, so durations stay numbers; URLs always `Redacted()`; latent, no such call site found; non-Stringer structs still unscrubbed in JSON |
+| Docker bases tag-pinned, not digest-pinned | #497 | 5.463; eleven references pinned to index digests read from the registries; buildpolicy guard; nothing built locally (no runtime), CI builds fleet, rpm and saltdiff; `race` and `zfs` images not built |
+| Multi-arch: apt `ListPkgs` keys on bare `${Package}`, last arch wins | #497 | 5.464; captured in a bookworm container with i386: Salt 3006.28 and 3008.3 key foreign packages `name:arch`; halite read `hello` as installed when only `hello:i386` was; native arch from dpkg's own line; breaking on multi-arch hosts; no live test |
 | aws-secrets: node `name` nests over a hub secret | #468 | 5.409; extension 1.1.1; cache eviction (bounded by what exists) and the `node_grain_allow` default (owner decision) left |
 | `template.DirLoader` follows symlinks | #469 | 5.410; test and dev use only; Linux only |
 | `state/order.go` is O(n²) | #471 | 5.411; heap, same order on 20,000 random graphs with ties; self-requisites still dropped silently (needs a Salt check) |
@@ -181,7 +184,7 @@ passing by the PRs above; that has not been looked for.
 | `lvm.lvresize` calls a rounded-up size a shrink | #475 | 5.430; measured on the fleet `linux` leg (LVM2 2.03.16): failed before, passed after; `lv_present` warned too; only 4 MiB extents |
 | `iptables.insert` does not enforce `position` | #474 | 5.428; docs corrected, behaviour unchanged (moving a live rule is a decision); Salt parity recalled, not checked |
 | `swap.on`/`off` compare the caller's path with the kernel's keys | #472 | 5.418; measured and fixed on beastie (FreeBSD `swapctl -l`), live test passed there; Linux not run; GEOM labels not links |
-| Multi-arch: `dpkg.set_selections` diff compares bare names with `name:arch` | #470 | 5.417; happens on a single-arch host too (941 qualified lines on Ubuntu 24.04); apt `ListPkgs` keyed on `${Package}` not fixed (needs a foreign-arch host to capture) |
+| Multi-arch: `dpkg.set_selections` diff compares bare names with `name:arch` | #470 | 5.417; happens on a single-arch host too (941 qualified lines on Ubuntu 24.04); apt `ListPkgs` keyed on `${Package}` not fixed (needs a foreign-arch host to capture), done in 5.464 |
 | `ufwChanged` unchanged when v4 skipped and v6 added | #467 | 5.416; established from ufw 0.36.2's source, fixtures composed, not captured (ufw needs root) |
 | `shutdown -r +N <message>` message starting with `-` read as an option | #465 | 5.415; systemd 255 measured with no bus (`-h` accepted); FreeBSD unaffected, read from shutdown.c, not run; refused rather than `--` |
 | websocket `writeFrame` unsynchronised, frames interleave | #445 | 5.406; reproduced over `net.Pipe`; no real client connected |
