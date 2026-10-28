@@ -1,0 +1,136 @@
+{
+ "captured": "salt-call --local pillar.items, Salt 3006.28 onedir on ubuntu-24.04, 2026-10-28, GitHub run 40762245009; Salt 3008.3 in the same run gave the same keys, with values masked",
+ "results": {
+  "aggregate": {
+   "agg": {
+    "__aggregate__": true,
+    "l": [
+     2
+    ]
+   },
+   "fresh": {
+    "k": 1
+   },
+   "fresh2": {
+    "__replace__": true,
+    "k": 2
+   },
+   "over": {
+    "__overwrite__": true,
+    "k2": 2
+   },
+   "rep": {
+    "__replace__": true,
+    "k2": 2
+   }
+  },
+  "overwrite": {
+   "agg": {
+    "__aggregate__": true,
+    "l": [
+     2
+    ]
+   },
+   "fresh": {
+    "k": 1
+   },
+   "fresh2": {
+    "__replace__": true,
+    "k": 2
+   },
+   "over": {
+    "__overwrite__": true,
+    "k2": 2
+   },
+   "rep": {
+    "__replace__": true,
+    "k2": 2
+   }
+  },
+  "recurse": {
+   "agg": {
+    "__aggregate__": true,
+    "l": [
+     2
+    ]
+   },
+   "fresh": {
+    "k": 1
+   },
+   "fresh2": {
+    "__replace__": true,
+    "k": 2
+   },
+   "over": {
+    "__overwrite__": true,
+    "k1": 1,
+    "k2": 2
+   },
+   "rep": {
+    "__replace__": true,
+    "k1": 1,
+    "k2": 2,
+    "nested": {
+     "n1": 1
+    }
+   }
+  },
+  "smart": {
+   "agg": {
+    "__aggregate__": true,
+    "l": [
+     2
+    ]
+   },
+   "fresh": {
+    "k": 1
+   },
+   "fresh2": {
+    "__replace__": true,
+    "k": 2
+   },
+   "over": {
+    "__overwrite__": true,
+    "k1": 1,
+    "k2": 2
+   },
+   "rep": {
+    "__replace__": true,
+    "k1": 1,
+    "k2": 2,
+    "nested": {
+     "n1": 1
+    }
+   }
+  },
+  "smart, pillar_merge_lists": {
+   "agg": {
+    "__aggregate__": true,
+    "l": [
+     1,
+     2
+    ]
+   },
+   "fresh": {
+    "k": 1
+   },
+   "fresh2": {
+    "__replace__": true,
+    "k": 2
+   },
+   "over": {
+    "__overwrite__": true,
+    "k1": 1,
+    "k2": 2
+   },
+   "rep": {
+    "__replace__": true,
+    "k1": 1,
+    "k2": 2,
+    "nested": {
+     "n1": 1
+    }
+   }
+  }
+ }
+}

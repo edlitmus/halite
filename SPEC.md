@@ -1222,12 +1222,13 @@ does not serve is an error. Both are Salt's behaviour.
 |---|---|
 | `smart` (default) | `recurse` for mappings, replace for everything else |
 | `recurse` | Deep merge mappings; later sources replace scalars and lists |
-| `aggregate` | Deep merge mappings and concatenate lists |
+| `aggregate` | Deep merge mappings and concatenate lists. **Not Salt's:** Salt's is yamlex aggregation, which merges the top level and, below it, only values tagged `!aggregate` (DIVERGENCE 5.468) |
 | `overwrite` | Later source replaces the key entirely |
 
 `pillar_merge_lists` controls whether `recurse` concatenates lists, defaulting to `false` as in
-Salt. The per-key override `__` prefix directives Salt supports in pillar data are implemented:
-`__overwrite__`, `__replace__`, and `__aggregate__` as keys within a mapping.
+Salt. There are no per-key merge directives: `__overwrite__`, `__replace__` and `__aggregate__`
+are ordinary keys, kept in the merged data, because Salt has no such directives and keeps them too
+(DIVERGENCE 5.468).
 
 `pillar.get('a:b:c', default, merge=True, delimiter=':')` behaves as in Salt, including the
 alternate delimiter argument, which matters for keys that contain a colon.

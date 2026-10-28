@@ -315,43 +315,25 @@ func TestMergeDoesNotMutateItsInputs(t *testing.T) {
 	}
 }
 
-func TestMergeDirectives(t *testing.T) {
-	dst := MapOf("nested", MapOf("keep", 1, "replace", 2), "list", []any{"x"})
-
-	// __replace__ discards the destination's mapping entirely.
-	src := MapOf("nested", MapOf("__replace__", true, "only", 9))
+// `__replace__` and its two siblings are data, as in Salt, which has no
+// such directives; internal/pillar's TestMergeDirectivesAreKeysAsInSalt
+// holds this against what salt-call compiled. DIVERGENCE 5.468.
+func TestMergeDirectivesAreOrdinaryKeys(t *testing.T) {
+	dst := MapOf("nested", MapOf("keep", 1), "list", []any{"x"})
+	src := MapOf("nested", MapOf("__replace__", true, "only", 9),
+		"list", []any{"y"})
 	out := Merge(dst, src, MergeOpts{Strategy: Recurse}).(*Map)
 	sub, _ := out.Get("nested")
-	if sub.(*Map).Has("keep") {
-		t.Errorf("__replace__ did not discard the destination: %v", sub.(*Map).StringKeys())
-	}
-	if !sub.(*Map).Has("only") {
-		t.Error("__replace__ dropped the source's own keys")
-	}
-	// The directive itself never survives into the result.
-	if sub.(*Map).Has("__replace__") {
-		t.Error("the directive leaked into the merged data")
+	for _, k := range []string{"keep", "only", "__replace__"} {
+		if !sub.(*Map).Has(k) {
+			t.Errorf("nested lost %s: %v", k, sub.(*Map).StringKeys())
+		}
 	}
 
-	// __aggregate__ turns on list concatenation for that mapping.
-	dst = MapOf("inner", MapOf("list", []any{"x"}))
-	src = MapOf("inner", MapOf("__aggregate__", true, "list", []any{"y"}))
+	src = MapOf("nested", MapOf("__aggregate__", true), "list", []any{"y"})
 	out = Merge(dst, src, MergeOpts{Strategy: Recurse}).(*Map)
-	got, _ := Traverse(out, "inner:list", ":")
-	if len(got.([]any)) != 2 {
-		t.Errorf("__aggregate__ list = %#v", got)
-	}
-
-	// A directive set false is consumed but changes nothing.
-	dst = MapOf("nested", MapOf("keep", 1))
-	src = MapOf("nested", MapOf("__replace__", false, "added", 2))
-	out = Merge(dst, src, MergeOpts{Strategy: Recurse}).(*Map)
-	sub, _ = out.Get("nested")
-	if !sub.(*Map).Has("keep") || !sub.(*Map).Has("added") {
-		t.Errorf("a false directive changed the merge: %v", sub.(*Map).StringKeys())
-	}
-	if sub.(*Map).Has("__replace__") {
-		t.Error("the directive leaked into the merged data")
+	if got, _ := out.Get("list"); len(got.([]any)) != 1 {
+		t.Errorf("__aggregate__ concatenated a list: %#v", got)
 	}
 }
 

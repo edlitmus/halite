@@ -34322,6 +34322,65 @@ captured or changed. Execution was not run: the failure of a matched state
 reaching `x` is the existing requisite path, given the edge, and was not shown
 on a glob.
 
+### 5.468 Salt has no `__replace__`, and halite merged as if it had
+
+Issue 321, section 5: "`__replace__`/`__overwrite__` at the top of a later
+source wipes the pillar compiled so far." Checking that against Salt found
+the premise false, not the bullet. `value/merge.go` read
+`__overwrite__`, `__replace__` and `__aggregate__` inside a mapping as
+directives "Salt honours inside pillar data", and SPEC 12.3 said the same.
+Neither Salt 3006.28's source nor 3008.3's contains any of the three
+strings (searched in the sdists from PyPI). This is the other kind of claim
+the project warns about: it was written as Salt's behaviour, and nobody had
+asked Salt.
+
+**Captured** with `salt-call --local pillar.items` from the 3006.28 and
+3008.3 onedirs on ubuntu-24.04 (GitHub run 40762245009, on a scratch branch
+since deleted). Two pillar files under one top; the second gives `rep`,
+`over` and `agg` each a directive set `True` beside a new key, and gives a
+key the first file lacks a `__replace__` too. Under `smart`, `recurse`,
+`overwrite`, `aggregate` and `pillar_merge_lists`, both versions kept every
+directive key in the compiled pillar as data and merged around it exactly
+as they merge any other key. 3008.3 masks pillar values in that output; its
+keys were the same as 3006.28's, so the fixture holds 3006.28's.
+
+| `smart` | `rep` | `over` | `agg.l` |
+|---|---|---|---|
+| Salt | `__replace__, k1, k2, nested` | `__overwrite__, k1, k2` | `[2]` |
+| halite | `k2` | `k2` | `[1, 2]` |
+
+halite also kept the directive under the key the first file lacked, because
+a mapping met no merge there, so it did not agree with itself either. The
+user's tree uses none of the three; a tree that did would have lost pillar
+data, silently.
+
+**The change.** There are no directives: the three are ordinary keys.
+SPEC 12.3 says so. `TestMergeDirectivesAreKeysAsInSalt`, in
+`internal/pillar`, compiles the captured files under `smart`, `recurse`,
+`overwrite` and `smart` with `pillar_merge_lists` and compares the whole
+pillar with Salt's; it failed on three of the four before the change
+(`overwrite` replaces each top-level key whole, so it already agreed). The
+test in `internal/value` that held the invented behaviour now holds the
+opposite. **Breaking** for a tree that used them, which then gets Salt's
+result; pre-1.0, and the CHANGELOG says so.
+
+**Found while doing this, and not changed: `aggregate` is not Salt's.**
+SPEC 12.3's table says `aggregate` "deep merge[s] mappings and
+concatenate[s] lists", under a heading that promises Salt's semantics. In
+Salt it is `salt.utils.dictupdate.merge_aggregate`, which is yamlex's
+`merge_recursive(level=1)`: it merges the top level and, below it, only
+values tagged `!aggregate` by the yamlex renderer; anything untagged is
+replaced. The capture shows it: under `aggregate`, Salt's `rep` was `k2`
+alone and `agg.l` was `[2]`. halite has no yamlex renderer and so no tags,
+and what the right answer is without them is a decision, not a fix. SPEC's
+row now says it is not Salt's and points here; `TestMergeStrategies` still
+holds halite's reading and is the test to change with it. The capture's
+`aggregate` result is in the fixture for that.
+
+**Not verified.** Ext pillar merges and configuration drop-ins go through
+the same merge and were not captured: Salt's configuration merges have no
+directives either, by the same search, but were not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

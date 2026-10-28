@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `__replace__`, `__overwrite__` and `__aggregate__` are ordinary pillar keys
+
+halite read them as merge directives, which SPEC 12.3 said were Salt's;
+Salt has no such directives and keeps them in the pillar as data. A
+mapping that set `__replace__: True` lost what an earlier pillar file had
+put beside it. They are now plain keys, merged as Salt merges them
+(DIVERGENCE 5.468). **Breaking** for a tree that used them.
+
 ### A requisite may name its target with a glob
 
 `require: [pkg: 'nginx*']` and the bare `require: ['nginx*']` now depend on

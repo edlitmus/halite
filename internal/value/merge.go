@@ -61,15 +61,6 @@ type MergeOpts struct {
 	MergeLists bool
 }
 
-// The per-key directives Salt honours inside pillar data. A mapping that
-// carries one of these keys overrides the ambient strategy for that
-// mapping only.
-const (
-	directiveOverwrite = "__overwrite__"
-	directiveReplace   = "__replace__"
-	directiveAggregate = "__aggregate__"
-)
-
 // Merge combines src into dst and returns the result. Neither argument is
 // mutated: the result shares unmodified subtrees with its inputs, and any
 // mapping the merge touches is copied first.
@@ -136,54 +127,25 @@ func overwriteTop(dst, src any) any {
 	return out
 }
 
+// mergeMaps deep merges src into a copy of dst.
+//
+// `__replace__`, `__overwrite__` and `__aggregate__` are keys like any
+// other. This used to read them as per-mapping directives, which SPEC
+// 12.3 said were Salt's. They are not: neither Salt 3006.28's source nor
+// 3008.3's has the strings, and salt-call kept each one in the compiled
+// pillar as data, merging around it under every strategy. Here
+// `__replace__: True` discarded what an earlier pillar file had put
+// beside it, and the key vanished -- unless no earlier file had that
+// key, when it was kept, so the "directive" did not agree with itself
+// either. DIVERGENCE 5.468.
 func mergeMaps(dst, src *Map, opts MergeOpts, depth int) *Map {
-	local := opts
-	// A directive inside the source mapping overrides the ambient
-	// strategy for this level. The directive key itself is not carried
-	// into the result.
-	skip := map[string]bool{}
-	for _, e := range src.Entries() {
-		k, ok := e.Key.(string)
-		if !ok {
-			continue
-		}
-		switch k {
-		case directiveOverwrite, directiveReplace:
-			if Truthy(e.Val) {
-				skip[k] = true
-				out := NewMap(src.Len())
-				for _, se := range src.Entries() {
-					if sk, ok := se.Key.(string); ok && isDirective(sk) {
-						continue
-					}
-					out.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
-				}
-				return out
-			}
-			skip[k] = true
-		case directiveAggregate:
-			if Truthy(e.Val) {
-				local.Strategy = Aggregate
-				local.MergeLists = true
-			}
-			skip[k] = true
-		}
-	}
-
 	out := dst.Clone()
 	for _, e := range src.Entries() {
-		if k, ok := e.Key.(string); ok && skip[k] {
-			continue
-		}
 		if cur, ok := out.Get(e.Key); ok {
-			out.SetAt(e.Key, mergeValue(cur, e.Val, local, depth+1), e.KeyPos, e.ValPos)
+			out.SetAt(e.Key, mergeValue(cur, e.Val, opts, depth+1), e.KeyPos, e.ValPos)
 			continue
 		}
 		out.SetAt(e.Key, e.Val, e.KeyPos, e.ValPos)
 	}
 	return out
-}
-
-func isDirective(k string) bool {
-	return k == directiveOverwrite || k == directiveReplace || k == directiveAggregate
 }
