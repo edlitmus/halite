@@ -194,7 +194,7 @@ SPEC 4.3 requires two builders to produce identical digests, and an archive is m
   - every time is SOURCE\_DATE\_EPOCH, which the Makefile takes from the commit; an unset or zero epoch is refused rather than defaulted, because a default is exactly the clock this exists to keep out;
   - entries are written in sorted order, directories before the files in them;
   - owner and group are 0 and have no names;
-  - modes are 0755 for directories and binaries and 0644 for the rest, never the mode the file happens to have in the checkout, which depends on the checkout's umask;
+  - modes are 0755 for directories, binaries and the files git records as executable (the rc.d scripts), and 0644 for the rest, never the mode the file happens to have in the checkout, which depends on the checkout's umask;
   - the gzip header has no name and no time, and the compression level is fixed.
 
 It uses the standard library only (plan.md §3.6: no packaging tool in go.mod, and none needed for an archive).

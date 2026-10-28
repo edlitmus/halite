@@ -34004,6 +34004,34 @@ stale comment, and passes with it.
 Still not run on the node: the crontab was read from the fixture, and halite
 did not write to the workstation's crontab.
 
+### 5.459 The release archives carry the rc.d scripts as executable
+
+Issue 321, build section: the rc.d scripts went into the archives at 0644.
+
+**Measured.** The v0.1.1 release's `halite-0.1.1-freebsd-amd64.tar.gz`,
+downloaded from the release, holds `service/rc.d/halite_api`, `halite_highstate`,
+`halite_hub` and `halite_node` at `-rw-r--r--`; git records all four as 100755.
+`disttar` gave every file outside `bin/` 0644 by rule, which SPEC 27.2 also
+said. The install chapters use `install -m 0555`, which sets the mode and hid
+it; a script unpacked and copied with `cp`, or run where it was unpacked, was
+not executable.
+
+**The change.** The mode now comes from git's index (`git ls-files -s`): 0755
+for a file git records as 100755, 0644 otherwise. It is git's bit and not the
+checkout's mode, so two builders from the same commit still agree, which is the
+reason the rule existed. Without git it packages at 0644 as before. SPEC 27.2
+says so.
+
+**Demonstrated.** `TestAnExecutableScriptStaysExecutable` writes the script at
+0600 and sets the bit only in git's index, and
+`TestTheRepositorysRcScriptsAreExecutableInGit` reads the real repository; both
+failed with the 100755 check disabled and pass with it. An archive built from
+this checkout with `go run ./tools/disttar` lists the four scripts at
+`-rwxr-xr-x` and a systemd unit at `-rw-r--r--`.
+
+**Not verified.** `make dist` and the release workflow were not run, so the two
+builders were not compared on this change. The audit's `make dist` sums `*`
+half is still not changed.
 
 ## 6. Everything else not started
 

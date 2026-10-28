@@ -21,9 +21,10 @@
 //   - entries are written in sorted order, directories before the files
 //     in them;
 //   - owner and group are 0 and have no names;
-//   - modes are 0755 for directories and binaries and 0644 for the rest,
-//     never the mode the file happens to have in the checkout, which
-//     depends on the checkout's umask;
+//   - modes are 0755 for directories, binaries and the files git records
+//     as executable (the rc.d scripts), and 0644 for the rest, never the
+//     mode the file happens to have in the checkout, which depends on the
+//     checkout's umask;
 //   - the gzip header has no name and no time, and the compression level
 //     is fixed.
 //
@@ -210,8 +211,8 @@ func sharedEntries(o options) ([]entry, error) {
 	// Where the directory is under version control, only the files git
 	// tracks are packaged (see trackedUnder). The handbook is built, not
 	// committed, so it is added without a list.
-	var files func(dir, into string, deep bool, tracked map[string]bool) (int, error)
-	files = func(dir, into string, deep bool, tracked map[string]bool) (int, error) {
+	var files func(dir, into string, deep bool, tracked map[string]os.FileMode) (int, error)
+	files = func(dir, into string, deep bool, tracked map[string]os.FileMode) (int, error) {
 		listing, err := os.ReadDir(dir)
 		if err != nil {
 			return 0, err
@@ -230,21 +231,26 @@ func sharedEntries(o options) ([]entry, error) {
 			if !f.Type().IsRegular() {
 				continue
 			}
-			if tracked != nil && !tracked[path] {
-				fmt.Fprintf(os.Stderr, "disttar: not packaging %s: git does not track it\n", path)
-				continue
+			mode := os.FileMode(0o644)
+			if tracked != nil {
+				m, ok := tracked[path]
+				if !ok {
+					fmt.Fprintf(os.Stderr, "disttar: not packaging %s: git does not track it\n", path)
+					continue
+				}
+				mode = m
 			}
 			body, err := os.ReadFile(path)
 			if err != nil {
 				return 0, err
 			}
-			out = append(out, entry{path: into + "/" + f.Name(), body: body, mode: 0o644})
+			out = append(out, entry{path: into + "/" + f.Name(), body: body, mode: int64(mode)})
 			n++
 		}
 		return n, nil
 	}
 	add := func(dir, into string, deep bool) error {
-		var tracked map[string]bool
+		var tracked map[string]os.FileMode
 		if dir != o.handbook {
 			tracked = trackedUnder(dir)
 		}
@@ -296,7 +302,7 @@ func sharedEntries(o options) ([]entry, error) {
 		if !f.Type().IsRegular() {
 			continue
 		}
-		if trackedPages != nil && !trackedPages[filepath.Join(man, f.Name())] {
+		if _, ok := trackedPages[filepath.Join(man, f.Name())]; trackedPages != nil && !ok {
 			fmt.Fprintf(os.Stderr, "disttar: not packaging %s: git does not track it\n", filepath.Join(man, f.Name()))
 			continue
 		}
@@ -336,25 +342,39 @@ func sharedEntries(o options) ([]entry, error) {
 }
 
 // trackedUnder is the set of files git tracks under dir, as paths joined to
-// dir the way the walk joins them, or nil when git cannot say (no git, or
-// dir is not in a repository), in which case the caller packages what is
-// there, as it always did.
+// dir the way the walk joins them, each with the mode the archive gives it,
+// or nil when git cannot say (no git, or dir is not in a repository), in
+// which case the caller packages what is there at 0644, as it always did.
+//
+// The mode is git's, not the checkout's: 0755 for a file git records as
+// 100755 and 0644 for the rest. The rc.d scripts are 100755 in the
+// repository and went into every archive at 0644, so a script unpacked and
+// copied with cp, or run in place, was not executable; the install chapters
+// use `install -m 0555`, which hid it. git's bit is part of the commit, so
+// the archive is still the same from any checkout of it.
 //
 // It asks because the packager used to take whatever lay under
 // contrib/examples, rc.d and systemd: a scratch file left in one of them
 // by a local build ended up in an archive that is then signed and
 // attested. CI builds from a clean checkout and never met it; a release
 // built on a working machine could (issue 321, build section).
-func trackedUnder(dir string) map[string]bool {
-	out, err := exec.Command("git", "-C", dir, "ls-files", "-z").Output()
+func trackedUnder(dir string) map[string]os.FileMode {
+	out, err := exec.Command("git", "-C", dir, "ls-files", "-s", "-z").Output()
 	if err != nil {
 		return nil
 	}
-	set := map[string]bool{}
-	for _, rel := range strings.Split(string(out), "\x00") {
-		if rel != "" {
-			set[filepath.Join(dir, filepath.FromSlash(rel))] = true
+	set := map[string]os.FileMode{}
+	// Each record is "<mode> <object> <stage>\t<path>".
+	for _, rec := range strings.Split(string(out), "\x00") {
+		meta, rel, ok := strings.Cut(rec, "\t")
+		if !ok || rel == "" {
+			continue
 		}
+		mode := os.FileMode(0o644)
+		if strings.HasPrefix(meta, "100755 ") {
+			mode = 0o755
+		}
+		set[filepath.Join(dir, filepath.FromSlash(rel))] = mode
 	}
 	return set
 }

@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The release archives keep the rc.d scripts executable
+
+The rc.d scripts were packaged at 0644 (v0.1.1's archives have them so); they
+now carry the executable bit git records for them (DIVERGENCE 5.459).
+
 ### `cron.present` adopts the jobs Salt wrote
 
 A crontab Salt manages is now read as managed: Salt's marker and
