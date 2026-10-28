@@ -33983,6 +33983,27 @@ not write, not adopted as managed variables. Only the shapes captured above
 were tried; a Salt `cron.file`, or a crontab Salt wrote with `commented: True`,
 was not. Not run against a real crontab on a node.
 
+**Addendum, 2026-10-27: a production crontab.** The one `cron.present` in the
+estate's own Salt tree is `state/drake.sls` in `edlitmus/salt`, targeted at the
+Ubuntu workstation `system76-pc`: `/root/service-restart.sh` with `special:
+'@daily'` and no identifier. Root's crontab there, as Salt last wrote it on
+2025-03-04, is now `testdata/cron/system76-pc-salt.crontab`, taken with
+`crontab -l`; Salt has since been removed from the host, so the version that
+wrote it is not known. Two tests read it with drake.sls's own arguments.
+
+`TestTheWorkstationsSaltJobChangesNothing` passes, but it also passed with the
+adoption broken, which is the finding: a job with no identifier was already
+matched by its command, so on this crontab halite before 5.458 also reported
+no change. What the adoption decides here is the rewrite.
+`TestReschedulingTheWorkstationsJobLeavesNoSaltLines` moves the job to
+`@weekly` and expects the bare line and nothing of Salt's; with the
+`SALT_CRON_IDENTIFIER:` case disabled it failed, leaving
+`# SALT_CRON_IDENTIFIER:/root/service-restart.sh` above the new line as a
+stale comment, and passes with it.
+
+Still not run on the node: the crontab was read from the fixture, and halite
+did not write to the workstation's crontab.
+
 
 ## 6. Everything else not started
 
