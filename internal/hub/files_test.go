@@ -206,3 +206,38 @@ func TestTheHideSettingsApplyToListingAndToFetching(t *testing.T) {
 		t.Error("a malformed file_ignore_regex was accepted")
 	}
 }
+
+// Every hash_type SPEC 13.5 offers takes a file from the hub to the
+// node's cache, checked. sha3-256 did not: the hub could not hash with
+// it, sent every file without a digest, and the node cached each one
+// unchecked. A hash_type the file server does not offer is refused for
+// the file rather than sent unchecked. DIVERGENCE 5.469.
+func TestEveryOfferedHashTypeCarriesAFileToTheNodeChecked(t *testing.T) {
+	for _, algorithm := range []string{"sha256", "sha384", "sha512", "sha3-256"} {
+		t.Run(algorithm, func(t *testing.T) {
+			l := newLab(t).withFiles(t, map[string]string{"web/nginx.conf": "worker_processes 4;\n"})
+			l.server.HashType = algorithm
+			node := l.enrolled(t, "web1.example")
+
+			_, digest, _, err := node.FetchFile(context.Background(), "base", "web/nginx.conf", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(digest, algorithm+":") {
+				t.Fatalf("the hub published %q under hash_type %s", digest, algorithm)
+			}
+			remote := fileserver.NewRemote(node, t.TempDir(), []string{"base"})
+			remote.HashType = algorithm
+			if _, err := remote.Fetch("base", "salt://web/nginx.conf"); err != nil {
+				t.Fatalf("the node did not cache it: %v", err)
+			}
+		})
+	}
+
+	l := newLab(t).withFiles(t, map[string]string{"web/nginx.conf": "worker_processes 4;\n"})
+	l.server.HashType = "md5"
+	node := l.enrolled(t, "web1.example")
+	if body, digest, _, err := node.FetchFile(context.Background(), "base", "web/nginx.conf", ""); err == nil {
+		t.Errorf("a file the hub could not hash was sent: %q, digest %q", body, digest)
+	}
+}

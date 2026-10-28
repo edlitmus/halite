@@ -225,6 +225,11 @@ func runServe(args *cli.Args) int {
 				"fix", "make the store belong to the account the hub runs as: chown -R <that account> "+filepath.Join(keysDir(h.cfg), "tokens"))
 		}
 	}
+	// A hash_type the file server cannot publish would refuse every file
+	// a node asks for, one request at a time (DIVERGENCE 5.469).
+	if err := fileserver.CheckHashType(h.cfg.String("hash_type", "sha256")); err != nil {
+		cli.Fatalf("hash_type: %v", err)
+	}
 	listen := args.Flag("listen", h.cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort)))
 
 	names := serverNames(args, listen)

@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A node refuses a file the hub sent without a digest
+
+The node cached a file the hub sent without a digest, unchecked, and the
+hub sent every file so under `hash_type: sha3-256`, which the reference
+offered and nothing implemented. `sha3-256` now works; a `hash_type` the
+file server does not offer stops the hub at start; the hub does not send
+a file it cannot hash; and the node refuses a body with no digest
+(DIVERGENCE 5.469).
+
 ### `__replace__`, `__overwrite__` and `__aggregate__` are ordinary pillar keys
 
 halite read them as merge directives, which SPEC 12.3 said were Salt's;

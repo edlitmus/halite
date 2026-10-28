@@ -34381,6 +34381,52 @@ holds halite's reading and is the test to change with it. The capture's
 the same merge and were not captured: Salt's configuration merges have no
 directives either, by the same search, but were not run.
 
+### 5.469 A node cached a file the hub sent without a digest, unchecked
+
+Issue 321, section 5, as part of the `file.recurse` bullet (5.386 left it):
+"`cacheFile` accepts a body with no published digest." SPEC 13.5 says a
+transfer is checked against the published digest before it is moved into
+place. `Remote.cacheFile` checked only when the hub sent one, and a digest
+with no `algorithm:` prefix was skipped the same way.
+
+**When the hub sent none.** `hub/files.go` set `X-Halite-Hash` only when
+`HashOf` succeeded, and served the body either way. `HashOf` failed for any
+`hash_type` outside sha256, sha384 and sha512, and SPEC 13.5 and the
+configuration reference both offered a fourth, `sha3-256`, that neither
+the hub's `hashOf` nor the node's `digestOf` knew. Those were two lists
+that had to agree with each other and with the documentation, and agreed
+with each other only. So an estate that chose the strongest hash on offer
+got no checking at all: the manifest endpoint answered
+500 (by reading `Manifest`, which returns the hash error), and every single file went out without a digest and was
+cached as it came.
+
+**The change.**
+
+- One list. `newHash` builds the digest for both sides, and offers
+  `sha3-256` from the standard library's `crypto/sha3`, which makes SPEC
+  13.5 and the reference true rather than removing the option.
+- The hub refuses, at start, a `hash_type` the file server cannot publish
+  (`CheckHashType`), with the config-fault exit. Measured: a hub with
+  `hash_type: sha3-512` stopped with exit 78 naming the four it offers; one
+  with `sha3-256` got past the check.
+- The hub does not send a file it cannot hash; it answers 500 and logs why.
+- The node refuses a body with no digest, or with a digest that names no
+  algorithm, and does not cache it.
+
+**Demonstrated.** `TestABodyIsCachedOnlyAgainstAPublishedDigest`
+(`internal/fileserver`) cached a body published with no digest and with a
+bare one before the change. `TestEveryOfferedHashTypeCarriesAFileToTheNodeChecked`
+(`internal/hub`) takes a file from a real in-process hub to a node's cache
+under each of the four: on the old code the hub published `""` under
+sha3-256, and sent a file under `md5` that it could not hash. Both pass now.
+`TestEveryPublishedHashIsOneTheNodeVerifies` checks sha3-256 against FIPS
+202's `abc` example.
+
+**Not verified.** No real hub and node were run with sha3-256, and FIPS
+mode (`GODEBUG=fips140=on`) was not run with it; sha3-256 is an approved
+FIPS 202 function, but that is read, not measured. The node does not check
+its own `hash_type`; an unknown one only stops it sending an entity tag.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

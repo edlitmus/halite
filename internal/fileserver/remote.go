@@ -2,12 +2,9 @@ package fileserver
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
 	"os"
 	"path/filepath"
 	"sort"
@@ -236,17 +233,26 @@ func (r *Remote) cacheFile(env, rel string) (string, error) {
 	// published digest after write and before the file is moved into
 	// place, so a truncated or tampered transfer never becomes the
 	// cached copy.
-	if published != "" {
-		algorithm, want, found := strings.Cut(published, ":")
-		if found {
-			got, err := digestOf(body, algorithm)
-			if err != nil {
-				return "", err
-			}
-			if got != want {
-				return "", fmt.Errorf("%s/%s arrived with digest %s and the hub published %s", env, rel, got, want)
-			}
-		}
+	//
+	// A body without a digest is refused, and so is a digest without an
+	// algorithm. Both were taken as "nothing to check", and the hub sent
+	// no digest whenever it could not hash the file -- for every file,
+	// under a `hash_type` of sha3-256 (DIVERGENCE 5.469). A check that a
+	// missing header turns off is not a check. Every hub this node can
+	// talk to sends one: the header is as old as the file endpoint.
+	if published == "" {
+		return "", fmt.Errorf("the hub published no digest for %s/%s, so it cannot be checked and was not cached", env, rel)
+	}
+	algorithm, want, found := strings.Cut(published, ":")
+	if !found || want == "" {
+		return "", fmt.Errorf("the hub's digest for %s/%s, %q, is not a digest: it names no algorithm", env, rel, published)
+	}
+	got, err := digestOf(body, algorithm)
+	if err != nil {
+		return "", fmt.Errorf("%s/%s: %w", env, rel, err)
+	}
+	if got != want {
+		return "", fmt.Errorf("%s/%s arrived with digest %s and the hub published %s", env, rel, got, want)
 	}
 	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("caching %s: %w", rel, err)
@@ -254,10 +260,7 @@ func (r *Remote) cacheFile(env, rel string) (string, error) {
 	if err := writeAtomic(path, body, 0o600); err != nil {
 		return "", err
 	}
-	if published != "" {
-		_, digest, _ := strings.Cut(published, ":")
-		r.remember(path, digest)
-	}
+	r.remember(path, want)
 	return path, nil
 }
 
@@ -316,16 +319,9 @@ func (r *Remote) List(env string) ([]string, error) {
 }
 
 func digestOf(data []byte, algorithm string) (string, error) {
-	var h hash.Hash
-	switch algorithm {
-	case "sha256", "":
-		h = sha256.New()
-	case "sha384":
-		h = sha512.New384()
-	case "sha512":
-		h = sha512.New()
-	default:
-		return "", fmt.Errorf("%q is not a hash this build verifies", algorithm)
+	h, err := newHash(algorithm)
+	if err != nil {
+		return "", err
 	}
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil)), nil
