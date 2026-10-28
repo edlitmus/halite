@@ -34212,6 +34212,35 @@ architecture. Only i386 beside amd64 was captured. A package held or pinned by
 its qualified name through the other apt paths (`pkg.latest`, `pkg.hold`, the
 version reads) was not checked against this list.
 
+### 5.465 A principal glob in a policy binding crosses `/`
+
+Issue 321, section 5, the half of the `stringList` bullet 5.387 left:
+`matchPrincipal` used `path.Match`, so `/` in a principal could defeat a
+`*`.
+
+**What the `/` reaches.** Of the principal kinds, `hook:<path>` is the one
+that can hold a `/`: a hook's path is the rest of `/v1/hook/...` and keeps its
+inner slashes. A binding of `hook:*` gave nothing to `hook:github/push`, and
+`hook:github/*` nothing to `hook:github/a/b`. Bindings only grant, so this
+failed closed: a delivery was refused that the policy as written meant to
+allow, with no word of why. It never granted more than written.
+
+**The change.** `matchPrincipal` uses `fileserver.Fnmatch`, the port of
+Python's `fnmatch.fnmatchcase` that 5.295 put under `file_ignore_glob`: `*`
+and `?` cross `/`, as Salt's eauth name matching does. That widens as well as
+fixes: `hook:github/*` now matches `hook:github/a/b`. `[seq]` keeps working;
+a backslash is now a literal rather than an escape, and an unclosed `[` is a
+literal rather than no match.
+
+**Demonstrated.** `TestAPrincipalGlobCrossesASlash` failed before (`hook:*`
+missing from `hook:github/push`, nothing for `hook:github/a/b`) and passes;
+`node:lb*.prod` still matches `node:lb1.prod` and not
+`node:lb1.prod.example`.
+
+**Not done.** `matchGlob`, which the rules use for function and SLS names, is
+still `path.Match`; those names are dotted, and nothing was found that a `/`
+breaks. No live hub was run with a nested hook path.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

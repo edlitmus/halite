@@ -599,3 +599,27 @@ bindings:
 		}
 	}
 }
+
+// A `*` in a binding's principal crosses `/`, as Salt's fnmatch does. A
+// webhook's principal is `hook:<path>` and a path may have `/` in it, so
+// with path.Match a binding of `hook:*` gave nothing to `hook:github/push`,
+// and said nothing (issue 321; DIVERGENCE 5.465).
+func TestAPrincipalGlobCrossesASlash(t *testing.T) {
+	p := &Policy{Bindings: []Binding{
+		{Principal: "hook:*", Roles: []string{"hooks"}},
+		{Principal: "hook:github/*", Roles: []string{"github"}},
+		{Principal: "node:lb*.prod", Roles: []string{"lb_peer"}},
+	}}
+	for principal, want := range map[string]string{
+		"hook:deploy":           "hooks",
+		"hook:github/push":      "github hooks",
+		"hook:github/a/b":       "github hooks",
+		"node:lb1.prod":         "lb_peer",
+		"node:lb1.prod.example": "",
+		"local:alice":           "",
+	} {
+		if got := strings.Join(p.RolesFor(principal), " "); got != want {
+			t.Errorf("%s: roles %q, want %q", principal, got, want)
+		}
+	}
+}

@@ -160,7 +160,7 @@ passing by the PRs above; that has not been looked for.
 | `file.rename force` deletes the destination before the move | #418 | 5.377; onto itself too; Salt also deletes first, so only the failure path differs; `movePath` still copies on any rename error, not only EXDEV; not run as root or on FreeBSD |
 | `openssl.pkcs12_export` writes under the umask | #419 | 5.385; an existing bundle was rewritten in place; LibreSSL and FreeBSD's base openssl not run |
 | `file.recurse` joins listed paths with no `..` check | #420 | 5.386; the prefix was matched as a string too; `cacheFile` accepting a body with no published digest not looked at; no hub run |
-| policy `stringList` drops non-string items | #421 | 5.387; YAML 1.2 reads `on` as a string, so that example does not occur; `matchPrincipal`'s `path.Match` and `/` in principals not fixed |
+| policy `stringList` drops non-string items | #421 | 5.387; YAML 1.2 reads `on` as a string, so that example does not occur; `matchPrincipal`'s `path.Match` and `/` in principals not fixed, done in 5.465 |
 | TOTP codes replayable inside their window | #422 | 5.388; in memory, so a restart forgets; LDAP and OIDC logins unchanged |
 | `readJSON` accepts trailing non-JSON | #423 | 5.389 |
 | API listener does not restrict curves in FIPS mode | #424 | 5.390; go1.27.2 refuses X25519 under fips140=on anyway, measured; a comment saying otherwise corrected; the new test passes against the old listener too, so it holds the property, not the change |
@@ -175,6 +175,7 @@ passing by the PRs above; that has not been looked for.
 | `log` field that is a `fmt.Stringer` not scrubbed; `*url.URL` prints its password | #497 | 5.462; console leaked both, measured; scrubbed text replaces a Stringer only when it held a secret, so durations stay numbers; URLs always `Redacted()`; latent, no such call site found; non-Stringer structs still unscrubbed in JSON |
 | Docker bases tag-pinned, not digest-pinned | #497 | 5.463; eleven references pinned to index digests read from the registries; buildpolicy guard; nothing built locally (no runtime), CI builds fleet, rpm and saltdiff; `race` and `zfs` images not built |
 | Multi-arch: apt `ListPkgs` keys on bare `${Package}`, last arch wins | #497 | 5.464; captured in a bookworm container with i386: Salt 3006.28 and 3008.3 key foreign packages `name:arch`; halite read `hello` as installed when only `hello:i386` was; native arch from dpkg's own line; breaking on multi-arch hosts; no live test |
+| policy `matchPrincipal` uses `path.Match`, so `/` defeats `*` | #PRNUM | 5.465; reached by hook principals (`hook:github/push`); failed closed, never granted more; now Salt's fnmatch, which also widens `hook:x/*` to nested paths; `matchGlob` for functions and SLS left; no live hub |
 | aws-secrets: node `name` nests over a hub secret | #468 | 5.409; extension 1.1.1; cache eviction (bounded by what exists) and the `node_grain_allow` default (owner decision) left |
 | `template.DirLoader` follows symlinks | #469 | 5.410; test and dev use only; Linux only |
 | `state/order.go` is O(n²) | #471 | 5.411; heap, same order on 20,000 random graphs with ties; self-requisites still dropped silently (needs a Salt check) |

@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A `*` in a policy binding's principal matches across `/`
+
+Principal globs in `bindings` now match as Salt's fnmatch does: `hook:*`
+covers a webhook whose path has a `/` in it, which it silently did not.
+`hook:github/*` now also covers paths nested below it (DIVERGENCE 5.465).
+
 ### A foreign-architecture Debian package is listed as `name:arch` (breaking on multi-arch hosts)
 
 On a Debian or Ubuntu host with a foreign architecture, `pkg.list_pkgs` now
