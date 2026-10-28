@@ -34137,6 +34137,37 @@ the change.
 Stringer as a field, so this is latent, like 5.408. A struct that is not a
 Stringer still goes to JSON by its exported fields, unscrubbed.
 
+### 5.463 Container base images are pinned by digest
+
+Issue 321, build section: "Docker bases are tag-pinned, not digest-pinned".
+Every base the repository builds from named a tag: `golang:1.27.3-bookworm`,
+`golang:1.25-bookworm` (twice, once through `mirror.gcr.io`), `opensuse/leap:16.0`,
+`ubuntu:24.04`, and the EL base `rockylinux/rockylinux:9` or `almalinux:8`
+given as a build argument. A tag is whatever the registry says on the day, so
+the fleet and saltdiff images CI drives as root could change under an unchanged
+commit. Nothing is known to have moved yet: the `rockylinux/rockylinux:9`
+digest 5.319 recorded from two runs, `sha256:8101994123cf…`, is the one pinned
+here.
+
+**The change.** Each reference is now `<tag>@sha256:<index digest>`: the eight
+`FROM` lines, the `ARG BASE` default and the two `--build-arg BASE=` in the
+Makefile. The digests were read on 2026-10-28 from the registries' manifest
+endpoints (`Docker-Content-Digest`, asking for an index), and each is the
+multi-arch index, so one line serves amd64 and arm64. `mirror.gcr.io` returned
+the same digest as Docker Hub for `golang:1.25-bookworm`. The tag stays beside
+the digest: it says what the digest is, and the toolchain checks read it.
+
+`TestContainerBasesArePinnedByDigest` in `internal/buildpolicy` holds every
+`FROM`, `ARG BASE` and Makefile `--build-arg BASE=` to a digest. On the
+previous files it reported all eleven; it passes now. It counts what it checked
+and fails if that falls below ten, so a rename does not quietly empty it.
+
+**Not verified.** Nothing was built here, which has no container runtime: the
+pinned lines are proven only by the PR's own CI, which builds the fleet, rpm and
+saltdiff images. `contrib/docker/race` and `contrib/vm/zfs` are not built by CI
+and were not built. Updating a digest is now a manual step, with no tool for
+it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

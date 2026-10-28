@@ -17,7 +17,7 @@
 # pull it together without logging in, and Docker Hub answered GitHub's
 # runners with 429 Too Many Requests: the gate failed in six seconds,
 # twice running, having tested nothing. DIVERGENCE 5.272.
-FROM mirror.gcr.io/library/golang:1.25-bookworm
+FROM mirror.gcr.io/library/golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437
 
 # The Salt major to compare against. SPEC 31's deviation table records
 # which version each difference was observed under — 3006 and 3008

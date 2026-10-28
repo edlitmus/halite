@@ -46,8 +46,8 @@
 #
 # BASE is declared before the first FROM because that is the only place
 # an ARG can reach a FROM line from.
-ARG BASE=rockylinux/rockylinux:9
-FROM golang:1.27.3-bookworm AS toolchain
+ARG BASE=rockylinux/rockylinux:9@sha256:8101994123cf3d0a8fee517bee7f39e555c7d92bd2d9eb3303cc988a0eeed00f
+FROM golang:1.27.3-bookworm@sha256:05237276236793ebedaf0b87dab86add9ec9adc66ebef2dbc3107c18254cde1c AS toolchain
 
 FROM ${BASE}
 

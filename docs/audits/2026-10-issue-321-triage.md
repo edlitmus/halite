@@ -173,6 +173,7 @@ passing by the PRs above; that has not been looked for.
 | Redaction: overlapping secrets leave a tail in clear | #462 | 5.407; the multi-line secret in `render.Error`'s numbered window is left for the owner (two options in the entry); `log.ScrubValue` and `error` fields separate |
 | `log` field holding an `error` not scrubbed | #466 | 5.408; latent, no call site passed one; JSON wrote `{}`; `fmt.Stringer` fields left (a `*url.URL` still prints its password), done in 5.462 |
 | `log` field that is a `fmt.Stringer` not scrubbed; `*url.URL` prints its password | #PRNUM | 5.462; console leaked both, measured; scrubbed text replaces a Stringer only when it held a secret, so durations stay numbers; URLs always `Redacted()`; latent, no such call site found; non-Stringer structs still unscrubbed in JSON |
+| Docker bases tag-pinned, not digest-pinned | #PRNUM | 5.463; eleven references pinned to index digests read from the registries; buildpolicy guard; nothing built locally (no runtime), CI builds fleet, rpm and saltdiff; `race` and `zfs` images not built |
 | aws-secrets: node `name` nests over a hub secret | #468 | 5.409; extension 1.1.1; cache eviction (bounded by what exists) and the `node_grain_allow` default (owner decision) left |
 | `template.DirLoader` follows symlinks | #469 | 5.410; test and dev use only; Linux only |
 | `state/order.go` is O(n²) | #471 | 5.411; heap, same order on 20,000 random graphs with ties; self-requisites still dropped silently (needs a Salt check) |
