@@ -34061,6 +34061,50 @@ the template package passes.
 of any size. `batch`, `slice` and the other filters that build lists from an
 existing one are not charged. Salt has no such limit to compare with.
 
+### 5.461 A state that is its own requisite is refused as a cycle
+
+Issue 321, engine section: `state/order.go` dropped self-requisites silently.
+5.411 left it open because it needed a Salt check.
+
+**Measured, Salt.** `salt-call --local state.apply`, Salt 3006.28 and 3008.3
+onedir on GitHub's ubuntu-24.04 runner, 2026-10-28, against `a:
+test.succeed_with_changes` with each of: `require`, `watch`, `onchanges` and
+`prereq` naming `test: a`; `require: [a]`; `require_in: [test: a]`;
+`require: [sls: <its own file>]` beside a second state; and `require: [test:
+'*']` beside a second state. Every one was refused as a recursive requisite.
+3008.3 refused the whole run (`Recursive requisites were found: ({'SLS': ...,
+'ID': 'a'}, 'require', ...)`, exit 1). 3006.28 refused the bare form the same way
+(`A recursive requisite was found`, exit 1) and, for the bare ID, `require_in`,
+`sls:` and glob forms, failed `a` with `Recursive requisite found` and ran the
+other state (exit 2).
+
+**Measured, halite.** The same files under `halite-node state apply --local`:
+`require`, `watch`, `prereq`, the bare ID, `require_in` and `sls:` ran `a` and
+reported its change; `onchanges` skipped it as having no changes, every run.
+`addEdge` returned early when the two ends were the same chunk, so the
+requisite was as good as absent. The glob form is refused by halite at compile
+time for another reason: it does not accept `*` in a requisite.
+
+**The change.** A requisite that resolves to its own chunk is reported as a
+requisite cycle of one hop, `a -> require -> a`, a compilation error like any
+other cycle, as 3008.3 does. Once per chunk. `listen` is left alone: it orders
+nothing, and was not captured. SPEC 11.4 says so.
+
+**Breaking,** for a tree that held such a requisite and ran: it now fails to
+compile. In edlitmus/salt, the estate's own tree, none of the 32 `.sls` files
+has an `sls:` requisite, and 20 of its 21 state files compiled with this change
+and no cycle, each on its own with an empty pillar (its pillar is GPG-encrypted
+and this host has no key). The 21st, `scripts`, stopped earlier, at a loop over
+pillar it did not have, so its requisites were not reached.
+
+**Demonstrated.** `TestAStateThatRequiresItselfIsACycle` covers the seven forms
+halite accepts; all seven failed with the check disabled and pass with it. The
+whole tree's tests pass.
+
+**Not verified.** `listen` and `onfail` on themselves, `use`, and the `_any`
+forms were not captured. A self-requisite reached through an `include`d file's
+`sls:` was not tried. The saltdiff differential was not given a case.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -1093,6 +1093,9 @@ tiebreak. Two consequences are specified explicitly:
 
 A requisite cycle is a compilation error that prints the cycle as a path, for example
 `a -> require -> b -> watch -> c -> require -> a`. Salt prints an unhelpful recursion message here.
+A state that is its own requisite, by ID, by a glob or `sls:` that matches it, or through
+`require_in`, is a cycle of one hop (`a -> require -> a`) and is refused the same way, as Salt
+refuses it; `listen` constrains no order and is exempt.
 
 `failhard: True` at the state level or globally aborts the run on the first failure. Without it, a
 failure marks dependents as skipped with a comment naming the failed dependency, and the run
