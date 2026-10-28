@@ -1045,3 +1045,26 @@ func TestOnRenderedSeesEachFileIncludingTheBrokenOne(t *testing.T) {
 		t.Errorf("the broken file's rendered output never arrived: %q", seen["broken"])
 	}
 }
+
+// A state that is its own requisite is a cycle, and Salt refuses it as
+// one: 3006.28 and 3008.3, under salt-call --local, refused each form
+// below as a recursive requisite (DIVERGENCE 5.461). The edge used to be
+// dropped silently, so the state ran as if the requisite were not there.
+func TestAStateThatRequiresItselfIsACycle(t *testing.T) {
+	for name, sls := range map[string]string{
+		"require":    "a:\n  test.nop:\n    - require:\n      - test: a\n",
+		"watch":      "a:\n  test.nop:\n    - watch:\n      - test: a\n",
+		"onchanges":  "a:\n  test.nop:\n    - onchanges:\n      - test: a\n",
+		"prereq":     "a:\n  test.nop:\n    - prereq:\n      - test: a\n",
+		"bare id":    "a:\n  test.nop:\n    - require:\n      - a\n",
+		"require_in": "a:\n  test.nop:\n    - require_in:\n      - test: a\n",
+		"own sls":    "a:\n  test.nop:\n    - require:\n      - sls: web\nb:\n  test.nop: []\n",
+	} {
+		msg := errText(compile(t, map[string]string{"base|web": sls}, "web"))
+		if !strings.Contains(msg, "requisite cycle: a -> ") || strings.Count(msg, "requisite cycle") != 1 {
+			t.Errorf("%s: want one cycle naming a, got:\n%s", name, msg)
+		}
+	}
+	// Requiring another state in the same file is not a cycle.
+	mustCompile(t, map[string]string{"base|web": "a:\n  test.nop:\n    - require:\n      - test: b\nb:\n  test.nop: []\n"}, "web")
+}

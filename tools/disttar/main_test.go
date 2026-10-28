@@ -397,3 +397,63 @@ func TestAnUntrackedFileIsNotPackaged(t *testing.T) {
 		t.Error("the tracked rc script is missing")
 	}
 }
+
+// A file git records as executable goes into the archive at 0755, whatever
+// mode the checkout gave it, and the rest stay 0644. The rc.d scripts are
+// the case: 100755 in the repository, 0644 in every archive until now.
+// The fixture writes the script at 0600 and sets the bit only in git's
+// index, so a pass means git's bit was read and not the file's.
+func TestAnExecutableScriptStaysExecutable(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	o := fixture(t)
+	root := filepath.Dir(o.dist)
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "core.fileMode=false"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "ex", "man", "rcd", "sd")
+	git("update-index", "--chmod=+x", "rcd/halite_hub")
+
+	entries, err := sharedEntries(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{"service/rc.d/halite_hub": 0o755, "service/systemd/halite-hub.service": 0o644}
+	for _, e := range entries {
+		for suffix, mode := range want {
+			if strings.HasSuffix(e.path, suffix) {
+				if e.mode != mode {
+					t.Errorf("%s is %#o in the archive, want %#o", e.path, e.mode, mode)
+				}
+				delete(want, suffix)
+			}
+		}
+	}
+	for suffix := range want {
+		t.Errorf("no entry for %s", suffix)
+	}
+}
+
+// The repository's own rc.d scripts are recorded as executable, which is
+// what the test above relies on git saying.
+func TestTheRepositorysRcScriptsAreExecutableInGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := filepath.Join("..", "..", "contrib", "rc.d")
+	modes := trackedUnder(dir)
+	if modes == nil {
+		t.Skip("not in a git checkout")
+	}
+	for _, name := range []string{"halite_api", "halite_highstate", "halite_hub", "halite_node"} {
+		if got := modes[filepath.Join(dir, name)]; got != 0o755 {
+			t.Errorf("%s: %#o, want 0755", name, got)
+		}
+	}
+}

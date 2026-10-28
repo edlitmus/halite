@@ -342,8 +342,8 @@ type budget struct {
 	output        int64
 	maxOutput     int64
 	checks        int
-	// materialised counts the items of lists built by range() across the
-	// whole render. The per-call limit alone let a template hold as many
+	// materialised counts the items of lists built by range(), list
+	// repetition, permutations and combinations across the whole render. The per-call limit alone let a template hold as many
 	// 10M-item lists as it had variables: thirty `range(9000000)` calls
 	// in one render allocated 6.2 GB, each call individually allowed.
 	materialised int64

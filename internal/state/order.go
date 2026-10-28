@@ -36,9 +36,26 @@ func order(chunks []*Chunk, diags *Diags) []*Chunk {
 		edges[after] = append(edges[after], before)
 	}
 
+	// A chunk that is its own requisite is a cycle of one hop, and Salt
+	// refuses it as one. addEdge used to drop the edge without a word, so
+	// `require: [test: a]` on `a` ran as if it were not there, and a
+	// self-onchanges skipped the state every run. Captured from salt-call
+	// --local, 3006.28 and 3008.3, on 2026-10-28: require, watch,
+	// onchanges, prereq, the bare-ID form, require_in, `sls:` naming the
+	// state's own file and a `*` glob that matches it were each refused as
+	// a recursive requisite -- 3008.3 refusing the whole run, as a cycle
+	// here does; 3006.28 failing that state and running the rest
+	// (DIVERGENCE 5.461). listen constrains no order and was not
+	// captured, so it is left alone.
+	selfReported := make([]bool, n)
+
 	for i, c := range chunks {
 		for _, req := range c.Reqs {
 			for _, target := range req.Resolved {
+				if target == i && req.Kind != Listen && !selfReported[i] {
+					selfReported[i] = true
+					diags.Add(c.Pos, c.SLS, c.ID, "requisite cycle: %s", renderCycle(chunks, []int{i, i}))
+				}
 				switch req.Kind {
 				case Prereq:
 					// prereq inverts the usual direction: B declares

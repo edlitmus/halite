@@ -953,7 +953,10 @@ Statements nest at most as deep as the recursion depth (100), and one expression
 levels, counting both brackets and the height of a chain such as `1 + 1 + ... + 1`. A single string
 a builtin builds (`indent`, `center`, `zfill`, `*`) may be no larger than the output limit, and a
 single list (`range`, `*`, `batch`, `slice`, `permutations`, `combinations`) may hold no more items
-than the iteration limit, both checked before the value is built.
+than the iteration limit, both checked before the value is built. The lists `range`, `*`,
+`permutations` and `combinations` build are also counted across the render, and together may hold
+no more items than the iteration limit; `batch` and `slice` regroup a list that already exists and
+are not counted.
 
 Rendering happens in the unprivileged sandbox subprocess described in section 25.4.
 
@@ -1090,6 +1093,9 @@ tiebreak. Two consequences are specified explicitly:
 
 A requisite cycle is a compilation error that prints the cycle as a path, for example
 `a -> require -> b -> watch -> c -> require -> a`. Salt prints an unhelpful recursion message here.
+A state that is its own requisite, by ID, by a glob or `sls:` that matches it, or through
+`require_in`, is a cycle of one hop (`a -> require -> a`) and is refused the same way, as Salt
+refuses it; `listen` constrains no order and is exempt.
 
 `failhard: True` at the state level or globally aborts the run on the first failure. Without it, a
 failure marks dependents as skipped with a comment naming the failed dependency, and the run
@@ -2584,7 +2590,7 @@ publishes nothing, and no tag has been cut.
 | `.msi` | Windows service registration, an event log source, and configuration under `%PROGRAMDATA%\Halite` |
 | `.pkg` | macOS with a launchd plist and the manual page |
 | FreeBSD package | rc.d script and the manual page |
-| Tarball | Static binaries plus example configuration and the manual pages, for air-gapped and container use. One per platform in section 27.1, tier 3 included: `halite-<version>-<os>-<arch>.tar.gz`, or `.zip` for Windows, holding `LICENSE`, `EVIDENCE.md` (the evidence report), `bin/`, `examples/`, `handbook/` (the HTML Handbook, built from the same commit and checked against the code), `service/` (the rc.d scripts and systemd units) and `man/man5/`, `man/man7/` and `man/man8/` under a directory of the same name. Every entry's time is `SOURCE_DATE_EPOCH`, owner and group are 0 with no names, modes are 0755 for binaries and directories and 0644 otherwise, and entries are sorted, so two builders produce the same bytes. The `-fips` set of section 27.4 is a further archive per FIPS target, `halite-<version>-linux-<arch>-fips.tar.gz`, with the same contents but `bin/` holding the `-fips` binaries; it is separate from the ordinary archive so that no one installs a FIPS binary by taking the wrong file |
+| Tarball | Static binaries plus example configuration and the manual pages, for air-gapped and container use. One per platform in section 27.1, tier 3 included: `halite-<version>-<os>-<arch>.tar.gz`, or `.zip` for Windows, holding `LICENSE`, `EVIDENCE.md` (the evidence report), `bin/`, `examples/`, `handbook/` (the HTML Handbook, built from the same commit and checked against the code), `service/` (the rc.d scripts and systemd units) and `man/man5/`, `man/man7/` and `man/man8/` under a directory of the same name. Every entry's time is `SOURCE_DATE_EPOCH`, owner and group are 0 with no names, modes are 0755 for binaries, directories and the files git records as executable (the rc.d scripts) and 0644 otherwise, and entries are sorted, so two builders produce the same bytes. The `-fips` set of section 27.4 is a further archive per FIPS target, `halite-<version>-linux-<arch>-fips.tar.gz`, with the same contents but `bin/` holding the `-fips` binaries; it is separate from the ordinary archive so that no one installs a FIPS binary by taking the wrong file |
 | Container image | `FROM scratch` with the static binary, CA bundle, and time zone data. No shell, no package manager. Separate images per binary. |
 | SBOM and provenance | Per artifact, section 4.3 |
 | Manual pages | `halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc. Section 8 because each command administers a machine and most need root. They are a deliverable in their own right and not only a package's contents: a machine built from source and installed with `make install` gets them and does not get `docs/`. Every subcommand appears in the page for its binary, held there by a test. |

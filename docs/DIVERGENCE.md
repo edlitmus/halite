@@ -34004,6 +34004,106 @@ stale comment, and passes with it.
 Still not run on the node: the crontab was read from the fixture, and halite
 did not write to the workstation's crontab.
 
+### 5.459 The release archives carry the rc.d scripts as executable
+
+Issue 321, build section: the rc.d scripts went into the archives at 0644.
+
+**Measured.** The v0.1.1 release's `halite-0.1.1-freebsd-amd64.tar.gz`,
+downloaded from the release, holds `service/rc.d/halite_api`, `halite_highstate`,
+`halite_hub` and `halite_node` at `-rw-r--r--`; git records all four as 100755.
+`disttar` gave every file outside `bin/` 0644 by rule, which SPEC 27.2 also
+said. The install chapters use `install -m 0555`, which sets the mode and hid
+it; a script unpacked and copied with `cp`, or run where it was unpacked, was
+not executable.
+
+**The change.** The mode now comes from git's index (`git ls-files -s`): 0755
+for a file git records as 100755, 0644 otherwise. It is git's bit and not the
+checkout's mode, so two builders from the same commit still agree, which is the
+reason the rule existed. Without git it packages at 0644 as before. SPEC 27.2
+says so.
+
+**Demonstrated.** `TestAnExecutableScriptStaysExecutable` writes the script at
+0600 and sets the bit only in git's index, and
+`TestTheRepositorysRcScriptsAreExecutableInGit` reads the real repository; both
+failed with the 100755 check disabled and pass with it. An archive built from
+this checkout with `go run ./tools/disttar` lists the four scripts at
+`-rwxr-xr-x` and a systemd unit at `-rw-r--r--`.
+
+**Not verified.** `make dist` and the release workflow were not run, so the two
+builders were not compared on this change. The audit's `make dist` sums `*`
+half is still not changed.
+
+### 5.460 permutations, combinations and list repetition are charged to the render
+
+Issue 321, engine section: `permutations` and `combinations` "cap by count
+only". 5.445 found that `range()`'s limit was per call, so a render could hold as
+many ten-million-item lists as it had variables, and charged `range()` to the
+render. The same was true of these two and of list repetition (`[x] * n`), which
+5.445 did not touch.
+
+**Measured.** Three `s|permutations(7)` over ten items, 4.2 million items each,
+rendered in one template; so did two `s|combinations(11)` over 22 (7.8 million
+each) and two `[0] * 6000000`. Each was under the per-call bound of ten million
+and the render held more than that.
+
+**The change.** All three charge `budget.materialise`, the render-wide count
+`range()` uses. For the combinatorics this replaces the per-call check, since the
+render's total is never less than one call's; the error now says the lists built
+in the render would hold more than the limit. List repetition keeps its per-call
+check, which also stops the product from wrapping, and is charged after it. SPEC
+10.2.8 now says which lists are counted across a render.
+
+**Demonstrated.** `TestCombinatoricListsAreChargedToTheRender` and
+`TestListRepetitionIsChargedToTheRender` failed on the previous files and pass;
+the template package passes.
+
+**Not verified.** Memory was not measured, only the counts; an item is a value
+of any size. `batch`, `slice` and the other filters that build lists from an
+existing one are not charged. Salt has no such limit to compare with.
+
+### 5.461 A state that is its own requisite is refused as a cycle
+
+Issue 321, engine section: `state/order.go` dropped self-requisites silently.
+5.411 left it open because it needed a Salt check.
+
+**Measured, Salt.** `salt-call --local state.apply`, Salt 3006.28 and 3008.3
+onedir on GitHub's ubuntu-24.04 runner, 2026-10-28, against `a:
+test.succeed_with_changes` with each of: `require`, `watch`, `onchanges` and
+`prereq` naming `test: a`; `require: [a]`; `require_in: [test: a]`;
+`require: [sls: <its own file>]` beside a second state; and `require: [test:
+'*']` beside a second state. Every one was refused as a recursive requisite.
+3008.3 refused the whole run (`Recursive requisites were found: ({'SLS': ...,
+'ID': 'a'}, 'require', ...)`, exit 1). 3006.28 refused the bare form the same way
+(`A recursive requisite was found`, exit 1) and, for the bare ID, `require_in`,
+`sls:` and glob forms, failed `a` with `Recursive requisite found` and ran the
+other state (exit 2).
+
+**Measured, halite.** The same files under `halite-node state apply --local`:
+`require`, `watch`, `prereq`, the bare ID, `require_in` and `sls:` ran `a` and
+reported its change; `onchanges` skipped it as having no changes, every run.
+`addEdge` returned early when the two ends were the same chunk, so the
+requisite was as good as absent. The glob form is refused by halite at compile
+time for another reason: it does not accept `*` in a requisite.
+
+**The change.** A requisite that resolves to its own chunk is reported as a
+requisite cycle of one hop, `a -> require -> a`, a compilation error like any
+other cycle, as 3008.3 does. Once per chunk. `listen` is left alone: it orders
+nothing, and was not captured. SPEC 11.4 says so.
+
+**Breaking,** for a tree that held such a requisite and ran: it now fails to
+compile. In edlitmus/salt, the estate's own tree, none of the 32 `.sls` files
+has an `sls:` requisite, and 20 of its 21 state files compiled with this change
+and no cycle, each on its own with an empty pillar (its pillar is GPG-encrypted
+and this host has no key). The 21st, `scripts`, stopped earlier, at a loop over
+pillar it did not have, so its requisites were not reached.
+
+**Demonstrated.** `TestAStateThatRequiresItselfIsACycle` covers the seven forms
+halite accepts; all seven failed with the check disabled and pass with it. The
+whole tree's tests pass.
+
+**Not verified.** `listen` and `onfail` on themselves, `use`, and the `_any`
+forms were not captured. A self-requisite reached through an `include`d file's
+`sls:` was not tried. The saltdiff differential was not given a case.
 
 ## 6. Everything else not started
 

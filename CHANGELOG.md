@@ -21,6 +21,25 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A state that is its own requisite fails to compile (breaking)
+
+A requisite that names its own state, directly, through `require_in`, or by an
+`sls:` that includes it, is now a requisite cycle (`a -> require -> a`) and the
+run does not compile. It used to be ignored, so the state ran as if the
+requisite were absent, and a self-`onchanges` skipped the state every run.
+Salt 3006 and 3008 refuse all of these too (DIVERGENCE 5.461).
+
+### `permutations`, `combinations` and list repetition count against the render's limit
+
+The items these build are now counted across the whole render, as `range()`'s
+are, instead of only per call: several lists each under ten million items, and
+over it together, now fail the render (DIVERGENCE 5.460).
+
+### The release archives keep the rc.d scripts executable
+
+The rc.d scripts were packaged at 0644 (v0.1.1's archives have them so); they
+now carry the executable bit git records for them (DIVERGENCE 5.459).
+
 ### `cron.present` adopts the jobs Salt wrote
 
 A crontab Salt manages is now read as managed: Salt's marker and
