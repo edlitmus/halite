@@ -254,6 +254,19 @@ The rule this package enforces: a pattern using a construct RE2 lacks is a hard 
 - `Error` (type): Error is a refusal to compile a pattern, naming what RE2 lacks.
 - `Unsupported` (func): Unsupported reports every construct in a pattern that RE2 cannot express.
 
+## `internal/fnmatch`
+
+Import path `github.com/edlitmus/halite/internal/fnmatch`.
+
+Package fnmatch is Python's fnmatch.fnmatchcase, the glob Salt means wherever it takes one: file\_ignore\_glob, file.recurse's include and exclude, eauth names and requisite targets. It was in fileserver, which the state compiler cannot import (fileserver imports state), so it was moved here when requisites needed it (DIVERGENCE 5.467).
+
+**Files:** `fnmatch.go`; with tests.
+
+**Exports.**
+
+- `HasMeta` (func): HasMeta reports whether a pattern holds any of fnmatch's special characters.
+- `Match` (func): Match is Python's fnmatch.fnmatchcase, which is what Salt's file_ignore_glob means.
+
 ## `internal/state`
 
 Import path `github.com/edlitmus/halite/internal/state`.

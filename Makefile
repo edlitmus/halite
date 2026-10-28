@@ -575,8 +575,37 @@ handbook: make-supports-bang
 # created before `*` in its first stage was expanded, and the manifest then
 # listed itself with the hash of an empty file (about 1 run in 100 here;
 # DIVERGENCE 5.281). `*` does not match a dot file, and the rename is atomic.
+#
+# What is left in dist/ after that is refused unless this build made it.
+# Nothing removed stale binaries: cross writes the names TARGETS and
+# BINARIES give and leaves every other file alone, so a binary from a run
+# with another target list, or anything else dropped in dist/, was summed
+# into the manifest and signed with it (issue 321; DIVERGENCE 5.466). The
+# expected names are worked out with the same loops cross and fips-cross
+# use; anything else stops the build and is named, rather than deleted,
+# because it may be somebody's.
 dist: cross fips-cross handbook
 	@rm -f dist/halite-*.tar.gz dist/halite-*.zip dist/halite-*.cdx.json dist/*.sig
+	@cd dist && expected=`for t in $(TARGETS); do \
+		os=$${t%/*}; arch=$${t#*/}; ext=""; \
+		[ "$$os" = "windows" ] && ext=".exe"; \
+		for b in $(BINARIES); do echo "$$b-$$os-$$arch$$ext"; done; \
+	done; \
+	for t in $(FIPS_TARGETS); do \
+		os=$${t%/*}; arch=$${t#*/}; \
+		for b in $(BINARIES); do echo "$$b-fips-$$os-$$arch"; done; \
+	done` && \
+	stray="" && \
+	for f in *; do \
+		[ -e "$$f" ] || continue; \
+		[ "$$f" = SHA256SUMS ] && continue; \
+		echo "$$expected" | grep -qxF -- "$$f" || stray="$$stray $$f"; \
+	done && \
+	if [ -n "$$stray" ]; then \
+		echo "dist/ holds files this build did not make, and SHA256SUMS would sum them:$$stray" >&2; \
+		echo "move or remove them (make clean removes dist/) and run make dist again" >&2; \
+		exit 1; \
+	fi
 	@env $(RELEASE_ENV) go run ./tools/disttar -dist dist \
 		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
 		-targets "$(TARGETS)" -binaries "$(BINARIES)" -fips-targets "$(FIPS_TARGETS)"

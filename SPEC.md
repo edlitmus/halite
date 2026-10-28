@@ -1074,8 +1074,11 @@ All of Salt's requisites, in both directions.
 | `require_in`, `watch_in`, `onchanges_in`, `onfail_in`, `prereq_in`, `listen_in` | Inverse forms, resolved into the forward form during compilation |
 
 Requisite targets may be written as `- pkg: nginx_installed`, as `- nginx_installed` (matching by ID
-across all modules, with an ambiguity error if more than one matches), as `- sls: some.sls` to
-depend on every state in an SLS, or as `- id: nginx_installed`.
+across all modules, and depending on every state that carries the ID, as Salt does), as `- sls:
+some.sls` to depend on every state in an SLS, or as `- id: nginx_installed`. A target that is not an
+exact ID or name may be a Salt glob (`*`, `?`, `[seq]`): `- pkg: 'nginx*'` depends on every `pkg`
+state whose ID or name matches, and `- 'nginx*'` on every state whose ID matches. A glob that matches
+nothing is a compilation error, as an unknown name is.
 
 `__id__` and `__sls__` scoping rules match Salt: an ID is global across the whole compiled state,
 not scoped to its SLS. This is a design flaw in Salt and it is reproduced, because trees depend on

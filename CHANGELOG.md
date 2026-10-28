@@ -21,6 +21,23 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A requisite may name its target with a glob
+
+`require: [pkg: 'nginx*']` and the bare `require: ['nginx*']` now depend on
+every matching state, as Salt resolves them, where halite refused them as
+undeclared. A glob that matches nothing is still an error (DIVERGENCE 5.467).
+
+### `make dist` stops on files in `dist/` it did not make
+
+A leftover binary or any other file in `dist/` was summed into the release
+manifest; `make dist` now names such files and stops (DIVERGENCE 5.466).
+
+### A `*` in a policy binding's principal matches across `/`
+
+Principal globs in `bindings` now match as Salt's fnmatch does: `hook:*`
+covers a webhook whose path has a `/` in it, which it silently did not.
+`hook:github/*` now also covers paths nested below it (DIVERGENCE 5.465).
+
 ### A foreign-architecture Debian package is listed as `name:arch` (breaking on multi-arch hosts)
 
 On a Debian or Ubuntu host with a foreign architecture, `pkg.list_pkgs` now

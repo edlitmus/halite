@@ -34212,6 +34212,116 @@ architecture. Only i386 beside amd64 was captured. A package held or pinned by
 its qualified name through the other apt paths (`pkg.latest`, `pkg.hold`, the
 version reads) was not checked against this list.
 
+### 5.465 A principal glob in a policy binding crosses `/`
+
+Issue 321, section 5, the half of the `stringList` bullet 5.387 left:
+`matchPrincipal` used `path.Match`, so `/` in a principal could defeat a
+`*`.
+
+**What the `/` reaches.** Of the principal kinds, `hook:<path>` is the one
+that can hold a `/`: a hook's path is the rest of `/v1/hook/...` and keeps its
+inner slashes. A binding of `hook:*` gave nothing to `hook:github/push`, and
+`hook:github/*` nothing to `hook:github/a/b`. Bindings only grant, so this
+failed closed: a delivery was refused that the policy as written meant to
+allow, with no word of why. It never granted more than written.
+
+**The change.** `matchPrincipal` uses `fileserver.Fnmatch`, the port of
+Python's `fnmatch.fnmatchcase` that 5.295 put under `file_ignore_glob`: `*`
+and `?` cross `/`, as Salt's eauth name matching does. That widens as well as
+fixes: `hook:github/*` now matches `hook:github/a/b`. `[seq]` keeps working;
+a backslash is now a literal rather than an escape, and an unclosed `[` is a
+literal rather than no match.
+
+**Demonstrated.** `TestAPrincipalGlobCrossesASlash` failed before (`hook:*`
+missing from `hook:github/push`, nothing for `hook:github/a/b`) and passes;
+`node:lb*.prod` still matches `node:lb1.prod` and not
+`node:lb1.prod.example`.
+
+**Not done.** `matchGlob`, which the rules use for function and SLS names, is
+still `path.Match`; those names are dotted, and nothing was found that a `/`
+breaks. No live hub was run with a nested hook path.
+
+### 5.466 `make dist` refuses a `dist/` holding files the build did not make
+
+Issue 321, build section, the half 5.457 and 5.459 left: `make dist` sums `*`
+of `dist/`. It removed stale archives, SBOMs and signatures first, but not
+binaries, and `cross` writes the names its target list gives and leaves
+everything else. So a binary from a run with another target list, or any file
+put in `dist/`, went into `SHA256SUMS`, which is what the release compares
+across builders, attests and signs.
+
+**Measured on beastie**, FreeBSD 15.1, its own make, go1.27.3, with
+`TARGETS=freebsd/amd64 BINARIES=halite-node FIPS_TARGETS=` to keep the run
+short. With a copy of the binary as `halite-hub-linux-arm64` and a
+`notes.txt` added to `dist/`, the previous recipe exited 0 with both in the
+manifest.
+
+**The change.** After clearing what it always cleared, the recipe works out the
+binary names `cross` and `fips-cross` make, with the same loops, and refuses to
+continue while `dist/` holds anything else besides `SHA256SUMS`, naming each
+file. It does not delete them: they may be somebody's, and `make clean`
+removes `dist/` for whoever means that. The archives and SBOMs are made after
+the check, by tools that write only their own.
+
+**Demonstrated** in the same run: a clean `dist/` built and summed three
+artifacts; the two stray files stopped it with `dist/ holds files this build
+did not make, and SHA256SUMS would sum them: halite-hub-linux-arm64 notes.txt`;
+removing them, it built again.
+
+**Not verified.** The full target list was not run, nor `release.yml`, whose
+builders start from a clean checkout and never met this. GNU make was not
+tried: the Makefile refuses it already (`make-supports-bang`).
+
+### 5.467 A requisite may name its target with a glob
+
+Found while capturing 5.461: `require: [test: '*']` was refused by halite as
+naming a state "not declared in this run", where Salt resolved it. Salt
+resolves a requisite target with fnmatch when it is not an exact name.
+
+**Measured, Salt.** `salt-call --local state.apply`, 3006.28 and 3008.3 onedir
+on GitHub's ubuntu-24.04 runner, 2026-10-28, `test.*` states, reading
+`__run_num__`, result and comment for each:
+
+| requisite on `x` | Salt |
+|---|---|
+| `test: 'b*'`, b1 passes, b2 fails | b1, b2, then x, failed: `One or more requisite failed: g_fail.b2` |
+| the same, both pass | b1, b2, x, all pass, though x is declared first |
+| `test: '/tmp/*'`, state `c` named `/tmp/foo` | c, then x: the name matched |
+| `test: 'b[12]'`, with b3 too | b1, b2, x, b3 |
+| bare `'b*'` | as `test: 'b*'`: IDs matched |
+| `onchanges: [test: 'b*']` | b1, b2, x |
+| `test: 'zz*'` | 3008.3 refuses at compile time (`Referenced state does not exist for requisite`); 3006.28 fails x (`The following requisites were not found`) |
+| `cmd: 'b*'` where the b's are `test` | the same refusals |
+
+**The change.** When a `module: target` or bare target is not an exact ID or
+name and holds `*`, `?` or `[`, it resolves to every chunk it matches, in
+declaration order: of that module, by ID or name, for `module: target`; by ID,
+for the bare form. Exact names are tried first, as Salt's are. A glob that
+matches nothing is a compilation error, as 3008.3 has it and as an unknown name
+already was; it is not retried by ID across modules, as an exact name is. A glob
+that matches its own state is the self-requisite of 5.461 and is refused.
+
+The fnmatch port moved from `internal/fileserver` to its own `internal/fnmatch`,
+because `state` cannot import `fileserver` (which imports `state`). Its CPython
+fixture and generator moved with it; the two `Roots` tests that were in the same
+file stayed in `fileserver`. `policy` (5.465), `file.recurse` and
+`file_ignore_glob` use it from there.
+
+SPEC 11.3 says so, and its sentence that a bare ID matching more than one state
+is "an ambiguity error" is corrected: the code has taken every state with the ID
+since that was found to be what Salt does, and the comment in `resolveOneRef`
+says why; the SPEC was not changed then.
+
+**Demonstrated.** `TestARequisiteGlobResolvesAsSaltDoes` holds the run order of
+five captured cases (the `set` case runs `b1 b2 x b3`, as Salt numbered them),
+refuses the three that Salt refuses, and refuses a glob matching its own state
+as a cycle. With glob detection disabled it failed at the first case; it passes.
+
+**Not verified.** `sls:` globs and `_in` requisites with globs were not
+captured or changed. Execution was not run: the failure of a matched state
+reaching `x` is the existing requisite path, given the edge, and was not shown
+on a glob.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

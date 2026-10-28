@@ -1068,3 +1068,44 @@ func TestAStateThatRequiresItselfIsACycle(t *testing.T) {
 	// Requiring another state in the same file is not a cycle.
 	mustCompile(t, map[string]string{"base|web": "a:\n  test.nop:\n    - require:\n      - test: b\nb:\n  test.nop: []\n"}, "web")
 }
+
+// A requisite may name its target with a glob, which Salt resolves to
+// every state of that module whose ID or name matches. Captured with
+// salt-call --local, 3006.28 and 3008.3, 2026-10-28 (DIVERGENCE 5.467):
+// `x` requiring `test: 'b*'` ran after b1 and b2 although declared before
+// them, and failed when b2 did; `test: '/tmp/*'` found the state named
+// /tmp/foo whose ID was `c`; `test: 'b[12]'` took b1 and b2 and not b3;
+// the bare `'b*'` matched IDs. A glob matching nothing, or matching only
+// states of another module, was refused (3008.3 at compile time).
+func TestARequisiteGlobResolvesAsSaltDoes(t *testing.T) {
+	order := func(sls string) []string {
+		t.Helper()
+		return runOrder(mustCompile(t, map[string]string{"base|web": sls}, "web"))
+	}
+	for name, tc := range map[string]struct{ sls, want string }{
+		"module glob": {"x:\n  test.nop:\n    - require:\n      - test: 'b*'\nb1:\n  test.nop: []\nb2:\n  test.nop: []\n", "b1 b2 x"},
+		"by name":     {"x:\n  test.nop:\n    - require:\n      - test: '/tmp/*'\nc:\n  test.nop:\n    - name: /tmp/foo\n", "c x"},
+		"set":         {"x:\n  test.nop:\n    - require:\n      - test: 'b[12]'\nb1:\n  test.nop: []\nb2:\n  test.nop: []\nb3:\n  test.nop: []\n", "b1 b2 x b3"},
+		"bare":        {"x:\n  test.nop:\n    - require:\n      - 'b*'\nb1:\n  test.nop: []\nb2:\n  test.nop: []\n", "b1 b2 x"},
+		"onchanges":   {"x:\n  test.nop:\n    - onchanges:\n      - test: 'b*'\nb1:\n  test.nop: []\nb2:\n  test.nop: []\n", "b1 b2 x"},
+	} {
+		if got := strings.Join(order(tc.sls), " "); got != tc.want {
+			t.Errorf("%s: ran %s, want %s", name, got, tc.want)
+		}
+	}
+	for name, sls := range map[string]string{
+		"matches nothing":  "x:\n  test.nop:\n    - require:\n      - test: 'zz*'\nb1:\n  test.nop: []\n",
+		"another module":   "x:\n  test.nop:\n    - require:\n      - cmd: 'b*'\nb1:\n  test.nop: []\n",
+		"bare, no matches": "x:\n  test.nop:\n    - require:\n      - 'zz*'\nb1:\n  test.nop: []\n",
+	} {
+		if msg := errText(compile(t, map[string]string{"base|web": sls}, "web")); msg == "" {
+			t.Errorf("%s: compiled, and Salt refuses it", name)
+		}
+	}
+	// A glob that matches the state declaring it is a self-requisite, which
+	// Salt refused as recursive in the 5.461 capture (`test: '*'`).
+	msg := errText(compile(t, map[string]string{"base|web": "a:\n  test.nop:\n    - require:\n      - test: '*'\nb:\n  test.nop: []\n"}, "web"))
+	if !strings.Contains(msg, "requisite cycle: a -> ") {
+		t.Errorf("a glob matching its own state: want a cycle, got:\n%s", msg)
+	}
+}

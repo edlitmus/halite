@@ -55,7 +55,7 @@ state; ` + "`runner`" + ` executes it by calling the functions registered in ` +
 and ` + "`grains`" + ` supply the data.`,
 		Packages: []string{
 			"internal/value", "internal/yaml", "internal/template", "internal/render",
-			"internal/rendersandbox", "internal/regexcompat", "internal/state",
+			"internal/rendersandbox", "internal/regexcompat", "internal/fnmatch", "internal/state",
 			"internal/states", "internal/runner", "internal/exec", "internal/signature",
 			"internal/builtin", "internal/target", "internal/pillar", "internal/grains",
 			"internal/migrate",

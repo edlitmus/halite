@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/target"
@@ -296,12 +297,16 @@ func (p *Policy) RolesFor(principal string) []string {
 // matchPrincipal compares a binding's principal to the authenticated
 // one. A glob is permitted so that `node:lb*.prod` works, as SPEC 23.5
 // writes it.
+//
+// The glob is Salt's, fnmatch, not Go's path.Match. path.Match's `*`
+// stops at `/`, and a webhook's principal is `hook:<path>` with a path
+// that may hold one, so `hook:*` gave nothing to `hook:github/push` and
+// said nothing (issue 321; DIVERGENCE 5.465). Salt matches eauth names
+// with fnmatch, and file_ignore_glob was moved off path.Match for the
+// same reason (5.295); fnmatch.Match is that port. It widens as
+// well as fixes: `hook:github/*` now also matches `hook:github/a/b`.
 func matchPrincipal(pattern, principal string) bool {
-	if pattern == principal {
-		return true
-	}
-	ok, err := path.Match(pattern, principal)
-	return err == nil && ok
+	return pattern == principal || fnmatch.Match(pattern, principal)
 }
 
 // Authorize decides one request, resolving the principal's roles from

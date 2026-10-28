@@ -10,7 +10,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileperm"
-	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -345,7 +345,7 @@ func extraUnderTree(dest string, want []string, exclude string) ([]string, error
 		if relErr != nil {
 			return relErr
 		}
-		if !keep[rel] && !(exclude != "" && fileserver.Fnmatch(exclude, filepath.ToSlash(rel))) {
+		if !keep[rel] && !(exclude != "" && fnmatch.Match(exclude, filepath.ToSlash(rel))) {
 			extra = append(extra, filepath.ToSlash(rel))
 		}
 		return nil
@@ -367,10 +367,10 @@ func extraUnderTree(dest string, want []string, exclude string) ([]string, error
 func filterTreePaths(paths []string, include, exclude string) []string {
 	out := make([]string, 0, len(paths))
 	for _, rel := range paths {
-		if include != "" && !fileserver.Fnmatch(include, rel) {
+		if include != "" && !fnmatch.Match(include, rel) {
 			continue
 		}
-		if exclude != "" && fileserver.Fnmatch(exclude, rel) {
+		if exclude != "" && fnmatch.Match(exclude, rel) {
 			continue
 		}
 		out = append(out, rel)
