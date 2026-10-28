@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `make dist` stops on files in `dist/` it did not make
+
+A leftover binary or any other file in `dist/` was summed into the release
+manifest; `make dist` now names such files and stops (DIVERGENCE 5.466).
+
 ### A `*` in a policy binding's principal matches across `/`
 
 Principal globs in `bindings` now match as Salt's fnmatch does: `hook:*`

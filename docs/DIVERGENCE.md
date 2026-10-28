@@ -34241,6 +34241,37 @@ missing from `hook:github/push`, nothing for `hook:github/a/b`) and passes;
 still `path.Match`; those names are dotted, and nothing was found that a `/`
 breaks. No live hub was run with a nested hook path.
 
+### 5.466 `make dist` refuses a `dist/` holding files the build did not make
+
+Issue 321, build section, the half 5.457 and 5.459 left: `make dist` sums `*`
+of `dist/`. It removed stale archives, SBOMs and signatures first, but not
+binaries, and `cross` writes the names its target list gives and leaves
+everything else. So a binary from a run with another target list, or any file
+put in `dist/`, went into `SHA256SUMS`, which is what the release compares
+across builders, attests and signs.
+
+**Measured on beastie**, FreeBSD 15.1, its own make, go1.27.3, with
+`TARGETS=freebsd/amd64 BINARIES=halite-node FIPS_TARGETS=` to keep the run
+short. With a copy of the binary as `halite-hub-linux-arm64` and a
+`notes.txt` added to `dist/`, the previous recipe exited 0 with both in the
+manifest.
+
+**The change.** After clearing what it always cleared, the recipe works out the
+binary names `cross` and `fips-cross` make, with the same loops, and refuses to
+continue while `dist/` holds anything else besides `SHA256SUMS`, naming each
+file. It does not delete them: they may be somebody's, and `make clean`
+removes `dist/` for whoever means that. The archives and SBOMs are made after
+the check, by tools that write only their own.
+
+**Demonstrated** in the same run: a clean `dist/` built and summed three
+artifacts; the two stray files stopped it with `dist/ holds files this build
+did not make, and SHA256SUMS would sum them: halite-hub-linux-arm64 notes.txt`;
+removing them, it built again.
+
+**Not verified.** The full target list was not run, nor `release.yml`, whose
+builders start from a clean checkout and never met this. GNU make was not
+tried: the Makefile refuses it already (`make-supports-bang`).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
