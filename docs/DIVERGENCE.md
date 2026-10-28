@@ -34168,6 +34168,50 @@ saltdiff images. `contrib/docker/race` and `contrib/vm/zfs` are not built by CI
 and were not built. Updating a digest is now a manual step, with no tool for
 it.
 
+### 5.464 apt's package list keys a foreign-architecture package as Salt does
+
+Issue 321, section 5, the multi-arch bullet's first half, which 5.417 left
+because it needed a host with a foreign architecture: apt's `ListPkgs` keyed
+every package by bare `${Package}`, so the last architecture won.
+
+**Measured.** A `debian:bookworm` container on GitHub's ubuntu-24.04 runner,
+2026-10-28, with `dpkg --add-architecture i386` and `hello:i386` and
+`libc6:i386` installed (hello has no native install; libc6 has both).
+`dpkg-query -W -f='${Package}\t${Version}\t${Status}\n'`, the form halite
+used, printed `hello` once and `libc6` twice with nothing to tell them apart.
+Salt's `pkg.list_pkgs`, 3006.28 and 3008.3 alike, returned `hello:i386`,
+`libc6`, `libc6:i386`, `gcc-12-base`, `gcc-12-base:i386` and `tzdata` (an
+`all` package, bare), and no `hello`. `pkg.version hello` answered empty and
+`hello:i386` its version. Under `test=True`, `pkg.installed: hello` would
+install it, and `pkg.installed: hello:i386` was already in place. halite's list
+had `hello` and no `hello:i386`, so it answered the opposite of both: the bare
+name read as installed when only the i386 one was, and the qualified name was
+never found. Read from 5.440's presence check rather than run, a
+`pkg.installed: hello:i386` would then fail after apt installed it, because
+the check looks for a name the list did not have.
+
+**The change.** The query adds `${Architecture}`, and a package of neither the
+native architecture nor `all` is keyed `name:arch`. The native architecture is
+the `dpkg` package's own, read from the same listing (dpkg is `Multi-Arch:
+foreign` and installed only for the architecture it was built for; in the
+capture it read `amd64`, as `dpkg --print-architecture` did), so no second
+command. Without a `dpkg` line every name is bare, as before.
+
+**Demonstrated.** `TestAForeignArchitecturePackageIsKeyedAsSaltKeysIt` reads
+the whole captured listing (117 packages) and wants Salt's keys for the eight
+names above and none of `hello`, `tzdata:all` or `libc6:amd64`. With the
+qualification disabled it failed for all four i386 keys and for the bare
+`hello`; it passes.
+
+**Breaking,** for a caller on a multi-arch host that read `pkg.list_pkgs` and
+expected a foreign package under its bare name. That is what Salt returns, and
+on a single-architecture host nothing changes.
+
+**Not verified.** No live test drives it; the fleet `debian` leg has no foreign
+architecture. Only i386 beside amd64 was captured. A package held or pinned by
+its qualified name through the other apt paths (`pkg.latest`, `pkg.hold`, the
+version reads) was not checked against this list.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
