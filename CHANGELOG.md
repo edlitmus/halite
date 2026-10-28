@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `permutations`, `combinations` and list repetition count against the render's limit
+
+The items these build are now counted across the whole render, as `range()`'s
+are, instead of only per call: several lists each under ten million items, and
+over it together, now fail the render (DIVERGENCE 5.460).
+
 ### The release archives keep the rc.d scripts executable
 
 The rc.d scripts were packaged at 0644 (v0.1.1's archives have them so); they

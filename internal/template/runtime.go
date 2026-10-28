@@ -465,6 +465,12 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 			if !mulWithin(int64(len(ll)), n, r.opts.MaxIterations) {
 				return nil, errorf(pos, "list repetition would produce more than %d items", r.opts.MaxIterations)
 			}
+			// The check above keeps the product from wrapping; this one
+			// charges the list to the render, as range() is charged, so
+			// that two calls under the limit each are not twice it.
+			if err := r.budget.materialise(int64(len(ll))*n, "list repetition", pos); err != nil {
+				return nil, err
+			}
 			out := make([]any, 0, int64(len(ll))*n)
 			for i := int64(0); i < n; i++ {
 				out = append(out, ll...)

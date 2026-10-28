@@ -649,6 +649,10 @@ func zipFilter(longest bool) FilterFunc {
 }
 
 func combinatoric(ordered bool) FilterFunc {
+	name := "combinations"
+	if ordered {
+		name = "permutations"
+	}
 	return func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
 		items, err := asSeq(fc, v)
 		if err != nil {
@@ -672,8 +676,14 @@ func combinatoric(ordered bool) FilterFunc {
 				// million results, under a count limit of ten million,
 				// and 36 million items, which is the memory. An empty
 				// result still costs a slot, so it counts as one.
-				if !mulWithin(int64(len(out))+1, max(r, 1), fc.r.opts.MaxIterations) {
-					return fc.Errorf("this combination would produce more than %d items", fc.r.opts.MaxIterations)
+				//
+				// And it is charged to the render, not to the call, as
+				// range() is (budget.materialise): a limit per call let
+				// three calls of 4.2 million items each through. The
+				// render's total is never less than the call's, so this
+				// is also the per-call bound it replaces.
+				if err := fc.r.budget.materialise(max(r, 1), name, fc.Pos); err != nil {
+					return err
 				}
 				out = append(out, append([]any{}, cur...))
 				return nil

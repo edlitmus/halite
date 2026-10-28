@@ -34033,6 +34033,34 @@ this checkout with `go run ./tools/disttar` lists the four scripts at
 builders were not compared on this change. The audit's `make dist` sums `*`
 half is still not changed.
 
+### 5.460 permutations, combinations and list repetition are charged to the render
+
+Issue 321, engine section: `permutations` and `combinations` "cap by count
+only". 5.445 found that `range()`'s limit was per call, so a render could hold as
+many ten-million-item lists as it had variables, and charged `range()` to the
+render. The same was true of these two and of list repetition (`[x] * n`), which
+5.445 did not touch.
+
+**Measured.** Three `s|permutations(7)` over ten items, 4.2 million items each,
+rendered in one template; so did two `s|combinations(11)` over 22 (7.8 million
+each) and two `[0] * 6000000`. Each was under the per-call bound of ten million
+and the render held more than that.
+
+**The change.** All three charge `budget.materialise`, the render-wide count
+`range()` uses. For the combinatorics this replaces the per-call check, since the
+render's total is never less than one call's; the error now says the lists built
+in the render would hold more than the limit. List repetition keeps its per-call
+check, which also stops the product from wrapping, and is charged after it. SPEC
+10.2.8 now says which lists are counted across a render.
+
+**Demonstrated.** `TestCombinatoricListsAreChargedToTheRender` and
+`TestListRepetitionIsChargedToTheRender` failed on the previous files and pass;
+the template package passes.
+
+**Not verified.** Memory was not measured, only the counts; an item is a value
+of any size. `batch`, `slice` and the other filters that build lists from an
+existing one are not charged. Salt has no such limit to compare with.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

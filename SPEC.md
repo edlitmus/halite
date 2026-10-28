@@ -953,7 +953,10 @@ Statements nest at most as deep as the recursion depth (100), and one expression
 levels, counting both brackets and the height of a chain such as `1 + 1 + ... + 1`. A single string
 a builtin builds (`indent`, `center`, `zfill`, `*`) may be no larger than the output limit, and a
 single list (`range`, `*`, `batch`, `slice`, `permutations`, `combinations`) may hold no more items
-than the iteration limit, both checked before the value is built.
+than the iteration limit, both checked before the value is built. The lists `range`, `*`,
+`permutations` and `combinations` build are also counted across the render, and together may hold
+no more items than the iteration limit; `batch` and `slice` regroup a list that already exists and
+are not counted.
 
 Rendering happens in the unprivileged sandbox subprocess described in section 25.4.
 

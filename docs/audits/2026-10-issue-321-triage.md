@@ -226,6 +226,7 @@ passing by the PRs above; that has not been looked for.
 | `netplan.managed` replaces a symlinked file | #492 | 5.453; follows the link now; Ubuntu temp dir only |
 | archive entries read whole into memory | #492 | 5.454; streamed; 96 MiB entry allocated 236 MiB before; `TotalAlloc`, not peak RSS |
 | disttar: rc.d scripts archived 0644 | #PRNUM | 5.459; v0.1.1 shipped them so, measured; mode taken from git's index; `make dist` and the release workflow not run |
+| `permutations`/`combinations` cap by count only | #PRNUM | 5.460; the count was per call, as `range()`'s was (5.445): three calls of 4.2M items rendered; now charged to the render; list repetition (`[x] * n`) had the same gap and is fixed with it; counts, not memory; `batch`/`slice` not charged |
 
 **Also from section 1.** The staticcheck results (1.3) are taken in 5.456, in part.
 The two live tests with wrong assumptions on current distributions (1.1)
