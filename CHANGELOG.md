@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Log fields that print a secret are scrubbed
+
+A log field whose printed form carries a registered secret is now written
+scrubbed, and a URL field has its password redacted; other fields are written
+as before (DIVERGENCE 5.462).
+
 ### A state that is its own requisite fails to compile (breaking)
 
 A requisite that names its own state, directly, through `require_in`, or by an

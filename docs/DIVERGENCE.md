@@ -34105,6 +34105,38 @@ whole tree's tests pass.
 forms were not captured. A self-requisite reached through an `include`d file's
 `sls:` was not tried. The saltdiff differential was not given a case.
 
+### 5.462 A log field that is a fmt.Stringer is scrubbed, and a URL's password redacted
+
+Issue 321, Low, the half of the redaction bullet 5.408 left: `log.ScrubValue`
+ignores `fmt.Stringer` field values, and a `*url.URL` prints its password.
+
+**Measured.** With a secret registered and `l.Info("fetching", "remote", u,
+"db", s)`, where `u` is `https://deploy:<password>@git.example.org/repo.git`
+and `s` is a Stringer whose text carries the secret, the console form wrote
+both in clear: `db=dsn mysql://app:<secret>@db
+remote=https://deploy:<password>@git.example.org/repo.git`. The JSON form
+leaked neither, but wrote `"db":{}` and the URL as a struct, so the text was
+lost instead.
+
+**The change.** 5.408 did not turn every Stringer into its text, because a
+`time.Duration` is written to JSON as a number and every such record would
+change. This does not either. A Stringer's text is scrubbed, and the field is
+replaced by the scrubbed text only when that removed something; one with no
+secret in it is written exactly as before. A `*url.URL` is written as
+`Redacted()` whatever its password is, since a URL's userinfo is a credential
+whether or not anybody registered it. The redactor's own userinfo pattern then
+takes the user name as well.
+
+**Demonstrated.** `TestAStringerFieldIsScrubbed` failed three ways on the
+previous `log.go` (both secrets on the console, the text lost from JSON) and
+passes. `TestAStringerWithoutASecretIsUnchanged` holds a duration at
+`"took":1500000000`; it passes before and after, so it holds the property, not
+the change.
+
+**Not verified.** No call site was found passing a URL or a secret-bearing
+Stringer as a field, so this is latent, like 5.408. A struct that is not a
+Stringer still goes to JSON by its exported fields, unscrubbed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -200,15 +201,31 @@ func (l *Logger) Log(level Level, msg string, kv ...any) {
 	// containers and returns anything else as it was, so an error field
 	// went out unscrubbed: the console form printed it through %v with
 	// any secret in it, and the JSON form wrote `{}`, because an error's
-	// fields are unexported (DIVERGENCE 5.408). Only error, not every
-	// fmt.Stringer: a time.Duration or time.Time field is written as
+	// fields are unexported (DIVERGENCE 5.408). Not every fmt.Stringer
+	// the same way: a time.Duration or time.Time field is written as
 	// JSON in its own form, and turning it into its String() would
-	// change what every such record says. fmt.Sprint rather than
+	// change what every such record says (5.462). fmt.Sprint rather than
 	// Error(), because fmt recovers from a typed nil whose Error method
 	// dereferences it, and a log line should not be what panics.
+	//
+	// A fmt.Stringer is scrubbed by its text, and replaced by the
+	// scrubbed text only when that removed something. A Stringer with a
+	// secret in it went to the console through %v in clear; one without
+	// keeps its own form, so a duration stays a number in JSON. A
+	// *url.URL is written as Redacted(), its password replaced, whether
+	// or not the password is a registered secret: a URL's userinfo is a
+	// credential by definition, and String() prints it.
 	for k, v := range rec {
-		if err, ok := v.(error); ok {
-			v = fmt.Sprint(err)
+		switch t := v.(type) {
+		case error:
+			v = fmt.Sprint(t)
+		case *url.URL:
+			v = t.Redacted()
+		case fmt.Stringer:
+			text := fmt.Sprint(t)
+			if scrubbed := l.secrets.Scrub(text); scrubbed != text {
+				v = scrubbed
+			}
 		}
 		rec[k] = l.secrets.ScrubValue(v)
 	}
