@@ -21,6 +21,23 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A node refuses a file the hub sent without a digest
+
+The node cached a file the hub sent without a digest, unchecked, and the
+hub sent every file so under `hash_type: sha3-256`, which the reference
+offered and nothing implemented. `sha3-256` now works; a `hash_type` the
+file server does not offer stops the hub at start; the hub does not send
+a file it cannot hash; and the node refuses a body with no digest
+(DIVERGENCE 5.469).
+
+### `__replace__`, `__overwrite__` and `__aggregate__` are ordinary pillar keys
+
+halite read them as merge directives, which SPEC 12.3 said were Salt's;
+Salt has no such directives and keeps them in the pillar as data. A
+mapping that set `__replace__: True` lost what an earlier pillar file had
+put beside it. They are now plain keys, merged as Salt merges them
+(DIVERGENCE 5.468). **Breaking** for a tree that used them.
+
 ### A requisite may name its target with a glob
 
 `require: [pkg: 'nginx*']` and the bare `require: ['nginx*']` now depend on

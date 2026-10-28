@@ -106,8 +106,17 @@ func registerGit(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				// After `--`, because a remote may begin with a dash:
+				// `git remote add -- -x <url>` makes one, and without
+				// the `--` git 2.43 read `-x` as an option and printed
+				// its usage. An option-shaped remote is then only a
+				// name that does not exist. Nothing ran either way --
+				// `get-url` takes only `--push` and `--all` -- so this
+				// is about reading a real remote, not about a command.
+				// Refusing a leading dash, as git.latest does, would
+				// have refused that remote. DIVERGENCE 5.470.
 				res, err := gitRun(c, states.Str(args, "cwd", ""),
-					"remote", "get-url", states.Str(args, "remote", "origin"))
+					"remote", "get-url", "--", states.Str(args, "remote", "origin"))
 				if err != nil {
 					return nil, err
 				}
@@ -187,9 +196,12 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	// and not for a checkout that already exists: `fetch --quiet --tags
 	// --upload-pack=<cmd>` has no positional left, so git fetches the
 	// configured origin and runs <cmd> through the shell to do it. The
-	// test made it create a file. A leading dash is not a URL, a remote
-	// name, a revision or a branch git would accept in any other
-	// spelling, so refusing it costs nothing real. DIVERGENCE 5.414.
+	// test made it create a file. A leading dash is not a URL, a
+	// revision or a branch git would accept in any other spelling. A
+	// remote name is the exception, found later: `git remote add -- -x`
+	// makes one (DIVERGENCE 5.470), and this refuses it. That is kept,
+	// because a remote named so is a curiosity and the refusal is safe,
+	// but "costs nothing" was not true of it. DIVERGENCE 5.414.
 	//
 	// `target` is not checked: it is a path, the clone below puts it
 	// after `--`, and every other command runs with it as the working

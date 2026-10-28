@@ -325,6 +325,7 @@ Path containment is the security property this package exists to guarantee. Salt
 
 **Exports.**
 
+- `CheckHashType` (func): CheckHashType says whether a configured `hash_type` is one the file server can publish, so a hub refuses it at start rather than refusing every file it is asked for.
 - `Entry` (type): Entry is one file in a manifest: its path relative to the environment's root, its digest, and its size.
 - `EnvFromURI` (func): EnvFromURI reads the environment out of a halite:// or salt:// query string.
 - `Fetch` (type): Fetch is the part of the transport this package needs.

@@ -137,11 +137,23 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request, nodeID, env, path 
 	// tree redeployed from git has new timestamps and identical
 	// contents, and re-sending the estate's whole tree on every deploy
 	// is what makes Salt's file server the bottleneck it is.
+	//
+	// A file that cannot be hashed is not served. It used to go out with
+	// no digest, and the node took a missing digest as nothing to check;
+	// under `hash_type: sha3-256`, which nothing here knew, that was every
+	// file (DIVERGENCE 5.469). The node now refuses such a body too, so
+	// this is about saying why, here, where the operator can fix it.
 	algorithm, digest, err := s.Files.HashOf(env, path, s.HashType)
-	if err == nil {
-		w.Header().Set("ETag", `"`+algorithm+":"+digest+`"`)
-		w.Header().Set("X-Halite-Hash", algorithm+":"+digest)
+	if err != nil {
+		s.warn("a served file could not be hashed, so it was not sent",
+			"env", env, "path", path, "error", err.Error())
+		span.Fail(err)
+		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal,
+			fmt.Errorf("%s could not be hashed, so it was not sent", path))
+		return
 	}
+	w.Header().Set("ETag", `"`+algorithm+":"+digest+`"`)
+	w.Header().Set("X-Halite-Hash", algorithm+":"+digest)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	span.SetAttr("halite.file.bytes", info.Size())
 	// Whether the node already had it. This is the attribute the node's

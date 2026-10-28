@@ -34322,6 +34322,138 @@ captured or changed. Execution was not run: the failure of a matched state
 reaching `x` is the existing requisite path, given the edge, and was not shown
 on a glob.
 
+### 5.468 Salt has no `__replace__`, and halite merged as if it had
+
+Issue 321, section 5: "`__replace__`/`__overwrite__` at the top of a later
+source wipes the pillar compiled so far." Checking that against Salt found
+the premise false, not the bullet. `value/merge.go` read
+`__overwrite__`, `__replace__` and `__aggregate__` inside a mapping as
+directives "Salt honours inside pillar data", and SPEC 12.3 said the same.
+Neither Salt 3006.28's source nor 3008.3's contains any of the three
+strings (searched in the sdists from PyPI). This is the other kind of claim
+the project warns about: it was written as Salt's behaviour, and nobody had
+asked Salt.
+
+**Captured** with `salt-call --local pillar.items` from the 3006.28 and
+3008.3 onedirs on ubuntu-24.04 (GitHub run 40762245009, on a scratch branch
+since deleted). Two pillar files under one top; the second gives `rep`,
+`over` and `agg` each a directive set `True` beside a new key, and gives a
+key the first file lacks a `__replace__` too. Under `smart`, `recurse`,
+`overwrite`, `aggregate` and `pillar_merge_lists`, both versions kept every
+directive key in the compiled pillar as data and merged around it exactly
+as they merge any other key. 3008.3 masks pillar values in that output; its
+keys were the same as 3006.28's, so the fixture holds 3006.28's.
+
+| `smart` | `rep` | `over` | `agg.l` |
+|---|---|---|---|
+| Salt | `__replace__, k1, k2, nested` | `__overwrite__, k1, k2` | `[2]` |
+| halite | `k2` | `k2` | `[1, 2]` |
+
+halite also kept the directive under the key the first file lacked, because
+a mapping met no merge there, so it did not agree with itself either. The
+user's tree uses none of the three; a tree that did would have lost pillar
+data, silently.
+
+**The change.** There are no directives: the three are ordinary keys.
+SPEC 12.3 says so. `TestMergeDirectivesAreKeysAsInSalt`, in
+`internal/pillar`, compiles the captured files under `smart`, `recurse`,
+`overwrite` and `smart` with `pillar_merge_lists` and compares the whole
+pillar with Salt's; it failed on three of the four before the change
+(`overwrite` replaces each top-level key whole, so it already agreed). The
+test in `internal/value` that held the invented behaviour now holds the
+opposite. **Breaking** for a tree that used them, which then gets Salt's
+result; pre-1.0, and the CHANGELOG says so.
+
+**Found while doing this, and not changed: `aggregate` is not Salt's.**
+SPEC 12.3's table says `aggregate` "deep merge[s] mappings and
+concatenate[s] lists", under a heading that promises Salt's semantics. In
+Salt it is `salt.utils.dictupdate.merge_aggregate`, which is yamlex's
+`merge_recursive(level=1)`: it merges the top level and, below it, only
+values tagged `!aggregate` by the yamlex renderer; anything untagged is
+replaced. The capture shows it: under `aggregate`, Salt's `rep` was `k2`
+alone and `agg.l` was `[2]`. halite has no yamlex renderer and so no tags,
+and what the right answer is without them is a decision, not a fix. SPEC's
+row now says it is not Salt's and points here; `TestMergeStrategies` still
+holds halite's reading and is the test to change with it. The capture's
+`aggregate` result is in the fixture for that.
+
+**Not verified.** Ext pillar merges and configuration drop-ins go through
+the same merge and were not captured: Salt's configuration merges have no
+directives either, by the same search, but were not run.
+
+### 5.469 A node cached a file the hub sent without a digest, unchecked
+
+Issue 321, section 5, as part of the `file.recurse` bullet (5.386 left it):
+"`cacheFile` accepts a body with no published digest." SPEC 13.5 says a
+transfer is checked against the published digest before it is moved into
+place. `Remote.cacheFile` checked only when the hub sent one, and a digest
+with no `algorithm:` prefix was skipped the same way.
+
+**When the hub sent none.** `hub/files.go` set `X-Halite-Hash` only when
+`HashOf` succeeded, and served the body either way. `HashOf` failed for any
+`hash_type` outside sha256, sha384 and sha512, and SPEC 13.5 and the
+configuration reference both offered a fourth, `sha3-256`, that neither
+the hub's `hashOf` nor the node's `digestOf` knew. Those were two lists
+that had to agree with each other and with the documentation, and agreed
+with each other only. So an estate that chose the strongest hash on offer
+got no checking at all: the manifest endpoint answered
+500 (by reading `Manifest`, which returns the hash error), and every single file went out without a digest and was
+cached as it came.
+
+**The change.**
+
+- One list. `newHash` builds the digest for both sides, and offers
+  `sha3-256` from the standard library's `crypto/sha3`, which makes SPEC
+  13.5 and the reference true rather than removing the option.
+- The hub refuses, at start, a `hash_type` the file server cannot publish
+  (`CheckHashType`), with the config-fault exit. Measured: a hub with
+  `hash_type: sha3-512` stopped with exit 78 naming the four it offers; one
+  with `sha3-256` got past the check.
+- The hub does not send a file it cannot hash; it answers 500 and logs why.
+- The node refuses a body with no digest, or with a digest that names no
+  algorithm, and does not cache it.
+
+**Demonstrated.** `TestABodyIsCachedOnlyAgainstAPublishedDigest`
+(`internal/fileserver`) cached a body published with no digest and with a
+bare one before the change. `TestEveryOfferedHashTypeCarriesAFileToTheNodeChecked`
+(`internal/hub`) takes a file from a real in-process hub to a node's cache
+under each of the four: on the old code the hub published `""` under
+sha3-256, and sent a file under `md5` that it could not hash. Both pass now.
+`TestEveryPublishedHashIsOneTheNodeVerifies` checks sha3-256 against FIPS
+202's `abc` example.
+
+**Not verified.** No real hub and node were run with sha3-256, and FIPS
+mode (`GODEBUG=fips140=on`) was not run with it; sha3-256 is an approved
+FIPS 202 function, but that is read, not measured. The node does not check
+its own `hash_type`; an unknown one only stops it sending an entity tag.
+
+### 5.470 `git.remote_get` read a remote beginning with `-` as an option
+
+Issue 321, section 5, left by 5.414: `git.remote_get` passes its `remote`
+to `git remote get-url` the same way `git.latest` did.
+
+**Measured** with git 2.43.0 on Ubuntu 24.04. `get-url` takes only `--push`
+and `--all`, so nothing could be made to run: `--upload-pack=touch <file>`
+was an unknown option and no file appeared, and `--push` and `--all` gave
+the usage text, exit 129. What it did break is a real remote: `git remote
+add -- -dash <url>` makes a remote called `-dash`, and `remote_get` with
+`remote: -dash` failed with `unknown switch 'd'`.
+
+That also makes one sentence in 5.414 false. `git.latest` refuses a
+leading dash in `name`, `remote`, `rev` and `branch`, on the grounds that
+none "has a legitimate spelling that begins with a dash". A remote does.
+The refusal is kept: it is safe, a remote named so is a curiosity, and
+`git.latest`'s fetch takes more options than `get-url` does. Its comment
+now says what it refuses.
+
+**The change.** `remote_get` puts `--` before the remote. A remote named
+`-dash` is read; `--push` is a name that does not exist (`No such remote
+'--push'`). `TestGitRemoteGetReadsARemoteThatBeginsWithADash` holds both
+against the real git, and failed on the first with the `--` removed.
+
+**Not verified.** git on FreeBSD was not run; that `get-url` accepts `--`
+is from git 2.43's common option parser, as 5.414's other uses were.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
