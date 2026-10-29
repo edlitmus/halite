@@ -34769,6 +34769,37 @@ was captured only for `test`; every other module's `mod_watch` is unchanged.
 Run order is not compared against Salt (SPEC 11.4's differs, 5.476). Salt 3007.1 was not
 captured. Nothing ran on a real machine of any fleet platform.
 
+### 5.479 v0.1.1 was tagged with its changelog entries under "Unreleased"
+
+Issue 313. `docs/releasing.md` asked for `## Unreleased` to be renamed to
+`## <version> — <date>` before tagging; nothing checked that it had been, and
+v0.1.1 was tagged at `f4a60b7a` with six entries still under "Unreleased", so
+the changelog at the tagged commit described no release. The heading was
+fixed afterwards and the step was written into releasing.md, which is a
+sentence asking to be remembered.
+
+**The change.** `changelogFitsTag` reads a changelog and a version and
+refuses one with no `## <version> — YYYY-MM-DD` heading or with entries still
+listed under `## Unreleased`. `TestReleaseGateChangelogNamesTheTag` applies it
+to the repository's `CHANGELOG.md` and is run by `make release-gate`, which
+`release.yml` runs before building anything. The tag is read from
+`GITHUB_REF_NAME` or, failing that, `git describe --exact-match`; with
+neither, the test skips with a message and does not pass.
+
+**Demonstrated.** The check refuses the headings `git show
+v0.1.1:CHANGELOG.md` holds (`TestChangelogCheckRefusesWhatV011WasTaggedWith`,
+a captured fixture). Breaking either rule in the function fails
+`TestChangelogCheckAcceptsARenamedHeading`. On this tree with
+`GITHUB_REF_NAME=v0.1.1` the gated test fails, naming the entry still under
+"Unreleased"; with no tag it skips.
+
+**Not verified.** It has not run inside `release.yml`: that `GITHUB_REF_NAME`
+reaches `go test` through the Makefile on a tag push, and that the job's
+checkout has the tag for the `git describe` fallback, are read from the
+workflow, not seen. The first real tag will be the test. The issue's other
+suggestion, templating the `v0.1.0` in releasing.md's commands, is not done;
+the file already tells the reader to use their own tag.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

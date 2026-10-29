@@ -181,7 +181,9 @@ described below, on the tagged commit, with a clean tree.
 commit on `main`, so that the tagged commit's changelog says what the tag
 is (v0.1.1 was tagged with its entries still under "Unreleased"; the heading
 was fixed afterwards). Run `make check` and `make release-gate` first; the workflow runs the gate
-and stops if it fails. Then push that one tag:
+and stops if it fails. The gate holds this rename too: on a `v*` tag it refuses a
+changelog with no `## <version> — <date>` heading or with entries still under
+`## Unreleased`, and on any other commit it skips and says so. Then push that one tag:
 
 ```sh
 git tag -a v0.1.0 -m 'halite 0.1.0'

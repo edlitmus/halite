@@ -137,6 +137,8 @@ build: make-supports-bang
 release-gate:
 	@env $(DEV_ENV) go test -count=1 -tags releasegate \
 		-run TestReleaseGateNoUnverifiedRootMutatingModule ./internal/builtin/
+	@env $(DEV_ENV) go test -count=1 -tags releasegate \
+		-run TestReleaseGateChangelogNamesTheTag ./internal/docsaudit/
 
 # make-supports-bang refuses a make that cannot evaluate `!=`. See the
 # comment above GIT_VERSION: without it every stamped and installed

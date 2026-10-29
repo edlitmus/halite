@@ -1,0 +1,10 @@
+## Unreleased
+### FIPS builds are part of the release
+### The release manifest no longer lists itself
+### The Handbook
+### A release stays a draft until it is signed
+### An SBOM for every release archive
+### Sign jobs with a key held in AWS KMS
+## 0.1.0 — 2026-10-10
+### halite-api picks up a re-issued operator certificate without a restart
+### One fully qualified name: the `fqdn` grain follows Salt's rule
