@@ -171,7 +171,7 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 			continue
 		}
 
-		sr.Result, sr.Skipped = r.runChunk(ch, decision.watchFired)
+		sr.Result, sr.Skipped = r.runChunk(ch, decision.reaction)
 		sr.Duration = r.Now().Sub(sr.StartTime)
 		out.Results = append(out.Results, sr)
 		if sr.Skipped {
@@ -193,9 +193,16 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 type decision struct {
 	skip   bool
 	result states.Result
-	// watchFired means a watch requisite saw changes, so the module's
-	// mod_watch reaction runs in place of its normal function.
-	watchFired bool
+	// reaction is set when a watch requisite saw changes, so the
+	// module's mod_watch reaction runs in place of its normal function.
+	reaction reaction
+}
+
+// reaction is what made a chunk's call a reaction rather than its own
+// run; the zero value is its own run. See exec.Context.Reaction.
+type reaction struct {
+	kind         string
+	watchChanged []string
 }
 
 // evaluateRequisites applies every requisite kind's gating rule.
@@ -204,6 +211,7 @@ func (r *Runner) evaluateRequisites(ch *state.Chunk, chunks []*state.Chunk, resu
 		sawOnChanges, onChangesSatisfied bool
 		sawOnFail, onFailSatisfied       bool
 		watchFired                       bool
+		watchChanged                     []string
 	)
 
 	for _, req := range ch.Reqs {
@@ -224,8 +232,13 @@ func (r *Runner) evaluateRequisites(ch *state.Chunk, chunks []*state.Chunk, resu
 						"This state was skipped because %s failed.", describe(chunks[idx])))}
 				}
 			}
-			if req.Kind == state.Watch && anyChanged(targets, results) {
-				watchFired = true
+			if req.Kind == state.Watch {
+				for _, idx := range targets {
+					if changed(idx, results) {
+						watchFired = true
+						watchChanged = append(watchChanged, chunks[idx].State+": "+chunks[idx].ID)
+					}
+				}
 			}
 
 		case state.RequireAny, state.WatchAny:
@@ -291,7 +304,10 @@ func (r *Runner) evaluateRequisites(ch *state.Chunk, chunks []*state.Chunk, resu
 		return decision{skip: true, result: states.True(
 			"This state was skipped because none of its onfail requisites failed.")}
 	}
-	return decision{watchFired: watchFired}
+	if !watchFired {
+		return decision{}
+	}
+	return decision{reaction: reaction{kind: exec.ReactionWatch, watchChanged: watchChanged}}
 }
 
 // prereqWouldChange runs a prereq target in test mode and reports whether
@@ -430,15 +446,15 @@ func mustGet(m *value.Map, key string) any {
 // main pass by `creates:` ran its mod_watch at the end anyway. Salt's
 // call_listen copies the whole low chunk, drops only the requisite keys,
 // and sends it through call(), which applies all of them. DIVERGENCE 5.302.
-func (r *Runner) runChunk(ch *state.Chunk, watchFired bool) (res states.Result, held bool) {
+func (r *Runner) runChunk(ch *state.Chunk, react reaction) (res states.Result, held bool) {
 	if gate, held := r.evaluateGates(ch); held {
 		return gate, true
 	}
-	return r.execute(ch, watchFired), false
+	return r.execute(ch, react), false
 }
 
 // execute runs one chunk, applying the retry loop and the check_cmd.
-func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
+func (r *Runner) execute(ch *state.Chunk, react reaction) states.Result {
 	// SPEC 26.3's span per state, under the job's.
 	//
 	// Started here rather than in Run's loop so that it covers what
@@ -463,6 +479,7 @@ func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 	// 11.7 lists both as per-state options, and an option that governs
 	// the conditions but not the state itself is the wrong half.
 	base := r.chunkContext(ch)
+	base.Reaction, base.WatchChanged = react.kind, react.watchChanged
 	call := func() (states.Result, error) {
 		ctx := base
 		// A per-state `timeout` bounds each attempt, not the retry loop
@@ -476,7 +493,7 @@ func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 			defer cancel()
 			ctx = &bounded
 		}
-		if watchFired {
+		if react.kind != "" {
 			return r.States.CallWatch(ctx, ch.Func(), ch.Args)
 		}
 		return r.States.Call(ctx, ch.Func(), ch.Args)
@@ -622,7 +639,7 @@ func (r *Runner) runListeners(chunks []*state.Chunk, results []*StateResult, out
 		// and check_cmd. The requisites are not evaluated again: they
 		// were the main pass's, and Salt drops them from the listener's
 		// copy of the chunk for the same reason.
-		res, held := r.runChunk(ch, true)
+		res, held := r.runChunk(ch, reaction{kind: exec.ReactionListen})
 		if res.Name == "" {
 			res.Name = ch.Name
 		}
@@ -646,11 +663,15 @@ func (r *Runner) failHardFor(ch *state.Chunk) bool {
 
 func anyChanged(targets []int, results []*StateResult) bool {
 	for _, idx := range targets {
-		if idx < len(results) && results[idx] != nil && results[idx].Result.HasChanges() {
+		if changed(idx, results) {
 			return true
 		}
 	}
 	return false
+}
+
+func changed(idx int, results []*StateResult) bool {
+	return idx < len(results) && results[idx] != nil && results[idx].Result.HasChanges()
 }
 
 func allChanged(targets []int, results []*StateResult) bool {

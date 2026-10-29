@@ -469,11 +469,21 @@ func (c *Compiler) resolveInverseRequisites(out *Compiled) {
 		for _, f := range d.Funcs {
 			for _, e := range f.Args.Entries() {
 				name := value.KeyString(e.Key)
+				if forward, ok := notInverseReqs[name]; ok {
+					out.Diags.Add(e.KeyPos, d.SLS, d.ID,
+						"Salt has no %s: it passes it to the state function as an argument "+
+							"and attaches nothing; write %s on the states it names", name, forward)
+					continue
+				}
 				kind, ok := inverseReqs[name]
 				if !ok {
 					continue
 				}
 				for _, ref := range parseReqList(e.Val, e.ValPos, d.SLS, d.ID, name, &out.Diags) {
+					if kind == Listen && ref.SLS != "" {
+						out.Diags.Add(e.ValPos, d.SLS, d.ID, listenSLSRefusal, name, ref.SLS)
+						continue
+					}
 					additions = append(additions, addition{
 						targetID:    ref.ID,
 						targetState: ref.State,

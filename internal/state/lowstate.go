@@ -367,6 +367,17 @@ func collectRequisites(f *FuncDecl, d *Decl, diags *Diags) []Req {
 			continue
 		}
 		refs := parseReqList(e.Val, e.ValPos, d.SLS, d.ID, name, diags)
+		if kind == Listen {
+			kept := refs[:0]
+			for _, ref := range refs {
+				if ref.SLS != "" {
+					diags.Add(e.ValPos, d.SLS, d.ID, listenSLSRefusal, name, ref.SLS)
+					continue
+				}
+				kept = append(kept, ref)
+			}
+			refs = kept
+		}
 		if len(refs) == 0 {
 			continue
 		}

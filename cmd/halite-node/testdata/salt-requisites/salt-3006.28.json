@@ -1,0 +1,1322 @@
+{
+ "captured": "salt-call 3006.28 onedir, --local --out=json state.apply <case>, as root, GitHub ubuntu-24.04 runner, run 40898315580, 2026-10-29; reduced to each state's tag, id, result, changes and comment in run order",
+ "cases": {
+  "i_listen": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Referenced state sls: g1 does not exist",
+     "id": null,
+     "result": false,
+     "tag": "Listen_Error_|-listen_g1_|-listen_sls_|-Listen_Error"
+    }
+   ]
+  },
+  "i_listen_glob": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "g2a",
+     "result": false,
+     "tag": "test_|-g2a_|-g2a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Referenced state sls: g* does not exist",
+     "id": null,
+     "result": false,
+     "tag": "Listen_Error_|-listen_g*_|-listen_sls_|-Listen_Error"
+    }
+   ]
+  },
+  "i_listen_none": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Referenced state sls: nosuch does not exist",
+     "id": null,
+     "result": false,
+     "tag": "Listen_Error_|-listen_nosuch_|-listen_sls_|-Listen_Error"
+    }
+   ]
+  },
+  "i_onchanges": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "i_onchanges_any": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_onchanges_glob": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "g2a",
+     "result": false,
+     "tag": "test_|-g2a_|-g2a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_onchanges_none": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_onchanges_q": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "State was not run because none of the onchanges reqs changed",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "State was not run because none of the onchanges reqs changed",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "i_onfail": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-fail_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "i_onfail_any": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-fail_without_changes"
+    }
+   ]
+  },
+  "i_onfail_glob": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "g2a",
+     "result": false,
+     "tag": "test_|-g2a_|-g2a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_onfail_none": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_onfail_q": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "State was not run because onfail req did not change",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "State was not run because onfail req did not change",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "i_prereq": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "No changes detected",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "No changes detected",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    }
+   ]
+  },
+  "i_prereq_glob": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "g2a",
+     "result": false,
+     "tag": "test_|-g2a_|-g2a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_prereq_none": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_require_any": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-fail_without_changes"
+    }
+   ]
+  },
+  "i_use": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "from a",
+     "id": "u1a",
+     "result": true,
+     "tag": "test_|-u1a_|-u1a_|-configurable_test_state"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "from a",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-configurable_test_state"
+    }
+   ]
+  },
+  "i_watch": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {
+      "Requisites with changes": [
+       "test: a"
+      ]
+     },
+     "comment": "Watch statement fired.",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "i_watch_any": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_watch_glob": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "g2a",
+     "result": false,
+     "tag": "test_|-g2a_|-g2a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_watch_none": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    }
+   ]
+  },
+  "i_watch_q": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_listen": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "Requisites with changes": []
+     },
+     "comment": "Watch statement fired.",
+     "id": "listener_a",
+     "result": true,
+     "tag": "test_|-listener_a_|-a_|-mod_watch"
+    }
+   ]
+  },
+  "s_listen_in": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "Requisites with changes": []
+     },
+     "comment": "Watch statement fired.",
+     "id": "listener_a",
+     "result": true,
+     "tag": "test_|-listener_a_|-a_|-mod_watch"
+    }
+   ]
+  },
+  "s_onchanges_any": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_onchanges_in": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_onfail": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_onfail_all": {
+   "error": "UnboundLocalError: cannot access local variable 'chunk' where it is not associated with a value",
+   "exit": 1
+  },
+  "s_onfail_any": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_onfail_in": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_prereq_in": {
+   "error": "RecursionError: maximum recursion depth exceeded",
+   "exit": 1
+  },
+  "s_require_any": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_require_any_in": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_use": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_use_in": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_watch_any": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "s_watch_in": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Recursive requisite found",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "b",
+     "result": true,
+     "tag": "test_|-b_|-b_|-succeed_without_changes"
+    }
+   ]
+  },
+  "x_in_sls": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "a",
+     "result": false,
+     "tag": "test_|-a_|-a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "One or more requisite failed: x_in_sls.a",
+     "id": "g1a",
+     "result": false,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "One or more requisite failed: x_in_sls.a",
+     "id": "g1b",
+     "result": false,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "x_in_sls_ok": {
+   "exit": 0,
+   "states": [
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "a",
+     "result": true,
+     "tag": "test_|-a_|-a_|-succeed_without_changes"
+    },
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "o1",
+     "result": true,
+     "tag": "test_|-o1_|-o1_|-succeed_without_changes"
+    }
+   ]
+  },
+  "x_slsglob": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "g2a",
+     "result": false,
+     "tag": "test_|-g2a_|-g2a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "One or more requisite failed: g2.g2a",
+     "id": "x",
+     "result": false,
+     "tag": "test_|-x_|-x_|-succeed_without_changes"
+    }
+   ]
+  },
+  "x_slsglob_ok": {
+   "exit": 1,
+   "states": [
+    {
+     "changes": {
+      "testing": {
+       "new": "Something pretended to change",
+       "old": "Unchanged"
+      }
+     },
+     "comment": "Success!",
+     "id": "g1a",
+     "result": true,
+     "tag": "test_|-g1a_|-g1a_|-succeed_with_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "g1b",
+     "result": true,
+     "tag": "test_|-g1b_|-g1b_|-succeed_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Failure!",
+     "id": "g2a",
+     "result": false,
+     "tag": "test_|-g2a_|-g2a_|-fail_without_changes"
+    },
+    {
+     "changes": {},
+     "comment": "Success!",
+     "id": "x",
+     "result": true,
+     "tag": "test_|-x_|-x_|-succeed_without_changes"
+    }
+   ]
+  }
+ }
+}
