@@ -10,7 +10,6 @@ package policy
 
 import (
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 
@@ -564,12 +563,21 @@ func matchAny(patterns []string, s string) bool {
 	return false
 }
 
+// matchGlob matches a function, runner, keyword or SLS pattern, with
+// Salt's fnmatch as matchPrincipal does. It was path.Match, whose `[!w]`
+// is a set holding `!` and `w` where fnmatch's, Salt's and a shell's is
+// "not w": `deny_sls: ['[!w]*']` denied `web` and let `secret` through,
+// the reverse of what it says, and `pkg.[!r]*` granted `pkg.remove`.
+// path.Match's `\` escape goes with it; fnmatch has none, as Salt has
+// none. DIVERGENCE 5.472.
+//
+// Salt's own ACLs go further, through expr_match: a pattern that is not
+// a glob match is tried again as a regular expression, which is how
+// `.*` grants everything there. That is not done. A grammar in which
+// every entry is two languages at once is what SPEC 23.5 exists to
+// replace, and a regex here would widen every pattern in every policy.
 func matchGlob(pattern, s string) bool {
-	if pattern == "*" {
-		return true
-	}
-	ok, err := path.Match(pattern, s)
-	return err == nil && ok
+	return pattern == "*" || fnmatch.Match(pattern, s)
 }
 
 // checkArgs applies the argument-level constraints, returning the
@@ -698,8 +706,8 @@ func checkArgs(rule Rule, req Request) string {
 //     a role with allow_mods was unconstrained on the operator's own
 //     command line: every name it was asked for was allowed.
 //   - `sls` is a comma list. `deploy.web,teardown.everything` is one
-//     positional argument, `deploy.*` matches it (path.Match's `*`
-//     stops only at `/`), and the runner compiled both.
+//     positional argument, `deploy.*` matches it (a glob `*` crosses
+//     a comma), and the runner compiled both.
 //
 // So the names are every positional argument and the keyword `sls`,
 // each split the way tagGlobs splits it. That is a superset of what

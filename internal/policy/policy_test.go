@@ -623,3 +623,44 @@ func TestAPrincipalGlobCrossesASlash(t *testing.T) {
 		}
 	}
 }
+
+// Function, runner, kwarg and SLS patterns are matched as principals
+// are, with Salt's fnmatch. They were matched with path.Match, which
+// differs from it where a deny list cares: `[!w]` is "not w" to fnmatch
+// and Salt, and to path.Match a set of `!` and `w`, so `deny_sls:
+// ['[!w]*']` denied `web` and allowed `secret`, the reverse of what it
+// says, and `pkg.[!r]*` granted `pkg.remove`. DIVERGENCE 5.472.
+func TestPolicyPatternsAreSaltsGlobs(t *testing.T) {
+	p, _, err := Load([]byte(`
+roles:
+  ops:
+    - target: '*'
+      functions: ['state.apply', 'pkg.[!r]*']
+      args:
+        state.apply:
+          deny_sls: ['[!w]*']
+bindings:
+  - principal: 'cert:CN=ops'
+    roles: ['ops']
+`), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		fun, sls string
+		want     bool
+	}{
+		{"state.apply", "web", true},
+		{"state.apply", "secret", false},
+		{"pkg.installed", "", true},
+		{"pkg.remove", "", false},
+	} {
+		req := Request{Principal: "cert:CN=ops", Target: "web1", Fun: c.fun}
+		if c.sls != "" {
+			req.Arg = []string{c.sls}
+		}
+		if d := p.Authorize(req); d.Allowed != c.want {
+			t.Errorf("%s %s: allowed=%v, want %v (%s)", c.fun, c.sls, d.Allowed, c.want, d.Reason)
+		}
+	}
+}

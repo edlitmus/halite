@@ -34492,6 +34492,42 @@ file to the new one is the likely fix, and is left for a host that can show
 it. Setuid, setgid and sticky bits are not kept; none of these files has a
 reason for them. Ubuntu only, in a temporary directory.
 
+### 5.472 Policy function and SLS patterns were path.Match, not Salt's glob
+
+Issue 321, section 5, left by 5.465: principals moved to fnmatch, and
+`matchGlob`, which matches `functions`, `runners`, keyword lists, `deny_sls`,
+`allow_sls` and `allow_mods`, stayed on `path.Match`.
+
+**Where the two differ, for these names.** Not at `/`, which 5.465 was about:
+SLS names are judged in their canonical dotted spelling (5.294), and function
+and runner names hold no `/`. They differ in a bracket. `[!w]` is "anything
+but `w`" to fnmatch, to Salt and to a shell, and to `path.Match` a set of the
+two characters `!` and `w` (Go spells negation `[^w]`). Measured with
+`TestPolicyPatternsAreSaltsGlobs` on the old code:
+
+| Rule | Request | old | now |
+|---|---|---|---|
+| `deny_sls: ['[!w]*']` | `state.apply web` | denied | allowed |
+| `deny_sls: ['[!w]*']` | `state.apply secret` | **allowed** | denied |
+| `functions: ['pkg.[!r]*']` | `pkg.remove` | **granted** | refused |
+| `functions: ['pkg.[!r]*']` | `pkg.installed` | refused | granted |
+
+A deny list that does the reverse of what it says is the case that matters.
+`path.Match`'s `\` escape goes too; fnmatch has none. An unclosed `[` was
+thought to be a third case, a deny entry with a typo matching nothing; it is
+not, because fnmatch's literal `[` matches no canonical SLS name either, and
+it was dropped from the test.
+
+**Not done, deliberately:** Salt's ACLs match through `expr_match`, which
+tries a pattern as fnmatch and then again as a regular expression, which is
+how `.*` grants everything there. halite's policy does not, and SPEC 23.5 now
+says so: a regex reading would widen every pattern in every policy, and one
+grammar is what the section is for.
+
+**Checked:** the production policy on beastie has no `[!`, `[^` or `\` in a
+pattern, so none of its decisions changes. SPEC 23.5 now says what a pattern
+is. **Not verified:** no live hub was run with such a rule.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
