@@ -72,7 +72,11 @@ func parsePySpec(spec string) (pySpec, error) {
 		i++
 	}
 	if i > start {
-		p.width, _ = strconv.Atoi(spec[start:i])
+		w, err := formatNumber(spec[start:i], "width")
+		if err != nil {
+			return p, err
+		}
+		p.width = w
 	}
 	if i < len(spec) && (spec[i] == ',' || spec[i] == '_') {
 		p.grouping = spec[i]
@@ -87,7 +91,11 @@ func parsePySpec(spec string) (pySpec, error) {
 		if i == start {
 			return p, fmt.Errorf("format specifier missing precision")
 		}
-		p.precision, _ = strconv.Atoi(spec[start:i])
+		pr, err := formatNumber(spec[start:i], "precision")
+		if err != nil {
+			return p, err
+		}
+		p.precision = pr
 	}
 	if i < len(spec) {
 		p.typ = spec[i]
@@ -97,6 +105,29 @@ func parsePySpec(spec string) (pySpec, error) {
 		return p, fmt.Errorf("invalid format specifier %q", spec)
 	}
 	return p, nil
+}
+
+// maxFormatNumber bounds a format spec's width and precision. Both end
+// up as a padded or zero-extended string, so a spec that names one is a
+// request to allocate it, and the render's MaxOutput is not in reach of
+// this path to refuse it afterwards. strconv.Atoi's error was discarded,
+// so `{:>99999999999999999999}` became a width of MaxInt and
+// `{:.9223372036854775807f}` a precision the same; under a 1G memory
+// limit the second killed the process.
+// The bound is DefaultOptions' MaxOutput, so nothing that could have been
+// rendered is refused. Python raises for a number past ssize_t
+// ("Too many decimal digits in format string") and would MemoryError on
+// the rest; refusing both the same way is the nearest honest thing.
+const maxFormatNumber = 64 << 20
+
+// formatNumber reads the digits of a width or precision, refusing one
+// that overflows or exceeds maxFormatNumber.
+func formatNumber(digits, what string) (int, error) {
+	n, err := strconv.Atoi(digits)
+	if err != nil || n > maxFormatNumber {
+		return 0, fmt.Errorf("format %s is too large (limit %d)", what, maxFormatNumber)
+	}
+	return n, nil
 }
 
 // pyFormatValue is format(v, spec).

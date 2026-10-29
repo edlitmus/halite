@@ -67,7 +67,11 @@ func pyPercent(format string, args []any, kwargs map[string]any) (string, error)
 			i++
 		}
 		if i > start {
-			width, _ = strconv.Atoi(format[start:i])
+			w, err := formatNumber(format[start:i], "width")
+			if err != nil {
+				return "", fmt.Errorf("format(): %v", err)
+			}
+			width = w
 		}
 		if i < len(format) && format[i] == '*' {
 			return "", fmt.Errorf("format(): a '*' width is not supported")
@@ -80,7 +84,11 @@ func pyPercent(format string, args []any, kwargs map[string]any) (string, error)
 			}
 			precision = 0
 			if i > start {
-				precision, _ = strconv.Atoi(format[start:i])
+				pr, err := formatNumber(format[start:i], "precision")
+				if err != nil {
+					return "", fmt.Errorf("format(): %v", err)
+				}
+				precision = pr
 			}
 			if i < len(format) && format[i] == '*' {
 				return "", fmt.Errorf("format(): a '*' precision is not supported")

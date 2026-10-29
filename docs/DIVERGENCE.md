@@ -34665,6 +34665,44 @@ expects the missing-sls refusal for the same tree.
 **Not verified.** Only `require_in` was captured; `watch_in` and the others
 attach the same way. Execution was not run.
 
+### 5.477 A format width or precision too large to allocate was allocated
+
+Found by a scratch probe of `str.format` with absurd widths, which took the
+developer's tmux down: the probe's fifth spec, `{:.9223372036854775807f}`,
+asked for a string of MaxInt digits. 5.369 and its `%` successor read the
+width and precision with `strconv.Atoi` and discarded the error, so a number
+past int64 became MaxInt silently and one below it was taken at its word.
+Both end as a padded or zero-extended string, and the render's `MaxOutput`
+(which `zfill` checks) is not in reach of `pyFormatValue` or `pyPercent`, so
+nothing refused it afterwards. A template is attacker-adjacent (SPEC 10.2.8).
+
+**Measured,** the five probe specs against the old code under a 1G cgroup
+(`systemd-run --user --scope -p MemoryMax=1G -p MemorySwapMax=0`): three
+died with Go's `makeslice: len out of range`, reported as "a halite defect,
+please report it"; `{:.99999999999999999999}` on a string rendered `1`, the
+precision being a truncation; and `{:.9223372036854775807f}` was killed by
+the kernel (exit 137). Without the cgroup that spec is not a test failure
+but the machine's memory.
+
+**The change.** `formatNumber` reads a width or precision and refuses one
+that overflows or exceeds 64 MiB, the default `MaxOutput`, so nothing a
+render could have written is refused. Both syntaxes use it. Python raises
+for a number past ssize_t ("Too many decimal digits in format string") and
+would `MemoryError` on a smaller one it could not allocate; refusing both
+with one message is the nearest honest thing. **A divergence from Python:**
+`'{:.99999999999999999999}'.format('x')` is `x` there and an error here.
+
+**Demonstrated.** `TestFormatSpecNumbersAreBounded` holds seven specs across
+both syntaxes, and `TestFormatSpecNumbersBelowTheBoundStillWork` that
+ordinary ones are unchanged; the package ran under the 1G cgroup and passed.
+With the size bound removed and the overflow check kept, the first test is
+killed by the cgroup (exit 137) rather than failing, which is how an
+allocation shows in a test, and the second still passes. **Not verified:**
+a 64 MiB width is still a 64 MiB allocation per spec, so a
+template can still spend 64 MiB per `format` call it makes, bounded by the
+render's own charge and not by this; no real Salt was asked what
+`format` does with these.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
