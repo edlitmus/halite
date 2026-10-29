@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A format width or precision too large to allocate is refused
+
+`'{:.9223372036854775807f}'.format(x)` and `'%99999999999999999999s'|format(x)`
+asked for a string of that length; the first took a process to the memory
+limit. A width or precision past 64 MiB, or past what an int holds, is now
+an error. `'{:.99999999999999999999}'.format('x')`, which Python answers
+with `x`, is refused too (DIVERGENCE 5.477).
+
 ### A requisite may name `sls:` with a glob, and `_in` forms may name an sls
 
 `require: [sls: 'web.*']` depends on every state of every matching SLS,
