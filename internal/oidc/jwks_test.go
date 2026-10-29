@@ -20,6 +20,10 @@ type keyServer struct {
 	kid     string
 	signer  *signer
 	cache   string
+	// status, when set, is answered instead of the set.
+	status int
+	// gate, when set, holds every fetch until it is closed.
+	gate chan struct{}
 }
 
 func newKeyServer(t *testing.T, kid string) *keyServer {
@@ -28,8 +32,15 @@ func newKeyServer(t *testing.T, kid string) *keyServer {
 	k.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		k.mu.Lock()
 		k.fetches++
-		kid, pub, cache := k.kid, &k.signer.rsaKey.PublicKey, k.cache
+		kid, pub, cache, status, gate := k.kid, &k.signer.rsaKey.PublicKey, k.cache, k.status, k.gate
 		k.mu.Unlock()
+		if gate != nil {
+			<-gate
+		}
+		if status != 0 {
+			w.WriteHeader(status)
+			return
+		}
 		if cache != "" {
 			w.Header().Set("Cache-Control", cache)
 		}
@@ -244,5 +255,106 @@ func TestAnECPointOffTheCurveIsRefused(t *testing.T) {
 	}
 	if _, err := bad.publicKey(); err == nil {
 		t.Error("a point off the curve was accepted as a key")
+	}
+}
+
+// A key the provider has withdrawn stops verifying once the set's cache
+// window has passed. Nothing refreshed a set on its schedule: `Refresh`
+// had no caller, so the only fetch after the first was the one an
+// unknown `kid` causes, and a withdrawn key, which no token names as
+// unknown, stayed trusted until the process restarted -- the case a
+// provider withdraws a key for. DIVERGENCE 5.474.
+func TestAWithdrawnKeyIsRefusedOnceTheSetExpires(t *testing.T) {
+	k := newKeyServer(t, "k1")
+	clock := time.Now()
+	set := keySetFor(k, func() time.Time { return clock })
+	opts := VerifyOptions{Issuer: "https://idp.example", Audience: "halite", Now: func() time.Time { return clock }}
+
+	withdrawn := k.signer
+	if _, err := Verify(withdrawn.token(t, "RS256", goodClaims(clock.Add(3*time.Hour))), set, opts); err != nil {
+		t.Fatalf("a published key was refused: %v", err)
+	}
+	k.rotate(t, "k2")
+
+	// Inside the window the set is not asked again: the cache is the
+	// provider's own word on how long its keys stand.
+	clock = clock.Add(30 * time.Minute)
+	if _, err := Verify(withdrawn.token(t, "RS256", goodClaims(clock.Add(time.Hour))), set, opts); err != nil {
+		t.Fatalf("inside the cache window the set changed: %v", err)
+	}
+	clock = clock.Add(time.Hour)
+	if _, err := Verify(withdrawn.token(t, "RS256", goodClaims(clock.Add(time.Hour))), set, opts); err == nil {
+		t.Fatal("a key the provider withdrew still verified after its set expired")
+	}
+	if _, err := Verify(k.signer.token(t, "RS256", goodClaims(clock.Add(time.Hour))), set, opts); err != nil {
+		t.Errorf("the key that replaced it was refused: %v", err)
+	}
+}
+
+// A provider that is down when the set expires leaves the keys it last
+// published in use, and is asked again no more than once per
+// MinRefreshInterval: logins do not stop because the provider is
+// briefly unreachable, and do not each become a request to it.
+func TestAnExpiredSetIsKeptWhileTheProviderIsDown(t *testing.T) {
+	k := newKeyServer(t, "k1")
+	clock := time.Now()
+	set := keySetFor(k, func() time.Time { return clock })
+	opts := VerifyOptions{Issuer: "https://idp.example", Audience: "halite", Now: func() time.Time { return clock }}
+	if err := set.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	k.mu.Lock()
+	k.status = http.StatusServiceUnavailable
+	k.mu.Unlock()
+	clock = clock.Add(2 * time.Hour)
+	for i := 0; i < 5; i++ {
+		if _, err := Verify(k.signer.token(t, "RS256", goodClaims(clock.Add(time.Hour))), set, opts); err != nil {
+			t.Fatalf("an unreachable provider stopped logins with keys already held: %v", err)
+		}
+	}
+	if n := k.count(); n != 2 {
+		t.Errorf("%d fetches; want the first and one retry", n)
+	}
+}
+
+// A token that names a key while the set is being fetched waits for the
+// fetch. It used to be refused at once ("fetched less than a minute
+// ago"), so during a rotation every login but the first failed until
+// the fetch that would have let them in had finished. DIVERGENCE 5.474.
+func TestATokenArrivingMidFetchWaitsForIt(t *testing.T) {
+	k := newKeyServer(t, "k1")
+	clock := time.Now()
+	set := keySetFor(k, func() time.Time { return clock })
+	opts := VerifyOptions{Issuer: "https://idp.example", Audience: "halite", Now: func() time.Time { return clock }}
+	if err := set.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	k.rotate(t, "k2")
+	clock = clock.Add(2 * MinRefreshInterval)
+	k.mu.Lock()
+	k.gate = make(chan struct{})
+	gate := k.gate
+	k.mu.Unlock()
+
+	const logins = 10
+	errs := make(chan error, logins)
+	for i := 0; i < logins; i++ {
+		go func() {
+			_, err := Verify(k.signer.token(t, "RS256", goodClaims(clock.Add(time.Hour))), set, opts)
+			errs <- err
+		}()
+	}
+	for k.count() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	for i := 0; i < logins; i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("a login during the fetch failed: %v", err)
+		}
+	}
+	if n := k.count(); n != 2 {
+		t.Errorf("%d fetches; want one for the rotation", n)
 	}
 }

@@ -34556,6 +34556,115 @@ times under `-race`. **Not verified:** no real identity provider; the key-set
 refresh in `jwks.go` has its own bound (`MinRefreshInterval`) and was not
 looked at for the same race.
 
+### 5.474 An OIDC key the provider withdrew stayed trusted until a restart
+
+Found checking what 5.473 left unverified, the key set's concurrency; not an
+audit bullet. `KeySet` said it "refreshes on its own schedule", and computed
+an expiry from the provider's `Cache-Control` (`cacheFor`, bounded to between
+five minutes and a day), and nothing ran the schedule: `Refresh` had no
+caller outside the tests. After the first fetch the only fetch was the
+out-of-turn one an unknown `kid` causes. A key the provider has withdrawn is
+never unknown -- it is the one already held -- so it went on verifying tokens
+until the hub or API process restarted. Withdrawing a key is what a provider
+does when the key is suspect. `TestTheCacheWindowIsBoundedAtBothEnds` even
+said a long window "would keep a withdrawn key valid here long after it was
+withdrawn", about a window nothing enforced.
+
+**And a second defect, the one being looked for.** A token naming a key
+while the set was being fetched was refused at once, "fetched less than 1m0s
+ago", because the out-of-turn bound is stamped before the fetch. So during a
+rotation every login but the first was turned away until the fetch that would
+have admitted it finished: 9 of 10 concurrent logins, measured.
+
+**The change.** `find` checks the set's expiry where the keys are used, and
+fetches again when it has passed; no goroutine has to be kept alive for it.
+The bound on out-of-turn fetches covers this one too, so an expired set is
+asked for at most once per `MinRefreshInterval`. If the provider cannot be
+reached, the keys it last published stay in use: refusing every login
+because the provider is briefly down would be this service's outage made of
+somebody else's. A caller that arrives while a fetch is in progress waits for
+it and gets its result.
+
+**Demonstrated,** against the package's key server, on the old code and then
+the new: `TestAWithdrawnKeyIsRefusedOnceTheSetExpires` (the withdrawn key
+still verified 90 minutes after a fetch whose window was an hour, and is
+refused now; the key
+that replaced it verifies), `TestATokenArrivingMidFetchWaitsForIt` (9 of 10
+refused, now none) and `TestAnExpiredSetIsKeptWhileTheProviderIsDown` (one
+retry, not one per login; the held keys keep working). All three ran 30
+times under `-race`.
+
+**Not verified.** No real identity provider. A provider that keeps serving a
+withdrawn key in its set is outside this. The scheduled `Refresh` is kept,
+for the tests and any caller that wants it, and still has none in the build.
+
+### 5.475 An `sls:` requisite took no glob
+
+Issue 321's requisite-glob work (5.467) left `sls:` and the `_in` forms
+uncaptured. Captured with `salt-call --local state.apply` from the 3006.28 and
+3008.3 onedirs on ubuntu-24.04, 2026-10-29 (GitHub run 40812410082, on a
+scratch branch since deleted), with `g1` holding a passing state and `g2` a
+failing one:
+
+| Case | Salt 3006.28 | Salt 3008.3 | halite before |
+|---|---|---|---|
+| `require: [sls: "g*"]` | g1a, g2a, then x, failed: `One or more requisite failed: g2.g2a` | the same | refused: not part of this run |
+| `require: [sls: "zz*"]` | x failed: `The following requisites were not found` | **x ran and passed** | refused |
+
+**The change.** An `sls:` target that is not an SLS in the run and holds a
+glob character matches every SLS whose name fnmatch matches, and depends on
+all their states, in declaration order. One that matches nothing is refused,
+as 3006.28 fails it. 3008.3 was not followed there: it runs the state as if
+the requisite were absent, so a typo in a requisite makes it do nothing,
+silently, where every other unresolvable requisite is an error in both
+versions and here. SPEC 11.3 says so.
+
+`TestAnSLSRequisiteGlobResolvesAsSaltDoes` holds both rows: g1a g2a x with
+x depending on both, and the refusal. It failed on the old code at the first.
+
+**Not verified.** Only `require` was captured with an `sls:` glob; the other
+kinds go through the same resolution. Execution was not run here; the failure
+reaching x is the existing requisite path given the edge.
+
+### 5.476 `require_in: [sls: ...]` was refused, and Salt drops several `_in` forms silently
+
+From the same capture as 5.475. halite refused an `sls:` target in any `_in`
+requisite, telling the author to write the forward form instead. Salt 3006.28
+and 3008.3 agreed on every row:
+
+| Case, `a` failing | Salt | halite before |
+|---|---|---|
+| `require_in: [sls: g1]` | a, then g1a failed (`One or more requisite failed: c_in_sls.a`), then o1 | refused |
+| `require_in: [test: "b*"]` | refused: `Cannot extend ID 'b*'` | refused |
+| `require_in: ["b*"]` | **accepted; b1, b2 ran and passed**, a last | refused |
+| `require_in: [sls: "g*"]` | **accepted; g1a passed**, a last | refused |
+| `require_in: [sls: nosuch]` | **accepted**; everything ran, a last | refused |
+| `require_in: [test: "zz*"]` | refused | refused |
+
+**The change.** `require_in: [sls: web]`, and every other `_in` kind, adds the
+forward requisite to every state of that SLS. The three rows where Salt
+accepts the requisite and attaches it to nothing stay refused, with a message
+that says Salt would accept it: a requisite that cannot attach is a mistake
+in the tree, and Salt's answer is to run what it was meant to guard. SPEC 11.3
+says so.
+
+**Found and not changed: run order.** With the edge in place Salt ran `a g1a
+o1` and halite runs `o1 a g1a`. That is SPEC 11.4, not this requisite. Salt
+walks the states in declaration order and runs a state's requisites just
+before it, so `a` moved up to g1a's place. halite takes, at each step, the
+earliest-declared state that is ready, and `o1`, included before `a`, is
+ready from the start. Both honour every edge; they differ in where a
+required state lands relative to states unrelated to it. Changing the ordering is a change to every run of every tree and is
+not made here.
+
+`TestAnSLSInRequisiteAttachesToEveryStateOfIt` holds the edge, halite's
+order, and the five refusals. It failed on the old code at the first.
+`TestInverseRequisiteRejections` expected the old "cannot name an sls" and now
+expects the missing-sls refusal for the same tree.
+
+**Not verified.** Only `require_in` was captured; `watch_in` and the others
+attach the same way. Execution was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

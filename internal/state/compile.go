@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/target"
@@ -455,6 +456,7 @@ func (c *Compiler) resolveInverseRequisites(out *Compiled) {
 	type addition struct {
 		targetID    string
 		targetState string
+		targetSLS   string
 		kind        ReqKind
 		ref         ReqRef
 		pos         value.Pos
@@ -475,6 +477,7 @@ func (c *Compiler) resolveInverseRequisites(out *Compiled) {
 					additions = append(additions, addition{
 						targetID:    ref.ID,
 						targetState: ref.State,
+						targetSLS:   ref.SLS,
 						kind:        kind,
 						// The forward requisite points back at the
 						// declaring state.
@@ -489,9 +492,13 @@ func (c *Compiler) resolveInverseRequisites(out *Compiled) {
 	}
 
 	for _, a := range additions {
+		if a.targetSLS != "" {
+			c.inverseToSLS(out, a.targetSLS, a.kind, a.ref, a.pos, a.fromSLS, a.fromID)
+			continue
+		}
 		if a.targetID == "" {
 			out.Diags.Add(a.pos, a.fromSLS, a.fromID,
-				"%s_in cannot name an sls; write the forward requisite on the other state", a.kind)
+				"%s_in names nothing it can attach to", a.kind)
 			continue
 		}
 		targetDecl, ok := out.High.Lookup(a.targetID)
@@ -508,6 +515,42 @@ func (c *Compiler) resolveInverseRequisites(out *Compiled) {
 			continue
 		}
 		appendRequisiteArg(targetFunc, a.kind, a.ref)
+	}
+}
+
+// inverseToSLS is `require_in: [sls: web]`: every state of that sls
+// gains the forward requisite, as Salt 3006.28 and 3008.3 do it
+// (captured 2026-10-29: with `a` failing, g1's state failed "One or
+// more requisite failed: c_in_sls.a" and the other sls's ran). It was
+// refused here, with a message telling the author to write it forwards.
+//
+// A glob, or an sls that is not in the run, is refused. Salt accepted
+// both and did nothing: the states it might have named ran and passed
+// although `a` had failed, so the requisite was dropped without a word.
+// A refusal is the safer reading of a requisite that cannot attach;
+// halite refuses an `_in` naming an undeclared ID for the same reason,
+// and so does Salt. DIVERGENCE 5.476.
+func (c *Compiler) inverseToSLS(out *Compiled, sls string, kind ReqKind, ref ReqRef, pos value.Pos, fromSLS, fromID string) {
+	if fnmatch.HasMeta(sls) {
+		out.Diags.Add(pos, fromSLS, fromID,
+			"%s_in names sls %q, a glob; an `_in` requisite takes an sls by its name "+
+				"(Salt accepts a glob here and attaches nothing)", kind, sls)
+		return
+	}
+	attached := false
+	for _, d := range out.High.Decls() {
+		if d.SLS != sls {
+			continue
+		}
+		for _, f := range d.Funcs {
+			appendRequisiteArg(f, kind, ref)
+			attached = true
+		}
+	}
+	if !attached {
+		out.Diags.Add(pos, fromSLS, fromID,
+			"%s_in names sls %q, which is not part of this run "+
+				"(Salt accepts this and attaches nothing)", kind, sls)
 	}
 }
 

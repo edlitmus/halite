@@ -572,7 +572,7 @@ dependent:
 
 func TestInverseRequisiteRejections(t *testing.T) {
 	cases := []struct{ src, want string }{
-		{"a:\n  test.nop:\n    - require_in:\n      - sls: other\n", "cannot name an sls"},
+		{"a:\n  test.nop:\n    - require_in:\n      - sls: other\n", "not part of this run"},
 		{"a:\n  test.nop:\n    - require_in:\n      - nope\n", "not declared in this run"},
 		{"a:\n  test.nop:\n    - require_in:\n      - pkg: a\n", "does not declare pkg"},
 	}
