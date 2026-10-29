@@ -1,0 +1,14 @@
+name: scratch-reqcap2
+on: push
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        v: ["3006.28", "3008.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - run: cd scratch-cap && ./run.sh ${{ matrix.v }}
