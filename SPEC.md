@@ -1077,8 +1077,13 @@ Requisite targets may be written as `- pkg: nginx_installed`, as `- nginx_instal
 across all modules, and depending on every state that carries the ID, as Salt does), as `- sls:
 some.sls` to depend on every state in an SLS, or as `- id: nginx_installed`. A target that is not an
 exact ID or name may be a Salt glob (`*`, `?`, `[seq]`): `- pkg: 'nginx*'` depends on every `pkg`
-state whose ID or name matches, and `- 'nginx*'` on every state whose ID matches. A glob that matches
-nothing is a compilation error, as an unknown name is.
+state whose ID or name matches, `- 'nginx*'` on every state whose ID matches, and `- sls: 'web.*'`
+on every state of every SLS it matches. A glob that matches nothing is a compilation error, as an
+unknown name is (Salt 3008.3 ignores an `sls:` glob that matches nothing; DIVERGENCE 5.475).
+
+An `_in` form may name `- sls: some.sls`, which adds the forward requisite to every state of that
+SLS. An `_in` form naming a glob of any kind, or an SLS not in the run, is a compilation error. Salt
+accepts the bare glob, the `sls:` glob and the missing SLS, and attaches nothing (DIVERGENCE 5.476).
 
 `__id__` and `__sls__` scoping rules match Salt: an ID is global across the whole compiled state,
 not scoped to its SLS. This is a design flaw in Salt and it is reproduced, because trees depend on

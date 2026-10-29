@@ -34598,6 +34598,73 @@ times under `-race`.
 withdrawn key in its set is outside this. The scheduled `Refresh` is kept,
 for the tests and any caller that wants it, and still has none in the build.
 
+### 5.475 An `sls:` requisite took no glob
+
+Issue 321's requisite-glob work (5.467) left `sls:` and the `_in` forms
+uncaptured. Captured with `salt-call --local state.apply` from the 3006.28 and
+3008.3 onedirs on ubuntu-24.04, 2026-10-29 (GitHub run 40812410082, on a
+scratch branch since deleted), with `g1` holding a passing state and `g2` a
+failing one:
+
+| Case | Salt 3006.28 | Salt 3008.3 | halite before |
+|---|---|---|---|
+| `require: [sls: "g*"]` | g1a, g2a, then x, failed: `One or more requisite failed: g2.g2a` | the same | refused: not part of this run |
+| `require: [sls: "zz*"]` | x failed: `The following requisites were not found` | **x ran and passed** | refused |
+
+**The change.** An `sls:` target that is not an SLS in the run and holds a
+glob character matches every SLS whose name fnmatch matches, and depends on
+all their states, in declaration order. One that matches nothing is refused,
+as 3006.28 fails it. 3008.3 was not followed there: it runs the state as if
+the requisite were absent, so a typo in a requisite makes it do nothing,
+silently, where every other unresolvable requisite is an error in both
+versions and here. SPEC 11.3 says so.
+
+`TestAnSLSRequisiteGlobResolvesAsSaltDoes` holds both rows: g1a g2a x with
+x depending on both, and the refusal. It failed on the old code at the first.
+
+**Not verified.** Only `require` was captured with an `sls:` glob; the other
+kinds go through the same resolution. Execution was not run here; the failure
+reaching x is the existing requisite path given the edge.
+
+### 5.476 `require_in: [sls: ...]` was refused, and Salt drops several `_in` forms silently
+
+From the same capture as 5.475. halite refused an `sls:` target in any `_in`
+requisite, telling the author to write the forward form instead. Salt 3006.28
+and 3008.3 agreed on every row:
+
+| Case, `a` failing | Salt | halite before |
+|---|---|---|
+| `require_in: [sls: g1]` | a, then g1a failed (`One or more requisite failed: c_in_sls.a`), then o1 | refused |
+| `require_in: [test: "b*"]` | refused: `Cannot extend ID 'b*'` | refused |
+| `require_in: ["b*"]` | **accepted; b1, b2 ran and passed**, a last | refused |
+| `require_in: [sls: "g*"]` | **accepted; g1a passed**, a last | refused |
+| `require_in: [sls: nosuch]` | **accepted**; everything ran, a last | refused |
+| `require_in: [test: "zz*"]` | refused | refused |
+
+**The change.** `require_in: [sls: web]`, and every other `_in` kind, adds the
+forward requisite to every state of that SLS. The three rows where Salt
+accepts the requisite and attaches it to nothing stay refused, with a message
+that says Salt would accept it: a requisite that cannot attach is a mistake
+in the tree, and Salt's answer is to run what it was meant to guard. SPEC 11.3
+says so.
+
+**Found and not changed: run order.** With the edge in place Salt ran `a g1a
+o1` and halite runs `o1 a g1a`. That is SPEC 11.4, not this requisite. Salt
+walks the states in declaration order and runs a state's requisites just
+before it, so `a` moved up to g1a's place. halite takes, at each step, the
+earliest-declared state that is ready, and `o1`, included before `a`, is
+ready from the start. Both honour every edge; they differ in where a
+required state lands relative to states unrelated to it. Changing the ordering is a change to every run of every tree and is
+not made here.
+
+`TestAnSLSInRequisiteAttachesToEveryStateOfIt` holds the edge, halite's
+order, and the five refusals. It failed on the old code at the first.
+`TestInverseRequisiteRejections` expected the old "cannot name an sls" and now
+expects the missing-sls refusal for the same tree.
+
+**Not verified.** Only `require_in` was captured; `watch_in` and the others
+attach the same way. Execution was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

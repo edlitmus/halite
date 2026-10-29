@@ -1109,3 +1109,86 @@ func TestARequisiteGlobResolvesAsSaltDoes(t *testing.T) {
 		t.Errorf("a glob matching its own state: want a cycle, got:\n%s", msg)
 	}
 }
+
+// The captured trees from the 2026-10-29 run, salt-call --local on Salt
+// 3006.28 and 3008.3 (GitHub run 40812410082, a scratch branch since
+// deleted). test.succeed_without_changes and test.fail_without_changes
+// are written test.nop here: what is held is the order and the edges.
+var saltSLSGlobTree = map[string]string{
+	"base|g1":    "g1a:\n  test.nop: []\n",
+	"base|g2":    "g2a:\n  test.nop: []\n",
+	"base|other": "o1:\n  test.nop: []\n",
+	"base|bs":    "b1:\n  test.nop: []\nb2:\n  test.nop: []\nc1:\n  test.nop: []\n",
+}
+
+func withSLS(name, src string) map[string]string {
+	files := map[string]string{"base|" + name: src}
+	for k, v := range saltSLSGlobTree {
+		files[k] = v
+	}
+	return files
+}
+
+// `require: [sls: 'g*']` depends on every state of every sls the glob
+// matches. Salt ran g1a, g2a, then x, and failed x with g2's failure;
+// halite refused the glob as an sls not in the run. One matching nothing
+// is refused, as 3006.28 failed it; 3008.3 ran x as if the requisite
+// were not there. DIVERGENCE 5.475.
+func TestAnSLSRequisiteGlobResolvesAsSaltDoes(t *testing.T) {
+	out := mustCompile(t, withSLS("c_slsglob",
+		"x:\n  test.nop:\n    - require:\n      - sls: 'g*'\ninclude:\n  - g1\n  - g2\n"), "c_slsglob")
+	if got := strings.Join(runOrder(out), " "); got != "g1a g2a x" {
+		t.Errorf("ran %s; Salt ran g1a g2a x", got)
+	}
+	x := out.Low[len(out.Low)-1]
+	if x.ID != "x" || len(x.Reqs) != 1 || len(x.Reqs[0].Resolved) != 2 {
+		t.Errorf("x's requisite resolved to %+v; want g1a and g2a", x.Reqs)
+	}
+
+	msg := errText(compile(t, withSLS("c_slsglob_none",
+		"x:\n  test.nop:\n    - require:\n      - sls: 'zz*'\ninclude:\n  - g1\n"), "c_slsglob_none"))
+	if !strings.Contains(msg, "matches no sls") {
+		t.Errorf("a glob matching no sls: want a refusal, got:\n%s", msg)
+	}
+}
+
+// `require_in: [sls: g1]` makes every state of g1 require the declaring
+// state. Salt ran a, then g1a (failed by a's failure), then o1. halite
+// refused an sls in an `_in` requisite. A glob, or an sls not in the
+// run, is refused: Salt accepted each and attached nothing, so the
+// states ran and passed although a had failed. The bare glob is refused
+// as before, which Salt also accepted and dropped; the `module: glob`
+// form Salt refuses too. DIVERGENCE 5.476.
+func TestAnSLSInRequisiteAttachesToEveryStateOfIt(t *testing.T) {
+	out := mustCompile(t, withSLS("c_in_sls",
+		"a:\n  test.nop:\n    - require_in:\n      - sls: g1\ninclude:\n  - g1\n  - other\n"), "c_in_sls")
+	// Salt ran a g1a o1; halite runs o1 a g1a. The edge is the same, and
+	// the difference is SPEC 11.4's ordering, not this requisite: Salt
+	// runs a state's requisites just before it, walking in declaration
+	// order, and halite takes the earliest-declared state that is ready,
+	// which is o1. Recorded in DIVERGENCE 5.476, not changed here.
+	if got := strings.Join(runOrder(out), " "); got != "o1 a g1a" {
+		t.Errorf("ran %s; want o1 a g1a (Salt: a g1a o1)", got)
+	}
+	for _, c := range out.Low {
+		if c.ID == "g1a" && (len(c.Reqs) != 1 || c.Reqs[0].Kind != Require) {
+			t.Errorf("g1a carries %+v; want a require on a", c.Reqs)
+		}
+		if c.ID == "o1" && len(c.Reqs) != 0 {
+			t.Errorf("o1, in another sls, carries %+v", c.Reqs)
+		}
+	}
+
+	for name, tc := range map[string]struct{ sls, want string }{
+		"sls glob":    {"a:\n  test.nop:\n    - require_in:\n      - sls: 'g*'\ninclude:\n  - g1\n  - g2\n  - other\n", "a glob"},
+		"missing sls": {"a:\n  test.nop:\n    - require_in:\n      - sls: nosuch\ninclude:\n  - bs\n", "not part of this run"},
+		"bare glob":   {"a:\n  test.nop:\n    - require_in:\n      - 'b*'\ninclude:\n  - bs\n", "not declared"},
+		"module glob": {"a:\n  test.nop:\n    - require_in:\n      - test: 'b*'\ninclude:\n  - bs\n", "not declared"},
+		"no match":    {"a:\n  test.nop:\n    - require_in:\n      - test: 'zz*'\ninclude:\n  - bs\n", "not declared"},
+	} {
+		msg := errText(compile(t, withSLS("c_in", tc.sls), "c_in"))
+		if !strings.Contains(msg, tc.want) {
+			t.Errorf("%s: want a refusal saying %q, got:\n%s", name, tc.want, msg)
+		}
+	}
+}

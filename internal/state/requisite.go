@@ -223,6 +223,27 @@ func resolveOneRef(
 			switch {
 			case ref.SLS != "":
 				idx, ok := bySLS[ref.SLS]
+				// `sls: 'web.*'` is every state of every sls the glob
+				// matches, in declaration order, as Salt 3006.28 and
+				// 3008.3 resolved it (captured 2026-10-29: `sls: "g*"`
+				// ran g1's and g2's states first and failed with g2's).
+				// One that matches nothing is refused, as 3006.28 has it;
+				// 3008.3 ran the state as if the requisite were not
+				// there, which turns a typo into a requisite that does
+				// nothing. DIVERGENCE 5.475.
+				if !ok && fnmatch.HasMeta(ref.SLS) {
+					for i, o := range chunks {
+						if fnmatch.Match(ref.SLS, o.SLS) {
+							idx = append(idx, i)
+						}
+					}
+					if len(idx) == 0 {
+						diags.Add(ref.Pos, c.SLS, c.ID,
+							"%s names sls %q, a glob that matches no sls in this run", req.Kind, ref.SLS)
+						return
+					}
+					ok = true
+				}
 				if !ok {
 					diags.Add(ref.Pos, c.SLS, c.ID,
 						"%s names sls %q, which is not part of this run", req.Kind, ref.SLS)
