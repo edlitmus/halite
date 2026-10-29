@@ -34454,6 +34454,44 @@ against the real git, and failed on the first with the `--` removed.
 **Not verified.** git on FreeBSD was not run; that `get-url` accepts `--`
 is from git 2.43's common option parser, as 5.414's other uses were.
 
+### 5.471 System configuration files were rewritten with a constant mode
+
+Issue 321, Low, the half of the `atomicfile.Write` bullet 5.446 left: "mode,
+owner and SELinux label are replaced by constants." `writeConfigFile`, through
+which the hosts, hostname, sysctl, fstab, locale.gen, modprobe, environment
+and package-repository writers go, renamed a new file over the old one with
+the mode its caller passed: 0644 everywhere but `locale`, which already read
+the old mode itself, and netplan. The owner was already kept (M-20).
+
+**Measured.** A 0600 `sysctl.conf` rewritten by `writeSysctlConf` came back
+0644, and so did a 0640 file behind a link written through
+`writeConfigFile`. An estate that had narrowed one of these files had it
+opened to everybody by the first state that touched it.
+
+**What Salt does,** read in 3008.3's source and not run: `hosts.py`,
+`linux_sysctl.py` and `mount.py` open the file with `"w"`, `"wb"` or `"w+"`
+and write in place, which keeps the inode and with it mode, owner, ACLs and
+label.
+
+**The change.** `writeConfigFile` keeps the existing file's permission bits,
+and uses the caller's mode only for a file that does not exist yet. The
+rename stays: it is what makes the write atomic, which Salt's is not.
+netplan goes through a new `writeConfigFileMode`, because it sets 0600 on
+purpose (netplan warns about a readable file) and its rollback restores the
+exact mode it saw. `TestAConfigFileKeepsItsModeWhenRewritten` failed on both
+files before the change and passes; a new file still gets 0644.
+
+**Not done: the SELinux label,** and any other extended attribute or ACL.
+They belong to the old inode, and a renamed-in file gets the directory's
+default context, so on an SELinux host `/etc/hosts` would, if the
+reference policy's contexts are as remembered (`net_conf_t` for it, `etc_t`
+for `/etc`), lose its type until relabelled; not checked on a host. That was not changed, because no
+machine here runs SELinux enforcing to show either the defect or a fix:
+the fleet's rpm legs are containers. Copying `security.selinux` from the old
+file to the new one is the likely fix, and is left for a host that can show
+it. Setuid, setgid and sticky bits are not kept; none of these files has a
+reason for them. Ubuntu only, in a temporary directory.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

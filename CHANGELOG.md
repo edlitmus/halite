@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### System configuration files keep their mode when a module rewrites them
+
+hosts, hostname, sysctl, fstab, locale.gen, modprobe, environment and
+package-repository files were rewritten 0644 whatever mode they had, so a
+file an estate had made 0600 became world-readable. They keep their mode
+now, as Salt's in-place writes do; the SELinux label is still not kept
+(DIVERGENCE 5.471).
+
 ### A node refuses a file the hub sent without a digest
 
 The node cached a file the hub sent without a digest, unchecked, and the

@@ -101,9 +101,38 @@ func followLink(path string) (string, error) {
 // the link gone (issue 321, Low, `atomicfile.Write`). The file states had
 // this fixed as M-19; these are the same defect in the other writers.
 // The timezone module, which must replace /etc/localtime, does not come
-// through here. What is still not kept is the old file's mode, which
-// each caller sets, and its SELinux label.
+// through here.
+//
+// **The file keeps its mode**; `mode` is for a file that does not exist
+// yet. Each caller passed a constant, 0644 for most, so a sysctl.conf or
+// fstab an estate had made 0600 was made world-readable by the first
+// state that touched it. Salt opens these files with "w" and truncates
+// them in place (hosts.py, linux_sysctl.py, mount.py, read in 3008.3's
+// source), which keeps mode, owner and label; writeAtomic already keeps
+// the owner, and this keeps the mode. DIVERGENCE 5.471.
+//
+// What is still not kept is the SELinux label, or any other extended
+// attribute or ACL: they belong to the old inode, and the new file gets
+// the directory's default. On an SELinux host that is a relabel waiting
+// to be noticed. No machine here has SELinux enforcing to show it on.
+//
+// netplan does not come through here: it sets 0600 on purpose, and puts
+// a file back with the mode it had (writeConfigFileMode).
 func writeConfigFile(path string, data []byte, mode os.FileMode) error {
+	real, err := followLink(path)
+	if err != nil {
+		return err
+	}
+	if was, err := os.Stat(real); err == nil && was.Mode().IsRegular() {
+		mode = was.Mode().Perm()
+	}
+	return writeAtomic(real, data, mode)
+}
+
+// writeConfigFileMode is writeConfigFile with the mode given, whatever
+// the file had: for netplan, which must leave a file 0600, and for a
+// rollback that restores a file's previous mode.
+func writeConfigFileMode(path string, data []byte, mode os.FileMode) error {
 	real, err := followLink(path)
 	if err != nil {
 		return err

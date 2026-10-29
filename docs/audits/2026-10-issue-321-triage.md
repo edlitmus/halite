@@ -184,6 +184,7 @@ passing by the PRs above; that has not been looked for.
 | L-engine-1: `cidr_subnets` wrong for IPv6, can panic or spin | #332 | 5.312, with H-04; checked against Python's `ipaddress`; listed here 2026-10-28, not re-run |
 | L-engine-3: `value.DecodeJSON` has no depth limit | #332 | 5.312, with H-04; 10,000 levels, `encoding/json`'s own; real on go1.26.6, already bounded by go1.27's json/v2; listed here 2026-10-28, not re-run |
 | L-engine-9: gitfs `clone`/`verify-commit` without `--`; a `-foo` branch read as an option | #325 | 5.292, with H-19; listed here 2026-10-28, not re-run |
+| `atomicfile.Write`: mode and SELinux label replaced by constants (the half 5.446 left) | #PRNUM | 5.471; a 0600 sysctl.conf and a 0640 file behind a link came back 0644, measured; mode now kept, caller's mode only for a new file; netplan keeps forcing 0600; Salt writes in place (read, not run); SELinux label and other xattrs not kept (no SELinux host); Ubuntu temp dir only |
 | aws-secrets: node `name` nests over a hub secret | #468 | 5.409; extension 1.1.1; cache eviction (bounded by what exists) and the `node_grain_allow` default (owner decision) left |
 | `template.DirLoader` follows symlinks | #469 | 5.410; test and dev use only; Linux only |
 | `state/order.go` is O(n²) | #471 | 5.411; heap, same order on 20,000 random graphs with ties; self-requisites still dropped silently (needs a Salt check) |
