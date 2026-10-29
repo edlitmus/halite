@@ -54,6 +54,7 @@ Common flags:
   --help               describe the program without running a command
   --config <path>      configuration file, default <root>/hub.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
+                       state_dir and the other /var paths do not follow it
   --out <format>       summary (default), nested, json, yaml, txt, or quiet
 
 serve flags:

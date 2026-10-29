@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `--help` says `--root` does not move `state_dir`
+
+`--root` moves the configuration root and what is written in terms of it;
+`state_dir`, and so the extension cache, stays under `/var`. The manual
+said so and `--help` did not, so a test run with `--root <tmpdir>` read the
+real `/var/lib/halite/ext` and looked like a bug (issue 312, DIVERGENCE
+5.143). Set `state_dir` to isolate a run.
+
 ### Requisite forms now behave as Salt's captured runs do
 
 A fired `watch` on a `test` state reports "Watch statement fired." and the

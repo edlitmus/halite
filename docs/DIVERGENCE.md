@@ -13023,6 +13023,24 @@ number is visible.
 `--config`, `--pki-dir` and `--policy` were already honoured where they
 exist; this is about the defaults behind them.
 
+#### `--help` did not say so (issue 312)
+
+Issue 312 saw `{"msg":"the extension cache could not be read","dir":"/var/lib/halite/ext"}`
+from a `halite-node --root <tmpdir>` run and suspected the cache directory
+ignored `--root`. It does, as above: the cache is `<state_dir>/ext`, and
+`<state_dir>` is under `/var`, which `--root` is not documented as moving.
+`docs/configuration.md` said so; `--help` called `--root` "configuration
+root" and stopped, which is the line a person running a test reads. All three
+programs now add that `state_dir` and the other `/var` paths do not follow
+it. `TestTheExtensionCacheDoesNotFollowRoot` holds that the node's cache
+directory under `--root` is still `<DefaultStateDir>/ext` and follows an
+explicit `state_dir`; with the default pointed elsewhere it fails.
+
+**Not verified.** The warning in the issue is a permission error from a
+non-root run, and was not reproduced here. Whether a root test run writes
+to the real cache was not looked at: the extension store writes on install,
+and no test installs one under `--root`.
+
 
 ### 5.144 The review's Tier 4, where two items were larger than their label
 
