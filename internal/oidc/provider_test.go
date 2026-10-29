@@ -35,6 +35,9 @@ type fakeIssuer struct {
 	discoveryStatus int
 	// discoveries counts discovery requests.
 	discoveries atomic.Int32
+	// discoveryGate, when set, holds every discovery request until it
+	// is closed: a provider that is slow to answer.
+	discoveryGate chan struct{}
 	// redirects maps a path on the issuer to a URL it redirects to,
 	// with a 307 so that a POST stays a POST.
 	redirects map[string]string
@@ -47,6 +50,9 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		f.discoveries.Add(1)
+		if f.discoveryGate != nil {
+			<-f.discoveryGate
+		}
 		if f.discoveryStatus != 0 {
 			w.WriteHeader(f.discoveryStatus)
 			return

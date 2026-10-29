@@ -2189,7 +2189,10 @@ Properties that are requirements, not suggestions:
   `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.
   Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
   `.*`.
-- **Wildcards are explicit.** `'*'` matches; a missing field does not.
+- **Wildcards are explicit.** `'*'` matches; a missing field does not. A pattern in a principal,
+  `functions`, `runners`, a keyword list, `deny_sls`, `allow_sls` or `allow_mods` is a glob as
+  Salt's fnmatch reads it: `*`, `?`, `[seq]` and `[!seq]`, with `*` crossing `/` and no escape
+  character. It is not also tried as a regular expression, as Salt's ACLs try it (DIVERGENCE 5.472).
 - **A runner reaches the nodes its rule's target covers.** A runner runs on the hub with the hub's
   reach over every node's pillar, cache, key and job returns, so a runner rule may name a `target`,
   and a runner that reads or changes what the hub holds about a node -- `pillar.show_pillar`,

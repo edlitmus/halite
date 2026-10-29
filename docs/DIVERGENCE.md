@@ -34454,6 +34454,108 @@ against the real git, and failed on the first with the `--` removed.
 **Not verified.** git on FreeBSD was not run; that `get-url` accepts `--`
 is from git 2.43's common option parser, as 5.414's other uses were.
 
+### 5.471 System configuration files were rewritten with a constant mode
+
+Issue 321, Low, the half of the `atomicfile.Write` bullet 5.446 left: "mode,
+owner and SELinux label are replaced by constants." `writeConfigFile`, through
+which the hosts, hostname, sysctl, fstab, locale.gen, modprobe, environment
+and package-repository writers go, renamed a new file over the old one with
+the mode its caller passed: 0644 everywhere but `locale`, which already read
+the old mode itself, and netplan. The owner was already kept (M-20).
+
+**Measured.** A 0600 `sysctl.conf` rewritten by `writeSysctlConf` came back
+0644, and so did a 0640 file behind a link written through
+`writeConfigFile`. An estate that had narrowed one of these files had it
+opened to everybody by the first state that touched it.
+
+**What Salt does,** read in 3008.3's source and not run: `hosts.py`,
+`linux_sysctl.py` and `mount.py` open the file with `"w"`, `"wb"` or `"w+"`
+and write in place, which keeps the inode and with it mode, owner, ACLs and
+label.
+
+**The change.** `writeConfigFile` keeps the existing file's permission bits,
+and uses the caller's mode only for a file that does not exist yet. The
+rename stays: it is what makes the write atomic, which Salt's is not.
+netplan goes through a new `writeConfigFileMode`, because it sets 0600 on
+purpose (netplan warns about a readable file) and its rollback restores the
+exact mode it saw. `TestAConfigFileKeepsItsModeWhenRewritten` failed on both
+files before the change and passes; a new file still gets 0644.
+
+**Not done: the SELinux label,** and any other extended attribute or ACL.
+They belong to the old inode, and a renamed-in file gets the directory's
+default context, so on an SELinux host `/etc/hosts` would, if the
+reference policy's contexts are as remembered (`net_conf_t` for it, `etc_t`
+for `/etc`), lose its type until relabelled; not checked on a host. That was not changed, because no
+machine here runs SELinux enforcing to show either the defect or a fix:
+the fleet's rpm legs are containers. Copying `security.selinux` from the old
+file to the new one is the likely fix, and is left for a host that can show
+it. Setuid, setgid and sticky bits are not kept; none of these files has a
+reason for them. Ubuntu only, in a temporary directory.
+
+### 5.472 Policy function and SLS patterns were path.Match, not Salt's glob
+
+Issue 321, section 5, left by 5.465: principals moved to fnmatch, and
+`matchGlob`, which matches `functions`, `runners`, keyword lists, `deny_sls`,
+`allow_sls` and `allow_mods`, stayed on `path.Match`.
+
+**Where the two differ, for these names.** Not at `/`, which 5.465 was about:
+SLS names are judged in their canonical dotted spelling (5.294), and function
+and runner names hold no `/`. They differ in a bracket. `[!w]` is "anything
+but `w`" to fnmatch, to Salt and to a shell, and to `path.Match` a set of the
+two characters `!` and `w` (Go spells negation `[^w]`). Measured with
+`TestPolicyPatternsAreSaltsGlobs` on the old code:
+
+| Rule | Request | old | now |
+|---|---|---|---|
+| `deny_sls: ['[!w]*']` | `state.apply web` | denied | allowed |
+| `deny_sls: ['[!w]*']` | `state.apply secret` | **allowed** | denied |
+| `functions: ['pkg.[!r]*']` | `pkg.remove` | **granted** | refused |
+| `functions: ['pkg.[!r]*']` | `pkg.installed` | refused | granted |
+
+A deny list that does the reverse of what it says is the case that matters.
+`path.Match`'s `\` escape goes too; fnmatch has none. An unclosed `[` was
+thought to be a third case, a deny entry with a typo matching nothing; it is
+not, because fnmatch's literal `[` matches no canonical SLS name either, and
+it was dropped from the test.
+
+**Not done, deliberately:** Salt's ACLs match through `expr_match`, which
+tries a pattern as fnmatch and then again as a regular expression, which is
+how `.*` grants everything there. halite's policy does not, and SPEC 23.5 now
+says so: a regex reading would widen every pattern in every policy, and one
+grammar is what the section is for.
+
+**Checked:** the production policy on beastie has no `[!`, `[^` or `\` in a
+pattern, so none of its decisions changes. SPEC 23.5 now says what a pattern
+is. **Not verified:** no live hub was run with such a rule.
+
+### 5.473 Concurrent OIDC logins each fetched discovery from a slow provider
+
+Issue 321, section 5, left by 5.419: "no single-flight for concurrent
+discoveries". 5.419 remembered a failed discovery for
+`DiscoveryRetryInterval`, but the fetch ran outside the provider's lock, so
+the interval bounded a provider that had answered with a failure and nothing
+else. While the provider was slow or not answering, every login that arrived
+made its own request, each held for up to the client's 15 s timeout, and
+`POST /v1/login/oidc` is unauthenticated.
+
+**Measured** against the package's fake issuer, with discovery held open:
+twenty concurrent `StartAuth` calls made twenty discovery requests.
+
+**The change.** The first caller starts the fetch and later ones wait on it.
+The fetch runs detached from the caller that started it
+(`context.WithoutCancel`), under its own 30 s bound, because it is everybody's:
+otherwise the first login giving up would fail the rest. A caller that gives
+up stops waiting and the fetch goes on. That also makes 5.419's guard, that a
+caller's cancellation is not recorded as the provider failing, true by
+construction, since no caller's cancellation reaches the fetch.
+
+**Demonstrated.** `TestConcurrentLoginsShareOneDiscovery` (20 requests before,
+1 now) and `TestTheFirstLoginGivingUpDoesNotFailTheOthers` (2 requests before,
+when the second login refetched; 1 now, and the second succeeds). Both ran 30
+times under `-race`. **Not verified:** no real identity provider; the key-set
+refresh in `jwks.go` has its own bound (`MinRefreshInterval`) and was not
+looked at for the same race.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
