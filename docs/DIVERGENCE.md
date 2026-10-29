@@ -34556,6 +34556,48 @@ times under `-race`. **Not verified:** no real identity provider; the key-set
 refresh in `jwks.go` has its own bound (`MinRefreshInterval`) and was not
 looked at for the same race.
 
+### 5.474 An OIDC key the provider withdrew stayed trusted until a restart
+
+Found checking what 5.473 left unverified, the key set's concurrency; not an
+audit bullet. `KeySet` said it "refreshes on its own schedule", and computed
+an expiry from the provider's `Cache-Control` (`cacheFor`, bounded to between
+five minutes and a day), and nothing ran the schedule: `Refresh` had no
+caller outside the tests. After the first fetch the only fetch was the
+out-of-turn one an unknown `kid` causes. A key the provider has withdrawn is
+never unknown -- it is the one already held -- so it went on verifying tokens
+until the hub or API process restarted. Withdrawing a key is what a provider
+does when the key is suspect. `TestTheCacheWindowIsBoundedAtBothEnds` even
+said a long window "would keep a withdrawn key valid here long after it was
+withdrawn", about a window nothing enforced.
+
+**And a second defect, the one being looked for.** A token naming a key
+while the set was being fetched was refused at once, "fetched less than 1m0s
+ago", because the out-of-turn bound is stamped before the fetch. So during a
+rotation every login but the first was turned away until the fetch that would
+have admitted it finished: 9 of 10 concurrent logins, measured.
+
+**The change.** `find` checks the set's expiry where the keys are used, and
+fetches again when it has passed; no goroutine has to be kept alive for it.
+The bound on out-of-turn fetches covers this one too, so an expired set is
+asked for at most once per `MinRefreshInterval`. If the provider cannot be
+reached, the keys it last published stay in use: refusing every login
+because the provider is briefly down would be this service's outage made of
+somebody else's. A caller that arrives while a fetch is in progress waits for
+it and gets its result.
+
+**Demonstrated,** against the package's key server, on the old code and then
+the new: `TestAWithdrawnKeyIsRefusedOnceTheSetExpires` (the withdrawn key
+still verified 90 minutes after a fetch whose window was an hour, and is
+refused now; the key
+that replaced it verifies), `TestATokenArrivingMidFetchWaitsForIt` (9 of 10
+refused, now none) and `TestAnExpiredSetIsKeptWhileTheProviderIsDown` (one
+retry, not one per login; the held keys keep working). All three ran 30
+times under `-race`.
+
+**Not verified.** No real identity provider. A provider that keeps serving a
+withdrawn key in its set is outside this. The scheduled `Refresh` is kept,
+for the tests and any caller that wants it, and still has none in the build.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -32,9 +32,17 @@ const MinRefreshInterval = 60 * time.Second
 
 // KeySet holds a provider's public keys.
 //
-// It is safe for concurrent use, refreshes on its own schedule, and
-// refreshes once out of turn when a token names a key it does not have,
-// which is what makes a provider's key rotation invisible here.
+// It is safe for concurrent use. It is fetched again when the provider's
+// `Cache-Control` window has passed, the first time a token is checked
+// after that, and once out of turn when a token names a key it does not
+// have, which is what makes a provider's key rotation invisible here.
+//
+// "Refreshes on its own schedule" is what this said, and nothing ran the
+// schedule: `Refresh` had no caller, so after the first fetch the only
+// one was the out-of-turn kind, and a key the provider withdrew -- which
+// no token names as unknown -- stayed trusted until the process
+// restarted (DIVERGENCE 5.474). Expiry is now checked where keys are
+// used, which needs no goroutine to keep alive.
 type KeySet struct {
 	// URL is the `jwks_uri` from the provider's discovery document.
 	URL string
@@ -49,6 +57,10 @@ type KeySet struct {
 	fetchedAt   time.Time
 	expiresAt   time.Time
 	lastAttempt time.Time
+	// inflight is closed when the fetch in progress ends, and lastErr
+	// is what it ended with, for the callers that waited on it.
+	inflight chan struct{}
+	lastErr  error
 }
 
 func (k *KeySet) now() time.Time {
@@ -75,6 +87,14 @@ func (k *KeySet) client() *http.Client {
 // `kid` is refused: guessing which key to try, and accepting a token if
 // any of them verifies, turns key rotation into an attack surface.
 func (k *KeySet) find(kid, alg string) (any, error) {
+	// A set past its window is fetched again before it is used. If the
+	// provider cannot be reached the keys it last published stay in use:
+	// refusing every login because the provider is briefly down would be
+	// an outage of this service made of somebody else's, and a key the
+	// provider withdrew is withdrawn from a set it can serve.
+	if k.expired() {
+		_ = k.refresh(context.Background(), false)
+	}
 	if key, ok := k.lookup(kid); ok {
 		return key, nil
 	}
@@ -112,6 +132,14 @@ func (k *KeySet) lookup(kid string) (any, bool) {
 	return nil, false
 }
 
+// expired reports whether a set that has been fetched is past the
+// window its provider gave it.
+func (k *KeySet) expired() bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return !k.fetchedAt.IsZero() && !k.now().Before(k.expiresAt)
+}
+
 func (k *KeySet) size() int {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -123,8 +151,27 @@ func (k *KeySet) Refresh(ctx context.Context) error {
 	return k.refresh(ctx, true)
 }
 
+// refresh fetches the set: a scheduled refresh only when it is stale, an
+// out-of-turn one no more than once per MinRefreshInterval.
+//
+// A caller that arrives while a fetch is in progress waits for it rather
+// than starting another or being refused. It used to be refused, as if
+// the set had just been fetched: during a rotation every token naming
+// the new key but the first was turned away until the fetch that would
+// have admitted it had finished (DIVERGENCE 5.474).
 func (k *KeySet) refresh(ctx context.Context, scheduled bool) error {
 	k.mu.Lock()
+	if wait := k.inflight; wait != nil {
+		k.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		k.mu.Lock()
+		defer k.mu.Unlock()
+		return k.lastErr
+	}
 	now := k.now()
 	fresh := len(k.keys) > 0 && now.Before(k.expiresAt)
 	if scheduled && fresh {
@@ -137,22 +184,32 @@ func (k *KeySet) refresh(ctx context.Context, scheduled bool) error {
 	}
 	k.lastAttempt = now
 	url := k.URL
+	done := make(chan struct{})
+	k.inflight = done
 	k.mu.Unlock()
 
+	var (
+		keys map[string]any
+		ttl  time.Duration
+		err  error
+	)
 	if url == "" {
-		return fmt.Errorf("this key set has no URL")
-	}
-	keys, ttl, err := fetchKeys(ctx, k.client(), url)
-	if err != nil {
-		return err
+		err = fmt.Errorf("this key set has no URL")
+	} else {
+		keys, ttl, err = fetchKeys(ctx, k.client(), url)
 	}
 
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.keys = keys
-	k.fetchedAt = k.now()
-	k.expiresAt = k.fetchedAt.Add(ttl)
-	return nil
+	if err == nil {
+		k.keys = keys
+		k.fetchedAt = k.now()
+		k.expiresAt = k.fetchedAt.Add(ttl)
+	}
+	k.lastErr = err
+	k.inflight = nil
+	close(done)
+	return err
 }
 
 func fetchKeys(ctx context.Context, client *http.Client, url string) (map[string]any, time.Duration, error) {

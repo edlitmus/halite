@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### An OIDC signing key the provider withdraws stops being trusted
+
+The provider's key set is fetched again once its cache window passes, so
+a key the provider has withdrawn is refused from then on; it was trusted
+until the hub or API restarted. Logins that arrive while the set is being
+fetched now wait for it instead of being refused (DIVERGENCE 5.474).
+
 ### Policy function and SLS patterns read `[!x]` as "not x"
 
 Patterns in `functions`, `runners`, keyword lists, `deny_sls`,
