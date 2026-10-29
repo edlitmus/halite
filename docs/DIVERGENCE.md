@@ -34528,6 +34528,34 @@ grammar is what the section is for.
 pattern, so none of its decisions changes. SPEC 23.5 now says what a pattern
 is. **Not verified:** no live hub was run with such a rule.
 
+### 5.473 Concurrent OIDC logins each fetched discovery from a slow provider
+
+Issue 321, section 5, left by 5.419: "no single-flight for concurrent
+discoveries". 5.419 remembered a failed discovery for
+`DiscoveryRetryInterval`, but the fetch ran outside the provider's lock, so
+the interval bounded a provider that had answered with a failure and nothing
+else. While the provider was slow or not answering, every login that arrived
+made its own request, each held for up to the client's 15 s timeout, and
+`POST /v1/login/oidc` is unauthenticated.
+
+**Measured** against the package's fake issuer, with discovery held open:
+twenty concurrent `StartAuth` calls made twenty discovery requests.
+
+**The change.** The first caller starts the fetch and later ones wait on it.
+The fetch runs detached from the caller that started it
+(`context.WithoutCancel`), under its own 30 s bound, because it is everybody's:
+otherwise the first login giving up would fail the rest. A caller that gives
+up stops waiting and the fetch goes on. That also makes 5.419's guard, that a
+caller's cancellation is not recorded as the provider failing, true by
+construction, since no caller's cancellation reaches the fetch.
+
+**Demonstrated.** `TestConcurrentLoginsShareOneDiscovery` (20 requests before,
+1 now) and `TestTheFirstLoginGivingUpDoesNotFailTheOthers` (2 requests before,
+when the second login refetched; 1 now, and the second succeeds). Both ran 30
+times under `-race`. **Not verified:** no real identity provider; the key-set
+refresh in `jwks.go` has its own bound (`MinRefreshInterval`) and was not
+looked at for the same race.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

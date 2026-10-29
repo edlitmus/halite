@@ -101,7 +101,15 @@ type Provider struct {
 	// DiscoveryRetryInterval.
 	failed   error
 	failedAt time.Time
+	// inflight is closed when the discovery being fetched ends; nil
+	// when none is.
+	inflight chan struct{}
 }
+
+// discoveryTimeout bounds the one shared discovery fetch. It is made for
+// every login waiting on it, so it does not run under any one caller's
+// context, and a caller's client may have no timeout of its own.
+const discoveryTimeout = 30 * time.Second
 
 // New builds a provider. Discovery happens on first use rather than
 // here, so that a provider being briefly unreachable does not stop the
@@ -213,6 +221,21 @@ func (p *Provider) now() time.Time {
 
 // discover fetches the provider's metadata once, and after a failure
 // asks again no sooner than DiscoveryRetryInterval.
+//
+// **One fetch at a time.** It used to fetch outside the lock, so the
+// retry interval bounded a provider that had answered with a failure and
+// nothing else: while one was slow or not answering, every login that
+// arrived made its own request, each held for up to the client's
+// timeout, and `POST /v1/login/oidc` is unauthenticated. Twenty
+// concurrent logins made twenty requests (DIVERGENCE 5.473). Now the
+// first starts the fetch and the rest wait for it.
+//
+// The fetch runs detached from the caller that started it, under
+// discoveryTimeout: it is everybody's, so the first caller giving up
+// must not fail the others. A caller that gives up stops waiting; the
+// fetch goes on. That also settles what 5.419 had to guard by hand, that
+// a cancellation is not recorded as the provider failing, because no
+// caller's cancellation reaches the fetch.
 func (p *Provider) discover(ctx context.Context) (Discovery, error) {
 	p.mu.Lock()
 	if p.fetched {
@@ -224,23 +247,43 @@ func (p *Provider) discover(ctx context.Context) (Discovery, error) {
 		return Discovery{}, fmt.Errorf("%w (not asked again until %s has passed)",
 			p.failed, DiscoveryRetryInterval)
 	}
+	if p.inflight == nil {
+		p.inflight = make(chan struct{})
+		go p.fetchShared(context.WithoutCancel(ctx), p.inflight)
+	}
+	wait := p.inflight
 	p.mu.Unlock()
 
+	select {
+	case <-wait:
+	case <-ctx.Done():
+		return Discovery{}, ctx.Err()
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.fetched {
+		return p.discovery, nil
+	}
+	return Discovery{}, p.failed
+}
+
+// fetchShared is the one discovery fetch, and records what it found for
+// every caller waiting on done.
+func (p *Provider) fetchShared(ctx context.Context, done chan struct{}) {
+	ctx, cancel := context.WithTimeout(ctx, discoveryTimeout)
+	defer cancel()
 	doc, err := p.fetchDiscovery(ctx)
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err != nil {
-		// A caller that gave up is not the provider failing, and
-		// holding one impatient client's cancellation against
-		// everybody else would be an outage made of nothing.
-		if ctx.Err() == nil {
-			p.failed, p.failedAt = err, p.now()
-		}
-		return Discovery{}, err
+		p.failed, p.failedAt = err, p.now()
+	} else {
+		p.discovery, p.fetched, p.failed = doc, true, nil
+		p.keys = &KeySet{URL: doc.JWKSURI, Client: p.client(), Now: p.cfg.Now}
 	}
-	p.discovery, p.fetched, p.failed = doc, true, nil
-	p.keys = &KeySet{URL: doc.JWKSURI, Client: p.client(), Now: p.cfg.Now}
-	return doc, nil
+	p.inflight = nil
+	close(done)
 }
 
 // fetchDiscovery asks the provider for its metadata and checks it.

@@ -157,3 +157,76 @@ func TestACancelledDiscoveryIsNotHeldAgainstTheNext(t *testing.T) {
 		t.Fatalf("a cancelled discovery held the next login out: %v", err)
 	}
 }
+
+// Logins that arrive while discovery is in flight wait for it rather
+// than each asking the provider. The retry interval bounded a provider
+// that had answered with a failure; it did nothing while one was still
+// failing to answer, and every unauthenticated `POST /v1/login/oidc`
+// in that window made its own request, each held for up to the client's
+// timeout. Twenty concurrent logins made twenty. Issue 321, section 5;
+// DIVERGENCE 5.473.
+func TestConcurrentLoginsShareOneDiscovery(t *testing.T) {
+	f := newFakeIssuer(t)
+	f.discoveryGate = make(chan struct{})
+	p := providerFor(t, f, nil)
+
+	const logins = 20
+	errs := make(chan error, logins)
+	for i := 0; i < logins; i++ {
+		go func() {
+			_, err := p.StartAuth(context.Background())
+			errs <- err
+		}()
+	}
+	// Give every login the chance to reach the provider. On the old
+	// code all twenty arrive; on this one only the first does, so the
+	// wait runs out rather than finishing early.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for f.discoveries.Load() < logins && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(f.discoveryGate)
+	for i := 0; i < logins; i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("a login failed: %v", err)
+		}
+	}
+	if n := f.discoveries.Load(); n != 1 {
+		t.Errorf("%d concurrent logins asked the provider %d times; want once", logins, n)
+	}
+}
+
+// The login that started the shared discovery may give up; the others
+// waiting on it still get the answer. The fetch is made for all of them,
+// so it is not cancelled with the first caller's request.
+func TestTheFirstLoginGivingUpDoesNotFailTheOthers(t *testing.T) {
+	f := newFakeIssuer(t)
+	f.discoveryGate = make(chan struct{})
+	p := providerFor(t, f, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() {
+		_, err := p.StartAuth(ctx)
+		first <- err
+	}()
+	for f.discoveries.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	second := make(chan error, 1)
+	go func() {
+		_, err := p.StartAuth(context.Background())
+		second <- err
+	}()
+	cancel()
+	if err := <-first; err == nil {
+		t.Error("the login that gave up succeeded")
+	}
+	close(f.discoveryGate)
+	if err := <-second; err != nil {
+		t.Errorf("the second login failed with the first's cancellation: %v", err)
+	}
+	if n := f.discoveries.Load(); n != 1 {
+		t.Errorf("the provider was asked %d times; want once", n)
+	}
+}
