@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -86,7 +87,7 @@ func registerTest(r *Registries) {
 		return states.True("This state does nothing, successfully."), nil
 	}
 
-	r.States.Add(
+	testStates := []states.Module{
 		states.Module{
 			Sig: signature.Signature{
 				Module: "test", Function: "nop",
@@ -204,5 +205,75 @@ func registerTest(r *Registries) {
 				}
 			},
 		},
-	)
+	}
+	// Every test state has Salt's mod_watch, as every state in Salt's
+	// test module does, since it is one function for the module.
+	for i := range testStates {
+		testStates[i].ModWatch = testModWatch(testStates[i])
+	}
+	r.States.Add(testStates...)
+}
+
+// testModWatch is Salt's test.mod_watch, called in Salt's order.
+//
+// When a watch fires, Salt runs the state's function first and calls
+// mod_watch only when that reported no changes, a failure included; a
+// listen reaction goes to mod_watch directly. Salt's test.mod_watch
+// succeeds with "Watch statement fired." and lists the watched states
+// that changed, and `result`, `comment` and `changes` written on the
+// state replace those. halite's test states had no mod_watch, so a
+// fired watch ran the state as if nothing had: captured from Salt
+// 3006.28 and 3008.3, `watch_in: [sls: g1]` from a state with changes
+// made g1's unchanged state report "Watch statement fired." and
+// {"Requisites with changes": ["test: a"]}, where halite reported it
+// had done nothing. DIVERGENCE 5.478.
+//
+// Salt's mod_watch sees only what was written on the state; halite's
+// arguments arrive bound, defaults filled in, so a value equal to its
+// parameter's default is read as not written. fail_without_changes's
+// default comment would otherwise replace "Watch statement fired.", and
+// configurable_test_state's empty one would blank it. Writing the
+// default explicitly is the case this gets wrong. `changes` is not
+// taken: Salt puts whatever was written in as the change set, and
+// configurable_test_state takes it as a boolean, which as a change set
+// means nothing.
+func testModWatch(m states.Module) states.Func {
+	written := func(args *value.Map, name string) (any, bool) {
+		v, ok := args.Get(name)
+		if !ok {
+			return nil, false
+		}
+		for _, p := range m.Sig.Params {
+			if p.Name == name && p.Default != nil && reflect.DeepEqual(v, p.Default) {
+				return nil, false
+			}
+		}
+		return v, true
+	}
+	return func(c *exec.Context, args *value.Map) (states.Result, error) {
+		if c.Reaction != exec.ReactionListen {
+			res, err := m.Fn(c, args)
+			if err != nil || res.HasChanges() {
+				return res, err
+			}
+		}
+		result := true
+		if v, ok := written(args, "result"); ok {
+			result = value.Truthy(v)
+		}
+		comment := "Watch statement fired."
+		if v, ok := written(args, "comment"); ok {
+			comment = value.KeyString(v)
+		}
+		watched := make([]any, len(c.WatchChanged))
+		for i, w := range c.WatchChanged {
+			watched[i] = w
+		}
+		out := states.True(comment)
+		if !result {
+			out = states.False(comment)
+		}
+		out.Changes = value.MapOf("Requisites with changes", watched)
+		return out, nil
+	}
 }

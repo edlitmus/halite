@@ -64,11 +64,26 @@ var forwardReqs = map[string]ReqKind{
 // form during compilation so that nothing downstream has to know they
 // existed.
 var inverseReqs = map[string]ReqKind{
-	"require_in": Require, "require_any_in": RequireAny,
-	"watch_in": Watch, "watch_any_in": WatchAny,
-	"onchanges_in": OnChanges, "onchanges_any_in": OnChangesAny,
-	"onfail_in": OnFail, "onfail_any_in": OnFailAny,
+	"require_in": Require, "watch_in": Watch,
+	"onchanges_in": OnChanges, "onfail_in": OnFail,
 	"prereq_in": Prereq, "use_in": Use, "listen_in": Listen,
+}
+
+// notInverseReqs are `_in` spellings Salt does not have, mapped to the
+// forward requisite they look like. They are refused rather than read.
+//
+// halite resolved the four `_any_in` forms as if Salt had them. Salt
+// has none (`requisite_in` in salt/state.py lists the seven above), so
+// it passes the keyword to the state function as an ordinary argument
+// and attaches nothing: captured from 3006.28 and 3008.3, with `a`
+// failing and `require_any_in: [sls: g1]`, g1's states ran and
+// succeeded, where halite skipped them as failed. Read as a requisite
+// the keyword guards states it does not guard in Salt; ignored, it is
+// a requisite the author thinks is there. DIVERGENCE 5.478.
+var notInverseReqs = map[string]string{
+	"require_any_in": "require_any", "watch_any_in": "watch_any",
+	"onchanges_any_in": "onchanges_any", "onfail_any_in": "onfail_any",
+	"onfail_all_in": "onfail_all",
 }
 
 // IsRequisiteArg reports whether an argument name is a requisite rather
@@ -77,7 +92,10 @@ func IsRequisiteArg(name string) bool {
 	if _, ok := forwardReqs[name]; ok {
 		return true
 	}
-	_, ok := inverseReqs[name]
+	if _, ok := inverseReqs[name]; ok {
+		return true
+	}
+	_, ok := notInverseReqs[name]
 	return ok
 }
 
@@ -365,3 +383,13 @@ func applyUse(chunks []*Chunk, diags *Diags) {
 		}
 	}
 }
+
+// listenSLSRefusal is the refusal of `listen` or `listen_in` naming an
+// sls. Salt's listen resolution reads `sls: g1` as state module `sls`,
+// ID `g1`, finds no such state, and fails the run with an error state
+// "Referenced state sls: g1 does not exist" -- captured for `listen_in`
+// from 3006.28 and 3008.3, read from salt/state.py for `listen`, whose
+// lookup is the same loop. halite attached a reaction to every state of
+// the sls. DIVERGENCE 5.478.
+const listenSLSRefusal = "%s names sls %q; Salt's listen takes no sls " +
+	"and fails the run with \"Referenced state sls: %[2]s does not exist\""

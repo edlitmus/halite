@@ -45,14 +45,17 @@ func order(chunks []*Chunk, diags *Diags) []*Chunk {
 	// state's own file and a `*` glob that matches it were each refused as
 	// a recursive requisite -- 3008.3 refusing the whole run, as a cycle
 	// here does; 3006.28 failing that state and running the rest
-	// (DIVERGENCE 5.461). listen constrains no order and was not
-	// captured, so it is left alone.
+	// (DIVERGENCE 5.461). So were onfail, the `_any` forms, onfail_all
+	// and the watch, onchanges, onfail and prereq `_in` forms (5.478;
+	// 3006.28 crashed on two of them). listen and use were not: a state
+	// listening to itself reacts to its own changes, and one using itself
+	// copies nothing, and neither constrains the order.
 	selfReported := make([]bool, n)
 
 	for i, c := range chunks {
 		for _, req := range c.Reqs {
 			for _, target := range req.Resolved {
-				if target == i && req.Kind != Listen && !selfReported[i] {
+				if target == i && req.Kind != Listen && req.Kind != Use && !selfReported[i] {
 					selfReported[i] = true
 					diags.Add(c.Pos, c.SLS, c.ID, "requisite cycle: %s", renderCycle(chunks, []int{i, i}))
 				}
@@ -64,6 +67,12 @@ func order(chunks []*Chunk, diags *Diags) []*Chunk {
 				case Listen:
 					// A listen reaction runs at the end of the run rather
 					// than in place, so it constrains nothing here.
+				case Use:
+					// use copies arguments at compile time and is done by
+					// the time anything runs. It ordered the user after
+					// the used state here; Salt does not, and ran a
+					// `use_in` target before the state it used, captured
+					// from 3006.28 and 3008.3. DIVERGENCE 5.478.
 				default:
 					addEdge(target, i)
 				}

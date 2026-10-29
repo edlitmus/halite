@@ -23,6 +23,12 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
+// The values of Context.Reaction.
+const (
+	ReactionWatch  = "watch"
+	ReactionListen = "listen"
+)
+
 // Context is what a module function may read and act through.
 type Context struct {
 	// Ctx carries cancellation and the deadline of the surrounding job.
@@ -59,6 +65,20 @@ type Context struct {
 	// name itself -- an orchestration step recording which step it was.
 	// Empty outside a state run.
 	StateID string
+	// Reaction is why a state function is being called as a reaction
+	// rather than as the state's own run: ReactionWatch when a watch
+	// requisite fired, ReactionListen for a listen reaction at the end of
+	// the run. Empty for the state's own run and outside a state run.
+	// WatchChanged names the `watch` requisites that reported changes,
+	// as Salt's mod_watch lists them (`test: a`); only `watch`, not
+	// `watch_any`, because that is the list Salt's `__reqs__` gives it.
+	//
+	// A module's ModWatch is called in place of its function, so a
+	// module that follows Salt's order -- run the function, and react
+	// only when it changed nothing -- needs to know which kind of call it
+	// is in. Salt's listen reaction goes to mod_watch directly.
+	Reaction     string
+	WatchChanged []string
 
 	// Test marks a run that must change nothing. Every function that
 	// mutates the system checks it.

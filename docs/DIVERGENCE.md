@@ -34703,6 +34703,72 @@ template can still spend 64 MiB per `format` call it makes, bounded by the
 render's own charge and not by this; no real Salt was asked what
 `format` does with these.
 
+### 5.478 Requisite forms halite read differently from Salt, in four places
+
+Found by running every requisite case captured from Salt 3006.28 and 3008.3
+(`cmd/halite-node/testdata/salt-requisites`, reduced from `salt-call --local
+--out=json state.apply` by `capture.sh`) through halite, after 5.475 and
+5.476 had done the `sls:` forms. Each state's result and whether it changed
+must be Salt's; `TestRequisitesBehaveAsSaltsCaptured` holds that.
+
+**`test` states had no `mod_watch`.** A fired `watch` ran the state as if
+nothing had fired. Salt runs the function first and calls `mod_watch` only
+when that reported no changes (a failure included); a `listen` reaction goes
+to `mod_watch` directly. Salt's `test.mod_watch` succeeds with "Watch
+statement fired." and lists the watched states that changed under
+"Requisites with changes". `watch_in: [sls: g1]` from a state with changes
+made g1's unchanged state report that, where halite reported it had done
+nothing. The test states now have it, and `exec.Context` carries
+`Reaction` and `WatchChanged` so a module can tell which kind of call it is
+in. **Wrong in one case:** Salt's `mod_watch` sees only what was written on
+the state, and halite's arguments arrive bound with defaults filled in, so a
+`result` or `comment` equal to its parameter's default reads as not written.
+Writing the default explicitly is what this gets wrong. `changes` is not
+taken at all.
+
+**`_any_in` forms are refused.** halite resolved `require_any_in`,
+`watch_any_in`, `onchanges_any_in` and `onfail_any_in` as requisites. Salt
+has seven `_in` forms and none of these: it passes the keyword to the state
+function as an argument and attaches nothing. With `a` failing and
+`require_any_in: [sls: g1]`, g1's states ran and succeeded in Salt and were
+skipped as failed here. Read as a requisite the keyword guards states Salt
+leaves unguarded; ignored, it is a requisite the author believes is there.
+Refused, with the forward spelling named (`onfail_all_in` likewise).
+**A divergence from Salt, by decision:** Salt runs it.
+
+**`listen` and `listen_in` naming an sls are refused.** Salt reads `sls: g1`
+as state module `sls`, ID `g1`, finds none, and fails the run with
+"Referenced state sls: g1 does not exist"; halite attached a reaction to
+every state of the sls. Captured for `listen_in`, and read from
+`salt/state.py` for `listen`, whose lookup is the same loop.
+
+**`use` no longer orders, and a state may not require itself in more forms.**
+`use` copies arguments at compile time and is done before anything runs; it
+ordered the user after the used state here, and Salt does not (a `use_in`
+target ran before the state it used, captured from both versions). Separately,
+5.461's self-requisite cycle now covers onfail, the `_any` forms,
+`onfail_all` and the watch, onchanges, onfail and prereq `_in` forms; 3006.28
+crashed on two of them. `listen` and `use` naming themselves stay allowed.
+
+**Demonstrated.** `go test` for `internal/state`, `internal/runner`,
+`internal/builtin` and `cmd/halite-node` passes, the last against the
+captured JSON of both versions (3006.28 is held only where it ran the case:
+it crashed on two self-requisites 3008.3 refuses, and failed the state
+rather than the run on the rest). With the seven source files put back as
+they were on `main` and the tests left in place, four fail:
+`TestUseConstrainsNoOrder`, `TestListenNamingAnSLSIsRefused`,
+`TestAnyInRequisitesAreRefused` and `TestRequisitesBehaveAsSaltsCaptured`.
+
+**Not verified.** Which of the captured cases fail on the old code, and so
+which of the four changes the capture test is holding, was not separated;
+the `test.mod_watch` change is also held by `TestTestModWatchFollowsSaltsOrder`
+and `TestTestModWatchTakesWhatWasWritten`, which fail when a listen reaction
+is made to run the function first. The argument-default case it gets wrong
+(above) has no test. `mod_watch`
+was captured only for `test`; every other module's `mod_watch` is unchanged.
+Run order is not compared against Salt (SPEC 11.4's differs, 5.476). Salt 3007.1 was not
+captured. Nothing ran on a real machine of any fleet platform.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

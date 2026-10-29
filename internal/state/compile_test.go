@@ -1192,3 +1192,53 @@ func TestAnSLSInRequisiteAttachesToEveryStateOfIt(t *testing.T) {
 		}
 	}
 }
+
+// use copies arguments and orders nothing. Salt ran `u1a`, which a
+// `use_in` made use `a`, before `a` (captured, 3006.28 and 3008.3);
+// halite ordered it after, as if use were require. A state using itself
+// is not a cycle. DIVERGENCE 5.478.
+func TestUseConstrainsNoOrder(t *testing.T) {
+	files := withSLS("i_use", "a:\n  test.nop:\n    - use_in:\n      - sls: u1\ninclude:\n  - u1\n  - other\n")
+	files["base|u1"] = "u1a:\n  test.nop: []\n"
+	out := mustCompile(t, files, "i_use")
+	if got := strings.Join(runOrder(out), " "); got != "u1a o1 a" {
+		t.Errorf("ran %s; Salt ran u1a o1 a", got)
+	}
+	for _, src := range []string{
+		"a:\n  test.nop:\n    - use:\n      - test: a\nb:\n  test.nop: []\n",
+		"a:\n  test.nop:\n    - use_in:\n      - test: a\nb:\n  test.nop: []\n",
+	} {
+		if msg := errText(compile(t, map[string]string{"base|s": src}, "s")); msg != "" {
+			t.Errorf("a state using itself was refused:\n%s", msg)
+		}
+	}
+}
+
+// listen takes no sls. Salt reads `sls: g1` as a state of module `sls`
+// and fails the run, "Referenced state sls: g1 does not exist"; captured
+// for listen_in, read from salt/state.py for listen, whose lookup is the
+// same. halite attached a reaction to every state of g1. DIVERGENCE 5.478.
+func TestListenNamingAnSLSIsRefused(t *testing.T) {
+	for _, src := range []string{
+		"a:\n  test.nop:\n    - listen_in:\n      - sls: g1\ninclude:\n  - g1\n",
+		"a:\n  test.nop:\n    - listen:\n      - sls: g1\ninclude:\n  - g1\n",
+	} {
+		msg := errText(compile(t, withSLS("l", src), "l"))
+		if !strings.Contains(msg, `Referenced state sls: g1 does not exist`) {
+			t.Errorf("not refused as Salt fails it:\n%s\n%s", src, msg)
+		}
+	}
+}
+
+// Salt has no `_any_in` and no `onfail_all_in`; it passes the keyword to
+// the function and attaches nothing. halite read the four `_any_in`
+// forms as requisites. DIVERGENCE 5.478.
+func TestAnyInRequisitesAreRefused(t *testing.T) {
+	for _, kw := range []string{"require_any_in", "watch_any_in", "onchanges_any_in", "onfail_any_in", "onfail_all_in"} {
+		src := "a:\n  test.nop:\n    - " + kw + ":\n      - sls: g1\ninclude:\n  - g1\n"
+		msg := errText(compile(t, withSLS("n", src), "n"))
+		if !strings.Contains(msg, "Salt has no "+kw) {
+			t.Errorf("%s not refused:\n%s", kw, msg)
+		}
+	}
+}

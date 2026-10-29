@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Requisite forms now behave as Salt's captured runs do
+
+A fired `watch` on a `test` state reports "Watch statement fired." and the
+states that changed, as Salt's `test.mod_watch` does. `use` no longer
+orders the state that uses another. A state naming itself in more
+requisite forms is refused as a cycle. **Breaking:** the `_any_in` forms
+(`require_any_in`, `watch_any_in`, `onchanges_any_in`, `onfail_any_in`,
+`onfail_all_in`) and `listen`/`listen_in` naming an `sls:` are refused,
+where Salt passes the first to the function as an argument and fails the
+run on the second (DIVERGENCE 5.478).
+
 ### A format width or precision too large to allocate is refused
 
 `'{:.9223372036854775807f}'.format(x)` and `'%99999999999999999999s'|format(x)`
