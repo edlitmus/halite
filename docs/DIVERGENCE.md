@@ -34818,6 +34818,33 @@ workflow, not seen. The first real tag will be the test. The issue's other
 suggestion, templating the `v0.1.0` in releasing.md's commands, is not done;
 the file already tells the reader to use their own tag.
 
+### 5.480 Of 18 v0.1.1 archives, one had been checked
+
+Issue 307. 5.278's release run checked `gh attestation verify` on one
+archive of 90 manifest entries and the contents of two of the 18 archives; the
+rest were taken on the strength of `SHA256SUMS` and the signatures
+verifying as a set, which say the files are the ones the workflow built and
+not that each holds what handbook chapter 30 says an archive holds.
+
+**Measured.** `tools/verify-archives.sh v0.1.1` downloads the release and,
+per archive, checks the SHA-256, the attestation pinned to `release.yml` at the
+tag, and the top-level layout, and prints what `file` says the first binary
+is. All 18 pass all three, and the binaries read as the platform in each name
+(`docs/releasing.md` lists them). Against v0.1.0 it exits non-zero on all 16
+archives, on layout, as it should: v0.1.0 predates the handbook and the
+service files.
+
+**The change.** The script, `make release-verify-archives TAG=...`, and the
+results recorded in `docs/releasing.md`.
+
+**Not verified.** It is not run in CI and not part of `release-verify`.
+Nothing here ran a binary on its platform; `file` reads headers. Contents
+below the top level were not compared with a checkout. Only the first binary
+of each archive is shown. The script's failure was exercised only for layout.
+That `gh attestation verify` refuses a wrong pin was shown by hand on
+linux-amd64, not through the script: `--source-ref refs/tags/v0.1.0` and a
+`ci.yml` signer workflow each exit 1, the right pins exit 0.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

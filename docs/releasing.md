@@ -357,9 +357,25 @@ verified its 36 archives and SBOMs and the manifest, and made it public
 public URLs with no authentication, `SHA256SUMS`, its signature and one
 archive's signature verified under `openssl` with the committed key.
 
+**Checked afterwards, on all 18 archives** (2026-10-29, `make
+release-verify-archives TAG=v0.1.1`, `tools/verify-archives.sh`, from a
+Linux x86-64 host with `gh`; DIVERGENCE 5.480): every archive's SHA-256
+matches `SHA256SUMS`; `gh attestation verify` passes on every one, pinned
+to `release.yml` at `refs/tags/v0.1.1`; and every one holds exactly
+`EVIDENCE.md LICENSE bin examples handbook man service`, the zips included.
+The first binary in each is the format its platform's name says, per
+`file`: Mach-O arm64 for darwin, ELF with the FreeBSD, NetBSD and OpenBSD
+OS markers for those, ELF x86-64 and aarch64, ppc64le, riscv64 and s390x
+(big-endian) for Linux, PE32+ x86-64 and Aarch64 for Windows, and the
+`-fips` archives hold `-fips`-suffixed binaries. The same script against
+v0.1.0 exits non-zero on all 16 of its archives, on layout alone, which is
+right: they predate the handbook and service files.
+
 **Not covered:** the credentials were a static key and secret in the
-environment, so SSO and an assumed role were still not tried.
-`gh attestation verify` was run on one archive of the 90, not all of
-them; the contents of the other 17 archives were not opened, and no
-`-fips` binary has run on a host in kernel FIPS mode. The gate checks
-what was signed, not who may run it (5.278).
+environment, so SSO and an assumed role were still not tried. The archives'
+contents below the top level were not compared with a checkout, and only
+the first binary of each was inspected, by `file`, which says what format a
+binary is and not that it runs: none of them but linux-amd64 has been run
+on its platform, and no `-fips` binary has run on a host in kernel FIPS
+mode. `verify-archives.sh` is run by hand; nothing runs it in CI. The gate
+checks what was signed, not who may run it (5.278).

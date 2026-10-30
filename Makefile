@@ -110,7 +110,7 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
 	fleetcheck fleetcheck-image fleetcheck-rocky9 fleetcheck-alma8 fleetcheck-leap16 dist \
-	release-sign release-verify release-pubkey release-publish \
+	release-sign release-verify release-verify-archives release-pubkey release-publish \
 	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
 
 all: build
@@ -649,6 +649,14 @@ release-sign:
 
 release-verify:
 	@env $(DEV_ENV) go run ./tools/relsign verify -dist dist -pub "$(RELEASE_PUB)"
+
+# release-verify-archives checks every archive of a published release:
+# checksum, attestation pinned to release.yml at the tag, and layout.
+# It downloads the release; TAG names it: make release-verify-archives
+# TAG=v0.1.1. Issue 307.
+release-verify-archives:
+	@test -n "$(TAG)" || { echo "usage: make release-verify-archives TAG=v0.1.1" >&2; exit 1; }
+	@sh tools/verify-archives.sh "$(TAG)"
 
 release-pubkey:
 	@env $(DEV_ENV) go run ./tools/relsign pubkey -key "$(RELEASE_KEY)"
