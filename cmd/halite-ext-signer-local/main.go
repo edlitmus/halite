@@ -39,13 +39,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/edlitmus/halite/ext"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/jobsign"
 )
 
 // Version is what the handshake and `sys.list_extensions` report.
-const Version = "1.0.1"
+const Version = "1.0.2"
 
 func main() {
 	// SPEC 24.3's self-applied limits, the way every extension in this
@@ -84,6 +86,25 @@ func main() {
 func loadKey(path string) (*ecdsa.PrivateKey, error) {
 	if path == "" {
 		return nil, fmt.Errorf("HALITE_EXT_SIGNER_KEY_FILE is not set; this extension has nothing to sign with")
+	}
+	// A key others can read is refused, as the node refuses a secret file
+	// it would sign with (config.ReadSecretFile): with this key anyone on
+	// the machine can sign what the hub will accept, and starting anyway
+	// would let the one check that could have caught it pass silently. The
+	// rule is the same one -- fileperm.Others, which is "any group or
+	// world bit" on unix and the file's access list on Windows -- so the
+	// message says what to run on whichever platform this is. A key owned by
+	// another account is not refused: nothing else in the tree refuses it,
+	// and what to do about it is a policy that belongs to the SPEC 25.6
+	// deployment, not to this reference bridge. The stat and the read are
+	// two calls, so a file made readable between them is not caught.
+	others, err := fileperm.Others(path)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if len(others) > 0 {
+		return nil, fmt.Errorf("%s can be read by %s; %s",
+			path, strings.Join(others, ", "), fileperm.Advice(path))
 	}
 	pem, err := os.ReadFile(path)
 	if err != nil {

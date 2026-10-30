@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The local signer extension refuses a key file others can read
+
+`halite-ext-signer-local` (the reference `signer` bridge, version 1.0.2) read
+its key from `HALITE_EXT_SIGNER_KEY_FILE` whatever the file's mode. It now
+refuses to start when any other account can read the file, naming the file and
+saying what to run, as the node does for its own signing secrets. A key that
+was `0644` stops the signer starting until it is `chmod 600`.
+
 ### Config files keep their SELinux context when halite rewrites them
 
 On an SELinux host, the modules that rewrite a system file (hosts, hostname,

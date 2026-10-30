@@ -7,8 +7,10 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -137,6 +139,63 @@ func TestLoadKeyReadsAPKCS8PEMFile(t *testing.T) {
 	}
 	if !got.Equal(key) {
 		t.Error("the key read back does not match the one written")
+	}
+}
+
+// A key file anyone else on the machine can read is refused, and the refusal
+// names the file, who can read it and what to run (issue 321, section 5;
+// 5.412 had left the mode unchecked as a policy choice for the owner, who
+// has now made it: the node's own rule for a signing secret).
+//
+// Mode bits are the answer on unix only; on Windows the same check reads the
+// file's access list, which this test does not build, so it is skipped there.
+// The mode is set with Chmod after the write, because the umask would
+// otherwise turn the test's 0644 into whatever the runner's umask allows.
+func TestLoadKeyRefusesAKeyOthersCanRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a mode says nothing about who can read a file on Windows; the check reads its access list")
+	}
+	key := testKey(t)
+	pemBytes, err := jobsign.EncodePrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		mode   os.FileMode
+		refuse bool
+	}{
+		{0o600, false},
+		{0o400, false},
+		{0o640, true},
+		{0o604, true},
+		{0o644, true},
+		{0o660, true},
+		{0o666, true},
+	} {
+		t.Run(fmt.Sprintf("%04o", tc.mode), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "signer.key")
+			if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			got, err := loadKey(path)
+			if !tc.refuse {
+				if err != nil || got == nil {
+					t.Fatalf("a key with mode %04o was refused: %v", tc.mode, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("a key with mode %04o was accepted", tc.mode)
+			}
+			for _, want := range []string{path, "can be read by", fmt.Sprintf("mode %o", tc.mode)} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("err = %q, want it to contain %q", err, want)
+				}
+			}
+		})
 	}
 }
 
