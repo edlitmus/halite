@@ -34872,9 +34872,15 @@ dispatched. A failure is a red run on the release, and unpublishes nothing.
 **Not verified.** The workflow was linted only as YAML and held to the repo's
 action-pinning test; GitHub does not run a new `release:` or
 `workflow_dispatch` workflow from a branch, so it has not run. That
-`release-publish`'s edit fires `published`, and that `file` and `unzip` are on
-the runner, are read, not seen. The first dispatch after merge is the test;
-the result is below once it exists.
+`release-publish`'s edit fires `published` is read, not seen.
+
+**Ran, by dispatch, after merge** (2026-10-30, run 41066878385, `tag=v0.1.1`,
+ubuntu-24.04): green, all 18 archives `sum=ok att=ok layout=ok`, the binaries
+reading as in `docs/releasing.md`. So `file`, `unzip`, `gh attestation verify`
+and the script work on the runner. What that does not show is the
+`release: published` trigger, which has never fired: the next release made
+public with `make release-publish` is its test, and if no run appears beside
+it, the trigger is wrong and the dispatch is the only path.
 
 ## 6. Everything else not started
 
