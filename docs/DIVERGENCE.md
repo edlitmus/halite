@@ -34882,6 +34882,40 @@ and the script work on the runner. What that does not show is the
 public with `make release-publish` is its test, and if no run appears beside
 it, the trigger is wrong and the dispatch is the only path.
 
+### 5.481 `make install-man` into a staged directory that did not exist installed nothing, and said it had succeeded
+
+Issue 309 asked for `install-man` to be run "with `MANDIR=/tmp/stage/man8`",
+and doing exactly that found it. The recipe installed only if `MANDIR` or its
+parent was writable, so with `/tmp/stage` not yet made neither was, the
+recipe printed "cannot write ... the manual pages were not installed" on
+stderr, and exited 0. Someone checking what an install would put where got a
+success and an empty directory. The warning is right for its purpose (an
+unprivileged `make install` into `/usr/local`, where a node without manual
+pages beats a failed install) and wrong for a directory that is merely absent.
+
+**The change.** When nothing exists at `MANDIR`, the recipe makes it. An
+existing directory that is not writable still warns and exits 0: `mkdir -p`
+succeeds on one that exists, which would have sent it into the install loop
+to fail, so it is only tried when nothing is there.
+`TestInstallManStagesIntoADirectoryThatDoesNotExistYet` runs the real target
+into a temporary directory under every make on the machine that can evaluate
+the Makefile; with the old recipe it fails under both GNU make 4.3 and
+`/usr/bin/make` here, and counts the six pages, not the exit status, because
+the status was the part that lied.
+
+**Demonstrated.** The six pages install (`man5/halite-policy.5`,
+`halite-sls.5`, `man7/halite.7`, `man8/` the three programs) and `man 5
+halite-sls` renders from the stage, on Ubuntu with GNU make 4.3; and under
+`/usr/bin/make` on FreeBSD 15.1-RELEASE-p6 (`beastie`), from a copy of the
+Makefile and `contrib/man` in a `mktemp -d`, with the same six files and the
+same `man 5 halite-sls`. A stage whose directory exists but is read-only
+still warns and does not fail.
+
+**Not verified.** The real thing as root, on Linux or FreeBSD, into
+`/usr/local/share/man`; macOS; `bmake` on Linux (not installed here, so only
+FreeBSD's make stood for BSD make); `makewhatis`/`mandb` indexing after an
+install, which `man -k` would need. So the issue stays open.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

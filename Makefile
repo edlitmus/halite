@@ -860,11 +860,21 @@ install: make-supports-bang
 # failing, because "make install failed" over a manual page is a worse
 # outcome than a node without one.
 #
+# A MANDIR that does not exist yet is not an unwritable one. Staging into
+# a fresh directory (MANDIR=/tmp/stage/man8, the usual way to check what an
+# install would put where) has neither MANDIR nor its parent to test, and
+# the writable test alone read that as "cannot write", said so on stderr,
+# and exited 0 with nothing installed (issue 309). The last clause makes
+# the directory when nothing is there; an existing directory that is not
+# writable still warns, because mkdir -p succeeds on one that exists and so
+# is only tried when nothing does.
+#
 # internal/docsaudit holds these pages to the binaries' own dispatch
 # switches, so a command cannot ship without one.
 install-man: make-supports-bang
 	@p=`dirname "$(MANDIR)"`; \
-	if test -w "$(MANDIR)" 2>/dev/null || test -w "$$p"; then \
+	if test -w "$(MANDIR)" 2>/dev/null || test -w "$$p" || \
+		{ ! test -e "$(MANDIR)" && mkdir -p "$(MANDIR)" 2>/dev/null; }; then \
 		install -d -m 0755 "$(MANDIR)" || exit 1; \
 		for b in $(BINARIES); do \
 			echo "  $(MANDIR)/$$b.8"; \
