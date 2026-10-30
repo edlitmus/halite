@@ -35133,6 +35133,36 @@ many callers were not each run, though they share it. `make check` was not
 run on this branch. The lab was destroyed afterwards (Vultr listed 0
 instances).
 
+### 5.485 The lab's SSH allow-list refused one spelling of "everybody"
+
+Issue 321, section 5, a lab Low: `variables.tf` rejected only the exact string
+`0.0.0.0/0`, so `0.0.0.0/1` with `128.0.0.0/1`, `::/0` or any other `/0` passed
+and opened key-only root SSH, on machines that run this tree as root, to
+everyone. 5.483 listed it as open.
+
+**The change.** Each `allowed_ssh_cidrs` entry must parse as a CIDR
+(`cidrhost`) and have a prefix of at least /8 for IPv4 or /32 for IPv6. The
+addresses the lab itself passes (`make lab-up`'s `<address>/32`, `make
+lab-down`'s `203.0.113.1/32`) are unaffected. It stops a mistake, not a person:
+256 /8s would pass, and they would have been meant.
+
+**Demonstrated.** `TestLabSSHCIDRValidationRefusesWideAndMalformedEntries` cuts
+the real `variable "allowed_ssh_cidrs"` block out of `variables.tf` and runs
+`tofu plan -var ...` (OpenTofu 1.13.1) over twelve inputs: three ordinary
+networks are accepted; `0.0.0.0/0`, the two halves, `::/0`, `1.2.3.4/0`,
+`10.0.0.0/7`, `2001:db8::/16`, `nonsense`, a host with no prefix and an empty
+list are refused. With the old condition restored, seven of those twelve fail
+(everything but the exact `0.0.0.0/0` and the empty list), which is the audit's
+claim reproduced. Validation runs before any provider is called, so this needs
+no credentials and creates nothing.
+
+**Not verified.** The test skips where there is no `tofu` on the PATH. No workflow here
+installs it (they mention `contrib/tofu` only in comments), and whether the
+runner images carry it was not checked, so CI probably does not hold this; a
+run by a person with `tofu` does. A full `make lab-plan` with the new condition was not run. The lab's other
+two Info items (host-key trust on first use, the predictable `/tmp` tarball
+path) are untouched.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
