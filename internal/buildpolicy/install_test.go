@@ -156,3 +156,67 @@ func withoutMakeFlags(env []string) []string {
 	}
 	return out
 }
+
+// `make install-man MANDIR=<dir>/stage/man8` installs the pages when
+// <dir>/stage does not exist yet.
+//
+// Issue 309 asked for a run with a staged MANDIR, and the example it gave
+// is the one that failed: the recipe installed only if MANDIR or its
+// parent was writable, so staging into a directory that was about to be
+// made read as "cannot write", said so on stderr, and exited 0 with
+// nothing installed. A person checking what an install would do saw a
+// success and an empty directory. The pages are counted here, not the
+// exit status, because the status was the part that was wrong.
+//
+// This runs the target for real, into a temporary directory, with every
+// make this machine has that can evaluate the Makefile: GNU make 4 and a
+// BSD make read the recipe differently (5.281 is the same lesson), and the
+// stock macOS make does not support `!=` and is skipped, as the Makefile
+// itself refuses it. It does not show the real thing as root, or on a
+// platform whose `install` is not this one's; it shows the staged one.
+func TestInstallManStagesIntoADirectoryThatDoesNotExistYet(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install-man runs install(1) and sh; there is no Windows install")
+	}
+	root := repoRoot(t)
+	var makes []string
+	for _, name := range []string{"bmake", "gmake", "make"} {
+		if p, err := exec.LookPath(name); err == nil {
+			makes = append(makes, p)
+		}
+	}
+	if len(makes) == 0 {
+		t.Skip("no make on this machine")
+	}
+	want := []string{"man5/halite-policy.5", "man5/halite-sls.5", "man7/halite.7",
+		"man8/halite-api.8", "man8/halite-hub.8", "man8/halite-node.8"}
+	ran := 0
+	for _, mk := range makes {
+		t.Run(filepath.Base(mk), func(t *testing.T) {
+			// Not -n: a dry run prints the refusal instead of running it, so the
+			// macOS make that cannot evaluate `!=` passed the probe and failed
+			// the install.
+			probe := exec.Command(mk, "make-supports-bang")
+			probe.Dir, probe.Env = root, withoutMakeFlags(os.Environ())
+			if out, err := probe.CombinedOutput(); err != nil {
+				t.Skipf("%s cannot evaluate the Makefile: %v\n%s", mk, err, out)
+			}
+			stage := filepath.Join(t.TempDir(), "stage")
+			cmd := exec.Command(mk, "install-man", "MANDIR="+filepath.Join(stage, "man8"))
+			cmd.Dir, cmd.Env = root, withoutMakeFlags(os.Environ())
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s install-man: %v\n%s", mk, err, out)
+			}
+			ran++
+			for _, w := range want {
+				if _, err := os.Stat(filepath.Join(stage, w)); err != nil {
+					t.Errorf("%s: %s was not installed: %v\n%s", mk, w, err, out)
+				}
+			}
+		})
+	}
+	if ran == 0 {
+		t.Skip("no make on this machine could evaluate the Makefile, so install-man was not run")
+	}
+}

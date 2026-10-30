@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `make install-man` makes a `MANDIR` that does not exist yet
+
+`make install-man MANDIR=/tmp/stage/man8` printed "cannot write" and exited 0
+with nothing installed when `/tmp/stage` was not there, so staging an install
+looked like it had worked. It makes the directory now. An existing directory
+you cannot write still warns, as before (DIVERGENCE 5.481).
+
 ### `--help` says `--root` does not move `state_dir`
 
 `--root` moves the configuration root and what is written in terms of it;
