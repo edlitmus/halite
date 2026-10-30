@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/ext"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/jobsign"
 )
 
@@ -130,7 +131,9 @@ func TestLoadKeyReadsAPKCS8PEMFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "signer.key")
-	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+	// fileperm.WriteFile: a plain os.WriteFile inherits BUILTIN\Users on
+	// Windows, and loadKey refuses a key others can read.
+	if err := fileperm.WriteFile(path, pemBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got, err := loadKey(path)

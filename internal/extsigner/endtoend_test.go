@@ -16,6 +16,7 @@ import (
 
 	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/jobsign"
 )
 
@@ -45,7 +46,10 @@ func TestSignerExtensionSignsAndVerifiesForReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(keyPath, pemBytes, 0o600); err != nil {
+	// fileperm.WriteFile, not os.WriteFile: the signer refuses a key others can
+	// read, and on Windows a plain write inherits BUILTIN\Users from the
+	// directory, which the access-list check counts (DIVERGENCE 5.486).
+	if err := fileperm.WriteFile(keyPath, pemBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
 

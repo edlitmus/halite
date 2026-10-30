@@ -35180,8 +35180,14 @@ runs the real binary with a `0600` key, still passes.
 **Demonstrated.** `TestLoadKeyRefusesAKeyOthersCanRead` loads a key at seven
 modes: `0600` and `0400` load; `0640`, `0604`, `0644`, `0660` and `0666` are
 refused, naming the file and the mode. With the refusal disabled the five
-refusal cases fail and the two accepting ones pass. Unix only: the Windows
-branch (an access list) was not built or run.
+refusal cases fail and the two accepting ones pass. That test is unix only.
+**Windows ran it unplanned:** the first CI run failed on Windows because two
+existing tests wrote their key with `os.WriteFile`, which inherits
+`BUILTIN\Users` from the temporary directory, and the access-list check
+refused it (`can be read by BUILTIN\Users; icacls ... /inheritance:r /g ...`).
+So the Windows branch refuses what it should; on Windows a key must be created
+private (`fileperm.WriteFile`, or the `icacls` line the message prints), and
+the two tests now do that.
 
 **Not done.** A key owned by another account is not refused (nothing else in the
 tree refuses it); the stat and the read are two calls, so a file made readable

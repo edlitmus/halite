@@ -27,7 +27,9 @@ is a pre-release in `release.yml`, so it is marked as one.
 its key from `HALITE_EXT_SIGNER_KEY_FILE` whatever the file's mode. It now
 refuses to start when any other account can read the file, naming the file and
 saying what to run, as the node does for its own signing secrets. A key that
-was `0644` stops the signer starting until it is `chmod 600`.
+was `0644` stops the signer starting until it is `chmod 600`. On Windows the
+check reads the file's access list: a key that inherits `BUILTIN\Users` is
+refused, and the message prints the `icacls` command that fixes it.
 
 ### Config files keep their SELinux context when halite rewrites them
 
