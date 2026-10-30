@@ -85,6 +85,7 @@ Common flags:
   --local              work from local roots rather than through a hub
   --config <path>      configuration file, default <root>/node.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
+                       state_dir and the other /var paths do not follow it
   --file-root <dir>    a state root, repeatable; implies --local, except
                        on connect, where it is the fallback tree
   --pillar-root <dir>  a pillar root, repeatable; implies --local, except

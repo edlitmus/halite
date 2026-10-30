@@ -36,6 +36,7 @@ Common flags:
   --help               describe the program without running a command
   --config <path>      configuration file, default <root>/api.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
+                       state_dir and the other /var paths do not follow it
   --out <format>       nested (default), json, yaml, or txt
 
 serve flags:

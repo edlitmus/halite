@@ -56,6 +56,7 @@ Common flags:
   --local              work from local roots rather than through a hub
   --config <path>      configuration file, default <root>/node.yaml
   --root <dir>         configuration root, default /etc/halite
+                       state_dir and the other /var paths do not follow it
   --file-root <dir>    a state root, repeatable; implies --local, except
                        on connect, where it is the fallback tree
   --pillar-root <dir>  a pillar root, repeatable; implies --local, except
@@ -117,6 +118,7 @@ Common flags:
   --help               describe the program without running a command
   --config <path>      configuration file, default <root>/hub.yaml
   --root <dir>         configuration root, default /etc/halite
+                       state_dir and the other /var paths do not follow it
   --out <format>       summary (default), nested, json, yaml, txt, or quiet
 
 serve flags:
@@ -226,6 +228,7 @@ Common flags:
   --help               describe the program without running a command
   --config <path>      configuration file, default <root>/api.yaml
   --root <dir>         configuration root, default /etc/halite
+                       state_dir and the other /var paths do not follow it
   --out <format>       nested (default), json, yaml, or txt
 
 serve flags:
