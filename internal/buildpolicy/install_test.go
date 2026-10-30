@@ -193,7 +193,10 @@ func TestInstallManStagesIntoADirectoryThatDoesNotExistYet(t *testing.T) {
 	ran := 0
 	for _, mk := range makes {
 		t.Run(filepath.Base(mk), func(t *testing.T) {
-			probe := exec.Command(mk, "-n", "make-supports-bang")
+			// Not -n: a dry run prints the refusal instead of running it, so the
+			// macOS make that cannot evaluate `!=` passed the probe and failed
+			// the install.
+			probe := exec.Command(mk, "make-supports-bang")
 			probe.Dir, probe.Env = root, withoutMakeFlags(os.Environ())
 			if out, err := probe.CombinedOutput(); err != nil {
 				t.Skipf("%s cannot evaluate the Makefile: %v\n%s", mk, err, out)
