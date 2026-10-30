@@ -34949,6 +34949,58 @@ Linux and a `makewhatis`/`mandb` index rebuild are not done: `apropos` on
 FreeBSD found the pages, but that may be the periodic index and not this
 install. Issue 309 stays open for those.
 
+### 5.482 The handbook's root and fresh-host procedures, run, and what they found
+
+Issue 308. Chapters 17, 24, 30 and 36 each carried a note that something had
+not been run as root on a clean host. On 2026-10-30 the lab (`contrib/tofu`,
+rows `ubuntu2604` and `freebsd15`: Ubuntu 26.04.1 LTS, kernel 7.0.0-38, and
+FreeBSD 15.1-RELEASE-p6, both amd64 on Vultr) ran them, from `main` at
+`efd9254e`, and was destroyed afterwards (Vultr's API listed 0 instances).
+
+**`make install` from a source checkout, as root.** Refused until `make build`
+had been run, with the message the Makefile has for it; after a build, `make
+install install-service install-man` exited 0 on both. It installs no account,
+so a second `make install` after `useradd`/`pw useradd` is what gives the
+directories to `halite`. A hub and a node then started and enrolled on each
+host. `man 5 halite-sls`, `man 7 halite` and `man 5 halite-policy` render on both,
+which closes the Linux-root and empty-`MANDIR` cases of 5.481's issue 309; macOS,
+`bmake` on Linux and the man index remain. The build was run as root, because
+the lab has no other account, so `make install`'s "never build as root" was
+not honoured here, only observed.
+
+**Agentless bootstrap (chapter 17), the whole procedure, on a FreeBSD host
+with nothing of halite on it, from the Ubuntu hub.** It worked, with two
+corrections to what the chapter said it would do. A tree holding the 17 MB
+`halite-node` is refused at 4 MiB (`the base tree is larger than 4194304
+bytes`), so `file.managed` of the binary from the tree cannot be the way; and
+`--thin` already puts the binary on the target under `thin_dir`, named by its
+SHA-256, which is where the bootstrap installs it from. The chapter had said
+each piece was run; the pieces do not fit together as described.
+
+**The deferred node restart (chapter 36 and `halite/node.sls`).** Run from
+a small state with `node.sls`'s command lines verbatim. Both finished the job
+first (`result True`) and restarted the node afterwards. Two things were not as
+written: on Linux the timer fired 52 s after the job, not 30, because a
+transient timer's `AccuracySec` is one minute (read back with `systemctl show`),
+and the control, `systemctl restart` or `service halite_node restart` written
+directly in the state, left the hub's `run` unanswered until a 100 s timeout
+and, on FreeBSD, left the node **down** (`halite_node could not enrol (exit
+141); not starting`). The deferred form is therefore not decoration. Not
+changed: the 30 s is still 30 s in the file; `--timer-property=AccuracySec=1s`
+would tighten it and was not tried.
+
+**The drift report from cron with mail (chapter 24).** Run every minute on
+Ubuntu with Postfix, `bsd-mailx`, `jq` and cron: one mail with the report
+while two nodes drifted; none over two ticks after they converged.
+
+**Not run.** Bootstrap by user-data (the lab's own cloud-init and FreeBSD startup
+script provisioned the hosts, which is not chapter 31's token-enrolment image
+bake); `--as reporter`; a fleet upgrade by replacing the binary; mail off the
+machine; `halite/node.sls` applied with this tree's pillar. The node's `/tmp`
+is private to its unit (`PrivateTmp=yes`), so a file a job writes there is not
+visible from a shell on the host, which cost a few minutes here and is not a
+defect.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
