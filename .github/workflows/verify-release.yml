@@ -1,0 +1,50 @@
+# Verify every archive of a release once it is public, and on demand.
+#
+# release.yml checks what it built, in the run that builds it. This checks
+# what a person downloads: that every archive on the release page matches
+# SHA256SUMS, carries a build attestation from release.yml at that tag, and
+# holds the layout handbook chapter 30 says it does. v0.1.1 went out with
+# one archive of eighteen checked by anyone (issue 307, DIVERGENCE 5.480);
+# `tools/verify-archives.sh` is the check, and this is what makes it run.
+#
+# `release: published` fires when a draft is made public, which is the step
+# `make release-publish` takes, and for a release created public. It does
+# not fire for a release published with the workflow's own GITHUB_TOKEN,
+# which GitHub does not let start another workflow; release.yml creates its
+# release as a draft for a person to publish, so that is not the path here.
+# If that ever changes this will stop running, and nothing will say so --
+# which is why it can also be dispatched by hand with a tag.
+#
+# A failing run does not unpublish anything. It is a red mark on the
+# release for a person to read; whether a release is pulled is their call.
+name: Verify release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the release to verify, for example v0.1.1"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  archives:
+    name: every archive of the release
+    runs-on: ubuntu-24.04
+    steps:
+      # The default branch, not the tag: the script is the current one, so
+      # a release cut before it existed can still be checked by hand.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: checksum, attestation and layout of each archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          REPO: ${{ github.repository }}
+        run: sh tools/verify-archives.sh "$TAG" "$REPO"

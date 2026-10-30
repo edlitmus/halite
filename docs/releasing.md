@@ -377,5 +377,7 @@ contents below the top level were not compared with a checkout, and only
 the first binary of each was inspected, by `file`, which says what format a
 binary is and not that it runs: none of them but linux-amd64 has been run
 on its platform, and no `-fips` binary has run on a host in kernel FIPS
-mode. `verify-archives.sh` is run by hand; nothing runs it in CI. The gate
+mode. `.github/workflows/verify-release.yml` runs `verify-archives.sh` when a
+release is published, and by hand for any tag; for v0.1.1 itself the
+run above was by hand. The gate
 checks what was signed, not who may run it (5.278).

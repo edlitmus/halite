@@ -34845,6 +34845,22 @@ That `gh attestation verify` refuses a wrong pin was shown by hand on
 linux-amd64, not through the script: `--source-ref refs/tags/v0.1.0` and a
 `ci.yml` signer workflow each exit 1, the right pins exit 0.
 
+#### It runs on a published release (issue 307)
+
+`.github/workflows/verify-release.yml` runs `tools/verify-archives.sh` on
+`release: published` and, by hand, for any tag. The draft `release.yml`
+creates is made public by a person with `make release-publish`, which is a
+user's `gh release edit` and so starts the workflow; a release published with
+the workflow's own `GITHUB_TOKEN` would not, which is why it can also be
+dispatched. A failure is a red run on the release, and unpublishes nothing.
+
+**Not verified.** The workflow was linted only as YAML and held to the repo's
+action-pinning test; GitHub does not run a new `release:` or
+`workflow_dispatch` workflow from a branch, so it has not run. That
+`release-publish`'s edit fires `published`, and that `file` and `unzip` are on
+the runner, are read, not seen. The first dispatch after merge is the test;
+the result is below once it exists.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
