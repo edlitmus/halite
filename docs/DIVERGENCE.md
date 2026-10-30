@@ -23521,6 +23521,21 @@ shown by a run that happens to pass.
 absence of the race on FreeBSD and macOS, whose shells and `sha256` were not
 run; 0 of 1000 is a bound on this host's shell only.
 
+#### Run on FreeBSD (issue 310)
+
+On `beastie`, FreeBSD 15.1-RELEASE-p6, native (`freebsd-version`; not read
+from the agent's shell), with `/bin/sh`: the loop above, 1000 runs of each
+form over 73 files in a `mktemp -d`. The old pipeline listed the manifest in
+itself in **1 of 1000** runs with `sha256sum` and **2 of 1000** with
+`sha256 -r`; the Makefile's form, written to `.SHA256SUMS.tmp` and renamed,
+in **0 of 1000** with each. So the race is real on FreeBSD, in both of the
+Makefile's branches, and the fix holds there.
+
+**Not verified.** macOS was not run: no macOS host was to hand, and its
+`/bin/sh` and `shasum` are different programs. `make dist` itself was not run
+on FreeBSD, only the recipe's pipeline in `sh`. 0 of 1000 bounds the rate
+below about 0.3% at 95% confidence, not zero. One host, one kernel.
+
 ### 5.282 Two release claims that the release did not meet: service files, and FIPS
 
 Reported by the maintainer after the Handbook merged.
