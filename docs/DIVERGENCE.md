@@ -23606,6 +23606,40 @@ path, and the publish step has run on a real release. The second item (the
 gate checks what was signed, not who may run it) stands, and
 `docs/releasing.md` has the rest, including what this run did not cover.
 
+#### The `-fips` binaries on a host in kernel FIPS mode (issue 306)
+
+2026-10-30, Rocky Linux 9.8 on the lab's `rocky9` row (Vultr, amd64, kernel
+5.14.0-687.54.1.el9_8, SELinux enforcing), the binaries from the published
+v0.1.1 `linux-amd64-fips` archive. Before the change: `/proc/sys/crypto/fips_enabled`
+0, and each of `halite-hub-fips`, `halite-node-fips` and `halite-api-fips`
+reported `fips mode on, module v1.0.0, self-tests passed` with `GODEBUG=fips140=on`;
+`grains.item fips_mode` was `False`. After `fips-mode-setup --enable` and a
+reboot: `fips_enabled` 1, policy `FIPS`; the same three lines; `fips_mode`
+`True`. The shipped `halite-hub.service` and `halite-node.service` with the
+shipped `fips/*.service.d/fips.conf` drop-ins started a hub and a node whose
+`/proc/<pid>/environ` held `GODEBUG=fips140=on` and whose executables were the
+`-fips` files; `keys operator create`, enrolment (manual accept), `test.ping`,
+`grains.item fips_mode` (`True`) and a `state.apply` of a `file.managed` all
+worked, with no AVC denial and nothing at `err` in the journal. `halite-hub-fips
+doctor` and `halite-node-fips doctor` passed `FIPS mode consistency` (`the
+kernel is in FIPS mode and this is a FIPS build (module v1.0.0, in FIPS mode)`),
+and the ordinary `halite-node` from the v0.1.1 archive on the same host got `warn
+FIPS mode consistency: the kernel is in FIPS mode and this is not a FIPS
+build`, so both directions of the check were seen on a real FIPS kernel.
+
+**The lab trap.** The first host was lost to it: after the reboot, `sshd` in
+FIPS mode refused the lab's ed25519 login key (`Permission denied (publickey…)`),
+so the host could not be reached and was destroyed. The second was raised with an
+ECDSA P-256 key (`TF_VAR_ssh_public_key_path`) and logged in under FIPS. The
+lab's default key path is ed25519; that default is untouched here.
+
+**Not verified.** arm64: Vultr sells no ARM instance, so the arm64 archive was
+not opened or run, and issue 306's arm64 half stays open. `halite-api-fips` was
+run for `version` only, not as a service. The hub and node shared one host, so
+no network path between hosts was used. One distribution, one kernel (RHEL 9's);
+Ubuntu Pro's FIPS kernel was not tried. `make check` was not run on this
+branch; this is documentation.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
