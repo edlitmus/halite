@@ -133,9 +133,16 @@ A node's binary is just a file. How you replace it depends on how you ship it:
   the job doing it. The example tree (`contrib/examples/tree`, `halite.node`)
   does exactly this with a deferred restart (`daemon(8)` on FreeBSD,
   `systemd-run --on-active` on Linux). Its README says what has been compiled
-  and what has been run, and says the deferred restart has not been seen to
-  escape the agent as intended on a real host. Treat the first fleet upgrade
-  with it as a trial.
+  and what has been run. The restart command was run inside a real job on
+  Ubuntu 26.04 and FreeBSD 15.1: the job finished and returned `True` first,
+  and the node restarted afterwards and came back `up`. On Linux the restart
+  came 52 seconds after the job, not 30, because a transient timer has
+  systemd's default accuracy of one minute, so read `30` as "between 30 and 90
+  seconds". The same restart written directly in the state (`systemctl
+  restart` or `service restart`) was run as a control: the hub's `run` never
+  returned, and on FreeBSD the node stayed **down**, the rc script saying `could
+  not enrol (exit 141); not starting`. Not run: a whole fleet upgrade, and
+  replacing the binary with the state.
 - **By hand**, for a few nodes: the same three commands as the hub, with
   `halite-node` and `halite_node`.
 

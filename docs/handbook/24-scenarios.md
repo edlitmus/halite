@@ -345,9 +345,14 @@ the `reporter` certificate a role that may run `state.apply` only with
 anything else. An empty report is the goal; a non-empty one lists the node,
 the state and what it would change.
 
-> **Not run:** the crontab line and the mail pipeline were not exercised;
-> the two halves they join, the rehearsal and the report, were
-> ([chapter 16](16-fleet-operations.md)).
+> **What has and has not been run.** The crontab line was run on Ubuntu 26.04
+> with Postfix (local delivery only), `bsd-mailx`, `jq` and cron, every minute
+> in place of 06:17, against two nodes. With a state that would be created,
+> cron sent one mail to root whose body was the report, one line per node. After
+> the fleet was converged, two further cron ticks sent nothing: `mail -E` was
+> silent on the empty report. **Not run:** `--as reporter` (the line was run as
+> the first operator), delivery to an address off the machine, and FreeBSD's
+> `mail`.
 
 ## Designing your own
 

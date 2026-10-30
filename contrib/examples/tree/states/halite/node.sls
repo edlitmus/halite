@@ -3,8 +3,9 @@
 # A node does not restart itself in the middle of the job that changed its
 # configuration: that job would die with it. A changed node.yaml schedules
 # a restart a little later, from outside the agent, and the run that wrote
-# it finishes first. The restart command is per platform and has not been
-# run by this project; read it before you rely on it.
+# it finishes first. The restart command is per platform. Both were run inside
+# a real job on Ubuntu 26.04 and FreeBSD 15.1 (DIVERGENCE 5.482), though not
+# from this file; on Linux read the 30 as 30 to 90 seconds.
 {%- from "halite/map.jinja" import halite with context %}
 {%- set node = pillar['halite']['node'] %}
 {%- set cfg = node['config'] %}

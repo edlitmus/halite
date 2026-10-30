@@ -24,7 +24,13 @@ from a directory you control, one working operator, and a green
 > 26.04.1 LTS (kernel 7.0.0-38), again from the v0.1.1 archive: `useradd`, the
 > install, the `--names` drop-in, `systemctl enable --now`, the operator, `doctor`
 > (`7 pass, 1 skip`), the checks, a reboot, and a node on Debian 13 and the API
-> against it. **Not run:** `make install` from a source checkout, hosts older
+> against it. `make install` from a source checkout was then run as root on both fresh hosts
+> (Ubuntu 26.04.1 under GNU make 4.3, FreeBSD 15.1-RELEASE-p6 under `/usr/bin/make`,
+> `main` at `efd9254e`): it refuses until `make build` has been run, which it
+> says, and afterwards it installed the programs, the service files and the
+> manual pages, and a second `make install`, after the account existed, gave
+> the directories to `halite`; a hub and a node then started and enrolled.
+> **Not run:** hosts older
 > than those named, SELinux or AppArmor profiles, and the hub on FreeBSD 14.5
 > (only the node was).
 

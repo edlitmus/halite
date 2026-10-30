@@ -225,10 +225,27 @@ Agentless mode can put the agent on a machine: a state that places the
 and an operator's approval ([chapter 31](31-install-nodes.md)); after that
 the node is connected and self-managing and its roster entry can go.
 
-> **Not verified:** this handbook ran each piece (agentless state
-> application, `file.managed` of a binary, enrolment) but not the whole
-> bootstrap as one procedure on a fresh machine. Treat it as a pattern to
-> test on a throwaway host, not a runbook.
+> **What has and has not been run.** The whole bootstrap was run as one
+> procedure on a FreeBSD 15.1-RELEASE-p6 host that had nothing of halite on it
+> (its binaries, configuration and keys removed first), from a hub on Ubuntu
+> 26.04: `halite-hub ssh` to the bare host, a state that wrote `node.yaml` and
+> the rc script, the binary, `halite-node enroll`, `keys accept`, and the rc
+> script; the node came up and answered `test.ping`. It did **not** work as
+> this section first described it, in two ways:
+>
+> - **The binary cannot be placed by `file.managed` from the tree.** A tree
+>   that holds the 17 MB `halite-node` is over agentless mode's 4 MiB limit,
+>   and the run said so: `the base tree is larger than 4194304 bytes, which is
+>   more than agentless mode sends inline`. Keep the binary out of the tree.
+> - **`--thin` already puts the binary on the target**, in `thin_dir`, under
+>   the name of its SHA-256. The bootstrap installs it from there
+>   (`halite-hub ssh host cmd.run 'install -m 0755 <thin_dir>/<hash>
+>   /usr/local/bin/halite-node'`), which is what was run.
+>
+> The two hosts could not reach each other (the lab opens only SSH to the
+> operator), so the ssh to the target and the node's connection to the hub both
+> went through tunnels from the operator's machine. Not run: a Linux target,
+> and any network path but those tunnels.
 
 ## Key ideas
 
