@@ -34930,6 +34930,25 @@ still warns and does not fail.
 FreeBSD's make stood for BSD make); `makewhatis`/`mandb` indexing after an
 install, which `man -k` would need. So the issue stays open.
 
+#### `make install-man` as root on FreeBSD, run
+
+Issue 309 also asked for the real install. On beastie (native FreeBSD
+15.1-RELEASE-p6, 2026-10-30) `sudo /usr/bin/make install-man`, from a
+worktree of `main` at `a382e70e`, exited 0 and listed six pages. All six
+files in `/usr/local/share/man/man5`, `man7` and `man8` were then
+`root:wheel` 0644 with the run's timestamp, and `man 5 halite-sls`,
+`man 7 halite` and `man 5 halite-policy` rendered, as did `apropos halite`
+for all six.
+
+**What that does not show.** The six pages were already installed and
+byte-identical to the ones installed (checked with `cmp` beforehand, and
+kept in a backup), so the pages' content was not what was under test, and
+the new mtimes are the only evidence that the recipe wrote them. It was not
+run on an empty `/usr/local/share/man`. Linux as root, macOS, `bmake` on
+Linux and a `makewhatis`/`mandb` index rebuild are not done: `apropos` on
+FreeBSD found the pages, but that may be the periodic index and not this
+install. Issue 309 stays open for those.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
