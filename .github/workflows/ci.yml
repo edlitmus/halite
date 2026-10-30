@@ -259,6 +259,32 @@ jobs:
           go-version: "1.27.3"
           cache: true
 
+      - name: issue 310 probe (temporary)
+        if: runner.os == 'macOS'
+        shell: /bin/sh {0}
+        run: |
+          sw_vers; uname -a
+          for t in sha256sum sha256 shasum openssl awk sort; do printf '%s: ' "$t"; command -v "$t" || echo none; done
+          sums() {
+            if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"
+            elif command -v sha256 >/dev/null 2>&1; then sha256 -r "$@"
+            else shasum -a 256 "$@"; fi
+          }
+          d=$(mktemp -d); cd "$d"
+          i=0; while [ $i -lt 73 ]; do echo "file $i" > "f$i"; i=$((i+1)); done
+          echo "branch the Makefile would take: $(command -v sha256sum >/dev/null 2>&1 && echo sha256sum || (command -v sha256 >/dev/null 2>&1 && echo 'sha256 -r' || echo 'NEITHER: make dist would fail'))"
+          old=0; new=0; n=1000; i=0
+          while [ $i -lt $n ]; do
+            rm -f SHA256SUMS .SHA256SUMS.tmp
+            sums * | awk '{ printf "%s  %s\n", $1, $2 }' | LC_ALL=C sort > SHA256SUMS
+            grep -q ' SHA256SUMS$' SHA256SUMS && old=$((old+1))
+            rm -f SHA256SUMS .SHA256SUMS.tmp
+            sums * | awk '{ printf "%s  %s\n", $1, $2 }' | LC_ALL=C sort > .SHA256SUMS.tmp && mv .SHA256SUMS.tmp SHA256SUMS
+            grep -q ' SHA256SUMS$' SHA256SUMS && new=$((new+1))
+            i=$((i+1))
+          done
+          echo "RESULT old form listed itself in $old of $n; Makefile form in $new of $n; lines in last manifest: $(wc -l < SHA256SUMS | tr -d ' ')"
+
       - name: test (make)
         if: runner.os == 'Linux'
         run: make test
