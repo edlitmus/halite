@@ -35269,6 +35269,39 @@ between them is not caught; and the lab's other two Info items remain.
 
 
 
+### 5.487 Chapter 24 said a policy could keep the drift reporter to `--test`; it cannot
+
+Issue 308. Chapter 24's drift-report scenario said to give the `reporter`
+certificate "a role that may run `state.apply` only with `--test`-style safety by
+pairing the schedule with a policy that denies anything else". Nothing in the
+policy grammar can require a keyword: the argument limits are `allow_sls`,
+`deny_sls`, `allow_mods` and `deny_kwargs` (chapter 26), and `deny_kwargs: [test]`
+would forbid the one thing the job passes.
+
+**Run** on 2026-10-30, on this workstation (Linux, unprivileged), a throwaway hub
+and one node built from `main` at `a4d4d7fc`, a policy whose `reporter` role is
+`target: "*"`, `functions: ["state.apply"]`, bound to `cert:CN=reporter`:
+
+| As `reporter` | Result |
+|---|---|
+| `run '*' state.apply --test --out json \| drift-report.sh` | the report line (`drift file ... would be created`); `target.txt` not created |
+| `run '*' state.apply` (no `--test`) | **allowed**: `Succeeded: 1 (changed=1)`, and `target.txt` held `hello` |
+| `run '*' test.ping` | refused: `no rule in [reporter] permits test.ping against "*"` |
+| `policy test cert:CN=reporter reportnode cmd.run` | denied, no rule in `[reporter]` |
+
+So `--as reporter` works as the crontab line uses it, and the role it needs is
+also a role that can apply for real; the read-only property was the `--test` in
+the schedule, and the policy added nothing to it. The chapter now says so and
+points at `allow_sls`.
+
+**Not changed: the gap itself.** A rule that could require `test: true` (or
+refuse a state.apply without it) would make the paragraph true; that is a policy
+feature, not a documentation fix, and was not built. **Not verified:** `allow_sls`
+as the narrowing the chapter now suggests was not run in this session (it is
+exercised by 5.320's tests); one node, one hub, one host; the cron path with
+`--as reporter` (the earlier cron run used the first operator). `make check` was
+not run; this is documentation.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

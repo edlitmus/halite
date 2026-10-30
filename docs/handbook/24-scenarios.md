@@ -339,20 +339,29 @@ run, including the failure, the rollback and the resume, in
 ```
 
 (`mail -E` sends nothing on an empty body: a converged fleet is silent.) The
-script is `drift-report.sh` from [chapter 16](16-fleet-operations.md); give
-the `reporter` certificate a role that may run `state.apply` only with
-`--test`-style safety by pairing the schedule with a policy that denies
-anything else. An empty report is the goal; a non-empty one lists the node,
-the state and what it would change.
+script is `drift-report.sh` from [chapter 16](16-fleet-operations.md). Give
+the `reporter` certificate a role that may run `state.apply` and nothing else,
+and know what that grants: **a policy cannot require `--test`.** A role that
+may run `state.apply` may run it for real, so the reporter credential can
+change every node it is allowed to reach, and what keeps the morning job
+read-only is the `--test` in the crontab line, not the policy. Narrow it with
+`allow_sls` (chapter 26) to the states you are content to have applied, and
+keep the credential where only the cron job can read it. An empty report is the
+goal; a non-empty one lists the node, the state and what it would change.
 
 > **What has and has not been run.** The crontab line was run on Ubuntu 26.04
 > with Postfix (local delivery only), `bsd-mailx`, `jq` and cron, every minute
 > in place of 06:17, against two nodes. With a state that would be created,
 > cron sent one mail to root whose body was the report, one line per node. After
 > the fleet was converged, two further cron ticks sent nothing: `mail -E` was
-> silent on the empty report. **Not run:** `--as reporter` (the line was run as
-> the first operator), delivery to an address off the machine, and FreeBSD's
-> `mail`.
+> silent on the empty report. The line was then run with `--as reporter` against
+> a throwaway hub and node, under a policy whose `reporter` role grants only
+> `state.apply`: the rehearsal gave the report and changed nothing, `test.ping`
+> as `reporter` was refused (`no rule in [reporter] permits test.ping against
+> "*"`), and **`state.apply` without `--test` as `reporter` was allowed and
+> created the file**, which is why the paragraph above says the policy does not
+> make the job read-only. **Not run:** delivery to an address off the machine,
+> and FreeBSD's `mail`.
 
 ## Designing your own
 
