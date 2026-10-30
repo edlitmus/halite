@@ -40,9 +40,22 @@ variable "allowed_ssh_cidrs" {
     error_message = "allowed_ssh_cidrs is empty, which would create instances nothing can reach. `make lab-up` sets it from your current public address."
   }
 
+  # Each entry must parse as a CIDR, and must not be wide enough to be "the
+  # internet" rather than somebody's network. The first version of this check
+  # refused the single string "0.0.0.0/0", which is the one spelling nobody
+  # would type by accident-in-the-right-direction: "0.0.0.0/1" with
+  # "128.0.0.0/1" is the same whole internet, and so is "::/0", "1.2.3.4/0" or
+  # any other /0 (issue 321, section 5). So the test is the prefix length, not
+  # the string: at least /8 for IPv4 (one very large network, but not
+  # everyone) and /32 for IPv6 (a provider's allocation is a /32, and a home
+  # connection a /56 or /64). This stops a mistake; a person who lists 256 /8s
+  # has meant it.
   validation {
-    condition     = !contains(var.allowed_ssh_cidrs, "0.0.0.0/0")
-    error_message = "0.0.0.0/0 opens key-only root SSH on every instance to the whole internet. These hosts run a source tree as root; scope this to an address you control."
+    condition = alltrue([
+      for c in var.allowed_ssh_cidrs :
+      can(cidrhost(c, 0)) && tonumber(split("/", c)[1]) >= (strcontains(c, ":") ? 32 : 8)
+    ])
+    error_message = "every allowed_ssh_cidrs entry must be a CIDR no wider than /8 (IPv4) or /32 (IPv6); anything wider, including 0.0.0.0/0, 0.0.0.0/1, ::/0 and a malformed value, opens key-only root SSH on every instance to a large part of the internet. These hosts run a source tree as root; scope this to an address you control."
   }
 }
 

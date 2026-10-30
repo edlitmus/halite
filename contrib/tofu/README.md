@@ -185,7 +185,8 @@ packet filters.
 
 - SSH is the only port open, and only to the address `make lab-up`
   detected, or the one `LAB_SSH_CIDR` names. `variables.tf` refuses
-  `0.0.0.0/0` outright and has no default, because a default here would
+  any entry wider than /8 (IPv4) or /32 (IPv6), or not a CIDR at all, which
+  covers `0.0.0.0/0`, `::/0` and `0.0.0.0/1` plus `128.0.0.0/1`, and has no default, because a default here would
   eventually be the default somebody ran with.
 - The bootstrap turns off password authentication once the key is in
   place. Vultr mails a root password for every instance; after this it
