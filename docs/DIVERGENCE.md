@@ -23536,6 +23536,28 @@ Makefile's branches, and the fix holds there.
 on FreeBSD, only the recipe's pipeline in `sh`. 0 of 1000 bounds the rate
 below about 0.3% at 95% confidence, not zero. One host, one kernel.
 
+#### Run on macOS (issue 310)
+
+On GitHub's `macos-15` runner (macOS 15.8.2, build 24H232, Darwin 24.6.0), in
+`/bin/sh`, from a throwaway pull request whose only change was one CI step (the
+PR was closed unmerged): the same loop, 1000 runs of each form over 73 files in
+a `mktemp -d`. The old pipeline listed the manifest in itself in **29 of 1000**
+runs; the Makefile's form, written to `.SHA256SUMS.tmp` and renamed, in **0 of
+1000**, with 73 lines in the last manifest. So the race is real on macOS, at a
+much higher rate than the 1 and 2 of 1000 seen on FreeBSD (5.281, above), and
+the fix holds there. The probe also printed which tool the Makefile's
+`command -v` would pick: `/sbin/sha256sum` exists on this runner, so the
+`sha256sum *` branch is the one measured; `/sbin/sha256` is there too, and the
+`sha256 -r *` branch was **not** run on macOS.
+
+**Not verified.** One runner image, which has Homebrew's `shasum` and `openssl`
+that a stock Mac does not; whether a Mac without `/sbin/sha256sum` takes the
+other branch was not run. `make dist` itself was not run on macOS, only the
+recipe's pipeline. 0 of 1000 bounds the rate below about 0.3% at 95%
+confidence. With this, issue 310's "done when" (FreeBSD and macOS, both forms,
+recorded) is met for the `sha256sum` branch on both and the `sha256 -r` branch
+on FreeBSD only.
+
 ### 5.282 Two release claims that the release did not meet: service files, and FIPS
 
 Reported by the maintainer after the Handbook merged.
@@ -34948,6 +34970,23 @@ run on an empty `/usr/local/share/man`. Linux as root, macOS, `bmake` on
 Linux and a `makewhatis`/`mandb` index rebuild are not done: `apropos` on
 FreeBSD found the pages, but that may be the periodic index and not this
 install. Issue 309 stays open for those.
+
+#### `make install-man` under `bmake` on Linux (issue 309)
+
+NetBSD `bmake` 20200710 (Ubuntu's `bmake` 20200710-16 package, downloaded with
+`apt-get download` and extracted without root, run with `-m` pointing at its
+`share/mk`) on Ubuntu 24.04: `bmake make-supports-bang` and `bmake install-man
+MANDIR=<dir>/s/man8` both exited 0, the `<dir>/s` parent not existing, and the
+six pages were installed under `man5`, `man7` and `man8`. With that `bmake`
+first on `PATH`, `TestInstallManStagesIntoADirectoryThatDoesNotExistYet` ran
+the `bmake`, `gmake` and `make` subtests, all passing, and
+`TestInstallOnDarwinInstallsNoSystemdUnits`, which skips on this machine
+without a BSD make, ran its Darwin, FreeBSD and Linux cases and passed.
+
+**Not verified.** macOS (the CI macOS legs have GNU make 3.81, which the test
+skips, and no `bmake` or `gmake` was added there); a `makewhatis`/`mandb` index
+rebuild after the install; a `bmake` newer than 2020. Issue 309 stays open for
+those.
 
 ### 5.482 The handbook's root and fresh-host procedures, run, and what they found
 
