@@ -4630,7 +4630,7 @@ mac_keychain.default_keychain()
 
 #### `mac_keychain.friendly_name`
 
-Return the friendlyName inside a PKCS#12 file. This shells out to `openssl`, and the file's passphrase is in the process table while it runs.
+Return the friendlyName inside a PKCS#12 file. This shells out to `openssl`, giving it the file's passphrase on standard input.
 
 ```
 mac_keychain.friendly_name(path: path, password: string)

@@ -35379,6 +35379,42 @@ exercised by 5.320's tests); one node, one hub, one host; the cron path with
 `--as reporter` (the earlier cron run used the first operator). `make check` was
 not run; this is documentation.
 
+### 5.488 `mac_keychain.friendly_name` put the passphrase on openssl's command line
+
+Issue 321, section 5: "`mac_keychain.go:360,439` pass the PKCS#12 password on
+argv; documented but visible in `ps`." Line 360 is `security import -P`, which
+5.45 records as `security`'s only form and which the tool's own help calls
+"insecure" (5.45, the macOS 15.8.2 subsection). Line 439 was `openssl pkcs12 -in
+<file> -passin pass:<passphrase>`, which is not the tool's design: openssl takes
+a passphrase from `pass:`, `env:`, `file:`, `fd:` or `stdin`. 5.45 had written
+that `friendly_name` "has the same exposure", true of what the code did and not
+of what it had to do.
+
+**The change.** `macKeychainFriendlyName` runs `-passin stdin` and sends the
+passphrase and a newline on standard input. A passphrase with `\r` or `\n` in it
+is refused before openssl runs, because openssl reads one line and `pass:` could
+carry what a line cannot; a shorter read would be reported as a wrong passphrase.
+`install` is unchanged.
+
+**Demonstrated.** `mini-me` (Apple Silicon, macOS 27.2): `openssl pkcs12 -passin
+stdin` read a PKCS#12 file's `friendlyName` with the right passphrase and exited 1
+with a wrong one, under Homebrew's OpenSSL 4.0.3 and the system's LibreSSL 3.3.6
+(`/usr/bin/openssl`). `TestLiveMacKeychainRoundTripsAThrowawayKeychain`, whose
+`friendly_name` step is the changed code and which makes its own keychain and
+needs no root, passed with each of the two first on the `PATH`; the module's
+unit tests passed there too. `TestMacKeychainFriendlyNameKeepsThePassphraseOffTheCommandLine`
+asserts that no argument holds the passphrase, that `-passin` is `stdin` and that
+standard input is the passphrase and a newline; with `pass:` put back it fails
+(`the passphrase is in the argument vector: "pass:s3cr3t-p4ss"`).
+`TestMacKeychainFriendlyNameRefusesALineBreakInThePassphrase` holds the refusal.
+The generated module page and the `mac_keychain` evidence note changed with it.
+
+**Not verified.** That nothing else can read the passphrase while openssl holds it
+(`/proc` has no macOS equivalent here; stdin is not in `ps`, which was not
+looked at on the Mac); a macOS earlier than 27.2; the System-keychain
+(root) half of the live test with this change; and `make check`. `install` still
+exposes its passphrase, by `security`'s design.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

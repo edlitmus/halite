@@ -933,8 +933,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"it; and a second test imports into and removes from the real " +
 		"`/Library/Keychains/System.keychain` under sudo, which is the path that makes these " +
 		"functions declare root. Running it found two defects (DIVERGENCE 5.118), one of " +
-		"which only appears when the caller is root -- which is what a node is. Not covered: " +
-		"the `-T` application access list, and `install` into a keychain that is locked"},
+		"which only appears when the caller is root -- which is what a node is. `friendly_name` " +
+		"now gives openssl its passphrase on standard input (5.488); that half of the round " +
+		"trip ran on macOS 27.2 under Homebrew's OpenSSL 4.0.3 and the system's LibreSSL " +
+		"3.3.6. Not covered: the `-T` application access list, and `install` into a keychain " +
+		"that is locked"},
 
 	"mac_power": {Level: exec.Hardware, Note: "the setters were driven against the real " +
 		"`pmset` on an Apple M1 running macOS 27.0 (build 26A5425a) under sudo, capturing " +
