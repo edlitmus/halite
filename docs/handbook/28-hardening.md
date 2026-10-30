@@ -260,6 +260,24 @@ extra files in the ordinary ones so that nobody gets a FIPS binary by copying
 the wrong file. Ask the binary, not its name:
 `halite-node-fips version` must report the module and `self-tests passed`.
 
+> **What has and has not been run.** The three binaries from the published
+> v0.1.1 `linux-amd64-fips` archive were run on Rocky Linux 9.8 (kernel
+> 5.14.0-687.54.1) with the kernel in FIPS mode (`/proc/sys/crypto/fips_enabled`
+> 1, crypto policy `FIPS`, SELinux enforcing), after `fips-mode-setup --enable`
+> and a reboot. Each reported `fips mode on, module v1.0.0, self-tests passed`;
+> `fips_mode` read `False` before the reboot and `True` after; `doctor` on the
+> hub and on the node passed its FIPS row (`the kernel is in FIPS mode and this
+> is a FIPS build`); and the ordinary `halite-node` on the same host got `warn
+> ... the kernel is in FIPS mode and this is not a FIPS build`. A hub and a node
+> ran under the shipped base units and `service/systemd/fips/` drop-ins (the
+> processes' environment held `GODEBUG=fips140=on` and their executables were the
+> `-fips` files), the node enrolled, answered `test.ping` and applied a state.
+> **Not run:** arm64 (Vultr sells no ARM instance, and the arm64 archive was
+> not opened), `halite-api-fips` as a service (only its `version`), a node on
+> another host, and an upgrade. **A trap for whoever repeats it on a lab host:**
+> after the reboot RHEL 9's `sshd` in FIPS mode refused an ed25519 login key, so
+> a host raised with one cannot be reached; use an ECDSA or RSA key.
+
 ## Secrets: where they are and are not
 
 - **In pillar, encrypted or fetched** ([chapter 9](09-pillar.md)): on the hub,
