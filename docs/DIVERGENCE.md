@@ -23578,6 +23578,19 @@ confidence. With this, issue 310's "done when" (FreeBSD and macOS, both forms,
 recorded) is met for the `sha256sum` branch on both and the `sha256 -r` branch
 on FreeBSD only.
 
+#### Run on a real Mac (issue 310)
+
+`mini-me`, Apple Silicon, macOS 27.2 (build 26B118), reached over SSH through
+`beastie`; `/bin/sh`, in a `mktemp -d`, 1000 runs of each form over 73 files, no
+other load. Both tool branches the Makefile can take exist natively there
+(`/sbin/sha256sum` and `/sbin/sha256`) and both were run. With `sha256sum`: old
+form 0 of 1000, Makefile form 0 of 1000. With `sha256 -r`: old form 0 of 1000,
+Makefile form 0 of 1000. So the `sha256 -r` branch, which no earlier run had
+reached on macOS, is clean, and **this Mac did not reproduce the race at all**:
+the CI runner showed 29 of 1000 for the old form (above), FreeBSD 1 and 2, and
+here 0. The race depends on scheduling; 0 of 1000 on an idle machine says nothing
+against it, and the runs above stand.
+
 ### 5.282 Two release claims that the release did not meet: service files, and FIPS
 
 Reported by the maintainer after the Handbook merged.
@@ -35061,6 +35074,30 @@ root into `/usr/local/share/man`; the Homebrew `bmake` and `make` versions were
 not recorded; a man-index rebuild (`makewhatis` or its macOS equivalent) was not
 run, so `apropos` was not looked at. Issue 309 stays open for the root install
 into the real man tree and the index.
+
+#### `make install-man` as root on a real Mac (issue 309)
+
+`mini-me` (Apple Silicon, macOS 27.2, SIP enabled), 2026-10-30, `main` at
+`62a4d8e4` shipped to a temporary directory. `/usr/local/share` did not exist
+(`/usr/local` did). Stock `make` under `sudo` refused with the Makefile's message.
+Homebrew's `bmake` 20260912 and `make` 4.4.1 were installed for the run. Then
+`sudo bmake install-man`, and later `sudo gmake install-man`, each with the default
+`MANDIR` (`/usr/local/share/man/man8`) and each exiting 0: all six pages went in
+as `root:wheel` 0644 under `man5`, `man7` and `man8`, creating
+`/usr/local/share/man` and its three subdirectories; `man -w halite-sls` found
+`/usr/local/share/man/man5/halite-sls.5`; `man 5 halite-sls`, `man 7 halite` and
+`man 8 halite-hub` rendered; and `apropos halite` listed the pages **without an
+index rebuild by us** (macOS's `man` searches the directory it indexes on the fly,
+or its own periodic job did; which was not determined). Afterwards the six files,
+the directories this run made, the two Homebrew packages and the temporary files
+were removed, and `/usr/local/share`, `brew list` and `/tmp` were checked to match
+the starting state.
+
+**Not verified.** An Intel Mac, an earlier macOS, and a Mac with a man database
+that is built only by `makewhatis`. With this, issue 309's real-root run is done on
+Linux (5.482), FreeBSD (5.481) and macOS; its remaining item is the man index on
+Linux (`apropos` was not run there) and FreeBSD (where `apropos` listed the pages,
+but whether by this install was not separated). `make check` was not run.
 
 ### 5.482 The handbook's root and fresh-host procedures, run, and what they found
 
