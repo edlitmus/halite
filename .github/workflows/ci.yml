@@ -259,6 +259,31 @@ jobs:
           go-version: "1.27.3"
           cache: true
 
+      - name: macOS probe 2 (temporary)
+        if: runner.os == 'macOS'
+        shell: /bin/bash {0}
+        run: |
+          sw_vers | head -3
+          echo "=== security help import"; security help import 2>&1 | head -40 || true
+          echo "=== makes on this runner"
+          for t in make gmake bmake; do printf '%s: ' "$t"; command -v "$t" || echo none; done
+          make --version 2>&1 | head -1
+          echo "=== stock make install-man (expect the refusal)"
+          T=$(mktemp -d); make install-man MANDIR="$T/stage/man8" 2>&1 | tail -3; echo "stock make exit=${PIPESTATUS[0]}"
+          echo "=== brew install bmake make"
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install bmake make 2>&1 | tail -3
+          for mk in bmake gmake; do
+            T=$(mktemp -d)
+            echo "=== $mk install-man (staged, parent missing)"
+            $mk install-man MANDIR="$T/stage/man8" > "$T/out" 2>&1; echo "$mk exit=$?"; tail -3 "$T/out"
+            (cd "$T" && find stage -type f | sort)
+            echo "--- man renders?"
+            MANPATH="$T/stage" man -w halite-sls 2>&1 | head -2
+            MANPATH="$T/stage" man 5 halite-sls 2>&1 | col -b | head -4
+          done
+          echo "=== the repo's install tests with bmake and gmake on PATH"
+          CGO_ENABLED=0 go test -count=1 -v -run 'TestInstallManStages|TestInstallOnDarwin' ./internal/buildpolicy 2>&1 | grep -E "^(---|\s+---|ok|FAIL)" | head -20
+
       - name: test (make)
         if: runner.os == 'Linux'
         run: make test
