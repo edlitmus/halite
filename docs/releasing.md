@@ -186,8 +186,8 @@ changelog with no `## <version> — <date>` heading or with entries still under
 `## Unreleased`, and on any other commit it skips and says so. Then push that one tag:
 
 ```sh
-git tag -a v0.1.0 -m 'halite 0.1.0'
-git push origin v0.1.0
+git tag -a <tag> -m 'halite <version>'
+git push origin <tag>
 ```
 
 Push the tag by name, not with `git push --tags`, which pushes every
@@ -202,7 +202,7 @@ find the run and wait for all five jobs:
 ```sh
 gh run list --repo edlitmus/halite --workflow release.yml --limit 3
 gh run watch <run id> --repo edlitmus/halite
-gh release view v0.1.0 --repo edlitmus/halite
+gh release view <tag> --repo edlitmus/halite
 ```
 
 Until `gh release view` answers, there is no release to upload to, and
@@ -255,7 +255,7 @@ export AWS_REGION=<region>        # the key's region; KMS keys are regional
 ```sh
 make release-sign
 make release-verify
-gh release upload v0.1.0 dist/SHA256SUMS.sig dist/*.tar.gz.sig dist/*.zip.sig \
+gh release upload <tag> dist/SHA256SUMS.sig dist/*.tar.gz.sig dist/*.zip.sig \
     dist/*.cdx.json.sig --repo edlitmus/halite
 ```
 
@@ -276,11 +276,11 @@ credentials, and lists every problem rather than the first.
 **5. Publish.** The release becomes public only through the gate:
 
 ```sh
-make release-publish TAG=v0.1.0
+make release-publish TAG=<tag>
 ```
 
-(The commands in this section name v0.1.0 because that is the release they
-were first written against; use the tag you pushed.)
+(In this section `<tag>` is the tag you pushed, such as `v0.1.1`, and
+`<version>` is the same without the `v`.)
 
 It refuses a release that is not a draft, downloads the draft as GitHub
 holds it into a temporary directory, and runs `relsign verify
