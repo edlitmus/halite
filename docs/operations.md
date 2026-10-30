@@ -1424,7 +1424,8 @@ bridge and nothing more — its own key is still a local PEM file, read
 from `HALITE_EXT_SIGNER_KEY_FILE` because this process is started
 directly by `--sign-extension` rather than loaded from the fleet's
 signed `_ext/` cache, so there is no `ext_pillar`-shaped configuration
-block to carry the path in. Reading it does not deliver the property
+block to carry the path in. It refuses a key file that any other account
+can read (`chmod 600` it), as the node does for its own secrets. Reading it does not deliver the property
 signing exists for; it demonstrates that the protocol does, and a
 signer actually backed by a hardware token or a KMS is the same two
 functions — `sign` a digest, report `public_key` — against a different

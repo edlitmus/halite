@@ -35162,6 +35162,39 @@ runner images carry it was not checked, so CI probably does not hold this; a
 run by a person with `tofu` does. A full `make lab-plan` with the new condition was not run. The lab's other
 two Info items (host-key trust on first use, the predictable `/tmp` tarball
 path) are untouched.
+### 5.486 The local signer read its key file whatever its mode
+
+Issue 321, section 5, the half 5.412 left: "the local signer reads its key
+file with no mode check". 5.412 called what to refuse "a policy choice for the
+owner"; the owner has chosen the node's own rule for a signing secret
+(`config.ReadSecretFile`): refuse a file any group or world bit lets another
+account read, on unix, and the file's access list on Windows, through the same
+`fileperm.Others`, with the same message saying what to run.
+
+**The change.** `loadKey` in `halite-ext-signer-local` stats the file with
+`fileperm.Others` before it reads it, and refuses with `<path> can be read by
+mode 644; <advice>`. Version 1.0.2, since a key it used to load it now refuses;
+the record is updated. `internal/extsigner`'s end-to-end test, which builds and
+runs the real binary with a `0600` key, still passes.
+
+**Demonstrated.** `TestLoadKeyRefusesAKeyOthersCanRead` loads a key at seven
+modes: `0600` and `0400` load; `0640`, `0604`, `0644`, `0660` and `0666` are
+refused, naming the file and the mode. With the refusal disabled the five
+refusal cases fail and the two accepting ones pass. That test is unix only.
+**Windows ran it unplanned:** the first CI run failed on Windows because two
+existing tests wrote their key with `os.WriteFile`, which inherits
+`BUILTIN\Users` from the temporary directory, and the access-list check
+refused it (`can be read by BUILTIN\Users; icacls ... /inheritance:r /g ...`).
+So the Windows branch refuses what it should; on Windows a key must be created
+private (`fileperm.WriteFile`, or the `icacls` line the message prints), and
+the two tests now do that.
+
+**Not done.** A key owned by another account is not refused (nothing else in the
+tree refuses it); the stat and the read are two calls, so a file made readable
+between them is not caught; and the lab's other two Info items remain.
+`make check` was not run on this branch.
+
+
 
 ## 6. Everything else not started
 
