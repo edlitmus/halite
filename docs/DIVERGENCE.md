@@ -34833,6 +34833,20 @@ workflow, not seen. The first real tag will be the test. The issue's other
 suggestion, templating the `v0.1.0` in releasing.md's commands, is not done;
 the file already tells the reader to use their own tag.
 
+#### The `v0.1.0` in releasing.md's commands is now `<tag>`
+
+The step commands (tag, push, `gh release view`, `gh release upload`,
+`make release-publish`) named `v0.1.0` and carried a note saying to use
+your own tag, so copying one verbatim operated on a release that already
+exists. They now say `<tag>`, as the file already did for `<run id>`, and
+the note says what `<tag>` and `<version>` are. The verification examples
+near the top still name `v0.1.0` on purpose: they check a specific release
+and the archive names beside them are that release's.
+
+**Not verified:** this is prose. `internal/docsaudit` is the only check on
+it, and it does not look for a stray tag in a command, so a later edit
+could put one back.
+
 ### 5.480 Of 18 v0.1.1 archives, one had been checked
 
 Issue 307. 5.278's release run checked `gh attestation verify` on one
