@@ -35001,6 +35001,96 @@ is private to its unit (`PrivateTmp=yes`), so a file a job writes there is not
 visible from a shell on the host, which cost a few minutes here and is not a
 defect.
 
+### 5.483 Issue 321, section 5: every bullet, and what became of it
+
+The audit's section 5 (Low and Info) has 60 bullets with no identifiers, so
+a check by finding number could not cover it. This is the bullet-by-bullet
+pass, on `main` at `4d1370db`.
+
+**How it was made, and how far to trust it.** Each bullet was matched to the
+ledger section that quotes it or names its subject, and read for whether that
+section says it fixed it. The three bullets whose answer is in code rather
+than prose were also read there (below). **No fix was re-run in this pass**: a
+"fixed" here means the cited section says so and says how it was broken on
+purpose, not that it was seen failing again today.
+
+| Bullet (audit wording, shortened) | Status | Where |
+|---|---|---|
+| websocket `writeFrame` interleaves | fixed | 5.406 |
+| TOTP codes replayable | fixed | 5.388 |
+| OIDC redirects and discovery | fixed | 5.419, 5.433, 5.473, 5.474 |
+| API listener's curves in FIPS mode | fixed | 5.390 |
+| `hubError` relays hub text | fixed | 5.435, 5.441 |
+| `readJSON` accepts trailing text | fixed | 5.389 |
+| `keys operator create --admin` policy unreadable | fixed | 5.434 |
+| leaks: `eventbus.Wait`, `Cache.locks`, `certreload` | fixed | 5.432, 5.431, 5.444 |
+| attacker-controlled strings in logs | fixed | 5.433, 5.408 |
+| `job.ID.Valid` accepts a sign | fixed | 5.422 |
+| LDAP case folding; filter operators in a name | decided (as Salt); fixed | 5.449; 5.420 |
+| policy `stringList` drops items; principal glob | fixed | 5.387, 5.465 |
+| `cmd.*` unparseable timeout runs unbounded | fixed | 5.371 |
+| `check_cmd` temporary file mode | fixed | 5.372 |
+| archive entries read whole; no total limit | fixed | 5.438, 5.454 |
+| `maxProviderOutput` bounds nothing | fixed | 5.437, 5.450 |
+| `file.recurse` joins listed paths unchecked | fixed | 5.386, 5.469 |
+| `file.rename force` deletes first | fixed | 5.377 |
+| enrollment token only on argv | fixed | 5.439 |
+| `ssh_auth.present` newline injects a key | fixed | 5.373 |
+| `git.latest` no `--` | fixed | 5.414, 5.470 |
+| `file.touch` does not touch | fixed | 5.405 |
+| `openssl.pkcs12_export` mode window | fixed | 5.385 |
+| `ps` user filter, names over 8 | fixed | 5.376 |
+| `ps.pkill` guards | PID 1 and self fixed; sshd decided | 5.436, 5.451 |
+| `pkg.installed` reports Changed | fixed | 5.440 |
+| multi-arch apt and dpkg keys | fixed | 5.417, 5.464 |
+| `sysrc` any failure is "unset" | fixed | 5.375 |
+| `.` in a jail's name | fixed (the audit's memory was wrong) | 5.452 |
+| `swap.on` through a symlink | fixed | 5.418 |
+| `dnf_module` on dnf5 says "no streams" | fixed; the GPG-key prompt sentence is **not addressed** | 5.447 |
+| `snap.installed` channel compare | fixed | 5.443 |
+| `ufwChanged` and the IPv6 twin | fixed | 5.416 |
+| `atomicfile.Write`: symlink, mode | fixed | 5.446, 5.453, 5.471 |
+| `atomicfile.Write`: SELinux label, xattrs, ACLs | **open** | 5.471 |
+| `mac_keychain` PKCS#12 password on argv | **open**: `security import -P` is the only way the tool takes it; unchanged | code, `mac_keychain.go` |
+| `shutdown` message starting with `-` | fixed | 5.415 |
+| Info: `authselect`, `status.uptime`, `lvresize` | fixed | 5.448, 5.404, 5.430 |
+| `cidr_subnets` wrong for IPv6 | fixed | 5.312 |
+| `yaml_squote` multi-line | fixed | 5.374 |
+| `value.DecodeJSON` no depth limit | fixed | 5.312 |
+| SigV4 canonical URI | fixed | 5.401 |
+| redaction gaps | fixed | 5.407, 5.408, 5.462 |
+| aws-secrets: node-supplied name; cache; `node_grain_allow` | name fixed; cache and default allow-all **decided, documented** | 5.409, 5.324 |
+| `migrate/skeleton.go` unescaped names | fixed | 5.413 |
+| gitfs: no `--` in `clone --mirror` / `verify-commit` | fixed in code (`git.go` passes `--`); no ledger section names it | code |
+| `template.DirLoader` symlinks | fixed | 5.410 |
+| signer: digest length | fixed | 5.412 |
+| signer: local key file read with no mode check | **open** ("Not done") | 5.412 |
+| merge at depth > 100; `__replace__` | fixed | 5.442, 5.468 |
+| `range()`, `permutations`, `combinations` | fixed | 5.445, 5.460 |
+| `order.go` O(n²); self-requisites dropped | fixed | 5.411, 5.461 |
+| CI downloads unverified | fixed | 5.403 |
+| actions pinned by tag | fixed | 5.421 |
+| provenance guidance loose | fixed | 5.425 |
+| lab SSH CIDR rejects only `0.0.0.0/0` | **open**: `variables.tf` still tests that one string | code |
+| lab host-key trust, predictable `/tmp/$GO_TARBALL` | **open**, Info: both on a root-only throwaway VM | code |
+| `ProtectKernelModules` in the node unit | fixed (it was not a defect) | 5.427 |
+| buildpolicy checks that pass on the defect | fixed | 5.426 |
+| `disttar` packages untracked files | fixed | 5.457, 5.466, 5.459 |
+| `vuln` unpinned; Docker bases by tag | fixed | 5.358, 5.463 |
+| `cancel-in-progress` on `main` | fixed | 5.423 |
+
+**What is left, from this table:** the SELinux label and other extended
+attributes on a renamed-in config file (needs a host running SELinux
+enforcing); `mac_keychain`'s password on argv; the local signer's key-file
+mode; the lab's CIDR check and its two Info items; the dnf5 key prompt, never
+looked at; and the two decisions (aws-secrets, LDAP) that are the owner's to
+reopen. Nothing here was changed by this section.
+
+**Not verified.** Matching a bullet to a section was by reading titles and
+text; a bullet could be covered by a section that does not name it, or named
+by one that fixed something nearby. The three code checks were of the current
+tree and read, not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
