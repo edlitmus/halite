@@ -35091,6 +35091,48 @@ text; a bullet could be covered by a section that does not name it, or named
 by one that fixed something nearby. The three code checks were of the current
 tree and read, not run.
 
+### 5.484 A rewritten config file lost its SELinux context
+
+Issue 321, section 5: "`atomicfile.Write` ... mode, owner and SELinux label
+are replaced by constants." 5.446 and 5.471 took the symlink, mode and owner
+halves and left the label, because no machine here ran SELinux enforcing.
+The lab's `rocky9` row does (Rocky Linux 9.8, kernel 5.14.0-687.54.1,
+`Enforcing`, targeted policy), and it shows the defect and the fix.
+
+**Measured, before the change.** `/etc/hosts` was `net_conf_t`, which is what
+`matchpathcon` expects of it. An in-place `echo >>` left it so. `halite-node
+call dnsutil.hosts_append ip_addr=192.0.2.1 entries=selinux-probe` rewrote it
+as `unconfined_u:object_r:etc_t:s0`, and `restorecon -n -v` reported that it
+would relabel it to `net_conf_t`. No AVC denial was logged, so the defect is
+the wrong label, not a refusal. So the 5.471 guess ("`net_conf_t` for it,
+`etc_t` for `/etc`, if the reference policy's contexts are as remembered")
+was right, and is now checked.
+
+**The change.** `writeAtomic` copies the replaced file's `security.selinux`
+attribute onto the temporary file before the rename
+(`keepSELinuxLabel`, standard library `syscall`, no new dependency). It copies
+rather than relabelling by policy, so a context an administrator set on
+purpose survives, as it did when Salt wrote in place. No attribute, an
+unsupported filesystem, and a refusal to set it (what a confined process gets)
+are not errors.
+
+**Demonstrated.** `TestLiveWriteConfigFileKeepsSELinuxContext` sets
+`net_conf_t` on a file under `/etc`, rewrites it through `writeConfigFile`
+and compares the context: it passes with the change, and with the call removed
+it fails with `"unconfined_u:object_r:etc_t:s0", was
+"unconfined_u:object_r:net_conf_t:s0"`. The unit test
+`TestWriteAtomicKeepsAnExtendedAttribute` does the same with a `user.`
+attribute on any Linux machine and fails when the call is removed. The live
+test skips with its reason without SELinux or root; the Linux fleet leg runs
+all `TestLive*`, so it skips there.
+
+**Not verified.** Other extended attributes and ACLs are still not carried.
+A write by a process confined to a different domain was not run (the node
+runs unconfined). Only `writeAtomic`'s existing-file path was exercised; the
+many callers were not each run, though they share it. `make check` was not
+run on this branch. The lab was destroyed afterwards (Vultr listed 0
+instances).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
