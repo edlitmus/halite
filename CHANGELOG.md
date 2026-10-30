@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Config files keep their SELinux context when halite rewrites them
+
+On an SELinux host, the modules that rewrite a system file (hosts, hostname,
+sysctl, fstab, locale.gen, modprobe, the package-repository files) gave the
+new file the context the directory's policy gives a new file, so `/etc/hosts`
+went from `net_conf_t` to `etc_t` until something ran `restorecon`. The new
+file now carries the old one's context. Other extended attributes and ACLs are
+still not carried over.
+
 ### `make install-man` makes a `MANDIR` that does not exist yet
 
 `make install-man MANDIR=/tmp/stage/man8` printed "cannot write" and exited 0

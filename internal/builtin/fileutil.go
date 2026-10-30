@@ -54,7 +54,7 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		if err := keepOwnership(tmp, was); err != nil && !errors.Is(err, fs.ErrPermission) {
 			return err
 		}
-		return nil
+		return keepSELinuxLabel(tmp, path)
 	})
 }
 
