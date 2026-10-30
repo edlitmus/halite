@@ -4933,6 +4933,26 @@ system one, so nothing has watched a certificate go in or out.
 `evidence.go` records the module `assumed`, and `make release-gate` is
 red on it.
 
+#### `security import` has no way to hide the passphrase, read from the tool (issue 321)
+
+Issue 321, section 5: "`mac_keychain.go` pass the PKCS#12 password on argv;
+documented but visible in `ps`." 5.45 recorded that `-P` is the only form and
+that there is no standard-input path; this is the tool saying so. `security
+help import` on GitHub's `macos-15` runner (macOS 15.8.2, build 24H232), from a
+throwaway pull request closed unmerged:
+
+    Usage: import inputfile [-k keychain] [-t type] [-f format] [-w] [-P passphrase] [options...]
+        -P  Specify wrapping passphrase immediately (default is secure passphrase via GUI)
+     Use of the -P option is insecure
+
+So the alternatives to an argument are a GUI prompt, which a root job on a
+server cannot answer, and none. The audit's bullet stays as it is: **decided,
+not changeable from here**, the module's doc comment and 5.45 say the exposure
+is `security`'s. **Not verified:** other macOS versions' help text; whether
+`openssl pkcs12 -passin pass:...` (the `friendly_name` half of 5.45) has an
+alternative the module could use, such as `-passin file:` or `fd:`, which was
+not looked at and which `openssl` does offer.
+
 ### 5.46 `mac_assistive`: `TCC.db`, and the schema Salt's module missed
 
 SPEC 15.3's eighth macOS module, the one that finishes the row, and
@@ -35021,6 +35041,26 @@ without a BSD make, ran its Darwin, FreeBSD and Linux cases and passed.
 skips, and no `bmake` or `gmake` was added there); a `makewhatis`/`mandb` index
 rebuild after the install; a `bmake` newer than 2020. Issue 309 stays open for
 those.
+
+#### `make install-man` on macOS (issue 309)
+
+GitHub's `macos-15` runner (macOS 15.8.2), from a throwaway pull request closed
+unmerged. Stock `/usr/bin/make` (GNU Make 3.81) refused `install-man` with the
+Makefile's own message (`It is probably GNU make older than 4.0 ... Use bmake, or
+GNU make 4.0 or later (Homebrew: 'brew install make', then 'gmake')`, exit 2).
+After `brew install bmake make`, both `bmake install-man MANDIR=<tmp>/stage/man8`
+and `gmake install-man MANDIR=<tmp>/stage/man8` exited 0 with `<tmp>/stage`
+missing and installed all six pages under `man5`, `man7` and `man8`; `MANPATH=<tmp>/stage
+man 5 halite-sls` rendered the page with macOS's `man`. With both on the PATH,
+`TestInstallManStagesIntoADirectoryThatDoesNotExistYet` passed its `bmake` and
+`gmake` subtests and skipped `make` (3.81, by design), and
+`TestInstallOnDarwinInstallsNoSystemdUnits` passed its three cases.
+
+**Not verified.** Run as the runner's user into a temporary directory, not as
+root into `/usr/local/share/man`; the Homebrew `bmake` and `make` versions were
+not recorded; a man-index rebuild (`makewhatis` or its macOS equivalent) was not
+run, so `apropos` was not looked at. Issue 309 stays open for the root install
+into the real man tree and the index.
 
 ### 5.482 The handbook's root and fresh-host procedures, run, and what they found
 
