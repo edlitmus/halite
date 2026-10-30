@@ -26,6 +26,9 @@ import (
 // is `security`'s design, not a choice here, and it is the same shape
 // `mac_shadow.set_password` and Salt's own `keychain.install` carry. A
 // tree that cannot accept that installs the certificate out of band.
+// `friendly_name` does not share it: openssl takes its passphrase on
+// standard input (`-passin stdin`), and since DIVERGENCE 5.488 it is sent
+// there.
 //
 // **Names come from the `labl` attribute.** `security find-certificate`
 // prints each certificate's attributes as `"labl"<blob>="<name>"`, or
@@ -132,7 +135,7 @@ func registerMacKeychain(r *Registries) {
 			Sig: signature.Signature{
 				Module: "mac_keychain", Function: "friendly_name",
 				Doc: "Return the friendlyName inside a PKCS#12 file. This shells out to " +
-					"`openssl`, and the file's passphrase is in the process table while it runs.",
+					"`openssl`, giving it the file's passphrase on standard input.",
 				Params: []signature.Param{
 					req("path", signature.Path, "The .p12 or .pfx file."),
 					req("password", signature.String, "The file's passphrase, in plaintext."),
@@ -435,8 +438,22 @@ func macKeychainFriendlyName(c *exec.Context, path, password string) (any, error
 	if path == "" {
 		return nil, fmt.Errorf("mac_keychain.friendly_name needs a file")
 	}
+	// The passphrase goes in on standard input (`-passin stdin`), not as
+	// `-passin pass:<it>`: an argument is in the process table for as long as
+	// openssl runs, where every account on the machine can read it, and openssl
+	// offers four other places to take it from. (`security import`, the other
+	// function here that takes a passphrase, has no such choice: its own help
+	// says `-P` is the only non-GUI form. DIVERGENCE 5.45 and 5.488.)
+	//
+	// openssl reads the passphrase as one line, so a newline in it cannot be
+	// sent. `pass:` could carry one; this refuses it by name rather than
+	// letting openssl read a shorter passphrase and report a wrong one.
+	if strings.ContainsAny(password, "\r\n") {
+		return nil, fmt.Errorf("mac_keychain.friendly_name cannot take a passphrase with a line break: openssl reads it as one line")
+	}
 	res, err := c.Run(exec.Command{
-		Argv:           []string{"openssl", "pkcs12", "-in", path, "-passin", "pass:" + password, "-info", "-nodes", "-nokeys"},
+		Argv:           []string{"openssl", "pkcs12", "-in", path, "-passin", "stdin", "-info", "-nodes", "-nokeys"},
+		Stdin:          password + "\n",
 		IgnoreExitCode: true,
 	})
 	if err != nil {

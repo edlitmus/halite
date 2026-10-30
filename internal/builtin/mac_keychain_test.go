@@ -218,3 +218,51 @@ func TestMacKeychainDefaultKeychainReportsARealFailure(t *testing.T) {
 		t.Fatal("an unrelated failure was reported as an empty answer")
 	}
 }
+
+// friendly_name gives openssl the passphrase on standard input, never as an
+// argument (issue 321, section 5: the argument is in the process table for as
+// long as openssl runs). The test reads what the runner was handed: no
+// argument may contain the passphrase, `-passin` must name `stdin`, and the
+// passphrase must arrive as one line on standard input.
+func TestMacKeychainFriendlyNameKeepsThePassphraseOffTheCommandLine(t *testing.T) {
+	const secret = "s3cr3t-p4ss"
+	c, runner := macKeychainCtx(t, nil)
+	runner.Default = exec.Result{Stdout: "Bag Attributes\n    friendlyName: My Cert\n"}
+	got, err := macKeychainFriendlyName(c, "/tmp/id.p12", secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "My Cert" {
+		t.Errorf("friendly name = %#v, want %q", got, "My Cert")
+	}
+	if len(runner.Ran) != 1 {
+		t.Fatalf("ran %d commands, want 1: %v", len(runner.Ran), runner.RanCommands())
+	}
+	cmd := runner.Ran[0]
+	for _, a := range cmd.Argv {
+		if strings.Contains(a, secret) {
+			t.Errorf("the passphrase is in the argument vector: %q", a)
+		}
+	}
+	want := []string{"openssl", "pkcs12", "-in", "/tmp/id.p12", "-passin", "stdin", "-info", "-nodes", "-nokeys"}
+	if strings.Join(cmd.Argv, " ") != strings.Join(want, " ") {
+		t.Errorf("argv = %v, want %v", cmd.Argv, want)
+	}
+	if cmd.Stdin != secret+"\n" {
+		t.Errorf("stdin = %q, want %q", cmd.Stdin, secret+"\n")
+	}
+}
+
+// A passphrase with a line break cannot be sent as one line, and is refused
+// before openssl runs rather than read short and reported as the wrong one.
+func TestMacKeychainFriendlyNameRefusesALineBreakInThePassphrase(t *testing.T) {
+	for _, pw := range []string{"a\nb", "a\r\nb", "trailing\n"} {
+		c, runner := macKeychainCtx(t, nil)
+		if _, err := macKeychainFriendlyName(c, "/tmp/id.p12", pw); err == nil {
+			t.Errorf("passphrase %q was accepted", pw)
+		}
+		if len(runner.Ran) != 0 {
+			t.Errorf("openssl ran for passphrase %q: %v", pw, runner.RanCommands())
+		}
+	}
+}

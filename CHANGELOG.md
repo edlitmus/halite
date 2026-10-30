@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `mac_keychain.friendly_name` no longer puts the passphrase on the command line
+
+`friendly_name` ran `openssl pkcs12 -passin pass:<passphrase>`, so the PKCS#12
+file's passphrase was visible to every account on the Mac in `ps` while openssl
+ran. It now sends the passphrase on standard input. A passphrase containing a
+line break is refused by name, because openssl reads it as one line; `pass:`
+could carry one. `mac_keychain.install` still passes the passphrase as an
+argument: `security import -P` is the only form macOS's tool offers (its own
+help says "Use of the -P option is insecure").
+
 ### The local signer extension refuses a key file others can read
 
 `halite-ext-signer-local` (the reference `signer` bridge, version 1.0.2) read
