@@ -21,6 +21,17 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A glob target now means what it means in Salt
+
+`halite-hub run 'web[!1]*'` reached `web1` and skipped `web2`: the target glob used
+Go's `path.Match`, where `[!1]` is the set `!` and `1` and negation is `[^1]`, the
+reverse of Salt's fnmatch. It is now fnmatch, so `[!seq]` negates and `^` does not,
+and `*` crosses `/` in a grain value (`-G 'shell:*sh'` against `/bin/sh`). The
+policy's `target:` and a bootstrap token's node scope share the matcher and move
+with it. **Check any target or policy written with `[^...]` or `[!...]`**: neither
+was found in the production config (DIVERGENCE 5.501). Other globs still on `path.Match`
+are listed there.
+
 ### A reactor restart no longer loses the events it had accepted but not finished
 
 The reactor recorded its position as soon as it had handed a batch to its

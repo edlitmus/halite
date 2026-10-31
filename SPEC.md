@@ -571,7 +571,7 @@ arguments of jobs meant for other minions. Here, a node receives only jobs it ma
 
 | Type | Flag | Syntax | Notes |
 |---|---|---|---|
-| glob | default | `web*.prod` | Against node ID. `path.Match` semantics. |
+| glob | default | `web*.prod` | Against node ID. Salt's glob, fnmatch: `[!seq]` negates, `^` does not (DIVERGENCE 5.501). |
 | list | `-L` | `web1,web2` | Exact IDs. |
 | regex | `-E` | `^web[0-9]+$` | RE2. See section 10.4. |
 | grain | `-G` | `os_family:Debian` | Colon-delimited path, glob on the value. |
