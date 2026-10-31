@@ -419,8 +419,13 @@ func (c *RunnerContext) dispatch(sub Submission) (*job.Job, error) {
 // dispatching on the strength of the outer grant alone would turn the
 // narrower permission into the wider one.
 func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) {
-	decision := s.Policy.Authorize(
-		policyRequestFor(principal, sub.Fun, sub.Target, sub.TargetKind, sub.Arg, sub.Kwarg, false))
+	// The dry-run flag is part of the question: it is a keyword on the wire,
+	// and a role that requires `test: true` is answered on it (DIVERGENCE
+	// 5.493). An orchestration step with `test: true` reaches here as a
+	// Submission whose Test is set and whose Kwarg says nothing of it.
+	question := policyRequestFor(principal, sub.Fun, sub.Target, sub.TargetKind, sub.Arg, sub.Kwarg, false)
+	question.Test = sub.Test
+	decision := s.Policy.Authorize(question)
 	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("a job dispatched on a principal's behalf was refused by policy",

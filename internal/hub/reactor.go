@@ -53,6 +53,10 @@ type Reactor struct {
 	mu     sync.Mutex
 	// chains counts how many reactions a causality chain has caused.
 	chains map[string]*chainCount
+	// lastPrune is when chains was last swept for forgotten entries, and
+	// chainScans how many sweeps there have been, for a test.
+	lastPrune  time.Time
+	chainScans int
 
 	// Handled is called after each event is processed, for a test that
 	// needs to know the work is done. Nil in production.
@@ -297,6 +301,15 @@ func (r *Reactor) enqueue(entry ReactorEntry, e *eventbus.Event) {
 	}
 }
 
+// chainForgetAfter is how long a chain may go unseen before it is
+// forgotten, and chainPruneEvery how often the map is swept for those. A
+// chain is therefore held for between chainForgetAfter and
+// chainForgetAfter+chainPruneEvery.
+const (
+	chainForgetAfter = 10 * time.Minute
+	chainPruneEvery  = 10 * time.Second
+)
+
 // overLength reports whether a chain has caused more reactions than it
 // is allowed to. SPEC 16.3: a file that changes in a loop fires a
 // beacon that fires a reactor that changes the file.
@@ -312,9 +325,22 @@ func (r *Reactor) overLength(e *eventbus.Event) bool {
 	now := r.now()
 	// Chains are forgotten after a while, or a busy estate would
 	// accumulate one entry per job for ever.
-	for k, c := range r.chains {
-		if now.Sub(c.seen) > 10*time.Minute {
-			delete(r.chains, k)
+	//
+	// Swept every chainPruneEvery, not on every event. It was a scan of
+	// every chain held, under the lock every event takes, and an event with
+	// no chain of its own starts one, so the map held about ten minutes of
+	// events and each new one walked all of them: 74 us per event at 10,000
+	// chains, 335 us at 40,000 and 813 us at 80,000, measured, where SPEC 30's
+	// 5,000 events a second leaves 200. The reactor fell behind its
+	// own stated throughput within seconds and kept falling. DIVERGENCE
+	// 5.494.
+	if r.lastPrune.IsZero() || now.Sub(r.lastPrune) >= chainPruneEvery {
+		r.lastPrune = now
+		r.chainScans++
+		for k, c := range r.chains {
+			if now.Sub(c.seen) > chainForgetAfter {
+				delete(r.chains, k)
+			}
 		}
 	}
 	c, ok := r.chains[chain]
