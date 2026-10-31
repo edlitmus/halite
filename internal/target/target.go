@@ -14,9 +14,9 @@ package target
 import (
 	"fmt"
 	"net/netip"
-	"path"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/regexcompat"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -26,7 +26,7 @@ import (
 type Kind int
 
 const (
-	// Glob matches the node ID with path.Match semantics. The default.
+	// Glob matches the node ID with Salt's glob, fnmatch. The default.
 	Glob Kind = iota
 	// List is an exact set of node IDs, flag -L.
 	List
@@ -533,18 +533,18 @@ func ListIDs(expr string) []string {
 // cannot come to disagree about what `web*.example` means.
 func MatchGlob(pattern, nodeID string) bool { return globMatch(pattern, nodeID) }
 
-// globMatch is path.Match with a whole-string requirement, which is what
-// Salt's glob targeting does.
+// globMatch is Salt's glob, Python's fnmatch, over the whole string.
+//
+// It was path.Match, whose `[!1]` is a set of `!` and `1` and whose negation
+// is `[^1]`, the reverse of fnmatch and of a shell: `web[!1]*` reached web1 and
+// skipped web2. Its `*` also stops at `/`, which a grain value can hold
+// (`-G 'shell:*sh'` against `/bin/sh`). A node ID holds no `/`, so for IDs only
+// the brackets differ. DIVERGENCE 5.501.
 func globMatch(pattern, s string) bool {
 	if pattern == "*" {
 		return true
 	}
-	ok, err := path.Match(pattern, s)
-	if err != nil {
-		// A malformed pattern must not become a wildcard.
-		return false
-	}
-	return ok
+	return fnmatch.Match(pattern, s)
 }
 
 // compileSubnet matches an address or a CIDR against the node's address

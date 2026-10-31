@@ -30,6 +30,17 @@ same refusal. `state.orch_list` also lists a scoped caller's own runs up to its
 `limit` (looked for among the 5,000 most recent) instead of cutting everyone's runs
 first (DIVERGENCE 5.504).
 
+### A glob target now means what it means in Salt
+
+`halite-hub run 'web[!1]*'` reached `web1` and skipped `web2`: the target glob used
+Go's `path.Match`, where `[!1]` is the set `!` and `1` and negation is `[^1]`, the
+reverse of Salt's fnmatch. It is now fnmatch, so `[!seq]` negates and `^` does not,
+and `*` crosses `/` in a grain value (`-G 'shell:*sh'` against `/bin/sh`). The
+policy's `target:` and a bootstrap token's node scope share the matcher and move
+with it. **Check any target or policy written with `[^...]` or `[!...]`**: neither
+was found in the production config (DIVERGENCE 5.501). Other globs still on `path.Match`
+are listed there.
+
 ### A queued job is no longer lost on a busy hub
 
 A job queued for an offline node (`--offline queue`) was only looked for among the
