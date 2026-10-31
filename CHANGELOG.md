@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `tolerate_failures` globs mean what they mean in Salt
+
+An orchestration step's `tolerate_failures` (and `fail_minions`) matched node
+names with `path.Match`, so `['web[!1]*']` forgave `web1` alone instead of every
+web node but `web1`. They are now Salt's globs (DIVERGENCE 5.502). A step that
+relied on `[!x]` or `[^x]` here changes meaning.
+
 ### A reactor restart no longer loses the events it had accepted but not finished
 
 The reactor recorded its position as soon as it had handed a batch to its
