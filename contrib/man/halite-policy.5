@@ -57,6 +57,13 @@ A request that names none is refused.
 .It Cm deny_kwargs
 keyword arguments that may not be passed, such as
 .Ql pillar .
+.It Cm require_kwargs
+a mapping from a keyword to the one value a call must give it, such as
+.Ql "{test: true}" ,
+which holds a role to a dry run.
+A call that omits the keyword, or gives another value or another type, is refused.
+The dry-run flag counts as the keyword
+.Ql test .
 .El
 .Sh PRINCIPALS
 .Bl -tag -width "reactor:name" -compact
