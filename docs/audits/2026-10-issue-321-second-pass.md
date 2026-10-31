@@ -73,3 +73,26 @@ the `*_windows.go` and `*_other.go` files; the template filters beyond the
 differential corpus; and the parsers the first audit read but did not run
 against real tool output. The owner's decisions (aws-secrets defaults, LDAP case
 folding, `ps.pkill` and sshd, firewall lockout) were not reopened.
+
+## Round two: the rest of `internal/hub` that was not read
+
+On 2026-10-31, at `main` `7f35a3c9` and after. Read in full: `queue.go`, `inflight.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go` and `orch.go`. Same method and same limits as above: Go tests on the hub's test server with stub nodes, FreeBSD in a jail (5.505), no real node.
+
+| What | Shown how | Status |
+|---|---|---|
+| A queued job was looked for among the 200 most recent jobs, so a hub running a job every ten seconds lost it inside the queue's default hour | a failing test: 230 other jobs, then the node connects | fixed, 5.500 (#542) |
+| The target glob was `path.Match`: `run 'web[!1]*'` reached `web1` and skipped `web2`; a grain `*` stopped at `/` | measured side by side with fnmatch, then a failing test | fixed, 5.501 (#543), **a behaviour change** |
+| `tolerate_failures` used `path.Match`, so `['web[!1]*']` forgave `web1` alone | a failing test | fixed, 5.502 (#544) |
+| `jobs.list_jobs limit=N` cut the whole estate's jobs before the caller's scope, so a scoped caller saw none of its own | a failing test | fixed, 5.503 (#545) |
+| `state.orch_resume` returned a run `state.orch_show` hid (the carried-forward step comments); `orch_list` had the `limit` defect too | a failing test: alice resumed ed's run | fixed, 5.504 (#546) |
+
+**Read, not shown (round two).**
+- Other `path.Match` callers on a glob a person writes, none measured: the state allowlist (`internal/state/compile.go`), `logrotate`'s patterns, the grain-key match in `introspect.go`, `halite-node`'s environment patterns, and `halite-ext-aws-secrets`' secret patterns (5.501).
+- `inflight.wait` records one idle channel: two concurrent waiters would leave the first never woken. Only `Serve` waits today.
+- `OrchStore.List`'s comment says an unreadable record is "not silently dropped"; the code drops it silently.
+- `jobs.active`'s `limit` is documented as "recent jobs to consider" and is a window by its own words; left alone.
+- SPEC 9.5 reads "a queued job that expires produces an event"; the event is emitted only when the node connects after the expiry, so a node that never returns leaves none.
+- `mine.get` for an operator ignores a publisher's `allow_tgt` (the code says an operator has already been through the policy); a decision, not a defect found.
+- `salt.wait_for_event` listens from "latest" when the step starts, so an event emitted between the previous step and this one is missed.
+
+**Still unread in `internal/hub`:** `orchstore.go`, `metrics.go`, the anchor store internals (`anchors.go`), `events.go`, `subscribe.go`, `fleet.go`, `pillar.go`, `files.go`, `relay.go`, and the parts of `server.go`, `dispatch.go`, `runner.go`, `runners_fleet.go` and `runners_tree.go` that were not needed to follow a finding. Everything under `cmd/halite-node` and the other packages in the first pass's "not read" list is as it was.
