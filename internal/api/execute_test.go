@@ -486,3 +486,53 @@ func TestAnUnreachableHubDoesNotReachTheCallerWithItsAddress(t *testing.T) {
 		t.Errorf("the hub's address reached the caller: %s", body)
 	}
 }
+
+// A role that requires `test: true` is answered on the dry-run flag, on both
+// endpoints that submit a state run.
+//
+// The flag is a field of the request and not one of its keywords, and the API
+// asks the policy about `Kwarg` alone, so a question built without the flag
+// would refuse every dry run under `require_kwargs: {test: true}` (and, were
+// the requirement ever read from Kwarg only, allow nothing it should).
+// Both /v1/run and /v1/nodes/{id}/state build that question, in two places.
+// DIVERGENCE 5.493, issue 526.
+func TestARoleRequiringTestIsAnsweredOnTheDryRunFlag(t *testing.T) {
+	l, hub := executeLab(t, `
+roles:
+  reporter:
+    - target: '*'
+      functions: ['state.apply']
+      args:
+        'state.apply':
+          require_kwargs: {test: true}
+bindings:
+  - principal: 'local:ed'
+    roles: ['reporter']
+`)
+	out := l.login(t, "ed", "hunter2")
+
+	for _, tc := range []struct {
+		name, path, body string
+		want             int
+	}{
+		{"run with the flag", PathRun, `{"tgt":"web1","fun":"state.apply","test":true}`, http.StatusOK},
+		{"run with the keyword", PathRun, `{"tgt":"web1","fun":"state.apply","kwarg":{"test":true}}`, http.StatusOK},
+		{"run without it", PathRun, `{"tgt":"web1","fun":"state.apply"}`, http.StatusForbidden},
+		{"run with the keyword as a string", PathRun, `{"tgt":"web1","fun":"state.apply","kwarg":{"test":"true"}}`, http.StatusForbidden},
+		{"node state with the flag", "/v1/nodes/web1.example/state", `{"sls":["web"],"test":true}`, http.StatusOK},
+		{"node state without it", "/v1/nodes/web1.example/state", `{"sls":["web"]}`, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, body := l.post(t, tc.path, tc.body, out.Token)
+			if res.StatusCode != tc.want {
+				t.Fatalf("answered %d, want %d: %s", res.StatusCode, tc.want, body)
+			}
+			if tc.want == http.StatusForbidden && !strings.Contains(body, "requires test=true") {
+				t.Errorf("the refusal should say what was required: %s", body)
+			}
+			if tc.want == http.StatusOK && !hub.submitted.Test && hub.submitted.Kwarg["test"] != true {
+				t.Errorf("an allowed dry run reached the hub without being one: %+v", hub.submitted)
+			}
+		})
+	}
+}

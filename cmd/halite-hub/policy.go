@@ -93,6 +93,9 @@ func runPolicy(args *cli.Args) int {
 				for fn, a := range r.Args {
 					fmt.Printf("     %s: allow_sls=%v deny_sls=%v allow_mods=%v deny_kwargs=%v\n",
 						fn, a.AllowSLS, a.DenySLS, a.AllowMods, a.DenyKwargs)
+					if len(a.RequireKwargs) > 0 {
+						fmt.Printf("     %s: require_kwargs=%v\n", fn, a.RequireKwargs)
+					}
 				}
 			}
 		}
@@ -130,6 +133,7 @@ func runPolicy(args *cli.Args) int {
 			Fun:        args.Positional[3],
 			Arg:        args.Positional[4:],
 			Kwarg:      kwargs,
+			Test:       args.Bool("test", false),
 			Runner:     args.Bool("runner", false),
 		}
 		decision := loaded.Authorize(req)

@@ -63,9 +63,15 @@ func requestFor(fun, target string, arg []string, kwarg map[string]any, runner b
 // that authorized the first and forwarded the second let a `web*.prod`
 // role reach db1.prod. Taking the kind as a required argument, rather
 // than a field someone may forget to set, is the point. DIVERGENCE 5.296.
-func jobRequestFor(fun, target, kind string, arg []string, kwarg map[string]any) policy.Request {
+//
+// test is the request's dry-run flag, which travels beside the keywords and
+// is a keyword on the wire; a role that requires `test: true` is answered on
+// it, and a caller that left it out would have every dry run refused.
+// DIVERGENCE 5.493.
+func jobRequestFor(fun, target, kind string, arg []string, kwarg map[string]any, test bool) policy.Request {
 	req := requestFor(fun, target, arg, kwarg, false)
 	req.TargetKind = kind
+	req.Test = test
 	return req
 }
 

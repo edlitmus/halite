@@ -233,7 +233,15 @@ A rule can restrict how a function is called:
 | `allow_sls: [webserver.*]` | `state.apply` may name only these SLS files (patterns). A request naming none runs the highstate and is refused, as is `state.highstate`. |
 | `deny_sls: [...]` | ...or must not name these. |
 | `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. Each name is checked, positional or the `sls` keyword, and each name of a comma list on its own. |
-| `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name. |
+| `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name (patterns). |
+| `require_kwargs: {test: true}` | The call must carry each keyword with exactly this value, or it is refused. A bool, a string or a number; the name is exact, not a pattern; the type must match, so the string `"true"` is not `true`. |
+
+`require_kwargs: {test: true}` is how a role is held to a rehearsal. The dry-run
+flag (`run --test`, `"test": true` in the API) is a keyword on the wire, and
+both limits judge the keywords the node will receive, so `test` counts whether
+it was given as the flag or as `test=true`. A call that omits the keyword is
+refused, not assumed to be fine. `halite-hub policy test` takes `--test` for
+this: `policy test cert:CN=reporter web1 state.apply --test`.
 
 `deny_kwargs: ['pillar']` matters more than it looks. Pillar can be passed
 on the command line, which is otherwise a trivial way around any
