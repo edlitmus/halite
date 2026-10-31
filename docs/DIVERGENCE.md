@@ -35707,6 +35707,21 @@ Issue 321, the second audit pass (`internal/hub/runners_orch.go`).
 
 **Not verified.** That resuming under the caller's authority is the right rule when the caller *can* see the run (it is what the code did; steps are authorized as the resumer); a real orchestration over a real hub; `make check`. Found and not changed: `OrchStore.List`'s comment says an unreadable record is "not silently dropped" and the code drops it silently (`continue`).
 
+### 5.505 The second round of hub fixes, run on FreeBSD in a jail
+
+Issue 321, the second audit pass. 5.500 to 5.504 each list FreeBSD as not run.
+
+**Run** on 2026-10-31 in a fresh thin Bastille jail on `beastie` (FreeBSD 15.1-RELEASE-p6, amd64, a `lo0` address, root): `internal/hub` and `internal/target` as test binaries cross-compiled here (`GOOS=freebsd CGO_ENABLED=0 go test -c`) at `main` `d9022f91`, shipped into a jail with no network and no Go.
+
+| Set | Pass | Fail |
+|---|---|---|
+| `internal/target`, all | 34 | 0 (one skip: `TestCompoundStackHelper`, a child process that runs only when another test starts it) |
+| `internal/hub`, `-run 'TestAQueuedJob|TestTheQueueIndex|TestToleratedFailures|TestAScopedCaller|TestARunnerShowsOnly|Orch|Queue|Offline|Runner'` | 37 | 0 |
+
+Passing there: `TestAGlobTargetIsSaltsGlob` and `TestAGrainGlobCrossesASlash` (5.501), `TestToleratedFailuresUseSaltsGlob` (5.502), `TestAQueuedJobIsDeliveredAfterManyOtherJobs` and `TestTheQueueIndexIsSeededFromTheWholeCache` (5.500), `TestAScopedCallerIsListedTheJobsItCanSeeUpToTheLimit` (5.503), `TestAScopedCallerCannotResumeARunItCannotSee` and `TestAScopedCallerIsListedItsOwnRunsUpToTheLimit` (5.504).
+
+**What this does and does not show.** As in 5.499: a jail shares the host's kernel, so this is the Go code under FreeBSD's runtime, loopback and filesystem; the nodes are stubs on the hub's test server and no `halite-node` ran on FreeBSD. The glob result is the one that matters most there, since FreeBSD hosts carry most of the fleet and 5.501 changes what a target means. **Not run:** the whole `internal/hub` suite there, `-race` (no cgo in the cross-build), a real node, and `make check`. The jail was destroyed afterwards; `radarr` and `zabbix` were not touched.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
