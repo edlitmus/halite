@@ -70,7 +70,7 @@ func registerReactorRunner(r *Runners) {
 							continue
 						}
 						for _, reaction := range parsed {
-							reactions = append(reactions, plannedReaction(c, entry, reaction))
+							reactions = append(reactions, plannedReaction(c, entry, reaction, event.Node))
 						}
 					}
 				}
@@ -89,7 +89,7 @@ func registerReactorRunner(r *Runners) {
 // are different questions, and a reaction that renders perfectly and is
 // refused at three in the morning is the one an operator wants to find
 // out about now. SPEC 18.3.
-func plannedReaction(c *RunnerContext, entry ReactorEntry, r Reaction) *value.Map {
+func plannedReaction(c *RunnerContext, entry ReactorEntry, r Reaction, node string) *value.Map {
 	out := value.NewMap(8)
 	out.Set("id", r.ID)
 	out.Set("sls", r.SLS)
@@ -110,7 +110,7 @@ func plannedReaction(c *RunnerContext, entry ReactorEntry, r Reaction) *value.Ma
 		}
 		out.Set("kwarg", kw)
 	}
-	out.Set("authorized", c.Server.wouldAuthorize(entry, r))
+	out.Set("authorized", c.Server.wouldAuthorize(entry, r, node))
 	return out
 }
 
@@ -124,14 +124,23 @@ func reactionError(entry ReactorEntry, file string, err error) *value.Map {
 
 // wouldAuthorize asks the policy what it would decide, without running
 // anything.
-func (s *Server) wouldAuthorize(entry ReactorEntry, r Reaction) string {
+//
+// node is the node the event came from. A caller reaction runs there and is
+// authorized by that node's name, so that is the question asked; the plan used
+// to ask about a placeholder no node-scoped rule matches, and said "denied"
+// about a reaction the reactor then dispatched. With no node given the plan
+// cannot answer and says so. DIVERGENCE 5.498.
+func (s *Server) wouldAuthorize(entry ReactorEntry, r Reaction, node string) string {
 	var decision string
 	switch r.Kind {
 	case ReactRunner, ReactWheel:
 		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, "", "", r.Arg, r.Kwarg, true))
 		decision = d.String()
 	case ReactCaller:
-		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, "<the node that fired the event>", "L", r.Arg, r.Kwarg, false))
+		if node == "" {
+			return "not known: a caller reaction runs on the node that fired the event; give reactor.test a `node`"
+		}
+		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, node, "L", r.Arg, r.Kwarg, false))
 		decision = d.String()
 	default:
 		d := s.Policy.Authorize(policyRequestFor(entry.Principal, r.Fun, r.Target, r.TargetKind, r.Arg, r.Kwarg, false))
