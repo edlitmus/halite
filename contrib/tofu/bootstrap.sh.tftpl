@@ -130,6 +130,14 @@ fact packages_missing "$(echo "$missing" | sed 's/^ //')"
 GO_TARBALL="go${go_version}.linux-amd64.tar.gz"
 GO_URL="https://go.dev/dl/$GO_TARBALL"
 
+# A private directory, not /tmp/$GO_TARBALL. The name is predictable and /tmp
+# is shared, so another account on the machine could plant a symlink there
+# before the fetch: `curl -o` and `fetch -o` follow it, and root would
+# overwrite whatever it pointed at (reproduced with curl and a file:// URL).
+# The same account could also swap the tarball between the checksum below and
+# the `tar` that unpacks it. mktemp -d is 0700 and owned by root.
+GO_TMP="$(mktemp -d)" || { echo "mktemp -d failed" >&2; fact go no_tempdir; exit 1; }
+
 # curl or wget, whichever this image shipped. `curl` is in the package
 # list, but the list is installed best-effort by design, and a row whose
 # package name turns out to be wrong should still be able to fetch a
@@ -137,10 +145,10 @@ GO_URL="https://go.dev/dl/$GO_TARBALL"
 echo "--- fetching $GO_URL"
 if command -v curl >/dev/null 2>&1; then
     fetch_ok=0
-    curl -fsSL -o "/tmp/$GO_TARBALL" "$GO_URL" && fetch_ok=1
+    curl -fsSL -o "$GO_TMP/$GO_TARBALL" "$GO_URL" && fetch_ok=1
 elif command -v wget >/dev/null 2>&1; then
     fetch_ok=0
-    wget -q -O "/tmp/$GO_TARBALL" "$GO_URL" && fetch_ok=1
+    wget -q -O "$GO_TMP/$GO_TARBALL" "$GO_URL" && fetch_ok=1
 else
     echo "neither curl nor wget is on this image" >&2
     fact go no_fetcher
@@ -157,7 +165,7 @@ fi
 # boot: no ready file is written, and `make lab-test` skips the host by
 # name rather than testing whatever arrived.
 echo "--- verifying $GO_TARBALL"
-got="$(sha256sum "/tmp/$GO_TARBALL" | cut -d' ' -f1)"
+got="$(sha256sum "$GO_TMP/$GO_TARBALL" | cut -d' ' -f1)"
 if [ "$got" != "${go_sha256}" ]; then
     echo "checksum mismatch for $GO_TARBALL" >&2
     echo "  expected ${go_sha256}" >&2
@@ -169,8 +177,8 @@ fi
 fact go_sha256_verified "${go_sha256}"
 
 rm -rf /usr/local/go
-tar -C /usr/local -xzf "/tmp/$GO_TARBALL"
-rm -f "/tmp/$GO_TARBALL"
+tar -C /usr/local -xzf "$GO_TMP/$GO_TARBALL"
+rm -rf "$GO_TMP"
 
 # On the login shell and on every non-interactive ssh command, which are
 # not the same path: ssh with a command does not read /etc/profile.
