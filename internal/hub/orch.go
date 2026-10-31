@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/runner"
@@ -521,13 +521,14 @@ func excludeTolerated(nodes, tolerate []string) []string {
 	return out
 }
 
-// toleratesNode matches a node against the globs a step was given.
+// toleratesNode matches a node against the globs a step was given, which are
+// Salt's globs: fnmatch, as `fail_minions` takes them. They were path.Match,
+// whose `[!1]` is the set `!` and `1`: `tolerate_failures: ['web[!1]*']`, meant
+// to forgive every web node but the canary, forgave only the canary and
+// failed the step for the rest. DIVERGENCE 5.502.
 func toleratesNode(patterns []string, id string) bool {
 	for _, p := range patterns {
-		if p == id {
-			return true
-		}
-		if ok, err := path.Match(p, id); err == nil && ok {
+		if p == id || fnmatch.Match(p, id) {
 			return true
 		}
 	}

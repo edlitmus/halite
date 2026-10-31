@@ -28,6 +28,13 @@ so an operator limited to a few nodes could be shown none of its own jobs on a b
 hub. A scoped caller is now looked for among the 5,000 most recent jobs and given up
 to `limit` of the ones it may see; a job older than that is not found (DIVERGENCE 5.503).
 
+### `tolerate_failures` globs mean what they mean in Salt
+
+An orchestration step's `tolerate_failures` (and `fail_minions`) matched node
+names with `path.Match`, so `['web[!1]*']` forgave `web1` alone instead of every
+web node but `web1`. They are now Salt's globs (DIVERGENCE 5.502). A step that
+relied on `[!x]` or `[^x]` here changes meaning.
+
 ### A glob target now means what it means in Salt
 
 `halite-hub run 'web[!1]*'` reached `web1` and skipped `web2`: the target glob used
