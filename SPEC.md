@@ -1708,7 +1708,10 @@ The hub's bus is a durable append-only log rather than Salt's in-memory ZeroMQ I
   or a specific offset. A subscriber that falls behind is disconnected with an explicit
   `subscriber_lag` error rather than causing the bus to buffer without bound.
 - Replay from an offset is supported, which makes a reactor restart lossless and makes incident
-  reconstruction possible. Salt's event bus is lossy by construction, and every mature Salt estate
+  reconstruction possible. The reactor records the position before its oldest unfinished event, not
+  the end of what it has read, so an event still debouncing, queued or mid-reaction when it stops is
+  read again at the next start: restart is **at least once**, and the events that finished after that
+  one are repeated (DIVERGENCE 5.495). Salt's event bus is lossy by construction, and every mature Salt estate
   has learned this during an incident.
 
 ### 17.3 Node bus

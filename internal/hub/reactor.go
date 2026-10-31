@@ -53,6 +53,12 @@ type Reactor struct {
 	// chainScans how many sweeps there have been, for a test.
 	lastPrune  time.Time
 	chainScans int
+	// acks holds the position of the oldest event still being worked on,
+	// which is what the offset file records: see ackTracker.
+	acks ackTracker
+	// written is the last position put in the offset file, so an
+	// unchanged one is not written again.
+	written string
 
 	// Handled is called after each event is processed, for a test that
 	// needs to know the work is done. Nil in production.
@@ -136,9 +142,12 @@ func (r *Reactor) Run(ctx context.Context) error {
 	r.Server.Metrics.GaugeFunc("halite_reactor_queue_depth",
 		"Events waiting in the reactor's worker queues.", r.queuedEvents)
 
-	from := r.readOffset()
 	tags := ReactorTags(r.Entries)
 	bus := r.Server.Events
+	// A concrete position, not "earliest" or "latest": the position before
+	// the first event read is what the offset file may have to record, and
+	// a symbolic one would resume somewhere else after a restart.
+	from := r.concrete(r.readOffset())
 	for {
 		wake := bus.Wait()
 		events, next, err := bus.Read(from, tags, 500)
@@ -171,7 +180,11 @@ func (r *Reactor) Run(ctx context.Context) error {
 					"offset": lag.From, "segments_pruned": int64(lag.Segments),
 					"resuming_from": lag.Oldest,
 				})
-				from = lag.Oldest
+				// Everything held was behind the resumed position, which
+				// the reactor can no longer read from.
+				r.acks.reset()
+				from = r.concrete(lag.Oldest)
+				r.written = from
 				r.writeOffset(from)
 				continue
 			}
@@ -180,16 +193,26 @@ func (r *Reactor) Run(ctx context.Context) error {
 			// alternative is a reactor that has silently stopped.
 			r.Server.warn("the reactor could not read from its offset; starting from the end",
 				"offset", from, "error", err.Error())
-			from = eventbus.Latest
+			r.acks.reset()
+			from = r.concrete(eventbus.Latest)
 			continue
 		}
+		// Each event is tracked from before it is offered, with the
+		// position that precedes it: the offset file records the position
+		// before the oldest event still being worked on, so an event that
+		// was debouncing, queued or mid-reaction when the hub stopped is
+		// read again after the restart. SPEC 17.2 calls a reactor restart
+		// lossless, and the position used to be written as soon as the
+		// batch was *offered*. DIVERGENCE 5.495.
+		before := from
 		for i := range events {
+			r.acks.track(&events[i], before)
 			r.Offer(&events[i])
+			r.acks.release(&events[i])
+			before = events[i].Offset
 		}
-		if next != from {
-			from = next
-			r.writeOffset(from)
-		}
+		from = next
+		r.commit(from)
 		if len(events) > 0 {
 			// More may be waiting; read again before sleeping.
 			continue
@@ -197,8 +220,12 @@ func (r *Reactor) Run(ctx context.Context) error {
 		select {
 		case <-wake:
 		case <-ctx.Done():
+			r.commit(from)
 			return nil
 		case <-time.After(time.Second):
+			// Reactions finish on their own schedule, so the position
+			// moves when they do and not only when a batch arrives.
+			r.commit(from)
 		}
 	}
 }
@@ -246,19 +273,29 @@ func (r *Reactor) offerTo(entry ReactorEntry, e *eventbus.Event) {
 	limit := r.limitFor(entry)
 	key := dedupeKey(entry, e)
 
+	// One hold per entry the event is offered to, released when that entry
+	// is done with it: at once if it throttles, deduplicates or breaks the
+	// chain, when the reaction finishes if it is queued, and when a later
+	// event replaces it if it is debouncing. See ackTracker.
+	r.acks.hold(e)
 	if entry.RateLimit > 0 && !limit.allow(entry, r.now()) {
 		r.Server.emitCorrelated("halite/reactor/throttled", e.Node, correlationOf(e), map[string]any{
 			"tag": e.Tag, "reactor": entry.Tag, "rate_limit": entry.RateLimit,
 		})
+		r.acks.release(e)
 		return
 	}
 	if entry.DedupeWindow > 0 && limit.duplicate(key, entry.DedupeWindow, r.now()) {
+		r.acks.release(e)
 		return
 	}
 	if entry.Debounce > 0 {
-		limit.debounce(key, e, entry.Debounce, func(latest *eventbus.Event) {
+		if superseded := limit.debounce(key, e, entry.Debounce, func(latest *eventbus.Event) {
 			r.enqueue(entry, latest)
-		})
+		}); superseded != nil {
+			// Its reaction is the latest event's: coalesced, and done.
+			r.acks.release(superseded)
+		}
 		return
 	}
 	r.enqueue(entry, e)
@@ -277,6 +314,7 @@ func (r *Reactor) enqueue(entry ReactorEntry, e *eventbus.Event) {
 		r.Server.emitCorrelated("halite/reactor/loop", e.Node, correlationOf(e), map[string]any{
 			"tag": e.Tag, "reactor": entry.Tag, "max_causality_depth": int64(r.maxDepth()),
 		})
+		r.acks.release(e)
 		return
 	}
 	key := e.Correlation
@@ -284,12 +322,18 @@ func (r *Reactor) enqueue(entry ReactorEntry, e *eventbus.Event) {
 		key = e.Node
 	}
 	w := r.workers[hashIndex(key, len(r.workers))]
-	if dropped := w.queue.push(reactorJob{entry: entry, event: e}); dropped > 0 {
+	if lost := w.queue.pushReporting(reactorJob{entry: entry, event: e}); len(lost) > 0 {
+		dropped := len(lost)
 		r.Server.m().reactorDropped.Add(float64(dropped))
 		r.Server.warn("the reactor queue overflowed", "dropped", dropped, "tag", e.Tag)
 		r.Server.emit("halite/reactor/overflow", "", map[string]any{
 			"dropped": int64(dropped), "tag": e.Tag, "reactor": entry.Tag,
 		})
+		// Dropped on purpose and reported, which is not the same as lost
+		// without a trace: they no longer hold the position back.
+		for _, j := range lost {
+			r.acks.release(j.event)
+		}
 	}
 }
 
@@ -385,13 +429,17 @@ func (l *reactorLimit) duplicate(key string, window time.Duration, now time.Time
 
 // debounce holds the latest event for a key and runs once the burst has
 // stopped.
-func (l *reactorLimit) debounce(key string, e *eventbus.Event, window time.Duration, run func(*eventbus.Event)) {
+//
+// It returns the event the new one replaced, if one was waiting, because that
+// event will never be reacted to on its own.
+func (l *reactorLimit) debounce(key string, e *eventbus.Event, window time.Duration, run func(*eventbus.Event)) *eventbus.Event {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	superseded := l.pending[key]
 	l.pending[key] = e
 	if t, ok := l.timers[key]; ok {
 		t.Reset(window)
-		return
+		return superseded
 	}
 	l.timers[key] = time.AfterFunc(window, func() {
 		l.mu.Lock()
@@ -403,6 +451,7 @@ func (l *reactorLimit) debounce(key string, e *eventbus.Event, window time.Durat
 			run(latest)
 		}
 	})
+	return superseded
 }
 
 // dedupeKey is what "the same event twice" means for an entry.
@@ -452,6 +501,12 @@ func (w *reactorWorker) run(ctx context.Context) {
 			return
 		}
 		w.reactor.react(ctx, job)
+		// A reaction cut short because the reactor is stopping did not
+		// happen, and keeps the position behind its event so the next
+		// start reads it again. One that ran, or timed out, is done.
+		if ctx.Err() == nil {
+			w.reactor.acks.release(job.event)
+		}
 	}
 }
 
@@ -563,6 +618,32 @@ func (r *Reactor) readOffset() string {
 	return offset
 }
 
+// commit records the position the reactor may resume from: the one before
+// the oldest event still being worked on, or `read` when nothing is.
+func (r *Reactor) commit(read string) {
+	at := r.acks.committed(read)
+	if at == r.written {
+		return
+	}
+	r.written = at
+	r.writeOffset(at)
+}
+
+// concrete turns "earliest" and "latest" into the position they mean now, and
+// leaves a position alone. A position that cannot be resolved is returned
+// as it is, for Read to refuse in its own words.
+func (r *Reactor) concrete(from string) string {
+	switch from {
+	case "", eventbus.Latest, eventbus.Earliest:
+		seg, at, err := r.Server.Events.Resolve(from)
+		if err != nil {
+			return from
+		}
+		return fmt.Sprintf("%08d:%d", seg, at)
+	}
+	return from
+}
+
 func (r *Reactor) writeOffset(offset string) {
 	if r.OffsetFile == "" {
 		return
@@ -593,13 +674,16 @@ func newBoundedQueue(limit int) *boundedQueue {
 }
 
 // push adds an item and reports how many were dropped to make room.
-func (q *boundedQueue) push(j reactorJob) int {
+func (q *boundedQueue) push(j reactorJob) int { return len(q.pushReporting(j)) }
+
+// pushReporting is push, returning the items it dropped rather than how many.
+func (q *boundedQueue) pushReporting(j reactorJob) []reactorJob {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	dropped := 0
+	var dropped []reactorJob
 	for len(q.items) >= q.limit {
+		dropped = append(dropped, q.items[0])
 		q.items = q.items[1:]
-		dropped++
 	}
 	q.items = append(q.items, j)
 	q.cond.Signal()
@@ -672,4 +756,87 @@ func ReactorSummary(entries []ReactorEntry) *value.Map {
 		out.Set(e.Tag, item)
 	}
 	return out
+}
+
+// ackTracker knows which events the reactor is still working on, so that the
+// offset file can say where the oldest of them began.
+//
+// The file used to be written when a batch had been offered to the workers,
+// which is before anything had been done with it: an event waiting out a
+// debounce window, sitting in a worker's queue or halfway through its reaction
+// when the hub stopped was behind the recorded position, and the next start
+// never saw it. Nothing recorded the loss, which is the failure SPEC 18.2 says
+// the reactor must not have. Now each event is tracked with the position that
+// precedes it, holds the position back while any entry is still working on
+// it, and lets go when the last does. A restart then reads again from before
+// the oldest unfinished event, which makes it **at least once**: the events
+// that finished after that one are repeated. DIVERGENCE 5.495.
+type ackTracker struct {
+	mu   sync.Mutex
+	open []*ackedEvent
+	by   map[*eventbus.Event]*ackedEvent
+}
+
+type ackedEvent struct {
+	before string
+	holds  int
+}
+
+// track starts following an event, with one hold for the offer itself.
+func (t *ackTracker) track(e *eventbus.Event, before string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.by == nil {
+		t.by = map[*eventbus.Event]*ackedEvent{}
+	}
+	a := &ackedEvent{before: before, holds: 1}
+	t.open = append(t.open, a)
+	t.by[e] = a
+}
+
+// hold adds a hold to a tracked event. An event nobody tracked -- one offered
+// straight to the reactor, as the tests do -- is not followed.
+func (t *ackTracker) hold(e *eventbus.Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if a := t.by[e]; a != nil {
+		a.holds++
+	}
+}
+
+// release lets go of one hold.
+func (t *ackTracker) release(e *eventbus.Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	a := t.by[e]
+	if a == nil {
+		return
+	}
+	a.holds--
+	if a.holds <= 0 {
+		delete(t.by, e)
+	}
+}
+
+// committed is the position to record: before the oldest event still held,
+// or `read`, how far the reactor has read, when none is.
+func (t *ackTracker) committed(read string) string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for len(t.open) > 0 && t.open[0].holds <= 0 {
+		t.open[0] = nil
+		t.open = t.open[1:]
+	}
+	if len(t.open) == 0 {
+		return read
+	}
+	return t.open[0].before
+}
+
+// reset forgets everything held, when the position it would record can no
+// longer be read from.
+func (t *ackTracker) reset() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.open, t.by = nil, nil
 }
