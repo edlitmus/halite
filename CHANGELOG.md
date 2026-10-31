@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `jobs.list_jobs` lists a scoped caller's own jobs up to the limit
+
+The limit applied to the whole estate's recent jobs before the caller's scope did,
+so an operator limited to a few nodes could be shown none of its own jobs on a busy
+hub. A scoped caller is now looked for among the 5,000 most recent jobs and given up
+to `limit` of the ones it may see; a job older than that is not found (DIVERGENCE 5.503).
+
 ### `tolerate_failures` globs mean what they mean in Salt
 
 An orchestration step's `tolerate_failures` (and `fail_minions`) matched node
