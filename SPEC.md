@@ -658,7 +658,7 @@ output schema is frozen and versioned, so downstream tooling can depend on it.
 |---|---|
 | `--batch=N` or `--batch=25%` | Execute against at most N nodes at a time, waiting for returns before advancing |
 | `--batch-wait=S` | Settle time between batches |
-| `--batch-safe-limit=N` | Abort the batch if more than N nodes fail |
+| `--batch-safe-limit=N` | Abort the batch once N nodes have failed; a node that does not answer is not counted (DIVERGENCE 5.496) |
 | `--subset=N` | Execute against a random N of the matched set |
 | `--async` | Return the `jid` immediately |
 | `--timeout=S` | Per-node return timeout |
