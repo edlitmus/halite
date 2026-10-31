@@ -129,15 +129,23 @@ fact packages_missing "$(echo "$missing" | sed 's/^ //')"
 GO_TARBALL="go${go_version}.freebsd-amd64.tar.gz"
 GO_URL="https://go.dev/dl/$GO_TARBALL"
 
+# A private directory, not /tmp/$GO_TARBALL. The name is predictable and /tmp
+# is shared, so another account on the machine could plant a symlink there
+# before the fetch: `curl -o` and `fetch -o` follow it, and root would
+# overwrite whatever it pointed at (reproduced with curl and a file:// URL).
+# The same account could also swap the tarball between the checksum below and
+# the `tar` that unpacks it. mktemp -d is 0700 and owned by root.
+GO_TMP="$(mktemp -d)" || { echo "mktemp -d failed" >&2; fact go no_tempdir; exit 1; }
+
 echo "--- fetching $GO_URL"
-if ! fetch -q -o "/tmp/$GO_TARBALL" "$GO_URL"; then
+if ! fetch -q -o "$GO_TMP/$GO_TARBALL" "$GO_URL"; then
     echo "the Go toolchain could not be fetched; this machine cannot build" >&2
     fact go failed_download
     exit 1
 fi
 
 echo "--- verifying $GO_TARBALL"
-got="$(sha256 -q "/tmp/$GO_TARBALL")"
+got="$(sha256 -q "$GO_TMP/$GO_TARBALL")"
 if [ "$got" != "${go_sha256}" ]; then
     echo "checksum mismatch for $GO_TARBALL" >&2
     echo "  expected ${go_sha256}" >&2
@@ -149,8 +157,8 @@ fi
 fact go_sha256_verified "${go_sha256}"
 
 rm -rf /usr/local/go
-tar -C /usr/local -xzf "/tmp/$GO_TARBALL"
-rm -f "/tmp/$GO_TARBALL"
+tar -C /usr/local -xzf "$GO_TMP/$GO_TARBALL"
+rm -rf "$GO_TMP"
 
 # There is no /etc/profile.d here. The symlinks are the mechanism
 # instead, and they are enough: /usr/local/bin is on the default PATH of

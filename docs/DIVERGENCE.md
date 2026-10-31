@@ -35456,6 +35456,18 @@ Issue 321's `dnf_module` bullet had two halves. 5.447 fixed the first, dnf5 repo
 
 **Not verified.** What dnf5 itself prints and how it answers, which would need a Fedora host (the lab has no Fedora row) and which `dnf_module` no longer reaches; dnf 4 on EL8 and EL9 reading a repository with `repo_gpgcheck=1` and an unimported key; apt and pkg prompts, which the test covers only in the sense that they share the runner. The test is `unix`-only (it uses `sh`), so Windows' behaviour is not held by it. `make check` was not run.
 
+### 5.490 The lab's first-boot scripts fetched the Go toolchain to a predictable name in /tmp
+
+Issue 321, section 5, the lab's Info item: "a predictable `/tmp/$GO_TARBALL`".
+
+**The defect.** `bootstrap.sh.tftpl` and `bootstrap-freebsd.sh.tftpl` fetched `go<version>.<os>-amd64.tar.gz` to `/tmp/$GO_TARBALL`, checksummed it, and unpacked it with `tar -C /usr/local`, all as root, on a machine whose other accounts the lab does not control. The name is known in advance and `/tmp` is shared. **Reproduced** (on this workstation, with the primitive only, not the lab script): a symlink at the destination, then `curl -fsSL -o <link> file://<src>`, replaced the target's contents with the download. `fetch -o` on FreeBSD was not run, and is assumed to open the destination the same way. The checksum and the `tar` were also two uses of one name, so the file could be swapped between them.
+
+**The change.** Both scripts now fetch into `GO_TMP="$(mktemp -d)"` (0700, owned by root), use that path for the fetch, the checksum and the unpack, and remove the directory afterwards. A failure exits as before, leaving the directory, which only root can read.
+
+**Held, and broken on purpose.** `TestLabBootstrapDownloadsIntoAPrivateDirectory` requires the `mktemp -d` line, refuses any non-comment `/tmp/` in the templates, and runs `sh -n` over each rendered template. Against the original templates it fails (11 lines of complaint); with a stray `if true; then` appended it fails on `sh -n`; with the change it passes.
+
+**Not verified.** Neither script was run: no lab host was raised for this, so `mktemp -d` on every row's image (it is in coreutils and in FreeBSD's base, and the Linux rows' images were not checked one by one), and the full bootstrap with the new path, are untested; the test reads text, so it cannot show a hostile local account failing. Whether any other `/tmp` use in the lab (the `lab.sh` upload, `REMOTE_DIR=/root/halite`) has the same shape was not audited here. `make check` was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
