@@ -35115,7 +35115,7 @@ pages findable. (The weekly `periodic` job would do it unprompted; that was not
 waited for.) The jail was destroyed afterwards and `bastille list all` and
 `/usr/local/bastille/jails` match the start.
 
-**Linux** (Ubuntu, man-db, unprivileged, GNU make 4.4 on a staged `MANDIR`).
+**Linux** (Ubuntu, man-db, unprivileged, GNU make 4.3 on a staged `MANDIR`).
 `apropos -M <stage>/man halite` said `nothing appropriate` after the install;
 `mandb -C /dev/null <stage>/man` built `index.db`, after which `apropos` listed
 all six and `man -M <stage>/man 5 halite-sls` rendered. Same result as FreeBSD:
@@ -35454,7 +35454,7 @@ Issue 321, section 5, the lab's other Info item. `lab.sh` connects with `StrictH
 
 **The defect found while looking.** Nothing ever removed `.known_hosts`; `make lab-down` destroyed the instances and left their keys, and the file held seven entries from earlier labs. Vultr hands addresses out again, so a stale key is a refusal waiting for a reused address, and the file only grew. `lab-down` now deletes it after a destroy that succeeded, not after one that failed: a half-destroyed lab keeps the keys of what is still running. A reused address meeting a stale key was not seen in this lab; ssh's refusal for it is its documented behaviour.
 
-**Held, and broken on purpose.** `TestLabDownForgetsKnownHostsOnlyAfterASuccessfulDestroy` runs the real recipe with `TOFU` pointing at a stand-in that exits 0 or 1 and `TOFU_DIR` at a temporary directory. With the `rm` removed it fails on the successful destroy (file kept); with `|| true` after the destroy it fails on both cases; with the change it passes. It shows the ordering and not that a real `tofu destroy` behaves, and it ran under GNU make 4.4 only.
+**Held, and broken on purpose.** `TestLabDownForgetsKnownHostsOnlyAfterASuccessfulDestroy` runs the real recipe with `TOFU` pointing at a stand-in that exits 0 or 1 and `TOFU_DIR` at a temporary directory. With the `rm` removed it fails on the successful destroy (file kept); with `|| true` after the destroy it fails on both cases; with the change it passes. It shows the ordering and not that a real `tofu destroy` behaves, and it ran under GNU make 4.3 only.
 
 **Not verified.** A real `make lab-down` was not run for this (no instance exists), under BSD make or on macOS. `make check` was not run.
 
