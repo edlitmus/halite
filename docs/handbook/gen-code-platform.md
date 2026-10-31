@@ -247,7 +247,7 @@ Six packages had their own copy of the same write-a-temp-file-and- rename helper
 
 which are the two sides of one race. MoveFileEx has to open the destination for delete with no sharing; a reader holding it open makes that fail, and while it holds it a reader's open fails instead. Neither error mentions the other party, and neither is recoverable by the caller, so both are handled here rather than at eighteen call sites.
 
-**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `perm.go`, `root.go`; with tests.
+**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `perm.go`, `root.go`, `xattr_linux.go`, `xattr_other.go`; with tests.
 
 **Exports.**
 
