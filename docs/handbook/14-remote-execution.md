@@ -252,6 +252,18 @@ stopped. (In the predecessor, `--batch` is a client-
 side loop, and a dropped connection abandons half an estate with nothing
 recording where it stopped.)
 
+**What the limit counts.** A node that *failed* (it answered, and the answer
+was a failure). A node that does not answer is not counted: after
+`--batch-timeout` the batch notes "advanced with returns outstanding" and delivers
+the next slice, so a change that hangs or cuts off the first node it reaches does
+not trip the limit. Without `--batch-timeout` the wait for a slice is the job's whole
+lifetime (15 minutes unless `--ttl` says otherwise; read in the code and not
+run), so set `--batch-timeout` too. In the hub's own test, with three stub
+nodes, one silent, `--batch 1 --batch-safe-limit 1 --batch-timeout 1`: both
+other nodes were given the job and the silent one was left in the job's missing
+list. A finished batch with a node still owing its return stays `batching`
+until the job expires and is settled.
+
 `--batch-safe-limit` is the one to always set. A change that fails on the
 first node will usually fail on the next hundred, and you want to stop at
 two. Here, with a command that fails everywhere:

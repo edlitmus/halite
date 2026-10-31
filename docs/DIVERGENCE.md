@@ -35575,6 +35575,20 @@ Issue 321, the audit pass over the hub files the first audit did not read (`inte
 
 **Not verified.** A reaction cut short by shutdown is covered by reading, not by a test: no test cancels the reactor mid-reaction. The behaviour across a real hub restart under systemd, a lag reset with events held, and the throughput cost of the tracker's lock (not measured) are untested. The first start with no offset file still begins at the end, as before. `make check` was not run.
 
+### 5.496 What `--batch-safe-limit` counts: a silent node is not a failure
+
+Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/batch.go`).
+
+**Two sentences that disagreed.** SPEC 9.3 said `--batch-safe-limit=N` aborts "if more than N nodes fail". The code (`failed >= j.Batch.SafeLimit`), the CLI help, chapter 14 and its recorded run all say it stops once N have failed: with `--batch 1 --batch-safe-limit 1` the batch stopped after the first failure. SPEC now says that.
+
+**What "fail" means.** `awaitBatch` counts returns whose `Success` is false and nothing else. A node that takes the job and never answers (a change that hangs it, reboots it, or cuts it off from the hub) is not a failure: after the batch timeout the batch logs "advanced with returns outstanding" and delivers the same change to the next slice. SPEC 9.3 lists "unresponsive" beside "failed" as separate states, so this is the letter of it; but the limit exists "to stop before the rest of the estate gets the same broken change", and the broken change that kills its target is the one it does not stop.
+
+**Shown.** `TestASilentNodeIsNotCountedAgainstTheSafeLimit`, a hub with three stub nodes, the first silent, `Batch: 1`, `BatchSafeLimit: 1`, `BatchTimeoutSecs: 1`: the other two were given the job, the silent one was the only node in the job's missing list, and the hub logged `batch complete`. The test records today's behaviour so that a change either way is a decision; it does not say the behaviour is right.
+
+**Read, not run.** Without `--batch-timeout` the wait per slice is `time.Until(j.Expires)` taken once, which is the job's whole lifetime, 15 minutes by default (`job.DefaultTTL`), and each slice waits that long again: a silent node in a slice holds the batch for 15 minutes, and the slices after it are delivered to a job that has expired. What a node does with an expired job (refuses it, by `job` package) was not run through a batch. A batch that has delivered to everyone but still waits on a return stays in state `batching` (the hub's own test showed it, 30 s after `batch complete`) until `Settle` closes it at expiry.
+
+**Not changed: three decisions for the owner.** Whether a node that has not answered within the batch timeout should count toward the safe limit; whether the default per-slice timeout should be the job's whole lifetime; and whether a finished batch with returns outstanding should read as `batching` or `dispatched`. Chapter 14 now says what each does today and tells the operator to set `--batch-timeout`. **Not verified:** any of this on a real hub and node, FreeBSD, `make check`.
+
 ### 5.498 `reactor.test` judged a caller reaction against a placeholder, not the node
 
 Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/runners_reactor.go`, `reaction.go`). SPEC 18.3: a reactor is subject to the policy like any caller, and `reactor.test` includes the decision "because a reaction that renders perfectly and is refused at three in the morning is the one an operator wants to find out about now".
