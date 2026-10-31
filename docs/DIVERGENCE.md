@@ -35099,6 +35099,35 @@ Linux (5.482), FreeBSD (5.481) and macOS; its remaining item is the man index on
 Linux (`apropos` was not run there) and FreeBSD (where `apropos` listed the pages,
 but whether by this install was not separated). `make check` was not run.
 
+#### The man index, on FreeBSD and Linux (issue 309)
+
+2026-10-30, `main` at `1f40ead9`'s Makefile and `contrib/man`.
+
+**FreeBSD**, in a fresh thin Bastille jail on `beastie` (15.1-RELEASE, `lo0` address,
+no `/usr/local/share/man` in it), as root. `make install-man` (base BSD make)
+exited 0 and put all six pages under `/usr/local/share/man`. Straight afterwards
+`apropos halite` said `nothing appropriate`: **the install does not build the index,
+and the pages are not searchable until something does.** `makewhatis
+/usr/local/share/man` exited 0 and wrote `mandoc.db`; `apropos halite` then listed
+all six pages, and `man 5 halite-sls` rendered. This separates what 5.481's macOS
+note could not: on FreeBSD it is the index step, not the install, that makes the
+pages findable. (The weekly `periodic` job would do it unprompted; that was not
+waited for.) The jail was destroyed afterwards and `bastille list all` and
+`/usr/local/bastille/jails` match the start.
+
+**Linux** (Ubuntu, man-db, unprivileged, GNU make 4.4 on a staged `MANDIR`).
+`apropos -M <stage>/man halite` said `nothing appropriate` after the install;
+`mandb -C /dev/null <stage>/man` built `index.db`, after which `apropos` listed
+all six and `man -M <stage>/man 5 halite-sls` rendered. Same result as FreeBSD:
+install, then index. Not run as root into `/usr/share/man`, where man-db's own
+daily job would be the other route.
+
+**Not changed:** `install-man` does not run `makewhatis` or `mandb`. Whether it
+should is a design choice, since both write outside the staged tree an operator
+asked for; today the pages are installed and findable by `man`, and `apropos` needs
+the index run by the operator or the system's job. **Not verified:** man-db's
+real-root path, a system with no periodic or cron job, `make check`.
+
 ### 5.482 The handbook's root and fresh-host procedures, run, and what they found
 
 Issue 308. Chapters 17, 24, 30 and 36 each carried a note that something had
