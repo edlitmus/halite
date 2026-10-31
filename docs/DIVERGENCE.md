@@ -35468,6 +35468,9 @@ Issue 321, section 5, the lab's Info item: "a predictable `/tmp/$GO_TARBALL`".
 
 **Not verified.** Neither script was run: no lab host was raised for this, so `mktemp -d` on every row's image (it is in coreutils and in FreeBSD's base, and the Linux rows' images were not checked one by one), and the full bootstrap with the new path, are untested; the test reads text, so it cannot show a hostile local account failing. Whether any other `/tmp` use in the lab (the `lab.sh` upload, `REMOTE_DIR=/root/halite`) has the same shape was not audited here. `make check` was not run.
 
+
+**Run since:** the same lab host's bootstrap (`rocky9`, 2026-10-31) ran the new `mktemp -d` path from cloud-init: Go 1.27.3 was installed with `go_sha256_verified` recorded and `bootstrap_finished` set. That covers Rocky 9.8 only: the other Linux rows and FreeBSD (`fetch -o` into the private directory) were not raised.
+
 ### 5.491 The lab trusts an instance's SSH host key on first use, and kept the keys for ever
 
 Issue 321, section 5, the lab's other Info item. `lab.sh` connects with `StrictHostKeyChecking=accept-new` and a lab-local `UserKnownHostsFile` (`contrib/tofu/.known_hosts`).
@@ -35481,6 +35484,9 @@ Issue 321, section 5, the lab's other Info item. `lab.sh` connects with `StrictH
 **Held, and broken on purpose.** `TestLabDownForgetsKnownHostsOnlyAfterASuccessfulDestroy` runs the real recipe with `TOFU` pointing at a stand-in that exits 0 or 1 and `TOFU_DIR` at a temporary directory. With the `rm` removed it fails on the successful destroy (file kept); with `|| true` after the destroy it fails on both cases; with the change it passes. It shows the ordering and not that a real `tofu destroy` behaves, and it ran under GNU make 4.3 only.
 
 **Not verified.** A real `make lab-down` was not run for this (no instance exists), under BSD make or on macOS. `make check` was not run.
+
+
+**Run since:** a real `make lab-down` (2026-10-31, `rocky9`) printed `Destroy complete! Resources: 5 destroyed` and `contrib/tofu/.known_hosts` was gone; Vultr listed 0 instances. Under GNU make 4.3 only.
 
 ### 5.492 A rewritten file now keeps its ACL and every extended attribute, for every writer
 
@@ -35500,6 +35506,16 @@ Issue 321, section 5: the audit table's last open row, "`atomicfile.Write`: SELi
 - **FreeBSD and macOS.** Their ACLs are NFSv4 or POSIX.1e behind `extattr` and `chmod +a`, not xattrs; nothing there is kept and nothing was measured.
 - **Other writers.** `archive.go`'s `WriteInFrom` (root-confined extraction) is a different path and was not changed; `os.WriteFile`-style writers in place already keep the inode.
 - Writers that rewrite a file *in place* keep everything and were untouched. `make check` was not run.
+
+#### Run on Rocky 9.8 enforcing, as root (issue 321)
+
+2026-10-31, the lab's `rocky9` row (Rocky Linux 9.8, kernel 5.14.0-687.54.1.el9_8, SELinux `Enforcing`), the tree at `main` `2fc35c74` (5.492 merged), shipped as a tarball of the tracked files, root, filesystem as raised.
+
+- `TestLiveWriteConfigFileKeepsSELinuxContext` **passed** with the generalized copy (the old run, 5.484, covered `keepSELinuxLabel`).
+- `TestWriteAtomicKeepsExtendedAttributes`, `TestWriteAtomicKeepsAnACL` and `TestWriteKeepsAnACLNoWiderThanTheModeAsked` (the narrower-mode case) all passed as root.
+- By hand, a file with `u:nobody:r--`, `user.demo`, `trusted.demo` and the context `net_conf_t`, rewritten through `atomicfile.Write` at 0640: `getfacl`, `getfattr -d -m -` and `ls -Z` before and after were **identical**, `system.posix_acl_access`, `trusted.demo` and `security.selinux` included, and the contents were the new ones. So root's view and an ACL naming another account, both listed as not verified above, are now run.
+
+**Still not run:** a file whose `security.selinux` the kernel refuses to carry (a confined caller), `make check`, and FreeBSD and macOS (nothing is kept there). The lab was destroyed afterwards; Vultr listed 0 instances.
 
 ## 6. Everything else not started
 
