@@ -35444,6 +35444,18 @@ looked at on the Mac); a macOS earlier than 27.2; the System-keychain
 (root) half of the live test with this change; and `make check`. `install` still
 exposes its passphrase, by `security`'s design.
 
+### 5.489 A command that stops to ask a question is answered with end-of-file (issue 321, the dnf5 prompt)
+
+Issue 321's `dnf_module` bullet had two halves. 5.447 fixed the first, dnf5 reported "no streams". The second, "running the read as a user made dnf5 prompt to import a third-party repo GPG key (declined, no tty)", was never addressed, and the audit table said so.
+
+**What it comes to.** Nothing in `dnf_module` answers a prompt, and none needs to: the reads (`dnf -q module list`) carry no `-y`, the changes carry `-y`, and every command the runner starts has no standard input unless the caller gave `Command.Stdin`, so os/exec connects it to the null device. A prompt reads end-of-file and the tool takes its "no" path, as the audit saw ("declined"). That is also why a dnf5 repository key can never hang a run. Since 5.447, `dnf_module` does not reach a dnf5 repository at all: `dnf --version` reads no repository, and the module refuses by name before any `module` command. The `-y` on the changes is the other direction, and is dnf's own: `-y` answers yes to importing a repository key that the repository's `gpgkey=` names, which is what an operator running `dnf install -y` gets anywhere.
+
+**Held.** `TestACommandThatPromptsIsAnsweredWithEndOfFile` (`internal/exec`) runs a shell `read` through `OSRunner` and requires `eof`. No test held this property before, though a change that handed the child the parent's standard input would silently turn every prompt into a hang on a hub started from a shell.
+
+**Demonstrated.** With the runner changed to connect a never-ending pipe when no `Stdin` is given, the test fails (`a child that asked a question was left waiting for an answer`, after 15 s); restored, it passes. The first version of the test relied on `Command.Timeout` to end that failure, and the broken runner **hung** instead: os/exec's `Wait` blocks on copying the pipe even after the child is killed. The test is therefore bounded from outside, in a goroutine.
+
+**Not verified.** What dnf5 itself prints and how it answers, which would need a Fedora host (the lab has no Fedora row) and which `dnf_module` no longer reaches; dnf 4 on EL8 and EL9 reading a repository with `repo_gpgcheck=1` and an unimported key; apt and pkg prompts, which the test covers only in the sense that they share the runner. The test is `unix`-only (it uses `sh`), so Windows' behaviour is not held by it. `make check` was not run.
+
 ### 5.490 The lab's first-boot scripts fetched the Go toolchain to a predictable name in /tmp
 
 Issue 321, section 5, the lab's Info item: "a predictable `/tmp/$GO_TARBALL`".
