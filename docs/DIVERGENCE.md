@@ -35517,6 +35517,18 @@ Issue 321, section 5: the audit table's last open row, "`atomicfile.Write`: SELi
 
 **Still not run:** a file whose `security.selinux` the kernel refuses to carry (a confined caller), `make check`, and FreeBSD and macOS (nothing is kept there). The lab was destroyed afterwards; Vultr listed 0 instances.
 
+### 5.497 Two reactor entries with the same tag shared one set of controls
+
+Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/reactor.go`).
+
+**The defect.** A reactor entry's controls (the rate-limit bucket, the dedupe window, the debounce timer) were kept in a map keyed by the entry's tag glob. Two entries can have the same glob: Salt's own `reactor:` list repeats a tag to run two things on it, `Matching` returns both, and the parser does not refuse the repeat. They then shared one set. With `dedupe_window` on both, the first entry's event recorded the key and the second entry's was judged a duplicate of it, so the second reaction never ran. With `debounce` on both, the timer's closure belonged to whichever entry created it, so the burst ended in that entry's reaction only. In neither case did anything say so: a duplicate is dropped quietly by design.
+
+**Shown.** `TestTwoEntriesWithTheSameTagAreEachReactedTo` (two entries, `dedupe_window: 1h`, each running its own SLS): on the old code only the first reaction ran (`only map[ping_a:true] ran`), and with the fix both do. `TestTwoDebouncedEntriesWithTheSameTagAreEachReactedTo` is the same with `debounce: 200ms`. Pointing the controls back at one shared set fails both.
+
+**The change.** The controls are keyed by the entry's position in `Entries`, and `Offer` walks the entries themselves instead of `Matching`'s copies so each keeps its position. Entries that differ in glob were never affected.
+
+**Not verified.** Two entries that are identical in every field are still two entries and now react twice, as written; whether the configuration should refuse an exact duplicate was not decided. One hub, stub nodes, no real reaction run end to end on a node. `make check` was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

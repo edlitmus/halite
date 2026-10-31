@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Two reactor entries with the same tag now each react
+
+Reactor entries that used the same tag glob shared their rate limit, dedupe
+window and debounce timer, so with `dedupe_window` or `debounce` on both, the
+second entry's reaction was dropped as a duplicate of the first's, silently. Each
+entry now has its own (DIVERGENCE 5.497). An exact duplicate entry reacts twice,
+as it is written.
+
 ### A rewritten file keeps its ACL and extended attributes
 
 A file rewritten by a state (hosts, sysctl, fstab, modprobe, iptables and
