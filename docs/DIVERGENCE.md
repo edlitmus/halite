@@ -35736,6 +35736,18 @@ Issue 321, the third audit pass (`internal/hub/subscribe.go`, `fleet.go`).
 
 **Not verified.** A real relay and hub across a real partition (the test replaces the stream by connecting again, which is the same hub-side path, not the same network event); that no consumer relied on a stop event arriving for every stream, including replaced ones (no Go code, shipped example or handbook page in the repository reads the tag; an operator's own reactor or `halite-hub events` consumer might, and SPEC 17.1 calls it "a node disconnects", which a replaced stream is not); `make check`. The package passes under `-race`.
 
+### 5.507 `POST /v1/relay` ignored `accept_relays`
+
+Issue 321, the third audit pass (`internal/hub/relay.go`).
+
+**The defect.** `accept_relays` is off by default, and the subscribe path refuses a relay with "this hub does not accept relays" rather than downgrading it to a node (5.3's reason: an estate that has not decided to run relays should not acquire one because somebody set a flag in a branch office). `POST /v1/relay`, the update a relay sends when its fleet changes, did not look at the flag. A node whose policy allowed `relay.proxy` could register subordinates through it, and the hub then routed those nodes' jobs to it and took its returns for them, on a hub that had said it takes no relays. The policy and the `relay_subordinates` globs still applied, so this is a gap between two switches that should agree, not an open door.
+
+**Shown.** `TestAnUpdateFromARelayIsRefusedUnlessTheHubAcceptsThem` posts an update to a hub with `accept_relays` unset: on the old code it answered 200 and `RelayFor("web1.example")` named the relay; with the check it answers 403 and nothing is routed, and the same update to a hub with the flag set is accepted. The check was removed again and the test failed.
+
+**Deliberately not added.** A requirement that the relay have a stream open. `Relay.session` announces itself concurrently with opening the subscription (it must, so the spool can drain once the upstream knows the subordinates), so an update can arrive first, and refusing it would leave the spool waiting for the next attempt. The consequence is a lead, not a fix: an update that arrives after a relay's stream has gone leaves routes for a relay with no stream. `Connected()` hides them, but `targetableNodes()` lists them, so a job aimed at one is dispatched and the node reads as missing. The next connection of that relay replaces them. Not shown to happen in practice.
+
+**Not verified.** A real relay against a hub with the flag off; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
