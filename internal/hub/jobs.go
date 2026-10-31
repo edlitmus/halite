@@ -222,6 +222,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		Fun:        req.Fun,
 		Arg:        req.Arg,
 		Kwarg:      req.Kwarg,
+		Test:       req.Test,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {
@@ -311,6 +312,7 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request, principal string
 		Fun:        existing.Fun,
 		Arg:        existing.Arg,
 		Kwarg:      existing.Kwarg,
+		Test:       existing.Test,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {
@@ -364,7 +366,7 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 	}
 	decision := s.Policy.Authorize(policy.Request{
 		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
-		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg,
+		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {
