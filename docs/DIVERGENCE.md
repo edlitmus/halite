@@ -35630,6 +35630,20 @@ Passing there: `TestCountingChainsDoesNotSweepOnEveryEvent` and `TestAChainSeenA
 
 **What this does and does not show.** A jail shares the host's kernel, so this is the Go code under FreeBSD's runtime, loopback and filesystem, and nothing about FreeBSD-specific kernel behaviour. No `halite-node` ran on FreeBSD: the nodes are stubs on the hub's test server, as on Linux. **Not run:** `-race` (the cross-built binary has no cgo, which the race detector needs), the tests against a real node, and `make check`. The jail was destroyed afterwards; `radarr` and `zabbix` were not touched.
 
+### 5.500 A queued job was lost once 200 other jobs had run
+
+Issue 321, the second audit pass (`internal/hub/queue.go`, which the first audit did not read). SPEC 9.5: with `queue`, the job is spooled for the node and delivered on its next connection if `expires` has not passed.
+
+**The defect.** `deliverQueued` looked for a node's queued jobs among the 200 most recent jobs in the cache, on the comment's word that two hundred "covers a busy hub's hour many times over". A hub with a reactor or a schedule running one job every ten seconds runs 360 in an hour, which is also the default queue lifetime. A job queued for a node was out of the window once 200 others had run, and the node came back and was given nothing. It was not expired or reported either, since it was never looked at.
+
+**Shown.** `TestAQueuedJobIsDeliveredAfterManyOtherJobs`: a job queued for an offline `web1.example`, 230 other jobs run to `web2.example`, then `web1.example` connects. On the old code it was not delivered; with the fix it is. The test runs in about ten seconds on this workstation.
+
+**The change.** A `queueIndex` per hub: for each node, the jobs spooled for it. It is a hint and not the record. Each candidate is read and checked against the job's own `Queued` list before it is sent, and an entry that is stale (pruned, killed, already delivered) is dropped. It is filled once from the whole cache by the first node to connect, and then by each job that is queued (`Dispatch` is the only place that spools one). Widening the window instead would walk the whole cache each time any node connects, which after a hub restart is every node at once. Candidates go oldest first, the order they were asked for in; they used to go newest first.
+
+**Demonstrated.** Two breaks failed a test and were reverted: dispatch not indexing (the delivery test), and seeding from 200 jobs (`TestTheQueueIndexIsSeededFromTheWholeCache`, which stands in for a hub that restarted with the job already queued). The queue, offline, chaos and batch tests pass under `-race`.
+
+**Not verified.** The first node to connect after a start reads the whole cache once, and connections wait for it; on a large cache that was not timed. A real hub restart with a queued job was not run. Whether a queued job whose node *never* returns should produce an expiry event, which SPEC 9.5 reads as "a queued job that expires produces an event", is not answered here: the event is emitted only when the node comes back after the expiry, as before. `make check` was not run.
+
 ### 5.503 `jobs.list_jobs limit=N` listed fewer than N of a scoped caller's jobs
 
 Issue 321, the second audit pass (`internal/hub/runners_jobs.go`). The runner's own text is "How many to list."

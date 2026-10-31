@@ -28,6 +28,14 @@ so an operator limited to a few nodes could be shown none of its own jobs on a b
 hub. A scoped caller is now looked for among the 5,000 most recent jobs and given up
 to `limit` of the ones it may see; a job older than that is not found (DIVERGENCE 5.503).
 
+### A queued job is no longer lost on a busy hub
+
+A job queued for an offline node (`--offline queue`) was only looked for among the
+200 most recent jobs when the node came back, so on a hub running more than 200
+jobs in the queue's hour the node was given nothing, and nothing reported it. Each
+node's queued jobs are now found directly and delivered oldest first (DIVERGENCE
+5.500). The first node to connect after a hub start reads the whole job cache once.
+
 ### A reactor restart no longer loses the events it had accepted but not finished
 
 The reactor recorded its position as soon as it had handed a batch to its
