@@ -35644,6 +35644,31 @@ Issue 321, the second audit pass (`internal/hub/queue.go`, which the first audit
 
 **Not verified.** The first node to connect after a start reads the whole cache once, and connections wait for it; on a large cache that was not timed. A real hub restart with a queued job was not run. Whether a queued job whose node *never* returns should produce an expiry event, which SPEC 9.5 reads as "a queued job that expires produces an event", is not answered here: the event is emitted only when the node comes back after the expiry, as before. `make check` was not run.
 
+### 5.501 A glob target was path.Match, which reverses `[!x]`
+
+Issue 321, the second audit pass; found reading `internal/hub/orch.go`'s `tolerate_failures` and following the pattern to the one the whole fleet is targeted with. 5.472 had moved policy function and SLS patterns off `path.Match`; the target glob stayed, and SPEC 8 said "`path.Match` semantics".
+
+**What differs.** Salt matches a glob target with fnmatch, where `[!seq]` is "anything but" and `^` is an ordinary character. `path.Match` has its `[!1]` a set of `!` and `1`, and negation is `[^1]`. Its `*` also stops at `/`. For node IDs, which hold no `/`, only the brackets differ.
+
+**Measured** with `path.Match` and fnmatch side by side (`internal/target`, on this workstation):
+
+| Target | Node | old | Salt, now |
+|---|---|---|---|
+| `web[!1]*` | `web1.prod` | **matched** | not matched |
+| `web[!1]*` | `web2.prod` | not matched | matched |
+| `web[^1]*` | `web2.prod` | **matched** | not matched |
+| `[!d]*` | `db1.prod` | **matched** | not matched |
+
+So `run 'web[!1]*'` reached web1 and skipped web2: the node the operator meant to leave out, and only that one. In a grain target the `*` stopping at `/` made `-G 'shell:*sh'` match nothing against `/bin/sh`, and `-G 'path:/usr/*'` against `/usr/local/bin`; Salt matches both.
+
+**Who shares it.** `target.MatchGlob` is the function dispatch, the policy's `target:` coverage, a bootstrap token's node scope and a relay's subordinate globs all use, so they moved together and still agree with each other; the change is that they now agree with Salt too.
+
+**The change.** `globMatch` is `fnmatch.Match`. `TestAGlobTargetIsSaltsGlob` and `TestAGrainGlobCrossesASlash` failed on the old code and pass; SPEC 8's glob row says what a glob is. The target, policy, keystore, hub, API and `halite-hub` tests pass.
+
+**Behaviour change.** A target written with `[^x]` meant "not x" and now means "a `^` or an `x`"; one written with `[!x]` meant "a `!` or an `x`" and now means "not x". Neither was found in the config on `beastie` (`/usr/local/etc/halite`, `/usr/local/etc/salt`); the state and pillar trees there were not searched. A grain pattern now crosses `/`.
+
+**Left, not changed.** Other callers still on `path.Match` for a glob a person writes: `tolerate_failures`/`fail_minions` (`internal/hub/orch.go`), the state allowlist (`internal/state/compile.go`), `logrotate`'s patterns, the grain-key match in `introspect.go`, `halite-node`'s environment patterns, and `halite-ext-aws-secrets`' secret patterns. Each is the same question and was not measured. **Not verified:** a live hub targeted with a bracket expression, FreeBSD, `make check`; the Salt differential (a CI leg) was not run locally.
+
 ### 5.502 `tolerate_failures` forgave the wrong nodes for `[!x]`
 
 Issue 321, the second audit pass (`internal/hub/orch.go`). The same reversal as 5.501, in one of the other globs it listed.
