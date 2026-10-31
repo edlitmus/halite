@@ -57,9 +57,21 @@ func TestASilentNodeIsNotCountedAgainstTheSafeLimit(t *testing.T) {
 		t.Fatalf("%d of the two answering nodes were given the job; a silent node stopped the batch, "+
 			"which is not what is recorded in 5.496", tr.count())
 	}
-	status, err := op.JobStatus(context.Background(), res.JID)
-	if err != nil {
-		t.Fatal(err)
+	// The returns of the two answering nodes are recorded a moment after they
+	// are sent, so the missing list is waited on rather than read once: it
+	// settles at the silent node alone. (Read once, it still held web3 on a
+	// slow runner.)
+	var status *transport.JobStatus
+	settled := time.Now().Add(5 * time.Second)
+	for {
+		var err error
+		if status, err = op.JobStatus(context.Background(), res.JID); err != nil {
+			t.Fatal(err)
+		}
+		if len(status.Missing) <= 1 || time.Now().After(settled) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	if len(status.Delivered) != 3 {
 		t.Errorf("delivered to %v, want all three", status.Delivered)
