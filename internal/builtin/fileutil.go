@@ -43,8 +43,9 @@ import (
 // was asked for a user or group still applies it afterwards and wins. An
 // unprivileged run cannot give a file to another account, and that is
 // tolerated rather than failed, which is what it got before; as root, which
-// is how a node runs, it does not happen. What this does not keep is an
-// ACL or an extended attribute: those go with the old inode, as they did.
+// is how a node runs, it does not happen. The ACL and the other extended
+// attributes (SELinux context included) are carried by atomicfile itself, for
+// every writer, not only this one (DIVERGENCE 5.492).
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	was, err := os.Lstat(path)
 	if err != nil || !was.Mode().IsRegular() {
@@ -54,7 +55,7 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		if err := keepOwnership(tmp, was); err != nil && !errors.Is(err, fs.ErrPermission) {
 			return err
 		}
-		return keepSELinuxLabel(tmp, path)
+		return nil
 	})
 }
 

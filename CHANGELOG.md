@@ -21,6 +21,18 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A rewritten file keeps its ACL and extended attributes
+
+A file rewritten by a state (hosts, sysctl, fstab, modprobe, iptables and
+nftables rules, PAM files, the keystore) was replaced by a new file, which
+lost the old one's POSIX ACL and extended attributes: a `user:backup:r--` entry
+added with `setfacl` was gone after the first state that touched the file. The
+SELinux context was kept for the config files only (DIVERGENCE 5.484). Every
+file replaced this way now keeps all of them, and the mode a state asks for
+still wins: an ACL entry is narrowed by a stricter mode, never widened past it
+(DIVERGENCE 5.492). Linux only; the SELinux path was not re-run on an enforcing
+host with this change, and FreeBSD and macOS ACLs are not kept.
+
 ### `mac_keychain.friendly_name` no longer puts the passphrase on the command line
 
 `friendly_name` ran `openssl pkcs12 -passin pass:<passphrase>`, so the PKCS#12

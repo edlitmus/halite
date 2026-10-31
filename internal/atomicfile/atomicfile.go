@@ -78,6 +78,14 @@ func WritePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
+	// A file that is being replaced hands its extended attributes -- SELinux
+	// context, POSIX ACLs, user attributes -- to its successor, before
+	// `prepare` so that prepare has the last word. DIVERGENCE 5.492.
+	if was, err := os.Lstat(path); err == nil && was.Mode().IsRegular() {
+		if err := keepExtendedAttributes(name, path, mode); err != nil {
+			return fmt.Errorf("writing %s: %w", path, err)
+		}
+	}
 	if prepare != nil {
 		if err := prepare(name); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)

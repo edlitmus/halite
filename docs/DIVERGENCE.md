@@ -35300,7 +35300,7 @@ are not errors.
 and compares the context: it passes with the change, and with the call removed
 it fails with `"unconfined_u:object_r:etc_t:s0", was
 "unconfined_u:object_r:net_conf_t:s0"`. The unit test
-`TestWriteAtomicKeepsAnExtendedAttribute` does the same with a `user.`
+`TestWriteAtomicKeepsExtendedAttributes (it was TestWriteAtomicKeepsAnExtendedAttribute, in `internal/builtin`, until 5.492)` does the same with a `user.`
 attribute on any Linux machine and fails when the call is removed. The live
 test skips with its reason without SELinux or root; the Linux fleet leg runs
 all `TestLive*`, so it skips there.
@@ -35443,6 +35443,25 @@ The generated module page and the `mac_keychain` evidence note changed with it.
 looked at on the Mac); a macOS earlier than 27.2; the System-keychain
 (root) half of the live test with this change; and `make check`. `install` still
 exposes its passphrase, by `security`'s design.
+
+### 5.492 A rewritten file now keeps its ACL and every extended attribute, for every writer
+
+Issue 321, section 5: the audit table's last open row, "`atomicfile.Write`: SELinux label, xattrs, ACLs". 5.484 kept the SELinux label, in `writeAtomic`, and said the ACL and the rest "go with the old inode". They did, and so did the label for every writer that did not go through `writeAtomic`.
+
+**Measured** on this workstation (Linux, ext4, unprivileged): a 0640 file with `user:<uid>:r--` from `setfacl`, rewritten through `writeAtomic`, came back with no ACL entry (`getfacl` showed `user::rw-`, `group::r--`, `other::---` and nothing else). `TestWriteAtomicKeepsAnACL` failed on that and passes now. Salt writes in place and so keeps it (5.471, read in 3008.3's source, not run).
+
+**The change.** `internal/atomicfile` copies the old file's extended attributes onto the temporary file, before the rename and before the caller's `prepare` step, whenever the target exists as a regular file. It lists the attributes and copies each, rather than naming `security.selinux`: a list is what was missing the ACL. That moved the code from `internal/builtin` (`keepSELinuxLabel` is now `keepExtendedAttributes`), so `modprobe`, `iptables`, `nftables`, `pam`, the keystore and the PKI store, which call `atomicfile.Write` directly and never had the label, get it too. A refusal to set an attribute (a confined or unprivileged process, for `security.*` and `trusted.*`) and a filesystem with none are tolerated, as before.
+
+**The caller's mode still wins.** Setting `system.posix_acl_access` sets the file's group bits to the ACL's mask. Copied after the temporary file got its mode, that turns a 0600 write over a file with an `r--` entry into a file that entry can read. The copy is therefore followed by the mode again, and chmod on a file with an ACL rewrites the mask from the group bits: the entries survive, narrowed by what was asked, never widened past it. `TestWriteKeepsAnACLNoWiderThanTheModeAsked` shows mode 0600, `mask::---` and the entry `#effective:---`; with the second chmod removed it fails on all three.
+
+**Demonstrated.** Beyond the ACL test above: with the copy limited to `security.selinux`, `TestWriteAtomicKeepsExtendedAttributes` (two `user.` attributes) and the ACL test both fail; `GOOS=freebsd`, `darwin`, `windows` and `linux/arm64` vet clean (the other platforms get a no-op).
+
+**Not verified.**
+- **The SELinux path with this change.** `TestLiveWriteConfigFileKeepsSELinuxContext` was not re-run: it needs an enforcing host, and none was raised. 5.484's run covered the old code, which set only `security.selinux`.
+- **Root's view.** Nothing ran as root here, so `trusted.*` and `security.*` attributes set by root, and an ACL naming another account, are untested.
+- **FreeBSD and macOS.** Their ACLs are NFSv4 or POSIX.1e behind `extattr` and `chmod +a`, not xattrs; nothing there is kept and nothing was measured.
+- **Other writers.** `archive.go`'s `WriteInFrom` (root-confined extraction) is a different path and was not changed; `os.WriteFile`-style writers in place already keep the inode.
+- Writers that rewrite a file *in place* keep everything and were untouched. `make check` was not run.
 
 ## 6. Everything else not started
 
