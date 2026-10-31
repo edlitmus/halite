@@ -35597,18 +35597,6 @@ Issue 321, the audit pass over the hub files the first audit did not read (`inte
 
 **Not verified.** The plan for `local.` and runner reactions was compared by reading and was found to ask what the reactor asks; no test pairs them. A real node was not run. `make check` was not run.
 
-### 5.498 `reactor.test` judged a caller reaction against a placeholder, not the node
-
-Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/runners_reactor.go`, `reaction.go`). SPEC 18.3: a reactor is subject to the policy like any caller, and `reactor.test` includes the decision "because a reaction that renders perfectly and is refused at three in the morning is the one an operator wants to find out about now".
-
-**The pair.** `reactor.test` and the reactor ask the policy the same question in two places. For a `caller.` reaction, which runs on the node that fired the event, the reactor asks about that node by name (`Target: e.Node, TargetKind: "L"`). The plan asked about the literal string `<the node that fired the event>`, which no rule scoped to a node pattern matches.
-
-**Shown.** `TestReactorTestAndTheReactorAgreeOnACallerReaction`: a `heal` role with `target: 'web*.example'`, `functions: ['service.restart']`, bound to the entry's principal. The reactor dispatched `caller.service.restart` for an event from `web1.example`; `reactor.test` with `node: web1.example` said `denied: no rule in [heal] permits service.restart against list target "<the node that fired the event>"`. A preview that says refused about a reaction that runs is worse than none.
-
-**The change.** `reactor.test` asks about the node it was given (`node`, which a reaction also reads as `id`). With no node it says `not known: a caller reaction runs on the node that fired the event; give reactor.test a node`, and does not guess. `TestReactorTestSaysWhatItCannotKnowAboutACallerReaction` holds that and the refusal for a node outside the role. Pointing the plan back at the placeholder fails the first test.
-
-**Not verified.** The plan for `local.` and runner reactions was compared by reading and was found to ask what the reactor asks; no test pairs them. A real node was not run. `make check` was not run.
-
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
