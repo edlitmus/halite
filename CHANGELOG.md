@@ -21,6 +21,22 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A policy can require a keyword, so a credential can be held to `--test`
+
+A rule's `args` take `require_kwargs: {test: true}`: the call must carry each
+named keyword with exactly that value (a bool, a string or a number, compared
+by type) or it is refused. With it, a `reporter` role that may run `state.apply`
+may run it only as a dry run; before, nothing in the grammar could say so and
+the same role could apply for real (DIVERGENCE 5.487, issue 526). The dry-run
+flag counts as the keyword `test`, because that is what the node receives, and
+`halite-hub policy test` takes `--test`.
+
+**One behaviour changes for existing policies.** `deny_kwargs` now sees `test`:
+the policy used to be asked about a job's keywords without its dry-run flag, so
+a pattern such as `['*']` let `--test` through. It now refuses it (DIVERGENCE
+5.493). Run on one hub and node; the API and the scheduler were covered by
+tests, not run live.
+
 ### A rewritten file keeps its ACL and extended attributes
 
 A file rewritten by a state (hosts, sysctl, fstab, modprobe, iptables and
