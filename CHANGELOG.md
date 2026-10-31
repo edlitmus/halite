@@ -28,6 +28,14 @@ names with `path.Match`, so `['web[!1]*']` forgave `web1` alone instead of every
 web node but `web1`. They are now Salt's globs (DIVERGENCE 5.502). A step that
 relied on `[!x]` or `[^x]` here changes meaning.
 
+### A queued job is no longer lost on a busy hub
+
+A job queued for an offline node (`--offline queue`) was only looked for among the
+200 most recent jobs when the node came back, so on a hub running more than 200
+jobs in the queue's hour the node was given nothing, and nothing reported it. Each
+node's queued jobs are now found directly and delivered oldest first (DIVERGENCE
+5.500). The first node to connect after a hub start reads the whole job cache once.
+
 ### A reactor restart no longer loses the events it had accepted but not finished
 
 The reactor recorded its position as soon as it had handed a batch to its
