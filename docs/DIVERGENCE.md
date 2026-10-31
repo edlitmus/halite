@@ -35693,6 +35693,20 @@ Issue 321, the second audit pass (`internal/hub/runners_jobs.go`). The runner's 
 
 **Not changed.** `jobs.active`'s `limit` is documented as "how many recent jobs to consider", so it is a window by its own words and was left alone. **Not verified:** the cost of the 5,000-record read on a real cache, a real operator with a scoped certificate, `make check`.
 
+### 5.504 `state.orch_resume` showed a run `state.orch_show` hid, and `orch_list` ignored its own limit
+
+Issue 321, the second audit pass (`internal/hub/runners_orch.go`).
+
+**Resume.** `state.orch_show` and `state.orch_list` tell a caller scoped to a few nodes that another principal's run does not exist (M-56), because a run's timeline holds the nodes every step reached. `state.orch_resume` took any jid: it read the run, resumed it under the *caller's* authority, and returned the new run's timeline, in which each step carried forward reads `Carried forward from <jid>: <that step's comment>`, the old run's own text. A caller who had just been told there was no such run was handed its steps.
+
+**Shown.** `TestAScopedCallerCannotResumeARunItCannotSee`: `ed` runs an orchestration; `alice`, scoped to `web*.example` with the runners `state.orch_show` and `state.orch_resume`, is refused by `orch_show`, and on the old code `orch_resume` of the same jid returned a run timeline ("resumed_of" the jid, the `drain` step carried forward). It now gives `orch_show`'s refusal, word for word, and the test requires the two to agree.
+
+**The change.** One rule, `runVisible` (the principal who ran it, or a scope of every node), for showing, listing and resuming.
+
+**List.** `state.orch_list limit=N` had the same defect as `jobs.list_jobs` (5.503): the store was cut to the most recent N runs of everybody before the caller's visibility was applied, so a principal whose one run was older than N others listed none. A scoped caller is now looked for among the 5,000 most recent runs (`TestAScopedCallerIsListedItsOwnRunsUpToTheLimit` fails with the window narrowed back to `limit`); a caller of every node is unchanged.
+
+**Not verified.** That resuming under the caller's authority is the right rule when the caller *can* see the run (it is what the code did; steps are authorized as the resumer); a real orchestration over a real hub; `make check`. Found and not changed: `OrchStore.List`'s comment says an unreadable record is "not silently dropped" and the code drops it silently (`continue`).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
