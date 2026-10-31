@@ -35559,6 +35559,22 @@ Issue 321, the audit pass over the hub files the first audit did not read (`inte
 
 **Not changed, and not measured.** The map still holds about ten minutes of events, so at 5,000 events a second it holds millions of entries; its memory was not measured, and a smaller retention or a bound is the next step if it matters. The throughput target itself was not run: nothing here drives the whole reactor at 5,000 events a second, and there is no harness for it in the tree. The rest of the reactor (rate limit, dedupe, debounce) was read and not timed.
 
+### 5.495 A reactor restart lost the events it had accepted but not finished
+
+Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/reactor.go`). SPEC 17.2 says replay from an offset "makes a reactor restart lossless".
+
+**The defect.** The reactor wrote its offset as soon as it had *offered* a batch to its workers. An event waiting out a debounce window, sitting in a worker's queue, or halfway through its reaction when the hub stopped was already behind the recorded position, so the next start resumed after it: the reaction never happened and nothing recorded that it had not. The existing restart test (`TestARestartedReactorResumesFromWhereItStopped`) covers only events that arrived while no reactor was running.
+
+**Shown.** `TestAnEventStillDebouncingWhenTheReactorStopsIsReactedToAfterARestart`: an event read by a first reactor with `debounce: 2s`, the reactor stopped inside the window, a second reactor started from the same offset file. On the old code it failed: `the event that was debouncing when the reactor stopped was lost`, nothing reacted in six seconds.
+
+**The change.** Each event read is tracked (`ackTracker`) with the position before it, holds that position back while any entry is still working on it, and lets go when the last does: when the entry throttles, deduplicates or breaks the chain (at once); when its reaction finishes (a reaction cut short because the reactor is stopping does not count); when a later event replaces it in a debounce (coalesced); and when a full queue drops it (reported on the bus, as before). The offset file holds the position before the oldest event still held, or the end of what was read when none is, and is written whenever that changes and once more on the way out. "earliest" and "latest" are resolved to a concrete position at start, so the position before the first event is something a restart can resume from. After a lag reset the tracker is cleared, since what it held is behind a position the reactor can no longer read.
+
+**What it costs: at least once.** A restart now reads again from before the oldest unfinished event, which repeats the events that *finished* after it. In a steady state that is a handful, and a crash is covered as well as a clean stop; but a non-idempotent reaction (restarting a service, running an orchestration) can run twice across a restart. The dedupe window is in memory and does not survive one. SPEC 17.2, the handbook's chapters 18 and 45 and the changelog now say "at least once".
+
+**Demonstrated.** Each of four breaks failed a test and was reverted: the position ignoring the tracker (the restart test and three more); finished reactions never releasing (`TestEventsAlreadyReactedToAreNotRepeatedAfterARestart`: the position stuck behind them); a replaced debounce event never released; dropped jobs never released (`TestAnEventTheQueueDropsStopsHoldingThePosition`). The hub package passes under `-race`.
+
+**Not verified.** A reaction cut short by shutdown is covered by reading, not by a test: no test cancels the reactor mid-reaction. The behaviour across a real hub restart under systemd, a lag reset with events held, and the throughput cost of the tracker's lock (not measured) are untested. The first start with no offset file still begins at the end, as before. `make check` was not run.
+
 ### 5.496 What `--batch-safe-limit` counts: a silent node is not a failure
 
 Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/batch.go`).

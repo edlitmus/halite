@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A reactor restart no longer loses the events it had accepted but not finished
+
+The reactor recorded its position as soon as it had handed a batch to its
+workers, so an event that was debouncing, queued or mid-reaction when the hub
+stopped was skipped by the next start, with nothing to say it had been. It now
+records the position before its oldest unfinished event. **Restart is at least
+once:** the events that finished after that one are repeated, so a
+non-idempotent reaction can run twice across a restart (DIVERGENCE 5.495). A
+reaction cut short by shutdown is covered by reading and not by a test.
+
 ### Two reactor entries with the same tag now each react
 
 Reactor entries that used the same tag glob shared their rate limit, dedupe
