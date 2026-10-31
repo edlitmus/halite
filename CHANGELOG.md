@@ -31,6 +31,14 @@ once:** the events that finished after that one are repeated, so a
 non-idempotent reaction can run twice across a restart (DIVERGENCE 5.495). A
 reaction cut short by shutdown is covered by reading and not by a test.
 
+### `reactor.test` no longer says a caller reaction is denied when it is not
+
+For a `caller.` reaction (which runs on the node that fired the event),
+`reactor.test` asked the policy about a placeholder instead of the node, so a
+role scoped to `web*.example` was reported as denying a reaction the reactor then
+dispatched. It now asks about the node it is given, and says it cannot know when
+it is given none (DIVERGENCE 5.498).
+
 ### The reactor no longer slows down as it counts causality chains
 
 Each event made the reactor walk every causality chain it still held, and an
