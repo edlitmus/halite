@@ -116,7 +116,7 @@ func (s *Server) applyState(w http.ResponseWriter, r *http.Request, token *apito
 	}
 	// One kind, named once, for the question and for the job.
 	const kind = "L"
-	if !s.authorize(w, token, jobRequestFor("state.apply", id, kind, req.SLS, nil)) {
+	if !s.authorize(w, token, jobRequestFor("state.apply", id, kind, req.SLS, nil, req.Test)) {
 		return
 	}
 

@@ -9,6 +9,7 @@
 package policy
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -49,6 +50,12 @@ type ArgRule struct {
 	DenySLS    []string
 	AllowMods  []string
 	DenyKwargs []string
+	// RequireKwargs names keywords a call must carry, each with exactly
+	// the value given: `{test: true}` is a role that can run the function
+	// only as a dry run. A keyword that is absent, or present with another
+	// value or another type, refuses the call. Values are bool, string or
+	// number; names are exact, never patterns. DIVERGENCE 5.493.
+	RequireKwargs map[string]any
 }
 
 // Binding attaches roles to a principal.
@@ -77,6 +84,13 @@ type Request struct {
 	Fun        string
 	Arg        []string
 	Kwarg      map[string]any
+	// Test is the job's dry-run flag, which travels beside Kwarg and not
+	// in it. On the wire it is the keyword `test` (job.WireKwargs sets it
+	// from the flag, over whatever Kwarg says), so the policy judges the
+	// keywords the node will see: a request that leaves it out has a
+	// `test` the node never reads from Kwarg, and a role that requires
+	// `test: true` would refuse every dry run. DIVERGENCE 5.493.
+	Test bool
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
 	Runner bool
@@ -225,6 +239,9 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 					return nil, fmt.Errorf("%s: role %q rule %d: args for %q is not a mapping", path, role, i, fn)
 				}
 				var ar ArgRule
+				if ar.RequireKwargs, err = requireKwargs(cm); err != nil {
+					return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
+				}
 				for _, f := range []struct {
 					key string
 					dst *[]string
@@ -240,6 +257,39 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 			}
 		}
 		out = append(out, r)
+	}
+	return out, nil
+}
+
+// requireKwargs reads `require_kwargs`: a mapping from a keyword name to the
+// one value a call must give it.
+//
+// The value is a bool, a string or a number. A list, a mapping or null is
+// refused at load: a requirement a call cannot be compared against exactly
+// is one that would be quietly never met, or quietly always met, and a
+// policy file is not where to find out which. The name is not a pattern,
+// and an empty one is refused.
+func requireKwargs(m *value.Map) (map[string]any, error) {
+	v, ok := m.Get("require_kwargs")
+	if !ok || v == nil {
+		return nil, nil
+	}
+	rm, ok := v.(*value.Map)
+	if !ok {
+		return nil, fmt.Errorf("`require_kwargs` is a mapping from a keyword to the value it must have, not %v", v)
+	}
+	out := make(map[string]any, rm.Len())
+	for _, e := range rm.Entries() {
+		name := value.KeyString(e.Key)
+		if name == "" {
+			return nil, fmt.Errorf("`require_kwargs` has a keyword with no name")
+		}
+		switch e.Val.(type) {
+		case bool, string, int64, float64:
+			out[name] = e.Val
+		default:
+			return nil, fmt.Errorf("`require_kwargs` %s is %v, which is not a bool, a string or a number", name, e.Val)
+		}
 	}
 	return out, nil
 }
@@ -580,6 +630,77 @@ func matchGlob(pattern, s string) bool {
 	return pattern == "*" || fnmatch.Match(pattern, s)
 }
 
+// wireKwargs is the keywords the node will be sent: Kwarg, with `test` set
+// from the dry-run flag the way job.WireKwargs sets it, over whatever Kwarg
+// says. The map is a copy, because the request is the caller's.
+func (r Request) wireKwargs() map[string]any {
+	if !r.Test {
+		return r.Kwarg
+	}
+	out := make(map[string]any, len(r.Kwarg)+1)
+	for k, v := range r.Kwarg {
+		out[k] = v
+	}
+	out["test"] = true
+	return out
+}
+
+// checkRequired refuses a call that lacks a required keyword or gives it
+// another value. Names are taken in sorted order, so the reason a role names
+// is the same on every run.
+func checkRequired(required, kwargs map[string]any, fun string) string {
+	names := make([]string, 0, len(required))
+	for name := range required {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		want := required[name]
+		got, ok := kwargs[name]
+		if !ok {
+			return fmt.Sprintf("%s requires %s=%v from this role, and the call does not carry it", fun, name, want)
+		}
+		if !sameScalar(want, got) {
+			return fmt.Sprintf("%s requires %s=%v from this role, and the call has %s=%v", fun, name, want, name, got)
+		}
+	}
+	return ""
+}
+
+// sameScalar compares a required value with a call's. Types must agree: the
+// string "true" is not the boolean true, which is the distinction a node
+// refuses a `test` over (cmd/halite-node jobTestFlag). Numbers compare as
+// numbers whichever of the integer and float types a YAML file and a JSON
+// body gave them.
+func sameScalar(want, got any) bool {
+	switch w := want.(type) {
+	case bool:
+		g, ok := got.(bool)
+		return ok && g == w
+	case string:
+		g, ok := got.(string)
+		return ok && g == w
+	}
+	wf, ok1 := toFloat(want)
+	gf, ok2 := toFloat(got)
+	return ok1 && ok2 && wf == gf
+}
+
+func toFloat(v any) (float64, bool) {
+	switch t := v.(type) {
+	case int:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case float64:
+		return t, true
+	case json.Number:
+		f, err := t.Float64()
+		return f, err == nil
+	}
+	return 0, false
+}
+
 // checkArgs applies the argument-level constraints, returning the
 // reason a request is refused or the empty string.
 func checkArgs(rule Rule, req Request) string {
@@ -587,14 +708,18 @@ func checkArgs(rule Rule, req Request) string {
 	if !ok {
 		return ""
 	}
+	kwargs := req.wireKwargs()
 	for _, kwarg := range constraint.DenyKwargs {
-		for name := range req.Kwarg {
+		for name := range kwargs {
 			if name == kwarg || matchGlob(kwarg, name) {
 				// Passing `pillar` on the command line is otherwise a
 				// trivial way round pillar-based authorization.
 				return fmt.Sprintf("%s may not be called with %q by this role", req.Fun, name)
 			}
 		}
+	}
+	if reason := checkRequired(constraint.RequireKwargs, kwargs, req.Fun); reason != "" {
+		return reason
 	}
 	// The names deny_sls and allow_mods judge. For a job they are the
 	// positional arguments, as they always were; for a runner they are

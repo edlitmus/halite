@@ -35408,6 +35408,8 @@ exercised by 5.320's tests); one node, one hub, one host; the cron path with
 `--as reporter` (the earlier cron run used the first operator). `make check` was
 not run; this is documentation.
 
+**Closed by 5.493** (issue 526): `require_kwargs: {test: true}` makes the paragraph true, and the same run's `state.apply` without `--test` as `reporter` is now refused.
+
 ### 5.488 `mac_keychain.friendly_name` put the passphrase on openssl's command line
 
 Issue 321, section 5: "`mac_keychain.go:360,439` pass the PKCS#12 password on
@@ -35516,6 +35518,46 @@ Issue 321, section 5: the audit table's last open row, "`atomicfile.Write`: SELi
 - By hand, a file with `u:nobody:r--`, `user.demo`, `trusted.demo` and the context `net_conf_t`, rewritten through `atomicfile.Write` at 0640: `getfacl`, `getfattr -d -m -` and `ls -Z` before and after were **identical**, `system.posix_acl_access`, `trusted.demo` and `security.selinux` included, and the contents were the new ones. So root's view and an ACL naming another account, both listed as not verified above, are now run.
 
 **Still not run:** a file whose `security.selinux` the kernel refuses to carry (a confined caller), `make check`, and FreeBSD and macOS (nothing is kept there). The lab was destroyed afterwards; Vultr listed 0 instances.
+
+### 5.493 A policy can require a keyword, and the dry-run flag is one
+
+Issue 526, which is 5.487's gap: "a rule that could require `test: true` ... is a policy feature, not a documentation fix, and was not built."
+
+**The grammar.** `args: {state.apply: {require_kwargs: {test: true}}}`: the call must carry each named keyword with exactly that value. Values are a bool, a string or a number, compared **by type**, so the string `"true"` is not `true` (a node refuses a non-boolean `test` for the same reason, `jobTestFlag`; 5.330). Names are exact and not patterns, and an absent keyword refuses the call. A list, a mapping, null or an empty name is refused at load. It is a limit like the others: a role without it is unchanged.
+
+**The pair that disagreed.** A job's dry-run flag is a field (`Test`) beside its keywords, not one of them, and `job.WireKwargs` turns it into the keyword `test` on the wire, over whatever `Kwarg` says. Every authorization built its question from `Kwarg` alone, so the policy never saw the flag the node would act on. Two things followed. A requirement on `test` would have refused every dry run. And `deny_kwargs` could not see it either: `deny_kwargs: ['*']` or `['te*']` let `--test` through, though the node reads it as a keyword. The policy request now has a `Test` field, and the policy judges the keywords the node receives (`Kwarg` with `test` set from the flag the way `WireKwargs` sets it). Every site that authorizes a job passes it: the hub's submit, resume and kill (`internal/hub/jobs.go`), `DispatchAs` for what an orchestration step or a runner dispatches, and the API's `/v1/run` and `/v1/nodes/{id}/state`. `/v1/orch` already put `test` in its keywords. `halite-hub policy test` takes `--test`, because its `--kwarg` values are all strings.
+
+**Run** on 2026-10-31, on this workstation (Linux, unprivileged), a throwaway hub and one node built from `main` at `b453365c` plus this change, under the `reporter` policy of `contrib/examples/handbook/automation/drift-reporter-policy.yaml`:
+
+| As `reporter` | Result |
+|---|---|
+| `run '*' state.apply --test --out json` | the report (`result: null`, a diff); `target.txt` not created |
+| `run '*' state.apply` | refused: `state.apply requires test=true from this role, and the call does not carry it`; not created |
+| `run '*' state.apply test=true` | a rehearsal, not created |
+| `run '*' test.ping` | refused: `no rule in [reporter] permits test.ping against "*"` |
+| `policy test cert:CN=reporter rk-node state.apply` / `... --test` | denied, naming the requirement / allowed |
+
+The row that 5.487 recorded as allowed and writing the file is now refused. Chapter 24's reporter section, chapter 26's table, SPEC's argument-level constraints, `halite-policy(5)` and the example policy say so.
+
+**Demonstrated.** Broken on purpose, each failing a test: `wireKwargs` ignoring the flag (the flag cases and the `deny_kwargs` case); `checkRequired` returning nothing (the refusals); the bool compared as text (the string `"true"` allowed); each site that sets `Test` in turn, the hub's submit, kill, resume and `DispatchAs`, and both API endpoints, each by one test in `internal/hub` or `internal/api`. Two of my first breaks did not compile and proved nothing; they were redone.
+
+**Not verified.**
+- **The API and the scheduler, live.** `halite-api` and a schedule or orchestration step were not run against a real hub with this role; the unit tests drive them against stubs and the hub's own test server.
+- **Reactors.** They authorize with `Kwarg` and carry no `Test` field, so a reaction asks for a dry run by keyword, which is what is judged.
+- **Behaviour change.** A `deny_kwargs` pattern that matches `test` now refuses `--test` (it did not see it before); none in this repository's examples does.
+- **Other platforms and a relay.** One node, one hub, no relay, no FreeBSD. `make check` was not run.
+
+### 5.494 The reactor swept every causality chain it held on every event
+
+Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/reactor.go`). SPEC 30 sets "5,000 events per second sustained" for the reactor.
+
+**The defect.** `overLength` counts reactions per causality chain so that a loop is broken (SPEC 16.3). Each call first walked the whole `chains` map to forget the ones unseen for ten minutes, under the lock every event takes. An event with no chain of its own starts one named by its offset, so the map holds about ten minutes of events and each new event walked all of them.
+
+**Measured** on this workstation (Linux, one goroutine, `overLength` alone with distinct chains): 74 us per event with 10,000 chains held, 162 us at 20,000, 335 us at 40,000 and 813 us at 80,000, taking 65 s for the 80,000. SPEC's rate leaves 200 us an event, so the reactor was past its stated throughput after about 27,000 chains, which is some five seconds at that rate, and the cost kept rising for as long as the load did.
+
+**The change.** The map is swept at most every ten seconds (`chainPruneEvery`) and forgets a chain unseen for ten minutes (`chainForgetAfter`, unchanged), so a chain is held for between ten minutes and ten minutes ten seconds. A chain seen again is never forgotten. `TestCountingChainsDoesNotSweepOnEveryEvent` counts sweeps, not time: 50,000 events with distinct chains inside one interval sweep once, and one sweep after the interval and age forgets them. With the interval removed it fails, sweeping 50,000 times and taking 39 s where the fixed code takes 0.03 s. `TestAChainSeenAgainIsNotForgotten` holds the other side.
+
+**Not changed, and not measured.** The map still holds about ten minutes of events, so at 5,000 events a second it holds millions of entries; its memory was not measured, and a smaller retention or a bound is the next step if it matters. The throughput target itself was not run: nothing here drives the whole reactor at 5,000 events a second, and there is no harness for it in the tree. The rest of the reactor (rate limit, dedupe, debounce) was read and not timed.
 
 ### 5.496 What `--batch-safe-limit` counts: a silent node is not a failure
 
