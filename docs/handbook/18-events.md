@@ -103,7 +103,9 @@ So the safe default when you mean "everything under this" is `**`.
 **Positions.** `--from` takes `latest` (the default), `earliest`, or an
 offset. A consumer that stores the offset of the last event it handled can
 stop for a month and resume without missing or repeating a thing. That is
-what makes a reactor restart lossless, and what makes the log usable in an
+what makes a reactor restart lossless (the reactor records the position before its
+oldest unfinished event, so a restart repeats the few that finished after it
+rather than losing one that had not), and what makes the log usable in an
 incident, when the question is "what happened between 02:10 and 02:40?".
 A reader that falls behind further than the bus can hold is told so
 explicitly, and not given a silently incomplete stream.

@@ -150,7 +150,7 @@ doubles the event volume; turn it off when the consumer is migrated.
 | Order | Total, by offset, within one hub |
 | Durability | Security tags (`halite/auth*`, `halite/key/*`) are on disk before the append returns; the rest are synced on an interval |
 | Retention | `event_retention` / `event_max_size`, whichever binds first |
-| Replay | From any retained offset (`--from`), which is what makes a reactor restart lossless |
+| Replay | From any retained offset (`--from`), which is what makes a reactor restart lossless (at least once: events finished after the oldest unfinished one are repeated) |
 | A slow subscriber | Told explicitly that it fell behind; never given a silently incomplete stream |
 | Across a relay | Only the tags the relay is configured to forward (`relay_event_tags`) |
 
