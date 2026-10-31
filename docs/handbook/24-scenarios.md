@@ -340,13 +340,33 @@ run, including the failure, the rollback and the resume, in
 
 (`mail -E` sends nothing on an empty body: a converged fleet is silent.) The
 script is `drift-report.sh` from [chapter 16](16-fleet-operations.md). Give
-the `reporter` certificate a role that may run `state.apply` and nothing else,
-and know what that grants: **a policy cannot require `--test`.** A role that
-may run `state.apply` may run it for real, so the reporter credential can
-change every node it is allowed to reach, and what keeps the morning job
-read-only is the `--test` in the crontab line, not the policy. Narrow it with
-`allow_sls` (chapter 26) to the states you are content to have applied, and
-keep the credential where only the cron job can read it. An empty report is the
+the `reporter` certificate a role that may run `state.apply` only as a
+rehearsal, with `require_kwargs` (chapter 26):
+
+<!-- example: handbook/automation/drift-reporter-policy.yaml -->
+```yaml
+# The drift reporter may run state.apply, and only as a rehearsal: a call
+# that does not carry test=true is refused, whatever else it names. It can
+# run nothing else, so `test.ping` and the rest are refused too.
+roles:
+  reporter:
+    - target: '*'
+      functions: ['state.apply']
+      args:
+        'state.apply':
+          require_kwargs: {test: true}
+
+bindings:
+  - principal: 'cert:CN=reporter'
+    roles: ['reporter']
+```
+
+Now the policy, and not only the `--test` in the crontab line, keeps the morning
+job read-only: a stolen reporter credential can ask what would change and
+nothing else. (Before `require_kwargs` a policy could not say this, and a role
+that could run `state.apply` could run it for real.) Add `allow_sls` to narrow
+which states it may even rehearse, and keep the credential where only the cron
+job can read it. An empty report is the
 goal; a non-empty one lists the node, the state and what it would change.
 
 > **What has and has not been run.** The crontab line was run on Ubuntu 26.04
@@ -355,13 +375,18 @@ goal; a non-empty one lists the node, the state and what it would change.
 > cron sent one mail to root whose body was the report, one line per node. After
 > the fleet was converged, two further cron ticks sent nothing: `mail -E` was
 > silent on the empty report. The line was then run with `--as reporter` against
-> a throwaway hub and node, under a policy whose `reporter` role grants only
-> `state.apply`: the rehearsal gave the report and changed nothing, `test.ping`
-> as `reporter` was refused (`no rule in [reporter] permits test.ping against
-> "*"`), and **`state.apply` without `--test` as `reporter` was allowed and
-> created the file**, which is why the paragraph above says the policy does not
-> make the job read-only. **Not run:** delivery to an address off the machine,
-> and FreeBSD's `mail`.
+> a throwaway hub and node, first under a policy whose `reporter` role granted
+> only `state.apply`: **`state.apply` without `--test` was allowed and created
+> the file**, so the policy added nothing to the job's safety. Under the policy
+> above, on a hub and node built from `main` on Ubuntu (unprivileged, one node):
+> `run '*' state.apply --test --out json --as reporter` gave the report and
+> created nothing, the same without `--test` was refused (`state.apply requires
+> test=true from this role, and the call does not carry it`) and created
+> nothing, `state.apply test=true` was a rehearsal too, and `test.ping` was
+> refused (`no rule in [reporter] permits test.ping against "*"`). **Not run:**
+> the same through `halite-api` and from a schedule or an orchestration step
+> (the unit tests cover those paths; no live run did), delivery to an address
+> off the machine, and FreeBSD's `mail`.
 
 ## Designing your own
 

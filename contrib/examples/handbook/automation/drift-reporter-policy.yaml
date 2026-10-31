@@ -1,0 +1,14 @@
+# The drift reporter may run state.apply, and only as a rehearsal: a call
+# that does not carry test=true is refused, whatever else it names. It can
+# run nothing else, so `test.ping` and the rest are refused too.
+roles:
+  reporter:
+    - target: '*'
+      functions: ['state.apply']
+      args:
+        'state.apply':
+          require_kwargs: {test: true}
+
+bindings:
+  - principal: 'cert:CN=reporter'
+    roles: ['reporter']
