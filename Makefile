@@ -1236,12 +1236,21 @@ lab-cidr:
 # the value never builds a rule -- and a destroy must not depend on
 # working out a public address, because the run that most needs to
 # succeed is the one cleaning up after something already went wrong.
+#
+# It also forgets the host keys lab.sh recorded (`.known_hosts`, 5.491).
+# They are the lab's trust on first use, and a key outliving its instance
+# is worth nothing but a refusal: Vultr hands addresses out again, and a
+# reused one with a new key is met with ssh's "REMOTE HOST IDENTIFICATION
+# HAS CHANGED" (that is ssh's documented failure; this lab was not seen to
+# hit it). Only after a destroy that succeeded (`set -e`): a half-destroyed
+# lab keeps the keys of what is still running.
 lab-down:
 	@set -e; \
 	$(LAB_LOAD_KEY); \
 	$(TOFU) -chdir=$(TOFU_DIR) destroy -input=false -auto-approve \
 		-var "allowed_ssh_cidrs=[\"203.0.113.1/32\"]" \
-		-var 'distros=$(LAB_DISTROS)'
+		-var 'distros=$(LAB_DISTROS)'; \
+	rm -f $(TOFU_DIR)/.known_hosts
 
 # Converge a lab that a failed apply left half-finished.
 #

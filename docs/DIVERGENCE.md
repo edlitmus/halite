@@ -35444,6 +35444,20 @@ looked at on the Mac); a macOS earlier than 27.2; the System-keychain
 (root) half of the live test with this change; and `make check`. `install` still
 exposes its passphrase, by `security`'s design.
 
+### 5.491 The lab trusts an instance's SSH host key on first use, and kept the keys for ever
+
+Issue 321, section 5, the lab's other Info item. `lab.sh` connects with `StrictHostKeyChecking=accept-new` and a lab-local `UserKnownHostsFile` (`contrib/tofu/.known_hosts`).
+
+**What that gives.** The first connection to a new instance records its key; any later change refuses. So an on-path attacker at the first connection to a freshly raised host could hold the session that runs `lab-test`, which ships this tree, as root. Later connections are pinned to whatever the first one saw.
+
+**Why that is not changed.** Pinning the key means knowing it before the first connection, and the lab has no channel for that: Vultr's API does not return a new instance's host keys, the BSD images do not run cloud-init, and generating the key in tofu (a `tls_private_key` per host, written by user-data) would add a provider to a lab whose pinned versions are part of what it reports, and put a host private key in `terraform.tfstate`. The exposure is a billed, throwaway instance, reachable only from the `allowed_ssh_cidrs` addresses (5.485) for the minutes before the first connection. That is a judgement and not a measurement: **this half is an open question, not a clearance**, and nothing was run to see what an attacker at that moment could do.
+
+**The defect found while looking.** Nothing ever removed `.known_hosts`; `make lab-down` destroyed the instances and left their keys, and the file held seven entries from earlier labs. Vultr hands addresses out again, so a stale key is a refusal waiting for a reused address, and the file only grew. `lab-down` now deletes it after a destroy that succeeded, not after one that failed: a half-destroyed lab keeps the keys of what is still running. A reused address meeting a stale key was not seen in this lab; ssh's refusal for it is its documented behaviour.
+
+**Held, and broken on purpose.** `TestLabDownForgetsKnownHostsOnlyAfterASuccessfulDestroy` runs the real recipe with `TOFU` pointing at a stand-in that exits 0 or 1 and `TOFU_DIR` at a temporary directory. With the `rm` removed it fails on the successful destroy (file kept); with `|| true` after the destroy it fails on both cases; with the change it passes. It shows the ordering and not that a real `tofu destroy` behaves, and it ran under GNU make 4.4 only.
+
+**Not verified.** A real `make lab-down` was not run for this (no instance exists), under BSD make or on macOS. `make check` was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
