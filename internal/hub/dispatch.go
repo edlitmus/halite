@@ -258,6 +258,7 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 			if err := s.Jobs.Put(j); err != nil {
 				return nil, err
 			}
+			s.queued.add(j)
 		}
 	}
 

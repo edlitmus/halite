@@ -186,6 +186,9 @@ type Server struct {
 	// heard from: what `halite_jobs_missing_returns` is the sum of.
 	// See owedReturns.
 	owed owedReturns
+	// queued is, per node, the jobs spooled for it: a hint to find them
+	// by, not the record of them. See queueIndex.
+	queued queueIndex
 
 	// streamHeartbeat, when set, replaces the 25 seconds a followed
 	// event stream may be silent before a blank line is sent, and
