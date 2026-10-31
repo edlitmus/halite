@@ -238,7 +238,7 @@ reactor:
 	_ = l
 	// One worker with room for one job and nothing popping from it, so the
 	// second and third offers each push the previous job out.
-	r.limits = map[string]*reactorLimit{}
+	r.limits = map[int]*reactorLimit{}
 	r.chains = map[string]*chainCount{}
 	r.workers = []*reactorWorker{{reactor: r, queue: newBoundedQueue(1)}}
 

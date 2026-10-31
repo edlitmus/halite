@@ -45,8 +45,12 @@ type Reactor struct {
 	Now func() time.Time
 
 	workers []*reactorWorker
-	limits  map[string]*reactorLimit
-	mu      sync.Mutex
+	// limits are the per-entry controls, keyed by the entry's position in
+	// Entries and not by its tag glob: two entries can share a glob, and
+	// sharing a bucket, a dedupe window and a debounce timer made the second
+	// one's events duplicates of the first's. DIVERGENCE 5.497.
+	limits map[int]*reactorLimit
+	mu     sync.Mutex
 	// chains counts how many reactions a causality chain has caused.
 	chains map[string]*chainCount
 	// lastPrune is when chains was last swept for forgotten entries, and
@@ -237,7 +241,7 @@ func (r *Reactor) start(ctx context.Context) {
 	if r.workers != nil {
 		return
 	}
-	r.limits = map[string]*reactorLimit{}
+	r.limits = map[int]*reactorLimit{}
 	r.chains = map[string]*chainCount{}
 	n := r.workerCount()
 	per := r.queueDepth() / n
@@ -264,13 +268,17 @@ func (r *Reactor) Offer(e *eventbus.Event) {
 	if e.Correlation == "" {
 		e.Correlation = string(r.Server.clock().Next())
 	}
-	for _, entry := range Matching(r.Entries, e.Tag) {
-		r.offerTo(entry, e)
+	// Over the entries themselves rather than Matching's copies, so each keeps
+	// its position: the controls belong to the entry, not to its glob.
+	for i, entry := range r.Entries {
+		if eventbus.MatchTag(entry.Tag, e.Tag) {
+			r.offerTo(i, entry, e)
+		}
 	}
 }
 
-func (r *Reactor) offerTo(entry ReactorEntry, e *eventbus.Event) {
-	limit := r.limitFor(entry)
+func (r *Reactor) offerTo(index int, entry ReactorEntry, e *eventbus.Event) {
+	limit := r.limitFor(index)
 	key := dedupeKey(entry, e)
 
 	// One hold per entry the event is offered to, released when that entry
@@ -389,17 +397,17 @@ func (r *Reactor) overLength(e *eventbus.Event) bool {
 	return c.n > r.maxDepth()
 }
 
-func (r *Reactor) limitFor(entry ReactorEntry) *reactorLimit {
+func (r *Reactor) limitFor(index int) *reactorLimit {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	l, ok := r.limits[entry.Tag]
+	l, ok := r.limits[index]
 	if !ok {
 		l = &reactorLimit{
 			seen:    map[string]time.Time{},
 			pending: map[string]*eventbus.Event{},
 			timers:  map[string]*time.Timer{},
 		}
-		r.limits[entry.Tag] = l
+		r.limits[index] = l
 	}
 	return l
 }

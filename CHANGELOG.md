@@ -31,6 +31,14 @@ once:** the events that finished after that one are repeated, so a
 non-idempotent reaction can run twice across a restart (DIVERGENCE 5.495). A
 reaction cut short by shutdown is covered by reading and not by a test.
 
+### Two reactor entries with the same tag now each react
+
+Reactor entries that used the same tag glob shared their rate limit, dedupe
+window and debounce timer, so with `dedupe_window` or `debounce` on both, the
+second entry's reaction was dropped as a duplicate of the first's, silently. Each
+entry now has its own (DIVERGENCE 5.497). An exact duplicate entry reacts twice,
+as it is written.
+
 ### `reactor.test` no longer says a caller reaction is denied when it is not
 
 For a `caller.` reaction (which runs on the node that fired the event),

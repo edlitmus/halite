@@ -35589,6 +35589,18 @@ Issue 321, the audit pass over the hub files the first audit did not read (`inte
 
 **Not changed: three decisions for the owner.** Whether a node that has not answered within the batch timeout should count toward the safe limit; whether the default per-slice timeout should be the job's whole lifetime; and whether a finished batch with returns outstanding should read as `batching` or `dispatched`. Chapter 14 now says what each does today and tells the operator to set `--batch-timeout`. **Not verified:** any of this on a real hub and node, FreeBSD, `make check`.
 
+### 5.497 Two reactor entries with the same tag shared one set of controls
+
+Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/reactor.go`).
+
+**The defect.** A reactor entry's controls (the rate-limit bucket, the dedupe window, the debounce timer) were kept in a map keyed by the entry's tag glob. Two entries can have the same glob: Salt's own `reactor:` list repeats a tag to run two things on it, `Matching` returns both, and the parser does not refuse the repeat. They then shared one set. With `dedupe_window` on both, the first entry's event recorded the key and the second entry's was judged a duplicate of it, so the second reaction never ran. With `debounce` on both, the timer's closure belonged to whichever entry created it, so the burst ended in that entry's reaction only. In neither case did anything say so: a duplicate is dropped quietly by design.
+
+**Shown.** `TestTwoEntriesWithTheSameTagAreEachReactedTo` (two entries, `dedupe_window: 1h`, each running its own SLS): on the old code only the first reaction ran (`only map[ping_a:true] ran`), and with the fix both do. `TestTwoDebouncedEntriesWithTheSameTagAreEachReactedTo` is the same with `debounce: 200ms`. Pointing the controls back at one shared set fails both.
+
+**The change.** The controls are keyed by the entry's position in `Entries`, and `Offer` walks the entries themselves instead of `Matching`'s copies so each keeps its position. Entries that differ in glob were never affected.
+
+**Not verified.** Two entries that are identical in every field are still two entries and now react twice, as written; whether the configuration should refuse an exact duplicate was not decided. One hub, stub nodes, no real reaction run end to end on a node. `make check` was not run.
+
 ### 5.498 `reactor.test` judged a caller reaction against a placeholder, not the node
 
 Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/runners_reactor.go`, `reaction.go`). SPEC 18.3: a reactor is subject to the policy like any caller, and `reactor.test` includes the decision "because a reaction that renders perfectly and is refused at three in the morning is the one an operator wants to find out about now".
