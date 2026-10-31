@@ -93,11 +93,7 @@ func registerStateRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				// A run's timeline holds the nodes every step reached, so
-				// only the principal who ran it, and a scope of '*', see
-				// it; anyone else is told there is no such run (issue
-				// 321, M-56).
-				if !c.Scope.Everything() && run.Principal != c.Principal {
+				if !c.runVisible(run) {
 					return nil, fmt.Errorf("%s: %w", id, job.ErrNoJob)
 				}
 				return orchJSON(run, true), nil
@@ -110,15 +106,13 @@ func registerStateRunner(r *Runners) {
 				runnerOpt("limit", signature.Int, 20, "How many to list."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
-				runs, err := c.Server.orchStore().List(c.argInt("limit"))
+				runs, err := c.visibleRuns(c.argInt("limit"))
 				if err != nil {
 					return nil, err
 				}
 				out := value.NewMap(len(runs))
 				for _, run := range runs {
-					if c.Scope.Everything() || run.Principal == c.Principal {
-						out.Set(string(run.JID), orchJSON(run, false))
-					}
+					out.Set(string(run.JID), orchJSON(run, false))
 				}
 				return out, nil
 			},
@@ -142,6 +136,12 @@ func registerStateRunner(r *Runners) {
 				previous, err := c.Server.orchStore().Get(id)
 				if err != nil {
 					return nil, err
+				}
+				// The same answer orch_show gives. The resumed run's
+				// timeline carries each earlier step forward with its own
+				// comment, so resuming a run is reading it.
+				if !c.runVisible(previous) {
+					return nil, fmt.Errorf("%s: %w", id, job.ErrNoJob)
 				}
 				req := OrchRequest{
 					Principal:  c.Principal,
@@ -189,6 +189,53 @@ func registerStateRunner(r *Runners) {
 			Pending: "it needs the durable work queue of SPEC section 19.4",
 		},
 	)
+}
+
+// runVisible reports whether the caller may see an orchestration run.
+//
+// A run's timeline holds the nodes every step reached, so only the principal
+// who ran it, and a scope of '*', see it; anyone else is told there is no such
+// run (issue 321, M-56). It is the one rule for showing, listing and resuming:
+// resuming had its own, which was none, and returned the earlier run's step
+// comments as "Carried forward from ...". DIVERGENCE 5.504.
+func (c *RunnerContext) runVisible(run *OrchRun) bool {
+	return c.Scope.Everything() || run.Principal == c.Principal
+}
+
+// scopedRunWindow is how many of the most recent runs are looked through to
+// find a scoped caller's.
+const scopedRunWindow = 5000
+
+// visibleRuns is up to limit of the most recent runs the caller may see. As
+// with jobs.list_jobs (DIVERGENCE 5.503) the limit used to cut the store to the
+// most recent N of everyone's runs before the caller's visibility did, so a
+// principal whose one run was older than N others listed none. A caller that
+// sees everything is unchanged; a scoped one is looked for among the
+// scopedRunWindow most recent.
+func (c *RunnerContext) visibleRuns(limit int) ([]*OrchRun, error) {
+	store := c.Server.orchStore()
+	if c.Scope.Everything() {
+		return store.List(limit)
+	}
+	window := scopedRunWindow
+	if limit > window {
+		window = limit
+	}
+	all, err := store.List(window)
+	if err != nil {
+		return nil, err
+	}
+	var out []*OrchRun
+	for _, run := range all {
+		if !c.runVisible(run) {
+			continue
+		}
+		out = append(out, run)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 // runOrchestration backs state.orchestrate and its short name.

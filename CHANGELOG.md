@@ -21,6 +21,15 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `state.orch_resume` no longer shows a run the caller may not see
+
+A caller scoped to a few nodes is told another principal's orchestration run does not
+exist by `state.orch_show` and `state.orch_list`, but `state.orch_resume` of the same
+run returned its timeline, with each carried-forward step's comment. It now gives the
+same refusal. `state.orch_list` also lists a scoped caller's own runs up to its
+`limit` (looked for among the 5,000 most recent) instead of cutting everyone's runs
+first (DIVERGENCE 5.504).
+
 ### A reactor restart no longer loses the events it had accepted but not finished
 
 The reactor recorded its position as soon as it had handed a batch to its
