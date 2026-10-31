@@ -212,3 +212,44 @@ func TestARunnerCallIsHeldToItsNarrowing(t *testing.T) {
 		t.Error("an empty narrowing reached a node")
 	}
 }
+
+// `jobs.list_jobs limit=N` lists up to N of the jobs the caller can see.
+//
+// The limit was applied to the cache before the caller's scope was, so a
+// caller scoped to a few nodes was given the most recent N jobs *of the whole
+// estate*, cut down to the ones in scope: with 25 jobs on db1 since its one
+// job on web1, `limit=20` listed nothing, though the job is theirs and the
+// documented 'How many to list' is 20. DIVERGENCE 5.503.
+func TestAScopedCallerIsListedTheJobsItCanSeeUpToTheLimit(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	l.server.Policy = runnerScopePolicy(t)
+	l.enrolled(t, "web1.example")
+	l.enrolled(t, "db1.example")
+	alice := l.operator(t, "alice")
+	ed := l.operator(t, "ed")
+
+	mine, err := ed.Submit(context.Background(), transport.SubmitRequest{
+		Target: "web1.example", TargetKind: "L", Fun: "test.ping",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 25; i++ {
+		if _, err := ed.Submit(context.Background(), transport.SubmitRequest{
+			Target: "db1.example", TargetKind: "L", Fun: "test.ping",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res, err := alice.Runner(context.Background(), transport.RunnerRequest{
+		Fun: "jobs.list_jobs", Kwarg: map[string]any{"limit": 20},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := mapOf(t, returned(t, res))
+	if _, ok := listed.Get(mine.JID); !ok {
+		t.Errorf("alice's one job on web1 is not in jobs.list_jobs limit=20: it listed %d jobs", listed.Len())
+	}
+}

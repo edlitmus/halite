@@ -26,15 +26,13 @@ func registerJobsRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				list, err := jobs.List(c.argInt("limit"))
+				list, err := c.visibleJobs(jobs, c.argInt("limit"))
 				if err != nil {
 					return nil, err
 				}
 				out := value.NewMap(len(list))
 				for _, j := range list {
-					if c.jobVisible(j) {
-						out.Set(string(j.JID), c.scopedSummary(j))
-					}
+					out.Set(string(j.JID), c.scopedSummary(j))
 				}
 				return out, nil
 			},
@@ -268,6 +266,44 @@ func (c *RunnerContext) jobs() (*job.Cache, error) {
 		return nil, fmt.Errorf("this hub keeps no job cache, so there is nothing to read")
 	}
 	return c.Server.Jobs, nil
+}
+
+// scopedJobWindow is how many of the most recent jobs are looked through to
+// find a scoped caller's jobs.
+const scopedJobWindow = 5000
+
+// visibleJobs is up to limit of the most recent jobs the caller may see.
+//
+// The limit used to be applied to the cache and the scope afterwards, so a
+// caller scoped to a few nodes got the most recent N jobs of the whole estate
+// cut down to its own: after 25 jobs on db1, `limit=20` listed nothing of a
+// web-scoped caller's one job on web1, and "how many to list" was not what it
+// said. A caller of every node is unchanged. A scoped one is looked for among
+// the most recent scopedJobWindow, a bound and not a promise: a job older than
+// that is not found. DIVERGENCE 5.503.
+func (c *RunnerContext) visibleJobs(jobs *job.Cache, limit int) ([]*job.Job, error) {
+	if c.Scope.Everything() {
+		return jobs.List(limit)
+	}
+	window := scopedJobWindow
+	if limit > window {
+		window = limit
+	}
+	all, err := jobs.List(window)
+	if err != nil {
+		return nil, err
+	}
+	var out []*job.Job
+	for _, j := range all {
+		if !c.jobVisible(j) {
+			continue
+		}
+		out = append(out, j)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func parseJID(s string) (job.ID, error) {
