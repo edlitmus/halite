@@ -81,14 +81,19 @@ func (f *Fleet) attach(nodeID string, now time.Time) *stream {
 }
 
 // detach removes a stream, unless it has already been replaced by a
-// newer one from the same node.
-func (f *Fleet) detach(st *stream) {
+// newer one from the same node, and says which: true when this stream was the
+// node's current one and the node is now gone, false when a newer connection
+// holds the name and the node has not left.
+func (f *Fleet) detach(st *stream) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if cur, ok := f.streams[st.nodeID]; ok && cur == st {
+	cur, ok := f.streams[st.nodeID]
+	current := ok && cur == st
+	if current {
 		delete(f.streams, st.nodeID)
 	}
 	st.close()
+	return current
 }
 
 // Relay records that a set of nodes is reachable through one

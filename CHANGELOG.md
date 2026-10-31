@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A relay that reconnects keeps its subordinates
+
+When a relay reconnected while the hub still held its old stream open, the old
+stream's exit forgot every node behind that relay, so none could be targeted until the
+relay next reported a change. The same exit published a `node/<id>/stop` event for a
+node that was connected, and the "left" presence event counted the node that was
+leaving. A replaced stream now ends without doing either (DIVERGENCE 5.506).
+
 ### `state.orch_resume` no longer shows a run the caller may not see
 
 A caller scoped to a few nodes is told another principal's orchestration run does not

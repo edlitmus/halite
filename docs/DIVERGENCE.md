@@ -35722,6 +35722,20 @@ Passing there: `TestAGlobTargetIsSaltsGlob` and `TestAGrainGlobCrossesASlash` (5
 
 **What this does and does not show.** As in 5.499: a jail shares the host's kernel, so this is the Go code under FreeBSD's runtime, loopback and filesystem; the nodes are stubs on the hub's test server and no `halite-node` ran on FreeBSD. The glob result is the one that matters most there, since FreeBSD hosts carry most of the fleet and 5.501 changes what a target means. **Not run:** the whole `internal/hub` suite there, `-race` (no cgo in the cross-build), a real node, and `make check`. The jail was destroyed afterwards; `radarr` and `zabbix` were not touched.
 
+### 5.506 A relay that reconnected lost its routes, and a replaced stream announced a node stop
+
+Issue 321, the third audit pass (`internal/hub/subscribe.go`, `fleet.go`).
+
+**The defect.** A second connection from the same identity replaces the first (`Fleet.attach` closes the old stream), which is how a node or relay arrives after a network partition while the hub has not yet noticed the old peer is gone. The *old* handler then returned and ran what every exit ran: `dropRelay(<relay>)`, which forgets every subordinate of that relay name, and the `halite/node/<id>/stop` and `halite/presence/change` events. The first removed the routes the *new* connection had registered a moment earlier, so a relay that reconnected had every node behind it unreachable (not targetable, not connected, jobs dispatched into nothing) until it next sent a `/v1/relay` update, which it sends only when its own fleet changes. The second told reactors a node had stopped while it was connected.
+
+**Shown.** `TestAReplacedRelayStreamDoesNotTakeTheNewOnesRoutesWithIt` opens a relay's stream twice through a real HTTP server and the real handler. On the old code, all three assertions failed: `RelayFor("web1.example")` was gone, `Connected()` did not list it, and one `halite/node/relay1.example/stop` event had been published. With the exit's cleanup skipped for a replaced stream the test passes; with that skip disabled again (`if false && !current`) it fails the same three ways.
+
+**The same exit, a second defect.** The "left" half of `halite/presence/change` counted `Connected()` before the stream was detached, so the last node of an estate leaving reported one connected. `TestAPresenceChangeForALeavingNodeCountsTheFleetWithoutIt` failed with "1 connected" when the detach was moved back after the count, and passes with it first.
+
+**The change.** `Fleet.detach` says whether the stream was still the node's current one. A handler whose stream was replaced ends quietly (one log line, the disconnect metric still counted); only the current stream's exit drops a relay's routes and emits the stop and presence events, and it detaches before counting.
+
+**Not verified.** A real relay and hub across a real partition (the test replaces the stream by connecting again, which is the same hub-side path, not the same network event); that no consumer relied on a stop event arriving for every stream, including replaced ones (no Go code, shipped example or handbook page in the repository reads the tag; an operator's own reactor or `halite-hub events` consumer might, and SPEC 17.1 calls it "a node disconnects", which a replaced stream is not); `make check`. The package passes under `-race`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

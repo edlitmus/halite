@@ -59,18 +59,15 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 			transport.WriteError(w, http.StatusForbidden, transport.CodeRefused, err)
 			return
 		}
-		defer s.fleet().dropRelay(nodeID)
 	}
 
 	st := s.fleet().attach(nodeID, now)
-	defer s.fleet().detach(st)
 
 	s.m().nodeConnects.Inc()
 	// Why a stream ended is the useful half: a node that went away and
 	// one the hub cut off are different incidents, and a stream that
 	// ended because the write failed is a third.
 	reason := "client_gone"
-	defer func() { s.m().nodeDisconnects.With(reason).Inc() }()
 
 	s.info("node connected", "node_id", nodeID, "version", req.Version, "grains_bytes", len(req.Grains))
 	s.emit(tagNodeStart(nodeID), nodeID, map[string]any{"version": req.Version})
@@ -78,6 +75,28 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 		"connected": len(s.fleet().Connected()), "joined": nodeID,
 	})
 	defer func() {
+		// Detached first, so that the count below is the fleet without
+		// this node; it was taken before, and a node leaving an estate of
+		// one reported one connected.
+		current := s.fleet().detach(st)
+		s.m().nodeDisconnects.With(reason).Inc()
+		if !current {
+			// A second connection from this identity replaced this one,
+			// which is how a reconnecting node, or relay, arrives while the
+			// hub has not yet noticed the old peer is gone. This handler
+			// returning is then the old stream ending and nothing else: the
+			// node has not stopped, and the routes a relay registered are
+			// the new connection's, which `dropRelay` removes by relay name
+			// and cannot tell from this one's. Both used to run, so a relay
+			// that reconnected had its subordinates forgotten until it next
+			// sent an update, and a reactor on `node/<id>/stop` was told
+			// about a node that was connected. DIVERGENCE 5.506.
+			s.info("a node's earlier connection ended; it has reconnected", "node_id", nodeID)
+			return
+		}
+		if req.Relay {
+			s.fleet().dropRelay(nodeID)
+		}
 		s.info("node disconnected", "node_id", nodeID)
 		s.emit(tagNodeStop(nodeID), nodeID, nil)
 		s.emit("halite/presence/change", nodeID, map[string]any{
