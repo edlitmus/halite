@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `reactor.test` no longer says a caller reaction is denied when it is not
+
+For a `caller.` reaction (which runs on the node that fired the event),
+`reactor.test` asked the policy about a placeholder instead of the node, so a
+role scoped to `web*.example` was reported as denying a reaction the reactor then
+dispatched. It now asks about the node it is given, and says it cannot know when
+it is given none (DIVERGENCE 5.498).
+
 ### A rewritten file keeps its ACL and extended attributes
 
 A file rewritten by a state (hosts, sysctl, fstab, modprobe, iptables and
