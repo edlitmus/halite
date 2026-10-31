@@ -35630,6 +35630,18 @@ Passing there: `TestCountingChainsDoesNotSweepOnEveryEvent` and `TestAChainSeenA
 
 **What this does and does not show.** A jail shares the host's kernel, so this is the Go code under FreeBSD's runtime, loopback and filesystem, and nothing about FreeBSD-specific kernel behaviour. No `halite-node` ran on FreeBSD: the nodes are stubs on the hub's test server, as on Linux. **Not run:** `-race` (the cross-built binary has no cgo, which the race detector needs), the tests against a real node, and `make check`. The jail was destroyed afterwards; `radarr` and `zabbix` were not touched.
 
+### 5.503 `jobs.list_jobs limit=N` listed fewer than N of a scoped caller's jobs
+
+Issue 321, the second audit pass (`internal/hub/runners_jobs.go`). The runner's own text is "How many to list."
+
+**The defect.** The limit was applied to the job cache and the caller's scope afterwards. A caller scoped to a few nodes was therefore given the most recent N jobs of the *whole estate*, cut down to the ones it may see: after 25 jobs on `db1` since its one job on `web1`, a `web*`-scoped caller's `limit=20` listed nothing of it, and a quiet scope on a busy estate listed an empty history.
+
+**Shown.** `TestAScopedCallerIsListedTheJobsItCanSeeUpToTheLimit`: one job to `web1.example`, then 25 to `db1.example`, `alice` (scoped to `web*.example`) calls `jobs.list_jobs limit=20`. On the old code her job was not in the answer (it listed one job, her own runner call); with the fix it is. With the window narrowed back to `limit` the test fails again.
+
+**The change.** For a caller of every node the answer is unchanged. A scoped caller is looked for among the 5,000 most recent jobs and given up to `limit` of the ones it can see. That is a bound and not a promise: a scoped caller's job older than the 5,000th most recent is not found, and the cost of a scoped `list_jobs` is one read of up to 5,000 job records.
+
+**Not changed.** `jobs.active`'s `limit` is documented as "how many recent jobs to consider", so it is a window by its own words and was left alone. **Not verified:** the cost of the 5,000-record read on a real cache, a real operator with a scoped certificate, `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
