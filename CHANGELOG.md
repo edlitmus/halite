@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A hub that accepts no relays refuses a relay's fleet update too
+
+`accept_relays` was honoured when a relay connected but not by `POST /v1/relay`, so a
+node the policy allowed to relay could register subordinates on a hub that had said it
+takes no relays. The update is now refused with 403 the way the connection is
+(DIVERGENCE 5.507).
+
 ### A relay that reconnects keeps its subordinates
 
 When a relay reconnected while the hub still held its old stream open, the old

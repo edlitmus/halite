@@ -163,6 +163,20 @@ func (s *Server) relayUpdate(w http.ResponseWriter, r *http.Request, relayID str
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
+	// The same refusal the subscribe path gives. This handler did not look
+	// at `accept_relays`, so a node the policy allowed `relay.proxy` could
+	// register subordinates, and have their jobs routed to it, on a hub that
+	// had said it takes no relays (DIVERGENCE 5.507).
+	//
+	// What is not checked here is that the relay has a stream open: the
+	// relay announces itself concurrently with opening one (relay.session),
+	// so the update can legitimately arrive first, and refusing it would
+	// leave the relay's spool waiting for the next attempt.
+	if !s.AcceptRelays {
+		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
+			errors.New("this hub does not accept relays; set `accept_relays: true` on it"))
+		return
+	}
 	decision := s.Policy.Authorize(policy.Request{
 		Principal: "node:" + relayID,
 		Fun:       "relay.proxy",
