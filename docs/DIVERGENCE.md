@@ -35613,6 +35613,23 @@ Issue 321, the audit pass over the hub files the first audit did not read (`inte
 
 **Not verified.** The plan for `local.` and runner reactions was compared by reading and was found to ask what the reactor asks; no test pairs them. A real node was not run. `make check` was not run.
 
+### 5.499 The reactor and batch fixes, run on FreeBSD in a jail
+
+Issue 321, the second audit pass. 5.494 to 5.498 each list FreeBSD as not run; this runs the tests of all five there.
+
+**Run** on 2026-10-31 in a fresh thin Bastille jail on `beastie` (FreeBSD 15.1-RELEASE-p6, amd64, a `lo0` address, root), the tests of `internal/hub` as a binary cross-compiled here (`GOOS=freebsd CGO_ENABLED=0 go test -c`) at `main` `7f35a3c9`, shipped into the jail, which has no network and no Go.
+
+| Set | Pass | Fail |
+|---|---|---|
+| Reactor, reaction, dedupe, debounce, chaos (`-run 'Reactor|Reaction|TwoEntries|TwoDebounced|EventsAlready|AnEventStillDebouncing|TheTracker|DebouncedAndDropped|AnEventTheQueue|CountingChains|AChainSeen|Causality|Dedup|Throttle|RateLimit'`) | 25 | 1 |
+| Batch, safe limit, resume, subset (`-run 'Batch|SafeLimit|SilentNode|Resum|Subset'`) | 20 | 0 |
+
+Passing there: `TestCountingChainsDoesNotSweepOnEveryEvent` and `TestAChainSeenAgainIsNotForgotten` (5.494); `TestAnEventStillDebouncingWhenTheReactorStopsIsReactedToAfterARestart`, `TestEventsAlreadyReactedToAreNotRepeatedAfterARestart`, `TestDebouncedAndDroppedEventsStopHoldingThePosition`, `TestAnEventTheQueueDropsStopsHoldingThePosition` and `TestARestartedReactorResumesFromWhereItStopped` (5.495); `TestASilentNodeIsNotCountedAgainstTheSafeLimit` (5.496); `TestTwoEntriesWithTheSameTagAreEachReactedTo` and `TestTwoDebouncedEntriesWithTheSameTagAreEachReactedTo` (5.497); `TestReactorTestAndTheReactorAgreeOnACallerReaction` (5.498).
+
+**The one failure is the jail, not FreeBSD.** `TestTheHandbookReactionsDispatchWhatChapterTwentyOneSays` opens `../../contrib/examples/handbook/automation/reactor/node-started.sls`, which a lone test binary has no source tree to find. It was not re-run in a checkout there. The `internal/atomicfile` binary, run alongside for completeness, failed three repository-scanning audits (`TestNothingElseWritesThroughATempFileAndARename`, `TestNoExemptionOutlivesItsFunction`, `TestNothingElseRenamesWithTheStandardLibrary`) for the same reason: each inspected nothing (`only 0 functions were inspected`). Its other five tests passed. On FreeBSD that run shows nothing about 5.492, whose xattr and ACL copy is Linux code and a no-op there.
+
+**What this does and does not show.** A jail shares the host's kernel, so this is the Go code under FreeBSD's runtime, loopback and filesystem, and nothing about FreeBSD-specific kernel behaviour. No `halite-node` ran on FreeBSD: the nodes are stubs on the hub's test server, as on Linux. **Not run:** `-race` (the cross-built binary has no cgo, which the race detector needs), the tests against a real node, and `make check`. The jail was destroyed afterwards; `radarr` and `zabbix` were not touched.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

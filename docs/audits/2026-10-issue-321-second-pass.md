@@ -22,7 +22,7 @@ stated property nobody had shown:
 
 Nothing here was read against a real hub and node: every demonstration below is
 a Go test on the hub's own test server with stub nodes, plus one measurement of
-a single function. FreeBSD was not involved.
+a single function. The reactor and batch tests were also run on FreeBSD 15.1 in a jail on `beastie` (5.499): 45 of 46 pass, and the one failure needs the source tree the jail lacks. A jail shares the host's kernel and its nodes are stubs, so that is the Go code on FreeBSD's runtime, not a node on FreeBSD.
 
 ## Findings
 
