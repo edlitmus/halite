@@ -35669,6 +35669,18 @@ So `run 'web[!1]*'` reached web1 and skipped web2: the node the operator meant t
 
 **Left, not changed.** Other callers still on `path.Match` for a glob a person writes: `tolerate_failures`/`fail_minions` (`internal/hub/orch.go`), the state allowlist (`internal/state/compile.go`), `logrotate`'s patterns, the grain-key match in `introspect.go`, `halite-node`'s environment patterns, and `halite-ext-aws-secrets`' secret patterns. Each is the same question and was not measured. **Not verified:** a live hub targeted with a bracket expression, FreeBSD, `make check`; the Salt differential (a CI leg) was not run locally.
 
+### 5.502 `tolerate_failures` forgave the wrong nodes for `[!x]`
+
+Issue 321, the second audit pass (`internal/hub/orch.go`). The same reversal as 5.501, in one of the other globs it listed.
+
+**The defect.** An orchestration step's `tolerate_failures` (Salt's `fail_minions`) names nodes whose failure does not fail the step. It matched them with `path.Match`, whose `[!1]` is the set `!` and `1`. `tolerate_failures: ['web[!1]*']`, written to forgive every web node but the canary, forgave only the canary and counted a failure of any other web node against the step.
+
+**Shown.** `TestToleratedFailuresUseSaltsGlob`: with `web[!1]*`, `web1.prod`, `web2.prod` and `db1.prod` failing, the old code left `web2.prod` and `db1.prod` blocking where it should leave `web1.prod` and `db1.prod`; `[!d]*` the same. It passes with `fnmatch.Match`, and fails again with `path.Match` put back.
+
+**The change.** `toleratesNode` is `fnmatch.Match`. Exact ids and `*`-style globs behave as before.
+
+**Not verified.** An orchestration run end to end with a tolerated failure; the other `path.Match` callers listed in 5.501 (state allowlist, `logrotate`, grain-key match, node environment patterns, aws-secrets patterns) are untouched. `make check` was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
