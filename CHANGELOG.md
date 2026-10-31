@@ -21,6 +21,16 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The reactor no longer slows down as it counts causality chains
+
+Each event made the reactor walk every causality chain it still held, and an
+event with no chain starts one, so under a steady load the cost per event grew
+with the load (74 us at 10,000 chains held, 813 us at 80,000, measured on the
+counting alone) and a busy reactor fell behind the 5,000 events a second SPEC
+asks for within seconds. The chains are now forgotten in a sweep every ten
+seconds instead (DIVERGENCE 5.494). The throughput target was not run end to
+end, and the map's memory under that load was not measured.
+
 ### A rewritten file keeps its ACL and extended attributes
 
 A file rewritten by a state (hosts, sysctl, fstab, modprobe, iptables and

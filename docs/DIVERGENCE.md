@@ -35517,6 +35517,18 @@ Issue 321, section 5: the audit table's last open row, "`atomicfile.Write`: SELi
 
 **Still not run:** a file whose `security.selinux` the kernel refuses to carry (a confined caller), `make check`, and FreeBSD and macOS (nothing is kept there). The lab was destroyed afterwards; Vultr listed 0 instances.
 
+### 5.494 The reactor swept every causality chain it held on every event
+
+Issue 321, the audit pass over the hub files the first audit did not read (`internal/hub/reactor.go`). SPEC 30 sets "5,000 events per second sustained" for the reactor.
+
+**The defect.** `overLength` counts reactions per causality chain so that a loop is broken (SPEC 16.3). Each call first walked the whole `chains` map to forget the ones unseen for ten minutes, under the lock every event takes. An event with no chain of its own starts one named by its offset, so the map holds about ten minutes of events and each new event walked all of them.
+
+**Measured** on this workstation (Linux, one goroutine, `overLength` alone with distinct chains): 74 us per event with 10,000 chains held, 162 us at 20,000, 335 us at 40,000 and 813 us at 80,000, taking 65 s for the 80,000. SPEC's rate leaves 200 us an event, so the reactor was past its stated throughput after about 27,000 chains, which is some five seconds at that rate, and the cost kept rising for as long as the load did.
+
+**The change.** The map is swept at most every ten seconds (`chainPruneEvery`) and forgets a chain unseen for ten minutes (`chainForgetAfter`, unchanged), so a chain is held for between ten minutes and ten minutes ten seconds. A chain seen again is never forgotten. `TestCountingChainsDoesNotSweepOnEveryEvent` counts sweeps, not time: 50,000 events with distinct chains inside one interval sweep once, and one sweep after the interval and age forgets them. With the interval removed it fails, sweeping 50,000 times and taking 39 s where the fixed code takes 0.03 s. `TestAChainSeenAgainIsNotForgotten` holds the other side.
+
+**Not changed, and not measured.** The map still holds about ten minutes of events, so at 5,000 events a second it holds millions of entries; its memory was not measured, and a smaller retention or a bound is the next step if it matters. The throughput target itself was not run: nothing here drives the whole reactor at 5,000 events a second, and there is no harness for it in the tree. The rest of the reactor (rate limit, dedupe, debounce) was read and not timed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
