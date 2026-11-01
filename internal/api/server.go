@@ -224,7 +224,8 @@ func (s *Server) hardened(next http.Handler) http.Handler {
 
 // logged writes the structured access record SPEC 22.3 calls the audit
 // record for the estate.
-func (s *Server) logged(next http.Handler) http.Handler {
+func (s *Server) logged(mux *http.ServeMux) http.Handler {
+	next := http.Handler(mux)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := s.now()
 		// The route is resolved before the handler runs so that the
@@ -232,6 +233,15 @@ func (s *Server) logged(next http.Handler) http.Handler {
 		// will: a gauge that goes up under one label and down under
 		// another leaks a series that never returns to zero.
 		route := routeOf(r)
+		// A path the mux has no route for falls to the catch-all, which is
+		// reachable without a token, so the path is the caller's text and
+		// not a route: one series per distinct path used up each family's
+		// bound, and the in-flight gauge kept a series for every one. The
+		// mux is asked rather than read off the request afterwards, because
+		// the route is needed before the handler runs. DIVERGENCE 5.509.
+		if _, pattern := mux.Handler(r); pattern == "/" {
+			route = unmatchedRoute
+		}
 		s.m().requestsInFlight.With(route).Add(1)
 		defer s.m().requestsInFlight.With(route).Add(-1)
 
@@ -261,6 +271,10 @@ func (s *Server) logged(next http.Handler) http.Handler {
 		m.responseBytes.With(route).Add(float64(rec.bytes))
 	})
 }
+
+// unmatchedRoute is the route label of every request for a path the API does
+// not serve.
+const unmatchedRoute = "(unmatched)"
 
 // routeOf names the route a request matched, with the variable segments
 // removed.

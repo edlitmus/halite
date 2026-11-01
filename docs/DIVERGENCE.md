@@ -35774,6 +35774,20 @@ Issue 321, the third audit pass (`internal/hub/dispatch.go`).
 
 **Not verified.** A real canary rollout; that no caller relied on the old refusal as a way of insisting that *every* matched node be up (`--offline require` without a subset is unchanged, and it is the way to say that); `make check`. The second test draws at random and fails if the one connected node is never drawn in 40 tries (about one in 10^7 for a correct hub).
 
+### 5.510 The API labelled a request with the path a stranger typed
+
+Issue 321, the third audit pass (`internal/api/server.go`), the same defect as 5.508 found in the second place.
+
+**The defect.** `routeOf` returned the request's own path for anything it did not recognise, and the catch-all that answers an unknown path needs no token. `halite_api_requests_total`, `halite_api_request_duration_seconds` and `halite_api_response_bytes_total` all carry `route`, and `halite_api_requests_in_flight` does too, which is added to before the handler runs and so kept a series for every path ever asked for. A family holds at most 512 series and counts the rest as `__overflow__`, so a few hundred different paths used the bound up and every route first seen afterwards was lost to it.
+
+**Shown.** `TestUnknownPathsShareOneRouteLabel` (API): 612 unknown paths with no token, then an authenticated read of a job. On the old code the exposition held a `/scan/N` series for each; with the fix they share `(unmatched)`, there is no `__overflow__`, and the job route is counted under `/v1/jobs/{id}`. With the check disabled the test failed again.
+
+**The change.** The route is resolved before the handler runs (the in-flight gauge needs it), so the mux is asked (`ServeMux.Handler`) rather than the request read afterwards, as the hub does (5.508). A path that reaches the catch-all is labelled `(unmatched)`; real route labels are unchanged.
+
+**Found, not changed.** `/v1/hook/{path...}` is the one route whose tail is kept in the label (`/v1/hook/{id}/<tail>`), and a hook request is the other unauthenticated one: a caller can still put its own text in a label there, bounded by the same 512. Collapsing it would merge the hooks an operator reads apart today; naming only the configured hooks needs the hook table, which this function does not have.
+
+**Not verified.** A real scanner; Prometheus reading the result; `make check`.
+
 ### 5.511 The key runners published no event, and `key.revoke` left the node connected
 
 Issue 321, the third audit pass (`internal/hub/runners_fleet.go`, `subscribe.go`).
