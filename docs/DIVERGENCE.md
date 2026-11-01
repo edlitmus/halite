@@ -35982,6 +35982,18 @@ Issue 321, the second audit pass, left open through round three (`internal/hub/o
 
 **Not verified.** That a record is truncated in practice on any filesystem the hub runs on (the test writes one); `make check`. `OrchStore.Get` for a single unreadable record already answered with the error and is unchanged.
 
+### 5.527 A runner that panicked left its job dispatched for ever
+
+Issue 321, the third audit pass, left open in round three (`internal/hub/runner.go`).
+
+**The defect.** `CallRunner` records the call `dispatched` and publishes `halite/run/<jid>/new` before it runs the runner, and closes both after. `net/http` recovers a handler's panic for the request and nothing more, so a runner that panicked left the record `dispatched` with no `ret` event and no return, and the caller's connection dropped. Nothing closes a runner job but its own return (5.528 is the other half of that).
+
+**Shown.** A registered runner that panics, called through the real endpoint. On the old code the server logged `http2: panic serving` and the caller got a failure from the transport; with the recover removed again the test fails the same way.
+
+**The change.** `runGuarded` turns the panic into the error it is: the run is a failed run, with the `ret` event, the return recorded as the failure and the caller told, and the stack in the hub's log. `http.ErrAbortHandler`, the sentinel a handler panics with on purpose, is passed on.
+
+**Not verified.** A panic in a goroutine a runner starts itself, which `recover` here cannot see and which ends the hub as any such panic does; no builtin runner is known to panic. `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
