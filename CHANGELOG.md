@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A returner outage is no longer counted as dropped events
+
+The event returner counted every failed shipment in `halite_events_dropped_total`, although
+the event is sent again, so an unreachable SIEM raised `HaliteEventsDropped`. It now has its
+own `halite_event_returner_failures_total`, an alert, and a series on the example dashboard;
+`reason="returner_failed"` is gone (DIVERGENCE 5.518).
+
 ### A state result is published only for a job that ran states
 
 `halite/state/<jid>/<node>/<result>` was published whenever a return's output format said

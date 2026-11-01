@@ -45,6 +45,9 @@ type hubMetrics struct {
 
 	eventsPublished *metrics.Counter
 	eventsDropped   *metrics.Counter
+	// eventReturnerFailures counts a returner refusing an event. It is not an
+	// event dropped: the shipper keeps its place and sends it again.
+	eventReturnerFailures *metrics.Counter
 	// returnsForeignSchema counts returns from a node newer than this
 	// hub. Non-zero during an upgrade and zero afterwards; non-zero
 	// afterwards is a node somebody forgot.
@@ -138,6 +141,9 @@ func (s *Server) setupMetrics() {
 			"Events appended to the bus, by the first two segments of the tag.", "tag_prefix"),
 		eventsDropped: r.Counter("halite_events_dropped_total",
 			"Events that did not reach the bus.", "reason"),
+		eventReturnerFailures: r.Counter("halite_event_returner_failures_total",
+			"Times the event returner could not ship an event. The event is not lost: "+
+				"it is sent again, and a returner that stays down shows here for as long as it does."),
 
 		returnsForeignSchema: r.Counter("halite_returns_foreign_schema_total",
 			"Returns whose schema this build does not know, which means a node is "+
@@ -216,7 +222,7 @@ func (s *Server) setupMetrics() {
 	// with increase(); TestEveryAlertedHubSeriesStartsAtZero holds the
 	// list to the rules. The events alert sums every reason, so each
 	// reason is named; the orchestration alert reads one result.
-	for _, reason := range []string{"no_bus", "append_failed", "subscriber_lag", "returner_failed", "node_rate"} {
+	for _, reason := range []string{"no_bus", "append_failed", "subscriber_lag", "node_rate"} {
 		m.eventsDropped.With(reason)
 	}
 	m.orchRuns.With("compile_failed")
