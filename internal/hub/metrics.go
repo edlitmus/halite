@@ -686,12 +686,25 @@ func (s *Server) measured(next http.Handler) http.Handler {
 
 		m := s.m()
 		route := hubRoute(r.URL.Path)
+		// The mux names the pattern it matched on the request. The catch-all
+		// that answers a path the hub does not serve is "/", and it is
+		// reachable with no client certificate, so the path the caller typed
+		// is not a route: one series per distinct path used up the family's
+		// bound and sent every route first seen later to `__overflow__`.
+		// DIVERGENCE 5.508.
+		if r.Pattern == "/" {
+			route = unmatchedRoute
+		}
 		m.requests.With(route, strconv.Itoa(rec.status)).Inc()
 		if elapsed := s.now().Sub(started); elapsed >= 0 {
 			m.requestDuration.With(route).Observe(elapsed.Seconds())
 		}
 	})
 }
+
+// unmatchedRoute is the route label of every request for a path the hub does
+// not serve.
+const unmatchedRoute = "(unmatched)"
 
 // hubRoute names the route a path belongs to, with the variable part
 // removed.

@@ -35748,6 +35748,20 @@ Issue 321, the third audit pass (`internal/hub/relay.go`).
 
 **Not verified.** A real relay against a hub with the flag off; `make check`.
 
+### 5.508 A scanner could fill the hub's route label with its own paths
+
+Issue 321, the third audit pass (`internal/hub/metrics.go`).
+
+**The defect.** `halite_hub_requests_total` and `halite_hub_request_duration_seconds` carry a `route` label. `hubRoute` made it the request's path, normalising only the jobs and files prefixes, so a request for a path the hub does not serve was its own route. The catch-all that answers one sits outside `authenticated`, so it is reachable with no client certificate. A family holds at most `metrics.MaxSeries` (512) series and counts the rest under `__overflow__`, so a client asking for a few hundred different paths used the whole bound, after which every route first seen later, and the routes a quiet hub serves rarely, were counted as `__overflow__` and could no longer be read apart. The caller's own text was also a label value on an exposition.
+
+**Shown.** `TestUnknownPathsShareOneRouteLabel` sends 612 distinct unknown paths through the real handler and then a request for `/v1/health`. On the old code the family held 511 `/scan/N` series, `/v1/health` itself had gone to `{route="__overflow__",code="__overflow__"}`, and the test failed three ways. With the fix every unknown path counts under one label, `(unmatched)`, and `/v1/health` is counted as itself; with the check disabled again the test fails as before.
+
+**The change.** `measured` reads the pattern the mux matched (`Request.Pattern`) and labels a request that fell to the catch-all `(unmatched)`. The existing route labels are unchanged (`TestTheRouteLabelDropsTheIdentifier` and the exposition tests pass untouched), so a dashboard keyed on them is not disturbed; only the junk series go.
+
+**Found, not changed here.** `internal/api` has the same shape: `routeOf` returns the raw path for anything unrecognised, and keeps the caller's own tail after a known prefix (`/v1/nodes/{id}/<tail>`). Whether the API's catch-all is reachable without credentials was not checked.
+
+**Not verified.** A real scanner against a real hub; Prometheus reading the result; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
