@@ -187,9 +187,31 @@ func parseReactions(doc *value.Map, sls string) ([]Reaction, error) {
 		if r.Kind == ReactLocal && r.Target == "" {
 			return nil, fmt.Errorf("%s: %s: a local reaction needs `tgt`", sls, id)
 		}
+
+		// `tgt` belongs to a local reaction. A caller reaction runs on the
+		// node that fired the event and nowhere else (see runReactions), and
+		// a runner or wheel reaction runs on the hub, so a `tgt` on any of
+		// them was accepted and then ignored: the operator who wrote
+		// `caller.service.restart` with `tgt: db*` read a reaction that
+		// restarted a service on the database hosts, and got one that
+		// restarted it on the node that fired the event. Refused where it is
+		// written, which is where it can be fixed. DIVERGENCE 5.522.
+		if r.Kind != ReactLocal && (r.Target != "" || r.TargetKind != "") {
+			return nil, fmt.Errorf("%s: %s: `tgt` and `tgt_type` apply to a local reaction; "+
+				"a %s reaction %s", sls, id, r.Kind, whereItRuns(r.Kind))
+		}
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// whereItRuns says where a reaction of a kind that takes no target runs, for
+// the message that refuses one.
+func whereItRuns(kind string) string {
+	if kind == ReactCaller {
+		return "runs on the node that fired the event"
+	}
+	return "runs on the hub"
 }
 
 // applyReactionArgs reads the list of single-key mappings under a
@@ -227,7 +249,19 @@ func applyReactionArgs(r *Reaction, v any) error {
 				return fmt.Errorf("`%s` is a list, or a mapping of keyword arguments", name)
 			}
 			for _, a := range list {
-				r.Arg = append(r.Arg, value.KeyString(a))
+				// A job's arguments are strings. A mapping or a list in one
+				// was flattened by KeyString into Go's printing of a
+				// pointer, which is not what the author wrote and not
+				// anything the function can use; keywords are what a
+				// structure is for. DIVERGENCE 5.522.
+				switch a.(type) {
+				case string, int64, float64, bool, nil:
+					r.Arg = append(r.Arg, value.KeyString(a))
+				default:
+					return fmt.Errorf("an entry of `%s` is %s, and a reaction's positional "+
+						"arguments are scalars; pass a structure as a keyword under `kwarg`",
+						name, value.TypeName(a))
+				}
 			}
 		case "kwarg", "kwargs":
 			m, ok := e.Val.(*value.Map)
