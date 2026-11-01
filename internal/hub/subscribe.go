@@ -42,11 +42,26 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 	// and they are recorded before the stream opens: a job dispatched
 	// in the same second as a node connects should not miss it.
 	if len(req.Grains) > 0 || req.Version != "" {
+		// A report that carries a version and no grains does not erase the
+		// ones the hub holds. The node sends nil when it cannot encode its
+		// grains (`grainsJSON` logs and returns nothing), and this wrote
+		// that over the cache: every target on a grain then matched nothing
+		// for that node until its next refresh, which is the silent miss
+		// SPEC 8.3 says must be annotated and not hidden. The grains it did
+		// report earlier keep their own age, so `grain_stale_after` still
+		// says how old they are: the time recorded is when they were
+		// reported, not when the node last connected. DIVERGENCE 5.523.
+		grains, seen := req.Grains, now
+		if len(grains) == 0 {
+			if old, err := s.nodes().Get(nodeID); err == nil {
+				grains, seen = old.Grains, old.LastSeen
+			}
+		}
 		if err := s.nodes().Put(&NodeData{
 			NodeID:   nodeID,
-			Grains:   req.Grains,
+			Grains:   grains,
 			Version:  req.Version,
-			LastSeen: now,
+			LastSeen: seen,
 		}); err != nil && !errors.Is(err, errNoNodeCache) {
 			s.warn("could not record what a node reported", "node_id", nodeID, "error", err.Error())
 		}
