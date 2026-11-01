@@ -35898,6 +35898,18 @@ Issue 321, the fourth audit pass (`internal/hub/reactor.go`).
 
 **Not verified.** A real disk fault, or a bus on a network filesystem; `make check`. The unmoved-offset assertion is made on the new code only, since the old code never reaches it in the test.
 
+### 5.520 Two publications to one node's mine could erase each other
+
+Issue 321, the fourth audit pass (`internal/hub/mine.go`).
+
+**The defect.** `MineStore.Update` reads a node's file, adds the published functions and writes it back; `Delete` of one function does the same without one. Nothing made that a single step. Two of them for the same node, which the hub's concurrent handlers and the `mine.delete` runner allow, each wrote back a file that lacked the other's change: a function a node had just published could be missing until it next published, and a deleted one could come back. The file write itself is atomic (`atomicfile`), which is why it looked safe.
+
+**Shown.** `TestAMineDeleteDoesNotLoseAConcurrentPublication` and `TestConcurrentMinePublicationsAreAllKept`, under `-race` and repeated: they pass with the change, and with the lock commented out the first reports functions published during the deletes lost and deleted functions back (`old18 was deleted and came back`, `new19 ... was lost`).
+
+**The change.** One mutex on the store held across the read, the change and the write of `Update` and of `Delete`; `Put` takes it too, and `put` is the unlocked form the others call. One lock for the whole store rather than per node: the writes are small and rare.
+
+**Not verified.** A real fleet publishing at once; `make check`. Found and not changed here: a deleted node's mine is not cleared when its key is deleted, which is its own entry.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
