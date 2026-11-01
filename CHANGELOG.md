@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The `event.send` runner counts, forwards and spells its events like any other
+
+`event.send` appended to the bus directly, so its events were missing from
+`halite_events_published_total`, never reached a relay's upstream, and had no `salt/...`
+spelling under `event_tag_compat`. It now publishes the way the hub's own events are
+published (DIVERGENCE 5.512).
+
 ### The key runners publish `halite/key/<node>/<action>`, and `key.revoke` disconnects at once
 
 `key.accept`, `key.reject`, `key.revoke` and `key.delete` published nothing, and a node

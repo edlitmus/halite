@@ -33,20 +33,34 @@ func (s *Server) emit(tag string, node string, data map[string]any) {
 // dispatched for it, and the events that job produced all carry the
 // same identifier. SPEC 17.1 and 16.3.
 func (s *Server) emitCorrelated(tag, node, correlation string, data map[string]any) {
+	s.publish(tag, node, correlation, data)
+}
+
+// publish is emitCorrelated that says where the event landed, for a caller
+// that must report it, and that fails when the append does.
+//
+// Everything the hub puts on the bus goes through here: the count, the
+// forward to a relay's upstream, the compatibility spelling. The `event.send`
+// runner appended to the bus itself and did none of them (DIVERGENCE 5.512).
+func (s *Server) publish(tag, node, correlation string, data map[string]any) (string, error) {
 	if s.Events == nil {
 		s.m().eventsDropped.With("no_bus").Inc()
-		return
+		return "", errNoBus
 	}
 	e := &eventbus.Event{Tag: tag, Node: node, Stamp: s.now(), Data: data, Correlation: correlation}
-	if _, err := s.Events.Append(e); err != nil {
+	offset, err := s.Events.Append(e)
+	if err != nil {
 		s.warn("could not record an event", "tag", tag, "error", err.Error())
 		s.m().eventsDropped.With("append_failed").Inc()
-		return
+		return "", err
 	}
 	s.m().eventsPublished.With(tagPrefix(tag)).Inc()
 	s.forward(e)
 	s.emitSaltCompat(e)
+	return offset, nil
 }
+
+var errNoBus = errors.New("this hub keeps no event bus")
 
 // emitSaltCompat writes the `salt/...` spelling as well, for SPEC
 // 17.1's `event_tag_compat`: a transition period where an existing
