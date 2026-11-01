@@ -91,6 +91,18 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		return nil, err
 	}
 
+	// Before the offline accounting below, because that is about the nodes
+	// the job will go to. It was after it, so `--offline queue` spooled the
+	// job for every matched node the subset had left out (each ran it when
+	// it next connected), and `--offline require` refused a job for nodes it
+	// was never going to reach. DIVERGENCE 5.509.
+	if sub.Subset > 0 {
+		matched, err = subsetOf(matched, sub.Subset)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	connected := s.fleet().Connected()
 	var absent []string
 	for _, id := range matched {
@@ -101,13 +113,6 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 	if sub.Offline == job.Require && len(absent) > 0 {
 		return nil, fmt.Errorf("%d of %d matched nodes are not connected (%v) and the offline policy is %q",
 			len(absent), len(matched), absent, job.Require)
-	}
-
-	if sub.Subset > 0 {
-		matched, err = subsetOf(matched, sub.Subset)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	batch := sub.Batch

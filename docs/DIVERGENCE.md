@@ -35762,6 +35762,18 @@ Issue 321, the third audit pass (`internal/hub/metrics.go`).
 
 **Not verified.** A real scanner against a real hub; Prometheus reading the result; `make check`.
 
+### 5.509 `--subset` was applied after the offline policy had counted the nodes it left out
+
+Issue 321, the third audit pass (`internal/hub/dispatch.go`).
+
+**The defect.** `Dispatch` worked out which matched nodes were not connected, and enforced `--offline require` and queued for `--offline queue`, *before* `--subset` chose the nodes the job goes to. Under `queue`, every matched node the subset had left out was spooled the job too, and ran it as it next connected: on machines the operator had said, by naming a canary subset, not to touch yet. Under `require`, the job was refused for a node it was never going to reach, so a subset of connected nodes could not be dispatched while anything else matched was down.
+
+**Shown.** `TestAQueuedSubsetQueuesOnlyForTheChosenNodes`: six enrolled nodes, none connected, `--subset 2 --offline queue`; the job's `Nodes` held two and its `Queued` held all six (four outside the subset). `TestARequiredSubsetIsRefusedOnlyForTheChosenNodes`: three nodes with one connected, `--subset 1 --offline require`; 40 draws and the job was refused every time, because the two disconnected nodes counted whichever was drawn. Both failed on the old code and pass with the subset chosen first.
+
+**The change.** The subset is chosen before the connected/absent accounting. Nothing else in the order moved.
+
+**Not verified.** A real canary rollout; that no caller relied on the old refusal as a way of insisting that *every* matched node be up (`--offline require` without a subset is unchanged, and it is the way to say that); `make check`. The second test draws at random and fails if the one connected node is never drawn in 40 tries (about one in 10^7 for a correct hub).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
