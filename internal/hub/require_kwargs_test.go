@@ -77,7 +77,13 @@ func TestAReporterCanKillItsOwnDryRun(t *testing.T) {
 	l := newLab(t).withJobs(t)
 	l.server.Policy = reporterPolicy(t)
 	web1 := l.enrolled(t, "web1.example")
-	defer l.connect(t, web1, "web1.example", `{}`)()
+	// A node that does not answer, so the job is still running when it is
+	// killed. This used a node that returns at once, and then raced: a job
+	// that had already completed is refused a kill (DIVERGENCE 5.515), and
+	// the kill that was meant to prove the reporter is authorized to stop a
+	// dry run sometimes arrived after the return and failed for another
+	// reason.
+	defer l.connectSilent(t, web1, "web1.example", `{}`)()
 	op := l.operator(t, "ed")
 
 	res, err := op.Submit(context.Background(), transport.SubmitRequest{
