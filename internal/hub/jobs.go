@@ -372,10 +372,7 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
 		return
 	}
-	decision := s.Policy.Authorize(policy.Request{
-		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
-		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test,
-	})
+	decision := s.Policy.Authorize(requestForJob(principal, j))
 	s.countDecision(decision)
 	if !decision.Allowed {
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
@@ -463,19 +460,7 @@ func (s *Server) jobStatus(w http.ResponseWriter, r *http.Request, principal str
 	// bound to `web*` could not run anything on `db1`, and could read every
 	// return `db1` had made, which is state output and so may hold secrets.
 	// DIVERGENCE 5.513.
-	//
-	// A runner call is recorded as a job against the pseudo-target "hub",
-	// and a node-targeted rule says nothing about it, so it is authorized
-	// the way the call was: as the runner function, which is also how
-	// `metrics.show` is gated.
-	req := policy.Request{
-		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
-		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test,
-	}
-	if j.Target == RunnerTarget {
-		req = policy.Request{Principal: principal, Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Runner: true}
-	}
-	decision := s.Policy.Authorize(req)
+	decision := s.Policy.Authorize(requestForJob(principal, j))
 	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("job read refused by policy",
@@ -513,4 +498,24 @@ func (s *Server) jobStatus(w http.ResponseWriter, r *http.Request, principal str
 		Missing:   missing,
 		Returns:   encoded,
 	})
+}
+
+// requestForJob is the authorization request for acting on a job that is
+// already recorded: reading it, or stopping it.
+//
+// A runner call is recorded as a job against the pseudo-target "hub", which
+// a node-targeted rule says nothing about, so it is authorized the way the
+// call was made: as the runner function, which is also how `metrics.show`
+// is gated. `jobStatus` did this inline and `kill` did not, so an operator
+// holding the runner could read a runner call and not stop it, and an
+// operator holding only `*` node rules could be refused or allowed by
+// whatever a glob over "hub" happened to say. DIVERGENCE 5.516.
+func requestForJob(principal string, j *job.Job) policy.Request {
+	if j.Target == RunnerTarget {
+		return policy.Request{Principal: principal, Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Runner: true}
+	}
+	return policy.Request{
+		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
+		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test,
+	}
 }

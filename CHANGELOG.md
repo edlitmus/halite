@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Stopping a runner call is authorized as the runner, like reading it
+
+`kill` judged a recorded runner call as a node job against `hub`, so the operator holding the
+runner could read the call but not stop it. Reading and stopping now share one rule
+(DIVERGENCE 5.516).
+
 ### Killing a completed job no longer aborts it, and a late return no longer completes a killed one
 
 `kill` marked any job aborted, including one that had finished, and told its nodes to cancel.
