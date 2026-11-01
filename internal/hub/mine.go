@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/fileperm"
@@ -52,6 +53,13 @@ type MineData struct {
 type MineStore struct {
 	dir string
 	Now func() time.Time
+	// mu makes a read-modify-write of one node's file one step. `Update` and
+	// `Delete` of a function read the file, change it and write it back, and
+	// two of them for the same node interleaved, so each wrote back a file
+	// that lacked the other's change. One lock for the store and not one per
+	// node: the writes are small, rare and per node, and a map of locks is
+	// more machinery than that is worth.
+	mu sync.Mutex
 }
 
 var errNoMineStore = errors.New("this hub keeps no mine")
@@ -115,6 +123,13 @@ func (m *MineStore) Get(nodeID string) (*MineData, error) {
 // what it publishes, and a function removed from `mine_functions`
 // should stop being served rather than linger for ever.
 func (m *MineStore) Put(data *MineData) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.put(data)
+}
+
+// put is Put for a caller already holding the lock.
+func (m *MineStore) put(data *MineData) error {
 	path, err := m.path(data.NodeID)
 	if err != nil {
 		return err
@@ -141,6 +156,8 @@ func (m *MineStore) Put(data *MineData) error {
 // Update merges one function's data into what a node has published,
 // which is what `mine.send` does for a single value.
 func (m *MineStore) Update(nodeID string, functions map[string]*MineEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	data, err := m.Get(nodeID)
 	if errors.Is(err, ErrNoMineData) {
 		data = &MineData{NodeID: nodeID, Functions: map[string]*MineEntry{}}
@@ -154,12 +171,14 @@ func (m *MineStore) Update(nodeID string, functions map[string]*MineEntry) error
 		entry.Updated = m.now()
 		data.Functions[name] = entry
 	}
-	return m.Put(data)
+	return m.put(data)
 }
 
 // Delete drops one function, or the whole node when no function is
 // named.
 func (m *MineStore) Delete(nodeID, function string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if function == "" {
 		path, err := m.path(nodeID)
 		if err != nil {
@@ -178,7 +197,7 @@ func (m *MineStore) Delete(nodeID, function string) error {
 		return err
 	}
 	delete(data.Functions, function)
-	return m.Put(data)
+	return m.put(data)
 }
 
 // Nodes lists every node with published data, in ID order.

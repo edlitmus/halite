@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Concurrent publications to one node's mine no longer erase each other
+
+`Update` and `Delete` of a mine function were an unlocked read, change and write, so two for
+one node could lose a publication or bring back a deleted function. They now take a lock
+(DIVERGENCE 5.520).
+
 ### The reactor keeps its place when the event bus cannot be read
 
 Any read error other than a bad offset used to send the reactor to the end of the bus with
