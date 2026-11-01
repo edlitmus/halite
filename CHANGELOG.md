@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The API's request metrics no longer grow a series per unknown path
+
+The API labelled a request for a path it does not serve with that path, and that answer
+needs no token, so a few hundred different paths filled the families and every route first
+seen afterwards was counted as `__overflow__`. Unknown paths now share one `(unmatched)`
+label; real routes are unchanged (DIVERGENCE 5.510).
+
 ### The `event.send` runner counts, forwards and spells its events like any other
 
 `event.send` appended to the bus directly, so its events were missing from
