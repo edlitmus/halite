@@ -110,6 +110,7 @@ The rule the whole package follows is that a node's identity comes from the cert
 - `OrchSignatures` (func): OrchSignatures is the orchestration step set, for callers that need to know what a step may be named without running one.
 - `OrchStep` (type): OrchStep is one step's outcome.
 - `OrchStore` (type): OrchStore keeps the runs on disk.
+- `OrchUnreadable` (type): OrchUnreadable is a record the store holds and could not read.
 - `ParseReactors` (func): ParseReactors reads the `reactor` configuration of SPEC 18.1.
 - `PillarOptions` (type): PillarOptions is what the hub needs to compile pillar for a node.
 - `Reach` (type): Reach says what a runner touches of the nodes (issue 321, M-56).
