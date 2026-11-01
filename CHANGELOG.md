@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `event.replay` returns a full page of the events a scoped caller may see
+
+A caller whose scope covered only some nodes could be handed an empty page, with a `next` offset,
+because the page was cut at `limit` before the events it may not see were removed. It now reads on until
+it has `limit` visible events, the log ends, or it has read 10,000; `next` is where it stopped
+(DIVERGENCE 5.525).
+
 ### `delivered` is documented as an attempt, which is what it records
 
 The job record's `delivered` was described as the nodes that "have received" the job, but it
