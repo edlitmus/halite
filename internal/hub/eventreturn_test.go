@@ -3,8 +3,12 @@ package hub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -85,29 +89,168 @@ func TestTheEventStreamReachesTheReturner(t *testing.T) {
 
 // A returner outage must not become permanent loss — the offset does
 // not advance past an event that did not arrive.
-func TestAFailedShipmentDoesNotAdvanceTheOffset(t *testing.T) {
+//
+// It does advance past the ones that did. It used to stay put for the whole
+// batch, so a receiver that took two of four and then went down was sent the
+// two again on the retry, and this test had been written to expect it.
+func TestAFailedShipmentAdvancesOnlyPastWhatArrived(t *testing.T) {
 	sink := &recordingReturner{fails: true, failAt: 2}
 	shipper, bus, offsetFile := eventReturnLab(t, sink)
 	shipper.OffsetFile = offsetFile
 
+	var second string
 	for i := 0; i < 4; i++ {
-		if _, err := bus.Append(&eventbus.Event{Tag: "halite/job/x/new", Stamp: time.Now()}); err != nil {
+		off, err := bus.Append(&eventbus.Event{
+			Tag: fmt.Sprintf("halite/job/%d/new", i), Stamp: time.Now(),
+		})
+		if err != nil {
 			t.Fatal(err)
+		}
+		if i == 1 {
+			second = off
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = shipper.Run(ctx)
 
-	// Two got through and the rest did not, so nothing was recorded as
-	// shipped: the next start sends all four again rather than skipping
-	// the two that never arrived.
-	if _, err := os.Stat(offsetFile); err == nil {
-		t.Errorf("the offset advanced past events that were never delivered")
-	}
 	if got := len(sink.tags()); got != 2 {
-		t.Errorf("the sink took %d events, want 2", got)
+		t.Fatalf("the sink took %d events, want 2", got)
 	}
+	// Recorded as exactly what arrived: not nothing, and not past the third.
+	raw, err := os.ReadFile(offsetFile)
+	if err != nil {
+		t.Fatalf("the offset was not recorded after two events arrived: %v", err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != second {
+		t.Errorf("the offset is %q, want the position after the second event, %q", got, second)
+	}
+
+	// The receiver comes back, and a restart sends the other two and only
+	// those.
+	sink.mu.Lock()
+	sink.fails = false
+	sink.mu.Unlock()
+	again := &EventReturn{Server: shipper.Server, Returner: sink, OffsetFile: offsetFile, Batch: 10}
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go func() { _ = again.Run(ctx2) }()
+	waitForTags(t, sink, 4)
+	time.Sleep(100 * time.Millisecond)
+	want := []string{"halite/job/0/new", "halite/job/1/new", "halite/job/2/new", "halite/job/3/new"}
+	if got := sink.tags(); !slices.Equal(got, want) {
+		t.Errorf("the receiver was sent %v, want each event once: %v", got, want)
+	}
+}
+
+// A shipper that has fallen off the back of the bus resumes at the oldest
+// event the bus still holds, not at the end.
+//
+// Any read error used to set the position to the end of the bus, so retention
+// having removed the shipper's position cost every retained event as well,
+// which the shipper had not yet sent and a SIEM wanted.
+func TestALaggedEventReturnerResumesAtTheOldestRetainedEvent(t *testing.T) {
+	sink := &recordingReturner{}
+	shipper, bus, offsetFile := eventReturnLab(t, sink)
+	bus.SegmentBytes = 512
+	bus.MaxBytes = 2048
+
+	stale, err := bus.Append(&eventbus.Event{
+		Tag: "halite/chaos/stale", Data: map[string]any{"pad": strings.Repeat("q", 64)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 200; i++ {
+		if _, err := bus.Append(&eventbus.Event{
+			Tag:  "halite/chaos/churn",
+			Data: map[string]any{"n": i, "pad": strings.Repeat("q", 64)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bus.Prune(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var lag *eventbus.LagError
+	if err := bus.Lag(stale); !errors.As(err, &lag) {
+		t.Fatalf("the offset was not pruned (%v); this test needs a bus that has turned over", err)
+	}
+	if err := os.WriteFile(offsetFile, []byte(stale+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = shipper.Run(ctx) }()
+	waitForTags(t, sink, 1)
+	for _, tag := range sink.tags() {
+		if tag != "halite/chaos/churn" {
+			t.Errorf("shipped %q, which should have been pruned", tag)
+		}
+	}
+}
+
+// A read error that says nothing about the position leaves it alone.
+//
+// It used to set the position to the end of the bus, so a segment that could
+// not be read for a moment cost everything between the offset and now, and a
+// persistent failure was retried with no pause at all.
+func TestAnUnreadableBusDoesNotMoveTheEventReturnersOffset(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a file this process cannot open, which root and Windows can")
+	}
+	sink := &recordingReturner{}
+	shipper, bus, offsetFile := eventReturnLab(t, sink)
+	for i := 0; i < 3; i++ {
+		if _, err := bus.Append(&eventbus.Event{Tag: "halite/job/x/new", Stamp: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seg, at, err := bus.Resolve(eventbus.Earliest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := fmt.Sprintf("%08d:%d", seg, at)
+	if err := os.WriteFile(offsetFile, []byte(start+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := filepath.Glob(filepath.Join(filepath.Dir(offsetFile), "events", "*"))
+	for _, f := range files {
+		if err := os.Chmod(f, 0); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Chmod(f, 0o600)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	stopped := make(chan struct{})
+	go func() { _ = shipper.Run(ctx); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		// The old loop never looked at the context on this path: it read
+		// again at once, for ever, and could not be stopped.
+		t.Fatal("the event returner did not stop when its context ended")
+	}
+
+	if raw, _ := os.ReadFile(offsetFile); strings.TrimSpace(string(raw)) != start {
+		t.Errorf("a read error moved the offset from %s to %q", start, strings.TrimSpace(string(raw)))
+	}
+	if len(sink.tags()) != 0 {
+		t.Errorf("shipped %v from a bus that could not be read", sink.tags())
+	}
+
+	// Readable again, a fresh shipper delivers all three: nothing was skipped.
+	for _, f := range files {
+		os.Chmod(f, 0o600)
+	}
+	again := &EventReturn{Server: shipper.Server, Returner: sink, OffsetFile: offsetFile, Batch: 10}
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go func() { _ = again.Run(ctx2) }()
+	waitForTags(t, sink, 3)
 }
 
 func waitForTags(t *testing.T, sink *recordingReturner, want int) {

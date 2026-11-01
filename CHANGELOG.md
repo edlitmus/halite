@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The event returner no longer skips events on a read error, or sends a half-sent batch twice
+
+A read error from the event bus used to move the shipper to the end of the bus, losing
+everything in between, and could not be stopped. A pruned position now resumes at the oldest
+retained event and says what was lost, other errors wait and retry from the same place, and
+after a partial batch only the unsent events are sent again (DIVERGENCE 5.514).
+
 ### Reading a job is now held to the policy that governed running it
 
 `GET /v1/jobs/{jid}` checked only that the caller held an operator certificate, so an
