@@ -35826,6 +35826,18 @@ Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
 
 **Not verified.** `make check`; a real operator and a real policy file. Not changed: `kill` still authorizes a runner job as a node job against `hub` and does not take the runner form; `GET /v1/jobs` (the list) goes through the `jobs.*` runners and was not read for the same gap on the API side.
 
+### 5.514 The event returner turned any read error into a hole, and a half-sent batch into duplicates
+
+Issue 321, the fourth audit pass (`internal/hub/eventreturn.go`).
+
+**The defect.** `EventReturn` exists so that a returner outage does not become a gap in a SIEM's audit trail. Three paths in `Run` did the opposite or the unstated. (1) Any error from `bus.Read` set the position to `latest` and read again at once, so a read the disk failed for a moment, or a position retention had pruned, skipped everything between the offset and now, and for a pruned position the retained events as well. The sibling reactor already told the cases apart (DIVERGENCE 4.12's lag handling); the shipper had not been given it. (2) That same path never looked at the context and never paused, so a persistent read error was a loop that could not be stopped. (3) When the receiver took part of a batch and then failed, the offset stayed at the start of the batch and the retry sent the first part again; the existing test had been written to expect that, in a comment that called it the next start sending "all four again".
+
+**Shown.** Three tests, each failing on the old code. `TestAFailedShipmentAdvancesOnlyPastWhatArrived`: no offset was recorded after two of four events arrived. `TestALaggedEventReturnerResumesAtTheOldestRetainedEvent`: a bus that had turned over, the shipper holding a pruned offset, and nothing was shipped (zero of the retained events). `TestAnUnreadableBusDoesNotMoveTheEventReturnersOffset`: segments made unreadable with `chmod 0`; the old `Run` did not return when its context ended, and the test says so after ten seconds. It skips as root and on Windows, which can open the file anyway.
+
+**The change.** A lagged position resumes at `LagError.Oldest`, counted as `subscriber_lag` and logged with the segments pruned. A malformed offset still starts at the end, as the reactor does, since it says nothing about where the shipper was. Any other error keeps the offset, logs, and retries after five seconds, stopping with the context. After a partial batch the offset is recorded at the last event that arrived (an event's own `Offset` is the position after it), so the retry sends only the rest.
+
+**Not verified.** A real SIEM or a real returner (`syslog`, `smtp`, `webhook`) behind it; the lag path on a long-running hub (the test shrinks the segments to turn the bus over); `make check`. Found and not changed: `halite_events_dropped_total{reason="returner_failed"}` is incremented on every failed attempt although the event is retried and not dropped, and the reactor still resets to the end on a read error that is neither lag nor a bad offset.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
