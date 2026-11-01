@@ -35970,6 +35970,18 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/runners
 
 **Not verified.** A bus of real size (the cap is a number chosen, not measured); `make check`.
 
+### 5.526 `OrchStore.List` dropped a record it could not read, against its own comment
+
+Issue 321, the second audit pass, left open through round three (`internal/hub/orchstore.go`, `runners_orch.go`).
+
+**The defect.** The loop that reads each record to list it said "one unreadable record must not hide the rest, and must not be silently dropped either" and then `continue`d without saying anything. A truncated or corrupt record was absent from `orch list`; an operator looking for a run the hub had written was told it did not exist.
+
+**Shown.** A truncated record beside a good one. The old code listed the good one and nothing else; with the new reporting taken out again, both new tests fail (no record reported; limit 2 returns one run and no unreadable).
+
+**The change.** `List` returns the runs, and beside them the records that could not be read, with the error. `state.orch_list` shows each as an entry in the state `unreadable` with the error, in the shape of a run, so the CLI's listing needs no new case; every one is also logged. An unreadable record counts against `limit`, because it is one of the most recent. A caller that does not see everything is not shown them: with no readable principal there is no way to know the run is theirs, and naming it would tell them one exists that is not.
+
+**Not verified.** That a record is truncated in practice on any filesystem the hub runs on (the test writes one); `make check`. `OrchStore.Get` for a single unreadable record already answered with the error and is unchanged.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

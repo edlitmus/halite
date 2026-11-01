@@ -106,13 +106,26 @@ func registerStateRunner(r *Runners) {
 				runnerOpt("limit", signature.Int, 20, "How many to list."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
-				runs, err := c.visibleRuns(c.argInt("limit"))
+				runs, unreadable, err := c.visibleRuns(c.argInt("limit"))
 				if err != nil {
 					return nil, err
 				}
-				out := value.NewMap(len(runs))
+				out := value.NewMap(len(runs) + len(unreadable))
 				for _, run := range runs {
 					out.Set(string(run.JID), orchJSON(run, false))
+				}
+				// Listed, in the state an operator can act on, rather
+				// than left out (DIVERGENCE 5.526). The shape is a run's
+				// with nothing in it, so a client reading the listing
+				// needs no new case.
+				for _, bad := range unreadable {
+					entry := value.NewMap(6)
+					entry.Set("jid", string(bad.JID))
+					entry.Set("sls", []any{})
+					entry.Set("state", "unreadable")
+					entry.Set("steps", int64(0))
+					entry.Set("error", bad.Err.Error())
+					out.Set(string(bad.JID), entry)
 				}
 				return out, nil
 			},
@@ -212,18 +225,30 @@ const scopedRunWindow = 5000
 // principal whose one run was older than N others listed none. A caller that
 // sees everything is unchanged; a scoped one is looked for among the
 // scopedRunWindow most recent.
-func (c *RunnerContext) visibleRuns(limit int) ([]*OrchRun, error) {
+//
+// The records that could not be read come back too, but only for a caller that
+// sees everything: an unreadable record has no principal to compare with, so
+// whether a scoped caller owns it cannot be known, and naming it would tell
+// them a run exists that is not theirs. Every caller's miss is logged.
+func (c *RunnerContext) visibleRuns(limit int) ([]*OrchRun, []OrchUnreadable, error) {
 	store := c.Server.orchStore()
-	if c.Scope.Everything() {
-		return store.List(limit)
+	window := limit
+	if !c.Scope.Everything() {
+		window = scopedRunWindow
+		if limit > window {
+			window = limit
+		}
 	}
-	window := scopedRunWindow
-	if limit > window {
-		window = limit
-	}
-	all, err := store.List(window)
+	all, bad, err := store.List(window)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	for _, b := range bad {
+		c.Server.warn("an orchestration record could not be read",
+			"jid", string(b.JID), "error", b.Err.Error())
+	}
+	if !c.Scope.Everything() {
+		bad = nil
 	}
 	var out []*OrchRun
 	for _, run := range all {
@@ -235,7 +260,7 @@ func (c *RunnerContext) visibleRuns(limit int) ([]*OrchRun, error) {
 			break
 		}
 	}
-	return out, nil
+	return out, bad, nil
 }
 
 // runOrchestration backs state.orchestrate and its short name.

@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `orch list` shows a run record it cannot read, instead of leaving it out
+
+A truncated or corrupt orchestration record used to be missing from the listing without a trace. It is now
+listed in the state `unreadable`, with the error, and logged (DIVERGENCE 5.526). Only a caller that sees every run is shown them.
+
 ### `event.replay` returns a full page of the events a scoped caller may see
 
 A caller whose scope covered only some nodes could be handed an empty page, with a `next` offset,
