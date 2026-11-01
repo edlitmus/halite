@@ -35922,6 +35922,18 @@ Issue 321, the fourth audit pass (`internal/hub/runners_fleet.go`, `subscribe.go
 
 **Not verified.** The guard for a name that has enrolled again before the reconcile pass (it is the one the loop's disconnect already used, and no test enrols a name twice); `make check`; a real load balancer state reading the mine. Whether revoking should also stop serving the mine is a question for whoever runs revocations, and nothing here changes it.
 
+### 5.522 A reaction was accepted with a target it ignored and arguments it garbled
+
+Issue 321, the fourth audit pass (`internal/hub/reaction.go`).
+
+**The defect.** Two things a reaction SLS could say were accepted and then not honoured. (1) `tgt` and `tgt_type` on a `caller` reaction (which runs on the node that fired the event and nowhere else, by design: a reaction that could name another node would let one node cause execution on another by choosing a tag) or on a `runner` or `wheel` reaction (which runs on the hub). The operator who wrote `caller.service.restart` with `tgt: db*` read a reaction that restarted a service on the database hosts and got one that restarted it on whichever node fired the event, and `reactor.test` described it the same way. (2) A mapping or a list inside a positional `arg` list was turned into a string by `value.KeyString`, which for a structure is Go's printing of a pointer; the job then carried that as its argument.
+
+**Shown.** `TestAReactionIsRefusedForWhatItCannotCarry`: five documents (a caller with `tgt`, a caller with `tgt_type`, a runner with `tgt`, a mapping in `arg`, a list in `arg`), every one accepted by the old `parseReactions` (the test failed with all five); with the change every one is refused with a message naming the fix. The same test holds that scalars of every kind, a structure under `kwarg`, a caller with ordinary arguments and a runner with keyword `args` are still accepted.
+
+**The change.** `parseReactions` refuses `tgt` and `tgt_type` on anything but a local reaction, saying where that kind runs, and refuses a non-scalar positional argument, saying to pass a structure under `kwarg`. Both are caught when the reaction is parsed, so the reactor and the `reactor.test` preview, which share the parser, agree. A reaction file that relied on either now fails to apply, and says why: the intent was lost silently before.
+
+**Not verified.** An estate's real reaction files (the one shipped example, `config-changed.sls`, uses neither); `make check`. Whether a structured positional `arg` should be encoded as JSON instead of refused is a design question: Salt does pass structures, and this build's job arguments are strings.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

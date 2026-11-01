@@ -692,3 +692,47 @@ reactor:
 		}
 	}
 }
+
+// What a reaction cannot carry is refused where it is written.
+//
+// A `tgt` on a caller reaction was accepted and ignored: the reaction ran on
+// the node that fired the event whatever it named. A mapping inside `arg` was
+// flattened into Go's printing of a pointer. DIVERGENCE 5.522.
+func TestAReactionIsRefusedForWhatItCannotCarry(t *testing.T) {
+	cases := map[string]string{
+		"a caller with a target":      "a:\n  caller.service.restart:\n    - tgt: 'db*'\n    - arg:\n      - nginx\n",
+		"a caller with a target kind": "a:\n  caller.service.restart:\n    - tgt_type: pcre\n",
+		"a runner with a target":      "a:\n  runner.event.send:\n    - tgt: '*'\n",
+		"a mapping in arg":            "a:\n  local.cmd.run:\n    - tgt: '*'\n    - arg:\n      - {env: prod}\n",
+		"a list in arg":               "a:\n  local.cmd.run:\n    - tgt: '*'\n    - arg:\n      - [a, b]\n",
+	}
+	for name, src := range cases {
+		doc, _, err := yaml.Parse([]byte(src), yaml.Options{File: "r.sls"})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		m, ok := doc.(*value.Map)
+		if !ok {
+			t.Fatalf("%s: the fixture is not a mapping", name)
+		}
+		if _, err := parseReactions(m, "r.sls"); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+
+	// What was always fine still is.
+	for name, src := range map[string]string{
+		"a caller with arguments":    "a:\n  caller.service.restart:\n    - arg:\n      - nginx\n",
+		"scalars of every kind":      "a:\n  local.test.echo:\n    - tgt: '*'\n    - arg:\n      - one\n      - 2\n      - true\n",
+		"a structure as a keyword":   "a:\n  local.cmd.run:\n    - tgt: '*'\n    - kwarg:\n        env: {A: b}\n",
+		"a runner with keyword args": "a:\n  runner.event.send:\n    - args:\n        tag: halite/x\n",
+	} {
+		doc, _, err := yaml.Parse([]byte(src), yaml.Options{File: "r.sls"})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := parseReactions(doc.(*value.Map), "r.sls"); err != nil {
+			t.Errorf("%s was refused: %v", name, err)
+		}
+	}
+}

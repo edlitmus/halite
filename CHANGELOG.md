@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A reaction with a target it would ignore, or a structured argument, is refused
+
+`tgt` on a `caller`, `runner` or `wheel` reaction was accepted and ignored, and a mapping or
+list in a positional `arg` was flattened into garbage. Both are now refused when the
+reaction is parsed, with the fix in the message (DIVERGENCE 5.522).
+
 ### Deleting a node's key now clears its mine and cached grains
 
 A deleted key left what the node had published to the mine being served to other nodes, so a
