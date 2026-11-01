@@ -137,17 +137,26 @@ On 2026-11-01, at `main` `5b6ff546`. Read in full: `jobs.go`, `mine.go`, `nodes.
 | `GET /v1/jobs/{jid}` checked only the operator certificate, where `submit`, `resume` and `kill` authorize: an operator bound to `web*`, refused a submit against `db1`, read a `db1` job's record and returns | the administrator's job read by that operator, with a failing control for the submit; the new test fails twice on the old code (node job, runner call) | fixed, 5.513 (#556) |
 | `EventReturn.Run` turned any read error into a jump to the end of the bus with no pause and no look at the context, and resent the first part of a half-sent batch | a bus that had turned over with a pruned offset (nothing shipped); segments made unreadable (`Run` did not stop); two of four events sent (no offset recorded) | fixed, 5.514 (#558) |
 | `kill` aborted a completed job and told its nodes; a late return completed a killed job | both states read wrong on the old code, each in its own test | fixed, 5.515 (#559) |
+| `kill` judged a runner call as a node job | the runner holder refused with the old form, allowed with the shared one | fixed, 5.516 (#561) |
+| A state-result event for a `test.ping` or a `show_*` job | published for both on the old gate, and again with the gate widened | fixed, 5.517 (#562) |
+| A returner outage counted as the bus dropping events | the old counting left `reason="returner_failed"` and no returner counter | fixed, 5.518 (#564) |
+| The reactor answered every bus read error as a corrupt offset | `Run` did not stop when its context ended | fixed, 5.519 (#565) |
+| Concurrent mine publications and deletes erased each other | `-race`, repeated; with the lock commented out functions were lost and deleted ones came back | fixed, 5.520 (#566) |
+| `key.delete` left the node's mine served and its grains cached | both still there after the runner and after the reconcile loop | fixed, 5.521 (#567) |
+| A reaction with a target it ignored, or an arg it garbled, was accepted | five documents accepted by the old parser | fixed, 5.522 (#568) |
+| A reconnect that reported no grains erased the cached ones | grains `null` and their age reset on the old code | fixed, 5.523 (#569) |
+| `delivered` documented as arrival, recorded as an attempt | not shown by a failing test (prose); a test pins the behaviour | corrected, 5.524 (#570) |
 
 **Read, not shown (round four).**
 - ~~`EventReturn.Run`: a read error resets the offset to `Latest` and loops with no wait.~~ Shown and fixed, 5.514 (#558); the loop did not stop with its context either.
 - ~~`EventReturn.Run`: a half-sent batch is resent whole.~~ Fixed, 5.514 (#558): the offset is recorded at the last event that arrived.
-- `halite_events_dropped_total{reason="returner_failed"}` is incremented on every failed attempt, but the event is retried, not dropped.
-- ~~`kill` sets `Aborted` on any job.~~ Shown and fixed, 5.515 (#559), with the mirror case it led to (`completeIfDone` overwriting `Aborted`). `kill`'s runner-job authorization is still the node form against `hub` (5.513 did not change it). Not run.
-- `returned` publishes `halite/state/<jid>/<node>/<result>` when `ret.Out == "highstate"`, a field the node supplies and the hub does not check against `ret.Fun`. A node the job was sent to could fire a state-result reactor from a `test.ping` return.
-- `JobStatus.Delivered` is an attempt, as `job.Job` says, and listed a never-connected node in the demonstration for 5.513; the field name reads as arrival.
-- `MineStore.Update` is read-modify-write with no lock, so two concurrent publishes from one node can lose one. A node's mine data is removed only by the `mine.delete` runner; no key runner clears it.
-- A `caller` reaction that sets `tgt` has it silently ignored and runs on the event's node; a non-scalar `arg` is flattened through `KeyString`.
-- `grainsJSON` in `cmd/halite-node` returns nil when encoding fails, and a subscribe that carries a version and no grains overwrites the hub's cached grains with none. Needs an encode failure.
-- Not checked for the same gap as 5.513: the `GET /v1/jobs` list, which goes through the `jobs.*` runners.
+- ~~`halite_events_dropped_total{reason="returner_failed"}` counts retries as drops.~~ Fixed, 5.518 (#564): the returner has its own counter, alert and dashboard series.
+- ~~`kill` sets `Aborted` on any job.~~ Shown and fixed, 5.515 (#559), with the mirror case it led to (`completeIfDone` overwriting `Aborted`). ~~Its runner-job authorization was the node form against `hub`.~~ Fixed, 5.516 (#561); the 5.515 change also made a test racy, fixed in #563.
+- ~~`returned` publishes the state-result tag on the node's `Out`.~~ Fixed, 5.517 (#562): the recorded job function decides.
+- ~~`JobStatus.Delivered` reads as arrival.~~ It records an attempt; the documentation said otherwise and now says so, 5.524 (#570). The field's name is unchanged.
+- ~~`MineStore.Update` is an unlocked read-modify-write.~~ Shown and fixed, 5.520 (#566). ~~A deleted node's mine was never cleared.~~ Fixed, 5.521 (#567), for the runner and for a delete seen by the reconcile loop; a revoked node's data is kept.
+- ~~A `caller` reaction's `tgt` is ignored; a non-scalar `arg` is flattened.~~ Both refused when parsed, 5.522 (#568). Whether structured args should be JSON-encoded instead is open.
+- ~~A subscribe with a version and no grains overwrites the cached grains.~~ Shown and fixed on the hub side, 5.523 (#569). `grainsJSON` still returns nothing on an encode failure rather than saying so, and no node that really fails to encode was made.
+- Checked, no gap: the API's `GET /v1/jobs` and `/v1/jobs/{jid}` go through the scoped `jobs.list_jobs` and `jobs.list_job` runners (5.516's note). Not compared: whether the runner scope and 5.513's function rule agree for every policy.
 
 **Not verified in round four.** No real node, relay or operator policy file, no FreeBSD jail run for 5.513, and `make check`.
