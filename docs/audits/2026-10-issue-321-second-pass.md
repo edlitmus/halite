@@ -126,4 +126,26 @@ On 2026-10-31, at `main` `fc79b8cc` and after. Read in full: `subscribe.go`, `ev
 
 **Not verified in round three.** No real `halite-node`, no real relay across a network, no Prometheus reading the metrics, `-race` on the hub package only for the relay change, no FreeBSD jail run for these fixes (round two's jail run, 5.505, covers earlier ones), and `make check`.
 
-**Still unread.** In `internal/hub`, no round has read these in full: `enrolllimit.go`, `eventreturn.go`, `grains.go`, `jobs.go` (the submit, status, resume and kill handlers; only searched), `listen.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go` (the node cache; only searched), `runners_pending.go`, `servingcert.go`, `reaction.go` outside `runReactions`, and the first 60 lines of `dispatch.go` and 150 of `server.go` (type declarations and fields). Everything under `cmd/halite-node` and the other packages in the first pass's "not read" list is as it was.
+**Still unread (as of round three; round four read all but the declarations).** In `internal/hub`, no round had read these in full: `enrolllimit.go`, `eventreturn.go`, `grains.go`, `jobs.go` (the submit, status, resume and kill handlers; only searched), `listen.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go` (the node cache; only searched), `runners_pending.go`, `servingcert.go`, `reaction.go` outside `runReactions`, and the first 60 lines of `dispatch.go` and 150 of `server.go` (type declarations and fields). Everything under `cmd/halite-node` and the other packages in the first pass's "not read" list is as it was.
+
+## Round four: the last of `internal/hub`
+
+On 2026-11-01, at `main` `5b6ff546`. Read in full: `jobs.go`, `mine.go`, `nodes.go`, `enrolllimit.go`, `eventreturn.go`, `grains.go`, `listen.go`, `metrics_endpoint.go`, `runners_pending.go`, `servingcert.go` and `reaction.go`. Every file in the package has now been read, in the first pass's table or in a round after it, except the type declarations and fields at the top of `dispatch.go` (60 lines) and `server.go` (150), which a finding never needed. Same method and limits as before: Go tests on the hub's test server with stub nodes, no real node, no FreeBSD run for this round.
+
+| What | Shown how | Status |
+|---|---|---|
+| `GET /v1/jobs/{jid}` checked only the operator certificate, where `submit`, `resume` and `kill` authorize: an operator bound to `web*`, refused a submit against `db1`, read a `db1` job's record and returns | the administrator's job read by that operator, with a failing control for the submit; the new test fails twice on the old code (node job, runner call) | fixed, 5.513 (#556) |
+
+**Read, not shown (round four).**
+- `EventReturn.Run`: a read error resets the offset to `Latest` and loops with no wait. A persistent error would spin hot, and every event between the old offset and the end is skipped, which is the hole the type exists to prevent. Not run.
+- `EventReturn.Run`: when the returner fails part way through a batch the offset stays, so the events already shipped go out again. Delivery is at-least-once and nothing says so.
+- `halite_events_dropped_total{reason="returner_failed"}` is incremented on every failed attempt, but the event is retried, not dropped.
+- `kill` sets `Aborted` on any job, so killing a completed job overwrites `Complete`; its runner-job authorization is the node form against `hub` (5.513 did not change it). Not run.
+- `returned` publishes `halite/state/<jid>/<node>/<result>` when `ret.Out == "highstate"`, a field the node supplies and the hub does not check against `ret.Fun`. A node the job was sent to could fire a state-result reactor from a `test.ping` return.
+- `JobStatus.Delivered` is an attempt, as `job.Job` says, and listed a never-connected node in the demonstration for 5.513; the field name reads as arrival.
+- `MineStore.Update` is read-modify-write with no lock, so two concurrent publishes from one node can lose one. A node's mine data is removed only by the `mine.delete` runner; no key runner clears it.
+- A `caller` reaction that sets `tgt` has it silently ignored and runs on the event's node; a non-scalar `arg` is flattened through `KeyString`.
+- `grainsJSON` in `cmd/halite-node` returns nil when encoding fails, and a subscribe that carries a version and no grains overwrites the hub's cached grains with none. Needs an encode failure.
+- Not checked for the same gap as 5.513: the `GET /v1/jobs` list, which goes through the `jobs.*` runners.
+
+**Not verified in round four.** No real node, relay or operator policy file, no FreeBSD jail run for 5.513, and `make check`.
