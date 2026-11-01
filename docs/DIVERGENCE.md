@@ -35874,6 +35874,18 @@ Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
 
 **Not verified.** A real reactor on a real hub reacting; `make check`. Not checked by a test: that `appliesState` stays equal to the node's applying forms, which would need the two packages to share the list. `state.sls_id` and other `state.*` spellings are not handled by the node either, as read.
 
+### 5.518 A returner outage was counted as the bus dropping events
+
+Issue 321, the fourth audit pass (`internal/hub/eventreturn.go`).
+
+**The defect.** Each failed shipment by the event returner incremented `halite_events_dropped_total{reason="returner_failed"}`. Nothing was dropped: the shipper keeps its place and sends the event again (5.514). But `HaliteEventsDropped`, the alert on that family, says "The event bus dropped N events", and so did the example dashboard's "Dropped, by reason" panel, so a SIEM that was unreachable for ten minutes told an operator that the bus had lost events it still held. The count also rose by one for every retry, not for every event.
+
+**Shown.** `TestAReturnerOutageIsNotCountedAsDroppedEvents`, with a registry attached and a returner that always fails: the old counting leaves `reason="returner_failed"` in the exposition and no returner counter; with the change the exposition holds `halite_event_returner_failures_total 1` and no such reason.
+
+**The change.** A family of its own, `halite_event_returner_failures_total` (no labels, so it is exported at 0 and an `increase()` on it sees the first failure), an alert `HaliteEventReturnerFailing` in `docs/metrics.md` whose comment says nothing is lost, and a series on the dashboard's dropped panel labelled "event returner (retried)". `returner_failed` is no longer a reason of the dropped family and no longer pre-created. Operator-visible: an alert or panel that read that reason now reads the new family.
+
+**Not verified.** Prometheus loading the new rule, and Grafana rendering the new series (the JSON parses, and the panel was not opened); a real returner outage; `make check`. Which returner failed is in the log line, not on the metric.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/eventbus"
 	"github.com/edlitmus/halite/internal/job"
+	"github.com/edlitmus/halite/internal/metrics"
 )
 
 // recordingReturner stands in for a SIEM, and can be made to fail.
@@ -263,4 +265,36 @@ func waitForTags(t *testing.T, sink *recordingReturner, want int) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("only %d events arrived, want %d", len(sink.tags()), want)
+}
+
+// A returner that cannot be reached is a failure to ship, which is retried,
+// and not an event dropped.
+//
+// It was counted in `halite_events_dropped_total{reason="returner_failed"}`,
+// so `HaliteEventsDropped` told an operator the bus had dropped events when it
+// had dropped none and the events were still there to be sent. DIVERGENCE
+// 5.518.
+func TestAReturnerOutageIsNotCountedAsDroppedEvents(t *testing.T) {
+	sink := &recordingReturner{fails: true, failAt: 0}
+	shipper, bus, _ := eventReturnLab(t, sink)
+	srv := shipper.Server
+	srv.Metrics = metrics.NewRegistry()
+	if _, err := bus.Append(&eventbus.Event{Tag: "halite/job/x/new", Stamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+	_ = shipper.Run(ctx)
+
+	var out bytes.Buffer
+	if err := srv.Metrics.Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	expo := out.String()
+	if !strings.Contains(expo, "\nhalite_event_returner_failures_total 1\n") {
+		t.Errorf("the failed shipment was not counted as a returner failure:\n%s", grepLines(expo, "returner_fail"))
+	}
+	if strings.Contains(expo, `reason="returner_failed"`) {
+		t.Errorf("a returner outage is still counted as dropped events:\n%s", grepLines(expo, "dropped"))
+	}
 }

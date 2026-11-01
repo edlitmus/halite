@@ -2319,6 +2319,17 @@
           "refId": "B",
           "range": true,
           "legendFormat": "reactor queue"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum (rate(halite_event_returner_failures_total{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "refId": "C",
+          "range": true,
+          "legendFormat": "event returner (retried)"
         }
       ],
       "title": "Dropped, by reason",

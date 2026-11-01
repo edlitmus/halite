@@ -757,6 +757,7 @@ themselves, under whatever you call that job.
 | `halite_fileserver_bytes_total` | counter | — | Bytes served. |
 | `halite_events_published_total` | counter | `tag_prefix` | Events reaching the bus. |
 | `halite_events_dropped_total` | counter | `reason` | Events that did not. |
+| `halite_event_returner_failures_total` | counter | — | Times the event returner could not ship an event to its returner. Nothing is lost: the shipper keeps its place and sends the event again, so this rises for as long as the returner is down. |
 | `halite_returns_foreign_schema_total` | counter | — | Returns whose schema this hub does not know, which means a node is newer than it. Non-zero while an upgrade is in flight and zero afterwards; non-zero afterwards is a node somebody forgot. |
 | `halite_event_subscriber_lag_seconds` | histogram | — | How old an event was when a subscriber was handed it. |
 | `halite_reactor_duration_seconds` | histogram | `tag_prefix` | Render and dispatch time for one reaction. |
@@ -1036,6 +1037,15 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "The event bus dropped {{ $value }} events"
+
+      # An event returner that cannot reach its receiver loses nothing,
+      # and says so here rather than in the dropped count: the events are
+      # sent again when it is back, as long as the bus still holds them.
+      - alert: HaliteEventReturnerFailing
+        expr: increase(halite_event_returner_failures_total[10m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "The event returner could not ship {{ $value }} events; it is retrying"
 
       - alert: HaliteReactorDropped
         expr: increase(halite_reactor_dropped_total[10m]) > 0

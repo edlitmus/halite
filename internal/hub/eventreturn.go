@@ -105,7 +105,10 @@ func (e *EventReturn) Run(ctx context.Context) error {
 			if err := e.Returner.Event(ctx, &events[i]); err != nil {
 				e.Server.warn("an event could not be shipped",
 					"tag", events[i].Tag, "returner", e.Returner.Name(), "error", err.Error())
-				e.Server.m().eventsDropped.With("returner_failed").Inc()
+				// Not `events_dropped`: this event is retried, and counting an
+				// outage there made `HaliteEventsDropped` say the bus had
+				// dropped events when it had dropped none. DIVERGENCE 5.518.
+				e.Server.m().eventReturnerFailures.Inc()
 				break
 			}
 			shipped++
