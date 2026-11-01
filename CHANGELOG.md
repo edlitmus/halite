@@ -21,6 +21,14 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The hub's request metrics no longer grow a series per unknown path
+
+The `route` label of `halite_hub_requests_total` was the request's path for anything the
+hub does not serve, and that answer is reachable without a certificate, so a few hundred
+different paths filled the family and every route first seen afterwards was counted as
+`__overflow__`. Unknown paths now share one `(unmatched)` label; the labels of real routes
+are unchanged (DIVERGENCE 5.508).
+
 ### A hub that accepts no relays refuses a relay's fleet update too
 
 `accept_relays` was honoured when a relay connected but not by `POST /v1/relay`, so a
