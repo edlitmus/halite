@@ -96,3 +96,34 @@ On 2026-10-31, at `main` `7f35a3c9` and after. Read in full: `queue.go`, `inflig
 - `salt.wait_for_event` listens from "latest" when the step starts, so an event emitted between the previous step and this one is missed.
 
 **Still unread in `internal/hub`:** `orchstore.go`, `metrics.go`, the anchor store internals (`anchors.go`), `events.go`, `subscribe.go`, `fleet.go`, `pillar.go`, `files.go`, `relay.go`, and the parts of `server.go`, `dispatch.go`, `runner.go`, `runners_fleet.go` and `runners_tree.go` that were not needed to follow a finding. Everything under `cmd/halite-node` and the other packages in the first pass's "not read" list is as it was.
+
+## Round three: the rest of `internal/hub`
+
+On 2026-10-31, at `main` `fc79b8cc` and after. Read in full: `subscribe.go`, `events.go`, `relay.go`, `fleet.go`, `orchstore.go`, `pillar.go`, `files.go`, `anchors.go`, `metrics.go`, `runner.go`, `runners_fleet.go` and `runners_tree.go`. Read in part: `dispatch.go` (the whole of `Dispatch`, `resolve`, `targetPillar`, `identify`) and `server.go` from line 150 (the handler, authentication, `enroll`, `renew`; the first 150 lines are fields). Same method and limits as the rounds before: Go tests on the hub's test server with stub nodes, no real node, and no FreeBSD run for this round (see below).
+
+| What | Shown how | Status |
+|---|---|---|
+| A relay that reconnected while the hub held its old stream open lost every route behind it, because the old handler's exit dropped them by relay name; the same exit published a stop event for a connected node | a real HTTP server and the real handler, opened twice: route gone, node not connected, stop event, all three failing on the old code | fixed, 5.506 (#548) |
+| The last node of an estate leaving reported one connected in `halite/presence/change` | a failing test, then the detach moved back to break it | fixed, 5.506 (#548) |
+| `POST /v1/relay` ignored `accept_relays` | the update answered 200 and routed a node on a hub that takes no relays | fixed, 5.507 (#549) |
+| A scanner could fill the hub's `route` label with its own paths, after which `/v1/health` itself was counted as `__overflow__` | 612 unknown paths, then a real request | fixed, 5.508 (#550) |
+| `--subset` was applied after the offline policy counted the nodes it left out: `queue` spooled the job for the rest, `require` refused for them | six nodes subset to two: `Nodes` 2, `Queued` 6; refused 40 of 40 draws | fixed, 5.509 (#551) |
+| The same route-label defect in the API (`routeOf`) | 612 unknown paths with no token | fixed, 5.510 (#554) |
+| `key.accept`, `key.reject`, `key.revoke` and `key.delete` published no event, and `key.revoke` left the node connected for the reconcile interval (`Server.Revoke`, which does both, had no caller); the hub had no test of these four runners | a connected node revoked through `CallRunner`; the bus held nothing | fixed, 5.511 (#552) |
+| `event.send` skipped what `emit` does: the published count, the forward to a relay's upstream, the `salt/...` spelling | the forward never arrived; each of the three removed in turn fails its own assertion | fixed, 5.512 (#553) |
+
+**Read, not shown (round three).**
+- `POST /v1/relay` does not require the relay to have a stream open, deliberately: the relay announces concurrently with subscribing, so an early update is legitimate. An update arriving after the stream has gone leaves routes `targetableNodes()` lists and `Connected()` hides (5.507).
+- The hook route in the API, `/v1/hook/{path...}`, still keeps its tail in the `route` label, and a hook request is unauthenticated (5.510).
+- `halite-hub keys accept|reject|revoke|delete` run at a terminal is another process and publishes no `halite/key/...` event; whether the reconcile loop should publish what it sees changed on disk is a decision (5.511).
+- `event.replay` takes its `limit` before the caller's scope filter, so a scoped caller can be handed an empty page that carries a `next` offset; it pages on correctly, and a caller that takes an empty page for the end stops early (5.512).
+- `identify` checks that a signed job's identifier is unused and the job is stored later, so two concurrent submissions of the same signed submission can both pass; the node's nonce guard (SPEC 6.3) is what stops the second running there. Neither was run.
+- A runner job is recorded `dispatched` with no expiry (`recordRunnerJob`), so one that was in flight when the hub stopped is listed as running for ever; `Settle` only closes a job that has an expiry. Not run.
+- A runner that panics is recovered by `net/http` for the request, and leaves the same dispatched record and no `halite/run/.../ret` event. Not run.
+- `file` in `files.go` hashes the file separately from opening it, so a file replaced between the two is served with the old digest; the node refuses a body whose digest differs, so it fails safe and retries. Not run.
+- `OrchStore.List` still drops an unreadable record silently, against its own comment (round two, not changed).
+- `halite_hub_requests_total`'s route label is now bounded for unknown paths; the `fun` label of `jobsDispatched` and `jobDuration` is whatever function name a job carries, bounded by the registry's cap and not by validation here. Not checked whether every submitted function is validated against a registry first.
+
+**Not verified in round three.** No real `halite-node`, no real relay across a network, no Prometheus reading the metrics, `-race` on the hub package only for the relay change, no FreeBSD jail run for these fixes (round two's jail run, 5.505, covers earlier ones), and `make check`.
+
+**Still unread.** In `internal/hub`, no round has read these in full: `enrolllimit.go`, `eventreturn.go`, `grains.go`, `jobs.go` (the submit, status, resume and kill handlers; only searched), `listen.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go` (the node cache; only searched), `runners_pending.go`, `servingcert.go`, `reaction.go` outside `runReactions`, and the first 60 lines of `dispatch.go` and 150 of `server.go` (type declarations and fields). Everything under `cmd/halite-node` and the other packages in the first pass's "not read" list is as it was.
