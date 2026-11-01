@@ -35838,6 +35838,18 @@ Issue 321, the fourth audit pass (`internal/hub/eventreturn.go`).
 
 **Not verified.** A real SIEM or a real returner (`syslog`, `smtp`, `webhook`) behind it; the lag path on a long-running hub (the test shrinks the segments to turn the bus over); `make check`. Found and not changed: `halite_events_dropped_total{reason="returner_failed"}` is incremented on every failed attempt although the event is retried and not dropped, and the reactor still resets to the end on a read error that is neither lag nor a bad offset.
 
+### 5.515 Killing a completed job aborted it, and a late return completed a killed one
+
+Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
+
+**The defect.** Two writers of the job state each ignored the other's terminal state. `kill` set the record to Aborted whatever it held, and expired it, so killing a job that had already completed turned a successful run into an aborted one and sent a kill to every node that had it; the operator's job list only had to be a minute old. In the other direction, `completeIfDone` marked a job Complete whenever nothing was missing, which an answer from the last node, running the job when it was killed, makes true: a job an operator had stopped then read as having completed. Found by reading `kill` against `completeIfDone`; the second was suspected from the first and shown separately.
+
+**Shown.** `TestKillingACompletedJobLeavesItComplete` on the old code: the kill succeeded with `Told:[quiet.example]` and the state read `aborted`. `TestAKilledJobStaysAbortedWhenAWorkingNodeAnswersLate`: the state read `complete` after the late return. Both fail on the old `jobs.go` and pass with the change. The existing `TestAKilledJobLeavesNothingOwed` kills a job twice after a late return; it only passes because the second kill is still accepted on an Aborted job, which is what the change preserves.
+
+**The change.** `kill` refuses a Complete job with 409 and the reason, writing nothing and telling no node; a job that is Aborted, Partial, Batching or Dispatched is killed as before, and killing an aborted one again stays harmless. `completeIfDone` leaves an Aborted job as it is.
+
+**Not verified.** A real node answering after a real kill; `make check`; the `halite-hub jobs kill` command's output for the 409 (it prints whatever the hub says, and the text was not read there). Not changed: a runner job is still authorized by `kill` as a node job against `hub`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

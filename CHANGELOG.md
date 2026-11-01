@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Killing a completed job no longer aborts it, and a late return no longer completes a killed one
+
+`kill` marked any job aborted, including one that had finished, and told its nodes to cancel.
+It now refuses a completed job with 409. And a node that answered after its job was killed
+used to turn the job back to complete; a killed job stays aborted (DIVERGENCE 5.515).
+
 ### The event returner no longer skips events on a read error, or sends a half-sent batch twice
 
 A read error from the event bus used to move the shipper to the end of the bus, losing
