@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The reactor keeps its place when the event bus cannot be read
+
+Any read error other than a bad offset used to send the reactor to the end of the bus with
+no pause, skipping the reactions to everything in between and ignoring a shutdown. It now
+keeps its position and retries after five seconds (DIVERGENCE 5.519).
+
 ### A returner outage is no longer counted as dropped events
 
 The event returner counted every failed shipment in `halite_events_dropped_total`, although

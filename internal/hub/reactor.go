@@ -195,10 +195,28 @@ func (r *Reactor) Run(ctx context.Context) error {
 			// A bad offset must not wedge the reactor for ever: start
 			// from what is there now and say so, because the
 			// alternative is a reactor that has silently stopped.
-			r.Server.warn("the reactor could not read from its offset; starting from the end",
+			if errors.Is(err, eventbus.ErrBadOffset) {
+				r.Server.warn("the reactor's offset is not one this bus issued; starting from the end",
+					"offset", from, "error", err.Error())
+				r.acks.reset()
+				from = r.concrete(eventbus.Latest)
+				continue
+			}
+			// Anything else is the disk or the bus failing, which says
+			// nothing about where the reactor was. This used to be the
+			// bad-offset answer as well, so a segment that could not be
+			// read for a moment skipped every event between the offset and
+			// now (reactions that never fired, on events that will not come
+			// again), and a persistent failure was retried with no pause
+			// and no look at the context. Keep the position and try again
+			// after a pause. DIVERGENCE 5.519.
+			r.Server.warn("the reactor could not read the event bus; will retry from the same offset",
 				"offset", from, "error", err.Error())
-			r.acks.reset()
-			from = r.concrete(eventbus.Latest)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(5 * time.Second):
+			}
 			continue
 		}
 		// Each event is tracked from before it is offered, with the

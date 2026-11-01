@@ -35886,6 +35886,18 @@ Issue 321, the fourth audit pass (`internal/hub/eventreturn.go`).
 
 **Not verified.** Prometheus loading the new rule, and Grafana rendering the new series (the JSON parses, and the panel was not opened); a real returner outage; `make check`. Which returner failed is in the log line, not on the metric.
 
+### 5.519 The reactor answered every bus read error as a corrupt offset file
+
+Issue 321, the fourth audit pass (`internal/hub/reactor.go`).
+
+**The defect.** `Reactor.Run` told a lagged position apart (DIVERGENCE 4.12's lag handling) and answered everything else the way it answers an offset file nobody can parse: set the position to the end of the bus, forget the acknowledgements, read again at once. For a bad offset that is right, since it says nothing about where the reactor was. For a read the disk failed for a moment it skipped every event between the offset and now, which are reactions that never fire for events that will not come again (SPEC 17.2 calls a reactor restart lossless), and for a persistent failure it was a loop with no pause that never looked at the context. The event returner had the same shape (5.514); this is the other half of the lead recorded there.
+
+**Shown.** `TestAnUnreadableBusDoesNotMoveTheReactorsOffset`: an event is on the bus, the segments are made unreadable (`chmod 0`; skipped as root and on Windows), and the reactor runs for 1.5 s. On the old code `Run` did not return when its context ended, and the test says so after ten seconds. With the change it stops, its offset is unmoved, and once the files are readable a new reactor on the same offset reacts to the event it could not read.
+
+**The change.** A malformed offset still starts at the end. Any other error keeps the position, logs, and retries after five seconds, stopping with the context.
+
+**Not verified.** A real disk fault, or a bus on a network filesystem; `make check`. The unmoved-offset assertion is made on the new code only, since the old code never reaches it in the test.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
