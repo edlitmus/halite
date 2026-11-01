@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A reconnect that reports no grains no longer erases the hub's cached grains
+
+A node that could not encode its grains reported none, and the hub wrote that over its cache
+as freshly seen, so grain targets missed the node. The cached grains and their age are now
+kept (DIVERGENCE 5.523).
+
 ### A reaction with a target it would ignore, or a structured argument, is refused
 
 `tgt` on a `caller`, `runner` or `wheel` reaction was accepted and ignored, and a mapping or

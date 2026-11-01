@@ -35934,6 +35934,18 @@ Issue 321, the fourth audit pass (`internal/hub/reaction.go`).
 
 **Not verified.** An estate's real reaction files (the one shipped example, `config-changed.sls`, uses neither); `make check`. Whether a structured positional `arg` should be encoded as JSON instead of refused is a design question: Salt does pass structures, and this build's job arguments are strings.
 
+### 5.523 A reconnect that reported no grains erased the hub's cached ones
+
+Issue 321, the fourth audit pass (`internal/hub/subscribe.go`).
+
+**The defect.** `subscribe` records what a node reports before the stream opens, whenever it carries grains or a version, with `NodeCache.Put`, which replaces the whole record. The node always sends its version, and sends no grains when it cannot encode them (`grainsJSON` in `cmd/halite-node/enroll.go` logs the failure and returns nothing). The hub then wrote an empty grain set over the cache and stamped it with the time of the connection, so every target on a grain matched nothing for that node until its next refresh (the silent miss SPEC 8.3 says must be annotated and not hidden), and the cache said the empty set was fresh.
+
+**Shown.** `TestAReconnectWithoutGrainsDoesNotEraseTheCachedOnes`: a node subscribes with grains and a version, reconnects two hours later with a version only. On the old code the cached grains read `null` and their age was reset to the second connection; with the change the grains are those it reported and the age is the first report's, so `grain_stale_after` still describes them truthfully.
+
+**The change.** A report with no grains keeps the cached grains and their `LastSeen`, and takes the new version. A node the hub holds nothing for is recorded as before.
+
+**Not verified.** A node that really fails to encode its grains (no such node was made: the node-side encoder was read, not run); `make check`. Not changed: the node still sends nothing when it cannot encode, rather than saying so.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
