@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/job"
 )
 
 // A read error that says nothing about the position leaves it alone.
@@ -84,5 +85,22 @@ reactor:
 	waitFor(t, 10*time.Second, "the reaction to the event the first reactor could not read", func() bool {
 		events, _, err := bus.Read(eventbus.Earliest, []string{"halite/audit/saw_it"}, 10)
 		return err == nil && len(events) > 0
+	})
+	// And until the runner call that made it has finished recording itself.
+	// The event is published from inside the call, and the call then writes
+	// its return into the job cache: a test that returns at the event lets
+	// its temporary directory be removed under that write, which failed this
+	// test on macOS ("directory not empty") when the write was slow.
+	waitFor(t, 10*time.Second, "the reaction's runner call to finish recording itself", func() bool {
+		jobs, err := l.server.Jobs.List(10)
+		if err != nil {
+			return false
+		}
+		for _, j := range jobs {
+			if j.Fun == "event.send" && j.State == job.Complete {
+				return true
+			}
+		}
+		return false
 	})
 }
