@@ -128,9 +128,10 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		// reactor watching a state result can tell what caused the run
 		// it is looking at. A job the hub no longer has a record of
 		// carries none, which is the honest answer.
-		chain := ""
+		chain, ranAState := "", false
 		if j, err := s.Jobs.Get(ret.JID); err == nil {
 			chain = j.Correlation
+			ranAState = appliesState(j.Fun)
 		}
 		s.emitCorrelated(tagJobRet(string(ret.JID), ran), ran, chain, map[string]any{
 			"jid": string(ret.JID), "fun": ret.Fun,
@@ -138,7 +139,15 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		})
 		// A state run gets its own tag as well, because that is what a
 		// reactor watches: SPEC 17.1's halite/state/<jid>/<node>/<result>.
-		if ret.Out == "highstate" {
+		//
+		// Decided by the function the hub recorded for the job; the output
+		// formatter the node put on its return is only a second opinion.
+		// `Out` is the node's to set, and the node also uses "highstate"
+		// for the `show_*` functions, which compile and run nothing: a
+		// `test.ping` return that said so, or a `state.show_lowstate`,
+		// published a state result for a run that never happened, to the
+		// reactors and change feeds that act on it. DIVERGENCE 5.517.
+		if ret.Out == "highstate" && ranAState {
 			result := "failed"
 			if ret.Success {
 				result = "ok"
@@ -518,4 +527,16 @@ func requestForJob(principal string, j *job.Job) policy.Request {
 		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
 		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test,
 	}
+}
+
+// appliesState reports whether a job's function runs states on the node, as
+// opposed to showing what they would be. The names are the node's
+// `stateFunction` set without its `show_*` forms; the two lists are in
+// different binaries, which is why this is a list and not an import.
+func appliesState(fun string) bool {
+	switch fun {
+	case "state.apply", "state.highstate", "state.sls":
+		return true
+	}
+	return false
 }

@@ -35862,6 +35862,18 @@ Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
 
 **Not verified.** A real hub with a runner call in flight; `make check`. Checked and found governed: the API's `GET /v1/jobs` and `/v1/jobs/{jid}` go through the scoped `jobs.list_jobs` and `jobs.list_job` runners, so the list path has no gap of the 5.513 kind. Not compared: whether the runner scope and 5.513's function rule agree for every policy, which differ in what they ask of the reader.
 
+### 5.517 A state result was announced for jobs that ran no states
+
+Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
+
+**The defect.** `returned` published `halite/state/<jid>/<node>/<ok|failed>`, the tag SPEC 17.1 names for "a state run completes" and the one reactors and change feeds act on, whenever a return's `Out` was `highstate`. `Out` is a field the node supplies, and the node also uses it for the `show_*` functions (`state.show_lowstate`, `show_top`...), which compile and run nothing. A node the job was sent to could therefore make a `test.ping` announce a state run, and an operator running `state.show_highstate` fired every reactor that watches state results.
+
+**Shown.** `TestAStateResultIsPublishedOnlyForAJobThatAppliesStates` submits four jobs to a connected node and files each return with `Out: "highstate"`: `test.ping` and `state.show_lowstate` published a state result on the old code; `state.apply` and `state.highstate` did, correctly. With the gate widened back (`|| true`) the first two fail again.
+
+**The change.** The decision is the function the hub recorded for the job (`state.apply`, `state.highstate`, `state.sls`), not the node's output formatter. `appliesState` lists the node's applying forms; the node's `stateFunction` is in another binary, so the two lists are separate.
+
+**Not verified.** A real reactor on a real hub reacting; `make check`. Not checked by a test: that `appliesState` stays equal to the node's applying forms, which would need the two packages to share the list. `state.sls_id` and other `state.*` spellings are not handled by the node either, as read.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
