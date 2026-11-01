@@ -35788,6 +35788,18 @@ Issue 321, the third audit pass (`internal/hub/runners_fleet.go`, `subscribe.go`
 
 **Not verified.** A reactor reacting to `halite/key/*/revoke` on a real hub; `make check`.
 
+### 5.512 The `event.send` runner skipped what every other published event gets
+
+Issue 321, the third audit pass (`internal/hub/runners_tree.go`, `events.go`).
+
+**The defect.** An event the hub publishes through `emit` is counted in `halite_events_published_total`, handed to `OnEvent` (which is how a relay's upstream hears it), and written under its `salt/...` spelling when `event_tag_compat` is on. The `event.send` runner, which is how an orchestration, a reactor or an operator puts an event on the bus, called `bus.Append` itself and did none of the three. Its events were missing from the published count, never reached a relay's upstream, and had no compatibility spelling for the consumer that exists because it cannot be changed.
+
+**Shown.** `TestEventSendPublishesLikeAnyOtherEvent`, with `event_tag_compat` and `OnEvent` set and a registry attached: on the old code the event was never forwarded (the wait timed out). With the fix, and then with each of the three removed from `publish` in turn, the test fails on exactly that one: no forward, no `salt/...` event, count absent.
+
+**The change.** `emitCorrelated` is now a wrapper over `publish`, which does all three and says where the event landed and whether it failed; the runner calls it, and still fails the call when the append fails, as it did.
+
+**Not verified.** A relay's upstream receiving an `event.send` on a real two-tier estate; `make check`. Found and not changed: `event.replay` takes its `limit` before the caller's scope filter, so a scoped caller can be handed an empty page that still carries a `next` offset (it pages on correctly, and a caller that takes an empty page for the end of the log stops early).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

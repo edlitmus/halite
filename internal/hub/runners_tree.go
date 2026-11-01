@@ -297,8 +297,7 @@ func registerEventRunner(r *Runners) {
 				runnerOpt("data", signature.Map, nil, "The payload."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
-				bus, err := c.bus()
-				if err != nil {
+				if _, err := c.bus(); err != nil {
 					return nil, err
 				}
 				tag := c.arg("tag")
@@ -314,11 +313,7 @@ func registerEventRunner(r *Runners) {
 				// be asked who caused it, and the answer has to come
 				// from the connection, not from the body.
 				data["_principal"] = c.Principal
-				offset, err := bus.Append(&eventbus.Event{
-					Tag:         tag,
-					Data:        data,
-					Correlation: string(c.JID),
-				})
+				offset, err := c.Server.publish(tag, "", string(c.JID), data)
 				if err != nil {
 					return nil, err
 				}
