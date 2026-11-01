@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A state result is published only for a job that ran states
+
+`halite/state/<jid>/<node>/<result>` was published whenever a return's output format said
+`highstate`, which a node sets itself and also uses for the `show_*` functions. It is now
+decided by the job's recorded function: `state.apply`, `state.highstate` and `state.sls`
+(DIVERGENCE 5.517).
+
 ### Stopping a runner call is authorized as the runner, like reading it
 
 `kill` judged a recorded runner call as a node job against `hub`, so the operator holding the
