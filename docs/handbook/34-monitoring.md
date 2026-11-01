@@ -187,7 +187,7 @@ worth an alert in itself; send them through `event_return`
 |---|---|
 | `halite/reactor/error`, `halite/reactor/overflow`, `halite/reactor/loop` | A reaction failed, the queue overflowed, a causality chain was broken |
 | `halite/node/*/evidence/conflict` | A node's evidence head contradicts the hub's |
-| `halite/key/**` | Enrolments, acceptances, revocations (an audit trail) |
+| `halite/key/**` | Accepting, rejecting, revoking or deleting a key through the hub's runners (`key.accept` and the rest), and renewals: an audit trail of those. A `halite-hub keys` command run at a terminal is another process and publishes nothing |
 | `halite/beacon/**` | Whatever your beacons were set to notice |
 | `halite/error/**` | A structured error worth reacting to |
 

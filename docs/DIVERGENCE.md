@@ -35774,6 +35774,20 @@ Issue 321, the third audit pass (`internal/hub/dispatch.go`).
 
 **Not verified.** A real canary rollout; that no caller relied on the old refusal as a way of insisting that *every* matched node be up (`--offline require` without a subset is unchanged, and it is the way to say that); `make check`. The second test draws at random and fails if the one connected node is never drawn in 40 tries (about one in 10^7 for a correct hub).
 
+### 5.511 The key runners published no event, and `key.revoke` left the node connected
+
+Issue 321, the third audit pass (`internal/hub/runners_fleet.go`, `subscribe.go`).
+
+**The defect.** The `key.accept`, `key.reject`, `key.revoke` and `key.delete` runners (what an orchestration, a reactor or the API calls) went straight to the key store. Only `Server.Revoke` published `halite/key/<node>/revoke` and ended the node's stream, and nothing called `Server.Revoke`. So: no key runner published a lifecycle event, though the handbook describes `halite/key/**` as the audit trail of "acceptances, revocations"; and a node revoked through `key.revoke` kept its stream until the reconcile loop's next pass, two seconds later, and for ever on a hub run without that loop. SPEC 7.4 says a revocation is acted on at once. A renewal is the one thing that wrote to the namespace.
+
+**Shown.** `TestKeyRevokeEndsTheStreamAndAnnouncesItself`: a connected node, `key.revoke` through `CallRunner`; on the old code the stream was still up after five seconds and the bus held no `halite/key/web1.example/revoke`. `TestKeyAcceptRejectAndDeleteAnnounceThemselves`: the bus held no event for any of the three. Both fail on the old code and pass now. The hub had no test of these four runners at all before this; `internal/policy` tested their scope only.
+
+**The change.** `revokeBy` (what `Server.Revoke` now calls) takes the principal and returns the record; the runners use it, and `announceKey` publishes `halite/key/<node>/<action>` with the principal named. The handbook's monitoring table said the namespace holds "enrolments, acceptances, revocations"; it now says what it holds.
+
+**Not shown, and left.** A `halite-hub keys accept|reject|revoke|delete` run at a terminal is another process with no bus handle, and publishes nothing (the reconcile loop ends a revoked node's stream, as before, and says so in the log). Whether the reconcile loop should publish what it sees changed on disk, so those actions reach the audit trail too, is a decision, not a defect found: it would make the event come from the hub and not from the person.
+
+**Not verified.** A reactor reacting to `halite/key/*/revoke` on a real hub; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
