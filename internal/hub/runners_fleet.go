@@ -273,6 +273,7 @@ func registerKeyRunner(r *Runners) {
 				if _, err := c.Server.Authority.Delete(c.arg("node")); err != nil {
 					return nil, err
 				}
+				c.Server.forgetNode(c.arg("node"))
 				c.Server.announceKey(c.Principal, c.arg("node"), "delete", nil)
 				return true, nil
 			},

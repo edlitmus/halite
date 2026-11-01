@@ -35910,6 +35910,18 @@ Issue 321, the fourth audit pass (`internal/hub/mine.go`).
 
 **Not verified.** A real fleet publishing at once; `make check`. Found and not changed here: a deleted node's mine is not cleared when its key is deleted, which is its own entry.
 
+### 5.521 Deleting a node's key left its mine being served
+
+Issue 321, the fourth audit pass (`internal/hub/runners_fleet.go`, `subscribe.go`).
+
+**The defect.** `key.delete` removed the key record and nothing else. What the node had published to the mine stayed, and the mine is served to other nodes: a load balancer's state that builds its backend list from `mine.get` kept a decommissioned host in it until somebody knew to run `cache.clear_mine` for that node. Its cached grains stayed too. The same was true of a record deleted by `halite-hub keys delete` at a terminal, which is another process and never reaches the runner. Found by looking for what `key.delete` and the mine each assume about the other.
+
+**Shown.** `TestKeyDeleteClearsTheNodesMineAndGrains`: two nodes with a mine function and cached grains each, `key.delete` on one; on the old code both of its entries were still there (`the deleted node's mine is still served: <nil>`), and the other node's untouched. `TestReconcileClearsTheMineOfANodeDeletedElsewhere`: the record deleted through the authority and `reconcileOnce` run, which is what the running hub does. Each fails with its own call to `forgetNode` disabled.
+
+**The change.** `forgetNode` drops the mine and the cached grains of a node, called by `key.delete` and by the reconcile loop for a deleted record whose name has not been accepted again. Revocation does not call it: a revoked record can be accepted again and the node has not been removed. The reconcile loop calls it on every pass while the deleted record's denial is live; it is a removal of files that are not there, which the stores treat as success.
+
+**Not verified.** The guard for a name that has enrolled again before the reconcile pass (it is the one the loop's disconnect already used, and no test enrols a name twice); `make check`; a real load balancer state reading the mine. Whether revoking should also stop serving the mine is a question for whoever runs revocations, and nothing here changes it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

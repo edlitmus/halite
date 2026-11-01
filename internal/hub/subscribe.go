@@ -270,6 +270,13 @@ func (s *Server) reconcileOnce() error {
 		if revoker != nil {
 			revoker.Revoke(d.Serial, d.Reason)
 		}
+		// What the hub kept for the node goes too, whichever process
+		// deleted the record: `halite-hub keys delete` at a terminal never
+		// reaches the runner. Not for a name that has enrolled again, whose
+		// record is somebody else's now. DIVERGENCE 5.521.
+		if !accepted[d.NodeID] {
+			s.forgetNode(d.NodeID)
+		}
 		if !accepted[d.NodeID] && s.fleet().Disconnect(d.NodeID, d.Reason) {
 			s.info("a node's record was deleted elsewhere; the node has been told",
 				"node_id", d.NodeID, "reason", d.Reason)
@@ -316,4 +323,24 @@ func reasonOr(reason string) string {
 		return "enrollment revoked"
 	}
 	return reason
+}
+
+// forgetNode drops what the hub keeps for a node whose key record has been
+// deleted: the mine it published and the grains it reported.
+//
+// Deleting the record left both. The mine is served to other nodes, so a
+// decommissioned host stayed in the backend list a load balancer's state
+// built from `mine.get`, until somebody knew to run `cache.clear_mine`; and a
+// node cache entry for a name nothing can connect as is clutter that a grain
+// survey reads. Revocation is not deletion and does not call this: a revoked
+// record can be accepted again, and the node has not been removed from the
+// estate. A name that enrols again publishes and reports afresh. DIVERGENCE
+// 5.521.
+func (s *Server) forgetNode(nodeID string) {
+	if err := s.mine().Delete(nodeID, ""); err != nil && !errors.Is(err, errNoMineStore) {
+		s.warn("could not clear a deleted node's mine", "node_id", nodeID, "error", err.Error())
+	}
+	if err := s.nodes().Delete(nodeID); err != nil && !errors.Is(err, errNoNodeCache) {
+		s.warn("could not clear a deleted node's cached grains", "node_id", nodeID, "error", err.Error())
+	}
 }
