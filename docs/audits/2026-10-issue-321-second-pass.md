@@ -135,12 +135,14 @@ On 2026-11-01, at `main` `5b6ff546`. Read in full: `jobs.go`, `mine.go`, `nodes.
 | What | Shown how | Status |
 |---|---|---|
 | `GET /v1/jobs/{jid}` checked only the operator certificate, where `submit`, `resume` and `kill` authorize: an operator bound to `web*`, refused a submit against `db1`, read a `db1` job's record and returns | the administrator's job read by that operator, with a failing control for the submit; the new test fails twice on the old code (node job, runner call) | fixed, 5.513 (#556) |
+| `EventReturn.Run` turned any read error into a jump to the end of the bus with no pause and no look at the context, and resent the first part of a half-sent batch | a bus that had turned over with a pruned offset (nothing shipped); segments made unreadable (`Run` did not stop); two of four events sent (no offset recorded) | fixed, 5.514 (#558) |
+| `kill` aborted a completed job and told its nodes; a late return completed a killed job | both states read wrong on the old code, each in its own test | fixed, 5.515 (#559) |
 
 **Read, not shown (round four).**
-- `EventReturn.Run`: a read error resets the offset to `Latest` and loops with no wait. A persistent error would spin hot, and every event between the old offset and the end is skipped, which is the hole the type exists to prevent. Not run.
-- `EventReturn.Run`: when the returner fails part way through a batch the offset stays, so the events already shipped go out again. Delivery is at-least-once and nothing says so.
+- ~~`EventReturn.Run`: a read error resets the offset to `Latest` and loops with no wait.~~ Shown and fixed, 5.514 (#558); the loop did not stop with its context either.
+- ~~`EventReturn.Run`: a half-sent batch is resent whole.~~ Fixed, 5.514 (#558): the offset is recorded at the last event that arrived.
 - `halite_events_dropped_total{reason="returner_failed"}` is incremented on every failed attempt, but the event is retried, not dropped.
-- `kill` sets `Aborted` on any job, so killing a completed job overwrites `Complete`; its runner-job authorization is the node form against `hub` (5.513 did not change it). Not run.
+- ~~`kill` sets `Aborted` on any job.~~ Shown and fixed, 5.515 (#559), with the mirror case it led to (`completeIfDone` overwriting `Aborted`). `kill`'s runner-job authorization is still the node form against `hub` (5.513 did not change it). Not run.
 - `returned` publishes `halite/state/<jid>/<node>/<result>` when `ret.Out == "highstate"`, a field the node supplies and the hub does not check against `ret.Fun`. A node the job was sent to could fire a state-result reactor from a `test.ping` return.
 - `JobStatus.Delivered` is an attempt, as `job.Job` says, and listed a never-connected node in the demonstration for 5.513; the field name reads as arrival.
 - `MineStore.Update` is read-modify-write with no lock, so two concurrent publishes from one node can lose one. A node's mine data is removed only by the `mine.delete` runner; no key runner clears it.
