@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A runner call a previous run of the hub left in flight is closed when the hub starts
+
+A restart, crash or kill while a runner call was running left its job `dispatched`, listed as running for ever. At startup
+the hub now marks those `aborted` (DIVERGENCE 5.528).
+
 ### A runner that panics is a failed run instead of a dropped connection and a job that stays running
 
 The call is now recorded as the failure it was, with its `halite/run/<jid>/ret` event, and the caller is told; the

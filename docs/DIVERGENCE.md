@@ -35994,6 +35994,18 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/runner.
 
 **Not verified.** A panic in a goroutine a runner starts itself, which `recover` here cannot see and which ends the hub as any such panic does; no builtin runner is known to panic. `make check`.
 
+### 5.528 A runner call in flight when the hub stopped was listed as running for ever
+
+Issue 321, the third audit pass, left open in round three (`internal/hub/batch.go`, `cmd/halite-hub/serve.go`).
+
+**The defect.** A runner call is recorded `dispatched` with no expiry, because it is delivered to nobody and has no window to gather in. `Settle` closes only a job with one. A call running when the hub stopped, by a restart, a crash or a kill, kept the record `dispatched` after the process that was running it had gone, and `jobs list` showed it as in flight indefinitely.
+
+**Shown.** A runner job and a node job both `dispatched`; `AbandonRunnerJobs` closed both with the target check removed (two closed, the node job aborted), and one, the runner's, with it in. The function is new, so there is no old-code run of it; what the test demonstrates is that it closes the hub's own and only the hub's own, and that a second sweep finds nothing.
+
+**The change.** `AbandonRunnerJobs` marks `aborted` every job recorded against the hub itself that is still `dispatched`, once, at startup before anything is served. That is the only moment it is certain that no call of this process is in flight, so it is not a periodic sweep: run later it would close calls that are running. It looks through the 5,000 most recent jobs, a number chosen, not measured. It is `aborted` and not `partial` or `complete` because the call stopped with no return to report.
+
+**Not verified.** A real restart in the middle of an orchestration (the record is written in the test, not left by a killed hub); a hub with more than 5,000 jobs newer than the orphan; two hubs sharing one job cache, which the design does not allow and this would break; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
