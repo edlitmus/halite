@@ -166,7 +166,11 @@ func (s *Server) completeIfDone(id job.ID) {
 	// just cleared -- sending the node the job a second time on its
 	// next connection. See job.Cache.Update.
 	_, err = s.Jobs.Update(id, func(cur *job.Job) error {
-		if cur.State == job.Complete {
+		// Not an aborted one either. An operator's kill is a decision, and
+		// a node that was already running the job answering late makes
+		// nothing missing, which used to read as the job having completed.
+		// DIVERGENCE 5.515.
+		if cur.State == job.Complete || cur.State == job.Aborted {
 			return errAlreadyComplete
 		}
 		cur.State = job.Complete
@@ -181,6 +185,10 @@ func (s *Server) completeIfDone(id job.ID) {
 // reaches an operator: a job marked complete twice is two goroutines
 // agreeing, not a fault.
 var errAlreadyComplete = errors.New("the job is already complete")
+
+// errJobFinished is what kill's update answers for a job that has completed,
+// which the handler turns into a 409.
+var errJobFinished = errors.New("the job has already completed")
 
 // submit is POST /v1/jobs: an operator asking for a job.
 func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string) {
@@ -379,12 +387,27 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 	// Expiring it is what stops the batch goroutine from advancing and
 	// what makes every node refuse it: the check is already there in
 	// the replay guard, and one mechanism is better than two.
+	//
+	// A job that has completed has nothing left to stop. Marking it aborted
+	// turned a successful run into an aborted one and told every node to
+	// cancel work that was over, for an operator whose job list was a
+	// minute old. It is refused rather than quietly accepted, as `resume`
+	// refuses what it cannot resume; killing one that is already aborted
+	// stays harmless and repeatable. DIVERGENCE 5.515.
 	if _, err := s.Jobs.Update(id, func(cur *job.Job) error {
+		if cur.State == job.Complete {
+			return errJobFinished
+		}
 		cur.Queued = nil
 		cur.Expires = s.now().Add(-time.Second)
 		cur.State = job.Aborted
 		return nil
 	}); err != nil {
+		if errors.Is(err, errJobFinished) {
+			transport.WriteError(w, http.StatusConflict, transport.CodeRefused,
+				fmt.Errorf("job %s has already completed; there is nothing to stop", id))
+			return
+		}
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
 		return
 	}
