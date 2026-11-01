@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -71,5 +72,45 @@ bindings:
 	}
 	if _, err := l.operator(t, "mallory").JobStatus(context.Background(), "20261101T000000000001"); err == nil {
 		t.Error("an operator with no runner grant read a runner call")
+	}
+}
+
+// Stopping a runner call is authorized the way reading it is: as the runner.
+//
+// `kill` built its request from the job's target and function as a node job,
+// and a runner call is recorded against the pseudo-target "hub", so the
+// operator who held the runner and could read the call could not stop it, and
+// one holding only node rules was judged by what a glob over "hub" said.
+// DIVERGENCE 5.516.
+func TestAnOperatorHoldingTheRunnerCanStopItsCall(t *testing.T) {
+	l := newLab(t).withJobs(t).withEvents(t)
+	loaded, _, err := policy.Load([]byte(`
+roles:
+  runnerholder:
+    - target: '*'
+      runners: ['pillar.show_pillar']
+  everynode:
+    - target: '*'
+      functions: ['*']
+bindings:
+  - principal: 'cert:CN=rita'
+    roles: ['runnerholder']
+  - principal: 'cert:CN=nodey'
+    roles: ['everynode']
+`), "kill-runner-job.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.server.Policy = loaded
+	const jid = "20261101T000000000002"
+	l.server.recordRunnerJob(job.ID(jid), RunnerCall{
+		Principal: "cert:CN=rita", Fun: "pillar.show_pillar",
+	}, l.server.now())
+
+	if _, err := l.operator(t, "nodey").KillJob(context.Background(), jid); err == nil {
+		t.Error("an operator with node rules and no runner grant stopped a runner call")
+	}
+	if _, err := l.operator(t, "rita").KillJob(context.Background(), jid); err != nil {
+		t.Errorf("the operator holding the runner cannot stop its call: %v", err)
 	}
 }

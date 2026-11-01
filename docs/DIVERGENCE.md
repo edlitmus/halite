@@ -35850,6 +35850,18 @@ Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
 
 **Not verified.** A real node answering after a real kill; `make check`; the `halite-hub jobs kill` command's output for the 409 (it prints whatever the hub says, and the text was not read there). Not changed: a runner job is still authorized by `kill` as a node job against `hub`.
 
+### 5.516 `kill` judged a runner call as a node job
+
+Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
+
+**The defect.** 5.513 made `GET /v1/jobs/{jid}` authorize, and taught it that a runner call is recorded as a job against the pseudo-target `hub`, so it is authorized as the runner function. `kill` kept building its request from the job's target and function as a node job. The operator who held `pillar.show_pillar` could read that call and was refused stopping it (`no rule in [runnerholder] permits pillar.show_pillar against "hub"`), and an operator holding node rules for `*` was judged by whatever a glob over `hub` said. Two handlers for one job, two answers to who may act on it.
+
+**Shown.** `TestAnOperatorHoldingTheRunnerCanStopItsCall`: with `kill` put back to the node form the runner holder is refused with the message above; with the change the holder stops the call and the operator with only node rules is refused.
+
+**The change.** One `requestForJob` builds the request for acting on a recorded job, and `jobStatus` and `kill` both use it, so the two cannot drift again. `resume` is not changed: it re-runs a node job and a runner call is not resumable.
+
+**Not verified.** A real hub with a runner call in flight; `make check`. Checked and found governed: the API's `GET /v1/jobs` and `/v1/jobs/{jid}` go through the scoped `jobs.list_jobs` and `jobs.list_job` runners, so the list path has no gap of the 5.513 kind. Not compared: whether the runner scope and 5.513's function rule agree for every policy, which differ in what they ask of the reader.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
