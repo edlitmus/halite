@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Deleting a node's key now clears its mine and cached grains
+
+A deleted key left what the node had published to the mine being served to other nodes, so a
+decommissioned host stayed in a backend list. `key.delete`, and a delete made at a terminal
+(seen by the reconcile loop), now clear it; a revoked node's data is kept
+(DIVERGENCE 5.521).
+
 ### Concurrent publications to one node's mine no longer erase each other
 
 `Update` and `Delete` of a mine function were an unlocked read, change and write, so two for
