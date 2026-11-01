@@ -434,6 +434,33 @@ func (s *Server) jobStatus(w http.ResponseWriter, r *http.Request, principal str
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
 		return
 	}
+	// Reading a job is held to the policy that governed running it. This
+	// handler used to check only that the caller held an operator
+	// certificate, where submit, resume and kill all authorize: an operator
+	// bound to `web*` could not run anything on `db1`, and could read every
+	// return `db1` had made, which is state output and so may hold secrets.
+	// DIVERGENCE 5.513.
+	//
+	// A runner call is recorded as a job against the pseudo-target "hub",
+	// and a node-targeted rule says nothing about it, so it is authorized
+	// the way the call was: as the runner function, which is also how
+	// `metrics.show` is gated.
+	req := policy.Request{
+		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
+		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test,
+	}
+	if j.Target == RunnerTarget {
+		req = policy.Request{Principal: principal, Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Runner: true}
+	}
+	decision := s.Policy.Authorize(req)
+	s.countDecision(decision)
+	if !decision.Allowed {
+		s.warn("job read refused by policy",
+			"principal", principal, "jid", string(id), "reason", decision.Reason)
+		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
+			fmt.Errorf("%s", decision.Reason))
+		return
+	}
 	returns, err := s.Jobs.Returns(id)
 	if err != nil {
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)

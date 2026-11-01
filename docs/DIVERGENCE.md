@@ -35814,6 +35814,18 @@ Issue 321, the third audit pass (`internal/hub/runners_tree.go`, `events.go`).
 
 **Not verified.** A relay's upstream receiving an `event.send` on a real two-tier estate; `make check`. Found and not changed: `event.replay` takes its `limit` before the caller's scope filter, so a scoped caller can be handed an empty page that still carries a `next` offset (it pages on correctly, and a caller that takes an empty page for the end of the log stops early).
 
+### 5.513 Reading a job was the one job route the policy did not govern
+
+Issue 321, the fourth audit pass (`internal/hub/jobs.go`).
+
+**The defect.** `submit`, `resume` and `kill` each authorize against the job's own target and function. `GET /v1/jobs/{jid}` checked only that the caller held an operator certificate. An operator bound to `web*` was refused a submit against `db1` and could then read the record and every return of a `db1` job, and a return is state output, which may hold secrets. Found by reading `jobStatus` beside its three siblings, and shown before it was fixed.
+
+**Shown.** `TestJobStatusIsAuthorizedLikeTheJobWas`: an operator holding only `test.ping` on `web*` was refused a submit against `db1.example` and then read the administrator's job against it, with its target, nodes and state. With the check restored it is refused with the policy's own reason. With `jobStatus` put back as it was, the test fails twice: once for the node job and once for the runner call below.
+
+**The change.** `jobStatus` authorizes the job's recorded request before it reads the returns, counts the decision, and logs a refusal. A runner call is recorded as a job against the pseudo-target `hub`, which a node-targeted rule says nothing about, so it is authorized the way it was made, as the runner function (the way `metrics.show` is gated). The operator who may run a job, and the one holding the runner, still read it.
+
+**Not verified.** `make check`; a real operator and a real policy file. Not changed: `kill` still authorizes a runner job as a node job against `hub` and does not take the runner form; `GET /v1/jobs` (the list) goes through the `jobs.*` runners and was not read for the same gap on the API side.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
