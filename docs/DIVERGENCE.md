@@ -35946,6 +35946,18 @@ Issue 321, the fourth audit pass (`internal/hub/subscribe.go`).
 
 **Not verified.** A node that really fails to encode its grains (no such node was made: the node-side encoder was read, not run); `make check`. Not changed: the node still sends nothing when it cannot encode, rather than saying so.
 
+### 5.524 `delivered` was documented as arrival and records an attempt
+
+Issue 321, the fourth audit pass (`internal/transport/wire.go`, `docs/handbook/15-jobs.md`).
+
+**The defect.** `JobStatus.Delivered` was documented as "who the job has reached" and the handbook's job-record table says "the nodes that have received it". `job.Job` says what the field is: an attempt, so that a node that was not connected when its turn came is still counted, "or the batch would retry it for ever and never advance". In the probe that found this (5.513's), a job for a node that had never connected listed that node under `delivered` and under `missing` at once. Two descriptions of one field that disagreed, the more visible one wrong.
+
+**Shown.** Not by a failing test, because this is a correction of prose and a test cannot fail on the old wording. `TestDeliveredCountsANodeThatWasNotConnected` holds the behaviour the new wording describes (the absent node is in `delivered` and `missing` and has no return), so a change that made `delivered` mean arrival would have to change the wording and the test together.
+
+**The change.** The comment on the field and the handbook row now say attempt, why a down node is counted, and that who received the job is who has returned (`jobs missing` lists who has not). The CLI's `N delivered` for a batched job is unchanged: the handbook quotes that output byte for byte (`14-remote-execution.md`), and in a batch it means the slices sent, which `run`'s progress line already calls "dispatched".
+
+**Not verified.** That an operator reads the new row and not the old habit; `make check`. Left open: the field's name still says more than it records, and renaming it would break clients of `GET /v1/jobs/{jid}`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
