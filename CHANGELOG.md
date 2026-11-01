@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Reading a job is now held to the policy that governed running it
+
+`GET /v1/jobs/{jid}` checked only that the caller held an operator certificate, so an
+operator who could not run anything on a host could still read what that host's jobs
+returned. It now authorizes the job's own target and function, or the runner function for a
+runner call, and refuses with the policy's reason (DIVERGENCE 5.513).
+
 ### The API's request metrics no longer grow a series per unknown path
 
 The API labelled a request for a path it does not serve with that path, and that answer
