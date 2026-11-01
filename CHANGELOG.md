@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `--subset` no longer queues for, or is refused over, nodes it left out
+
+`--subset N --offline queue` spooled the job for every matched node, not just the N chosen,
+so the others ran it when they next connected. `--subset N --offline require` was refused
+because of a matched node outside the subset. The subset is now chosen first, and the
+offline policy applies to the nodes the job goes to (DIVERGENCE 5.509).
+
 ### The hub's request metrics no longer grow a series per unknown path
 
 The `route` label of `halite_hub_requests_total` was the request's path for anything the
