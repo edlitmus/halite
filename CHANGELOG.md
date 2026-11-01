@@ -21,6 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The key runners publish `halite/key/<node>/<action>`, and `key.revoke` disconnects at once
+
+`key.accept`, `key.reject`, `key.revoke` and `key.delete` published nothing, and a node
+revoked through `key.revoke` stayed connected until the reconcile loop's next pass. They now
+publish the event, naming the principal, and `key.revoke` ends the node's stream. Key
+commands run at a terminal still publish nothing (DIVERGENCE 5.511).
+
 ### `--subset` no longer queues for, or is refused over, nodes it left out
 
 `--subset N --offline queue` spooled the job for every matched node, not just the N chosen,

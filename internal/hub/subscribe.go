@@ -175,13 +175,43 @@ func (s *Server) fleet() *Fleet {
 // serial reaches the handshake denylist, and the node is told on its
 // own stream that it should stop, per SPEC 7.4.
 func (s *Server) Revoke(nodeID, reason string) error {
-	if _, err := s.Authority.Revoke(nodeID, reason); err != nil {
-		return err
+	_, err := s.revokeBy("", nodeID, reason)
+	return err
+}
+
+// revokeBy is Revoke for a caller who is somebody: the `key.revoke` runner
+// has a principal, and the event it publishes says who. It answers with the
+// record, which the runner returns.
+//
+// The runner used to call the key store itself. That withdrew the
+// enrollment and published nothing, and left the node's stream open until
+// the reconcile loop's next pass (two seconds, and never on a hub run
+// without it); `Revoke` above, which does both, had no caller. DIVERGENCE
+// 5.511.
+func (s *Server) revokeBy(principal, nodeID, reason string) (*keystore.Record, error) {
+	rec, err := s.Authority.Revoke(nodeID, reason)
+	if err != nil {
+		return nil, err
 	}
-	s.emit(tagKey(nodeID, "revoke"), nodeID, map[string]any{"reason": reason})
+	s.announceKey(principal, nodeID, "revoke", map[string]any{"reason": reason})
 	s.fleet().Disconnect(nodeID, reason)
-	s.info("enrollment revoked", "node_id", nodeID, "reason", reason)
-	return nil
+	s.info("enrollment revoked", "node_id", nodeID, "reason", reason, "principal", principal)
+	return rec, nil
+}
+
+// announceKey publishes a key lifecycle action as `halite/key/<node>/<action>`,
+// naming the principal when there is one. The handbook describes this
+// namespace as the audit trail of acceptances and revocations; until the
+// key runners called this, only a renewal and the unused `Revoke` ever wrote
+// to it.
+func (s *Server) announceKey(principal, nodeID, action string, data map[string]any) {
+	if data == nil {
+		data = map[string]any{}
+	}
+	if principal != "" {
+		data["principal"] = principal
+	}
+	s.emit(tagKey(nodeID, action), nodeID, data)
 }
 
 // Reconcile keeps the running hub's handshake denylist in step with the
