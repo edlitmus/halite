@@ -444,8 +444,13 @@ type JobStatus struct {
 	Target string   `json:"target,omitempty"`
 	State  string   `json:"state,omitempty"`
 	Nodes  []string `json:"nodes,omitempty"`
-	// Delivered is who the job has reached, which lags Nodes while a
-	// batch is in flight.
+	// Delivered is who the hub has attempted delivery to, which lags Nodes
+	// while a batch is in flight. An attempt and not an arrival: a node
+	// that was not connected when its turn came is counted, or a batch
+	// would retry it for ever and never advance. Who actually received the
+	// job is who has returned, and `Missing` is who has not. This was
+	// documented as "who the job has reached", and read that way by anyone
+	// looking at a job for a node that was down.
 	Delivered []string          `json:"delivered,omitempty"`
 	Missing   []string          `json:"missing,omitempty"`
 	Returns   []json.RawMessage `json:"returns,omitempty"`

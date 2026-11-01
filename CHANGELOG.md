@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### `delivered` is documented as an attempt, which is what it records
+
+The job record's `delivered` was described as the nodes that "have received" the job, but it
+counts every node the hub tried, including one that was not connected. The documentation now
+says so; behaviour is unchanged (DIVERGENCE 5.524).
+
 ### A reconnect that reports no grains no longer erases the hub's cached grains
 
 A node that could not encode its grains reported none, and the hub wrote that over its cache

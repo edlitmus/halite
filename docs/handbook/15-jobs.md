@@ -25,7 +25,7 @@ A job has:
 | `offline` | The offline policy it was submitted with. |
 | `state` | `dispatched`, `complete`, `aborted`, … |
 | `batch` | For a batched run: its size and how far it has got. |
-| `delivered` | The nodes that have received it. |
+| `delivered` | The nodes the hub has attempted delivery to. An attempt, not an arrival: a node that was not connected when its turn came is counted, so a batch can move on. Who received it is who has returned; `jobs missing` lists who has not. |
 
 Each node's **return** is its own record, in a schema kept compatible with
 the predecessor's so that existing dashboards and returners keep working:
