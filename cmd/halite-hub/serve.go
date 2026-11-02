@@ -679,7 +679,7 @@ func checkRootsAreNotTheHubsOwn(h *hubContext, roots map[string][]string) error 
 	}
 	for env, dirs := range roots {
 		for _, dir := range dirs {
-			served, err := filepath.Abs(dir)
+			served, err := rootForms(dir)
 			if err != nil {
 				return fmt.Errorf("file root %q: %w", dir, err)
 			}
@@ -687,20 +687,47 @@ func checkRootsAreNotTheHubsOwn(h *hubContext, roots map[string][]string) error 
 				if path == "" {
 					continue
 				}
-				mine, err := filepath.Abs(path)
+				mine, err := rootForms(path)
 				if err != nil {
 					continue
 				}
-				if contains(served, mine) || contains(mine, served) {
-					return fmt.Errorf(
-						"file_roots for %q serves %s, which holds %s (%s): "+
-							"every enrolled node could read it. Move one of the two.",
-						env, served, what, mine)
+				// Every spelling of one against every spelling of the other:
+				// a root that is a link into the state directory is the state
+				// directory, whatever it is called. DIVERGENCE 5.540.
+				for _, s := range served {
+					for _, m := range mine {
+						if contains(s, m) || contains(m, s) {
+							return fmt.Errorf(
+								"file_roots for %q serves %s, which holds %s (%s): "+
+									"every enrolled node could read it. Move one of the two.",
+								env, s, what, m)
+						}
+					}
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// rootForms is a path as written, made absolute, and as it resolves once
+// every symlink in it is followed, when that is a different place.
+//
+// The comparison used filepath.Abs alone, which does not follow a link, so
+// `/srv/salt -> /var/lib/halite` was not recognised as the state
+// directory it is and the hub served its key store and job cache to every
+// node, which is what the check exists to stop. A path that does not exist
+// yet has no resolution, and its absolute form is all there is.
+func rootForms(path string) ([]string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	forms := []string{abs}
+	if real, err := filepath.EvalSymlinks(abs); err == nil && real != abs {
+		forms = append(forms, real)
+	}
+	return forms, nil
 }
 
 // contains reports whether inner is outer or is beneath it.

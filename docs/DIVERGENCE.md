@@ -36136,6 +36136,18 @@ Issue 321, the second pass, round five (`cmd/halite-hub/ssh.go`).
 
 **The change.** `sshTimeoutFlag` reads the flag and refuses anything that is not a positive duration; `runSSH` calls it with the other flags it checks before the hub is opened (5.221), so the refusal is a usage error before any target is touched.
 
+### 5.540 A file root that was a symlink to the hub's own state was not refused
+
+Issue 321, the second pass, round five (`cmd/halite-hub/serve.go`).
+
+**The defect.** `checkRootsAreNotTheHubsOwn` refuses a `file_roots` entry that holds, or is inside, the hub's key material, key store, state or cache, because the hub would serve its keys and every return in the estate to every enrolled node. It compared paths made absolute with `filepath.Abs`, which does not follow a symlink, so `/srv/salt` linked to the state directory, a common way to lay a server out, passed.
+
+**Shown.** The state directory itself was refused and a link to it was accepted (scratch test, old code). The new test fails twice on the old code: a served link to the state directory, and a state directory that is itself a link to the served tree. It also pins that a link to a separate tree is still fine.
+
+**The change.** Each path is compared in the form written and in the form it resolves to once its links are followed, every spelling of one against every spelling of the other. A path that does not exist has no resolution and is compared as written. The test skips where a symlink cannot be made.
+
+**Not verified.** Windows junctions, and a link whose target is created after the check.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
