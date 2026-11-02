@@ -191,36 +191,12 @@ func (n *node) extensionLoadOptions() extension.LoadOptions {
 // extensionPins reads `extension_pins`, a mapping of name to version
 // and root.
 func (n *node) extensionPins() map[string]extension.Pin {
-	raw, ok := n.cfg.Get("extension_pins")
-	if !ok || raw == nil {
-		return nil
+	raw, _ := n.cfg.Get("extension_pins")
+	pins, err := extension.ParsePins(raw)
+	if err != nil {
+		cli.Fatalf("%v", err)
 	}
-	m, isMap := raw.(*value.Map)
-	if !isMap {
-		cli.Fatalf("`extension_pins` is a mapping of extension to version and root, not %s",
-			value.TypeName(raw))
-	}
-	out := map[string]extension.Pin{}
-	for _, e := range m.Entries() {
-		name := value.KeyString(e.Key)
-		switch v := e.Val.(type) {
-		case string:
-			out[name] = extension.Pin{Version: v}
-		case *value.Map:
-			pin := extension.Pin{}
-			if version, ok := v.Get("version"); ok {
-				pin.Version = value.KeyString(version)
-			}
-			if root, ok := v.Get("root"); ok {
-				pin.Root = value.KeyString(root)
-			}
-			out[name] = pin
-		default:
-			cli.Fatalf("`extension_pins`: %s pins to %s, and a pin is a version or a mapping "+
-				"of version and root", name, value.TypeName(e.Val))
-		}
-	}
-	return out
+	return pins
 }
 
 // warmExtension starts one process so the handshake happens and the

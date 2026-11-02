@@ -100,7 +100,7 @@ Package extension is the distribution and trust half of SPEC section 24: a signe
 
 SPEC 24.4's claim is that this is materially better than Salt, and the reasons are checkable: code delivered to a node must be signed by a key the node trusts, must be pinned by version and digest, runs out of process, and runs sandboxed. This package is the first two.
 
-**Files:** `bundle.go`, `manifest.go`, `platform.go`, `runtime.go`, `sign.go`, `store.go`, `sync.go`, `trust.go`; with tests.
+**Files:** `bundle.go`, `manifest.go`, `pins.go`, `platform.go`, `runtime.go`, `sign.go`, `store.go`, `sync.go`, `trust.go`; with tests.
 
 **Exports.**
 
@@ -120,6 +120,7 @@ SPEC 24.4's claim is that this is materially better than Salt, and the reasons a
 - `Manifest` (type): Manifest describes a bundle.
 - `MerkleRoot` (func): MerkleRoot is the root of a bundle's file tree: the file half of what the signature covers.
 - `ParseManifest` (func): ParseManifest reads one and checks it.
+- `ParsePins` (func): ParsePins reads `extension_pins`: a mapping of extension name to a version (a string) or to a mapping of `version` and `root`.
 - `ParseTrustKey` (func): ParseTrustKey reads `<name> <base64 public key>`, the form `extension_trust_keys` takes.
 - `Pin` (type): Pin is what an estate fixes an extension at.
 - `Platform` (func): Platform is the `<goos>/<goarch>` key for this build.
