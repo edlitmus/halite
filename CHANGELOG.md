@@ -21,6 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`halite-node state show_highstate`, `show_sls` and `show_lowstate` no longer print a registered secret.** A password in a state's `contents:` or a token in a command was shown whole, though `state apply`, `pillar` and `doctor` masked it. They now mask it the way `pillar` does. The remote `state.show_*` jobs are not changed here. DIVERGENCE 5.556.
 - **A misspelt or empty entry in `extension_pins` stops the hub or node at start.** `{version: 1.0.0, rot: <digest>}` pinned the version and silently not the root, and `{}` pinned nothing. Each is now refused by name, so a configuration that was running with a pin that did nothing will not start until it is corrected. DIVERGENCE 5.555.
 
 - **`halite-hub doctor` no longer warns that a git- or S3-backed hub serves nothing.** The file server check looked only at `file_roots`. It now counts a configured git remote or S3 bucket as something served. DIVERGENCE 5.554.

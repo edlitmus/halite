@@ -169,7 +169,15 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 		if err := out.Err(); err != nil {
 			cli.Fatalf("%v", err)
 		}
-		n.out(renderHigh(out))
+		// The compiled states carry whatever the tree carries, and a
+		// tree carries secrets: a password in `contents:`, a token in a
+		// command. `state apply` scrubs what it prints and these forms
+		// did not, so the same secret was masked in one and whole in the
+		// other. maskValue and not ScrubValue: it replaces a string that
+		// IS a registered secret outright, which also covers one shorter
+		// than the substring scrubber's floor, and the schema keys here
+		// are not data. DIVERGENCE 5.556.
+		n.out(maskValue(renderHigh(out), n.secrets))
 		return 0
 
 	case "show_lowstate":
@@ -178,7 +186,8 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 		if err := out.Err(); err != nil {
 			cli.Fatalf("%v", err)
 		}
-		n.out(renderLow(out))
+		// See show_highstate above for why this is masked.
+		n.out(maskValue(renderLow(out), n.secrets))
 		return 0
 
 	case "show_states":

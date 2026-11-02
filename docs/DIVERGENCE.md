@@ -36318,6 +36318,18 @@ Issue 321, the second pass, round ten (`internal/extension/pins.go`, both progra
 
 **Not verified.** An estate's real configurations, which may hold such an entry.
 
+### 5.556 `halite-node state show_*` printed a registered secret in clear
+
+Issue 321, the second pass, round eleven (`cmd/halite-node/commands.go`).
+
+**The defect.** `state apply`, `pillar` and `doctor` run what they print through the node's redactor; `state show_highstate`, `show_sls` and `show_lowstate` printed the compiled states through `n.out` and nothing else. The one hand-made exception was `runas_password`, masked in `renderLow`. A secret carried as a state argument (a password in `contents:`, a token in a command line) appeared whole, so the same value was masked in a run's output and complete in the command an operator reads to see what a tree will do, which is the one pasted into a ticket.
+
+**Shown.** A node configured with `returner_smtp_password: s3cr3t-value-123` (registered by `seedConfiguredSecrets`) and a tree with `contents: password=s3cr3t-value-123` and a command naming it: `show_highstate`, `show_sls web` and `show_lowstate` all exited 0 with the value in stdout, as a subprocess (the new test fails on the old code for the five output forms it runs). With the scrub taken out of `show_lowstate` the test fails for two forms (text and JSON); out of `show_highstate`, for three (text, `show_sls`, YAML); both restored, it passes. `show_states` and `show_top` print SLS and state names only and are checked to still work.
+
+**The change.** The two values are passed through `maskValue`, the function `pillar` and `doctor` use, rather than a second redactor: a string that is a registered secret becomes the placeholder, and a secret inside a longer string is scrubbed in place, so `password=` survives and the line is still readable. `maskValue` and not `ScrubValue`, because it also replaces a value that is wholly a short secret and leaves the schema keys alone.
+
+**Not verified.** The remote `state.show_highstate` and `state.show_lowstate` jobs (`execute.go` builds the same values and returns them to the hub, not through this path; whether the hub scrubs a job's return was not checked); a secret that is not registered, such as a `runas_password` written in the tree, which `show_highstate` still prints (only `show_lowstate` masks it by name); a pillar secret decrypted from real GPG, which was not run, the registered one here coming from configuration; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
