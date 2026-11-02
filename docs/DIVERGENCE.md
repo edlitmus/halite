@@ -36258,6 +36258,18 @@ Issue 321, the second pass, round eight (`internal/gitfs/backend.go`).
 
 **Not verified.** A real remote going away over a network and returning; a remote whose last good tree was swept by an earlier hub version.
 
+### 5.551 The node's environment allowlist and denylist read `[!x]` backwards, and skipped a pattern that did not parse
+
+Issue 321, the second pass, round eight (`cmd/halite-node/main.go`).
+
+**The defect.** `env_allowlist` and `env_denylist` (SPEC 28.3) were matched with Go's `path.Match`, which the rest of the tree had moved off for fnmatch (5.501). `path.Match` writes a negated set `[^x]`, so `[!b]*` as a denylist denied `base` and permitted `dev`, and as an allowlist `[!p]*` refused `base` and permitted `prod`: the opposite of what the pattern says, in the control that exists to say which environments a node will apply. And `path.Match` returns an error for a pattern that does not parse; the code skipped it, so a denylist entry that did not parse (`stage[`) denied nothing, where an allowlist one at least refused.
+
+**Shown.** `checkEnvPermitted` against three configurations on the old code: `[!b]*` denied `base`, `[!p]*` refused `base` and allowed `prod`, and `prod[` refused neither `prod[` nor `prod`. The new test fails on the old code in eight places.
+
+**The change.** The patterns are matched with the same fnmatch the node ID, the policy and the fileserver's filters use. fnmatch has no error: an unclosed `[` is a literal one, so `stage[` denies an environment named `stage[`. An operator who wrote `[!x]` meaning what fnmatch means now gets it; one whose list happened to depend on the inversion gets what it says. The hub's own environment filters were already fnmatch.
+
+**Not verified.** A node applying a job for an environment under a real configuration; the compatibility shim's translation of Salt's `file_ignore_glob`-style settings, which does not touch these two.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
