@@ -162,3 +162,39 @@ On 2026-11-01, at `main` `5b6ff546`. Read in full: `jobs.go`, `mine.go`, `nodes.
 - Checked, no gap: the API's `GET /v1/jobs` and `/v1/jobs/{jid}` go through the scoped `jobs.list_jobs` and `jobs.list_job` runners (5.516's note). Not compared: whether the runner scope and 5.513's function rule agree for every policy.
 
 **Not verified in round four.** No real node, relay or operator policy file, no FreeBSD jail run for 5.513, and `make check`.
+
+## Round five: the first of the packages and commands no round had opened
+
+On 2026-11-02, at `main` `2dbc28a4`. This round read, in full unless noted: `internal/awsauth` (all four files), `internal/varlink`, `internal/fips`, `internal/log` (`FromConfig`, and `log.go` as far as the redaction loop in `Log`), `internal/metrics` (`metrics.go`, `expose.go`, `merge.go`), `internal/target` (`target.go`, `compound.go`), `internal/tracing` (`context.go`, `carrier.go`), and in `cmd`: `halite-hub/ssh.go`, `keys.go`, `policy.go`, `extsign.go`, `extensionverify.go`, `serve.go` lines 600 to 780, and `halite-node/jobsignature.go` and `writeInlineFile` in `oneshot.go`. Nothing was fixed in this round: it records what was found. Each lead below says whether it was run.
+
+### Shown (a scratch test, run on this commit and then removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| A grain or pillar value that contains a colon can never be targeted: `splitKeyValue` splits at the *last* colon, so `G@hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff` looks for the key `hwaddr_interfaces:eth0:aa:bb:cc:dd:ee` and the value `ff`. A MAC address, an IPv6 address and any `host:port` value are out of reach of `-G`, `-P` and the compound `G@`. | five forms against a node holding that grain, all false | open. Salt tries every split point (`salt.utils.data.subdict_match`); that is from memory of its source, and Salt is not installed here, so the differential was not run |
+| `halite-hub ssh` sends the state tree as `map[string]string` inside JSON, so a file that is not valid UTF-8 (an image, an archive, a DER certificate) reaches the target with each invalid byte replaced by U+FFFD, and `file.managed` from it writes the corrupted bytes. Nothing refuses or warns. | `sshRequest` for `state.apply` over a tree holding the bytes `89 50 4e 47 ff fe 00 80`; the request decodes to `ef bf bd 50 4e 47 ef bf bd ef bf bd 00 ef bf bd` | open |
+| `halite-hub ssh --timeout 30` (no unit) is silently ignored and the run takes the five-minute default; `halite-hub run --timeout 30` refuses it. | `sshTimeout` with `30` returned 5m0s; with `-5s` it returned `-5s`, which `sshexec` then replaces with its own default | open |
+| `checkRootsAreNotTheHubsOwn` compares paths with `filepath.Abs`, which does not follow a symlink, so a `file_roots` entry that is a link to `state_dir` is not refused, and the hub serves its key store and job cache to every node, which is what the check exists to stop. | the state directory itself is refused; a symlink to it returns nil | open |
+| `tracing.ParseTraceParent` accepts an uppercase trace id and a version that is not hexadecimal (`zz-...`). The W3C format is lowercase hexadecimal (from memory of the specification, which was not consulted). | the two headers parsed as valid | open; low |
+
+### Read, not run
+
+- `awsauth`: `AWS_CONTAINER_CREDENTIALS_FULL_URI` is fetched with no `Authorization` header, and nothing in the tree reads `AWS_CONTAINER_AUTHORIZATION_TOKEN` or its `_FILE` form (grep: no match anywhere), so EKS Pod Identity cannot be reached by this path. Not run against one.
+- `awsauth`: `IMDS.Get` takes a 401 as an error and does not take a new token, so a metadata service that restarts costs up to the token's remaining life (at most five minutes). With `partition: aws-cn` and no region the STS endpoint is built for `us-east-1`, which has no `.com.cn` host.
+- `awsauth`: `canonicalQuery` sorts by the raw name where SigV4 sorts by the encoded one, which differ for a character above `~` and for a repeated key with such values. No caller sends one (the S3 listing's keys are fixed names), so it is latent.
+- `varlink.Call` sets a deadline from the context but does not stop when the context is cancelled without one, so a cancel waits out the 30 seconds.
+- `metrics`: `Counter.Add(NaN)` passes the `n < 0` test and `Histogram.Observe(NaN)` makes `_sum` NaN for good; the series key joins label values with NUL, so values containing one can share a series. A histogram scrape is not atomic across its buckets and its count. No caller is known to pass a NaN or a NUL.
+- `keys operator create --lifetime` is not checked: a negative or zero lifetime writes a certificate that is already expired, and there is no upper bound.
+- `policy test --kwarg` drops a pair with no `=` without a word, and splits on every comma, so a typo in the flag gives a decision about a different request. `deny_kwargs` and `require_kwargs` are the rules it matters for.
+- `writeInlineFile` writes every file at 0600 and refuses a file whose name starts with `..` (`..data`), which is not a path out of the tree.
+- `target.compileSubnet` compares an unzoned, unmapped address: a `-S` address written as `::ffff:10.0.0.1`, or an `ipv6` grain with a zone, does not match as one might expect. Not run.
+
+### Checked, no gap
+
+`jobsign` checks in `jobsignature.go`: the function classes, the target match, the pillar-failure refusal and the expiry bound agree with what their comments say, and `SigningPayload` covers the JID, target and its kind, function, arguments, keyword arguments, environment and expiry. Not checked: whether `Batch`, `Offline`, `Nodes` and `Test` outside the keyword arguments can change what a signed job does on a node. `awsauth.ServiceURL` refuses the region characters it says it does. `Merge` keeps one declaration per family.
+
+### Still unread
+
+By line count this round read about a fifth of what the earlier rounds listed. **Not read:** `internal/winsec`, `internal/dbus`, `internal/doctor`, `internal/nodeevidence`, the rest of `internal/tracing` (`otlp.go`, `tracer.go`, `span.go`, `settings.go`), the rest of `log.go`, and the `*_windows.go` and `*_other.go` files. In `cmd/halite-hub`: `run.go`, `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `relay.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node`: everything except the two files named above, with `enroll.go`, `main.go`, `evidence.go`, `commands.go`, `execute.go` and `metrics.go` the largest.
+
+**Not verified in round five.** No Salt differential, no real AWS endpoint, no real fleet, no FreeBSD jail run, and `make check`. The five shown items were run on the Linux workstation only.
