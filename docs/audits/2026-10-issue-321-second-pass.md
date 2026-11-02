@@ -255,3 +255,26 @@ On 2026-11-02, after the round-six fixes were opened. Read in full: `cmd/halite-
 `prepareSigning` builds the job from the request and passes it through `job.SigningPayload`, as the node does. The functions that run other functions later, `schedule.add` and `schedule.modify` with `schedule.run_job`, are marked `arbitrary_code`, so a node requiring signatures for that class refuses an unsigned one; `schedule.enable_job` is not, and enables an entry the operator wrote. The node's schedule has no pillar source (SPEC 20.1 lists one; DIVERGENCE records it), which is why a hub cannot schedule something the signature check would have refused. The node's metrics endpoint has no plaintext mode and verifies a scraper's certificate when `metrics_client_ca` is set.
 
 **Not verified in round seven.** Prometheus, a real hub, and `make check`.
+
+## Round eight: the file server backends, the node's environment controls, and the job cache commands
+
+On 2026-11-02. Read in full: `cmd/halite-hub/gitfs.go`, `s3fs.go`, `extpillar.go`, `jobs.go` (to `export`), `cmd/halite-node/anchor.go`, `enroll.go`'s remaining handlers, and in `main.go` the identity resolution (lines 447 to 560) and `checkEnvPermitted`; with `internal/gitfs/backend.go`'s `Update` and `sweep`, which the first of them calls. Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **One failed git remote drops the environments it served.** `Backend.Update` keeps the last good tree when every remote fails, and says so; when only some fail it replaces what is served with what the others returned. A hub with two remotes, one of which is unreachable for one update, stops serving the failed remote's branches (`staging`), and every node asking for them gets a missing tree, though the last good checkout is on disk. The error is "some gitfs remotes served nothing". | two local repositories, `main` in one and `staging` in the other; one update serves `[base staging]`; the second repository is removed and the next update serves `[base]` | open |
+| **The node's environment allowlist and denylist use `path.Match`**, which the rest of the tree left for fnmatch (5.501) because its negation is `[^x]` and not `[!x]`. `[!b]*` as a denylist denies `base` and permits `dev`; as an allowlist `[!p]*` refuses `base` and permits `prod`: the opposite of what it says, in the control SPEC 28.3 asks for. And a malformed pattern is skipped with the error discarded, so a denylist entry that does not parse (`prod[`) denies nothing, where an allowlist one at least fails shut. | `checkEnvPermitted` against three configurations, as above | open |
+
+### Read, not run
+
+- `jobs active` lists the 200 most recent jobs and answers "nothing is in flight" when none of them is, so a batch older than that, still running, is reported as not there. (5.536's `AbandonRunnerJobs` has the same window, 5000, and says so.)
+- `anchorProblem` logs a conflict, which is the signal that the evidence chain was rewritten, once at error level and then as debug lines for every later report until the process restarts, and there is no metric of it. `verify-evidence --anchors` finds it from the hub's file; nothing a monitor watches does.
+- `openJobs` joins `state_dir` and `/jobs` as a string, where the hub joins with `filepath.Join`; the two agree on unix.
+
+### Checked, no gap
+
+`Backend.Update`'s all-failed and all-refused paths keep the last tree and do not sweep it (5.293). `s3Provider` and `s3Buckets` read per-bucket keys against a closed list and refuse a misspelt one. An external pillar source is hard-fail unless `ext_pillar_fail` is exactly `ignore`, so a typo fails in the safe direction. A receipt is checked against the head the node reported, and then against the CA it pins, before it is filed.
+
+**Not verified in round eight.** A real git remote going away and returning over a network, a real S3 endpoint, and `make check`.
