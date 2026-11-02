@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
@@ -291,12 +293,15 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 	// secrets, which is the same property SPEC 12.1 gives an enrolled
 	// node.
 	if needsTree(fun) {
-		files, err := inlineTree(h, args)
+		files, binary, err := inlineTree(h, args)
 		if err != nil {
 			return nil, err
 		}
 		if len(files) > 0 {
 			req["files"] = files
+		}
+		if len(binary) > 0 {
+			req["files_b64"] = binary
 		}
 	}
 	if needsPillar(fun) {
@@ -347,35 +352,47 @@ func needsPillar(fun string) bool {
 const MaxInlineTree = 4 << 20
 
 // inlineTree reads the state tree the hub serves for this environment.
-func inlineTree(h *hubContext, args *cli.Args) (map[string]string, error) {
+//
+// A file that is valid UTF-8 is returned as text, and any other as base64
+// in the second map. The request is JSON, and a JSON string cannot hold a
+// byte that is not UTF-8: encoding/json replaces each such byte with
+// U+FFFD, so an image, an archive or a DER certificate reached the target
+// altered, and `file.managed` wrote the altered file without a word.
+// DIVERGENCE 5.538.
+func inlineTree(h *hubContext, args *cli.Args) (map[string]string, map[string]string, error) {
 	roots := h.cfg.Roots("file_roots")
 	if len(roots) == 0 {
-		return nil, fmt.Errorf("agentless state runs send the tree with the job, and this hub " +
+		return nil, nil, fmt.Errorf("agentless state runs send the tree with the job, and this hub " +
 			"serves none; set file_roots")
 	}
 	tree := fileserver.NewRoots(roots)
 	env := args.Flag("env", h.cfg.String("env", "base"))
 	manifest, err := tree.Manifest(env, "", "sha256")
 	if err != nil {
-		return nil, fmt.Errorf("reading the %s tree: %w", env, err)
+		return nil, nil, fmt.Errorf("reading the %s tree: %w", env, err)
 	}
 
 	out := map[string]string{}
+	binary := map[string]string{}
 	var total int64
 	for _, entry := range manifest.Files {
 		body, _, err := tree.Read(env, entry.Path)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", entry.Path, err)
+			return nil, nil, fmt.Errorf("reading %s: %w", entry.Path, err)
 		}
 		total += int64(len(body))
 		if total > MaxInlineTree {
-			return nil, fmt.Errorf("the %s tree is larger than %d bytes, which is more than "+
+			return nil, nil, fmt.Errorf("the %s tree is larger than %d bytes, which is more than "+
 				"agentless mode sends inline. SPEC 21.1's reverse tunnel is not built; "+
 				"serve a smaller tree or use an enrolled node", env, MaxInlineTree)
 		}
-		out[entry.Path] = string(body)
+		if utf8.Valid(body) {
+			out[entry.Path] = string(body)
+		} else {
+			binary[entry.Path] = base64.StdEncoding.EncodeToString(body)
+		}
 	}
-	return out, nil
+	return out, binary, nil
 }
 
 // inlinePillar compiles this target's pillar on the hub.
