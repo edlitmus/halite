@@ -171,7 +171,9 @@ func (s *Server) relayUpdate(w http.ResponseWriter, r *http.Request, relayID str
 	// What is not checked here is that the relay has a stream open: the
 	// relay announces itself concurrently with opening one (relay.session),
 	// so the update can legitimately arrive first, and refusing it would
-	// leave the relay's spool waiting for the next attempt.
+	// leave the relay's spool waiting for the next attempt. An update that
+	// arrives with no stream is held by the fleet until one does, and
+	// dropped if none does within relayAnnounceGrace (DIVERGENCE 5.533).
 	if !s.AcceptRelays {
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
 			errors.New("this hub does not accept relays; set `accept_relays: true` on it"))
