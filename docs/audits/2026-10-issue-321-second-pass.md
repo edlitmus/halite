@@ -113,16 +113,18 @@ On 2026-10-31, at `main` `fc79b8cc` and after. Read in full: `subscribe.go`, `ev
 | `event.send` skipped what `emit` does: the published count, the forward to a relay's upstream, the `salt/...` spelling | the forward never arrived; each of the three removed in turn fails its own assertion | fixed, 5.512 (#553) |
 
 **Read, not shown (round three).**
-- `POST /v1/relay` does not require the relay to have a stream open, deliberately: the relay announces concurrently with subscribing, so an early update is legitimate. An update arriving after the stream has gone leaves routes `targetableNodes()` lists and `Connected()` hides (5.507).
-- The hook route in the API, `/v1/hook/{path...}`, still keeps its tail in the `route` label, and a hook request is unauthenticated (5.510).
+- ~~An update arriving after the stream has gone leaves routes.~~ Shown and fixed, 5.533 (#580): held for the stream for 30 seconds (chosen, not measured), then dropped. An update before the stream is still legitimate and still works.
+- ~~The hook route in the API, `/v1/hook/{path...}`, still keeps its tail in the `route` label.~~ Shown and fixed, 5.529 (#576): 612 POSTs to distinct paths made 612 labels. A hook request is still unauthenticated, as it is meant to be.
 - `halite-hub keys accept|reject|revoke|delete` run at a terminal is another process and publishes no `halite/key/...` event; whether the reconcile loop should publish what it sees changed on disk is a decision (5.511).
-- `event.replay` takes its `limit` before the caller's scope filter, so a scoped caller can be handed an empty page that carries a `next` offset; it pages on correctly, and a caller that takes an empty page for the end stops early (5.512).
-- `identify` checks that a signed job's identifier is unused and the job is stored later, so two concurrent submissions of the same signed submission can both pass; the node's nonce guard (SPEC 6.3) is what stops the second running there. Neither was run.
-- A runner job is recorded `dispatched` with no expiry (`recordRunnerJob`), so one that was in flight when the hub stopped is listed as running for ever; `Settle` only closes a job that has an expiry. Not run.
-- A runner that panics is recovered by `net/http` for the request, and leaves the same dispatched record and no `halite/run/.../ret` event. Not run.
-- `file` in `files.go` hashes the file separately from opening it, so a file replaced between the two is served with the old digest; the node refuses a body whose digest differs, so it fails safe and retries. Not run.
-- `OrchStore.List` still drops an unreadable record silently, against its own comment (round two, not changed).
-- `halite_hub_requests_total`'s route label is now bounded for unknown paths; the `fun` label of `jobsDispatched` and `jobDuration` is whatever function name a job carries, bounded by the registry's cap and not by validation here. Not checked whether every submitted function is validated against a registry first.
+- ~~`event.replay` takes its `limit` before the caller's scope filter.~~ Shown and fixed, 5.525 (#573): a `web*` caller behind ten `db1` events was handed none of its three. A scan cap of 10,000 events per call is chosen, not measured.
+- ~~`identify` checks that a signed job's identifier is unused and the job is stored later.~~ Shown (with the interleaving forced by a seam) and fixed, 5.531 (#578): two of two were accepted. How often a real hub loses the race is not known.
+- ~~A runner job is recorded `dispatched` with no expiry.~~ Fixed, 5.528 (#575): the hub closes the ones a previous run left, once, at startup. The test writes the orphan; no hub was killed mid-call.
+- ~~A runner that panics leaves a dispatched record and no `ret` event.~~ Shown and fixed, 5.527 (#575): it is a failed run now, with the stack in the log. A panic in a goroutine a runner starts itself is not covered.
+- ~~`file` in `files.go` hashes the file separately from opening it.~~ Shown and fixed, 5.530 (#577), and the wrong way round from what this said: the old *body* went out under the *new* digest. A rewrite in place is still inconsistent and still refused by the node.
+- ~~`OrchStore.List` still drops an unreadable record silently.~~ Fixed, 5.526 (#574): `orch list` shows it as `unreadable`, to a caller that sees every run.
+- ~~The `fun` label of `jobsDispatched` and `jobDuration`.~~ Checked, and worse than the lead said: `jobDuration` took it from the node's return. Fixed, 5.532 (#579): the hub's record of the job, and `other` for a name that is not a dotted identifier. No registry validates a submitted function on the hub (the modules are the node's), so how many distinct valid names an operator allowed `*` can submit is unchanged.
+
+**Closed afterwards (2026-11-01, #573 to #580):** every lead above except the terminal `keys` event, which is the owner's decision and was not touched. Not verified for any of them: `make check`, a real fleet or relay across a network, and a FreeBSD jail run.
 
 **Not verified in round three.** No real `halite-node`, no real relay across a network, no Prometheus reading the metrics, `-race` on the hub package only for the relay change, no FreeBSD jail run for these fixes (round two's jail run, 5.505, covers earlier ones), and `make check`.
 
