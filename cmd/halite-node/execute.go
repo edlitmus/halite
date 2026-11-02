@@ -76,7 +76,7 @@ func (n *node) executeJob(j *job.Job) (result *job.Return) {
 		// Counted last, so that a job which panicked is counted as the
 		// failure it became rather than as whatever it was before the
 		// recover ran.
-		n.metrics.countJob(ret, took)
+		n.metrics.countJob(ret, took, n.metricFunction(j.Fun))
 	}()
 
 	// The job's environment, not this invocation's. A job for `staging`
@@ -124,6 +124,22 @@ func (n *node) executeJob(j *job.Job) (result *job.Return) {
 	}
 	ret.Return = encoded
 	return ret
+}
+
+// metricFunction is the `fun` label for a job: the function's name when this
+// node has such a function, and `other` when it has not.
+//
+// The name comes from the hub, and a node counted whatever it was given:
+// 600 different names made the series bound spill, after which a real
+// function's counts landed in `__overflow__` and every name a node does not
+// have was a series of its own. This node knows what it can run, so the
+// label is that and not what it was asked for (the hub, which cannot know,
+// bounds the name by its shape: 5.532). DIVERGENCE 5.549.
+func (n *node) metricFunction(fun string) string {
+	if _, isState := stateFunction(fun); isState || n.registry.Exec.Has(fun) {
+		return fun
+	}
+	return "other"
 }
 
 // jobTestFlag reads a job's `test` keyword argument, which is how a dry

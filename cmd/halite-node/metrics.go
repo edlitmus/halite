@@ -186,7 +186,7 @@ func (m *nodeMetrics) countAccepted() {
 }
 
 // countJob records one finished job.
-func (m *nodeMetrics) countJob(ret *job.Return, took time.Duration) {
+func (m *nodeMetrics) countJob(ret *job.Return, took time.Duration, fun string) {
 	if !m.on() {
 		return
 	}
@@ -194,9 +194,9 @@ func (m *nodeMetrics) countJob(ret *job.Return, took time.Duration) {
 	if ret.Success {
 		result = "succeeded"
 	}
-	m.jobs.With(ret.Fun, result).Inc()
+	m.jobs.With(fun, result).Inc()
 	if took >= 0 {
-		m.jobDuration.With(ret.Fun).Observe(took.Seconds())
+		m.jobDuration.With(fun).Observe(took.Seconds())
 	}
 }
 
