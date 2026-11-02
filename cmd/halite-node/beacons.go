@@ -45,15 +45,20 @@ func (n *node) startBeacons(ctx context.Context) {
 		return
 	}
 
+	// One compilation shared by the polls, for a few minutes: see
+	// pillarCache.
+	pillar := newPillarCache(n.compilePillarOrErr, n.log.Warn)
 	engine := &beacon.Engine{
 		Registry:  beacon.New(),
 		Instances: instances,
 		Tick:      n.cfg.Duration("beacon_tick", 0),
 		Context: func() *exec.Context {
-			// A fresh context each poll: grains and pillar move, and a
-			// beacon polling for a week against the set this process
-			// started with is reading a node that no longer exists.
-			return n.context(n.compilePillarOrNothing())
+			// A fresh context each poll, with a pillar at most a few
+			// minutes old: grains and pillar move, and a beacon polling
+			// for a week against the set this process started with is
+			// reading a node that no longer exists, but compiling it
+			// afresh on every poll was a request to the hub for each.
+			return n.context(pillar.get())
 		},
 		// Through the node rather than the sender it holds now: the
 		// client is rebuilt on every reconnect, and a captured method
