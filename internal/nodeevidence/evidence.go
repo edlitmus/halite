@@ -192,6 +192,15 @@ func sealedName(firstSeq uint64) string {
 	return fmt.Sprintf("evidence.%012d.jsonl", firstSeq)
 }
 
+// segmentFile is what the log needs of the segment it appends to. An
+// *os.File is one; the tests give it one whose writes fail half way.
+type segmentFile interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+	Truncate(size int64) error
+}
+
 // Log is the append-only chain. Safe for concurrent use.
 type Log struct {
 	dir      string
@@ -203,7 +212,7 @@ type Log struct {
 	// file is the current segment, held open for the process's life:
 	// reopening per record would be three syscalls to save nothing, and
 	// the descriptor is what makes an append one write.
-	file *os.File
+	file segmentFile
 	size int64
 	// firstSeq is the sequence number the current segment starts at,
 	// which is the name it is sealed under.
@@ -391,23 +400,42 @@ func (l *Log) Append(kind string, detail map[string]string) error {
 	line = append(line, '\n')
 
 	if l.size > 0 && l.size+int64(len(line)) > l.maxBytes {
-		if err := l.seal(); err != nil {
-			return err
+		// A segment that cannot be sealed is not a reason to lose the
+		// record: it keeps growing past its size until the next attempt
+		// works, which is a larger file and not a hole in the chain. The
+		// failure used to be returned, so one name already taken made every
+		// later record fail and be counted lost.
+		if l.seal() != nil && l.file == nil {
+			return ErrClosed
 		}
 	}
 	// One Write, so that a crash leaves at most one partial line, which
 	// recover drops and the next record counts.
 	if _, err := l.file.Write(line); err != nil {
 		l.lost++
+		l.dropPartial()
 		return fmt.Errorf("appending to the evidence log: %w", err)
 	}
 	if err := l.file.Sync(); err != nil {
 		l.lost++
+		l.dropPartial()
 		return fmt.Errorf("flushing the evidence log: %w", err)
 	}
 	l.size += int64(len(line))
 	l.seq, l.head, l.lost = r.Seq, r.Hash, 0
 	return nil
+}
+
+// dropPartial cuts the segment back to the last record that was written
+// whole. A write that fails part way (a full disk is the usual reason)
+// leaves its first bytes in the file, and the next record would be appended
+// straight after them with no newline between, so one failed record would
+// cost the next good one too, and Verify would call both a break. The
+// truncation is best effort: if it fails the next recover finds a partial
+// line and drops it, as it does after a crash. DIVERGENCE 5.547.
+// Called with the lock held.
+func (l *Log) dropPartial() {
+	_ = l.file.Truncate(l.size)
 }
 
 // seal closes the current segment and starts a new one. Called with the
@@ -419,23 +447,42 @@ func (l *Log) Append(kind string, detail map[string]string) error {
 // a record that means "a file ended here" and could be forged to hide
 // one.
 func (l *Log) seal() error {
-	if err := l.file.Close(); err != nil {
-		return fmt.Errorf("closing the evidence segment: %w", err)
-	}
 	current := filepath.Join(l.dir, currentName)
 	target := filepath.Join(l.dir, sealedName(l.firstSeq))
+	// Before anything is closed: a target that exists is a refusal, and the
+	// log has to be left able to append, as it was.
 	if _, err := os.Stat(target); err == nil {
 		return fmt.Errorf("sealing the evidence segment: %s already exists", target)
 	}
+	if err := l.file.Close(); err != nil {
+		l.reopen(current)
+		return fmt.Errorf("closing the evidence segment: %w", err)
+	}
 	if err := atomicfile.Rename(current, target); err != nil {
+		l.reopen(current)
 		return fmt.Errorf("sealing the evidence segment: %w", err)
 	}
 	f, err := fileperm.OpenFile(current, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
+		l.file = nil
 		return fmt.Errorf("opening the evidence log: %w", err)
 	}
 	l.file, l.size, l.firstSeq = f, 0, l.seq+1
 	return nil
+}
+
+// reopen gives the log a file to append to again after a seal that failed
+// once the old one was closed. Left as it was, the log held a closed file
+// and every later Append failed until the process restarted, each counted as
+// a record lost. If even this fails the log is closed, which is what Append
+// then says so, rather than a write to a descriptor that is gone.
+func (l *Log) reopen(current string) {
+	f, err := fileperm.OpenFile(current, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		l.file = nil
+		return
+	}
+	l.file = f
 }
 
 // Head is the last record's hash and sequence number, which is what the
