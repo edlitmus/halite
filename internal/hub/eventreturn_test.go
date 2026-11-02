@@ -134,9 +134,7 @@ func TestAFailedShipmentAdvancesOnlyPastWhatArrived(t *testing.T) {
 	sink.fails = false
 	sink.mu.Unlock()
 	again := &EventReturn{Server: shipper.Server, Returner: sink, OffsetFile: offsetFile, Batch: 10}
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	go func() { _ = again.Run(ctx2) }()
+	runInBackground(t, again.Run)
 	waitForTags(t, sink, 4)
 	time.Sleep(100 * time.Millisecond)
 	want := []string{"halite/job/0/new", "halite/job/1/new", "halite/job/2/new", "halite/job/3/new"}
@@ -182,9 +180,7 @@ func TestALaggedEventReturnerResumesAtTheOldestRetainedEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = shipper.Run(ctx) }()
+	runInBackground(t, shipper.Run)
 	waitForTags(t, sink, 1)
 	for _, tag := range sink.tags() {
 		if tag != "halite/chaos/churn" {
@@ -249,10 +245,27 @@ func TestAnUnreadableBusDoesNotMoveTheEventReturnersOffset(t *testing.T) {
 		os.Chmod(f, 0o600)
 	}
 	again := &EventReturn{Server: shipper.Server, Returner: sink, OffsetFile: offsetFile, Batch: 10}
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	go func() { _ = again.Run(ctx2) }()
+	runInBackground(t, again.Run)
 	waitForTags(t, sink, 3)
+}
+
+// runInBackground runs a shipper until the test ends, and waits for it to
+// stop before the test's temporary directory is removed.
+//
+// The shipper records its offset after it ships, so one still running when
+// the test returns writes into a directory that is being removed, and the
+// cleanup fails with "directory not empty": seen on CI for two tests of this
+// file and for the reactor's (DIVERGENCE 5.519), each of which had started
+// the shipper with `go` and a deferred cancel that did not wait.
+func runInBackground(t *testing.T, run func(context.Context) error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = run(ctx); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 }
 
 func waitForTags(t *testing.T, sink *recordingReturner, want int) {
