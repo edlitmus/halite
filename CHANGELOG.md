@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+
+
 - **Six settings the programs read are now declared, so they are no longer reported as ignored.** `hub_timeout`, `beacon_tick`, `output`, `gitfs_timeout` and `s3_timeout` were honoured and warned about; they are in the reference now. `halite-node doctor` read a setting that does not exist (`require_signed_extensions`) for whether extensions must be signed and so reported, on a default node, that unsigned ones would load; it reads `extension_require_signature`, which defaults to true. Its remedies named settings that are not settings. DIVERGENCE 5.545.
 
 The configuration reference explains each of the 238 settings in the

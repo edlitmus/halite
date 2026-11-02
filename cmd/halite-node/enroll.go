@@ -429,11 +429,10 @@ func needsRenewal(cert *x509.Certificate) bool {
 
 // runConnect opens the subscribe stream and stays on it.
 //
-// This build carries the transport and not yet the work: a job arriving
-// here is logged and refused rather than run, because running it needs
-// the job cache and the return path that follow in this phase. It is
-// the difference between "the fleet is connected" and "the fleet does
-// what it is told", and saying which one this is matters.
+// Jobs that arrive are queued for the executor and run, and their returns are
+// posted back; the loop at the end holds the stream and reconnects when it
+// ends. (This comment said the build carried the transport and not yet the
+// work, and a job arriving was refused. That stopped being true long ago.)
 func runConnect(args *cli.Args) int {
 	n := setup(args)
 	client, _ := n.hubClient(args)
@@ -531,13 +530,10 @@ func runConnect(args *cli.Args) int {
 	n.startSchedule(ctx)
 	n.startMine(ctx)
 
-	backoff := time.Second
-	const maxBackoff = time.Minute
-	tries := n.cfg.Int("hub_tries", 0)
-	attempt := int64(0)
+	pace := newReconnect(n.cfg.Int("hub_tries", 0))
 
 	for ctx.Err() == nil {
-		attempt++
+		pace.attempting()
 		// Rebuilt on every reconnect so that a renewal that happened while
 		// this process was running takes effect: the certificate is
 		// read from disk here, not once at startup.
@@ -555,7 +551,12 @@ func runConnect(args *cli.Args) int {
 			NodeID:  n.nodeID,
 			Grains:  grainsJSON(n),
 			Version: version.String(),
-		}, n.requestAnchor, func(msg transport.Message) error {
+		}, func() {
+			// The hub has accepted the stream: the failures before it are
+			// over, for `hub_tries` and for the backoff.
+			pace.opened()
+			n.requestAnchor()
+		}, func(msg transport.Message) error {
 			return n.handle(msg)
 		})
 		n.metrics.countDisconnect()
@@ -571,20 +572,17 @@ func runConnect(args *cli.Args) int {
 			n.log.Warn("the stream ended", "error", err.Error())
 		} else {
 			// A clean end is the hub asking for a reconnection, so the
-			// next attempt is immediate rather than backed off.
+			// next attempt is not backed off.
 			n.log.Info("the hub closed the stream")
-			backoff = time.Second
 		}
-		if tries > 0 && attempt >= tries {
-			n.log.Error("giving up", "attempts", attempt)
+		wait, giveUp := pace.ended(err == nil)
+		if giveUp {
+			n.log.Error("giving up", "attempts", pace.attempt)
 			return 1
 		}
 		select {
-		case <-time.After(backoff):
+		case <-time.After(wait):
 		case <-ctx.Done():
-		}
-		if backoff < maxBackoff {
-			backoff *= 2
 		}
 	}
 	n.log.Info("stopped")
