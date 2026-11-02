@@ -36006,6 +36006,18 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/batch.g
 
 **Not verified.** A real restart in the middle of an orchestration (the record is written in the test, not left by a killed hub); a hub with more than 5,000 jobs newer than the orphan; two hubs sharing one job cache, which the design does not allow and this would break; `make check`.
 
+### 5.529 A hook path was kept in the API's route label
+
+Issue 321, the third audit pass, left open in round three (`internal/api/server.go`).
+
+**The defect.** 5.510 stopped unknown paths becoming route labels, and left the hook route, which `routeOf` still labelled with whatever followed the first segment: `/v1/hook/a/b` was `/v1/hook/{id}/b`. That rule exists for `/v1/nodes/{id}/state`, which has a few fixed tails. A hook's path is the sender's, the route takes no token, so a scanner posting to a few hundred distinct hook paths used up the route families' series bound, after which every route first seen later was counted under `__overflow__`, as before 5.510.
+
+**Shown.** 612 POSTs to distinct hook paths, with a failing control for the label: the old code exports `halite_api_requests_total{route="/v1/hook/{id}/0",...}` and a series for each; with the fix removed again the test fails the same way. The same paths as GET were already `(unmatched)`, so the method that reaches the handler is the one that leaked.
+
+**The change.** The hook route is labelled `/v1/hook/{id}` whatever follows. The other prefixes are unchanged.
+
+**Not verified.** Whether any other prefix has a tail a caller chooses (`PathPillar`, `PathKey` and `PathOrchJob` were read, not exercised with unknown tails; an unknown tail on a route the mux does not know falls to `(unmatched)`); a Prometheus scrape; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
