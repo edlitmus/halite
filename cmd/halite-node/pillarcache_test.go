@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -69,8 +70,12 @@ func (nullEvents) Send(string, map[string]any) error { return nil }
 func TestABeaconPolledEverySecondDoesNotAskTheHubForPillarEveryTime(t *testing.T) {
 	n := nodeWithBrokenPillar(t)
 	root := t.TempDir()
+	// diskusage, which runs on every platform (the load beacon does not run
+	// on Windows, and a node told to start one there exits). The threshold is
+	// one the disk cannot reach, so the beacon polls and never fires; what is
+	// counted is the context each poll asks for.
 	cfg, err := config.Load(config.Node, config.LoadOptions{Path: writeConfig(t, root,
-		"beacon_tick: 100ms\nbeacons:\n  load:\n    - interval: 1\n    - averages:\n        1m: [0.0, 1000.0]\n")})
+		"beacon_tick: 100ms\nbeacons:\n  diskusage:\n    - interval: 1\n    - '"+filepath.ToSlash(root)+"': 100%\n")})
 	if err != nil {
 		t.Fatal(err)
 	}
