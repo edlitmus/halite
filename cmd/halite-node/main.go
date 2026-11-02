@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,6 +25,7 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/jobsign"
@@ -794,9 +794,17 @@ func (n *node) out(v any) {
 // The denylist wins, and an empty allowlist means no restriction — the
 // same shape as state_allowlist and state_denylist, because an operator
 // who has learnt one should not have to learn the other.
+//
+// The patterns are Salt's glob, fnmatch, as every other glob in this tree
+// is (5.501), and not Go's path.Match. path.Match writes a negated set
+// `[^x]`, so `[!b]*` as a denylist denied `base` and permitted `dev`, the
+// opposite of what it says; and it returned an error for a pattern that
+// does not parse, which this skipped, so a denylist entry like `prod[`
+// denied nothing at all, in the control that exists to deny. fnmatch has no
+// such error: an unclosed `[` is a literal one. DIVERGENCE 5.551.
 func checkEnvPermitted(cfg *config.Config, env string) error {
 	for _, pattern := range cfg.StringSlice("env_denylist") {
-		if ok, err := path.Match(pattern, env); err == nil && ok {
+		if fnmatch.Match(pattern, env) {
 			return fmt.Errorf("environment %q is excluded by env_denylist (%q). SPEC section 28.3", env, pattern)
 		}
 	}
@@ -805,7 +813,7 @@ func checkEnvPermitted(cfg *config.Config, env string) error {
 		return nil
 	}
 	for _, pattern := range allow {
-		if ok, err := path.Match(pattern, env); err == nil && ok {
+		if fnmatch.Match(pattern, env) {
 			return nil
 		}
 	}

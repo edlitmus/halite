@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`env_allowlist` and `env_denylist` on a node read `[!x]` the way fnmatch does.** They used Go's `path.Match`, where the negation is `[^x]`, so `[!b]*` as a denylist denied `base` and permitted `dev`; and a pattern that did not parse was skipped, so a denylist entry like `stage[` denied nothing. A list that relied on the inversion now does what it says. DIVERGENCE 5.551.
+
 - **One git remote being down no longer removes the environments it served.** With two or more `gitfs_remotes`, an update in which one failed replaced what the file server served with what the others returned, so the failed remote's branches vanished until it came back. It now keeps the last good tree of a remote that fails, as it already did when all of them failed. DIVERGENCE 5.550.
 
 - **A node counts a job for a function it does not have under `fun="other"`.** `halite_node_jobs_total` and `halite_node_job_duration_seconds` took the function name from the hub, so a flood of made-up names filled the series bound and pushed real functions into `__overflow__`. A function the node has keeps its own label. DIVERGENCE 5.549.
