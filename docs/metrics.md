@@ -796,8 +796,8 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_hub_reconnects_total` | counter | — | Times the stream was opened. The first connection counts. |
 | `halite_node_hub_requests_total` | counter | `route` `code` | Requests this node made to the hub. |
 | `halite_node_hub_request_duration_seconds` | histogram | `route` | How long the hub took to answer one. |
-| `halite_node_jobs_total` | counter | `fun` `result` | Jobs this node ran. |
-| `halite_node_job_duration_seconds` | histogram | `fun` | How long it spent on one. |
+| `halite_node_jobs_total` | counter | `fun` `result` | Jobs this node ran. A function this node does not have is counted as `other`. |
+| `halite_node_job_duration_seconds` | histogram | `fun` | How long it spent on one. `other` for a function this node does not have. |
 | `halite_node_jobs_refused_total` | counter | `reason` | Jobs it would not run: `replayed`, `expired`, `malformed`, `other`. `other` is a full job queue, or a job without the signature `require_job_signature` asks for. |
 | `halite_node_job_queue_depth` | gauge | — | Jobs waiting for the executor. |
 | `halite_node_return_queue_depth` | gauge | — | Returns waiting to be posted. |

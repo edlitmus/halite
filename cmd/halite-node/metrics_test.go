@@ -50,7 +50,7 @@ func TestANodeRecordsNothingWithoutTheSetting(t *testing.T) {
 	}
 	// Every call site is unconditional, so all of them have to be safe
 	// on a recorder that is off.
-	m.countJob(&job.Return{Fun: "test.ping", Success: true}, time.Second)
+	m.countJob(&job.Return{Fun: "test.ping", Success: true}, time.Second, "test.ping")
 	m.countRefusal(ErrQueueFull)
 	m.observeExtension("thing", "succeeded", time.Second)
 	m.observeBeacon("dropped", "diskusage", 3)
@@ -129,8 +129,8 @@ func TestTheEndpointServesAnExposition(t *testing.T) {
 
 	m := nodeMetricsFor(t, "metrics_listen: '127.0.0.1:0'\n"+
 		"metrics_tls_cert: "+certFile+"\nmetrics_tls_key: "+keyFile+"\n")
-	m.countJob(&job.Return{Fun: "state.apply", Success: true}, 12*time.Second)
-	m.countJob(&job.Return{Fun: "state.apply", Success: false}, time.Second)
+	m.countJob(&job.Return{Fun: "state.apply", Success: true}, 12*time.Second, "state.apply")
+	m.countJob(&job.Return{Fun: "state.apply", Success: false}, time.Second, "state.apply")
 	m.countRefusal(&job.Refusal{Reason: job.ReasonReplayed})
 	m.countDroppedReturn()
 	m.observeStateCompile(400 * time.Millisecond)
@@ -387,7 +387,7 @@ func TestRunningAJobMovesTheNodesCounters(t *testing.T) {
 	body := expositionOf(t, n.metrics)
 	for _, want := range []string{
 		`halite_node_jobs_total{fun="test.ping",result="succeeded"} 1`,
-		`halite_node_jobs_total{fun="nosuch.function",result="failed"} 1`,
+		`halite_node_jobs_total{fun="other",result="failed"} 1`,
 		`halite_node_job_duration_seconds_count{fun="test.ping"} 1`,
 	} {
 		if !strings.Contains(body, want) {
@@ -719,5 +719,29 @@ func TestAnUnloadableReplacementKeepsThePreviousCertificate(t *testing.T) {
 	}
 	if len(warned) != 2 {
 		t.Errorf("a second, different failure was not said: %q", warned)
+	}
+}
+
+// A job for a function this node does not have is counted under `other`: the
+// name is the hub's, and 600 different ones filled the series bound, after
+// which test.ping was counted under `__overflow__`. DIVERGENCE 5.549.
+func TestAJobForAFunctionTheNodeLacksDoesNotMintASeries(t *testing.T) {
+	n := nodeWithBrokenPillar(t)
+	n.metrics = nodeMetricsFor(t, "metrics_listen: '127.0.0.1:0'\n")
+	for i := 0; i < 600; i++ {
+		fun := fmt.Sprintf("junk.fn%d", i)
+		n.metrics.countJob(&job.Return{Fun: fun}, time.Millisecond, n.metricFunction(fun))
+	}
+	n.metrics.countJob(&job.Return{Fun: "test.ping", Success: true}, time.Millisecond, n.metricFunction("test.ping"))
+	n.metrics.countJob(&job.Return{Fun: "state.apply", Success: true}, time.Millisecond, n.metricFunction("state.apply"))
+
+	body := expositionOf(t, n.metrics)
+	if strings.Contains(body, "junk.fn") || strings.Contains(body, "__overflow__") {
+		t.Errorf("a function this node does not have became a label:\n%s", body)
+	}
+	for _, want := range []string{`fun="other"`, `fun="test.ping"`, `fun="state.apply"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("no series with %s:\n%s", want, body)
+		}
 	}
 }

@@ -36234,6 +36234,18 @@ Issue 321, the second pass, round six (`internal/tracing`).
 
 **Not verified.** A real collector going away and returning; the node and hub wiring beyond building.
 
+### 5.549 The node's `fun` label took whatever name the hub sent
+
+Issue 321, the second pass, round seven (`cmd/halite-node/metrics.go`, `cmd/halite-node/execute.go`).
+
+**The defect.** `halite_node_jobs_total` and `halite_node_job_duration_seconds` were labelled with the job's function as the hub named it. The hub's own copy of the label had been bounded by the name's shape (5.532), and the node's had not: a hub, which is what the node's controls are written to distrust, or an operator with a wildcard grant, could send jobs for any number of functions the node does not have, each a failed return and each a series, until the family's 512-series bound spilled and a real function's counts went into `__overflow__`.
+
+**Shown.** 600 jobs named `junk.fnN` and then `test.ping` through `countJob` on a node's metrics: 512 series, an `__overflow__` among them, and no series for `test.ping` (scratch test on the old code). With the new label taken out the new test fails, and so does the existing test that runs a job for `nosuch.function`, which pinned the old label and now pins `other`.
+
+**The change.** The label is the function's name when this node has such a function (a state function, or one in the execution registry, through an alias too), and `other` when it has not. The node knows what it can run, so this is a better bound than the hub's, which cannot. `docs/metrics.md` says so. The example dashboard is unchanged: it sums over `fun` and names no value.
+
+**Not verified.** Prometheus reading it; an extension function registered after start, which the registry holds like any other and so keeps its own label.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
