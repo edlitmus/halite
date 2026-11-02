@@ -325,3 +325,24 @@ On 2026-11-02. Read in full: `cmd/halite-node/oneshot.go` (the rest of it), `run
 The one-shot node applies `env_allowlist` and `env_denylist` through `executeJob`, and says in its log that it does not check a signature (the caller already has a shell). `saveRuntimeConfig` writes through `atomicfile`. Renewal holds the identity lock for the read and the write. `orch` refuses nothing it should accept and sends `--test` only for the forms that take it.
 
 **Not verified in round ten.** A real node under load for the grains race (the detector shows the access, not how often it is lost), and `make check`.
+
+## Round eleven: the extension commands, the hub's evidence command, the node's doctor, tracing and render sandbox
+
+On 2026-11-02. Read in full: `cmd/halite-hub/extensionrun.go`, `evidence.go`, the flag sections of `extensioncmd.go`; `cmd/halite-node/doctor.go`, `trace.go` (to `tracedFiles`), `rendersandbox.go`. Nothing is fixed in this round.
+
+### Read, not run
+
+- **`halite-node doctor`'s "does the file differ from what this process is running" compares the configuration with itself.** `nodeConfigCheck` loads the file, and `n` was loaded from the same file a moment earlier by `setup` in the same process, so `unchanged` is `err == nil && len(warnings) == len(n.cfg.Warnings)`: the warning counts of two reads of one file. The check can never see the agent's configuration, which is another process, and it says "loads, and matches what this process is running" whatever the agent started with. (The only thing it can find is a file that changed between those two reads.) Established by reading; there is no second process to compare with in the code.
+- **`extensions run --timeout` that does not parse, or is not positive, is taken as 60 seconds without a word** (`parseRunTimeout`), where `extensions verify` refuses one (`verifyDuration`) and `ssh --timeout` was changed to (5.539). The same defect a third time, in a developer command.
+- **A job's render sandbox is a child process of its own.** A job runs on a copy of the node (`forJob`), `renderEngine` creates the sandbox on that copy when `render_sandbox` is on, and `closeRenderSandbox`, which `runConnect` defers on the agent's node, closes the agent's, which is never created: each job's child is released when its pipes are finalised, not when the job ends. Not run: the sandbox re-executes the test binary, which the harness does not isolate.
+- A node's tracing span for a job is named `job <function>` with the function as the hub sent it, so span names carry the same unbounded names the node's metric label did (5.549).
+
+### Checked, no gap
+
+`extensions run` reports a handshake that names nothing, declares no version or an unknown kind, and refuses a directory and a non-executable file by name. `halite-hub evidence anchors` prints the hub's file byte for byte and refuses a node id that is not a path. The node's doctor reads the FIPS state from the `fips_mode` grain, the same source a tree targets on, and the certificate expiry check lists the node certificate and the CA.
+
+**Not verified in round eleven.** A running agent and a doctor run against it, a real sandbox child, and `make check`.
+
+### Still unread
+
+`cmd/halite-hub/main.go`, the body of `extensioncmd.go`; `cmd/halite-node`: the rest of `commands.go` (from `stateCompiler`), the rest of `trace.go`; `internal/log/log.go` after the redaction loop; the `*_windows.go` and `*_other.go` files outside `winsec`. Everything else listed in the earlier rounds has been read at least once.
