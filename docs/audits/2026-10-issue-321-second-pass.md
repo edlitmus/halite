@@ -278,3 +278,26 @@ On 2026-11-02. Read in full: `cmd/halite-hub/gitfs.go`, `s3fs.go`, `extpillar.go
 `Backend.Update`'s all-failed and all-refused paths keep the last tree and do not sweep it (5.293). `s3Provider` and `s3Buckets` read per-bucket keys against a closed list and refuse a misspelt one. An external pillar source is hard-fail unless `ext_pillar_fail` is exactly `ignore`, so a typo fails in the safe direction. A receipt is checked against the head the node reported, and then against the CA it pins, before it is filed.
 
 **Not verified in round eight.** A real git remote going away and returning over a network, a real S3 endpoint, and `make check`.
+
+## Round nine: the node's evidence, beacons, mine and commands, and the hub's runner command
+
+On 2026-11-02. Read in full: `internal/doctor/fips.go`, `internal/tracing/span.go`, `cmd/halite-node/evidence.go` (to `verify-evidence`), `mine.go`, `beacons.go`, `commands.go` (to `stateCompiler`), `cmd/halite-hub/runner.go`; with `useHubPillar` from `enroll.go` and `internal/beacon/engine.go`'s `pollDue`. Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **Every beacon poll makes the hub compile this node's pillar.** The engine's `Context` is `n.context(n.compilePillarOrNothing())`, so each poll of each due beacon calls `n.hubPillar`, which is one request to the hub with no cache, and the hub compiles pillar for it, external sources included (a Secrets Manager fetch, for one). The default interval is a minute; a beacon watching a file is usually set to seconds. A fleet of a thousand nodes with three beacons at the default asks the hub for about fifty compilations a second. | a node with a hub-pillar function that counts its calls and one `load` beacon at an interval of 1 second: 4 requests in 3.5 seconds | open |
+
+### Read, not run
+
+- `halite-hub runner <fun>` calls the runner and then reads `--out`: `cli.ParseFormat` is after `client.Runner`, so `--out tabel` runs the runner, which may be a key decision or an orchestration, and then exits with a usage error. `run` checks its flags before it sends anything (5.225); this is the same defect in the other command.
+- A span's status message (`span.Fail(err)`) and attributes are exported as they are. The redactor is applied by the logger, and nothing in `internal/tracing` calls it, so an error whose text holds a secret goes to the collector in clear. Nothing in the tree was found to put one there.
+- `evidenceLog` opens once: after one failed open (a full disk at start, a directory that was not yet writable) `opened` stays true, every later record is dropped without a log line (the first failure is reported and the error cleared), and `halite_node_evidence_failures_total` does not count them. The gauge `halite_node_evidence_log_open` reads 0, which is the signal; the doctor check reads the directory.
+- `arg_digest` in an evidence record digests the argument text after the redactor has run, so for a job whose arguments hold a registered secret it is not the digest the hub would compute from the real arguments; the comment on `DigestString` says the digest is for comparison with the hub's copy.
+
+### Checked, no gap
+
+`FIPSConsistency` covers the four combinations of kernel and artifact and says which is which. `applyStateKwargs` refuses a key it does not read and `test=False` over a node that is in test mode. The mine publishes through the same replace and allow-target rules as the hub's runner.
+
+**Not verified in round nine.** A real hub counting compilations, a real collector, and `make check`.
