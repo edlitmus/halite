@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### Two submissions of the same signed job are no longer both accepted
+
+The identifier check and the job's record are now one step for a signed submission, so the second of two concurrent
+submissions is refused with "already has a job" instead of both being told they succeeded (DIVERGENCE 5.531).
+
 ### A file replaced while the hub serves it goes out with its own digest
 
 The digest in `ETag` and `X-Halite-Hash` is now computed from the file the body is read from, not from a second open of

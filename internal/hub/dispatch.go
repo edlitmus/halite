@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/job"
@@ -138,9 +139,30 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 			ttl = QueuedTTL
 		}
 	}
+	// A signed job carries its own identifier, and "no job has this
+	// identifier yet" is checked in identify and made true by the Put below.
+	// Between the two another submission of the same signed job could pass
+	// the same check, and both would be recorded, and delivered, with the
+	// second record replacing the first (DIVERGENCE 5.531). The node's replay
+	// guard (SPEC 6.3) stopped the second one running, so this was not a
+	// double execution; it was two submissions both answered with success and
+	// one record for them. So signed submissions take a lock from the check
+	// to the record, and let go of it as soon as the record is written, so
+	// that delivery, which can be slow, is outside it. An unsigned job's
+	// identifier is the hub's own and cannot collide.
+	release := func() {}
+	if sub.Signature != "" {
+		s.signedMu.Lock()
+		var once sync.Once
+		release = func() { once.Do(s.signedMu.Unlock) }
+		defer release()
+	}
 	jid, expires, err := s.identify(sub, now, ttl)
 	if err != nil {
 		return nil, err
+	}
+	if s.signedAfterIdentify != nil {
+		s.signedAfterIdentify()
 	}
 	j := &job.Job{
 		JID:         jid,
@@ -226,6 +248,7 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 			return nil, err
 		}
 	}
+	release()
 	s.emitCorrelated(tagJobNew(string(j.JID)), "", j.Correlation, map[string]any{
 		"jid": string(j.JID), "fun": j.Fun, "arg": j.Arg,
 		"tgt": j.Target, "tgt_type": j.TargetKind,

@@ -202,6 +202,10 @@ type Server struct {
 	// hashed, which is where a file replaced under the hub changes what it
 	// serves. Tests only.
 	fileAfterOpen func()
+	// signedMu serialises the identifier check and the record of a signed
+	// submission; signedAfterIdentify runs between them, for tests.
+	signedMu            sync.Mutex
+	signedAfterIdentify func()
 }
 
 // goBackground runs work that outlives the request that started it,

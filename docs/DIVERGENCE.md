@@ -36030,6 +36030,18 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/files.g
 
 **Not verified.** A real deploy racing a real node; the in-place rewrite case; Windows, where renaming over an open file is refused, so the interleaving cannot arise that way and the test skips there (found by CI); `make check`.
 
+### 5.531 Two submissions of one signed job could both pass the identifier check
+
+Issue 321, the third audit pass, left open in round three (`internal/hub/dispatch.go`).
+
+**The defect.** `identify` refuses a signed job whose identifier the hub already has, and the job is recorded by a `Put` some lines later. Two concurrent submissions of the same signed job could both pass the check, both be recorded, the second replacing the first, and both be answered with success. The node's replay guard (SPEC 6.3) stopped the second from running, so nothing ran twice; two callers were told their submission was accepted and one record stood for both.
+
+**Shown.** Both submissions held at the gap between the check and the record until both are there (or half a second), by a test seam, then released: the old code accepted 2 of 2; with the lock taken out again the test fails the same way (`2 of two ... accepted`). With the lock the second cannot arrive while the first waits, the wait times out, and the second finds the first's record: 1 of 2, and `-race` clean.
+
+**The change.** A signed submission takes `signedMu` from before the check until its record is written, and lets go then, so delivery is outside the lock. An unsigned job's identifier is the hub's own and cannot collide, so it takes no lock.
+
+**Not verified.** That the race was ever lost in practice (the test forces the interleaving; nothing here shows how often a real hub would hit it); two hubs sharing one job cache; `make check`. A signed job still serialises on one mutex between check and record, which was not measured under load.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
