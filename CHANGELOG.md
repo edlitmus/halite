@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The API no longer makes a series for every hook path
+
+A request to `/v1/hook/<anything>` is counted under `/v1/hook/{id}`, so a scanner posting to distinct paths can no longer
+fill the route label's series bound (DIVERGENCE 5.529).
+
 ### A runner call a previous run of the hub left in flight is closed when the hub starts
 
 A restart, crash or kill while a runner call was running left its job `dispatched`, listed as running for ever. At startup

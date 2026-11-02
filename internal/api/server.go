@@ -282,6 +282,13 @@ func routeOf(r *http.Request) string {
 	path := r.URL.Path
 	for _, prefix := range []string{PathJob, PathNode, PathKey, PathOrchJob, PathPillar, PathHook} {
 		if rest, ok := strings.CutPrefix(path, prefix); ok {
+			// A hook's path is whatever the sender wrote, and the route
+			// takes no token, so its tail is the caller's text and not a
+			// route (DIVERGENCE 5.529). The other prefixes have a few
+			// fixed tails.
+			if prefix == PathHook {
+				return prefix + "{id}"
+			}
 			// `/v1/nodes/{id}/state` keeps its tail, because applying
 			// state to a node and reading one are different routes.
 			if _, tail, found := strings.Cut(rest, "/"); found && tail != "" {
