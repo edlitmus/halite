@@ -112,7 +112,13 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		return
 	}
 	if fresh {
-		s.countReturn(&ret)
+		// The function the job was submitted with, from the record; the
+		// return's own `fun` is a node's text (DIVERGENCE 5.532).
+		recorded := ""
+		if j, err := s.Jobs.Get(ret.JID); err == nil {
+			recorded = j.Fun
+		}
+		s.countReturn(&ret, recorded)
 		if s.OnReturn != nil {
 			// A relay forwards it upstream. In the background, because
 			// the node is waiting on this response and an upstream

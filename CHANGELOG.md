@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### The `fun` label of the job metrics comes from the hub's record, not from the node
+
+`halite_job_duration_seconds` took its function name from the return a node posted; it now uses the function the job was
+submitted with. A name that is not a dotted identifier is counted as `other` in it and in `halite_jobs_dispatched_total`
+(DIVERGENCE 5.532).
+
 ### Two submissions of the same signed job are no longer both accepted
 
 The identifier check and the job's record are now one step for a signed submission, so the second of two concurrent

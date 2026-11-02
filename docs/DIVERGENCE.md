@@ -36042,6 +36042,18 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/dispatc
 
 **Not verified.** That the race was ever lost in practice (the test forces the interleaving; nothing here shows how often a real hub would hit it); two hubs sharing one job cache; `make check`. A signed job still serialises on one mutex between check and record, which was not measured under load.
 
+### 5.532 A node's text was a metric label
+
+Issue 321, the third audit pass, left open in round three (`internal/hub/metrics.go`, `jobs.go`).
+
+**The defect.** `halite_job_duration_seconds` was labelled with the `fun` of the *return*, which is what the node wrote. An enrolled node, or one with a bug, could post returns naming a different function each time, so the family's series bound (5.510's) was spent on its text and every real function was counted under `__overflow__` after. The `halite_state_run_duration_seconds` histogram was gated on the same text (`state.` prefix), so a node could feed or starve it. The dispatch side, `halite_jobs_dispatched_total`, took the function of a submission as it came, which a caller allowed `*` can make anything, including a name with a quote or a newline in it.
+
+**Shown.** Thirty returns from one node, each with its own `fun`: the old code exported thirty `halite_job_duration_seconds_count{fun="junk.fnN"}` series; with the job's recorded function replaced by the return's again the test fails the same way. The overflow itself is 5.510's test and was not repeated here, so the tests post thirty, not 512.
+
+**The change.** `returned` counts a return under the function the job was submitted with, from the job's record. A job the hub has no record of is `other`. `metricFun` makes a label of a dotted identifier of at most 64 characters and `other` of anything else, for both families.
+
+**Not verified.** That `metricFun`'s shape rule fits every function name an extension can have (the ones in the repository do); how many distinct valid names a caller allowed `*` could submit before the bound bites, which this does not change; a Prometheus scrape; `make check`. The dashboard is unchanged: its `fun` legends read whatever the label holds, which now includes `other`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
