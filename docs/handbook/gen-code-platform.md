@@ -150,6 +150,7 @@ A build with tracing off does no work: no goroutine, no buffer, no allocation pe
 - `TraceID` (type): TraceID is a 16-byte identifier shared by every span of one trace.
 - `Tracer` (type): Tracer starts spans and hands the finished ones to an exporter.
 - `TracerFrom` (func): TracerFrom builds the tracer a process runs with.
+- `WarnOnExportError` (func): WarnOnExportError is an OnExportError that logs, and not every time: the first failure, then at most one a minute, with how many spans the failures since the last line have cost.
 
 ## `internal/doctor`
 

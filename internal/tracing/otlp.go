@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -288,6 +289,12 @@ func attrValue(v any) (otlpValue, bool) {
 		s := strconv.FormatInt(t, 10)
 		return otlpValue{IntValue: &s}, true
 	case float64:
+		// JSON has no NaN or infinity: encoding one fails the whole batch,
+		// up to 256 spans for one attribute. Carried as its text instead.
+		if math.IsNaN(t) || math.IsInf(t, 0) {
+			s := strconv.FormatFloat(t, 'g', -1, 64)
+			return otlpValue{StringValue: &s}, true
+		}
 		return otlpValue{DoubleValue: &t}, true
 	case time.Duration:
 		// Milliseconds, because that is what a person reads a duration

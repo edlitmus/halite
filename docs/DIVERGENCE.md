@@ -36220,6 +36220,20 @@ Issue 321, the second pass, round six (`internal/nodeevidence/evidence.go`).
 
 **Not verified.** A real full disk; the by-path truncation on Windows itself, which was written from the CI failure and is tested here by a handle that refuses to truncate.
 
+### 5.548 A failed span export was thrown away without a word, and one NaN attribute failed a whole batch
+
+Issue 321, the second pass, round six (`internal/tracing`).
+
+**The defect.** The exporter goroutine called `ExportSpans` and discarded the error: a collector that was down lost every batch with no log line and nothing counted, because `Dropped()` counted only the full queue. SPEC 26.2 asks for a counter behind every drop path. And a span attribute that was a `float64` NaN or infinity made `json.Marshal` fail for the whole payload, so one such attribute cost up to 256 spans. With no exporter configured a flush dereferenced nil.
+
+**Shown.** The NaN test fails on the old code (the payload does not marshal). The export-failure tests are on a counter and a hook that did not exist, so the old behaviour is shown by reading the discarded error.
+
+**The change.** `Tracer.Failed()` counts the spans in batches the exporter did not take, `OnExportError` is told of each, and `WarnOnExportError` logs the first and then at most one line a minute with the spans lost since the last; both binaries use it, and say at shutdown how many spans the exporter cost. A NaN or infinite attribute is carried as its text. A tracer with no exporter counts its batches as failed. The shutdown line for queue overflow is unchanged.
+
+**Not added.** A metric. `halite_trace_spans_dropped_total` would need a row in `docs/metrics.md`, an alert and a dashboard panel (a change to the metrics surface is made with the dashboard), and the SPEC 26.2 counter is still owed; the logged count is what an operator has until then.
+
+**Not verified.** A real collector going away and returning; the node and hub wiring beyond building.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
