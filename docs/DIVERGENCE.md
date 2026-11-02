@@ -36294,6 +36294,18 @@ Issue 321, the second pass, round ten (`cmd/halite-node/main.go`, `execute.go`, 
 
 **Not verified.** How often the race is lost on a real node (the detector shows the access, not its frequency); the package's whole race run, of which the grain, job, signing, anchor and beacon tests were run.
 
+### 5.554 `halite-hub doctor` told a hub that serves from git or S3 that it served nothing
+
+Issue 321, the second pass, round ten (`cmd/halite-hub/doctor.go`).
+
+**The defect.** The file server check read `file_roots` for the environment and nothing else. A hub whose tree comes from the git or S3 backend has no `file_roots`, serves perfectly well, and was told "reachable and has no roots", with the remedy that nothing can be served and every `source:` will fail to resolve: a warning on every run, which is how a diagnostic comes to be read by nobody.
+
+**Shown.** A hub configured with `fileserver_backend: [git]` and one remote: `status=warn detail="file_roots for base is reachable and has no roots"` (scratch test on the old code). The new test fails on it for the git-only, S3-only and both cases.
+
+**The change.** A backend that `fileserver_backend` names and that has a remote or a bucket configured counts as something served, and the check's source names it ("file_roots for base and the git backend"). It is the configuration that is counted: a remote or a bucket cannot be reached from here without a network call, and a diagnostic must not change anything or wait on one. The test also pins what is still said: no roots and no backend warns, a backend named with nothing behind it warns, and a root that does not exist fails whatever else is configured.
+
+**Not verified.** A real remote or bucket; whether the update that fetches them is working, which `fileserver.update` reports and this does not.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`halite-hub doctor` no longer warns that a git- or S3-backed hub serves nothing.** The file server check looked only at `file_roots`. It now counts a configured git remote or S3 bucket as something served. DIVERGENCE 5.554.
+
 - **A node's grains can no longer be replaced while a job is starting.** The grain refresh and a runtime `grains` change assigned the field while every job copied the node, which read it: a data race the race detector reports. The grains are now guarded. DIVERGENCE 5.553.
 
 - **A node no longer has the hub compile its pillar on every beacon poll.** Each poll of each due beacon asked the hub for a fresh pillar, which the hub compiled, external sources included. The pillar a beacon reads is now at most five minutes old, and a compilation that fails is retried after a minute. DIVERGENCE 5.552.
