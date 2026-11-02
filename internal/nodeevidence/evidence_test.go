@@ -652,6 +652,16 @@ func TestKindsListsEveryKindConstant(t *testing.T) {
 type halfFile struct {
 	*os.File
 	fail bool
+	// noTruncate refuses to truncate through the handle, as an append-only
+	// handle does on Windows.
+	noTruncate bool
+}
+
+func (h *halfFile) Truncate(size int64) error {
+	if h.noTruncate {
+		return errors.New("access is denied")
+	}
+	return h.File.Truncate(size)
 }
 
 func (h *halfFile) Write(b []byte) (int, error) {
@@ -667,11 +677,19 @@ func (h *halfFile) Write(b []byte) (int, error) {
 // with no newline between, so both were one unreadable line. DIVERGENCE
 // 5.547.
 func TestAFailedWriteLeavesNothingBehindForTheNextRecord(t *testing.T) {
+	for _, refuse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "truncate through the handle", true: "truncate by path"}[refuse], func(t *testing.T) {
+			failedWriteLeavesNothingBehind(t, refuse)
+		})
+	}
+}
+
+func failedWriteLeavesNothingBehind(t *testing.T, refuseTruncate bool) {
 	dir := t.TempDir()
 	l := open(t, dir, Options{NodeID: "n1"})
 	appendJobs(t, l, 2)
 
-	flaky := &halfFile{File: l.file.(*os.File)}
+	flaky := &halfFile{File: l.file.(*os.File), noTruncate: refuseTruncate}
 	l.file = flaky
 	flaky.fail = true
 	if err := l.Append(KindJobAccepted, map[string]string{"fun": "lost"}); err == nil {

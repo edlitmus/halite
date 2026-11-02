@@ -435,7 +435,18 @@ func (l *Log) Append(kind string, detail map[string]string) error {
 // line and drops it, as it does after a crash. DIVERGENCE 5.547.
 // Called with the lock held.
 func (l *Log) dropPartial() {
-	_ = l.file.Truncate(l.size)
+	if l.file.Truncate(l.size) == nil {
+		return
+	}
+	// A file opened for append cannot always be truncated through its own
+	// handle: on Windows an append-only handle has no right to set the end
+	// of the file, and the truncation silently did nothing there (the
+	// failed-write test failed on both Windows legs of CI). Closed, cut by
+	// path and reopened, which needs no such right.
+	current := filepath.Join(l.dir, currentName)
+	_ = l.file.Close()
+	_ = os.Truncate(current, l.size)
+	l.reopen(current)
 }
 
 // seal closes the current segment and starts a new one. Called with the
