@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A grain or pillar value containing a colon can now be targeted.** `-G 'hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff'`, an IPv6 grain value and a `host:port` value matched nothing, because the target was split at its last colon only. It is now read at every colon, as Salt does. A target that matched no node before may now match some. DIVERGENCE 5.537.
+
 ### A key accepted, rejected, revoked or deleted with `halite-hub keys` now publishes its `halite/key/...` event
 
 The runners already did (5.511); a decision made at a terminal, which is another process, published nothing, so a reaction on

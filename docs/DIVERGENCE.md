@@ -36102,6 +36102,18 @@ Issue 321, the third audit pass, left open as the owner's decision (5.511; `inte
 
 **Not verified.** The window between a runner changing the store and recording its announcement, in which a loop pass could announce the same change a second time (a duplicate, never a loss; not shown to happen); a real `halite-hub keys` process against a real hub; the event's `principal` for a terminal change, which is empty because the store does not record who ran it; `make check`.
 
+### 5.537 A grain or pillar value that contains a colon could not be targeted
+
+Issue 321, the second pass, round five (`docs/audits/2026-10-issue-321-second-pass.md`; `internal/target/target.go`).
+
+**The defect.** `-G`, `-P`, `-I`, `-J` and the compound `G@`, `P@`, `I@`, `J@` read `a:b:c` as the path `a:b` and the value `c`, splitting at the last colon only. A value that has a colon in it, a MAC address, an IPv6 address or a `host:port`, was therefore looked for under a path no node has: `G@hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff` asked for the path `hwaddr_interfaces:eth0:aa:bb:cc:dd:ee` and the value `ff`.
+
+**Shown.** A node holding `hwaddr_interfaces: {eth0: "aa:bb:cc:dd:ee:ff"}` and `fqdn_ip6: [fe80::1]`: five spellings of a target for them (grain, glob with a wildcard, an IPv6 value, `-P`, and compound) all returned false on the old code, and seven cases of the new test fail on it. The same test pins what must still not match: a different last octet, a different interface, a different value.
+
+**The change.** The target is read at every colon, the last first, and matches if any reading does, which is what Salt's `subdict_match` does. That is from memory of Salt's source; Salt is not installed here, so the differential was not run. A reading with an empty path is skipped, and a target with no usable reading is still an error. For a regex target, an error in the last reading's pattern is reported as before, and a pattern from an earlier reading that does not compile is a reading that does not apply. `Term.Key`, which the pillar top file's trusted-grain rule reads, is unchanged and is still the last-colon reading, so a target on a trusted grain with a colon in the value is refused there (the key is not a trusted name) rather than admitted; that is the safe direction and was not widened.
+
+A target that matched nothing because of this can now match nodes. That is the fix, and it is also a change of what a job reaches.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
