@@ -42,11 +42,27 @@ type Result struct {
 	// tampered with. Reporting the first as the second would make a
 	// rollback look like an incident.
 	UnknownSchemas []string
-	Breaks         []Break
+	// Unverified is how many records carry one of those schemas, and so
+	// had their links checked and their contents not.
+	Unverified uint64
+	Breaks     []Break
 }
 
-// OK reports whether the chain holds.
+// OK reports whether nothing this build could check is wrong. It is not
+// the same as the chain holding: see Verified.
 func (r *Result) OK() bool { return len(r.Breaks) == 0 }
+
+// Verified reports whether every record's contents were checked and the
+// chain holds.
+//
+// OK is true of a chain whose records this build could not read the
+// contents of, which is right for a rollback to an older build and is not
+// a statement that the contents are what was written. A record can be
+// edited and given a schema nobody knows: its stored hash is untouched, so
+// the link to the next record and the hub's anchors, which both compare
+// that stored hash, agree with it, and the edit is invisible. Anything
+// that says the chain holds has to ask this one. DIVERGENCE 5.543.
+func (r *Result) Verified() bool { return r.OK() && r.Unverified == 0 }
 
 // Verify walks every segment in chain order and checks each record's
 // hash against its contents and its link against the record before it.
@@ -85,6 +101,7 @@ func Verify(dir string) (*Result, error) {
 			res.Records++
 
 			if r.Schema != Schema {
+				res.Unverified++
 				if !seenSchema[r.Schema] {
 					seenSchema[r.Schema] = true
 					res.UnknownSchemas = append(res.UnknownSchemas, r.Schema)

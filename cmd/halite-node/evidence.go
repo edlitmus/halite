@@ -476,7 +476,7 @@ func runVerifyEvidence(args *cli.Args) int {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	ok := res.OK() && check.OK()
+	ok := res.Verified() && check.OK()
 
 	if n.format == cli.JSON || n.format == cli.YAML {
 		n.out(verifyValue(res, check, anchorsPath, caPath, caErr))
@@ -513,7 +513,7 @@ func runVerifyEvidence(args *cli.Args) int {
 			res.Lost)
 	}
 	for _, schema := range res.UnknownSchemas {
-		fmt.Printf("\nRecords written with schema %s cannot be checked by this build; their links\nare verified and their contents are not. That is a newer halite, not a broken chain.\n",
+		fmt.Printf("\nRecords written with schema %s cannot be checked by this build: their links\nare verified and their contents are not. That can be a newer halite, and it can\nbe a record that was edited and given a schema nobody knows, which this build\ncannot tell from it. The chain is not reported as holding until a build that\nreads that schema has verified it.\n",
 			schema)
 	}
 	for _, note := range check.Unchecked {
@@ -590,7 +590,8 @@ func verifyValue(res *nodeevidence.Result, check *nodeevidence.AnchorCheck, anch
 	out.Set("directory", res.Dir)
 	out.Set("segments", int64(len(res.Segments)))
 	out.Set("records", int64(res.Records))
-	out.Set("ok", res.OK() && check.OK())
+	out.Set("ok", res.Verified() && check.OK())
+	out.Set("unverified_records", int64(res.Unverified))
 	out.Set("lost", int64(res.Lost))
 	if res.First != nil {
 		out.Set("first_seq", int64(res.First.Seq))

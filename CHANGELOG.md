@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`halite-node verify-evidence` no longer passes a record it could not check.** A record with a schema this build does not know had its link checked and its contents not, and the command said the chain held and exited 0; an edited record given such a schema was invisible, including to `--anchors`. The command now exits 1 and says the records are unverified, with `unverified_records` in `--out json`. A chain written by a newer build reads as unverified under an older one. DIVERGENCE 5.543.
+
 - **A module that panics is now a failed job and not a stopped node.** `executeJob` recovered the panic but returned nil, which the executor read; the agent exited. The job now returns a failure saying it panicked, and the next job runs. DIVERGENCE 5.542.
 
 - **A `traceparent` header that is not lowercase hexadecimal is no longer adopted.** An uppercase id or a non-hex version was accepted; the trace now starts afresh. DIVERGENCE 5.541.
