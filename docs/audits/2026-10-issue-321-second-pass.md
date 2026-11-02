@@ -301,3 +301,27 @@ On 2026-11-02. Read in full: `internal/doctor/fips.go`, `internal/tracing/span.g
 `FIPSConsistency` covers the four combinations of kernel and artifact and says which is which. `applyStateKwargs` refuses a key it does not read and `test=False` over a node that is in test mode. The mine publishes through the same replace and allow-target rules as the hub's runner.
 
 **Not verified in round nine.** A real hub counting compilations, a real collector, and `make check`.
+
+## Round ten: the one-shot node, runtime configuration, the hub's doctor, orchestration and extension settings
+
+On 2026-11-02. Read in full: `cmd/halite-node/oneshot.go` (the rest of it), `runtimeconfig.go`, `renewal.go`; `cmd/halite-hub/orch.go`, `doctor.go` (the checks, to the disk check), `extensions.go`. Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **`n.grains` is written while jobs read it.** `reloadRuntimeConfig("grains")` (a runtime `grains.*` call) and the refresh loop (`enroll.go`) assign `n.grains`; `forJob`, which every job starts with, copies the whole node, `grains` field included, with no lock. | the real `reloadRuntimeConfig` and `forJob` in two goroutines under `-race`: `DATA RACE`, a write in `reloadRuntimeConfig` and a previous read in `forJob`. The package's own race run does not cover it, because nothing runs the two together | open |
+| **`halite-hub doctor` warns that nothing can be served on a hub that serves from git or S3.** `hubFileServerCheck` reads `file_roots` for the environment and nothing else: with `fileserver_backend: [git]` and no local roots it says "reachable and has no roots", whose remedy says every `source:` will fail to resolve. | a hub configuration of a git backend and one remote: `status=warn detail="file_roots for base is reachable and has no roots"` | open |
+| **A misspelt key in an `extension_pins` entry drops the pin it was meant to be.** The entry is read key by key and a key that is not `version` or `root` is ignored, where `gitfs_remotes` and `s3_buckets` refuse one by name. `{version: 1.0.0, rot: <digest>}` pins the version and not the root, which is the integrity pin (H-02, 5.333); `{}` pins nothing. Nothing says so. The node reads its pins by the same code. | `extensionPins` on a hub configuration with one correct, one misspelt and one empty entry: `root` was `abc123`, empty, and empty | open |
+
+### Read, not run
+
+- `halite-hub orch run`, `resume`, `show` and `list` call the runner and then read `--out`, as `runner` does (round nine): a bad `--out` on `orch run` starts the orchestration and exits with a usage error. `orch list --limit abc` is sent to the hub as a string.
+- The one-shot request's `timeout_seconds` is sent by `halite-hub ssh` for a roster target that sets one and is declared in `OneshotRequest` and read nowhere: the run is bounded by the hub's own timeout and the target's `ConnectTimeout`, so the field does nothing.
+- `hubCertificateCheck` represents a certificate it cannot read as `&x509.Certificate{}`, which the expiry check reports as expired an enormous time ago; the label carries the read error, so the message is findable and the number is nonsense.
+
+### Checked, no gap
+
+The one-shot node applies `env_allowlist` and `env_denylist` through `executeJob`, and says in its log that it does not check a signature (the caller already has a shell). `saveRuntimeConfig` writes through `atomicfile`. Renewal holds the identity lock for the read and the write. `orch` refuses nothing it should accept and sends `--test` only for the forms that take it.
+
+**Not verified in round ten.** A real node under load for the grains race (the detector shows the access, not how often it is lost), and `make check`.
