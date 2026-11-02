@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.
+
 - **`halite-node state show_highstate`, `show_sls` and `show_lowstate` no longer print a registered secret.** A password in a state's `contents:` or a token in a command was shown whole, though `state apply`, `pillar` and `doctor` masked it. They now mask it the way `pillar` does. The remote `state.show_*` jobs are not changed here. DIVERGENCE 5.556.
 - **A misspelt or empty entry in `extension_pins` stops the hub or node at start.** `{version: 1.0.0, rot: <digest>}` pinned the version and silently not the root, and `{}` pinned nothing. Each is now refused by name, so a configuration that was running with a pin that did nothing will not start until it is corrected. DIVERGENCE 5.555.
 

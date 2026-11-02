@@ -316,9 +316,14 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 
 	switch fn {
 	case "show_lowstate":
-		return outcome{value: renderLow(compiled), success: true}, nil
+		// Masked, as the command line's `state show_*` is (DIVERGENCE
+		// 5.556): the compiled states carry what the tree carries, a
+		// password in `contents:` or a token in a command, and this value
+		// goes back to the hub and into its job cache. The applying forms
+		// below set `result.Secrets` for the same reason. DIVERGENCE 5.557.
+		return outcome{value: maskValue(renderLow(compiled), n.secrets), success: true}, nil
 	case "show_highstate", "show_sls":
-		return outcome{value: renderHigh(compiled), success: true}, nil
+		return outcome{value: maskValue(renderHigh(compiled), n.secrets), success: true}, nil
 	case "show_states", "show_top":
 		names := make([]any, len(compiled.SLS))
 		for i, s := range compiled.SLS {

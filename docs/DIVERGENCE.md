@@ -36330,6 +36330,18 @@ Issue 321, the second pass, round eleven (`cmd/halite-node/commands.go`).
 
 **Not verified.** The remote `state.show_highstate` and `state.show_lowstate` jobs (`execute.go` builds the same values and returns them to the hub, not through this path; whether the hub scrubs a job's return was not checked); a secret that is not registered, such as a `runas_password` written in the tree, which `show_highstate` still prints (only `show_lowstate` masks it by name); a pillar secret decrypted from real GPG, which was not run, the registered one here coming from configuration; `make check`.
 
+### 5.557 A `state.show_*` job returned a registered secret to the hub
+
+Issue 321, the second pass, round twelve (`cmd/halite-node/execute.go`; the command line's form is 5.556).
+
+**The defect.** 5.556 masked what `halite-node state show_lowstate`, `show_highstate` and `show_sls` print. The same three functions run as jobs (`state.show_lowstate`, `state.show_highstate`, `state.show_sls`) through `runStateJob`, which returned `renderLow` and `renderHigh` as they were: the compiled states carry what the tree carries (a password in `contents:`, a token in a command), and the value goes back to the hub and into its job cache and its API. The applying forms in the same function set `result.Secrets` so their output is scrubbed; these returned before reaching it. Nothing on the node's return path scrubs afterwards.
+
+**Shown.** A node with a registered secret and a state holding it in `contents:`: all three jobs, through `executeJob`, returned the secret whole (scratch test on the old code). The new test fails on it for all three, and passes with the masking.
+
+**The change.** The returned value goes through `maskValue` with the node's secrets, as the command line's does: a string that is a registered secret is replaced outright and one that contains it is scrubbed in place, so `password=` stays readable and the state's id and function are unchanged. `show_states` and `show_top` return names only and are as they were.
+
+**Not verified.** A secret that arrives as a GPG-decrypted pillar value on a real node (the test registers it directly); whether the hub itself scrubs a return it caches, which was not read; an unregistered `runas_password` in `show_highstate`, which only `show_lowstate` masks by key name.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
