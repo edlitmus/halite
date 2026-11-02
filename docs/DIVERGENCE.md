@@ -35958,6 +35958,18 @@ Issue 321, the fourth audit pass (`internal/transport/wire.go`, `docs/handbook/1
 
 **Not verified.** That an operator reads the new row and not the old habit; `make check`. Left open: the field's name still says more than it records, and renaming it would break clients of `GET /v1/jobs/{jid}`.
 
+### 5.525 `event.replay` applied its limit before the caller's scope
+
+Issue 321, the third audit pass, left open in round three (`internal/hub/runners_tree.go`).
+
+**The defect.** `event.replay` read `limit` events off the bus and dropped the ones about nodes outside the caller's scope afterwards. A caller bound to `web*` asking for ten events on a bus whose next ten were about `db1` was handed an empty page carrying a `next` offset. The page is well formed and says nothing wrong, and a caller that reads an empty page as the end of the log stops with its own events further on. `event.listen` already looped past what it could not see; `replay` did not.
+
+**Shown.** A scoped caller, ten events about `db1` and then three about `web1`, limit five: the old code returned none, the new returns the three. A second test, twenty of each interleaved, holds that the page is full at the limit and that the scan does not return more. Both fail on the old code (0 and 3 events).
+
+**The change.** `readVisible` reads, filters, and asks again for what is still wanted from where the last read stopped, ending on a short read, which is the bus saying it has no more. One call reads at most `replayScanCap` (10,000) events looking for visible ones; past that the caller gets what it has and the offset to carry on from, because a caller scoped to three nodes on a log that is all about others would otherwise make one call scan the whole of it.
+
+**Not verified.** A bus of real size (the cap is a number chosen, not measured); `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

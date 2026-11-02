@@ -336,11 +336,11 @@ func registerEventRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				events, next, err := bus.Read(c.arg("from"), tagGlobs(c.arg("tag")), c.argInt("limit"))
+				events, next, err := c.readVisible(bus, c.arg("from"), tagGlobs(c.arg("tag")), c.argInt("limit"))
 				if err != nil {
 					return nil, err
 				}
-				return eventPage(c.visibleEvents(events), next)
+				return eventPage(events, next)
 			},
 		},
 		RunnerModule{
@@ -555,6 +555,47 @@ func eventPage(events []eventbus.Event, next string) (any, error) {
 	out.Set("events", list)
 	out.Set("next", next)
 	return out, nil
+}
+
+// replayScanCap is how many events one `event.replay` call will read looking
+// for ones its caller may see. A caller scoped to a few nodes on a bus that is
+// nearly all about others would otherwise make one call scan the whole log;
+// past the cap it is handed what it has and the offset to carry on from.
+const replayScanCap = 10000
+
+// readVisible reads up to limit events the caller may see, and where to carry
+// on from.
+//
+// The scope filter used to run on a page the bus had already cut at `limit`,
+// so a caller bound to `web*` asking for ten events on a bus whose next ten
+// were about `db1` was handed an empty page with a `next` offset: a page that
+// is well formed, says nothing wrong, and reads as the end of the log to a
+// caller that stops on an empty one (DIVERGENCE 5.525).
+//
+// A short read is the bus saying it has nothing more, and ends the scan. A
+// full one that was filtered down is asked again for what is still wanted,
+// from where it stopped, which is why `next` is the offset after the last
+// event read and not the last one returned.
+func (c *RunnerContext) readVisible(bus *eventbus.Bus, from string, globs []string, limit int) ([]eventbus.Event, string, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	var out []eventbus.Event
+	next := from
+	for scanned := 0; len(out) < limit && scanned < replayScanCap; {
+		want := limit - len(out)
+		events, after, err := bus.Read(next, globs, want)
+		if err != nil {
+			return nil, "", err
+		}
+		out = append(out, c.visibleEvents(events)...)
+		next = after
+		scanned += len(events)
+		if len(events) < want {
+			break
+		}
+	}
+	return out, next, nil
 }
 
 // visibleEvents keeps the events the caller may see: one about a node
