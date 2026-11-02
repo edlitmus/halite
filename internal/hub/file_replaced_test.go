@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -19,6 +20,12 @@ import (
 // node refuses a body whose digest differs, so it failed safe and retried; it
 // was still a refusal the hub caused and could not explain. DIVERGENCE 5.530.
 func TestAFileReplacedWhileItIsServedGoesOutWithItsOwnDigest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// A file that is open cannot be renamed over there, so the
+		// replacement this test makes is refused and the interleaving it
+		// forces cannot happen (seen on CI).
+		t.Skip("Windows does not allow renaming over an open file")
+	}
 	l := newLab(t).withFiles(t, map[string]string{"app.conf": "version one\n"})
 	path := filepath.Join(l.root, "app.conf")
 	l.server.fileAfterOpen = func() {
