@@ -228,6 +228,56 @@ func (s *Server) Settle() (int, error) {
 	return settled, nil
 }
 
+// runnerJobWindow is how many of the most recent jobs AbandonRunnerJobs looks
+// through. A runner call orphaned by a restart is from the run before it, so
+// it is among the newest; the number is chosen, not measured.
+const runnerJobWindow = 5000
+
+// AbandonRunnerJobs closes the runner calls a previous run of the hub left
+// dispatched, and says how many.
+//
+// A runner call is recorded `dispatched` before it runs and closed when it
+// returns (`recordRunnerJob`, `recordRunnerReturn`), and it carries no expiry
+// because it is not delivered to anyone and has no window to gather in.
+// `Settle` closes only a job that has one. So a call in flight when the hub
+// stopped -- a restart, a crash, a kill -- was listed as running for ever: the
+// answer to "what is running right now" included a call that stopped with the
+// process (DIVERGENCE 5.528).
+//
+// This is called once at startup, before the hub serves anything, which is
+// the only moment it is certain that no runner call of this process is in
+// flight: whatever is recorded dispatched against the hub itself belongs to a
+// process that no longer exists. Called at any other time it would close the
+// calls that are running. They are marked aborted, which is what they are:
+// stopped by the hub going away with no return to report.
+func (s *Server) AbandonRunnerJobs() (int, error) {
+	if s.Jobs == nil {
+		return 0, nil
+	}
+	jobs, err := s.Jobs.List(runnerJobWindow)
+	if err != nil {
+		return 0, err
+	}
+	closed := 0
+	for _, j := range jobs {
+		if j.Target != RunnerTarget || j.State != job.Dispatched {
+			continue
+		}
+		if _, err := s.Jobs.Update(j.JID, func(cur *job.Job) error {
+			if cur.State == job.Dispatched {
+				cur.State = job.Aborted
+			}
+			return nil
+		}); err != nil {
+			return closed, err
+		}
+		s.info("a runner call was in flight when the hub stopped",
+			"jid", string(j.JID), "fun", j.Fun, "principal", j.Submitter)
+		closed++
+	}
+	return closed, nil
+}
+
 // setState records a job's outcome.
 func (s *Server) setState(j *job.Job, state job.State) {
 	j.State = state

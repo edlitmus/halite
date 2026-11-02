@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -339,7 +340,7 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 	s.recordRunnerJob(jid, call, started)
 
 	out := &RunnerOutcome{JID: jid, Fun: call.Fun, Success: true}
-	ret, err := reg.fns[call.Fun](&RunnerContext{
+	ret, err := s.runGuarded(call.Fun, reg.fns[call.Fun], &RunnerContext{
 		Ctx:       ctx,
 		Server:    s,
 		Principal: call.Principal,
@@ -367,6 +368,37 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 	})
 	s.recordRunnerReturn(out, started)
 	return out, nil
+}
+
+// runGuarded runs a runner and turns a panic in it into the error it is.
+//
+// `net/http` recovers a handler's panic for the request and nothing else, so a
+// runner that panicked left what `CallRunner` had already written: the
+// `halite/run/<jid>/new` event, and a job record in the state `dispatched`
+// that nothing would ever close, with no `ret` event and no return. The caller
+// got a dropped connection. It is now a failed run like any other -- the `ret`
+// event, the return recorded as the failure it was, the caller told -- and the
+// stack goes to the hub's log, where the bug that caused it is found
+// (DIVERGENCE 5.527).
+//
+// `http.ErrAbortHandler` is passed on: it is the sentinel a handler panics
+// with on purpose to abandon a response, and swallowing it would turn that into
+// a success.
+func (s *Server) runGuarded(fun string, fn func(*RunnerContext) (any, error), c *RunnerContext) (ret any, err error) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		if r == http.ErrAbortHandler {
+			panic(r)
+		}
+		s.warn("a runner panicked",
+			"fun", fun, "principal", c.Principal, "panic", fmt.Sprint(r),
+			"stack", string(debug.Stack()))
+		ret, err = nil, fmt.Errorf("%s panicked: %v; the hub's log has the stack", fun, r)
+	}()
+	return fn(c)
 }
 
 // policyRefusal carries a denial out of CallRunner so the endpoint can

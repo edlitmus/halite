@@ -571,6 +571,13 @@ func runServe(args *cli.Args) int {
 			}
 		}()
 	}
+	// Before anything is served, which is the one moment no runner call of
+	// this process can be in flight (DIVERGENCE 5.528).
+	if n, err := server.AbandonRunnerJobs(); err != nil {
+		h.log.Warn("closing runner calls a previous run left dispatched", "error", err.Error())
+	} else if n > 0 {
+		h.log.Warn("closed runner calls that were in flight when the hub last stopped", "calls", n)
+	}
 	go maintain(ctx, h, server, jobs, bus)
 
 	// From here a failure is the running hub's, and a restart is the
