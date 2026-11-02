@@ -345,4 +345,32 @@ On 2026-11-02. Read in full: `cmd/halite-hub/extensionrun.go`, `evidence.go`, th
 
 ### Still unread
 
-`cmd/halite-hub/main.go`, the body of `extensioncmd.go`; `cmd/halite-node`: the rest of `commands.go` (from `stateCompiler`), the rest of `trace.go`; `internal/log/log.go` after the redaction loop; the `*_windows.go` and `*_other.go` files outside `winsec`. Everything else listed in the earlier rounds has been read at least once.
+the body of `extensioncmd.go` and the end of `cmd/halite-node/trace.go`; the Windows files named in round twelve. Everything else listed in the earlier rounds has been read at least once.
+
+## Round twelve: the node's `state show_*` and `grains` commands, the logger, and the Windows process and file code
+
+On 2026-11-02. Read in full: `cmd/halite-node/commands.go` (from `stateCompiler`), `cmd/halite-hub/main.go` (the dispatch), `internal/log/log.go` (from `Log`), and the Windows files `internal/bridge/sandbox_windows.go`, `internal/exec/proc_windows.go`, `credential_windows.go`, `internal/fileperm/fileperm_windows.go` and `internal/atomicfile/atomicfile_windows.go`. Nothing is fixed in this round, and no Windows machine was available to run any of the last group.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **`halite-node state show_lowstate`, `show_highstate` and `show_sls` print a registered secret in clear.** `state apply`, `pillar` and `doctor` run their output through the redactor; these three write the compiled states with `n.out`, which does not, and the only hand-made exception is `runas_password` in `renderLow`. A secret a state carries as an argument (a password in `contents:`, a token in a command) appears whole. | a node whose `returner_smtp_password` is registered as a secret (`Holds` true, `Scrub` masks it) and a state holding the same text in `contents:`: all three commands exit 0 with the secret in the output | open |
+
+### Read, not run
+
+- **Both Windows job objects are assigned after the process has started.** `exec.confineTree` (every command a state or `cmd.run` starts) and `bridge.applyPlatform` (every extension) create the job, start the process, and then call `AssignProcessToJobObject` from `afterStart`. A child the process forks before that call is not in the job, so `KILL_ON_JOB_CLOSE` and the cancel that terminates the job do not reach it: the timeout orphan-child defect the Linux side fixed with a process group (the memory of OSRunner), left open in a window. The usual remedy is to create the process suspended and resume it after assignment; Go's `os/exec` has no suspended start, so it would be `CREATE_SUSPENDED` through `SysProcAttr` and a resume through the thread handle. Not run: there is no Windows machine here.
+- `exec.confineTree` returns no-ops when the job cannot be created or the limit cannot be set, and ignores a failed assignment, without a log line: a command that was meant to be confined is not, silently. The extension version at least returns an error.
+- `fileperm_windows.Apply` restricts a path to its owner, SYSTEM and Administrators only when the requested mode has no group or other bits; a mode such as `0640` is `chmod`ed (which on Windows is the read-only attribute) and leaves the parent's access list in place, which may be wider than the group the mode named.
+- `Logger.With` builds a child with its own mutex and the parent's writer, so the parent's and the child's lines can interleave when the writer is a `MultiWriter` over stderr and a file (the two writes are separate calls). In the console form a message that contains a newline starts a line of its own.
+- `atomicfile` treats `ERROR_ACCESS_DENIED` as transient for two seconds, so a real permission error costs two seconds per call before it is reported.
+
+### Checked, no gap
+
+`runLint` counts a render warning as a problem and exits 1. `grains get` of a missing key answers an empty string, as Salt does. `maskValue` masks a string that is a registered secret as a whole and scrubs the rest, in a nested mapping or list. The hub's command dispatch refuses `files` by name as unbuilt. `Log` scrubs every field, an error and a stringer included, and the message, before it picks a form.
+
+**Not verified in round twelve.** Any Windows behaviour, and `make check`.
+
+### Still unread
+
+The remaining Windows files outside `winsec` and the ones above (`internal/grains/platform_windows.go`, `winsvc`, `wintask`, `winreg`, the `builtin` `*_windows.go` modules, `exec/shell_windows.go`, `script_windows.go`), and the `*_other.go` stubs. Everything else on the lists in the earlier rounds has been read at least once.
