@@ -388,12 +388,12 @@ func DiskFree(usage map[string]FreeSpace, warnBelow, failBelow uint64) Check {
 				res.Detail = strings.Join(append(empty, low...), "; ")
 				res.Remedy = "A hub that cannot write a job record refuses the job; a node " +
 					"that cannot write its spool loses returns.\nThe job cache and the event " +
-					"bus both prune on a schedule — check `retention` and `max_bytes` before " +
+					"bus both prune on a schedule — check `job_cache_retention`, `job_cache_max_size`, `event_retention` and `event_max_size` before " +
 					"adding a disk."
 			case len(low) > 0:
 				res.Status = Warn
 				res.Detail = strings.Join(low, "; ")
-				res.Remedy = "Check `retention` and `max_bytes` for the job cache and the " +
+				res.Remedy = "Check `job_cache_retention` and `job_cache_max_size` for the job cache and `event_retention` and `event_max_size` for the " +
 					"event bus; both prune by age and size and both default generously."
 			default:
 				res.Status = Pass
@@ -465,13 +465,13 @@ func QueueDepths(depths map[string]QueueDepth) Check {
 				res.Detail = strings.Join(append(full, deep...), "; ")
 				res.Remedy = "A full reactor queue drops the oldest event to make room, and " +
 					"the reaction that would have run never does.\nWatch " +
-					"`halite_reactor_dropped_total`; raise `queue_depth` or `workers`, or " +
+					"`halite_reactor_dropped_total`; raise `reactor_queue_depth` or `reactor_workers`, or " +
 					"find the reaction that is slow."
 			case len(deep) > 0:
 				res.Status = Warn
 				res.Detail = strings.Join(deep, "; ")
 				res.Remedy = "Over half full. It drops the oldest when it fills; see " +
-					"`halite_reactor_dropped_total` and the `workers` setting."
+					"`halite_reactor_dropped_total` and the `reactor_workers` setting."
 			default:
 				res.Status = Pass
 				res.Detail = strings.Join(fine, "; ")
@@ -525,18 +525,18 @@ func ExtensionSignatures(required bool, extensions []ExtensionTrust) Check {
 				res.Detail = strings.Join(bad, "; ")
 				res.Remedy = "A signature that does not verify is not a missing one: the " +
 					"bundle has changed since it was signed, or it was signed by a key this " +
-					"node does not trust.\nRe-sign it, or add the key to `extension_trust`."
+					"node does not trust.\nRe-sign it, or add the key to `extension_trust_keys`."
 			case len(unsigned) > 0 && required:
 				res.Status = Fail
 				res.Detail = fmt.Sprintf("%d unsigned: %s", len(unsigned), strings.Join(unsigned, ", "))
 				res.Remedy = "This node requires signatures, so these will not load and any " +
 					"state calling them fails at apply time.\nSign them, or clear " +
-					"`require_signed_extensions` on a node where that is deliberate."
+					"`extension_require_signature: false` on a node where that is deliberate."
 			case len(unsigned) > 0:
 				res.Status = Warn
 				res.Detail = fmt.Sprintf("%d unsigned: %s (signatures are not required here)",
 					len(unsigned), strings.Join(unsigned, ", "))
-				res.Remedy = "They will load. Set `require_signed_extensions` on a managed " +
+				res.Remedy = "They will load. Set `extension_require_signature` on a managed " +
 					"node so that an extension nobody signed cannot run."
 			default:
 				res.Status = Pass

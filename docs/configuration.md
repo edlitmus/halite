@@ -147,6 +147,14 @@ The hub's TCP port.
 
 Only read when `hub` names no port. One port carries everything — jobs, returns, files, events — because SPEC 6.1 has a single mutual-TLS listener rather than Salt's separate publish and return ports.
 
+### `hub_timeout`
+
+*`halite-node` · `30s` · SPEC section 7.3*
+
+How long fetching the hub's CA by fingerprint may take, at enrolment.
+
+Bounds the one request enrolment makes before it has a CA to verify the hub with: fetching the CA by its fingerprint. It does not bound the stream or the jobs that follow.
+
 ### `hub_tries`
 
 *`halite-node` · `0` · SPEC section 6.2*
@@ -681,6 +689,14 @@ Subdirectory inside each repository to serve.
 
 A subdirectory inside each repository to serve as the tree root, for a repository that holds the states under `salt/` alongside other things.
 
+### `gitfs_timeout`
+
+*`halite-hub` · `5m` · SPEC section 13.3*
+
+How long one git operation of the file server may take.
+
+Bounds one git operation, a fetch or a clone, so a remote that hangs does not hold the file server for ever.
+
 ### `gitfs_update_interval`
 
 *`halite-hub` · `5m` · SPEC section 13.3*
@@ -813,6 +829,14 @@ The secret half. Prefer `s3_secret_access_key_file`, which keeps it out of the f
 File holding the secret key, mode 600.
 
 A file holding the secret, required to be mode 600. This is the form to use when a static credential is unavoidable.
+
+### `s3_timeout`
+
+*`halite-hub` · `2m` · SPEC section 13.4*
+
+How long one request of the S3 file server may take.
+
+Bounds one request to S3, the listing and each object fetch.
 
 ### `s3_update_interval`
 
@@ -1065,6 +1089,14 @@ Publication interval, in minutes, matching Salt's units.
 
 Work a node starts on its own: the scheduler that replaces
 cron, and the beacons that turn a local condition into an event.
+
+### `beacon_tick`
+
+*`halite-node` · `250ms` · SPEC section 16.1*
+
+How often the beacon loop looks for a beacon that is due; an interval is honoured to within it.
+
+How often the loop looks for a beacon whose interval has elapsed. A beacon fires to within this of its interval, so the default is short; raising it saves wake-ups on a node with only slow beacons. Empty or 0 takes the default.
 
 ### `beacons`
 
@@ -2026,6 +2058,14 @@ Its key.
 
 The key for `metrics_tls_cert`, mode 600 and readable by the account the agent runs as.
 
+### `output`
+
+*`halite-node` · `nested` · SPEC section 26.1*
+
+The output format of a command, when --out is not given.
+
+The format a command prints its result in when `--out` is not given: `nested`, `json`, `yaml`, `txt` or `quiet`. Salt's `output` setting, read here for the same reason.
+
 ### `tracing`
 
 *all three programs · `off` · SPEC section 26.3*
@@ -2059,6 +2099,7 @@ Every setting, and which programs read it.
 | `accept_relays` | `halite-hub` | `false` | Relays |
 | `accounts` | `halite-api` | `<config root>/accounts.yaml` | Authorization |
 | `api_operator` | `halite-api` | `api` | The API service |
+| `beacon_tick` | `halite-node` | `250ms` | Scheduling and beacons |
 | `beacons` | `halite-node` | — | Scheduling and beacons |
 | `cache_dir` | all three programs | `<cache dir>` | Filesystem layout |
 | `certificate_lifetime` | `halite-hub` | `2160h` | Enrollment and certificates |
@@ -2110,6 +2151,7 @@ Every setting, and which programs read it.
 | `gitfs_ref_types` | `halite-hub` | `branches` | The git file server |
 | `gitfs_remotes` | `halite-hub` | — | The git file server |
 | `gitfs_root` | `halite-hub` | — | The git file server |
+| `gitfs_timeout` | `halite-hub` | `5m` | The git file server |
 | `gitfs_update_interval` | `halite-hub` | `5m` | The git file server |
 | `gitfs_verify_signatures` | `halite-hub` | `false` | The git file server |
 | `gpg_binary` | `halite-node`, `halite-hub` | `gpg` | Rendering and templates |
@@ -2125,6 +2167,7 @@ Every setting, and which programs read it.
 | `hub_ca_file` | `halite-node` | — | Identity and connection |
 | `hub_fingerprint` | `halite-node` | — | Identity and connection |
 | `hub_port` | `halite-node` | `4510` | Identity and connection |
+| `hub_timeout` | `halite-node` | `30s` | Identity and connection |
 | `hub_tries` | `halite-node` | `0` | Identity and connection |
 | `hub_type` | `halite-node` | `static` | Identity and connection |
 | `job_cache` | `halite-hub` | `local` | Targeting and the job cache |
@@ -2188,6 +2231,7 @@ Every setting, and which programs read it.
 | `oidc_role_map` | `halite-api` | — | OpenID Connect |
 | `oidc_scopes` | `halite-api` | — | OpenID Connect |
 | `oidc_skew` | `halite-api` | `60s` | OpenID Connect |
+| `output` | `halite-node` | `nested` | Logging and diagnostics |
 | `parallel_jobs` | `halite-node` | `false` | Node execution controls |
 | `pillar_cache_disk` | `halite-node` | `false` | The tree: states and pillar |
 | `pillar_merge_lists` | `halite-node`, `halite-hub` | `false` | The tree: states and pillar |
@@ -2261,6 +2305,7 @@ Every setting, and which programs read it.
 | `s3_role_session` | `halite-hub` | `halite` | The S3 file server |
 | `s3_secret_access_key` | `halite-hub` | — | The S3 file server |
 | `s3_secret_access_key_file` | `halite-hub` | — | The S3 file server |
+| `s3_timeout` | `halite-hub` | `2m` | The S3 file server |
 | `s3_update_interval` | `halite-hub` | `5m` | The S3 file server |
 | `s3_web_identity_token_file` | `halite-hub` | — | The S3 file server |
 | `schedule` | `halite-node` | — | Scheduling and beacons |

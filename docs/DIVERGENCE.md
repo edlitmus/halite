@@ -36194,6 +36194,18 @@ Issue 321, the second pass, round six (`internal/dbus`).
 
 **Not verified.** A real system bus, and a reply from a real systemd, which the existing tests of the binding stand in for.
 
+### 5.545 Six settings were read and not declared, and `doctor` read one that is not the setting
+
+Issue 321, the second pass, round six (`internal/config`, `internal/doctor`, `cmd/halite-node/doctor.go`).
+
+**The defect.** The configuration table is what the loader checks a key against and what the reference is generated from. Six settings were read by the programs and were not in it: `hub_timeout`, `beacon_tick`, `output` (node), `gitfs_timeout` and `s3_timeout` (hub), and `require_signed_extensions`, which `halite-node doctor` read in place of `extension_require_signature`, the setting the node enforces. An operator who set one was warned that it "is not recognised and was ignored" while it took effect, and none of them was in the reference. The `doctor` one was worse: `require_signed_extensions` is read nowhere else, and defaults to false where the enforced setting defaults to true, so on a default node an unsigned extension was reported "They will load" (a warning) when the node refuses to load it. The remedies named five more settings that do not exist (`extension_trust`, `queue_depth`, `workers`, `retention`, `max_bytes`).
+
+**Shown.** A node configuration holding `hub_timeout: 7s`, `beacon_tick: 3s` and `output: json`: three "not recognised and was ignored" warnings, and `Duration("hub_timeout")` read 7s. Two new tests fail on the old code: every setting the programs read through a literal key is declared (six failures), and every setting a `doctor` remedy names is declared (six names).
+
+**The change.** The five are declared, with their defaults as the code has them and a line each in the reference; `doctor` reads `extension_require_signature` with the enforced default; the remedies name `extension_trust_keys`, `extension_require_signature`, `reactor_queue_depth`, `reactor_workers`, `job_cache_retention`, `job_cache_max_size`, `event_retention` and `event_max_size`. The reference's setting count is 238.
+
+**Not changed.** The hub's event returner reads `id` for the node identity it stamps, and nothing sets it; whether a hub has such an identity is a decision, and the audit names it as the one exception. Not run: `nodeExtensionCheck` on a node holding an unsigned extension, which needs a runtime with a bundle.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
