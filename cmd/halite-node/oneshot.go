@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -55,6 +56,10 @@ type OneshotRequest struct {
 	// Files are the state tree entries this job needs, sent inline for
 	// a small payload. SPEC 21.1.
 	Files map[string]string `json:"files,omitempty"`
+	// FilesBase64 are the entries that are not valid UTF-8, which a JSON
+	// string cannot carry. From a hub older than the field there are
+	// none, and such a file arrived altered. DIVERGENCE 5.538.
+	FilesBase64 map[string]string `json:"files_b64,omitempty"`
 	// Grains the roster attached, merged under what the target
 	// reports about itself.
 	Grains json.RawMessage `json:"grains,omitempty"`
@@ -311,7 +316,7 @@ func applyOneshotContent(n *node, req OneshotRequest) (*inlineTree, error) {
 	// has no state tree of its own, and one that fell back to a local
 	// directory would apply whatever a previous configuration system
 	// left there.
-	if req.Files != nil || needsInlineTree(req.Fun) {
+	if req.Files != nil || req.FilesBase64 != nil || needsInlineTree(req.Fun) {
 		dir, err := os.MkdirTemp(oneshotTempRoot, "halite-oneshot-*")
 		if err != nil {
 			return nil, err
@@ -321,6 +326,16 @@ func applyOneshotContent(n *node, req OneshotRequest) (*inlineTree, error) {
 			if err := writeInlineFile(dir, rel, body); err != nil {
 				tree.remove(n)
 				return nil, err
+			}
+		}
+		for rel, encoded := range req.FilesBase64 {
+			raw, err := base64.StdEncoding.DecodeString(encoded)
+			if err == nil {
+				err = writeInlineFile(dir, rel, string(raw))
+			}
+			if err != nil {
+				tree.remove(n)
+				return nil, fmt.Errorf("the file %q the hub sent: %w", rel, err)
 			}
 		}
 		// The tree the hub sent, and only it. A target in agentless

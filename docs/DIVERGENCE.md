@@ -36114,6 +36114,18 @@ Issue 321, the second pass, round five (`docs/audits/2026-10-issue-321-second-pa
 
 A target that matched nothing because of this can now match nodes. That is the fix, and it is also a change of what a job reaches.
 
+### 5.538 An agentless run altered every file in the tree that was not valid UTF-8
+
+Issue 321, the second pass, round five (`cmd/halite-hub/ssh.go`, `cmd/halite-node/oneshot.go`).
+
+**The defect.** `halite-hub ssh` sends the state tree with the job as `map[string]string` in a JSON request. A JSON string cannot hold a byte that is not UTF-8, so `encoding/json` replaced each one with U+FFFD, and an image, an archive or a DER certificate reached the target altered. `file.managed` from `salt://` then wrote the altered bytes, with no error and no warning.
+
+**Shown.** `sshRequest` for `state.apply` over a tree holding the bytes `89 50 4e 47 ff fe 00 80`: the request decoded to `ef bf bd 50 4e 47 ef bf bd ef bf bd 00 ef bf bd`. The new hub test fails on the old code (the file arrives as text, and no `files_b64` entry exists).
+
+**The change.** A file that is valid UTF-8 is sent as before in `files`; any other is sent base64-encoded in a new `files_b64`, and the node writes both through `writeInlineFile`. A node that is older than the field ignores `files_b64`, so against an older pushed binary such a file is missing rather than altered; the hub pushes its own `halite-node` unless `--thin` names another. A `files_b64` entry that is not base64 refuses the run.
+
+**Not verified.** A real ssh run to a real target; the node-side test calls `applyOneshotContent` directly and was not broken on purpose, because the field it reads does not exist without the change.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
