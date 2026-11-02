@@ -36206,6 +36206,8 @@ Issue 321, the second pass, round six (`internal/config`, `internal/doctor`, `cm
 
 **Not changed.** The hub's event returner reads `id` for the node identity it stamps, and nothing sets it; whether a hub has such an identity is a decision, and the audit names it as the one exception. Not run: `nodeExtensionCheck` on a node holding an unsigned extension, which needs a runtime with a bundle.
 
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
