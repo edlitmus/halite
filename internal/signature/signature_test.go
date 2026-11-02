@@ -294,3 +294,26 @@ func TestAWrongTypeIsOneErrorNotTwo(t *testing.T) {
 		t.Errorf("one wrong argument produced %d errors: %v", mentioning, errs)
 	}
 }
+
+// A JSON string is not a mapping to a function that wants one.
+//
+// The question left open by DIVERGENCE 5.522 was whether a reaction's
+// structured positional argument should be refused, as it is, or encoded as
+// JSON and sent. A job's positional arguments are strings, and this is what
+// the binder does with one for a mapping-typed or list-typed parameter: it
+// does not parse it. So an encoded structure would reach the function as the
+// text of one and be refused there, later and further from the reaction that
+// caused it. Refusing at parse time, with a message that points at `kwarg`,
+// is the earlier and clearer of two refusals, and that decides it
+// (DIVERGENCE 5.535).
+func TestAJSONStringIsNotAMappingToTheBinder(t *testing.T) {
+	s := Signature{Module: "x", Function: "y", Params: []Param{
+		{Name: "data", Type: Map},
+	}}
+	if _, errs := s.Bind([]any{`{"a": 1}`}, nil); len(errs) == 0 {
+		t.Error("a JSON string was accepted for a mapping parameter, so encoding a reaction's structured argument could work and refusing it is the wrong decision")
+	}
+	if _, errs := s.Bind(nil, value.MapOf("data", value.MapOf("a", int64(1)))); len(errs) != 0 {
+		t.Errorf("a real mapping as a keyword was refused: %v", errs)
+	}
+}
