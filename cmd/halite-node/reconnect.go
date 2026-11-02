@@ -1,7 +1,8 @@
 package main
 
 import (
-	"math/rand/v2"
+	"crypto/rand"
+	"encoding/binary"
 	"time"
 )
 
@@ -34,7 +35,7 @@ const (
 )
 
 func newReconnect(tries int64) *reconnect {
-	return &reconnect{tries: tries, backoff: minBackoff, jitter: rand.Float64}
+	return &reconnect{tries: tries, backoff: minBackoff, jitter: cryptoFloat}
 }
 
 // attempting records that an attempt is about to be made.
@@ -67,4 +68,16 @@ func (r *reconnect) ended(clean bool) (wait time.Duration, giveUp bool) {
 		}
 	}
 	return wait, false
+}
+
+// cryptoFloat is a number in [0, 1) from crypto/rand: SPEC 25.3 admits no
+// other source in this tree, and the jitter is not worth an exception. If the
+// system's source fails the wait is the middle of the spread, which is the
+// backoff itself.
+func cryptoFloat() float64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0.5
+	}
+	return float64(binary.LittleEndian.Uint64(b[:])>>11) / (1 << 53)
 }

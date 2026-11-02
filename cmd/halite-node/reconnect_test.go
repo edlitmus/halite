@@ -74,3 +74,12 @@ func TestTheReconnectWaitResetsWhenTheStreamOpensAndIsJittered(t *testing.T) {
 		t.Errorf("jitter spans %v to %v, want about 800ms to 1.2s", a, b)
 	}
 }
+
+// The jitter comes from crypto/rand (SPEC 25.3) and stays in [0, 1).
+func TestTheReconnectJitterSourceStaysInRange(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		if f := cryptoFloat(); f < 0 || f >= 1 {
+			t.Fatalf("cryptoFloat() = %v, want [0, 1)", f)
+		}
+	}
+}
