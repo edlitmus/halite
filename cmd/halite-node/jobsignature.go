@@ -312,7 +312,7 @@ func (n *node) matchesSignedTarget(j *job.Job) error {
 	// a failure to load it is remembered rather than handed to the
 	// matcher. See signedTargetPillar.
 	var pillarErr error
-	hit := matcher.Match(target.Node{ID: n.nodeID, Grains: n.grains,
+	hit := matcher.Match(target.Node{ID: n.nodeID, Grains: n.grainsNow(),
 		LoadPillar: n.signedTargetPillar(&pillarErr)})
 	if pillarErr != nil {
 		return fmt.Errorf(

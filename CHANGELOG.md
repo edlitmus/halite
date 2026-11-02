@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A node's grains can no longer be replaced while a job is starting.** The grain refresh and a runtime `grains` change assigned the field while every job copied the node, which read it: a data race the race detector reports. The grains are now guarded. DIVERGENCE 5.553.
+
 - **A node no longer has the hub compile its pillar on every beacon poll.** Each poll of each due beacon asked the hub for a fresh pillar, which the hub compiled, external sources included. The pillar a beacon reads is now at most five minutes old, and a compilation that fails is retried after a minute. DIVERGENCE 5.552.
 
 - **`env_allowlist` and `env_denylist` on a node read `[!x]` the way fnmatch does.** They used Go's `path.Match`, where the negation is `[^x]`, so `[!b]*` as a denylist denied `base` and permitted `dev`; and a pattern that did not parse was skipped, so a denylist entry like `stage[` denied nothing. A list that relied on the inversion now does what it says. DIVERGENCE 5.551.

@@ -247,7 +247,7 @@ func nodeFIPSCheck(n *node) doctor.Check {
 		Platform: runtime.GOOS,
 	}
 	if kernelHasFIPSMode() {
-		kernel, _ := value.Traverse(n.grains, "fips_mode", ":")
+		kernel, _ := value.Traverse(n.grainsNow(), "fips_mode", ":")
 		on, _ := kernel.(bool)
 		state.Kernel = &on
 	} else {

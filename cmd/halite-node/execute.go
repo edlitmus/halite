@@ -174,6 +174,12 @@ func jobTestFlag(j *job.Job) (bool, error) {
 // logger, redactor -- are shared deliberately, and the fields a job may
 // change are not.
 func (n *node) forJob() *node {
+	if n.grainsMu != nil {
+		// The copy reads every field, `grains` among them, while the
+		// refresh loop may be replacing it.
+		n.grainsMu.RLock()
+		defer n.grainsMu.RUnlock()
+	}
 	copied := *n
 	return &copied
 }

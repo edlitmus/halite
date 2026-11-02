@@ -232,7 +232,7 @@ func (n *node) stateCompiler(p *value.Map, jobID string) *state.Compiler {
 			PillarEnv:        n.pillarEnv,
 			NodeID:           n.nodeID,
 			JobID:            jobID,
-			Grains:           n.grains,
+			Grains:           n.grainsNow(),
 			Pillar:           p,
 			ConfigValues:     n.cfg.Effective(config.Node),
 			Undefined:        n.undef,
@@ -381,7 +381,7 @@ func runGrains(args *cli.Args) int {
 	}
 	switch sub {
 	case "items":
-		n.out(value.MapOf(n.nodeID, n.grains))
+		n.out(value.MapOf(n.nodeID, n.grainsNow()))
 	case "get":
 		// `get` is one key and the bare value; `item` is any number of
 		// them and a mapping. Taking a second key here and answering
@@ -389,7 +389,7 @@ func runGrains(args *cli.Args) int {
 		if len(args.Positional) != 2 {
 			cli.Fatalf("grains get takes exactly one key; use `grains item` for several")
 		}
-		v, ok := value.Traverse(n.grains, args.Positional[1], ":")
+		v, ok := value.Traverse(n.grainsNow(), args.Positional[1], ":")
 		if !ok {
 			v = ""
 		}
@@ -398,10 +398,10 @@ func runGrains(args *cli.Args) int {
 		if len(args.Positional) < 2 {
 			cli.Usagef("grains item needs a key")
 		}
-		n.out(value.MapOf(n.nodeID, traverseAll(n.grains, args.Positional[1:])))
+		n.out(value.MapOf(n.nodeID, traverseAll(n.grainsNow(), args.Positional[1:])))
 	case "ls", "keys":
-		names := make([]any, 0, n.grains.Len())
-		for _, k := range n.grains.SortedKeys() {
+		names := make([]any, 0, n.grainsNow().Len())
+		for _, k := range n.grainsNow().SortedKeys() {
 			names = append(names, k)
 		}
 		n.out(value.MapOf(n.nodeID, names))
@@ -547,7 +547,7 @@ func runLint(args *cli.Args) int {
 			SLS:       strings.TrimSuffix(path, ".sls"),
 			Env:       n.env,
 			NodeID:    n.nodeID,
-			Grains:    n.grains,
+			Grains:    n.grainsNow(),
 			Pillar:    p,
 			Config:    n.cfg.Effective(config.Node),
 			Loader:    n.files.Templates(n.env),

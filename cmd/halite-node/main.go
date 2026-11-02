@@ -198,6 +198,12 @@ type node struct {
 	// (forJob) and a copied mutex is a second, unrelated lock.
 	identityMu *sync.Mutex
 
+	// grainsMu guards `grains`, which the refresh loop and a runtime
+	// `grains` change replace while jobs start and read it. A pointer for
+	// the reason identityMu is one. Nil in a node built by hand, which
+	// is then not shared. DIVERGENCE 5.553.
+	grainsMu *sync.RWMutex
+
 	cfg      *config.Config
 	registry *builtin.Registries
 	grains   *value.Map
@@ -351,6 +357,7 @@ func setup(args *cli.Args) *node {
 
 	n := &node{
 		identityMu:    &sync.Mutex{},
+		grainsMu:      &sync.RWMutex{},
 		statesRunning: new(atomic.Int64),
 		evidence:      &evidenceState{},
 		metrics:       newNodeMetrics(cfg),
@@ -427,7 +434,7 @@ func setup(args *cli.Args) *node {
 	for _, w := range warnings {
 		n.log.Warn(w.String(), "component", "grains")
 	}
-	n.grains = g
+	n.setGrains(g)
 
 	// The configuration root is probed first, so that a node whose tree
 	// lives beside its configuration — or is symlinked there, which is
@@ -660,7 +667,7 @@ func (n *node) compileLocalPillar() (*value.Map, error) {
 			Env:           n.pillarEnv,
 			AllEnvs:       n.pillarAll,
 			NodeID:        n.nodeID,
-			Grains:        n.grains,
+			Grains:        n.grainsNow(),
 			ConfigValues:  n.cfg.Effective(config.Node),
 			TrustedGrains: n.cfg.StringSlice("pillar_trusted_grains"),
 			Strategy:      strategy,
@@ -730,7 +737,7 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		// renders bytes that came off the file server, so it goes
 		// wherever the SLS rendering goes.
 		Render:       n.renderEngine(),
-		Grains:       n.grains,
+		Grains:       n.grainsNow(),
 		Pillar:       p,
 		Config:       n.cfg.Effective(config.Node),
 		NodeID:       n.nodeID,
@@ -875,4 +882,29 @@ func (n *node) runContext() context.Context {
 		return n.jobCtx
 	}
 	return context.Background()
+}
+
+// grainsNow is this node's grains as they are now. The map is replaced
+// whole and never edited, so a caller may keep what it is given.
+func (n *node) grainsNow() *value.Map {
+	if n.grainsMu == nil {
+		return n.grains
+	}
+	n.grainsMu.RLock()
+	defer n.grainsMu.RUnlock()
+	return n.grains
+}
+
+// setGrains replaces them. The refresh loop and `grains.*` called these
+// assignments while every job started by copying the node, which reads
+// the field: a data race the package's own race run does not reach,
+// because nothing runs the two together.
+func (n *node) setGrains(g *value.Map) {
+	if n.grainsMu == nil {
+		n.grains = g
+		return
+	}
+	n.grainsMu.Lock()
+	defer n.grainsMu.Unlock()
+	n.grains = g
 }

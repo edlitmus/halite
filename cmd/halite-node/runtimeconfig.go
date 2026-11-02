@@ -68,7 +68,7 @@ func (n *node) reloadRuntimeConfig(kind string) error {
 		for _, w := range warnings {
 			n.log.Warn(w.String(), "component", "grains")
 		}
-		n.grains = fresh
+		n.setGrains(fresh)
 		return nil
 	}
 	return fmt.Errorf("%s cannot be re-read", kind)
