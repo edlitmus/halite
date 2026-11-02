@@ -167,14 +167,32 @@ func (c *OrchStore) Get(id job.ID) (*OrchRun, error) {
 	return &run, nil
 }
 
-// List returns the most recent runs, newest first.
-func (c *OrchStore) List(limit int) ([]*OrchRun, error) {
+// OrchUnreadable is a record the store holds and could not read.
+type OrchUnreadable struct {
+	JID job.ID
+	Err error
+}
+
+// List returns the most recent runs, newest first, and the records among
+// them that could not be read.
+//
+// The comment on the loop said an unreadable record "must not be silently
+// dropped" and the code `continue`d past it without a word, so a truncated or
+// corrupt record simply was not in the listing: an operator looking for a run
+// the hub had written was told there was no such run (DIVERGENCE 5.526). The
+// rest still list, because one bad file must not hide the others; the bad
+// ones come back beside them, named, for the caller to say so.
+//
+// An unreadable record counts against `limit` like a readable one, because it
+// is one of the most recent records and a listing that skipped it would reach
+// further back than the caller asked.
+func (c *OrchStore) List(limit int) ([]*OrchRun, []OrchUnreadable, error) {
 	if c == nil || c.dir == "" {
-		return nil, errNoOrchStore
+		return nil, nil, errNoOrchStore
 	}
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var ids []string
 	for _, e := range entries {
@@ -189,14 +207,14 @@ func (c *OrchStore) List(limit int) ([]*OrchRun, error) {
 		ids = ids[:limit]
 	}
 	out := make([]*OrchRun, 0, len(ids))
+	var bad []OrchUnreadable
 	for _, id := range ids {
 		run, err := c.Get(job.ID(id))
 		if err != nil {
-			// One unreadable record must not hide the rest, and must
-			// not be silently dropped either.
+			bad = append(bad, OrchUnreadable{JID: job.ID(id), Err: err})
 			continue
 		}
 		out = append(out, run)
 	}
-	return out, nil
+	return out, bad, nil
 }
