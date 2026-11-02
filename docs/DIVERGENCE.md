@@ -36126,6 +36126,16 @@ Issue 321, the second pass, round five (`cmd/halite-hub/ssh.go`, `cmd/halite-nod
 
 **Not verified.** A real ssh run to a real target; the node-side test calls `applyOneshotContent` directly and was not broken on purpose, because the field it reads does not exist without the change.
 
+### 5.539 `halite-hub ssh --timeout` ignored a value it could not read
+
+Issue 321, the second pass, round five (`cmd/halite-hub/ssh.go`).
+
+**The defect.** `sshTimeout` parsed `--timeout` and, on an error, fell back to `ssh_timeout` or five minutes without a word, so `--timeout 30` (no unit) ran with the default; `halite-hub run --timeout 30` refuses it. A negative value passed through and was replaced inside `sshexec`. The flag's job is to bound a target that hangs, and a bound that is silently not applied is found out on the day a target hangs.
+
+**Shown.** Before the change, `sshTimeout` with `--timeout 30` returned 5m0s and with `-5s` returned `-5s` (scratch test on the old code). The new test fails on the old code because the checking function does not exist; it asserts that `30`, `-5s`, `0s`, `true` and `soon` are refused and `90s` and `2m` are read.
+
+**The change.** `sshTimeoutFlag` reads the flag and refuses anything that is not a positive duration; `runSSH` calls it with the other flags it checks before the hub is opened (5.221), so the refusal is a usage error before any target is touched.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

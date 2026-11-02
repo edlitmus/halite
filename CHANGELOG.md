@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`halite-hub ssh --timeout` refuses a value it cannot read.** `--timeout 30` (no unit), `0s` and a negative duration were ignored and the run took the default. They are now a usage error, as for `halite-hub run`. DIVERGENCE 5.539.
+
 - **`halite-hub ssh` no longer alters a binary file in the state tree.** Any file that was not valid UTF-8 (an image, an archive, a DER certificate) arrived with each invalid byte replaced by U+FFFD, and was written like that. Such files now travel base64-encoded in a new `files_b64` field of the one-shot request. A `halite-node` older than this, pushed with `--thin`, does not read the field and so lacks those files. DIVERGENCE 5.538.
 
 - **A grain or pillar value containing a colon can now be targeted.** `-G 'hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff'`, an IPv6 grain value and a `host:port` value matched nothing, because the target was split at its last colon only. It is now read at every colon, as Salt does. A target that matched no node before may now match some. DIVERGENCE 5.537.

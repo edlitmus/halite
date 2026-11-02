@@ -49,6 +49,9 @@ func runSSH(args *cli.Args) int {
 	// report. DIVERGENCE 5.221.
 	cli.IntFlag(args, "ssh-concurrency", 8, 1)
 	cli.IntFlag(args, "indent", 0, 0)
+	if _, err := sshTimeoutFlag(args); err != nil {
+		cli.Usagef("%v", err)
+	}
 	if _, err := cli.ParseFormat(args.Flag("out", "nested")); err != nil {
 		cli.Usagef("%v", err)
 	}
@@ -248,12 +251,30 @@ func sshMatcher(flag, expression string) (*target.Matcher, error) {
 	return target.Compile(kind, expression, nil)
 }
 
+// sshTimeoutFlag reads --timeout: zero when it was not given, an error when
+// it is not a positive duration.
+//
+// It was read leniently, so `--timeout 30` (no unit) was ignored and the run
+// took the five-minute default, where `halite-hub run --timeout 30` refuses
+// it; a negative one passed through to sshexec, which replaces it with its
+// own default. A bound that is silently not applied is the worse failure for
+// a flag whose job is to stop a hung target. DIVERGENCE 5.539.
+func sshTimeoutFlag(args *cli.Args) (time.Duration, error) {
+	flag := args.Flag("timeout", "")
+	if flag == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(flag)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("--timeout %q is not a positive duration such as 90s or 5m", flag)
+	}
+	return d, nil
+}
+
 // sshTimeout is how long one target may take.
 func sshTimeout(args *cli.Args, h *hubContext) time.Duration {
-	if flag := args.Flag("timeout", ""); flag != "" && flag != "true" {
-		if d, err := time.ParseDuration(flag); err == nil {
-			return d
-		}
+	if d, err := sshTimeoutFlag(args); err == nil && d > 0 {
+		return d
 	}
 	return h.cfg.Duration("ssh_timeout", 5*time.Minute)
 }
