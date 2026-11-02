@@ -36246,6 +36246,18 @@ Issue 321, the second pass, round seven (`cmd/halite-node/metrics.go`, `cmd/hali
 
 **Not verified.** Prometheus reading it; an extension function registered after start, which the registry holds like any other and so keeps its own label.
 
+### 5.550 One git remote failing took the environments it served with it
+
+Issue 321, the second pass, round eight (`internal/gitfs/backend.go`).
+
+**The defect.** `Backend.Update` says a remote that fails "does not clear what it was already serving", and it kept the last tree only when every remote failed. With some failing, what was served was replaced by what the others returned: a hub with two remotes, one unreachable for one update, stopped serving the failed remote's branches, every node asking for one of its environments got a missing tree, and the last good checkout sat on disk unserved until the remote came back. The error said "some gitfs remotes served nothing".
+
+**Shown.** Two repositories, `main` in one and `staging` in the other: an update served both, the second repository was removed, and the next update served `base` alone (scratch test on the old code). The new tests fail on it: the first with "nothing is served for staging", the second because the first-listed remote's tree was gone from `base`.
+
+**The change.** The roots each remote served are kept per remote, and a remote that fails, or that is reachable and serves nothing, keeps its last ones. The served set is then built in the order the remotes are listed, so a remote listed first still shadows a later one for the same path. A remote that served some refs and refused others still replaces its own, as before: a refused ref is not served. The sweep is unchanged: it already keys on what is served, so a carried-forward tree is not removed.
+
+**Not verified.** A real remote going away over a network and returning; a remote whose last good tree was swept by an earlier hub version.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -24,6 +24,9 @@ type Backend struct {
 	state []RemoteState
 	// updated is when the last successful update finished.
 	updated time.Time
+	// byRemote is what each remote served at the last update, keyed by its
+	// mirror, so that a remote that fails keeps its last good roots.
+	byRemote map[string]map[string][]string
 }
 
 // RemoteState is what one remote resolved to at the last update.
@@ -113,6 +116,10 @@ func (b *Backend) Update(ctx context.Context) error {
 	// cache the sweep may tidy. The sweep runs after the decision about
 	// what is served, not inside the loop: see sweep.
 	var reached []Remote
+	// perRemote is what each remote served this time, by the key that
+	// names its mirror. A remote that fails is not left out of what is
+	// served: its last good roots are carried forward, below.
+	perRemote := map[string]map[string][]string{}
 
 	for _, remote := range b.opts.Remotes {
 		result := RemoteState{Remote: remote, Refused: map[string]string{}}
@@ -150,7 +157,10 @@ func (b *Backend) Update(ctx context.Context) error {
 					"remote", remote.label(), "ref", ref.Name, "error", err.Error())
 				continue
 			}
-			roots[ref.Env] = append(roots[ref.Env], target)
+			if perRemote[remote.mirrorDir()] == nil {
+				perRemote[remote.mirrorDir()] = map[string][]string{}
+			}
+			perRemote[remote.mirrorDir()][ref.Env] = append(perRemote[remote.mirrorDir()][ref.Env], target)
 			result.Refs = append(result.Refs, ref)
 		}
 		if len(result.Refs) == 0 {
@@ -169,6 +179,28 @@ func (b *Backend) Update(ctx context.Context) error {
 	}
 
 	b.mu.Lock()
+	// A remote that failed, or that served nothing, keeps what it was
+	// serving. Only the case where every remote failed used to: with one
+	// of two down, what was served was replaced by what the other one
+	// returned, and the failed remote's environments disappeared from the
+	// file server while their last good trees sat on disk, which the
+	// comment above this function says does not happen. DIVERGENCE 5.550.
+	for _, remote := range b.opts.Remotes {
+		key := remote.mirrorDir()
+		if len(perRemote[key]) == 0 {
+			if previous, ok := b.byRemote[key]; ok {
+				perRemote[key] = previous
+			}
+		}
+	}
+	b.byRemote = perRemote
+	// In the order the remotes are listed, as before, so that a remote
+	// listed first still shadows a later one for the same path.
+	for _, remote := range b.opts.Remotes {
+		for env, dirs := range perRemote[remote.mirrorDir()] {
+			roots[env] = append(roots[env], dirs...)
+		}
+	}
 	if len(roots) > 0 || len(failures) == 0 {
 		// Only replace what is served when something was served, or
 		// when nothing failed. A total failure leaves the previous

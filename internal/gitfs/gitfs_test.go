@@ -782,3 +782,83 @@ func TestIsObjectID(t *testing.T) {
 		}
 	}
 }
+
+// One remote of two going away does not take its environments with it. Only
+// every remote failing kept the last tree; with one down, what was served
+// was replaced by what the other returned, and its branches were gone from
+// the file server while their checkouts sat on disk. DIVERGENCE 5.550.
+func TestOneRemoteFailingKeepsWhatItServed(t *testing.T) {
+	a, b := newRepo(t), newRepo(t)
+	a.write("top.sls", "base: {}\n")
+	a.commit("a")
+	b.write("top.sls", "staging: {}\n")
+	b.git("checkout", "--quiet", "-b", "staging")
+	b.commit("b")
+
+	be, err := New(Options{
+		Remotes:  []Remote{{URL: a.dir, Name: "a"}, {URL: b.dir, Name: "b"}},
+		CacheDir: filepath.Join(t.TempDir(), "gitfs"),
+		Base:     "main", Timeout: 60 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := be.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	requireServedFile(t, be.Roots(), "staging", "top.sls", "staging: {}\n")
+
+	// b goes away; a moves on.
+	if err := os.RemoveAll(b.dir); err != nil {
+		t.Fatal(err)
+	}
+	a.write("top.sls", "base: {'*': [web]}\n")
+	a.commit("a2")
+	if err := be.Update(context.Background()); err == nil {
+		t.Fatal("an update with a remote gone reported success")
+	}
+	roots := be.Roots()
+	requireServedFile(t, roots, "staging", "top.sls", "staging: {}\n")
+	requireServedFile(t, roots, "base", "top.sls", "base: {'*': [web]}\n")
+
+	// And when the remote the failure was of is gone for good, the tree
+	// is still the one it served last, not an empty estate, however many
+	// updates later.
+	for i := 0; i < 3; i++ {
+		_ = be.Update(context.Background())
+	}
+	requireServedFile(t, be.Roots(), "staging", "top.sls", "staging: {}\n")
+}
+
+// Remotes are searched in the order they are listed, after an update that
+// carried one forward as before.
+func TestARemoteListedFirstStillShadowsALaterOneAfterACarryForward(t *testing.T) {
+	a, b := newRepo(t), newRepo(t)
+	a.write("top.sls", "from a\n")
+	a.commit("a")
+	b.write("top.sls", "from b\n")
+	b.commit("b")
+	be, err := New(Options{
+		Remotes:  []Remote{{URL: a.dir, Name: "a"}, {URL: b.dir, Name: "b"}},
+		CacheDir: filepath.Join(t.TempDir(), "gitfs"),
+		Base:     "main", Timeout: 60 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := be.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// The first remote fails; the second is all that answers.
+	if err := os.RemoveAll(a.dir); err != nil {
+		t.Fatal(err)
+	}
+	_ = be.Update(context.Background())
+	roots := be.Roots()["base"]
+	if len(roots) != 2 {
+		t.Fatalf("base is served from %d roots, want both remotes' last trees: %v", len(roots), roots)
+	}
+	if got, _ := os.ReadFile(filepath.Join(roots[0], "top.sls")); string(got) != "from a\n" {
+		t.Errorf("the first listed remote no longer comes first: %q", got)
+	}
+}
