@@ -22,7 +22,15 @@ import (
 // run, or names a function this build does not ship comes back as a
 // failed return, because an agent that exits on a bad job is an agent
 // an operator can stop with one typo.
-func (n *node) executeJob(j *job.Job) *job.Return {
+//
+// The result is named, and set as soon as there is one, because the deferred
+// function below recovers a panic and fills that return in: with an unnamed
+// result a recovered panic returns the zero value, so a module that panicked
+// gave `executor.Run` a nil return, which it read on the next line, in a
+// goroutine nothing recovers, and the node stopped. The comment on the
+// recover was right about what it meant and wrong about what it did.
+// DIVERGENCE 5.542.
+func (n *node) executeJob(j *job.Job) (result *job.Return) {
 	// A job runs against a copy of the node, never against the agent's
 	// own.
 	//
@@ -54,6 +62,7 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 		NodeVersion: version.String(),
 		Schema:      job.ReturnSchema,
 	}
+	result = ret
 	defer func() {
 		took := time.Since(started)
 		ret.DurationMS = took.Milliseconds()

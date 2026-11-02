@@ -36158,6 +36158,18 @@ Issue 321, the second pass, round five (`internal/tracing/context.go`).
 
 **The change.** Every field, the version included, must be lowercase hexadecimal. That the format requires lowercase is from memory of the W3C Trace Context text, which was not consulted; the change refuses more than before, so a sender that wrote uppercase now starts a new trace instead of continuing one.
 
+### 5.542 A module that panicked stopped the node
+
+Issue 321, the second pass, round six (`cmd/halite-node/execute.go`).
+
+**The defect.** `executeJob` recovers a panic in a deferred function and fills in the failed return, on the reasoning in its own comment: one bad job must not take the agent down. Its result was unnamed, so a recovered panic returned the zero value, a nil `*job.Return`. `executor.Run` read `ret.Success` on the next line, in a goroutine nothing recovers, so the first panicking module ended the node process.
+
+**Shown.** A registered function that panics, through `executeJob`: it returned nil. Through the executor on the old code the test process died with a nil pointer dereference. The new test fails on the old code at the nil return, and with that check removed it dies in the executor.
+
+**The change.** The result is named and set as soon as the return exists, so the recovered panic returns the failed return it filled in. The test also queues a second job behind the panicking one and checks it runs.
+
+**Not verified.** A real module that panics, as opposed to a registered stand-in; the schedule and agentless callers, which call `executeJob` too and read its result in the same way.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
