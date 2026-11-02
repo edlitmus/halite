@@ -14,6 +14,7 @@ package target
 import (
 	"fmt"
 	"net/netip"
+	"regexp"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/fnmatch"
@@ -411,7 +412,7 @@ func compileLeaf(kind Kind, expr string) (node, error) {
 		return funcNode(func(n Node) bool { return re.MatchString(n.ID) }), nil
 
 	case Grain, Pillar:
-		key, pattern, err := splitKeyValue(expr)
+		cands, err := splitCandidates(expr)
 		if err != nil {
 			return nil, err
 		}
@@ -420,32 +421,49 @@ func compileLeaf(kind Kind, expr string) (node, error) {
 			pick = pickPillar
 		}
 		return funcNode(func(n Node) bool {
-			v, ok := value.Traverse(pick(n), key, ":")
-			if !ok {
-				return false
+			for _, c := range cands {
+				v, ok := value.Traverse(pick(n), c.key, ":")
+				if ok && matchScalarOrList(v, func(s string) bool { return globMatch(c.pattern, s) }) {
+					return true
+				}
 			}
-			return matchScalarOrList(v, func(s string) bool { return globMatch(pattern, s) })
+			return false
 		}), nil
 
 	case GrainRegex, PillarRegex:
-		key, pattern, err := splitKeyValue(expr)
+		cands, err := splitCandidates(expr)
 		if err != nil {
 			return nil, err
 		}
-		re, err := regexcompat.Compile(pattern)
-		if err != nil {
-			return nil, &Error{Expr: expr, Msg: err.Error()}
+		// The last split is the one that has always been read, so its
+		// pattern is the one whose error is reported. A pattern from an
+		// earlier split that does not compile is a split that does not
+		// apply, not a mistake in the expression.
+		for i := range cands {
+			re, err := regexcompat.Compile(cands[i].pattern)
+			if err != nil {
+				if i == 0 {
+					return nil, &Error{Expr: expr, Msg: err.Error()}
+				}
+				continue
+			}
+			cands[i].re = re
 		}
 		pick := pickGrains
 		if kind == PillarRegex {
 			pick = pickPillar
 		}
 		return funcNode(func(n Node) bool {
-			v, ok := value.Traverse(pick(n), key, ":")
-			if !ok {
-				return false
+			for _, c := range cands {
+				if c.re == nil {
+					continue
+				}
+				v, ok := value.Traverse(pick(n), c.key, ":")
+				if ok && matchScalarOrList(v, c.re.MatchString) {
+					return true
+				}
 			}
-			return matchScalarOrList(v, re.MatchString)
+			return false
 		}), nil
 
 	case Subnet:
@@ -486,6 +504,39 @@ func splitKeyValue(expr string) (key, pattern string, err error) {
 		return "", "", &Error{Expr: expr, Msg: "the grain or pillar name is empty"}
 	}
 	return key, pattern, nil
+}
+
+// keyValue is one way of reading `a:b:c` as a grain path and a pattern.
+type keyValue struct {
+	key, pattern string
+	re           *regexp.Regexp
+}
+
+// splitCandidates is every reading of a grain or pillar target as a path
+// and a pattern, the last colon first.
+//
+// Splitting at the last colon alone made a value that contains one
+// unreachable: `G@hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff` looked for the
+// path `hwaddr_interfaces:eth0:aa:bb:cc:dd:ee` and the value `ff`, which
+// no node has, so a MAC address, an IPv6 address or a host:port value
+// could not be targeted. Salt's subdict_match tries each split point and
+// matches if any does, which is what this does. A reading that names an
+// empty path is skipped. DIVERGENCE 5.537.
+func splitCandidates(expr string) ([]keyValue, error) {
+	if !strings.Contains(expr, ":") {
+		return []keyValue{{key: expr, pattern: "*"}}, nil
+	}
+	var out []keyValue
+	for i := len(expr) - 1; i >= 0; i-- {
+		if expr[i] != ':' || i == 0 {
+			continue
+		}
+		out = append(out, keyValue{key: expr[:i], pattern: expr[i+1:]})
+	}
+	if len(out) == 0 {
+		return nil, &Error{Expr: expr, Msg: "the grain or pillar name is empty"}
+	}
+	return out, nil
 }
 
 // matchScalarOrList applies a predicate to a value, or to any member when
