@@ -144,6 +144,10 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Identity and connection",
 		Detail: "How often the hub pings down the open stream. It is what detects a connection that has stopped carrying traffic without closing, which is the common failure behind a firewall with an idle timeout.",
 	},
+	"hub_timeout": {
+		Group:  "Identity and connection",
+		Detail: "Bounds the one request enrolment makes before it has a CA to verify the hub with: fetching the CA by its fingerprint. It does not bound the stream or the jobs that follow.",
+	},
 	"hub_tries": {
 		Group:  "Identity and connection",
 		Detail: "0 means retry for ever, which is what a managed node should do. A finite count is for a one-shot container that should exit rather than sit reconnecting.",
@@ -416,6 +420,10 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "The S3 file server",
 		Detail: "The projected token an EKS service account gets. With `s3_role_arn` it needs no other credential at all, which is the arrangement to prefer everywhere it is available.",
 	},
+	"s3_timeout": {
+		Group:  "The S3 file server",
+		Detail: "Bounds one request to S3, the listing and each object fetch.",
+	},
 	"s3_update_interval": {
 		Group:  "The S3 file server",
 		Detail: "How often the hub lists the buckets. 0 lists only on demand.",
@@ -467,6 +475,10 @@ var KeyDocs = map[string]KeyDoc{
 	"relay_max_depth": {
 		Group:  "Relays",
 		Detail: "How many relays a connection may already be behind. Capped at 2, because unbounded nesting is how a syndic estate becomes undebuggable.",
+	},
+	"gitfs_timeout": {
+		Group:  "The git file server",
+		Detail: "Bounds one git operation, a fetch or a clone, so a remote that hangs does not hold the file server for ever.",
 	},
 	"relay_timeout": {
 		Group:  "Relays",
@@ -555,6 +567,10 @@ var KeyDocs = map[string]KeyDoc{
 	"beacons": {
 		Group:  "Scheduling and beacons",
 		Detail: "Local conditions that become events on the hub's bus: a file changed, a service died, a disk filled. A beacon on its own does nothing; it is the reactor that turns the event into a job.",
+	},
+	"beacon_tick": {
+		Group:  "Scheduling and beacons",
+		Detail: "How often the loop looks for a beacon whose interval has elapsed. A beacon fires to within this of its interval, so the default is short; raising it saves wake-ups on a node with only slow beacons. Empty or 0 takes the default.",
 	},
 	"reactor": {
 		Group:  "Reactors",
@@ -1007,6 +1023,10 @@ var KeyDocs = map[string]KeyDoc{
 	"legacy_arg_parse": {
 		Group:  "Node execution controls",
 		Detail: "Restores Salt's YAML coercion of command line arguments, where `1.10` becomes a number and a version string is corrupted. On for a tree that relies on the coercion; off is correct.",
+	},
+	"output": {
+		Group:  "Logging and diagnostics",
+		Detail: "The format a command prints its result in when `--out` is not given: `nested`, `json`, `yaml`, `txt` or `quiet`. Salt's `output` setting, read here for the same reason.",
 	},
 	"log_level": {
 		Group:  "Logging and diagnostics",

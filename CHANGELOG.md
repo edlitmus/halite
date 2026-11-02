@@ -21,6 +21,10 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **Six settings the programs read are now declared, so they are no longer reported as ignored.** `hub_timeout`, `beacon_tick`, `output`, `gitfs_timeout` and `s3_timeout` were honoured and warned about; they are in the reference now. `halite-node doctor` read a setting that does not exist (`require_signed_extensions`) for whether extensions must be signed and so reported, on a default node, that unsigned ones would load; it reads `extension_require_signature`, which defaults to true. Its remedies named settings that are not settings. DIVERGENCE 5.545.
+
+The configuration reference explains each of the 238 settings in the
+
 - **The D-Bus client no longer panics, loops or over-allocates on a malformed message.** An empty or bare-bracket signature, an array of empty structs, deeply nested variants and an oversized length were each a panic, a hang, or an allocation as large as the peer said. They are now errors. `x` and `d` decode to `int64` and `float64`. DIVERGENCE 5.544.
 
 - **`halite-node verify-evidence` no longer passes a record it could not check.** A record with a schema this build does not know had its link checked and its contents not, and the command said the chain held and exited 0; an edited record given such a schema was invisible, including to `--anchors`. The command now exits 1 and says the records are unverified, with `unverified_records` in `--out json`. A chain written by a newer build reads as unverified under an older one. DIVERGENCE 5.543.
@@ -7196,7 +7200,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 233 settings in the
+The configuration reference explains each of the 238 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

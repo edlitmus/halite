@@ -226,7 +226,7 @@ func nodeExtensionCheck(n *node) doctor.Check {
 		}
 	}
 	return doctor.ExtensionSignatures(
-		n.cfg.Bool("require_signed_extensions", false), trust)
+		n.cfg.Bool("extension_require_signature", true), trust)
 }
 
 // nodeFIPSCheck gathers the two halves SPEC 27.4 asks to be compared.
