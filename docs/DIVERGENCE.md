@@ -36282,6 +36282,18 @@ Issue 321, the second pass, round nine (`cmd/halite-node/beacons.go`, `cmd/halit
 
 **Not verified.** A real hub counting compilations; whether any beacon reads pillar at all, which was not checked and bears on how much this saves in practice (the compilation was done whether or not the beacon used it).
 
+### 5.553 The node's grains were replaced while jobs read them
+
+Issue 321, the second pass, round ten (`cmd/halite-node/main.go`, `execute.go`, `enroll.go`, `runtimeconfig.go`).
+
+**The defect.** `n.grains` is assigned by the refresh loop (`enroll.go`) and by a runtime `grains.*` change (`reloadRuntimeConfig`), and read by everything that builds a context, a target or a pillar request, and by `forJob`, which every job starts with and which copies the whole node, `grains` field included. Nothing guarded it.
+
+**Shown.** The real `reloadRuntimeConfig` and `forJob` in two goroutines under `-race` on the old code: `DATA RACE`, a write in `reloadRuntimeConfig` and a previous read in `forJob` (scratch test). The new test, which also replaces the grains directly and reads them from the agent's node, reports the race with the lock in `forJob` taken out and passes with it.
+
+**The change.** `grains` is guarded by a read-write lock held through a pointer (`grainsMu`, for the reason `identityMu` is one: a job runs on a copy of the node), assigned through `setGrains` and read through `grainsNow`; `forJob` holds the read lock while it copies. The map is replaced whole and never edited, so a reader may keep what it was given. A node built by hand with no lock, as the tests build them, is not shared and does not take one.
+
+**Not verified.** How often the race is lost on a real node (the detector shows the access, not its frequency); the package's whole race run, of which the grain, job, signing, anchor and beacon tests were run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

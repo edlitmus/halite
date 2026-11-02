@@ -614,7 +614,7 @@ func (n *node) refreshGrains(ctx context.Context, args *cli.Args) {
 		for _, w := range warnings {
 			n.log.Warn(w.String(), "component", "grains")
 		}
-		n.grains = fresh
+		n.setGrains(fresh)
 		encoded := encodeGrains(fresh, n.log.Warn)
 		if encoded == nil {
 			continue
@@ -633,7 +633,7 @@ func (n *node) refreshGrains(ctx context.Context, args *cli.Args) {
 // grainsJSON encodes the node's facts through the ordered model's own
 // codec, so a 64-bit grain arrives at the hub as the integer it is.
 func grainsJSON(n *node) json.RawMessage {
-	return encodeGrains(n.grains, n.log.Warn)
+	return encodeGrains(n.grainsNow(), n.log.Warn)
 }
 
 // encodeGrains encodes a node's grains, leaving out the ones that cannot be
@@ -867,7 +867,7 @@ func (n *node) pillarRequest(env string, all bool, grains json.RawMessage) trans
 // estate migrating one piece at a time should not lose its pillar the
 // moment it enrols.
 func (n *node) useHubPillar(client *transport.Client) {
-	grains, err := value.EncodeJSON(n.grains, 0)
+	grains, err := value.EncodeJSON(n.grainsNow(), 0)
 	if err != nil {
 		n.log.Warn("could not encode grains for the hub", "error", err.Error())
 		return

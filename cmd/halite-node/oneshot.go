@@ -302,13 +302,13 @@ func applyOneshotContent(n *node, req OneshotRequest) (*inlineTree, error) {
 		if err != nil {
 			return nil, fmt.Errorf("the grains are not readable: %w", err)
 		}
-		if extra, ok := decoded.(*value.Map); ok && n.grains != nil {
+		if extra, ok := decoded.(*value.Map); ok && n.grainsNow() != nil {
 			// Under what the target reports about itself: a roster
 			// saying `os: Debian` about a machine that is FreeBSD
 			// should not make it apply the Debian branch.
-			merged := value.Merge(extra, n.grains, value.MergeOpts{Strategy: value.Recurse})
+			merged := value.Merge(extra, n.grainsNow(), value.MergeOpts{Strategy: value.Recurse})
 			if m, ok := merged.(*value.Map); ok {
-				n.grains = m
+				n.setGrains(m)
 			}
 		}
 	}
