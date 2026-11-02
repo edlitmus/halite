@@ -12,7 +12,6 @@ import (
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileserver"
-	"github.com/edlitmus/halite/internal/value"
 )
 
 // The hub's half of SPEC 24.
@@ -136,36 +135,12 @@ func (h *hubContext) extensionLoadOptions() extension.LoadOptions {
 // extensionPins reads `extension_pins`, a mapping of name to version
 // and root.
 func (h *hubContext) extensionPins() map[string]extension.Pin {
-	raw, ok := h.cfg.Get("extension_pins")
-	if !ok || raw == nil {
-		return nil
+	raw, _ := h.cfg.Get("extension_pins")
+	pins, err := extension.ParsePins(raw)
+	if err != nil {
+		cli.Fatalf("%v", err)
 	}
-	m, isMap := raw.(*value.Map)
-	if !isMap {
-		cli.Fatalf("`extension_pins` is a mapping of extension to version and root, not %s",
-			value.TypeName(raw))
-	}
-	out := map[string]extension.Pin{}
-	for _, e := range m.Entries() {
-		name := value.KeyString(e.Key)
-		switch v := e.Val.(type) {
-		case string:
-			out[name] = extension.Pin{Version: v}
-		case *value.Map:
-			pin := extension.Pin{}
-			if version, ok := v.Get("version"); ok {
-				pin.Version = value.KeyString(version)
-			}
-			if root, ok := v.Get("root"); ok {
-				pin.Root = value.KeyString(root)
-			}
-			out[name] = pin
-		default:
-			cli.Fatalf("`extension_pins`: %s pins to %s, and a pin is a version or a mapping "+
-				"of version and root", name, value.TypeName(e.Val))
-		}
-	}
-	return out
+	return pins
 }
 
 // rootsSource serves `_ext/` out of the hub's own file roots.

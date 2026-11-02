@@ -36306,6 +36306,18 @@ Issue 321, the second pass, round ten (`cmd/halite-hub/doctor.go`).
 
 **Not verified.** A real remote or bucket; whether the update that fetches them is working, which `fileserver.update` reports and this does not.
 
+### 5.555 A misspelt key in `extension_pins` dropped the pin it was meant to be
+
+Issue 321, the second pass, round ten (`internal/extension/pins.go`, both programs).
+
+**The defect.** The hub and the node each read `extension_pins` with a loop that took `version` and `root` and ignored any other key. `{version: 1.0.0, rot: <digest>}` pinned the version and silently not the root, which is the integrity pin (a version is a label the publisher controls, 5.333), and `{}` pinned nothing at all: a typo in the one setting that exists to make a swapped extension fail, with nothing said. `gitfs_remotes` and `s3_buckets` already refuse a misspelt key by name.
+
+**Shown.** `extensionPins` on a hub configuration with a correct pin, one with `rot`, and `{}`: the root was `abc123`, empty, and empty (scratch test on the old code). The new test, on the shared parser, pins the correct forms and refuses six malformed ones by name.
+
+**The change.** One parser, `extension.ParsePins`, which both programs call (the two copies were the same code). A key that is not `version` or `root` is refused naming it; a pin that names neither, or a version that is an empty string, is refused as pinning nothing; the string form and the version-only and root-only mappings are as they were. A hub or node whose configuration had a typo in a pin now stops at start with the message, as it does for a bad `extension_trust_keys`: a configuration that was running unpinned will not start until it is fixed, which is the point.
+
+**Not verified.** An estate's real configurations, which may hold such an entry.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

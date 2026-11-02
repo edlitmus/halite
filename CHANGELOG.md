@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A misspelt or empty entry in `extension_pins` stops the hub or node at start.** `{version: 1.0.0, rot: <digest>}` pinned the version and silently not the root, and `{}` pinned nothing. Each is now refused by name, so a configuration that was running with a pin that did nothing will not start until it is corrected. DIVERGENCE 5.555.
+
 - **`halite-hub doctor` no longer warns that a git- or S3-backed hub serves nothing.** The file server check looked only at `file_roots`. It now counts a configured git remote or S3 bucket as something served. DIVERGENCE 5.554.
 
 - **A node's grains can no longer be replaced while a job is starting.** The grain refresh and a runtime `grains` change assigned the field while every job copied the node, which read it: a data race the race detector reports. The grains are now guarded. DIVERGENCE 5.553.
