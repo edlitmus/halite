@@ -36078,6 +36078,16 @@ Issue 321, the fourth audit pass, left open (`cmd/halite-node/enroll.go`).
 
 **Not verified.** That any real grain collector produces a value like this (none is known to; the test builds one); that the hub is happy with a grain that appears and then disappears between reports; `make check`.
 
+### 5.535 A reaction's structured positional argument stays refused: encoding it would not work
+
+Issue 321, the fourth audit pass, a question 5.522 left open (`internal/hub/reaction.go`, `internal/signature`).
+
+**The question.** 5.522 made a reaction refuse a mapping or a list in a positional `arg` rather than flatten it into Go's printing of a pointer, and asked whether it should instead be sent JSON-encoded.
+
+**The answer, shown.** A job's positional arguments are strings, and the binder does not parse a string into a mapping or a list: a JSON string given to a mapping-typed parameter is refused, while the same mapping as a keyword is accepted (`TestAJSONStringIsNotAMappingToTheBinder`). So an encoded structure would reach the function as the text of one and be refused there, later and further from the reaction that caused it. Refusing at parse time, with a message that points at `kwarg`, is the earlier and clearer of two refusals. No behaviour changes.
+
+**Not verified.** That every function's positional parameters go through this binder (the node's `CallPositional` was read, not exercised for every module); `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
