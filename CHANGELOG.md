@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A node that has one grain it cannot encode still reports the rest, and says which
+
+Previously one such grain (a NaN, say) meant no grains at all were sent, at connect or on refresh, with a warning that
+named nothing. The grain is left out and named in the node's log (DIVERGENCE 5.534).
+
 ### A relay's late update no longer leaves routes behind a relay that is not connected
 
 An update from a relay with no stream is held for up to 30 seconds for the stream to arrive and then discarded, instead of

@@ -617,9 +617,8 @@ func (n *node) refreshGrains(ctx context.Context, args *cli.Args) {
 			n.log.Warn(w.String(), "component", "grains")
 		}
 		n.grains = fresh
-		encoded, err := value.EncodeJSON(fresh, 0)
-		if err != nil {
-			n.log.Warn("could not encode refreshed grains", "error", err.Error())
+		encoded := encodeGrains(fresh, n.log.Warn)
+		if encoded == nil {
 			continue
 		}
 		client, _ := n.hubClient(args)
@@ -636,11 +635,43 @@ func (n *node) refreshGrains(ctx context.Context, args *cli.Args) {
 // grainsJSON encodes the node's facts through the ordered model's own
 // codec, so a 64-bit grain arrives at the hub as the integer it is.
 func grainsJSON(n *node) json.RawMessage {
-	raw, err := value.EncodeJSON(n.grains, 0)
-	if err != nil {
-		n.log.Warn("could not encode grains for the hub", "error", err.Error())
+	return encodeGrains(n.grains, n.log.Warn)
+}
+
+// encodeGrains encodes a node's grains, leaving out the ones that cannot be
+// encoded and saying which.
+//
+// A grain that has no JSON form -- a NaN or an infinity from a probe that
+// divided by zero, a type the codec does not know -- failed the encode of the
+// whole mapping, and the caller then sent no grains at all: a warning that
+// named nothing, and a hub that kept the node's old grains (DIVERGENCE 5.523)
+// or, for the refresh, was never told the new ones. Every other grain was
+// lost for the sake of one. Now the mapping is tried whole, and only if that
+// fails is it encoded a key at a time, each failing key named in the warning
+// and left out. Left out and not sent as null: a null grain would match a
+// target that asks for the grain to be unset, which is a statement the node
+// did not make (DIVERGENCE 5.534).
+func encodeGrains(m *value.Map, warn func(msg string, args ...any)) json.RawMessage {
+	raw, err := value.EncodeJSON(m, 0)
+	if err == nil {
+		return raw
+	}
+	kept := value.NewMap(m.Len())
+	var dropped []string
+	for _, e := range m.Entries() {
+		if _, err := value.EncodeJSON(e.Val, 0); err != nil {
+			dropped = append(dropped, value.KeyString(e.Key))
+			continue
+		}
+		kept.Set(e.Key, e.Val)
+	}
+	raw, err2 := value.EncodeJSON(kept, 0)
+	if err2 != nil {
+		warn("could not encode grains for the hub", "error", err2.Error())
 		return nil
 	}
+	warn("some grains cannot be encoded and are left out of what the hub is told, so it has no value for them",
+		"grains", strings.Join(dropped, ","), "error", err.Error())
 	return raw
 }
 
