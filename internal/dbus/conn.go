@@ -82,6 +82,9 @@ func (c *Conn) Hello() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(out) == 0 {
+		return "", fmt.Errorf("dbus: the bus answered Hello with no name")
+	}
 	name, _ := out[0].(string)
 	c.unique = name
 	return name, nil
