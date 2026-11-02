@@ -36182,6 +36182,18 @@ Issue 321, the second pass, round six (`internal/nodeevidence/verify.go`, `cmd/h
 
 **Not verified.** A chain actually written by a newer build (the existing test writes one by hand); the hub's anchors command, which reads the same stored hashes and is unchanged.
 
+### 5.544 The D-Bus decoder panicked, looped and allocated on what the peer sent
+
+Issue 321, the second pass, round six (`internal/dbus`).
+
+**The defect.** `decode` read lengths and signatures from the peer and trusted them. An empty variant signature, a bare `(` or `{`, and an array with no element type indexed or sliced past the end and panicked. An array of an element that occupies no bytes (an empty struct) never reached its end. Variants nest by data, so a message could make the recursion as deep as it was long. A header length near 4 GiB wrapped in the padding arithmetic and panicked on the slice, and a body length was allocated as stated, up to 4 GiB; the specification's limits are 64 MiB and 128 MiB. `Hello` indexed the reply body without checking it had one, the authentication line was read with no limit, and `x` and `d` came back as the unsigned integer holding their bits.
+
+**Shown.** Hand-built signals: the old decoder panicked for four signatures and a header length, and accepted the thousand-deep variants; the new test fails on it for each. A bare `a` with no length bytes after it already returned an error and is not the case. Whether a real bus could deliver any of these is not shown: the bus validates messages before it routes them, which was not checked, so this is hardening against a peer rather than a defect seen in use.
+
+**The change.** An empty or unclosed signature, an array with no element type, an array element that takes no bytes, and nesting past 64 are errors; a message over the specification's sizes is refused before anything is allocated; `Hello` checks its reply; the authentication line is read through `ReadSlice`; `x` is an `int64` and `d` a `float64`. The one caller in the tree, the systemd binding, reads neither type.
+
+**Not verified.** A real system bus, and a reply from a real systemd, which the existing tests of the binding stand in for.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

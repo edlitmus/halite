@@ -131,10 +131,13 @@ func (c *Conn) auth() error {
 }
 
 func (c *Conn) readLine() (string, error) {
-	line, err := c.r.ReadString('\n')
+	// ReadSlice, which stops at the reader's buffer rather than growing
+	// with a peer that never sends a newline.
+	raw, err := c.r.ReadSlice('\n')
 	if err != nil {
 		return "", err
 	}
+	line := string(raw)
 	return strings.TrimRight(line, "\r\n"), nil
 }
 

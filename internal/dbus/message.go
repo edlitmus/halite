@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 )
 
 // Message types (D-Bus spec §"Message Types").
@@ -218,7 +219,24 @@ func encode(m *Message) ([]byte, error) {
 type dec struct {
 	b   []byte
 	off int
+	// depth is how many containers and variants enclose the value being
+	// read. See maxDepth.
+	depth int
 }
+
+// maxDepth bounds how deeply a value may nest. The specification allows 32
+// levels of array and 32 of struct, and a variant adds one for each of its
+// own; the decoder is recursive, so an unbounded depth is stack, and a
+// message the peer controls could ask for as much as it is long.
+const maxDepth = 64
+
+// Limits from the specification: a message is at most 128 MiB, and its
+// header fields at most 64 MiB. The lengths come from the peer and were
+// allocated as stated, up to 4 GiB.
+const (
+	maxMessage = 128 << 20
+	maxHeader  = 64 << 20
+)
 
 func (d *dec) need(n int) error {
 	if d.off+n > len(d.b) {
@@ -281,6 +299,20 @@ func (d *dec) getSig() (string, error) {
 
 // getValue unmarshals one value of the single complete type `sig`.
 func (d *dec) getValue(sig string) (any, error) {
+	// A signature is read from the wire, and an empty one, or a bare `(`
+	// or `{`, indexed past its end: the decoder panicked on input from the
+	// peer. DIVERGENCE 5.544.
+	if sig == "" {
+		return nil, fmt.Errorf("dbus: an empty type signature")
+	}
+	if (sig[0] == '(' || sig[0] == '{') && (len(sig) < 2 || sig[len(sig)-1] != map[byte]byte{'(': ')', '{': '}'}[sig[0]]) {
+		return nil, fmt.Errorf("dbus: the type %q is not closed", sig)
+	}
+	if d.depth >= maxDepth {
+		return nil, fmt.Errorf("dbus: values nest deeper than %d levels", maxDepth)
+	}
+	d.depth++
+	defer func() { d.depth-- }()
 	switch sig[0] {
 	case 'y':
 		return d.getByte()
@@ -307,6 +339,14 @@ func (d *dec) getValue(sig string) (any, error) {
 		}
 		v := order.Uint64(d.b[d.off:])
 		d.off += 8
+		// Each in the Go type its name says: a signed value and a double
+		// were both handed back as the unsigned integer holding their bits.
+		switch sig[0] {
+		case 'x':
+			return int64(v), nil
+		case 'd':
+			return math.Float64frombits(v), nil
+		}
 		return v, nil
 	case 's', 'o':
 		d.align(4)
@@ -323,6 +363,9 @@ func (d *dec) getValue(sig string) (any, error) {
 		return d.getValue(vsig)
 	case 'a':
 		elem := sig[1:]
+		if elem == "" {
+			return nil, fmt.Errorf("dbus: an array with no element type")
+		}
 		n, err := d.getU32()
 		if err != nil {
 			return nil, err
@@ -336,9 +379,15 @@ func (d *dec) getValue(sig string) (any, error) {
 		}
 		var out []any
 		for d.off < end {
+			before := d.off
 			v, err := d.getValue(elem)
 			if err != nil {
 				return nil, err
+			}
+			// An element that takes no bytes (an empty struct) would
+			// never reach the end.
+			if d.off == before {
+				return nil, fmt.Errorf("dbus: an array of %q elements that occupy no bytes", elem)
 			}
 			out = append(out, v)
 		}
@@ -387,6 +436,10 @@ func decode(r io.Reader) (*Message, error) {
 	bodyLen := order.Uint32(head[4:8])
 	m.Serial = order.Uint32(head[8:12])
 	hdrLen := order.Uint32(head[12:16])
+	if hdrLen > maxHeader || bodyLen > maxMessage || uint64(hdrLen)+uint64(bodyLen) > maxMessage {
+		return nil, fmt.Errorf("dbus: a message claims %d header and %d body bytes, over the %d limit",
+			hdrLen, bodyLen, maxMessage)
+	}
 
 	// Header fields, then padding up to the 8-byte boundary the body
 	// begins on.
