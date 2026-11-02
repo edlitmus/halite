@@ -36066,6 +36066,18 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/fleet.g
 
 **Not verified.** A relay across a real network, where announcement and connection may be further apart than 30 seconds (a relay's subscribe request carries its subordinates and `acceptRelay` routes them, so a reconnect announces them again; that path is exercised by the existing relay tests, not by a network); `make check`.
 
+### 5.534 One grain that could not be encoded cost the hub all of a node's grains
+
+Issue 321, the fourth audit pass, left open (`cmd/halite-node/enroll.go`).
+
+**The defect.** `grainsJSON` encoded the node's whole grain mapping and, when that failed, logged a warning that named nothing and returned no grains. A grain with no JSON form, a NaN or infinity from a probe that divided by zero or a type the codec does not know, therefore lost the hub every other fact the node had: at connect it sent none (5.523 made the hub keep the old ones rather than erase them, which is a mitigation and not an answer), and on the periodic refresh the new grains were never pushed at all, so a node was targeted on stale facts with one line in its log that did not say why.
+
+**Shown.** A mapping of three grains, one NaN: the old code sent nothing, and with the per-key path made to give up again the new test fails the same way (no grains sent). The new test also holds that the other two arrive with their values, that the bad one is absent, and that the warning names it; a second holds that grains that all encode produce no warning and the same bytes.
+
+**The change.** `encodeGrains` tries the whole mapping and, only if that fails, encodes a key at a time, leaving out each key that fails and naming it in the warning. Left out and not sent as null, because a null grain would match a target asking for the grain to be unset, which the node did not say. The refresh uses the same function.
+
+**Not verified.** That any real grain collector produces a value like this (none is known to; the test builds one); that the hub is happy with a grain that appears and then disappears between reports; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
