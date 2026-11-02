@@ -171,11 +171,11 @@ On 2026-11-02, at `main` `2dbc28a4`. This round read, in full unless noted: `int
 
 | What | Shown how | Status |
 |---|---|---|
-| A grain or pillar value that contains a colon can never be targeted: `splitKeyValue` splits at the *last* colon, so `G@hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff` looks for the key `hwaddr_interfaces:eth0:aa:bb:cc:dd:ee` and the value `ff`. A MAC address, an IPv6 address and any `host:port` value are out of reach of `-G`, `-P` and the compound `G@`. | five forms against a node holding that grain, all false | open. Salt tries every split point (`salt.utils.data.subdict_match`); that is from memory of its source, and Salt is not installed here, so the differential was not run |
-| `halite-hub ssh` sends the state tree as `map[string]string` inside JSON, so a file that is not valid UTF-8 (an image, an archive, a DER certificate) reaches the target with each invalid byte replaced by U+FFFD, and `file.managed` from it writes the corrupted bytes. Nothing refuses or warns. | `sshRequest` for `state.apply` over a tree holding the bytes `89 50 4e 47 ff fe 00 80`; the request decodes to `ef bf bd 50 4e 47 ef bf bd ef bf bd 00 ef bf bd` | open |
-| `halite-hub ssh --timeout 30` (no unit) is silently ignored and the run takes the five-minute default; `halite-hub run --timeout 30` refuses it. | `sshTimeout` with `30` returned 5m0s; with `-5s` it returned `-5s`, which `sshexec` then replaces with its own default | open |
-| `checkRootsAreNotTheHubsOwn` compares paths with `filepath.Abs`, which does not follow a symlink, so a `file_roots` entry that is a link to `state_dir` is not refused, and the hub serves its key store and job cache to every node, which is what the check exists to stop. | the state directory itself is refused; a symlink to it returns nil | open |
-| `tracing.ParseTraceParent` accepts an uppercase trace id and a version that is not hexadecimal (`zz-...`). The W3C format is lowercase hexadecimal (from memory of the specification, which was not consulted). | the two headers parsed as valid | open; low |
+| A grain or pillar value that contains a colon can never be targeted: `splitKeyValue` splits at the *last* colon, so `G@hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff` looks for the key `hwaddr_interfaces:eth0:aa:bb:cc:dd:ee` and the value `ff`. A MAC address, an IPv6 address and any `host:port` value are out of reach of `-G`, `-P` and the compound `G@`. | five forms against a node holding that grain, all false | fixed, 5.537 (#588). Salt tries every split point (`salt.utils.data.subdict_match`); that is from memory of its source, and Salt is not installed here, so the differential was not run |
+| `halite-hub ssh` sends the state tree as `map[string]string` inside JSON, so a file that is not valid UTF-8 (an image, an archive, a DER certificate) reaches the target with each invalid byte replaced by U+FFFD, and `file.managed` from it writes the corrupted bytes. Nothing refuses or warns. | `sshRequest` for `state.apply` over a tree holding the bytes `89 50 4e 47 ff fe 00 80`; the request decodes to `ef bf bd 50 4e 47 ef bf bd ef bf bd 00 ef bf bd` | fixed, 5.538 (#589) |
+| `halite-hub ssh --timeout 30` (no unit) is silently ignored and the run takes the five-minute default; `halite-hub run --timeout 30` refuses it. | `sshTimeout` with `30` returned 5m0s; with `-5s` it returned `-5s`, which `sshexec` then replaces with its own default | fixed, 5.539 (#590) |
+| `checkRootsAreNotTheHubsOwn` compares paths with `filepath.Abs`, which does not follow a symlink, so a `file_roots` entry that is a link to `state_dir` is not refused, and the hub serves its key store and job cache to every node, which is what the check exists to stop. | the state directory itself is refused; a symlink to it returns nil | fixed, 5.540 (#591) |
+| `tracing.ParseTraceParent` accepts an uppercase trace id and a version that is not hexadecimal (`zz-...`). The W3C format is lowercase hexadecimal (from memory of the specification, which was not consulted). | the two headers parsed as valid | fixed, 5.541 (#592) |
 
 ### Read, not run
 
@@ -195,6 +195,188 @@ On 2026-11-02, at `main` `2dbc28a4`. This round read, in full unless noted: `int
 
 ### Still unread
 
-By line count this round read about a fifth of what the earlier rounds listed. **Not read:** `internal/winsec`, `internal/dbus`, `internal/doctor`, `internal/nodeevidence`, the rest of `internal/tracing` (`otlp.go`, `tracer.go`, `span.go`, `settings.go`), the rest of `log.go`, and the `*_windows.go` and `*_other.go` files. In `cmd/halite-hub`: `run.go`, `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `relay.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node`: everything except the two files named above, with `enroll.go`, `main.go`, `evidence.go`, `commands.go`, `execute.go` and `metrics.go` the largest.
+By line count this round read about a fifth of what the earlier rounds listed. **Not read:** `internal/winsec`, `internal/dbus`, `internal/doctor`, `internal/nodeevidence`, the rest of `internal/tracing` (`otlp.go`, `tracer.go`, `span.go`, `settings.go`), the rest of `log.go`, and the `*_windows.go` and `*_other.go` files. In `cmd/halite-hub` (`run.go` was read in round seven): `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `relay.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node`: everything except the two files named above, with `enroll.go`, `main.go`, `evidence.go`, `commands.go`, `execute.go` and `metrics.go` the largest.
 
 **Not verified in round five.** No Salt differential, no real AWS endpoint, no real fleet, no FreeBSD jail run, and `make check`. The five shown items were run on the Linux workstation only.
+
+## Round six: `dbus`, `winsec`, `doctor`, `nodeevidence`, `tracing`, and parts of the two commands
+
+On 2026-11-02, at `main` after #587. Read in full: `internal/dbus`, `internal/winsec`, `internal/doctor` (`doctor.go`, `checks.go`), `internal/nodeevidence` (`evidence.go`, `digest.go`, `verify.go`, `receipt.go`, `anchors.go`), `internal/tracing` (`tracer.go`, `otlp.go`, `settings.go`, with `context.go` and `carrier.go` from round five), and in `cmd`: `halite-hub/relay.go`, and `halite-node/execute.go` (to the executor), `enroll.go` (lines 156 to 600) and `jobsignature.go`. Nothing is fixed in this round. Each lead says whether it was run.
+
+### Shown (a scratch test, run on this commit and then removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **A job whose module panics returns nil, and the executor dereferences it.** `executeJob` recovers the panic in a deferred function and calls `fail(ret, ...)`, but its result is unnamed, so the function returns the zero value, a nil `*job.Return`. `executor.Run` reads `ret.Success` on the next line, in a goroutine nothing recovers. The comment above the recover says a panicking module "must produce a failed return rather than take the agent down". | a registered function that panics, run through `executeJob`: the log line is written and the result is `nil`. The dereference in `executor.Run` is by reading; the executor itself was not run | fixed, 5.542 (#593) |
+| **A chain record edited and relabelled with an unknown schema verifies.** `Verify` checks a record's hash only when its schema is the one this build writes; for any other it checks the link and says "a newer halite, not a broken chain". The link compares the stored `hash` field, which the edit leaves alone, and the hub's anchors compare that same field, so neither sees it. `verify-evidence` prints "The chain holds: every record's contents match its hash". | three records written with `Log.Append`; the second one's detail changed to `cmd.run rm -rf` and its schema to `halite.evidence/99`: `OK()` true, no breaks, one unknown schema. The same edit with the schema left alone is caught (one break) | fixed, 5.543 (#594) |
+| `dbus.decode` panics on a header or body signature that is empty or is a bare `(`, from the peer. | a header field with an empty variant signature: `index out of range [0] with length 0`; one with `(`: `slice bounds out of range [1:0]`. A bare `a` returned an error | fixed, 5.544 (#595) |
+
+### Read, not run
+
+- `executeJob`, in the same function: nothing else catches a panic in `executor.Run`, so the loss is the node process and not one job. The test file has no test of a panic (grep: none).
+- `runConnect`: `hub_tries` is documented as "Reconnect attempts before giving up", and `attempt` is never reset, so a node with `hub_tries: 5` that stays connected for months stops after its fifth disconnection in total. The backoff only resets on a clean end of the stream, so after a few errors every reconnection waits 60 seconds, and there is no jitter. The comment above `runConnect` says "a job arriving here is logged and refused rather than run", which has not been true for a long time.
+- `doctor`: the extension check reads `require_signed_extensions`, which no declared setting is named, with a default of false; the setting a node enforces is `extension_require_signature`, default true. On a default node an unsigned extension is reported "They will load" (a warning) when the node refuses to load it. The remedy text names `extension_trust` (the setting is `extension_trust_keys`) and the queue check names `queue_depth` and `workers` (`reactor_queue_depth`, `reactor_workers`). One report of a setting nothing declares and two of names that are not the settings.
+- `nodeevidence.Log.Append`: a short write (a full disk, which `doctor` names as the usual reason) leaves partial bytes in the segment, and the next record is appended after them with no newline, so one failed record can cost the next good one too. `seal` closes the file before it renames, so a failed rename or an existing target leaves the log holding a closed file and every later `Append` fails until the process restarts.
+- `winsec.Others` reports an account only if its entry grants one of a set of read and write bits: an entry that grants only `DELETE` or `FILE_APPEND_DATA` is not reported, though either lets the account alter or replace the file; an entry marked inherit-only, which does not apply to the object itself, is reported. `enablePrivilege` reads `GetLastError` after `AdjustTokenPrivileges` returned success, which Go may do on another thread, so `ERROR_NOT_ALL_ASSIGNED` can be missed. `Entries` reads the SID of an object ACE at the layout of a plain one. Not run: nothing here builds on Linux.
+- `tracing`: a failed export is dropped with no counter and no log (`_ = t.Export.ExportSpans`), and `Dropped()` counts only the full queue, so a collector that is down shows zero. SPEC 26.2 asks for a counter behind every drop. One NaN attribute makes `json.Marshal` fail for the whole batch of up to 256 spans. A caller who sends `traceparent` with the sampled flag makes the hub record and export spans for its request whatever the configured ratio; that is parent-based sampling as designed, and is a decision, not a finding. With no exporter configured a flush dereferences nil.
+- `dbus`: `decode` allocates `bodyLen` and the padded header length as the peer states them (up to 4 GiB; the specification's limit is 128 MiB), and `Hello` indexes the reply body without checking it has one. An array of an empty struct type never advances and would loop for ever. `x` and `d` decode to `uint64`, so a signed 64-bit value or a double is not what the caller is given. The auth line is read without a limit.
+- `varlink`, `awsauth`, `metrics`: as in round five.
+- `halite-hub relay`: an upstream written as a bare IPv6 address contains a colon and so is not given a port.
+
+### Checked, no gap
+
+`nodeevidence` receipts: the payload is one fixed line per field, every field is held to an alphabet with no newline, and the time must print back identically, as the comment says; `VerifyReceipt` checks the node named in the receipt against the chain it is filed in. `Digest` is stable under reordering and tags types. `winsec` permission masks are the Windows values for full control, modify, read and execute, read and write. `Restrict` and `RestrictDir` give the owner, SYSTEM and Administrators and nobody else, protected from the parent.
+
+### Still unread
+
+**Not read:** `internal/doctor/fips.go` and the `disk_*.go` files, `internal/tracing/span.go`, the rest of `internal/log/log.go`, and the `*_windows.go` and `*_other.go` files outside `winsec`. In `cmd/halite-hub`: `run.go`, `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node` (`metrics.go` and `returner.go` were read in round seven, `extensions.go` and `schedule.go` in part): `main.go`, `commands.go`, `evidence.go`, `oneshot.go` apart from `writeInlineFile`, `trace.go`, `anchor.go`, `beacons.go`, `runtimeconfig.go`, `mine.go`, `rendersandbox.go`, `renewal.go`, `doctor.go`, and the rest of `execute.go` and `enroll.go`.
+
+**Not verified in round six.** No Windows machine (so nothing in `winsec` was run), no real bus, no real node process (the panic was run through `executeJob`, not the executor), no hub with anchors, and `make check`.
+
+## Round seven: the hub's `run` and the node's metrics, returner and schedule
+
+On 2026-11-02, after the round-six fixes were opened. Read in full: `cmd/halite-hub/run.go`, `cmd/halite-node/metrics.go` (to the serve loop), `cmd/halite-node/returner.go`; in part: `cmd/halite-node/schedule.go` (to `runScheduled`) and `cmd/halite-node/extensions.go` (to `registerExtensionFunctions`). Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **The node's `fun` label takes whatever name the hub sent.** `halite_node_jobs_total` and `halite_node_job_duration_seconds` are labelled with the job's function from the job, and a node counts a job for a function it does not have like any other (a failed return). The hub's own copy of the label was bounded by the name's shape (5.532); the node's is not. | 600 jobs named `junk.fnN` and then `test.ping` through `countJob`: 512 series, an `__overflow__` among them, and no series for `test.ping`. A fix (label is the name when `registry.Exec.Has` or a state function, else `other`) was written, passed the node's tests but for the one that pinned `fun="nosuch.function"`, and was not kept | fixed, 5.549 (#600) |
+
+### Read, not run
+
+- `run --ttl 500ms` is read by `seconds()` as `int(d.Seconds())`, which is 0, and 0 means the hub's default (15 minutes, and 15 minutes in the signed path): a sub-second or negative TTL is not refused and not applied. The other duration flags of `run` read the same function.
+- `operatorClient` and `portOf` take the port from the last colon of `listen`, so a `listen` of `[::1]` (no port) gives `:1]`; an `--hub` that is a bare IPv6 address contains a colon and is read as host and port.
+- `resolveTarget` reads a matcher flag's value that is `true`, `yes`, `1`, `on`, `false`, `no`, `0` or `off` as a switch and not a target, so `run -L 1 test.ping` takes `test.ping` for the target and has no function. A node or glob named like one of those words cannot be given to a matcher flag.
+- The comment that opens `gather` sits above `seconds` and describes neither.
+
+### Checked, no gap
+
+`prepareSigning` builds the job from the request and passes it through `job.SigningPayload`, as the node does. The functions that run other functions later, `schedule.add` and `schedule.modify` with `schedule.run_job`, are marked `arbitrary_code`, so a node requiring signatures for that class refuses an unsigned one; `schedule.enable_job` is not, and enables an entry the operator wrote. The node's schedule has no pillar source (SPEC 20.1 lists one; DIVERGENCE records it), which is why a hub cannot schedule something the signature check would have refused. The node's metrics endpoint has no plaintext mode and verifies a scraper's certificate when `metrics_client_ca` is set.
+
+**Not verified in round seven.** Prometheus, a real hub, and `make check`.
+
+## Round eight: the file server backends, the node's environment controls, and the job cache commands
+
+On 2026-11-02. Read in full: `cmd/halite-hub/gitfs.go`, `s3fs.go`, `extpillar.go`, `jobs.go` (to `export`), `cmd/halite-node/anchor.go`, `enroll.go`'s remaining handlers, and in `main.go` the identity resolution (lines 447 to 560) and `checkEnvPermitted`; with `internal/gitfs/backend.go`'s `Update` and `sweep`, which the first of them calls. Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **One failed git remote drops the environments it served.** `Backend.Update` keeps the last good tree when every remote fails, and says so; when only some fail it replaces what is served with what the others returned. A hub with two remotes, one of which is unreachable for one update, stops serving the failed remote's branches (`staging`), and every node asking for them gets a missing tree, though the last good checkout is on disk. The error is "some gitfs remotes served nothing". | two local repositories, `main` in one and `staging` in the other; one update serves `[base staging]`; the second repository is removed and the next update serves `[base]` | fixed, 5.550 (#601) |
+| **The node's environment allowlist and denylist use `path.Match`**, which the rest of the tree left for fnmatch (5.501) because its negation is `[^x]` and not `[!x]`. `[!b]*` as a denylist denies `base` and permits `dev`; as an allowlist `[!p]*` refuses `base` and permits `prod`: the opposite of what it says, in the control SPEC 28.3 asks for. And a malformed pattern is skipped with the error discarded, so a denylist entry that does not parse (`prod[`) denies nothing, where an allowlist one at least fails shut. | `checkEnvPermitted` against three configurations, as above | fixed, 5.551 (#602) |
+
+### Read, not run
+
+- `jobs active` lists the 200 most recent jobs and answers "nothing is in flight" when none of them is, so a batch older than that, still running, is reported as not there. (5.536's `AbandonRunnerJobs` has the same window, 5000, and says so.)
+- `anchorProblem` logs a conflict, which is the signal that the evidence chain was rewritten, once at error level and then as debug lines for every later report until the process restarts, and there is no metric of it. `verify-evidence --anchors` finds it from the hub's file; nothing a monitor watches does.
+- `openJobs` joins `state_dir` and `/jobs` as a string, where the hub joins with `filepath.Join`; the two agree on unix.
+
+### Checked, no gap
+
+`Backend.Update`'s all-failed and all-refused paths keep the last tree and do not sweep it (5.293). `s3Provider` and `s3Buckets` read per-bucket keys against a closed list and refuse a misspelt one. An external pillar source is hard-fail unless `ext_pillar_fail` is exactly `ignore`, so a typo fails in the safe direction. A receipt is checked against the head the node reported, and then against the CA it pins, before it is filed.
+
+**Not verified in round eight.** A real git remote going away and returning over a network, a real S3 endpoint, and `make check`.
+
+## Round nine: the node's evidence, beacons, mine and commands, and the hub's runner command
+
+On 2026-11-02. Read in full: `internal/doctor/fips.go`, `internal/tracing/span.go`, `cmd/halite-node/evidence.go` (to `verify-evidence`), `mine.go`, `beacons.go`, `commands.go` (to `stateCompiler`), `cmd/halite-hub/runner.go`; with `useHubPillar` from `enroll.go` and `internal/beacon/engine.go`'s `pollDue`. Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **Every beacon poll makes the hub compile this node's pillar.** The engine's `Context` is `n.context(n.compilePillarOrNothing())`, so each poll of each due beacon calls `n.hubPillar`, which is one request to the hub with no cache, and the hub compiles pillar for it, external sources included (a Secrets Manager fetch, for one). The default interval is a minute; a beacon watching a file is usually set to seconds. A fleet of a thousand nodes with three beacons at the default asks the hub for about fifty compilations a second. | a node with a hub-pillar function that counts its calls and one `load` beacon at an interval of 1 second: 4 requests in 3.5 seconds | fixed, 5.552 (#603) |
+
+### Read, not run
+
+- `halite-hub runner <fun>` calls the runner and then reads `--out`: `cli.ParseFormat` is after `client.Runner`, so `--out tabel` runs the runner, which may be a key decision or an orchestration, and then exits with a usage error. `run` checks its flags before it sends anything (5.225); this is the same defect in the other command.
+- A span's status message (`span.Fail(err)`) and attributes are exported as they are. The redactor is applied by the logger, and nothing in `internal/tracing` calls it, so an error whose text holds a secret goes to the collector in clear. Nothing in the tree was found to put one there.
+- `evidenceLog` opens once: after one failed open (a full disk at start, a directory that was not yet writable) `opened` stays true, every later record is dropped without a log line (the first failure is reported and the error cleared), and `halite_node_evidence_failures_total` does not count them. The gauge `halite_node_evidence_log_open` reads 0, which is the signal; the doctor check reads the directory.
+- `arg_digest` in an evidence record digests the argument text after the redactor has run, so for a job whose arguments hold a registered secret it is not the digest the hub would compute from the real arguments; the comment on `DigestString` says the digest is for comparison with the hub's copy.
+
+### Checked, no gap
+
+`FIPSConsistency` covers the four combinations of kernel and artifact and says which is which. `applyStateKwargs` refuses a key it does not read and `test=False` over a node that is in test mode. The mine publishes through the same replace and allow-target rules as the hub's runner.
+
+**Not verified in round nine.** A real hub counting compilations, a real collector, and `make check`.
+
+## Round ten: the one-shot node, runtime configuration, the hub's doctor, orchestration and extension settings
+
+On 2026-11-02. Read in full: `cmd/halite-node/oneshot.go` (the rest of it), `runtimeconfig.go`, `renewal.go`; `cmd/halite-hub/orch.go`, `doctor.go` (the checks, to the disk check), `extensions.go`. Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **`n.grains` is written while jobs read it.** `reloadRuntimeConfig("grains")` (a runtime `grains.*` call) and the refresh loop (`enroll.go`) assign `n.grains`; `forJob`, which every job starts with, copies the whole node, `grains` field included, with no lock. | the real `reloadRuntimeConfig` and `forJob` in two goroutines under `-race`: `DATA RACE`, a write in `reloadRuntimeConfig` and a previous read in `forJob`. The package's own race run does not cover it, because nothing runs the two together | fixed, 5.553 (#604) |
+| **`halite-hub doctor` warns that nothing can be served on a hub that serves from git or S3.** `hubFileServerCheck` reads `file_roots` for the environment and nothing else: with `fileserver_backend: [git]` and no local roots it says "reachable and has no roots", whose remedy says every `source:` will fail to resolve. | a hub configuration of a git backend and one remote: `status=warn detail="file_roots for base is reachable and has no roots"` | fixed, 5.554 (#605) |
+| **A misspelt key in an `extension_pins` entry drops the pin it was meant to be.** The entry is read key by key and a key that is not `version` or `root` is ignored, where `gitfs_remotes` and `s3_buckets` refuse one by name. `{version: 1.0.0, rot: <digest>}` pins the version and not the root, which is the integrity pin (H-02, 5.333); `{}` pins nothing. Nothing says so. The node reads its pins by the same code. | `extensionPins` on a hub configuration with one correct, one misspelt and one empty entry: `root` was `abc123`, empty, and empty | fixed, 5.555 (#606) |
+
+### Read, not run
+
+- `halite-hub orch run`, `resume`, `show` and `list` call the runner and then read `--out`, as `runner` does (round nine): a bad `--out` on `orch run` starts the orchestration and exits with a usage error. `orch list --limit abc` is sent to the hub as a string.
+- The one-shot request's `timeout_seconds` is sent by `halite-hub ssh` for a roster target that sets one and is declared in `OneshotRequest` and read nowhere: the run is bounded by the hub's own timeout and the target's `ConnectTimeout`, so the field does nothing.
+- `hubCertificateCheck` represents a certificate it cannot read as `&x509.Certificate{}`, which the expiry check reports as expired an enormous time ago; the label carries the read error, so the message is findable and the number is nonsense.
+
+### Checked, no gap
+
+The one-shot node applies `env_allowlist` and `env_denylist` through `executeJob`, and says in its log that it does not check a signature (the caller already has a shell). `saveRuntimeConfig` writes through `atomicfile`. Renewal holds the identity lock for the read and the write. `orch` refuses nothing it should accept and sends `--test` only for the forms that take it.
+
+**Not verified in round ten.** A real node under load for the grains race (the detector shows the access, not how often it is lost), and `make check`.
+
+## Round eleven: the extension commands, the hub's evidence command, the node's doctor, tracing and render sandbox
+
+On 2026-11-02. Read in full: `cmd/halite-hub/extensionrun.go`, `evidence.go`, the flag sections of `extensioncmd.go`; `cmd/halite-node/doctor.go`, `trace.go` (to `tracedFiles`), `rendersandbox.go`. Nothing is fixed in this round.
+
+### Read, not run
+
+- **`halite-node doctor`'s "does the file differ from what this process is running" compares the configuration with itself.** `nodeConfigCheck` loads the file, and `n` was loaded from the same file a moment earlier by `setup` in the same process, so `unchanged` is `err == nil && len(warnings) == len(n.cfg.Warnings)`: the warning counts of two reads of one file. The check can never see the agent's configuration, which is another process, and it says "loads, and matches what this process is running" whatever the agent started with. (The only thing it can find is a file that changed between those two reads.) Established by reading; there is no second process to compare with in the code.
+- **`extensions run --timeout` that does not parse, or is not positive, is taken as 60 seconds without a word** (`parseRunTimeout`), where `extensions verify` refuses one (`verifyDuration`) and `ssh --timeout` was changed to (5.539). The same defect a third time, in a developer command.
+- **A job's render sandbox is a child process of its own.** A job runs on a copy of the node (`forJob`), `renderEngine` creates the sandbox on that copy when `render_sandbox` is on, and `closeRenderSandbox`, which `runConnect` defers on the agent's node, closes the agent's, which is never created: each job's child is released when its pipes are finalised, not when the job ends. Not run: the sandbox re-executes the test binary, which the harness does not isolate.
+- A node's tracing span for a job is named `job <function>` with the function as the hub sent it, so span names carry the same unbounded names the node's metric label did (5.549).
+
+### Checked, no gap
+
+`extensions run` reports a handshake that names nothing, declares no version or an unknown kind, and refuses a directory and a non-executable file by name. `halite-hub evidence anchors` prints the hub's file byte for byte and refuses a node id that is not a path. The node's doctor reads the FIPS state from the `fips_mode` grain, the same source a tree targets on, and the certificate expiry check lists the node certificate and the CA.
+
+**Not verified in round eleven.** A running agent and a doctor run against it, a real sandbox child, and `make check`.
+
+### Still unread
+
+the body of `extensioncmd.go` and the end of `cmd/halite-node/trace.go`; the Windows files named in round twelve. Everything else listed in the earlier rounds has been read at least once.
+
+## Round twelve: the node's `state show_*` and `grains` commands, the logger, and the Windows process and file code
+
+On 2026-11-02. Read in full: `cmd/halite-node/commands.go` (from `stateCompiler`), `cmd/halite-hub/main.go` (the dispatch), `internal/log/log.go` (from `Log`), and the Windows files `internal/bridge/sandbox_windows.go`, `internal/exec/proc_windows.go`, `credential_windows.go`, `internal/fileperm/fileperm_windows.go` and `internal/atomicfile/atomicfile_windows.go`. Nothing is fixed in this round, and no Windows machine was available to run any of the last group.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **`halite-node state show_lowstate`, `show_highstate` and `show_sls` print a registered secret in clear.** `state apply`, `pillar` and `doctor` run their output through the redactor; these three write the compiled states with `n.out`, which does not, and the only hand-made exception is `runas_password` in `renderLow`. A secret a state carries as an argument (a password in `contents:`, a token in a command) appears whole. | a node whose `returner_smtp_password` is registered as a secret (`Holds` true, `Scrub` masks it) and a state holding the same text in `contents:`: all three commands exit 0 with the secret in the output | open |
+
+### Read, not run
+
+- **Both Windows job objects are assigned after the process has started.** `exec.confineTree` (every command a state or `cmd.run` starts) and `bridge.applyPlatform` (every extension) create the job, start the process, and then call `AssignProcessToJobObject` from `afterStart`. A child the process forks before that call is not in the job, so `KILL_ON_JOB_CLOSE` and the cancel that terminates the job do not reach it: the timeout orphan-child defect the Linux side fixed with a process group (the memory of OSRunner), left open in a window. The usual remedy is to create the process suspended and resume it after assignment; Go's `os/exec` has no suspended start, so it would be `CREATE_SUSPENDED` through `SysProcAttr` and a resume through the thread handle. Not run: there is no Windows machine here.
+- `exec.confineTree` returns no-ops when the job cannot be created or the limit cannot be set, and ignores a failed assignment, without a log line: a command that was meant to be confined is not, silently. The extension version at least returns an error.
+- `fileperm_windows.Apply` restricts a path to its owner, SYSTEM and Administrators only when the requested mode has no group or other bits; a mode such as `0640` is `chmod`ed (which on Windows is the read-only attribute) and leaves the parent's access list in place, which may be wider than the group the mode named.
+- `Logger.With` builds a child with its own mutex and the parent's writer, so the parent's and the child's lines can interleave when the writer is a `MultiWriter` over stderr and a file (the two writes are separate calls). In the console form a message that contains a newline starts a line of its own.
+- `atomicfile` treats `ERROR_ACCESS_DENIED` as transient for two seconds, so a real permission error costs two seconds per call before it is reported.
+
+### Checked, no gap
+
+`runLint` counts a render warning as a problem and exits 1. `grains get` of a missing key answers an empty string, as Salt does. `maskValue` masks a string that is a registered secret as a whole and scrubs the rest, in a nested mapping or list. The hub's command dispatch refuses `files` by name as unbuilt. `Log` scrubs every field, an error and a stringer included, and the message, before it picks a form.
+
+**Not verified in round twelve.** Any Windows behaviour, and `make check`.
+
+### Still unread
+
+The remaining Windows files outside `winsec` and the ones above (`internal/grains/platform_windows.go`, `winsvc`, `wintask`, `winreg`, the `builtin` `*_windows.go` modules, `exec/shell_windows.go`, `script_windows.go`), and the `*_other.go` stubs. Everything else on the lists in the earlier rounds has been read at least once.
+
+## Closed afterwards (2026-11-02, #587 to #606)
+
+Every lead that was shown in rounds five to ten was fixed and merged, each with a test that fails when the fix is taken out and a ledger entry: 5.537 to 5.555 (#588 to #606). Four read-only leads were fixed as well, after being read and then shown by their tests: `hub_tries` and the reconnect wait (5.546, #597), the settings the programs read and `doctor` named wrongly (5.545, #596), the evidence log's failed write and seal (5.547, #598), and a failed span export (5.548, #599). The others were not fixed unless a row above says so: the `runner` and `orch` commands reading `--out` after the call, the one-shot `timeout_seconds` that nothing reads, the Windows leads of `winsec`, the unbounded `traceparent`-driven sampling (a design decision), the metric for a failed span export (needs the docs row, alert and dashboard), and the hub returner's `id`, which nothing sets. Round eleven's and twelve's leads, including `state show_*` printing a registered secret and the Windows job objects assigned after the process starts, are open.
+
+Four of the merges needed a fix of their own after CI, and each was a failure of the change and not of the runner: `math/rand` in the reconnect jitter (the buildpolicy test, SPEC 25.3), a truncate through an append-only handle on Windows (the evidence log), a beacon the Windows node does not run (the beacon pillar test), and a CHANGELOG count that a restack dropped. Several runs lost a macOS runner and were re-run. **Not verified for any of the fixes:** `make check`, a real fleet, and Windows itself beyond what the CI legs showed.
