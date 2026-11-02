@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A module that panics is now a failed job and not a stopped node.** `executeJob` recovered the panic but returned nil, which the executor read; the agent exited. The job now returns a failure saying it panicked, and the next job runs. DIVERGENCE 5.542.
+
 - **A `traceparent` header that is not lowercase hexadecimal is no longer adopted.** An uppercase id or a non-hex version was accepted; the trace now starts afresh. DIVERGENCE 5.541.
 
 - **A `file_roots` entry that is a symlink to the hub's state is now refused at start.** The check compared paths without following links, so `/srv/salt` linked to the state directory would have served the key store and job cache to every node. DIVERGENCE 5.540.
