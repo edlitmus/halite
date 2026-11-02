@@ -63,6 +63,7 @@ func (n *node) startTracing() {
 	if n.tracer == nil {
 		return
 	}
+	n.tracer.OnExportError = tracing.WarnOnExportError(n.log.Warn)
 	n.tracer.Start()
 	traceShutdown = n.stopTracing
 }
@@ -83,6 +84,10 @@ func (n *node) stopTracing() {
 	if dropped := n.tracer.Dropped(); dropped > 0 {
 		n.log.Warn("spans were dropped because the export queue was full",
 			"dropped", dropped, "component", "tracing")
+	}
+	if failed := n.tracer.Failed(); failed > 0 {
+		n.log.Warn("spans were dropped because the exporter failed",
+			"dropped", failed, "component", "tracing")
 	}
 }
 

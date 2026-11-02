@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,6 +47,14 @@ type Tracer struct {
 	stop    chan struct{}
 	stopped chan struct{}
 	dropped atomic.Int64
+	// failed counts the spans in batches the exporter did not take.
+	failed atomic.Int64
+
+	// OnExportError, when set, is told of each batch that did not export,
+	// from the exporter's own goroutine. A failed export used to be thrown
+	// away without a word, so a collector that was down showed no dropped
+	// spans anywhere. DIVERGENCE 5.548.
+	OnExportError func(err error, spans int)
 }
 
 // Exporter sends a batch somewhere.
@@ -136,6 +145,15 @@ func (t *Tracer) Stop(ctx context.Context) {
 // Reported rather than logged per span: a hub under enough load to drop
 // spans would produce a log line per drop, which costs more than the
 // tracing did. The hub turns this into a counter.
+func (t *Tracer) Failed() int64 {
+	if t == nil {
+		return 0
+	}
+	return t.failed.Load()
+}
+
+// Dropped is how many spans were lost to a full queue. Spans lost to an
+// exporter that failed are Failed.
 func (t *Tracer) Dropped() int64 {
 	if t == nil {
 		return 0
@@ -234,8 +252,19 @@ func (t *Tracer) run() {
 		// A deadline of its own: an export that hung would hold the
 		// queue and turn dropped spans into every span.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		_ = t.Export.ExportSpans(ctx, t.Service, t.Version, batch)
+		var err error
+		if t.Export == nil {
+			err = errors.New("no exporter is configured")
+		} else {
+			err = t.Export.ExportSpans(ctx, t.Service, t.Version, batch)
+		}
 		cancel()
+		if err != nil {
+			t.failed.Add(int64(len(batch)))
+			if t.OnExportError != nil {
+				t.OnExportError(err, len(batch))
+			}
+		}
 		batch = batch[:0]
 	}
 
@@ -314,3 +343,27 @@ func (AlwaysSample) SampleRoot(TraceID) bool { return true }
 type NeverSample struct{}
 
 func (NeverSample) SampleRoot(TraceID) bool { return false }
+
+// WarnOnExportError is an OnExportError that logs, and not every time: the
+// first failure, then at most one a minute, with how many spans the failures
+// since the last line have cost. A collector that is down fails every batch,
+// and a line for each would fill the log with the one fact.
+func WarnOnExportError(warn func(msg string, kv ...any)) func(error, int) {
+	var (
+		mu      sync.Mutex
+		last    time.Time
+		pending int
+	)
+	return func(err error, spans int) {
+		mu.Lock()
+		defer mu.Unlock()
+		pending += spans
+		if !last.IsZero() && time.Since(last) < time.Minute {
+			return
+		}
+		last = time.Now()
+		warn("spans could not be exported and are dropped", "error", err.Error(),
+			"spans", pending, "component", "tracing")
+		pending = 0
+	}
+}

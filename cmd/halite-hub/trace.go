@@ -41,6 +41,10 @@ func buildTracer(cfg *config.Config, log *hlog.Logger, service string) *tracing.
 			"error", err.Error(), "component", "tracing")
 		return nil
 	}
+	if t == nil {
+		return nil
+	}
+	t.OnExportError = tracing.WarnOnExportError(log.Warn)
 	t.Start()
 	return t
 }
@@ -60,5 +64,9 @@ func stopTracer(t *tracing.Tracer, log *hlog.Logger) {
 	if dropped := t.Dropped(); dropped > 0 {
 		log.Warn("spans were dropped because the export queue was full",
 			"dropped", dropped, "component", "tracing")
+	}
+	if failed := t.Failed(); failed > 0 {
+		log.Warn("spans were dropped because the exporter failed",
+			"dropped", failed, "component", "tracing")
 	}
 }

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A tracing collector that is down is no longer silent.** A failed export was discarded with no log line and no count. The first failure is now logged, then at most one line a minute with the spans lost, and the shutdown line says how many the exporter cost. One NaN or infinite span attribute no longer fails the whole batch. There is still no metric for it. DIVERGENCE 5.548.
+
 - **A failed write or seal no longer costs the evidence log the next record as well.** A write that failed part way left partial bytes that the next record was appended after, and a refused seal left the log holding a closed file, failing every later record until a restart. The segment is cut back to the last whole record, and a segment that cannot be sealed keeps growing and taking records. DIVERGENCE 5.547.
 
 
