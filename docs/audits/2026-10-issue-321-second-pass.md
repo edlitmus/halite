@@ -115,7 +115,7 @@ On 2026-10-31, at `main` `fc79b8cc` and after. Read in full: `subscribe.go`, `ev
 **Read, not shown (round three).**
 - ~~An update arriving after the stream has gone leaves routes.~~ Shown and fixed, 5.533 (#580): held for the stream for 30 seconds (chosen, not measured), then dropped. An update before the stream is still legitimate and still works.
 - ~~The hook route in the API, `/v1/hook/{path...}`, still keeps its tail in the `route` label.~~ Shown and fixed, 5.529 (#576): 612 POSTs to distinct paths made 612 labels. A hook request is still unauthenticated, as it is meant to be.
-- `halite-hub keys accept|reject|revoke|delete` run at a terminal is another process and publishes no `halite/key/...` event; whether the reconcile loop should publish what it sees changed on disk is a decision (5.511).
+- ~~`halite-hub keys accept|reject|revoke|delete` run at a terminal publishes no event.~~ Decided and fixed, 5.536: the reconcile loop announces a change it sees in the store, tagged `via: terminal` and with no principal, because the store does not record who ran the command.
 - ~~`event.replay` takes its `limit` before the caller's scope filter.~~ Shown and fixed, 5.525 (#573): a `web*` caller behind ten `db1` events was handed none of its three. A scan cap of 10,000 events per call is chosen, not measured.
 - ~~`identify` checks that a signed job's identifier is unused and the job is stored later.~~ Shown (with the interleaving forced by a seam) and fixed, 5.531 (#578): two of two were accepted. How often a real hub loses the race is not known.
 - ~~A runner job is recorded `dispatched` with no expiry.~~ Fixed, 5.528 (#575): the hub closes the ones a previous run left, once, at startup. The test writes the orphan; no hub was killed mid-call.
@@ -157,8 +157,8 @@ On 2026-11-01, at `main` `5b6ff546`. Read in full: `jobs.go`, `mine.go`, `nodes.
 - ~~`returned` publishes the state-result tag on the node's `Out`.~~ Fixed, 5.517 (#562): the recorded job function decides.
 - ~~`JobStatus.Delivered` reads as arrival.~~ It records an attempt; the documentation said otherwise and now says so, 5.524 (#570). The field's name is unchanged.
 - ~~`MineStore.Update` is an unlocked read-modify-write.~~ Shown and fixed, 5.520 (#566). ~~A deleted node's mine was never cleared.~~ Fixed, 5.521 (#567), for the runner and for a delete seen by the reconcile loop; a revoked node's data is kept.
-- ~~A `caller` reaction's `tgt` is ignored; a non-scalar `arg` is flattened.~~ Both refused when parsed, 5.522 (#568). Whether structured args should be JSON-encoded instead is open.
-- ~~A subscribe with a version and no grains overwrites the cached grains.~~ Shown and fixed on the hub side, 5.523 (#569). `grainsJSON` still returns nothing on an encode failure rather than saying so, and no node that really fails to encode was made.
+- ~~A `caller` reaction's `tgt` is ignored; a non-scalar `arg` is flattened.~~ Both refused when parsed, 5.522 (#568). Whether structured args should be JSON-encoded instead was answered, 5.535: no, the binder does not parse a string into a mapping, so refusing at parse time is the earlier refusal. A test pins it.
+- ~~A subscribe with a version and no grains overwrites the cached grains.~~ Shown and fixed on the hub side, 5.523 (#569). `grainsJSON` returned nothing on an encode failure rather than saying so. Fixed, 5.534: a grain that cannot be encoded is left out and named, and the rest are sent. No real collector is known to produce one; the test builds it.
 - Checked, no gap: the API's `GET /v1/jobs` and `/v1/jobs/{jid}` go through the scoped `jobs.list_jobs` and `jobs.list_job` runners (5.516's note). Not compared: whether the runner scope and 5.513's function rule agree for every policy.
 
 **Not verified in round four.** No real node, relay or operator policy file, no FreeBSD jail run for 5.513, and `make check`.
