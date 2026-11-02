@@ -36018,6 +36018,18 @@ Issue 321, the third audit pass, left open in round three (`internal/api/server.
 
 **Not verified.** Whether any other prefix has a tail a caller chooses (`PathPillar`, `PathKey` and `PathOrchJob` were read, not exercised with unknown tails; an unknown tail on a route the mux does not know falls to `(unmatched)`); a Prometheus scrape; `make check`.
 
+### 5.530 A file replaced while it was served went out under the wrong digest
+
+Issue 321, the third audit pass, left open in round three (`internal/hub/files.go`, `internal/fileserver/hash.go`).
+
+**The defect.** `file` opened the file, hashed it by path (`HashOf` opens it again), and sent the first handle. A deploy that replaces a file by rename, which is how a tree is deployed without a half-written file in it, landing between the two sent the old body under the new body's digest in `ETag` and `X-Halite-Hash`. The node refuses a body whose digest differs, so it failed safe and retried, a refusal the hub caused and could not explain. Whether a node that already held the new digest was also answered `304` for a body it had not been sent follows from the entity tag being wrong and was not run.
+
+**Shown.** The replacement made between the open and the hash, through a test seam, the real handler called: the old code sent `"version one\n"` under the digest of `"version two..."` (both headers wrong); with the old call put back after the fix, the test fails the same way.
+
+**The change.** `fileserver.HashFile` hashes an open handle and rewinds it, and `file` hashes the handle the body is read from. Body and digest now agree whatever happens to the path. A file rewritten *in place* while it is being read is still inconsistent, and the node's refusal still catches it.
+
+**Not verified.** A real deploy racing a real node; the in-place rewrite case; Windows, where renaming over an open file is refused, so the interleaving cannot arise that way and the test skips there (found by CI); `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

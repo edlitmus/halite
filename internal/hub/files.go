@@ -143,7 +143,14 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request, nodeID, env, path 
 	// under `hash_type: sha3-256`, which nothing here knew, that was every
 	// file (DIVERGENCE 5.469). The node now refuses such a body too, so
 	// this is about saying why, here, where the operator can fix it.
-	algorithm, digest, err := s.Files.HashOf(env, path, s.HashType)
+	//
+	// Hashed from the handle the body is sent from, not from the path: a
+	// file replaced between the two opens was served as the old body under
+	// the new digest (DIVERGENCE 5.530).
+	if s.fileAfterOpen != nil {
+		s.fileAfterOpen()
+	}
+	algorithm, digest, err := fileserver.HashFile(file, s.HashType)
 	if err != nil {
 		s.warn("a served file could not be hashed, so it was not sent",
 			"env", env, "path", path, "error", err.Error())

@@ -198,6 +198,10 @@ type Server struct {
 	// setting is not read by another test's stream still closing.
 	streamHeartbeat time.Duration
 	streamAfterRead func()
+	// fileAfterOpen runs after a served file is opened and before it is
+	// hashed, which is where a file replaced under the hub changes what it
+	// serves. Tests only.
+	fileAfterOpen func()
 }
 
 // goBackground runs work that outlives the request that started it,

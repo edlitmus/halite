@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A file replaced while the hub serves it goes out with its own digest
+
+The digest in `ETag` and `X-Halite-Hash` is now computed from the file the body is read from, not from a second open of
+the path, so a rename landing in between no longer sends the old content under the new digest (DIVERGENCE 5.530).
+
 ### The API no longer makes a series for every hook path
 
 A request to `/v1/hook/<anything>` is counted under `/v1/hook/{id}`, so a scanner posting to distinct paths can no longer
