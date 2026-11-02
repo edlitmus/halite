@@ -36208,6 +36208,18 @@ Issue 321, the second pass, round six (`internal/config`, `internal/doctor`, `cm
 
 
 
+### 5.547 A failed write or a failed seal cost the evidence log more than the record that failed
+
+Issue 321, the second pass, round six (`internal/nodeevidence/evidence.go`).
+
+**The defect.** Two paths in `Log.Append`. A write that fails part way, which on a full disk (the reason `doctor` names as the usual one) is the likely shape, left its first bytes in the segment, and the next record was appended straight after them with no newline between: one failed record made the next good one part of an unreadable line, and `Verify` reported a break. And `seal` closed the segment before it renamed it, so a rename refused, or a sealed name already taken, left the log holding a closed file: every later `Append` failed, each counted as a record lost, until the process restarted.
+
+**Shown.** The new tests fail with the old code put back, each for its own reason: after a write that fails half way, `Verify` reports "this line is not a readable evidence record" for the line holding both; with a sealed name already taken, the third record fails with "already exists". The old code could not be run as it stood, because the test needs a seam the file did not have (`segmentFile`).
+
+**The change.** A failed write or sync truncates the segment back to the last whole record, best effort, and the next record declares the loss as before; if the truncation through the handle is refused, as it is on Windows for a file opened for append (the first CI run of this change failed on both Windows legs for that reason), the segment is closed, cut by path and reopened; and if that fails too the next `recover` drops the partial line as it does after a crash. A seal checks its target before it closes anything and reopens the segment if a later step fails; and a segment that cannot be sealed keeps taking records, as a larger file, instead of failing them. The log reports itself closed only if it could not get a file back.
+
+**Not verified.** A real full disk; the by-path truncation on Windows itself, which was written from the CI failure and is tested here by a handle that refuses to truncate.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

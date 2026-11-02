@@ -647,3 +647,90 @@ func TestKindsListsEveryKindConstant(t *testing.T) {
 		}
 	}
 }
+
+// halfFile writes half of what it is given, then fails: a full disk.
+type halfFile struct {
+	*os.File
+	fail bool
+	// noTruncate refuses to truncate through the handle, as an append-only
+	// handle does on Windows.
+	noTruncate bool
+}
+
+func (h *halfFile) Truncate(size int64) error {
+	if h.noTruncate {
+		return errors.New("access is denied")
+	}
+	return h.File.Truncate(size)
+}
+
+func (h *halfFile) Write(b []byte) (int, error) {
+	if h.fail {
+		n, _ := h.File.Write(b[:len(b)/2])
+		return n, errors.New("no space left on device")
+	}
+	return h.File.Write(b)
+}
+
+// A write that fails part way does not cost the next record. The partial
+// bytes were left in the segment and the next record was appended after them
+// with no newline between, so both were one unreadable line. DIVERGENCE
+// 5.547.
+func TestAFailedWriteLeavesNothingBehindForTheNextRecord(t *testing.T) {
+	for _, refuse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "truncate through the handle", true: "truncate by path"}[refuse], func(t *testing.T) {
+			failedWriteLeavesNothingBehind(t, refuse)
+		})
+	}
+}
+
+func failedWriteLeavesNothingBehind(t *testing.T, refuseTruncate bool) {
+	dir := t.TempDir()
+	l := open(t, dir, Options{NodeID: "n1"})
+	appendJobs(t, l, 2)
+
+	flaky := &halfFile{File: l.file.(*os.File), noTruncate: refuseTruncate}
+	l.file = flaky
+	flaky.fail = true
+	if err := l.Append(KindJobAccepted, map[string]string{"fun": "lost"}); err == nil {
+		t.Fatal("a failed write was not reported")
+	}
+	flaky.fail = false
+	if err := l.Append(KindJobAccepted, map[string]string{"fun": "next"}); err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+
+	res := verify(t, dir)
+	if !res.OK() {
+		t.Fatalf("the chain after a failed write does not verify: %v", res.Breaks)
+	}
+	if res.Records != 3 {
+		t.Errorf("the chain holds %d records, want the two before and the one after", res.Records)
+	}
+	if res.Last == nil || res.Last.Lost != 1 {
+		t.Errorf("the record after the failure does not declare it: %+v", res.Last)
+	}
+}
+
+// A segment that cannot be sealed keeps taking records. The close came
+// before the rename, so a refusal left the log holding a closed file and
+// every later record failed until the process restarted. DIVERGENCE 5.547.
+func TestASegmentThatCannotBeSealedKeepsTakingRecords(t *testing.T) {
+	dir := t.TempDir()
+	l := open(t, dir, Options{NodeID: "n1", MaxBytes: 600})
+	appendJobs(t, l, 2)
+	// The name the first seal would take is already there.
+	if err := os.WriteFile(filepath.Join(dir, sealedName(1)), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		if err := l.Append(KindJobAccepted, map[string]string{"fun": strings.Repeat("x", 40)}); err != nil {
+			t.Fatalf("record %d after the failed seal: %v", i+3, err)
+		}
+	}
+	l.Close()
+	if res := verify(t, dir); res.Records != 8 || !res.OK() {
+		t.Errorf("the chain holds %d records (want 8), breaks %v", res.Records, res.Breaks)
+	}
+}

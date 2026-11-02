@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A failed write or seal no longer costs the evidence log the next record as well.** A write that failed part way left partial bytes that the next record was appended after, and a refused seal left the log holding a closed file, failing every later record until a restart. The segment is cut back to the last whole record, and a segment that cannot be sealed keeps growing and taking records. DIVERGENCE 5.547.
+
 
 
 - **Six settings the programs read are now declared, so they are no longer reported as ignored.** `hub_timeout`, `beacon_tick`, `output`, `gitfs_timeout` and `s3_timeout` were honoured and warned about; they are in the reference now. `halite-node doctor` read a setting that does not exist (`require_signed_extensions`) for whether extensions must be signed and so reported, on a default node, that unsigned ones would load; it reads `extension_require_signature`, which defaults to true. Its remedies named settings that are not settings. DIVERGENCE 5.545.
