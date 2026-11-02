@@ -36028,7 +36028,7 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/files.g
 
 **The change.** `fileserver.HashFile` hashes an open handle and rewinds it, and `file` hashes the handle the body is read from. Body and digest now agree whatever happens to the path. A file rewritten *in place* while it is being read is still inconsistent, and the node's refusal still catches it.
 
-**Not verified.** A real deploy racing a real node; the in-place rewrite case; `make check`.
+**Not verified.** A real deploy racing a real node; the in-place rewrite case; Windows, where renaming over an open file is refused, so the interleaving cannot arise that way and the test skips there (found by CI); `make check`.
 
 ## 6. Everything else not started
 
