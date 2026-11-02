@@ -36148,6 +36148,16 @@ Issue 321, the second pass, round five (`cmd/halite-hub/serve.go`).
 
 **Not verified.** Windows junctions, and a link whose target is created after the check.
 
+### 5.541 A `traceparent` that was not lowercase hexadecimal was adopted
+
+Issue 321, the second pass, round five (`internal/tracing/context.go`).
+
+**The defect.** `ParseTraceParent` decoded the three fields with `hex.DecodeString`, which accepts both cases, and never looked at the version beyond its length and `ff`. An uppercase trace or span id, and a version of `zz`, were accepted and the trace continued from them. The header is also forwarded and returned in events, so an id the format does not allow was passed on.
+
+**Shown.** Four headers parsed as valid before the change (scratch test); the new test fails five of its cases on the old code and keeps a lowercase header and a later version with extra fields valid.
+
+**The change.** Every field, the version included, must be lowercase hexadecimal. That the format requires lowercase is from memory of the W3C Trace Context text, which was not consulted; the change refuses more than before, so a sender that wrote uppercase now starts a new trace instead of continuing one.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

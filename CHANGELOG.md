@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A `traceparent` header that is not lowercase hexadecimal is no longer adopted.** An uppercase id or a non-hex version was accepted; the trace now starts afresh. DIVERGENCE 5.541.
+
 - **A `file_roots` entry that is a symlink to the hub's state is now refused at start.** The check compared paths without following links, so `/srv/salt` linked to the state directory would have served the key store and job cache to every node. DIVERGENCE 5.540.
 
 - **`halite-hub ssh --timeout` refuses a value it cannot read.** `--timeout 30` (no unit), `0s` and a negative duration were ignored and the run took the default. They are now a usage error, as for `halite-hub run`. DIVERGENCE 5.539.

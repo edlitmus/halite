@@ -123,6 +123,15 @@ func ParseTraceParent(header string) (SpanContext, bool) {
 		return SpanContext{}, false
 	}
 
+	// Lowercase hexadecimal, in every field including the version: the
+	// format says so, hex.DecodeString accepts both cases, and a version of
+	// `zz` is not a version. DIVERGENCE 5.541.
+	for _, part := range parts[:4] {
+		if !lowerHex(part) {
+			return SpanContext{}, false
+		}
+	}
+
 	var sc SpanContext
 	traceID, err := hex.DecodeString(parts[1])
 	if err != nil {
@@ -187,4 +196,14 @@ func NewSpanID() (SpanID, error) {
 			return id, nil
 		}
 	}
+}
+
+// lowerHex reports whether s is made only of 0-9 and a-f.
+func lowerHex(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
