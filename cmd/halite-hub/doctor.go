@@ -284,7 +284,38 @@ func hubFileServerCheck(cfg *config.Config) doctor.Check {
 			break
 		}
 	}
-	return doctor.FileServerReachable("file_roots for "+env, roots, unreadable)
+	// What else serves files. A hub whose tree comes from git or S3 has no
+	// `file_roots` and serves perfectly well; the check read the roots
+	// alone and told it that nothing could be served and every `source:`
+	// would fail. What is configured is counted: a remote or a bucket
+	// cannot be reached from here without a network call, which a
+	// diagnostic that must not change anything does not make. DIVERGENCE
+	// 5.554.
+	source := "file_roots for " + env
+	served := append([]string(nil), roots...)
+	if namesBackend(cfg, "git") || namesBackend(cfg, "gitfs") {
+		if n := listLen(cfg, "gitfs_remotes"); n > 0 {
+			source += " and the git backend"
+			served = append(served, fmt.Sprintf("%d git remote(s)", n))
+		}
+	}
+	if namesBackend(cfg, "s3") || namesBackend(cfg, "s3fs") {
+		if n := listLen(cfg, "s3_buckets"); n > 0 {
+			source += " and the S3 backend"
+			served = append(served, fmt.Sprintf("%d S3 bucket(s)", n))
+		}
+	}
+	return doctor.FileServerReachable(source, served, unreadable)
+}
+
+// listLen is how many entries a configured list holds.
+func listLen(cfg *config.Config, key string) int {
+	raw, ok := cfg.Get(key)
+	if !ok {
+		return 0
+	}
+	list, _ := raw.([]any)
+	return len(list)
 }
 
 // hubPillarCheck compiles the pillar the way a node asking for one
