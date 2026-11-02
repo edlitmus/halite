@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A node no longer has the hub compile its pillar on every beacon poll.** Each poll of each due beacon asked the hub for a fresh pillar, which the hub compiled, external sources included. The pillar a beacon reads is now at most five minutes old, and a compilation that fails is retried after a minute. DIVERGENCE 5.552.
+
 - **`env_allowlist` and `env_denylist` on a node read `[!x]` the way fnmatch does.** They used Go's `path.Match`, where the negation is `[^x]`, so `[!b]*` as a denylist denied `base` and permitted `dev`; and a pattern that did not parse was skipped, so a denylist entry like `stage[` denied nothing. A list that relied on the inversion now does what it says. DIVERGENCE 5.551.
 
 - **One git remote being down no longer removes the environments it served.** With two or more `gitfs_remotes`, an update in which one failed replaced what the file server served with what the others returned, so the failed remote's branches vanished until it came back. It now keeps the last good tree of a remote that fails, as it already did when all of them failed. DIVERGENCE 5.550.

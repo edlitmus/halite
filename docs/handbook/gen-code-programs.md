@@ -22,7 +22,7 @@ Command halite-node is the endpoint agent and the local executor. It replaces th
 
 This build carries everything a node does about its own tree without a hub, and everything it does with one: enrollment, renewal, the subscribe stream, running the jobs that arrive on it, hub-compiled pillar, the file server as a source, beacons, the scheduler, and the mine.
 
-**Files:** `anchor.go`, `beacons.go`, `commands.go`, `doctor.go`, `enroll.go`, `event.go`, `evidence.go`, `execute.go`, `extensions.go`, `grainopts.go`, `jobsignature.go`, `main.go`, `metrics.go`, `mine.go`, `oneshot.go`, `reconnect.go`, `rendersandbox.go`, `renewal.go`, `returner.go`, `runtimeconfig.go`, `schedule.go`, `trace.go`; with tests.
+**Files:** `anchor.go`, `beacons.go`, `commands.go`, `doctor.go`, `enroll.go`, `event.go`, `evidence.go`, `execute.go`, `extensions.go`, `grainopts.go`, `jobsignature.go`, `main.go`, `metrics.go`, `mine.go`, `oneshot.go`, `pillarcache.go`, `reconnect.go`, `rendersandbox.go`, `renewal.go`, `returner.go`, `runtimeconfig.go`, `schedule.go`, `trace.go`; with tests.
 
 ## `cmd/halite-hub`
 

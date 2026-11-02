@@ -36270,6 +36270,18 @@ Issue 321, the second pass, round eight (`cmd/halite-node/main.go`).
 
 **Not verified.** A node applying a job for an environment under a real configuration; the compatibility shim's translation of Salt's `file_ignore_glob`-style settings, which does not touch these two.
 
+### 5.552 Every beacon poll made the hub compile the node's pillar
+
+Issue 321, the second pass, round nine (`cmd/halite-node/beacons.go`, `cmd/halite-node/pillarcache.go`).
+
+**The defect.** The beacon engine asks for a context for each poll, and the node built it with `n.context(n.compilePillarOrNothing())`: on a node with a hub that is one request to the hub for every poll of every due beacon, with no cache, and the hub compiles the pillar for it, external sources included (a Secrets Manager fetch, for one). At the default interval of a minute that is one compilation per beacon per node per minute; a file beacon set to seconds is one per few seconds. A fleet of a thousand nodes with three beacons at the default asks the hub for about fifty compilations a second.
+
+**Shown.** A node whose hub-pillar function counts its calls, with one `load` beacon at an interval of one second: 4 requests in 3.5 seconds on the old code, and the new test fails on it for that reason. With the change, 1.
+
+**The change.** The pillar a beacon poll reads is cached for five minutes (`pillarCache`); a compilation that fails is an empty pillar, as it was, warned about once per attempt and retried after a minute and not at the rate of the poll. The five minutes and the one are chosen, not measured. The comment on the context said it was fresh each poll because grains and pillar move and a node polling against what the process started with reads one that no longer exists; a few minutes of staleness does not undo that, and a beacon that must see a pillar change sooner is not one this build has. The mine, which publishes hourly, is unchanged.
+
+**Not verified.** A real hub counting compilations; whether any beacon reads pillar at all, which was not checked and bears on how much this saves in practice (the compilation was done whether or not the beacon used it).
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
