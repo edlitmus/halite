@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/keystore"
@@ -226,7 +228,101 @@ func (s *Server) announceKey(principal, nodeID, action string, data map[string]a
 	if principal != "" {
 		data["principal"] = principal
 	}
+	s.keyWatch.note(nodeID, action)
 	s.emit(tagKey(nodeID, action), nodeID, data)
+}
+
+// keyWatch is what the reconcile loop last saw of each node's key record, so
+// that it can say what changed since.
+//
+// `halite-hub keys accept|reject|revoke|delete` run at a terminal is another
+// process, which changes the store and publishes nothing: the bus, which
+// SPEC 17.1 says carries `halite/key/<id>/...`, had no record of a key being
+// accepted or revoked that way, and a reaction on `halite/key/*/revoke` never
+// fired for it. The store is the channel between the two processes (see
+// Reconcile), so the loop that reads it announces what it finds changed
+// (DIVERGENCE 5.536).
+//
+// The runners record what they announce here, so a change this process made
+// and published is not published again when the loop reads it back.
+type keyWatch struct {
+	mu     sync.Mutex
+	state  map[string]keystore.State
+	primed bool
+}
+
+// note records the state a published action leaves a key in.
+func (w *keyWatch) note(nodeID, action string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.primed {
+		return
+	}
+	switch action {
+	case "accept":
+		w.state[nodeID] = keystore.Accepted
+	case "reject":
+		w.state[nodeID] = keystore.Rejected
+	case "revoke":
+		w.state[nodeID] = keystore.Revoked
+	case "delete":
+		delete(w.state, nodeID)
+	}
+}
+
+// keyChange is one key whose state is not the one last seen.
+type keyChange struct {
+	NodeID, Action, Reason string
+}
+
+// diff answers with what changed since the last call, and remembers the new
+// state. The first call only learns: a hub that starts announcing every key it
+// has ever held would be announcing history.
+//
+// A record that appears with no earlier state is a node that enrolled, and
+// is not announced here: enrolment is the hub's own path and has its own
+// events. Only a change to a key already known is a decision somebody made.
+func (w *keyWatch) diff(records []*keystore.Record) []keyChange {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	current := make(map[string]keystore.State, len(records))
+	reason := map[string]string{}
+	for _, rec := range records {
+		current[rec.NodeID] = rec.State
+		reason[rec.NodeID] = rec.Reason
+	}
+	if !w.primed {
+		w.state, w.primed = current, true
+		return nil
+	}
+	var out []keyChange
+	for id, st := range current {
+		old, had := w.state[id]
+		if !had || old == st {
+			continue
+		}
+		switch st {
+		case keystore.Accepted:
+			out = append(out, keyChange{id, "accept", ""})
+		case keystore.Rejected:
+			out = append(out, keyChange{id, "reject", reason[id]})
+		case keystore.Revoked:
+			out = append(out, keyChange{id, "revoke", reason[id]})
+		}
+	}
+	for id := range w.state {
+		if _, still := current[id]; !still {
+			out = append(out, keyChange{id, "delete", ""})
+		}
+	}
+	w.state = current
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].NodeID != out[j].NodeID {
+			return out[i].NodeID < out[j].NodeID
+		}
+		return out[i].Action < out[j].Action
+	})
+	return out
 }
 
 // Reconcile keeps the running hub's handshake denylist in step with the
@@ -265,6 +361,16 @@ func (s *Server) reconcileOnce() error {
 	deleted, err := s.Authority.Store.ListDeleted()
 	if err != nil {
 		return err
+	}
+	// What was decided in another process, announced as the runners announce
+	// theirs. After the stream-ending work below would be as good; before it
+	// is what keeps the event ahead of the node's own `stop`.
+	for _, c := range s.keyWatch.diff(records) {
+		data := map[string]any{"via": "terminal"}
+		if c.Reason != "" {
+			data["reason"] = c.Reason
+		}
+		s.announceKey("", c.NodeID, c.Action, data)
 	}
 	revoker := s.Authority.Revoker
 	now := s.now()

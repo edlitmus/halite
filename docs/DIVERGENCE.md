@@ -36088,6 +36088,20 @@ Issue 321, the fourth audit pass, a question 5.522 left open (`internal/hub/reac
 
 **Not verified.** That every function's positional parameters go through this binder (the node's `CallPositional` was read, not exercised for every module); `make check`.
 
+### 5.536 A key decision made at a terminal published no event
+
+Issue 321, the third audit pass, left open as the owner's decision (5.511; `internal/hub/subscribe.go`).
+
+**The defect.** `halite-hub keys accept|reject|revoke|delete` run at a terminal is another process: it changes the store and publishes nothing. 5.511 made the runners publish `halite/key/<id>/<action>`, so the same decision made two ways left a record on the bus for one and none for the other, and a reaction on `halite/key/*/revoke` never fired for a revoke typed at a terminal.
+
+**Shown.** Two pending keys, a first reconcile pass, then `Accept`, `Reject`, `Revoke` and `Delete` made straight on the hub's key store and a pass after each: the old code published nothing; each now publishes its own event, tagged `via: terminal`, exactly once, and a quiet pass publishes nothing more. A second test revokes through the runner and reads the store back twice: with the runners' record of what they announced taken out it is announced twice (once by the runner, once by the loop).
+
+**The change.** The reconcile loop, which already reads the store because the store is the channel between the two processes, keeps what it last saw of each key and announces a change to a key it already knew: accept, reject, revoke, or the record gone. The first pass only learns, so a hub does not announce its history when it starts. A record seen for the first time is an enrolment and has its own events. The runners tell the loop what they published, so a change made and announced in-process is not announced again.
+
+**The objection 5.511 recorded**, that the event would come from the hub and not from the person: it does, and says so. The event has no `principal`, because the store does not record who ran the command, and carries `via: terminal`, so a consumer can tell it from a runner's, which names the certificate.
+
+**Not verified.** The window between a runner changing the store and recording its announcement, in which a loop pass could announce the same change a second time (a duplicate, never a loss; not shown to happen); a real `halite-hub keys` process against a real hub; the event's `principal` for a terminal change, which is empty because the store does not record who ran it; `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

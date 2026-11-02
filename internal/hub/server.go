@@ -206,6 +206,8 @@ type Server struct {
 	// submission; signedAfterIdentify runs between them, for tests.
 	signedMu            sync.Mutex
 	signedAfterIdentify func()
+	// keyWatch is what the reconcile loop last saw of each key record.
+	keyWatch keyWatch
 }
 
 // goBackground runs work that outlives the request that started it,

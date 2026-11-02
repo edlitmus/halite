@@ -21,6 +21,12 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A key accepted, rejected, revoked or deleted with `halite-hub keys` now publishes its `halite/key/...` event
+
+The runners already did (5.511); a decision made at a terminal, which is another process, published nothing, so a reaction on
+`halite/key/*/revoke` never fired for it. The hub's reconcile loop now announces what it sees change, tagged `via: terminal`,
+within its two-second interval (DIVERGENCE 5.536).
+
 ### A node that has one grain it cannot encode still reports the rest, and says which
 
 Previously one such grain (a NaN, say) meant no grains at all were sent, at connect or on refresh, with a warning that
