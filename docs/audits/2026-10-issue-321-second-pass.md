@@ -195,7 +195,7 @@ On 2026-11-02, at `main` `2dbc28a4`. This round read, in full unless noted: `int
 
 ### Still unread
 
-By line count this round read about a fifth of what the earlier rounds listed. **Not read:** `internal/winsec`, `internal/dbus`, `internal/doctor`, `internal/nodeevidence`, the rest of `internal/tracing` (`otlp.go`, `tracer.go`, `span.go`, `settings.go`), the rest of `log.go`, and the `*_windows.go` and `*_other.go` files. In `cmd/halite-hub`: `run.go`, `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `relay.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node`: everything except the two files named above, with `enroll.go`, `main.go`, `evidence.go`, `commands.go`, `execute.go` and `metrics.go` the largest.
+By line count this round read about a fifth of what the earlier rounds listed. **Not read:** `internal/winsec`, `internal/dbus`, `internal/doctor`, `internal/nodeevidence`, the rest of `internal/tracing` (`otlp.go`, `tracer.go`, `span.go`, `settings.go`), the rest of `log.go`, and the `*_windows.go` and `*_other.go` files. In `cmd/halite-hub` (`run.go` was read in round seven): `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `relay.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node`: everything except the two files named above, with `enroll.go`, `main.go`, `evidence.go`, `commands.go`, `execute.go` and `metrics.go` the largest.
 
 **Not verified in round five.** No Salt differential, no real AWS endpoint, no real fleet, no FreeBSD jail run, and `make check`. The five shown items were run on the Linux workstation only.
 
@@ -229,6 +229,29 @@ On 2026-11-02, at `main` after #587. Read in full: `internal/dbus`, `internal/wi
 
 ### Still unread
 
-**Not read:** `internal/doctor/fips.go` and the `disk_*.go` files, `internal/tracing/span.go`, the rest of `internal/log/log.go`, and the `*_windows.go` and `*_other.go` files outside `winsec`. In `cmd/halite-hub`: `run.go`, `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node`: `main.go`, `commands.go`, `evidence.go`, `metrics.go`, `extensions.go`, `oneshot.go` apart from `writeInlineFile`, `trace.go`, `anchor.go`, `schedule.go` apart from the end, `beacons.go`, `runtimeconfig.go`, `returner.go`, `mine.go`, `rendersandbox.go`, `renewal.go`, `doctor.go`, and the rest of `execute.go` and `enroll.go`.
+**Not read:** `internal/doctor/fips.go` and the `disk_*.go` files, `internal/tracing/span.go`, the rest of `internal/log/log.go`, and the `*_windows.go` and `*_other.go` files outside `winsec`. In `cmd/halite-hub`: `run.go`, `main.go`, `doctor.go`, `orch.go`, `jobs.go`, `runner.go`, `gitfs.go`, `s3fs.go`, `extpillar.go`, `extensions.go`, `extensioncmd.go`, `extensionrun.go`, `evidence.go`, and the rest of `serve.go`. In `cmd/halite-node` (`metrics.go` and `returner.go` were read in round seven, `extensions.go` and `schedule.go` in part): `main.go`, `commands.go`, `evidence.go`, `oneshot.go` apart from `writeInlineFile`, `trace.go`, `anchor.go`, `beacons.go`, `runtimeconfig.go`, `mine.go`, `rendersandbox.go`, `renewal.go`, `doctor.go`, and the rest of `execute.go` and `enroll.go`.
 
 **Not verified in round six.** No Windows machine (so nothing in `winsec` was run), no real bus, no real node process (the panic was run through `executeJob`, not the executor), no hub with anchors, and `make check`.
+
+## Round seven: the hub's `run` and the node's metrics, returner and schedule
+
+On 2026-11-02, after the round-six fixes were opened. Read in full: `cmd/halite-hub/run.go`, `cmd/halite-node/metrics.go` (to the serve loop), `cmd/halite-node/returner.go`; in part: `cmd/halite-node/schedule.go` (to `runScheduled`) and `cmd/halite-node/extensions.go` (to `registerExtensionFunctions`). Nothing is fixed in this round.
+
+### Shown (a scratch test, run and removed)
+
+| What | Shown how | Status |
+|---|---|---|
+| **The node's `fun` label takes whatever name the hub sent.** `halite_node_jobs_total` and `halite_node_job_duration_seconds` are labelled with the job's function from the job, and a node counts a job for a function it does not have like any other (a failed return). The hub's own copy of the label was bounded by the name's shape (5.532); the node's is not. | 600 jobs named `junk.fnN` and then `test.ping` through `countJob`: 512 series, an `__overflow__` among them, and no series for `test.ping`. A fix (label is the name when `registry.Exec.Has` or a state function, else `other`) was written, passed the node's tests but for the one that pinned `fun="nosuch.function"`, and was not kept | open |
+
+### Read, not run
+
+- `run --ttl 500ms` is read by `seconds()` as `int(d.Seconds())`, which is 0, and 0 means the hub's default (15 minutes, and 15 minutes in the signed path): a sub-second or negative TTL is not refused and not applied. The other duration flags of `run` read the same function.
+- `operatorClient` and `portOf` take the port from the last colon of `listen`, so a `listen` of `[::1]` (no port) gives `:1]`; an `--hub` that is a bare IPv6 address contains a colon and is read as host and port.
+- `resolveTarget` reads a matcher flag's value that is `true`, `yes`, `1`, `on`, `false`, `no`, `0` or `off` as a switch and not a target, so `run -L 1 test.ping` takes `test.ping` for the target and has no function. A node or glob named like one of those words cannot be given to a matcher flag.
+- The comment that opens `gather` sits above `seconds` and describes neither.
+
+### Checked, no gap
+
+`prepareSigning` builds the job from the request and passes it through `job.SigningPayload`, as the node does. The functions that run other functions later, `schedule.add` and `schedule.modify` with `schedule.run_job`, are marked `arbitrary_code`, so a node requiring signatures for that class refuses an unsigned one; `schedule.enable_job` is not, and enables an entry the operator wrote. The node's schedule has no pillar source (SPEC 20.1 lists one; DIVERGENCE records it), which is why a hub cannot schedule something the signature check would have refused. The node's metrics endpoint has no plaintext mode and verifies a scraper's certificate when `metrics_client_ca` is set.
+
+**Not verified in round seven.** Prometheus, a real hub, and `make check`.
