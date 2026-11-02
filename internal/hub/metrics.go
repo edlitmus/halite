@@ -477,7 +477,7 @@ func (s *Server) countBeaconDrops(beacon string, data map[string]any) {
 // unguarded decrement went briefly negative and was put right.
 func (s *Server) countDispatch(j *job.Job, nodes []string) {
 	m := s.m()
-	m.jobsDispatched.With(j.Fun).Inc()
+	m.jobsDispatched.With(metricFun(j.Fun)).Inc()
 	m.jobsOutstanding.Add(float64(s.owed.owe(j.JID, j.Expires, nodes)))
 }
 
@@ -612,7 +612,13 @@ func (o *owedReturns) expired(now time.Time) []job.ID {
 // A state run's individual results are in the return, so the hub counts
 // them from what it already has rather than asking the node for a
 // metric it would have to keep.
-func (s *Server) countReturn(ret *job.Return) {
+//
+// `fun` is the function the job was submitted with, from the hub's own record,
+// and not the one in the return: the return is a node's text, and a node that
+// named a different function each time filled the label family and sent every
+// real function to `__overflow__` (DIVERGENCE 5.532). A job the hub no longer
+// has a record of is counted under "other".
+func (s *Server) countReturn(ret *job.Return, fun string) {
 	m := s.m()
 	result := "failed"
 	if ret.Success {
@@ -628,13 +634,13 @@ func (s *Server) countReturn(ret *job.Return) {
 	}
 	if ret.DurationMS > 0 {
 		took := time.Duration(ret.DurationMS) * time.Millisecond
-		observeSeconds(m.jobDuration.With(ret.Fun), took)
+		observeSeconds(m.jobDuration.With(metricFun(fun)), took)
 		// SPEC 26.2's `halite_state_run_duration_seconds`. The node
 		// already reports how long it spent, so the hub separates state
 		// runs out of the general job timing rather than asking for a
 		// second number -- a highstate that is getting slower is not
 		// visible in a distribution shared with `test.ping`.
-		if strings.HasPrefix(ret.Fun, "state.") {
+		if strings.HasPrefix(fun, "state.") {
 			observeSeconds(m.stateRun, took)
 		}
 	}
@@ -854,4 +860,29 @@ func (s *Server) countFileRequest(w *countingWriter) {
 	// change the shape of a metric an estate is already graphing.
 	m.fileRequests.With("roots", strconv.Itoa(w.status)).Inc()
 	m.fileBytes.Add(float64(w.bytes))
+}
+
+// metricFun is a function name fit to be a label value.
+//
+// Dotted identifiers of a sane length are themselves; anything else is
+// "other". The set of functions is bounded by what the policy allows an
+// operator to submit and by the modules the nodes carry, neither of which the
+// hub can enumerate here, so this bounds the *shape* of a label, not how many
+// there are: a caller allowed `*` can still submit as many distinct valid
+// names as it likes, and the family's own series bound is what holds then.
+func metricFun(fun string) string {
+	if len(fun) == 0 || len(fun) > 64 || !strings.Contains(fun, ".") {
+		return "other"
+	}
+	for _, r := range fun {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '.':
+		default:
+			return "other"
+		}
+	}
+	if strings.HasPrefix(fun, ".") || strings.HasSuffix(fun, ".") || strings.Contains(fun, "..") {
+		return "other"
+	}
+	return fun
 }
