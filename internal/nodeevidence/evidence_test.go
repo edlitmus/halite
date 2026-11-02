@@ -411,6 +411,56 @@ func TestARecordFromANewerBuildIsNotABreak(t *testing.T) {
 	if len(res.UnknownSchemas) != 1 || res.UnknownSchemas[0] != "halite.evidence/2" {
 		t.Errorf("the unverified schema was not reported: %v", res.UnknownSchemas)
 	}
+	// Not a break, and not a chain that holds either. DIVERGENCE 5.543.
+	if res.Verified() || res.Unverified != 1 {
+		t.Errorf("a chain with a record it could not check was reported as verified: Verified=%v Unverified=%d",
+			res.Verified(), res.Unverified)
+	}
+}
+
+// A record edited and given a schema nobody knows is not reported as a
+// chain that holds. Its stored hash is untouched, so the link and the
+// hub's anchors both agree with it, and only the content check would have
+// seen the edit. The same edit with the schema left alone is a break.
+// DIVERGENCE 5.543.
+func TestARecordRelabelledWithAnUnknownSchemaIsNotReportedAsVerified(t *testing.T) {
+	dir := t.TempDir()
+	l := open(t, dir, Options{NodeID: "n1"})
+	for _, fun := range []string{"alpha", "bravo", "charlie"} {
+		if err := l.Append(KindJobAccepted, map[string]string{"fun": fun}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l.Close()
+	segments, err := Segments(dir)
+	if err != nil || len(segments) != 1 {
+		t.Fatalf("segments %v, %v", segments, err)
+	}
+	raw, err := os.ReadFile(segments[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(raw), "\n")
+	lines[1] = strings.Replace(lines[1], `"fun":"bravo"`, `"fun":"cmd.run rm -rf"`, 1)
+
+	if err := os.WriteFile(segments[0], []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if res := verify(t, dir); res.OK() || len(res.Breaks) == 0 {
+		t.Fatalf("an edited record was not a break: %+v", res.Breaks)
+	}
+
+	lines[1] = strings.Replace(lines[1], `"schema":"halite.evidence/1"`, `"schema":"halite.evidence/99"`, 1)
+	if err := os.WriteFile(segments[0], []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := verify(t, dir)
+	if res.Verified() {
+		t.Error("an edited record with an unknown schema was reported as verified")
+	}
+	if res.Unverified != 1 {
+		t.Errorf("Unverified = %d, want 1", res.Unverified)
+	}
 }
 
 func TestOpeningRefusesToExtendANewerChain(t *testing.T) {

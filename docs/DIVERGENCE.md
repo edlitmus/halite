@@ -36170,6 +36170,18 @@ Issue 321, the second pass, round six (`cmd/halite-node/execute.go`).
 
 **Not verified.** A real module that panics, as opposed to a registered stand-in; the schedule and agentless callers, which call `executeJob` too and read its result in the same way.
 
+### 5.543 An evidence record edited and given an unknown schema verified
+
+Issue 321, the second pass, round six (`internal/nodeevidence/verify.go`, `cmd/halite-node/evidence.go`).
+
+**The defect.** `Verify` checks a record's hash against its contents only when the record's schema is the one this build writes. For any other schema it checks the link and reports, in `verify-evidence`, "That is a newer halite, not a broken chain". The link compares the stored `hash` field of the record before, and the hub's anchors compare the stored `hash` of the record at a number; an edit that leaves the field alone, and changes the schema to one nobody knows, is seen by neither. The command then printed "The chain holds: every record's contents match its hash", which was untrue of that record, and exited 0.
+
+**Shown.** Three records written with `Log.Append`; the second one's detail changed and its schema set to `halite.evidence/99`: `OK()` true, no breaks. The same edit with the schema left alone is one break. The new tests fail on the old code: the library test (`Verified()` is false and `Unverified` is 1) and a subprocess test of `verify-evidence`, which exited 0 and printed that the chain holds.
+
+**The change.** `Result` counts the records it could not check (`Unverified`) and has `Verified()`, which is `OK()` and none unchecked. `OK()` keeps its meaning (no break), so a chain from a newer build is still not a break and `Open` still refuses to extend it. `verify-evidence` exits 1 and does not say the chain holds while any record is unchecked, and says why in terms that do not choose between a newer build and an edit; `--out json` has `ok` false and `unverified_records`. A rollback to an older build now reads as unverified rather than verified. That is the cost, and it is the right way round: the build that wrote those records verifies them.
+
+**Not verified.** A chain actually written by a newer build (the existing test writes one by hand); the hub's anchors command, which reads the same stored hashes and is unchanged.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
