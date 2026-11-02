@@ -21,7 +21,26 @@ type Fleet struct {
 	// client, so a job for a node behind one is written to the relay's
 	// stream and the relay dispatches it onward.
 	via map[string]string
+	// pending holds the subordinates a relay announced while it had no
+	// stream here, until it has one or they are too old to believe. See
+	// Relay.
+	pending map[string]pendingRelay
+	// now is the clock; tests move it.
+	now func() time.Time
 }
+
+// pendingRelay is one relay's announcement waiting for its stream.
+type pendingRelay struct {
+	subordinates []string
+	at           time.Time
+}
+
+// relayAnnounceGrace is how long an announcement from a relay with no stream
+// waits for one. The relay announces concurrently with opening its stream, so
+// the two arrive within moments of each other; past this the announcement is
+// from a relay that has gone, and the routes it names reach nothing. The number
+// is chosen, not measured.
+const relayAnnounceGrace = 30 * time.Second
 
 // stream is one node's outbound queue.
 type stream struct {
@@ -47,7 +66,12 @@ func (st *stream) close() {
 const queueDepth = 64
 
 func newFleet() *Fleet {
-	return &Fleet{streams: map[string]*stream{}, via: map[string]string{}}
+	return &Fleet{
+		streams: map[string]*stream{},
+		via:     map[string]string{},
+		pending: map[string]pendingRelay{},
+		now:     time.Now,
+	}
 }
 
 // LiveFleet is this hub's fleet, created if nothing has needed it yet.
@@ -77,6 +101,14 @@ func (f *Fleet) attach(nodeID string, now time.Time) *stream {
 		old.close()
 	}
 	f.streams[nodeID] = st
+	// A relay's announcement that arrived before this stream does, which is
+	// the order the protocol allows, is applied now -- if it is still fresh.
+	if p, ok := f.pending[nodeID]; ok {
+		delete(f.pending, nodeID)
+		if f.now().Sub(p.at) <= relayAnnounceGrace {
+			f.route(nodeID, p.subordinates)
+		}
+	}
 	return st
 }
 
@@ -106,6 +138,30 @@ func (f *Fleet) detach(st *stream) bool {
 func (f *Fleet) Relay(relayID string, subordinates []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.pending == nil {
+		f.pending = map[string]pendingRelay{}
+	}
+	if _, live := f.streams[relayID]; !live {
+		// No stream to reach them through. The relay announces
+		// concurrently with opening one, so this can be the first of the
+		// two to arrive, and refusing it would leave the relay waiting for
+		// its next attempt. But one that arrives after the stream has gone
+		// is from a relay that is not here, and the routes it names were
+		// kept for ever: `targetableNodes` listed them and `Connected`
+		// hid them (DIVERGENCE 5.533). So it waits, apart from the routes
+		// a job can use, for the stream to come.
+		f.pending[relayID] = pendingRelay{
+			subordinates: append([]string(nil), subordinates...),
+			at:           f.now(),
+		}
+		return
+	}
+	delete(f.pending, relayID)
+	f.route(relayID, subordinates)
+}
+
+// route replaces a relay's subordinates. The caller holds the lock.
+func (f *Fleet) route(relayID string, subordinates []string) {
 	for node, via := range f.via {
 		if via == relayID {
 			delete(f.via, node)
@@ -135,6 +191,7 @@ func (f *Fleet) RelayFor(nodeID string) (string, bool) {
 func (f *Fleet) dropRelay(relayID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	delete(f.pending, relayID)
 	for node, via := range f.via {
 		if via == relayID {
 			delete(f.via, node)

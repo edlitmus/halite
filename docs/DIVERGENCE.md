@@ -36054,6 +36054,18 @@ Issue 321, the third audit pass, left open in round three (`internal/hub/metrics
 
 **Not verified.** That `metricFun`'s shape rule fits every function name an extension can have (the ones in the repository do); how many distinct valid names a caller allowed `*` could submit before the bound bites, which this does not change; a Prometheus scrape; `make check`. The dashboard is unchanged: its `fun` legends read whatever the label holds, which now includes `other`.
 
+### 5.533 A relay's update that arrived after its stream had gone left routes for ever
+
+Issue 321, the third audit pass, left open in round three (`internal/hub/fleet.go`, `relay.go`).
+
+**The defect.** `POST /v1/relay` is accepted whether or not the relay has a stream open, on purpose: the relay announces concurrently with opening one, so the update may come first (5.507). But the routes it recorded outlived a relay that was not there. `dropRelay` runs when the stream ends, and an update after that put back what it had just removed: `targetableNodes` listed the nodes, no job could reach them, and `Connected` hid them, until the relay next came and went.
+
+**Shown.** A relay with a stream, detached and dropped, then a late update: the old code held two routes. With the new hold disabled again both new tests fail (routes left behind; routes live before any stream).
+
+**The change.** The fleet holds an announcement from a relay with no stream apart from the routes a job can use, and applies it when the stream attaches if it is no more than `relayAnnounceGrace` (30 seconds, chosen, not measured) old. A later one for the same relay replaces it; `dropRelay` clears it. The subscribe path calls `Relay` before it attaches the stream, which is the early order, so it goes through the hold and comes out at the attach, and the existing relay tests that run it pass unchanged.
+
+**Not verified.** A relay across a real network, where announcement and connection may be further apart than 30 seconds (a relay's subscribe request carries its subordinates and `acceptRelay` routes them, so a reconnect announces them again; that path is exercised by the existing relay tests, not by a network); `make check`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -21,6 +21,11 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+### A relay's late update no longer leaves routes behind a relay that is not connected
+
+An update from a relay with no stream is held for up to 30 seconds for the stream to arrive and then discarded, instead of
+being routed to for ever (DIVERGENCE 5.533).
+
 ### The `fun` label of the job metrics comes from the hub's record, not from the node
 
 `halite_job_duration_seconds` took its function name from the return a node posted; it now uses the function the job was
