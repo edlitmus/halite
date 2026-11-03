@@ -29880,6 +29880,25 @@ path itself, is not offered, so a state cannot ask for the link to be
 replaced. `file.copy`, `file.prepend`, `blockreplace`, `comment` and
 `uncomment` go through `editResult` too, and were not each run against a
 link. Linux as root was not run.
+
+#### 5.346, the fix followed a link anyone could plant
+
+The fix above followed **every** link, whoever made it. Its own case was
+a link an operator made in `sites-enabled`; it did not consider a link
+an unprivileged account made in a directory a root state writes into.
+`file.managed` with `mode:` on a path in a home directory followed a
+`.profile` the account had pointed at a 0600 file outside it. The state
+wrote the tree's contents there, made the file 0644, and reported it
+updated. The edit functions wrote through the link the same way. The
+table above is still true: a root-owned link in a root-owned directory
+is still followed. 5.558 makes the rule and records the divergence from
+Salt.
+
+One sentence above is wrong. `file.copy` does not go through
+`editResult` (`fileCopyState` in `file_edit.go`, read on `de26c91b`). It
+calls `writeAtomic` on the destination directly, so it still replaces a
+link there rather than following it.
+
 ### 5.347 file.recurse cleaned what it was told to exclude, and ignored a mode change
 
 Issue 321 finding M-22, three defects the audit reproduced. All three
@@ -36341,6 +36360,187 @@ Issue 321, the second pass, round twelve (`cmd/halite-node/execute.go`; the comm
 **The change.** The returned value goes through `maskValue` with the node's secrets, as the command line's does: a string that is a registered secret is replaced outright and one that contains it is scrubbed in place, so `password=` stays readable and the state's id and function are unchanged. `show_states` and `show_top` return names only and are as they were.
 
 **Not verified.** A secret that arrives as a GPG-decrypted pillar value on a real node (the test registers it directly); whether the hub itself scrubs a return it caches, which was not read; an unregistered `runas_password` in `show_highstate`, which only `show_lowstate` masks by key name.
+
+### 5.558 A file state followed a symbolic link another account had planted
+
+Item A1 of the issue 321 close-out review (2026-11-03): a regression the
+M-19 fix (5.346, #386) introduced. Reproduced on main `de26c91b`.
+
+**The defect.** `followLink` (`internal/builtin/fileutil.go`) resolved
+any link at a file state's path with `filepath.EvalSymlinks` and wrote
+the file it named. A node runs as root. A path in a directory an
+unprivileged account can write (its home, or an app directory handed
+over with `user:`) let that account point the state anywhere. The
+reviewer's probe (macOS, not root) had a `.profile` link in
+`home-deploy` to a 0600 `etc-shadow` beside it. `file.managed` with
+`contents`, `mode: 0644` and `group:` wrote the contents into
+`etc-shadow`, made it 0644, changed its group, and reported
+"etc-shadow was updated". `file.append`, `file.line` and `file.replace`
+each edited `etc-shadow` through the link. Before #386 the rename
+replaced the link, and the account's file was the only one changed.
+
+This contradicts `noLink` in `internal/builtin/ssh_account.go` (M-30),
+which refuses a link in the same kind of account directory for the same
+reason. Two paths that must agree.
+
+**The rule.** `resolveTrusted` (`followlink_unix.go`) resolves the path
+one component at a time. It follows a link only when the link, and every
+directory on the way to it, is owned by root or by the account the node
+runs as, and is in a directory nobody else can write. A sticky
+directory also passes: there, nobody else can rename or remove the link.
+Group write is tolerated only for group 0, whose members can become root
+anyway. This is Linux's `fs.protected_symlinks`, which covers only
+sticky world-writable directories, extended to ordinary ones. A home
+directory is not sticky, and its owner can put a link in it whatever
+the kernel's setting. Anything else is refused by name, and the link is
+left alone:
+
+```text
+/home/deploy/.profile is a symbolic link to /etc/shadow, and it was not
+followed: /home/deploy, a directory on the way to it, belongs to uid 1001,
+so another account could have made it point anywhere. A file this node
+writes as root is not written through such a link; name the file it
+should change instead
+```
+
+Three choices, and why:
+
+- **The account a state names with `user:` is not trusted.** The task
+  that found this suggested it. It is the wrong one: it is the account
+  that can plant the link. With it trusted, `file.managed` with `user:
+  deploy` would have root give deploy the file the link names.
+- **Every link on the way is checked, not only the one named.** A
+  root-owned `/etc/app.conf -> /srv/app/app.conf`, with `/srv/app` the
+  app account's, is a planted link one step removed.
+- **What comes after the last link is not checked.** A trusted link is
+  the operator's own. Following it is the same as naming its target,
+  and a file named directly in a writable directory is what file states
+  have always written. Everything up to the last link is in directories
+  only root can change, so nothing on that part can be swapped between
+  the check and the write.
+
+It applies to every writer that comes through `followLink`:
+`file.managed`, the edit functions' `editResult` (`replace`, `append`,
+`prepend`, `line`, `blockreplace`, `comment`, `uncomment`),
+`file.sed`, `file.serialize`, and the modules' `writeConfigFile` and
+`writeConfigFileMode` (hosts, hostname, sysctl, fstab, locale.gen, kmod,
+environ, pkgrepo, netplan).
+
+**Divergence from Salt.** Salt follows regardless.
+`salt/modules/file.py` `manage_file` takes `os.path.realpath(name)` when
+the path is a link and `follow_symlinks` is true, its default in
+`file.managed`. It does not check who owns the link. Read in Salt's
+source at `v3008.0-1405-gf37cdcd1c9`, not run. A state Salt would
+follow through an account's link now fails here, naming the link. The
+operator can name the real file instead. `follow_symlinks: False` is
+still not offered (5.346).
+
+**Shown.** `file_symlink_planted_unix_test.go`. A test that is not root
+cannot make another account's file, so it uses two stand-ins. One is a
+directory anyone can write (0777, or 0775 with a group other than 0):
+the same hazard, with no stand-in needed. The other is `linkTrusted`
+told that one named path is another account's. It is told only that
+path, not that the test's own account is untrusted. Distrusting the
+account would fail every case at the first temporary directory it owns,
+before the link is reached, and the tests would pass for a reason none
+of them names. An early version of the sticky case did pass for a wrong
+reason: `os.Chmod(dir, 0o1777)` sets 0777, because Go's sticky bit is
+`os.ModeSticky`, not 01000. `plantedLink` now checks the mode it got.
+
+- `TestAPlantedLinkIsNotFollowed`: `file.managed` (with `mode: 0644`),
+  `append`, `line`, `replace`, `serialize` and `sed`, each in a
+  world-writable directory, a group-writable one, and one the account
+  owns. All 18 wrote the victim on main (the test, with a stub for
+  `linkTrusted`, fails all 18 there).
+- `TestAConfigWriterDoesNotFollowAPlantedLink`,
+  `TestALinkChainThroughAnAccountsDirectoryIsNotFollowed`,
+  `TestALinkBelowAnAccountsDirectoryIsNotFollowed`.
+- `TestALinkInAStickyDirectoryFollowsItsOwner`: followed when the owner
+  is trusted, refused when it is not.
+- `TestATrustedLinkIntoAWritableDirectoryIsFollowed`.
+- The 5.346 tests (`TestFileManagedWritesThroughALink`,
+  `TestEditsWriteThroughALink`, `TestADanglingLinkIsRefused`) and the
+  `writeConfigFile` link tests still pass. So an operator's link in
+  directories the account running the test owns is still followed.
+
+Broken on purpose, one at a time, each fails its own test and no other
+check covers for it. With the refusal removed, every planted case
+fails. Without the directories' inherited state, the "account owns"
+and "below" cases fail. Ignoring the sticky bit fails the trusted
+sticky case. Ignoring group write fails the group cases. Ignoring the
+owner fails the "account owns", "below" and untrusted sticky cases.
+Checking only the named link fails the chain case.
+
+**As root, in a jail on beastie** (2026-11-03): a thin Bastille jail
+running FreeBSD 15.1-RELEASE on the 15.1-RELEASE-p6 host, with test
+binaries and `halite-node` cross-built from this tree on macOS (Go
+1.27.3). The jail's real `nobody` (65534) and a `deploy` account made
+with `pw useradd` played the other account.
+
+- **The finding, end to end through `halite-node state sls --local`.**
+  `deploy` made `~/.profile -> /etc/halite-victim` and
+  `~/.bashrc -> /etc/halite-victim2` as itself (`su -m deploy`). Both
+  victims were root's 0600 files. The state was `file.managed` with
+  `contents`, `mode: "0644"` and `group: deploy`, then `file.append`:
+
+  | | main `de26c91b` | this change |
+  |---|---|---|
+  | `file.managed` | wrote the tree's line into the victim, made it `root:deploy 0644`, "was updated" | refused, names `/home/deploy` and uid 1001 |
+  | `file.append` | appended to victim2 | refused, the same reason |
+  | exit | 0 | 1 |
+  | victims | changed | byte-for-byte as they were, `root:wheel 0600` |
+
+- **`live_planted_link_test.go`**, as root with `HALITE_SYSTEM_LIVE=1`.
+  `nobody` owns a home directory and its link: every `followLink`
+  writer, and `writeConfigFile`, is refused. A root link into
+  `nobody`'s directory is refused at the second link. Five cases must
+  still be followed or must not:
+  - followed: a root link in a root directory (`sites-enabled`), in a
+    sticky one, and in one writable by group 0;
+  - refused: `nobody`'s link in a sticky directory, and a root link in
+    a directory writable by group 65534.
+
+  This is the group-0 allowance's only test, because only root can make
+  such a directory. It is in fleet.yml's linux and macos `-run` lists;
+  the freebsd leg runs every live test. `followlink*.go` and
+  `fileutil.go` are now trigger paths.
+- **The whole set** (the portable tests above, the 5.346 tests, the
+  `writeConfigFile` tests and the live ones), 49 passing and none
+  skipped. Three breaks, each built and run in the jail:
+  - no refusal: 20 pass, every planted case fails;
+  - group 0 not tolerated: only `group-0-writable` fails;
+  - owner not checked: the "account owns", "below", untrusted sticky
+    and live planted cases fail.
+
+The run found a defect in the portable test. It skipped its group case
+when the directory's group was 0, which it always is as root. It tested
+for the group bit alone, and 0777 has it too, so as root it also
+skipped all six world-writable cases. It now skips only for a mode with
+group write and without world write. Under root it gives the directory
+group 65534 rather than skipping.
+
+**On the fleet legs, as root** (PR #628's push, Fleet run 41675532814):
+`TestLivePlantedLinkIsNotFollowedAsRoot`,
+`TestLivePlantedLinkChainIsNotFollowedAsRoot` and
+`TestLiveOperatorLinksAreStillFollowedAsRoot`, with all five subtests,
+passed with none skipped. They ran on the linux leg (an `ubuntu-24.04`
+runner, under `sudo`), on the macos leg (`macos-15-arm64`, macOS
+15.8.2, under `sudo`) and on the freebsd leg (a FreeBSD 15.1-RELEASE
+VM). Each log was read for the test names, not only the job's result.
+
+**Not verified.**
+- `halite-node` end to end on Linux or macOS. Only the jail ran the
+  binary; the legs ran the tests.
+- A full FreeBSD host rather than a jail or a CI VM. The jail shares
+  beastie's kernel, and the rule reads only ownership and mode bits,
+  which a jail does not change; but it is a jail, not a node.
+- Windows: `followlink_other.go` still follows without a check. A link
+  there needs a privilege an ordinary account lacks unless Developer
+  Mode is on. Nothing was run there.
+- A **directory** link in the middle of a path whose last component is
+  not a link. The kernel still follows it, as it did before #386 and
+  as Salt does: `followLink` acts only when the named file is a link.
+  That is a separate, older hole and is not changed here.
 
 ### 5.558 A copied ACL landed on whatever the temporary name pointed at
 
