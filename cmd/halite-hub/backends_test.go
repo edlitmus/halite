@@ -187,6 +187,12 @@ bindings:
 	execs := builtin.New().Exec.Signatures()
 	for _, name := range execs.Names() {
 		sig, _ := execs.Lookup(name)
+		// A function that reads pillar is never granted by a pattern
+		// either, for a reason of its own that has its own test
+		// (policy.ReadsPillar, DIVERGENCE 5.563).
+		if policy.ReadsPillar(name, false) {
+			continue
+		}
 		if ok, why := granted(name); ok == sig.ArbitraryCode {
 			t.Errorf("%s: the node says arbitrary_code=%v and a wildcard on the hub says allowed=%v (%s)",
 				name, sig.ArbitraryCode, ok, why)
