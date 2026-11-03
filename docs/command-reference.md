@@ -1641,7 +1641,11 @@ prevent.
 literally. Reading one node's compiled pillar is reading its secrets,
 and a role written to let someone restart a service must not carry it
 because the list said `*`. SPEC 22.1 calls this a distinct
-high-privilege permission and it is enforced as one.
+high-privilege permission and it is enforced as one — on every route,
+not only this one: `POST /v1/run` with the `runner` client and the same
+function, and `pillar.items`, `pillar.raw`, `pillar.get` or `config.get`
+with the `local` client, need the role to name them too (DIVERGENCE
+5.563).
 
 ## Extensions
 
@@ -1828,8 +1832,11 @@ extension declaring `network` gets it; one declaring `root` is not
 dropped to another account. A declaration this build does not understand
 is refused rather than ignored.
 
-An extension's functions are marked `arbitrary_code`, so a wildcard in
-the RBAC policy never grants one — the role has to name it. A name that
+An extension's functions are marked `arbitrary_code` on the node, and a
+wildcard in the RBAC policy never grants one — the role has to name it.
+The hub cannot see that mark, since it does not know which extensions a
+node has, so it grants by pattern only the functions its own build ships:
+`functions: ['*']` and `myext.*` both leave `myext.exec` out. A name that
 collides with a built-in is refused rather than overriding it.
 
 ## Targeting

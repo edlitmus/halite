@@ -16,6 +16,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/value"
@@ -28,11 +29,58 @@ type Policy struct {
 	Bindings []Binding
 	// Path is where it was read from, for a message that names it.
 	Path string
-	// ArbitraryCode is the set of functions a wildcard never grants.
-	// The hub fills it in from the module signatures it ships, so a
-	// function marked `arbitrary_code` in a later build is covered
+	// ArbitraryCode is the set of functions this build ships that
+	// declare `arbitrary_code`. UseCatalog fills it in from the module
+	// signatures, so a function marked in a later build is covered
 	// without anyone remembering to add it here.
 	ArbitraryCode map[string]bool
+	// Shipped is every function name the build's registries hold, and
+	// a pattern grants a function only if it is here and not in
+	// ArbitraryCode.
+	//
+	// The rule is the inverse of the obvious one on purpose. The node
+	// runs extension functions too, and marks every one of them
+	// arbitrary code (internal/extension parseSignature); the hub
+	// cannot know which extensions a node has loaded, so a deny list
+	// built from what the hub ships cannot name them, and for as long
+	// as it was one, `functions: ['*']` granted `myext.exec`. A name
+	// this build does not ship is an extension's, or a newer build's,
+	// and either way nobody here has read its signature: it has to be
+	// named. DIVERGENCE 5.564.
+	//
+	// Nil grants nothing by pattern. That is what a policy nobody gave
+	// a catalog does, and it fails loudly rather than the way halite-api
+	// did, which never set ArbitraryCode and so let `*` grant `cmd.run`.
+	Shipped map[string]bool
+}
+
+// UseCatalog sets what a wildcard is judged against from the registries
+// a build ships. A name in more than one registry is arbitrary code if
+// any of them says so: SPEC 23.5 names `module.run`, which is a state.
+//
+// The `state.*` functions a node answers through its compiler are
+// shipped too, though no registry holds them (state.JobFunctions):
+// without them `state.*` stopped granting `state.apply`.
+func (p *Policy) UseCatalog(registries ...*signature.Registry) {
+	p.ArbitraryCode = map[string]bool{}
+	p.Shipped = map[string]bool{}
+	for _, name := range state.JobFunctions() {
+		p.Shipped[name] = true
+	}
+	for _, r := range registries {
+		for _, name := range r.Names() {
+			sig, _ := r.Lookup(name)
+			p.Shipped[name] = true
+			if sig.ArbitraryCode {
+				p.ArbitraryCode[name] = true
+			}
+		}
+	}
+}
+
+// wildcardGrants reports whether a pattern may grant fun at all.
+func (p *Policy) wildcardGrants(fun string) bool {
+	return p.Shipped[fun] && !p.ArbitraryCode[fun]
 }
 
 // Rule is one grant: a target pattern, the functions permitted against
@@ -93,14 +141,11 @@ type Request struct {
 	Test bool
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
+	//
+	// Whether a wildcard may grant the function is not a field: it is
+	// the function's property, answered by ReadsPillar, so no request
+	// can leave it out (DIVERGENCE 5.563).
 	Runner bool
-	// NeverWildcard requires the function to be named in the role
-	// rather than matched by a pattern, for the distinct
-	// high-privilege permissions of SPEC 22.1. Reading one node's
-	// compiled pillar is reading its secrets, and a role written to let
-	// someone restart a service should not carry it because the list
-	// said `*`.
-	NeverWildcard bool
 }
 
 // Decision is the outcome, and why. SPEC 23.5: every decision is
@@ -409,21 +454,38 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 					continue
 				}
 				// A distinct high-privilege permission has to be
-				// named, not matched. SPEC 22.1.
-				if req.NeverWildcard && !namedExactly(rule.Runners, req.Fun) {
-					best = Decision{Reason: fmt.Sprintf(
-						"%s is never granted by a wildcard; name it in the role (SPEC 22.1)",
-						req.Fun)}
+				// named, not matched. SPEC 22.1; DIVERGENCE 5.563.
+				if ReadsPillar(req.Fun, true) && !namedExactly(rule.Runners, req.Fun) {
+					best = pillarRefusal(req.Fun, "runners")
 					continue
 				}
 			} else {
 				if !targetCovered(rule.Target, kind, req.Target) {
 					continue
 				}
-				if !p.functionGranted(rule, req.Fun) || (req.NeverWildcard && !namedExactly(rule.Functions, req.Fun)) {
-					if (p.ArbitraryCode[req.Fun] || req.NeverWildcard) && matchAny(rule.Functions, "*") {
+				if ReadsPillar(req.Fun, false) && !namedExactly(rule.Functions, req.Fun) {
+					// Only a rule whose pattern matched has a reason
+					// worth reporting; one that never mentioned the
+					// function leaves the general one.
+					if matchAny(rule.Functions, req.Fun) {
+						best = pillarRefusal(req.Fun, "functions")
+					}
+					continue
+				}
+				if !p.functionGranted(rule, req.Fun) {
+					if p.ArbitraryCode[req.Fun] && matchAny(rule.Functions, "*") {
 						best = Decision{Reason: fmt.Sprintf(
 							"%s runs arbitrary code and is never granted by a wildcard; name it in the role's functions (SPEC 23.5)",
+							req.Fun)}
+					}
+					if p.Shipped == nil && matchAny(rule.Functions, req.Fun) {
+						best = Decision{Reason: fmt.Sprintf(
+							"this policy was given no catalog of the functions the build ships, so no pattern grants %s; that is a fault in whatever loaded it",
+							req.Fun)}
+					} else if !p.Shipped[req.Fun] && matchAny(rule.Functions, req.Fun) {
+						best = Decision{Reason: fmt.Sprintf(
+							"%s is not a function this build ships, so it is an extension's or a newer build's and may run anything; "+
+								"a wildcard never grants it, so name it in the role's functions (SPEC 23.5)",
 							req.Fun)}
 					}
 					continue
@@ -439,6 +501,15 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 	return best
 }
 
+// pillarRefusal is the reason a pattern did not grant a function that
+// reads pillar. It says what to write, because the fix is one line in the
+// policy and the operator reading this is the one who has to write it.
+func pillarRefusal(fun, list string) Decision {
+	return Decision{Reason: fmt.Sprintf(
+		"%s reads a node's pillar, which is its secrets, and is never granted by a wildcard; name it in the role's %s (SPEC 22.1)",
+		fun, list)}
+}
+
 // functionGranted applies the wildcard rule of SPEC 23.5: `'*'` matches,
 // but never a function that runs arbitrary code.
 func (p *Policy) functionGranted(rule Rule, fun string) bool {
@@ -450,9 +521,11 @@ func (p *Policy) functionGranted(rule Rule, fun string) bool {
 			continue
 		}
 		// Salt's `.*` grants everything, and everybody's Salt ACL
-		// grants `.*`. A pattern here grants everything it matches
-		// except the functions that are a shell by another name.
-		if p.ArbitraryCode[fun] {
+		// grants `.*`. A pattern here grants what it matches of the
+		// functions this build ships, except the ones that are a shell
+		// by another name; a name it does not ship is an extension's,
+		// which the node runs as arbitrary code (see Shipped).
+		if !p.wildcardGrants(fun) {
 			continue
 		}
 		return true

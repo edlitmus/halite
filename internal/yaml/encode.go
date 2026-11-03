@@ -19,6 +19,19 @@ type EncodeOptions struct {
 	// Flow renders collections inline, which is what the yaml_encode
 	// template filter wants when it is embedding a value in one line.
 	Flow bool
+	// MaxBytes, when positive, stops block output soon after it passes
+	// that many bytes, leaving it longer than MaxBytes so the caller can
+	// tell and refuse it. Block style indents every line by its depth,
+	// so its length is not bounded by the length of what it encodes: a
+	// mapping nested ten thousand deep is ten kilobytes of keys and
+	// a hundred megabytes of indentation. Flow style does not indent, so
+	// it needs no stop. The template engine sets this.
+	MaxBytes int64
+}
+
+// full reports whether block output has passed opts.MaxBytes.
+func (o EncodeOptions) full(b *strings.Builder) bool {
+	return o.MaxBytes > 0 && int64(b.Len()) > o.MaxBytes
 }
 
 // Encode renders a value as YAML. It is the inverse of Parse for every
@@ -70,6 +83,9 @@ func EncodeScalar(v any) string {
 // from rewriting every file it manages on the first run after a
 // migration.
 func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
+	if opts.full(b) {
+		return
+	}
 	pad := strings.Repeat(" ", indent)
 	switch t := v.(type) {
 	case *value.Map:
@@ -78,6 +94,9 @@ func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			return
 		}
 		for _, e := range t.Entries() {
+			if opts.full(b) {
+				return
+			}
 			b.WriteString(pad)
 			writeKey(b, e.Key)
 			b.WriteByte(':')
@@ -89,6 +108,9 @@ func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			return
 		}
 		for _, item := range t {
+			if opts.full(b) {
+				return
+			}
 			b.WriteString(pad)
 			b.WriteByte('-')
 			writeSeqItem(b, item, indent, opts)
@@ -130,6 +152,9 @@ func writeChild(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 // shares the dash's line and the rest are indented past it, so a mapping
 // in a list reads `- a: 1` / `  b: 2`.
 func writeSeqItem(b *strings.Builder, v any, indent int, opts EncodeOptions) {
+	if opts.full(b) {
+		return
+	}
 	inner := indent + opts.Indent
 	pad := strings.Repeat(" ", inner)
 	switch t := v.(type) {
@@ -139,6 +164,9 @@ func writeSeqItem(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			return
 		}
 		for i, e := range t.Entries() {
+			if opts.full(b) {
+				return
+			}
 			if i == 0 {
 				b.WriteByte(' ')
 			} else {
@@ -154,6 +182,9 @@ func writeSeqItem(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			return
 		}
 		for i, item := range t {
+			if opts.full(b) {
+				return
+			}
 			if i == 0 {
 				b.WriteByte(' ')
 			} else {

@@ -99,7 +99,7 @@ Existing SLS trees are full of Jinja, and requiring a rewrite to Go's text/templ
 
 Two deliberate departures from Jinja are worth knowing before reading further. Undefined names are strict by default (section 10.2.6), so a missing pillar value is an error naming the file, line, and identifier rather than an empty string that produces a state which silently does the wrong thing. And the random filters are seeded deterministically per render (section 10.2.4), so a test=True run and the real run that follows it agree.
 
-**Files:** `ast.go`, `depth.go`, `env.go`, `eval.go`, `filters.go`, `filters_salt.go`, `filters_seq.go`, `lex.go`, `listmutate.go`, `methods.go`, `parse.go`, `parse_expr.go`, `pyformat.go`, `pypercent.go`, `runtime.go`, `tests.go`; with tests.
+**Files:** `ast.go`, `depth.go`, `env.go`, `eval.go`, `filters.go`, `filters_salt.go`, `filters_seq.go`, `lex.go`, `listmutate.go`, `methods.go`, `parse.go`, `parse_expr.go`, `pyformat.go`, `pypercent.go`, `runtime.go`, `shape.go`, `tests.go`; with tests.
 
 **Exports.**
 
@@ -264,8 +264,11 @@ Package fnmatch is Python's fnmatch.fnmatchcase, the glob Salt means wherever it
 
 **Exports.**
 
+- `Compile` (func): Compile prepares a glob, for a pattern that arrives in a request.
 - `HasMeta` (func): HasMeta reports whether a pattern holds any of fnmatch's special characters.
+- `IsLiteral` (func): IsLiteral reports whether a pattern matches only itself, so that it needs no regexp and costs what the string does.
 - `Match` (func): Match is Python's fnmatch.fnmatchcase, which is what Salt's file_ignore_glob means.
+- `Pattern` (type): Pattern is a compiled glob.
 
 ## `internal/state`
 
@@ -277,7 +280,7 @@ The compiler reproduces Salt's semantics including the parts that are surprising
 
 One departure is worth stating up front: every error is collected and reported together. Salt reports the first and stops, which makes fixing a large tree an iterative grind. SPEC section 11.2 step 10.
 
-**Files:** `compile.go`, `diag.go`, `highstate.go`, `lowstate.go`, `order.go`, `requisite.go`, `slsname.go`, `top.go`; with tests.
+**Files:** `compile.go`, `diag.go`, `highstate.go`, `jobfunctions.go`, `lowstate.go`, `order.go`, `requisite.go`, `slsname.go`, `top.go`; with tests.
 
 **Exports.**
 
@@ -294,6 +297,8 @@ One departure is worth stating up front: every error is collected and reported t
 - `HighState` (type): HighState is the assembled declaration structure of a whole run, in declaration order.
 - `IsOptionArg` (func): IsOptionArg reports whether an argument name configures the runner.
 - `IsRequisiteArg` (func): IsRequisiteArg reports whether an argument name is a requisite rather than a module parameter.
+- `JobFunction` (func): JobFunction reports whether fun is one of them, and its name without the `state.` prefix.
+- `JobFunctions` (func): JobFunctions lists them by their full names.
 - `Loader` (type): Loader resolves SLS names to source.
 - `NewHighState` (func): NewHighState returns an empty high state.
 - `Options` (type): Options are the per-state options every state module honours, as distinct from the arguments a particular module takes.
@@ -435,7 +440,7 @@ Package builtin holds the execution and state modules compiled into halite: the 
 
 Both registries are built here rather than in separate packages because a state module and its execution module are two halves of one feature, and splitting them across packages makes it easy for the pair to drift.
 
-**Files:** `acl.go`, `acl_state.go`, `aliases.go`, `apparmor.go`, `archive.go`, `archive_remote.go`, `at.go`, `authselect.go`, `beacons.go`, `builtin.go`, `chattr.go`, `cmd.go`, `cmd_more.go`, `cron.go`, `crypto.go`, `data.go`, `debconf.go`, `defaults.go`, `dnf_module.go`, `dpkg.go`, `environ.go`, `environ_unix.go`, `environ_windows.go`, `evidence.go`, `file.go`, `file_checkcmd.go`, `file_edit.go`, `file_exec_edit.go`, `file_line.go`, `file_more.go`, `file_patch.go`, `file_recurse.go`, `file_remote.go`, `file_serialize.go`, `file_treecopy.go`, `fileutil.go`, `firewall.go`, `firewall_pf.go`, `firewall_ufw.go`, `firewalld.go`, `followlink_other.go`, `followlink_unix.go`, `git.go`, `grains_state.go`, `hostname.go`, `hosts.go`, `http.go`, `introspect.go`, `iptables.go`, `jail.go`, `journald.go`, `kernelpkg.go`, `kmod.go`, `lang.go`, `lang_build.go`, `lang_more.go`, `lang_states.go`, `locale.go`, `logrotate.go`, `lvm.go`, `mac_defaults.go`, `mac_keychain.go`, `mac_power.go`, `mac_softwareupdate.go`, `mac_user.go`, `mdadm.go`, `mine.go`, `mode_unix.go`, `mode_windows.go`, `modprobe.go`, `mount.go`, `netplan.go`, `nftables.go`, `openssl_cert.go`, `ownership.go`, `ownership_other.go`, `ownership_unix.go`, `ownership_windows.go`, `pam.go`, `parentdir.go`, `pkg.go`, `pkg_brew_owner_other.go`, `pkg_brew_owner_unix.go`, `pkg_choco.go`, `pkg_more.go`, `pkg_providers.go`, `pkg_vercmp.go`, `pkg_zypper.go`, `pkgrepo.go`, `pkgrepo_providers.go`, `pro.go`, `ps.go`, `quota.go`, `reboot.go`, `rpm.go`, `schedule.go`, `script_unix.go`, `script_windows.go`, `selinux.go`, `service.go`, `service_more.go`, `service_platform_other.go`, `service_platform_windows.go`, `service_systemd_dbus.go`, `service_windows.go`, `shadow.go`, `small_gaps.go`, `snap.go`, `ssh.go`, `ssh_account.go`, `ssh_known_hosts.go`, `sudo.go`, `sudo_state.go`, `swap.go`, `sys.go`, `sysctl.go`, `sysrc.go`, `system.go`, `system_module.go`, `template_source.go`, `test.go`, `timezone.go`, `tls.go`, `tmpfs.go`, `udev.go`, `user.go`, `user_aging.go`, `user_password.go`, `vercmp.go`, `watcher_states.go`, `win_dacl.go`, `win_dacl_other.go`, `win_dacl_windows.go`, `win_registry.go`, `win_registry_other.go`, `win_registry_windows.go`, `win_service.go`, `win_service_other.go`, `win_service_windows.go`, `win_task.go`, `win_task_other.go`, `win_task_windows.go`, `x509.go`, `x509_extensions.go`, `x509_module.go`, `x509_states.go`, `zfs.go`, `zpool.go`; with tests.
+**Files:** `acl.go`, `acl_state.go`, `aliases.go`, `apparmor.go`, `archive.go`, `archive_remote.go`, `at.go`, `authselect.go`, `beacons.go`, `builtin.go`, `chattr.go`, `cmd.go`, `cmd_more.go`, `cron.go`, `crypto.go`, `data.go`, `debconf.go`, `defaults.go`, `dnf_module.go`, `dpkg.go`, `entryattrs_other.go`, `entryattrs_unix.go`, `environ.go`, `environ_unix.go`, `environ_windows.go`, `evidence.go`, `file.go`, `file_checkcmd.go`, `file_edit.go`, `file_exec_edit.go`, `file_line.go`, `file_more.go`, `file_patch.go`, `file_recurse.go`, `file_remote.go`, `file_serialize.go`, `file_treecopy.go`, `fileutil.go`, `firewall.go`, `firewall_pf.go`, `firewall_ufw.go`, `firewalld.go`, `followlink_other.go`, `followlink_unix.go`, `git.go`, `grains_state.go`, `hostname.go`, `hosts.go`, `http.go`, `introspect.go`, `iptables.go`, `jail.go`, `journald.go`, `kernelpkg.go`, `kmod.go`, `lang.go`, `lang_build.go`, `lang_more.go`, `lang_states.go`, `locale.go`, `logrotate.go`, `lvm.go`, `mac_defaults.go`, `mac_keychain.go`, `mac_power.go`, `mac_softwareupdate.go`, `mac_user.go`, `mdadm.go`, `mine.go`, `mode_unix.go`, `mode_windows.go`, `modprobe.go`, `mount.go`, `netplan.go`, `nftables.go`, `openssl_cert.go`, `ownership.go`, `ownership_other.go`, `ownership_unix.go`, `ownership_windows.go`, `pam.go`, `parentdir.go`, `pkg.go`, `pkg_brew_owner_other.go`, `pkg_brew_owner_unix.go`, `pkg_choco.go`, `pkg_more.go`, `pkg_providers.go`, `pkg_vercmp.go`, `pkg_zypper.go`, `pkgrepo.go`, `pkgrepo_providers.go`, `pro.go`, `ps.go`, `quota.go`, `reboot.go`, `rpm.go`, `schedule.go`, `script_unix.go`, `script_windows.go`, `selinux.go`, `service.go`, `service_more.go`, `service_platform_other.go`, `service_platform_windows.go`, `service_systemd_dbus.go`, `service_windows.go`, `shadow.go`, `small_gaps.go`, `snap.go`, `ssh.go`, `ssh_account.go`, `ssh_known_hosts.go`, `sudo.go`, `sudo_state.go`, `swap.go`, `sys.go`, `sysctl.go`, `sysrc.go`, `system.go`, `system_module.go`, `template_source.go`, `test.go`, `timezone.go`, `tls.go`, `tmpfs.go`, `udev.go`, `user.go`, `user_aging.go`, `user_password.go`, `vercmp.go`, `watcher_states.go`, `win_dacl.go`, `win_dacl_other.go`, `win_dacl_windows.go`, `win_registry.go`, `win_registry_other.go`, `win_registry_windows.go`, `win_service.go`, `win_service_other.go`, `win_service_windows.go`, `win_task.go`, `win_task_other.go`, `win_task_windows.go`, `x509.go`, `x509_extensions.go`, `x509_module.go`, `x509_states.go`, `zfs.go`, `zpool.go`; with tests.
 
 **Exports.**
 

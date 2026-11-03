@@ -51,6 +51,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 
 	cases := []struct {

@@ -22,12 +22,14 @@ import (
 // suffers it. In the child the stack is capped at 4 MiB, so the old code
 // dies after some tens of thousands of levels rather than after the
 // gigabyte a default Go stack allows: the inputs below stay under a
-// megabyte and the test does not need the machine to find out.
+// megabyte and the test does not need the machine to find out. They must:
+// MaxExprLen refuses a longer expression before it is parsed, which would
+// make the test pass without reaching the parser (DIVERGENCE 5.559).
 
 const stackHelperEnv = "HALITE_TARGET_STACK_HELPER"
 
 // hostileShapes are expressions that the old code could not survive with
-// a 4 MiB stack. Each is under a megabyte. want is what the fixed code
+// a 4 MiB stack. Each is under MaxExprLen, which TestHostileShapesFit holds. want is what the fixed code
 // must do with it: refuse with a nesting error, or compile and evaluate.
 var hostileShapes = map[string]struct {
 	expr      func() string
@@ -53,14 +55,15 @@ var hostileShapes = map[string]struct {
 	// the next, so Match recursed once per term. This is the shape a
 	// long hand-built target actually has, which is why it must compile
 	// and evaluate rather than be refused. No term matches, so every one
-	// is evaluated.
+	// is evaluated. 90,000 terms is three times the 30,000 that
+	// overflowed the old code (5.291), and under MaxExprLen.
 	"or-chain": {
-		expr:      func() string { return strings.TrimSuffix(strings.Repeat("nomatch or ", 200_000), " or ") },
+		expr:      func() string { return strings.TrimSuffix(strings.Repeat("nomatch or ", 90_000), " or ") },
 		wantMatch: false,
 	},
 	// Every term matches, so every one is evaluated.
 	"and-chain": {
-		expr:      func() string { return strings.TrimSuffix(strings.Repeat("web1.prod and ", 200_000), " and ") },
+		expr:      func() string { return strings.TrimSuffix(strings.Repeat("web1.prod and ", 70_000), " and ") },
 		wantMatch: true,
 	},
 }
@@ -94,6 +97,16 @@ func TestCompoundStackHelper(t *testing.T) {
 		t.Fatalf("Match = %v, want %v", got, shape.wantMatch)
 	}
 	fmt.Println("SURVIVED: evaluated")
+}
+
+// hostileShapesFit holds every shape under MaxExprLen, so that each one
+// reaches the parser it is there to test.
+func TestHostileShapesFit(t *testing.T) {
+	for name, shape := range hostileShapes {
+		if n := len(shape.expr()); n > MaxExprLen {
+			t.Errorf("shape %q is %d bytes, over MaxExprLen (%d): it tests the length bound, not the parser", name, n, MaxExprLen)
+		}
+	}
 }
 
 func TestHostileTargetsDoNotOverflowTheStack(t *testing.T) {
@@ -164,9 +177,10 @@ func TestCompoundNestingLimitEdge(t *testing.T) {
 	}
 }
 
-// TestLongFlatTargetsStillCompile is the case a length cap would have
-// broken: a list of node names written as a compound, as long as a large
+// TestLongFlatTargetsStillCompile is the case a length cap must not
+// break: a list of node names written as a compound, as long as a large
 // estate's. It must compile, match its members, and not match others.
+// MaxExprLen is some six times its length.
 func TestLongFlatTargetsStillCompile(t *testing.T) {
 	var b strings.Builder
 	for i := range 5000 {

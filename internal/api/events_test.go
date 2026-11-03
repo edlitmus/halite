@@ -60,6 +60,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	s := &Server{Policy: loaded}
 
 	web := &apitoken.Token{Principal: "local:ed", Roles: []string{"webops"}}
@@ -109,6 +110,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	if loaded.VisibleNode([]string{"runners-only"}, "web1.example") {
 		t.Error("a runner grant made a node visible")
 	}

@@ -257,12 +257,21 @@ never granted by a wildcard: cmd.exec_code, cmd.retcode, cmd.run, cmd.run_all,
 cmd.run_bg, cmd.run_stderr, cmd.run_stdout, cmd.script, cmd.script_retcode,
 cmd.shell, cmd.wait, file.replace, file.write, module.run, module.wait,
 schedule.add, schedule.modify, schedule.run_job
+
+nor any function this build does not ship, such as an extension's
 ```
 
 (That is `halite-hub policy show` for this build.) The list is taken from
 the signatures the build ships, so a function marked in a later build is
 covered without anyone remembering to add it. `functions: ['*']` therefore
-covers `pkg.installed` and not `cmd.run`:
+covers `pkg.installed` and not `cmd.run`.
+
+The last line is the other half. A pattern grants only a function the
+hub's build ships and knows is not arbitrary code. An extension's
+function is arbitrary code on the node, and the hub cannot know which
+extensions a node has loaded, so a wildcard never grants one: a role
+that calls `myext.exec` names it, and `myext.*` does not do it either.
+The same goes for a function from a newer build than the hub's.
 
 ```
 $ halite-hub policy test cert:CN=carol web1.prod pkg.install nginx
@@ -274,7 +283,24 @@ denied: cmd.run runs arbitrary code and is never granted by a wildcard; name it 
 In the systems this replaces, everybody's access control granted `.*` and
 so granted a root shell on every machine. Reading a node's **pillar** is a
 similarly distinct permission (it is reading its secrets) and must also be
-named, not wildcarded.
+named, not wildcarded. `policy show` prints that set on a line of its own:
+
+```
+reads a node's pillar, which a wildcard never grants: functions config.get, pillar.get, pillar.items, pillar.raw; runners cache.pillar, pillar.show_pillar
+```
+
+It is the function that decides, not the route it arrives by:
+`pillar.show_pillar` is refused to `runners: ['*']` through
+`GET /v1/pillar/{id}`, `POST /v1/run`, `halite-hub runner`, a reactor and
+an orchestration alike, and `pillar.items` sent to a node is refused to
+`functions: ['*']`. `config.get` is on the list because it searches
+pillar first. `pillar.keys` and `pillar.show_top` are not: they name the
+keys and the files, not the values.
+
+```
+$ halite-hub policy test cert:CN=carol web1.prod pillar.items
+denied: pillar.items reads a node's pillar, which is its secrets, and is never granted by a wildcard; name it in the role's functions (SPEC 22.1)
+```
 
 ### Bindings
 
@@ -413,7 +439,8 @@ Habits that keep a policy honest:
   match one rule entirely.
 - `runners:` are a separate permission from `functions:`.
 - **Functions that run arbitrary code are never granted by a wildcard**;
-  name them. Reading pillar is likewise named.
+  name them. Nor is an extension's function, or any the hub's build does
+  not ship. Reading pillar is likewise named.
 - Test with `halite-hub policy test` (exit status 0/1) and keep a test
   script; every decision is logged with its rule.
 - The hub and the API each read the policy **at start**; restart both. The

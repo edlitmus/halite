@@ -25,6 +25,7 @@ func metricsLab(t *testing.T, policySrc string) *lab {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 	return l
 }
@@ -124,6 +125,7 @@ func TestAHubWithoutARegistrySaysSo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 	l.enrolled(t, "web1.example")
 

@@ -176,7 +176,7 @@ func TestPercentFormatMatchesPython(t *testing.T) {
 				args = append(args, decodePyArg(t, a))
 			}
 		}
-		got, err := pyPercent(format, args, kwargs)
+		got, err := pyPercent(format, args, kwargs, DefaultOptions().MaxOutput)
 		switch {
 		case strings.HasPrefix(want, "!"):
 			if err == nil {
