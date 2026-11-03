@@ -315,6 +315,13 @@ func addSequenceFilters(f map[string]FilterFunc) {
 			if err != nil {
 				return nil, err
 			}
+			// map calls the filter itself rather than through
+			// applyFilter, so it charges what the filter made.
+			if !selectsExisting[name] {
+				if err := fc.r.chargeResult(mv, append([]any{item}, rest...), "map", fc.Pos); err != nil {
+					return nil, err
+				}
+			}
 			out[i] = mv
 		}
 		return out, nil

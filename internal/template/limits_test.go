@@ -408,23 +408,33 @@ func TestAllocatingBuiltinsAreBounded(t *testing.T) {
 		"batch":                   {`{{ [1, 2, 3] | batch(2, 0) | list }}`, "[[1, 2], [3, 0]]"},
 		"slice":                   {`{{ [1, 2, 3] | slice(5) | list }}`, "[[1], [2], [3], [], []]"},
 		"permutations":            {`{{ [1, 2, 3, 4, 5] | permutations(5) | length }}`, "120"},
-		"replace at limit":        {`{{ ('a' * 100) | replace('a', 'b' * 10) | length }}`, "1000"},
-		"replace count at limit":  {`{{ ('a' * 100) | replace('a', 'b' * 20, 47) | length }}`, "993"},
+		"replace at limit":        {`{{ a100 | replace('a', b10) | length }}`, "1000"},
+		"replace count at limit":  {`{{ a100 | replace('a', b20, 47) | length }}`, "993"},
 		"replace shrinking":       {`{{ ('ab' * 500) | replace('ab', '') | length }}`, "0"},
-		"replace method at limit": {`{{ ('a' * 100).replace('a', 'b' * 10) | length }}`, "1000"},
-		"join at limit":           {`{{ range(10) | join('x' * 110) | length }}`, "1000"},
-		"join method at limit":    {`{{ ('x' * 110).join(range(10) | map('string') | list) | length }}`, "1000"},
-		"concat at limit":         {`{{ (('a' * 500) ~ ('a' * 500)) | length }}`, "1000"},
+		"replace method at limit": {`{{ a100.replace('a', b10) | length }}`, "1000"},
+		"join at limit":           {`{{ range(10) | join(x110) | length }}`, "1000"},
+		"join method at limit":    {`{{ x110.join(digits) | length }}`, "1000"},
+		"concat at limit":         {`{{ (a500 ~ a500) | length }}`, "1000"},
 		"list concat at limit":    {`{% set ns = namespace(l=[1]) %}{% for i in range(9) %}{% set ns.l = ns.l + ns.l %}{% endfor %}{{ ns.l | length }}`, "512"},
 		// Twelve is past Jinja's leeway of five over the length, which
 		// halite does not implement; this case is the same either way.
 		"truncate": {`{{ 'abcdefghijkl' | truncate(3, true) }}`, "..."},
 	}
+	// The operands of the cases at a limit come from the context, so
+	// that each is held to the limit on one string alone: built in the
+	// template, they would be charged to the render too, and the
+	// render's total is what would refuse them (DIVERGENCE 5.559).
+	ctx := map[string]any{
+		"a100": strings.Repeat("a", 100), "a500": strings.Repeat("a", 500),
+		"b10": strings.Repeat("b", 10), "b20": strings.Repeat("b", 20),
+		"x110":   strings.Repeat("x", 110),
+		"digits": []any{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"},
+	}
 	for name, c := range allowed {
 		t.Run(name, func(t *testing.T) {
-			out, err := renderSmall(c[0])
-			if err != nil || out != c[1] {
-				t.Fatalf("%s = %q, %v; want %q", c[0], out, err, c[1])
+			res, err := smallEnv().RenderString(c[0], "t.sls", ctx)
+			if err != nil || res.Output != c[1] {
+				t.Fatalf("%s = %q, %v; want %q", c[0], res.Output, err, c[1])
 			}
 		})
 	}

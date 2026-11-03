@@ -956,7 +956,9 @@ single list (`range`, `*`, `batch`, `slice`, `permutations`, `combinations`) may
 than the iteration limit, both checked before the value is built; so is the result of `replace`,
 `join`, `format`, `~` and `+`. The lists `range`, `*`, `permutations` and `combinations` build are
 also counted across the render, and together may hold no more items than the iteration limit;
-`batch` and `slice` regroup a list that already exists and are not counted.
+`batch` and `slice` regroup a list that already exists and are not counted. The strings a render
+builds are counted across it too, and together may be no larger than the output limit; a string an
+operation was given or found, and what is written, are not counted again.
 
 A value is measured before anything walks it: printing, comparing, encoding, sorting, using it as
 a mapping key, or passing it to `salt[...]`. It may nest at most 10,000 deep, which is also the JSON

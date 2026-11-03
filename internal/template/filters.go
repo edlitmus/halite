@@ -74,6 +74,11 @@ func (r *renderer) applyFilter(f *FilterExpr, obj any) (any, error) {
 		}
 		return nil, &Error{Pos: f.Pos(), Msg: err.Error(), Cause: err}
 	}
+	if !selectsExisting[f.Name] {
+		if err := r.chargeResult(out, append([]any{obj}, args...), f.Name, f.Pos()); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
 }
 

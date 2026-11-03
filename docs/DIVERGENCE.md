@@ -36523,6 +36523,74 @@ filters.
 **Not verified.** Only darwin/arm64 with go1.27.3. Salt has no such limit
 to compare with.
 
+### 5.559 The strings a render built were limited one at a time
+
+5.312 held each string a builtin makes to `MaxOutput`, and 5.445 and
+5.460 charged the lists `range()`, `*` and the combinatorics make to the
+render as a whole. Strings had no such total. The comment that explained
+it, in `internal/template/env.go`, said a value built in memory "is not
+output, so it is not charged to the budget", which was the reason and
+the gap: a limit per value says nothing about how many values a render
+holds.
+
+**Measured.** On `de26c91b` with `MaxOutput` at 1,000, 500 iterations of
+`l.append('a' * 900)` rendered, and the review measured the list holding
+450,000 bytes; a namespace list built with `+` and a mapping built with
+`update` did the same. With the default limits that is up to a 64 MiB
+string per iteration.
+
+**The change.** The render counts the bytes of the strings it makes
+(`budget.build`), against `MaxOutput`, as `materialise` counts items
+against `MaxIterations`. It is charged where every filter, method and
+global function returns, and by `map` for the filter it calls, rather
+than in each builtin, so a filter added later is charged without anybody
+remembering to; and by `~`, `+` and `*` on strings. What is charged is a
+string result that is not one of the operation's inputs handed back, so
+`|string` of a string, `|trim` with nothing to trim and `x ~ ''` cost
+nothing. Nine filters and three methods that return a string they found
+rather than made (`first`, `last`, `min`, `max`, `random`, `attr`,
+`default`, `d`, `traverse`; `get`, `pop`, `setdefault`) are named and not
+charged, and `method_call`, whose method is charged when it is called.
+Leaving one out of that list over-counts, which refuses a template early;
+the other way round, a builder nobody charged, is the failure that ends
+the process, which is why the list names the exceptions rather than the
+builders. Not charged: what is written, which is output and has its own
+limit; a macro's result, which is what its body wrote; and a `salt[...]`
+result, which is the size of what a module read. The comment now says
+what is bounded and how.
+
+**Breaking, in principle.** A render that builds more than 64 MiB of
+strings in all now fails, though no single string is past the limit.
+Building a string by concatenation in a loop builds every prefix of it,
+so a string of L bytes built from k-byte pieces charges about L²/2k: at
+50-byte lines, a little over 80 kB. None of the eleven Salt trees checked
+out on the development machine builds a string that way (searched for a
+name assigned from itself with `~` or `+`); they use `~` to join a few
+path pieces. The largest total any render in the package tests built,
+the Jinja corpus among them, was 20,002 bytes (measured by a temporary
+counter, not committed).
+
+**Demonstrated.** `TestBuiltStringsAreChargedToTheRender`: three
+400-byte strings against a 1,000-byte limit, held by `append`, list `+`,
+`update`, a filter, a method, `map`, `~`, both formats and a rendered
+list. With the charge disabled all ten were allowed; with the named
+exceptions emptied, `first` and `get` were refused; without the
+identity check, `string`, `trim`, `strip` and `x ~ ''` were refused; and
+each charging site removed on its own let its own cases through.
+
+**Not done.** Lists are still counted only where 5.460 counts them.
+`append` copies the list it extends, because a Go slice is not a Python
+list (5.107), so `{% do ll.append(l) %}{% do l.append(1) %}` in a loop
+holds every prefix of `l`, the square of its length in items; read from
+the code, not run. Charging the copies would refuse any list built by
+more than about 4,500 appends, and the right fix is a list that is not
+copied. Strings inside a container a filter returns, other than through
+`map`, are not counted (`split` shares its input's bytes; `|list` of a
+string makes one-character strings).
+
+**Not verified.** Only darwin/arm64 with go1.27.3. No real tree was
+rendered with the counter.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

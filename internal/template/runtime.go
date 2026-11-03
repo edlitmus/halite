@@ -76,6 +76,14 @@ type funcValue struct {
 	fn   func(args []any, kwargs map[string]any) (any, error)
 }
 
+// boundMethod is a method with the value it was looked up on, so that a
+// method returning that value unchanged (`'a'.strip()`) is not charged as
+// building a string.
+type boundMethod struct {
+	funcValue
+	recv any
+}
+
 func (f funcValue) Call(args []any, kwargs map[string]any) (any, error) {
 	return f.fn(args, kwargs)
 }
@@ -164,6 +172,9 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 	}
 
 	if m, ok := method(obj, name, r.opts.MaxOutput); ok {
+		if fv, ok := m.(funcValue); ok {
+			m = boundMethod{fv, obj}
+		}
 		return m, nil
 	}
 	v, ok := index(obj, name)
@@ -375,6 +386,24 @@ func (r *renderer) callValue(fn any, args []any, kwargs map[string]any, pos Pos)
 			}
 			return nil, &Error{Pos: pos, Msg: err.Error(), Cause: err}
 		}
+		// A method or a global function's string is charged here, as a
+		// filter's is in applyFilter. A macro's is not: it is the text
+		// its body wrote, which was charged as it was written. Nor is a
+		// salt[...] call's: an execution module's result is the size of
+		// what it read, not of anything the template made.
+		var name string
+		inputs := args
+		switch f := fn.(type) {
+		case funcValue:
+			name = f.name
+		case boundMethod:
+			name, inputs = f.name, append([]any{f.recv}, args...)
+		}
+		if name != "" && !selectsExisting[name] {
+			if err := r.chargeResult(v, inputs, name+"()", pos); err != nil {
+				return nil, err
+			}
+		}
 		// range() is the one global that builds a list from nothing, so
 		// it is the one charged here (see budget.materialise).
 		if f, ok := fn.(funcValue); ok && f.name == "range" {
@@ -408,7 +437,11 @@ func (r *renderer) concat(a, b string, pos Pos) (any, error) {
 	if err := r.checkBytes(int64(len(a))+int64(len(b)), "string concatenation", pos); err != nil {
 		return nil, err
 	}
-	return a + b, nil
+	s := a + b
+	if err := r.chargeResult(s, []any{a, b}, "string concatenation", pos); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
@@ -506,6 +539,11 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 			}
 			if !mulWithin(int64(len(ls)), n, r.opts.MaxOutput) {
 				return nil, errorf(pos, "string repetition would exceed the %d byte output limit", r.opts.MaxOutput)
+			}
+			if n != 1 {
+				if err := r.budget.build(int64(len(ls)) * n); err != nil {
+					return nil, errorf(pos, "string repetition: %v", err)
+				}
 			}
 			return strings.Repeat(ls, int(n)), nil
 		}

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A render's strings are limited in total, not only one at a time.** Each string a template builds was held to the output limit (64 MiB), but a render could keep as many as it could put in a list. The bytes of the strings a render makes are now counted across it against the same limit, as the lists it makes already were. A render that builds more than 64 MiB of strings in all, for example a string of a few hundred kilobytes built up by concatenation in a loop, now fails with an error that says so. DIVERGENCE 5.559.
+
 - **A template can no longer end the hub or a node by building a value too deep, too shared or self-containing to walk.** A list nested two million deep, which a loop builds in about a second, overflowed the stack when it was printed, compared, encoded, used as a mapping key or passed to `salt[...]`; a list holding one string many times was rendered whole before anything measured it; and a mapping that holds itself was walked until the stack ran out. Each is now refused with an error at the template line: a value may nest 10,000 deep, and its rendering may be no larger than the output limit. `tojson` and `json` refuse an indent whose padding alone would pass the limit. DIVERGENCE 5.312.
 
 - **`replace`, `join`, `format` and string and list concatenation are held to the output limit.** Each built its result without measuring it, so one expression could ask for many gigabytes, and an allocation the runtime cannot make ends the process. They are now refused before they are built, as `indent`, `center` and `*` already were. DIVERGENCE 5.558.
