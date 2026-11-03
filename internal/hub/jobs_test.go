@@ -43,9 +43,9 @@ func labPolicy(t *testing.T) *policy.Policy {
 roles:
   administrator:
     - target: '*'
-      functions: ['*', 'cmd.run']
+      functions: ['*', 'cmd.run', 'pillar.items', 'pillar.raw', 'pillar.get', 'config.get']
     - target: '*'
-      runners: ['*']
+      runners: ['*', 'pillar.show_pillar']
 bindings:
   - principal: 'cert:CN=ed'
     roles: ['administrator']

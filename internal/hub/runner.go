@@ -319,7 +319,7 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		return nil, fmt.Errorf("%s: %s", call.Fun, strings.Join(msgs, "; "))
 	}
 
-	scope := s.Policy.RunnerScope(call.Principal, call.Fun, false)
+	scope := s.Policy.RunnerScope(call.Principal, call.Fun)
 	if call.Narrow != nil {
 		scope = scope.Within(policy.Scope{Targets: *call.Narrow})
 	}

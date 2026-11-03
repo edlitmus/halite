@@ -1641,7 +1641,11 @@ prevent.
 literally. Reading one node's compiled pillar is reading its secrets,
 and a role written to let someone restart a service must not carry it
 because the list said `*`. SPEC 22.1 calls this a distinct
-high-privilege permission and it is enforced as one.
+high-privilege permission and it is enforced as one — on every route,
+not only this one: `POST /v1/run` with the `runner` client and the same
+function, and `pillar.items`, `pillar.raw`, `pillar.get` or `config.get`
+with the `local` client, need the role to name them too (DIVERGENCE
+5.563).
 
 ## Extensions
 

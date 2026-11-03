@@ -352,7 +352,7 @@ func (s *Server) forwardRunner(w http.ResponseWriter, r *http.Request, token *ap
 func (s *Server) runnerRequest(token *apitoken.Token, fun string, arg []string, kwarg map[string]any) transport.RunnerRequest {
 	req := transport.RunnerRequest{Fun: fun, Arg: arg, Kwarg: kwarg}
 	if token != nil {
-		targets := s.Policy.RunnerScopeFor(token.Roles, fun, false).Targets
+		targets := s.Policy.RunnerScopeFor(token.Roles, fun).Targets
 		if targets == nil {
 			targets = []string{}
 		}

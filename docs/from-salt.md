@@ -238,7 +238,10 @@ One thing to know now rather than at 3am: `functions: ['*']` does **not**
 include `cmd.run`, `cmd.shell`, `cmd.script`, `module.run`, `file.write`,
 or `file.replace`. Those run arbitrary code and have to be named. If your
 tree applies states, you do not need them; if an operator runs ad-hoc
-commands, give that role a rule naming exactly the ones it needs.
+commands, give that role a rule naming exactly the ones it needs. Reading
+a node's pillar is the same: `pillar.items`, `pillar.get`, `config.get`
+and the `pillar.show_pillar` runner are never granted by `'*'`, so an
+administrator who reads pillar needs them named too.
 
 If you have a `publisher_acl` or an `external_auth` block,
 `halite-hub migrate --salt-config /usr/local/etc/salt/master` <!-- lexicon:allow -->
