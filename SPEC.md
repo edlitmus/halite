@@ -609,6 +609,18 @@ non-zero with `--require-match`.
 Nodegroups may reference other nodegroups with `N@name`, to a depth of 10, and a cycle is a
 configuration error detected at load rather than at use.
 
+An expression is bounded in size, and over a bound it is refused at compile with an error that
+says which bound, before any node is considered (DIVERGENCE 5.291, 5.559):
+
+- nesting, to 100 levels of `(` and `not`;
+- the whole expression, of any type, to 1 MiB;
+- one glob, bare or the value of a `G@` or `I@` term, to 1 KiB, unless it has no `*`, `?` or `[`,
+  in which case it is a literal and is not limited;
+- the globs and regular expressions of one expression together, its nodegroups' included, to
+  32 KiB. A grain or pillar term is read at every colon (5.537) and each reading counts.
+
+The API refuses a `tgt` over 1 MiB with a 400 before the policy reads it.
+
 ### 8.3 Staleness
 
 Hub-side targeting depends on cached grains, so staleness is a real hazard and is made visible

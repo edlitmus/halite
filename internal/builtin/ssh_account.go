@@ -151,7 +151,7 @@ func (f *sshAccountFile) write(data []byte, mode os.FileMode) error {
 	// temporary file sits in ~/.ssh, which the account owns, so between
 	// the close and a chmod by name the account could replace it with a
 	// hard link to /etc/spwd.db, and the chown would hand that file
-	// to the account. DIVERGENCE 5.558.
+	// to the account. DIVERGENCE 5.560.
 	_, werr := out.Write(data)
 	if werr == nil {
 		werr = out.Chmod(mode)

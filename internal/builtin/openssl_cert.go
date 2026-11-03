@@ -732,7 +732,7 @@ func openSSLPKCS12Create(c *exec.Context, args *value.Map) (any, error) {
 	// By the checked change rather than os.Chmod: tmp is a name in the
 	// bundle's directory, which may be an account's, and a chmod by name
 	// is one the account can redirect to another file with a hard link.
-	// DIVERGENCE 5.558.
+	// DIVERGENCE 5.560.
 	if err := changeEntryPath(tmp, entryChange{mode: 0o600, setMode: true, uid: -1, gid: -1}, false); err != nil {
 		return nil, fmt.Errorf("%s was written and its mode could not be set to 0600: %w", path, err)
 	}

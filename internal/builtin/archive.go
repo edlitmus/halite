@@ -732,7 +732,7 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 // contents were reached, so a fresh extraction warned about every link it
 // shipped. Children first, the directories are still root's while what is
 // in them is changed, and only what sits directly in a destination that
-// already belonged to the account is skipped. DIVERGENCE 5.558.
+// already belonged to the account is skipped. DIVERGENCE 5.560.
 func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wantUser, wantGroup string) (int, []string, error) {
 	if wantUser == "" && wantGroup == "" {
 		return 0, nil, nil

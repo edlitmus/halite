@@ -11,7 +11,7 @@ import (
 // uid, gid or link count to check. On Windows a mode is an access control
 // list set by path (mode_windows.go) and an owner is win_dacl's; these
 // keep the name-based changes the callers made before. What a hard link
-// means there is recorded in DIVERGENCE 5.558.
+// means there is recorded in DIVERGENCE 5.560.
 
 type entryChange struct {
 	mode     os.FileMode

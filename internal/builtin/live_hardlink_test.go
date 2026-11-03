@@ -17,7 +17,7 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
-// The hard-link defect of DIVERGENCE 5.558 as it actually happens: root
+// The hard-link defect of DIVERGENCE 5.560 as it actually happens: root
 // runs the state, a real second account owns the directory, and the
 // account plants the link. hardlink_unix_test.go stands in for "another
 // account" with a 0777 directory because it is not root; this is the run

@@ -234,7 +234,7 @@ func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) 
 // be a second name for /etc/spwd.db. changeEntryIn (through
 // applyModeIn and applyOwnershipIn) makes the change on an opened, checked
 // descriptor and refuses a hard link in a directory another account can
-// write. DIVERGENCE 5.558.
+// write. DIVERGENCE 5.560.
 func applyRecurse(dir string, targets []recurseTarget, args *value.Map, f recurseFlags) error {
 	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
 	if !f.user {

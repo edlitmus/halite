@@ -101,9 +101,14 @@ on:
       # `shadow` shares its /etc/shadow reader with user.present, and its
       # live test drives chage, passwd and chpasswd as root on the linux leg.
       - "internal/builtin/shadow*.go"
+      # Which symbolic links a root file state follows (DIVERGENCE 5.558).
+      # The rule is about other accounts' files, and only root can make
+      # one, so live_planted_link_test.go is its only real test.
+      - "internal/builtin/followlink*.go"
+      - "internal/builtin/fileutil.go"
       # The one place every mode and owner change is made, and the helpers
       # that call it; TestLiveHardLinkIsRefusedForAnotherAccount drives it
-      # as root with a second account (DIVERGENCE 5.558).
+      # as root with a second account (DIVERGENCE 5.560).
       - "internal/builtin/entryattrs*.go"
       - "internal/builtin/ownership*.go"
       - "internal/builtin/mode_*.go"
@@ -561,7 +566,7 @@ jobs:
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
+              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
             echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
           test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"
@@ -887,7 +892,7 @@ jobs:
         run: |
           set -e
           sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
-            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveConformance' ./internal/builtin/
+            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveConformance|TestLivePlantedLink|TestLiveOperatorLinks' ./internal/builtin/
 
       # The account tests create and remove a real account. If one is
       # left behind the machine is thrown away anyway, but a leg that

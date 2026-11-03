@@ -174,7 +174,7 @@ func legacyHash(data []byte, algorithm string) (string, error) {
 // follow the last one. DIVERGENCE 5.300.
 //
 // Neither of those stops a hard link, which the same account can plant
-// under a name the archive ships; changeEntryIn does. DIVERGENCE 5.558.
+// under a name the archive ships; changeEntryIn does. DIVERGENCE 5.560.
 func applyOwnershipIn(root *os.Root, name, wantUser, wantGroup string) error {
 	uid, gid, err := resolveOwner(wantUser, wantGroup)
 	if err != nil {
