@@ -380,3 +380,27 @@ The remaining Windows files outside `winsec` and the ones above (`internal/grain
 Every lead that was shown in rounds five to ten was fixed and merged, each with a test that fails when the fix is taken out and a ledger entry: 5.537 to 5.555 (#588 to #606). Four read-only leads were fixed as well, after being read and then shown by their tests: `hub_tries` and the reconnect wait (5.546, #597), the settings the programs read and `doctor` named wrongly (5.545, #596), the evidence log's failed write and seal (5.547, #598), and a failed span export (5.548, #599). The others were not fixed unless a row above says so: the `runner` and `orch` commands reading `--out` after the call, the one-shot `timeout_seconds` that nothing reads, the Windows leads of `winsec`, the unbounded `traceparent`-driven sampling (a design decision), the metric for a failed span export (needs the docs row, alert and dashboard), and the hub returner's `id`, which nothing sets. Round eleven's and twelve's leads, including `state show_*` printing a registered secret and the Windows job objects assigned after the process starts, are open.
 
 Four of the merges needed a fix of their own after CI, and each was a failure of the change and not of the runner: `math/rand` in the reconnect jitter (the buildpolicy test, SPEC 25.3), a truncate through an append-only handle on Windows (the evidence log), a beacon the Windows node does not run (the beacon pillar test), and a CHANGELOG count that a restack dropped. Several runs lost a macOS runner and were re-run. **Not verified for any of the fixes:** `make check`, a real fleet, and Windows itself beyond what the CI legs showed.
+
+## Validated afterwards (2026-11-03): a FreeBSD 15.1 jail, and real Salt
+
+The rounds above were run on a Linux workstation. These were run on beastie (FreeBSD 15.1-RELEASE, Go 1.27.3, `GOFLAGS=-mod=vendor`) in a thin Bastille jail with the host's `/usr/local` mounted read-only, as root, and against Salt 3007.17 in a throwaway virtualenv.
+
+**Unit tests, in the jail, at `main` 2ee49b73 and later.** Passed: `nodeevidence`, `tracing`, `config`, `doctor`, `target`, `extension`, `metrics`, `awsauth`, `varlink`, `fips`, `log`, `fileserver`, `redact`, `gitfs` (the carry-forward tests of 5.550 included), `job`, `hub`, `exec`, `specaudit`, `buildpolicy`, `policy`, `docsaudit`, `cmd/halite-hub` and `cmd/halite-node`. One failure, `internal/builtin` `TestLiveRebootReadsThisMachine`: `freebsd-version -k` cannot find a kernel in a thin jail, and the tree before this audit's changes fails the same way, so it is the jail and not the code. Two things the jail needed that are not the code's: `127.0.0.1` as well as the jail's own address (a jail rewrites connections to `127.0.0.1` to its primary address, and the test certificates are for `127.0.0.1`), and `ldconfig -m /usr/local/lib` (`gitfs` runs git with a clean environment, so git must find `libpcre2` through the hints).
+
+**A real hub and a real node in the jail, the tree of `7dfe5541` (before 5.546, 5.552, 5.556, 5.557) against `main` after #611.** One enrolled node, a state holding a registered secret in `contents:`, a one-second `diskusage` beacon, `hub_tries: 3`, over loopback:
+
+| What | Before | After |
+|---|---|---|
+| a `state.show_lowstate` and a `state.show_highstate` job: the secret in the hub CLI's output | 1 and 1 | 0 and 0 |
+| the secret in the hub's job cache on disk | 2 files | 0 |
+| `halite-node state show_lowstate` on the node: the secret in the output | 1 | 0 |
+| hub pillar compilations (`halite_pillar_compile_duration_seconds_count`) in 10 seconds | 8 (10 to 18) | 0 (8 to 8, the five-minute cache already held it) |
+| five hub restarts with `hub_tries: 3` | the node exited at the second, "giving up" after 3 attempts | alive after all five, 11 connection attempts, no "giving up" |
+
+That confirms 5.546, 5.552, 5.556 and 5.557 against a real hub and node. Two earlier attempts at this run were discarded and are not evidence: the first never enrolled its node (the script collected no certificate after the accept), the second checked readiness for lowercase `true` where the command prints `True`; both printed zeros from a node that was not there.
+
+**Salt 3007.17, `salt.utils.data.subdict_match`.** `hwaddr_interfaces:eth0:aa:bb:cc:dd:ee:ff`, `hwaddr_interfaces:eth0:aa:*`, `fqdn_ip6:fe80::1` and the regex form match, and `...:ee:00` and `fqdn_ip6:fe80::2` do not: exactly the cases the test of 5.537 holds. That replaces "from memory of Salt's source" in that entry.
+
+**The W3C Trace Context text** gives `version = 2HEXDIGLC`, `trace-id = 32HEXDIGLC`, `parent-id = 16HEXDIGLC`, `trace-flags = 2HEXDIGLC` (lowercase hexadecimal only) and says a `traceparent` that does not parse restarts the trace: what 5.541 does.
+
+**Not validated, and why.** Real AWS (the `awsauth` leads: #613, which needs the work agent), anything on Windows (#608; the lab has none), a relay across a network, Prometheus reading the new metric labels, a real collector for the span-export hook, a GPG-decrypted pillar secret (the tests register the secret directly), and `make check`. The paid lab was not raised: nothing above needed a distribution or a second host, and the jail shares the host's kernel, so it proves nothing about kernel behaviour.
