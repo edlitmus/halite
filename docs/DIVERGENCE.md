@@ -26903,8 +26903,9 @@ the child's stack by hand, for a value at the limit inside 99 nested
 `if`: the walks that spell the value as a mapping key, through
 `fmt.Sprint`, are the deepest. They need between 12 and 16 MiB on
 darwin/arm64, with or without `-race`, and on freebsd/amd64 under
-`-race`, and between 4 and 8 MiB on FreeBSD without it: about 1.6 KiB a
-level at the most. Every other walk fits in 8 MiB on both, and those
+`-race`, between 4 and 8 MiB on FreeBSD without it, between 8 and
+16 MiB on linux/arm64 and under 8 on linux/amd64, both without it: about
+1.6 KiB a level at the most. Every other walk fits in 8 MiB on both, and those
 built on `renderValue` need more than 4. The test's child has 32 MiB,
 twice the most measured; the default stack is 1 GiB. (A first version
 of this said every walk fit in 8 MiB. It was measured before the key
@@ -26972,9 +26973,23 @@ cases in the parent, all nine shared ones, and 44 deep (42 by overflow)
 and 42 cyclic (31) of the children failed, and the 44 at the limit
 passed.
 
-**Not verified.** Linux, and the pinned go1.26.6. No real Salt tree was
-rendered through the measure; the package tests, the Jinja corpus among
-them, pass.
+**Run on Linux.** At `cf90bbce`, on three AWS EC2 instances, with
+go1.27.3 from go.dev checked against its published SHA-256, as `nobody`
+through `setpriv`, 2026-11-03: ref-salt1 (Ubuntu 22.04.5 LTS, kernel
+5.15.0-1119-aws-fips with FIPS enabled, linux/arm64), noop2-1 (Ubuntu
+22.04.5, 5.15.0-1117-aws-fips, FIPS enabled, linux/amd64) and ami-test-1
+(Ubuntu 24.04.5, 7.0.0-1014-aws, linux/arm64). The same nine packages
+passed on each, and with the measure disabled the counts were the same
+on each as on darwin (44 and 9 in the parent; 44 deep, 42 by overflow,
+and 42 cyclic, 31, of the children; the 44 at the limit passed). Two things the host needed
+that are not the code's: `/tmp`, `/var/tmp` and `/dev/shm` are mounted
+`noexec`, so the run was under `/home` with `GOTMPDIR` there too; and
+`-race` needs cgo, which needs a C compiler the host does not have, so
+the race detector was not run on Linux here (CI's race job runs on
+Linux).
+
+**Not verified.** `-race` on Linux, and the pinned go1.26.6. No real Salt tree was rendered through the measure; the
+package tests, the Jinja corpus among them, pass.
 
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
@@ -36535,9 +36550,10 @@ limit pass on both. With the
 default limits the review's two expressions are refused at their
 filters.
 
-**Not verified.** Run on darwin/arm64 and, in a FreeBSD 15.1 jail
-(5.312's subsection above), freebsd/amd64, both with go1.27.3; not on
-Linux. Salt has no such limit to compare with.
+**Not verified.** Run on darwin/arm64, in a FreeBSD 15.1 jail
+(freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
+all with go1.27.3; see 5.312's subsection above. Salt has no such limit
+to compare with.
 
 ### 5.559 The strings a render built were limited one at a time
 
@@ -36604,9 +36620,10 @@ copied. Strings inside a container a filter returns, other than through
 `map`, are not counted (`split` shares its input's bytes; `|list` of a
 string makes one-character strings).
 
-**Not verified.** Run on darwin/arm64 and, in a FreeBSD 15.1 jail
-(5.312's subsection), freebsd/amd64, both with go1.27.3; not on Linux.
-No real tree was rendered with the counter.
+**Not verified.** Run on darwin/arm64, in a FreeBSD 15.1 jail
+(freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
+all with go1.27.3; see 5.312's subsection. No real tree was rendered
+with the counter.
 
 ## 6. Everything else not started
 

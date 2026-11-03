@@ -38,14 +38,15 @@ import (
 // refused; YAML, the other way in, stops at 100. The deepest literal the
 // parser accepts is maxExprDepth (1,000), so a value past that was built
 // by a loop. Measured with go1.27.3 on darwin/arm64 and freebsd/amd64,
-// with and without -race (value_walk_test.go,
-// TestDeepValuesDoNotOverflowTheStack, with the child's stack lowered by
-// hand), for a value at the limit under 99 nested `if`: the walks that
-// spell the value as a mapping key, through fmt.Sprint, are the deepest,
-// and need between 12 and 16 MiB on darwin with or without -race and on
-// FreeBSD under -race, about 1.6 KiB a level; every other walk fits in
-// 8 MiB. The test's child has 32 MiB, twice the most measured, and the
-// default stack is 1 GiB.
+// with and without -race, and on linux/arm64 and linux/amd64 without
+// (value_walk_test.go, TestDeepValuesDoNotOverflowTheStack, with the
+// child's stack lowered by hand), for a value at the limit under 99
+// nested `if`: the walks that spell the value as a mapping key, through
+// fmt.Sprint, are the deepest, and need between 12 and 16 MiB on darwin
+// with or without -race and on FreeBSD under -race, and between 8 and 16
+// on linux/arm64 (on linux/amd64 they fit in 8), about 1.6 KiB a level
+// at the most; every other walk fits in 8 MiB. The test's child has
+// 32 MiB, twice the most measured, and the default stack is 1 GiB.
 const maxValueDepth = value.MaxDepth
 
 // valueShape is what measureValue learns of a value.
