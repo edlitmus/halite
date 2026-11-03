@@ -168,7 +168,7 @@ func TestASignedExtensionIsLoadedAndCalled(t *testing.T) {
 // flag, and refuses an extension to a wildcard because it is not a name
 // the build ships: cmd/halite-hub
 // TestAWildcardOnTheHubGrantsWhatTheNodeShipsAndNoExtension, DIVERGENCE
-// 5.558.
+// 5.564.
 func TestAnExtensionFunctionIsMarkedAsArbitraryCode(t *testing.T) {
 	sig, err := parseSignature(ext.Signature{
 		Module: "echo", Function: "say", Doc: "d",

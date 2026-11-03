@@ -76,6 +76,14 @@ type funcValue struct {
 	fn   func(args []any, kwargs map[string]any) (any, error)
 }
 
+// boundMethod is a method with the value it was looked up on, so that a
+// method returning that value unchanged (`'a'.strip()`) is not charged as
+// building a string.
+type boundMethod struct {
+	funcValue
+	recv any
+}
+
 func (f funcValue) Call(args []any, kwargs map[string]any) (any, error) {
 	return f.fn(args, kwargs)
 }
@@ -129,6 +137,9 @@ type LoopInfo struct {
 	Items   []any
 	changed any
 	hasPrev bool
+	// maxBytes is the render's MaxOutput, for measuring what
+	// loop.changed compares.
+	maxBytes int64
 	// recurse re-enters the loop body for `{% for %}...recursive`.
 	recurse func(items any) (string, error)
 }
@@ -161,6 +172,9 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 	}
 
 	if m, ok := method(obj, name, r.opts.MaxOutput); ok {
+		if fv, ok := m.(funcValue); ok {
+			m = boundMethod{fv, obj}
+		}
 		return m, nil
 	}
 	v, ok := index(obj, name)
@@ -182,6 +196,12 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 
 // getItem resolves `obj[key]`.
 func (r *renderer) getItem(obj, key any, pos Pos) (any, error) {
+	// A key that is not a scalar is spelt by fmt.Sprint, to index a
+	// mapping and to name a missing one, and fmt recurses as deep as
+	// the key does.
+	if _, err := r.checkValue(key, "a key", pos); err != nil {
+		return nil, err
+	}
 	if u, ok := obj.(Undefined); ok {
 		return Undefined{Name: fmt.Sprintf("%s[%v]", u.Name, key), Pos: pos, Hint: u.Hint}, nil
 	}
@@ -315,6 +335,9 @@ func (l *LoopInfo) attr(name string, pos Pos) (any, error) {
 			} else {
 				cur = args
 			}
+			if err := checkValueBytes(cur, "loop.changed", l.maxBytes); err != nil {
+				return nil, err
+			}
 			same := l.hasPrev && equalValues(l.changed, cur)
 			l.changed, l.hasPrev = cur, true
 			return !same, nil
@@ -340,12 +363,46 @@ func (r *renderer) callValue(fn any, args []any, kwargs map[string]any, pos Pos)
 	case Undefined:
 		return nil, r.undefinedError(t, pos)
 	case Callable:
+		// An execution module walks its arguments however it likes,
+		// encoding them, merging them or printing them, and none of
+		// that code is the engine's to bound, so the arguments are
+		// measured here, before they leave it.
+		if _, ok := fn.(dispatchValue); ok {
+			for _, a := range args {
+				if _, err := r.checkValue(a, "an argument to salt", pos); err != nil {
+					return nil, err
+				}
+			}
+			for _, a := range kwargs {
+				if _, err := r.checkValue(a, "an argument to salt", pos); err != nil {
+					return nil, err
+				}
+			}
+		}
 		v, err := t.Call(args, kwargs)
 		if err != nil {
 			if _, ok := err.(*Error); ok {
 				return nil, err
 			}
 			return nil, &Error{Pos: pos, Msg: err.Error(), Cause: err}
+		}
+		// A method or a global function's string is charged here, as a
+		// filter's is in applyFilter. A macro's is not: it is the text
+		// its body wrote, which was charged as it was written. Nor is a
+		// salt[...] call's: an execution module's result is the size of
+		// what it read, not of anything the template made.
+		var name string
+		inputs := args
+		switch f := fn.(type) {
+		case funcValue:
+			name = f.name
+		case boundMethod:
+			name, inputs = f.name, append([]any{f.recv}, args...)
+		}
+		if name != "" && !selectsExisting[name] {
+			if err := r.chargeResult(v, inputs, name+"()", pos); err != nil {
+				return nil, err
+			}
 		}
 		// range() is the one global that builds a list from nothing, so
 		// it is the one charged here (see budget.materialise).
@@ -371,12 +428,37 @@ func (r *renderer) callValue(fn any, args []any, kwargs map[string]any, pos Pos)
 
 // ---- operators ----
 
+// concat joins two strings, refusing a result larger than one string may
+// be. `~` and `+` each make a string as long as both operands, so a loop
+// that applies one to a string and itself doubles it at every pass, and
+// forty passes is a terabyte. Nothing measured it, because each pass
+// only adds two strings that already exist.
+func (r *renderer) concat(a, b string, pos Pos) (any, error) {
+	if err := r.checkBytes(int64(len(a))+int64(len(b)), "string concatenation", pos); err != nil {
+		return nil, err
+	}
+	s := a + b
+	if err := r.chargeResult(s, []any{a, b}, "string concatenation", pos); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 	l, rv = untuple(l), untuple(rv)
 	switch op {
 	case "~":
-		return r.toStr(l, pos) + r.toStr(rv, pos), nil
+		// toStr forgives an undefined operand, which `~` always has; it
+		// must not forgive a value too deep or too large to render, so
+		// that is checked first.
+		if err := r.checkPair(l, rv, "~", pos); err != nil {
+			return nil, err
+		}
+		return r.concat(r.toStr(l, pos), r.toStr(rv, pos), pos)
 	case "in":
+		if err := r.checkIn(rv, l, pos); err != nil {
+			return nil, err
+		}
 		return contains(rv, l), nil
 	}
 
@@ -387,6 +469,12 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 		return nil, r.undefinedError(u, pos)
 	}
 
+	switch op {
+	case "==", "!=", "<", "<=", ">", ">=":
+		if err := r.checkCompare(op == "==" || op == "!=", l, rv, "comparison", pos); err != nil {
+			return nil, err
+		}
+	}
 	switch op {
 	case "==":
 		return equalValues(l, rv), nil
@@ -417,12 +505,18 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 			if !ok {
 				return nil, errorf(pos, "cannot add %s to a string; use ~ to concatenate values of different types", typeName(rv))
 			}
-			return ls + rs, nil
+			return r.concat(ls, rs, pos)
 		}
 		if ll, ok := l.([]any); ok {
 			rl, ok := rv.([]any)
 			if !ok {
 				return nil, errorf(pos, "cannot add %s to a list", typeName(rv))
+			}
+			// The list form doubles as the string form does, and was no
+			// more measured: eleven passes of `ns.l = ns.l + ns.l` made
+			// 2,048 items under a limit of 1,000.
+			if err := r.checkItems(int64(len(ll))+int64(len(rl)), "list concatenation", pos); err != nil {
+				return nil, err
 			}
 			out := make([]any, 0, len(ll)+len(rl))
 			return append(append(out, ll...), rl...), nil
@@ -445,6 +539,11 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 			}
 			if !mulWithin(int64(len(ls)), n, r.opts.MaxOutput) {
 				return nil, errorf(pos, "string repetition would exceed the %d byte output limit", r.opts.MaxOutput)
+			}
+			if n != 1 {
+				if err := r.budget.build(int64(len(ls)) * n); err != nil {
+					return nil, errorf(pos, "string repetition: %v", err)
+				}
 			}
 			return strings.Repeat(ls, int(n)), nil
 		}
@@ -624,6 +723,16 @@ func equalValues(a, b any) bool {
 }
 
 func compare(a, b any) (int, error) {
+	return compareAt(a, b, 0)
+}
+
+// compareAt is compare for two values depth levels inside the pair the
+// template compared. Only the outermost level names the element, so the
+// error a mismatch at the bottom of two deep lists makes is one line: it
+// used to be wrapped once per level, and every wrapping is a new string
+// as long as the one before plus twenty bytes, all of them kept by the
+// chain, which for two lists ten thousand deep is a gigabyte.
+func compareAt(a, b any, depth int) (int, error) {
 	if as, ok := a.(string); ok {
 		bs, ok := b.(string)
 		if !ok {
@@ -642,8 +751,11 @@ func compare(a, b any) (int, error) {
 			return 0, fmt.Errorf("cannot compare a sequence with %s", typeName(b))
 		}
 		for i := 0; i < len(as) && i < len(bs); i++ {
-			c, err := compare(as[i], bs[i])
+			c, err := compareAt(as[i], bs[i], depth+1)
 			if err != nil {
+				if depth > 0 {
+					return 0, err
+				}
 				return 0, fmt.Errorf("comparing element %d: %w", i, err)
 			}
 			if c != 0 {
@@ -774,6 +886,9 @@ func (r *renderer) toStrErr(v any, pos Pos) (string, error) {
 			return "", err
 		}
 		return "", nil
+	}
+	if _, err := r.checkValue(v, "rendering a value", pos); err != nil {
+		return "", err
 	}
 	return renderValue(v), nil
 }

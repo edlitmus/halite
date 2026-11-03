@@ -158,7 +158,7 @@ func TestTheHubAndTheNodeAgreeOnArbitraryCode(t *testing.T) {
 // not one of those, so `functions: ['*']` granted `myext.exec`. The fix
 // made the set an allow list, which is also why the state forms are
 // here: read from the registries alone, `state.*` stopped granting
-// `state.apply`. DIVERGENCE 5.558.
+// `state.apply`. DIVERGENCE 5.564.
 func TestAWildcardOnTheHubGrantsWhatTheNodeShipsAndNoExtension(t *testing.T) {
 	loaded, _, err := policy.Load([]byte(`
 roles:

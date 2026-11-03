@@ -40,7 +40,7 @@ func (l *lab) withJobs(t *testing.T) *lab {
 //
 // `lb.drain`, `test.too_long` and `test.fits` are names the tests submit
 // and no build ships, so a wildcard does not grant them: to the hub they
-// could be an extension's (DIVERGENCE 5.558). They are named for that
+// could be an extension's (DIVERGENCE 5.564). They are named for that
 // reason.
 func labPolicy(t *testing.T) *policy.Policy {
 	t.Helper()
@@ -48,9 +48,9 @@ func labPolicy(t *testing.T) *policy.Policy {
 roles:
   administrator:
     - target: '*'
-      functions: ['*', 'cmd.run', 'lb.drain', 'test.too_long', 'test.fits']
+      functions: ['*', 'cmd.run', 'lb.drain', 'test.too_long', 'test.fits', 'pillar.items', 'pillar.raw', 'pillar.get', 'config.get']
     - target: '*'
-      runners: ['*']
+      runners: ['*', 'pillar.show_pillar']
 bindings:
   - principal: 'cert:CN=ed'
     roles: ['administrator']

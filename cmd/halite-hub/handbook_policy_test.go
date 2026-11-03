@@ -57,6 +57,9 @@ func TestTheHandbookPolicyDecidesWhatChapterTwentySixSays(t *testing.T) {
 			policy.Request{Principal: "cert:CN=carol", Target: "web1.prod", Fun: "pkg.install", Arg: []string{"nginx"}}, true, `role "everything-but"`},
 		{"carol's wildcard does not carry cmd.run",
 			policy.Request{Principal: "cert:CN=carol", Target: "web1.prod", Fun: "cmd.run", Arg: []string{"id"}}, false, "never granted by a wildcard"},
+		{"carol's wildcard does not carry pillar.items",
+			policy.Request{Principal: "cert:CN=carol", Target: "web1.prod", Fun: "pillar.items"}, false,
+			"denied: pillar.items reads a node's pillar, which is its secrets, and is never granted by a wildcard; name it in the role's functions (SPEC 22.1)"},
 		{"the pipeline runs the orchestration it is granted",
 			policy.Request{Principal: "cert:CN=ci-pipeline", Fun: "state.orchestrate", Runner: true, Arg: []string{"deploy.web"}}, true, ""},
 		{"the pipeline may not run another",
@@ -102,7 +105,7 @@ func TestChapterTwentySixListsWhatPolicyShowPrints(t *testing.T) {
 	block := text[start+len(lead):]
 	block = block[:strings.Index(block, "```")]
 	// The list ends at the blank line `policy show` prints before saying
-	// that what the build does not ship is refused too (DIVERGENCE 5.558).
+	// that what the build does not ship is refused too (DIVERGENCE 5.564).
 	if end := strings.Index(block, "\n\n"); end >= 0 {
 		block = block[:end]
 	}
@@ -122,5 +125,18 @@ func TestChapterTwentySixListsWhatPolicyShowPrints(t *testing.T) {
 		if !shipped[name] {
 			t.Errorf("chapter 26 lists %s and policy show does not print it", name)
 		}
+	}
+}
+
+// The pillar line chapter 26 quotes is the one `policy show` prints, word
+// for word: it is a list of what a wildcard will not grant, and a reader
+// deciding what to name in a role reads it off the page. DIVERGENCE 5.563.
+func TestChapterTwentySixQuotesThePillarLine(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "docs", "handbook", "26-authorization.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line := pillarReadersLine(); !strings.Contains(string(src), "\n"+line+"\n") {
+		t.Errorf("chapter 26 does not quote what policy show prints:\n%s", line)
 	}
 }

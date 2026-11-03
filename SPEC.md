@@ -609,6 +609,18 @@ non-zero with `--require-match`.
 Nodegroups may reference other nodegroups with `N@name`, to a depth of 10, and a cycle is a
 configuration error detected at load rather than at use.
 
+An expression is bounded in size, and over a bound it is refused at compile with an error that
+says which bound, before any node is considered (DIVERGENCE 5.291, 5.559):
+
+- nesting, to 100 levels of `(` and `not`;
+- the whole expression, of any type, to 1 MiB;
+- one glob, bare or the value of a `G@` or `I@` term, to 1 KiB, unless it has no `*`, `?` or `[`,
+  in which case it is a literal and is not limited;
+- the globs and regular expressions of one expression together, its nodegroups' included, to
+  32 KiB. A grain or pillar term is read at every colon (5.537) and each reading counts.
+
+The API refuses a `tgt` over 1 MiB with a 400 before the policy reads it.
+
 ### 8.3 Staleness
 
 Hub-side targeting depends on cached grains, so staleness is a real hazard and is made visible
@@ -953,10 +965,17 @@ Statements nest at most as deep as the recursion depth (100), and one expression
 levels, counting both brackets and the height of a chain such as `1 + 1 + ... + 1`. A single string
 a builtin builds (`indent`, `center`, `zfill`, `*`) may be no larger than the output limit, and a
 single list (`range`, `*`, `batch`, `slice`, `permutations`, `combinations`) may hold no more items
-than the iteration limit, both checked before the value is built. The lists `range`, `*`,
-`permutations` and `combinations` build are also counted across the render, and together may hold
-no more items than the iteration limit; `batch` and `slice` regroup a list that already exists and
-are not counted.
+than the iteration limit, both checked before the value is built; so is the result of `replace`,
+`join`, `format`, `~` and `+`. The lists `range`, `*`, `permutations` and `combinations` build are
+also counted across the render, and together may hold no more items than the iteration limit;
+`batch` and `slice` regroup a list that already exists and are not counted. The strings a render
+builds are counted across it too, and together may be no larger than the output limit; a string an
+operation was given or found, and what is written, are not counted again.
+
+A value is measured before anything walks it: printing, comparing, encoding, sorting, using it as
+a mapping key, or passing it to `salt[...]`. It may nest at most 10,000 deep, which is also the JSON
+decoder's limit, and its rendering may be no larger than the output limit, which bounds a value
+that holds one item many times. A value that contains itself is refused as too deep.
 
 Rendering happens in the unprivileged sandbox subprocess described in section 25.4.
 
@@ -2201,8 +2220,14 @@ Properties that are requirements, not suggestions:
   `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.
   Nor does it include a function the hub's build does not ship, which is how an extension's
   function is seen from the hub: the node marks every one `arbitrary_code`, and the hub cannot know
-  which a node has loaded (DIVERGENCE 5.558). Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
+  which a node has loaded (DIVERGENCE 5.564). Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
   `.*`.
+- **Reading a node's pillar is a distinct permission** (section 22.1), and is never granted by a
+  wildcard either: `functions: ['*']` does not include `pillar.items`, `pillar.raw`, `pillar.get` or
+  `config.get`, and `runners: ['*']` does not include `pillar.show_pillar` or `cache.pillar`. It is
+  the function's property, not the route's: the same call through `/v1/pillar`, `/v1/run`, the hub's
+  runner endpoint, a reactor or an orchestration is decided the same way. `pillar.keys` and
+  `pillar.show_top`, which return names rather than values, are not on the list (DIVERGENCE 5.563).
 - **Wildcards are explicit.** `'*'` matches; a missing field does not. A pattern in a principal,
   `functions`, `runners`, a keyword list, `deny_sls`, `allow_sls` or `allow_mods` is a glob as
   Salt's fnmatch reads it: `*`, `?`, `[seq]` and `[!seq]`, with `*` crossing `/` and no escape

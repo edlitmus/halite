@@ -336,33 +336,83 @@ func TestTheClientTypesArePreserved(t *testing.T) {
 
 // Reading a node's pillar is reading its secrets, so a role has to name
 // it: a wildcard never carries it. SPEC 22.1.
+//
+// Every route to it, not one. `GET /v1/pillar/{id}` refused
+// `runners: ['*']` and `POST /v1/run` with `client: runner` and the same
+// function answered 200 with the pillar, because the rule was a flag the
+// first handler set; `client: local` with `pillar.items` was granted by
+// `functions: ['*']` as well. DIVERGENCE 5.563.
 func TestReadingPillarIsNeverGrantedByAWildcard(t *testing.T) {
-	l, _ := executeLab(t, `
+	routes := []struct {
+		name, method, path, body string
+	}{
+		{"the pillar endpoint", http.MethodGet, "/v1/pillar/web1.example", ""},
+		{"a runner through /v1/run", http.MethodPost, PathRun,
+			`{"client":"runner","fun":"pillar.show_pillar","arg":["web1.example"]}`},
+		{"an async runner through /v1/run", http.MethodPost, PathRun,
+			`{"client":"runner_async","fun":"pillar.show_pillar","arg":["web1.example"]}`},
+		{"pillar.items sent to the node", http.MethodPost, PathRun,
+			`{"client":"local","tgt":"web1.example","fun":"pillar.items"}`},
+		{"pillar.get sent to the node", http.MethodPost, PathRun,
+			`{"client":"local","tgt":"web1.example","fun":"pillar.get","arg":["db:password"]}`},
+		{"config.get sent to the node", http.MethodPost, PathRun,
+			`{"client":"local","tgt":"web1.example","fun":"config.get","arg":["db:password"]}`},
+	}
+	do := func(l *lab, token string, method, path, body string) (*http.Response, string) {
+		if method == http.MethodGet {
+			return l.get(t, path, token)
+		}
+		return l.post(t, path, body, token)
+	}
+
+	wild, wildHub := executeLab(t, `
 roles:
   wildcard:
-    - runners: ['*']
-  named:
-    - runners: ['pillar.show_pillar']
+    - target: '*'
+      functions: ['*']
+    - target: '*'
+      runners: ['*']
 bindings:
   - principal: 'local:ed'
     roles: ['wildcard']
-  - principal: 'local:named'
-    roles: ['named']
 `)
-	out := l.login(t, "ed", "hunter2")
-	res, body := l.get(t, "/v1/pillar/web1.example", out.Token)
-	if res.StatusCode != http.StatusForbidden {
-		t.Fatalf("a wildcard read the pillar: %d %s", res.StatusCode, body)
+	out := wild.login(t, "ed", "hunter2")
+	for _, r := range routes {
+		before := len(wildHub.seen)
+		res, body := do(wild, out.Token, r.method, r.path, r.body)
+		if res.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: a wildcard read the pillar: %d %s", r.name, res.StatusCode, body)
+			continue
+		}
+		if !strings.Contains(body, "wildcard") || !strings.Contains(body, "pillar") {
+			t.Errorf("%s: the refusal should say why: %s", r.name, body)
+		}
+		if len(wildHub.seen) != before {
+			t.Errorf("%s: the refused call reached the hub anyway", r.name)
+		}
 	}
-	if !strings.Contains(body, "wildcard") {
-		t.Errorf("the refusal should say why: %s", body)
+	// The same wildcard grant does reach an ordinary runner, so the
+	// refusal is about the function and not about the role.
+	if res, _ := wild.get(t, PathJobs, out.Token); res.StatusCode != http.StatusOK {
+		t.Errorf("the wildcard grant did not reach jobs.list_jobs: %d", res.StatusCode)
 	}
 
-	// The same wildcard grant does reach an ordinary runner, so the
-	// refusal is about this endpoint and not about the role.
-	res, _ = l.get(t, PathJobs, out.Token)
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("the wildcard grant did not reach jobs.list_jobs: %d", res.StatusCode)
+	named, _ := executeLab(t, `
+roles:
+  named:
+    - target: '*'
+      functions: ['pillar.items', 'pillar.get', 'config.get']
+    - target: '*'
+      runners: ['pillar.show_pillar']
+bindings:
+  - principal: 'local:ed'
+    roles: ['named']
+`)
+	out = named.login(t, "ed", "hunter2")
+	for _, r := range routes {
+		if res, body := do(named, out.Token, r.method, r.path, r.body); res.StatusCode/100 != 2 {
+			t.Errorf("%s: naming the function did not grant it: %d %s", r.name, res.StatusCode, body)
+		}
 	}
 }
 

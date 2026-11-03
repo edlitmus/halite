@@ -625,7 +625,7 @@ func loadPolicy(h *hubContext) (*policy.Policy, error) {
 // functions this build ships, and which of them run arbitrary code.
 // Every name it does not ship -- an extension function above all --
 // needs naming in a role, because the node runs it as arbitrary code
-// and the hub cannot know which extensions a node has. DIVERGENCE 5.558.
+// and the hub cannot know which extensions a node has. DIVERGENCE 5.564.
 //
 // Both registries: SPEC 23.5 names `module.run`, which is a state
 // module rather than an execution one. It is not submittable in this

@@ -273,7 +273,7 @@ func (n *node) runFunction(j *job.Job) (outcome, error) {
 
 // stateFunction reports whether a name is one the state compiler
 // handles, and what to call it. The list is internal/state's, because
-// the hub's policy catalog reads it too (DIVERGENCE 5.558).
+// the hub's policy catalog reads it too (DIVERGENCE 5.564).
 func stateFunction(fun string) (string, bool) {
 	return state.JobFunction(fun)
 }

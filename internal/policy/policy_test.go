@@ -62,7 +62,7 @@ func load(t *testing.T) *Policy {
 
 // catalogued gives a test's policy the catalog of the build, which is
 // what the hub and halite-api give theirs: a policy without one grants
-// nothing by pattern (DIVERGENCE 5.558).
+// nothing by pattern (DIVERGENCE 5.564).
 func catalogued(p *Policy) {
 	registries := builtin.New()
 	p.UseCatalog(registries.Exec.Signatures(), registries.States.Signatures())

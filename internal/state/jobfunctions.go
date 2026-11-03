@@ -9,7 +9,7 @@ import "strings"
 // They are listed here, and not in the node, because the hub's policy
 // has to know them too. A wildcard on the hub grants only what the
 // build ships, since anything else may be an extension's and run
-// anything (DIVERGENCE 5.558), and "what the build ships" is the
+// anything (DIVERGENCE 5.564), and "what the build ships" is the
 // execution registry plus these: a policy that read the registry alone
 // stopped `state.*` granting `state.apply`. One list, read by both, is
 // what keeps the node's dispatch and the hub's catalog the same set.
