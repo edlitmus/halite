@@ -36655,7 +36655,8 @@ On both, everything passes with the change. On both, de26c91b with the same test
 **Found, not changed.**
 - `internal/atomicfile/xattr_linux.go` copies a replaced file's extended attributes onto the temporary file with `setxattr` and `chmod` by path, after the close. In a directory the account owns, the account controls both the replaced file's ACL and the temporary name. That is the same swap, onto another file's ACL, and it is Linux only. It is left for its own change because it is in another package and needs `fsetxattr`, which `syscall` does not export.
 - `logrotate.go`, `sudo_state.go` and `netplan.go` chmod or chown by name only in root's directories (`/etc/logrotate.d`, a private `MkdirTemp`, `/etc/sudoers.d`, `/etc/netplan`). They are left as they are.
-### 5.560 A reaction in flight when the hub stopped wrote its return after `serve` had returned
+
+### 5.561 A reaction in flight when the hub stopped wrote its return after `serve` had returned
 
 Found by reading (`cmd/halite-hub/serve.go`, `internal/hub/reactor.go`), as the follow-up to the change that refuses a request read as the hub stops (a separate branch at the time of writing): that closes the hub's request path at stop, and leaves the loops `serve` starts beside it.
 
@@ -36670,9 +36671,6 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 **Broken on purpose.** With the wait removed from `Run` the test fails as above. With the wait kept, `reactorWorker.run` releasing its event regardless of the context, and the `ctx.Done` branch of `Run` waiting for the workers before its final commit (the obvious way to write this, and wrong), it fails on the offset: `"00000001:381", want "00000001:0"`. Restored, it passes, and the `Reactor|Reaction|Reacted|Debounc|EventReturn|Serve` tests of `internal/hub` pass under `-race`.
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
-
-
-
 
 ## 6. Everything else not started
 
