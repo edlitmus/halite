@@ -22,7 +22,7 @@ import (
 // target allocated some 550 MB while compiling, and three distinct 1 MiB
 // patterns left 158 MB held for the life of the hub. A pattern RE2 refuses
 // (`?` four million times, measured) was a panic, because the compile was
-// MustCompile. DIVERGENCE 5.558.
+// MustCompile. DIVERGENCE 5.559.
 
 func TestCompileRefusesAnOverLongPattern(t *testing.T) {
 	// `*a` is the dearest shape measured per character.

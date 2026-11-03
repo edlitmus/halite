@@ -610,7 +610,7 @@ Nodegroups may reference other nodegroups with `N@name`, to a depth of 10, and a
 configuration error detected at load rather than at use.
 
 An expression is bounded in size, and over a bound it is refused at compile with an error that
-says which bound, before any node is considered (DIVERGENCE 5.291, 5.558):
+says which bound, before any node is considered (DIVERGENCE 5.291, 5.559):
 
 - nesting, to 100 levels of `(` and `not`;
 - the whole expression, of any type, to 1 MiB;

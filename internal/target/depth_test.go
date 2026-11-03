@@ -24,7 +24,7 @@ import (
 // gigabyte a default Go stack allows: the inputs below stay under a
 // megabyte and the test does not need the machine to find out. They must:
 // MaxExprLen refuses a longer expression before it is parsed, which would
-// make the test pass without reaching the parser (DIVERGENCE 5.558).
+// make the test pass without reaching the parser (DIVERGENCE 5.559).
 
 const stackHelperEnv = "HALITE_TARGET_STACK_HELPER"
 

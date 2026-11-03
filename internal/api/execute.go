@@ -113,7 +113,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, token *apitoken
 	// Before the policy, which splits a list target into names and judges
 	// each one, so that an over-long target costs a length check rather
 	// than that. The hub's target.Compile refuses it too, and says the
-	// same; this is where an API caller hears it. DIVERGENCE 5.558.
+	// same; this is where an API caller hears it. DIVERGENCE 5.559.
 	if len(req.Target) > target.MaxExprLen {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf(
 			"`tgt` is %d bytes; the limit is %d", len(req.Target), target.MaxExprLen))

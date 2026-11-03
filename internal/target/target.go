@@ -222,7 +222,7 @@ type Matcher struct {
 // bytes a byte for an or-chain of names, bare or as `L@` terms, and some
 // 8 for a `-L` list. At the 64 MiB a request body may be, that is some
 // 2 GB for one request; with 5.501's globs compiled to regexps and kept,
-// it was far worse (DIVERGENCE 5.558).
+// it was far worse (DIVERGENCE 5.559).
 //
 // 1 MiB is some 32 MB to compile at the steepest measured. It holds some
 // fifty thousand names of twenty characters, or four thousand of the
@@ -432,7 +432,7 @@ func (f funcNode) match(n Node) bool { return f(n) }
 // a node name, or any term with no `*?[`, is a literal and costs nothing,
 // so the long targets 5.291 kept -- lists of names -- are untouched.
 // 32 KiB is some three hundred 100-byte globs in one expression, or an
-// `E@` alternation of a thousand short names. DIVERGENCE 5.558.
+// `E@` alternation of a thousand short names. DIVERGENCE 5.559.
 const maxPatternBytes = 32 << 10
 
 // budget is what is left of maxPatternBytes for one expression.
@@ -703,7 +703,7 @@ func MatchGlob(pattern, nodeID string) bool { return globMatch(pattern, nodeID) 
 // It is for a pattern from configuration -- a policy's target, a token's
 // node scope, a relay's globs -- and goes through fnmatch.Match, which
 // caches. A target in a request is compiled by compileGlob, which bounds
-// it and keeps nothing once the job is dispatched. DIVERGENCE 5.558.
+// it and keeps nothing once the job is dispatched. DIVERGENCE 5.559.
 func globMatch(pattern, s string) bool {
 	if pattern == "*" {
 		return true

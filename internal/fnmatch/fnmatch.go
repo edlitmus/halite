@@ -82,7 +82,7 @@ func IsLiteral(pattern string) bool { return !HasMeta(pattern) && utf8.ValidStri
 // `*a` repeated, allocated some 570 bytes a character while compiling and
 // kept some 120 once compiled: a 1 KiB pattern is 0.6 MB to compile, and
 // a 1 MiB target, which a request body of 64 MiB had room for many times
-// over, was more than half a gigabyte. DIVERGENCE 5.558.
+// over, was more than half a gigabyte. DIVERGENCE 5.559.
 //
 // 1 KiB is four times the longest node ID pki.ValidateNodeID admits, and
 // a glob is a short thing. A long target is a list of names, and a name
@@ -145,7 +145,7 @@ var compileRegexp = regexp.Compile
 //
 // It was a sync.Map that never forgot, and target globs went through it,
 // so every distinct glob anybody targeted was held for the life of the
-// hub: three 1 MiB patterns held 158 MB (DIVERGENCE 5.558). Targets now
+// hub: three 1 MiB patterns held 158 MB (DIVERGENCE 5.559). Targets now
 // go through Compile and are not cached at all; this is for the patterns
 // in configuration, which are few and matched over and over, so the bound
 // is there for when that assumption is wrong. Bounding the text bounds

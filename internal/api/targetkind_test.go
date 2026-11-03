@@ -137,7 +137,7 @@ bindings:
 // An over-long `tgt` is a 400 before the policy reads it and before the
 // hub sees it. The policy splits a list target into names and judges each
 // one, so a request at the 64 MiB body limit was megabytes of work under
-// the policy before the hub's own bound refused it. DIVERGENCE 5.558.
+// the policy before the hub's own bound refused it. DIVERGENCE 5.559.
 func TestAnOverLongTargetIsRefusedBeforeThePolicy(t *testing.T) {
 	const everywhere = `
 roles:

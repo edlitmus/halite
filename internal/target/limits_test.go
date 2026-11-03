@@ -17,7 +17,7 @@ import (
 
 // A glob target became a compiled regexp with 5.501, and nothing bounded
 // what that cost: one 1 MiB target allocated some 550 MB, and the regexp
-// was kept for the life of the hub. DIVERGENCE 5.558.
+// was kept for the life of the hub. DIVERGENCE 5.559.
 
 // An over-long glob is refused at Compile, before any node is considered,
 // wherever in an expression it is.

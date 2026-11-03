@@ -12,7 +12,7 @@ import (
 // with an ordinary error and before any node is considered, whatever the
 // caller in front of it did. The API checks the length too; the hub's
 // own bound is what holds for the CLI, a runner and anything else that
-// submits. DIVERGENCE 5.558.
+// submits. DIVERGENCE 5.559.
 func TestDispatchRefusesAnOverLongTarget(t *testing.T) {
 	l := newLab(t).withJobs(t).withEvents(t)
 	for _, c := range []struct{ name, kind, tgt, want string }{
