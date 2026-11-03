@@ -36342,6 +36342,48 @@ Issue 321, the second pass, round twelve (`cmd/halite-node/execute.go`; the comm
 
 **Not verified.** A secret that arrives as a GPG-decrypted pillar value on a real node (the test registers it directly); whether the hub itself scrubs a return it caches, which was not read; an unregistered `runas_password` in `show_highstate`, which only `show_lowstate` masks by key name.
 
+### 5.558 `replace`, `join` and concatenation built strings nothing measured
+
+5.312 bounded the builtins that make a string larger than their inputs
+(`indent`, `center`, `zfill`, `*`), each before it allocates. Four that do
+the same were left out, along with the two operators.
+
+**Measured.** A review on 2026-11-03, against `de26c91b` with the default
+limits: `(('a' * 1048576) | replace('', 'b' * 200)) | length` was
+210,763,976 and `((range(100000) | list) | join('c' * 2000)) | length`
+200,486,890, both against a `MaxOutput` of 64 MiB. The multiplier is the
+template's to choose, so 64 GiB is one larger number away, and an
+allocation the runtime cannot make ends the hub or the node. Here, on the
+same commit with `MaxOutput` at 1,000: `('a' * 100) | replace('', 'b' *
+20)` and `.replace(...)` were 2,120 bytes, `range(100) | join('c' * 20)`
+and `str.join` 2,170, and eleven passes of `ns.s = ns.s ~ ns.s`, of `ns.s +
+ns.s` and of `ns.l = ns.l + ns.l` made 2,048 bytes or items (twelve made
+4,096). Concatenation doubles at every pass, so forty is a terabyte, and
+nothing measured it because each pass adds two things that already exist.
+
+**Found while doing this.** `str.format` and `|format` name one argument
+as often as the format string says: `('{0}' * 1000).format(s)` is a
+thousand copies of `s`. They were not measured either.
+
+**The change.** `replace` and `str.replace` work out the result's length
+from `strings.Count`, which counts exactly the matches `Replace` makes,
+the empty ones included, and refuse it before building it; `join` and
+`str.join` add up the items and multiply the separator by division;
+`~` and string `+` refuse a result past `MaxOutput`, and list `+` one past
+`MaxIterations`. `format` and `str.format` measure the result as it is
+written. All are checked with arithmetic that cannot wrap.
+
+**Demonstrated.** In `TestAllocatingBuiltinsAreBounded`, the eight new
+refusals of the first four filters and the operators failed on the old
+files, the two of the formats failed with their checks removed, and each
+check, removed on its own, failed its own cases; the new cases at each
+limit pass on both. With the
+default limits the review's two expressions are refused at their
+filters.
+
+**Not verified.** Only darwin/arm64 with go1.27.3. Salt has no such limit
+to compare with.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

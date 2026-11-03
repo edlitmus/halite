@@ -235,7 +235,7 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if err != nil {
 			return nil, err
 		}
-		out, err := pyPercent(s, args, kwargs)
+		out, err := pyPercent(s, args, kwargs, fc.r.opts.MaxOutput)
 		if err != nil {
 			return nil, fc.Errorf("format: %v", err)
 		}
@@ -400,12 +400,16 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if !ok1 || !ok2 {
 			return nil, fc.Errorf("replace takes two string arguments")
 		}
+		count := -1
 		if n, ok := arg(args, kwargs, 2, "count"); ok {
 			if i, ok := asInt(n); ok {
-				return strings.Replace(s, old, nw, int(i)), nil
+				count = int(i)
 			}
 		}
-		return strings.ReplaceAll(s, old, nw), nil
+		if !replaceWithin(s, old, nw, count, fc.r.opts.MaxOutput) {
+			return nil, fc.Errorf("replace would exceed the %d byte output limit", fc.r.opts.MaxOutput)
+		}
+		return strings.Replace(s, old, nw, count), nil
 	}
 
 	f["filesizeformat"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {

@@ -371,11 +371,23 @@ func (r *renderer) callValue(fn any, args []any, kwargs map[string]any, pos Pos)
 
 // ---- operators ----
 
+// concat joins two strings, refusing a result larger than one string may
+// be. `~` and `+` each make a string as long as both operands, so a loop
+// that applies one to a string and itself doubles it at every pass, and
+// forty passes is a terabyte. Nothing measured it, because each pass
+// only adds two strings that already exist.
+func (r *renderer) concat(a, b string, pos Pos) (any, error) {
+	if err := r.checkBytes(int64(len(a))+int64(len(b)), "string concatenation", pos); err != nil {
+		return nil, err
+	}
+	return a + b, nil
+}
+
 func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 	l, rv = untuple(l), untuple(rv)
 	switch op {
 	case "~":
-		return r.toStr(l, pos) + r.toStr(rv, pos), nil
+		return r.concat(r.toStr(l, pos), r.toStr(rv, pos), pos)
 	case "in":
 		return contains(rv, l), nil
 	}
@@ -417,12 +429,18 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 			if !ok {
 				return nil, errorf(pos, "cannot add %s to a string; use ~ to concatenate values of different types", typeName(rv))
 			}
-			return ls + rs, nil
+			return r.concat(ls, rs, pos)
 		}
 		if ll, ok := l.([]any); ok {
 			rl, ok := rv.([]any)
 			if !ok {
 				return nil, errorf(pos, "cannot add %s to a list", typeName(rv))
+			}
+			// The list form doubles as the string form does, and was no
+			// more measured: eleven passes of `ns.l = ns.l + ns.l` made
+			// 2,048 items under a limit of 1,000.
+			if err := r.checkItems(int64(len(ll))+int64(len(rl)), "list concatenation", pos); err != nil {
+				return nil, err
 			}
 			out := make([]any, 0, len(ll)+len(rl))
 			return append(append(out, ll...), rl...), nil

@@ -426,6 +426,45 @@ func mulWithin(a, b, limit int64) bool {
 	return a <= limit/b
 }
 
+// replaceWithin reports whether strings.Replace(s, old, nw, n) would be
+// no longer than limit, without building it. The result grows by
+// len(nw)-len(old) at each replacement, and the template chooses both
+// strings and, through an empty old string, which matches between every
+// character, almost the count too: replacing the empty string in a
+// 1 MiB string with 200 bytes was 210 MB against a 64 MiB limit.
+// strings.Count counts exactly the matches Replace makes, empty matches
+// included, and a negative n is every match in both.
+func replaceWithin(s, old, nw string, n int, limit int64) bool {
+	grow := int64(len(nw)) - int64(len(old))
+	if grow <= 0 {
+		return true
+	}
+	count := int64(strings.Count(s, old))
+	if n >= 0 && int64(n) < count {
+		count = int64(n)
+	}
+	return mulWithin(count, grow, limit-int64(len(s)))
+}
+
+// joinWithin reports whether strings.Join(parts, sep) would be no longer
+// than limit, without building it. The separator is repeated once
+// between each pair of items, so its length is multiplied by a count
+// the template chose, and the product is checked by division for the
+// reason mulWithin gives.
+func joinWithin(parts []string, sep string, limit int64) bool {
+	var total int64
+	for _, p := range parts {
+		total += int64(len(p))
+		if total > limit {
+			return false
+		}
+	}
+	if len(parts) < 2 {
+		return true
+	}
+	return mulWithin(int64(len(sep)), int64(len(parts)-1), limit-total)
+}
+
 // rangeLen is the number of items range(start, stop, step) produces,
 // worked out in unsigned arithmetic: stop - start overflows int64 for
 // range(-9223372036854775807, 9223372036854775807), and the old

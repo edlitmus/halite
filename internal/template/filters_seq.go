@@ -83,6 +83,9 @@ func addSequenceFilters(f map[string]FilterFunc) {
 			}
 			parts[i] = renderValue(item)
 		}
+		if !joinWithin(parts, sep, fc.r.opts.MaxOutput) {
+			return nil, fc.Errorf("join would exceed the %d byte output limit", fc.r.opts.MaxOutput)
+		}
 		return strings.Join(parts, sep), nil
 	}
 
