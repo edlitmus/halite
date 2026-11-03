@@ -36381,8 +36381,14 @@ All ten pass unprivileged on macOS 26 (arm64) and on beastie, FreeBSD 15.1 (amd6
 - With the change, all three refuse, naming the hard link. All ten unit tests also run there as root, with no skips, and pass.
 - The fresh extraction gives the archive's nested symbolic link to the account with no warning. With the deepest-first sort taken out, the link stays root's and the run warns: the case only a root run can see.
 
+**Shown on real Ubuntu hosts, as root.** The same test, the ten unit tests and `TestLiveSSHFilesForAnotherAccount` ran from a clone of 256ee889, with Go 1.27.3 from go.dev (sha256 checked), through SSM on 2026-11-03. Two hosts of the eds-test lab:
+- noop2-1: Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64, FIPS enabled;
+- ami-test-1: Ubuntu 24.04.5, 7.0.0-1014-aws, arm64.
+
+On both, everything passes with the change. On both, de26c91b with the same tests copied in fails every refusal case and hands the root's file to the throwaway account (`1004:0 0644`, and `0600` for `archive.extracted`). The ssh account writer works on both builds. The kernel refused the account's own `ln` on both, as on the Docker run. The hosts mount `/tmp` `noexec`, so the toolchain and the build ran from `/root`. The test data was still made in `/tmp`, on the same filesystem as the planted link. Nothing was left on either host afterwards: no files under `/root/a2` or `/tmp`, and no test account or group.
+
 **Not verified.**
-- A root run on FreeBSD, where the account can make the link itself. The live test runs on the fleet's freebsd leg, which runs every `TestLive*`; it has not run there yet.
+- A root run on FreeBSD, where the account can make the link itself. Every root run so far was on Linux, where the kernel refused the account's link and root planted it. The live test runs on the fleet's freebsd leg, which runs every `TestLive*`; it has not run there yet.
 - The ssh account writer's change: it closes a race, which no test drives. `TestLiveSSHFilesForAnotherAccount` covers that the writer still works.
 - "Trusted" reads the mode bits and the owner. An NFSv4 ACL on ZFS that lets a named account add entries without showing in the group bits is not seen, so such a directory is treated as trusted.
 - Windows is not changed. A mode there is an access control list set by path (`fileperm`), and an owner is set by path through `winsec`. Whether an unprivileged account there can still hard-link a file it cannot write was not checked.
