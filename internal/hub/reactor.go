@@ -150,7 +150,7 @@ func (r *Reactor) Run(ctx context.Context) error {
 	// Returning without waiting left those writes to a hub that had
 	// already said it was done. A worker the stop cut short still does
 	// not release its event, so the offset stays behind it either way.
-	// DIVERGENCE 5.561.
+	// DIVERGENCE 5.567.
 	defer r.running.Wait()
 	// Declared here rather than with the hub's other families, because
 	// the reactor is what holds the queues and a gauge read off

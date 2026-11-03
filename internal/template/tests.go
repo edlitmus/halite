@@ -140,6 +140,9 @@ func standardTests() map[string]TestFunc {
 		if len(args) != 1 {
 			return false, fc.Errorf("the in test takes one argument")
 		}
+		if err := fc.r.checkIn(args[0], v, fc.Pos); err != nil {
+			return false, err
+		}
 		return contains(args[0], v), nil
 	}
 
@@ -215,12 +218,17 @@ func cmpTest(keep func(int) bool) TestFunc {
 		if len(args) != 1 {
 			return false, fc.Errorf("this test takes one argument")
 		}
-		if keep(0) && !keep(1) && !keep(-1) {
+		eq := keep(0) && !keep(1) && !keep(-1)
+		ne := !keep(0) && keep(1) && keep(-1)
+		if err := fc.r.checkCompare(eq || ne, v, args[0], "comparison", fc.Pos); err != nil {
+			return false, err
+		}
+		if eq {
 			// Equality does not need an ordering, so structural equality
 			// answers it for collections too.
 			return equalValues(v, args[0]), nil
 		}
-		if !keep(0) && keep(1) && keep(-1) {
+		if ne {
 			return !equalValues(v, args[0]), nil
 		}
 		c, err := compare(v, args[0])

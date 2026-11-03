@@ -50,7 +50,7 @@ func loadPolicyFile(cfg *config.Config) (*policy.Policy, string) {
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w.String())
 	}
-	loaded.ArbitraryCode = arbitraryCodeFunctions()
+	applyCatalog(loaded)
 	return loaded, path
 }
 
@@ -108,6 +108,12 @@ func runPolicy(args *cli.Args) int {
 			names = append(names, name)
 		}
 		fmt.Printf("\nnever granted by a wildcard: %s\n", strings.Join(sorted(names), ", "))
+		// The list is what the build ships and declares. What it does not
+		// ship -- an extension's function above all -- is refused to a
+		// pattern too, and cannot be listed: the hub does not know which
+		// extensions a node has. DIVERGENCE 5.564.
+		fmt.Printf("\nnor any function this build does not ship, such as an extension's\n")
+		fmt.Println(pillarReadersLine())
 		return 0
 
 	case "test":
@@ -142,7 +148,7 @@ func runPolicy(args *cli.Args) int {
 		// targets of the rules granting it are what it reaches, and an
 		// operator testing a policy needs to be told which.
 		if decision.Allowed && req.Runner {
-			scope := loaded.RunnerScope(req.Principal, req.Fun, false)
+			scope := loaded.RunnerScope(req.Principal, req.Fun)
 			switch {
 			case len(scope.Targets) == 0:
 				fmt.Println("it reaches no node: no rule granting it names a target")
@@ -159,6 +165,17 @@ func runPolicy(args *cli.Args) int {
 	}
 	fmt.Fprintf(os.Stderr, "halite-hub policy: unknown subcommand %q\n\n%s", args.Positional[0], policyUsage)
 	return cli.ExitUsage
+}
+
+// pillarReadersLine is `policy show`'s account of the other set no
+// wildcard grants: the functions that hand a node's pillar to the caller.
+// It is a line of its own, not names added to the arbitrary-code list,
+// because the two are different reasons and the operator choosing whether
+// to name one wants to know which it is. DIVERGENCE 5.563.
+func pillarReadersLine() string {
+	functions, runners := policy.PillarReaders()
+	return fmt.Sprintf("reads a node's pillar, which a wildcard never grants: functions %s; runners %s",
+		strings.Join(functions, ", "), strings.Join(runners, ", "))
 }
 
 func sorted(in []string) []string {

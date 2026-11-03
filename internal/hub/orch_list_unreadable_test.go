@@ -73,7 +73,7 @@ func TestAnUnreadableOrchRecordIsCountedAndIsNotShownToAScopedCaller(t *testing.
 		t.Errorf("limit 2 returned %d runs and %d unreadable", len(runs), len(unreadable))
 	}
 
-	scoped := &RunnerContext{Server: l.server, Principal: "cert:CN=alice", Scope: l.server.Policy.RunnerScope("cert:CN=nobody", "state.orch_list", false)}
+	scoped := &RunnerContext{Server: l.server, Principal: "cert:CN=alice", Scope: l.server.Policy.RunnerScope("cert:CN=nobody", "state.orch_list")}
 	_, bad2, err := scoped.visibleRuns(0)
 	if err != nil {
 		t.Fatal(err)

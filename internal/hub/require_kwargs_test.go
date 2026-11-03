@@ -29,6 +29,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	return p
 }
 

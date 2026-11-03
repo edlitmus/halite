@@ -18,7 +18,7 @@ import (
 // flight then finished after the hub had logged "the hub stopped" and
 // returned: its `ret` event and its job return were written by a process
 // that had said it was done, and in a test the directory under them was
-// already being removed. DIVERGENCE 5.561.
+// already being removed. DIVERGENCE 5.567.
 //
 // The runner here holds until the test lets it go, and the test lets it
 // go only once it has seen whether Run waited. A Run that does not wait

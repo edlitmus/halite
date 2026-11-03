@@ -74,6 +74,11 @@ func (r *renderer) applyFilter(f *FilterExpr, obj any) (any, error) {
 		}
 		return nil, &Error{Pos: f.Pos(), Msg: err.Error(), Cause: err}
 	}
+	if !selectsExisting[f.Name] {
+		if err := r.chargeResult(out, append([]any{obj}, args...), f.Name, f.Pos()); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
 }
 
@@ -235,7 +240,10 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if err != nil {
 			return nil, err
 		}
-		out, err := pyPercent(s, args, kwargs)
+		if err := checkArgs(fc, "format", args, kwargs); err != nil {
+			return nil, err
+		}
+		out, err := pyPercent(s, args, kwargs, fc.r.opts.MaxOutput)
 		if err != nil {
 			return nil, fc.Errorf("format: %v", err)
 		}
@@ -400,12 +408,16 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if !ok1 || !ok2 {
 			return nil, fc.Errorf("replace takes two string arguments")
 		}
+		count := -1
 		if n, ok := arg(args, kwargs, 2, "count"); ok {
 			if i, ok := asInt(n); ok {
-				return strings.Replace(s, old, nw, int(i)), nil
+				count = int(i)
 			}
 		}
-		return strings.ReplaceAll(s, old, nw), nil
+		if !replaceWithin(s, old, nw, count, fc.r.opts.MaxOutput) {
+			return nil, fc.Errorf("replace would exceed the %d byte output limit", fc.r.opts.MaxOutput)
+		}
+		return strings.Replace(s, old, nw, count), nil
 	}
 
 	f["filesizeformat"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
@@ -420,7 +432,10 @@ func addCoreFilters(f map[string]FilterFunc) {
 		return humanSize(n, binary), nil
 	}
 
-	f["pprint"] = func(_ *FilterContext, v any, _ []any, _ map[string]any) (any, error) {
+	f["pprint"] = func(fc *FilterContext, v any, _ []any, _ map[string]any) (any, error) {
+		if _, err := fc.r.checkValue(v, "pprint", fc.Pos); err != nil {
+			return nil, err
+		}
 		return reprValue(v), nil
 	}
 
@@ -440,6 +455,9 @@ func addCoreFilters(f map[string]FilterFunc) {
 		m, ok := v.(*value.Map)
 		if !ok {
 			return nil, fc.Errorf("xmlattr expects a mapping")
+		}
+		if _, err := fc.r.checkValue(m, "xmlattr", fc.Pos); err != nil {
+			return nil, err
 		}
 		var b strings.Builder
 		for _, e := range m.Entries() {
@@ -489,11 +507,18 @@ func jsonFilter(fc *FilterContext, v any, args []any, kwargs map[string]any) (an
 	// file through this filter produced spaced output under Salt, and
 	// compact output here would make the file differ on the first run
 	// after a migration.
+	if err := checkIndented(fc, v, indent, "tojson"); err != nil {
+		return nil, err
+	}
 	b, err := value.EncodeJSONSpaced(stripUndefined(v), int(indent), true)
 	if err != nil {
 		return nil, fc.Errorf("tojson: %v", err)
 	}
-	return saltJSONEscape(string(b)), nil
+	out := saltJSONEscape(string(b))
+	if err := fc.r.checkBytes(int64(len(out)), "tojson", fc.Pos); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // saltJSONEscape is what Salt's `tojson` does to json.dumps's output.
@@ -553,6 +578,9 @@ func saltJSONFilter(fc *FilterContext, v any, args []any, kwargs map[string]any)
 	if sk, ok := arg(args, kwargs, 0, "sort_keys"); ok {
 		sortKeys = truthy(sk)
 	}
+	if err := checkIndented(fc, v, indent, "json"); err != nil {
+		return nil, err
+	}
 	out := stripUndefined(v)
 	if sortKeys {
 		out = sortMapKeys(out)
@@ -561,8 +589,46 @@ func saltJSONFilter(fc *FilterContext, v any, args []any, kwargs map[string]any)
 	if err != nil {
 		return nil, fc.Errorf("json: %v", err)
 	}
+	if err := fc.r.checkBytes(int64(len(b)), "json", fc.Pos); err != nil {
+		return nil, err
+	}
 	// Salt strips the result, which matters only with an indent.
 	return strings.TrimSpace(string(b)), nil
+}
+
+// checkIndented measures a value before it is encoded with an indent,
+// and refuses one whose indentation alone would pass the output limit.
+// The encoder pads each item with indent spaces for every container
+// around it, so a value a thousand deep with an indent of a thousand is
+// a gigabyte of spaces from a few kilobytes of value; an indent of ten
+// billion was a single allocation of that many bytes, whatever the
+// value. What is left, the escapes the encoders add to the contents, is
+// at most a small multiple of the contents, and the encoded result is
+// held to the output limit once it is built.
+func checkIndented(fc *FilterContext, v any, indent int64, what string) error {
+	sh, err := fc.r.checkValue(v, what, fc.Pos)
+	if err != nil {
+		return err
+	}
+	if indent > 0 && !mulWithin(indent, sh.pad, fc.r.opts.MaxOutput-sh.bytes) {
+		return fc.Errorf("%s: an indent of %d would exceed the %d byte output limit", what, indent, fc.r.opts.MaxOutput)
+	}
+	return nil
+}
+
+// checkArgs measures the arguments a format string will render.
+func checkArgs(fc *FilterContext, what string, args []any, kwargs map[string]any) error {
+	for _, a := range args {
+		if _, err := fc.r.checkValue(a, what, fc.Pos); err != nil {
+			return err
+		}
+	}
+	for _, a := range kwargs {
+		if _, err := fc.r.checkValue(a, what, fc.Pos); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // sortMapKeys rewrites every mapping in key order, leaving sequences in

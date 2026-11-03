@@ -37,6 +37,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	return loaded
 }
 
