@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A hub that is stopping no longer accepts a node's return after it reports that it has stopped.** A request already read off an open connection could still run, and write into the job cache, after `serve` had been told the hub was down. Such a request is now answered 503, and the node retries it. DIVERGENCE 5.559.
+
 - **A root file state no longer writes through a symbolic link another account could have planted.** Since 5.346, `file.managed`, the edit functions, `file.sed`, `file.serialize` and the modules' configuration writers followed any link at the path. An account that could write the directory (its home, or an app directory handed over with `user:`) could point the state at any file, for example `/etc/shadow`, and the state wrote it, set its mode and reported it updated. A link is now followed only when it and every directory on the way to it are root's and nobody else can write them. Otherwise the state fails and names the link. A state that relied on following a link in an account's directory must name the real file. Salt follows regardless. DIVERGENCE 5.558.
 
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.

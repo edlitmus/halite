@@ -36542,6 +36542,22 @@ VM). Each log was read for the test names, not only the job's result.
   as Salt does: `followLink` acts only when the named file is a link.
   That is a separate, older hole and is not changed here.
 
+### 5.559 The hub could write a node's return after Serve said it had stopped
+
+CI run 41682208877, `race (macos-15)`, on a branch that did not touch the hub (`internal/hub/inflight.go`, `internal/hub/listen.go`).
+
+**The symptom.** `TestAPillarTargetRefusesWhenACandidatesPillarWillNotCompile` passed every assertion and then failed in `t.TempDir`'s cleanup: `unlinkat …/002/jobs/<date>/<jid>/returns: directory not empty`. Something was writing a return into the job cache while the test removed it. The test's last submission is a `test.ping` to `web1.example`, which the lab node answers, and the test ends without waiting for that answer, so the return is in flight as the lab stops. That is ordinary; a node's answer can arrive at any moment, including as a hub shuts down. The test was not wrong to end there.
+
+**The defect.** `Serve` is meant to return only once no handler is running: that is what `inflight` was added for (commit `cad1e949`), so that a caller told the hub has stopped can trust it. It counted handlers from `enter` to `leave`, and `wait` returned when the count was zero. Closing the listener stops new connections, not new requests: a request net/http has already read off an open connection starts its handler when the scheduler reaches it, and a handler that had not reached `enter` when `wait` looked was not counted. `wait` saw zero, `Serve` returned, and the handler then ran `AddReturn` against a job cache its caller had finished with. `http.Server.Shutdown` would have waited for it, but `Serve` deliberately does not wait for `Shutdown` (it waits for every connection to go quiet, about a second per hub).
+
+In a test that is a removed directory. In production it is a return written, and `halite/job/<jid>/ret/<node>` emitted, by a hub that has already told `serve` it stopped: after whatever `serve` does next with the cache.
+
+**Shown.** `TestARequestThatArrivesAsTheHubStopsWritesNothing` holds a node's return in that window with a hook (`inflight.arrived`, which runs before the count), stops the hub, then releases it. On the old code the hub answered the return with success and wrote it into the cache after `Serve` returned; both assertions fail, every time, not by chance. With the change it passes. Disabling only the refusal (`if false && f.closed`) makes it fail again, and makes the updated `TestInflightWaitsForEveryHandler` fail at "a handler was let in after wait had returned".
+
+**The change.** `wait` now closes the gate as it reads the count, under the same lock, and `enter` refuses once the gate is closed. A handler either entered before `wait` looked, and is waited for, or arrives after, and is refused. There is no third case. A refused request is answered 503 with `Connection: close` and runs nothing. A node treats 503 as transient (`transport.Permanent` is false outside 4xx) and retries the return, so the answer goes to the hub that replaces this one rather than being lost.
+
+**Not verified.** The failing CI run was not reproduced as it happened. The original test passed 8 times out of 8 locally, and the hook forces the same window rather than finding it by chance. Whether the CI flake was this window and not another writer is inferred: in the lab, `AddReturn` is reached only from the return handler and from `CallRunner`, called from a handler or from work under `goBackground`, all of which `Serve` waits for. **The hub as `serve` runs it has writers outside that accounting, and this does not fix them.** The reactor's workers (`Reactor.start`), `Reconcile`, `maintain` and the event returner are started with a bare `go` in `cmd/halite-hub/serve.go`, nothing waits for them, and a runner reaction ends in `recordRunnerReturn`, so a reaction in flight can still write a return after `Serve` has returned. That was read, not run, and is left for its own change. A node retrying a refused return against a real hub restart was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
