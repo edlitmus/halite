@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A hub that is stopping no longer accepts a node's return after it reports that it has stopped.** A request already read off an open connection could still run, and write into the job cache, after `serve` had been told the hub was down. Such a request is now answered 503, and the node retries it. DIVERGENCE 5.565.
+
 - **A wildcard no longer grants an extension's functions, on the hub or through the API.** `functions: ['*']` or `myext.*` granted `myext.exec`, though the node runs every extension function as arbitrary code; and `halite-api` granted `cmd.run` to a `*` role at its own check, because it never knew which functions are arbitrary code. A pattern now grants only functions the build ships and knows are not arbitrary code. **A role that used an extension's function through a wildcard must now name it**, as `cmd.run` is named; that includes the administrator role `keys operator create --admin` writes. `halite-hub policy show` says so. DIVERGENCE 5.564.
 
 - **A wildcard no longer grants reading a node's pillar, by any route.** Only `GET /v1/pillar/{id}` refused `runners: ['*']`; `POST /v1/run`, `halite-hub runner`, a reactor and an orchestration ran `pillar.show_pillar` on it, and `functions: ['*']` sent `pillar.items`, `pillar.raw`, `pillar.get` and `config.get` to any node. All of these now have to be named in the role. **A role, including the API service's own, that read pillar through `*` is refused until it names them**; `halite-hub policy show` prints the list. DIVERGENCE 5.563.
