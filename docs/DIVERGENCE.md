@@ -36541,8 +36541,7 @@ VM). Each log was read for the test names, not only the job's result.
   not a link. The kernel still follows it, as it did before #386 and
   as Salt does: `followLink` acts only when the named file is a link.
   That is a separate, older hole and is not changed here.
-
-### 5.558 A copied ACL landed on whatever the temporary name pointed at
+### 5.559 A copied ACL landed on whatever the temporary name pointed at
 
 Issue 321, the close-out review of 2026-11-03, item A2's "Found, not changed" (`internal/atomicfile/xattr_linux.go`; the attribute copy is 5.492).
 
@@ -36586,6 +36585,8 @@ The rest of `internal/atomicfile` and `internal/builtin` pass in the same image,
 **Found, not changed.**
 - What the account swapped the temporary name for is still renamed into place, and `Write` reports success. The contents went to the orphaned inode. In the account's own directory, that is the account's business. It leaves the next run to write the file again.
 - `prepare` still receives the temporary file's name. Its one ownership caller, `writeAtomic`'s `keepOwnership`, is `Lchown` by name on this branch, which a hard link redirects. A2 (PR 629, not merged when this was written) routes it through `changeEntryAt`.
+
+
 
 ## 6. Everything else not started
 

@@ -60,7 +60,7 @@ on:
       - "cmd/halite-api/live_unit_test.go"
       # The replaced file's ACL copied through a temporary name a second
       # account swapped (TestLiveACLIsNotCopiedOntoAFileTheAccountLinked,
-      # DIVERGENCE 5.558); it needs root and `nobody`.
+      # DIVERGENCE 5.559); it needs root and `nobody`.
       - "internal/atomicfile/xattr*.go"
       # `iptables` and `nftables` run in a private network namespace, so
       # their live tests are in the ordinary `test` job and need no root
