@@ -36991,7 +36991,50 @@ In a test that is a removed directory. In production it is a return written, and
 **The change.** `wait` now closes the gate as it reads the count, under the same lock, and `enter` refuses once the gate is closed. A handler either entered before `wait` looked, and is waited for, or arrives after, and is refused. There is no third case. A refused request is answered 503 with `Connection: close` and runs nothing. A node treats 503 as transient (`transport.Permanent` is false outside 4xx) and retries the return, so the answer goes to the hub that replaces this one rather than being lost.
 
 **Not verified.** The failing CI run was not reproduced as it happened. The original test passed 8 times out of 8 locally, and the hook forces the same window rather than finding it by chance. Whether the CI flake was this window and not another writer is inferred: in the lab, `AddReturn` is reached only from the return handler and from `CallRunner`, called from a handler or from work under `goBackground`, all of which `Serve` waits for. **The hub as `serve` runs it has writers outside that accounting, and this does not fix them.** The reactor's workers (`Reactor.start`), `Reconcile`, `maintain` and the event returner are started with a bare `go` in `cmd/halite-hub/serve.go`, nothing waits for them, and a runner reaction ends in `recordRunnerReturn`, so a reaction in flight can still write a return after `Serve` has returned. That was read, not run, and is left for its own change. A node retrying a refused return against a real hub restart was not run.
+### 5.566 A copied ACL landed on whatever the temporary name pointed at
 
+Issue 321, the close-out review of 2026-11-03, item A2's "Found, not changed" (`internal/atomicfile/xattr_linux.go`; the attribute copy is 5.492).
+
+**The defect.** `WritePrepared` closed the temporary file and then called `keepExtendedAttributes(tmp, path, mode)`, which copied the replaced file's extended attributes onto the temporary file with `setxattr` by name, and then, when one of them was an ACL, ran `chmod` on it by name. Both follow a symbolic link, and neither can tell a hard link from the file it names. The temporary file sits in the target's directory. When that directory is an account's (`file.managed` on `~deploy/.profile`, run as root, goes through `writeAtomic` to here), the account owns the replaced file, so it chooses the ACL that is copied, and it can rename root's temporary name away and put a link to any file there between the close and the copy. The ACL it chose and the caller's mode then landed on that other file, as root. Against `/etc/shadow` that is an entry naming the account, and the file goes to the caller's mode (0644 for a `.profile`). Linux only: no other platform keeps these attributes, and `keepExtendedAttributes` is a no-op elsewhere.
+
+The reading side had the same shape. The replaced file was read by name with `listxattr` and `getxattr`, which follow a symbolic link, after an `lstat` in `WritePrepared` that only moved the window.
+
+**Is it reachable on the estate.** The symbolic-link form needs nothing but the directory. `fs.protected_symlinks` restricts following a link only in a sticky world-writable directory, which a home directory is not. The live test below followed the account's link as root with `fs.protected_symlinks=1` (Docker Desktop's 7.0.14-linuxkit kernel). It was not tried on an estate host. The hard-link form needs a link to a file the account does not own, which `fs.protected_hardlinks=1` refuses. The A2 entry (PR 629) read that setting as 1 on four Ubuntu hosts of the eds-test lab, so on the Ubuntu estate the hard-link form reaches only files the account already owns.
+
+**The change.**
+- The attributes are copied onto the open temporary file, before the close, with `fsetxattr`, and the mode is re-applied with `fchmod` (`f.Chmod`). `syscall` exports `Setxattr` and not the f-calls, and the vendored module that has them is not allowed (`internal/buildpolicy`), so `fsetxattr`, `fgetxattr` and `flistxattr` are made with `syscall.Syscall6` and the `SYS_*` numbers `syscall` already has for every Linux architecture.
+- The copy now runs before `Sync`, so the sync covers it.
+- The replaced file is opened with `O_NOFOLLOW|O_NONBLOCK|O_NOCTTY` and read through that descriptor. A symbolic link gives nothing (ELOOP). A FIFO does not hang the run. What was opened must be a regular file, so a directory, with its default ACL, gives nothing either. The `lstat` in `WritePrepared` is gone; the descriptor is the check.
+
+**What the read side can still leak.** A hard link. An account that can link a file into its directory has that file's attributes copied onto the new one. It can link a file it owns anywhere, or any file on a host with `fs.protected_hardlinks=0`. Nothing is written to the linked file. What is disclosed is small. An ACL and an SELinux label are readable by anyone who can reach the file (`getfacl` and `ls -Z` need no permission on it). `trusted.*` is copied, but reading it back needs CAP_SYS_ADMIN. What is left is the `user.*` values of a file the account could not read, on a file it may be able to. The managed file can also end up with the linked file's SELinux label. A link count above one is not refused, because this package cannot tell an account's directory from root's, and a legitimately linked file in `/etc` would lose its attributes.
+
+Opening needs read permission where listing by name did not. A writer that may replace a file but not read it now copies nothing. A root writer is never refused.
+
+**Shown.** In the `halite-fleet:bookworm` image, with `acl` added for `setfacl`, `--network none`: Debian 12, Go 1.27.3, Linux arm64 (Docker Desktop's kernel), 2026-11-03. Each run was made as root and again as `nobody` through `setpriv`.
+- `TestWriteDoesNotCopyAttributesThroughASwappedTemporaryName` swaps the temporary name for a symbolic link and for a hard link to a 0600 file, through a test hook at the moment between the write and the copy. On de26c91b with only the hook added, both cases failed: the outside file gained `user.halite-planted` and `system.posix_acl_access` and went from 0600 to 0644. With the change, both pass.
+- `TestLiveACLIsNotCopiedOntoAFileTheAccountLinked` runs as root. It gives a directory to `nobody`, and `nobody` itself (a child process with its credentials) replaces root's temporary name with a symbolic link to a root-owned 0600 file. On de26c91b with the hook, that file gained the account's ACL and went to 0644. With the change it passes. `./internal/atomicfile/` is now in the package list of the fleet workflow's linux leg, whose `-run` filter already matches the name. It has not run there yet.
+- `TestKeepExtendedAttributesReadsOnlyTheReplacedFileItself` swaps the replaced name for a symbolic link, a FIFO and a directory.
+
+With the change made pointless one way at a time, these tests failed:
+- `setxattr` and `chmod` by name again: the swap test, both cases, and the live test;
+- only the `chmod` by name: the same, on the mode alone;
+- no `O_NOFOLLOW`: the read test's symbolic-link case;
+- no `O_NONBLOCK`: the read test's FIFO case, after its ten-second limit;
+- no regular-file check: the read test's directory case;
+- no re-`chmod` after an ACL: `TestWriteKeepsAnACLNoWiderThanTheModeAsked`, which uses the real `setfacl`.
+
+The rest of `internal/atomicfile` and `internal/builtin` pass in the same image, root and unprivileged, except `TestPlannedOwnershipHasOneShape` as `nobody`. That test asks for a change of owner to `nobody`, so it cannot pass when run as `nobody`, and it fails the same way on de26c91b. `go vet` is clean for linux, freebsd, darwin and windows.
+
+**Not verified.**
+- A real host. Every run here was a container on Docker Desktop's kernel, with `/tmp` on its overlay filesystem. Not ext4 or xfs, not an SELinux host, not one of the Ubuntu hosts.
+- `security.selinux` through the descriptor. The tests use `user.*` and `system.posix_acl_access`. `TestLiveWriteConfigFileKeepsSELinuxContext` would show it on an enforcing host, and it was not run.
+- Any architecture but arm64. `SYS_FSETXATTR` and the others are taken from `syscall`, and `go vet` is clean for linux amd64, 386, arm and riscv64, but only arm64 ran.
+- The swap is made through a hook rather than a race, so the tests show where the copy goes, not how wide the window was.
+- `make check` was not run in full.
+
+**Found, not changed.**
+- What the account swapped the temporary name for is still renamed into place, and `Write` reports success. The contents went to the orphaned inode. In the account's own directory, that is the account's business. It leaves the next run to write the file again.
+- `prepare` still receives the temporary file's name. Its one ownership caller, `writeAtomic`'s `keepOwnership`, is `Lchown` by name on this branch, which a hard link redirects. A2 (PR 629, not merged when this was written) routes it through `changeEntryAt`.
 
 
 

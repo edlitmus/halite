@@ -58,6 +58,10 @@ on:
       # (TestLiveAPIUnit, cmd/halite-api/live_unit_test.go).
       - "contrib/systemd/halite-api.service"
       - "cmd/halite-api/live_unit_test.go"
+      # The replaced file's ACL copied through a temporary name a second
+      # account swapped (TestLiveACLIsNotCopiedOntoAFileTheAccountLinked,
+      # DIVERGENCE 5.566); it needs root and `nobody`.
+      - "internal/atomicfile/xattr*.go"
       # `iptables` and `nftables` run in a private network namespace, so
       # their live tests are in the ordinary `test` job and need no root
       # -- but a GitHub runner may forbid an unprivileged namespace, and
@@ -566,7 +570,7 @@ jobs:
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
+              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks' ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ 2>&1 && status=0 || status=$?
             echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
           test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"
