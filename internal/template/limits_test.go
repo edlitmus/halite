@@ -355,7 +355,7 @@ func TestAllocatingBuiltinsAreBounded(t *testing.T) {
 		// limits `('a' * 1048576) | replace('', 'b' * 200)` was 210 MB
 		// and a 2,000-byte separator between 100,000 items 200 MB, each
 		// against a 64 MiB limit, and either is one larger number from
-		// 64 GB (DIVERGENCE 5.558).
+		// 64 GB (DIVERGENCE 5.561).
 		"replace filter": `{{ ('a' * 100) | replace('', 'b' * 20) | length }}`,
 		"replace method": `{{ ('a' * 100).replace('', 'b' * 20) | length }}`,
 		"replace count":  `{{ ('a' * 100) | replace('a', 'b' * 20, 50) | length }}`,
@@ -423,7 +423,7 @@ func TestAllocatingBuiltinsAreBounded(t *testing.T) {
 	// The operands of the cases at a limit come from the context, so
 	// that each is held to the limit on one string alone: built in the
 	// template, they would be charged to the render too, and the
-	// render's total is what would refuse them (DIVERGENCE 5.559).
+	// render's total is what would refuse them (DIVERGENCE 5.562).
 	ctx := map[string]any{
 		"a100": strings.Repeat("a", 100), "a500": strings.Repeat("a", 500),
 		"b10": strings.Repeat("b", 10), "b20": strings.Repeat("b", 20),

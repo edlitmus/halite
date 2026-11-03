@@ -59,7 +59,7 @@ func TestArchiveOwnershipIsNotAppliedThroughASymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = enforceArchiveOwnership(&exec.Context{}, dest, []string{"evil/secret"}, "", other)
+	_, _, err = enforceArchiveOwnership(&exec.Context{}, dest, []string{"evil/secret"}, "", other)
 	if err == nil {
 		t.Error("ownership was enforced through a link out of the destination without complaint")
 	}

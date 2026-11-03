@@ -464,7 +464,7 @@ func (b *budget) write(n int, pos Pos) error {
 // and the lists range(), `*` and the combinatorics make by
 // budget.materialise. This comment used to say that a value built in
 // memory "is not charged to the budget", and that was the gap: a limit
-// per value held nothing to the number of values (DIVERGENCE 5.559).
+// per value held nothing to the number of values (DIVERGENCE 5.562).
 
 // checkBytes refuses a string of n bytes.
 func (r *renderer) checkBytes(n int64, what string, pos Pos) error {
