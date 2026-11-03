@@ -1828,8 +1828,11 @@ extension declaring `network` gets it; one declaring `root` is not
 dropped to another account. A declaration this build does not understand
 is refused rather than ignored.
 
-An extension's functions are marked `arbitrary_code`, so a wildcard in
-the RBAC policy never grants one — the role has to name it. A name that
+An extension's functions are marked `arbitrary_code` on the node, and a
+wildcard in the RBAC policy never grants one — the role has to name it.
+The hub cannot see that mark, since it does not know which extensions a
+node has, so it grants by pattern only the functions its own build ships:
+`functions: ['*']` and `myext.*` both leave `myext.exec` out. A name that
 collides with a built-in is refused rather than overriding it.
 
 ## Targeting

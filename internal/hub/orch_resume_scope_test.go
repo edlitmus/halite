@@ -53,6 +53,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	l.server.Policy = p
 	defer l.answering(t, "web1.example", nil)()
 
@@ -103,6 +104,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	l.server.Policy = p
 
 	mine := l.server.clock().Next()

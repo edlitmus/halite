@@ -164,7 +164,11 @@ func TestASignedExtensionIsLoadedAndCalled(t *testing.T) {
 
 // An extension is arbitrary code by construction, so a wildcard in the
 // RBAC policy never grants one: SPEC 23.5's rule applied to the thing it
-// most obviously covers.
+// most obviously covers. This is the node's half. The hub cannot see the
+// flag, and refuses an extension to a wildcard because it is not a name
+// the build ships: cmd/halite-hub
+// TestAWildcardOnTheHubGrantsWhatTheNodeShipsAndNoExtension, DIVERGENCE
+// 5.558.
 func TestAnExtensionFunctionIsMarkedAsArbitraryCode(t *testing.T) {
 	sig, err := parseSignature(ext.Signature{
 		Module: "echo", Function: "say", Doc: "d",

@@ -161,6 +161,7 @@ func executeLab(t *testing.T, policySrc string) (*lab, *stubHub) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		catalogued(loaded)
 		l.server.Policy = loaded
 	}
 	return l, hub
@@ -251,6 +252,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(wider)
 	l.server.Policy = wider
 
 	res, _ := l.post(t, PathRun, `{"tgt":"db1","fun":"test.ping"}`, out.Token)

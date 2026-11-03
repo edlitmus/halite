@@ -38,6 +38,7 @@ func authorizeReporter(t *testing.T, src string, req Request) Decision {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	req.Principal, req.Target, req.Fun = "cert:CN=reporter", "*", "state.apply"
 	return p.Authorize(req)
 }

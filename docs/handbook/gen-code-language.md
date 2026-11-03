@@ -277,7 +277,7 @@ The compiler reproduces Salt's semantics including the parts that are surprising
 
 One departure is worth stating up front: every error is collected and reported together. Salt reports the first and stops, which makes fixing a large tree an iterative grind. SPEC section 11.2 step 10.
 
-**Files:** `compile.go`, `diag.go`, `highstate.go`, `lowstate.go`, `order.go`, `requisite.go`, `slsname.go`, `top.go`; with tests.
+**Files:** `compile.go`, `diag.go`, `highstate.go`, `jobfunctions.go`, `lowstate.go`, `order.go`, `requisite.go`, `slsname.go`, `top.go`; with tests.
 
 **Exports.**
 
@@ -294,6 +294,8 @@ One departure is worth stating up front: every error is collected and reported t
 - `HighState` (type): HighState is the assembled declaration structure of a whole run, in declaration order.
 - `IsOptionArg` (func): IsOptionArg reports whether an argument name configures the runner.
 - `IsRequisiteArg` (func): IsRequisiteArg reports whether an argument name is a requisite rather than a module parameter.
+- `JobFunction` (func): JobFunction reports whether fun is one of them, and its name without the `state.` prefix.
+- `JobFunctions` (func): JobFunctions lists them by their full names.
 - `Loader` (type): Loader resolves SLS names to source.
 - `NewHighState` (func): NewHighState returns an empty high state.
 - `Options` (type): Options are the per-state options every state module honours, as distinct from the arguments a particular module takes.

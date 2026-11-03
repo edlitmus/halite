@@ -43,6 +43,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 	admin := l.operator(t, "ed")
 	sub, err := admin.Submit(context.Background(), transport.SubmitRequest{
@@ -101,6 +102,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 	const jid = "20261101T000000000002"
 	l.server.recordRunnerJob(job.ID(jid), RunnerCall{

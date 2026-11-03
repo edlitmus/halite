@@ -11,6 +11,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/runner"
+	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
@@ -271,18 +272,10 @@ func (n *node) runFunction(j *job.Job) (outcome, error) {
 }
 
 // stateFunction reports whether a name is one the state compiler
-// handles, and what to call it.
+// handles, and what to call it. The list is internal/state's, because
+// the hub's policy catalog reads it too (DIVERGENCE 5.558).
 func stateFunction(fun string) (string, bool) {
-	const prefix = "state."
-	if len(fun) <= len(prefix) || fun[:len(prefix)] != prefix {
-		return "", false
-	}
-	name := fun[len(prefix):]
-	switch name {
-	case "apply", "highstate", "sls", "show_top", "show_highstate", "show_sls", "show_lowstate", "show_states":
-		return name, true
-	}
-	return "", false
+	return state.JobFunction(fun)
 }
 
 // runStateJob compiles and, for the applying forms, runs.

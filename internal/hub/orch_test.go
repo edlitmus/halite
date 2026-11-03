@@ -451,6 +451,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 
 	run, err := l.server.Orchestrate(context.Background(), OrchRequest{

@@ -33,7 +33,6 @@ import (
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/returner"
-	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/version"
@@ -615,32 +614,34 @@ func loadPolicy(h *hubContext) (*policy.Policy, error) {
 	for _, w := range warnings {
 		h.log.Warn(w.String(), "component", "policy", "path", path)
 	}
-	loaded.ArbitraryCode = arbitraryCodeFunctions()
+	applyCatalog(loaded)
 	h.log.Info("policy loaded",
 		"path", path, "roles", len(loaded.Roles), "bindings", len(loaded.Bindings),
 		"never_granted_by_wildcard", len(loaded.ArbitraryCode))
 	return loaded, nil
 }
 
-// arbitraryCodeFunctions is the set a wildcard never grants, taken from
-// the signatures this build ships rather than from a list here: a
-// function marked `arbitrary_code` in a later build is covered without
-// anyone remembering.
-func arbitraryCodeFunctions() map[string]bool {
-	out := map[string]bool{}
+// applyCatalog gives a loaded policy what it judges a wildcard by: the
+// functions this build ships, and which of them run arbitrary code.
+// Every name it does not ship -- an extension function above all --
+// needs naming in a role, because the node runs it as arbitrary code
+// and the hub cannot know which extensions a node has. DIVERGENCE 5.558.
+//
+// Both registries: SPEC 23.5 names `module.run`, which is a state
+// module rather than an execution one. It is not submittable in this
+// build, and listing it costs nothing and covers the build where it is.
+func applyCatalog(loaded *policy.Policy) {
 	registries := builtin.New()
-	// Both registries: SPEC 23.5 names `module.run`, which is a state
-	// module rather than an execution one. It is not submittable in
-	// this build, and listing it costs nothing and covers the build
-	// where it is.
-	for _, r := range []*signature.Registry{registries.Exec.Signatures(), registries.States.Signatures()} {
-		for _, name := range r.Names() {
-			if sig, ok := r.Lookup(name); ok && sig.ArbitraryCode {
-				out[name] = true
-			}
-		}
-	}
-	return out
+	loaded.UseCatalog(registries.Exec.Signatures(), registries.States.Signatures())
+}
+
+// arbitraryCodeFunctions is the set of shipped functions a wildcard never
+// grants, from the same catalog applyCatalog gives the policy, so the
+// bootstrap file and `policy show` list what the hub enforces.
+func arbitraryCodeFunctions() map[string]bool {
+	var p policy.Policy
+	applyCatalog(&p)
+	return p.ArbitraryCode
 }
 
 // gpgOptionsFor is SPEC 12.6's renderer settings, which the hub needs

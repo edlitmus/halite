@@ -36342,6 +36342,24 @@ Issue 321, the second pass, round twelve (`cmd/halite-node/execute.go`; the comm
 
 **Not verified.** A secret that arrives as a GPG-decrypted pillar value on a real node (the test registers it directly); whether the hub itself scrubs a return it caches, which was not read; an unregistered `runas_password` in `show_highstate`, which only `show_lowstate` masks by key name.
 
+### 5.558 A wildcard on the hub granted an extension's functions
+
+Issue 321, the close-out review of 2026-11-03, item A3 (`internal/policy/policy.go`, `cmd/halite-hub/serve.go`, `cmd/halite-api/serve.go`; the built-in half of the same agreement is 5.297).
+
+**The defect.** SPEC 23.5: a wildcard never grants a function that declares `arbitrary_code`. The node marks every extension function so (`internal/extension` `parseSignature`, whose comment says a wildcard "never grants one"). The hub could not see that mark: its never-by-wildcard set was a deny list built from `builtin.New()`'s registries, which hold no extension, so on the hub `functions: ['*']` (or `myext.*`) granted `myext.exec`, and the node ran it. Two paths that must agree; `TestTheHubAndTheNodeAgreeOnArbitraryCode` compared them over the built-in execution registry only, so it passed.
+
+**Found beside it.** `halite-api` loaded the same policy and never set the arbitrary-code set at all, so its own check — the operator's, before it forwards under its own certificate — let `functions: ['*']` through for `cmd.run`, `cmd.script` and every other declared function. The hub's second check then judged only the API's certificate, so an operator with a wildcard role reached `cmd.run` whenever the API's role named it.
+
+**Shown.** On the old code: a policy granting `['*', 'myext.*']`, given the catalog the hub's loader gives it, allowed `myext.exec` and `site_tools.run`; the API's `loadPolicy` allowed `cmd.run`, `cmd.script` and `myext.exec` under `['*']`. Both new tests fail on that code and pass on this.
+
+**The change.** The rule is inverted: a pattern grants a function only if the build ships it and it is not arbitrary code (`Policy.Shipped`, filled with `ArbitraryCode` by `Policy.UseCatalog` from the registries). Anything the build does not ship — an extension's function, or a newer build's — has to be named, because the hub cannot know which extensions a node has loaded and nobody here has read its signature. The node already took that view of an unknown name for `require_job_signature` (`jobsignature.go`: "a function this build does not ship requires one"). A policy given no catalog grants nothing by pattern and says so, which is how a loader that forgets (as `halite-api` did) now fails. `halite-api` now applies the same catalog as the hub.
+
+"What the build ships" is the execution registry plus the `state.*` forms the node answers through its compiler (`apply`, `highstate`, `sls`, `show_*`), which are in no registry: read from the registries alone, `state.*` stopped granting `state.apply`, which `TestAllowSLSRefusesTheHighstate` caught. The node's list moved from `cmd/halite-node` to `state.JobFunctions` so the node's dispatch and the catalog read one list. `policy show` adds a line saying that what the build does not ship is refused to a pattern too; a denial for such a function says it is "not a function this build ships".
+
+**What an operator sees.** A role that granted an extension's function only by `*` or `myext.*` is refused it now, and must name it. The hub's own tests show the shape of it: six submitted made-up names (`lb.drain`, `test.too_long`, `test.fits`) under the lab's `functions: ['*', 'cmd.run']` and were refused, and the lab policy now names them. Nothing the build ships changes: `TestAWildcardOnTheHubGrantsWhatTheNodeShipsAndNoExtension` holds, for every execution function and every state form, that a wildcard on the hub grants it exactly when the node does not call it arbitrary code, and refuses two extension names. Broken on purpose three ways: with the old deny-list check restored, it and `TestTheAPIsWildcardIsTheHubs` fail on the extension names; with the state forms left out of the catalog, it fails on them and `TestAllowSLSRefusesTheHighstate` fails; with the API's catalog removed, `TestTheAPIsWildcardIsTheHubs` fails.
+
+**Not verified.** No hub, node or API was run, and no extension was loaded; all of this is unit tests against the policy the loaders build. The safety of the rule leans on the node refusing an extension function whose name is a built-in's (`registerExtensionFunctions`), which was read and has no test. Version skew is not covered: a hub newer than its nodes ships a function an older node lacks, and if an extension on that node registers the name, a wildcard on the hub grants it. A pattern in `runners:` is unchanged; runners run on the hub and are not extensions.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

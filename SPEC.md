@@ -2199,7 +2199,9 @@ Properties that are requirements, not suggestions:
 - **`cmd.run` is a distinct permission** from every other function and is never granted by a
   wildcard. `functions: ['*']` does not include `cmd.run`, `cmd.script`, `cmd.shell`, `module.run`,
   `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.
-  Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
+  Nor does it include a function the hub's build does not ship, which is how an extension's
+  function is seen from the hub: the node marks every one `arbitrary_code`, and the hub cannot know
+  which a node has loaded (DIVERGENCE 5.558). Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
   `.*`.
 - **Wildcards are explicit.** `'*'` matches; a missing field does not. A pattern in a principal,
   `functions`, `runners`, a keyword list, `deny_sls`, `allow_sls` or `allow_mods` is a glob as

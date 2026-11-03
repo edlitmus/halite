@@ -107,6 +107,10 @@ roles:
   # at a chosen path is code execution by a slower route — a cron file,
   # an authorized_keys, a unit file.
   #
+  # An extension's functions are not on that list and a wildcard does not
+  # grant them either: the hub grants by pattern only what its own build
+  # ships, because it cannot know which extensions a node has loaded.
+  #
   # Salt's `.*` grants everything, and everybody's Salt ACL says `.*`.
   break_glass:
     - target: '*'

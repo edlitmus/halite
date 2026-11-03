@@ -266,6 +266,13 @@ func loadPolicy(s *service, args *cli.Args) *policy.Policy {
 	for _, w := range warnings {
 		s.log.Warn(w.String(), "component", "policy")
 	}
+	// The catalog the hub judges a wildcard by. The API authorizes the
+	// operator before it forwards under its own certificate, and without
+	// this it never knew which functions run arbitrary code:
+	// `functions: ['*']` passed `cmd.run` here, which reached the node
+	// whenever the API's own role named it. DIVERGENCE 5.558.
+	registries := builtin.New()
+	loaded.UseCatalog(registries.Exec.Signatures(), registries.States.Signatures())
 	return loaded
 }
 
