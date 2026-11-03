@@ -958,6 +958,11 @@ than the iteration limit, both checked before the value is built; so is the resu
 also counted across the render, and together may hold no more items than the iteration limit;
 `batch` and `slice` regroup a list that already exists and are not counted.
 
+A value is measured before anything walks it: printing, comparing, encoding, sorting, using it as
+a mapping key, or passing it to `salt[...]`. It may nest at most 10,000 deep, which is also the JSON
+decoder's limit, and its rendering may be no larger than the output limit, which bounds a value
+that holds one item many times. A value that contains itself is refused as too deep.
+
 Rendering happens in the unprivileged sandbox subprocess described in section 25.4.
 
 ### 10.3 The `exec` renderer

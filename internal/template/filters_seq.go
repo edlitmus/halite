@@ -27,6 +27,21 @@ func asSeq(fc *FilterContext, v any) ([]any, error) {
 	return fc.r.iterate(v, fc.Pos)
 }
 
+// checkedSeq is asSeq for the filters that compare, render or descend
+// into the items, whose walks measureValue must see first. The others,
+// `first` and `length` and the rest, use asSeq, because measuring a list
+// costs as much as walking it and they look at one item or none.
+func checkedSeq(fc *FilterContext, v any, what string) ([]any, error) {
+	items, err := asSeq(fc, v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := fc.r.checkValue(items, what, fc.Pos); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func addSequenceFilters(f map[string]FilterFunc) {
 	f["first"] = func(fc *FilterContext, v any, _ []any, _ map[string]any) (any, error) {
 		items, err := asSeq(fc, v)
@@ -61,7 +76,7 @@ func addSequenceFilters(f map[string]FilterFunc) {
 	}
 
 	f["join"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
-		items, err := asSeq(fc, v)
+		items, err := checkedSeq(fc, v, "join")
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +124,7 @@ func addSequenceFilters(f map[string]FilterFunc) {
 	}
 
 	f["sort"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
-		items, err := asSeq(fc, v)
+		items, err := checkedSeq(fc, v, "sort")
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +147,7 @@ func addSequenceFilters(f map[string]FilterFunc) {
 	}
 
 	f["unique"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
-		items, err := asSeq(fc, v)
+		items, err := checkedSeq(fc, v, "unique")
 		if err != nil {
 			return nil, err
 		}
@@ -315,6 +330,9 @@ func addSequenceFilters(f map[string]FilterFunc) {
 		if !ok {
 			return nil, fc.Errorf("dictsort expects a mapping, found %s", typeName(v))
 		}
+		if _, err := fc.r.checkValue(m, "dictsort", fc.Pos); err != nil {
+			return nil, err
+		}
 		caseSensitive := false
 		if b, ok := arg(args, kwargs, 0, "case_sensitive"); ok {
 			caseSensitive = truthy(b)
@@ -340,7 +358,7 @@ func addSequenceFilters(f map[string]FilterFunc) {
 	}
 
 	f["groupby"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
-		items, err := asSeq(fc, v)
+		items, err := checkedSeq(fc, v, "groupby")
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +464,7 @@ func resolveDotted(fc *FilterContext, item any, attr string) (any, error) {
 
 func extremum(wantMax bool) FilterFunc {
 	return func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
-		items, err := asSeq(fc, v)
+		items, err := checkedSeq(fc, v, "min/max")
 		if err != nil {
 			return nil, err
 		}
@@ -536,14 +554,14 @@ func selectFilter(invert, byAttr bool) FilterFunc {
 // filters Salt adds.
 func setOp(name string, keepInA, keepInBoth, keepInB bool) FilterFunc {
 	return func(fc *FilterContext, v any, args []any, _ map[string]any) (any, error) {
-		a, err := asSeq(fc, v)
+		a, err := checkedSeq(fc, v, name)
 		if err != nil {
 			return nil, err
 		}
 		if len(args) != 1 {
 			return nil, fc.Errorf("%s takes one sequence argument", name)
 		}
-		b, err := asSeq(fc, args[0])
+		b, err := checkedSeq(fc, args[0], name)
 		if err != nil {
 			return nil, err
 		}

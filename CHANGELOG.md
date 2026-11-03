@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A template can no longer end the hub or a node by building a value too deep, too shared or self-containing to walk.** A list nested two million deep, which a loop builds in about a second, overflowed the stack when it was printed, compared, encoded, used as a mapping key or passed to `salt[...]`; a list holding one string many times was rendered whole before anything measured it; and a mapping that holds itself was walked until the stack ran out. Each is now refused with an error at the template line: a value may nest 10,000 deep, and its rendering may be no larger than the output limit. `tojson` and `json` refuse an indent whose padding alone would pass the limit. DIVERGENCE 5.312.
+
 - **`replace`, `join`, `format` and string and list concatenation are held to the output limit.** Each built its result without measuring it, so one expression could ask for many gigabytes, and an allocation the runtime cannot make ends the process. They are now refused before they are built, as `indent`, `center` and `*` already were. DIVERGENCE 5.558.
 
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.

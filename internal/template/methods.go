@@ -25,11 +25,11 @@ func method(obj any, name string, maxBytes int64) (Callable, bool) {
 			return fn, true
 		}
 	case *value.Map:
-		if fn, ok := mapMethod(t, name); ok {
+		if fn, ok := mapMethod(t, name, maxBytes); ok {
 			return fn, true
 		}
 	case []any:
-		if fn, ok := listMethod(t, name); ok {
+		if fn, ok := listMethod(t, name, maxBytes); ok {
 			return fn, true
 		}
 	}
@@ -55,7 +55,10 @@ func argString(args []any, kwargs map[string]any, i int, name string) (string, b
 	return s, ok
 }
 
-func mapMethod(m *value.Map, name string) (Callable, bool) {
+// maxBytes is the render's MaxOutput, against which the key that get, pop
+// and setdefault are given is measured: a key that is not a scalar is
+// spelt by fmt.Sprint, which recurses as deep as the key does.
+func mapMethod(m *value.Map, name string, maxBytes int64) (Callable, bool) {
 	switch name {
 	case "get":
 		// Salt trees write `pillar.get('a:b:c', default)`. A literal key
@@ -66,6 +69,9 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 			key, ok := arg(args, kwargs, 0, "key")
 			if !ok {
 				return nil, fmt.Errorf("get() needs a key")
+			}
+			if err := checkValueBytes(key, "get()", maxBytes); err != nil {
+				return nil, err
 			}
 			def, hasDef := arg(args, kwargs, 1, "default")
 			if v, found := m.Get(normalizeKey(key)); found {
@@ -138,6 +144,9 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 			if !ok {
 				return nil, fmt.Errorf("pop() needs a key")
 			}
+			if err := checkValueBytes(key, "pop()", maxBytes); err != nil {
+				return nil, err
+			}
 			v, found := m.Get(normalizeKey(key))
 			if found {
 				m.Delete(normalizeKey(key))
@@ -155,6 +164,9 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 			if !ok {
 				return nil, fmt.Errorf("setdefault() needs a key")
 			}
+			if err := checkValueBytes(key, "setdefault()", maxBytes); err != nil {
+				return nil, err
+			}
 			if v, found := m.Get(normalizeKey(key)); found {
 				return v, nil
 			}
@@ -166,12 +178,15 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 	return nil, false
 }
 
-func listMethod(l []any, name string) (Callable, bool) {
+func listMethod(l []any, name string, maxBytes int64) (Callable, bool) {
 	switch name {
 	case "count":
 		return funcValue{"count", func(args []any, _ map[string]any) (any, error) {
 			if len(args) != 1 {
 				return nil, fmt.Errorf("count() takes one argument")
+			}
+			if err := checkPairBytes(l, args[0], "count()", maxBytes); err != nil {
+				return nil, err
 			}
 			n := int64(0)
 			for _, item := range l {
@@ -185,6 +200,9 @@ func listMethod(l []any, name string) (Callable, bool) {
 		return funcValue{"index", func(args []any, _ map[string]any) (any, error) {
 			if len(args) != 1 {
 				return nil, fmt.Errorf("index() takes one argument")
+			}
+			if err := checkPairBytes(l, args[0], "index()", maxBytes); err != nil {
+				return nil, err
 			}
 			for i, item := range l {
 				if equalValues(item, args[0]) {
@@ -270,6 +288,9 @@ func stringMethod(s, name string, maxBytes int64) (Callable, bool) {
 			items, ok := args[0].([]any)
 			if !ok {
 				return nil, fmt.Errorf("join() takes a sequence")
+			}
+			if err := checkValueBytes(items, "join()", maxBytes); err != nil {
+				return nil, err
 			}
 			parts := make([]string, len(items))
 			for i, item := range items {
@@ -419,8 +440,8 @@ func stringsToAny(ss []string) []any {
 // SLS trees use. Format specifications are not implemented; a template
 // that needs one uses a filter.
 //
-// maxBytes is the render's MaxOutput, against which the result is
-// measured as it is built.
+// maxBytes is the render's MaxOutput, against which each argument is
+// measured before it is rendered, and the result as it is built.
 func formatBraces(s string, args []any, kwargs map[string]any, maxBytes int64) (string, error) {
 	var b strings.Builder
 	auto := 0
@@ -464,6 +485,9 @@ func formatBraces(s string, args []any, kwargs map[string]any, maxBytes int64) (
 					return "", fmt.Errorf("format(): keyword argument %q is missing", field)
 				}
 				v = kv
+			}
+			if err := checkValueBytes(v, "format()", maxBytes); err != nil {
+				return "", err
 			}
 			out, err := pyFormatValue(v, spec)
 			if err != nil {

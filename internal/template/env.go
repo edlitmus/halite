@@ -579,6 +579,11 @@ func installGlobals(e *Environment) {
 		}
 		m := value.NewMap(len(kwargs))
 		if len(args) == 1 {
+			// The pairs' first items become keys (see the dict literal
+			// in eval.go for why a key is measured).
+			if err := checkValueBytes(args[0], "dict()", e.Opts.MaxOutput); err != nil {
+				return nil, err
+			}
 			if err := dictUpdate(m, args[0]); err != nil {
 				return nil, err
 			}

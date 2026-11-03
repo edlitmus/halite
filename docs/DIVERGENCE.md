@@ -26822,6 +26822,145 @@ cursor, which moves only forward; that was read, not measured.
 here; CI will run it. Its Windows and FreeBSD builds were vetted, not
 run.
 
+#### 5.312, a value is measured before it is walked
+
+The first item of the "Not done" list above: a value can be as deep as a
+loop can make it. A review on 2026-11-03, against `de26c91b`, measured it
+in child processes: `{% set ns.x = [ns.x] %}` in a loop built a list that
+overflowed an 8 MiB stack when printed at about 14,500 levels (about
+580 bytes a level; `tojson` about 390, `yaml` 307, `==` 259), so two
+million levels fill the default 1 GiB. Building two million took 1.3 s
+and 319 MB under the default `MaxIterations` of ten million, and the
+printed form, about 4 MB, is under `MaxOutput`. Nothing stopped it. The
+same value reached `join`, and any `salt[...]` call that encodes its
+arguments.
+
+**Found while doing this, and the same shape.** Depth is one of three
+ways a walk of a value runs away, and the other two were not in the list:
+
+- *Sharing.* A list holds its items by reference, so `{% set ns.x =
+  [ns.x, ns.x] %}` doubles what a walk visits at each pass while holding
+  one more list. And one string repeated in a list is printed once per
+  item: on `de26c91b`, with `MaxOutput` at 1,000, `(['a' * 900] * 900) |
+  tojson | length`, `| string | length` and `~ ''` each gave 813,600,
+  because the whole text is built before anything measures it. With the
+  default limits that is a 64 MiB string times ten million items.
+- *Cycles.* `d.update({'d': d})` makes a mapping that holds itself, and
+  every walk of it recursed until the stack overflowed.
+- *Indentation.* `tojson(indent=N)` and `json(indent=N)` pad every item
+  by N for each container around it, and `yaml(False)` by two, so a
+  value a thousand deep with an indent of a thousand is a gigabyte of
+  spaces, and an indent of ten billion is one allocation of that many
+  bytes whatever the value (read from the code, not run: running it is
+  the failure).
+- *Error text.* `compare` wrapped its error once per level, each wrap a
+  new string twenty bytes longer than the last and all of them kept: for
+  two lists ten thousand deep with a mismatch at the bottom, about a
+  gigabyte (worked out, not run).
+- *Keys.* A mapping's index spells a key that is not a scalar with
+  `fmt.Sprint` (`value.CanonKey`), and so does the message for a missing
+  key, and `fmt` recurses as deep as the key does. Python refuses a list
+  as a key; halite accepts one, so `{x: 1}`, `m[x]`, `[1][x]`,
+  `m.get(x)`, `m.pop(x)`, `m.setdefault(x)` and `dict([[x, 1]])` each
+  overflowed a 32 MiB stack with `x` two hundred thousand deep. This
+  showed only once the rest was in place, when the test table grew to
+  cover keys.
+
+**The change.** `measureValue` (`internal/template/shape.go`) walks a
+value with a stack of its own on the heap, one frame per level, so it
+cannot overflow the Go stack. It refuses a value nested deeper than
+`maxValueDepth`, which is also how it stops on a cycle, or one whose
+rendering could not fit in `MaxOutput`: it counts a lower bound (each
+string its length, each key its length, each container two, any other
+scalar one) that every rendering, str, repr, JSON or YAML, writes at
+least, so it refuses nothing that could have been rendered within the
+limit, and it stops a shared value after at most `MaxOutput` visits. The
+engine measures a value before every recursive walk of it that can
+reach one: printing, `~`, `|string` and every filter that renders its
+input, `pprint`, `tojson`, `json`, `yaml`, `yaml_encode`,
+`dict_to_sls_yaml_params`, `xmlattr`, `join` and `str.join`, `format`
+and `str.format`, `==`, `!=`, `<`, `<=`, `>`, `>=` and the tests that
+compare, `in`, `sort`, `unique`, `min`, `max`, `dictsort`, `groupby`,
+`flatten`, the set filters, `set_dict_key_value` and its kin (which
+deep-copy), `list.count`, `list.index`, `list.remove`, `loop.changed`,
+a key given to a subscript, a mapping literal, `dict()`, `get`, `pop` or
+`setdefault`, and every argument of a `salt[...]` call, positional and
+keyword, before the module sees it. The walks themselves are unchanged.
+
+A comparison is measured only when it will recurse: equality only for
+two lists or two mappings of the same length, ordering only for two
+lists, `in` only for the list searched and the needle, and for a mapping
+only the needle. Measuring costs as much as walking, and `'k' in pillar`
+or `pillar == {}` are answered without walking pillar, so measuring it
+would have made them cost its size.
+
+`maxValueDepth` is `value.MaxDepth`, which is `value.DecodeJSON`'s
+existing limit and `encoding/json`'s own, 10,000: anything that came
+into a render as a JSON document is within it, and YAML, the other way
+in, stops at 100. It is ten times the parser's `maxExprDepth`, so no
+literal reaches it; only a loop does. Measured on darwin/arm64 with
+go1.27.3, with and without `-race`, by lowering the child's stack by
+hand: every walk of a value at the limit, inside 99 nested `if`, fits in
+8 MiB, and those built on `renderValue` need more than 4 MiB, so between
+about 420 and 840 bytes a level. The test's child has 32 MiB; the
+default stack is 1 GiB.
+
+The indentation is checked before encoding: `measureValue` also counts
+the containers around each item, and `tojson` and `json` refuse an
+indent whose padding alone would pass the limit. YAML block output takes
+a new `EncodeOptions.MaxBytes` and stops soon after passing it. Each of
+the encoded results is then held to `MaxOutput` once it is built; what
+the measure does not see, the escapes the encoders add, is at most a
+small multiple of the contents (six bytes for one in JSON). And
+`compare` names only the outermost element.
+
+**Divergences.** `d == d` for a mapping that holds itself is `True` in
+Python, which compares a value with itself by identity; here it is
+refused. Outside comparisons, the measure is taken whether or not the
+walk would have gone deep: `{'a': x} | dictsort` compares only the keys,
+was safe on the old code with any `x`, and is refused now, as is
+anything given a value past the limit. Jinja's own limit, Python's
+recursion limit, was not measured against.
+
+**Demonstrated.** `value_walk_test.go`, 44 walks. With `measureValue`
+made to accept everything: all 44 failed
+`TestDeepValuesAreRefusedBeforeTheyAreWalked` (a value 10,001 deep, built
+in Go and walked by the old code in a few megabytes of this process's
+stack); all nine of `TestSharedValuesAreMeasuredByWhatTheyRenderTo`
+failed; and of the 132 children of `TestDeepValuesDoNotOverflowTheStack`
+(each walk of a value 200,000 deep, of a mapping that holds itself, and
+of one at the limit under 99 nested `if`, on a 32 MiB stack), all 44
+deep ones failed, 42 by `fatal error: stack overflow`, and 42 of the 44
+cyclic ones, 31 by overflow; the 44 at the limit passed. The failures
+that were not overflows are walks that do not go deep on that value:
+`dictsort` and `groupby`, which compare keys, `flatten` of a mapping,
+and a mapping used as a key, which `fmt` prints as a pointer. The
+measure refuses those by rule rather than to stop a crash. `<` and `!=`
+between the mapping and a list are answered at the top and not refused;
+`TestComparisonsThatDoNotRecurseDoNotMeasure` holds that, and failed
+with every comparison measured, and with none measured `==`, `!=`, `<`
+and `eq` overflowed their children. Each key check, removed on its own,
+let its own case overflow its child.
+`TestHugeIndentIsRefusedBeforeEncoding` calls the check
+directly, so that the reverted code is not asked to allocate ten
+gigabytes, and failed with the check removed;
+`TestComparingDeepListsReportsOneElement` failed with the wrapping put
+back; `yaml.TestEncodeStopsAtMaxBytes` failed with the stop removed
+(40,402 bytes past a limit of 1,000). The deep and cyclic values are
+built only in children, because on the old code they overflow the
+stack, and in the test process that is the 1 GiB default.
+
+**Not done.** A value a module returns from `salt[...]` is not measured,
+nor is pillar from an external source before it reaches a render; both
+come from code rather than from a template's loop. `fmt.Sprint`, which
+`renderValue` falls back to for a type outside the model, is not
+bounded, and no template-built value reaches it.
+
+**Not verified.** Nothing here ran on FreeBSD or Linux, or with the
+pinned go1.26.6; the stack figures are darwin/arm64 with go1.27.3. No
+real Salt tree was rendered through the measure; the package tests,
+the Jinja corpus among them, pass.
+
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
 **What was wrong.** `mount.mounted` decided whether the mounted

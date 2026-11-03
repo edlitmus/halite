@@ -82,9 +82,12 @@ func mutatingListMethod(name string) (listMutator, bool) {
 		}, true
 
 	case "remove":
-		return func(_ *renderer, _ Pos, l []any, args []any, _ map[string]any) ([]any, any, error) {
+		return func(r *renderer, _ Pos, l []any, args []any, _ map[string]any) ([]any, any, error) {
 			if len(args) != 1 {
 				return l, nil, fmt.Errorf("remove() takes one argument")
+			}
+			if err := checkPairBytes(l, args[0], "remove()", r.opts.MaxOutput); err != nil {
+				return l, nil, err
 			}
 			for i, item := range l {
 				if equalValues(item, args[0]) {

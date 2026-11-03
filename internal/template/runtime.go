@@ -129,6 +129,9 @@ type LoopInfo struct {
 	Items   []any
 	changed any
 	hasPrev bool
+	// maxBytes is the render's MaxOutput, for measuring what
+	// loop.changed compares.
+	maxBytes int64
 	// recurse re-enters the loop body for `{% for %}...recursive`.
 	recurse func(items any) (string, error)
 }
@@ -182,6 +185,12 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 
 // getItem resolves `obj[key]`.
 func (r *renderer) getItem(obj, key any, pos Pos) (any, error) {
+	// A key that is not a scalar is spelt by fmt.Sprint, to index a
+	// mapping and to name a missing one, and fmt recurses as deep as
+	// the key does.
+	if _, err := r.checkValue(key, "a key", pos); err != nil {
+		return nil, err
+	}
 	if u, ok := obj.(Undefined); ok {
 		return Undefined{Name: fmt.Sprintf("%s[%v]", u.Name, key), Pos: pos, Hint: u.Hint}, nil
 	}
@@ -315,6 +324,9 @@ func (l *LoopInfo) attr(name string, pos Pos) (any, error) {
 			} else {
 				cur = args
 			}
+			if err := checkValueBytes(cur, "loop.changed", l.maxBytes); err != nil {
+				return nil, err
+			}
 			same := l.hasPrev && equalValues(l.changed, cur)
 			l.changed, l.hasPrev = cur, true
 			return !same, nil
@@ -340,6 +352,22 @@ func (r *renderer) callValue(fn any, args []any, kwargs map[string]any, pos Pos)
 	case Undefined:
 		return nil, r.undefinedError(t, pos)
 	case Callable:
+		// An execution module walks its arguments however it likes,
+		// encoding them, merging them or printing them, and none of
+		// that code is the engine's to bound, so the arguments are
+		// measured here, before they leave it.
+		if _, ok := fn.(dispatchValue); ok {
+			for _, a := range args {
+				if _, err := r.checkValue(a, "an argument to salt", pos); err != nil {
+					return nil, err
+				}
+			}
+			for _, a := range kwargs {
+				if _, err := r.checkValue(a, "an argument to salt", pos); err != nil {
+					return nil, err
+				}
+			}
+		}
 		v, err := t.Call(args, kwargs)
 		if err != nil {
 			if _, ok := err.(*Error); ok {
@@ -387,8 +415,17 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 	l, rv = untuple(l), untuple(rv)
 	switch op {
 	case "~":
+		// toStr forgives an undefined operand, which `~` always has; it
+		// must not forgive a value too deep or too large to render, so
+		// that is checked first.
+		if err := r.checkPair(l, rv, "~", pos); err != nil {
+			return nil, err
+		}
 		return r.concat(r.toStr(l, pos), r.toStr(rv, pos), pos)
 	case "in":
+		if err := r.checkIn(rv, l, pos); err != nil {
+			return nil, err
+		}
 		return contains(rv, l), nil
 	}
 
@@ -399,6 +436,12 @@ func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
 		return nil, r.undefinedError(u, pos)
 	}
 
+	switch op {
+	case "==", "!=", "<", "<=", ">", ">=":
+		if err := r.checkCompare(op == "==" || op == "!=", l, rv, "comparison", pos); err != nil {
+			return nil, err
+		}
+	}
 	switch op {
 	case "==":
 		return equalValues(l, rv), nil
@@ -642,6 +685,16 @@ func equalValues(a, b any) bool {
 }
 
 func compare(a, b any) (int, error) {
+	return compareAt(a, b, 0)
+}
+
+// compareAt is compare for two values depth levels inside the pair the
+// template compared. Only the outermost level names the element, so the
+// error a mismatch at the bottom of two deep lists makes is one line: it
+// used to be wrapped once per level, and every wrapping is a new string
+// as long as the one before plus twenty bytes, all of them kept by the
+// chain, which for two lists ten thousand deep is a gigabyte.
+func compareAt(a, b any, depth int) (int, error) {
 	if as, ok := a.(string); ok {
 		bs, ok := b.(string)
 		if !ok {
@@ -660,8 +713,11 @@ func compare(a, b any) (int, error) {
 			return 0, fmt.Errorf("cannot compare a sequence with %s", typeName(b))
 		}
 		for i := 0; i < len(as) && i < len(bs); i++ {
-			c, err := compare(as[i], bs[i])
+			c, err := compareAt(as[i], bs[i], depth+1)
 			if err != nil {
+				if depth > 0 {
+					return 0, err
+				}
 				return 0, fmt.Errorf("comparing element %d: %w", i, err)
 			}
 			if c != 0 {
@@ -792,6 +848,9 @@ func (r *renderer) toStrErr(v any, pos Pos) (string, error) {
 			return "", err
 		}
 		return "", nil
+	}
+	if _, err := r.checkValue(v, "rendering a value", pos); err != nil {
+		return "", err
 	}
 	return renderValue(v), nil
 }
