@@ -35,6 +35,9 @@ type parser struct {
 	// depth is how many `(` and `not` enclose the token being parsed.
 	// See maxCompoundDepth.
 	depth int
+	// budget is shared with any nodegroup the expression expands, which
+	// is part of the same target. See maxPatternBytes.
+	budget *budget
 }
 
 // maxCompoundDepth bounds how deeply an expression may nest, counting
@@ -300,7 +303,7 @@ func (p *parser) parsePrimary() (node, error) {
 func (p *parser) compileTerm(t compoundToken) (node, error) {
 	at := strings.Index(t.text, "@")
 	if at <= 0 {
-		leaf, err := compileLeaf(Glob, t.text)
+		leaf, err := compileLeaf(Glob, t.text, p.budget)
 		if err != nil {
 			return nil, withCol(err, t.col)
 		}
@@ -315,7 +318,7 @@ func (p *parser) compileTerm(t compoundToken) (node, error) {
 		// An `@` that is not a type sigil belongs to the value, which is
 		// how an email-like node ID or a grain value containing @ is
 		// written.
-		leaf, err := compileLeaf(Glob, t.text)
+		leaf, err := compileLeaf(Glob, t.text, p.budget)
 		if err != nil {
 			return nil, withCol(err, t.col)
 		}
@@ -331,7 +334,7 @@ func (p *parser) compileTerm(t compoundToken) (node, error) {
 		if err != nil {
 			return nil, withCol(err, t.col)
 		}
-		sub := &parser{src: expanded, groups: p.groups}
+		sub := &parser{src: expanded, groups: p.groups, budget: p.budget}
 		n, err := sub.parse()
 		if err != nil {
 			return nil, err
@@ -343,7 +346,7 @@ func (p *parser) compileTerm(t compoundToken) (node, error) {
 		return n, nil
 	}
 
-	leaf, err := compileLeaf(kind, rest)
+	leaf, err := compileLeaf(kind, rest, p.budget)
 	if err != nil {
 		return nil, withCol(err, t.col)
 	}

@@ -24341,6 +24341,21 @@ node compiles a job's target again in `cmd/halite-node/jobsignature.go`.
 That path shares the same code and the same bound, but a test was not
 run there. The figures above are from one Mac and were not taken on
 FreeBSD or Linux.
+
+#### The length decision, revisited (5.559)
+
+"Length is not capped, on purpose" rested on two claims: that a long
+target costs memory in a straight line, and that `max_body` bounds it.
+The line is steep. Measured on darwin/arm64 with go1.27.3, compiling a
+4 MiB or-chain of names allocated some 32 bytes a byte, so the 64 MiB a
+body may be is some 2 GB; and 5.501 then made every glob a compiled
+regexp at some 570 bytes a character, kept for good. 5.559 caps an
+expression at 1 MiB, which `TestLongFlatTargetsStillCompile`'s 5,001
+`L@` names fit six times over. The or-chain and and-chain shapes above
+were cut from 200,000 terms to 90,000 and 70,000 to fit under it; both
+are still past the 30,000 at which the old code overflowed, and
+`TestHostileShapesFit` keeps them under the cap so that they test the
+parser and not the cap.
 ### 5.292 gitfs verified a branch by its name and served it by its commit
 
 With `gitfs_verify_signatures: true`, `verify` ran
@@ -29880,6 +29895,25 @@ path itself, is not offered, so a state cannot ask for the link to be
 replaced. `file.copy`, `file.prepend`, `blockreplace`, `comment` and
 `uncomment` go through `editResult` too, and were not each run against a
 link. Linux as root was not run.
+
+#### 5.346, the fix followed a link anyone could plant
+
+The fix above followed **every** link, whoever made it. Its own case was
+a link an operator made in `sites-enabled`; it did not consider a link
+an unprivileged account made in a directory a root state writes into.
+`file.managed` with `mode:` on a path in a home directory followed a
+`.profile` the account had pointed at a 0600 file outside it. The state
+wrote the tree's contents there, made the file 0644, and reported it
+updated. The edit functions wrote through the link the same way. The
+table above is still true: a root-owned link in a root-owned directory
+is still followed. 5.558 makes the rule and records the divergence from
+Salt.
+
+One sentence above is wrong. `file.copy` does not go through
+`editResult` (`fileCopyState` in `file_edit.go`, read on `de26c91b`). It
+calls `writeAtomic` on the destination directly, so it still replaces a
+link there rather than following it.
+
 ### 5.347 file.recurse cleaned what it was told to exclude, and ignored a mode change
 
 Issue 321 finding M-22, three defects the audit reproduced. All three
@@ -36341,6 +36375,232 @@ Issue 321, the second pass, round twelve (`cmd/halite-node/execute.go`; the comm
 **The change.** The returned value goes through `maskValue` with the node's secrets, as the command line's does: a string that is a registered secret is replaced outright and one that contains it is scrubbed in place, so `password=` stays readable and the state's id and function are unchanged. `show_states` and `show_top` return names only and are as they were.
 
 **Not verified.** A secret that arrives as a GPG-decrypted pillar value on a real node (the test registers it directly); whether the hub itself scrubs a return it caches, which was not read; an unregistered `runas_password` in `show_highstate`, which only `show_lowstate` masks by key name.
+
+### 5.558 A file state followed a symbolic link another account had planted
+
+Item A1 of the issue 321 close-out review (2026-11-03): a regression the
+M-19 fix (5.346, #386) introduced. Reproduced on main `de26c91b`.
+
+**The defect.** `followLink` (`internal/builtin/fileutil.go`) resolved
+any link at a file state's path with `filepath.EvalSymlinks` and wrote
+the file it named. A node runs as root. A path in a directory an
+unprivileged account can write (its home, or an app directory handed
+over with `user:`) let that account point the state anywhere. The
+reviewer's probe (macOS, not root) had a `.profile` link in
+`home-deploy` to a 0600 `etc-shadow` beside it. `file.managed` with
+`contents`, `mode: 0644` and `group:` wrote the contents into
+`etc-shadow`, made it 0644, changed its group, and reported
+"etc-shadow was updated". `file.append`, `file.line` and `file.replace`
+each edited `etc-shadow` through the link. Before #386 the rename
+replaced the link, and the account's file was the only one changed.
+
+This contradicts `noLink` in `internal/builtin/ssh_account.go` (M-30),
+which refuses a link in the same kind of account directory for the same
+reason. Two paths that must agree.
+
+**The rule.** `resolveTrusted` (`followlink_unix.go`) resolves the path
+one component at a time. It follows a link only when the link, and every
+directory on the way to it, is owned by root or by the account the node
+runs as, and is in a directory nobody else can write. A sticky
+directory also passes: there, nobody else can rename or remove the link.
+Group write is tolerated only for group 0, whose members can become root
+anyway. This is Linux's `fs.protected_symlinks`, which covers only
+sticky world-writable directories, extended to ordinary ones. A home
+directory is not sticky, and its owner can put a link in it whatever
+the kernel's setting. Anything else is refused by name, and the link is
+left alone:
+
+```text
+/home/deploy/.profile is a symbolic link to /etc/shadow, and it was not
+followed: /home/deploy, a directory on the way to it, belongs to uid 1001,
+so another account could have made it point anywhere. A file this node
+writes as root is not written through such a link; name the file it
+should change instead
+```
+
+Three choices, and why:
+
+- **The account a state names with `user:` is not trusted.** The task
+  that found this suggested it. It is the wrong one: it is the account
+  that can plant the link. With it trusted, `file.managed` with `user:
+  deploy` would have root give deploy the file the link names.
+- **Every link on the way is checked, not only the one named.** A
+  root-owned `/etc/app.conf -> /srv/app/app.conf`, with `/srv/app` the
+  app account's, is a planted link one step removed.
+- **What comes after the last link is not checked.** A trusted link is
+  the operator's own. Following it is the same as naming its target,
+  and a file named directly in a writable directory is what file states
+  have always written. Everything up to the last link is in directories
+  only root can change, so nothing on that part can be swapped between
+  the check and the write.
+
+It applies to every writer that comes through `followLink`:
+`file.managed`, the edit functions' `editResult` (`replace`, `append`,
+`prepend`, `line`, `blockreplace`, `comment`, `uncomment`),
+`file.sed`, `file.serialize`, and the modules' `writeConfigFile` and
+`writeConfigFileMode` (hosts, hostname, sysctl, fstab, locale.gen, kmod,
+environ, pkgrepo, netplan).
+
+**Divergence from Salt.** Salt follows regardless.
+`salt/modules/file.py` `manage_file` takes `os.path.realpath(name)` when
+the path is a link and `follow_symlinks` is true, its default in
+`file.managed`. It does not check who owns the link. Read in Salt's
+source at `v3008.0-1405-gf37cdcd1c9`, not run. A state Salt would
+follow through an account's link now fails here, naming the link. The
+operator can name the real file instead. `follow_symlinks: False` is
+still not offered (5.346).
+
+**Shown.** `file_symlink_planted_unix_test.go`. A test that is not root
+cannot make another account's file, so it uses two stand-ins. One is a
+directory anyone can write (0777, or 0775 with a group other than 0):
+the same hazard, with no stand-in needed. The other is `linkTrusted`
+told that one named path is another account's. It is told only that
+path, not that the test's own account is untrusted. Distrusting the
+account would fail every case at the first temporary directory it owns,
+before the link is reached, and the tests would pass for a reason none
+of them names. An early version of the sticky case did pass for a wrong
+reason: `os.Chmod(dir, 0o1777)` sets 0777, because Go's sticky bit is
+`os.ModeSticky`, not 01000. `plantedLink` now checks the mode it got.
+
+- `TestAPlantedLinkIsNotFollowed`: `file.managed` (with `mode: 0644`),
+  `append`, `line`, `replace`, `serialize` and `sed`, each in a
+  world-writable directory, a group-writable one, and one the account
+  owns. All 18 wrote the victim on main (the test, with a stub for
+  `linkTrusted`, fails all 18 there).
+- `TestAConfigWriterDoesNotFollowAPlantedLink`,
+  `TestALinkChainThroughAnAccountsDirectoryIsNotFollowed`,
+  `TestALinkBelowAnAccountsDirectoryIsNotFollowed`.
+- `TestALinkInAStickyDirectoryFollowsItsOwner`: followed when the owner
+  is trusted, refused when it is not.
+- `TestATrustedLinkIntoAWritableDirectoryIsFollowed`.
+- The 5.346 tests (`TestFileManagedWritesThroughALink`,
+  `TestEditsWriteThroughALink`, `TestADanglingLinkIsRefused`) and the
+  `writeConfigFile` link tests still pass. So an operator's link in
+  directories the account running the test owns is still followed.
+
+Broken on purpose, one at a time, each fails its own test and no other
+check covers for it. With the refusal removed, every planted case
+fails. Without the directories' inherited state, the "account owns"
+and "below" cases fail. Ignoring the sticky bit fails the trusted
+sticky case. Ignoring group write fails the group cases. Ignoring the
+owner fails the "account owns", "below" and untrusted sticky cases.
+Checking only the named link fails the chain case.
+
+**As root, in a jail on beastie** (2026-11-03): a thin Bastille jail
+running FreeBSD 15.1-RELEASE on the 15.1-RELEASE-p6 host, with test
+binaries and `halite-node` cross-built from this tree on macOS (Go
+1.27.3). The jail's real `nobody` (65534) and a `deploy` account made
+with `pw useradd` played the other account.
+
+- **The finding, end to end through `halite-node state sls --local`.**
+  `deploy` made `~/.profile -> /etc/halite-victim` and
+  `~/.bashrc -> /etc/halite-victim2` as itself (`su -m deploy`). Both
+  victims were root's 0600 files. The state was `file.managed` with
+  `contents`, `mode: "0644"` and `group: deploy`, then `file.append`:
+
+  | | main `de26c91b` | this change |
+  |---|---|---|
+  | `file.managed` | wrote the tree's line into the victim, made it `root:deploy 0644`, "was updated" | refused, names `/home/deploy` and uid 1001 |
+  | `file.append` | appended to victim2 | refused, the same reason |
+  | exit | 0 | 1 |
+  | victims | changed | byte-for-byte as they were, `root:wheel 0600` |
+
+- **`live_planted_link_test.go`**, as root with `HALITE_SYSTEM_LIVE=1`.
+  `nobody` owns a home directory and its link: every `followLink`
+  writer, and `writeConfigFile`, is refused. A root link into
+  `nobody`'s directory is refused at the second link. Five cases must
+  still be followed or must not:
+  - followed: a root link in a root directory (`sites-enabled`), in a
+    sticky one, and in one writable by group 0;
+  - refused: `nobody`'s link in a sticky directory, and a root link in
+    a directory writable by group 65534.
+
+  This is the group-0 allowance's only test, because only root can make
+  such a directory. It is in fleet.yml's linux and macos `-run` lists;
+  the freebsd leg runs every live test. `followlink*.go` and
+  `fileutil.go` are now trigger paths.
+- **The whole set** (the portable tests above, the 5.346 tests, the
+  `writeConfigFile` tests and the live ones), 49 passing and none
+  skipped. Three breaks, each built and run in the jail:
+  - no refusal: 20 pass, every planted case fails;
+  - group 0 not tolerated: only `group-0-writable` fails;
+  - owner not checked: the "account owns", "below", untrusted sticky
+    and live planted cases fail.
+
+The run found a defect in the portable test. It skipped its group case
+when the directory's group was 0, which it always is as root. It tested
+for the group bit alone, and 0777 has it too, so as root it also
+skipped all six world-writable cases. It now skips only for a mode with
+group write and without world write. Under root it gives the directory
+group 65534 rather than skipping.
+
+**On the fleet legs, as root** (PR #628's push, Fleet run 41675532814):
+`TestLivePlantedLinkIsNotFollowedAsRoot`,
+`TestLivePlantedLinkChainIsNotFollowedAsRoot` and
+`TestLiveOperatorLinksAreStillFollowedAsRoot`, with all five subtests,
+passed with none skipped. They ran on the linux leg (an `ubuntu-24.04`
+runner, under `sudo`), on the macos leg (`macos-15-arm64`, macOS
+15.8.2, under `sudo`) and on the freebsd leg (a FreeBSD 15.1-RELEASE
+VM). Each log was read for the test names, not only the job's result.
+
+**Not verified.**
+- `halite-node` end to end on Linux or macOS. Only the jail ran the
+  binary; the legs ran the tests.
+- A full FreeBSD host rather than a jail or a CI VM. The jail shares
+  beastie's kernel, and the rule reads only ownership and mode bits,
+  which a jail does not change; but it is a jail, not a node.
+- Windows: `followlink_other.go` still follows without a check. A link
+  there needs a privilege an ordinary account lacks unless Developer
+  Mode is on. Nothing was run there.
+- A **directory** link in the middle of a path whose last component is
+  not a link. The kernel still follows it, as it did before #386 and
+  as Salt does: `followLink` acts only when the named file is a link.
+  That is a separate, older hole and is not changed here.
+### 5.559 A long glob target exhausted the hub's memory, and kept it
+
+Issue 321, the close-out review of 2026-11-03, item A6: a regression from 5.501 (#543), measured by the reviewer on main `de26c91b`.
+
+**The defect.** 5.501 made a glob target Salt's fnmatch. `fnmatch.Match` translated each pattern to an RE2 expression, compiled it with `regexp.MustCompile`, and stored it in a `sync.Map` that never evicted. A glob target and every `G@`/`I@` value went through it, lazily, at match time. Nothing bounded the pattern: the API takes a body of up to 64 MiB, and a role with `target: '*'` covers any target, the reach of 5.291. The reviewer measured one 1 MiB target allocating some 550 MB while compiling, and three distinct 1 MiB patterns leaving 158 MB held for the life of the hub.
+
+**Measured here** (darwin/arm64, go1.27.3, compiling `fnmatchTranslate`'s output with `regexp.Compile`):
+
+| Pattern | Allocated while compiling | Held once compiled |
+|---|---|---|
+| `*a` x 512 (1 KiB) | 581 KB | 124 KB |
+| `*a` x 32,768 (64 KiB) | 50 MB | 8.3 MB |
+| `?` x 1,000,000 | 540 MB | not measured |
+| `?` x 4,000,000 | 1.37 GB, then refused | -- |
+
+The last row is the panic, run rather than reasoned: RE2 refused it with *"expression too large"*, which `MustCompile` turns into a panic. RE2's error text quotes the whole translated expression, megabytes of it. A grain target compounds this: 5.537 reads `a:b:c` at every colon, and each reading was its own glob, so a `G@` value of n colons was n patterns whose lengths add up to the square of n.
+
+**Also measured, and older than 5.501.** A target of names costs memory to parse even with no glob in it. Compiling 4 MiB of target allocated some 33 bytes a byte for an or-chain of bare names, 31 for `L@` terms, and 8 for a `-L` list. At 64 MiB that is some 2 GB. 5.291 left length uncapped because it took the cost as linear and bounded by `max_body`. It is linear, but at that rate `max_body` bounds nothing useful. See its new subsection.
+
+**The change.** Four parts.
+
+- `fnmatch.Compile` is the path for a pattern from a request. It refuses a glob over `MaxPatternLen`, 1 KiB, with `ErrTooLong`. It uses `regexp.Compile`, and an RE2 refusal is an error that gives the pattern's length, not RE2's text. It caches nothing: the caller holds the `*Pattern`. A pattern with no `*?[`, in valid UTF-8, is a literal. It is compared as a string, with no regexp and no length limit. Invalid UTF-8 keeps the regexp, because the regexp reads a bad byte as U+FFFD and string equality would not.
+- `fnmatch.Match` stays for patterns from configuration: policy, `file_ignore_glob`, `env_allowlist`/`env_denylist`, `tolerate_failures`, requisites, relay globs, a token's node scope. It has no length limit, because an operator's pattern that silently stopped matching would hide or deny nothing. Its cache is a least-recently-used list holding at most 64 KiB of pattern text, some 8 MB at the dearest measured ratio. A pattern longer than that is compiled each time it is used and not kept. A pattern RE2 refuses matches nothing, where it panicked before.
+- `target.Compile` compiles every glob once, through `fnmatch.Compile`, and the `Matcher` holds the result. The globs and regular expressions of one expression share a budget of 32 KiB, nodegroups and every grain reading included. Literals and `*` cost nothing. The whole expression, of any type, is refused over `MaxExprLen`, 1 MiB, before it is tokenized. An error quoting an expression shortens it to 64 bytes and its length. `ValidateNodegroups` gives each group a budget of its own, as `Compile` gives a group named alone, so a group that passes at load passes at use.
+- The API refuses a `tgt` over 1 MiB with a 400, before the policy splits it into names (`internal/api/execute.go`).
+
+**Why these numbers.** A glob is short, and 1 KiB is four times the longest node ID `pki.ValidateNodeID` admits. A long target is a list of names, which are literals and are limited only by the 1 MiB. That holds some 50,000 names of twenty characters, and compiling it is some 32 MB at the steepest measured rate. The 32 KiB budget is some 20 MB of compile work and 4 MB held at the dearest glob shape. A regular expression measured cheaper: 32 KiB of `.*a` through `regexcompat.Compile` allocated 14 MB and held 2.6 MB, and an alternation of names 1.6 MB and 50 KB. It allows three hundred 100-byte globs, or an `E@` alternation of a thousand short names.
+
+**Shown.** Each test was broken on purpose and seen to fail:
+
+- `TestCompileRefusesAnOverLongPattern` (`internal/fnmatch/limits_test.go`) failed with the length check removed.
+- `TestAPatternRE2RefusesIsAnErrorNotAPanic` failed with `cachedRegexp` panicking on the error, and with RE2's text passed through. The refusal is injected, because the one RE2 has been seen to make costs 1.3 GB.
+- `TestTheCacheIsBounded` failed with eviction removed (150,003 bytes held against 65,536), and with a hit not moved to the front.
+- `TestDistinctPatternsDoNotHoldMemory` measures the heap in a child under `debug.SetMemoryLimit`. 300 distinct 1 KiB patterns held 8 MB, and 37 MB with eviction removed.
+- `TestALiteralWithInvalidUTF8AgreesWithTheRegexp` failed with the UTF-8 condition dropped.
+- `TestTheCacheIsSafeForConcurrentUse`, under `-race`, reported a data race with the lock taken off the cache lookup.
+- In `internal/target/limits_test.go`, the over-long glob, budget, grain-reading and nodegroup tests each failed with their own check removed. `TestATargetsGlobsAreNotKept` measures the heap in a child: 300 distinct glob targets, compiled, matched and let go, held 0 KB. With the glob leaf put back on the cached `globMatch` it held 8 MB and failed. `TestAnOverLongExpressionIsRefused` failed with `MaxExprLen` removed.
+- `TestDispatchRefusesAnOverLongTarget` (`internal/hub`) failed with both caps removed. `TestAnOverLongTargetIsRefusedBeforeThePolicy` (`internal/api`) got a 200 with the API check removed.
+
+The new tests could not be run against main `de26c91b` itself, because `fnmatch.Compile` does not exist there. The breaks above stand in for it.
+
+**Behaviour change.** A target over 1 MiB, a glob with `*?[` over 1 KiB, or an expression whose globs and regexes come to more than 32 KiB is refused. A top file is compiled by the same code, so a top-file target over a limit is now an error.
+
+**Not verified.** No hub or API was run; the measurements are from `internal/fnmatch` and `internal/target` on one Mac, not FreeBSD or Linux. Not limited: the expansion of a nodegroup, which is configuration and is checked against the budget but not against `MaxExprLen`; and `file.recurse`'s `include_pat`/`exclude_pat`. Those are state arguments, matched with `fnmatch.Match` on the node, uncapped but now under the bounded cache. Whether a request can supply one directly, rather than through a state file, was not traced. Measured against nothing real: whether any top file or policy in use has a glob over 1 KiB. None was looked for.
+
 
 ### 5.559 A reaction in flight when the hub stopped wrote its return after `serve` had returned
 
