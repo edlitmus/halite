@@ -34,7 +34,7 @@ func TestARecursiveModeChangeDoesNotFollowASwappedLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, err := planRecurse(newCtx(false), tree, f, args)
+	targets, _, err := planRecurse(newCtx(false), tree, f, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestARecursiveModeChangeDoesNotFollowASwappedParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, err := planRecurse(newCtx(false), tree, f, args)
+	targets, _, err := planRecurse(newCtx(false), tree, f, args)
 	if err != nil {
 		t.Fatal(err)
 	}
