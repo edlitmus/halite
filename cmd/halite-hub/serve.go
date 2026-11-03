@@ -509,7 +509,7 @@ func runServe(args *cli.Args) int {
 	// `go` let any of them go on writing after "the hub stopped" was
 	// logged and this returned, and the returner was closed under a
 	// shipper still sending to it. They are waited for below.
-	// DIVERGENCE 5.559.
+	// DIVERGENCE 5.560.
 	var loops sync.WaitGroup
 	// The hub's own certificate, renewed at half its life and served
 	// without a restart, as a node's is. DIVERGENCE 5.259.

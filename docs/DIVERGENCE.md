@@ -36600,9 +36600,7 @@ The new tests could not be run against main `de26c91b` itself, because `fnmatch.
 **Behaviour change.** A target over 1 MiB, a glob with `*?[` over 1 KiB, or an expression whose globs and regexes come to more than 32 KiB is refused. A top file is compiled by the same code, so a top-file target over a limit is now an error.
 
 **Not verified.** No hub or API was run; the measurements are from `internal/fnmatch` and `internal/target` on one Mac, not FreeBSD or Linux. Not limited: the expansion of a nodegroup, which is configuration and is checked against the budget but not against `MaxExprLen`; and `file.recurse`'s `include_pat`/`exclude_pat`. Those are state arguments, matched with `fnmatch.Match` on the node, uncapped but now under the bounded cache. Whether a request can supply one directly, rather than through a state file, was not traced. Measured against nothing real: whether any top file or policy in use has a glob over 1 KiB. None was looked for.
-
-
-### 5.559 A reaction in flight when the hub stopped wrote its return after `serve` had returned
+### 5.560 A reaction in flight when the hub stopped wrote its return after `serve` had returned
 
 Found by reading (`cmd/halite-hub/serve.go`, `internal/hub/reactor.go`), as the follow-up to the change that refuses a request read as the hub stops (a separate branch at the time of writing): that closes the hub's request path at stop, and leaves the loops `serve` starts beside it.
 
@@ -36617,6 +36615,9 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 **Broken on purpose.** With the wait removed from `Run` the test fails as above. With the wait kept, `reactorWorker.run` releasing its event regardless of the context, and the `ctx.Done` branch of `Run` waiting for the workers before its final commit (the obvious way to write this, and wrong), it fails on the offset: `"00000001:381", want "00000001:0"`. Restored, it passes, and the `Reactor|Reaction|Reacted|Debounc|EventReturn|Serve` tests of `internal/hub` pass under `-race`.
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
+
+
+
 
 ## 6. Everything else not started
 
