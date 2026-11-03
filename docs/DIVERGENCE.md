@@ -36519,12 +36519,21 @@ skipped all six world-writable cases. It now skips only for a mode with
 group write and without world write. Under root it gives the directory
 group 65534 rather than skipping.
 
+**On the fleet legs, as root** (PR #628's push, Fleet run 41675532814):
+`TestLivePlantedLinkIsNotFollowedAsRoot`,
+`TestLivePlantedLinkChainIsNotFollowedAsRoot` and
+`TestLiveOperatorLinksAreStillFollowedAsRoot`, with all five subtests,
+passed with none skipped. They ran on the linux leg (an `ubuntu-24.04`
+runner, under `sudo`), on the macos leg (`macos-15-arm64`, macOS
+15.8.2, under `sudo`) and on the freebsd leg (a FreeBSD 15.1-RELEASE
+VM). Each log was read for the test names, not only the job's result.
+
 **Not verified.**
-- Linux as root, and macOS as root: the fleet legs will run the live
-  test, and it has not run there yet.
-- A full host. The jail shares beastie's kernel, and the rule reads
-  only ownership and mode bits, which a jail does not change; but it
-  is a jail, not a node.
+- `halite-node` end to end on Linux or macOS. Only the jail ran the
+  binary; the legs ran the tests.
+- A full FreeBSD host rather than a jail or a CI VM. The jail shares
+  beastie's kernel, and the rule reads only ownership and mode bits,
+  which a jail does not change; but it is a jail, not a node.
 - Windows: `followlink_other.go` still follows without a check. A link
   there needs a privilege an ordinary account lacks unless Developer
   Mode is on. Nothing was run there.
