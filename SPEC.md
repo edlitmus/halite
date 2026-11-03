@@ -965,10 +965,17 @@ Statements nest at most as deep as the recursion depth (100), and one expression
 levels, counting both brackets and the height of a chain such as `1 + 1 + ... + 1`. A single string
 a builtin builds (`indent`, `center`, `zfill`, `*`) may be no larger than the output limit, and a
 single list (`range`, `*`, `batch`, `slice`, `permutations`, `combinations`) may hold no more items
-than the iteration limit, both checked before the value is built. The lists `range`, `*`,
-`permutations` and `combinations` build are also counted across the render, and together may hold
-no more items than the iteration limit; `batch` and `slice` regroup a list that already exists and
-are not counted.
+than the iteration limit, both checked before the value is built; so is the result of `replace`,
+`join`, `format`, `~` and `+`. The lists `range`, `*`, `permutations` and `combinations` build are
+also counted across the render, and together may hold no more items than the iteration limit;
+`batch` and `slice` regroup a list that already exists and are not counted. The strings a render
+builds are counted across it too, and together may be no larger than the output limit; a string an
+operation was given or found, and what is written, are not counted again.
+
+A value is measured before anything walks it: printing, comparing, encoding, sorting, using it as
+a mapping key, or passing it to `salt[...]`. It may nest at most 10,000 deep, which is also the JSON
+decoder's limit, and its rendering may be no larger than the output limit, which bounds a value
+that holds one item many times. A value that contains itself is refused as too deep.
 
 Rendering happens in the unprivileged sandbox subprocess described in section 25.4.
 

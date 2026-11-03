@@ -26837,6 +26837,175 @@ cursor, which moves only forward; that was read, not measured.
 here; CI will run it. Its Windows and FreeBSD builds were vetted, not
 run.
 
+#### 5.312, a value is measured before it is walked
+
+The first item of the "Not done" list above: a value can be as deep as a
+loop can make it. A review on 2026-11-03, against `de26c91b`, measured it
+in child processes: `{% set ns.x = [ns.x] %}` in a loop built a list that
+overflowed an 8 MiB stack when printed at about 14,500 levels (about
+580 bytes a level; `tojson` about 390, `yaml` 307, `==` 259), so two
+million levels fill the default 1 GiB. Building two million took 1.3 s
+and 319 MB under the default `MaxIterations` of ten million, and the
+printed form, about 4 MB, is under `MaxOutput`. Nothing stopped it. The
+same value reached `join`, and any `salt[...]` call that encodes its
+arguments.
+
+**Found while doing this, and the same shape.** Depth is one of three
+ways a walk of a value runs away, and the other two were not in the list:
+
+- *Sharing.* A list holds its items by reference, so `{% set ns.x =
+  [ns.x, ns.x] %}` doubles what a walk visits at each pass while holding
+  one more list. And one string repeated in a list is printed once per
+  item: on `de26c91b`, with `MaxOutput` at 1,000, `(['a' * 900] * 900) |
+  tojson | length`, `| string | length` and `~ ''` each gave 813,600,
+  because the whole text is built before anything measures it. With the
+  default limits that is a 64 MiB string times ten million items.
+- *Cycles.* `d.update({'d': d})` makes a mapping that holds itself, and
+  every walk of it recursed until the stack overflowed.
+- *Indentation.* `tojson(indent=N)` and `json(indent=N)` pad every item
+  by N for each container around it, and `yaml(False)` by two, so a
+  value a thousand deep with an indent of a thousand is a gigabyte of
+  spaces, and an indent of ten billion is one allocation of that many
+  bytes whatever the value (read from the code, not run: running it is
+  the failure).
+- *Error text.* `compare` wrapped its error once per level, each wrap a
+  new string twenty bytes longer than the last and all of them kept: for
+  two lists ten thousand deep with a mismatch at the bottom, about a
+  gigabyte (worked out, not run).
+- *Keys.* A mapping's index spells a key that is not a scalar with
+  `fmt.Sprint` (`value.CanonKey`), and so does the message for a missing
+  key, and `fmt` recurses as deep as the key does. Python refuses a list
+  as a key; halite accepts one, so `{x: 1}`, `m[x]`, `[1][x]`,
+  `m.get(x)`, `m.pop(x)`, `m.setdefault(x)` and `dict([[x, 1]])` each
+  overflowed a 32 MiB stack with `x` two hundred thousand deep. This
+  showed only once the rest was in place, when the test table grew to
+  cover keys.
+
+**The change.** `measureValue` (`internal/template/shape.go`) walks a
+value with a stack of its own on the heap, one frame per level, so it
+cannot overflow the Go stack. It refuses a value nested deeper than
+`maxValueDepth`, which is also how it stops on a cycle, or one whose
+rendering could not fit in `MaxOutput`: it counts a lower bound (each
+string its length, each key its length, each container two, any other
+scalar one) that every rendering, str, repr, JSON or YAML, writes at
+least, so it refuses nothing that could have been rendered within the
+limit, and it stops a shared value after at most `MaxOutput` visits. The
+engine measures a value before every recursive walk of it that can
+reach one: printing, `~`, `|string` and every filter that renders its
+input, `pprint`, `tojson`, `json`, `yaml`, `yaml_encode`,
+`dict_to_sls_yaml_params`, `xmlattr`, `join` and `str.join`, `format`
+and `str.format`, `==`, `!=`, `<`, `<=`, `>`, `>=` and the tests that
+compare, `in`, `sort`, `unique`, `min`, `max`, `dictsort`, `groupby`,
+`flatten`, the set filters, `set_dict_key_value` and its kin (which
+deep-copy), `list.count`, `list.index`, `list.remove`, `loop.changed`,
+a key given to a subscript, a mapping literal, `dict()`, `get`, `pop` or
+`setdefault`, and every argument of a `salt[...]` call, positional and
+keyword, before the module sees it. The walks themselves are unchanged.
+
+A comparison is measured only when it will recurse: equality only for
+two lists or two mappings of the same length, ordering only for two
+lists, `in` only for the list searched and the needle, and for a mapping
+only the needle. Measuring costs as much as walking, and `'k' in pillar`
+or `pillar == {}` are answered without walking pillar, so measuring it
+would have made them cost its size.
+
+`maxValueDepth` is `value.MaxDepth`, which is `value.DecodeJSON`'s
+existing limit and `encoding/json`'s own, 10,000: anything that came
+into a render as a JSON document is within it, and YAML, the other way
+in, stops at 100. It is ten times the parser's `maxExprDepth`, so no
+literal reaches it; only a loop does. Measured with go1.27.3 by lowering
+the child's stack by hand, for a value at the limit inside 99 nested
+`if`: the walks that spell the value as a mapping key, through
+`fmt.Sprint`, are the deepest. They need between 12 and 16 MiB on
+darwin/arm64, with or without `-race`, and on freebsd/amd64 under
+`-race`, between 4 and 8 MiB on FreeBSD without it, between 8 and
+16 MiB on linux/arm64 and under 8 on linux/amd64, both without it: about
+1.6 KiB a level at the most. Every other walk fits in 8 MiB on both, and those
+built on `renderValue` need more than 4. The test's child has 32 MiB,
+twice the most measured; the default stack is 1 GiB. (A first version
+of this said every walk fit in 8 MiB. It was measured before the key
+walks were added, and the FreeBSD run below, which measured them, is
+what showed it wrong.)
+
+The indentation is checked before encoding: `measureValue` also counts
+the containers around each item, and `tojson` and `json` refuse an
+indent whose padding alone would pass the limit. YAML block output takes
+a new `EncodeOptions.MaxBytes` and stops soon after passing it. Each of
+the encoded results is then held to `MaxOutput` once it is built; what
+the measure does not see, the escapes the encoders add, is at most a
+small multiple of the contents (six bytes for one in JSON). And
+`compare` names only the outermost element.
+
+**Divergences.** `d == d` for a mapping that holds itself is `True` in
+Python, which compares a value with itself by identity; here it is
+refused. Outside comparisons, the measure is taken whether or not the
+walk would have gone deep: `{'a': x} | dictsort` compares only the keys,
+was safe on the old code with any `x`, and is refused now, as is
+anything given a value past the limit. Jinja's own limit, Python's
+recursion limit, was not measured against.
+
+**Demonstrated.** `value_walk_test.go`, 44 walks. With `measureValue`
+made to accept everything: all 44 failed
+`TestDeepValuesAreRefusedBeforeTheyAreWalked` (a value 10,001 deep, built
+in Go and walked by the old code in a few megabytes of this process's
+stack); all nine of `TestSharedValuesAreMeasuredByWhatTheyRenderTo`
+failed; and of the 132 children of `TestDeepValuesDoNotOverflowTheStack`
+(each walk of a value 200,000 deep, of a mapping that holds itself, and
+of one at the limit under 99 nested `if`, on a 32 MiB stack), all 44
+deep ones failed, 42 by `fatal error: stack overflow`, and 42 of the 44
+cyclic ones, 31 by overflow; the 44 at the limit passed. The failures
+that were not overflows are walks that do not go deep on that value:
+`dictsort` and `groupby`, which compare keys, `flatten` of a mapping,
+and a mapping used as a key, which `fmt` prints as a pointer. The
+measure refuses those by rule rather than to stop a crash. `<` and `!=`
+between the mapping and a list are answered at the top and not refused;
+`TestComparisonsThatDoNotRecurseDoNotMeasure` holds that, and failed
+with every comparison measured, and with none measured `==`, `!=`, `<`
+and `eq` overflowed their children. Each key check, removed on its own,
+let its own case overflow its child.
+`TestHugeIndentIsRefusedBeforeEncoding` calls the check
+directly, so that the reverted code is not asked to allocate ten
+gigabytes, and failed with the check removed;
+`TestComparingDeepListsReportsOneElement` failed with the wrapping put
+back; `yaml.TestEncodeStopsAtMaxBytes` failed with the stop removed
+(40,402 bytes past a limit of 1,000). The deep and cyclic values are
+built only in children, because on the old code they overflow the
+stack, and in the test process that is the 1 GiB default.
+
+**Not done.** A value a module returns from `salt[...]` is not measured,
+nor is pillar from an external source before it reaches a render; both
+come from code rather than from a template's loop. `fmt.Sprint`, which
+`renderValue` falls back to for a type outside the model, is not
+bounded, and no template-built value reaches it.
+
+**Run on FreeBSD.** At `8978d713`, in a thin Bastille jail on beastie
+(FreeBSD 15.1-RELEASE, go1.27.3, freebsd/amd64, the host's `/usr/local`
+mounted read-only, as root), 2026-11-03: `template`, `value`, `yaml`,
+`render`, `pillar`, `state`, `specaudit`, `docsaudit` and `buildpolicy`
+passed, and `template`, `yaml` and `value` under `-race`. With the
+measure disabled, the counts were the same as on darwin: all 44 deep
+cases in the parent, all nine shared ones, and 44 deep (42 by overflow)
+and 42 cyclic (31) of the children failed, and the 44 at the limit
+passed.
+
+**Run on Linux.** At `cf90bbce`, on three AWS EC2 instances, with
+go1.27.3 from go.dev checked against its published SHA-256, as `nobody`
+through `setpriv`, 2026-11-03: ref-salt1 (Ubuntu 22.04.5 LTS, kernel
+5.15.0-1119-aws-fips with FIPS enabled, linux/arm64), noop2-1 (Ubuntu
+22.04.5, 5.15.0-1117-aws-fips, FIPS enabled, linux/amd64) and ami-test-1
+(Ubuntu 24.04.5, 7.0.0-1014-aws, linux/arm64). The same nine packages
+passed on each, and with the measure disabled the counts were the same
+on each as on darwin (44 and 9 in the parent; 44 deep, 42 by overflow,
+and 42 cyclic, 31, of the children; the 44 at the limit passed). Two things the host needed
+that are not the code's: `/tmp`, `/var/tmp` and `/dev/shm` are mounted
+`noexec`, so the run was under `/home` with `GOTMPDIR` there too; and
+`-race` needs cgo, which needs a C compiler the host does not have, so
+the race detector was not run on Linux here (CI's race job runs on
+Linux).
+
+**Not verified.** `-race` on Linux, and the pinned go1.26.6. No real Salt tree was rendered through the measure; the
+package tests, the Jinja corpus among them, pass.
+
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
 **What was wrong.** `mount.mounted` decided whether the mounted
@@ -36655,6 +36824,121 @@ On both, everything passes with the change. On both, de26c91b with the same test
 **Found, not changed.**
 - `internal/atomicfile/xattr_linux.go` copies a replaced file's extended attributes onto the temporary file with `setxattr` and `chmod` by path, after the close. In a directory the account owns, the account controls both the replaced file's ACL and the temporary name. That is the same swap, onto another file's ACL, and it is Linux only. It is left for its own change because it is in another package and needs `fsetxattr`, which `syscall` does not export.
 - `logrotate.go`, `sudo_state.go` and `netplan.go` chmod or chown by name only in root's directories (`/etc/logrotate.d`, a private `MkdirTemp`, `/etc/sudoers.d`, `/etc/netplan`). They are left as they are.
+### 5.561 `replace`, `join` and concatenation built strings nothing measured
+
+5.312 bounded the builtins that make a string larger than their inputs
+(`indent`, `center`, `zfill`, `*`), each before it allocates. Four that do
+the same were left out, along with the two operators.
+
+**Measured.** A review on 2026-11-03, against `de26c91b` with the default
+limits: `(('a' * 1048576) | replace('', 'b' * 200)) | length` was
+210,763,976 and `((range(100000) | list) | join('c' * 2000)) | length`
+200,486,890, both against a `MaxOutput` of 64 MiB. The multiplier is the
+template's to choose, so 64 GiB is one larger number away, and an
+allocation the runtime cannot make ends the hub or the node. Here, on the
+same commit with `MaxOutput` at 1,000: `('a' * 100) | replace('', 'b' *
+20)` and `.replace(...)` were 2,120 bytes, `range(100) | join('c' * 20)`
+and `str.join` 2,170, and eleven passes of `ns.s = ns.s ~ ns.s`, of `ns.s +
+ns.s` and of `ns.l = ns.l + ns.l` made 2,048 bytes or items (twelve made
+4,096). Concatenation doubles at every pass, so forty is a terabyte, and
+nothing measured it because each pass adds two things that already exist.
+
+**Found while doing this.** `str.format` and `|format` name one argument
+as often as the format string says: `('{0}' * 1000).format(s)` is a
+thousand copies of `s`. They were not measured either.
+
+**The change.** `replace` and `str.replace` work out the result's length
+from `strings.Count`, which counts exactly the matches `Replace` makes,
+the empty ones included, and refuse it before building it; `join` and
+`str.join` add up the items and multiply the separator by division;
+`~` and string `+` refuse a result past `MaxOutput`, and list `+` one past
+`MaxIterations`. `format` and `str.format` measure the result as it is
+written. All are checked with arithmetic that cannot wrap.
+
+**Demonstrated.** In `TestAllocatingBuiltinsAreBounded`, the eight new
+refusals of the first four filters and the operators failed on the old
+files, the two of the formats failed with their checks removed, and each
+check, removed on its own, failed its own cases; the new cases at each
+limit pass on both. With the
+default limits the review's two expressions are refused at their
+filters.
+
+**Not verified.** Run on darwin/arm64, in a FreeBSD 15.1 jail
+(freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
+all with go1.27.3; see 5.312's subsection above. Salt has no such limit
+to compare with.
+### 5.562 The strings a render built were limited one at a time
+
+5.312 held each string a builtin makes to `MaxOutput`, and 5.445 and
+5.460 charged the lists `range()`, `*` and the combinatorics make to the
+render as a whole. Strings had no such total. The comment that explained
+it, in `internal/template/env.go`, said a value built in memory "is not
+output, so it is not charged to the budget", which was the reason and
+the gap: a limit per value says nothing about how many values a render
+holds.
+
+**Measured.** On `de26c91b` with `MaxOutput` at 1,000, 500 iterations of
+`l.append('a' * 900)` rendered, and the review measured the list holding
+450,000 bytes; a namespace list built with `+` and a mapping built with
+`update` did the same. With the default limits that is up to a 64 MiB
+string per iteration.
+
+**The change.** The render counts the bytes of the strings it makes
+(`budget.build`), against `MaxOutput`, as `materialise` counts items
+against `MaxIterations`. It is charged where every filter, method and
+global function returns, and by `map` for the filter it calls, rather
+than in each builtin, so a filter added later is charged without anybody
+remembering to; and by `~`, `+` and `*` on strings. What is charged is a
+string result that is not one of the operation's inputs handed back, so
+`|string` of a string, `|trim` with nothing to trim and `x ~ ''` cost
+nothing. Nine filters and three methods that return a string they found
+rather than made (`first`, `last`, `min`, `max`, `random`, `attr`,
+`default`, `d`, `traverse`; `get`, `pop`, `setdefault`) are named and not
+charged, and `method_call`, whose method is charged when it is called.
+Leaving one out of that list over-counts, which refuses a template early;
+the other way round, a builder nobody charged, is the failure that ends
+the process, which is why the list names the exceptions rather than the
+builders. Not charged: what is written, which is output and has its own
+limit; a macro's result, which is what its body wrote; and a `salt[...]`
+result, which is the size of what a module read. The comment now says
+what is bounded and how.
+
+**Breaking, in principle.** A render that builds more than 64 MiB of
+strings in all now fails, though no single string is past the limit.
+Building a string by concatenation in a loop builds every prefix of it,
+so a string of L bytes built from k-byte pieces charges about L²/2k: at
+50-byte lines, a little over 80 kB. None of the eleven Salt trees checked
+out on the development machine builds a string that way (searched for a
+name assigned from itself with `~` or `+`); they use `~` to join a few
+path pieces. The largest total any render in the package tests built,
+the Jinja corpus among them, was 20,002 bytes (measured by a temporary
+counter, not committed).
+
+**Demonstrated.** `TestBuiltStringsAreChargedToTheRender`: three
+400-byte strings against a 1,000-byte limit, held by `append`, list `+`,
+`update`, a filter, a method, `map`, `~`, both formats and a rendered
+list. With the charge disabled all ten were allowed; with the named
+exceptions emptied, `first` and `get` were refused; without the
+identity check, `string`, `trim`, `strip` and `x ~ ''` were refused; and
+each charging site removed on its own let its own cases through.
+
+**Not done.** Lists are still counted only where 5.460 counts them.
+`append` copies the list it extends, because a Go slice is not a Python
+list (5.107), so `{% do ll.append(l) %}{% do l.append(1) %}` in a loop
+holds every prefix of `l`, the square of its length in items; read from
+the code, not run. Charging the copies would refuse any list built by
+more than about 4,500 appends, and the right fix is a list that is not
+copied. Strings inside a container a filter returns, other than through
+`map`, are not counted (`split` shares its input's bytes; `|list` of a
+string makes one-character strings).
+
+**Not verified.** Run on darwin/arm64, in a FreeBSD 15.1 jail
+(freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
+all with go1.27.3; see 5.312's subsection. No real tree was rendered
+with the counter.
+
+
+
 
 
 
