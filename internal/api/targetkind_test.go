@@ -3,7 +3,10 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/target"
 )
 
 // The API authorizes a run as the kind it forwards to the hub.
@@ -128,5 +131,42 @@ bindings:
 				t.Errorf("%s: /v1/nodes/%s/state reached the hub: %v", pol.name, seg, hub.seen)
 			}
 		}
+	}
+}
+
+// An over-long `tgt` is a 400 before the policy reads it and before the
+// hub sees it. The policy splits a list target into names and judges each
+// one, so a request at the 64 MiB body limit was megabytes of work under
+// the policy before the hub's own bound refused it. DIVERGENCE 5.559.
+func TestAnOverLongTargetIsRefusedBeforeThePolicy(t *testing.T) {
+	const everywhere = `
+roles:
+  operator:
+    - target: '*'
+      functions: ['test.ping']
+bindings:
+  - principal: 'local:ed'
+    roles: ['operator']
+`
+	l, hub := executeLab(t, everywhere)
+	out := l.login(t, "ed", "hunter2")
+	long := strings.Repeat("web1,", target.MaxExprLen/5+1)
+	body := fmt.Sprintf(`{"tgt":%q,"tgt_type":"list","fun":"test.ping"}`, long)
+	res, text := l.post(t, PathRun, body, out.Token)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a %d-byte target answered %d, want 400: %.300s", len(long), res.StatusCode, text)
+	}
+	if !strings.Contains(text, "limit") || len(text) > 400 {
+		t.Fatalf("the refusal should name the limit and not quote the target: %.300s", text)
+	}
+	if len(hub.seen) != 0 {
+		t.Fatalf("an over-long target reached the hub: %v", hub.seen)
+	}
+
+	// At the bound it is forwarded.
+	at := strings.TrimSuffix(strings.Repeat("web1,", target.MaxExprLen/5), ",")
+	body = fmt.Sprintf(`{"tgt":%q,"tgt_type":"list","fun":"test.ping"}`, at)
+	if res, text := l.post(t, PathRun, body, out.Token); res.StatusCode != http.StatusOK {
+		t.Fatalf("a %d-byte target answered %d: %.300s", len(at), res.StatusCode, text)
 	}
 }

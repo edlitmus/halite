@@ -264,8 +264,11 @@ Package fnmatch is Python's fnmatch.fnmatchcase, the glob Salt means wherever it
 
 **Exports.**
 
+- `Compile` (func): Compile prepares a glob, for a pattern that arrives in a request.
 - `HasMeta` (func): HasMeta reports whether a pattern holds any of fnmatch's special characters.
+- `IsLiteral` (func): IsLiteral reports whether a pattern matches only itself, so that it needs no regexp and costs what the string does.
 - `Match` (func): Match is Python's fnmatch.fnmatchcase, which is what Salt's file_ignore_glob means.
+- `Pattern` (type): Pattern is a compiled glob.
 
 ## `internal/state`
 
