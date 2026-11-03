@@ -2201,6 +2201,12 @@ Properties that are requirements, not suggestions:
   `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.
   Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
   `.*`.
+- **Reading a node's pillar is a distinct permission** (section 22.1), and is never granted by a
+  wildcard either: `functions: ['*']` does not include `pillar.items`, `pillar.raw`, `pillar.get` or
+  `config.get`, and `runners: ['*']` does not include `pillar.show_pillar` or `cache.pillar`. It is
+  the function's property, not the route's: the same call through `/v1/pillar`, `/v1/run`, the hub's
+  runner endpoint, a reactor or an orchestration is decided the same way. `pillar.keys` and
+  `pillar.show_top`, which return names rather than values, are not on the list (DIVERGENCE 5.558).
 - **Wildcards are explicit.** `'*'` matches; a missing field does not. A pattern in a principal,
   `functions`, `runners`, a keyword list, `deny_sls`, `allow_sls` or `allow_mods` is a glob as
   Salt's fnmatch reads it: `*`, `?`, `[seq]` and `[!seq]`, with `*` crossing `/` and no escape

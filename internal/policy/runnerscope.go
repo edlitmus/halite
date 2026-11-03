@@ -59,19 +59,26 @@ func (s Scope) Everything() bool {
 
 // RunnerScope is the scope of fun for principal: the targets of every
 // rule, in every role bound to the principal, that grants the runner,
-// by the same test Authorize uses. neverWildcard is Authorize's: a
-// runner that a wildcard never grants is in scope only through a rule
-// that names it.
-func (p *Policy) RunnerScope(principal, fun string, neverWildcard bool) Scope {
+// by the same test Authorize uses. A runner that a wildcard never grants
+// is in scope only through a rule that names it.
+//
+// That used to be a parameter, and every caller passed false: a
+// principal granted `pillar.show_pillar` by name on web* and holding
+// `runners: ['*']` on `*` was authorized by the first rule and scoped by
+// both, so it read db1's pillar. The scope is the second half of the
+// same decision, and it asks ReadsPillar as Authorize does. DIVERGENCE
+// 5.558.
+func (p *Policy) RunnerScope(principal, fun string) Scope {
 	if p == nil {
 		return Scope{}
 	}
-	return p.RunnerScopeFor(p.RolesFor(principal), fun, neverWildcard)
+	return p.RunnerScopeFor(p.RolesFor(principal), fun)
 }
 
 // RunnerScopeFor is RunnerScope for a set of roles already resolved, as
 // an API token carries them.
-func (p *Policy) RunnerScopeFor(roles []string, fun string, neverWildcard bool) Scope {
+func (p *Policy) RunnerScopeFor(roles []string, fun string) Scope {
+	neverWildcard := ReadsPillar(fun, true)
 	if p == nil {
 		return Scope{}
 	}

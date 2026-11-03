@@ -79,6 +79,9 @@ func TestTheExamplePolicyDecidesWhatItSaysItDoes(t *testing.T) {
 			policy.Request{Principal: "node:relay1.prod", Fun: "relay.proxy", Runner: true}, true},
 		{"a relay is not an operator",
 			policy.Request{Principal: "node:relay1.prod", Target: "*", Fun: "test.ping"}, false},
+		{"the administrator reads pillar because pillar_reader names it",
+			policy.Request{Principal: "local:ed", Fun: "pillar.show_pillar", Runner: true,
+				Arg: []string{"db1.prod"}}, true},
 		{"an unbound principal gets nothing",
 			policy.Request{Principal: "cert:CN=nobody", Target: "web1.prod", Fun: "test.ping"}, false},
 	}
@@ -105,6 +108,21 @@ func TestTheExampleAdministratorIsStillRefusedArbitraryCode(t *testing.T) {
 		})
 		if d.Allowed {
 			t.Errorf("functions: ['*'] granted %s, which SPEC 23.5 says a wildcard never does", fun)
+		}
+	}
+
+	// Nor does it carry reading pillar: the administrator role alone,
+	// without the pillar_reader the example binds beside it, is refused.
+	// DIVERGENCE 5.558.
+	p.Bindings = append(p.Bindings, policy.Binding{
+		Principal: "cert:CN=admin-only", Roles: []string{"administrator"},
+	})
+	for _, req := range []policy.Request{
+		{Principal: "cert:CN=admin-only", Target: "web1.prod", Fun: "pillar.items"},
+		{Principal: "cert:CN=admin-only", Fun: "pillar.show_pillar", Runner: true, Arg: []string{"web1.prod"}},
+	} {
+		if d := p.Authorize(req); d.Allowed {
+			t.Errorf("the administrator's wildcard granted %s", req.Fun)
 		}
 	}
 

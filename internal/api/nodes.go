@@ -259,15 +259,18 @@ func (s *Server) orchDetail(w http.ResponseWriter, r *http.Request, token *apito
 // one node's compiled pillar is reading its secrets, and a role written
 // to let someone restart a service must not carry it because the
 // function list said `*`. The role has to name it.
+//
+// The handler used to say so with a flag on the request, which made it
+// the one route that did; `POST /v1/run` reached the same runner without
+// it. The policy knows `pillar.show_pillar` is never granted by a
+// wildcard now, whoever asks (DIVERGENCE 5.558).
 func (s *Server) pillar(w http.ResponseWriter, r *http.Request, token *apitoken.Token) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/pillar/")
 	if id == "" || strings.Contains(id, "/") {
 		writeError(w, http.StatusBadRequest, "that is not a node identifier")
 		return
 	}
-	req := requestFor("pillar.show_pillar", "", []string{id}, nil, true)
-	req.NeverWildcard = true
-	if !s.authorize(w, token, req) {
+	if !s.authorize(w, token, requestFor("pillar.show_pillar", "", []string{id}, nil, true)) {
 		return
 	}
 	s.forwardRunner(w, r, token, "pillar.show_pillar", []string{id}, nil)

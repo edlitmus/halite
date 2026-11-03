@@ -112,6 +112,18 @@ roles:
     - target: '*'
       functions: ['cmd.run', 'cmd.script', 'module.run', 'file.replace']
 
+  # Reading a node's pillar is reading its secrets, so it is a distinct
+  # permission too: no wildcard grants pillar.items, pillar.raw,
+  # pillar.get or config.get sent to a node, nor the pillar.show_pillar
+  # runner, whichever route the call arrives by. `administrator` above
+  # cannot read pillar; this role, bound to the same person, is what
+  # lets it. `halite-hub policy show` prints the list.
+  pillar_reader:
+    - target: '*'
+      functions: ['pillar.items', 'pillar.raw', 'pillar.get', 'config.get']
+    - target: '*'
+      runners: ['pillar.show_pillar']
+
   # A relay proxies for its own nodes and needs exactly one runner to do
   # it. SPEC 5.3.
   relay:
@@ -135,7 +147,7 @@ bindings:
     roles: ['deployer', 'readonly']
 
   - principal: 'local:ed'
-    roles: ['administrator']
+    roles: ['administrator', 'pillar_reader']
 
   - principal: 'node:relay*.prod'
     roles: ['relay']

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A wildcard no longer grants reading a node's pillar, by any route.** Only `GET /v1/pillar/{id}` refused `runners: ['*']`; `POST /v1/run`, `halite-hub runner`, a reactor and an orchestration ran `pillar.show_pillar` on it, and `functions: ['*']` sent `pillar.items`, `pillar.raw`, `pillar.get` and `config.get` to any node. All of these now have to be named in the role. **A role, including the API service's own, that read pillar through `*` is refused until it names them**; `halite-hub policy show` prints the list. DIVERGENCE 5.558.
+
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.
 
 - **`halite-node state show_highstate`, `show_sls` and `show_lowstate` no longer print a registered secret.** A password in a state's `contents:` or a token in a command was shown whole, though `state apply`, `pillar` and `doctor` masked it. They now mask it the way `pillar` does. The remote `state.show_*` jobs are not changed here. DIVERGENCE 5.556.

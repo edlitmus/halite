@@ -11,7 +11,9 @@ import (
 )
 
 // runnerScopePolicy grants alice runners against the web nodes alone,
-// bob the same runners with no target at all, and ed everything.
+// bob the same runners with no target at all, and ed everything --
+// pillar.show_pillar by name, because a wildcard never grants it
+// (DIVERGENCE 5.558).
 func runnerScopePolicy(t *testing.T) *policy.Policy {
 	t.Helper()
 	p, _, err := policy.Load([]byte(`
@@ -25,7 +27,7 @@ roles:
     - target: '*'
       functions: ['*']
     - target: '*'
-      runners: ['*']
+      runners: ['*', 'pillar.show_pillar']
 bindings:
   - principal: 'cert:CN=alice'
     roles: ['webrunners']

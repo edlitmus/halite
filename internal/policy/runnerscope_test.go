@@ -29,7 +29,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
-	sc := p.RunnerScope("cert:CN=webops", "pillar.show_pillar", false)
+	sc := p.RunnerScope("cert:CN=webops", "pillar.show_pillar")
 	for node, want := range map[string]bool{"web1": true, "webz": true, "db1": true, "db2": false, "mail": false} {
 		if got := sc.Covers(node); got != want {
 			t.Errorf("webops reaching %s through pillar.show_pillar: %v, want %v", node, got, want)
@@ -38,17 +38,17 @@ bindings:
 	if sc.Everything() {
 		t.Error("web* and db1 are not the whole estate")
 	}
-	if got := p.RunnerScope("cert:CN=webops", "cache.grains", false); got.Covers("db1") || !got.Covers("web1") {
+	if got := p.RunnerScope("cert:CN=webops", "cache.grains"); got.Covers("db1") || !got.Covers("web1") {
 		t.Errorf("cache.grains is granted by the web rule alone: %v", got.Targets)
 	}
-	if got := p.RunnerScope("cert:CN=bare", "pillar.show_pillar", false); got.Covers("web1") || len(got.Targets) != 0 {
+	if got := p.RunnerScope("cert:CN=bare", "pillar.show_pillar"); got.Covers("web1") || len(got.Targets) != 0 {
 		t.Errorf("a runner rule with no target reached %v", got.Targets)
 	}
-	if got := p.RunnerScope("cert:CN=admin", "key.delete", false); !got.Everything() || !got.Covers("anything") {
+	if got := p.RunnerScope("cert:CN=admin", "key.delete"); !got.Everything() || !got.Covers("anything") {
 		t.Errorf("target '*' is everything: %v", got.Targets)
 	}
 	// A wildcard does not put a never-by-wildcard runner in scope.
-	if got := p.RunnerScope("cert:CN=admin", "key.delete", true); len(got.Targets) != 0 {
+	if got := p.RunnerScope("cert:CN=admin", "pillar.show_pillar"); len(got.Targets) != 0 {
 		t.Errorf("runners: ['*'] scoped a runner a wildcard never grants: %v", got.Targets)
 	}
 }

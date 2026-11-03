@@ -93,14 +93,11 @@ type Request struct {
 	Test bool
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
+	//
+	// Whether a wildcard may grant the function is not a field: it is
+	// the function's property, answered by ReadsPillar, so no request
+	// can leave it out (DIVERGENCE 5.558).
 	Runner bool
-	// NeverWildcard requires the function to be named in the role
-	// rather than matched by a pattern, for the distinct
-	// high-privilege permissions of SPEC 22.1. Reading one node's
-	// compiled pillar is reading its secrets, and a role written to let
-	// someone restart a service should not carry it because the list
-	// said `*`.
-	NeverWildcard bool
 }
 
 // Decision is the outcome, and why. SPEC 23.5: every decision is
@@ -409,19 +406,26 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 					continue
 				}
 				// A distinct high-privilege permission has to be
-				// named, not matched. SPEC 22.1.
-				if req.NeverWildcard && !namedExactly(rule.Runners, req.Fun) {
-					best = Decision{Reason: fmt.Sprintf(
-						"%s is never granted by a wildcard; name it in the role (SPEC 22.1)",
-						req.Fun)}
+				// named, not matched. SPEC 22.1; DIVERGENCE 5.558.
+				if ReadsPillar(req.Fun, true) && !namedExactly(rule.Runners, req.Fun) {
+					best = pillarRefusal(req.Fun, "runners")
 					continue
 				}
 			} else {
 				if !targetCovered(rule.Target, kind, req.Target) {
 					continue
 				}
-				if !p.functionGranted(rule, req.Fun) || (req.NeverWildcard && !namedExactly(rule.Functions, req.Fun)) {
-					if (p.ArbitraryCode[req.Fun] || req.NeverWildcard) && matchAny(rule.Functions, "*") {
+				if ReadsPillar(req.Fun, false) && !namedExactly(rule.Functions, req.Fun) {
+					// Only a rule whose pattern matched has a reason
+					// worth reporting; one that never mentioned the
+					// function leaves the general one.
+					if matchAny(rule.Functions, req.Fun) {
+						best = pillarRefusal(req.Fun, "functions")
+					}
+					continue
+				}
+				if !p.functionGranted(rule, req.Fun) {
+					if p.ArbitraryCode[req.Fun] && matchAny(rule.Functions, "*") {
 						best = Decision{Reason: fmt.Sprintf(
 							"%s runs arbitrary code and is never granted by a wildcard; name it in the role's functions (SPEC 23.5)",
 							req.Fun)}
@@ -437,6 +441,15 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 		}
 	}
 	return best
+}
+
+// pillarRefusal is the reason a pattern did not grant a function that
+// reads pillar. It says what to write, because the fix is one line in the
+// policy and the operator reading this is the one who has to write it.
+func pillarRefusal(fun, list string) Decision {
+	return Decision{Reason: fmt.Sprintf(
+		"%s reads a node's pillar, which is its secrets, and is never granted by a wildcard; name it in the role's %s (SPEC 22.1)",
+		fun, list)}
 }
 
 // functionGranted applies the wildcard rule of SPEC 23.5: `'*'` matches,

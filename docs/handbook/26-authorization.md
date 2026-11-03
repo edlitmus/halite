@@ -274,7 +274,24 @@ denied: cmd.run runs arbitrary code and is never granted by a wildcard; name it 
 In the systems this replaces, everybody's access control granted `.*` and
 so granted a root shell on every machine. Reading a node's **pillar** is a
 similarly distinct permission (it is reading its secrets) and must also be
-named, not wildcarded.
+named, not wildcarded. `policy show` prints that set on a line of its own:
+
+```
+reads a node's pillar, which a wildcard never grants: functions config.get, pillar.get, pillar.items, pillar.raw; runners cache.pillar, pillar.show_pillar
+```
+
+It is the function that decides, not the route it arrives by:
+`pillar.show_pillar` is refused to `runners: ['*']` through
+`GET /v1/pillar/{id}`, `POST /v1/run`, `halite-hub runner`, a reactor and
+an orchestration alike, and `pillar.items` sent to a node is refused to
+`functions: ['*']`. `config.get` is on the list because it searches
+pillar first. `pillar.keys` and `pillar.show_top` are not: they name the
+keys and the files, not the values.
+
+```
+$ halite-hub policy test cert:CN=carol web1.prod pillar.items
+denied: pillar.items reads a node's pillar, which is its secrets, and is never granted by a wildcard; name it in the role's functions (SPEC 22.1)
+```
 
 ### Bindings
 
