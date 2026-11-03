@@ -78,17 +78,25 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 //
 // A link that does not resolve is refused by name rather than replaced
 // or followed into a file nobody asked for.
+//
+// **Nor is a link another account could have planted.** Following every
+// link, as this first did, let any account that can write a directory a
+// root state writes into -- its home, an app directory handed over with
+// `user:` -- point the state at any file on the machine: `file.managed`
+// with `mode: 0644` wrote the tree's contents into a 0600 file outside
+// the directory and made it 0644, and every edit wrote through the link
+// the same way. ssh_account.go's noLink already refused a link in exactly
+// that kind of directory; this did not, and the two must agree. A link is
+// now followed only when only root could have made it and pointed it
+// where it points, which resolveTrusted (followlink_unix.go) spells out;
+// otherwise it is refused by name and left alone, neither followed nor
+// replaced. Salt follows regardless. DIVERGENCE 5.558.
 func followLink(path string) (string, error) {
 	info, err := os.Lstat(path)
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		return path, nil
 	}
-	real, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		to, _ := os.Readlink(path)
-		return "", fmt.Errorf("%s is a symbolic link to %s, which does not resolve: %w", path, to, err)
-	}
-	return real, nil
+	return resolveTrusted(path)
 }
 
 // writeConfigFile is writeAtomic for the system configuration files the
