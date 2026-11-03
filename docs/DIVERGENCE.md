@@ -26898,12 +26898,18 @@ would have made them cost its size.
 existing limit and `encoding/json`'s own, 10,000: anything that came
 into a render as a JSON document is within it, and YAML, the other way
 in, stops at 100. It is ten times the parser's `maxExprDepth`, so no
-literal reaches it; only a loop does. Measured on darwin/arm64 with
-go1.27.3, with and without `-race`, by lowering the child's stack by
-hand: every walk of a value at the limit, inside 99 nested `if`, fits in
-8 MiB, and those built on `renderValue` need more than 4 MiB, so between
-about 420 and 840 bytes a level. The test's child has 32 MiB; the
-default stack is 1 GiB.
+literal reaches it; only a loop does. Measured with go1.27.3 by lowering
+the child's stack by hand, for a value at the limit inside 99 nested
+`if`: the walks that spell the value as a mapping key, through
+`fmt.Sprint`, are the deepest. They need between 12 and 16 MiB on
+darwin/arm64, with or without `-race`, and on freebsd/amd64 under
+`-race`, and between 4 and 8 MiB on FreeBSD without it: about 1.6 KiB a
+level at the most. Every other walk fits in 8 MiB on both, and those
+built on `renderValue` need more than 4. The test's child has 32 MiB,
+twice the most measured; the default stack is 1 GiB. (A first version
+of this said every walk fit in 8 MiB. It was measured before the key
+walks were added, and the FreeBSD run below, which measured them, is
+what showed it wrong.)
 
 The indentation is checked before encoding: `measureValue` also counts
 the containers around each item, and `tojson` and `json` refuse an
@@ -26956,10 +26962,19 @@ come from code rather than from a template's loop. `fmt.Sprint`, which
 `renderValue` falls back to for a type outside the model, is not
 bounded, and no template-built value reaches it.
 
-**Not verified.** Nothing here ran on FreeBSD or Linux, or with the
-pinned go1.26.6; the stack figures are darwin/arm64 with go1.27.3. No
-real Salt tree was rendered through the measure; the package tests,
-the Jinja corpus among them, pass.
+**Run on FreeBSD.** At `8978d713`, in a thin Bastille jail on beastie
+(FreeBSD 15.1-RELEASE, go1.27.3, freebsd/amd64, the host's `/usr/local`
+mounted read-only, as root), 2026-11-03: `template`, `value`, `yaml`,
+`render`, `pillar`, `state`, `specaudit`, `docsaudit` and `buildpolicy`
+passed, and `template`, `yaml` and `value` under `-race`. With the
+measure disabled, the counts were the same as on darwin: all 44 deep
+cases in the parent, all nine shared ones, and 44 deep (42 by overflow)
+and 42 cyclic (31) of the children failed, and the 44 at the limit
+passed.
+
+**Not verified.** Linux, and the pinned go1.26.6. No real Salt tree was
+rendered through the measure; the package tests, the Jinja corpus among
+them, pass.
 
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
@@ -36520,8 +36535,9 @@ limit pass on both. With the
 default limits the review's two expressions are refused at their
 filters.
 
-**Not verified.** Only darwin/arm64 with go1.27.3. Salt has no such limit
-to compare with.
+**Not verified.** Run on darwin/arm64 and, in a FreeBSD 15.1 jail
+(5.312's subsection above), freebsd/amd64, both with go1.27.3; not on
+Linux. Salt has no such limit to compare with.
 
 ### 5.559 The strings a render built were limited one at a time
 
@@ -36588,8 +36604,9 @@ copied. Strings inside a container a filter returns, other than through
 `map`, are not counted (`split` shares its input's bytes; `|list` of a
 string makes one-character strings).
 
-**Not verified.** Only darwin/arm64 with go1.27.3. No real tree was
-rendered with the counter.
+**Not verified.** Run on darwin/arm64 and, in a FreeBSD 15.1 jail
+(5.312's subsection), freebsd/amd64, both with go1.27.3; not on Linux.
+No real tree was rendered with the counter.
 
 ## 6. Everything else not started
 
