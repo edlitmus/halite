@@ -47,6 +47,10 @@ func TestReadingPillarIsNeverGrantedByAWildcard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The catalog the hub gives its policy, without which no pattern
+	// grants anything (5.564), and the functions this test expects the
+	// wildcard still to grant would be refused for the wrong reason.
+	catalogued(p)
 	type ask struct {
 		fun    string
 		runner bool

@@ -29,6 +29,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	sc := p.RunnerScope("cert:CN=webops", "pillar.show_pillar")
 	for node, want := range map[string]bool{"web1": true, "webz": true, "db1": true, "db2": false, "mail": false} {
 		if got := sc.Covers(node); got != want {

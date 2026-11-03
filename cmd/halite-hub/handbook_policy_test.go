@@ -29,7 +29,7 @@ func loadHandbookPolicy(t *testing.T) *policy.Policy {
 	for _, w := range warnings {
 		t.Errorf("the handbook policy warns: %s", w.String())
 	}
-	loaded.ArbitraryCode = arbitraryCodeFunctions()
+	applyCatalog(loaded)
 	return loaded
 }
 
@@ -104,6 +104,11 @@ func TestChapterTwentySixListsWhatPolicyShowPrints(t *testing.T) {
 	}
 	block := text[start+len(lead):]
 	block = block[:strings.Index(block, "```")]
+	// The list ends at the blank line `policy show` prints before saying
+	// that what the build does not ship is refused too (DIVERGENCE 5.564).
+	if end := strings.Index(block, "\n\n"); end >= 0 {
+		block = block[:end]
+	}
 	quoted := map[string]bool{}
 	for _, name := range strings.Split(block, ",") {
 		if name = strings.TrimSpace(name); name != "" {

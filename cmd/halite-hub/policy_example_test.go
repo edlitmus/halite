@@ -25,7 +25,7 @@ func loadExamplePolicy(t *testing.T) *policy.Policy {
 	for _, w := range warnings {
 		t.Errorf("the example policy warns: %s", w.String())
 	}
-	loaded.ArbitraryCode = arbitraryCodeFunctions()
+	applyCatalog(loaded)
 	return loaded
 }
 

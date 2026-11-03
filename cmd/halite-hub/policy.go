@@ -50,7 +50,7 @@ func loadPolicyFile(cfg *config.Config) (*policy.Policy, string) {
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w.String())
 	}
-	loaded.ArbitraryCode = arbitraryCodeFunctions()
+	applyCatalog(loaded)
 	return loaded, path
 }
 
@@ -108,6 +108,11 @@ func runPolicy(args *cli.Args) int {
 			names = append(names, name)
 		}
 		fmt.Printf("\nnever granted by a wildcard: %s\n", strings.Join(sorted(names), ", "))
+		// The list is what the build ships and declares. What it does not
+		// ship -- an extension's function above all -- is refused to a
+		// pattern too, and cannot be listed: the hub does not know which
+		// extensions a node has. DIVERGENCE 5.564.
+		fmt.Printf("\nnor any function this build does not ship, such as an extension's\n")
 		fmt.Println(pillarReadersLine())
 		return 0
 

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/builtin"
+	"github.com/edlitmus/halite/internal/policy"
+	"github.com/edlitmus/halite/internal/state"
 )
 
 // The list `serve` validates `fileserver_backend` against and the names
@@ -141,5 +143,79 @@ func TestTheHubAndTheNodeAgreeOnArbitraryCode(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("the execution registry is empty; this check has stopped checking")
+	}
+}
+
+// The agreement above is over the execution registry, and the node
+// dispatches more than that: the `state.*` forms its compiler answers,
+// which no registry holds, and every extension function it has loaded,
+// which it marks arbitrary code (internal/extension parseSignature). A
+// wildcard on the hub has to grant exactly the first two less what is
+// arbitrary code, and none of the third.
+//
+// It granted the extensions: the hub's set was a deny list of the
+// built-in functions that declare `arbitrary_code`, and an extension is
+// not one of those, so `functions: ['*']` granted `myext.exec`. The fix
+// made the set an allow list, which is also why the state forms are
+// here: read from the registries alone, `state.*` stopped granting
+// `state.apply`. DIVERGENCE 5.564.
+func TestAWildcardOnTheHubGrantsWhatTheNodeShipsAndNoExtension(t *testing.T) {
+	loaded, _, err := policy.Load([]byte(`
+roles:
+  everything:
+    - target: '*'
+      functions: ['*', 'myext.*', 'state.*']
+bindings:
+  - principal: 'cert:CN=root'
+    roles: ['everything']
+`), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyCatalog(loaded)
+	granted := func(fun string) (bool, string) {
+		d := loaded.Authorize(policy.Request{
+			Principal: "cert:CN=root", Target: "*", Fun: fun,
+			// allow_sls is not in this role, so an SLS changes nothing;
+			// it is here so that state.sls asks a well-formed question.
+			Arg: []string{"web"},
+		})
+		return d.Allowed, d.Reason
+	}
+
+	// Everything the node answers that is not arbitrary code.
+	execs := builtin.New().Exec.Signatures()
+	for _, name := range execs.Names() {
+		sig, _ := execs.Lookup(name)
+		// A function that reads pillar is never granted by a pattern
+		// either, for a reason of its own that has its own test
+		// (policy.ReadsPillar, DIVERGENCE 5.563).
+		if policy.ReadsPillar(name, false) {
+			continue
+		}
+		if ok, why := granted(name); ok == sig.ArbitraryCode {
+			t.Errorf("%s: the node says arbitrary_code=%v and a wildcard on the hub says allowed=%v (%s)",
+				name, sig.ArbitraryCode, ok, why)
+		}
+	}
+	forms := state.JobFunctions()
+	if len(forms) == 0 {
+		t.Fatal("no state job functions; this check has stopped checking")
+	}
+	for _, name := range forms {
+		if ok, why := granted(name); !ok {
+			t.Errorf("%s is answered by the node's compiler and a wildcard on the hub refuses it: %s", name, why)
+		}
+	}
+
+	// And what the node would run as an extension, it does not.
+	for _, name := range []string{"myext.exec", "site_tools.run"} {
+		ok, why := granted(name)
+		if ok {
+			t.Errorf("a wildcard granted %s, which the hub does not ship and the node would run as arbitrary code", name)
+		}
+		if !strings.Contains(why, "not a function this build ships") {
+			t.Errorf("%s: the refusal should say why: %s", name, why)
+		}
 	}
 }

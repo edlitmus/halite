@@ -63,6 +63,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 
 	got, err := lb.FetchMine(context.Background(), transport.MineGetRequest{
@@ -142,6 +143,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 
 	// The wrong function, against a target the grant covers.
@@ -188,6 +190,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 
 	got, err := app.FetchMine(context.Background(), transport.MineGetRequest{

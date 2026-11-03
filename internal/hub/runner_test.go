@@ -87,6 +87,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 
 	fleet := l.operator(t, "fleet")
@@ -121,6 +122,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 	l.server.Policy = loaded
 
 	op := l.operator(t, "ed")

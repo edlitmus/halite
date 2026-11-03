@@ -41,6 +41,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(loaded)
 
 	s := &Server{
 		Accounts: &account.File{Accounts: map[string]*account.Account{

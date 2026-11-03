@@ -3,6 +3,8 @@ package policy
 import (
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/builtin"
 )
 
 const example = `
@@ -54,10 +56,16 @@ func load(t *testing.T) *Policy {
 	for _, w := range warnings {
 		t.Logf("warning: %v", w)
 	}
-	p.ArbitraryCode = map[string]bool{
-		"cmd.run": true, "cmd.script": true, "cmd.shell": true, "module.run": true,
-	}
+	catalogued(p)
 	return p
+}
+
+// catalogued gives a test's policy the catalog of the build, which is
+// what the hub and halite-api give theirs: a policy without one grants
+// nothing by pattern (DIVERGENCE 5.564).
+func catalogued(p *Policy) {
+	registries := builtin.New()
+	p.UseCatalog(registries.Exec.Signatures(), registries.States.Signatures())
 }
 
 func TestDenyByDefault(t *testing.T) {
@@ -76,6 +84,7 @@ func TestDenyByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(empty)
 	if empty.Authorize(Request{Principal: "cert:CN=root", Target: "*", Fun: "test.ping"}).Allowed {
 		t.Error("an empty policy allowed something")
 	}
@@ -151,7 +160,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
-	named.ArbitraryCode = map[string]bool{"cmd.run": true}
+	catalogued(named)
 	if !named.Authorize(Request{Principal: "cert:CN=ci", Target: "build1", Fun: "cmd.run"}).Allowed {
 		t.Error("naming cmd.run should grant it")
 	}
@@ -212,6 +221,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	ask := func(fun string, arg []string, kwarg map[string]any) Decision {
 		return p.Authorize(Request{
 			Principal: "cert:CN=alice", Target: "web1.prod", Fun: fun, Arg: arg, Kwarg: kwarg,
@@ -358,6 +368,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	for _, tc := range []struct {
 		name      string
 		arg       []string
@@ -567,6 +578,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	ask := func(fun string, args ...string) Decision {
 		return p.Authorize(Request{Principal: "cert:CN=ops", Target: "n1", Fun: fun, Arg: args})
 	}
@@ -646,6 +658,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(p)
 	for _, c := range []struct {
 		fun, sls string
 		want     bool

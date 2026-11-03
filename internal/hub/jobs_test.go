@@ -37,13 +37,18 @@ func (l *lab) withJobs(t *testing.T) *lab {
 // functions a wildcard never covers. It is written out rather than
 // assumed, because the tests below check that the absence of one
 // authorizes nothing.
+//
+// `lb.drain`, `test.too_long` and `test.fits` are names the tests submit
+// and no build ships, so a wildcard does not grant them: to the hub they
+// could be an extension's (DIVERGENCE 5.564). They are named for that
+// reason.
 func labPolicy(t *testing.T) *policy.Policy {
 	t.Helper()
 	loaded, _, err := policy.Load([]byte(`
 roles:
   administrator:
     - target: '*'
-      functions: ['*', 'cmd.run', 'pillar.items', 'pillar.raw', 'pillar.get', 'config.get']
+      functions: ['*', 'cmd.run', 'lb.drain', 'test.too_long', 'test.fits', 'pillar.items', 'pillar.raw', 'pillar.get', 'config.get']
     - target: '*'
       runners: ['*', 'pillar.show_pillar']
 bindings:
@@ -53,7 +58,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded.ArbitraryCode = map[string]bool{"cmd.run": true, "cmd.script": true, "module.run": true}
+	catalogued(loaded)
 	return loaded
 }
 
