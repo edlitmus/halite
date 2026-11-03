@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A rewritten file's ACL can no longer be redirected onto another file.** On Linux, a file replaced through a temporary file inherits the old file's extended attributes, ACL included. The copy was made by name after the temporary file was closed. An account that owned the directory (a home directory managed by `file.managed`, say) could swap the temporary name for a link to another file, and its chosen ACL and the caller's mode were then put on that file, as root. The copy is now made on the open file. The replaced file is read through a descriptor that does not follow a symbolic link, and only when it is a regular file. A writer that may replace a file but not read it no longer copies its attributes. DIVERGENCE 5.558.
+
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.
 
 - **`halite-node state show_highstate`, `show_sls` and `show_lowstate` no longer print a registered secret.** A password in a state's `contents:` or a token in a command was shown whole, though `state apply`, `pillar` and `doctor` masked it. They now mask it the way `pillar` does. The remote `state.show_*` jobs are not changed here. DIVERGENCE 5.556.

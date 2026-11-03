@@ -64,7 +64,12 @@ func TestKeepExtendedAttributesWithNothingToKeep(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := keepExtendedAttributes(tmp, plain, 0o644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := keepExtendedAttributes(f, plain, 0o644); err != nil {
 		t.Fatalf("a file with no extended attributes: %v", err)
 	}
 }

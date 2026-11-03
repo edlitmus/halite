@@ -69,22 +69,32 @@ func WritePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 		tmp.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
+	if beforeAttributes != nil {
+		beforeAttributes(name)
+	}
+	// A file that is being replaced hands its extended attributes -- SELinux
+	// context, POSIX ACLs, user attributes -- to its successor, before
+	// `prepare` so that prepare has the last word. DIVERGENCE 5.492.
+	//
+	// On the open file, not on its name, and before the close. The
+	// directory may be an account's, and the account can rename the
+	// temporary name away and put a link to another file there at any
+	// moment; a copy by name after the close put the ACL it chose, and the
+	// caller's mode, on that other file (DIVERGENCE 5.558). The descriptor
+	// is the file this function created whatever its name now says.
+	if err := keepExtendedAttributes(tmp, path, mode); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
 	// Sync before the rename, so that a crash between the two leaves the
-	// old file rather than a new one full of zeroes.
+	// old file rather than a new one full of zeroes. After the attributes,
+	// so that it covers them too.
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	// A file that is being replaced hands its extended attributes -- SELinux
-	// context, POSIX ACLs, user attributes -- to its successor, before
-	// `prepare` so that prepare has the last word. DIVERGENCE 5.492.
-	if was, err := os.Lstat(path); err == nil && was.Mode().IsRegular() {
-		if err := keepExtendedAttributes(name, path, mode); err != nil {
-			return fmt.Errorf("writing %s: %w", path, err)
-		}
 	}
 	if prepare != nil {
 		if err := prepare(name); err != nil {
@@ -105,3 +115,10 @@ func WritePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 	}
 	return nil
 }
+
+// beforeAttributes, when a test sets it, runs with the temporary file's
+// name after its contents are written and before the replaced file's
+// attributes are copied onto it -- while it is still open. It stands in for the account that owns
+// the directory, which can rename that name away and put something else
+// there at that moment (DIVERGENCE 5.558).
+var beforeAttributes func(tmpName string)
