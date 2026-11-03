@@ -45,6 +45,9 @@ type Reactor struct {
 	Now func() time.Time
 
 	workers []*reactorWorker
+	// running counts the workers, so that Run returns only once none of
+	// them is part way through a reaction. See Run.
+	running sync.WaitGroup
 	// limits are the per-entry controls, keyed by the entry's position in
 	// Entries and not by its tag glob: two entries can share a glob, and
 	// sharing a bucket, a dedupe window and a debounce timer made the second
@@ -140,6 +143,15 @@ func (r *Reactor) Run(ctx context.Context) error {
 		return nil
 	}
 	r.start(ctx)
+	// Run returning is how `halite-hub serve` knows the reactor has
+	// stopped, and a worker can be part way through a reaction when the
+	// context ends: a runner reaction's return and `ret` event are
+	// written when the runner finishes, not when it is asked to stop.
+	// Returning without waiting left those writes to a hub that had
+	// already said it was done. A worker the stop cut short still does
+	// not release its event, so the offset stays behind it either way.
+	// DIVERGENCE 5.559.
+	defer r.running.Wait()
 	// Declared here rather than with the hub's other families, because
 	// the reactor is what holds the queues and a gauge read off
 	// something that does not exist yet would read zero for ever.
@@ -269,7 +281,7 @@ func (r *Reactor) start(ctx context.Context) {
 	for i := 0; i < n; i++ {
 		w := &reactorWorker{reactor: r, queue: newBoundedQueue(per)}
 		r.workers = append(r.workers, w)
-		go w.run(ctx)
+		r.running.Go(func() { w.run(ctx) })
 	}
 }
 

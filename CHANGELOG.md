@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **The hub waits for a reaction in flight before it reports it has stopped.** On SIGTERM a runner reaction that was still running went on writing its job return and its `ret` event after "the hub stopped" was logged, and the event returner was closed under a shipper still sending. `serve` now waits for the reactor and its other background loops; a stop can take as long as the slowest reaction in flight, and a second SIGTERM or `^C` stops the hub without waiting. DIVERGENCE 5.559.
+
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.
 
 - **`halite-node state show_highstate`, `show_sls` and `show_lowstate` no longer print a registered secret.** A password in a state's `contents:` or a token in a command was shown whole, though `state apply`, `pillar` and `doctor` masked it. They now mask it the way `pillar` does. The remote `state.show_*` jobs are not changed here. DIVERGENCE 5.556.
