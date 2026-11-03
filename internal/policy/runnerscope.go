@@ -67,7 +67,7 @@ func (s Scope) Everything() bool {
 // `runners: ['*']` on `*` was authorized by the first rule and scoped by
 // both, so it read db1's pillar. The scope is the second half of the
 // same decision, and it asks ReadsPillar as Authorize does. DIVERGENCE
-// 5.558.
+// 5.563.
 func (p *Policy) RunnerScope(principal, fun string) Scope {
 	if p == nil {
 		return Scope{}

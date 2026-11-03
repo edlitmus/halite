@@ -125,7 +125,7 @@ func TestChapterTwentySixListsWhatPolicyShowPrints(t *testing.T) {
 
 // The pillar line chapter 26 quotes is the one `policy show` prints, word
 // for word: it is a list of what a wildcard will not grant, and a reader
-// deciding what to name in a role reads it off the page. DIVERGENCE 5.558.
+// deciding what to name in a role reads it off the page. DIVERGENCE 5.563.
 func TestChapterTwentySixQuotesThePillarLine(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "docs", "handbook", "26-authorization.md"))
 	if err != nil {

@@ -263,7 +263,7 @@ func (s *Server) orchDetail(w http.ResponseWriter, r *http.Request, token *apito
 // The handler used to say so with a flag on the request, which made it
 // the one route that did; `POST /v1/run` reached the same runner without
 // it. The policy knows `pillar.show_pillar` is never granted by a
-// wildcard now, whoever asks (DIVERGENCE 5.558).
+// wildcard now, whoever asks (DIVERGENCE 5.563).
 func (s *Server) pillar(w http.ResponseWriter, r *http.Request, token *apitoken.Token) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/pillar/")
 	if id == "" || strings.Contains(id, "/") {

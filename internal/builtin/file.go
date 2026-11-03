@@ -740,10 +740,12 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	var below []recurseTarget
 	if recurse.any && exists {
-		below, err = planRecurse(c, path, recurse, args)
+		var skipped []string
+		below, skipped, err = planRecurse(c, path, recurse, args)
 		if err != nil {
 			return states.False(fmt.Sprintf("%s could not be walked: %v", path, err)), nil
 		}
+		modeWarnings = append(modeWarnings, skipped...)
 	}
 
 	if exists && !modeDiffers && !ownerDiffers && len(below) == 0 {

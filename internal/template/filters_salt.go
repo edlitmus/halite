@@ -48,7 +48,14 @@ func addSerializationFilters(f map[string]FilterFunc) {
 		if s, ok := v.(string); ok {
 			return yaml.Quote(s), nil
 		}
-		return strings.TrimRight(yaml.Encode(v, yaml.EncodeOptions{Flow: true}), "\n"), nil
+		if _, err := fc.r.checkValue(v, "yaml_encode", fc.Pos); err != nil {
+			return nil, err
+		}
+		out := strings.TrimRight(yaml.Encode(v, yaml.EncodeOptions{Flow: true}), "\n")
+		if err := fc.r.checkBytes(int64(len(out)), "yaml_encode", fc.Pos); err != nil {
+			return nil, err
+		}
+		return out, nil
 	}
 	// Salt's `yaml` filter is safe_dump: flow style by default, block
 	// when the tree passes false. An estate writes
@@ -62,7 +69,13 @@ func addSerializationFilters(f map[string]FilterFunc) {
 		if a, ok := arg(args, kwargs, 0, "flow_style"); ok {
 			flow = truthy(a)
 		}
-		out := yaml.Encode(stripUndefined(v), yaml.EncodeOptions{Flow: flow})
+		if _, err := fc.r.checkValue(v, "yaml", fc.Pos); err != nil {
+			return nil, err
+		}
+		out := yaml.Encode(stripUndefined(v), yaml.EncodeOptions{Flow: flow, MaxBytes: fc.r.opts.MaxOutput})
+		if err := fc.r.checkBytes(int64(len(out)), "yaml", fc.Pos); err != nil {
+			return nil, err
+		}
 		// safe_dump ends with a newline and Salt strips it, because the
 		// filter's output is being put in the middle of a line.
 		return strings.TrimRight(out, "\n"), nil
@@ -154,6 +167,9 @@ func addSerializationFilters(f map[string]FilterFunc) {
 		if !ok {
 			return nil, fc.Errorf("dict_to_sls_yaml_params expects a mapping")
 		}
+		if _, err := fc.r.checkValue(m, "dict_to_sls_yaml_params", fc.Pos); err != nil {
+			return nil, err
+		}
 		var b strings.Builder
 		for _, e := range m.Entries() {
 			b.WriteString("- ")
@@ -161,6 +177,9 @@ func addSerializationFilters(f map[string]FilterFunc) {
 			b.WriteString(": ")
 			b.WriteString(strings.TrimRight(yaml.Encode(e.Val, yaml.EncodeOptions{Flow: true}), "\n"))
 			b.WriteByte('\n')
+		}
+		if err := fc.r.checkBytes(int64(b.Len()), "dict_to_sls_yaml_params", fc.Pos); err != nil {
+			return nil, err
 		}
 		return strings.TrimRight(b.String(), "\n"), nil
 	}
@@ -468,7 +487,7 @@ func addCollectionFilters(f map[string]FilterFunc) {
 	f["symmetric_difference"] = setOp("symmetric_difference", true, false, true)
 
 	f["flatten"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
-		items, err := asSeq(fc, v)
+		items, err := checkedSeq(fc, v, "flatten")
 		if err != nil {
 			return nil, err
 		}
@@ -557,6 +576,9 @@ func addCollectionFilters(f map[string]FilterFunc) {
 			delim := ":"
 			if d, ok := argString(args, kwargs, 2, "delimiter"); ok {
 				delim = d
+			}
+			if _, err := fc.r.checkValue(v, name, fc.Pos); err != nil {
+				return nil, err
 			}
 			root, ok := value.Deep(v).(*value.Map)
 			if !ok {

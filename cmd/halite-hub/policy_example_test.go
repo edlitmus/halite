@@ -113,7 +113,7 @@ func TestTheExampleAdministratorIsStillRefusedArbitraryCode(t *testing.T) {
 
 	// Nor does it carry reading pillar: the administrator role alone,
 	// without the pillar_reader the example binds beside it, is refused.
-	// DIVERGENCE 5.558.
+	// DIVERGENCE 5.563.
 	p.Bindings = append(p.Bindings, policy.Binding{
 		Principal: "cert:CN=admin-only", Roles: []string{"administrator"},
 	})

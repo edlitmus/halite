@@ -4,6 +4,7 @@ package builtin
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -25,12 +26,18 @@ func plannedMode(path string, info os.FileInfo, want os.FileMode) (differs bool,
 	return true, states.Change(formatMode(info.Mode()), formatMode(want)), ""
 }
 
-// applyMode sets a file's permissions to the requested mode.
-func applyMode(path string, want os.FileMode) error { return os.Chmod(path, want) }
+// applyMode sets a file's permissions to the requested mode. It follows a
+// symbolic link at path, as chmod(2) does, and refuses a hard link another
+// account could have planted; see entryattrs_unix.go.
+func applyMode(path string, want os.FileMode) error {
+	return changeEntryPath(path, entryChange{mode: want, setMode: true, uid: -1, gid: -1}, true)
+}
 
 // applyModeIn is applyMode for a name inside an os.Root, which cannot be
-// led out of the root by a symbolic link. dir is the root's path, which
-// the Windows version needs and this one does not.
+// led out of the root by a symbolic link, nor through a hard link in a
+// directory another account can write. dir is the root's path, which the
+// Windows version needs and this one uses only to name the file.
 func applyModeIn(root *os.Root, dir, name string, want os.FileMode) error {
-	return root.Chmod(name, want)
+	return changeEntryIn(root, filepath.Join(dir, name), name,
+		entryChange{mode: want, setMode: true, uid: -1, gid: -1})
 }

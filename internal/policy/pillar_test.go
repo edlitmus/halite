@@ -41,7 +41,7 @@ bindings:
 // runner endpoint, a reactor or an orchestration was granted by it --
 // and `pillar.items` sent to the node was granted by `functions: ['*']`
 // everywhere. The rule is the function's now, so the question cannot be
-// asked without it. DIVERGENCE 5.558.
+// asked without it. DIVERGENCE 5.563.
 func TestReadingPillarIsNeverGrantedByAWildcard(t *testing.T) {
 	p, _, err := Load([]byte(pillarPolicy), "policy.yaml")
 	if err != nil {

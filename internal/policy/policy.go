@@ -96,7 +96,7 @@ type Request struct {
 	//
 	// Whether a wildcard may grant the function is not a field: it is
 	// the function's property, answered by ReadsPillar, so no request
-	// can leave it out (DIVERGENCE 5.558).
+	// can leave it out (DIVERGENCE 5.563).
 	Runner bool
 }
 
@@ -406,7 +406,7 @@ func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
 					continue
 				}
 				// A distinct high-privilege permission has to be
-				// named, not matched. SPEC 22.1; DIVERGENCE 5.558.
+				// named, not matched. SPEC 22.1; DIVERGENCE 5.563.
 				if ReadsPillar(req.Fun, true) && !namedExactly(rule.Runners, req.Fun) {
 					best = pillarRefusal(req.Fun, "runners")
 					continue

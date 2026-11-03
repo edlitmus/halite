@@ -1645,7 +1645,7 @@ high-privilege permission and it is enforced as one — on every route,
 not only this one: `POST /v1/run` with the `runner` client and the same
 function, and `pillar.items`, `pillar.raw`, `pillar.get` or `config.get`
 with the `local` client, need the role to name them too (DIVERGENCE
-5.558).
+5.563).
 
 ## Extensions
 

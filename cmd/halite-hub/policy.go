@@ -166,7 +166,7 @@ func runPolicy(args *cli.Args) int {
 // wildcard grants: the functions that hand a node's pillar to the caller.
 // It is a line of its own, not names added to the arbitrary-code list,
 // because the two are different reasons and the operator choosing whether
-// to name one wants to know which it is. DIVERGENCE 5.558.
+// to name one wants to know which it is. DIVERGENCE 5.563.
 func pillarReadersLine() string {
 	functions, runners := policy.PillarReaders()
 	return fmt.Sprintf("reads a node's pillar, which a wildcard never grants: functions %s; runners %s",

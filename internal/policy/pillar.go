@@ -19,13 +19,13 @@ import "sort"
 // `functions: ['*']` on every route. A flag each caller must remember to
 // set is a rule with as many chances to be forgotten as there are
 // callers; a set consulted inside AuthorizeAs is asked by every one of
-// them, including the next. DIVERGENCE 5.558.
+// them, including the next. DIVERGENCE 5.563.
 //
 // The list is written here rather than read from the signatures, as the
 // arbitrary-code set is, because no signature says "returns pillar" and
 // adding a field for six functions would be a declaration with as many
 // ways to be missed as this list. What it does not cover is said in
-// 5.558: an extension that returns pillar is not on it.
+// 5.563: an extension that returns pillar is not on it.
 var (
 	// pillarFunctions are execution functions: run on the node, they
 	// return that node's pillar, or a value from it, to the caller.

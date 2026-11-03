@@ -45,7 +45,7 @@ bindings:
 }
 
 // **No route through the hub reads pillar on a wildcard grant**
-// (DIVERGENCE 5.558). The hub's CallRunner asked the policy without the
+// (DIVERGENCE 5.563). The hub's CallRunner asked the policy without the
 // flag that `GET /v1/pillar/{id}` set, so `halite-hub runner
 // pillar.show_pillar`, a reactor's `runner.` reaction and an
 // orchestration's `salt.runner` step were all granted it by

@@ -339,7 +339,7 @@ func TestTheClientTypesArePreserved(t *testing.T) {
 // `runners: ['*']` and `POST /v1/run` with `client: runner` and the same
 // function answered 200 with the pillar, because the rule was a flag the
 // first handler set; `client: local` with `pillar.items` was granted by
-// `functions: ['*']` as well. DIVERGENCE 5.558.
+// `functions: ['*']` as well. DIVERGENCE 5.563.
 func TestReadingPillarIsNeverGrantedByAWildcard(t *testing.T) {
 	routes := []struct {
 		name, method, path, body string
