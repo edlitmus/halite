@@ -4,6 +4,7 @@ package builtin
 
 import (
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -37,6 +38,12 @@ import (
 func groupOtherThan(t *testing.T, path string) (int, string) {
 	t.Helper()
 	_, have := statOf(t, path)
+	if os.Geteuid() == 0 {
+		// Root may give a file any group, named or not; lookupGroup takes
+		// a number for a group with no name.
+		g := int(have) + 1
+		return g, strconv.Itoa(g)
+	}
 	gids, err := os.Getgroups()
 	if err != nil {
 		t.Fatal(err)
@@ -255,8 +262,10 @@ func TestFileDirectoryRecurseSkipsAFIFOInAnOpenDirectory(t *testing.T) {
 	}
 	openDirToOthers(t, home)
 	fifo := filepath.Join(home, "pipe")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("a FIFO could not be made here: %v", err)
+	// mkfifo(1) rather than syscall.Mkfifo, which illumos and Solaris
+	// do not have, and this file builds for every unix.
+	if out, err := osexec.Command("mkfifo", fifo).CombinedOutput(); err != nil {
+		t.Skipf("a FIFO could not be made here: %v: %s", err, out)
 	}
 	if err := os.Chmod(fifo, 0o600); err != nil {
 		t.Fatal(err)
