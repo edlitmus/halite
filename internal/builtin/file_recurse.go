@@ -84,10 +84,16 @@ type recurseTarget struct {
 	to       string
 }
 
-// planRecurse walks the directory and returns what would change.
-func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) ([]recurseTarget, error) {
+// planRecurse walks the directory and returns what would change, and a
+// warning for each path it will not change for what the path is: a socket,
+// a FIFO or a device in a directory another account can write.
+//
+// Each change is checked here by the same code that will make it, so that
+// test mode refuses a planted hard link with the words the run would use,
+// and does not report as a change a path the run would skip.
+func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) ([]recurseTarget, []string, error) {
 	if !f.any {
-		return nil, nil
+		return nil, nil, nil
 	}
 	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
 	if !f.user {
@@ -111,19 +117,19 @@ func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) 
 		if dirSpec != "" {
 			m, err := parseMode(dirSpec)
 			if err != nil {
-				return nil, fmt.Errorf("dir_mode: %w", err)
+				return nil, nil, fmt.Errorf("dir_mode: %w", err)
 			}
 			dirMode, haveDirMode = m, true
 		}
 		if s := states.Str(args, "file_mode", ""); s != "" {
 			m, err := parseMode(s)
 			if err != nil {
-				return nil, fmt.Errorf("file_mode: %w", err)
+				return nil, nil, fmt.Errorf("file_mode: %w", err)
 			}
 			fileMode, haveFileMode = m, true
 		}
 		if !haveDirMode && !haveFileMode {
-			return nil, fmt.Errorf("recurse names mode, but neither dir_mode nor file_mode says what mode to set")
+			return nil, nil, fmt.Errorf("recurse names mode, but neither dir_mode nor file_mode says what mode to set")
 		}
 	}
 
@@ -131,6 +137,7 @@ func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) 
 	rootDepth := strings.Count(filepath.Clean(root), string(os.PathSeparator))
 
 	var out []recurseTarget
+	var skipped []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -189,16 +196,24 @@ func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) 
 			}
 			t.setOwner = differs
 		}
-		if t.setMode || t.setOwner {
-			out = append(out, t)
+		if !t.setMode && !t.setOwner {
+			return nil
 		}
+		if err := checkRecurseTarget(t, wantUser, wantGroup); err != nil {
+			if why, ok := skippedEntry(err); ok {
+				skipped = append(skipped, why)
+				return nil
+			}
+			return err
+		}
+		out = append(out, t)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
-	return out, nil
+	return out, skipped, nil
 }
 
 // applyRecurse makes the planned changes, inside dir.
@@ -210,9 +225,16 @@ func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) 
 // links, set the mode on the target as root; or swap a parent directory
 // for a link, which redirected even Lchown, because Lchown protects only
 // the last component. An os.Root resolves every component inside dir and
-// refuses to leave it, so the worst a swap can do is redirect a change to
-// another path in the tree being managed. A path that is a link by the
-// time it is reached is skipped, as the plan skipped links.
+// refuses to leave it. A path that is a link by the time it is reached is
+// skipped, as the plan skipped links.
+//
+// That was written as "the worst a swap can do is redirect a change to
+// another path in the tree", and it was not true: a **hard link** is not
+// followed, so the root does not see it leave, and a file in the tree can
+// be a second name for /etc/spwd.db. changeEntryIn (through
+// applyModeIn and applyOwnershipIn) makes the change on an opened, checked
+// descriptor and refuses a hard link in a directory another account can
+// write. DIVERGENCE 5.558.
 func applyRecurse(dir string, targets []recurseTarget, args *value.Map, f recurseFlags) error {
 	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
 	if !f.user {
@@ -240,11 +262,17 @@ func applyRecurse(dir string, targets []recurseTarget, args *value.Map, f recurs
 		}
 		if t.setMode {
 			if err := applyModeIn(root, dir, rel, t.mode); err != nil {
+				if _, ok := skippedEntry(err); ok {
+					continue
+				}
 				return err
 			}
 		}
 		if t.setOwner {
 			if err := applyOwnershipIn(root, rel, wantUser, wantGroup); err != nil {
+				if _, ok := skippedEntry(err); ok {
+					continue
+				}
 				return err
 			}
 		}

@@ -130,7 +130,8 @@ func (f *sshAccountFile) write(data []byte, mode os.FileMode) error {
 		if err := root.Mkdir(".ssh", 0o700); err != nil {
 			return err
 		}
-		if err := root.Chmod(".ssh", 0o700); err != nil {
+		if err := changeEntryIn(root, filepath.Join(f.home, ".ssh"), ".ssh",
+			entryChange{mode: 0o700, setMode: true, uid: -1, gid: -1}); err != nil {
 			return err
 		}
 	}
@@ -146,18 +147,23 @@ func (f *sshAccountFile) write(data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
+	// The mode and the owner are set on the descriptor, not by name. The
+	// temporary file sits in ~/.ssh, which the account owns, so between
+	// the close and a chmod by name the account could replace it with a
+	// hard link to /etc/spwd.db, and the chown would hand that file
+	// to the account. DIVERGENCE 5.558.
 	_, werr := out.Write(data)
+	if werr == nil {
+		werr = out.Chmod(mode)
+	}
+	if werr == nil {
+		werr = out.Chown(f.uid, f.gid)
+	}
 	if werr == nil {
 		werr = out.Sync()
 	}
 	if cerr := out.Close(); werr == nil {
 		werr = cerr
-	}
-	if werr == nil {
-		werr = root.Chmod(tmp, mode)
-	}
-	if werr == nil {
-		werr = root.Lchown(tmp, f.uid, f.gid)
 	}
 	if werr == nil {
 		werr = root.Rename(tmp, f.rel())
@@ -166,7 +172,10 @@ func (f *sshAccountFile) write(data []byte, mode os.FileMode) error {
 		_ = root.Remove(tmp)
 		return werr
 	}
-	return root.Lchown(".ssh", f.uid, f.gid)
+	// ~/.ssh is a name in the account's home, which the account can
+	// replace with a hard link as easily as a file in it.
+	return changeEntryIn(root, filepath.Join(f.home, ".ssh"), ".ssh",
+		entryChange{uid: f.uid, gid: f.gid})
 }
 
 // sshReadLines is readLines for an ssh file: through the account's root

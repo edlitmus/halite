@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
@@ -665,20 +666,20 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 		if err != nil {
 			return states.False(fmt.Sprintf("The archive %s could not be listed: %v", source, err)), nil
 		}
-		fixed, err := enforceArchiveOwnership(c, dest, entries, wantUser, wantGroup)
+		fixed, skipped, err := enforceArchiveOwnership(c, dest, entries, wantUser, wantGroup)
 		if err != nil {
 			return states.False(fmt.Sprintf("The ownership under %s could not be set: %v", dest, err)), nil
 		}
 		if fixed == 0 {
-			return states.True(fmt.Sprintf("The archive %s is already extracted into %s.", source, dest)), nil
+			return withWarnings(states.True(fmt.Sprintf("The archive %s is already extracted into %s.", source, dest)), skipped), nil
 		}
 		changes := value.MapOf("ownership", states.Change(nil, ownerLabel(wantUser, wantGroup)))
 		if c.Test {
-			return states.WouldChange(fmt.Sprintf(
-				"%d entries under %s would be given to %s.", fixed, dest, ownerLabel(wantUser, wantGroup)), changes), nil
+			return withWarnings(states.WouldChange(fmt.Sprintf(
+				"%d entries under %s would be given to %s.", fixed, dest, ownerLabel(wantUser, wantGroup)), changes), skipped), nil
 		}
-		return states.Changed(fmt.Sprintf(
-			"%d entries under %s were given to %s.", fixed, dest, ownerLabel(wantUser, wantGroup)), changes), nil
+		return withWarnings(states.Changed(fmt.Sprintf(
+			"%d entries under %s were given to %s.", fixed, dest, ownerLabel(wantUser, wantGroup)), changes), skipped), nil
 	}
 
 	changes := value.MapOf("extracted", toAnyList(truncateList(missing, 20)))
@@ -695,7 +696,8 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("The archive %s could not be extracted: %v", source, err)), nil
 	}
-	if _, err := enforceArchiveOwnership(c, dest, written, wantUser, wantGroup); err != nil {
+	_, skipped, err := enforceArchiveOwnership(c, dest, written, wantUser, wantGroup)
+	if err != nil {
 		return states.False(fmt.Sprintf(
 			"The archive was extracted but the ownership under %s could not be set: %v", dest, err)), nil
 	}
@@ -708,20 +710,32 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 				"The archive was extracted but the fetched copy could not be removed: %v", err)), nil
 		}
 	}
-	return states.Changed(
-		fmt.Sprintf("%d entries from %s were extracted into %s.", len(written), source, dest), changes), nil
+	return withWarnings(states.Changed(
+		fmt.Sprintf("%d entries from %s were extracted into %s.", len(written), source, dest), changes), skipped), nil
 }
 
 // enforceArchiveOwnership gives every entry the archive names to the
-// requested owner, and reports how many needed it.
+// requested owner, and reports how many needed it, and a warning for each
+// entry it left alone.
 //
 // The entries come from the archive rather than from a walk of the
 // destination, which is what Salt does too: a directory that already held
 // files keeps them, and a state that unpacks into /etc does not take
 // ownership of everything already in /etc.
-func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wantUser, wantGroup string) (int, error) {
+//
+// **Deepest first.** An entry is changed through a descriptor, and a hard
+// link refused, only in a directory another account can write
+// (entryattrs_unix.go), and a symbolic link in such a directory is skipped
+// with a warning, because a link's owner cannot be changed there without
+// the swap. Giving a directory to `user:` before its contents made every
+// directory the archive creates "another account's" by the time its
+// contents were reached, so a fresh extraction warned about every link it
+// shipped. Children first, the directories are still root's while what is
+// in them is changed, and only what sits directly in a destination that
+// already belonged to the account is skipped. DIVERGENCE 5.558.
+func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wantUser, wantGroup string) (int, []string, error) {
 	if wantUser == "" && wantGroup == "" {
-		return 0, nil
+		return 0, nil, nil
 	}
 	// Through the root, for the reason extractArchive is: the names are
 	// the archive's, and this runs as root, so a directory on the way that
@@ -729,19 +743,24 @@ func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wan
 	// to `user:`. DIVERGENCE 5.300.
 	root, err := openExtractRoot(mustAbs(dest), true)
 	if err != nil || root == nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer root.Close()
+	ordered := append([]string(nil), entries...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return entryDepth(ordered[i]) > entryDepth(ordered[j])
+	})
 	fixed := 0
-	for _, name := range entries {
+	var skipped []string
+	for _, name := range ordered {
 		target, err := containedEntry(mustAbs(dest), name)
 		if err != nil {
-			return fixed, err
+			return fixed, skipped, err
 		}
 		rel := relEntry(mustAbs(dest), target)
 		exists, err := entryExists(root, rel)
 		if err != nil {
-			return fixed, fmt.Errorf("archive entry %q: %w", name, err)
+			return fixed, skipped, fmt.Errorf("archive entry %q: %w", name, err)
 		}
 		if !exists {
 			continue
@@ -754,20 +773,29 @@ func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wan
 			if os.IsNotExist(err) {
 				continue
 			}
-			return fixed, err
+			return fixed, skipped, err
 		}
 		if !differs {
 			continue
 		}
+		// In test mode the same call decides and changes nothing, so a
+		// dry run refuses a planted hard link as the run would, and does
+		// not count an entry the run would skip.
+		if err := ownEntryIn(root, rel, wantUser, wantGroup, c.Test); err != nil {
+			if why, ok := skippedEntry(err); ok {
+				skipped = append(skipped, why)
+				continue
+			}
+			return fixed, skipped, err
+		}
 		fixed++
-		if c.Test {
-			continue
-		}
-		if err := applyOwnershipIn(root, rel, wantUser, wantGroup); err != nil {
-			return fixed, err
-		}
 	}
-	return fixed, nil
+	return fixed, skipped, nil
+}
+
+// entryDepth is how many directories deep an archive entry name is.
+func entryDepth(name string) int {
+	return strings.Count(strings.Trim(filepath.ToSlash(name), "/"), "/")
 }
 
 func mustAbs(p string) string {

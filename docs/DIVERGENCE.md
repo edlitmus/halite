@@ -36342,6 +36342,45 @@ Issue 321, the second pass, round twelve (`cmd/halite-node/execute.go`; the comm
 
 **Not verified.** A secret that arrives as a GPG-decrypted pillar value on a real node (the test registers it directly); whether the hub itself scrubs a return it caches, which was not read; an unregistered `runas_password` in `show_highstate`, which only `show_lowstate` masks by key name.
 
+### 5.558 A hard link carried a mode or ownership change out of the managed tree
+
+Issue 321, the close-out review of 2026-11-03, item A2 (`internal/builtin/entryattrs_unix.go`; the symbolic-link half is 5.300 and M-29).
+
+**The defect.** 5.300 and M-29 made the changes a state applies under a directory another account can write go through an `os.Root` and `Lchown`, and M-29's reasoning ended "the worst a swap can do is redirect a change to another path in the tree being managed". That is true of a symbolic link and false of a hard link, which is not followed because it is not a pointer: it is a second name for the same file. An account that owns a directory a state manages can replace a name in it with a hard link to a root-owned file on the same filesystem, and the next run applies the change to that file, as root. Three forms were shown on de26c91b: `archive.extracted` with `group:` (it re-applies ownership to every name in the archive on every run); `file.directory` with `recurse:` (the outside file went to 0644); and `file.managed` with `replace: False` and `mode:` or `group:`. Every other path-based caller of `applyMode`, `applyOwnership` and `keepOwnership` had the same shape, and so did the temporary file the `ssh_auth` and `ssh_known_hosts` account writer renames into `~/.ssh` (chmod and chown by name, after the close), `~/.ssh` itself, and the temporary bundle `openssl_cert.pkcs12_create` chmods beside its target.
+
+**Is it reachable on the estate.** On FreeBSD, yes by default: `security.bsd.hardlink_check_uid` and `hardlink_check_gid` are 0, so an unprivileged account may link a file it does not own. Read on beastie (FreeBSD 15.1-RELEASE-p6) with `sysctl` on 2026-11-03, with nothing setting them in `/etc/sysctl.conf`. On Linux, `fs.protected_hardlinks=1` (systemd's default, and Ubuntu's) refuses the link to a file the account does not own. That was not checked on a machine here.
+
+**The change.** One function, `changeEntryAt`, now makes every such change, and the path and root helpers (`applyMode`, `applyModeIn`, `applyOwnership`, `applyOwnershipIn`, `keepOwnership`) all go through it:
+
+- A directory owned by root or by halite's own account, with no group or other write bit, is *trusted*: nobody else could have put a name in it. The change is made by name inside the held directory, as before. A hard link is not refused there. Refusing it would break a state that manages `/usr/local/bin/perl` (a hard link to `perl5.x` on FreeBSD), and it would let any account stop a state for good by linking the managed file into `/tmp`.
+- In any other directory the entry is opened (`O_NONBLOCK|O_NOCTTY`, through the root, so the last name is resolved once inside a directory that cannot change identity). The code checks that the open file is the same inode `lstat` saw and that it is a regular file or a directory. If it is a regular file with a link count above one, the change is refused by name, unless the file already has the mode and owner asked for. The change is made with `fchmod`/`fchown` on the descriptor, which also closes the window between the check and the change.
+- Anything else in such a directory (a symbolic link, a socket, a FIFO, a device) cannot be changed portably through a descriptor, and a change by name is the swap again. It is refused by type. `file.directory` with `recurse:` and `archive.extracted` skip it with a warning rather than fail. Archives ship links, and a link's owner grants nothing.
+- The plan asks the same function, with `check` set, before reporting a change. So test mode refuses a planted hard link in the run's own words, and does not report a change for a path the run will skip.
+- `archive.extracted` now enforces ownership deepest entry first. On a fresh extraction, the directories it creates are still root's while their contents are changed. Otherwise every directory would already belong to `user:` by the time its links were reached, and each one would be skipped.
+- The `ssh_auth`/`ssh_known_hosts` account writer sets the mode and owner on the open temporary file before closing it.
+
+**Shown.** The reviewer's two probes became `internal/builtin/hardlink_unix_test.go`. The four refusal tests failed on de26c91b (outside file went to 0644, or to the other group) and pass with the change. They stand in for "another account" with a 0777 directory, because the run is not root. With the change made pointless one way at a time, these tests failed:
+
+- link count never checked: the four refusal tests and the test-mode one;
+- every directory trusted: those five, plus the FIFO and archive-link tests;
+- no directory trusted: the hard-link-in-a-private-directory test;
+- a type refusal made fatal: the FIFO and archive-link tests;
+- `check` allowed to make changes: `TestRecursePlanDoesNotChangeAnything`;
+- the trusted branch's `check` removed: `TestFileDirectoryRecurse`.
+
+All ten pass unprivileged on macOS 26 (arm64) and on beastie, FreeBSD 15.1 (amd64). On beastie, with the link count not checked, the five refusal tests fail.
+
+**Not verified.**
+- No run as root with a second, real account. That is the actual attack, and the only way to observe the deepest-first order (an unprivileged chgrp leaves the owner, and so the trust, unchanged) and the ssh account writer, whose live test needs root.
+- Linux was not run here. `fs.protected_hardlinks` was not read on a real Ubuntu host.
+- "Trusted" reads the mode bits and the owner. An NFSv4 ACL on ZFS that lets a named account add entries without showing in the group bits is not seen, so such a directory is treated as trusted.
+- Windows is not changed. A mode there is an access control list set by path (`fileperm`), and an owner is set by path through `winsec`. Whether an unprivileged account there can still hard-link a file it cannot write was not checked.
+- `make check` was not run in full.
+
+**Found, not changed.**
+- `internal/atomicfile/xattr_linux.go` copies a replaced file's extended attributes onto the temporary file with `setxattr` and `chmod` by path, after the close. In a directory the account owns, the account controls both the replaced file's ACL and the temporary name. That is the same swap, onto another file's ACL, and it is Linux only. It is left for its own change because it is in another package and needs `fsetxattr`, which `syscall` does not export.
+- `logrotate.go`, `sudo_state.go` and `netplan.go` chmod or chown by name only in root's directories (`/etc/logrotate.d`, a private `MkdirTemp`, `/etc/sudoers.d`, `/etc/netplan`). They are left as they are.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

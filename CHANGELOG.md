@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A mode or ownership change no longer reaches a file outside the managed tree through a hard link.** An account that owned a directory a state managed could put a hard link to a root-owned file there, and `file.managed`, `file.directory` with `recurse:`, `archive.extracted` with `user:`/`group:` and the ssh account writers changed that file as root. FreeBSD allows such a link by default. In a directory another account can write, the change is now made on an opened, checked descriptor. A file with more than one name there is refused, and a state that hits one fails, naming it. A symbolic link, socket, FIFO or device in such a directory is skipped with a warning by `recurse:` and `archive.extracted`. Hard links in directories only root can write are changed as before. DIVERGENCE 5.558.
+
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.
 
 - **`halite-node state show_highstate`, `show_sls` and `show_lowstate` no longer print a registered secret.** A password in a state's `contents:` or a token in a command was shown whole, though `state apply`, `pillar` and `doctor` masked it. They now mask it the way `pillar` does. The remote `state.show_*` jobs are not changed here. DIVERGENCE 5.556.

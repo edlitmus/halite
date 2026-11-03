@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
@@ -78,16 +79,18 @@ func keepOwnership(path string, was os.FileInfo) error {
 	if !ok {
 		return nil
 	}
-	return os.Lchown(path, int(st.Uid), int(st.Gid))
+	return changeEntryPath(path, entryChange{uid: int(st.Uid), gid: int(st.Gid)}, false)
 }
 
-// applyOwnership sets the owner and group of a path.
+// applyOwnership sets the owner and group of a path. Like Lchown it does
+// not follow a symbolic link at path; unlike it, it refuses a hard link
+// another account could have planted there. See entryattrs_unix.go.
 func applyOwnership(path, wantUser, wantGroup string) error {
 	uid, gid, err := resolveOwner(wantUser, wantGroup)
 	if err != nil {
 		return err
 	}
-	return os.Lchown(path, uid, gid)
+	return changeEntryPath(path, entryChange{uid: uid, gid: gid}, false)
 }
 
 // resolveOwner turns names into ids. A -1 means "leave this one alone",
@@ -169,10 +172,13 @@ func legacyHash(data []byte, algorithm string) (string, error) {
 // swap a directory for a link between any check and the chown. The root
 // resolves each component at the moment of the call, and Lchown does not
 // follow the last one. DIVERGENCE 5.300.
+//
+// Neither of those stops a hard link, which the same account can plant
+// under a name the archive ships; changeEntryIn does. DIVERGENCE 5.558.
 func applyOwnershipIn(root *os.Root, name, wantUser, wantGroup string) error {
 	uid, gid, err := resolveOwner(wantUser, wantGroup)
 	if err != nil {
 		return err
 	}
-	return root.Lchown(name, uid, gid)
+	return changeEntryIn(root, filepath.Join(root.Name(), name), name, entryChange{uid: uid, gid: gid})
 }
