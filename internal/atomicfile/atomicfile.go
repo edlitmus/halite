@@ -80,7 +80,7 @@ func WritePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 	// directory may be an account's, and the account can rename the
 	// temporary name away and put a link to another file there at any
 	// moment; a copy by name after the close put the ACL it chose, and the
-	// caller's mode, on that other file (DIVERGENCE 5.559). The descriptor
+	// caller's mode, on that other file (DIVERGENCE 5.566). The descriptor
 	// is the file this function created whatever its name now says.
 	if err := keepExtendedAttributes(tmp, path, mode); err != nil {
 		tmp.Close()
@@ -120,5 +120,5 @@ func WritePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 // name after its contents are written and before the replaced file's
 // attributes are copied onto it -- while it is still open. It stands in for the account that owns
 // the directory, which can rename that name away and put something else
-// there at that moment (DIVERGENCE 5.559).
+// there at that moment (DIVERGENCE 5.566).
 var beforeAttributes func(tmpName string)

@@ -467,7 +467,7 @@ func (r *renderer) renderFor(t *ForNode) error {
 		defer func() { r.scope = saved }()
 
 		completed := false
-		loop := &LoopInfo{Length: len(items), Items: items, Depth0: depth}
+		loop := &LoopInfo{Length: len(items), Items: items, Depth0: depth, maxBytes: r.opts.MaxOutput}
 		if t.Recursive {
 			loop.recurse = func(inner any) (string, error) {
 				sub := r.sub()
@@ -531,7 +531,7 @@ func (r *renderer) renderForRecursive(t *ForNode, iterable any, depth int) error
 	saved := r.scope
 	defer func() { r.scope = saved }()
 
-	loop := &LoopInfo{Length: len(items), Items: items, Depth0: depth}
+	loop := &LoopInfo{Length: len(items), Items: items, Depth0: depth, maxBytes: r.opts.MaxOutput}
 	loop.recurse = func(inner any) (string, error) {
 		sub := r.sub()
 		sub.scope = r.scope
@@ -1175,6 +1175,12 @@ func (r *renderer) eval(e Expr) (any, error) {
 			}
 			vv, err := r.eval(t.Vals[i])
 			if err != nil {
+				return nil, err
+			}
+			// A key is spelt for the index by value.CanonKey, which
+			// gives a key that is not a scalar to fmt.Sprint, and fmt
+			// recurses as deep as the key does.
+			if _, err := r.checkValue(kv, "a mapping key", k.Pos()); err != nil {
 				return nil, err
 			}
 			m.Set(normalizeKey(kv), vv)

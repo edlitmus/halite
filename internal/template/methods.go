@@ -13,8 +13,9 @@ import (
 // `.get('key', default)` — so the common ones are implemented rather than
 // left to filters.
 //
-// maxBytes is the render's MaxOutput, which bounds the one method that
-// builds a string from a number, zfill.
+// maxBytes is the render's MaxOutput, which bounds the methods that can
+// build a string larger than their receiver and arguments: zfill, from a
+// number, and join, replace and format, by repeating an argument.
 func method(obj any, name string, maxBytes int64) (Callable, bool) {
 	obj = untuple(obj)
 
@@ -24,11 +25,11 @@ func method(obj any, name string, maxBytes int64) (Callable, bool) {
 			return fn, true
 		}
 	case *value.Map:
-		if fn, ok := mapMethod(t, name); ok {
+		if fn, ok := mapMethod(t, name, maxBytes); ok {
 			return fn, true
 		}
 	case []any:
-		if fn, ok := listMethod(t, name); ok {
+		if fn, ok := listMethod(t, name, maxBytes); ok {
 			return fn, true
 		}
 	}
@@ -54,7 +55,10 @@ func argString(args []any, kwargs map[string]any, i int, name string) (string, b
 	return s, ok
 }
 
-func mapMethod(m *value.Map, name string) (Callable, bool) {
+// maxBytes is the render's MaxOutput, against which the key that get, pop
+// and setdefault are given is measured: a key that is not a scalar is
+// spelt by fmt.Sprint, which recurses as deep as the key does.
+func mapMethod(m *value.Map, name string, maxBytes int64) (Callable, bool) {
 	switch name {
 	case "get":
 		// Salt trees write `pillar.get('a:b:c', default)`. A literal key
@@ -65,6 +69,9 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 			key, ok := arg(args, kwargs, 0, "key")
 			if !ok {
 				return nil, fmt.Errorf("get() needs a key")
+			}
+			if err := checkValueBytes(key, "get()", maxBytes); err != nil {
+				return nil, err
 			}
 			def, hasDef := arg(args, kwargs, 1, "default")
 			if v, found := m.Get(normalizeKey(key)); found {
@@ -137,6 +144,9 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 			if !ok {
 				return nil, fmt.Errorf("pop() needs a key")
 			}
+			if err := checkValueBytes(key, "pop()", maxBytes); err != nil {
+				return nil, err
+			}
 			v, found := m.Get(normalizeKey(key))
 			if found {
 				m.Delete(normalizeKey(key))
@@ -154,6 +164,9 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 			if !ok {
 				return nil, fmt.Errorf("setdefault() needs a key")
 			}
+			if err := checkValueBytes(key, "setdefault()", maxBytes); err != nil {
+				return nil, err
+			}
 			if v, found := m.Get(normalizeKey(key)); found {
 				return v, nil
 			}
@@ -165,12 +178,15 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 	return nil, false
 }
 
-func listMethod(l []any, name string) (Callable, bool) {
+func listMethod(l []any, name string, maxBytes int64) (Callable, bool) {
 	switch name {
 	case "count":
 		return funcValue{"count", func(args []any, _ map[string]any) (any, error) {
 			if len(args) != 1 {
 				return nil, fmt.Errorf("count() takes one argument")
+			}
+			if err := checkPairBytes(l, args[0], "count()", maxBytes); err != nil {
+				return nil, err
 			}
 			n := int64(0)
 			for _, item := range l {
@@ -184,6 +200,9 @@ func listMethod(l []any, name string) (Callable, bool) {
 		return funcValue{"index", func(args []any, _ map[string]any) (any, error) {
 			if len(args) != 1 {
 				return nil, fmt.Errorf("index() takes one argument")
+			}
+			if err := checkPairBytes(l, args[0], "index()", maxBytes); err != nil {
+				return nil, err
 			}
 			for i, item := range l {
 				if equalValues(item, args[0]) {
@@ -270,9 +289,15 @@ func stringMethod(s, name string, maxBytes int64) (Callable, bool) {
 			if !ok {
 				return nil, fmt.Errorf("join() takes a sequence")
 			}
+			if err := checkValueBytes(items, "join()", maxBytes); err != nil {
+				return nil, err
+			}
 			parts := make([]string, len(items))
 			for i, item := range items {
 				parts[i] = renderValue(item)
+			}
+			if !joinWithin(parts, s, maxBytes) {
+				return nil, fmt.Errorf("join() would exceed the %d byte output limit", maxBytes)
 			}
 			return strings.Join(parts, s), nil
 		}}, true
@@ -284,12 +309,16 @@ func stringMethod(s, name string, maxBytes int64) (Callable, bool) {
 			if !ok1 || !ok2 {
 				return nil, fmt.Errorf("replace() takes two string arguments")
 			}
+			count := -1
 			if n, ok := arg(args, kwargs, 2, "count"); ok {
 				if i, ok := asInt(n); ok {
-					return strings.Replace(s, old, nw, int(i)), nil
+					count = int(i)
 				}
 			}
-			return strings.ReplaceAll(s, old, nw), nil
+			if !replaceWithin(s, old, nw, count, maxBytes) {
+				return nil, fmt.Errorf("replace() would exceed the %d byte output limit", maxBytes)
+			}
+			return strings.Replace(s, old, nw, count), nil
 		}}, true
 
 	case "startswith", "endswith":
@@ -317,7 +346,7 @@ func stringMethod(s, name string, maxBytes int64) (Callable, bool) {
 
 	case "format":
 		return funcValue{name, func(args []any, kwargs map[string]any) (any, error) {
-			return formatBraces(s, args, kwargs)
+			return formatBraces(s, args, kwargs, maxBytes)
 		}}, true
 
 	case "find", "rfind":
@@ -410,7 +439,10 @@ func stringsToAny(ss []string) []any {
 // formatBraces implements str.format() for the positional and named forms
 // SLS trees use. Format specifications are not implemented; a template
 // that needs one uses a filter.
-func formatBraces(s string, args []any, kwargs map[string]any) (string, error) {
+//
+// maxBytes is the render's MaxOutput, against which each argument is
+// measured before it is rendered, and the result as it is built.
+func formatBraces(s string, args []any, kwargs map[string]any, maxBytes int64) (string, error) {
 	var b strings.Builder
 	auto := 0
 	for i := 0; i < len(s); i++ {
@@ -454,9 +486,18 @@ func formatBraces(s string, args []any, kwargs map[string]any) (string, error) {
 				}
 				v = kv
 			}
+			if err := checkValueBytes(v, "format()", maxBytes); err != nil {
+				return "", err
+			}
 			out, err := pyFormatValue(v, spec)
 			if err != nil {
 				return "", fmt.Errorf("format(): %w", err)
+			}
+			// One argument may be named any number of times, so the
+			// result is measured as it is built: `('{0}' * 1000).format(s)`
+			// is a thousand copies of s.
+			if int64(b.Len())+int64(len(out)) > maxBytes {
+				return "", fmt.Errorf("format() would exceed the %d byte output limit", maxBytes)
 			}
 			b.WriteString(out)
 			continue

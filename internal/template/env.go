@@ -347,6 +347,71 @@ type budget struct {
 	// 10M-item lists as it had variables: thirty `range(9000000)` calls
 	// in one render allocated 6.2 GB, each call individually allowed.
 	materialised int64
+	// built counts the bytes of the strings the render made: what each
+	// filter, method, global function and string operator returned that
+	// it was not given. A limit per string alone let a template hold as
+	// many of them as it could put in a list: 500 `l.append('a' * 900)`
+	// under a 1,000-byte limit held 450,000 bytes, and with the default
+	// limits that is a 64 MiB string per iteration.
+	built int64
+}
+
+// build charges a string of n bytes, made during the render, to it.
+// The error has no position; the callers add theirs.
+func (b *budget) build(n int64) error {
+	b.built += n
+	if b.built > b.maxOutput {
+		return fmt.Errorf("strings built in this render would hold more than %d bytes in all", b.maxOutput)
+	}
+	return nil
+}
+
+// chargeResult charges what an operation returned, if it is a string it
+// may have made, rather than one of its inputs handed back: `|string` of
+// a string, `|trim` of a string with nothing to trim and `|default(x)`
+// cost nothing. The comparison is cheap when it matters, because Go
+// compares a string with itself by its pointer and length before its
+// bytes.
+//
+// It is charged where every filter, method and global function returns,
+// rather than in each one, so that a filter added later is charged
+// without anybody remembering to. The cost of that is the few that
+// return a string they found rather than made, `first` or `d.get(k)`,
+// which would be charged for every lookup; those are named in
+// selectsExisting. Leaving one out of that list over-counts, which
+// refuses a template early. Charging in each builder instead would make
+// the failure the other way, a builder nobody charged, which is the one
+// that ends the process.
+//
+// A container is not measured: the strings in it were charged when they
+// were made, and its items by materialise where that applies.
+func (r *renderer) chargeResult(out any, inputs []any, what string, pos Pos) error {
+	s, ok := out.(string)
+	if !ok || s == "" {
+		return nil
+	}
+	for _, in := range inputs {
+		if is, ok := in.(string); ok && is == s {
+			return nil
+		}
+	}
+	if err := r.budget.build(int64(len(s))); err != nil {
+		return errorf(pos, "%s: %v", what, err)
+	}
+	return nil
+}
+
+// selectsExisting names the filters and methods whose string result is
+// always one they were given or found in a container, so is not built.
+// method_call is here because the method it calls was charged by
+// callValue already.
+var selectsExisting = map[string]bool{
+	// filters
+	"attr": true, "d": true, "default": true, "first": true, "last": true,
+	"max": true, "min": true, "random": true, "traverse": true,
+	"method_call": true,
+	// methods
+	"get": true, "pop": true, "setdefault": true,
 }
 
 // materialise charges n items of a freshly built list to the render and
@@ -386,15 +451,20 @@ func (b *budget) write(n int, pos Pos) error {
 }
 
 // A value built in memory is not output, so it is not charged to the
-// budget; a list that is built and then only measured with `length` would
-// otherwise count against a limit it never reaches. But it has to be
-// bounded by something before it is built, because an allocation the
-// runtime cannot satisfy is a fatal error, not a panic, and the hub
-// compiles pillar in its own process. These are that something: one
-// string may be no larger than all the output a render may write, and
-// one list may hold no more items than a render may iterate over. Each
-// is checked before the allocation, with the size worked out in a way
-// that cannot overflow.
+// output count: a list that is built and then only measured with `length`
+// would otherwise count against a limit it never reaches. But it has to
+// be bounded by something, because an allocation the runtime cannot
+// satisfy is a fatal error, not a panic, and the hub compiles pillar in
+// its own process. There are two bounds. One string may be no larger
+// than all the output a render may write, and one list may hold no more
+// items than a render may iterate over; each is checked before the
+// allocation, with the size worked out in a way that cannot overflow,
+// by the functions below. And what a render builds is counted across
+// it, against the same two limits: the strings it makes by budget.build
+// and the lists range(), `*` and the combinatorics make by
+// budget.materialise. This comment used to say that a value built in
+// memory "is not charged to the budget", and that was the gap: a limit
+// per value held nothing to the number of values (DIVERGENCE 5.562).
 
 // checkBytes refuses a string of n bytes.
 func (r *renderer) checkBytes(n int64, what string, pos Pos) error {
@@ -424,6 +494,45 @@ func mulWithin(a, b, limit int64) bool {
 		return true
 	}
 	return a <= limit/b
+}
+
+// replaceWithin reports whether strings.Replace(s, old, nw, n) would be
+// no longer than limit, without building it. The result grows by
+// len(nw)-len(old) at each replacement, and the template chooses both
+// strings and, through an empty old string, which matches between every
+// character, almost the count too: replacing the empty string in a
+// 1 MiB string with 200 bytes was 210 MB against a 64 MiB limit.
+// strings.Count counts exactly the matches Replace makes, empty matches
+// included, and a negative n is every match in both.
+func replaceWithin(s, old, nw string, n int, limit int64) bool {
+	grow := int64(len(nw)) - int64(len(old))
+	if grow <= 0 {
+		return true
+	}
+	count := int64(strings.Count(s, old))
+	if n >= 0 && int64(n) < count {
+		count = int64(n)
+	}
+	return mulWithin(count, grow, limit-int64(len(s)))
+}
+
+// joinWithin reports whether strings.Join(parts, sep) would be no longer
+// than limit, without building it. The separator is repeated once
+// between each pair of items, so its length is multiplied by a count
+// the template chose, and the product is checked by division for the
+// reason mulWithin gives.
+func joinWithin(parts []string, sep string, limit int64) bool {
+	var total int64
+	for _, p := range parts {
+		total += int64(len(p))
+		if total > limit {
+			return false
+		}
+	}
+	if len(parts) < 2 {
+		return true
+	}
+	return mulWithin(int64(len(sep)), int64(len(parts)-1), limit-total)
 }
 
 // rangeLen is the number of items range(start, stop, step) produces,
@@ -540,6 +649,11 @@ func installGlobals(e *Environment) {
 		}
 		m := value.NewMap(len(kwargs))
 		if len(args) == 1 {
+			// The pairs' first items become keys (see the dict literal
+			// in eval.go for why a key is measured).
+			if err := checkValueBytes(args[0], "dict()", e.Opts.MaxOutput); err != nil {
+				return nil, err
+			}
 			if err := dictUpdate(m, args[0]); err != nil {
 				return nil, err
 			}

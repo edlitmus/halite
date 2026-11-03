@@ -24,7 +24,11 @@ import (
 // to Python 3.12.3 by 3,000 generated cases, refusals included
 // (testdata/pyformat/percent.tsv, TestPercentFormatMatchesPython). A `*`
 // width or precision is refused rather than guessed at.
-func pyPercent(format string, args []any, kwargs map[string]any) (string, error) {
+//
+// maxBytes is the render's MaxOutput. The result is measured as it is
+// built, because one argument may be named any number of times:
+// `('%(a)s' * 1000) | format(a=s)` is a thousand copies of s.
+func pyPercent(format string, args []any, kwargs map[string]any, maxBytes int64) (string, error) {
 	var b strings.Builder
 	next := 0
 	mapping := len(kwargs) > 0
@@ -130,6 +134,9 @@ func pyPercent(format string, args []any, kwargs map[string]any) (string, error)
 		out, err := percentConvert(conv, flags, width, precision, v)
 		if err != nil {
 			return "", err
+		}
+		if int64(b.Len())+int64(len(out)) > maxBytes {
+			return "", fmt.Errorf("the formatted string would exceed the %d byte output limit", maxBytes)
 		}
 		b.WriteString(out)
 	}

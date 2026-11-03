@@ -48,6 +48,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(healer)
 	l.server.Policy = healer
 	l.enrolled(t, "web1.example")
 	op := l.operator(t, "ed")
@@ -126,6 +127,7 @@ bindings:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogued(healer)
 	l.server.Policy = healer
 	op := l.operator(t, "ed")
 

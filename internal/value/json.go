@@ -43,6 +43,13 @@ func DecodeJSON(b []byte) (any, error) {
 // the standard decoder would have accepted.
 const maxJSONDepth = 10000
 
+// MaxDepth is the deepest value the rest of the system is asked to walk.
+// It is maxJSONDepth because a value deeper than that can be built but
+// not decoded, so anything that came in as a document is within it; the
+// template engine refuses to walk deeper (internal/template/shape.go),
+// since a template can build a value as deep as it can loop.
+const MaxDepth = maxJSONDepth
+
 func decodeValue(dec *json.Decoder, depth int) (any, error) {
 	tok, err := dec.Token()
 	if err != nil {

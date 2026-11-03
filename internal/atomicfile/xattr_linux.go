@@ -44,7 +44,7 @@ import (
 // only ever be narrowed by what the caller asked for, never widened past it.
 //
 // **Both files are reached through descriptors, never by name** (DIVERGENCE
-// 5.559). The temporary file sits in the target's directory, and when that
+// 5.566). The temporary file sits in the target's directory, and when that
 // directory is an account's -- root writing `~deploy/.profile` -- the account
 // owns the replaced file, so it chooses the ACL that is copied, and it can
 // rename the temporary name away and put a link to any file there. This used

@@ -24341,6 +24341,21 @@ node compiles a job's target again in `cmd/halite-node/jobsignature.go`.
 That path shares the same code and the same bound, but a test was not
 run there. The figures above are from one Mac and were not taken on
 FreeBSD or Linux.
+
+#### The length decision, revisited (5.559)
+
+"Length is not capped, on purpose" rested on two claims: that a long
+target costs memory in a straight line, and that `max_body` bounds it.
+The line is steep. Measured on darwin/arm64 with go1.27.3, compiling a
+4 MiB or-chain of names allocated some 32 bytes a byte, so the 64 MiB a
+body may be is some 2 GB; and 5.501 then made every glob a compiled
+regexp at some 570 bytes a character, kept for good. 5.559 caps an
+expression at 1 MiB, which `TestLongFlatTargetsStillCompile`'s 5,001
+`L@` names fit six times over. The or-chain and and-chain shapes above
+were cut from 200,000 terms to 90,000 and 70,000 to fit under it; both
+are still past the 30,000 at which the old code overflowed, and
+`TestHostileShapesFit` keeps them under the cap so that they test the
+parser and not the cap.
 ### 5.292 gitfs verified a branch by its name and served it by its commit
 
 With `gitfs_verify_signatures: true`, `verify` ran
@@ -26821,6 +26836,175 @@ cursor, which moves only forward; that was read, not measured.
 **Not verified.** The new test has not run on Windows, FreeBSD or Linux
 here; CI will run it. Its Windows and FreeBSD builds were vetted, not
 run.
+
+#### 5.312, a value is measured before it is walked
+
+The first item of the "Not done" list above: a value can be as deep as a
+loop can make it. A review on 2026-11-03, against `de26c91b`, measured it
+in child processes: `{% set ns.x = [ns.x] %}` in a loop built a list that
+overflowed an 8 MiB stack when printed at about 14,500 levels (about
+580 bytes a level; `tojson` about 390, `yaml` 307, `==` 259), so two
+million levels fill the default 1 GiB. Building two million took 1.3 s
+and 319 MB under the default `MaxIterations` of ten million, and the
+printed form, about 4 MB, is under `MaxOutput`. Nothing stopped it. The
+same value reached `join`, and any `salt[...]` call that encodes its
+arguments.
+
+**Found while doing this, and the same shape.** Depth is one of three
+ways a walk of a value runs away, and the other two were not in the list:
+
+- *Sharing.* A list holds its items by reference, so `{% set ns.x =
+  [ns.x, ns.x] %}` doubles what a walk visits at each pass while holding
+  one more list. And one string repeated in a list is printed once per
+  item: on `de26c91b`, with `MaxOutput` at 1,000, `(['a' * 900] * 900) |
+  tojson | length`, `| string | length` and `~ ''` each gave 813,600,
+  because the whole text is built before anything measures it. With the
+  default limits that is a 64 MiB string times ten million items.
+- *Cycles.* `d.update({'d': d})` makes a mapping that holds itself, and
+  every walk of it recursed until the stack overflowed.
+- *Indentation.* `tojson(indent=N)` and `json(indent=N)` pad every item
+  by N for each container around it, and `yaml(False)` by two, so a
+  value a thousand deep with an indent of a thousand is a gigabyte of
+  spaces, and an indent of ten billion is one allocation of that many
+  bytes whatever the value (read from the code, not run: running it is
+  the failure).
+- *Error text.* `compare` wrapped its error once per level, each wrap a
+  new string twenty bytes longer than the last and all of them kept: for
+  two lists ten thousand deep with a mismatch at the bottom, about a
+  gigabyte (worked out, not run).
+- *Keys.* A mapping's index spells a key that is not a scalar with
+  `fmt.Sprint` (`value.CanonKey`), and so does the message for a missing
+  key, and `fmt` recurses as deep as the key does. Python refuses a list
+  as a key; halite accepts one, so `{x: 1}`, `m[x]`, `[1][x]`,
+  `m.get(x)`, `m.pop(x)`, `m.setdefault(x)` and `dict([[x, 1]])` each
+  overflowed a 32 MiB stack with `x` two hundred thousand deep. This
+  showed only once the rest was in place, when the test table grew to
+  cover keys.
+
+**The change.** `measureValue` (`internal/template/shape.go`) walks a
+value with a stack of its own on the heap, one frame per level, so it
+cannot overflow the Go stack. It refuses a value nested deeper than
+`maxValueDepth`, which is also how it stops on a cycle, or one whose
+rendering could not fit in `MaxOutput`: it counts a lower bound (each
+string its length, each key its length, each container two, any other
+scalar one) that every rendering, str, repr, JSON or YAML, writes at
+least, so it refuses nothing that could have been rendered within the
+limit, and it stops a shared value after at most `MaxOutput` visits. The
+engine measures a value before every recursive walk of it that can
+reach one: printing, `~`, `|string` and every filter that renders its
+input, `pprint`, `tojson`, `json`, `yaml`, `yaml_encode`,
+`dict_to_sls_yaml_params`, `xmlattr`, `join` and `str.join`, `format`
+and `str.format`, `==`, `!=`, `<`, `<=`, `>`, `>=` and the tests that
+compare, `in`, `sort`, `unique`, `min`, `max`, `dictsort`, `groupby`,
+`flatten`, the set filters, `set_dict_key_value` and its kin (which
+deep-copy), `list.count`, `list.index`, `list.remove`, `loop.changed`,
+a key given to a subscript, a mapping literal, `dict()`, `get`, `pop` or
+`setdefault`, and every argument of a `salt[...]` call, positional and
+keyword, before the module sees it. The walks themselves are unchanged.
+
+A comparison is measured only when it will recurse: equality only for
+two lists or two mappings of the same length, ordering only for two
+lists, `in` only for the list searched and the needle, and for a mapping
+only the needle. Measuring costs as much as walking, and `'k' in pillar`
+or `pillar == {}` are answered without walking pillar, so measuring it
+would have made them cost its size.
+
+`maxValueDepth` is `value.MaxDepth`, which is `value.DecodeJSON`'s
+existing limit and `encoding/json`'s own, 10,000: anything that came
+into a render as a JSON document is within it, and YAML, the other way
+in, stops at 100. It is ten times the parser's `maxExprDepth`, so no
+literal reaches it; only a loop does. Measured with go1.27.3 by lowering
+the child's stack by hand, for a value at the limit inside 99 nested
+`if`: the walks that spell the value as a mapping key, through
+`fmt.Sprint`, are the deepest. They need between 12 and 16 MiB on
+darwin/arm64, with or without `-race`, and on freebsd/amd64 under
+`-race`, between 4 and 8 MiB on FreeBSD without it, between 8 and
+16 MiB on linux/arm64 and under 8 on linux/amd64, both without it: about
+1.6 KiB a level at the most. Every other walk fits in 8 MiB on both, and those
+built on `renderValue` need more than 4. The test's child has 32 MiB,
+twice the most measured; the default stack is 1 GiB. (A first version
+of this said every walk fit in 8 MiB. It was measured before the key
+walks were added, and the FreeBSD run below, which measured them, is
+what showed it wrong.)
+
+The indentation is checked before encoding: `measureValue` also counts
+the containers around each item, and `tojson` and `json` refuse an
+indent whose padding alone would pass the limit. YAML block output takes
+a new `EncodeOptions.MaxBytes` and stops soon after passing it. Each of
+the encoded results is then held to `MaxOutput` once it is built; what
+the measure does not see, the escapes the encoders add, is at most a
+small multiple of the contents (six bytes for one in JSON). And
+`compare` names only the outermost element.
+
+**Divergences.** `d == d` for a mapping that holds itself is `True` in
+Python, which compares a value with itself by identity; here it is
+refused. Outside comparisons, the measure is taken whether or not the
+walk would have gone deep: `{'a': x} | dictsort` compares only the keys,
+was safe on the old code with any `x`, and is refused now, as is
+anything given a value past the limit. Jinja's own limit, Python's
+recursion limit, was not measured against.
+
+**Demonstrated.** `value_walk_test.go`, 44 walks. With `measureValue`
+made to accept everything: all 44 failed
+`TestDeepValuesAreRefusedBeforeTheyAreWalked` (a value 10,001 deep, built
+in Go and walked by the old code in a few megabytes of this process's
+stack); all nine of `TestSharedValuesAreMeasuredByWhatTheyRenderTo`
+failed; and of the 132 children of `TestDeepValuesDoNotOverflowTheStack`
+(each walk of a value 200,000 deep, of a mapping that holds itself, and
+of one at the limit under 99 nested `if`, on a 32 MiB stack), all 44
+deep ones failed, 42 by `fatal error: stack overflow`, and 42 of the 44
+cyclic ones, 31 by overflow; the 44 at the limit passed. The failures
+that were not overflows are walks that do not go deep on that value:
+`dictsort` and `groupby`, which compare keys, `flatten` of a mapping,
+and a mapping used as a key, which `fmt` prints as a pointer. The
+measure refuses those by rule rather than to stop a crash. `<` and `!=`
+between the mapping and a list are answered at the top and not refused;
+`TestComparisonsThatDoNotRecurseDoNotMeasure` holds that, and failed
+with every comparison measured, and with none measured `==`, `!=`, `<`
+and `eq` overflowed their children. Each key check, removed on its own,
+let its own case overflow its child.
+`TestHugeIndentIsRefusedBeforeEncoding` calls the check
+directly, so that the reverted code is not asked to allocate ten
+gigabytes, and failed with the check removed;
+`TestComparingDeepListsReportsOneElement` failed with the wrapping put
+back; `yaml.TestEncodeStopsAtMaxBytes` failed with the stop removed
+(40,402 bytes past a limit of 1,000). The deep and cyclic values are
+built only in children, because on the old code they overflow the
+stack, and in the test process that is the 1 GiB default.
+
+**Not done.** A value a module returns from `salt[...]` is not measured,
+nor is pillar from an external source before it reaches a render; both
+come from code rather than from a template's loop. `fmt.Sprint`, which
+`renderValue` falls back to for a type outside the model, is not
+bounded, and no template-built value reaches it.
+
+**Run on FreeBSD.** At `8978d713`, in a thin Bastille jail on beastie
+(FreeBSD 15.1-RELEASE, go1.27.3, freebsd/amd64, the host's `/usr/local`
+mounted read-only, as root), 2026-11-03: `template`, `value`, `yaml`,
+`render`, `pillar`, `state`, `specaudit`, `docsaudit` and `buildpolicy`
+passed, and `template`, `yaml` and `value` under `-race`. With the
+measure disabled, the counts were the same as on darwin: all 44 deep
+cases in the parent, all nine shared ones, and 44 deep (42 by overflow)
+and 42 cyclic (31) of the children failed, and the 44 at the limit
+passed.
+
+**Run on Linux.** At `cf90bbce`, on three AWS EC2 instances, with
+go1.27.3 from go.dev checked against its published SHA-256, as `nobody`
+through `setpriv`, 2026-11-03: ref-salt1 (Ubuntu 22.04.5 LTS, kernel
+5.15.0-1119-aws-fips with FIPS enabled, linux/arm64), noop2-1 (Ubuntu
+22.04.5, 5.15.0-1117-aws-fips, FIPS enabled, linux/amd64) and ami-test-1
+(Ubuntu 24.04.5, 7.0.0-1014-aws, linux/arm64). The same nine packages
+passed on each, and with the measure disabled the counts were the same
+on each as on darwin (44 and 9 in the parent; 44 deep, 42 by overflow,
+and 42 cyclic, 31, of the children; the 44 at the limit passed). Two things the host needed
+that are not the code's: `/tmp`, `/var/tmp` and `/dev/shm` are mounted
+`noexec`, so the run was under `/home` with `GOTMPDIR` there too; and
+`-race` needs cgo, which needs a C compiler the host does not have, so
+the race detector was not run on Linux here (CI's race job runs on
+Linux).
+
+**Not verified.** `-race` on Linux, and the pinned go1.26.6. No real Salt tree was rendered through the measure; the
+package tests, the Jinja corpus among them, pass.
 
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
@@ -36541,7 +36725,273 @@ VM). Each log was read for the test names, not only the job's result.
   not a link. The kernel still follows it, as it did before #386 and
   as Salt does: `followLink` acts only when the named file is a link.
   That is a separate, older hole and is not changed here.
-### 5.559 A copied ACL landed on whatever the temporary name pointed at
+### 5.559 A long glob target exhausted the hub's memory, and kept it
+
+Issue 321, the close-out review of 2026-11-03, item A6: a regression from 5.501 (#543), measured by the reviewer on main `de26c91b`.
+
+**The defect.** 5.501 made a glob target Salt's fnmatch. `fnmatch.Match` translated each pattern to an RE2 expression, compiled it with `regexp.MustCompile`, and stored it in a `sync.Map` that never evicted. A glob target and every `G@`/`I@` value went through it, lazily, at match time. Nothing bounded the pattern: the API takes a body of up to 64 MiB, and a role with `target: '*'` covers any target, the reach of 5.291. The reviewer measured one 1 MiB target allocating some 550 MB while compiling, and three distinct 1 MiB patterns leaving 158 MB held for the life of the hub.
+
+**Measured here** (darwin/arm64, go1.27.3, compiling `fnmatchTranslate`'s output with `regexp.Compile`):
+
+| Pattern | Allocated while compiling | Held once compiled |
+|---|---|---|
+| `*a` x 512 (1 KiB) | 581 KB | 124 KB |
+| `*a` x 32,768 (64 KiB) | 50 MB | 8.3 MB |
+| `?` x 1,000,000 | 540 MB | not measured |
+| `?` x 4,000,000 | 1.37 GB, then refused | -- |
+
+The last row is the panic, run rather than reasoned: RE2 refused it with *"expression too large"*, which `MustCompile` turns into a panic. RE2's error text quotes the whole translated expression, megabytes of it. A grain target compounds this: 5.537 reads `a:b:c` at every colon, and each reading was its own glob, so a `G@` value of n colons was n patterns whose lengths add up to the square of n.
+
+**Also measured, and older than 5.501.** A target of names costs memory to parse even with no glob in it. Compiling 4 MiB of target allocated some 33 bytes a byte for an or-chain of bare names, 31 for `L@` terms, and 8 for a `-L` list. At 64 MiB that is some 2 GB. 5.291 left length uncapped because it took the cost as linear and bounded by `max_body`. It is linear, but at that rate `max_body` bounds nothing useful. See its new subsection.
+
+**The change.** Four parts.
+
+- `fnmatch.Compile` is the path for a pattern from a request. It refuses a glob over `MaxPatternLen`, 1 KiB, with `ErrTooLong`. It uses `regexp.Compile`, and an RE2 refusal is an error that gives the pattern's length, not RE2's text. It caches nothing: the caller holds the `*Pattern`. A pattern with no `*?[`, in valid UTF-8, is a literal. It is compared as a string, with no regexp and no length limit. Invalid UTF-8 keeps the regexp, because the regexp reads a bad byte as U+FFFD and string equality would not.
+- `fnmatch.Match` stays for patterns from configuration: policy, `file_ignore_glob`, `env_allowlist`/`env_denylist`, `tolerate_failures`, requisites, relay globs, a token's node scope. It has no length limit, because an operator's pattern that silently stopped matching would hide or deny nothing. Its cache is a least-recently-used list holding at most 64 KiB of pattern text, some 8 MB at the dearest measured ratio. A pattern longer than that is compiled each time it is used and not kept. A pattern RE2 refuses matches nothing, where it panicked before.
+- `target.Compile` compiles every glob once, through `fnmatch.Compile`, and the `Matcher` holds the result. The globs and regular expressions of one expression share a budget of 32 KiB, nodegroups and every grain reading included. Literals and `*` cost nothing. The whole expression, of any type, is refused over `MaxExprLen`, 1 MiB, before it is tokenized. An error quoting an expression shortens it to 64 bytes and its length. `ValidateNodegroups` gives each group a budget of its own, as `Compile` gives a group named alone, so a group that passes at load passes at use.
+- The API refuses a `tgt` over 1 MiB with a 400, before the policy splits it into names (`internal/api/execute.go`).
+
+**Why these numbers.** A glob is short, and 1 KiB is four times the longest node ID `pki.ValidateNodeID` admits. A long target is a list of names, which are literals and are limited only by the 1 MiB. That holds some 50,000 names of twenty characters, and compiling it is some 32 MB at the steepest measured rate. The 32 KiB budget is some 20 MB of compile work and 4 MB held at the dearest glob shape. A regular expression measured cheaper: 32 KiB of `.*a` through `regexcompat.Compile` allocated 14 MB and held 2.6 MB, and an alternation of names 1.6 MB and 50 KB. It allows three hundred 100-byte globs, or an `E@` alternation of a thousand short names.
+
+**Shown.** Each test was broken on purpose and seen to fail:
+
+- `TestCompileRefusesAnOverLongPattern` (`internal/fnmatch/limits_test.go`) failed with the length check removed.
+- `TestAPatternRE2RefusesIsAnErrorNotAPanic` failed with `cachedRegexp` panicking on the error, and with RE2's text passed through. The refusal is injected, because the one RE2 has been seen to make costs 1.3 GB.
+- `TestTheCacheIsBounded` failed with eviction removed (150,003 bytes held against 65,536), and with a hit not moved to the front.
+- `TestDistinctPatternsDoNotHoldMemory` measures the heap in a child under `debug.SetMemoryLimit`. 300 distinct 1 KiB patterns held 8 MB, and 37 MB with eviction removed.
+- `TestALiteralWithInvalidUTF8AgreesWithTheRegexp` failed with the UTF-8 condition dropped.
+- `TestTheCacheIsSafeForConcurrentUse`, under `-race`, reported a data race with the lock taken off the cache lookup.
+- In `internal/target/limits_test.go`, the over-long glob, budget, grain-reading and nodegroup tests each failed with their own check removed. `TestATargetsGlobsAreNotKept` measures the heap in a child: 300 distinct glob targets, compiled, matched and let go, held 0 KB. With the glob leaf put back on the cached `globMatch` it held 8 MB and failed. `TestAnOverLongExpressionIsRefused` failed with `MaxExprLen` removed.
+- `TestDispatchRefusesAnOverLongTarget` (`internal/hub`) failed with both caps removed. `TestAnOverLongTargetIsRefusedBeforeThePolicy` (`internal/api`) got a 200 with the API check removed.
+
+The new tests could not be run against main `de26c91b` itself, because `fnmatch.Compile` does not exist there. The breaks above stand in for it.
+
+**Behaviour change.** A target over 1 MiB, a glob with `*?[` over 1 KiB, or an expression whose globs and regexes come to more than 32 KiB is refused. A top file is compiled by the same code, so a top-file target over a limit is now an error.
+
+**Not verified.** No hub or API was run; the measurements are from `internal/fnmatch` and `internal/target` on one Mac, not FreeBSD or Linux. Not limited: the expansion of a nodegroup, which is configuration and is checked against the budget but not against `MaxExprLen`; and `file.recurse`'s `include_pat`/`exclude_pat`. Those are state arguments, matched with `fnmatch.Match` on the node, uncapped but now under the bounded cache. Whether a request can supply one directly, rather than through a state file, was not traced. Measured against nothing real: whether any top file or policy in use has a glob over 1 KiB. None was looked for.
+### 5.560 A hard link carried a mode or ownership change out of the managed tree
+
+Issue 321, the close-out review of 2026-11-03, item A2 (`internal/builtin/entryattrs_unix.go`; the symbolic-link half is 5.300 and M-29).
+
+**The defect.** 5.300 and M-29 made the changes a state applies under a directory another account can write go through an `os.Root` and `Lchown`, and M-29's reasoning ended "the worst a swap can do is redirect a change to another path in the tree being managed". That is true of a symbolic link and false of a hard link, which is not followed because it is not a pointer: it is a second name for the same file. An account that owns a directory a state manages can replace a name in it with a hard link to a root-owned file on the same filesystem, and the next run applies the change to that file, as root. Three forms were shown on de26c91b: `archive.extracted` with `group:` (it re-applies ownership to every name in the archive on every run); `file.directory` with `recurse:` (the outside file went to 0644); and `file.managed` with `replace: False` and `mode:` or `group:`. Every other path-based caller of `applyMode`, `applyOwnership` and `keepOwnership` had the same shape, and so did the temporary file the `ssh_auth` and `ssh_known_hosts` account writer renames into `~/.ssh` (chmod and chown by name, after the close), `~/.ssh` itself, and the temporary bundle `openssl_cert.pkcs12_create` chmods beside its target.
+
+**Is it reachable on the estate.** On FreeBSD, yes by default: `security.bsd.hardlink_check_uid` and `hardlink_check_gid` are 0, so an unprivileged account may link a file it does not own. Read on beastie (FreeBSD 15.1-RELEASE-p6) with `sysctl` on 2026-11-03, with nothing setting them in `/etc/sysctl.conf`. On Linux, `fs.protected_hardlinks=1` (systemd's default, and Ubuntu's) refuses the link to a file the account does not own. Seen in a Debian 12 container on Docker Desktop's Linux kernel (arm64): `ln` as the account failed with "Operation not permitted". Also read on four Ubuntu hosts of the eds-test lab with `sysctl`, through SSM, on 2026-11-03; all had it set to 1:
+- ref-salt1: 22.04.5, 5.15.0-1119-aws-fips, arm64;
+- noop-1: 22.04.5, 5.15.0-1119-aws-fips, arm64;
+- noop2-1: 22.04.5, 5.15.0-1117-aws-fips, x86_64;
+- ami-test-1: 24.04.5, 7.0.0-1014-aws, arm64.
+
+On all three it is set by `/usr/lib/sysctl.d/99-protect-links.conf`, and on the three 22.04 hosts by `50-default.conf` as well. So on the Ubuntu estate an account cannot plant the link to a root file, and the defect is FreeBSD's by default. A Linux host with the setting turned off would be exposed again, and the change does not depend on it.
+
+**The change.** One function, `changeEntryAt`, now makes every such change, and the path and root helpers (`applyMode`, `applyModeIn`, `applyOwnership`, `applyOwnershipIn`, `keepOwnership`) all go through it:
+
+- A directory owned by root or by halite's own account, with no group or other write bit, is *trusted*: nobody else could have put a name in it. The change is made by name inside the held directory, as before. A hard link is not refused there. Refusing it would break a state that manages `/usr/local/bin/perl` (a hard link to `perl5.x` on FreeBSD), and it would let any account stop a state for good by linking the managed file into `/tmp`.
+- In any other directory the entry is opened (`O_NONBLOCK|O_NOCTTY`, through the root, so the last name is resolved once inside a directory that cannot change identity). The code checks that the open file is the same inode `lstat` saw and that it is a regular file or a directory. If it is a regular file with a link count above one, the change is refused by name, unless the file already has the mode and owner asked for. The change is made with `fchmod`/`fchown` on the descriptor, which also closes the window between the check and the change.
+- Anything else in such a directory (a symbolic link, a socket, a FIFO, a device) cannot be changed portably through a descriptor, and a change by name is the swap again. It is refused by type. `file.directory` with `recurse:` and `archive.extracted` skip it with a warning rather than fail. Archives ship links, and a link's owner grants nothing.
+- The plan asks the same function, with `check` set, before reporting a change. So test mode refuses a planted hard link in the run's own words, and does not report a change for a path the run will skip.
+- `archive.extracted` now enforces ownership deepest entry first. On a fresh extraction, the directories it creates are still root's while their contents are changed. Otherwise every directory would already belong to `user:` by the time its links were reached, and each one would be skipped.
+- The `ssh_auth`/`ssh_known_hosts` account writer sets the mode and owner on the open temporary file before closing it.
+
+**Shown.** The reviewer's two probes became `internal/builtin/hardlink_unix_test.go`. The four refusal tests failed on de26c91b (outside file went to 0644, or to the other group) and pass with the change. They stand in for "another account" with a 0777 directory, because the run is not root. With the change made pointless one way at a time, these tests failed:
+
+- link count never checked: the four refusal tests and the test-mode one;
+- every directory trusted: those five, plus the FIFO and archive-link tests;
+- no directory trusted: the hard-link-in-a-private-directory test;
+- a type refusal made fatal: the FIFO and archive-link tests;
+- `check` allowed to make changes: `TestRecursePlanDoesNotChangeAnything`;
+- the trusted branch's `check` removed: `TestFileDirectoryRecurse`.
+
+All ten pass unprivileged on macOS 26 (arm64) and on beastie, FreeBSD 15.1 (amd64). On beastie, with the link count not checked, the five refusal tests fail.
+
+**Shown as root, with a real second account.** `TestLiveHardLinkIsRefusedForAnotherAccount` (`live_hardlink_test.go`) ran in the `halite-fleet:bookworm` image as root, `--network none`: Debian 12, Go 1.27.3, Linux arm64, 2026-11-03. It creates an account, gives it a home under /tmp, and puts a root-owned 0600 file outside that home. The kernel refused the account's own `ln`, so root planted each link, standing in for FreeBSD's default.
+- On de26c91b, all three cases handed the root's file to the account: `file.managed` and `file.directory` left it at `1000:0 0644`, and `archive.extracted` at `1000:0 0600`. The same run's unit tests failed the same way.
+- With the change, all three refuse, naming the hard link. All ten unit tests also run there as root, with no skips, and pass.
+- The fresh extraction gives the archive's nested symbolic link to the account with no warning. With the deepest-first sort taken out, the link stays root's and the run warns: the case only a root run can see.
+
+**Shown on real Ubuntu hosts, as root.** The same test, the ten unit tests and `TestLiveSSHFilesForAnotherAccount` ran from a clone of 256ee889, with Go 1.27.3 from go.dev (sha256 checked), through SSM on 2026-11-03. Two hosts of the eds-test lab:
+- noop2-1: Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64, FIPS enabled;
+- ami-test-1: Ubuntu 24.04.5, 7.0.0-1014-aws, arm64.
+
+On both, everything passes with the change. On both, de26c91b with the same tests copied in fails every refusal case and hands the root's file to the throwaway account (`1004:0 0644`, and `0600` for `archive.extracted`). The ssh account writer works on both builds. The kernel refused the account's own `ln` on both, as on the Docker run. The hosts mount `/tmp` `noexec`, so the toolchain and the build ran from `/root`. The test data was still made in `/tmp`, on the same filesystem as the planted link. Nothing was left on either host afterwards: no files under `/root/a2` or `/tmp`, and no test account or group.
+
+**Not verified.**
+- A root run on FreeBSD, where the account can make the link itself. Every root run so far was on Linux, where the kernel refused the account's link and root planted it. The live test runs on the fleet's freebsd leg, which runs every `TestLive*`; it has not run there yet.
+- The ssh account writer's change: it closes a race, which no test drives. `TestLiveSSHFilesForAnotherAccount` covers that the writer still works.
+- "Trusted" reads the mode bits and the owner. An NFSv4 ACL on ZFS that lets a named account add entries without showing in the group bits is not seen, so such a directory is treated as trusted.
+- Windows is not changed. A mode there is an access control list set by path (`fileperm`), and an owner is set by path through `winsec`. Whether an unprivileged account there can still hard-link a file it cannot write was not checked.
+- `make check` was not run in full.
+
+**Found, not changed.**
+- `internal/atomicfile/xattr_linux.go` copies a replaced file's extended attributes onto the temporary file with `setxattr` and `chmod` by path, after the close. In a directory the account owns, the account controls both the replaced file's ACL and the temporary name. That is the same swap, onto another file's ACL, and it is Linux only. It is left for its own change because it is in another package and needs `fsetxattr`, which `syscall` does not export.
+- `logrotate.go`, `sudo_state.go` and `netplan.go` chmod or chown by name only in root's directories (`/etc/logrotate.d`, a private `MkdirTemp`, `/etc/sudoers.d`, `/etc/netplan`). They are left as they are.
+### 5.561 `replace`, `join` and concatenation built strings nothing measured
+
+5.312 bounded the builtins that make a string larger than their inputs
+(`indent`, `center`, `zfill`, `*`), each before it allocates. Four that do
+the same were left out, along with the two operators.
+
+**Measured.** A review on 2026-11-03, against `de26c91b` with the default
+limits: `(('a' * 1048576) | replace('', 'b' * 200)) | length` was
+210,763,976 and `((range(100000) | list) | join('c' * 2000)) | length`
+200,486,890, both against a `MaxOutput` of 64 MiB. The multiplier is the
+template's to choose, so 64 GiB is one larger number away, and an
+allocation the runtime cannot make ends the hub or the node. Here, on the
+same commit with `MaxOutput` at 1,000: `('a' * 100) | replace('', 'b' *
+20)` and `.replace(...)` were 2,120 bytes, `range(100) | join('c' * 20)`
+and `str.join` 2,170, and eleven passes of `ns.s = ns.s ~ ns.s`, of `ns.s +
+ns.s` and of `ns.l = ns.l + ns.l` made 2,048 bytes or items (twelve made
+4,096). Concatenation doubles at every pass, so forty is a terabyte, and
+nothing measured it because each pass adds two things that already exist.
+
+**Found while doing this.** `str.format` and `|format` name one argument
+as often as the format string says: `('{0}' * 1000).format(s)` is a
+thousand copies of `s`. They were not measured either.
+
+**The change.** `replace` and `str.replace` work out the result's length
+from `strings.Count`, which counts exactly the matches `Replace` makes,
+the empty ones included, and refuse it before building it; `join` and
+`str.join` add up the items and multiply the separator by division;
+`~` and string `+` refuse a result past `MaxOutput`, and list `+` one past
+`MaxIterations`. `format` and `str.format` measure the result as it is
+written. All are checked with arithmetic that cannot wrap.
+
+**Demonstrated.** In `TestAllocatingBuiltinsAreBounded`, the eight new
+refusals of the first four filters and the operators failed on the old
+files, the two of the formats failed with their checks removed, and each
+check, removed on its own, failed its own cases; the new cases at each
+limit pass on both. With the
+default limits the review's two expressions are refused at their
+filters.
+
+**Not verified.** Run on darwin/arm64, in a FreeBSD 15.1 jail
+(freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
+all with go1.27.3; see 5.312's subsection above. Salt has no such limit
+to compare with.
+### 5.562 The strings a render built were limited one at a time
+
+5.312 held each string a builtin makes to `MaxOutput`, and 5.445 and
+5.460 charged the lists `range()`, `*` and the combinatorics make to the
+render as a whole. Strings had no such total. The comment that explained
+it, in `internal/template/env.go`, said a value built in memory "is not
+output, so it is not charged to the budget", which was the reason and
+the gap: a limit per value says nothing about how many values a render
+holds.
+
+**Measured.** On `de26c91b` with `MaxOutput` at 1,000, 500 iterations of
+`l.append('a' * 900)` rendered, and the review measured the list holding
+450,000 bytes; a namespace list built with `+` and a mapping built with
+`update` did the same. With the default limits that is up to a 64 MiB
+string per iteration.
+
+**The change.** The render counts the bytes of the strings it makes
+(`budget.build`), against `MaxOutput`, as `materialise` counts items
+against `MaxIterations`. It is charged where every filter, method and
+global function returns, and by `map` for the filter it calls, rather
+than in each builtin, so a filter added later is charged without anybody
+remembering to; and by `~`, `+` and `*` on strings. What is charged is a
+string result that is not one of the operation's inputs handed back, so
+`|string` of a string, `|trim` with nothing to trim and `x ~ ''` cost
+nothing. Nine filters and three methods that return a string they found
+rather than made (`first`, `last`, `min`, `max`, `random`, `attr`,
+`default`, `d`, `traverse`; `get`, `pop`, `setdefault`) are named and not
+charged, and `method_call`, whose method is charged when it is called.
+Leaving one out of that list over-counts, which refuses a template early;
+the other way round, a builder nobody charged, is the failure that ends
+the process, which is why the list names the exceptions rather than the
+builders. Not charged: what is written, which is output and has its own
+limit; a macro's result, which is what its body wrote; and a `salt[...]`
+result, which is the size of what a module read. The comment now says
+what is bounded and how.
+
+**Breaking, in principle.** A render that builds more than 64 MiB of
+strings in all now fails, though no single string is past the limit.
+Building a string by concatenation in a loop builds every prefix of it,
+so a string of L bytes built from k-byte pieces charges about L²/2k: at
+50-byte lines, a little over 80 kB. None of the eleven Salt trees checked
+out on the development machine builds a string that way (searched for a
+name assigned from itself with `~` or `+`); they use `~` to join a few
+path pieces. The largest total any render in the package tests built,
+the Jinja corpus among them, was 20,002 bytes (measured by a temporary
+counter, not committed).
+
+**Demonstrated.** `TestBuiltStringsAreChargedToTheRender`: three
+400-byte strings against a 1,000-byte limit, held by `append`, list `+`,
+`update`, a filter, a method, `map`, `~`, both formats and a rendered
+list. With the charge disabled all ten were allowed; with the named
+exceptions emptied, `first` and `get` were refused; without the
+identity check, `string`, `trim`, `strip` and `x ~ ''` were refused; and
+each charging site removed on its own let its own cases through.
+
+**Not done.** Lists are still counted only where 5.460 counts them.
+`append` copies the list it extends, because a Go slice is not a Python
+list (5.107), so `{% do ll.append(l) %}{% do l.append(1) %}` in a loop
+holds every prefix of `l`, the square of its length in items; read from
+the code, not run. Charging the copies would refuse any list built by
+more than about 4,500 appends, and the right fix is a list that is not
+copied. Strings inside a container a filter returns, other than through
+`map`, are not counted (`split` shares its input's bytes; `|list` of a
+string makes one-character strings).
+
+**Not verified.** Run on darwin/arm64, in a FreeBSD 15.1 jail
+(freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
+all with go1.27.3; see 5.312's subsection. No real tree was rendered
+with the counter.
+### 5.563 A wildcard read any node's pillar on every route but one
+
+Issue 321, the 2026-11-03 review of the fixes, item A4 (`internal/policy/pillar.go`, `policy.go`, `runnerscope.go`; the per-endpoint flag was added in 5.13).
+
+**The defect.** SPEC 22.1 makes reading a node's compiled pillar a distinct high-privilege permission, and chapter 26 of the handbook says a wildcard never grants it. The rule was `policy.Request.NeverWildcard`, a flag on the question, and the only code that set it was the handler for `GET /v1/pillar/{id}`. `POST /v1/run` with `{"client":"runner","fun":"pillar.show_pillar"}` asked the same question without it, and so did the hub's `CallRunner`: that is `halite-hub runner`, the API's forwarded call, a reactor's `runner.` reaction and an orchestration's `salt.runner` step. So `runners: ['*'], target: '*'` read any node's pillar everywhere except through the one endpoint that refused it. The fleet functions that return the same thing were never covered at all: `pillar.items`, `pillar.raw` and `pillar.get` sent to a node return its pillar in clear (module output is requested data and is not masked, 5.268), and `config.get` searches pillar first, so `functions: ['*']` was every node's secrets by another name.
+
+There was a second path with the same shape. The runner's scope (`RunnerScope`) took a `neverWildcard` parameter of its own, and every caller passed `false`. A principal holding `runners: ['*']` on `*` and `pillar.show_pillar` named on `web*` was authorized by the named rule, and its scope was the union of both rules' targets, `*` included, so it read db1's pillar. `halite-hub policy test --runner` printed "it reaches the nodes \*, web\* covers" for it.
+
+A reviewer showed the first half against the API with a stub hub: 403 from `/v1/pillar/web1`, 200 from `/v1/run` with the runner client and the same function.
+
+**Shown.** The new tests, run on a checkout of main (`de26c91b`) with only the test files copied in: `TestReadingPillarIsNeverGrantedByAWildcard` in `internal/api` failed for `/v1/run` with `runner`, with `runner_async`, and with `local` for `pillar.items`, `pillar.get` and `config.get` (each 200), and passed for `/v1/pillar` (403), which is the reviewer's split; `TestNoHubRouteReadsPillarOnAWildcard` failed for the operator's runner call and for all three jobs; `TestAReactorCannotReadPillarOnAWildcard` failed for the reactor, whose reaction ran (it failed later, on "this hub compiles no pillar") and whose `reactor.test` preview said "allowed". The policy tests do not compile against main, whose `RunnerScope` has the extra parameter; with it passed as `false`, both failed, the scope one with `[* web*]`. `TestARunnerIsConfinedToItsRulesTarget` in `internal/hub` asserted that an administrator holding only `runners: ['*']` could run `pillar.show_pillar db1`; that was this defect, written down as a requirement.
+
+Broken on purpose: with `ReadsPillar` answering `false`, every new test in `internal/policy`, `internal/api` and `internal/hub` fails; with only the scope's use of it removed, the two scope tests fail and the others pass. Restored, all pass. The built `halite-hub policy test` gives `denied: pillar.items reads a node's pillar ...` for the handbook policy's `carol`, and for the mixed principal above prints "it reaches the nodes web\* covers".
+
+**The change.** Which functions a wildcard never grants for this reason is the function's property, held in one place, `policy.ReadsPillar`, and asked inside `AuthorizeAs` and `RunnerScopeFor`, so no caller can leave it out and the next one cannot either. The flag and the parameter are gone. The set: the execution functions `pillar.items`, `pillar.raw`, `pillar.get` and `config.get`; the runners `pillar.show_pillar` and `cache.pillar` (declared, not built, listed so the build that builds it is covered). Not on it: `pillar.keys` and the runner `pillar.show_top`, which return key and file names, not values. A pattern that matches one of them (`*`, `pillar.*`) is refused with a reason that says to name it; naming it grants it. `halite-hub policy show` prints the set on its own line, and chapter 26 quotes that line, held by a test.
+
+The set is a list in the policy package rather than a flag in the signatures, as the arbitrary-code set is: no signature says "returns pillar", and a field for six functions would be a declaration with as many ways to be missed as the list.
+
+**What an operator sees.** A role that read pillar through a wildcard no longer does. That includes the hub's check of the API's own principal: an `api-service` role with `runners: ['*']` now has `GET /v1/pillar/{id}` refused at the hub even for an operator whose own role names the runner. The API roles the documentation shows either name `pillar.show_pillar` (chapter 26, the command reference) or grant no pillar at all (chapter 32, `docs/metrics.md`). The example policies' administrators (`contrib/examples/policy.yaml`, the example tree's `hub.sls`) now name the pillar readers or are bound to a role that does, and `docs/from-salt.md` says so beside the arbitrary-code warning.
+
+**Not verified.** An extension function that returns pillar is not on the list, and nothing would add it; that needs a signature declaration, which this change does not make. `halite-hub ssh <target> pillar.items` is not authorized by the policy at all (it runs with the hub's own authority), and was not changed. Other ways a `*` role can see pillar-derived values were not audited: `state.show_*` renders pillar into states (masked only for registered secrets, 5.557), `state.orchestrate_show_sls` renders the orchestration, `mine.get` returns what nodes published, and a job's return read back through `jobs.lookup_jid` is authorized as the job's function, so it follows this rule by construction but was not tested for it. The orchestration's `salt.runner` route was not run; it calls the same `CallRunner` the operator test exercises. Nothing here was run against a real fleet or a real API deployment, and no live test covers it.
+### 5.564 A wildcard on the hub granted an extension's functions
+
+Issue 321, the close-out review of 2026-11-03, item A3 (`internal/policy/policy.go`, `cmd/halite-hub/serve.go`, `cmd/halite-api/serve.go`; the built-in half of the same agreement is 5.297).
+
+**The defect.** SPEC 23.5: a wildcard never grants a function that declares `arbitrary_code`. The node marks every extension function so (`internal/extension` `parseSignature`, whose comment says a wildcard "never grants one"). The hub could not see that mark: its never-by-wildcard set was a deny list built from `builtin.New()`'s registries, which hold no extension, so on the hub `functions: ['*']` (or `myext.*`) granted `myext.exec`, and the node ran it. Two paths that must agree; `TestTheHubAndTheNodeAgreeOnArbitraryCode` compared them over the built-in execution registry only, so it passed.
+
+**Found beside it.** `halite-api` loaded the same policy and never set the arbitrary-code set at all, so its own check — the operator's, before it forwards under its own certificate — let `functions: ['*']` through for `cmd.run`, `cmd.script` and every other declared function. The hub's second check then judged only the API's certificate, so an operator with a wildcard role reached `cmd.run` whenever the API's role named it.
+
+**Shown.** On the old code: a policy granting `['*', 'myext.*']`, given the catalog the hub's loader gives it, allowed `myext.exec` and `site_tools.run`; the API's `loadPolicy` allowed `cmd.run`, `cmd.script` and `myext.exec` under `['*']`. Both new tests fail on that code and pass on this.
+
+**The change.** The rule is inverted: a pattern grants a function only if the build ships it and it is not arbitrary code (`Policy.Shipped`, filled with `ArbitraryCode` by `Policy.UseCatalog` from the registries). Anything the build does not ship — an extension's function, or a newer build's — has to be named, because the hub cannot know which extensions a node has loaded and nobody here has read its signature. The node already took that view of an unknown name for `require_job_signature` (`jobsignature.go`: "a function this build does not ship requires one"). A policy given no catalog grants nothing by pattern and says so, which is how a loader that forgets (as `halite-api` did) now fails. `halite-api` now applies the same catalog as the hub.
+
+"What the build ships" is the execution registry plus the `state.*` forms the node answers through its compiler (`apply`, `highstate`, `sls`, `show_*`), which are in no registry: read from the registries alone, `state.*` stopped granting `state.apply`, which `TestAllowSLSRefusesTheHighstate` caught. The node's list moved from `cmd/halite-node` to `state.JobFunctions` so the node's dispatch and the catalog read one list. `policy show` adds a line saying that what the build does not ship is refused to a pattern too; a denial for such a function says it is "not a function this build ships".
+
+**What an operator sees.** A role that granted an extension's function only by `*` or `myext.*` is refused it now, and must name it. The hub's own tests show the shape of it: six submitted made-up names (`lb.drain`, `test.too_long`, `test.fits`) under the lab's `functions: ['*', 'cmd.run']` and were refused, and the lab policy now names them. Nothing the build ships changes: `TestAWildcardOnTheHubGrantsWhatTheNodeShipsAndNoExtension` holds, for every execution function and every state form, that a wildcard on the hub grants it exactly when the node does not call it arbitrary code, and refuses two extension names. Broken on purpose three ways: with the old deny-list check restored, it and `TestTheAPIsWildcardIsTheHubs` fail on the extension names; with the state forms left out of the catalog, it fails on them and `TestAllowSLSRefusesTheHighstate` fails; with the API's catalog removed, `TestTheAPIsWildcardIsTheHubs` fails.
+
+**Run.** On 2026-11-03, on macOS 26.7.2 (arm64, Go 1.27.3, Python 3.15.2), unprivileged: a real `halite-hub serve`, a `halite-node connect` enrolled to it, and `halite-api serve`, all on 127.0.0.1, built once from this change and once from its parent `de26c91b`. The node ran a signed, pinned Python extension of kind `module` providing `myext.exec`, fetched with `saltutil.sync_modules` and loaded on a restart (`sys.list_extensions` showed it, `signed_by: proof`). On the parent, `halite-hub run n1.local myext.exec` returned `myext.exec ran on the node` for a role of `['*']`, a role of `['myext.*', 'test.*']`, and the administrator role `keys operator create --admin` writes (`'*'` plus the named built-ins); `policy test` said `allowed by role "wildcard"`. Through the parent's `halite-api`, an account whose role was `['*']` got HTTP 200 for both `myext.exec` and `cmd.run` (`echo` ran on the node), the API's own role naming both. On this change the hub refused all three roles with the "not a function this build ships" reason before dispatch; a role naming `myext.exec` ran it; `['*']` still ran `test.ping` and reached the node's compiler with `state.show_highstate`. Through this change's API the `['*']` account got 403 for `myext.exec` and for `cmd.run`, with the hub's reasons, and 200 for `test.ping`; an account naming `myext.exec` got 200 and the node's answer. `policy show` printed the new line. The administrator bootstrap role is one of the roles the change narrows: it no longer reaches an extension's function until the function is named in it.
+
+**Not verified.** No hub, node or API ran on FreeBSD or Linux, nor as root; the run above was one node on macOS. The safety of the rule leans on the node refusing an extension function whose name is a built-in's (`registerExtensionFunctions`), which was read and has no test. Version skew is not covered: a hub newer than its nodes ships a function an older node lacks, and if an extension on that node registers the name, a wildcard on the hub grants it. A pattern in `runners:` is unchanged; runners run on the hub and are not extensions.
+### 5.565 The hub could write a node's return after Serve said it had stopped
+
+CI run 41682208877, `race (macos-15)`, on a branch that did not touch the hub (`internal/hub/inflight.go`, `internal/hub/listen.go`).
+
+**The symptom.** `TestAPillarTargetRefusesWhenACandidatesPillarWillNotCompile` passed every assertion and then failed in `t.TempDir`'s cleanup: `unlinkat …/002/jobs/<date>/<jid>/returns: directory not empty`. Something was writing a return into the job cache while the test removed it. The test's last submission is a `test.ping` to `web1.example`, which the lab node answers, and the test ends without waiting for that answer, so the return is in flight as the lab stops. That is ordinary; a node's answer can arrive at any moment, including as a hub shuts down. The test was not wrong to end there.
+
+**The defect.** `Serve` is meant to return only once no handler is running: that is what `inflight` was added for (commit `cad1e949`), so that a caller told the hub has stopped can trust it. It counted handlers from `enter` to `leave`, and `wait` returned when the count was zero. Closing the listener stops new connections, not new requests: a request net/http has already read off an open connection starts its handler when the scheduler reaches it, and a handler that had not reached `enter` when `wait` looked was not counted. `wait` saw zero, `Serve` returned, and the handler then ran `AddReturn` against a job cache its caller had finished with. `http.Server.Shutdown` would have waited for it, but `Serve` deliberately does not wait for `Shutdown` (it waits for every connection to go quiet, about a second per hub).
+
+In a test that is a removed directory. In production it is a return written, and `halite/job/<jid>/ret/<node>` emitted, by a hub that has already told `serve` it stopped: after whatever `serve` does next with the cache.
+
+**Shown.** `TestARequestThatArrivesAsTheHubStopsWritesNothing` holds a node's return in that window with a hook (`inflight.arrived`, which runs before the count), stops the hub, then releases it. On the old code the hub answered the return with success and wrote it into the cache after `Serve` returned; both assertions fail, every time, not by chance. With the change it passes. Disabling only the refusal (`if false && f.closed`) makes it fail again, and makes the updated `TestInflightWaitsForEveryHandler` fail at "a handler was let in after wait had returned".
+
+**The change.** `wait` now closes the gate as it reads the count, under the same lock, and `enter` refuses once the gate is closed. A handler either entered before `wait` looked, and is waited for, or arrives after, and is refused. There is no third case. A refused request is answered 503 with `Connection: close` and runs nothing. A node treats 503 as transient (`transport.Permanent` is false outside 4xx) and retries the return, so the answer goes to the hub that replaces this one rather than being lost.
+
+**Not verified.** The failing CI run was not reproduced as it happened. The original test passed 8 times out of 8 locally, and the hook forces the same window rather than finding it by chance. Whether the CI flake was this window and not another writer is inferred: in the lab, `AddReturn` is reached only from the return handler and from `CallRunner`, called from a handler or from work under `goBackground`, all of which `Serve` waits for. **The hub as `serve` runs it has writers outside that accounting, and this does not fix them.** The reactor's workers (`Reactor.start`), `Reconcile`, `maintain` and the event returner are started with a bare `go` in `cmd/halite-hub/serve.go`, nothing waits for them, and a runner reaction ends in `recordRunnerReturn`, so a reaction in flight can still write a return after `Serve` has returned. That was read, not run, and is left for its own change. A node retrying a refused return against a real hub restart was not run.
+### 5.566 A copied ACL landed on whatever the temporary name pointed at
 
 Issue 321, the close-out review of 2026-11-03, item A2's "Found, not changed" (`internal/atomicfile/xattr_linux.go`; the attribute copy is 5.492).
 
@@ -36585,6 +37035,13 @@ The rest of `internal/atomicfile` and `internal/builtin` pass in the same image,
 **Found, not changed.**
 - What the account swapped the temporary name for is still renamed into place, and `Write` reports success. The contents went to the orphaned inode. In the account's own directory, that is the account's business. It leaves the next run to write the file again.
 - `prepare` still receives the temporary file's name. Its one ownership caller, `writeAtomic`'s `keepOwnership`, is `Lchown` by name on this branch, which a hard link redirects. A2 (PR 629, not merged when this was written) routes it through `changeEntryAt`.
+
+
+
+
+
+
+
 
 
 

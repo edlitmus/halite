@@ -47,6 +47,12 @@ halite:
             functions: ['*']
           - target: '*'
             runners: ['*']
+          # A wildcard never grants reading a node's pillar; these are
+          # named so the administrator can.
+          - target: '*'
+            functions: ['pillar.items', 'pillar.raw', 'pillar.get', 'config.get']
+          - target: '*'
+            runners: ['pillar.show_pillar']
         api-service:
           - runners: ['metrics.show']
       bindings:
