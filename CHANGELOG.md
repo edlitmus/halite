@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **The hub waits for a reaction in flight before it reports it has stopped.** On SIGTERM a runner reaction that was still running went on writing its job return and its `ret` event after "the hub stopped" was logged, and the event returner was closed under a shipper still sending. `serve` now waits for the reactor and its other background loops; a stop can take as long as the slowest reaction in flight, and a second SIGTERM or `^C` stops the hub without waiting. DIVERGENCE 5.567.
+
 - **A rewritten file's ACL can no longer be redirected onto another file.** On Linux, a file replaced through a temporary file inherits the old file's extended attributes, ACL included. The copy was made by name after the temporary file was closed. An account that owned the directory (a home directory managed by `file.managed`, say) could swap the temporary name for a link to another file, and its chosen ACL and the caller's mode were then put on that file, as root. The copy is now made on the open file. The replaced file is read through a descriptor that does not follow a symbolic link, and only when it is a regular file. A writer that may replace a file but not read it no longer copies its attributes. DIVERGENCE 5.566.
 
 - **A hub that is stopping no longer accepts a node's return after it reports that it has stopped.** A request already read off an open connection could still run, and write into the job cache, after `serve` had been told the hub was down. Such a request is now answered 503, and the node retries it. DIVERGENCE 5.565.

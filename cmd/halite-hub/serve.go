@@ -502,12 +502,20 @@ func runServe(args *cli.Args) int {
 	// it -- rather than leaving a goroutine delivering into a store
 	// that is being shut down. `jobs resume` picks it up afterwards.
 	server.Context = ctx
+	// The loops started beside the API, each of which writes to disk:
+	// the certificate, the key store's events, the job cache, the
+	// reactor's reactions and offset, the event returner's offset. A bare
+	// `go` let any of them go on writing after "the hub stopped" was
+	// logged and this returned, and the returner was closed under a
+	// shipper still sending to it. They are waited for below.
+	// DIVERGENCE 5.567.
+	var loops sync.WaitGroup
 	// The hub's own certificate, renewed at half its life and served
 	// without a restart, as a node's is. DIVERGENCE 5.259.
-	go h.keepServingRenewed(ctx, serving, names)
+	loops.Go(func() { h.keepServingRenewed(ctx, serving, names) })
 	// The operator command line is a separate process, so the running
 	// hub follows the key store rather than being told.
-	go server.Reconcile(ctx, 2*time.Second)
+	loops.Go(func() { server.Reconcile(ctx, 2*time.Second) })
 	if len(reactors) > 0 {
 		reactor := &hub.Reactor{
 			Server:     server,
@@ -522,28 +530,28 @@ func runServe(args *cli.Args) int {
 		}
 		h.log.Info("reactor started",
 			"entries", len(reactors), "tags", strings.Join(hub.ReactorTags(reactors), ","))
-		go func() {
+		loops.Go(func() {
 			if err := reactor.Run(ctx); err != nil {
 				h.log.Error("the reactor stopped", "error", err.Error())
 			}
-		}()
+		})
 	}
 	if shipper := h.eventReturner(server); shipper != nil {
 		defer shipper.Returner.Close()
 		h.log.Info("shipping the event stream to a returner",
 			"returner", shipper.Returner.Name(), "tags", strings.Join(shipper.Tags, ","))
-		go func() {
+		loops.Go(func() {
 			if err := shipper.Run(ctx); err != nil {
 				h.log.Error("the event returner stopped", "error", err.Error())
 			}
-		}()
+		})
 	}
 	if fetching.any() {
 		// One ticker for both backends, at the shorter of the two
 		// intervals: two tickers rebuilding the same search path would
 		// race to publish it.
 		if interval := fetchInterval(h); interval > 0 {
-			go func() {
+			loops.Go(func() {
 				ticker := time.NewTicker(interval)
 				defer ticker.Stop()
 				for {
@@ -557,7 +565,7 @@ func runServe(args *cli.Args) int {
 						}
 					}
 				}
-			}()
+			})
 		}
 	}
 	// SPEC 5.3: a relay serves its own nodes and presents itself
@@ -577,17 +585,44 @@ func runServe(args *cli.Args) int {
 	} else if n > 0 {
 		h.log.Warn("closed runner calls that were in flight when the hub last stopped", "calls", n)
 	}
-	go maintain(ctx, h, server, jobs, bus)
+	loops.Go(func() { maintain(ctx, h, server, jobs, bus) })
 
 	// From here a failure is the running hub's, and a restart is the
 	// right answer to it.
 	startupOver()
-	if err := server.Serve(ctx, ln); err != nil {
+	err = server.Serve(ctx, ln)
+	// Ends the context for the loops when Serve failed on its own, and
+	// gives the signals back: a reaction whose runner does not let go is
+	// then ended by a second SIGTERM or ^C, as it was before the hub
+	// waited for it, rather than by nothing.
+	stop()
+	waitForLoops(h, &loops)
+	if err != nil {
 		h.log.Error("the hub stopped", "error", err.Error())
 		return 1
 	}
 	h.log.Info("the hub stopped")
 	return 0
+}
+
+// waitForLoops waits for serve's background loops, and says what it is
+// waiting for when that is not over at once.
+//
+// Each loop returns when its context ends, except for what it is in the
+// middle of: a reaction is bounded by `reactor_timeout` only where its
+// runner honours the context, and a hub that sat silent while it waited
+// would look like one that had hung.
+func waitForLoops(h *hubContext, loops *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() { loops.Wait(); close(done) }()
+	select {
+	case <-done:
+		return
+	case <-time.After(2 * time.Second):
+	}
+	h.log.Info("waiting for the reactor and the hub's background work to finish; " +
+		"a second signal stops the hub without waiting")
+	<-done
 }
 
 // loadPolicy reads the RBAC file of SPEC 23.5.
