@@ -21,7 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **A wildcard no longer grants an extension's functions, on the hub or through the API.** `functions: ['*']` or `myext.*` granted `myext.exec`, though the node runs every extension function as arbitrary code; and `halite-api` granted `cmd.run` to a `*` role at its own check, because it never knew which functions are arbitrary code. A pattern now grants only functions the build ships and knows are not arbitrary code. **A role that used an extension's function through a wildcard must now name it**, as `cmd.run` is named. `halite-hub policy show` says so. DIVERGENCE 5.558.
+- **A wildcard no longer grants an extension's functions, on the hub or through the API.** `functions: ['*']` or `myext.*` granted `myext.exec`, though the node runs every extension function as arbitrary code; and `halite-api` granted `cmd.run` to a `*` role at its own check, because it never knew which functions are arbitrary code. A pattern now grants only functions the build ships and knows are not arbitrary code. **A role that used an extension's function through a wildcard must now name it**, as `cmd.run` is named; that includes the administrator role `keys operator create --admin` writes. `halite-hub policy show` says so. DIVERGENCE 5.558.
 
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.
 
