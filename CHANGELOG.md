@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A target expression has size limits, and a long glob target no longer exhausts the hub's memory.** Since glob targets became Salt's fnmatch (5.501), every glob was compiled to a regular expression with no bound on its length and kept for the life of the hub: one 1 MiB target allocated some 550 MB, three held 158 MB for good, and a pattern too large for the regular-expression engine panicked. A target is now refused over 1 MiB (a 400 from the API), a glob with `*`, `?` or `[` over 1 KiB, and an expression whose globs and regular expressions come to more than 32 KiB together. A name, or any term with no `*?[`, is not limited by the last two, so long lists of nodes still work. A top-file target over a limit is refused the same way, and a nodegroup's globs count against the expression that names it. DIVERGENCE 5.558.
+
 - **A `state.show_lowstate`, `state.show_highstate` or `state.show_sls` job no longer returns a registered secret to the hub.** The command line's forms were masked in 5.556; the jobs returned the compiled states whole, a password in `contents:` included, into the hub's job cache. DIVERGENCE 5.557.
 
 - **`halite-node state show_highstate`, `show_sls` and `show_lowstate` no longer print a registered secret.** A password in a state's `contents:` or a token in a command was shown whole, though `state apply`, `pillar` and `doctor` masked it. They now mask it the way `pillar` does. The remote `state.show_*` jobs are not changed here. DIVERGENCE 5.556.

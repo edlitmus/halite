@@ -213,15 +213,39 @@ type Matcher struct {
 	terms []Term
 }
 
+// MaxExprLen bounds a target expression, of any kind.
+//
+// 5.291 left length uncapped on purpose, reasoning that once nesting was
+// bounded a long target cost time and memory in a straight line and
+// max_body bounded it. The line is steeper than that. Measured on
+// darwin/arm64 with go1.27.3, compiling a 4 MiB target allocated some 32
+// bytes a byte for an or-chain of names, bare or as `L@` terms, and some
+// 8 for a `-L` list. At the 64 MiB a request body may be, that is some
+// 2 GB for one request; with 5.501's globs compiled to regexps and kept,
+// it was far worse (DIVERGENCE 5.558).
+//
+// 1 MiB is some 32 MB to compile at the steepest measured. It holds some
+// fifty thousand names of twenty characters, or four thousand of the
+// longest a node ID may be (pki.ValidateNodeID's 253), which is a larger
+// estate than one hub serves. A long target is a list of names, and this
+// is the bound on that; a glob in it is bounded far lower, by
+// fnmatch.MaxPatternLen and maxPatternBytes.
+const MaxExprLen = 1 << 20
+
 // Compile prepares a target expression of the given kind. Compilation is
 // separate from matching so that a bad expression is an error before any
 // node is considered, and so that a top file with many entries compiles
 // each one once.
 func Compile(kind Kind, expr string, groups Nodegroups) (*Matcher, error) {
+	if len(expr) > MaxExprLen {
+		return nil, &Error{Expr: elide(expr), Msg: fmt.Sprintf(
+			"the expression is %d bytes; the limit is %d", len(expr), MaxExprLen)}
+	}
 	m := &Matcher{kind: kind, expr: expr, group: groups}
+	b := &budget{left: maxPatternBytes}
 	switch kind {
 	case Compound:
-		p := &parser{src: expr, groups: groups}
+		p := &parser{src: expr, groups: groups, budget: b}
 		ast, err := p.parse()
 		if err != nil {
 			return nil, err
@@ -234,7 +258,7 @@ func Compile(kind Kind, expr string, groups Nodegroups) (*Matcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		p := &parser{src: resolved, groups: groups}
+		p := &parser{src: resolved, groups: groups, budget: b}
 		ast, err := p.parse()
 		if err != nil {
 			return nil, err
@@ -243,7 +267,7 @@ func Compile(kind Kind, expr string, groups Nodegroups) (*Matcher, error) {
 		return m, nil
 
 	default:
-		leaf, err := compileLeaf(kind, expr)
+		leaf, err := compileLeaf(kind, expr, b)
 		if err != nil {
 			return nil, err
 		}
@@ -368,7 +392,9 @@ func ValidateNodegroups(groups Nodegroups) error {
 		if err != nil {
 			return err
 		}
-		p := &parser{src: expanded, groups: groups}
+		// A budget of its own, as Compile gives a group named alone, so
+		// that a group which passes here passes when it is used.
+		p := &parser{src: expanded, groups: groups, budget: &budget{left: maxPatternBytes}}
 		if _, err := p.parse(); err != nil {
 			return fmt.Errorf("nodegroup %q: %w", name, err)
 		}
@@ -392,10 +418,76 @@ type funcNode func(Node) bool
 
 func (f funcNode) match(n Node) bool { return f(n) }
 
-func compileLeaf(kind Kind, expr string) (node, error) {
+// maxPatternBytes bounds the globs and regular expressions one target
+// expression compiles, counted together and nodegroups included.
+//
+// fnmatch.MaxPatternLen bounds one glob, which is not enough by itself:
+// an expression is many terms, and before this a request of 64 MiB could
+// be 64,000 globs of 1 KiB each at some 0.6 MB apiece to compile. Measured
+// on darwin/arm64 with go1.27.3, the dearest glob shape cost some 570
+// bytes a character to compile and kept some 120. A regular expression
+// costs less: 32 KiB of `.*a` allocated some 440 a character and kept 83,
+// and an alternation of names 51 and 2. So 32 KiB is at most some 20 MB of
+// work and 4 MB held while the job is dispatched. It is spent only by what is compiled:
+// a node name, or any term with no `*?[`, is a literal and costs nothing,
+// so the long targets 5.291 kept -- lists of names -- are untouched.
+// 32 KiB is some three hundred 100-byte globs in one expression, or an
+// `E@` alternation of a thousand short names. DIVERGENCE 5.558.
+const maxPatternBytes = 32 << 10
+
+// budget is what is left of maxPatternBytes for one expression.
+type budget struct{ left int }
+
+func (b *budget) spend(expr string, n int) error {
+	if n > b.left {
+		return &Error{Expr: elide(expr), Msg: fmt.Sprintf(
+			"the expression's globs and regular expressions exceed the budget of %d bytes for one target", maxPatternBytes)}
+	}
+	b.left -= n
+	return nil
+}
+
+// elide shortens an expression quoted in an error, which for the
+// expressions these limits refuse is long by definition, and goes to a
+// log line and an API response.
+func elide(expr string) string {
+	const keep = 64
+	if len(expr) <= keep {
+		return expr
+	}
+	return fmt.Sprintf("%s... (%d bytes)", expr[:keep], len(expr))
+}
+
+// compileGlob compiles one glob of an expression, spending the budget on
+// it unless it is a literal. `*` is every node, and costs nothing.
+func compileGlob(expr, pattern string, b *budget) (func(string) bool, error) {
+	if pattern == "*" {
+		return func(string) bool { return true }, nil
+	}
+	// fnmatch.Compile refuses a glob over fnmatch.MaxPatternLen. It runs
+	// before the budget is spent so that an over-long glob is reported as
+	// that rather than as the budget. It costs at most one glob's compile
+	// past the budget, because the first term over it ends the parse.
+	p, err := fnmatch.Compile(pattern)
+	if err != nil {
+		return nil, &Error{Expr: elide(expr), Msg: err.Error()}
+	}
+	if !fnmatch.IsLiteral(pattern) {
+		if err := b.spend(expr, len(pattern)); err != nil {
+			return nil, err
+		}
+	}
+	return p.Match, nil
+}
+
+func compileLeaf(kind Kind, expr string, b *budget) (node, error) {
 	switch kind {
 	case Glob:
-		return funcNode(func(n Node) bool { return globMatch(expr, n.ID) }), nil
+		match, err := compileGlob(expr, expr, b)
+		if err != nil {
+			return nil, err
+		}
+		return funcNode(func(n Node) bool { return match(n.ID) }), nil
 
 	case List:
 		ids := map[string]bool{}
@@ -405,6 +497,9 @@ func compileLeaf(kind Kind, expr string) (node, error) {
 		return funcNode(func(n Node) bool { return ids[n.ID] }), nil
 
 	case Regex:
+		if err := b.spend(expr, len(expr)); err != nil {
+			return nil, err
+		}
 		re, err := regexcompat.Compile(expr)
 		if err != nil {
 			return nil, &Error{Expr: expr, Msg: err.Error()}
@@ -416,6 +511,15 @@ func compileLeaf(kind Kind, expr string) (node, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Every reading is compiled here, once, rather than at each
+		// match. Each is a pattern of its own, so each spends the
+		// budget: a target of n colons is n patterns, and their lengths
+		// add up to the square of n.
+		for i := range cands {
+			if cands[i].glob, err = compileGlob(expr, cands[i].pattern, b); err != nil {
+				return nil, err
+			}
+		}
 		pick := pickGrains
 		if kind == Pillar {
 			pick = pickPillar
@@ -423,7 +527,7 @@ func compileLeaf(kind Kind, expr string) (node, error) {
 		return funcNode(func(n Node) bool {
 			for _, c := range cands {
 				v, ok := value.Traverse(pick(n), c.key, ":")
-				if ok && matchScalarOrList(v, func(s string) bool { return globMatch(c.pattern, s) }) {
+				if ok && matchScalarOrList(v, c.glob) {
 					return true
 				}
 			}
@@ -440,6 +544,9 @@ func compileLeaf(kind Kind, expr string) (node, error) {
 		// earlier split that does not compile is a split that does not
 		// apply, not a mistake in the expression.
 		for i := range cands {
+			if err := b.spend(expr, len(cands[i].pattern)); err != nil {
+				return nil, err
+			}
 			re, err := regexcompat.Compile(cands[i].pattern)
 			if err != nil {
 				if i == 0 {
@@ -510,6 +617,7 @@ func splitKeyValue(expr string) (key, pattern string, err error) {
 type keyValue struct {
 	key, pattern string
 	re           *regexp.Regexp
+	glob         func(string) bool
 }
 
 // splitCandidates is every reading of a grain or pillar target as a path
@@ -591,6 +699,11 @@ func MatchGlob(pattern, nodeID string) bool { return globMatch(pattern, nodeID) 
 // skipped web2. Its `*` also stops at `/`, which a grain value can hold
 // (`-G 'shell:*sh'` against `/bin/sh`). A node ID holds no `/`, so for IDs only
 // the brackets differ. DIVERGENCE 5.501.
+//
+// It is for a pattern from configuration -- a policy's target, a token's
+// node scope, a relay's globs -- and goes through fnmatch.Match, which
+// caches. A target in a request is compiled by compileGlob, which bounds
+// it and keeps nothing once the job is dispatched. DIVERGENCE 5.558.
 func globMatch(pattern, s string) bool {
 	if pattern == "*" {
 		return true

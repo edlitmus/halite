@@ -6,10 +6,13 @@
 package fnmatch
 
 import (
+	"container/list"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // Match is Python's fnmatch.fnmatchcase, which is what Salt's
@@ -40,8 +43,23 @@ import (
 // `[z-a]`, which 3.10 and later treat as empty, as this does. The tests hold its answers against Python's own,
 // captured by running fnmatch.fnmatchcase, not written from the
 // documentation.
+//
+// Match is for patterns from configuration: file_ignore_glob, a policy,
+// an SLS file. A pattern that arrives in a request goes through Compile,
+// which refuses one too long to be a glob anybody writes. Match has no
+// such limit, because a pattern an operator wrote that stopped matching
+// would hide nothing, or deny nothing, without saying so. A pattern the
+// regexp compiler refuses matches nothing; the only one seen refused was
+// millions of characters long.
 func Match(pattern, name string) bool {
-	return fnmatchRegexp(pattern).MatchString(name)
+	if IsLiteral(pattern) {
+		return pattern == name
+	}
+	re, err := cachedRegexp(pattern)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(name)
 }
 
 // HasMeta reports whether a pattern holds any of fnmatch's special
@@ -49,15 +67,142 @@ func Match(pattern, name string) bool {
 // looks names up exactly can skip the glob for it.
 func HasMeta(pattern string) bool { return strings.ContainsAny(pattern, "*?[") }
 
-var fnmatchCache sync.Map // pattern -> *regexp.Regexp
+// IsLiteral reports whether a pattern matches only itself, so that it
+// needs no regexp and costs what the string does. That is a pattern without `*?[` -- fnmatchTranslate
+// writes every other character as a literal -- and in valid UTF-8: a bad
+// byte becomes U+FFFD in the translation and also in the regexp's reading
+// of the input, so `\xff` matches the character U+FFFD as well as itself,
+// and string equality would not.
+func IsLiteral(pattern string) bool { return !HasMeta(pattern) && utf8.ValidString(pattern) }
 
-func fnmatchRegexp(pattern string) *regexp.Regexp {
-	if re, ok := fnmatchCache.Load(pattern); ok {
-		return re.(*regexp.Regexp)
+// MaxPatternLen bounds a glob that Compile accepts.
+//
+// A glob is translated to a regexp, and the regexp costs far more than
+// the pattern. Measured on darwin/arm64 with go1.27.3, the dearest shape,
+// `*a` repeated, allocated some 570 bytes a character while compiling and
+// kept some 120 once compiled: a 1 KiB pattern is 0.6 MB to compile, and
+// a 1 MiB target, which a request body of 64 MiB had room for many times
+// over, was more than half a gigabyte. DIVERGENCE 5.558.
+//
+// 1 KiB is four times the longest node ID pki.ValidateNodeID admits, and
+// a glob is a short thing. A long target is a list of names, and a name
+// is a literal, which Compile does not translate and does not limit.
+const MaxPatternLen = 1024
+
+// ErrTooLong is what Compile returns for a glob over MaxPatternLen.
+var ErrTooLong = errors.New("the glob is too long")
+
+// Pattern is a compiled glob.
+type Pattern struct {
+	literal string
+	// re is nil for a literal, which matches only itself.
+	re *regexp.Regexp
+}
+
+// Compile prepares a glob, for a pattern that arrives in a request. It
+// refuses a glob longer than MaxPatternLen and one the regexp compiler
+// refuses, with an error that says so without repeating the pattern, and
+// it keeps nothing: the caller holds the Pattern for as long as it needs
+// it, and when the caller lets go so does the memory. A pattern with no
+// `*?[` is a literal, compiled to nothing and not limited.
+func Compile(pattern string) (*Pattern, error) {
+	if IsLiteral(pattern) {
+		return &Pattern{literal: pattern}, nil
 	}
-	re := regexp.MustCompile(fnmatchTranslate(pattern))
-	fnmatchCache.Store(pattern, re)
-	return re
+	if len(pattern) > MaxPatternLen {
+		return nil, fmt.Errorf("%w: %d bytes, and the limit is %d", ErrTooLong, len(pattern), MaxPatternLen)
+	}
+	re, err := compileRegexp(fnmatchTranslate(pattern))
+	if err != nil {
+		return nil, errCompile(len(pattern))
+	}
+	return &Pattern{re: re}, nil
+}
+
+// Match reports whether name matches the pattern, as fnmatch.fnmatchcase.
+func (p *Pattern) Match(name string) bool {
+	if p.re == nil {
+		return p.literal == name
+	}
+	return p.re.MatchString(name)
+}
+
+// errCompile is the regexp compiler's refusal, without its text: RE2's
+// "expression too large" quotes the expression it refused, which for the
+// translation of a pattern it refuses is megabytes, and the error goes to
+// a log line and an API response.
+func errCompile(n int) error {
+	return fmt.Errorf("a glob of %d bytes is too large to compile", n)
+}
+
+// compileRegexp is regexp.Compile, a variable so that a test can make it
+// refuse: the only translation RE2 has been seen to refuse is too dear to
+// produce in a test.
+var compileRegexp = regexp.Compile
+
+// The cache Match keeps, least recently used first out, holding at most
+// cacheBytes of pattern text.
+//
+// It was a sync.Map that never forgot, and target globs went through it,
+// so every distinct glob anybody targeted was held for the life of the
+// hub: three 1 MiB patterns held 158 MB (DIVERGENCE 5.558). Targets now
+// go through Compile and are not cached at all; this is for the patterns
+// in configuration, which are few and matched over and over, so the bound
+// is there for when that assumption is wrong. Bounding the text bounds
+// the memory, because the compiled form costs in proportion to it: some
+// 120 bytes a character at the dearest measured, so 64 KiB of patterns is
+// some 8 MB. A pattern longer than the whole cache is compiled each time
+// it is used.
+const cacheBytes = 64 << 10
+
+var cache = struct {
+	sync.Mutex
+	order *list.List // of *cacheEntry, most recently used first
+	byPat map[string]*list.Element
+	bytes int
+}{order: list.New(), byPat: map[string]*list.Element{}}
+
+type cacheEntry struct {
+	pattern string
+	re      *regexp.Regexp
+}
+
+func cachedRegexp(pattern string) (*regexp.Regexp, error) {
+	cache.Lock()
+	if el, ok := cache.byPat[pattern]; ok {
+		cache.order.MoveToFront(el)
+		re := el.Value.(*cacheEntry).re
+		cache.Unlock()
+		return re, nil
+	}
+	cache.Unlock()
+
+	// Compiled outside the lock, so that one long pattern does not stall
+	// every other match. Two callers compiling the same pattern at once
+	// both compile it; the second to finish finds it stored.
+	re, err := compileRegexp(fnmatchTranslate(pattern))
+	if err != nil {
+		return nil, errCompile(len(pattern))
+	}
+	if len(pattern) > cacheBytes {
+		return re, nil
+	}
+
+	cache.Lock()
+	defer cache.Unlock()
+	if el, ok := cache.byPat[pattern]; ok {
+		cache.order.MoveToFront(el)
+		return el.Value.(*cacheEntry).re, nil
+	}
+	for cache.bytes+len(pattern) > cacheBytes {
+		oldest := cache.order.Back()
+		e := cache.order.Remove(oldest).(*cacheEntry)
+		delete(cache.byPat, e.pattern)
+		cache.bytes -= len(e.pattern)
+	}
+	cache.byPat[pattern] = cache.order.PushFront(&cacheEntry{pattern: pattern, re: re})
+	cache.bytes += len(pattern)
+	return re, nil
 }
 
 // fnmatchTranslate follows fnmatch._translate step for step, so that it

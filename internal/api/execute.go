@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/apitoken"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -106,6 +108,15 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, token *apitoken
 
 	if req.Target == "" {
 		writeError(w, http.StatusBadRequest, "a local run needs `tgt`, the nodes to run against")
+		return
+	}
+	// Before the policy, which splits a list target into names and judges
+	// each one, so that an over-long target costs a length check rather
+	// than that. The hub's target.Compile refuses it too, and says the
+	// same; this is where an API caller hears it. DIVERGENCE 5.558.
+	if len(req.Target) > target.MaxExprLen {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf(
+			"`tgt` is %d bytes; the limit is %d", len(req.Target), target.MaxExprLen))
 		return
 	}
 	if !s.authorize(w, token, jobRequestFor(req.Function, req.Target, req.targetKind(), req.Arg, req.Kwarg, req.Test)) {

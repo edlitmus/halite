@@ -24341,6 +24341,21 @@ node compiles a job's target again in `cmd/halite-node/jobsignature.go`.
 That path shares the same code and the same bound, but a test was not
 run there. The figures above are from one Mac and were not taken on
 FreeBSD or Linux.
+
+#### The length decision, revisited (5.558)
+
+"Length is not capped, on purpose" rested on two claims: that a long
+target costs memory in a straight line, and that `max_body` bounds it.
+The line is steep. Measured on darwin/arm64 with go1.27.3, compiling a
+4 MiB or-chain of names allocated some 32 bytes a byte, so the 64 MiB a
+body may be is some 2 GB; and 5.501 then made every glob a compiled
+regexp at some 570 bytes a character, kept for good. 5.558 caps an
+expression at 1 MiB, which `TestLongFlatTargetsStillCompile`'s 5,001
+`L@` names fit six times over. The or-chain and and-chain shapes above
+were cut from 200,000 terms to 90,000 and 70,000 to fit under it; both
+are still past the 30,000 at which the old code overflowed, and
+`TestHostileShapesFit` keeps them under the cap so that they test the
+parser and not the cap.
 ### 5.292 gitfs verified a branch by its name and served it by its commit
 
 With `gitfs_verify_signatures: true`, `verify` ran
@@ -36341,6 +36356,51 @@ Issue 321, the second pass, round twelve (`cmd/halite-node/execute.go`; the comm
 **The change.** The returned value goes through `maskValue` with the node's secrets, as the command line's does: a string that is a registered secret is replaced outright and one that contains it is scrubbed in place, so `password=` stays readable and the state's id and function are unchanged. `show_states` and `show_top` return names only and are as they were.
 
 **Not verified.** A secret that arrives as a GPG-decrypted pillar value on a real node (the test registers it directly); whether the hub itself scrubs a return it caches, which was not read; an unregistered `runas_password` in `show_highstate`, which only `show_lowstate` masks by key name.
+
+### 5.558 A long glob target exhausted the hub's memory, and kept it
+
+Issue 321, the close-out review of 2026-11-03, item A6: a regression from 5.501 (#543), measured by the reviewer on main `de26c91b`.
+
+**The defect.** 5.501 made a glob target Salt's fnmatch. `fnmatch.Match` translated each pattern to an RE2 expression, compiled it with `regexp.MustCompile`, and stored it in a `sync.Map` that never evicted. A glob target and every `G@`/`I@` value went through it, lazily, at match time. Nothing bounded the pattern: the API takes a body of up to 64 MiB, and a role with `target: '*'` covers any target, the reach of 5.291. The reviewer measured one 1 MiB target allocating some 550 MB while compiling, and three distinct 1 MiB patterns leaving 158 MB held for the life of the hub.
+
+**Measured here** (darwin/arm64, go1.27.3, compiling `fnmatchTranslate`'s output with `regexp.Compile`):
+
+| Pattern | Allocated while compiling | Held once compiled |
+|---|---|---|
+| `*a` x 512 (1 KiB) | 581 KB | 124 KB |
+| `*a` x 32,768 (64 KiB) | 50 MB | 8.3 MB |
+| `?` x 1,000,000 | 540 MB | not measured |
+| `?` x 4,000,000 | 1.37 GB, then refused | -- |
+
+The last row is the panic, run rather than reasoned: RE2 refused it with *"expression too large"*, which `MustCompile` turns into a panic. RE2's error text quotes the whole translated expression, megabytes of it. A grain target compounds this: 5.537 reads `a:b:c` at every colon, and each reading was its own glob, so a `G@` value of n colons was n patterns whose lengths add up to the square of n.
+
+**Also measured, and older than 5.501.** A target of names costs memory to parse even with no glob in it. Compiling 4 MiB of target allocated some 33 bytes a byte for an or-chain of bare names, 31 for `L@` terms, and 8 for a `-L` list. At 64 MiB that is some 2 GB. 5.291 left length uncapped because it took the cost as linear and bounded by `max_body`. It is linear, but at that rate `max_body` bounds nothing useful. See its new subsection.
+
+**The change.** Four parts.
+
+- `fnmatch.Compile` is the path for a pattern from a request. It refuses a glob over `MaxPatternLen`, 1 KiB, with `ErrTooLong`. It uses `regexp.Compile`, and an RE2 refusal is an error that gives the pattern's length, not RE2's text. It caches nothing: the caller holds the `*Pattern`. A pattern with no `*?[`, in valid UTF-8, is a literal. It is compared as a string, with no regexp and no length limit. Invalid UTF-8 keeps the regexp, because the regexp reads a bad byte as U+FFFD and string equality would not.
+- `fnmatch.Match` stays for patterns from configuration: policy, `file_ignore_glob`, `env_allowlist`/`env_denylist`, `tolerate_failures`, requisites, relay globs, a token's node scope. It has no length limit, because an operator's pattern that silently stopped matching would hide or deny nothing. Its cache is a least-recently-used list holding at most 64 KiB of pattern text, some 8 MB at the dearest measured ratio. A pattern longer than that is compiled each time it is used and not kept. A pattern RE2 refuses matches nothing, where it panicked before.
+- `target.Compile` compiles every glob once, through `fnmatch.Compile`, and the `Matcher` holds the result. The globs and regular expressions of one expression share a budget of 32 KiB, nodegroups and every grain reading included. Literals and `*` cost nothing. The whole expression, of any type, is refused over `MaxExprLen`, 1 MiB, before it is tokenized. An error quoting an expression shortens it to 64 bytes and its length. `ValidateNodegroups` gives each group a budget of its own, as `Compile` gives a group named alone, so a group that passes at load passes at use.
+- The API refuses a `tgt` over 1 MiB with a 400, before the policy splits it into names (`internal/api/execute.go`).
+
+**Why these numbers.** A glob is short, and 1 KiB is four times the longest node ID `pki.ValidateNodeID` admits. A long target is a list of names, which are literals and are limited only by the 1 MiB. That holds some 50,000 names of twenty characters, and compiling it is some 32 MB at the steepest measured rate. The 32 KiB budget is some 20 MB of compile work and 4 MB held at the dearest glob shape. A regular expression measured cheaper: 32 KiB of `.*a` through `regexcompat.Compile` allocated 14 MB and held 2.6 MB, and an alternation of names 1.6 MB and 50 KB. It allows three hundred 100-byte globs, or an `E@` alternation of a thousand short names.
+
+**Shown.** Each test was broken on purpose and seen to fail:
+
+- `TestCompileRefusesAnOverLongPattern` (`internal/fnmatch/limits_test.go`) failed with the length check removed.
+- `TestAPatternRE2RefusesIsAnErrorNotAPanic` failed with `cachedRegexp` panicking on the error, and with RE2's text passed through. The refusal is injected, because the one RE2 has been seen to make costs 1.3 GB.
+- `TestTheCacheIsBounded` failed with eviction removed (150,003 bytes held against 65,536), and with a hit not moved to the front.
+- `TestDistinctPatternsDoNotHoldMemory` measures the heap in a child under `debug.SetMemoryLimit`. 300 distinct 1 KiB patterns held 8 MB, and 37 MB with eviction removed.
+- `TestALiteralWithInvalidUTF8AgreesWithTheRegexp` failed with the UTF-8 condition dropped.
+- `TestTheCacheIsSafeForConcurrentUse`, under `-race`, reported a data race with the lock taken off the cache lookup.
+- In `internal/target/limits_test.go`, the over-long glob, budget, grain-reading and nodegroup tests each failed with their own check removed. `TestATargetsGlobsAreNotKept` measures the heap in a child: 300 distinct glob targets, compiled, matched and let go, held 0 KB. With the glob leaf put back on the cached `globMatch` it held 8 MB and failed. `TestAnOverLongExpressionIsRefused` failed with `MaxExprLen` removed.
+- `TestDispatchRefusesAnOverLongTarget` (`internal/hub`) failed with both caps removed. `TestAnOverLongTargetIsRefusedBeforeThePolicy` (`internal/api`) got a 200 with the API check removed.
+
+The new tests could not be run against main `de26c91b` itself, because `fnmatch.Compile` does not exist there. The breaks above stand in for it.
+
+**Behaviour change.** A target over 1 MiB, a glob with `*?[` over 1 KiB, or an expression whose globs and regexes come to more than 32 KiB is refused. A top file is compiled by the same code, so a top-file target over a limit is now an error.
+
+**Not verified.** No hub or API was run; the measurements are from `internal/fnmatch` and `internal/target` on one Mac, not FreeBSD or Linux. Not limited: the expansion of a nodegroup, which is configuration and is checked against the budget but not against `MaxExprLen`; and `file.recurse`'s `include_pat`/`exclude_pat`. Those are state arguments, matched with `fnmatch.Match` on the node, uncapped but now under the bounded cache. Whether a request can supply one directly, rather than through a state file, was not traced. Measured against nothing real: whether any top file or policy in use has a glob over 1 KiB. None was looked for.
 
 ## 6. Everything else not started
 
