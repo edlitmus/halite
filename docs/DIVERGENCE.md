@@ -37511,12 +37511,42 @@ it is unset is what Salt's `network.mod_hostname` does too, and what
 `LocalHostName` plus `.local`, so a state naming that name still reports
 a change the first time. That is recorded here, not changed.
 
-**Not verified.** The FreeBSD branch (`sysrc -x hostname`) and the
-Linux branch (removing or rewriting `/etc/hostname`) of the clearing
-step have not run. Every machine in those legs has a boot-time name, and
-the branch runs only when there is none. The new comparison in the
-`macos` leg has not run, because no macOS runner was available. Run on
-macOS 27.3 only; not run on macos-15.
+**The other two clearing branches, run the same way** (2026-11-04,
+`d6039a17`, each from the four hostname tests and the conformance case,
+as root). CI's legs never reach these branches, because every machine
+in them has a boot-time name.
+
+- **FreeBSD**: a throwaway thin Bastille jail on beastie
+  (15.1-RELEASE on the 15.1-RELEASE-p6 host,
+  `security.jail.jailed=1`, `allow.set_hostname=1`), with
+  freebsd/amd64 test binaries cross-built on macOS. A fresh jail has no
+  `hostname` in its `rc.conf`. From that state everything passed, and
+  afterwards `rc.conf` still had no `hostname` line. With the clearing
+  step disabled, the conformance case failed with "rc.conf holds
+  "halite-hn" and held "" before this test", and the line was left
+  behind. With `hostname=halite-hn` set first, everything passed,
+  including the running-versus-boot test, which skips without one. The
+  jail was destroyed afterwards.
+- **Linux**: noop2-1 (Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64,
+  systemd-hostnamed running), through SSM, built there from the branch.
+  With `/etc/hostname` present, everything passed and the file was
+  byte-identical afterwards. With the file removed, everything passed
+  and it was still absent afterwards. With the clearing step disabled,
+  the conformance case failed with "/etc/hostname holds "noop2-1" and
+  held "" before this test", and the file was left behind. The original
+  file was put back byte for byte.
+
+**Not verified.**
+
+- The Linux branch without `hostnamectl`, where the module writes
+  `/etc/hostname` itself.
+- arm64 Linux. The build on noop-1 (2 CPUs, 920 MB) ran the host out of
+  memory. The kernel killed its `salt-minion`, which stayed down for 20
+  minutes until it was restarted by hand, and the tests never ran.
+- An unset `HostName` on macos-15. The PR's `macos` leg ran there and
+  passed, and the new comparison ran. But the runner had `HostName` set
+  (to its own `….local` name) before and after, so the unset case
+  remains shown on macOS 27.3 only.
 
 ### 5.576 A rename by hand raced configd on a Mac
 
@@ -37557,7 +37587,9 @@ test, on mini-me, with `HostName` set:
 - With both waits, 5 of 5 passed.
 
 **Not verified.** The 10 s bound is generous against the 0.064 s
-measured, and has not been measured on any other Mac.
+measured, and has not been measured on any other Mac. The PR's `macos`
+leg on macos-15 passed the test with the wait in place, which shows it
+does no harm there, not that the race happens there.
 
 
 
