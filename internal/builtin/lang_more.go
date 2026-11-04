@@ -125,6 +125,10 @@ func registerNpm(r *Registries) {
 }
 
 func npmChange(c *exec.Context, args *value.Map, verb string) (any, error) {
+	pkgs, err := langNames(args, "pkgs")
+	if err != nil {
+		return nil, err
+	}
 	dir := states.Str(args, "dir", "")
 	argv := []string{verb}
 	if dir == "" {
@@ -133,7 +137,7 @@ func npmChange(c *exec.Context, args *value.Map, verb string) (any, error) {
 	if reg := states.Str(args, "registry", ""); reg != "" {
 		argv = append(argv, "--registry", reg)
 	}
-	argv = append(argv, states.Strings(args, "pkgs")...)
+	argv = append(argv, pkgs...)
 	if c.Which("npm") == "" {
 		return nil, fmt.Errorf("npm was not found on this node; the npm module drives the system binary")
 	}
@@ -216,11 +220,19 @@ func registerGem(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				gems, err := langNames(args, "gems")
+				if err != nil {
+					return nil, err
+				}
 				argv := []string{"install", "--no-document"}
 				if v := states.Str(args, "version", ""); v != "" {
+					// An element of its own, so it is checked as a name is.
+					if err := pkgValidateVersion(strings.Join(gems, ", "), v); err != nil {
+						return nil, err
+					}
 					argv = append(argv, "--version", v)
 				}
-				argv = append(argv, states.Strings(args, "gems")...)
+				argv = append(argv, gems...)
 				if c.Test {
 					return wouldRun("gem", argv...), nil
 				}
@@ -243,7 +255,11 @@ func registerGem(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				argv := append([]string{"uninstall", "--executables", "--all"}, states.Strings(args, "gems")...)
+				gems, err := langNames(args, "gems")
+				if err != nil {
+					return nil, err
+				}
+				argv := append([]string{"uninstall", "--executables", "--all"}, gems...)
 				if c.Test {
 					return wouldRun("gem", argv...), nil
 				}
