@@ -83,33 +83,18 @@ func TestLiveHostnameRenamesTheMachineAndPutsItBack(t *testing.T) {
 	c := system(t)
 	r := New()
 
-	before, err := r.Exec.Call(c, "hostname.get_hostname", value.NewMap(0))
+	snap, err := captureHostname(c, r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	running, _ := before.(string)
-	if running == "" {
-		t.Fatal("this machine reports no running hostname")
-	}
-
-	persistedBefore, err := r.Exec.Call(c, "hostname.get_persistent", value.NewMap(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wasPersisted, _ := persistedBefore.(string)
 	t.Logf("running=%q persistent=%q; hostnamectl=%q sysrc=%q",
-		running, wasPersisted, c.Which("hostnamectl"), c.Which("sysrc"))
+		snap.running, snap.persistent, c.Which("hostnamectl"), c.Which("sysrc"))
 
-	// Put it back whatever happens, including a panic. The persistent
-	// name is restored through the module too, because restoring it by
-	// hand would be a second implementation of the thing under test.
+	// Put it back whatever happens, including a panic -- both halves, and
+	// a boot-time name that was unset stays unset. See hostnameSnapshot.
 	t.Cleanup(func() {
-		name := running
-		if wasPersisted != "" {
-			name = wasPersisted
-		}
-		if _, err := r.Exec.Call(c, "hostname.set_hostname", value.MapOf("hostname", name)); err != nil {
-			t.Errorf("this machine was left named something else: restoring %q failed: %v", name, err)
+		if err := snap.restore(c, r); err != nil {
+			t.Errorf("this machine was not put back: %v", err)
 		}
 	})
 
@@ -175,45 +160,21 @@ func TestLiveHostnameRenamesTheMachineAndPutsItBack(t *testing.T) {
 
 // persistentByHand reads the boot-time hostname the way the platform
 // stores it, without going through the module under test.
+//
+// On a Mac that is SystemConfiguration's `HostName` preference, per
+// scutil(8), which `scutil --get` reads without root. An unset one has
+// now been seen, on mini-me (macOS 27.3, 2026-11-04): exit 1, nothing on
+// stdout, "HostName: not set" on stderr -- read as unset, as the module
+// does. The answer is still logged, because it is the line a reader of a
+// failure wants first.
 func persistentByHand(t *testing.T, c *exec.Context) (name, where string) {
 	t.Helper()
-	if runtime.GOOS == "freebsd" {
-		res, err := c.Run(exec.Command{
-			Argv:           []string{"sysrc", "-n", "hostname"},
-			IgnoreExitCode: true,
-		})
-		if err != nil {
-			t.Fatalf("sysrc: %v", err)
-		}
-		if res.Code != 0 {
-			return "", "rc.conf"
-		}
-		return strings.TrimSpace(res.Stdout), "rc.conf"
-	}
-	if runtime.GOOS == "darwin" {
-		// macOS has no /etc/hostname. The name hostname(1) and
-		// gethostname(3) come back with is SystemConfiguration's
-		// `HostName` preference, per scutil(8), which `scutil --get`
-		// reads without root. Its answer for an unset preference is
-		// logged, because nothing here has seen it yet.
-		res, err := c.Run(exec.Command{
-			Argv:           []string{"scutil", "--get", "HostName"},
-			IgnoreExitCode: true,
-		})
-		if err != nil {
-			t.Fatalf("scutil: %v", err)
-		}
-		t.Logf("scutil --get HostName: exit %d, stdout %q, stderr %q", res.Code, res.Stdout, res.Stderr)
-		if res.Code != 0 {
-			return "", "scutil HostName"
-		}
-		return strings.TrimSpace(res.Stdout), "scutil HostName"
-	}
-	body, err := os.ReadFile("/etc/hostname")
+	name, where, err := persistentByHandErr(c)
 	if err != nil {
-		t.Fatalf("/etc/hostname: %v", err)
+		t.Fatal(err)
 	}
-	return strings.TrimSpace(string(body)), "/etc/hostname"
+	t.Logf("%s: %q", where, name)
+	return name, where
 }
 
 // **The running name and the boot-time name pulled apart, and the module
@@ -237,6 +198,21 @@ func TestLiveHostnameTellsTheRunningNameFromTheBootTimeOne(t *testing.T) {
 	bootTime, where := persistentByHand(t, c)
 	if bootTime == "" {
 		t.Skipf("this machine has no persistent hostname in %s, so there is nothing to differ from", where)
+	}
+	// On a Mac, whatever last wrote the `HostName` preference -- the test
+	// before this one, as it puts the machine back -- is still being
+	// applied to the running name by configd, and would undo the rename
+	// below under it (waitRunningName). What configd settles on is the
+	// running name equal to the preference, so that is waited for. A Mac
+	// somebody already renamed by hand never gets there and is still a
+	// fair machine for this test -- after the wait nothing is pending --
+	// so running out of time is said, not failed. Elsewhere nothing moves
+	// the running name behind the caller's back.
+	if runtime.GOOS == "darwin" {
+		if now, ok := waitRunningName(bootTime); !ok {
+			t.Logf("the running name stayed %q, not the HostName preference %q; "+
+				"taken as renamed by hand before this test", now, bootTime)
+		}
 	}
 	before, err := r.Exec.Call(c, "hostname.get_hostname", value.NewMap(0))
 	if err != nil {
@@ -298,11 +274,39 @@ func TestLiveHostnameStateConvergesOnTheNameTheMachineHas(t *testing.T) {
 	c := system(t)
 	r := New()
 
-	before, err := r.Exec.Call(c, "hostname.get_hostname", value.NewMap(0))
+	snap, err := captureHostname(c, r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	running, _ := before.(string)
+	running := snap.running
+
+	// "The name the machine has" is both halves, and a machine can have
+	// only one. A Mac with no `HostName` preference -- the default on one
+	// nobody has configured -- runs as its `LocalHostName` plus `.local`
+	// and boots with no HostName at all, and a state naming the running
+	// name rightly writes the preference. This test used to assume the
+	// two agreed, which every runner it had seen did; on mini-me (macOS
+	// 27.3, 2026-11-04) it reported that change as a failure and left the
+	// preference written. So the machine is put back whatever happens,
+	// and where the halves differ the state is applied once first: the
+	// property is that a second run reports nothing, not that the first
+	// does.
+	t.Cleanup(func() {
+		if err := snap.restore(c, r); err != nil {
+			t.Errorf("this machine was not put back: %v", err)
+		}
+	})
+	if snap.persistent != running {
+		t.Logf("running=%q persistent=%q: applying once before asking for convergence",
+			running, snap.persistent)
+		first, err := r.States.Call(c, "hostname.system", value.MapOf("name", running))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !first.Succeeded() {
+			t.Fatalf("the state failed setting the boot-time name to the running one: %s", first.Comment)
+		}
+	}
 
 	// Asked for the name it already has, the state reports nothing.
 	out, err := r.States.Call(c, "hostname.system", value.MapOf("name", running))

@@ -37441,6 +37441,156 @@ reading. No node or hub was run with a multi-line secret in its pillar.
 The sandbox was run on macOS through its test binary, not under a
 dropped identity on FreeBSD or Linux. `make check` was not run.
 
+### 5.575 The hostname live tests left a Mac's unset `HostName` set
+
+Found on 2026-11-04 by running the `macos` leg's own command, as root,
+at `3433e651`, on mini-me (macOS 27.3, build 26C5035r, arm64, go1.27.3),
+because every GitHub macOS runner that day was cancelled before it
+started. The machine's `HostName` preference was unset before the run --
+`scutil --get HostName` exited 1 with "HostName: not set" on stderr and
+nothing on stdout, which is the default on a Mac nobody has configured
+and the answer `darwinPersistentHostname` already read as unset -- and
+afterwards it said `mini-me-1986.local`. Every test passed except the
+one in 5.576, and the leg's "put back" step, which looks only at the
+running name, would have passed too: the running name was right.
+
+**Three paths wrote it, and none put it back.**
+
+- The conformance case `hostname.system` captured the boot-time name,
+  fell back to the running name when it was empty, and restored with
+  `hostname.set_hostname`, which sets both halves. Its own comment said
+  the empty case was legitimate on a Mac and then wrote the running name
+  into it.
+- `TestLiveHostnameRenamesTheMachineAndPutsItBack` restored the same
+  way: the running name when the boot-time one was empty.
+- `TestLiveHostnameStateConvergesOnTheNameTheMachineHas` applied
+  `hostname.system` with the running name, assuming that changed
+  nothing, and restored nothing. On an unset Mac the state rightly
+  writes the preference, so the test failed and left it written.
+
+In the run, the conformance case went first, so the other two found a
+`HostName` already set and passed. The third path showed only once the
+first two were fixed: the fixed tests, run with nothing else from a
+`HostName` that was unset, failed in the convergence test with the
+change it made, and left the preference set.
+
+**The change.** `hostnameSnapshot` (`live_hostname_restore_test.go`)
+records the running name, the boot-time name as the module reads it, and
+on Linux and the others the bytes of `/etc/hostname` or its absence.
+`restore` puts the name back through `hostname.set_hostname` as before.
+Then, if there was no boot-time name, it removes the one that call
+wrote, by hand, because the module has no operation that unsets it and
+nor has Salt's. On a Mac it uses `scutil --prefs` (`d.remove HostName`,
+`commit`, `apply`), on FreeBSD `sysrc -x hostname`, and elsewhere it
+removes or rewrites the file. It then checks both halves from outside
+the module and returns what it could not put back. All three tests use
+it. The convergence test applies the state once first when the halves
+differ, because the property it exists for is that a second run reports
+nothing. The `macos` leg saves `scutil --get HostName` before the tests
+and fails if it differs afterwards.
+
+**Shown, on mini-me, from an unset `HostName` each time.**
+
+- The four hostname tests and the conformance case passed, and
+  `HostName` was still unset afterwards. `TestLiveHostnameTellsTheRunningNameFromTheBootTimeOne`
+  skipped, as it does when there is no boot-time name.
+- The whole `-run` filter of the `macos` leg passed, with three skips
+  beyond that one: netfilter, namespace and software update. Afterwards
+  `HostName` was unset and every name matched what it was before. No
+  `halite*` account or `org.halite.*` LaunchDaemon was left.
+
+**Broken on purpose.** With the clearing step disabled in `restore`,
+the conformance case failed at its second setup with "scutil HostName
+holds "mini-me-1986.local" and held "" before this test; this machine
+would come back as "mini-me-1986.local" after a reboot", and
+`HostName` was left set. Restored by hand afterwards.
+
+**Not changed.** `hostname.system` writing `HostName` on a Mac where
+it is unset is what Salt's `network.mod_hostname` does too, and what
+5.132 chose `HostName` to mean. A Mac with no `HostName` runs as its
+`LocalHostName` plus `.local`, so a state naming that name still reports
+a change the first time. That is recorded here, not changed.
+
+**The other two clearing branches, run the same way** (2026-11-04,
+`d6039a17`, each from the four hostname tests and the conformance case,
+as root). CI's legs never reach these branches, because every machine
+in them has a boot-time name.
+
+- **FreeBSD**: a throwaway thin Bastille jail on beastie
+  (15.1-RELEASE on the 15.1-RELEASE-p6 host,
+  `security.jail.jailed=1`, `allow.set_hostname=1`), with
+  freebsd/amd64 test binaries cross-built on macOS. A fresh jail has no
+  `hostname` in its `rc.conf`. From that state everything passed, and
+  afterwards `rc.conf` still had no `hostname` line. With the clearing
+  step disabled, the conformance case failed with "rc.conf holds
+  "halite-hn" and held "" before this test", and the line was left
+  behind. With `hostname=halite-hn` set first, everything passed,
+  including the running-versus-boot test, which skips without one. The
+  jail was destroyed afterwards.
+- **Linux**: noop2-1 (Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64,
+  systemd-hostnamed running), through SSM, built there from the branch.
+  With `/etc/hostname` present, everything passed and the file was
+  byte-identical afterwards. With the file removed, everything passed
+  and it was still absent afterwards. With the clearing step disabled,
+  the conformance case failed with "/etc/hostname holds "noop2-1" and
+  held "" before this test", and the file was left behind. The original
+  file was put back byte for byte. The same three runs on noop-1
+  (Ubuntu 22.04.5, 5.15.0-1119-aws-fips, arm64) gave the same results,
+  with "/etc/hostname holds "noop-1"" in the broken run. Those binaries
+  were cross-built on noop2-1 and checked by sha256 on noop-1.
+
+**Not verified.**
+
+- The Linux branch without `hostnamectl`, where the module writes
+  `/etc/hostname` itself.
+- An unset `HostName` on macos-15. The PR's `macos` leg ran there and
+  passed, and the new comparison ran. But the runner had `HostName` set
+  (to its own `….local` name) before and after, so the unset case
+  remains shown on macOS 27.3 only.
+
+### 5.576 A rename by hand raced configd on a Mac
+
+`TestLiveHostnameTellsTheRunningNameFromTheBootTimeOne` failed in the
+same run as 5.575 with "get_hostname = halite-live-probe after the
+machine was renamed to "halite-live-running-only"". `halite-live-probe`
+is the name the test before it sets and then puts back. The `macos`
+leg on macos-15 runners has passed this test.
+
+**Measured on mini-me.** Writing the `HostName` preference makes
+configd set the running name to it asynchronously. A script ran `scutil
+--set HostName A` and then `hostname B` at once, and polled
+`kern.hostname`: B at 0.003 s, then A from 0.064 s onward. A `hostname`
+alone, with no change to the preference, held for the 4 s it was
+watched. The test takes 0.03 s and starts straight after a cleanup that
+writes the preference twice, so its rename by hand landed inside that
+window and was undone under it.
+
+**The change.** `waitRunningName` polls the running name until it is the
+one wanted, for up to 10 s, instead of sleeping for a fixed time. The
+window is a property of the machine, and macos-15 evidently does not
+show it. Two places now wait:
+
+- `TestLiveHostnameTellsTheRunningNameFromTheBootTimeOne`, on a Mac,
+  waits for the running name to reach the preference before renaming by
+  hand. If it does not get there, the test logs that and carries on,
+  because a Mac that was renamed by hand earlier never gets there and is
+  still a fair machine for the test.
+- `hostnameSnapshot.restore` (5.575) waits too, as part of checking that
+  the machine was put back.
+
+**Shown.** Each run below was `-count=5` of the rename test and this
+test, on mini-me, with `HostName` set:
+
+- With both waits removed, the test failed in 1 run of the 5, with the
+  same message as above.
+- With only this test's wait, 5 of 5 passed.
+- With both waits, 5 of 5 passed.
+
+**Not verified.** The 10 s bound is generous against the 0.064 s
+measured, and has not been measured on any other Mac. The PR's `macos`
+leg on macos-15 passed the test with the wait in place, which shows it
+does no harm there, not that the race happens there.
+
 
 
 ## 6. Everything else not started

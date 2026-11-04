@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"strings"
 
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -73,52 +72,36 @@ import (
 // operator most needs to see.
 //
 // The original is captured on the first Setup and put back by every subsequent
-// Setup and by Cleanup. Through the module's own `hostname.set_hostname`,
-// deliberately -- restoring it by hand would be a second implementation of the
-// thing under test, and one that agreed with a broken module would hide it.
+// Setup and by Cleanup, through hostnameSnapshot: by the module's own
+// `hostname.set_hostname`, and then, where the machine had no boot-time name,
+// by removing the one that call wrote. This case used to go back to the
+// running name when the boot-time one was empty -- which on a Mac, where an
+// unset `HostName` is the default, wrote that name into the preference and
+// left it there (mini-me, macOS 27.3, 2026-11-04).
 func hostnameCases() []liveCase {
 	r := New()
 	root := liveRoot()
 	want := liveConformancePrefix + "-host"
 
-	// The name to go back to, read once. Empty until the first Setup, which
-	// is why construction touches nothing.
-	var original string
+	// What to go back to, read once. Unset until the first Setup, which is
+	// why construction touches nothing.
+	var original *hostnameSnapshot
 	capture := func() error {
-		if original != "" {
+		if original != nil {
 			return nil
 		}
-		persistent, err := r.Exec.Call(root, "hostname.get_persistent", value.NewMap(0))
+		s, err := captureHostname(root, r)
 		if err != nil {
-			return fmt.Errorf("this machine's persistent hostname could not be read: %w", err)
+			return err
 		}
-		if s, _ := persistent.(string); strings.TrimSpace(s) != "" {
-			original = strings.TrimSpace(s)
-			return nil
-		}
-		// macOS has no /etc/hostname and nothing reads one, so the
-		// persistent name can legitimately be empty there; the running
-		// name is then the only thing to go back to.
-		running, err := r.Exec.Call(root, "hostname.get_hostname", value.NewMap(0))
-		if err != nil {
-			return fmt.Errorf("this machine's hostname could not be read: %w", err)
-		}
-		s, _ := running.(string)
-		if strings.TrimSpace(s) == "" {
-			return fmt.Errorf("this machine reports no hostname at all, so there is nothing to put back")
-		}
-		original = strings.TrimSpace(s)
+		original = &s
 		return nil
 	}
 	restore := func() error {
-		if original == "" {
+		if original == nil {
 			return nil
 		}
-		if _, err := r.Exec.Call(root, "hostname.set_hostname",
-			value.MapOf("hostname", original)); err != nil {
-			return fmt.Errorf("this machine could not be renamed back to %s: %w", original, err)
-		}
-		return nil
+		return original.restore(root, r)
 	}
 
 	// Both halves, in one string, so that a module that changed one and
