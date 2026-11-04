@@ -255,13 +255,19 @@ var moduleEvidence = map[string]exec.Evidence{
 		"converged. With the hand-over removed it failed on all three legs with the files owned by uid " +
 		"0 (Fleet run 37046115494), which is the defect it was written with the fix for: a root-owned " +
 		"key file sshd cannot read as the account (DIVERGENCE 5.200). The editing itself is also held " +
-		"by the conformance harness on every CI leg against a file named with `config`. Not covered: " +
-		"`options` beyond none, and a home directory that does not exist yet"},
+		"by the conformance harness on every CI leg against a file named with `config`. A `config` " +
+		"inside the account's home goes through the same refusal of the account's links: " +
+		"`TestLiveSSHConfigInsideHomeRefusesALink` ran as root on 2026-11-04 on FreeBSD 15.1-RELEASE-p6 " +
+		"(a Bastille jail on beastie), Ubuntu 22.04.5 (an EC2 host) and macOS 27.2 arm64 (mini-me), failing on main with a root file " +
+		"chowned to the account through a linked ~/.ssh, and passing with the fix (DIVERGENCE 5.568). " +
+		"Not covered: `options` beyond none, and a home directory that does not exist yet"},
 	"ssh_known_hosts": {Level: exec.Hardware, Note: "the same test, on the same three legs and " +
 		"the same Fleet run 37045269819, put a declared host key in a throwaway account's " +
 		"~/.ssh/known_hosts as root and removed it, each converging, the file 0644 and owned by the " +
 		"account; with the hand-over removed it was root's (Fleet run 37045269819 passing, 37046115494 " +
-		"failing; DIVERGENCE 5.200). Not covered: `ssh-keyscan`, for a host with no key declared, " +
+		"failing; DIVERGENCE 5.200). A `config` naming ~/.ssh/known_hosts through a linked ~/.ssh " +
+		"wrote into the link's target as root on main and is refused with the fix, on FreeBSD 15.1, " +
+		"Ubuntu 22.04.5 and macOS 27.2 on 2026-11-04 (DIVERGENCE 5.568). Not covered: `ssh-keyscan`, for a host with no key declared, " +
 		"which reaches the network and has not been run at all"},
 	"zfs": {Level: exec.Hardware, Note: "`zfs.filesystem_present` and `zfs.absent` run through " +
 		"the conformance harness as root on the `freebsd` leg of `fleet.yml`, creating and destroying " +

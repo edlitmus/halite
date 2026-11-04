@@ -220,3 +220,151 @@ func TestLiveSSHRefusesALinkedSSHDirectory(t *testing.T) {
 		t.Errorf("the target's file became %q", b)
 	}
 }
+
+// **A `config` path inside the account's home goes through the same root
+// as the default one** (issue 321, A10). M-30's root was taken only when
+// no `config` was given, so `config: ~deploy/.ssh/authorized_keys` -- the
+// default file, named -- was written by path, through a ~/.ssh the account
+// had replaced with a link, and root wrote and chowned a file wherever the
+// account pointed it. What decides is where the path lands, not whether it
+// was named: the default file named, a file under a directory of the
+// home's that is a link, and the default file reached through another
+// name for the home all have to be refused, and nothing may appear in the
+// target or change owner. A `config` inside the home with no link in it,
+// and one outside the home, still work.
+func TestLiveSSHConfigInsideHomeRefusesALink(t *testing.T) {
+	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" {
+		t.Skip("set HALITE_SYSTEM_LIVE=1 on a machine you can throw away; this creates an account")
+	}
+	if os.Geteuid() != 0 {
+		t.Skip("writing another account's files needs root; run it under sudo")
+	}
+	c := realCtx(t)
+	r := New()
+	account := fmt.Sprintf("halsc%d", os.Getpid())
+	home := filepath.Join(os.TempDir(), account)
+	etc := filepath.Join(os.TempDir(), account+"-etc")
+	alias := filepath.Join(os.TempDir(), account+"-alias")
+	outside := filepath.Join(os.TempDir(), account+"-out")
+	if _, err := user.Lookup(account); err == nil {
+		t.Fatalf("%s already exists on this machine; refusing to touch it", account)
+	}
+	t.Cleanup(func() {
+		if _, err := r.States.Call(c, "user.absent", value.MapOf("name", account, "purge", true)); err != nil {
+			t.Errorf("removing %s: %v", account, err)
+		}
+		os.RemoveAll(home)
+		os.RemoveAll(etc)
+		os.Remove(alias)
+		os.RemoveAll(outside)
+	})
+	res, err := r.States.Call(c, "user.present", value.MapOf("name", account, "home", home,
+		"createhome", true, "shell", "/bin/sh", "fullname", "halite ssh config test"))
+	if err != nil || !res.Succeeded() {
+		t.Fatalf("user.present: %v %+v", err, res)
+	}
+	u, err := user.Lookup(account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	if err := os.MkdirAll(u.HomeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chown(u.HomeDir, uid, -1)
+	if err := os.MkdirAll(etc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(etc, "authorized_keys")
+	if err := os.WriteFile(secret, []byte("root-only line\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The account's own links: ~/.ssh and ~/keys, both to the target.
+	for _, name := range []string{".ssh", "keys"} {
+		link := filepath.Join(u.HomeDir, name)
+		_ = os.RemoveAll(link)
+		if err := os.Symlink(etc, link); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Lchown(link, uid, -1)
+	}
+	// Another name for the home, root's own, as /home is on a host whose
+	// /home is a link to /usr/home: the path does not start with the home
+	// as passwd spells it, and is the home all the same.
+	if err := os.Symlink(u.HomeDir, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		pubKey  = "AAAAC3NzaC1lZDI1NTE5AAAAIGV4YW1wbGVrZXlmb3Jjb25mb3JtYW5jZXRlc3Rz"
+		hostKey = "AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3RrZXlmb3Jjb25mb3JtYW5jZXRlc3RpbmdY"
+	)
+	auth := func(config string) *value.Map {
+		return value.MapOf("name", pubKey, "enc", "ssh-ed25519", "user", account, "config", config)
+	}
+	known := func(config string) *value.Map {
+		return value.MapOf("name", "host.example.com", "key", hostKey, "enc", "ssh-ed25519", "user", account, "config", config)
+	}
+	for _, call := range []struct {
+		what string
+		fn   string
+		args *value.Map
+	}{
+		{"the default authorized_keys, named", "ssh_auth.present", auth(filepath.Join(u.HomeDir, ".ssh", "authorized_keys"))},
+		{"the default known_hosts, named", "ssh_known_hosts.present", known(filepath.Join(u.HomeDir, ".ssh", "known_hosts"))},
+		{"a file under a linked directory", "ssh_auth.present", auth(filepath.Join(u.HomeDir, "keys", "authorized_keys"))},
+		{"the default file through another name for the home", "ssh_auth.present", auth(filepath.Join(alias, ".ssh", "authorized_keys"))},
+	} {
+		res, err := r.States.Call(c, call.fn, call.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Result == nil || *res.Result || !strings.Contains(res.Comment, "symbolic link") {
+			t.Errorf("%s (%s): %+v", call.what, call.fn, res)
+		}
+	}
+	entries, _ := os.ReadDir(etc)
+	if len(entries) != 1 {
+		t.Errorf("the target directory now holds %d entries; nothing may be written there", len(entries))
+	}
+	info, err := os.Stat(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := info.Sys().(*syscall.Stat_t); int(st.Uid) != 0 {
+		t.Errorf("the target's file was given to uid %d", st.Uid)
+	}
+	if b, _ := os.ReadFile(secret); string(b) != "root-only line\n" {
+		t.Errorf("the target's file became %q", b)
+	}
+
+	// What still has to work: a config in the home with no link in it,
+	// made if missing and given to the account, and one outside the home.
+	for _, config := range []string{
+		filepath.Join(u.HomeDir, "sub", "authorized_keys"),
+		filepath.Join(outside, "authorized_keys"),
+	} {
+		for i, wantChange := range []bool{true, false} {
+			res, err := r.States.Call(c, "ssh_auth.present", auth(config))
+			if err != nil || !res.Succeeded() {
+				t.Fatalf("%s, run %d: %v %+v", config, i+1, err, res)
+			}
+			if changed := res.Changes != nil && res.Changes.Len() > 0; changed != wantChange {
+				t.Errorf("%s, run %d: changed = %v, want %v: %s", config, i+1, changed, wantChange, res.Comment)
+			}
+		}
+		info, err := os.Stat(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Errorf("%s is %o, want 600", config, got)
+		}
+		if st := info.Sys().(*syscall.Stat_t); int(st.Uid) != uid {
+			t.Errorf("%s is owned by uid %d, want %d", config, st.Uid, uid)
+		}
+		if b, _ := os.ReadFile(config); !strings.Contains(string(b), pubKey) {
+			t.Errorf("%s does not hold the key: %q", config, b)
+		}
+	}
+}
