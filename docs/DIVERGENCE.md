@@ -37534,15 +37534,15 @@ in them has a boot-time name.
   and it was still absent afterwards. With the clearing step disabled,
   the conformance case failed with "/etc/hostname holds "noop2-1" and
   held "" before this test", and the file was left behind. The original
-  file was put back byte for byte.
+  file was put back byte for byte. The same three runs on noop-1
+  (Ubuntu 22.04.5, 5.15.0-1119-aws-fips, arm64) gave the same results,
+  with "/etc/hostname holds "noop-1"" in the broken run. Those binaries
+  were cross-built on noop2-1 and checked by sha256 on noop-1.
 
 **Not verified.**
 
 - The Linux branch without `hostnamectl`, where the module writes
   `/etc/hostname` itself.
-- arm64 Linux. The build on noop-1 (2 CPUs, 920 MB) ran the host out of
-  memory. The kernel killed its `salt-minion`, which stayed down for 20
-  minutes until it was restarted by hand, and the tests never ran.
 - An unset `HostName` on macos-15. The PR's `macos` leg ran there and
   passed, and the new comparison ran. But the runner had `HostName` set
   (to its own `….local` name) before and after, so the unset case
