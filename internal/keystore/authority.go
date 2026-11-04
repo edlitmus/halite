@@ -97,7 +97,7 @@ type Authority struct {
 // checkCSRSize. Renew used to ask nothing, and a node holding a
 // certificate could write a CSR of any size into its record by renewing:
 // issue 321's close-out stored one of 2.84 MB, under the 64 MiB the
-// request body allows. DIVERGENCE 5.568.
+// request body allows. DIVERGENCE 5.573.
 const MaxCSRBytes = 16 << 10
 
 // checkCSRSize is the one size check for a CSR the hub will keep, made
@@ -112,7 +112,7 @@ func checkCSRSize(csrPEM []byte) error {
 
 // MaxSuperseded bounds how many superseded serials whose certificates
 // have not yet expired one record may hold, and so how often a node may
-// renew. A renewal at the limit is refused. DIVERGENCE 5.568.
+// renew. A renewal at the limit is refused. DIVERGENCE 5.573.
 //
 // Nothing bounded renewal before. Each one keeps the serial it replaced
 // until that certificate expires -- 90 days at the default -- and
