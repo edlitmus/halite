@@ -26281,6 +26281,11 @@ other function failed the static check. So no other function had passed
   the dynamic audit catches that, and only on functions it reaches.
 - **State functions are not in the new static check.** 5.135's state
   differential is unchanged.
+#### 5.308, `mount.set_fstab` fell out of the dynamic audit
+
+`auditMustReach` names 24 functions now, not 23: `mount.set_fstab`
+joined it, off Windows, after it stopped being reached without anything
+failing. See 5.572.
 ### 5.309 A dotted unit name was sent to systemd without `.service`
 
 Audit finding H-14. `withServiceSuffix` decided whether a name already had
@@ -27005,6 +27010,39 @@ Linux).
 
 **Not verified.** `-race` on Linux, and the pinned go1.26.6. No real Salt tree was rendered through the measure; the
 package tests, the Jinja corpus among them, pass.
+
+#### 5.312, the depth test now reaches the bound it is for
+
+"It is real for the toolchain that releases are built with" stopped
+being true when the release toolchain moved to go1.27.3 (`go.mod`'s
+`toolchain` line, #481). Under it `encoding/json` is json/v2 underneath,
+`Decoder.Token` refuses the 10,001st level itself with "exceeded max
+depth", and `decodeValue`'s own check is never the one that fires. So
+`TestDecodeJSONDepthMatchesEncodingJSON`, which went through
+`DecodeJSON` and accepted either error, passed with the check deleted.
+Measured on darwin/arm64 with go1.27.3, 2026-11-04, by changing the
+check to `if false && depth >= maxJSONDepth`: the test passed, and
+`DecodeJSON` of 10,001 `[` returned "exceeded max depth".
+
+The check stays. It is the only bound this package owns, and the
+standard library's is an implementation detail that has changed once
+already; a `GOEXPERIMENT=nojsonv2` build, or a later release that moves
+it, would put the crash back with nothing failing.
+
+**The change.** `decodeValue` reads from a `tokenSource` interface (the
+`Token` and `More` of `*json.Decoder`) rather than the concrete type, and
+the test drives it with `unboundedTokens`, a token list that keeps no
+depth, as the go1.26 `Decoder` did. It requires decodeValue's own error,
+"nests deeper than", one past the limit, and still checks `json.Valid` at
+both edges and that `DecodeJSON` refuses end to end.
+
+**Broken on purpose.** With the check changed to `if false && …` the new
+test fails for arrays and objects: "want decodeValue's own nesting
+error, got <nil>". Restored, it passes.
+
+**Not verified.** Only darwin/arm64 with go1.27.3. A
+`GOEXPERIMENT=nojsonv2` build was not tried; the token source stands in
+for it.
 
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
@@ -37196,8 +37234,61 @@ Issue 321, the close-out review of 2026-11-03, item A12, second half.
 **Run as root in a jail on beastie** (the same jail and binaries as 5.570), against the jail's own `/etc/hosts`. `host.present` was given a name holding a newline and then `10.6.6.6 a12-evil.example`. Main wrote `10.6.6.6 a12-evil.example` into the file as a line of its own, and reported `Result: True`. This change refused the state, naming the `\n`, and left the file alone. An ordinary entry in the same run was written by both. The new test fails against main's code in the jail and passes with this change.
 
 **Not verified.** Neither the C library's reader nor any other resolver was asked how it reads a line with one of these characters. The refusal does not depend on how they read it. Only `host.present` was run end to end. `dnsutil.hosts_append` was run only through the test, in the jail and on macOS.
+### 5.572 `mount.set_fstab` fell out of the `--test` audit, and nothing failed
 
+`TestEveryMutatingFunctionHonoursItsTestModeClaim` (5.308) reported 180
+functions refused in every world on this Mac, against the 179 recorded
+in 5.308, and passed. The extra one was `mount.set_fstab`. A function
+refused in every world is not judged, so a regression that made its dry
+run write the table would have passed too.
 
+**Why it fell out, measured rather than read.** The audit was run with
+the unreached names logged, on darwin/arm64 with go1.27.3, 2026-11-04:
+
+- At `17ef7d99^`, `set_fstab` was reached and answered without acting:
+  179 unreached.
+- At `17ef7d99` (#377, the fix in 5.337), it refused in every world: 180.
+- On `5c44bed3`, with `tableReady` bypassed in `set_fstab` alone, it was
+  answered again: 179.
+
+5.337 made `set_fstab` refuse an entry with no `fstype`, because such a
+line closes up and is read with its options as the type. The signature
+still calls `fstype` optional, since `mount.mounted` shares the
+parameters and needs a type only when it persists. The audit fills only
+required arguments (and every path), so it never gave one, and every
+world was refused for the reason 5.337 added.
+
+**The change.** The audit takes `auditExtraArgs`, optional arguments a
+function refuses to run without where its signature does not say so,
+with one entry: `fstype: tmpfs` for `mount.set_fstab`. The `config`
+argument is a path and is already filled with one under the test's
+temporary directory, so the dry run never names `/etc/fstab`.
+`mount.set_fstab` is added to `auditMustReach`, except on Windows, where
+it is gated out before it runs, as `service.mask` is there for another
+reason. The count is back to 179, and `set_fstab` is among the 106
+answered.
+
+**Broken on purpose.** With the `auditExtraArgs` entry removed, the test
+fails: "mount.set_fstab refused in every world this audit built". With
+`c.Test` removed from `setFstab`'s early return, it fails on the dry
+run: `files: [changed config] ; first-exists: [changed config]`. Both
+restored, it passes. With `mountGOOS` set to `freebsd` and then to
+`linux` in the test, `set_fstab` was still reached and the count was
+179.
+
+**Not changed, and the same pair.** `set_fstab`'s signature says
+`fstype` is optional and its code refuses without one. Making it
+required in that signature would tell `sys.doc` and the generated
+`docs/modules.md` the truth and would have kept the audit reaching it,
+but it changes the error an operator sees, so it is a separate change.
+The audit's extra argument is a patch over that disagreement, and any
+other function with an optional parameter it cannot do without is
+still invisible to it, unless it is in `auditMustReach`.
+
+**Not verified.** Run on darwin/arm64 only. The `mountGOOS` runs are a
+stand-in for FreeBSD and Linux, not a run on them; CI's Linux and
+FreeBSD legs run the test. Not run on Windows, where `set_fstab` is
+left out of the list.
 
 
 

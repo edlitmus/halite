@@ -50,7 +50,21 @@ const maxJSONDepth = 10000
 // since a template can build a value as deep as it can loop.
 const MaxDepth = maxJSONDepth
 
-func decodeValue(dec *json.Decoder, depth int) (any, error) {
+// tokenSource is the part of *json.Decoder that decodeValue reads. It is
+// an interface so that the depth bound can be tested against a source
+// that keeps no depth of its own: from go1.27 encoding/json is built on
+// json/v2, whose Decoder.Token refuses the 10,001st level before
+// decodeValue sees it, so a test that goes through DecodeJSON passes with
+// the bound deleted and proves nothing about it (DIVERGENCE 5.312). The
+// bound stays because it is the only one this package owns; the
+// standard library's is an implementation detail that has already
+// changed once.
+type tokenSource interface {
+	Token() (json.Token, error)
+	More() bool
+}
+
+func decodeValue(dec tokenSource, depth int) (any, error) {
 	tok, err := dec.Token()
 	if err != nil {
 		return nil, err
