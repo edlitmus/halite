@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/target"
@@ -88,6 +89,10 @@ type Config struct {
 	// OnSecret receives every decrypted value, for the redactor of
 	// SPEC 26.1.
 	OnSecret func(string)
+	// Secrets is that redactor's set, which a YAML error's window of
+	// rendered lines is scrubbed with before it is numbered
+	// (render.Options.Secrets). DIVERGENCE 5.574.
+	Secrets *redact.Set
 	// OnRendered receives each file's rendered output -- the text the
 	// template stage produced, before it was parsed -- including when the
 	// parse then failed. For a debug log: Salt prints every rendered SLS
@@ -662,6 +667,7 @@ func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) rend
 		TemplateOptions:  c.Config.TemplateOptions,
 		GPG:              c.Config.GPG,
 		OnSecret:         c.Config.OnSecret,
+		Secrets:          c.Config.Secrets,
 		Renderer:         c.Config.Renderer,
 	}
 }

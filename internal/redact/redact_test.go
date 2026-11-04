@@ -467,3 +467,32 @@ func TestOverlappingSecretsLeaveNoTail(t *testing.T) {
 		t.Errorf("a self-overlapping secret left %q", got)
 	}
 }
+
+// ScrubLines keeps the line count, so that a window numbered from its
+// result names the lines the parser named, and hands back each line of
+// a multi-line secret for the message the parser derived from the same
+// text. A secret on one line is one placeholder, as Scrub makes it.
+// DIVERGENCE 5.574.
+func TestScrubLinesKeepsTheLineCount(t *testing.T) {
+	s := New()
+	s.Add("first-line-of-it\nsecond-line-of-it\nend")
+	s.Add("single-line-secret")
+	text := "a: 1\nkey: first-line-of-it\nsecond-line-of-it\nend\nb: single-line-secret\n"
+	got, lines := s.ScrubLines(text)
+	want := "a: 1\nkey: **********\n**********\n**********\nb: **********\n"
+	if got != want {
+		t.Errorf("ScrubLines = %q, want %q", got, want)
+	}
+	if msg := lines.Scrub(`after the mapping key "second-line-of-it"`); strings.Contains(msg, "second-line-of-it") {
+		t.Errorf("the lines set did not scrub a quoted line: %s", msg)
+	}
+	// A line too short to scrub on its own is not added: the set has
+	// the same floor as any other.
+	if lines.Len() != 2 {
+		t.Errorf("the lines set holds %d values, want the two long lines", lines.Len())
+	}
+	var none *Set
+	if got, _ := none.ScrubLines("x\ny"); got != "x\ny" {
+		t.Errorf("a nil set changed the text: %q", got)
+	}
+}

@@ -354,6 +354,7 @@ func runLint(args *cli.Args) int {
 		res, err := render.Render(src, render.Options{
 			File:     path,
 			OnSecret: secrets.Add,
+			Secrets:  secrets,
 			// The gpg settings are read by both programs, and a lint
 			// that could not find the keyring would report a file as
 			// unrenderable when the node renders it perfectly well.
@@ -382,7 +383,7 @@ func runLint(args *cli.Args) int {
 		// module loading, here only for the file asked about. Scrubbed,
 		// because rendering a pillar-reading template puts its values in
 		// the text. DIVERGENCE 5.261.
-		explained := render.Explain(src, path, res, err, args.Bool("rendered", false))
+		explained := render.Explain(src, path, res, err, args.Bool("rendered", false), secrets)
 		if err != nil {
 			fmt.Println(secrets.Scrub(err.Error()))
 			if explained != "" {

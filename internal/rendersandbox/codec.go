@@ -38,7 +38,12 @@ import (
 // the same binary in every supported arrangement, so a mismatch means
 // something is very wrong rather than something is merely old, and it is
 // refused with that in mind.
-const codecVersion = 1
+//
+// 2: a YAML failure after the template stage comes back in parts
+// (frame.Parse) rather than as text. A child of 1 paired with a parent
+// of 2 -- the binary replaced under a running node -- would have its
+// window printed unscrubbed, which is the defect 2 exists to remove.
+const codecVersion = 2
 
 // wireNode is one encoded value.
 //

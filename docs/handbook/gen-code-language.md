@@ -182,6 +182,7 @@ The reason this is a package rather than two calls at each call site is the sour
 - `ContextNames` (func): ContextNames is every name a template is given without defining it.
 - `Engine` (type): Engine renders one file.
 - `Error` (type): Error is a serializer failure reported at the template position rather than the rendered one.
+- `ErrorAt` (func): ErrorAt is the Error for YAML failure ye in rendered text, whose template source map is rendered.
 - `Explain` (func): Explain is what `lint` prints after a file's result line, for the operator who has to work out what went wrong: the whole rendered output when all is set (`--rendered`), and the template source around a template error, which has no rendered output to show.
 - `GPGOptions` (type): GPGOptions configure the decryption.
 - `InProcess` (type): InProcess renders in the calling process, which is what halite did everywhere before the sandbox existed and still does wherever the sandbox is not turned on.

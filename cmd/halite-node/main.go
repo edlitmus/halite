@@ -675,6 +675,7 @@ func (n *node) compileLocalPillar() (*value.Map, error) {
 			Undefined:     n.undef,
 			GPG:           n.gpgOptions(),
 			OnSecret:      n.secrets.Add,
+			Secrets:       n.secrets,
 			Renderer:      n.defaultRenderer(),
 			OnRendered:    n.logRendered,
 			// SPEC 25.4, the same child the state compiler uses.

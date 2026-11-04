@@ -62,6 +62,7 @@ func (h *hubContext) pillarOptions(extensions *extension.Runtime) (*hub.PillarOp
 		ConfigValues:     h.cfg.Effective(config.Hub),
 		Ext:              extPillarSources(h, extensions),
 		OnSecret:         h.secrets.Add,
+		Secrets:          h.secrets,
 		// Each pillar file's rendered output, at debug level, for the
 		// node it was compiled for. The logger's redactor scrubs it like
 		// any other record. DIVERGENCE 5.261.

@@ -178,7 +178,41 @@ func (s *Set) Scrub(text string) string {
 	if s == nil {
 		return text
 	}
-	return s.replaceOutside(text, nil)
+	return s.replaceOutside(text, nil, nil)
+}
+
+// ScrubLines is Scrub for text that is about to be split into lines and
+// numbered, and it keeps the line count. A secret that spans lines is
+// replaced line by line, a placeholder for each, so that line N of the
+// result is line N of the text and a window cut from it still shows the
+// line a parser named.
+//
+// The second result holds each line of every multi-line secret it
+// replaced, as secrets of their own, for scrubbing a message derived
+// from the same text -- a parser's "after the mapping key %q", which
+// quotes one line of the secret and none of the rest.
+//
+// This exists because Scrub at the sink cannot see a multi-line secret
+// once the text has been split: render.Error numbers the rendered lines
+// around a YAML failure, puts a template position in front of each, and
+// the secret is then in the message line by line with no line holding
+// the whole of it. Registering each line as a secret of its own would
+// also work and was not done: a PEM's `-----BEGIN PRIVATE KEY-----`
+// would then be scrubbed from every message on the machine, not only
+// where it is part of a secret. The set returned here lives as long as
+// one error. DIVERGENCE 5.407 asked for this, and 5.574 is the change.
+func (s *Set) ScrubLines(text string) (string, *Set) {
+	lines := New()
+	if text == "" {
+		return text, lines
+	}
+	// URLCredentials cannot change the line count: its match stops at
+	// whitespace.
+	text = URLCredentials(text)
+	if s == nil {
+		return text, lines
+	}
+	return s.replaceOutside(text, nil, lines), lines
 }
 
 // Holds reports whether v, whole, is a recorded secret -- including one
@@ -338,7 +372,7 @@ func (s *Set) ScrubExcept(text string, keep []string) string {
 	if len(spans) == 0 {
 		return s.Scrub(text)
 	}
-	return URLCredentials(s.replaceOutside(text, spans))
+	return URLCredentials(s.replaceOutside(text, spans, nil))
 }
 
 // replaceOutside applies the value set to every occurrence that is not
@@ -359,7 +393,11 @@ func (s *Set) ScrubExcept(text string, keep []string) string {
 // A secret that contains another is covered whole by the longer one's
 // occurrence, which is what "longest first" used to buy. Two secrets
 // that merely touch are two placeholders, as they were.
-func (s *Set) replaceOutside(text string, spans []span) string {
+//
+// With lines non-nil a run that spans lines becomes a placeholder per
+// line, newlines kept, and each of its lines is added to lines
+// (ScrubLines).
+func (s *Set) replaceOutside(text string, spans []span, lines *Set) string {
 	if s == nil {
 		return text
 	}
@@ -395,7 +433,17 @@ func (s *Set) replaceOutside(text string, spans []span) string {
 			}
 		}
 		b.WriteString(text[at:run.start])
-		b.WriteString(Placeholder)
+		if covered := text[run.start:run.end]; lines != nil && strings.Contains(covered, "\n") {
+			for j, line := range strings.Split(covered, "\n") {
+				if j > 0 {
+					b.WriteByte('\n')
+				}
+				b.WriteString(Placeholder)
+				lines.Add(line)
+			}
+		} else {
+			b.WriteString(Placeholder)
+		}
 		at = run.end
 	}
 	b.WriteString(text[at:])

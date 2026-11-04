@@ -47,7 +47,7 @@ func hubDoctorPillar(t *testing.T, hubYAML, top string, files map[string]string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return hubPillarCheck(cfg, secrets.Add).Run(context.Background())
+	return hubPillarCheck(cfg, secrets).Run(context.Background())
 }
 
 // A pillar top branches on a grain -- that is what a top file is for --

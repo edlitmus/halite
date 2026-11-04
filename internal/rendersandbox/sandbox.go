@@ -251,9 +251,18 @@ var errRender = errors.New("render failed")
 
 // renderFailed carries the child's message and answers to errRender, so
 // that the distinction the parent needs costs the operator no words.
-type renderFailed struct{ msg string }
+//
+// err is the error itself when the parent built it (a YAML failure, which
+// the child sends in parts), so that errors.As finds the *render.Error an
+// in-process render returns.
+type renderFailed struct {
+	msg string
+	err error
+}
 
 func (e *renderFailed) Error() string { return e.msg }
+
+func (e *renderFailed) Unwrap() error { return e.err }
 
 func (e *renderFailed) Is(target error) bool { return target == errRender }
 
@@ -425,6 +434,13 @@ func (c *childProcess) render(body string, stages []string, opts render.Options,
 // result turns the child's answer into a render.Result.
 func (c *childProcess) result(in frame, opts render.Options) (render.Result, error) {
 	if !in.OK {
+		if p := in.Parse; p != nil {
+			// Built here, with the set, by the function an in-process
+			// render uses: the child has no set to scrub with.
+			// DIVERGENCE 5.574.
+			e := render.ErrorAt(opts.File, &p.YAML, p.Text, &template.Result{SourceMap: p.SourceMap}, opts.Secrets)
+			return render.Result{}, &renderFailed{msg: e.Error(), err: e}
+		}
 		msg := in.Error
 		if msg == "" {
 			msg = "the render failed and said nothing about why"

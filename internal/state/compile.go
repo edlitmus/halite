@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/fnmatch"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/target"
@@ -78,6 +79,10 @@ type Config struct {
 	// OnSecret receives every decrypted value, for the redactor of
 	// SPEC 26.1.
 	OnSecret func(string)
+	// Secrets is that redactor's set, which a YAML error's window of
+	// rendered lines is scrubbed with before it is numbered
+	// (render.Options.Secrets). DIVERGENCE 5.574.
+	Secrets *redact.Set
 	// Renderer is the default pipeline of SPEC section 10.
 	Renderer []string
 
@@ -313,6 +318,7 @@ func (c *Compiler) renderOptions(env, sls, filePath string) render.Options {
 		TemplateOptions:  c.Config.TemplateOptions,
 		GPG:              c.Config.GPG,
 		OnSecret:         c.Config.OnSecret,
+		Secrets:          c.Config.Secrets,
 		Renderer:         c.Config.Renderer,
 	}
 }

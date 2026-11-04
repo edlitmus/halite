@@ -358,7 +358,7 @@ func TestExplainShowsTheSourceOrTheWholeOutput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a template error")
 	}
-	got := Explain(bad, "bad.sls", res, err, false)
+	got := Explain(bad, "bad.sls", res, err, false, nil)
 	if !strings.Contains(got, "template source around the error") || !strings.Contains(got, "b: {{ 1 +") {
 		t.Errorf("a template error should show its source:\n%s", got)
 	}
@@ -368,10 +368,10 @@ func TestExplainShowsTheSourceOrTheWholeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := Explain(good, "good.sls", res, nil, false); got != "" {
+	if got := Explain(good, "good.sls", res, nil, false, nil); got != "" {
 		t.Errorf("a clean file without --rendered should add nothing, got:\n%s", got)
 	}
-	got = Explain(good, "good.sls", res, nil, true)
+	got = Explain(good, "good.sls", res, nil, true, nil)
 	if !strings.Contains(got, "rendered output of good.sls") || !strings.Contains(got, "| x: 2") {
 		t.Errorf("--rendered should show the output:\n%s", got)
 	}
