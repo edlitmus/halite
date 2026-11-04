@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
@@ -116,6 +117,15 @@ type Options struct {
 	// the redactor of SPEC 26.1 knows what it must never print. Nil
 	// discards them, which is what a caller with no log wants.
 	OnSecret func(string)
+	// Secrets is the redactor's set, for the one place a render prints
+	// its own output: the numbered window of rendered lines a YAML error
+	// carries (Error.Context). The text is scrubbed before it is split
+	// into lines, because once it is split no line holds the whole of a
+	// secret that spans several -- a PEM used without `|indent` -- and
+	// the scrub at the sink matches nothing. Nil scrubs URL credentials
+	// alone. Not carried into the render sandbox; its parent rebuilds
+	// the error with it. DIVERGENCE 5.568.
+	Secrets *redact.Set
 
 	// Renderer is the pipeline a file without a shebang gets. Empty is
 	// jinja|yaml. SPEC section 10.
@@ -516,7 +526,7 @@ func parseYAML(src string, opts Options, rendered *template.Result, res *Result)
 		res.Warnings = append(res.Warnings, translateWarning(w, rendered, opts.File))
 	}
 	if err != nil {
-		return nil, translateError(err, rendered, src, opts.File)
+		return nil, translateError(err, rendered, src, opts.File, opts.Secrets)
 	}
 	return v, nil
 }
@@ -524,25 +534,51 @@ func parseYAML(src string, opts Options, rendered *template.Result, res *Result)
 // translateError rewrites a YAML error's position through the template's
 // source map, and shows both the line the operator wrote and the line the
 // renderer produced.
-func translateError(err error, rendered *template.Result, renderedText, file string) error {
+func translateError(err error, rendered *template.Result, renderedText, file string, secrets *redact.Set) error {
 	ye, ok := err.(*yaml.Error)
 	if !ok || rendered == nil {
 		return err
 	}
-	pos, found := rendered.MapLine(ye.Pos.Line)
-	if !found {
+	if _, found := rendered.MapLine(ye.Pos.Line); !found {
 		return err
 	}
-	renderedLine := nthLine(renderedText, ye.Pos.Line)
+	return ErrorAt(file, ye, renderedText, rendered, secrets)
+}
+
+// ErrorAt is the Error for YAML failure ye in rendered text, whose
+// template source map is rendered. It is exported for the render
+// sandbox, whose parent is handed these parts by the child and builds
+// the error here, so that a sandboxed render and an in-process one are
+// scrubbed by one function rather than by two that must agree.
+//
+// The text is scrubbed of secrets before anything is cut from it,
+// keeping its line count (redact.ScrubLines): the window is numbered
+// against the text the parser read, so a scrub that joined a secret's
+// lines into one placeholder would mark the wrong line. The parser's
+// own message and the line it kept are derived from the unscrubbed
+// text -- "expected `:` after the mapping key %q" quotes a line of the
+// secret -- so they are scrubbed of each line of every multi-line secret
+// the text held. The cause is a scrubbed copy, for the same reason: it
+// is reachable through errors.As. DIVERGENCE 5.568.
+func ErrorAt(file string, ye *yaml.Error, text string, rendered *template.Result, secrets *redact.Set) *Error {
+	pos, _ := rendered.MapLine(ye.Pos.Line)
+	text, lines := secrets.ScrubLines(text)
+	cause := &yaml.Error{Pos: ye.Pos, Msg: lines.Scrub(ye.Msg)}
+	if ye.Line != "" {
+		cause.Line = lines.Scrub(ye.Line)
+	}
+	for _, r := range ye.Related {
+		cause.Related = append(cause.Related, yaml.Related{Pos: r.Pos, Msg: lines.Scrub(r.Msg)})
+	}
 	return &Error{
 		File:         file,
 		SourceLine:   pos.Line,
 		SourceCol:    pos.Col,
 		RenderedLine: ye.Pos.Line,
-		RenderedText: renderedLine,
-		Context:      RenderedWindow(renderedText, rendered, ye.Pos.Line, ContextLines),
-		Msg:          ye.Msg,
-		Cause:        err,
+		RenderedText: nthLine(text, ye.Pos.Line),
+		Context:      RenderedWindow(text, rendered, ye.Pos.Line, ContextLines),
+		Msg:          cause.Msg,
+		Cause:        cause,
 	}
 }
 
@@ -727,13 +763,19 @@ func SourceWindow(src []byte, file string, err error) string {
 // after the template stage carries its own window in its message
 // (Error.Context), so it is not repeated here. Both lints call this, so
 // that the hub's and the node's say the same thing. DIVERGENCE 5.261.
-func Explain(src []byte, file string, res Result, err error, all bool) string {
+//
+// The rendered output is scrubbed of secrets before it is numbered, as
+// an error's window is (ErrorAt): numbered, a secret that spans lines is
+// in no line whole, and the lint's own scrub of what this returns would
+// match none of it. DIVERGENCE 5.568.
+func Explain(src []byte, file string, res Result, err error, all bool, secrets *redact.Set) string {
 	var b strings.Builder
 	if all {
 		if res.Text != "" {
 			fmt.Fprintf(&b, "  rendered output of %s (pipeline %s), with the template line each came from:\n",
 				file, strings.Join(res.Pipeline, "|"))
-			indent(&b, NumberedText(res.Text, res.Template))
+			text, _ := secrets.ScrubLines(res.Text)
+			indent(&b, NumberedText(text, res.Template))
 		} else if err != nil {
 			fmt.Fprintf(&b, "  %s did not render, so there is no rendered output to show\n", file)
 		}

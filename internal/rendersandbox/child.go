@@ -2,12 +2,14 @@ package rendersandbox
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/template"
+	"github.com/edlitmus/halite/internal/yaml"
 )
 
 // The child half of the sandbox.
@@ -85,7 +87,7 @@ func (c *childServer) render(req frame) error {
 
 	res, renderErr := render.RunStages(req.Body, req.Stages, opts)
 	if renderErr != nil {
-		return c.fail(renderErr)
+		return c.failRender(renderErr, res)
 	}
 
 	outFiles := newFiles()
@@ -109,6 +111,23 @@ func (c *childServer) render(req frame) error {
 // a tree with one broken SLS in it is ordinary.
 func (c *childServer) fail(err error) error {
 	return writeFrame(c.out, frame{Kind: frameResult, OK: false, Error: err.Error()})
+}
+
+// failRender reports a render that did not work, sending a YAML failure
+// after the template stage as its parts rather than its message: the
+// message carries the numbered window, which only the parent can scrub
+// (wireParseError).
+func (c *childServer) failRender(err error, res render.Result) error {
+	var re *render.Error
+	var ye *yaml.Error
+	if !errors.As(err, &re) || !errors.As(err, &ye) || res.Template == nil {
+		return c.fail(err)
+	}
+	return writeFrame(c.out, frame{Kind: frameResult, OK: false, Parse: &wireParseError{
+		YAML:      *ye,
+		Text:      res.Text,
+		SourceMap: res.Template.SourceMap,
+	}})
 }
 
 // ask sends a callback frame and waits for its reply.

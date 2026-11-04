@@ -251,6 +251,7 @@ func (n *node) stateCompiler(p *value.Map, jobID string) *state.Compiler {
 			Test:             n.test,
 			GPG:              n.gpgOptions(),
 			OnSecret:         n.secrets.Add,
+			Secrets:          n.secrets,
 			Renderer:         n.defaultRenderer(),
 			OnRendered:       n.logRendered,
 		},
@@ -552,6 +553,7 @@ func runLint(args *cli.Args) int {
 		res, err := render.Render(src, render.Options{
 			GPG:       n.gpgOptions(),
 			OnSecret:  n.secrets.Add,
+			Secrets:   n.secrets,
 			File:      path,
 			SLS:       strings.TrimSuffix(path, ".sls"),
 			Env:       n.env,
@@ -574,7 +576,7 @@ func runLint(args *cli.Args) int {
 		// module loading, here only for the file asked about. Scrubbed,
 		// because rendering a pillar-reading template puts its values in
 		// the text. DIVERGENCE 5.261.
-		explained := render.Explain(src, path, res, err, args.Bool("rendered", false))
+		explained := render.Explain(src, path, res, err, args.Bool("rendered", false), n.secrets)
 		if err != nil {
 			fmt.Println(n.secrets.Scrub(err.Error()))
 			if explained != "" {

@@ -38,7 +38,7 @@ func TestExternalPillarWithoutPillarRootsIsRefused(t *testing.T) {
 		t.Fatalf("ext_pillar with no pillar_roots gave %v", err)
 	}
 
-	res := hubPillarCheck(loadHubYAML(t, awsSource), redact.New().Add).Run(context.Background())
+	res := hubPillarCheck(loadHubYAML(t, awsSource), redact.New()).Run(context.Background())
 	if res.Status != doctor.Fail || !strings.Contains(res.Detail, "pillar_roots") {
 		t.Errorf("doctor on ext_pillar with no pillar_roots: %s %q", res.Status, res.Detail)
 	}

@@ -65,7 +65,7 @@ func runDoctor(args *cli.Args) int {
 		doctor.ConfigValidity(shown, loadErr, cfg.Warnings, true),
 		hubCertificateCheck(args, cfg),
 		hubFileServerCheck(cfg),
-		hubPillarCheck(cfg, secrets.Add),
+		hubPillarCheck(cfg, secrets),
 		hubDiskCheck(cfg),
 		hubQueueCheck(cfg),
 		doctor.ModuleVerification(builtin.New().Trust()),
@@ -325,7 +325,7 @@ func listLen(cfg *config.Config, key string) int {
 // estate out at once, and it takes it out at the moment a node asks
 // rather than at the moment somebody edits the tree. Compiling it here
 // moves the discovery to where an operator is already looking.
-func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
+func hubPillarCheck(cfg *config.Config, secrets *redact.Set) doctor.Check {
 	env := cfg.String("pillarenv", cfg.String("env", "base"))
 	// With no pillarenv a node is sent every environment's pillar,
 	// merged, so that is what is compiled here. DIVERGENCE 5.288.
@@ -394,7 +394,11 @@ func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 			// error naming what was inside a GPG block is exactly the
 			// kind of detail this check exists to print. DIVERGENCE
 			// 5.110.
-			OnSecret: onSecret,
+			OnSecret: secrets.Add,
+			// And scrubs, with what it learned, the rendered lines an
+			// error shows: a compile error is what this check prints.
+			// DIVERGENCE 5.568.
+			Secrets:  secrets,
 			Strategy: strategy,
 		},
 	}

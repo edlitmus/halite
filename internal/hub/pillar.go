@@ -8,6 +8,7 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/pillar"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/transport"
@@ -47,6 +48,11 @@ type PillarOptions struct {
 	// receives, which covers the node's output and says nothing about
 	// the hub's. DIVERGENCE 5.110.
 	OnSecret func(string)
+	// Secrets is the hub's redactor's set, which a YAML error's window
+	// of rendered lines is scrubbed with before it is numbered: OnSecret
+	// teaches it the values, and this is where they are needed before
+	// the sink. DIVERGENCE 5.568.
+	Secrets *redact.Set
 	// OnRendered receives each pillar file's rendered output, with the
 	// node it was compiled for: a debug log of what the templates
 	// produced, as Salt prints at debug level. DIVERGENCE 5.261.
@@ -233,6 +239,7 @@ func pillarConfigFor(opts *PillarOptions, nodeID, env string, grains *value.Map)
 		TemplateOptions:  opts.TemplateOptions,
 		Ext:              opts.Ext,
 		OnSecret:         opts.OnSecret,
+		Secrets:          opts.Secrets,
 		OnRendered:       renderedFor(opts.OnRendered, nodeID),
 		// Never Local: this is the hub's tree, and SPEC 12.1
 		// reserves that flag for a development compilation from a

@@ -32465,6 +32465,7 @@ self-overlapping case alone.
   the error is built rather than at the sink, or registering each line
   of a multi-line secret as a secret of its own, which would also scrub
   a PEM's `-----BEGIN …-----` line everywhere. That is the owner's call.
+  The owner chose the first; 5.568 is that change.
 - `log` passing an `error` field to `ScrubValue`, which only knows
   strings and containers: a separate change.
 
@@ -37050,6 +37051,130 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 **Broken on purpose.** With the wait removed from `Run` the test fails as above. With the wait kept, `reactorWorker.run` releasing its event regardless of the context, and the `ctx.Done` branch of `Run` waiting for the workers before its final commit (the obvious way to write this, and wrong), it fails on the offset: `"00000001:381", want "00000001:0"`. Restored, it passes, and the `Reactor|Reaction|Reacted|Debounc|EventReturn|Serve` tests of `internal/hub` pass under `-race`.
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
+
+### 5.568 A multi-line secret was printed line by line in a render error's window
+
+Issue 321, the part of the Low "redaction gaps" bullet that 5.407 left
+open and asked the owner to decide; the owner chose to scrub before the
+window is numbered. A YAML error after the template stage carries the
+rendered lines around it, numbered, with each line's template position
+in front (`render.Error.Context`, 5.261). The redactor runs at the sink
+and looks for each secret whole. A secret that spans lines, such as a
+PEM used in a template without `|indent`, is in no single line of the
+window, so nothing matched and the key was printed in clear.
+
+**Measured** on `main` at `5c44bed3`, by
+`TestAMultiLineSecretIsNotNumberedIntoTheErrorWindow` with the field it
+now sets removed and the error put through `Set.Scrub` as a sink does.
+The SLS was `- contents: {{ pillar['tls']['key'] }}` holding a
+four-line key:
+
+```
+tls.sls:4: expected `:` after the mapping key "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj"
+  rendered output around line 5, with the template line each came from:
+      2 (line 2)   |   file.managed:
+      3 (line 3)   |     - name: /etc/ssl/private/web.key
+      4 (line 4)   |     - contents: -----BEGIN PRIVATE KEY-----
+    > 5 (line 4)   | MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj
+      6 (line 4)   | MzEfYyjiWA4R4/M2bS1GB4t7NXp98C3SC6dVMvDuictGeurT8jNbvJZHtCSuYEvu
+      7 (line 4)   | NMoSfm76oqFvAp8Gy0iz5sxjZmSnXyCdPEovGhLa0VzMaQ8s+CLOyS56YyCFGeJZ
+      8 (line 4)   | -----END PRIVATE KEY-----
+```
+
+(The key is a made-up test value, not a real one.)
+
+Every line of the key was printed. Reading found three paths, not one:
+
+- **The window**, built by `translateError`.
+- **The parser's own message.** It quotes a line of the secret
+  (`after the mapping key %q`), and so do the `*yaml.Error` cause and
+  its `Line`, which can be reached through `errors.As`. Scrubbing the
+  text before the split does not reach these, because the parser read
+  the unscrubbed text.
+- **The render sandbox (SPEC 25.4).** The child built the window and
+  sent it to the parent as text, already numbered. The child does not
+  hold the set, so it could not scrub, and the parent's set could do
+  nothing with the text. The same test through the sandbox printed the
+  same lines, and the error was not a `*render.Error`.
+
+`lint --rendered` numbers a whole output the same way (`Explain` →
+`NumberedText`), and both lints scrubbed it after numbering. A
+`#!jinja|text` file holding the key printed it with the render
+succeeding.
+
+**The change.** `redact.Set.ScrubLines` scrubs text that is about to be
+split. A run of secret text that spans lines becomes a placeholder per
+line and keeps its newlines, so line N is still line N and the marked
+line is the one the parser named. One placeholder for the whole run
+would have moved every line after it. The method also returns a
+short-lived set that holds each line of every multi-line secret it
+replaced. `render.ErrorAt` builds the error: it scrubs the text with
+`ScrubLines` before it cuts the window, and it scrubs the parser's
+message, its line and the cause (a copy) with the per-error set. Only
+this error uses those lines. 5.407's other option, registering each line
+as a secret on its own, would have scrubbed `-----BEGIN PRIVATE KEY-----`
+from every message on the machine.
+
+The set reaches the render as `render.Options.Secrets`, through
+`state.Config.Secrets`, `pillar.Config.Secrets` and
+`hub.PillarOptions.Secrets`. The node, the hub, both lints and the hub's
+`doctor` pillar check pass the set they already fed through `OnSecret`.
+`Explain` takes the set and scrubs before numbering.
+
+In the sandbox the set stays in the parent. It holds the node's
+configured secrets as well as pillar, and a template is deliberately not
+shown those (`opts` is redacted). So the child now sends a YAML failure
+as its parts (`frame.Parse`: the parser's error, the rendered text and
+the source map), and the parent calls `render.ErrorAt`, the same
+function as the in-process path. The two paths agree because they run
+the same code, and the sandbox's error is a `*render.Error` again. The
+text that crosses is the same text a successful render sends back. The
+protocol is now version 2. If a node's binary is replaced under it, an
+old child is refused instead of having its window printed unscrubbed.
+
+**Demonstrated.** These tests fail on `main` as described above and pass
+with the change:
+
+- `TestAMultiLineSecretIsNotNumberedIntoTheErrorWindow` (render);
+- `TestAMultiLineSecretIsNotNumberedAcrossTheCrossing` (rendersandbox,
+  which also asserts that the output is the same as in-process);
+- `TestAMultiLineSecretIsNotNumberedIntoLintRendered`;
+- `TestTheCompilerScrubsAMultiLineSecretFromARenderError` (state);
+- `TestScrubLinesKeepsTheLineCount`.
+
+Each part of the fix was then broken on purpose, one at a time, and the
+tests failed as follows:
+
+| Part broken | Test that failed |
+|---|---|
+| The window cut from unscrubbed text | the render and sandbox tests, on every line of the key |
+| The message not scrubbed | both tests, on the quoted line alone |
+| `Explain` numbering unscrubbed text | the lint test |
+| One placeholder per run | "the window has 4 lines, want 7" |
+| The parent ignoring `Parse` | both sandbox window tests |
+| `Secrets` dropped from the state compiler's render options | the state test |
+
+**Not done.** A secret used *with* `|indent`. Each line of the rendered
+output then starts with spaces that are not in the secret, so the
+rendered text never holds the secret whole. No scrub of that text can
+find it: not the window, not `lint --rendered`, and not the debug
+`rendered` log record (5.261). This change does not affect that case,
+and it is the more common way to put a PEM in YAML. A parser message
+that quotes a line with `%q` and escapes a character in it (`"` or `\`)
+will not match that line. A PEM line has neither character. In the
+sandbox the text crosses as a JSON string, and `encoding/json` replaces
+invalid UTF-8. A secret that holds invalid bytes would then not match in
+the parent. The text of a successful render crosses the same way. Errors from
+the JSON serializer and from the template stage were not examined.
+Orchestration on the hub has no set to pass and no gpg stage, so it is
+unchanged.
+
+**Not verified.** Only unit tests. `pillar.Config.Secrets` and the
+`cmd/` wiring (node, hub, both lints, `doctor`) have no test that would
+fail if the field were dropped. They were checked by building and by
+reading. No node or hub was run with a multi-line secret in its pillar.
+The sandbox was run on macOS through its test binary, not under a
+dropped identity on FreeBSD or Linux. `make check` was not run.
 
 
 

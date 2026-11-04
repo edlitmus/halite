@@ -8,6 +8,7 @@ import (
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
+	"github.com/edlitmus/halite/internal/yaml"
 )
 
 // The protocol between the privileged parent and the render child.
@@ -87,6 +88,10 @@ type frame struct {
 	Display  string    `json:"display,omitempty"`
 	Value    *wireNode `json:"value,omitempty"`
 	Error    string    `json:"error,omitempty"`
+	// Parse is a result's YAML failure after the template stage, in
+	// parts and in place of Error, for the parent to build the error
+	// with its redactor's set. See wireParseError.
+	Parse *wireParseError `json:"parse,omitempty"`
 
 	// result.
 	Result *wireResult `json:"result,omitempty"`
@@ -100,15 +105,38 @@ type wireResult struct {
 	Warnings []render.Warning `json:"warnings,omitempty"`
 }
 
+// wireParseError is a render.Error in the parts render.ErrorAt builds
+// one from: the parser's error, the rendered text it failed on, and the
+// template's source map for that text.
+//
+// The child cannot finish the error itself. Its window is the rendered
+// lines around the failure, numbered, and once they are numbered a
+// secret spanning several of them -- a PEM used without `|indent` -- is
+// in no single line whole, so the parent's redactor at the sink matches
+// nothing. Scrubbing has to happen before the split, with the set, and
+// the set stays in the parent (wireOptions says why). The text crossing
+// is no new exposure: a render that succeeds sends the same text back
+// as its result. DIVERGENCE 5.568.
+type wireParseError struct {
+	YAML      yaml.Error                `json:"yaml"`
+	Text      string                    `json:"text"`
+	SourceMap []template.SourceMapEntry `json:"source_map,omitempty"`
+}
+
 // wireOptions is render.Options minus everything that is a function or a
 // privilege.
 //
-// Four fields are deliberately absent. Salt, Loader and OnUndefined are
+// Five fields are deliberately absent. Salt, Loader and OnUndefined are
 // callbacks and travel as frames instead. GPG is not here at all: the
 // gpg stage runs in the parent, so the child needs neither the keyring
 // nor the settings that find it, and OnSecret -- which only the gpg
 // walk calls -- has nothing to report from in here. That is the whole
-// reason the pipeline is split rather than shipped whole.
+// reason the pipeline is split rather than shipped whole. Secrets is
+// the redactor's set, which holds the node's configured secrets as well
+// as its pillar -- values a template is deliberately not shown, `opts`
+// being redacted -- and the child is where templates run; the one thing
+// it was for in here, an error's window, is built in the parent instead
+// (wireParseError).
 type wireOptions struct {
 	File      string `json:"file,omitempty"`
 	SLS       string `json:"sls,omitempty"`
