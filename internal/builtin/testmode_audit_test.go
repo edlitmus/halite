@@ -337,7 +337,7 @@ func auditArgs(t *testing.T, sig signature.Signature, dir string, world auditWor
 	args := value.NewMap(len(sig.Params))
 	paths := 0
 	for _, p := range sig.Params {
-		// A service's name is not a path, and since DIVERGENCE 5.568 a
+		// A service's name is not a path, and since DIVERGENCE 5.570 a
 		// name holding a `/` is refused before a provider is picked. The
 		// path this would otherwise get made every `service.*` function
 		// refuse in every world, so none of their dry runs was judged.
