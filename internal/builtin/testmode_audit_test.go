@@ -228,7 +228,7 @@ func TestEveryMutatingFunctionHonoursItsTestModeClaim(t *testing.T) {
 // `fstype`, which its signature still calls optional; the audit fills
 // only required arguments, so it then refused in every world, and the
 // unreached count went from 179 to 180 with nothing failing. Measured on
-// this Mac at 17ef7d99 and its parent (5.568). auditExtraArgs now gives
+// this Mac at 17ef7d99 and its parent (5.572). auditExtraArgs now gives
 // it a type.
 func auditMustReach() []string {
 	out := []string{
@@ -347,6 +347,14 @@ func auditArgs(t *testing.T, sig signature.Signature, dir string, world auditWor
 	paths := 0
 	extra := auditExtraArgs[sig.Name()]
 	for _, p := range sig.Params {
+		// A service's name is not a path, and since DIVERGENCE 5.570 a
+		// name holding a `/` is refused before a provider is picked. The
+		// path this would otherwise get made every `service.*` function
+		// refuse in every world, so none of their dry runs was judged.
+		if sig.Module == "service" && p.Name == "name" {
+			args.Set(p.Name, "halite-audit")
+			continue
+		}
 		if auditIsPath(p) {
 			args.Set(p.Name, world.path(t, dir, p.Name, paths))
 			paths++

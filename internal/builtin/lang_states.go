@@ -66,6 +66,9 @@ func langPresent(
 	if len(specs) == 0 {
 		return states.False(fmt.Sprintf("This state needs at least one %s to install.", what)), nil
 	}
+	if err := langValidateSpecs(specs); err != nil {
+		return states.False(err.Error()), nil
+	}
 	have, err := installed()
 	if err != nil {
 		return states.False(fmt.Sprintf("The installed %ss could not be read: %v", what, err)), nil
@@ -127,6 +130,9 @@ func langAbsent(
 	if len(specs) == 0 {
 		return states.False(fmt.Sprintf("This state needs at least one %s to remove.", what)), nil
 	}
+	if err := langValidateSpecs(specs); err != nil {
+		return states.False(err.Error()), nil
+	}
 	have, err := installed()
 	if err != nil {
 		return states.False(fmt.Sprintf("The installed %ss could not be read: %v", what, err)), nil
@@ -152,6 +158,21 @@ func langAbsent(
 		return states.False(fmt.Sprintf("Removing %s failed: %v", states.SortedNames(present), err)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s was removed.", namesList(present, what)), changes), nil
+}
+
+// langValidateSpecs is langNames for a state's specs, and comes before the
+// installed list is read, so a refused state is one the tool never hears
+// about. Each spec is checked whole, as it would reach argv: the name a
+// spec splits into is not always its first characters -- npm's
+// `@scope/pkg` splits on its leading `@` -- and it is the raw spec that
+// the tool is given.
+func langValidateSpecs(specs []pkgSpec) error {
+	for _, s := range specs {
+		if err := pkgValidateName(s.Raw); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func orAny(version string) any {

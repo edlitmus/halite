@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -210,6 +211,48 @@ func renderHosts(entries []hostEntry) string {
 	return b.String()
 }
 
+// hostsFieldsValid refuses an address or a name that would not stay one
+// field of one line once renderHosts wrote it (issue 321, the M-45 class).
+//
+// Both writers -- host.present and dnsutil.hosts_append -- wrote what they
+// were given, and parseHosts reads a line by splitting on whitespace and
+// cutting at `#`. So a newline in a name added a mapping of its own to
+// /etc/hosts, which every resolver on the machine consults before DNS; a
+// space or a tab made one name two; and a `#` made the rest of the line a
+// comment, so the write reported success and the next read disagreed with
+// it, on every run. The test for whitespace is unicode.IsSpace because
+// that is what strings.Fields, and so parseHosts, splits on: a check
+// narrower than the reader is a check the reader can be walked around.
+// A control character is refused as well, since no address or name holds
+// one and the C library's reader is not this one.
+//
+// It is checked before the file is read, so a dry run refuses exactly as
+// the real one does. host.absent and hosts_remove are not checked: they
+// only compare what they are given against what was parsed, and a name
+// holding a newline matches nothing.
+func hostsFieldsValid(path string, addresses, names []string) error {
+	check := func(kind, s string) error {
+		for _, r := range s {
+			if unicode.IsSpace(r) || unicode.IsControl(r) || r == '#' {
+				return fmt.Errorf("the %s %q holds %q, which would end its field or its line in %s",
+					kind, s, r, path)
+			}
+		}
+		return nil
+	}
+	for _, a := range addresses {
+		if err := check("address", a); err != nil {
+			return err
+		}
+	}
+	for _, n := range names {
+		if err := check("name", n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // hostNames reads the name or names a host state is about.
 func hostNames(args *value.Map) []string {
 	if names := states.Strings(args, "names"); len(names) > 0 {
@@ -226,6 +269,9 @@ func hostPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	names := hostNames(args)
 	if len(addresses) == 0 || len(names) == 0 {
 		return states.False("This state needs an address and at least one name."), nil
+	}
+	if err := hostsFieldsValid(HostsPath, addresses, names); err != nil {
+		return states.False(err.Error()), nil
 	}
 
 	entries, err := readHosts()
@@ -440,6 +486,9 @@ func hostsAppend(c *exec.Context, args *value.Map) (any, error) {
 	names := hostsEntryNames(args)
 	if addr == "" || len(names) == 0 {
 		return nil, fmt.Errorf("dnsutil.hosts_append needs an address and at least one name")
+	}
+	if err := hostsFieldsValid(path, []string{addr}, names); err != nil {
+		return nil, err
 	}
 
 	entries, err := readHostsFrom(path)
