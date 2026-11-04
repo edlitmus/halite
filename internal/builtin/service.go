@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -66,6 +67,70 @@ func pickServiceProvider(c *exec.Context) (serviceProvider, error) {
 		runtime.GOOS, strings.Join(names, ", "))
 }
 
+// serviceNameArg reads the service a function or state is about, and
+// refuses one that serviceNameValid does.
+func serviceNameArg(args *value.Map) (string, error) {
+	name := states.Str(args, "name", "")
+	if err := serviceNameValid(name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// serviceNameValid refuses a service name that a provider's tool would
+// read as something other than a name (issue 321, the M-45 class).
+//
+// Every provider passes the name as an argv element of its own, so no
+// shell ever sees it, but the tool's option parser does. **On FreeBSD,
+// `service -R status` is not a question about a service called `-R`**:
+// service(8)'s getopts takes `-R` as "stop and start every enabled
+// service", which it does and then exits 0 without reading the word
+// `status` at all (read in /usr/sbin/service on beastie, 15.1-RELEASE-p6).
+// `service.status: -R` was a read-only call that restarted the machine's
+// daemons and then answered "running". `-j <jail>` and `-E var=value`
+// take the next word as theirs in the same way. The other providers'
+// tools -- systemctl, rc-service, chkconfig, update-rc.d, launchctl --
+// were not checked one by one: a leading `-` is an option to any of them
+// that parses options, so it is refused for all of them rather than for
+// the one that was read.
+//
+// A `/` is refused because service(8) execs `<dir>/<name>` for the first
+// of its rc.d directories where that is executable, so `../../../tmp/x`
+// is any executable on the machine, run as root -- on beastie, `service
+// ../../../bin/echo hello` printed "hello" -- and no init system's names
+// hold one: a systemd
+// unit name cannot, nor can an OpenRC or sysvinit script's (they are file
+// names in one directory), a launchd label is reverse-DNS, and the
+// Windows manager forbids both slashes. `.` and `..` are directories, not
+// names. A control character is refused because no name holds one and a
+// newline would be a second line of whatever the tool echoes.
+//
+// It is checked once, here, by every `service.*` function and state
+// rather than by each provider, so the answer cannot depend on which
+// path reached the name: the state and the execution function used to
+// agree only in both passing it through.
+// TestAServiceNameThatIsAnOptionOrAPathNeverReachesArgv walks all of
+// them. Whitespace is left alone: it is not an injection into argv, and a
+// Windows service's key name may hold a space.
+func serviceNameValid(name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("a service name is needed")
+	case strings.HasPrefix(name, "-"):
+		return fmt.Errorf("the service name %q starts with '-', which the init system's tool would read as an option", name)
+	case strings.Contains(name, "/"):
+		return fmt.Errorf("the service name %q holds a '/'; a name is not a path, and service(8) would run it as one", name)
+	case name == "." || name == "..":
+		return fmt.Errorf("%q is a directory, not a service name", name)
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("the service name %q holds a control character", name)
+		}
+	}
+	return nil
+}
+
 func registerService(r *Registries) {
 	nameOnly := []signature.Param{req("name", signature.String, "The service.")}
 
@@ -77,11 +142,14 @@ func registerService(r *Registries) {
 				Privileges: []string{"root"}, Section: "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				p, err := pickServiceProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				name := states.Str(args, "name", "")
 				if c.Test {
 					return true, nil
 				}
@@ -101,11 +169,15 @@ func registerService(r *Registries) {
 				TestMode: signature.TestNotApplicable, Section: "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				p, err := pickServiceProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				return p.Status(c, states.Str(args, "name", ""))
+				return p.Status(c, name)
 			},
 		},
 		exec.Module{
@@ -115,11 +187,15 @@ func registerService(r *Registries) {
 				TestMode: signature.TestNotApplicable, Section: "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				p, err := pickServiceProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				return p.Enabled(c, states.Str(args, "name", ""))
+				return p.Enabled(c, name)
 			},
 		},
 		simple("start", "Start a service.", serviceProvider.Start),
@@ -197,11 +273,14 @@ func registerService(r *Registries) {
 }
 
 func serviceRunning(c *exec.Context, args *value.Map) (states.Result, error) {
+	name, err := serviceNameArg(args)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	p, err := pickServiceProvider(c)
 	if err != nil {
 		return states.False(fmt.Sprintf("No service provider is available: %v", err)), nil
 	}
-	name := states.Str(args, "name", "")
 	changes := value.NewMap(2)
 
 	running, err := p.Status(c, name)
@@ -245,11 +324,14 @@ func serviceRunning(c *exec.Context, args *value.Map) (states.Result, error) {
 }
 
 func serviceDead(c *exec.Context, args *value.Map) (states.Result, error) {
+	name, err := serviceNameArg(args)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	p, err := pickServiceProvider(c)
 	if err != nil {
 		return states.False(fmt.Sprintf("No service provider is available: %v", err)), nil
 	}
-	name := states.Str(args, "name", "")
 	changes := value.NewMap(2)
 
 	running, err := p.Status(c, name)
@@ -292,11 +374,14 @@ func serviceDead(c *exec.Context, args *value.Map) (states.Result, error) {
 }
 
 func serviceBootState(c *exec.Context, args *value.Map, want bool) (states.Result, error) {
+	name, err := serviceNameArg(args)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	p, err := pickServiceProvider(c)
 	if err != nil {
 		return states.False(fmt.Sprintf("No service provider is available: %v", err)), nil
 	}
-	name := states.Str(args, "name", "")
 	now, err := p.Enabled(c, name)
 	if err != nil {
 		return states.False(fmt.Sprintf("The boot state of %s could not be read: %v", name, err)), nil
@@ -329,11 +414,14 @@ func applyBootState(p serviceProvider, c *exec.Context, name string, want bool) 
 // service is restarted, or reloaded when the state asked for that. This is
 // the whole reason `watch` exists on a service.
 func serviceModWatch(c *exec.Context, args *value.Map) (states.Result, error) {
+	name, err := serviceNameArg(args)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	p, err := pickServiceProvider(c)
 	if err != nil {
 		return states.False(fmt.Sprintf("No service provider is available: %v", err)), nil
 	}
-	name := states.Str(args, "name", "")
 	verb := "restarted"
 	action := p.Restart
 	if states.Bool(args, "reload", false) {
