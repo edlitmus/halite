@@ -92,7 +92,66 @@ type Authority struct {
 // an ECDSA key, a subject and one SAN, and halite-node's are about 500
 // bytes at P-256 and 600 at P-384; 16 KiB leaves room for a CSR another
 // tool made and none for the 8 MiB extension issue 321's M-06 stored.
+//
+// Enroll and Renew both store the CSR they are given, so both ask
+// checkCSRSize. Renew used to ask nothing, and a node holding a
+// certificate could write a CSR of any size into its record by renewing:
+// issue 321's close-out stored one of 2.84 MB, under the 64 MiB the
+// request body allows. DIVERGENCE 5.573.
 const MaxCSRBytes = 16 << 10
+
+// checkCSRSize is the one size check for a CSR the hub will keep, made
+// before it is parsed. It is a function rather than a comparison written
+// twice because the two copies were already one and zero.
+func checkCSRSize(csrPEM []byte) error {
+	if len(csrPEM) > MaxCSRBytes {
+		return fmt.Errorf("%w: the CSR is %d bytes, and a node's is under %d", ErrMalformed, len(csrPEM), MaxCSRBytes)
+	}
+	return nil
+}
+
+// MaxSuperseded bounds how many superseded serials whose certificates
+// have not yet expired one record may hold, and so how often a node may
+// renew. A renewal at the limit is refused. DIVERGENCE 5.573.
+//
+// Nothing bounded renewal before. Each one keeps the serial it replaced
+// until that certificate expires -- 90 days at the default -- and
+// rewrites the whole record, so a node renewing in a loop grew its record
+// by a serial a time and paid for each write with all the earlier ones.
+//
+// The other bound on offer was a floor on when a renewal may come, at
+// the certificate's half-life, as pki.DueForRenewal has the node do. It
+// is the wrong one, because it strands exactly the node that most needs
+// to renew: `halite-node renew --force` exists to rotate a key before
+// it is due, after a compromise, and a floor would have refused that for
+// up to 45 days, leaving the leaked key working for the whole of them.
+// A count does not care when a renewal comes, only how many are still
+// outstanding. A node on schedule holds at most two live superseded
+// serials -- renewed at half-life, the one before has at most half its
+// life left -- so eight leaves room for six rotations inside one
+// certificate's life before anything is refused.
+//
+// Refusing is the only safe way to bound the list. Dropping the oldest
+// serial to make room would take a certificate that has not expired off
+// the denylist the next time the hub starts (LoadDenylist reads the
+// record) and off the CRL at once, which is how a leaked key gets back in.
+// A refused node keeps the certificate it has, which still works; the
+// refusal lifts as the oldest superseded one expires, and an operator
+// who cannot wait deletes the key (`halite-hub keys delete`, which keeps
+// every live serial denied as a tombstone) and enrolls the node again.
+// Revoking does not do it: a revoked record is never issued to again.
+const MaxSuperseded = 8
+
+// liveSuperseded counts rec's superseded serials still live at now.
+func liveSuperseded(rec *Record, now time.Time) int {
+	n := 0
+	for _, s := range rec.Superseded {
+		if s.Live(now) {
+			n++
+		}
+	}
+	return n
+}
 
 // DefaultMaxPending is how many pending records may exist before a new
 // name is refused. Every new name on /v1/enroll wrote one, and nothing
@@ -182,8 +241,8 @@ type Result struct {
 // lost the answer gets the same answer, and does not spend a second
 // token doing it.
 func (a *Authority) Enroll(req Request) (*Result, error) {
-	if len(req.CSR) > MaxCSRBytes {
-		return nil, fmt.Errorf("%w: the CSR is %d bytes, and a node's is under %d", ErrMalformed, len(req.CSR), MaxCSRBytes)
+	if err := checkCSRSize(req.CSR); err != nil {
+		return nil, err
 	}
 	csr, err := pki.DecodeCSR(req.CSR)
 	if err != nil {
@@ -572,6 +631,10 @@ func (a *Authority) Renew(peer *x509.Certificate, csrPEM []byte) (*Result, error
 	if err != nil {
 		return nil, err
 	}
+	// The same bound as Enroll, by the same check: this CSR is stored too.
+	if err := checkCSRSize(csrPEM); err != nil {
+		return nil, err
+	}
 	csr, err := pki.DecodeCSR(csrPEM)
 	if err != nil {
 		return nil, err
@@ -603,9 +666,20 @@ func (a *Authority) Renew(peer *x509.Certificate, csrPEM []byte) (*Result, error
 			return fmt.Errorf("%w: %s presented serial %s and the hub issued %s",
 				ErrRefused, nodeID, pki.SerialString(peer), rec.Serial)
 		}
+		// After the serial check, so that a stale certificate is told
+		// it is stale rather than that it renews too often. Only Renew
+		// is bounded: a reissue through Enroll is an operator's
+		// decision or a spent token, and the node asked for neither.
+		now := a.now()
+		if n := liveSuperseded(rec, now); n >= MaxSuperseded {
+			return fmt.Errorf("%w: %s has renewed %d times within its certificates' lives, which is the limit; "+
+				"the certificate it holds still works, and renewal is allowed again as the oldest replaced one expires "+
+				"(or delete the key, `halite-hub keys delete`, and enroll again)",
+				ErrRefused, nodeID, n)
+		}
 		rec.Fingerprint = fingerprint
 		rec.CSR = string(pki.EncodeCSR(csr.Raw))
-		res, err = a.issue(rec, csr, a.now())
+		res, err = a.issue(rec, csr, now)
 		return err
 	})
 	return res, err

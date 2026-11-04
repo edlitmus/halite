@@ -472,7 +472,7 @@ func TestOverlappingSecretsLeaveNoTail(t *testing.T) {
 // result names the lines the parser named, and hands back each line of
 // a multi-line secret for the message the parser derived from the same
 // text. A secret on one line is one placeholder, as Scrub makes it.
-// DIVERGENCE 5.568.
+// DIVERGENCE 5.574.
 func TestScrubLinesKeepsTheLineCount(t *testing.T) {
 	s := New()
 	s.Add("first-line-of-it\nsecond-line-of-it\nend")

@@ -51,7 +51,7 @@ type PillarOptions struct {
 	// Secrets is the hub's redactor's set, which a YAML error's window
 	// of rendered lines is scrubbed with before it is numbered: OnSecret
 	// teaches it the values, and this is where they are needed before
-	// the sink. DIVERGENCE 5.568.
+	// the sink. DIVERGENCE 5.574.
 	Secrets *redact.Set
 	// OnRendered receives each pillar file's rendered output, with the
 	// node it was compiled for: a debug log of what the templates

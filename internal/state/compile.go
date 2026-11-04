@@ -81,7 +81,7 @@ type Config struct {
 	OnSecret func(string)
 	// Secrets is that redactor's set, which a YAML error's window of
 	// rendered lines is scrubbed with before it is numbered
-	// (render.Options.Secrets). DIVERGENCE 5.568.
+	// (render.Options.Secrets). DIVERGENCE 5.574.
 	Secrets *redact.Set
 	// Renderer is the default pipeline of SPEC section 10.
 	Renderer []string

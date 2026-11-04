@@ -50,14 +50,22 @@ func registerCargo(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				crates, err := langNames(args, "crates")
+				if err != nil {
+					return nil, err
+				}
 				argv := []string{"install"}
 				if states.Bool(args, "locked", true) {
 					argv = append(argv, "--locked")
 				}
 				if v := states.Str(args, "version", ""); v != "" {
+					// An element of its own, so it is checked as a name is.
+					if err := pkgValidateVersion(strings.Join(crates, ", "), v); err != nil {
+						return nil, err
+					}
 					argv = append(argv, "--version", v)
 				}
-				argv = append(argv, states.Strings(args, "crates")...)
+				argv = append(argv, crates...)
 				if c.Test {
 					return wouldRun("cargo", argv...), nil
 				}
@@ -78,7 +86,11 @@ func registerCargo(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				argv := append([]string{"uninstall"}, states.Strings(args, "crates")...)
+				crates, err := langNames(args, "crates")
+				if err != nil {
+					return nil, err
+				}
+				argv := append([]string{"uninstall"}, crates...)
 				if c.Test {
 					return wouldRun("cargo", argv...), nil
 				}
@@ -127,6 +139,11 @@ func registerGoTool(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				if name := states.Str(args, "name", ""); name != "" {
+					// `go env -w` and `-u` write the user's Go
+					// environment; a variable name never begins with "-".
+					if err := pkgValidateName(name); err != nil {
+						return nil, err
+					}
 					res, err := langRun(c, "go", "", "env", name)
 					if err != nil {
 						return nil, err
@@ -153,7 +170,11 @@ func registerGoTool(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				argv := append([]string{"install"}, states.Strings(args, "pkgs")...)
+				pkgs, err := langNames(args, "pkgs")
+				if err != nil {
+					return nil, err
+				}
+				argv := append([]string{"install"}, pkgs...)
 				if c.Test {
 					return wouldRun("go", argv...), nil
 				}
@@ -248,7 +269,11 @@ func registerComposer(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				argv := append([]string{"require", "--no-ansi", "--no-interaction"}, states.Strings(args, "pkgs")...)
+				pkgs, err := langNames(args, "pkgs")
+				if err != nil {
+					return nil, err
+				}
+				argv := append([]string{"require", "--no-ansi", "--no-interaction"}, pkgs...)
 				if c.Test {
 					return wouldRun("composer", argv...), nil
 				}
@@ -337,7 +362,11 @@ func registerCpan(r *Registries) {
 				Section:  "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				argv := append([]string{"-i"}, states.Strings(args, "modules")...)
+				modules, err := langNames(args, "modules")
+				if err != nil {
+					return nil, err
+				}
+				argv := append([]string{"-i"}, modules...)
 				if c.Test {
 					return wouldRun("cpan", argv...), nil
 				}

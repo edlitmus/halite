@@ -116,7 +116,7 @@ type wireResult struct {
 // nothing. Scrubbing has to happen before the split, with the set, and
 // the set stays in the parent (wireOptions says why). The text crossing
 // is no new exposure: a render that succeeds sends the same text back
-// as its result. DIVERGENCE 5.568.
+// as its result. DIVERGENCE 5.574.
 type wireParseError struct {
 	YAML      yaml.Error                `json:"yaml"`
 	Text      string                    `json:"text"`

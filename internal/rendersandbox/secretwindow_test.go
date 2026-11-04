@@ -19,7 +19,7 @@ import (
 // in it line by line, and the parent's set could do nothing with that.
 // Now the child sends the parts and the parent builds the error with
 // render.ErrorAt, the function the in-process path uses, so the two
-// agree by construction; this checks that they do. DIVERGENCE 5.568.
+// agree by construction; this checks that they do. DIVERGENCE 5.574.
 func TestAMultiLineSecretIsNotNumberedAcrossTheCrossing(t *testing.T) {
 	const secret = "-----BEGIN PRIVATE KEY-----\n" +
 		"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj\n" +

@@ -13,7 +13,7 @@ import (
 // `|indent` reaches the compilation's errors scrubbed before its window
 // was numbered. render tests the scrub; this tests that the set gets
 // there, which is the half a compiler that forgot the field would break
-// without any render test noticing. DIVERGENCE 5.568.
+// without any render test noticing. DIVERGENCE 5.574.
 func TestTheCompilerScrubsAMultiLineSecretFromARenderError(t *testing.T) {
 	const secret = "-----BEGIN PRIVATE KEY-----\n" +
 		"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj\n" +

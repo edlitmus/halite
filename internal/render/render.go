@@ -124,7 +124,7 @@ type Options struct {
 	// secret that spans several -- a PEM used without `|indent` -- and
 	// the scrub at the sink matches nothing. Nil scrubs URL credentials
 	// alone. Not carried into the render sandbox; its parent rebuilds
-	// the error with it. DIVERGENCE 5.568.
+	// the error with it. DIVERGENCE 5.574.
 	Secrets *redact.Set
 
 	// Renderer is the pipeline a file without a shebang gets. Empty is
@@ -559,7 +559,7 @@ func translateError(err error, rendered *template.Result, renderedText, file str
 // text -- "expected `:` after the mapping key %q" quotes a line of the
 // secret -- so they are scrubbed of each line of every multi-line secret
 // the text held. The cause is a scrubbed copy, for the same reason: it
-// is reachable through errors.As. DIVERGENCE 5.568.
+// is reachable through errors.As. DIVERGENCE 5.574.
 func ErrorAt(file string, ye *yaml.Error, text string, rendered *template.Result, secrets *redact.Set) *Error {
 	pos, _ := rendered.MapLine(ye.Pos.Line)
 	text, lines := secrets.ScrubLines(text)
@@ -767,7 +767,7 @@ func SourceWindow(src []byte, file string, err error) string {
 // The rendered output is scrubbed of secrets before it is numbered, as
 // an error's window is (ErrorAt): numbered, a secret that spans lines is
 // in no line whole, and the lint's own scrub of what this returns would
-// match none of it. DIVERGENCE 5.568.
+// match none of it. DIVERGENCE 5.574.
 func Explain(src []byte, file string, res Result, err error, all bool, secrets *redact.Set) string {
 	var b strings.Builder
 	if all {

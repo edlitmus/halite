@@ -114,7 +114,7 @@ func TestAMultiLineSecretIsNotNumberedIntoTheErrorWindow(t *testing.T) {
 // window numbers part of it, and both lints scrubbed it at the sink,
 // after numbering: the same defect on a successful render. A text
 // pipeline puts the secret in the output unindented and whole, which is
-// the case scrubbing can see at all. DIVERGENCE 5.568.
+// the case scrubbing can see at all. DIVERGENCE 5.574.
 func TestAMultiLineSecretIsNotNumberedIntoLintRendered(t *testing.T) {
 	secrets := redact.New()
 	secrets.Add(pemSecret)

@@ -397,7 +397,7 @@ func hubPillarCheck(cfg *config.Config, secrets *redact.Set) doctor.Check {
 			OnSecret: secrets.Add,
 			// And scrubs, with what it learned, the rendered lines an
 			// error shows: a compile error is what this check prints.
-			// DIVERGENCE 5.568.
+			// DIVERGENCE 5.574.
 			Secrets:  secrets,
 			Strategy: strategy,
 		},

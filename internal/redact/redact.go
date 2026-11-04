@@ -200,7 +200,7 @@ func (s *Set) Scrub(text string) string {
 // also work and was not done: a PEM's `-----BEGIN PRIVATE KEY-----`
 // would then be scrubbed from every message on the machine, not only
 // where it is part of a secret. The set returned here lives as long as
-// one error. DIVERGENCE 5.407 asked for this, and 5.568 is the change.
+// one error. DIVERGENCE 5.407 asked for this, and 5.574 is the change.
 func (s *Set) ScrubLines(text string) (string, *Set) {
 	lines := New()
 	if text == "" {

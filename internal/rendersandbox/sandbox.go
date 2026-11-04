@@ -437,7 +437,7 @@ func (c *childProcess) result(in frame, opts render.Options) (render.Result, err
 		if p := in.Parse; p != nil {
 			// Built here, with the set, by the function an in-process
 			// render uses: the child has no set to scrub with.
-			// DIVERGENCE 5.568.
+			// DIVERGENCE 5.574.
 			e := render.ErrorAt(opts.File, &p.YAML, p.Text, &template.Result{SourceMap: p.SourceMap}, opts.Secrets)
 			return render.Result{}, &renderFailed{msg: e.Error(), err: e}
 		}
