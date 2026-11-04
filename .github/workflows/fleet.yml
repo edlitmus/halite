@@ -896,6 +896,12 @@ jobs:
           for k in HostName LocalHostName ComputerName; do
             echo "scutil $k: $(scutil --get $k 2>&1)"
           done
+          # Kept for "the machine was put back", which compares it. An
+          # unset HostName is a Mac's default, and the tests used to come
+          # back with it set to the running name -- the running name
+          # itself right, so the check below that looked only at that
+          # passed (DIVERGENCE 5.575).
+          scutil --get HostName > "$RUNNER_TEMP/hostname-pref-before" 2>&1 || true
 
       - name: drive the macOS row as root
         run: |
@@ -918,6 +924,11 @@ jobs:
           # one above.
           test "$(hostname)" != "halitecf-host" || {
             echo "the conformance suite left this machine renamed"; exit 1; }
+          # And the boot-time name, as it was before, set or unset.
+          scutil --get HostName > "$RUNNER_TEMP/hostname-pref-after" 2>&1 || true
+          echo "HostName before: $(cat "$RUNNER_TEMP/hostname-pref-before"); after: $(cat "$RUNNER_TEMP/hostname-pref-after")"
+          cmp -s "$RUNNER_TEMP/hostname-pref-before" "$RUNNER_TEMP/hostname-pref-after" || {
+            echo "::error::the tests changed this Mac's HostName preference"; exit 1; }
           # The zone the conformance case moves this Mac to. Its restore
           # relinks /etc/localtime rather than going through the tool,
           # because `systemsetup -settimezone UTC` refuses the zone this
