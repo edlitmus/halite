@@ -27006,6 +27006,39 @@ Linux).
 **Not verified.** `-race` on Linux, and the pinned go1.26.6. No real Salt tree was rendered through the measure; the
 package tests, the Jinja corpus among them, pass.
 
+#### 5.312, the depth test now reaches the bound it is for
+
+"It is real for the toolchain that releases are built with" stopped
+being true when the release toolchain moved to go1.27.3 (`go.mod`'s
+`toolchain` line, #481). Under it `encoding/json` is json/v2 underneath,
+`Decoder.Token` refuses the 10,001st level itself with "exceeded max
+depth", and `decodeValue`'s own check is never the one that fires. So
+`TestDecodeJSONDepthMatchesEncodingJSON`, which went through
+`DecodeJSON` and accepted either error, passed with the check deleted.
+Measured on darwin/arm64 with go1.27.3, 2026-11-04, by changing the
+check to `if false && depth >= maxJSONDepth`: the test passed, and
+`DecodeJSON` of 10,001 `[` returned "exceeded max depth".
+
+The check stays. It is the only bound this package owns, and the
+standard library's is an implementation detail that has changed once
+already; a `GOEXPERIMENT=nojsonv2` build, or a later release that moves
+it, would put the crash back with nothing failing.
+
+**The change.** `decodeValue` reads from a `tokenSource` interface (the
+`Token` and `More` of `*json.Decoder`) rather than the concrete type, and
+the test drives it with `unboundedTokens`, a token list that keeps no
+depth, as the go1.26 `Decoder` did. It requires decodeValue's own error,
+"nests deeper than", one past the limit, and still checks `json.Valid` at
+both edges and that `DecodeJSON` refuses end to end.
+
+**Broken on purpose.** With the check changed to `if false && …` the new
+test fails for arrays and objects: "want decodeValue's own nesting
+error, got <nil>". Restored, it passes.
+
+**Not verified.** Only darwin/arm64 with go1.27.3. A
+`GOEXPERIMENT=nojsonv2` build was not tried; the token source stands in
+for it.
+
 ### 5.313 `mount.mounted` remounted every run a filesystem declared by UUID or label
 
 **What was wrong.** `mount.mounted` decided whether the mounted
