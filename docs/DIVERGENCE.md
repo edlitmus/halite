@@ -26281,6 +26281,11 @@ other function failed the static check. So no other function had passed
   the dynamic audit catches that, and only on functions it reaches.
 - **State functions are not in the new static check.** 5.135's state
   differential is unchanged.
+#### 5.308, `mount.set_fstab` fell out of the dynamic audit
+
+`auditMustReach` names 24 functions now, not 23: `mount.set_fstab`
+joined it, off Windows, after it stopped being reached without anything
+failing. See 5.568.
 ### 5.309 A dotted unit name was sent to systemd without `.service`
 
 Audit finding H-14. `withServiceSuffix` decided whether a name already had
@@ -37083,6 +37088,61 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 **Broken on purpose.** With the wait removed from `Run` the test fails as above. With the wait kept, `reactorWorker.run` releasing its event regardless of the context, and the `ctx.Done` branch of `Run` waiting for the workers before its final commit (the obvious way to write this, and wrong), it fails on the offset: `"00000001:381", want "00000001:0"`. Restored, it passes, and the `Reactor|Reaction|Reacted|Debounc|EventReturn|Serve` tests of `internal/hub` pass under `-race`.
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
+### 5.568 `mount.set_fstab` fell out of the `--test` audit, and nothing failed
+
+`TestEveryMutatingFunctionHonoursItsTestModeClaim` (5.308) reported 180
+functions refused in every world on this Mac, against the 179 recorded
+in 5.308, and passed. The extra one was `mount.set_fstab`. A function
+refused in every world is not judged, so a regression that made its dry
+run write the table would have passed too.
+
+**Why it fell out, measured rather than read.** The audit was run with
+the unreached names logged, on darwin/arm64 with go1.27.3, 2026-11-04:
+
+- At `17ef7d99^`, `set_fstab` was reached and answered without acting:
+  179 unreached.
+- At `17ef7d99` (#377, the fix in 5.337), it refused in every world: 180.
+- On `5c44bed3`, with `tableReady` bypassed in `set_fstab` alone, it was
+  answered again: 179.
+
+5.337 made `set_fstab` refuse an entry with no `fstype`, because such a
+line closes up and is read with its options as the type. The signature
+still calls `fstype` optional, since `mount.mounted` shares the
+parameters and needs a type only when it persists. The audit fills only
+required arguments (and every path), so it never gave one, and every
+world was refused for the reason 5.337 added.
+
+**The change.** The audit takes `auditExtraArgs`, optional arguments a
+function refuses to run without where its signature does not say so,
+with one entry: `fstype: tmpfs` for `mount.set_fstab`. The `config`
+argument is a path and is already filled with one under the test's
+temporary directory, so the dry run never names `/etc/fstab`.
+`mount.set_fstab` is added to `auditMustReach`, except on Windows, where
+it is gated out before it runs, as `service.mask` is there for another
+reason. The count is back to 179, and `set_fstab` is among the 106
+answered.
+
+**Broken on purpose.** With the `auditExtraArgs` entry removed, the test
+fails: "mount.set_fstab refused in every world this audit built". With
+`c.Test` removed from `setFstab`'s early return, it fails on the dry
+run: `files: [changed config] ; first-exists: [changed config]`. Both
+restored, it passes. With `mountGOOS` set to `freebsd` and then to
+`linux` in the test, `set_fstab` was still reached and the count was
+179.
+
+**Not changed, and the same pair.** `set_fstab`'s signature says
+`fstype` is optional and its code refuses without one. Making it
+required in that signature would tell `sys.doc` and the generated
+`docs/modules.md` the truth and would have kept the audit reaching it,
+but it changes the error an operator sees, so it is a separate change.
+The audit's extra argument is a patch over that disagreement, and any
+other function with an optional parameter it cannot do without is
+still invisible to it, unless it is in `auditMustReach`.
+
+**Not verified.** Run on darwin/arm64 only. The `mountGOOS` runs are a
+stand-in for FreeBSD and Linux, not a run on them; CI's Linux and
+FreeBSD legs run the test. Not run on Windows, where `set_fstab` is
+left out of the list.
 
 
 
