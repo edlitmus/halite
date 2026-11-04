@@ -275,6 +275,19 @@ and removed after the next successful renewal.
 A node that is not running `connect` is **not** renewed. `halite-node renew`
 does it by hand; before the halfway point it says so and changes nothing, so
 a nightly `renew` in cron is safe for machines that only ever run `--local`.
+`halite-node renew --force` renews before then, which is how to rotate a key
+you think has leaked.
+
+The hub bounds how often one node may renew. It keeps every serial a renewal
+replaced until that certificate would have expired, and refuses a renewal
+while a node already has eight of them. A node on schedule never has more
+than two, so the limit leaves room for six early rotations inside one
+certificate's life. A refused node keeps its certificate, which still works,
+and can renew again as the oldest replaced certificate expires. To clear the
+limit at once, delete the node (`halite-hub keys delete`) and enroll it
+again. Revoking it does not help, because a revoked node is never issued
+another certificate. A renewal whose request is larger than 16 KiB is
+refused, as an enrollment's is.
 
 Because certificates carry validity dates, **clocks matter**. A node whose
 clock is far from the hub's cannot complete a handshake; `halite-node

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A node can no longer renew without limit.** The hub keeps each serial a renewal replaced until that certificate would have expired, and it now refuses a renewal while a node already has eight such serials. A node that renews on schedule has at most two, so `halite-node renew --force` still rotates a key early several times within one certificate's life. A refused node keeps its working certificate, and it can renew again as the oldest replaced certificate expires. To clear the limit at once, use `halite-hub keys delete` and enroll the node again. A renewal request whose CSR is larger than 16 KiB is now refused, as an enrollment's already was. DIVERGENCE 5.573.
+
 - **A service name can no longer be an option or a path.** On FreeBSD, `service.status: -R` ran `service -R status`, which stops and starts every enabled service on the machine, and a name such as `../../../tmp/x` made service(8) run that file as root. Every `service.*` function and state now refuses a name that is empty, starts with `-`, holds a `/` or a control character, or is `.` or `..`, before anything runs. DIVERGENCE 5.570.
 
 - **A hosts entry can no longer add a line to /etc/hosts.** A newline in a `host.present` or `dnsutil.hosts_append` name, address or alias wrote a mapping of its own; a space, tab or `#` split a name or turned the rest of the line into a comment. Such a value is now refused, in `--test` as well. DIVERGENCE 5.571.
