@@ -37072,6 +37072,19 @@ The test-mode audit (`TestEveryMutatingFunctionHonoursItsTestModeClaim`) gave ev
 - `service.mask`, `unmask` and `masked` were checked only for being refused, not on a systemd node.
 - `service -R` itself was never run, in the jail or on beastie. `-l` stood in for it.
 - Only inside a jail, not on a FreeBSD host's own rc.d. The jail shares beastie's 15.1-RELEASE-p6 kernel and base.
+### 5.569 A newline in a hosts entry wrote another line into /etc/hosts
+
+Issue 321, the close-out review of 2026-11-03, item A12, second half.
+
+**The defect.** `host.present` and `dnsutil.hosts_append` wrote the addresses and names they were given into the hosts file, through `renderHosts`. A newline in a name, an address or one of the `entries` added a mapping of its own: `name: "web1.example\n10.6.6.6 evil.example"` wrote `10.6.6.6 evil.example` as its own line. Every resolver on the machine reads /etc/hosts before DNS, so that line redirects any name. A space or a tab is a field boundary to `parseHosts`, which splits with `strings.Fields`, so one name became two. A `#` made the rest of the line a comment: the write reported success, and the next read disagreed with it, on every run.
+
+**The change.** `hostsFieldsValid` refuses any address or name that contains a rune `unicode.IsSpace` matches, a control character, or `#`. `unicode.IsSpace` is the test `strings.Fields` uses, so the check matches the reader instead of being narrower. Both writers call it before they read the file, so a `--test` run refuses exactly as a real one does. Values are still trimmed where they were before (an address, and each of hosts_append's `entries`), so a trailing newline from a template is not refused. `host.absent` and `hosts_remove` are not checked: they only compare what they are given with what was parsed, and a value with a newline in it matches nothing.
+
+**Shown.** `TestAHostsEntryThatEndsItsLineOrFieldIsRefused` tries `\n`, `\r\n`, a space, a tab, `#`, NUL and U+0085 in `host.present`'s `name`, `names`, `ip` and list `ip`, and in `hosts_append`'s `ip_addr`, string `entries` and list `entries`. It tries each one both for real and under `--test`, and checks that the file is byte for byte unchanged. Against main (5c44bed3) it failed with the injected line written, for example `10.0.0.1\tweb1.example\n10.6.6.6 evil.example`. With the change it passes, and an ordinary entry (`fe80::1%eth0`) is still written. Broken on purpose twice. Allowing `#` again fails the `#` cases. Removing the check from `hosts_append` alone fails only `hosts_append`'s cases.
+
+**Run as root in a jail on beastie** (the same jail and binaries as 5.568), against the jail's own `/etc/hosts`. `host.present` was given a name holding a newline and then `10.6.6.6 a12-evil.example`. Main wrote `10.6.6.6 a12-evil.example` into the file as a line of its own, and reported `Result: True`. This change refused the state, naming the `\n`, and left the file alone. An ordinary entry in the same run was written by both. The new test fails against main's code in the jail and passes with this change.
+
+**Not verified.** Neither the C library's reader nor any other resolver was asked how it reads a line with one of these characters. The refusal does not depend on how they read it. Only `host.present` was run end to end. `dnsutil.hosts_append` was run only through the test, in the jail and on macOS.
 
 
 
