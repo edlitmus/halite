@@ -64,7 +64,7 @@ on:
       - "internal/atomicfile/xattr*.go"
       # ssh_auth and ssh_known_hosts writing another account's files as
       # root, through a ~/.ssh or a `config` directory the account linked
-      # (TestLiveSSHRefuses, TestLiveSSHConfig; DIVERGENCE 5.349, 5.568).
+      # (TestLiveSSHRefuses, TestLiveSSHConfig; DIVERGENCE 5.349, 5.569).
       - "internal/builtin/ssh*.go"
       - "internal/builtin/live_ssh*.go"
       # `iptables` and `nftables` run in a private network namespace, so
