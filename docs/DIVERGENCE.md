@@ -37051,6 +37051,34 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
 
+### 5.568 A node could renew as often, and with as large a request, as it liked
+
+Issue 321, the close-out review of 2026-11-03, item A9 (`internal/keystore/authority.go`; the size bound on enrollment is issue 321's M-06, the superseded serials 5.392).
+
+**The defect.** Two unbounded things on `/v1/enroll/renew`, which a node reaches with nothing but its own certificate.
+
+- **Size.** `MaxCSRBytes` (16 KiB) was checked in `Enroll` and nowhere else. `Renew` parsed whatever CSR it was given and stored it in the node's record. The request body allows 64 MiB, and a reviewer stored a CSR of 2.84 MB. Two paths that must agree, and one of them did not ask.
+- **Frequency.** Nothing limited how often a node renewed. Each renewal keeps the serial it replaced in the record until that certificate would have expired (5.392), 90 days at the default, and rewrites the whole record. A node renewing in a loop added a serial a time, and paid for every write with all the earlier ones: the record grew linearly and the bytes written quadratically, with the in-memory denylist growing alongside.
+
+**The choice of bound.** The review offered two: refuse a renewal before the certificate's half-life, or cap the superseded list. A half-life floor is the wrong one, because it strands exactly the node that most needs to renew. `halite-node renew --force` exists to rotate a key before renewal is due, after a compromise, and a floor would have refused that for up to 45 days while the leaked key kept working. A count does not care when a renewal comes, only how many replaced certificates are still live. So the bound is `MaxSuperseded`, eight live superseded serials per record. A node on schedule holds at most two (renewed at half-life, the one before has at most half its life left), which leaves six early rotations inside one certificate's life before anything is refused.
+
+"Cap the list" has to mean refuse, not drop. Dropping the oldest serial to make room would take a certificate that has not expired off the CRL at once and off the denylist at the next start, since `LoadDenylist` reads the record. That is how a leaked key gets back in.
+
+**The change.** `checkCSRSize` is the one size check, asked by `Enroll` and by `Renew` before either parses. `Renew` counts the record's live superseded serials under the store's lock, after the serial check (so a stale certificate is told it is stale), and refuses with `ErrRefused` at eight: the hub answers 403 and logs "renewal refused". Only `Renew` is bounded. A reissue through `Enroll` is an operator's decision or a spent token.
+
+**What an operator sees.** A node that renews more than six times early inside one certificate's life is refused, with a message that says its certificate still works, that renewal comes back as the oldest replaced one expires, and that `halite-hub keys delete` and a new enrollment clear it at once. Delete keeps every live serial denied as a tombstone. Revoking does not clear it, because a revoked record is never issued to again. The node's renewal loop treats the refusal as any other failed renewal: a warning, and a retry at the next check. A renewal CSR over 16 KiB is refused as malformed (400). halite-node's are about 500 bytes.
+
+**Shown.** `TestARenewalCSRIsBoundedLikeAnEnrollment` and `TestRenewalsAreBoundedByLiveSupersededSerials`, in `internal/keystore`, run on this branch's parent `5c44bed3` with only `MaxSuperseded` and `checkCSRSize` declared and nothing calling them. The first failed with a 1,420,430-byte renewal CSR taken. The second failed with 34 renewals in a row taken. With the change both pass. The size test holds both paths to the same answer at the boundary itself, with valid CSRs just over 16 KiB (16,459 bytes, refused by both) and just under it (16,377 bytes, taken by `Renew`). The frequency test renews at half-life and then rotates the next day, and neither is refused. It then loops until the refusal, checks the record holds exactly eight, checks every one is still on the denylist, and checks that renewal works again once the oldest has expired.
+
+Broken on purpose, and each restored after:
+- `Renew` without the size check: the size test fails on the 1.4 MB CSR.
+- `Enroll` without it: the size test fails on the 16,459-byte CSR, and so does `TestAnOversizedCSRIsRefusedAndNotStored`.
+- the bound 1 KiB too tight: the size test fails on the 16,377-byte CSR.
+- the cap a thousand times higher: the frequency test fails, 34 renewals taken.
+- every superseded serial counted, live or not: the frequency test fails, because the refusal never lifts.
+
+**Not verified.** Nothing ran against a real hub and node. The tests drive `Authority.Renew` directly; the HTTP status and the node's renewal loop's reaction to a refusal were read, not run. The record size and write volume were not measured; "quadratic" is from reading `issue` and `Store.put`. `MaxSuperseded` is a constant, not a setting. An estate with a `certificate_lifetime` far shorter than its renewal check could reach it, though the check scales with the lifetime (`pki.RenewalCheckEvery`), so a node on schedule should not. Repeated delete-and-re-enroll still grows the tombstones; that is an operator's or a token's decision, and is not bounded here. No live test covers renewal, and none was added.
+
 
 
 
