@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A service name can no longer be an option or a path.** On FreeBSD, `service.status: -R` ran `service -R status`, which stops and starts every enabled service on the machine, and a name such as `../../../tmp/x` made service(8) run that file as root. Every `service.*` function and state now refuses a name that is empty, starts with `-`, holds a `/` or a control character, or is `.` or `..`, before anything runs. DIVERGENCE 5.568.
+
 - **The hub waits for a reaction in flight before it reports it has stopped.** On SIGTERM a runner reaction that was still running went on writing its job return and its `ret` event after "the hub stopped" was logged, and the event returner was closed under a shipper still sending. `serve` now waits for the reactor and its other background loops; a stop can take as long as the slowest reaction in flight, and a second SIGTERM or `^C` stops the hub without waiting. DIVERGENCE 5.567.
 
 - **A rewritten file's ACL can no longer be redirected onto another file.** On Linux, a file replaced through a temporary file inherits the old file's extended attributes, ACL included. The copy was made by name after the temporary file was closed. An account that owned the directory (a home directory managed by `file.managed`, say) could swap the temporary name for a link to another file, and its chosen ACL and the caller's mode were then put on that file, as root. The copy is now made on the open file. The replaced file is read through a descriptor that does not follow a symbolic link, and only when it is a regular file. A writer that may replace a file but not read it no longer copies its attributes. DIVERGENCE 5.566.

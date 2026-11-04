@@ -7,7 +7,6 @@ import (
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
-	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -78,11 +77,15 @@ func registerServiceMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				names, err := listServices(c)
 				if err != nil {
 					return nil, err
 				}
-				return serviceKnown(names, states.Str(args, "name", "")), nil
+				return serviceKnown(names, name), nil
 			},
 		},
 		exec.Module{
@@ -96,11 +99,15 @@ func registerServiceMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				names, err := listServices(c)
 				if err != nil {
 					return nil, err
 				}
-				return !serviceKnown(names, states.Str(args, "name", "")), nil
+				return !serviceKnown(names, name), nil
 			},
 		},
 		exec.Module{
@@ -114,11 +121,15 @@ func registerServiceMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				p, err := pickServiceProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				enabled, err := p.Enabled(c, states.Str(args, "name", ""))
+				enabled, err := p.Enabled(c, name)
 				if err != nil {
 					return nil, err
 				}
@@ -137,11 +148,14 @@ func registerServiceMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				p, err := pickServiceProvider(c)
 				if err != nil {
 					return nil, err
 				}
-				name := states.Str(args, "name", "")
 				if c.Test {
 					// Which of the two it would do cannot be known
 					// without trying the reload, and trying it is the
@@ -178,11 +192,15 @@ func registerServiceMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name, err := serviceNameArg(args)
+				if err != nil {
+					return nil, err
+				}
 				m, err := pickMasker(c)
 				if err != nil {
 					return nil, err
 				}
-				return m.Masked(c, states.Str(args, "name", ""))
+				return m.Masked(c, name)
 			},
 		},
 	)
@@ -203,11 +221,14 @@ func maskModule(r *Registries, name, doc string,
 			Section:    "15.2",
 		},
 		Fn: func(c *exec.Context, args *value.Map) (any, error) {
+			name, err := serviceNameArg(args)
+			if err != nil {
+				return nil, err
+			}
 			m, err := pickMasker(c)
 			if err != nil {
 				return nil, err
 			}
-			name := states.Str(args, "name", "")
 			if c.Test {
 				// The same answer `service.start` and the rest of
 				// simple() give under a dry run, and for the same
