@@ -30199,6 +30199,15 @@ and `macos` legs' filters; the `freebsd` leg runs every `TestLive*`.
 **Not done.** A home directory that is itself a link, or is writable by
 others, is trusted, as `os.Root` opens it by path. A `config` path is the
 operator's choice and is still written by path. macOS was not run.
+
+#### 5.349, a `config` path was not the operator's choice
+
+The `config` exception above was wrong. The operator chooses a name, not
+what the account has since put at it: `config:
+/home/deploy/.ssh/authorized_keys`, the default file spelled out, went by
+path through the same link the default path refuses. Fixed by deciding on
+where the path lands rather than on whether `config` was given; see
+5.569.
 ### 5.350 git.latest's `user` was never read, so every checkout was root's
 
 Issue 321 finding M-24. `git.latest` declared `user` ("Run git as this
@@ -37073,12 +37082,85 @@ The rule is 5.307's, not one per ecosystem, for the reason `pkgValidateName` giv
 **Tests.** `TestLangRefusesOptionInjection` calls every one of those functions with a payload, in a dry run and a real one, through a recording runner, and requires a refusal and no command at all. On 5c44bed3 it failed 48 times (24 calls, each in both modes). `TestLangEveryNameTakingFunctionIsCovered` holds the list to the registry: a function of those seven modules taking `name`, `pkgs`, `gems`, `crates` or `modules` must be in it. Broken on purpose, one at a time: `langNames` not validating fails the eleven execution functions; `langValidateSpecs` returning nil fails the six states; the two `version` checks and `go.env`'s check removed fail those three cases; `cpan.install` dropped from the list fails the coverage test.
 
 **Not verified.** Nothing ran as root, on FreeBSD or on Linux. composer was not run at all. go's `-toolexec` was shown to parse, not to run. The explicit options that take a URL on purpose (`pip.install`'s `index_url`, `npm`'s `registry`) are unchanged: they are the tree asking for an index, not a name being read as one. `maven.run`'s `goals` reach `mvn` as they stand and were not changed: a goal list is a build invocation that a tree may legitimately fill with options. The value `parseSpec` makes of a scoped npm name (an empty name, so a state cannot compare it with the installed list) is pinned by `TestParseSpec` and was not changed. The evidence levels of these modules are unchanged: the runs above show what each tool reads, not that an install through halite works.
+### 5.569 A `config` path in the account's home still followed the account's link
 
+Issue 321 close-out item A10, found by reading `sshAccountFileFor` after
+the M-30 fix (5.349). That fix read and wrote a named account's ssh file
+through an `os.Root` on its home, but only when the state gave no
+`config`: any `config` returned nil and was written by path, on the
+reasoning that it is a path the operator chose. So
+`ssh_auth.present` with `user: deploy` and `config:
+/home/deploy/.ssh/authorized_keys` -- the default file, named -- followed
+a `~/.ssh` deploy had replaced with a link, as root, and wrote, and
+chowned to deploy, a file wherever it led. The same for
+`ssh_known_hosts.present`, and for any `config` under a directory of the
+home that the account can replace.
 
+**Shown, as root, on three platforms** with
+`TestLiveSSHConfigInsideHomeRefusesALink`, built against main's ssh code
+(5c44bed3) with only the test added. A throwaway account's `~/.ssh` and
+`~/keys` were linked to a root-owned directory standing in for /etc,
+which held a root-only 0600 `authorized_keys`; a root-owned link in /tmp
+was a second name for the home. Four `present`s with `config` -- the
+default `authorized_keys` named, the default `known_hosts` named, a file
+under `~/keys`, and the default file through the second name -- all
+reported success. The target gained a `known_hosts`, and its root file
+was **chowned to the account** and had the managed key appended:
 
+- beastie, in a throwaway thin Bastille jail, FreeBSD 15.1-RELEASE-p6:
+  "the target's file was given to uid 1001";
+- noop2-1, Ubuntu 22.04.5 LTS (5.15.0-1117-aws-fips): "given to uid
+  1004";
+- mini-me, macOS 27.2 (26B123) on arm64: "given to uid 502". There the
+  home was `/tmp/halsc<pid>`, and /tmp is itself a link to /private/tmp,
+  a root-owned link above the home that the fix leaves alone.
 
+With the fix all four are refused, naming the link, nothing is written
+in the target, a `config` under a home directory with no link in it is
+made, 0600 and the account's, and converges, and one outside the home
+is written by path as before. `TestLiveSSHFilesForAnotherAccount` and
+`TestLiveSSHRefusesALinkedSSHDirectory` (5.349) pass beside it, on all
+three hosts.
 
+**The change.** `sshAccountFileFor` decides by where the path lands.
+`pathInHome` answers with the path relative to the home when it is inside
+it: lexically, or, failing that, when a directory on the way down from /
+is the home by identity (`os.SameFile`), so that a second name for the
+home -- `/usr/home/deploy` where `/home` is a link, as on FreeBSD -- is
+not a way to get the old by-path write. The shallowest such directory
+wins, so an account's own link back to its home stays in the relative
+path, where it is refused, rather than standing in for the home. The
+write still opens the root on the home as passwd spells it, not on the
+prefix that matched. Inside the root every directory between the home and
+the file, not only `.ssh`, is refused if it is a link, and one that is
+missing is made 0700, as `fileperm.MkdirAll` made it by path. `config`
+now decides only whose the directory is: the default `~/.ssh` is given to
+the account, as before; a `config` file is, and the directory it is in is
+not, as `giveToAccount` did by path.
 
+A home of `/` takes the root for its default `~/.ssh` only. The account
+does not own /, every absolute path is in it, and on macOS `/etc` is a
+link, so refusing links there would refuse any `config` such an account
+was given.
+
+**Broken on purpose.** With `config` given sending the path back to the
+by-path write, the live test fails on all three hosts exactly as main
+did.
+With `pathInHome` reduced to its lexical comparison, on beastie, only the
+second name for the home gets through: "the target's file was given to
+uid 1001", and `TestPathInHome` (a unit test, no root) fails on that row
+and on the account's link back to its home. Restored, both pass.
+
+**Not verified.** A home of `/` was not run, and the lexical-only break
+was run on FreeBSD alone. The live test joins the `linux`
+and `macos` legs' filters and the trigger paths of `fleet.yml`; the
+`freebsd` leg runs every `TestLive*`. A `config` inside another account's home
+(`user: deploy`, `config: /home/alice/keys`) is still written by path:
+alice can link a directory there, and that is A1's question of which
+links to follow, not this one. A relative `config` is resolved against
+the node's working directory, as it was; how Salt resolves one was not
+checked here. A home that is itself a link, or writable by others, is
+trusted, as 5.349 says.
 
 
 
