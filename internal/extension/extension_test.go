@@ -361,10 +361,18 @@ func TestATrustKeyRoundTrips(t *testing.T) {
 // `<cache>/<name>/<version>`.
 func installBundle(t *testing.T, cache string, name, version string) TrustKey {
 	t.Helper()
+	return installBundleAt(t, cache, name, version, name, version)
+}
+
+// installBundleAt signs a bundle as `signedName signedVersion` and puts
+// it at `<cache>/<dirName>/<dirVersion>`, which a correct install never
+// does and which is what a write to the cache can.
+func installBundleAt(t *testing.T, cache, dirName, dirVersion, signedName, signedVersion string) TrustKey {
+	t.Helper()
 	src, key, manifest := aBundle(t, func(m *Manifest) {
-		m.Name, m.Version = name, version
+		m.Name, m.Version = signedName, signedVersion
 	})
-	dst := filepath.Join(cache, name, version)
+	dst := filepath.Join(cache, dirName, dirVersion)
 	if err := os.MkdirAll(dst, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -517,5 +525,88 @@ func TestADirectoryWithNoManifestIsReportedAsWhatItIs(t *testing.T) {
 	}
 	if usable["echo"].Manifest.Version != "1.0.0" {
 		t.Errorf("it picked %s", usable["echo"].Manifest.Version)
+	}
+}
+
+// A bundle is held to the name and version it was signed as, not the
+// directory it was found in.
+//
+// The store takes an extension's name from its directory and looks the
+// pin up by that name, so a validly signed `echo 1.0.0` copied to
+// `bar/7.7.7` was checked against bar's pin -- which there is none of --
+// and loaded. The runtime then registers it by its manifest's name, as
+// echo: the pin on echo was bypassed by moving the bundle one directory
+// over. Shown in the 2026-11-03 review of the issue 321 fixes.
+// DIVERGENCE 5.333 signed the name and version; this holds the path to
+// them.
+func TestABundleIsHeldToTheNameAndVersionItWasSignedAs(t *testing.T) {
+	cases := []struct {
+		name, dirName, dirVersion string
+	}{
+		{"another name and version", "bar", "7.7.7"},
+		{"another name", "bar", "1.0.0"},
+		{"another version", "echo", "7.7.7"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := t.TempDir()
+			key := installBundleAt(t, cache, tc.dirName, tc.dirVersion, "echo", "1.0.0")
+
+			// echo is pinned to a version this bundle is not, which is
+			// the pin a renamed copy would otherwise walk past.
+			store := &Store{Dir: cache, Options: loadOpts(key),
+				Pins: map[string]Pin{"echo": {Version: "2.0.0"}}}
+			installed, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(installed) != 1 {
+				t.Fatalf("the cache read as %+v", installed)
+			}
+			got := installed[0]
+			if got.Bundle != nil {
+				t.Fatalf("echo 1.0.0 at %s/%s loaded", tc.dirName, tc.dirVersion)
+			}
+			if got.Err == nil {
+				t.Fatal("refused with no reason")
+			}
+			// Both halves named, so an operator can tell which of the
+			// two is wrong without opening the manifest.
+			for _, want := range []string{tc.dirName + "/" + tc.dirVersion, "echo/1.0.0"} {
+				if !strings.Contains(got.Err.Error(), want) {
+					t.Errorf("the refusal %q does not name %s", got.Err, want)
+				}
+			}
+			usable, problems := store.Usable(installed)
+			if len(usable) != 0 {
+				t.Errorf("usable: %v", usable)
+			}
+			if len(problems) == 0 {
+				t.Error("the refusal is not reported as a problem")
+			}
+		})
+	}
+}
+
+// An unsigned bundle, which `extension_require_signature: false`
+// permits, is held to its directory too, and the refusal does not call
+// its manifest signed: that would send an operator looking for a key.
+func TestAnUnsignedBundleIsHeldToItsDirectoryAndSaysItIsUnsigned(t *testing.T) {
+	cache := t.TempDir()
+	installBundleAt(t, cache, "bar", "7.7.7", "echo", "1.0.0")
+	if err := os.Remove(filepath.Join(cache, "bar", "7.7.7", SignatureName)); err != nil {
+		t.Fatal(err)
+	}
+	store := &Store{Dir: cache, Options: LoadOptions{RequireSignature: false}}
+	installed, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installed) != 1 || installed[0].Bundle != nil {
+		t.Fatalf("an unsigned echo 1.0.0 at bar/7.7.7 loaded: %+v", installed)
+	}
+	msg := installed[0].Err.Error()
+	if !strings.Contains(msg, "unsigned manifest says echo/1.0.0") || strings.Contains(msg, "signed as") {
+		t.Errorf("the refusal reads %q", msg)
 	}
 }

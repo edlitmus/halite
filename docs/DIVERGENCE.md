@@ -37651,7 +37651,82 @@ when served, since its digest is not persisted separately from the listing.
 Plain pillar values in a run's return are still in `returns.ndjson`, as they
 were: that file is not encrypted.
 
-### 5.578 One `aws_secrets_manager` block was served what another block fetched
+### 5.578 A signed extension loaded from a directory that named another extension
+
+`extension.Store.Load` took an extension's name and version from its
+`<cache>/<name>/<version>` directory, looked the pin up by that name, and
+never compared either with the manifest's `name` and `version`, which 5.333
+put under the signature. Found by the 2026-11-03 review of the issue 321
+fixes (issue 624). Two paths that had to agree: the directory the store
+reads a bundle from, and the name and version it was signed as.
+
+The review called it a name problem: a signed `echo 1.0.0` copied to
+`bar/7.7.7` was usable as `bar`. Measured, it is a pin bypass. The runtime
+registers a bundle by its manifest's name, so the copy at `bar/7.7.7` was
+checked against `bar`'s pin, of which there was none, and then loaded **as
+`echo`**, with `echo` pinned to 2.0.0. A copy at `echo/7.7.7` met `echo`'s
+pin, which compares the manifest's version and root, so that case was
+caught by the pin when there was one and loaded when there was not.
+
+**Fixed.** `LoadOptions` carries the name and version the caller found the
+bundle under, and `Load` refuses a bundle whose manifest says otherwise,
+after the signature and before the pin, naming both:
+`bar/7.7.7 holds a bundle signed as echo/1.0.0`. Before the pin because
+the pin was chosen by the directory's name, so a pin refusal there names
+the wrong extension's pin. An unsigned bundle, which
+`extension_require_signature: false` permits, is refused the same way and
+the message says the manifest is unsigned. A bundle loaded from a
+directory that names nothing (a staging directory) is not checked, so
+only `Store.Load` passes them.
+
+**What installs into the cache** was read before the check was written,
+in case a legitimate path lays a bundle out another way. None does. A
+node's `saltutil.sync_*` and the hub's `extensions sync` both go through
+`Syncer`, which installs at the `_ext/<name>/<version>/` path the file
+server published and already refused a bundle signed as anything else
+(`TestAPathThatDisagreesWithTheManifestIsRefused`). `extensions sign
+--publish` writes to the tree, not the cache, at the name and version it
+has just signed. Nothing else in the repository, the documentation or
+the handbook writes into `extension_dir`, so a mismatch is a write to the
+cache that did not come through a sync.
+
+**Tested.** `TestABundleIsHeldToTheNameAndVersionItWasSignedAs` signs
+`echo 1.0.0` with `echo` pinned to 2.0.0 and places it at `bar/7.7.7`,
+`bar/1.0.0` and `echo/7.7.7`. On main the first two loaded and the third
+was refused by the pin with a message naming neither directory. Broken on
+purpose, each way failed all three cases: the store no longer passing the
+directory's name and version, and the check returning nil.
+`TestAnUnsignedBundleIsHeldToItsDirectoryAndSaysItIsUnsigned` holds the
+unsigned wording, and failed with it removed.
+
+**Through the real CLI** (macOS arm64, Darwin 25.6; none of it is
+platform-specific). `halite-hub` was built from this branch and from main
+(9543d44f), and `echoext` was the extension. This branch signed and
+published `echo 1.0.0`, then synced and listed it: fetched, loaded, and
+`say()` listed. Then, in the cache:
+
+1. Moved to `bar/7.7.7`, `echo` pinned to 2.0.0: main listed
+   `echo 1.0.0 (module)` with `say()`; this branch refused it, naming
+   `bar/7.7.7` and `echo/1.0.0`, and listed nothing. Also refused with
+   `echo` pinned to its real version and root.
+2. Control: main with the correct layout and the same 2.0.0 pin refused
+   it (`echo is pinned to 2.0.0 and this bundle is 1.0.0`), so case 1 is
+   the directory and not the pin.
+3. Moved to `echo/7.7.7`: main loaded it, unpinned and pinned to its real
+   version and root; this branch refused it unpinned.
+4. Moved back to `echo/1.0.0`: this branch loaded it and listed `say()`.
+
+**Operators.** Nothing changes for a cache filled by sync. A bundle put
+into `extension_dir` by hand at another name or version now fails to load
+and the log says why; move it to the directory its manifest names, or
+sync it.
+
+**Not verified.** No node synced from a hub's tree and loaded the result;
+the CLI run was the hub's own sync and list, which shares `Store.Load`
+with a node but not the node's `remoteExtensionSource`. Nothing ran on
+FreeBSD or Linux by hand; CI runs the unit tests on both.
+
+### 5.579 One `aws_secrets_manager` block was served what another block fetched
 
 Issue 622, from the close-out review of issue 321. The extension's cache
 was keyed by region, secret and stage. The hub keeps one pool of
