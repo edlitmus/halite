@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -192,13 +191,13 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	read := func(label, file string, notice time.Duration) {
 		cert, err := files.ReadCert(file)
 		if err != nil {
-			// Reported as already expired rather than skipped: nothing
-			// will connect with it either way, and a check that stays
-			// quiet about a file it could not parse is one that passes
-			// on a broken hub.
-			certs[label+" (unreadable: "+err.Error()+")"] = doctor.Expected{
-				Cert: &x509.Certificate{}, WarnWithin: notice,
-			}
+			// Reported as a failure rather than skipped: nothing will
+			// connect with it, and a check that stays quiet about a file
+			// it could not parse is one that passes on a broken hub. As
+			// unreadable, with the reason, and not as expired: an empty
+			// certificate stood in for it, and its zero NotAfter printed
+			// as "expired -9223372036854ms ago" (DIVERGENCE 5.589).
+			certs[label] = doctor.Expected{Unreadable: err, WarnWithin: notice}
 			return
 		}
 		certs[label] = doctor.Expected{Cert: cert, WarnWithin: notice}

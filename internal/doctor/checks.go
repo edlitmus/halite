@@ -114,6 +114,13 @@ type Expected struct {
 	// AbsentDetail replaces the sentence used when Cert is nil, for the
 	// cases where "named here and not present" is not what happened.
 	AbsentDetail string
+	// Unreadable is why the file is there and could not be parsed. It
+	// fails the check, with the reason and no dates. Callers used to
+	// pass an empty certificate in its place, so the check reported a
+	// zero NotAfter as "expired -9223372036854ms ago" -- a duration that
+	// overflowed -- beside a label that already said it was unreadable.
+	// DIVERGENCE 5.589.
+	Unreadable error
 	// WarnWithin is how long before expiry to begin saying so.
 	//
 	// Per certificate, because the certificates in one key directory do
@@ -153,10 +160,15 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 			}
 			sort.Strings(names)
 
-			var absent, unissued, expired, expiring, details []string
+			var absent, unissued, unreadable, expired, expiring, details []string
 			for _, name := range names {
 				want := certs[name]
 				cert := want.Cert
+				if want.Unreadable != nil {
+					unreadable = append(unreadable, fmt.Sprintf("%s could not be read: %v",
+						name, want.Unreadable))
+					continue
+				}
 				// Named by the configuration and not on disk. Reported,
 				// because the alternative is a check that passes for a
 				// reason nobody can see.
@@ -187,10 +199,11 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 				}
 			}
 			switch {
-			case len(expired) > 0 || len(absent) > 0:
+			case len(expired) > 0 || len(absent) > 0 || len(unreadable) > 0:
 				res.Status = Fail
-				res.Detail = strings.Join(append(append(expired, absent...), expiring...), "; ")
-				res.Remedy = "Nothing will connect with an expired or missing certificate.\n" +
+				failed := append(append(append([]string(nil), unreadable...), expired...), absent...)
+				res.Detail = strings.Join(append(failed, expiring...), "; ")
+				res.Remedy = "Nothing will connect with an expired, missing or unreadable certificate.\n" +
 					"A node renews with `halite-node renew`; a hub's is reissued from its CA; " +
 					"an operator's with `halite-hub keys operator create <name>`, which keeps " +
 					"the same cert:CN=<name> the policy binds."

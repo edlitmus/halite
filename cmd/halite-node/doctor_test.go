@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
+	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -143,5 +145,24 @@ func TestNodeDoctorSaysWhenItCannotCompare(t *testing.T) {
 	if res.Status != doctor.Pass || strings.Contains(res.Detail, "matches") ||
 		!strings.Contains(res.Detail, "not compared") {
 		t.Errorf("no agent has started, and: %s %q", res.Status, res.Detail)
+	}
+}
+
+// A node certificate that cannot be parsed is reported as unreadable, not
+// as expired an impossible time ago. DIVERGENCE 5.589.
+func TestNodeDoctorReportsAnUnreadableCertificateAsUnreadable(t *testing.T) {
+	n := nodeForEvidence(t, "")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, pki.NodeCertFile), []byte("not a certificate\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args, err := cli.Parse([]string{"--pki-dir", dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := nodeCertificateCheck(args, n).Run(context.Background())
+	if res.Status != doctor.Fail || !strings.Contains(res.Detail, "could not be read") ||
+		strings.Contains(res.Detail, "expired") {
+		t.Errorf("an unparseable certificate: %s %q", res.Status, res.Detail)
 	}
 }

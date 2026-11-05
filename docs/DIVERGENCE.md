@@ -38228,6 +38228,43 @@ comment that says why. The audit has no exceptions now.
 behaviour is the same by construction, because the value passed is the
 value the read always returned.
 
+### 5.589 `doctor` reported an unreadable certificate as expired before time began
+
+Issue 615, item 8. When a certificate file was there and did not parse, the
+node's, hub's and API's `doctor` put the read error in the label and passed
+`&x509.Certificate{}` in its place. `CertificateExpiry` then subtracted
+"now" from a zero `NotAfter`, which overflows `time.Duration`.
+
+**Measured** on macOS 26.7.2 (arm64), with `main`'s binaries at `e02c31b`
+and the lab of 5.584, `node.crt` and `hub.crt` replaced with a line of text:
+
+```
+  fail  certificate validity and expiry  this node's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
+  fail  certificate validity and expiry  this hub's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
+```
+
+**The change.** `doctor.Expected` has an `Unreadable` error. A certificate
+with one fails the check as "could not be read", with the reason and no
+dates, and the remedy names unreadable certificates. The six call sites
+(one in the node, one in the hub, four in the API) pass the error in place
+of an empty certificate. The same files with the built binaries:
+
+```
+  fail  certificate validity and expiry  this node's certificate could not be read: no PEM block found where a certificate was expected
+  fail  certificate validity and expiry  this hub's certificate could not be read: no PEM block found where a certificate was expected
+```
+
+**Demonstrated.** `TestAnUnreadableCertificateIsReportedAsUnreadable`
+(internal/doctor) fails when the `Unreadable` branch is disabled.
+`TestNodeDoctorReportsAnUnreadableCertificateAsUnreadable` fails with the
+node's old call put back, and prints `expired -9223372036854ms ago`.
+
+**Not verified.** The API's four sites were changed the same way and not
+run. The node run above had no `hub` set: with one, `halite-node doctor`
+exits before it prints any check, because the clock check builds a hub
+client from the broken certificate and that calls `cli.Fatalf`. That is a
+separate defect and is not changed here.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

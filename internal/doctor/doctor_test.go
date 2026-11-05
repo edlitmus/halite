@@ -422,3 +422,35 @@ func TestFirstLineKeepsOrdinaryErrorsAlone(t *testing.T) {
 		}
 	}
 }
+
+// A certificate file that is there and cannot be parsed fails, says why,
+// and gives no dates.
+//
+// Every caller passed an empty certificate in its place, with the reason
+// in the label, and the check reported its zero NotAfter as "expired
+// -9223372036854ms ago": a duration that had overflowed. DIVERGENCE 5.589.
+func TestAnUnreadableCertificateIsReportedAsUnreadable(t *testing.T) {
+	now := time.Now()
+	res := CertificateExpiry(map[string]Expected{
+		"this node's certificate": {
+			Unreadable: errors.New("no PEM block found where a certificate was expected"),
+			WarnWithin: 14 * 24 * time.Hour,
+		},
+		"the hub's CA": {
+			Cert:       &x509.Certificate{NotBefore: now.Add(-time.Hour), NotAfter: now.Add(90 * 24 * time.Hour)},
+			WarnWithin: 14 * 24 * time.Hour,
+		},
+	}, now).Run(context.Background())
+	if res.Status != Fail {
+		t.Errorf("status %s, want fail", res.Status)
+	}
+	want := "this node's certificate could not be read: no PEM block found"
+	if !strings.Contains(res.Detail, want) {
+		t.Errorf("detail %q does not say %q", res.Detail, want)
+	}
+	for _, nonsense := range []string{"expired", "ms ago", "-9223372036854"} {
+		if strings.Contains(res.Detail, nonsense) {
+			t.Errorf("detail %q says %q of a certificate nobody could read", res.Detail, nonsense)
+		}
+	}
+}
