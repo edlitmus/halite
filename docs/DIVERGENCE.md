@@ -38149,6 +38149,93 @@ the two label sets above and expects 2 series. It also makes
 `("1:a","")`, `("","1:a")` and `("1","a")` and expects 3 series. With
 the old join put back, the first pair gives one series with the value 2.
 
+### 5.586 -S and S@ now give the answers that Salt 3007.1 gives
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/target/target.go`, `compileSubnet`).
+
+**The defect.** The issue named three cases. An `ipv6` grain with a
+zone (`fe80::1%eth0`) did not match `fe80::/10` or `fe80::1`. The
+expression `::ffff:10.0.0.1` did not match the grain `10.0.0.1`. The
+target `-S ::ffff:10.0.0.2` did not match the mapped grain that it
+names. Two paths had to agree here: our matcher and the matcher of
+Salt.
+
+**Shown.** We asked Salt, and we did not take the answers from the
+issue. Salt 3007.1 from PyPI ran in a virtualenv on macOS with CPython
+3.10.22. This is the Python that the onedir build of Salt 3007 ships. We
+called `salt.matchers.ipcidr_match.match(expr, opts={"grains": ...})`
+directly. We used 8 sets of grains and 22 expressions, which gave 176
+answers. They are stored in `internal/target/testdata/ipcidr-salt3007.json`.
+The script that made them is beside it (`ipcidr-salt3007.py`). A second
+run of the script gives a byte-identical file.
+
+**What Salt does.** This comes from the source of Salt and from the
+capture.
+
+- The family of the expression picks the grain. An IPv4 expression reads
+  the `ipv4` grain only. An IPv6 expression reads the `ipv6` grain
+  only. An IPv4-mapped address is IPv6.
+- A bare address is compared as a string. Salt writes the expression in
+  canonical form and compares it with each grain as written. The zone is
+  part of the string. A grain that is not in canonical form
+  (`2001:0db8:0:...:0005`) is not found by address, only by network.
+- A network is a containment test on the parsed grain. A zone does not
+  stop it. In Salt, `fe80::/10` and `::/0` match `fe80::1%eth0`.
+
+**The issue was wrong in two cases.** The issue expected `::ffff:10.0.0.1`
+to match the grain `10.0.0.1`. Salt says no, because the expression is
+IPv6 and the grain is in `ipv4`. Our code already gave the answer of
+Salt here. The issue also expected `fe80::1` to match the grain
+`fe80::1%eth0`. Salt says no here too, because the zone is part of the
+string. Our code was right in the first case and the issue was wrong in
+both. The other cases in the issue were real differences.
+
+**What the old code did.** It read both grains for every expression. It
+also removed the mapping from every grain address. As a result:
+
+- `-S 10.0.0.2` matched the mapped grain `::ffff:10.0.0.2`. Salt: no.
+- `-S ::ffff:10.0.0.2` and `::ffff:a00:2` did not match it. Salt: yes.
+- `::ffff:0:0/96` did not match it. Salt: yes.
+- `Prefix.Contains` in Go's `netip` says no to every zoned address, so
+  `fe80::/10` and `::/0` never matched a zoned grain. Salt: yes.
+- A grain that is not in canonical form was matched by address. Salt: no.
+
+Against the capture, the old code disagreed with Salt in 19 answers.
+
+**The change.** The family of the expression picks the grain. An address
+is an exact string compare of `netip.Addr.String()` with the grain. A
+network is `Prefix.Contains(addr.WithZone(""))`. The canonical form of
+Go's `netip` and of CPython agree on the cases that matter: the longest
+run of zeros is compressed, the first run wins a tie, a single zero
+group is not compressed, and a mapped address is written in dotted form.
+The capture has rows for each of these.
+
+**Kept different on purpose.** Salt parses a network strictly. So
+`10.0.0.1/24`, with host bits set, is an invalid target in Salt and
+matches nothing. We mask it to `10.0.0.0/24`. An expression that cannot
+be parsed matches nothing in Salt, and Salt logs it. We refuse to
+compile the target, as before. The test names both cases.
+
+**What an operator sees.** The grain collector of halite never writes a
+zoned or mapped `ipv6` grain. It drops the zone and files a mapped
+address under `ipv4`. These cases come from static or custom grains. In
+these edge cases only, a `-S` or `S@` target can reach a different set
+of nodes than before. Plain IPv4 and plain IPv6 targets against
+canonical grains do not change.
+
+**Tested.** `TestSubnetAgreesWithSalt`
+(`internal/target/subnet_salt_test.go`) holds the capture. It was broken
+three ways, and each way failed. The whole old matcher gave 19
+failures. With the zone strip removed, `fe80::/10` and `::/0` failed
+against a zoned grain. With the family taken after the mapping was
+removed, the mapped rows failed.
+
+**Not verified.** Only Salt 3007.1 was asked. Salt 3006 and 3008 were
+not. The matcher of Salt was called directly, not through a job that a
+real Salt deployment published. `S@` inside a nodegroup or a compound target
+was not run against Salt. It uses the same code path.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

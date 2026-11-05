@@ -1,0 +1,2184 @@
+{
+ "salt": "3007.1",
+ "python": "3.10.22",
+ "results": [
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": true
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": true
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": true
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": true
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "::/0",
+   "match": true
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": true
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": false
+  },
+  {
+   "node": "zoned",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1%eth0"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": true
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": true
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": true
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": true
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": true
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::/0",
+   "match": true
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": true
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": false
+  },
+  {
+   "node": "mapped_dotted",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": true
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": true
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": true
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "::/0",
+   "match": true
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": true
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": false
+  },
+  {
+   "node": "mapped_hex",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "::ffff:a00:2"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "::/0",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": true
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": false
+  },
+  {
+   "node": "plain",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "fe80::1",
+     "2001:db8::5"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": true
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": true
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": true
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "::/0",
+   "match": true
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": false
+  },
+  {
+   "node": "mapped_only",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "::ffff:10.0.0.2"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": true
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": true
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "::/0",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": true
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": false
+  },
+  {
+   "node": "no_ipv6",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": true
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "::/0",
+   "match": true
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": false
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": true
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": true
+  },
+  {
+   "node": "canonical",
+   "grains": {
+    "ipv4": [],
+    "ipv6": [
+     "2001:db8:0:1:1:1:1:1",
+     "2001:db8::1:0:0:1"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": true
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "fe80::/10",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "fe80::1",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "fe80::1%eth0",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "fe80::1%eth1",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "fe80::/10%eth0",
+   "match": "error"
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "::ffff:10.0.0.1",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "::ffff:10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "::ffff:a00:2",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "::ffff:0:0/96",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "10.0.0.1",
+   "match": true
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "10.0.0.2",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "10.0.0.0/24",
+   "match": true
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "2001:db8::5",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "2001:0db8::0005",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "2001:db8::/32",
+   "match": true
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "10.0.0.1/24",
+   "match": "error"
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "fe80::1/10",
+   "match": "error"
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "::/0",
+   "match": true
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "0.0.0.0/0",
+   "match": true
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "2001:db8::1:1:1:1:1",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "2001:db8:0:0:1:0:0:1",
+   "match": false
+  },
+  {
+   "node": "uncompressed",
+   "grains": {
+    "ipv4": [
+     "10.0.0.1"
+    ],
+    "ipv6": [
+     "2001:0db8:0000:0000:0000:0000:0000:0005"
+    ]
+   },
+   "expr": "2001:db8:0:0:1::1",
+   "match": false
+  }
+ ]
+}

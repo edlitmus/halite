@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`-S` and `S@` targets now give the answers that Salt 3007.1 gives for zoned and IPv4-mapped addresses.** The old matcher read both the `ipv4` and `ipv6` grains for every expression, and it removed the mapping from grain addresses. It disagreed with Salt in 19 of 176 captured answers. For example, `-S 10.0.0.2` matched the grain `::ffff:10.0.0.2`, and `fe80::/10` did not match the grain `fe80::1%eth0`. The family of the expression now picks the grain. A bare address is an exact string match. A network is a containment test that ignores the zone. Plain IPv4 and plain IPv6 targets against canonical grains do not change. A target can reach a different set of nodes only if a node has a zoned, mapped or non-canonical `ipv6` grain. The grain collector of halite does not write these, so they come from static or custom grains. A network with host bits set, such as `10.0.0.1/24`, is still masked, which Salt does not do. Only Salt 3007.1 was asked. DIVERGENCE 5.586.
+
 - **Label values with a NUL byte no longer share a series.** Two label sets could make the same series key and show as one series. No caller is known to pass a NUL byte. The exposition format does not change. DIVERGENCE 5.585.
 
 - **A NaN no longer sets a counter or a histogram sum to NaN.** `Counter.Add` and `Histogram.Observe` now drop a NaN. No caller is known to pass one. No metric name or label changes. DIVERGENCE 5.584.
