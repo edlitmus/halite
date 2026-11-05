@@ -165,7 +165,19 @@ func runJobs(args *cli.Args) int {
 		return 0
 
 	case "active":
-		jobs, err := cache().List(200)
+		// Every job in the cache, not the most recent 200. A job is in
+		// flight until it expires, and nothing bounds how far back that
+		// reaches: a batch of a large fleet with --ttl 24h is still going
+		// after thousands of shorter jobs have been sent past it. Reading
+		// only the newest 200, this said "nothing is in flight" about it
+		// -- the one answer that has to be right, because it is what an
+		// operator checks before a restart or a `jobs resume`. Job IDs
+		// carry their time and expiry is per job, so there is no earlier
+		// point at which the scan could stop and be sure. The cost is a
+		// read of each record, within the retention the cache already
+		// enforces, and the hub reads the whole cache the same way to
+		// seed its offline queue (queueIndex.seed). DIVERGENCE 5.592.
+		jobs, err := cache().List(0)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}

@@ -38225,6 +38225,18 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/extensionrun.go
 
 **Not verified.** A real extension: only the stand-in script was used. Windows, where the test skips.
 
+### 5.592 `halite-hub jobs active` said "nothing is in flight" when an older job was
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/jobs.go`).
+
+**The defect.** `jobs active` read `cache().List(200)`, the 200 most recent jobs. If none of them was batching, or dispatched with returns missing, and not expired, it printed "nothing is in flight" and exited 0. No ceiling exists on the TTL: the hub takes any `--ttl`, and a value of 0 or less means the default of 15 minutes (1 hour if queued). So an older job can be in flight behind any number of newer ones.
+
+**Shown.** `TestJobsActiveFindsAnOldJobStillInFlight` (`jobs_active_test.go`) starts a batching job an hour ago with 23 hours left and 2 of its 4 nodes delivered. It then adds 201 complete jobs after it. `jobs active` must list the jid of the batch and must not say "nothing is in flight". With `List(200)` put back, both assertions fail.
+
+**The change.** `jobs active` reads `cache().List(0)`, which is every job in the cache. The cache is bounded by `job_cache_retention` (30 days by default) and `job_cache_max_size`. This is the same rule as `queueIndex.seed` (`internal/hub/queue.go`), which reads `List(0)`.
+
+**Not verified.** How long `jobs active` takes on a large real cache. It reads one JSON file for each job, and the time was not measured. Noticed, not changed: the `Settle` of the hub (`internal/hub/batch.go`) still reads only the newest 500 jobs to expire old ones, so it never settles a job that is older than that.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

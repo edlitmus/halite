@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`halite-hub jobs active` finds a job that is older than the 200 newest.** The command looked only at the 200 most recent jobs. If an older batch was still in flight behind them, it printed "nothing is in flight" and exited 0. It now reads every job in the cache. The cache is bounded by `job_cache_retention` (30 days by default) and `job_cache_max_size`. On a very large cache the command can be slower. The time was not measured. DIVERGENCE 5.592.
+
 - **`halite-hub extensions run` refuses a `--timeout`, `--kwargs` or `--args` it cannot read, and does so before it starts the extension.** A `--timeout` such as `5` (no unit), `soon`, `-1s` or `0s` was replaced with 60 seconds without a message. Now each exits 64 with `halite-hub extensions run: ...` and names the flag. A `--kwargs` or `--args` that is not valid JSON is also refused with exit 64, and the extension process is not started. With no `--timeout`, the default is still 60 seconds. DIVERGENCE 5.591.
 
 - **`halite-hub runner <fun>` and `halite-hub orch` refuse a bad `--out` before they call the hub.** An unknown `--out`, for example `--out tabel`, ran the runner call and then exited 1. So a key decision, an orchestration, a resume or an event was done, and an operator who corrected the flag and ran the command again did it a second time. Now an unknown `--out` exits 64 with a usage error before anything is sent. `orch list --limit` is checked in the same way: `abc`, `5x`, `0` and `-1` exit 64 and name `--limit`. DIVERGENCE 5.590.
