@@ -38117,6 +38117,36 @@ digest was not added; their `doctor` now declines the question rather
 than answering it. A `doctor` run as an account that cannot read the
 evidence directory reports the read error; that path was not run.
 
+### 5.585 The one-shot request's `timeout_seconds` was sent and never read
+
+Issue 615, item 3. `halite-hub ssh` put the roster target's `timeout` into
+the request as `timeout_seconds`. `OneshotRequest.Timeout` declared it,
+with the comment "bounds the run on the target", and nothing read it: one
+declaration, one writer.
+
+The roster's `timeout` is not a bound on the run. `sshexec.sshArgs` passes
+it to ssh as `ConnectTimeout`, and `roster.applyDefaults` sets it to 30
+seconds when the roster does not. So the hub sent `timeout_seconds: 30` to
+every target, and a target that honoured the comment would stop every
+agentless highstate after 30 seconds. The hub's own wait is `ssh_timeout`
+or `--timeout` (`sshexec.Options.Timeout`), and that already bounded the
+run from the hub's side.
+
+**The change.** The hub no longer sends the field, and the field is gone
+from `OneshotRequest`. A hub older than this still sends it, and
+`json.Unmarshal` ignores a field the struct does not declare, so the
+request still runs. Handbook chapter 17 now says what `timeout` is and
+which setting bounds the wait.
+
+**Demonstrated.** `TestAnAgentlessRequestCarriesNoTimeoutTheTargetIgnores`
+builds the request for a target with a 45-second `timeout`. With the line
+that sent it put back, it fails ("the request carries
+timeout_seconds=45, which the target does not read").
+
+**Not verified.** No agentless run over ssh was made. What a target does
+when the hub's `ssh_timeout` kills its ssh client was not looked at here;
+the comment on `oneshotSignals` says the job runs to its end.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

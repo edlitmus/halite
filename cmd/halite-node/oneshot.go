@@ -63,8 +63,11 @@ type OneshotRequest struct {
 	// Grains the roster attached, merged under what the target
 	// reports about itself.
 	Grains json.RawMessage `json:"grains,omitempty"`
-	// Timeout bounds the run on the target.
-	Timeout float64 `json:"timeout_seconds,omitempty"`
+	// There is no Timeout. A field here said "bounds the run on the
+	// target", the hub filled it from the roster's ssh connect timeout,
+	// and nothing read it (DIVERGENCE 5.585). A hub older than its
+	// removal still sends `timeout_seconds`; json.Unmarshal ignores a
+	// field this struct does not declare, so that request still runs.
 }
 
 // OneshotProtocol is the version this build speaks.

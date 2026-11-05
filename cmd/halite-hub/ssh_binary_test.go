@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/roster"
@@ -56,5 +57,36 @@ func TestAnAgentlessRunSendsABinaryFileUnaltered(t *testing.T) {
 	raw, err := base64.StdEncoding.DecodeString(req.FilesBase64["logo.png"])
 	if err != nil || !bytes.Equal(raw, binary) {
 		t.Errorf("the binary file arrived as % x (%v), want % x", raw, err, binary)
+	}
+}
+
+// The hub sends no run timeout the target would ignore.
+//
+// The roster's `timeout` is ssh's ConnectTimeout. The hub used to send it
+// on as `timeout_seconds`, which the target's OneshotRequest declared as
+// "bounds the run on the target" and read nowhere (DIVERGENCE 5.585). A
+// field sent and ignored is a promise nobody keeps, and honouring this one
+// would stop every agentless run at the roster's 30-second default.
+func TestAnAgentlessRequestCarriesNoTimeoutTheTargetIgnores(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "hub.yaml"), []byte(
+		"state_dir: "+filepath.Join(root, "state")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := &cli.Args{Flags: map[string]string{"root": root}}
+	h := openHubForConfig(args)
+	t.Cleanup(h.closeAgentlessPillar)
+
+	body, err := sshRequest(h, roster.Target{ID: "web1", Timeout: 45 * time.Second},
+		"1", "test.ping", nil, nil, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := req["timeout_seconds"]; ok {
+		t.Errorf("the request carries timeout_seconds=%v, which the target does not read", v)
 	}
 }

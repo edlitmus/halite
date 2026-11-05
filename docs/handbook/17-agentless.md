@@ -69,7 +69,9 @@ lonely.example:
 A bare string is the host. A name with nothing under it connects by its own
 name. Fields: `host`, `port`, `user`, `priv` (key file), `sudo`,
 `identities_only`, `proxy_jump`, `timeout`, `thin_dir`, and `grains` to
-attach. A misspelt field is refused rather than ignored: `sudo_usr` would
+attach. `timeout` is the time that ssh waits to connect (30 seconds if you
+do not set it). It does not limit the run. The hub waits for a run for
+`ssh_timeout` (5 minutes if you do not set it) or `--timeout`. A misspelt field is refused rather than ignored: `sudo_usr` would
 otherwise run everything as root.
 
 Other rosters, with `--roster`:
