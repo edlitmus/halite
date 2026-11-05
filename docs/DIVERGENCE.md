@@ -37998,7 +37998,7 @@ local accounts were. An API newer than its hub was not run, and the
 claim that the older hub ignores the field is from reading `ReadJSON`,
 which does not refuse unknown fields.
 
-### 5.582 An agentless failure was framed with Go's quoting, not JSON's
+### 5.583 An agentless failure was framed with Go's quoting, not JSON's
 
 Found during the issue 622 work. `halite-node oneshot` built the return of
 a failed agentless run as `json.RawMessage(fmt.Sprintf("%q", err.Error()))`,

@@ -51,7 +51,7 @@ func captureOneshot(t *testing.T, write func()) string {
 // A failure whose error names a path holding a control character was
 // framed with Go's `%q`, which wrote `\x01`; the return was not JSON,
 // json.Marshal refused it, and the hub was shown the marshaller's
-// complaint instead of the error, with no JID. DIVERGENCE 5.582.
+// complaint instead of the error, with no JID. DIVERGENCE 5.583.
 //
 // Driven through the run rather than oneshotFailure directly, because
 // the point is that a real path reaches it: the hub sends `a\x01/b` as a

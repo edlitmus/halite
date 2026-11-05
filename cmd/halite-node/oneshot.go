@@ -360,7 +360,7 @@ var oneshotFrame = writeOneshot
 // The fallback is built by encoding/json as well, never by a format
 // string. It used to be `%q`, which is Go quoting and not JSON quoting:
 // the two agree on quotes and backslashes and differ on everything else
-// (see jsonString). DIVERGENCE 5.582.
+// (see jsonString). DIVERGENCE 5.583.
 func writeOneshot(ret *job.Return) {
 	encoded, err := json.Marshal(ret)
 	if err != nil {
@@ -403,7 +403,7 @@ func oneshotFailure(jid string, err error) int {
 // about a backslash instead of the error that had happened, with the
 // JID and exit status gone with it. An error from the target names
 // paths the hub sent and paths on the target, and either may hold any
-// byte a file name can. DIVERGENCE 5.582.
+// byte a file name can. DIVERGENCE 5.583.
 //
 // Marshalling a string cannot fail: invalid UTF-8 becomes U+FFFD.
 func jsonString(s string) json.RawMessage {
