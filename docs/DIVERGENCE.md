@@ -37781,6 +37781,70 @@ production estate has two blocks at all was not looked at. A pool of
 more than one process was not exercised; it can only make sharing rarer,
 since each process has its own cache.
 
+### 5.582 An agentless failure was framed with Go's quoting, not JSON's
+
+Found during the issue 622 work. `halite-node oneshot` built the return of
+a failed agentless run as `json.RawMessage(fmt.Sprintf("%q", err.Error()))`,
+and `writeOneshot` fell back to `{"success":false,"return":%q}` when the
+return would not encode. `%q` is Go quoting. It agrees with JSON on `"`
+and `\`, so a Windows path came through and the difference went unseen,
+but it writes a control character as `\x01` or `\a`, DEL as `\x7f`, and a
+non-printable character outside the BMP as `\U000e0001`, none of which
+JSON has.
+
+**Measured** with the real `halite-node` binary built from `main` at
+`4a61526`, on macOS 26.7.2 (arm64), given on stdin a job whose files put
+`a\x01/b` as a text file and `a\x01` as a binary one, so that writing the
+second names the directory the first made:
+
+```
+--- halite-oneshot-begin ---
+{"success":false,"return":"json: error calling MarshalJSON for type *jsontext.Value: invalid escape sequence `\\x` in string"}
+--- halite-oneshot-end ---
+```
+
+The frame is valid JSON -- the fallback's own `%q` had only the
+marshaller's message to quote, and that message escapes the byte -- but
+it is not the failure. The error that happened (`open
+…/halite-oneshot-*/a\x01: is a directory`) is gone, and so are the JID,
+the exit status (`retcode` absent, read as 0) and `node_version`.
+`sshexec.Unframe` hands that text to the hub as the target's return.
+
+The paths into it: an error from the target names paths the hub sent and
+paths on the target, and either may hold any byte a file name can. The
+demonstration uses a path the hub sent because that is reachable from
+stdin without root; invalid UTF-8 cannot arrive that way (the hub's JSON
+has already replaced it), but an `*os.PathError` for a file on the
+target's disk carries the name as it is.
+
+**The change.** `jsonString` marshals the text with `encoding/json`, which
+cannot fail on a string and turns invalid UTF-8 into U+FFFD. The fallback
+is built by `encoding/json` too, and now keeps the JID and says
+`retcode: 1`.
+
+**Demonstrated.** `TestAnAgentlessFailureNamingAControlCharacterReachesTheHub`
+drives the run above in-process and decodes the frame the way the hub
+does; `TestAnAgentlessFailureFramesAnyErrorText` covers BEL, VT, NUL, DEL,
+U+E0001, U+2028, a Windows path and invalid UTF-8. With `%q` put back in
+`oneshotFailure` both fail, every case but U+2028 and the Windows path
+arriving as the marshaller's complaint. `TestAReturnThatCannotBeEncodedIsStillFramed`
+fails with the old fallback (no JID, `retcode` 0). The rebuilt binary,
+given the same stdin, frames the real error with `jid` and `retcode: 1`.
+
+**Searched for the same thing elsewhere**, for `RawMessage(fmt.Sprintf`
+with `%q` and `%q` inside a JSON-shaped format string. Two others, left
+alone: `internal/relay/relay.go` quotes a constant ASCII sentence, which
+`%q` and JSON write the same way; `internal/extconform/checks.go` quotes
+`ext.FrameHello` and the operator's own `--kind` flag into a test hello,
+which only a kind holding a control character would break, and then only
+that one conformance check. Neither was run with such input.
+
+**Not verified.** Not run over SSH through `halite-hub ssh`; the hub side
+was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
+`job.Return` in the test. Not run on FreeBSD or Linux. Whether the old
+fallback could ever emit invalid JSON -- it would need a marshaller error
+holding a raw control byte -- was not shown either way; it is gone now.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
