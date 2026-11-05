@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A target word such as `no`, `1`, `true` or `off` after `-L`, `-E`, `-G` and the other matcher flags is now the target.** The command read these words as a bare switch, dropped the target, and stopped with "run needs a target and a function". `-L web1` worked, but `-L no` did not. Now any word after a matcher flag is the target, in `halite-hub run` and `halite-hub ssh`. One written form changes meaning: `--grain=true 'os:FreeBSD' test.ping` now targets the grain expression `true`. The documented form is `-G 'expr' fun`. DIVERGENCE 5.586.
+
 - **`halite-hub run` refuses a `--ttl`, `--batch-wait` or `--batch-timeout` that the hub would read as something else.** The command cut each value to whole seconds. So `500ms` became 0, and a negative value went through. The hub reads 0 or less as a default: 15 minutes for `--ttl`, and "until the job expires" for `--batch-timeout`. Now a negative value is refused. A zero is refused for `--ttl` and `--batch-timeout`, and so is a value that is not a whole number of seconds. Each exits 64 with a usage error that names the flag, before anything is sent to the hub. `--batch-wait 0` is still accepted and means no settle time. To get a default, leave the flag out. DIVERGENCE 5.585.
 
 - **An agentless run that fails on a path with a control character now reports the failure.** `halite-node oneshot` quoted its error with Go's `%q`, which is not JSON, so an error naming such a path came back to the hub as `json: error calling MarshalJSON … invalid escape sequence` with no JID and exit status 0. The error is now encoded as JSON and arrives as it was, with its JID and `retcode: 1`. DIVERGENCE 5.583.

@@ -38153,6 +38153,18 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`).
 
 **Not verified.** The change against a running hub. No hub was run. The test stops at the operator certificate in an empty root.
 
+### 5.586 A matcher flag whose value was `true`, `no`, `1` or `off` lost its target
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `resolveTarget`, shared by `run` and `ssh`).
+
+**The defect.** `resolveTarget` read a matcher flag value (`-L`, `-E`, `-G`, `-P`, `-I`, `-J`, `-S`, `-N`, `-C` and the long forms such as `--list`, `--pcre` and `--grain`) as a bare switch when the value was `true`, `yes`, `1`, `on`, `false`, `no`, `0` or `off`, in any case. The target was dropped and the command failed with "run needs a target and a function". `-L web1` worked, but `-L no` did not. This was wrong because `cli.Parse` gives a single-letter flag, and a long flag that is not boolean, the next token as its value whenever that token does not start with `-`. So a word after `-L` is always something the operator typed as a target. The flag is empty only when it is written last, before another flag, or as `--list=`.
+
+**Shown.** `TestAMatcherFlagCarriesTheTarget` has 9 new cases: `-L 1`, `-L no`, `--list on`, `-E yes`, `-N off`, `-L TRUE`, `--list=false`, `-L 0`, and a bare `-L` at the end. `TestCommandMatrixTargetsParse` still passes. With the bool-word check put back, the 8 bool-word cases fail.
+
+**The change.** Any non-empty value is the target, and `isBoolWord` is removed. A bare flag with an empty value still means a switch, and the target is the first positional argument. One form changes meaning: `--grain=true 'os:FreeBSD' test.ping` now targets the grain expression `true` and runs the function `os:FreeBSD`. Nobody is known to write this, and the documented form is `-G 'expr' fun`. `halite-hub ssh` has the same change because it uses the same `resolveTarget`.
+
+**Not verified.** The change against a running hub. Also, that a node named `no` matches on a real hub. The matching code is not changed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

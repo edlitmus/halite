@@ -414,9 +414,18 @@ func resolveTarget(args *cli.Args) (kind, target, fun string, rest []string, err
 			continue
 		}
 		kind = flag
-		// `-G 'os:FreeBSD'` carries the target; a bare `-G` before a
-		// positional one does not.
-		if v != "" && !isBoolWord(v) {
+		// `-G 'os:FreeBSD'` carries the target; a bare `-G` does not --
+		// one written last, or before another flag, which is the only way
+		// the parser leaves it empty.
+		//
+		// A value that read as a boolean word -- 1, 0, yes, no, on, off,
+		// true, false -- used to be taken for a switch and dropped, so
+		// `-L 1 test.ping` lost its target and said it needed one, and a
+		// node named `no` or `web1,on` could not be given to a matcher
+		// flag at all. The parser never hands a switch a word: a token
+		// after `-L` is always its value, so every word here is a target
+		// somebody typed. DIVERGENCE 5.586.
+		if v != "" {
 			target = v
 		}
 		break
@@ -443,16 +452,6 @@ func resolveTarget(args *cli.Args) (kind, target, fun string, rest []string, err
 var matcherFlags = []string{"L", "E", "G", "P", "I", "J", "S", "N", "C",
 	"list", "pcre", "grain", "grain_pcre", "pillar", "pillar_pcre",
 	"ipcidr", "nodegroup", "compound"}
-
-// isBoolWord reports whether a flag's value is one of the words that
-// means the flag was written as a switch rather than given a target.
-func isBoolWord(v string) bool {
-	switch strings.ToLower(v) {
-	case "true", "yes", "1", "on", "false", "no", "0", "off":
-		return true
-	}
-	return false
-}
 
 // prepareSigning settles the three things a signer must choose rather
 // than the hub, because the signature covers them and a signer cannot
