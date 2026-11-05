@@ -36504,7 +36504,7 @@ Issue 321, the second pass, round six (`internal/tracing`).
 
 **Not verified.** A real collector going away and returning; the node and hub wiring beyond building.
 
-**The metric, since.** 5.586 adds `halite_trace_spans_dropped_total`, its alert and its panels.
+**The metric, since.** 5.587 adds `halite_trace_spans_dropped_total`, its alert and its panels.
 
 ### 5.549 The node's `fun` label took whatever name the hub sent
 
@@ -38390,7 +38390,7 @@ Each part was broken on purpose and watched to fail:
 - **Not run on FreeBSD or Linux.** Nothing here depends on the platform,
   and CI runs the tests on all four.
 
-### 5.586 Spans lost to a full queue or a failed export were counted and never exposed
+### 5.587 Spans lost to a full queue or a failed export were counted and never exposed
 
 Issue 609, the metric 5.548 left owed.
 
