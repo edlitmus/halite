@@ -670,7 +670,8 @@ output schema is frozen and versioned, so downstream tooling can depend on it.
 |---|---|
 | `--batch=N` or `--batch=25%` | Execute against at most N nodes at a time, waiting for returns before advancing |
 | `--batch-wait=S` | Settle time between batches |
-| `--batch-safe-limit=N` | Abort the batch once N nodes have failed; a node that does not answer is not counted (DIVERGENCE 5.496) |
+| `--batch-timeout=S` | How long each slice waits for its returns. The default is 5 minutes. A slice never waits past the expiry of the job |
+| `--batch-safe-limit=N` | Abort the batch once N of the nodes it has delivered to have failed or have not answered when their slice's wait ends (DIVERGENCE 5.496) |
 | `--subset=N` | Execute against a random N of the matched set |
 | `--async` | Return the `jid` immediately |
 | `--timeout=S` | Per-node return timeout |
@@ -680,6 +681,9 @@ output schema is frozen and versioned, so downstream tooling can depend on it.
 Batching is implemented on the hub, not in the CLI. In Salt, `--batch` is client-side, so closing
 the terminal abandons the batch mid-flight. Here the batch is a hub-side job group with its own
 record, so it survives client disconnection and is resumable with `halite-hub jobs resume <jid>`.
+The hub never delivers a slice to a job that has expired. It stops the batch and closes the job as
+`aborted`. When the batch has delivered to every node but a return is still owed, the job shows state
+`dispatched`, not `batching`.
 
 ### 9.4 Returns and the job cache
 
