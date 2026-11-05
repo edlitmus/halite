@@ -23673,6 +23673,184 @@ no network path between hosts was used. One distribution, one kernel (RHEL 9's);
 Ubuntu Pro's FIPS kernel was not tried. `make check` was not run on this
 branch; this is documentation.
 
+#### The published arm64 archive, and Ubuntu Pro's FIPS kernels (issue 306)
+
+2026-11-05, two AWS hosts in us-east-1, reached through SSM as root. Both
+were already in kernel FIPS mode on Ubuntu Pro `fips-updates`. Neither was
+rebooted or moved into or out of FIPS mode for this run.
+
+- `ami-test-1`: i-06bb649fb9f76b3f6, c8g.2xlarge (Graviton), AMI
+  ami-06a7244b703c98422, **arm64**, Ubuntu 24.04.5 LTS, kernel
+  6.8.0-1067-aws-fips, `/proc/sys/crypto/fips_enabled` 1, `fips=1` on the
+  kernel command line. OpenSSL 3.0.13 with the provider "Ubuntu 24.04
+  OpenSSL Cryptographic Module" 3.0.13-0ubuntu3.15+Fips2 active.
+- `noop2-1`: i-0cc603ffb64dfbeea, c6a.2xlarge, AMI ami-09db3cf260e84b5d2,
+  **amd64**, Ubuntu 22.04.5 LTS, kernel 5.15.0-1117-aws-fips,
+  `fips_enabled` 1, `fips=1`. OpenSSL 3.0.2.
+
+Both hosts had AppArmor on and `/tmp` mounted `noexec`, so all work was
+under `/root`. Both run `salt-minion`; it was still active afterwards and
+`dmesg` showed no OOM kill.
+
+**The archives.** The published v0.1.1 archives were fetched on each host
+from the GitHub release: `halite-0.1.1-linux-arm64-fips.tar.gz` on
+`ami-test-1`, `halite-0.1.1-linux-amd64-fips.tar.gz` on `noop2-1`, and the
+ordinary `halite-0.1.1-linux-<arch>.tar.gz` on each. `sha256sum -c` against
+the release's SHA256SUMS said OK on both. The build identity printed was
+`0.1.1+f4a60b7a93a4 (fips v1.0.0)`. This is the first time the *published*
+arm64 `-fips` archive was opened and run. 5.83 ran arm64 `-fips` binaries
+built from source, on Ubuntu 22.04 arm64 (kernel 5.15.0-1114-aws-fips),
+before any release carried them.
+
+**The binaries.** On both hosts, with `GODEBUG=fips140=on`, each of
+`halite-hub-fips`, `halite-api-fips` and `halite-node-fips` printed `fips
+mode on, module v1.0.0, self-tests passed` from `version`, rc 0, six runs
+in all. Without `GODEBUG`, `halite-node-fips version` also said `fips mode
+on`, because the build defaults to it. With `GODEBUG=fips140=off`,
+`version` printed only the identity line and no `fips mode on`.
+
+**The grains.** `halite-node[-fips] grains get <grain>`, identical on both
+hosts:
+
+| grain | `-fips` | `-fips`, `fips140=off` | ordinary build |
+|---|---|---|---|
+| `fips_mode` | True | True | True |
+| `fips_build` | True | True | False |
+| `fips_enabled` | True | False | False |
+| `fips_module` | v1.0.0 | v1.0.0 | (empty) |
+
+So `fips_mode` is the kernel's state alone, as 1.11 says. The handbook said
+otherwise in two places (see below).
+
+**doctor, in all three directions.** On both hosts:
+
+- `halite-node-fips doctor`, before any hub existed: `pass FIPS mode
+  consistency  the kernel is in FIPS mode and this is a FIPS build (module
+  v1.0.0, in FIPS mode)`.
+- The ordinary `halite-node doctor`: `warn FIPS mode consistency  the
+  kernel is in FIPS mode and this is not a FIPS build`.
+
+On `ami-test-1` only, `GODEBUG=fips140=off halite-node-fips doctor`: `warn
+... the kernel is in FIPS mode and this FIPS build (module v1.0.0) is not
+running in FIPS mode`. This is the third branch, and the Rocky run did not
+reach it. With the services up: `halite-hub-fips doctor` on `noop2-1` gave
+7 pass, 1 skip, FIPS row pass. `halite-node-fips doctor` on `ami-test-1`,
+enrolled and connected, gave 10 pass, 1 skip; the connectivity row read
+`172.26.28.44 answered in 2ms: halite-hub 0.1.1+f4a60b7a93a4 (fips v1.0.0)
+ok` and the FIPS row passed. `halite-api-fips doctor` gave 3 pass, 1 warn;
+the warn is the 2-day self-signed serving certificate made for the test.
+The FIPS row passed.
+
+**Hub, node and API as services, across two hosts.** The hub ran on
+`noop2-1` (amd64) and the node on `ami-test-1` (arm64). Only TCP 22 and
+8301 were open between them, so the hub had `listen: 172.26.28.44:8301`.
+The units and drop-ins came from the archive's `service/systemd/` and
+`service/systemd/fips/`. Only the `-fips` binaries were installed, with no
+`/usr/local/bin/halite-hub` and so on, so a unit could start only if the
+drop-in's `ExecStart` replaced the base one. `systemctl cat` showed the base
+`ExecStart`, then `Environment=GODEBUG=fips140=on`, an empty `ExecStart=`
+and the `-fips` `ExecStart`. Each of `halite-hub`, `halite-node` and
+`halite-api` was active; `/proc/<pid>/exe` was the `-fips` file;
+`/proc/<pid>/environ` held `GODEBUG=fips140=on`; the journal at priority
+`err` had 0 lines for all three.
+
+- Hub, first start: it created the enrollment CA (ecdsa-p256) and a
+  serving certificate for `localhost,127.0.0.1,::1,noop2-1,noop2-1.ref…,
+  172.26.28.44`. Then `keys operator create ed --admin` and a restart.
+- Node: a `node.yaml` with the hub at 172.26.28.44, `hub_port` 8301 and the
+  pinned fingerprint. `enroll` returned rc 2 (pending). On the hub, `keys
+  list` showed the fingerprint the node had printed (42:c2:95:…). After
+  `keys accept`, `enroll` printed `enrolled`, the unit started, and
+  `manage.status` showed `up: [ami-test-1-h306]`.
+- API: `halite-api-fips` on `noop2-1` as a service under its drop-in,
+  `listen` 127.0.0.1:4511, hub 172.26.28.44:8301, its own operator
+  certificate `api` and a self-signed P-256 serving certificate. `halite-api-fips
+  account hash` gave `pbkdf2-sha512$…`. With curl (the host's OpenSSL, in
+  FIPS mode): `/v1/readyz` answered ready; `/v1/login` returned a token; a
+  wrong password got 401; `/v1/run` of `test.ping` returned true from the
+  arm64 node; `grains.item` of `fips_build` returned true; `cmd.run` got 403
+  `no rule in [webops] permits cmd.run against "ami-test-1-h306"`. curl
+  negotiated TLSv1.3 and TLS_AES_128_GCM_SHA256.
+
+**Jobs.** From the hub: `test.ping` returned True. `grains.item` for
+`fips_mode`, `fips_build` and `fips_enabled` returned true each,
+`fips_module` `v1.0.0`, `cpuarch` `aarch64` and `kernelrelease`
+`6.8.0-1067-aws-fips`. A `state.apply` of a `file.managed`
+(`/root/h306/managed.txt`, mode 0600) reported changed=1; a second apply
+reported the file already in the requested state. On the node the file had
+the contents, mode 600, owner root.
+
+**TLS.** From `ami-test-1`'s OpenSSL (the FIPS provider) to the hub, with
+`-alpn halite/1,h2`: TLSv1.3, TLS_AES_128_GCM_SHA256, server temporary key
+ECDH prime256v1, an ECDSA signature, and the SANs above. Without ALPN the
+hub refused (alert 80) and logged `does not speak halite/1`. That is
+expected, and chapter 30 of the handbook already passes `-alpn`.
+
+**An open question: Ed25519.** The hub's CertificateRequest listed
+`0x07+0x08` (Ed25519, 0x0807) among the signature algorithms it accepts,
+with `fips140=on`. SPEC 27.4 says "Ed25519 is unavailable" in FIPS mode.
+Go's own list for its native FIPS 140-3 mode (`crypto/tls/defaults_fips140.go`,
+`allowedSignatureAlgorithmsFIPS`) includes Ed25519; the list without it is
+the boringcrypto one. halite's own key generation (`internal/builtin/x509.go`,
+`key_algorithm`) still refuses ed25519 under FIPS by its own rule. This was
+not investigated further. It is a question and not a conclusion: SPEC 27.4
+and the Go list may disagree about what the TLS handshake accepts, and
+nothing here settles which one is right.
+
+**Two handbook sentences were wrong, and are corrected with this change.**
+`docs/handbook/08-grains.md` had the row `fips_mode | true/false | Whether
+this build and host are in FIPS mode.` `docs/handbook/28-hardening.md` said
+"The `fips_mode` grain is a pair, the host kernel's state *and* the
+binary's". The table above shows both are wrong: the ordinary build on a
+FIPS kernel reads `fips_mode: True`. The grain is the kernel's state;
+`fips_build`, `fips_enabled` and `fips_module` describe the binary.
+
+**A defect: `grains.item` took one name.** `halite-hub run ami-test-1-h306
+grains.item fips_mode fips_build fips_enabled fips_module cpuarch
+kernelrelease` returned `grains.item: takes at most 1 positional
+arguments, got 6`. `docs/operations.md` gives `halite-hub run '*'
+grains.item fips_mode fips_build fips_module` as the way to check the FIPS
+state of an estate, so that documented command failed on every node. A
+list as one quoted argument, `grains.item '[fips_mode, fips_build]'` with
+default argument parsing, returned a single grain literally named
+`[fips_mode,fips_build]` with value null. Cause and fix are in 5.584.
+
+**Seen, not fixed.** The operator CLI dials `localhost:<port of listen>`
+unless `--hub` is given. With `listen: 172.26.28.44:8301`, `halite-hub
+runner manage.status` failed: `dial tcp 127.0.0.1:8301: connect:
+connection refused`. `--hub 172.26.28.44` after the subcommand worked. The
+code is `operatorClient` in `cmd/halite-hub/run.go`.
+
+**Not covered.**
+
+- main (b842f005) was not run on the hosts, only v0.1.1. The FIPS code
+  changed little since then: `internal/fips`, the grain,
+  `internal/doctor/fips.go` and the drop-ins are unchanged, and
+  `cmd/halite-node/doctor.go` changed 2 lines.
+- No reboot. Neither host was moved into or out of FIPS mode, so
+  `fips_mode: False` on these kernels was not seen.
+- Ubuntu Pro's certified (non-updates) `fips` kernel. Both hosts are
+  `fips-updates`. SPEC 14.1 says `fips_mode` also reads the Ubuntu Pro FIPS
+  package state; the code (`internal/grains/platform_linux.go`) reads only
+  `/proc/sys/crypto/fips_enabled`. That is not changed here.
+- The arm64 host ran only the node. The hub and the API ran on amd64.
+  `halite-hub-fips` and `halite-api-fips` on arm64 ran `version` only.
+- One node; no token enrolment; no TOTP (it is disabled in FIPS by design,
+  and was not tried); no upgrade. The units were started, not enabled,
+  and no host was rebooted, so a start at boot was not seen.
+- RHEL family: only the earlier Rocky 9.8 run.
+
+Issue 306's arm64 half is now run, for the node. The hub and the API on
+arm64 ran `version` only.
+
+**Cleanup.** The units, drop-ins, binaries, `/etc/halite`, `/var/lib/halite`,
+`/var/cache/halite`, `/var/log/halite`, `/srv/halite`, `/root/h306` and the
+`halite` user were removed from both hosts, then `daemon-reload`.
+Afterwards neither host had a halite file, process, user or listening
+port. `salt-minion` was active on both and `dmesg` showed no OOM kill. One
+slip: an `rmdir /srv` in the cleanup also removed the empty stock `/srv`.
+It was recreated as root:root 0755 on both.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
