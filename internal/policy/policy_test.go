@@ -559,15 +559,22 @@ func TestADenialNamesTheTargetKind(t *testing.T) {
 // server folds to secret/x.sls (DIVERGENCE 5.294), and until the policy
 // followed the compiler each was authorized under `deny_sls: [secret.x]`,
 // because it was matched as written.
+//
+// The two functions' limits are in two rules. In one rule each would hold
+// the other too, since both take SLS names (issue 621), and the deny_sls
+// cases below would be refused by allow_sls before deny_sls was asked.
 func TestSLSConstraintsJudgeTheCanonicalName(t *testing.T) {
 	const src = `
 roles:
   ops:
     - target: '*'
-      functions: ['state.sls', 'state.apply']
+      functions: ['state.sls']
       args:
         'state.sls':
           deny_sls: ['secret.x', 'vault.*']
+    - target: '*'
+      functions: ['state.apply']
+      args:
         'state.apply':
           allow_sls: ['web.*']
 bindings:

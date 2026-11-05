@@ -2237,6 +2237,12 @@ Properties that are requirements, not suggestions:
   SLS names, and may be forbidden from passing `pillar` on the command line, which is otherwise a
   trivial way to bypass pillar-based authorization. A restriction to SLS names excludes the
   highstate: a request that names no SLS, or `state.highstate`, is refused under `allow_sls`.
+  An argument constraint holds every function that takes the same names, not only the one it is
+  written under: one written for any of `state.apply`, `state.sls`, `state.highstate` or the
+  `state.show_*` functions holds all of them, and one written for any of the `state.orchestrate`,
+  `state.orch` or `state.orchestrate_show_sls` runners holds all three. Several in one rule all
+  hold. Otherwise a rule granting `state.*` with `allow_sls` on `state.apply` would leave
+  `state.sls` free to apply any SLS (DIVERGENCE 5.586).
   A role may also require a keyword with `require_kwargs: {test: true}`: the call must carry each named
   keyword with exactly that value (a bool, a string or a number, compared by type), and a call that
   omits it is refused, which is how a credential is held to a dry run. The dry-run flag counts as the
