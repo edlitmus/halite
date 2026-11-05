@@ -38062,6 +38062,42 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
 
+### 5.584 `grains.item` took one grain name, and the documented FIPS check failed
+
+Found on 2026-11-05 during the issue 306 run on Ubuntu Pro's FIPS kernels
+(5.282). `halite-hub run ami-test-1-h306 grains.item fips_mode fips_build
+fips_enabled fips_module cpuarch kernelrelease` returned `grains.item: takes
+at most 1 positional arguments, got 6`. `docs/operations.md` gives
+`halite-hub run '*' grains.item fips_mode fips_build fips_module` as the way
+to check an estate's FIPS state, so the documented command failed on every
+node. Salt's `grains.item` takes `*args`. Passing the names as one quoted
+list, `grains.item '[fips_mode, fips_build]'` with default argument parsing,
+did not fail, but it asked for one grain literally named
+`[fips_mode,fips_build]` and returned null.
+
+**Cause.** `internal/builtin/introspect.go` declared `names` as one
+`signature.List` parameter and not as a variadic one. Two paths that must
+agree did not: the documented command line and the signature that bound it.
+
+**Fix.** `names` is now variadic, as the argument vector of `cmd.run` is.
+A list passed as one argument is flattened. That form is what
+`--legacy-arg-parse`, a state's YAML or a keyword `names=[…]` give, and it
+was the only multi-name form that worked before the change, so it must keep
+working.
+
+**Test.** `TestGrainsItemTakesSeveralNames`
+(`internal/builtin/grains_item_test.go`) covers one name, several names, a
+list as one argument, and the keyword form. Before the fix it failed on
+"several names" only. It was broken on purpose twice. Without `Variadic:
+true`, "several names" fails. Without the flattening, "a list as one
+argument" fails.
+
+**Not verified.** The fix was not run on a host. The hosts ran v0.1.1,
+which has the defect, and the fix is not in any release. The test goes
+through the same `Bind` path that refused the call, but nobody has run
+`halite-hub run '*' grains.item …` with several names against a node since
+the change.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
