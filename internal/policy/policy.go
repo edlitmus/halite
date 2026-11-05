@@ -819,11 +819,38 @@ func toFloat(v any) (float64, bool) {
 
 // checkArgs applies the argument-level constraints, returning the
 // reason a request is refused or the empty string.
+//
+// The constraints are every argument rule written for the function or for
+// another that takes the same names (argRulesFor, ArgumentFamily), and each
+// must pass. Read by the exact name, as it was, a rule granting `state.*`
+// with allow_sls under `state.apply` left `state.sls` free to apply any SLS
+// in the tree (issue 621). This is the one place a decision reads
+// Rule.Args, so every site that authorizes -- the hub's jobs, runners,
+// reactions, mine and relay, and halite-api -- reaches it through Authorize
+// or AuthorizeAs.
+//
+// A refusal by a rule written for another function says so, because the
+// operator reading it wrote that rule under the other name and is looking at
+// a request that does not mention it.
 func checkArgs(rule Rule, req Request) string {
-	constraint, ok := rule.Args[req.Fun]
-	if !ok {
-		return ""
+	for _, c := range argRulesFor(rule, req.Fun, req.Runner) {
+		if reason := checkArgRule(c.rule, req); reason != "" {
+			if c.written != req.Fun {
+				family := "every state function a node compiles"
+				if req.Runner {
+					family = "every runner that takes orchestration names"
+				}
+				reason += fmt.Sprintf(" (the args written for %s hold %s, %s among them)",
+					c.written, family, req.Fun)
+			}
+			return reason
+		}
 	}
+	return ""
+}
+
+// checkArgRule applies one argument rule to a request.
+func checkArgRule(constraint ArgRule, req Request) string {
 	kwargs := req.wireKwargs()
 	for _, kwarg := range constraint.DenyKwargs {
 		for name := range kwargs {
