@@ -423,7 +423,7 @@ func jsonString(s string) json.RawMessage {
 // refused `..data` and `..2024_11_05` -- names, not a way out of anything,
 // and the ones a Kubernetes ConfigMap volume writes into every directory
 // it mounts -- so a tree holding one failed the whole run (issue 614,
-// DIVERGENCE 5.590). A `..` element, an absolute path, an empty one and,
+// DIVERGENCE 5.591). A `..` element, an absolute path, an empty one and,
 // on Windows, a volume name or a reserved device name are still refused.
 //
 // Every file is written 0600 in a 0700 directory, and that is kept. The

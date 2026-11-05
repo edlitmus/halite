@@ -714,7 +714,7 @@ func globMatch(pattern, s string) bool {
 // compileSubnet matches an address or a CIDR against the node's address
 // grains, the way Salt's ipcidr matcher does
 // (salt/matchers/ipcidr_match.py, 3007.1). Issue 614 found three places it
-// did not (DIVERGENCE 5.587), and asking Salt showed the issue's own
+// did not (DIVERGENCE 5.588), and asking Salt showed the issue's own
 // expectation was wrong about one of them; the answers are in
 // testdata/ipcidr-salt3007.json, which the tests hold this to.
 //

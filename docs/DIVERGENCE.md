@@ -38062,7 +38062,86 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
 
-### 5.584 A cancelled context did not stop a varlink call
+### 5.584 Two enrollment tests depended on timing they never established
+
+Two `cmd/halite-node` tests that enroll a node failed intermittently on
+2026-11-05 and were re-run until they passed. They had different causes;
+neither was in the product, and each made the test stop proving what it
+said it proved.
+
+**`TestEnrollWaitRetriesWhenTheHubLimitsIt` (5.398).** It filled a budget
+of one, refilling at one request a second, then started the node by
+re-executing the test binary, and trusted the node to reach the hub
+inside that second. **Measured** on macOS 26.7.2 (arm64), GOMAXPROCS=2: a
+`-race` build of the `cmd/halite-node` test binary takes 1.02 s to print
+`version` (three runs of three), so the budget had refilled by the time
+the node asked, the request was admitted and issued, and the test failed
+at `enroll over the limit: exit 0`. It failed 11 runs of 15 under `-race`
+there, every time at that line. Nothing was wrong with the node or the
+hub: the node was never limited, so it had nothing to wait out.
+
+The test now gives the hub a clock it controls, as internal/hub's own
+limiter tests do (`l.advance`). The clock stands still from the request
+that fills the budget until the node prints `trying again in`, and only
+then moves two seconds, so the first `--wait` attempt is limited however
+long the node took to start, and the retry its own five-second interval
+sets is admitted. In the enroll handler only the limiter reads the
+server's clock; the certificate is dated by the Authority, which keeps its
+own. What the test no longer covers is the limiter draining against the
+wall clock end to end; the drain arithmetic is held in internal/hub with a
+controlled clock, as it was before.
+
+**Demonstrated** on the same Mac: 20 runs of 20 under `-race` and 10 of
+10 under `GODEBUG=fips140=on` pass, where 11 of 15 under `-race` failed
+before. Broken on purpose twice: with `--wait` made to stop at a 429, as
+it did before 5.398, it fails at `enroll --wait ended without waiting out
+the limit`; with the clock never moved, it fails at `enroll --wait was not
+admitted once the budget had drained` after its 60 s bound.
+
+**`TestAScheduledHighstateSurvivesAHubOutage` (5.577).** It waited for
+`halite-hub keys fingerprint` to succeed and then started `enroll --wait`.
+`keys fingerprint` reads the CA from disk, and `serve` writes the CA in
+`openHub` and listens much later, after the serving certificate. CI's
+fips-test job on run 42077713188 (attempt 1) shows the node starting in
+that window: `fetching the hub CA from 127.0.0.1:34595: dial tcp …:
+connect: connection refused`. `enroll` exits on an unreachable hub, so
+nothing was ever pending, and the test spent twenty seconds accepting a
+request nobody had made before it failed at `the node's request was never
+accepted`, which named the wrong step.
+
+**Measured** with the real `halite-hub` built at `e02c31b`, on the same
+Mac with `GODEBUG=fips140=on`: the CA file appears 23–47 ms before the
+port accepts a connection (six runs of six). Eight runs of the whole
+test under FIPS there all passed, so the window was not reproduced by
+looping. It was reproduced on purpose instead: a hub stopped with SIGSTOP
+once `ca.crt` existed, `keys fingerprint` read from it, and
+`halite-node enroll --wait` run against it printed the CI line exactly
+and exited 1.
+
+The test now waits until the hub accepts a TCP connection before it
+starts the node, and stops asking for acceptance as soon as `enroll`
+exits, failing with the node's own output instead.
+With the node given a wrong
+fingerprint so that it exits at once, the test now fails in 3.8 s at
+`enroll ended before its request was accepted` with the node's error,
+where it would have failed after twenty seconds at the acceptance. The
+wait for the listener itself was not broken on purpose: the window does
+not open in a natural local run, so removing it does not fail locally.
+
+**Left open, not changed here.** `enroll --wait` waits out a pending
+answer and a 429, and exits 1 on a hub it cannot reach. The comment in
+`runEnroll` says that is deliberate, and the handbook promises only the
+first two, so this is not a broken promise. A node provisioned while its
+hub restarts will fail its enrollment and depend on whatever ran it to
+try again. Whether `--wait` should also wait out an unreachable hub is a
+behaviour change for the node, and is left as a question.
+
+**Not verified.** The fixed outage test was not run in CI's fips-test job
+before this was written, only locally; the window it closes was shown
+with a paused hub, not caught in a natural run. Neither test was run on
+FreeBSD or Linux.
+
+### 5.585 A cancelled context did not stop a varlink call
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/varlink/varlink.go`). The audit ran on Linux at `main`
@@ -38096,7 +38175,7 @@ The test passes with `-race`.
 fake unix-socket server that never replies. The journald module itself
 was not run.
 
-### 5.585 A NaN passed the counter guard and poisoned a histogram sum
+### 5.586 A NaN passed the counter guard and poisoned a histogram sum
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/metrics/metrics.go`).
@@ -38126,7 +38205,7 @@ counter guard removed, the output lacks `scratch_total 3`. With the
 histogram guard removed, the output lacks `scratch_seconds_sum 2`, the
 `_count 2` line and the value 2 in the `+Inf` bucket.
 
-### 5.586 Label values with a NUL byte could share a series
+### 5.587 Label values with a NUL byte could share a series
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/metrics/metrics.go`).
@@ -38149,7 +38228,7 @@ the two label sets above and expects 2 series. It also makes
 `("1:a","")`, `("","1:a")` and `("1","a")` and expects 3 series. With
 the old join put back, the first pair gives one series with the value 2.
 
-### 5.587 -S and S@ now give the answers that Salt 3007.1 gives
+### 5.588 -S and S@ now give the answers that Salt 3007.1 gives
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/target/target.go`, `compileSubnet`).
@@ -38236,7 +38315,7 @@ not. The matcher of Salt was called directly, not through a job that a
 real Salt deployment published. `S@` inside a nodegroup or a compound target
 was not run against Salt. It uses the same code path.
 
-### 5.588 Spans were exported without redaction
+### 5.589 Spans were exported without redaction
 
 Issue 614, from the issue 321 second-pass audit, round nine
 (`internal/tracing`). The audit found this by reading. It did not run
@@ -38282,7 +38361,7 @@ wiring lines in the hub and the node. The tests of the `cmd` packages
 pass, and none of them fails when the `Secrets:` line in
 `cmd/*/trace.go` is removed.
 
-### 5.589 Child loggers did not share a lock, and a newline in a message started a record
+### 5.590 Child loggers did not share a lock, and a newline in a message started a record
 
 Issue 614, from the issue 321 second-pass audit, round twelve
 (`internal/log/log.go`). The audit found both defects by reading.
@@ -38323,7 +38402,7 @@ newline in its text is still printed inline. Only string fields go to
 the block. A carriage return is not treated as a line break. The output
 was not watched on a real terminal or in a real log file.
 
-### 5.590 An inline file named with two leading dots was refused
+### 5.591 An inline file named with two leading dots was refused
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`cmd/halite-node/oneshot.go`, `writeInlineFile`). The audit found this by reading.

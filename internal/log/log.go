@@ -101,7 +101,7 @@ type Logger struct {
 	//
 	// It was a mutex per Logger, so a child from With locked its own
 	// while writing to its parent's writer, and the two wrote at once
-	// (issue 614, DIVERGENCE 5.589). Over a MultiWriter of stderr and a
+	// (issue 614, DIVERGENCE 5.590). Over a MultiWriter of stderr and a
 	// file, two records could reach the two sinks in different orders;
 	// over a writer that is not safe for concurrent use, a buffer or a
 	// pipe wrapper, they could interleave inside a line or race. What
@@ -283,7 +283,7 @@ func consoleLine(rec map[string]any, fixed map[string]any) string {
 	// that wrote two lines, a pillar renderer's traceback -- started
 	// its second line at column one, where it read as a record of its
 	// own, and could be made to look like one with a level of its
-	// choosing (issue 614, DIVERGENCE 5.589). The JSON form needs
+	// choosing (issue 614, DIVERGENCE 5.590). The JSON form needs
 	// nothing: there it is one escaped string.
 	msg := fmt.Sprint(rec["msg"])
 	head, rest, multi := strings.Cut(strings.TrimRight(msg, "\n"), "\n")

@@ -37,7 +37,7 @@ func TestSubnetAgreesWithSalt(t *testing.T) {
 
 	// Salt parses a network strictly and refuses one with host bits set;
 	// halite masks it. A difference kept on purpose, recorded in
-	// DIVERGENCE 5.587, and named here so that it is the
+	// DIVERGENCE 5.588, and named here so that it is the
 	// only one.
 	masked := map[string]string{"10.0.0.1/24": "10.0.0.0/24", "fe80::1/10": "fe80::/10"}
 
