@@ -46,6 +46,7 @@ func (r *Registry) Write(w io.Writer) error {
 func (f *family) writeTo(b *strings.Builder) {
 	f.mu.Lock()
 	read := f.read
+	readEach, fixed := f.readEach, f.fixed
 	samples := make([]*sample, 0, len(f.order))
 	for _, key := range f.order {
 		samples = append(samples, f.series[key])
@@ -61,6 +62,13 @@ func (f *family) writeTo(b *strings.Builder) {
 
 	if read != nil {
 		b.WriteString(f.name + " " + formatFloat(read()) + "\n")
+		return
+	}
+	if readEach != nil {
+		for _, v := range fixed {
+			b.WriteString(f.name + f.labelsOf([]string{v}, "", "") + " " +
+				formatFloat(readEach(v)) + "\n")
+		}
 		return
 	}
 	if len(samples) == 0 {

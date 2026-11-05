@@ -36496,6 +36496,8 @@ Issue 321, the second pass, round six (`internal/tracing`).
 
 **Not verified.** A real collector going away and returning; the node and hub wiring beyond building.
 
+**The metric, since.** 5.584 adds `halite_trace_spans_dropped_total`, its alert and its panels.
+
 ### 5.549 The node's `fun` label took whatever name the hub sent
 
 Issue 321, the second pass, round seven (`cmd/halite-node/metrics.go`, `cmd/halite-node/execute.go`).
@@ -38061,6 +38063,59 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 `job.Return` in the test. Not run on FreeBSD or Linux. Whether the old
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
+
+### 5.584 Spans lost to a full queue or a failed export were counted and never exposed
+
+Issue 609, the metric 5.548 left owed.
+
+**The defect.** SPEC 26.2 asks for a counter behind every drop path. Since
+5.548 the tracer counted both of its own -- `Dropped()` for a full export
+queue, `Failed()` for a batch the exporter did not take -- and only logged
+them. Neither binary exposed either, so a collector that was down showed
+nothing an alert could see.
+
+**The change.** `halite_trace_spans_dropped_total{reason="queue_full"|"export_failed"}`
+on the hub (`internal/hub/metrics.go`) and on the node
+(`cmd/halite-node/metrics.go`, declared by `buildTracer`). It is read from
+the tracer at scrape time through a new `metrics.CounterFunc`, not counted
+again by a callback into a `Counter`: the tracer already keeps both totals
+and its shutdown line reads them, so a callback would be a second count
+that had to agree with the first, fed by a hook every drop path had to
+call. `CounterFunc` takes a closed set of label values, so both series are
+exported at 0 from the first scrape, tracing on or off (a nil tracer reads
+0), and `increase()` sees the first loss. `tracing.Lost(reason)` maps the
+label to the count; `LostReasons` is the set. A row in each table of
+`docs/metrics.md`, the `HaliteTraceSpansDropped` rule (no job filter, so it
+covers both scrapes; a 10-minute window held for 15 minutes, so one short
+loss does not fire), and a panel in the hub service row and in the node
+row of the example dashboard (version 7). The doc comment on `Failed`,
+which began "Dropped is", is corrected.
+
+**Shown.** The hub test scrapes `/v1/metrics` as an operator from a hub
+with tracing off, one whose exporter takes every batch and one whose
+exporter refuses: both reasons are present at 0 in the first two, and
+`export_failed` is 3 after three refused batches in the third. The node
+test builds the tracer through `buildTracer` with the real OTLP exporter
+against a local HTTP server answering 200 or 503 and scrapes the node's
+TLS endpoint: the same three outcomes. Broken on purpose, one at a time:
+the tracer not counting failed batches fails the hub, node and tracer
+tests; `Lost` reading `Failed` for `queue_full` fails the same three;
+`buildTracer` not declaring the family fails the node test; the
+exposition skipping `CounterFunc` series fails the registry and hub tests.
+`promtool` 2.55.1 (darwin-arm64, checksum from the release's
+`sha256sums.txt`) accepts all 32 rules in the `docs/metrics.md` blocks,
+and `promtool test rules` on synthetic series shows the rule silent at 10
+minutes and firing at 25 for a node whose collector stays down, silent at
+8, 14, 20 and 40 minutes after one loss of 3 spans, and silent for a hub
+at 0 throughout. Removing `for:`, widening the window to 20 minutes, and
+a threshold of 1000 each fail one of those cases. The rule test is not
+committed: CI has no `promtool`.
+
+**Not verified.** A real OpenTelemetry collector going away and returning;
+a real Prometheus scraping either binary; Grafana importing the new
+panels; `queue_full` moving through either binary's scrape (it is shown
+in the tracer test, and the binaries read it through the same `Lost`).
+The API service does not trace, so it has no such counter.
 
 ## 6. Everything else not started
 
