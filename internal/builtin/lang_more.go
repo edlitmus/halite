@@ -26,7 +26,13 @@ func registerVirtualenv(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. It runs the
+				// `python` the caller names to build the environment, which is a
+				// program of the caller's choice. Issue 619 (DIVERGENCE 5.297's
+				// second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				path := states.Str(args, "path", "")
@@ -98,7 +104,14 @@ func registerNpm(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. A package's
+				// install step runs as root on the node: a setup.py, an npm
+				// lifecycle script, a gem's native extension are all code the
+				// package's author chose, and `registry` lets the caller choose
+				// where it comes from. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return npmChange(c, args, "install")
@@ -217,7 +230,12 @@ func registerGem(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. A gem's native
+				// extension is built at install, as root: code the gem's author
+				// chose. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				gems, err := langNames(args, "gems")
