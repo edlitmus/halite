@@ -23689,7 +23689,7 @@ rebooted or moved into or out of FIPS mode for this run.
   `fips_enabled` 1, `fips=1`. OpenSSL 3.0.2.
 
 Both hosts had AppArmor on and `/tmp` mounted `noexec`, so all work was
-under `/root`. Both run `salt-minion`; it was still active afterwards and
+under `/root`. Both also run Salt's agent; it was still active afterwards and
 `dmesg` showed no OOM kill.
 
 **The archives.** The published v0.1.1 archives were fetched on each host
@@ -23847,7 +23847,7 @@ arm64 ran `version` only.
 `/var/cache/halite`, `/var/log/halite`, `/srv/halite`, `/root/h306` and the
 `halite` user were removed from both hosts, then `daemon-reload`.
 Afterwards neither host had a halite file, process, user or listening
-port. `salt-minion` was active on both and `dmesg` showed no OOM kill. One
+port. Salt's agent was active on both and `dmesg` showed no OOM kill. One
 slip: an `rmdir /srv` in the cleanup also removed the empty stock `/srv`.
 It was recreated as root:root 0755 on both.
 
