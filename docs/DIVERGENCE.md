@@ -38351,6 +38351,63 @@ expects one error line and a count of 3. With the count removed from
 existing test of a receipt that does not verify covers that path, and it
 does not check the counter. No Prometheus loaded the alert rule.
 
+### 5.592 A job could build a render sandbox that nothing closed
+
+Issue 615, item 2. A job runs on a shallow copy of the node (`forJob`).
+`renderEngine` kept the sandbox in a field of whatever node it was called
+on, and built one when that field was nil. A copy whose parent had no
+sandbox yet built its own, and nothing closed it: `runConnect`'s deferred
+`closeRenderSandbox` closes the agent's. The child lived until the garbage
+collector finalised its pipes.
+
+**Whether it happens depends on the order.** The audit read it as "each
+job's child is a process of its own". On both hosts below, the agent's own
+node built its sandbox at startup: the description lines are logged after
+`metrics listening` and before `connecting`. The job copies inherited the
+pointer and shared that one child. So a running agent did not leak in
+these runs. The leak is the path where a job copy reaches `renderEngine`
+before the agent's node does. A node built by `setup` that runs a job
+before anything else renders is that path, and in the test below it left
+three children for three jobs.
+
+**The change.** The node holds a pointer to a `sandboxHolder` (a mutex and
+the sandbox). `setup` creates it, the copies share it, `renderEngine`
+builds the sandbox under the lock once, and `closeRenderSandbox` closes
+the shared one. One child serves the agent and all its jobs, as in the
+order that worked, and the agent's close ends it.
+`rendersandbox.Live` counts the children this process has started and not
+yet reaped, so that a test can see a child it holds no reference to. The
+node's `TestMain` now serves the child when the sandbox re-executes the
+test binary. Without that, the child would have run the test binary's
+ordinary entry point, which does not speak the sandbox protocol.
+
+**Demonstrated.** `TestJobsShareOneRenderSandboxChildAndTheAgentEndsIt`
+builds the node with `setup`, sets `render_sandbox: true` and runs three
+`state.show_lowstate` jobs on a templated SLS. It expects one live child,
+and none after `closeRenderSandbox`. With the holder taken out of `setup`,
+which is `main`'s per-copy behaviour, it fails: three children, and three
+after the close.
+
+**Run live** with `render_sandbox: true`, a throwaway hub and an enrolled
+agent, three `state.show_lowstate` jobs through `halite-hub run`, and the
+agent's child processes counted with `ps`:
+
+- macOS 26.7.2 (arm64), in the lab of 5.584: one child during the jobs and
+  none 0.2 s after `SIGTERM` to the agent; the description logged once.
+  `main`'s binary at `e02c31b`: one child, as above.
+- beastie, FreeBSD 15.1-RELEASE-p6 (amd64), binaries cross-built from this
+  change and from `main`, run as an unprivileged user under `/tmp` on
+  loopback ports. Both: one child after three jobs, none one second after
+  the agent stopped, and the description logged once. The lab was removed
+  afterwards. The first count there was wrong: FreeBSD's `ps` reads
+  `-o ppid=,command=` as one column, so it counted nothing until the
+  columns were given as separate `-o` flags.
+
+**Not verified.** The leak was not produced live, because both agents
+built their sandbox before the first job. Which startup call does that was
+not traced. `render_sandbox_user` was not set, so no identity was dropped,
+and nothing ran as root. Not run on Linux.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
