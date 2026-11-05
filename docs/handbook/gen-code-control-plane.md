@@ -768,6 +768,7 @@ The two halves bind opposite parties. A node that rewrites its chain contradicts
 - `CheckHead` (func): CheckHead reports whether (seq, hash) is something Log could have produced as a head: a sequence number from 1, and a SHA-256 in the form hashOf writes.
 - `Digest` (func): Digest is a stable fingerprint of a configuration mapping.
 - `DigestString` (func): DigestString fingerprints one string, for a field a record holds in truncated form.
+- `LastOfKind` (func): LastOfKind reads the most recent record of one kind, without verifying anything, or nil when the chain holds none.
 - `Log` (type): Log is the append-only chain.
 - `Open` (func): Open prepares the chain in dir, creating it if necessary, and recovers the head of an existing one.
 - `Options` (type): Options configure a log.

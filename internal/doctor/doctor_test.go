@@ -31,7 +31,7 @@ func all(t *testing.T) []Check {
 	t.Helper()
 	kernel := false
 	return []Check{
-		ConfigValidity("/etc/halite/node.yaml", nil, nil, true),
+		ConfigValidity("/etc/halite/node.yaml", nil, nil, Running{Known: true, Same: true, Basis: "the record"}),
 		ClockSkew(time.Second, nil, time.Minute),
 		CertificateExpiry(map[string]Expected{
 			"node": {
@@ -143,9 +143,10 @@ func everyOutcome(t *testing.T) []Result {
 	var checks []Check
 
 	checks = append(checks,
-		ConfigValidity("/etc/halite/node.yaml", errors.New("line 3: bad indent"), nil, true),
-		ConfigValidity("/etc/halite/node.yaml", nil, []string{"tracing"}, true),
-		ConfigValidity("/etc/halite/node.yaml", nil, nil, false),
+		ConfigValidity("/etc/halite/node.yaml", errors.New("line 3: bad indent"), nil, Running{}),
+		ConfigValidity("/etc/halite/node.yaml", nil, []string{"tracing"}, Running{}),
+		ConfigValidity("/etc/halite/node.yaml", nil, nil, Running{Known: true, Basis: "the record"}),
+		ConfigValidity("/etc/halite/node.yaml", nil, nil, Running{Basis: "nothing to compare"}),
 
 		CertificateExpiry(nil, now),
 		CertificateExpiry(map[string]Expected{

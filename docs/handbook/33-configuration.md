@@ -234,15 +234,21 @@ enrol the hub's own node to itself using a separate `pki_dir` and `state_dir`
 Configuration is right when:
 
 ```sh
-halite-hub doctor        # "configuration validity: … loads, and matches what this process is running"
-halite-node doctor       # (and on each kind of node)
+halite-hub doctor        # "configuration validity: … loads; not compared with what the service is running: …"
+halite-node doctor       # "configuration validity: … loads, and matches what the agent recorded when it last started (…)"
 halite-api doctor
 ```
 
 all pass, startup logs show no `not recognised` lines, and a deliberate probe
-of the thing you changed behaves as intended. `matches what this process is
-running` is the phrase to look for: it means the file on disk and the process
-in memory agree, so no edit is waiting for a restart.
+of the thing you changed behaves as intended.
+
+`doctor` is a separate process from the service. It cannot see what the
+service read when it started. On a node, the agent writes a digest of its
+configuration to the evidence record when it starts, and `halite-node doctor`
+compares the file with that digest. `matches what the agent recorded` means
+that no edit is waiting for a restart. `differs from what the agent recorded`
+means that an edit is waiting. The hub and the API record no digest, so their
+`doctor` says `not compared`. On those, restart the service after an edit.
 
 ## If it goes wrong
 

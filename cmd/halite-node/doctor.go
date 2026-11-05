@@ -13,6 +13,7 @@ import (
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
 	"github.com/edlitmus/halite/internal/fips"
+	"github.com/edlitmus/halite/internal/nodeevidence"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -80,6 +81,13 @@ func (n *node) doctorHeading() string {
 // because the interesting case is a file edited since the service
 // started: this process is fine and the next restart is not, which is a
 // failure found at the worst possible moment otherwise.
+//
+// And compared with what the *agent* started with, which is the other
+// question an operator means, through the configuration record the agent
+// writes to its evidence chain at startup. This command is a separate
+// process: until DIVERGENCE 5.584 it compared the warning counts of two
+// loads of the same file inside itself, and so reported "matches what
+// this process is running" whatever the agent had started with.
 func nodeConfigCheck(args *cli.Args, n *node) doctor.Check {
 	path := args.Flag("config", "")
 	root := args.Flag("root", config.DefaultRoot)
@@ -91,15 +99,43 @@ func nodeConfigCheck(args *cli.Args, n *node) doctor.Check {
 		shown = root
 	}
 	var warnings []string
+	var running doctor.Running
 	if fresh != nil {
 		warnings = fresh.Warnings
+		running = n.runningConfig(fresh)
 	}
-	// Compared on the warnings the two loads produced rather than by
-	// deep equality: a Config holds compiled state that differs between
-	// two loads of the same bytes, and a check reporting "edited" every
-	// run is one nobody reads.
-	unchanged := err == nil && len(warnings) == len(n.cfg.Warnings)
-	return doctor.ConfigValidity(shown, err, warnings, unchanged)
+	return doctor.ConfigValidity(shown, err, warnings, running)
+}
+
+// runningConfig compares a freshly loaded configuration with the digest
+// the agent recorded when it last started.
+//
+// The digest is the one startEvidence writes, over the same values, so a
+// file nobody has touched digests to it and any edit to a setting does
+// not. It says nothing about an agent that has since stopped and not
+// restarted, which is why the detail names the record's time: an
+// operator can tell "the agent started on this" from "the agent last
+// started on this, a month ago" by reading it.
+func (n *node) runningConfig(fresh *config.Config) doctor.Running {
+	if !n.evidenceOn() {
+		return doctor.Running{Basis: "this node keeps no evidence record " +
+			"(`evidence: false`), which is where the agent records what it started with"}
+	}
+	rec, err := nodeevidence.LastOfKind(n.evidenceDir(), nodeevidence.KindConfig)
+	if err != nil {
+		return doctor.Running{Basis: "the evidence record could not be read: " + err.Error()}
+	}
+	if rec == nil || rec.Detail["digest"] == "" {
+		return doctor.Running{Basis: "the evidence record holds no configuration record; " +
+			"an agent writes one when it starts"}
+	}
+	basis := fmt.Sprintf("what the agent recorded when it last started (evidence record %d, %s)",
+		rec.Seq, rec.TS)
+	return doctor.Running{
+		Known: true,
+		Same:  nodeevidence.Digest(fresh.Values) == rec.Detail["digest"],
+		Basis: basis,
+	}
 }
 
 func nodeCertificateCheck(args *cli.Args, n *node) doctor.Check {

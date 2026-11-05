@@ -62,7 +62,13 @@ func runDoctor(args *cli.Args) int {
 	}
 
 	report := doctor.Run(context.Background(), doctor.RoleHub, []doctor.Check{
-		doctor.ConfigValidity(shown, loadErr, cfg.Warnings, true),
+		doctor.ConfigValidity(shown, loadErr, cfg.Warnings, doctor.Running{
+			// The running hub records no digest of what it started with, and
+			// this command is another process. It used to say "matches what
+			// this process is running", which was true of the doctor and of
+			// nothing an operator meant (DIVERGENCE 5.584).
+			Basis: "the running hub records nothing to compare it with",
+		}),
 		hubCertificateCheck(args, cfg),
 		hubFileServerCheck(cfg),
 		hubPillarCheck(cfg, secrets),

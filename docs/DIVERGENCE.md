@@ -38062,6 +38062,61 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
 
+### 5.584 `doctor` compared the configuration file with itself
+
+Issue 615, item 1, from the issue 321 second-pass audit. `halite-node
+doctor` says whether the file on disk is what the agent is running. It
+cannot know: `doctor` is its own process. `setup` loaded the file and
+`nodeConfigCheck` loaded it again a moment later, and the check compared
+the warning counts of those two loads. It said "loads, and matches what
+this process is running" whatever the agent had started with. The hub's
+and the API's `doctor` passed `true` and said the same sentence about
+themselves.
+
+**Measured** on macOS 26.7.2 (arm64), with a throwaway hub and an enrolled
+node in a scratch directory and the agent running (`halite-node connect`).
+After the agent started, `log_level: info` was changed to `debug` in
+`node.yaml`. `main`'s `halite-node doctor` at `e02c31b` said:
+
+```
+  pass  configuration validity           …/node/node.yaml loads, and matches what this process is running
+```
+
+**The change.** The agent already writes a `config` record to its evidence
+chain when it starts: a digest of its settings (`nodeevidence.Digest`).
+`nodeevidence.LastOfKind` reads the newest record of a kind, newest segment
+first, and the node's check compares the file's digest with that record's.
+The detail names the record and its time, because the record is from the
+agent's last start and an agent that has stopped since is not told apart.
+With evidence off, no record, or a chain it cannot read, the check says
+"not compared" and why. `doctor.ConfigValidity` takes a `doctor.Running`
+in place of the bool, so a caller cannot claim a comparison it did not
+make. The hub and the API record no digest, so theirs now say "not
+compared … records nothing to compare it with". Handbook chapter 33 told
+operators that the old phrase meant "no edit is waiting for a restart";
+it now says which `doctor` can tell and which cannot.
+
+The same edited file, with the built binary:
+
+```
+  warn  configuration validity           …/node/node.yaml loads but differs from what the agent recorded when it last started (evidence record 2, 2026-11-05T18:56:05.241805Z)
+```
+
+and, with the edit reverted, `pass … matches what the agent recorded when
+it last started (evidence record 2, …)`.
+
+**Demonstrated.** `TestNodeDoctorComparesTheFileWithWhatTheAgentStartedOn`
+starts an agent's chain, edits the file, and builds the doctor's node from
+the edited file as `setup` does. With `Same` forced to true, which is what
+`main`'s comparison amounts to, the edited case fails ("a file edited since
+the agent started passed"). `TestNodeDoctorSaysWhenItCannotCompare` covers
+a node with no record.
+
+**Not verified.** Run on macOS only, not on FreeBSD or Linux. A hub or API
+digest was not added; their `doctor` now declines the question rather
+than answering it. A `doctor` run as an account that cannot read the
+evidence directory reports the read error; that path was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

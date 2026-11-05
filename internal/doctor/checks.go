@@ -20,6 +20,27 @@ import (
 // can be sure of, and the whole point of these is to be trusted at the
 // moment somebody is already having a bad day.
 
+// Running is what this command knows about the configuration the
+// long-running service started with.
+//
+// `doctor` is a process of its own. Before DIVERGENCE 5.584 every caller
+// said the file matched "what this process is running" -- the node by
+// comparing two loads of the file inside the doctor's own process, the hub
+// and the API by passing true -- and the process running was the doctor.
+// A service started on last month's file passed. So the comparison is now
+// stated or it is not made: Known says whether there was anything to
+// compare with, and Basis says what it was, or why there was nothing.
+type Running struct {
+	// Known is true when Same means something.
+	Known bool
+	// Same is whether the file's digest is the one the service recorded.
+	Same bool
+	// Basis is shown to the operator. With Known it names what the file
+	// was compared with ("the configuration record the agent wrote when it
+	// started, at …"); without, it says why no comparison was made.
+	Basis string
+}
+
 // ConfigValidity reports whether the configuration this process is
 // running with loaded cleanly.
 //
@@ -28,7 +49,7 @@ import (
 // case is a file edited since the service started, where the running
 // process is fine and the next restart is not. That is a failure an
 // operator finds at the worst possible moment otherwise.
-func ConfigValidity(path string, loadErr error, unknownKeys []string, restartsClean bool) Check {
+func ConfigValidity(path string, loadErr error, unknownKeys []string, running Running) Check {
 	return Check{
 		Name:  "configuration validity",
 		Roles: []string{RoleNode, RoleHub, RoleAPI},
@@ -51,15 +72,24 @@ func ConfigValidity(path string, loadErr error, unknownKeys []string, restartsCl
 					"or remove it."
 				return res
 			}
-			if !restartsClean {
+			if running.Known && !running.Same {
 				res.Status = Warn
-				res.Detail = fmt.Sprintf("%s loads but differs from what this process started with", path)
-				res.Remedy = "The file has been edited since this process started. Restart to " +
+				res.Detail = fmt.Sprintf("%s loads but differs from %s", path, running.Basis)
+				res.Remedy = "The file has been edited since the service started. Restart to " +
 					"pick it up, or revert the file."
 				return res
 			}
 			res.Status = Pass
-			res.Detail = path + " loads, and matches what this process is running"
+			if running.Known {
+				res.Detail = fmt.Sprintf("%s loads, and matches %s", path, running.Basis)
+				return res
+			}
+			// Pass, because the question this check exists for -- will
+			// the next restart start? -- has been answered. The second
+			// question has not, and the detail says so rather than
+			// leaving the reader to assume it was asked.
+			res.Detail = fmt.Sprintf("%s loads; not compared with what the service is running: %s",
+				path, running.Basis)
 			return res
 		},
 	}

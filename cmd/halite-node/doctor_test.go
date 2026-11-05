@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/value"
@@ -65,5 +69,79 @@ func TestNodeDoctorScrubsBothOutputPaths(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), "pillar compilation") {
 		t.Errorf("the JSON output lost the report:\n%s", encoded)
+	}
+}
+
+// `doctor`'s configuration check compares the file with what the *agent*
+// started on, not with itself.
+//
+// `doctor` is its own process, and its setup loads the file a moment
+// before the check re-reads it. Until DIVERGENCE 5.584 the check compared
+// the warning counts of those two loads, so an agent started on one file
+// and a file edited since passed as "matches what this process is
+// running". The comparison is now with the configuration record the agent
+// wrote to its evidence chain when it started.
+func TestNodeDoctorComparesTheFileWithWhatTheAgentStartedOn(t *testing.T) {
+	agent := nodeForEvidence(t, "log_level: info\n")
+	agent.startEvidence()
+	path := agent.cfg.Files[0]
+
+	check := func(t *testing.T) doctor.Result {
+		t.Helper()
+		// What `doctor` does: setup loads the file as it is now, then the
+		// check reads it again.
+		cfg, err := config.Load(config.Node, config.LoadOptions{Path: path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := *agent
+		doc.cfg = cfg
+		doc.evidence = &evidenceState{}
+		args, err := cli.Parse([]string{"--config", path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return nodeConfigCheck(args, &doc).Run(context.Background())
+	}
+
+	t.Run("untouched", func(t *testing.T) {
+		res := check(t)
+		if res.Status != doctor.Pass || !strings.Contains(res.Detail, "matches what the agent recorded") {
+			t.Errorf("an unedited file: %s %q", res.Status, res.Detail)
+		}
+	})
+
+	t.Run("edited", func(t *testing.T) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		edited := strings.Replace(string(data), "log_level: info", "log_level: debug", 1)
+		if edited == string(data) {
+			t.Fatal("the test did not edit the file")
+		}
+		if err := os.WriteFile(path, []byte(edited), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		res := check(t)
+		if res.Status != doctor.Warn || !strings.Contains(res.Detail, "differs from what the agent") {
+			t.Errorf("a file edited since the agent started passed: %s %q", res.Status, res.Detail)
+		}
+	})
+}
+
+// With nothing to compare against, the check says so rather than
+// claiming a match.
+func TestNodeDoctorSaysWhenItCannotCompare(t *testing.T) {
+	n := nodeForEvidence(t, "")
+	path := n.cfg.Files[0]
+	args, err := cli.Parse([]string{"--config", path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := nodeConfigCheck(args, n).Run(context.Background())
+	if res.Status != doctor.Pass || strings.Contains(res.Detail, "matches") ||
+		!strings.Contains(res.Detail, "not compared") {
+		t.Errorf("no agent has started, and: %s %q", res.Status, res.Detail)
 	}
 }
