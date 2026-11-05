@@ -27937,12 +27937,12 @@ Each half was broken on purpose and watched to fail:
   narrowed role running the highstate. Any that do are refused after
   this change.
 
-#### 5.585, an argument rule holds its family
+#### 5.586, an argument rule holds its family
 
 The third bullet under "Not changed, and open" is fixed. An argument
 rule now holds every function that takes the same names, so `allow_sls`
 written under `state.apply` holds `state.sls`, `state.highstate` and the
-`state.show_*` renderers in the same rule. 5.585 has the details.
+`state.show_*` renderers in the same rule. 5.586 has the details.
 
 ### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
 
@@ -38169,7 +38169,7 @@ Issue 623, from the 2026-11-03 review of the issue 321 fixes (`internal/gitfs/ba
 
 **Not verified.** FreeBSD: beastie could not be reached (its ssh agent would not sign), and mini-me has no gpg, so this ran on one Mac only. A node fetching from the hub after the withdrawal: "served" was read from the hub's own log and its cache, which the sweep keys on what is served, not from a node asking for `salt://top.sls`. A remote over ssh or https, a tag (`verify-tag`), a key that expired or was revoked rather than deleted, and a keyring change while an update is running.
 
-### 5.585 An argument rule held only the function it was written under
+### 5.586 An argument rule held only the function it was written under
 
 Issue 621, from the 2026-11-03 review of the issue 321 fixes. 5.320 said
 under "Not changed, and open" that a rule granting `state.*` and
