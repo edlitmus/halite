@@ -1387,6 +1387,17 @@ together are a large C dependency with its own CVE history, and it inherits the 
   `git verify-commit` or `git verify-tag`. A ref that fails verification is not served, and the
   failure is an event. Salt cannot do this, and it is the single control that turns the file server
   from a code-delivery path into a signed code-delivery path.
+- **A remote that serves nothing keeps its last good tree, while that tree still verifies.** A
+  remote that cannot be reached, or whose every ref is refused, goes on serving what it served
+  before rather than emptying the file server. With `gitfs_verify_signatures: true` the kept tree
+  is verified again, against the keyring as it is at that update, every time it would be carried
+  forward. A tree whose signer has been removed from the keyring (or whose signature gpg no longer
+  accepts for any other reason) is dropped: the remote then serves nothing, the hub logs the remote,
+  ref and commit by name, and `fileserver.update` reports it under `withdrawn`. This is what a hub
+  restarted with the same keyring does, since it has no tree to keep, and a key is most often
+  withdrawn because it was compromised, when the kept tree is the one most likely to be an
+  attacker's. The keyring is not watched: a withdrawal takes effect at the next update, periodic at
+  `gitfs_update_interval` or on demand, and with the interval at `0` only on demand.
 - Fetch is periodic with jitter, plus on demand through `halite-hub files update`, plus on a
   webhook to `halite-api` at `/v1/hook/gitfs` with an HMAC-authenticated body.
 
@@ -2226,6 +2237,12 @@ Properties that are requirements, not suggestions:
   SLS names, and may be forbidden from passing `pillar` on the command line, which is otherwise a
   trivial way to bypass pillar-based authorization. A restriction to SLS names excludes the
   highstate: a request that names no SLS, or `state.highstate`, is refused under `allow_sls`.
+  An argument constraint holds every function that takes the same names, not only the one it is
+  written under: one written for any of `state.apply`, `state.sls`, `state.highstate` or the
+  `state.show_*` functions holds all of them, and one written for any of the `state.orchestrate`,
+  `state.orch` or `state.orchestrate_show_sls` runners holds all three. Several in one rule all
+  hold. Otherwise a rule granting `state.*` with `allow_sls` on `state.apply` would leave
+  `state.sls` free to apply any SLS (DIVERGENCE 5.586).
   A role may also require a keyword with `require_kwargs: {test: true}`: the call must carry each named
   keyword with exactly that value (a bool, a string or a number, compared by type), and a call that
   omits it is refused, which is how a credential is held to a dry run. The dry-run flag counts as the

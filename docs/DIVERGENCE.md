@@ -27936,6 +27936,14 @@ Each half was broken on purpose and watched to fail:
 - **The fleet's own policies were not read** for roles that rely on a
   narrowed role running the highstate. Any that do are refused after
   this change.
+
+#### 5.586, an argument rule holds its family
+
+The third bullet under "Not changed, and open" is fixed. An argument
+rule now holds every function that takes the same names, so `allow_sls`
+written under `state.apply` holds `state.sls`, `state.highstate` and the
+`state.show_*` renderers in the same rule. 5.586 has the details.
+
 ### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
 
 SPEC 23.5's `allow_mods` is how a policy limits a role to named
@@ -38062,6 +38070,324 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
 
+### 5.584 Two enrollment tests depended on timing they never established
+
+Two `cmd/halite-node` tests that enroll a node failed intermittently on
+2026-11-05 and were re-run until they passed. They had different causes;
+neither was in the product, and each made the test stop proving what it
+said it proved.
+
+**`TestEnrollWaitRetriesWhenTheHubLimitsIt` (5.398).** It filled a budget
+of one, refilling at one request a second, then started the node by
+re-executing the test binary, and trusted the node to reach the hub
+inside that second. **Measured** on macOS 26.7.2 (arm64), GOMAXPROCS=2: a
+`-race` build of the `cmd/halite-node` test binary takes 1.02 s to print
+`version` (three runs of three), so the budget had refilled by the time
+the node asked, the request was admitted and issued, and the test failed
+at `enroll over the limit: exit 0`. It failed 11 runs of 15 under `-race`
+there, every time at that line. Nothing was wrong with the node or the
+hub: the node was never limited, so it had nothing to wait out.
+
+The test now gives the hub a clock it controls, as internal/hub's own
+limiter tests do (`l.advance`). The clock stands still from the request
+that fills the budget until the node prints `trying again in`, and only
+then moves two seconds, so the first `--wait` attempt is limited however
+long the node took to start, and the retry its own five-second interval
+sets is admitted. In the enroll handler only the limiter reads the
+server's clock; the certificate is dated by the Authority, which keeps its
+own. What the test no longer covers is the limiter draining against the
+wall clock end to end; the drain arithmetic is held in internal/hub with a
+controlled clock, as it was before.
+
+**Demonstrated** on the same Mac: 20 runs of 20 under `-race` and 10 of
+10 under `GODEBUG=fips140=on` pass, where 11 of 15 under `-race` failed
+before. Broken on purpose twice: with `--wait` made to stop at a 429, as
+it did before 5.398, it fails at `enroll --wait ended without waiting out
+the limit`; with the clock never moved, it fails at `enroll --wait was not
+admitted once the budget had drained` after its 60 s bound.
+
+**`TestAScheduledHighstateSurvivesAHubOutage` (5.577).** It waited for
+`halite-hub keys fingerprint` to succeed and then started `enroll --wait`.
+`keys fingerprint` reads the CA from disk, and `serve` writes the CA in
+`openHub` and listens much later, after the serving certificate. CI's
+fips-test job on run 42077713188 (attempt 1) shows the node starting in
+that window: `fetching the hub CA from 127.0.0.1:34595: dial tcp …:
+connect: connection refused`. `enroll` exits on an unreachable hub, so
+nothing was ever pending, and the test spent twenty seconds accepting a
+request nobody had made before it failed at `the node's request was never
+accepted`, which named the wrong step.
+
+**Measured** with the real `halite-hub` built at `e02c31b`, on the same
+Mac with `GODEBUG=fips140=on`: the CA file appears 23–47 ms before the
+port accepts a connection (six runs of six). Eight runs of the whole
+test under FIPS there all passed, so the window was not reproduced by
+looping. It was reproduced on purpose instead: a hub stopped with SIGSTOP
+once `ca.crt` existed, `keys fingerprint` read from it, and
+`halite-node enroll --wait` run against it printed the CI line exactly
+and exited 1.
+
+The test now waits until the hub accepts a TCP connection before it
+starts the node, and stops asking for acceptance as soon as `enroll`
+exits, failing with the node's own output instead.
+With the node given a wrong
+fingerprint so that it exits at once, the test now fails in 3.8 s at
+`enroll ended before its request was accepted` with the node's error,
+where it would have failed after twenty seconds at the acceptance. The
+wait for the listener itself was not broken on purpose: the window does
+not open in a natural local run, so removing it does not fail locally.
+
+**Left open, not changed here.** `enroll --wait` waits out a pending
+answer and a 429, and exits 1 on a hub it cannot reach. The comment in
+`runEnroll` says that is deliberate, and the handbook promises only the
+first two, so this is not a broken promise. A node provisioned while its
+hub restarts will fail its enrollment and depend on whatever ran it to
+try again. Whether `--wait` should also wait out an unreachable hub is a
+behaviour change for the node, and is left as a question.
+
+**Not verified.** The fixed outage test was not run in CI's fips-test job
+before this was written, only locally; the window it closes was shown
+with a paused hub, not caught in a natural run. Neither test was run on
+FreeBSD or Linux.
+
+### 5.585 gitfs kept serving a tree after its signer was withdrawn from the keyring
+
+Issue 623, from the 2026-11-03 review of the issue 321 fixes (`internal/gitfs/backend.go`).
+
+**The defect.** Two paths that must agree. With `gitfs_verify_signatures: true`, a remote whose every ref was refused served nothing this update, and serving nothing kept its last good tree (5.293, and per remote since 5.550, PR 601). When a signing key was removed from `gitfs_keyring`, the next update refused the tip, and the tree that key had signed was carried forward and served for as long as the hub ran; the comment in `Update` said so on purpose ("an operator who withdraws trust from a signing key should get the last tree that verified"). A hub restarted with the same keyring had no tree to carry and served nothing for that remote. A key is withdrawn most often because it was compromised, and then the kept tree is the one most likely to be the attacker's: the verification of the served commit that 5.292 (H-19) made exact was being skipped for exactly the tree it mattered for. A second guard under the first hid the same thing on a hub with one remote: "a total failure leaves the previous tree in place" kept `b.roots` whenever nothing was served, so even emptying the carry-forward left the old tree served.
+
+**Decided** (the user, on issue 623): when the keyring changes, re-verify what is served and drop what no longer verifies, as a restart does. Written into SPEC 13.3.
+
+**How a keyring change is noticed.** It is not, and never was. `gitfs_keyring` is a GnuPG home that `git verify-commit` hands to gpg on every call, so a change reaches the hub at the next update: every `gitfs_update_interval` (5m by default, one ticker shared with S3), or on `halite-hub runner fileserver.update`. There is no file watch, and no reload rebuilds the backend. So the trigger chosen is that every update which would carry a tree forward verifies it again, with the same `verify` and keyring that admitted it, rather than a second mechanism that tries to notice the keyring changed. A digest of `pubring.kbx` would be a second thing to disagree: an imported revocation, a trustdb edit or an expiry changes what gpg answers without necessarily changing what the digest covered. Asked the same question of the same gpg, a running hub and a restarted one agree by construction. It costs one `git verify-commit` per kept ref, only on an update where that ref's remote served nothing. The trigger did not widen the change: nothing outside `internal/gitfs` was touched.
+
+**The change.** `byRemote` keeps the ref with each served directory. A remote that served nothing has its kept trees passed to `reverify`, which verifies each against the remote's mirror on disk (whether or not this update reached the remote; an unreachable remote is exactly when the kept tree is served) and drops each that fails. Each drop is logged at warn, `a gitfs tree is no longer served because its signature no longer verifies`, with the remote, ref, environment, commit and gpg's reason; a remote left with nothing is logged as `a gitfs remote now serves nothing`; and `RemoteState.Withdrawn` carries the refs, which `fileserver.update` reports under `withdrawn`. The total-failure guard is gone: since 5.550 the per-remote carry-forward is what keeps a failed remote's tree, and the only thing that guard could still keep was a tree the carry-forward had just dropped. With verification off nothing changes.
+
+**Shown.** Against real GnuPG 2.5.24 and git 2.56.0 on macOS 26.7.2, with the hub's keyring holding only the exported public key, trusted, and the withdrawal done as `gpg --delete-keys`. `TestAWithdrawnKeyStopsARunningHubServingWhatItSigned` and `TestARestartedHubAndARunningOneAgreeAfterAWithdrawal` fail on main's `backend.go` (given only the new field, so they compile): the running hub still served `base` from the withdrawn commit's tree while a restarted one served nothing. Each half of the change was then broken on its own and both tests failed each time: `reverify` returning the kept trees unchanged, and the total-failure guard put back with `reverify` intact. `TestAKeptTreeWhoseSignerIsStillTrustedIsKept` holds the other side: an unsigned new tip, and then the remote deleted, still leave the signed tree served; it fails when `reverify` drops everything, which would otherwise pass the first two.
+
+**Not changed, and still disagreeing.** A restart and a running hub still differ when the new tip is refused while its signer is trusted (an unsigned push): the running hub keeps the last good tree, which still verifies, and a restarted one has none to keep. That is the carry-forward doing what 5.293 and 5.550 meant it to, and not what issue 623 asked about.
+
+**Run live.** A real `halite-hub serve` on macOS 26.7.2 arm64 (this branch's build, and main's at e02c31b5 for comparison), Homebrew git 2.56.0 and GnuPG 2.5.24, `gitfs_update_interval: 3s`, one remote on the local disk whose `main` is one signed commit, and a `gitfs_keyring` holding only the exported public key, trusted. Both hubs started with `environments=base`. The key was deleted from the keyring with `gpg --delete-keys` while each ran. The fixed hub logged the withdrawal with the remote (`live-remote`), ref, environment, commit and gpg's `NO_PUBKEY` within one update, then `a gitfs remote now serves nothing`, and its commit's tree was gone from the cache. Main's logged only `a gitfs remote serves no environment` every three seconds and kept the tree. Restarted, both started with `environments=` (nothing).
+
+**Not verified.** FreeBSD: beastie could not be reached (its ssh agent would not sign), and mini-me has no gpg, so this ran on one Mac only. A node fetching from the hub after the withdrawal: "served" was read from the hub's own log and its cache, which the sweep keys on what is served, not from a node asking for `salt://top.sls`. A remote over ssh or https, a tag (`verify-tag`), a key that expired or was revoked rather than deleted, and a keyring change while an update is running.
+
+### 5.586 An argument rule held only the function it was written under
+
+Issue 621, from the 2026-11-03 review of the issue 321 fixes. 5.320 said
+under "Not changed, and open" that a rule granting `state.*` and
+constraining only `state.apply` left `state.highstate` and `state.sls`
+unconstrained, "and nothing warns about it". The review ran a real role
+through the policy. It granted `state.*` with `allow_sls: [web.*]` and
+`deny_kwargs: [pillar]` written under `state.apply`, and every runner with
+`allow_mods: [deploy.*]` written under `state.orchestrate`. All of these
+were **allowed**:
+
+- `state.sls db.secret`
+- `state.sls web.x` with `pillar=…`
+- `state.highstate`
+- `state.show_sls db.secret`, which renders the SLS, secrets and all
+- `state.orch sls=teardown`
+
+The cause is one line: `checkArgs` read `rule.Args[req.Fun]`, the argument
+rule written under the exact name of the function asked for. Every
+function above takes the names the rule was written to limit, under
+another name, and nothing told the operator that a sibling was a way
+round it. The checks 5.320 and 5.321 added (the highstate refusal, the
+keyword and comma list of `sls`) were sound for the function they held
+and reached no other.
+
+**The fix.** An argument rule now holds every function that takes the
+same names (`policy.ArgumentFamily`). There are two families:
+
+- **The SLS family**, for a job: every function the node answers through
+  its state compiler. The family is `state.JobFunctions`, the list the
+  node dispatches on (`stateFunction` in `cmd/halite-node`), so it holds
+  `state.apply`, `state.sls`, `state.highstate` and the five
+  `state.show_*` renderers. `runStateJob` compiles the positional names,
+  or the highstate when there are none, for all eight, so each takes what
+  `allow_sls` and `deny_sls` judge. A function the node starts answering
+  through its compiler joins the family, because both read that one list.
+- **The orchestration family**, for a runner: the runners that take
+  `sls`. These are `state.orchestrate`, `state.orch` and
+  `state.orchestrate_show_sls`. The runner registry belongs to the hub,
+  which `internal/policy` cannot import, so the list is written in the
+  policy, and `TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS` in
+  `internal/hub` holds it to the registry in both directions.
+
+`TestTheSLSFamilyIsEveryFunctionThatTakesSLSNames` holds the other side.
+It fails if the execution registry gains a function in the `state` module,
+or one with a parameter named `sls`, `mods` or `highstate`, because such
+a function would take SLS names from outside the family. There is none
+today. `kmod.present` and `kmod.absent` take `mods`, but they are state
+modules, which a job cannot call, and the names are kernel modules.
+
+**All of them hold, not the most specific.** When a rule has argument
+rules under two members of a family, a request must pass both. If the
+exact name's rule replaced the others, writing `deny_kwargs` under
+`state.sls` would lift `allow_sls` from `state.sls`, which is the same
+surprise in another form. An operator who wants different limits for
+different members writes them in different rules, each granting its own
+function. `TestEveryArgumentRuleInTheFamilyHolds` holds this.
+
+A refusal by a rule written under another name says so, because the
+request the operator is reading does not mention that name:
+
+```
+denied: db.secret is not in the SLS names this role may apply (web.*) (the args written for state.apply hold every state function a node compiles, state.sls among them)
+```
+
+**Every authorize site gets it.** `checkArgs` is the only place a
+decision reads `Rule.Args` (checked by grep for `.Args[` across the
+repository; `policy show` reads it too, to print it). It is reached only
+from `AuthorizeAs`, and `Authorize` calls that. Every site
+that authorizes calls one of those two: the hub's job submission, resume,
+kill and status (`jobs.go`), runner calls (`runner.go`, `runners_fleet.go`),
+reactions (`runners_reactor.go`), the mine (`mine.go`), the relay
+(`relay.go`), metrics, the delegation pair (`delegation.go`, 5.582),
+`halite-api` (`internal/api/authorize.go`) and `halite-hub policy test`.
+An orchestration's `salt.state` steps are submitted as `state.apply` jobs
+(`orch_steps.go`) and go through the same path.
+
+**`policy show`** now prints, under each argument rule, the functions it
+holds. For each rule that has argument rules, it also prints the
+functions the rule grants that none of them holds. A pattern is expanded
+to what the hub would grant by it, so `service.*` is counted against the
+functions this build ships and never includes a pillar reader:
+
+```
+role web
+  0. state.*, pkg.installed, service.* on *
+     state.apply: allow_sls=[web.*] deny_sls=[] allow_mods=[] deny_kwargs=[pillar]
+     state.apply: holds state.apply, state.highstate, state.show_highstate, state.show_lowstate, state.show_sls, state.show_states, state.show_top, state.sls
+     no argument rule holds: pkg.installed; service.* (all 18 it grants)
+  1. runners state.*, jobs.lookup_jid on no node (no target)
+     state.orchestrate: allow_sls=[] deny_sls=[] allow_mods=[deploy.*] deny_kwargs=[]
+     state.orchestrate: holds state.orch, state.orchestrate, state.orchestrate_show_sls
+     no argument rule holds: runner state.* (7 of the 10 it grants: state.event, state.orch_list, state.orch_resume, state.orch_show, state.pause, state.resume, state.single); runner jobs.lookup_jid
+```
+
+A rule with no argument rules gets no such line, because its listing
+already shows that nothing holds it. The issue also asked for a warning
+when the policy loads. That was not added: once the family holds,
+the case it would warn about is closed, and the `policy show` line covers
+the rest.
+
+**What an operator sees.** This fails closed, so existing roles become
+stricter, and the CHANGELOG marks it as breaking. In one rule:
+
+- An argument rule written for one member of a family now refuses
+  requests to the others that it would have refused for its own
+  function. A role with `allow_sls` on `state.apply` that also grants
+  `state.sls`, `state.highstate` or `state.show_*` in the **same rule**
+  is held to those names on all of them. Under 5.320 that refuses
+  `state.highstate`, and a `state.show_*` with no names, outright.
+- `require_kwargs: {test: true}` on `state.apply` now requires `test` on
+  the `state.show_*` renderers in that rule too. They take the flag
+  harmlessly, but a caller that does not pass it is refused.
+- `deny_kwargs: [pillar]` on `state.orchestrate` now refuses `pillar` to
+  `state.orch` and `state.orchestrate_show_sls` in that rule.
+
+The fix for a role that meant a sibling to be free is to move the
+sibling into a rule of its own. A role whose rule grants only the
+function its argument rule names sees no change. This is true of every
+example policy in `contrib/examples` and in the handbook, which were
+read for it. The existing test this broke is that case:
+`TestSLSConstraintsJudgeTheCanonicalName` wrote `deny_sls` under
+`state.sls` and `allow_sls` under `state.apply` in one rule. Its
+`state.sls ok` row was then refused by `allow_sls`. It now uses two
+rules, and that is the shape the CHANGELOG tells operators to use.
+
+#### What Salt does
+
+Read from Salt's source at `v3007.1`, `salt/utils/minions.py`. It was not
+run. `CkMinions.auth_check` walks the ACL list. A plain string entry such
+as `state.*` returns `True` as soon as `match_check` (`re.match` against
+the function name) succeeds, so no argument check runs. A dict entry such
+as `{'state.apply': {'args': [...], 'kwargs': {...}}}` goes through
+`__fun_check`, which runs `__args_check` only for a function its key
+matches. The entries are alternatives. So an ACL of `- state.*` and
+`- state.apply: {args: ['web.*']}` lets `state.sls db.secret` through on
+the first entry. Salt has the same hole, and an operator closes it there
+by writing the argument spec under a key that matches every function
+meant (`state.*`), because the key is a regular expression. Here the key
+of `args` is an exact name and a rule is one grant, so the family does
+that work. This is stricter than Salt, which never applies an argument
+spec to a function its key does not match.
+
+#### What was run
+
+`halite-hub policy test` with the role above, built from `main`
+(`e02c31b5`) and from this change, on macOS (Darwin 25.6, arm64):
+
+| Request | `main` | this change |
+|---|---|---|
+| `web1 state.sls db.secret` | allowed by `web` rule 0 | denied, `db.secret` not in `web.*` |
+| `web1 state.sls web.x --kwarg pillar=x` | allowed by `web` rule 0 | denied, `"pillar"` |
+| `web1 state.highstate` | allowed by `web` rule 0 | denied, runs the whole highstate |
+| `web1 state.show_sls db.secret` | allowed by `web` rule 0 | denied, `db.secret` not in `web.*` |
+| `'' state.orch --runner --kwarg sls=teardown` | allowed by `web` rule 1 | denied, `teardown` not in `deploy.*` |
+| `web1 state.sls web.x` | allowed by `web` rule 0 | allowed by `web` rule 0 |
+| `web1 state.apply web.x` | allowed by `web` rule 0 | allowed by `web` rule 0 |
+| `'' state.orch --runner --kwarg sls=deploy.web` | allowed by `web` rule 1 | allowed by `web` rule 1 |
+
+Tests:
+
+- `internal/policy` `TestAnArgumentRuleHoldsEveryFunctionThatTakesTheSameNames`
+  has the five cases of the issue, the remaining members of each family
+  (`state.show_top`, `state.show_lowstate`, `state.orchestrate_show_sls`),
+  allowed controls, and `state.orch_list` as a runner outside the family.
+- `internal/policy` `TestEveryArgumentRuleInTheFamilyHolds`,
+  `TestTheSLSFamilyIsEveryFunctionThatTakesSLSNames`.
+- `internal/hub` `TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS`.
+- `cmd/halite-hub` `TestPolicyShowSaysWhatNoArgumentRuleHolds` runs the
+  real `policy show`.
+
+Each part was broken on purpose and watched to fail:
+
+- **The family not read** (`argRulesFor` reading the exact name only,
+  which is `main`'s behaviour): nine rows of the first test failed,
+  including all five cases of the issue, and both rows of the second.
+  Before the fix existed, the same nine rows failed against `main`'s
+  `checkArgs`.
+- **The exact name's rule replacing the family's**: both rows of
+  `TestEveryArgumentRuleInTheFamilyHolds` failed, and the first test
+  passed, which is why the second test exists.
+- **`state.orchestrate_show_sls` dropped from the list**: the hub's
+  registry test failed, naming it, and so did the policy row for it.
+- **`policy show` counting the exact name only**: the show test failed on
+  `no argument rule holds: pkg.installed`, because `state.*` was then
+  reported as seven unheld functions.
+
+#### Not changed, and open
+
+- **`state.orch_resume` is outside the orchestration family.** It takes a
+  job ID, not `sls`, and runs the orchestration the earlier run named.
+  That run was authorized when it started, and only the same caller (or
+  a scope of `*`) may resume it (5.504). But `allow_mods` is not checked
+  again on resume, so a caller whose `allow_mods` was narrowed after the
+  first run can resume it. Putting it in the family would refuse every
+  resume under `allow_mods` ("names no orchestration"). Judging the
+  stored names would need the policy to read the run store. Neither was
+  done.
+- **The two families do not cross.** `allow_sls` written under
+  `state.orchestrate` does not hold `state.apply`, and `allow_mods`
+  under `state.apply` holds nothing that `state.apply` is asked for.
+  They are different names to different compilers.
+- **The keys of `args` are still exact names**, not patterns. A key the
+  build does not know is not refused at load. Both are as before.
+
+#### Not verified
+
+- **Not run through a hub to a node.** The decisions were shown through
+  `policy test` and the unit tests. No job was dispatched under a narrowed
+  role, and the API's path was not exercised on its own (it calls
+  `AuthorizeAs`, which reaches the same `checkArgs`).
+- **Salt was read, not run.** The account above is from one version's
+  source.
+- **The fleet's own policies were not read.** A role there that grants
+  `state.*` or `state.show_*` beside a constrained `state.apply` in one
+  rule is refused things after this change that it was allowed before.
+- **Not run on FreeBSD or Linux.** Nothing here depends on the platform,
+  and CI runs the tests on all four.
+
 ### 5.584 `doctor` compared the configuration file with itself
 
 Issue 615, item 1, from the issue 321 second-pass audit. `halite-node
@@ -38452,6 +38778,7 @@ not have to read the code again.
 
 **Not verified.** A GPG-decrypted pillar value was not used; the node test
 registered the secret directly. The API route was read and not run.
+
 
 ## 6. Everything else not started
 
