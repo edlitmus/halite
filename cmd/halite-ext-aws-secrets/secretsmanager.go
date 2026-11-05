@@ -51,6 +51,41 @@ func (c *secretsClient) now() time.Time {
 	return time.Now()
 }
 
+// identity names who this client asks as, for the cache key.
+//
+// Everything in the block that decides which principal signs, or which
+// service hears it: the static access key and its secret, the role
+// assumed and the session name, the web identity token file, the
+// endpoint and the partition. Two blocks agreeing on all of these send
+// the same signed request for the same secret, so one may reuse what the
+// other fetched; two that differ in any of them may not (issue 622).
+//
+// The credentials the chain finds on its own -- the environment, the
+// instance role -- are the process's, the same for every block, and so
+// are rightly not part of it.
+//
+// Hashed, so the secret access key is not held as a map key for the
+// life of the process; the parts are length-prefixed so that no two
+// different tuples can join into the same bytes.
+func (c *secretsClient) identity() string {
+	h := sha256.New()
+	part := func(s string) {
+		fmt.Fprintf(h, "%d:%s|", len(s), s)
+	}
+	part(c.Endpoint)
+	part(c.Partition)
+	if p := c.Provider; p != nil {
+		part(p.Explicit.AccessKeyID)
+		part(p.Explicit.SecretAccessKey)
+		part(p.Explicit.SessionToken)
+		part(p.RoleARN)
+		part(p.RoleSession)
+		part(p.WebIdentityTokenFile)
+		part(p.Partition)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func (c *secretsClient) client() *http.Client {
 	if c.Client != nil {
 		return c.Client

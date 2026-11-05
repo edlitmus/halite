@@ -185,8 +185,15 @@ func TestAHostileRegionInANodeNamedARNIsRefused(t *testing.T) {
 			grains := grainsJSON(t, map[string]any{"wants": []any{
 				map[string]any{"name": "k", "secret_id": arn},
 			}})
-			if _, err := callNoEndpoint(t, rec, `{"region":"us-east-1","node_grain":"wants"}`, grains); err == nil {
+			// Patterns wide enough to admit each ARN, so what refuses it
+			// is the region check and not the allow list.
+			_, err := callNoEndpoint(t, rec, `{"region":"us-east-1","node_grain":"wants",`+
+				`"node_grain_allow":["arn:*/*","arn:*/*/*"]}`, grains)
+			if err == nil {
 				t.Fatalf("the ARN region %q was used", region)
+			}
+			if strings.Contains(err.Error(), "node_grain_allow") {
+				t.Fatalf("refused by the allow list, so the region was never checked: %v", err)
 			}
 		})
 	}
@@ -199,8 +206,12 @@ func TestAnUnknownPartitionInAnARNIsRefused(t *testing.T) {
 	grains := grainsJSON(t, map[string]any{"wants": []any{
 		map[string]any{"name": "k", "secret_id": "arn:evil:secretsmanager:us-east-1:1:secret:vmop/a"},
 	}})
-	if _, err := callNoEndpoint(t, rec, `{"region":"us-east-1","node_grain":"wants"}`, grains); err == nil {
+	_, err := callNoEndpoint(t, rec, `{"region":"us-east-1","node_grain":"wants","node_grain_allow":["arn:*/*"]}`, grains)
+	if err == nil {
 		t.Fatal("an unknown partition was reached")
+	}
+	if strings.Contains(err.Error(), "node_grain_allow") {
+		t.Fatalf("refused by the allow list, so the partition was never checked: %v", err)
 	}
 }
 
@@ -219,7 +230,7 @@ func TestANodeSuppliedRegionMustBeAllowed(t *testing.T) {
 	t.Run("a node-named secret's region the block does not allow", func(t *testing.T) {
 		rec := &recorder{t: t, refuse: true}
 		grains := `{"wants":[{"name":"k","secret_id":"vmop/a","region":"eu-west-1"}]}`
-		_, err := callNoEndpoint(t, rec, `{"region":"us-east-1","node_grain":"wants"}`, grains)
+		_, err := callNoEndpoint(t, rec, `{"region":"us-east-1","node_grain":"wants","node_grain_allow":["vmop/*"]}`, grains)
 		if err == nil || !strings.Contains(err.Error(), "node_region_allow") {
 			t.Fatalf("an unlisted node-named region gave %v", err)
 		}
@@ -233,7 +244,7 @@ func TestANodeSuppliedRegionMustBeAllowed(t *testing.T) {
 			`{"region":"us-east-1","node_region_allow":["eu-west-1"],"secrets":[{"name":"k","secret_id":"vmop/a"}]}`,
 			`{"region":"eu-west-1"}`},
 		"a node-named secret's region in node_region_allow": {
-			`{"region":"us-east-1","node_region_allow":["eu-west-1"],"node_grain":"wants"}`,
+			`{"region":"us-east-1","node_region_allow":["eu-west-1"],"node_grain":"wants","node_grain_allow":["vmop/*"]}`,
 			`{"wants":[{"name":"k","secret_id":"vmop/a","region":"eu-west-1"}]}`},
 	}
 	want := map[string]string{

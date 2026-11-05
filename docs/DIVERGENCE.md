@@ -37790,6 +37790,214 @@ local accounts were. An API newer than its hub was not run, and the
 claim that the older hub ignores the field is from reading `ReadJSON`,
 which does not refuse unknown fields.
 
+### 5.578 A signed extension loaded from a directory that named another extension
+
+`extension.Store.Load` took an extension's name and version from its
+`<cache>/<name>/<version>` directory, looked the pin up by that name, and
+never compared either with the manifest's `name` and `version`, which 5.333
+put under the signature. Found by the 2026-11-03 review of the issue 321
+fixes (issue 624). Two paths that had to agree: the directory the store
+reads a bundle from, and the name and version it was signed as.
+
+The review called it a name problem: a signed `echo 1.0.0` copied to
+`bar/7.7.7` was usable as `bar`. Measured, it is a pin bypass. The runtime
+registers a bundle by its manifest's name, so the copy at `bar/7.7.7` was
+checked against `bar`'s pin, of which there was none, and then loaded **as
+`echo`**, with `echo` pinned to 2.0.0. A copy at `echo/7.7.7` met `echo`'s
+pin, which compares the manifest's version and root, so that case was
+caught by the pin when there was one and loaded when there was not.
+
+**Fixed.** `LoadOptions` carries the name and version the caller found the
+bundle under, and `Load` refuses a bundle whose manifest says otherwise,
+after the signature and before the pin, naming both:
+`bar/7.7.7 holds a bundle signed as echo/1.0.0`. Before the pin because
+the pin was chosen by the directory's name, so a pin refusal there names
+the wrong extension's pin. An unsigned bundle, which
+`extension_require_signature: false` permits, is refused the same way and
+the message says the manifest is unsigned. A bundle loaded from a
+directory that names nothing (a staging directory) is not checked, so
+only `Store.Load` passes them.
+
+**What installs into the cache** was read before the check was written,
+in case a legitimate path lays a bundle out another way. None does. A
+node's `saltutil.sync_*` and the hub's `extensions sync` both go through
+`Syncer`, which installs at the `_ext/<name>/<version>/` path the file
+server published and already refused a bundle signed as anything else
+(`TestAPathThatDisagreesWithTheManifestIsRefused`). `extensions sign
+--publish` writes to the tree, not the cache, at the name and version it
+has just signed. Nothing else in the repository, the documentation or
+the handbook writes into `extension_dir`, so a mismatch is a write to the
+cache that did not come through a sync.
+
+**Tested.** `TestABundleIsHeldToTheNameAndVersionItWasSignedAs` signs
+`echo 1.0.0` with `echo` pinned to 2.0.0 and places it at `bar/7.7.7`,
+`bar/1.0.0` and `echo/7.7.7`. On main the first two loaded and the third
+was refused by the pin with a message naming neither directory. Broken on
+purpose, each way failed all three cases: the store no longer passing the
+directory's name and version, and the check returning nil.
+`TestAnUnsignedBundleIsHeldToItsDirectoryAndSaysItIsUnsigned` holds the
+unsigned wording, and failed with it removed.
+
+**Through the real CLI** (macOS arm64, Darwin 25.6; none of it is
+platform-specific). `halite-hub` was built from this branch and from main
+(9543d44f), and `echoext` was the extension. This branch signed and
+published `echo 1.0.0`, then synced and listed it: fetched, loaded, and
+`say()` listed. Then, in the cache:
+
+1. Moved to `bar/7.7.7`, `echo` pinned to 2.0.0: main listed
+   `echo 1.0.0 (module)` with `say()`; this branch refused it, naming
+   `bar/7.7.7` and `echo/1.0.0`, and listed nothing. Also refused with
+   `echo` pinned to its real version and root.
+2. Control: main with the correct layout and the same 2.0.0 pin refused
+   it (`echo is pinned to 2.0.0 and this bundle is 1.0.0`), so case 1 is
+   the directory and not the pin.
+3. Moved to `echo/7.7.7`: main loaded it, unpinned and pinned to its real
+   version and root; this branch refused it unpinned.
+4. Moved back to `echo/1.0.0`: this branch loaded it and listed `say()`.
+
+**Operators.** Nothing changes for a cache filled by sync. A bundle put
+into `extension_dir` by hand at another name or version now fails to load
+and the log says why; move it to the directory its manifest names, or
+sync it.
+
+**Not verified.** No node synced from a hub's tree and loaded the result;
+the CLI run was the hub's own sync and list, which shares `Store.Load`
+with a node but not the node's `remoteExtensionSource`. Nothing ran on
+FreeBSD or Linux by hand; CI runs the unit tests on both.
+
+### 5.579 One `aws_secrets_manager` block was served what another block fetched
+
+Issue 622, from the close-out review of issue 321. The extension's cache
+was keyed by region, secret and stage. The hub keeps one pool of
+extension processes per extension, not per block, so every
+`aws_secrets_manager` block on a hub shares that cache, and a value one
+block fetched was handed to any other block that named the same secret in
+the same region -- whatever credentials or endpoint the other block had.
+5.324 (audit finding H-20) bounded which region a node may make the hub
+sign for; 5.409 left the cache, and 5.483 recorded it as decided and
+documented. Neither noticed that the key had no idea *who* had fetched.
+
+**Measured** with `main`'s key, at `9543d44`:
+
+- through the handler, two blocks with their own access keys against one
+  local Secrets Manager that lets only `AKIDHIGH` read `prod/db`: the
+  `AKIDLOW` block's pillar held the password, and the server saw
+  `AKIDLOW` zero times;
+- through the handler, two blocks with two endpoints serving different
+  values for one secret name: the second block read the first's value,
+  and its endpoint was called zero times;
+- and both again on the operator's path -- the real extension binary,
+  built, signed, verified by the store, run over the bridge with a pool of
+  one, the two blocks written in one hub `ext_pillar` list and compiled by
+  the pillar compiler (`internal/extpillar`,
+  `TestTwoBlocksDoNotShareWhatTheyFetched`): `restricted:db` compiled to
+  `hunter22`, and `two:k` to `from-first`.
+
+**The change.** The key now begins with `secretsClient.identity`: a
+SHA-256 over the block's endpoint and partition, and its explicit
+credentials -- access key ID, secret access key, session token, role ARN,
+role session name, web identity token file, and the provider's partition.
+Two blocks agreeing on all of those would send the same signed request,
+so one may reuse what the other fetched; two that differ in any may not.
+The secret key is hashed in rather than held: a cache key lives as long
+as the process. Credentials the chain finds for itself (the environment,
+the instance role) are the process's and the same for every block, so
+they are rightly not in it. The extension is now 1.1.2, because a block
+that used to be served another block's value now fails or reads its own.
+
+**Demonstrated.** The two handler tests
+(`TestABlockIsNotServedWhatAnotherBlocksCredentialsFetched`,
+`TestTwoEndpointsAreTwoCacheEntries`) and the end-to-end one fail with the
+values above when the key is `main`'s -- the identity taken out of it --
+and pass with it in. `TestTheSecretKeyIsPartOfTheIdentity` is new with
+the method and does not compile on `main`; with the secret key taken out
+of the identity, it fails.
+
+**Not verified.** No AWS: every server was local. A hub really holding
+two blocks was not run; the end-to-end test is the hub's own pillar path
+with the hub's process pool, not `halite-hub serve`. Whether the
+production estate has two blocks at all was not looked at. A pool of
+more than one process was not exercised; it can only make sharing rarer,
+since each process has its own cache.
+
+### 5.580 `node_grain` with no `node_grain_allow` let any node name any secret
+
+Issue 622, the first of its two decisions. With `node_grain` set, a node
+names secrets in its own grain and the hub fetches them into that node's
+pillar. `node_grain_allow` bounded which, and an empty list meant any:
+Salt's module had no list at all, and the extension kept that as parity.
+So a block that set the grain and forgot the list let every node have the
+hub read every secret its credentials could, by setting a grain. 5.483
+recorded this as decided and documented, and 5.409 as the owner's call.
+
+**The owner's decision** (2026-11-05) was to refuse it. `parseConfig`
+now fails a block with `node_grain` set and the list empty or absent,
+naming both keys, the grain, what to set, that a `*` does not match `/`,
+and that removing `node_grain` is the other way out. It is refused for
+every node, including one that names nothing, because the block is wrong
+whichever node it is compiled for. `allowed` no longer reads an empty list
+as "any" either, so a `Config` built without `parseConfig` does not
+reopen it.
+
+This is not a refusal to *start*. The hub does not read an extension's
+block (`extpillar.Bridged.Config`), and the handshake carries none, so
+the hub starts and every pillar compiled with the block fails with this
+message. With `fail: ignore` on the block, the hub logs it and the node's
+pillar has none of that block's secrets. Refusing at start would need a
+config check in the extension protocol (SPEC 24); the owner chose the
+extension-only refusal.
+
+**Breaking.** A hub whose block has `node_grain` and no list stops
+compiling pillar for every node that block applies to until the list is
+set. The extension is 1.2.0.
+
+**Demonstrated.** `TestANodeGrainWithoutAnAllowListIsRefused` fails on
+`main`'s code: the block was accepted, three fetches were made, and an
+empty `allowed` list permitted a node-named secret. It passes with the
+change. With the `parseConfig` check made false it fails again (a node
+naming nothing compiled, and the node naming one got the allow list's
+message rather than this one); with the empty-list shortcut put back into
+`allowed`, its last assertion fails.
+
+Four region tests (5.324) set `node_grain` without a list. After the
+change they were refused by this check, before the region was looked at:
+two failed, and the ARN and partition tests went on passing for the wrong
+reason. They now carry allow lists wide enough to admit their ARNs, and
+the ARN and partition tests fail if the refusal mentions
+`node_grain_allow`.
+
+**Not verified.** No AWS, and no hub was started with such a block; the
+refusal was driven through the handler. Whether the production estate
+sets `node_grain` was not looked at.
+
+### 5.581 The aws-secrets cache never evicted
+
+Issue 622, the second decision, and the low one. The extension's cache
+held every successful fetch for the life of the process, replaced only
+when the same secret was fetched again, and nothing bounded how many there
+were. A node with `node_grain` names its own secret IDs, so what it
+could grow the cache to was bounded only by what exists and what the allow
+list admits (5.409, 5.483).
+
+**The change.** An LRU: at most 1,024 values and 64 MiB of secret text,
+the least recently used going first. A value larger than the byte bound is
+returned and not cached. A value found past its TTL is removed when looked
+up. 1,024 is far above what a hub's own blocks name, so a hub not pushed by
+node-named secrets should never evict, and the TTL alone decides when a
+value is refetched. That is reasoning about block sizes, not a
+measurement of the estate's.
+
+**Demonstrated.** A node naming 1,074 secrets through the handler leaves
+1,074 values cached with eviction disabled -- which is `main`'s behaviour --
+and 1,024 with it, every secret still reaching the pillar. The LRU test
+fails when `MoveToFront` is removed (it becomes FIFO and evicts the secret
+just read); the byte test fails with eviction disabled; and the expiry test
+fails when an expired value is left in place. The new tests use the new
+bounds and so do not compile on `main`.
+
+**Not verified.** Memory was not measured: 64 MiB is the text held, not the
+parsed values' size in the heap. No AWS.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

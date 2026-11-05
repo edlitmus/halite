@@ -213,7 +213,9 @@ metrics: true
 #       # and a tree migrating from it may depend on that. Read twice
 #       # before setting, because a node controls its own grains: this
 #       # lets any node ask the hub to fetch any secret the hub's
-#       # credentials can read. The allow list is what bounds it.
+#       # credentials can read. The allow list is what bounds it, and
+#       # is required with it: `node_grain` alone is refused. A `*`
+#       # does not match `/`.
 #       # node_grain: aws_secrets_ext_pillar
 #       # node_grain_allow:
 #       #   - 'arn:aws:secretsmanager:*:*:secret:vmop/*'
@@ -237,7 +239,7 @@ metrics: true
 # root is printed by `halite-hub extensions sync`.
 # extension_pins:
 #   aws_secrets_manager:
-#     version: 1.1.1
+#     version: 1.2.0
 #     root: 9f2c...
 # The unprivileged account an extension drops to. It needs nothing but
 # its own working directory.
