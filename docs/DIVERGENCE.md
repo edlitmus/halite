@@ -38198,6 +38198,36 @@ both new assertions.
 **Not verified.** No tool compares node records with the hub's job cache
 today, so nothing that reads `arg_digest` was run.
 
+### 5.588 The hub's event returner read `id`, which could never be set
+
+Issue 615, item 7. 5.545 made an audit of every setting the programs read,
+and named one exception: the hub's `eventReturner` passed
+`cfg.String("id", "")` to the returner as its sender's name, and no hub
+setting declares `id`. It was left for a decision about whether a hub has
+an identity for its returners.
+
+It could not have one through this read. The Salt shim renames `id` to
+`node_id` as any file is loaded, the hub's included. A `hub.yaml` holding
+`id: hub1.example`, loaded as `config.Hub`, reads `id` as `""` and
+`node_id` as `hub1.example`, with the shim's warning (scratch test, not
+kept). So every hub has sent an empty name: the syslog returner uses
+`os.Hostname`, and the webhook returner sends no `X-Halite-Node` header.
+
+**Decided:** a hub has no identity for its returners beyond its host name,
+which is what it has always sent. A new setting would be a SPEC change,
+and nothing has asked for one.
+
+**The change.** The read is gone and the empty name is passed with a
+comment that says why. The audit has no exceptions now.
+
+**Demonstrated.** With the read put back,
+`TestEverySettingTheProgramsReadIsDeclared` fails and names
+`id (../../cmd/halite-hub/serve.go)`.
+
+**Not verified.** No event returner was run on a hub for this change. The
+behaviour is the same by construction, because the value passed is the
+value the read always returned.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
