@@ -1451,7 +1451,7 @@ and for a kill against the job's own target, and shows a caller only the
 runs it made for that operator. A claim from a certificate without
 `act_for` naming the operator is refused, and so, without it, is every
 runner call the service makes for a logged-in operator (DIVERGENCE
-5.578).
+5.582).
 
 The roles a token was *issued* with are what decide, so a role granted
 after the token was handed out does not widen it, and one taken away is

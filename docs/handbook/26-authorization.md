@@ -407,7 +407,7 @@ the claim only from a certificate whose role has `act_for` naming that
 operator, and refuses the call from anyone else. `act_for` takes principal
 patterns, as a binding does, and grants nothing else; a rule that holds only
 `act_for` may not name a target. Without it, every runner call the API makes
-for a logged-in operator is refused (DIVERGENCE 5.578).
+for a logged-in operator is refused (DIVERGENCE 5.582).
 
 Used with a narrow operator role, the effective rights of a person are the
 intersection. The jobs the API submits record both: `submitter` is the API's

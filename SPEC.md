@@ -2266,7 +2266,7 @@ Properties that are requirements, not suggestions:
   accepts the claim only from a principal whose role has `act_for` matching the operator, a list of
   principal patterns that grants nothing else, and refuses the call from any other. Without it, the
   hub had only the API's grant to judge, and an operator held to `web*` reached every node the API
-  could (DIVERGENCE 5.578).
+  could (DIVERGENCE 5.582).
 - **Every decision is logged**, allowed or denied, with the rule that matched.
 - **`halite-hub policy test`** evaluates a hypothetical request against the policy and prints the
   matching rule or the reason for denial, so a policy can be tested in CI rather than in production.

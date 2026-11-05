@@ -31502,7 +31502,7 @@ the API's scope alone. Not run against the production hub.
 
 #### 5.391, the API says whom it acts for
 
-What this section left under "Not done" is closed by 5.578, which found it
+What this section left under "Not done" is closed by 5.582, which found it
 was wider than visibility. Through the API a runner that sends jobs sent
 them as the API, so `Narrow` held only the runners that read nodes. A kill
 judged the API's grant. The API now sends the operator and their token's
@@ -37662,134 +37662,6 @@ when served, since its digest is not persisted separately from the listing.
 Plain pillar values in a run's return are still in `returns.ndjson`, as they
 were: that file is not encrypted.
 
-### 5.578 Through the API, the hub judged the API and not the operator
-
-Issue 618, from the 2026-11-03 review of the issue 321 fixes. 5.391 gave
-runners a scope and sent the operator's to the hub as `Narrow`, and said
-under "Not done" that the API "does not yet pass who it acts for". It
-named only visibility. The review showed four things an operator whose
-every rule names `web*` did through `halite-api`, because the API calls
-every runner, and `DELETE /v1/jobs/{jid}`, with its own certificate:
-
-- **Dispatch.** `checkRunnerReach` lets `ReachDispatch` runners through on
-  the ground that every job they send is authorized as it is sent; it
-  was, as the API. `saltutil.refresh_pillar`, `refresh_grains`,
-  `mine.update` and `state.orchestrate` reached `db1`.
-- **Runner calls.** `jobVisible` showed a runner call to the principal
-  that made it, which through the API is the API for everyone: alice read
-  bob's `pillar.show_pillar db1`, arguments and return, with
-  `jobs.lookup_jid`, `list_job`, `print_job` and `GET /v1/jobs`.
-- **Orchestrations.** `runVisible` the same: alice listed, showed and
-  resumed bob's run, and the resume sent a job to `db1`.
-- **Kill.** The API authorized `jobs.kill` with no job and no target,
-  then the hub asked whether the API could run the job's function against
-  its target. Any operator granted `jobs.kill` stopped any job.
-
-`TestAnOperatorThroughTheAPIDispatchesOnlyWhereTheyMay`,
-`…SeesOnlyTheirOwnRunnerCalls`, `…SeesAndResumesOnlyTheirOwnRuns` and
-`…KillsOnlyJobsTheyMay` (internal/hub/api_delegation_test.go) drive a
-real `api.Server` in front of the hub, with one policy file read by both.
-They compile against `main` too, and were run there at `9543d44`: every
-assertion about another operator's reach fails, with `db1` in the
-dispatched jobs, bob's run in alice's list, and a 200 for the kill.
-
-**The owner's decision** was to pass who the API acts for, and have the
-hub judge that as well, rather than refuse these runners through the API.
-
-- `transport.Delegation` is the operator's principal and the roles frozen
-  into their token (SPEC 23.6). The roles travel because the hub cannot
-  work them out: an API account names roles of its own, and the hub's
-  bindings know nothing of it. They are judged against the hub's policy,
-  so a role the hub does not define grants nothing.
-- The API sends it as `RunnerRequest.OnBehalfOf` on every runner call
-  made with a token, and as the body of the kill (`KillRequest`). It still
-  sends `Narrow`, which an older hub applies.
-- The hub asks every policy question twice, of the certificate and of the
-  operator (`authorizeFor`), and the first refusal is the answer. That is
-  the runner itself, every job it dispatches (`dispatchFor`, which
-  orchestration steps and nested runner calls also go through), and a kill
-  against the job's own target and function. A runner's scope is the
-  certificate's within the operator's, within `Narrow`.
-- A runner call's job and an orchestration run record `on_behalf_of`, and
-  their owner is the pair: same certificate, same operator or none
-  (`sameCaller`). So a direct operator does not see the runs the API made
-  for an account of the same name, either; nobody wrote a rule that says
-  `cert:CN=alice` and `local:alice` are one person.
-- **The claim is accepted only from a certificate whose role grants
-  `act_for`** for that principal, a new key in a rule. A claim from
-  anyone else, or naming nobody, refuses the whole call. Ignoring it would
-  leave that caller doing what the API did before. The roles only ever
-  narrow, so the grant is not about reach. It is about the name, which
-  decides whose runs a caller sees and is written as who asked.
-  `TestAClaimToActForAnotherIsRefusedWithoutActFor`.
-- A rule that grants only `act_for` and names a `target` is refused at
-  load. The target would read as a limit and is not one, and it would
-  show the caller every node it covers on the event stream (`VisibleNode`).
-
-Breaking each piece on purpose fails what it should, and only that:
-accepting any claim fails the claim test; dropping the operator's
-question fails dispatch and kill; comparing owners by certificate alone
-fails both visibility tests; an API that sends no delegation fails all
-four and `TestTheAPITellsTheHubWhomItActsFor`.
-`TestADirectOperatorIsUnchangedByDelegation` holds a direct operator,
-and the existing hub and API suites pass unchanged.
-
-**Breaking.** An API whose role lacks `act_for` has every token-bearing
-runner call refused with a 403 that names the line to add: `GET
-/v1/nodes`, `/v1/jobs`, `/v1/orch`, `/v1/pillar`, the `runner` client,
-and kill. The service's role needs a rule `- act_for: ['*']`, or narrower
-patterns naming the principals its accounts, LDAP and OIDC produce.
-Webhooks and `/v1/metrics` send no delegation and are unaffected. An API
-newer than its hub sends a field the older hub ignores, which is the old
-behaviour; upgrade the hub first.
-
-**Not changed.**
-
-- Killing a runner call's job asks the runner question with no target,
-  directly or through the API, so an operator granted
-  `state.orchestrate` may mark another's orchestration job aborted. It
-  stops nothing that runs on the hub. Left as it was for a direct
-  operator, and the same through the API.
-- A webhook's runner call carries no delegation and is held to the API's
-  grant alone, as 5.391 said.
-- `event.send` through the API is a confused deputy for *who sent an
-  event*, though not for what a reaction may do. A reaction runs as its
-  own configured principal (SPEC 18.3), whoever sent the event, so it
-  gains nothing from the sender. But the hub stamps `_principal` with the
-  certificate, so every event sent through the API, operator or webhook,
-  carries `cert:CN=api`. An operator granted `event.send` put
-  `halite/hook/github/push` on the bus through the API, indistinguishable
-  from a delivery; shown with a throwaway test against this change, not
-  kept. And `docs/command-reference.md` says a hook's `_principal` is the
-  identity the delivery authenticated as, where the hub overwrites the
-  API's `hook:<path>` with its own. Reported, not fixed here.
-
-**Run live** on mini-me (macOS 27.3, arm64), 2026-11-05: a real hub, API
-and three nodes on loopback, unprivileged, built for darwin/arm64 from
-`main` at `9543d44` and from this change, with one policy file and the
-same requests. Both builds stamp `9543d44`, since this change was
-uncommitted; they are told apart by the answers.
-
-| Through the API, as alice (`web*`) | `main` | this change |
-|---|---|---|
-| `saltutil.refresh_pillar` / `mine.update` on db1 | 200, `nodes: [db1.example]` | 422, "local:alice, who may not" |
-| the same on web1 | 200 | 200 |
-| `jobs.lookup_jid`, `GET /v1/jobs/{jid}` of bob's `pillar.show_pillar db1` | 200, arguments and return | "no such job" |
-| `GET /v1/orch/{jid}`, `orch_resume` of bob's run on db1 | 200, and the resume ran | "no such job" |
-| kill of bob's job bound for db2 | 200 | 403 |
-| the API's role without `act_for`, after a hub restart | | 403 naming `act_for` |
-
-bob's own runs, and his kill, answered 200 on both. A direct operator's
-`halite-hub runner manage.status` was unaffected with `act_for` removed.
-
-**Not verified.** FreeBSD: not run by hand there, because beastie's key
-would not sign from this Mac's agent on the day; the change is in
-platform-neutral authorization code, and CI's FreeBSD leg runs the
-tests. OIDC and LDAP principals as the claimed operator were not run;
-local accounts were. An API newer than its hub was not run, and the
-claim that the older hub ignores the field is from reading `ReadJSON`,
-which does not refuse unknown fields.
-
 ### 5.578 A signed extension loaded from a directory that named another extension
 
 `extension.Store.Load` took an extension's name and version from its
@@ -37997,6 +37869,134 @@ bounds and so do not compile on `main`.
 
 **Not verified.** Memory was not measured: 64 MiB is the text held, not the
 parsed values' size in the heap. No AWS.
+
+### 5.582 Through the API, the hub judged the API and not the operator
+
+Issue 618, from the 2026-11-03 review of the issue 321 fixes. 5.391 gave
+runners a scope and sent the operator's to the hub as `Narrow`, and said
+under "Not done" that the API "does not yet pass who it acts for". It
+named only visibility. The review showed four things an operator whose
+every rule names `web*` did through `halite-api`, because the API calls
+every runner, and `DELETE /v1/jobs/{jid}`, with its own certificate:
+
+- **Dispatch.** `checkRunnerReach` lets `ReachDispatch` runners through on
+  the ground that every job they send is authorized as it is sent; it
+  was, as the API. `saltutil.refresh_pillar`, `refresh_grains`,
+  `mine.update` and `state.orchestrate` reached `db1`.
+- **Runner calls.** `jobVisible` showed a runner call to the principal
+  that made it, which through the API is the API for everyone: alice read
+  bob's `pillar.show_pillar db1`, arguments and return, with
+  `jobs.lookup_jid`, `list_job`, `print_job` and `GET /v1/jobs`.
+- **Orchestrations.** `runVisible` the same: alice listed, showed and
+  resumed bob's run, and the resume sent a job to `db1`.
+- **Kill.** The API authorized `jobs.kill` with no job and no target,
+  then the hub asked whether the API could run the job's function against
+  its target. Any operator granted `jobs.kill` stopped any job.
+
+`TestAnOperatorThroughTheAPIDispatchesOnlyWhereTheyMay`,
+`…SeesOnlyTheirOwnRunnerCalls`, `…SeesAndResumesOnlyTheirOwnRuns` and
+`…KillsOnlyJobsTheyMay` (internal/hub/api_delegation_test.go) drive a
+real `api.Server` in front of the hub, with one policy file read by both.
+They compile against `main` too, and were run there at `9543d44`: every
+assertion about another operator's reach fails, with `db1` in the
+dispatched jobs, bob's run in alice's list, and a 200 for the kill.
+
+**The owner's decision** was to pass who the API acts for, and have the
+hub judge that as well, rather than refuse these runners through the API.
+
+- `transport.Delegation` is the operator's principal and the roles frozen
+  into their token (SPEC 23.6). The roles travel because the hub cannot
+  work them out: an API account names roles of its own, and the hub's
+  bindings know nothing of it. They are judged against the hub's policy,
+  so a role the hub does not define grants nothing.
+- The API sends it as `RunnerRequest.OnBehalfOf` on every runner call
+  made with a token, and as the body of the kill (`KillRequest`). It still
+  sends `Narrow`, which an older hub applies.
+- The hub asks every policy question twice, of the certificate and of the
+  operator (`authorizeFor`), and the first refusal is the answer. That is
+  the runner itself, every job it dispatches (`dispatchFor`, which
+  orchestration steps and nested runner calls also go through), and a kill
+  against the job's own target and function. A runner's scope is the
+  certificate's within the operator's, within `Narrow`.
+- A runner call's job and an orchestration run record `on_behalf_of`, and
+  their owner is the pair: same certificate, same operator or none
+  (`sameCaller`). So a direct operator does not see the runs the API made
+  for an account of the same name, either; nobody wrote a rule that says
+  `cert:CN=alice` and `local:alice` are one person.
+- **The claim is accepted only from a certificate whose role grants
+  `act_for`** for that principal, a new key in a rule. A claim from
+  anyone else, or naming nobody, refuses the whole call. Ignoring it would
+  leave that caller doing what the API did before. The roles only ever
+  narrow, so the grant is not about reach. It is about the name, which
+  decides whose runs a caller sees and is written as who asked.
+  `TestAClaimToActForAnotherIsRefusedWithoutActFor`.
+- A rule that grants only `act_for` and names a `target` is refused at
+  load. The target would read as a limit and is not one, and it would
+  show the caller every node it covers on the event stream (`VisibleNode`).
+
+Breaking each piece on purpose fails what it should, and only that:
+accepting any claim fails the claim test; dropping the operator's
+question fails dispatch and kill; comparing owners by certificate alone
+fails both visibility tests; an API that sends no delegation fails all
+four and `TestTheAPITellsTheHubWhomItActsFor`.
+`TestADirectOperatorIsUnchangedByDelegation` holds a direct operator,
+and the existing hub and API suites pass unchanged.
+
+**Breaking.** An API whose role lacks `act_for` has every token-bearing
+runner call refused with a 403 that names the line to add: `GET
+/v1/nodes`, `/v1/jobs`, `/v1/orch`, `/v1/pillar`, the `runner` client,
+and kill. The service's role needs a rule `- act_for: ['*']`, or narrower
+patterns naming the principals its accounts, LDAP and OIDC produce.
+Webhooks and `/v1/metrics` send no delegation and are unaffected. An API
+newer than its hub sends a field the older hub ignores, which is the old
+behaviour; upgrade the hub first.
+
+**Not changed.**
+
+- Killing a runner call's job asks the runner question with no target,
+  directly or through the API, so an operator granted
+  `state.orchestrate` may mark another's orchestration job aborted. It
+  stops nothing that runs on the hub. Left as it was for a direct
+  operator, and the same through the API.
+- A webhook's runner call carries no delegation and is held to the API's
+  grant alone, as 5.391 said.
+- `event.send` through the API is a confused deputy for *who sent an
+  event*, though not for what a reaction may do. A reaction runs as its
+  own configured principal (SPEC 18.3), whoever sent the event, so it
+  gains nothing from the sender. But the hub stamps `_principal` with the
+  certificate, so every event sent through the API, operator or webhook,
+  carries `cert:CN=api`. An operator granted `event.send` put
+  `halite/hook/github/push` on the bus through the API, indistinguishable
+  from a delivery; shown with a throwaway test against this change, not
+  kept. And `docs/command-reference.md` says a hook's `_principal` is the
+  identity the delivery authenticated as, where the hub overwrites the
+  API's `hook:<path>` with its own. Reported, not fixed here.
+
+**Run live** on mini-me (macOS 27.3, arm64), 2026-11-05: a real hub, API
+and three nodes on loopback, unprivileged, built for darwin/arm64 from
+`main` at `9543d44` and from this change, with one policy file and the
+same requests. Both builds stamp `9543d44`, since this change was
+uncommitted; they are told apart by the answers.
+
+| Through the API, as alice (`web*`) | `main` | this change |
+|---|---|---|
+| `saltutil.refresh_pillar` / `mine.update` on db1 | 200, `nodes: [db1.example]` | 422, "local:alice, who may not" |
+| the same on web1 | 200 | 200 |
+| `jobs.lookup_jid`, `GET /v1/jobs/{jid}` of bob's `pillar.show_pillar db1` | 200, arguments and return | "no such job" |
+| `GET /v1/orch/{jid}`, `orch_resume` of bob's run on db1 | 200, and the resume ran | "no such job" |
+| kill of bob's job bound for db2 | 200 | 403 |
+| the API's role without `act_for`, after a hub restart | | 403 naming `act_for` |
+
+bob's own runs, and his kill, answered 200 on both. A direct operator's
+`halite-hub runner manage.status` was unaffected with `act_for` removed.
+
+**Not verified.** FreeBSD: not run by hand there, because beastie's key
+would not sign from this Mac's agent on the day; the change is in
+platform-neutral authorization code, and CI's FreeBSD leg runs the
+tests. OIDC and LDAP principals as the claimed operator were not run;
+local accounts were. An API newer than its hub was not run, and the
+claim that the older hub ignores the field is from reading `ReadJSON`,
+which does not refuse unknown fields.
 
 ## 6. Everything else not started
 
