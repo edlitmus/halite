@@ -53,6 +53,19 @@ type LoadOptions struct {
 	Pin Pin
 	// Platform is `<goos>/<goarch>`. Empty takes this build's.
 	Platform string
+	// Name and Version are what the caller found the bundle under --
+	// the store's `<name>/<version>` directory -- and the bundle must
+	// have been signed as exactly that. Empty checks nothing, for a
+	// bundle loaded from a directory that names nothing, which is the
+	// Syncer's staging directory; the Syncer compares the published
+	// path with the manifest itself, after the kind.
+	//
+	// The caller looks the pin up by the directory's name, so a bundle
+	// whose manifest says otherwise is checked against the wrong pin:
+	// a signed `echo 1.0.0` copied to `bar/7.7.7` met bar's pin, of
+	// which there was none, loaded, and was registered by its
+	// manifest's name as echo, past echo's pin. DIVERGENCE 5.578.
+	Name, Version string
 }
 
 // Load verifies a bundle directory and answers with what it is.
@@ -119,6 +132,14 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 		bundle.Unsigned = true
 	}
 
+	// Before the pin, because the pin was chosen by the directory's
+	// name: when the two disagree, a pin refusal names the wrong
+	// extension's pin and sends the operator to the configuration,
+	// and a pin that happens to match says nothing at all.
+	if err := checkPlace(manifest, opts.Name, opts.Version, bundle.Unsigned); err != nil {
+		return nil, err
+	}
+
 	if err := checkPin(manifest, rootHex, hex.EncodeToString(filesRoot), opts.Pin); err != nil {
 		return nil, err
 	}
@@ -131,6 +152,35 @@ func Load(dir string, opts LoadOptions) (*Bundle, error) {
 		return nil, err
 	}
 	return bundle, nil
+}
+
+// checkPlace holds a bundle to the directory it was found in.
+//
+// Both the name and the version: the name is what the pin and the
+// runtime look an extension up by, and the version is what
+// `sys.list_extensions` and a pin's version half report, so a
+// directory that lies about either is the store disagreeing with the
+// signature about which bundle is meant -- the thing SPEC 24.4's
+// `<name>/<version>` layout exists to prevent.
+//
+// Nothing that installs into the store lays a bundle out any other
+// way: both synchronizations install at the path the file server
+// published, and refuse a bundle signed as anything else before it
+// reaches the cache. So a mismatch here is a write to the cache that
+// did not come through synchronization.
+func checkPlace(manifest *Manifest, name, version string, unsigned bool) error {
+	if (name == "" || name == manifest.Name) && (version == "" || version == manifest.Version) {
+		return nil
+	}
+	as := "signed as"
+	if unsigned {
+		// An unsigned manifest's name is only what it says, and saying
+		// "signed" would send an operator looking for a key.
+		as = "whose unsigned manifest says"
+	}
+	return fmt.Errorf("%s/%s holds a bundle %s %s/%s; a bundle loads only from the directory "+
+		"its manifest names, so this one is refused (DIVERGENCE 5.578)",
+		name, version, as, manifest.Name, manifest.Version)
 }
 
 // checkPin holds the bundle to what the estate fixed it at.

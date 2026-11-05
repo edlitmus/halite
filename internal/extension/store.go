@@ -71,6 +71,9 @@ func (s *Store) Load() ([]Installed, error) {
 			dir := filepath.Join(s.Dir, name, version)
 			opts := s.Options
 			opts.Pin = s.Pins[name]
+			// The pin is chosen by the directory's name, so the bundle
+			// is held to that name and version as well (DIVERGENCE 5.578).
+			opts.Name, opts.Version = name, version
 			bundle, err := Load(dir, opts)
 			out = append(out, Installed{
 				Name: name, Version: version, Dir: dir,
