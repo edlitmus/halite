@@ -32,7 +32,7 @@ type Tracer struct {
 	//
 	// SPEC 26.1 applies redaction at the sink, and the logger is one
 	// sink; the collector is another, and nothing on this path called
-	// the redactor (issue 614, DIVERGENCE 5.587). A span's message is
+	// the redactor (issue 614, DIVERGENCE 5.588). A span's message is
 	// an error's text -- span.Fail(err) -- and an error is exactly
 	// where a secret turns up unasked: a command line, a URL with a
 	// password in it, a pillar value quoted back by whatever refused

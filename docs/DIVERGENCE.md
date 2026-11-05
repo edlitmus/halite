@@ -38062,7 +38062,7 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
 
-### 5.583 A cancelled context did not stop a varlink call
+### 5.584 A cancelled context did not stop a varlink call
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/varlink/varlink.go`). The audit ran on Linux at `main`
@@ -38096,7 +38096,7 @@ The test passes with `-race`.
 fake unix-socket server that never replies. The journald module itself
 was not run.
 
-### 5.584 A NaN passed the counter guard and poisoned a histogram sum
+### 5.585 A NaN passed the counter guard and poisoned a histogram sum
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/metrics/metrics.go`).
@@ -38126,7 +38126,7 @@ counter guard removed, the output lacks `scratch_total 3`. With the
 histogram guard removed, the output lacks `scratch_seconds_sum 2`, the
 `_count 2` line and the value 2 in the `+Inf` bucket.
 
-### 5.585 Label values with a NUL byte could share a series
+### 5.586 Label values with a NUL byte could share a series
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/metrics/metrics.go`).
@@ -38149,7 +38149,7 @@ the two label sets above and expects 2 series. It also makes
 `("1:a","")`, `("","1:a")` and `("1","a")` and expects 3 series. With
 the old join put back, the first pair gives one series with the value 2.
 
-### 5.586 -S and S@ now give the answers that Salt 3007.1 gives
+### 5.587 -S and S@ now give the answers that Salt 3007.1 gives
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/target/target.go`, `compileSubnet`).
@@ -38236,7 +38236,7 @@ not. The matcher of Salt was called directly, not through a job that a
 real Salt deployment published. `S@` inside a nodegroup or a compound target
 was not run against Salt. It uses the same code path.
 
-### 5.587 Spans were exported without redaction
+### 5.588 Spans were exported without redaction
 
 Issue 614, from the issue 321 second-pass audit, round nine
 (`internal/tracing`). The audit found this by reading. It did not run
@@ -38282,7 +38282,7 @@ wiring lines in the hub and the node. The tests of the `cmd` packages
 pass, and none of them fails when the `Secrets:` line in
 `cmd/*/trace.go` is removed.
 
-### 5.588 Child loggers did not share a lock, and a newline in a message started a record
+### 5.589 Child loggers did not share a lock, and a newline in a message started a record
 
 Issue 614, from the issue 321 second-pass audit, round twelve
 (`internal/log/log.go`). The audit found both defects by reading.
@@ -38323,7 +38323,7 @@ newline in its text is still printed inline. Only string fields go to
 the block. A carriage return is not treated as a line break. The output
 was not watched on a real terminal or in a real log file.
 
-### 5.589 An inline file named with two leading dots was refused
+### 5.590 An inline file named with two leading dots was refused
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`cmd/halite-node/oneshot.go`, `writeInlineFile`). The audit found this by reading.

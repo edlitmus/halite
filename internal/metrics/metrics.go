@@ -171,7 +171,7 @@ func (f *family) bind(values []string) *sample {
 // not this package's -- a function name, an event tag, a path -- so it held
 // only until one did: With("a\x00b", "c") and With("a", "b\x00c") both made
 // "a\x00b\x00c" and came out as one series with the value 2 (issue 614,
-// DIVERGENCE 5.585). Prefixing each value with its length makes the
+// DIVERGENCE 5.586). Prefixing each value with its length makes the
 // boundaries part of the key rather than a byte the values are trusted not
 // to contain, so no choice of values can move one.
 func seriesKey(values []string) string {
@@ -286,7 +286,7 @@ func (c *Counter) Inc() { c.Add(1) }
 // NaN is ignored too, and for a reason the negative test alone did not
 // reach: every comparison with NaN is false, so `n < 0` let it through,
 // and NaN plus anything is NaN, so one bad Add turned the total into
-// NaN for the life of the process (issue 614, DIVERGENCE 5.584). There
+// NaN for the life of the process (issue 614, DIVERGENCE 5.585). There
 // is no amount a NaN could stand for, and a counter cannot be repaired
 // by later Adds.
 func (c *Counter) Add(n float64) {
@@ -316,7 +316,7 @@ func (g *Gauge) Add(n float64) {
 //
 // A NaN is dropped whole: not counted, not summed, not bucketed.
 // Summed, it made `_sum` NaN for good, and every rate or mean built on
-// it with it (issue 614, DIVERGENCE 5.584); counted without being
+// it with it (issue 614, DIVERGENCE 5.585); counted without being
 // summed, it would make `_count` and `_sum` disagree about how many
 // measurements there were, which is the pair every average divides. A
 // NaN is not a measurement, so it is none of them.
