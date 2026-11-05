@@ -807,6 +807,7 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_evidence_failures_total` | counter | — | Evidence records that could not be written, which are jobs with no entry in the record. |
 | `halite_node_evidence_log_open` | gauge | — | 1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open. The failure is logged once; the records lost after it are counted by `halite_node_evidence_unrecorded_total`. Absent when `evidence` is off, so 0 is never a choice. |
 | `halite_node_evidence_unrecorded_total` | counter | — | Evidence records the node did not write because its evidence log is not open. Each one is a job or an event that has no entry in the record. 0 while the log is open, and always 0 when `evidence` is off. |
+| `halite_node_evidence_anchor_problems_total` | counter | `problem` | Reports of the node's evidence head that the hub did not anchor, or that came back with a receipt the node did not file. `conflict`: the hub holds a head that this chain contradicts. `mismatch`: the receipt is for a different head. `receipt`: the receipt does not verify against the CA the node pins. `unsupported`: the hub keeps no anchors. `failed`: the report did not reach the hub. Counted at every report; the log says each problem once. Each problem is exported at 0 when `evidence` is on, and none when it is off. |
 | `halite_node_jobs_accepted_total` | counter | — | Jobs this node accepted to run: past the replay guard and the signature check, counted where the evidence record for the acceptance is written. A job refused afterwards, because the queue is full, was accepted first. Unlabelled, so it is exported at 0 and `increase()` sees the first job; `halite_node_jobs_total` is the finished jobs, by function and outcome. |
 | `halite_state_compile_duration_seconds` | histogram | — | Time to turn the tree into a low state. |
 | `halite_state_run_duration_seconds` | histogram | — | Time to apply it, not counting the line above. |
@@ -1295,6 +1296,17 @@ hub to be counted there, and neither did a record it failed to write:
         labels: {severity: critical}
         annotations:
           summary: "{{ $labels.instance }} did not record {{ $value }} evidence records; its evidence log is not open"
+
+      # The node got a receipt it would not file: one for a head it did
+      # not report, or one that does not verify against the CA it pins.
+      # Only the node can see this; the hub believes it answered. A
+      # conflict is not here, because HaliteEvidenceConflict pages for it
+      # from the hub.
+      - alert: HaliteNodeEvidenceReceiptRefused
+        expr: increase(halite_node_evidence_anchor_problems_total{problem=~"mismatch|receipt"}[15m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} refused the hub's evidence receipt: {{ $labels.problem }}"
 
       # The node is configured to keep an evidence record and its log is
       # not open: it failed to open at startup and said so once in the log.

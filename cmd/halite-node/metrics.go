@@ -76,6 +76,7 @@ type nodeMetrics struct {
 	evidenceRecords    *metrics.Counter
 	evidenceFailures   *metrics.Counter
 	evidenceUnrecorded *metrics.Counter
+	anchorProblems     *metrics.Counter
 }
 
 // newNodeMetrics reads the settings and declares the families.
@@ -180,6 +181,14 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 	m.evidenceUnrecorded = r.Counter("halite_node_evidence_unrecorded_total",
 		"Evidence records not written because this node's evidence log is not open: "+
 			"each is a job or event with no entry in the record.")
+	// Every report the hub would not anchor, or answered with a receipt
+	// this node would not file, by why. The log says each kind once and
+	// then drops to debug until the reports recover, so a conflict -- the
+	// chain rewritten -- was an error line at its first report and
+	// invisible after that (DIVERGENCE 5.591). The problems are declared
+	// at 0 with the record kinds, on a node that keeps a record.
+	m.anchorProblems = r.Counter("halite_node_evidence_anchor_problems_total",
+		"Reports of this node's evidence head that were not anchored, by problem.", "problem")
 
 	return m
 }
@@ -262,6 +271,24 @@ func (m *nodeMetrics) countEvidenceFailure() {
 func (m *nodeMetrics) countEvidenceUnrecorded() {
 	if m.on() {
 		m.evidenceUnrecorded.Inc()
+	}
+}
+
+// declareAnchorProblems exports the anchor problem counter at 0 for each
+// problem, beside declareEvidenceKinds and for the same reason: the first
+// conflict is then an increase, not a series born at 1.
+func (m *nodeMetrics) declareAnchorProblems(problems []string) {
+	if !m.on() {
+		return
+	}
+	for _, p := range problems {
+		m.anchorProblems.With(p)
+	}
+}
+
+func (m *nodeMetrics) countAnchorProblem(problem string) {
+	if m.on() {
+		m.anchorProblems.With(problem).Inc()
 	}
 }
 

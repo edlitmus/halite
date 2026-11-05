@@ -38308,6 +38308,49 @@ with the count taken out of `recordEvidence`.
 with `promtool` (not installed here). The 5.238 test that says
 `failures_total` stays 0 for this node still passes, and is still true.
 
+### 5.591 An evidence-anchor conflict was invisible after its first log line
+
+Issue 615, item 4. `anchorProblem` logs a kind of anchor failure once, at
+error level for a conflict and at warning for the others, and logs each
+later report of the same kind at debug until a report succeeds. A conflict
+means that the hub holds a head this chain contradicts: the chain was
+rewritten, reset or rolled back. While the chain stays behind the head the
+hub holds, every report conflicts. After the first, a node at the default
+log level said nothing, and no node metric counted it. The hub counts
+conflicts (`halite_hub_evidence_anchors_total{result="conflict"}`) and
+`HaliteEvidenceConflict` pages for them, but without a node label.
+
+**The change.** `halite_node_evidence_anchor_problems_total{problem}`
+counts every call of `anchorProblem`. The problems are `conflict`,
+`failed`, `mismatch`, `receipt` and `unsupported`, and each is exported at
+0 on a node that keeps a record, as the record kinds are (5.239).
+`TestEveryAnchorProblemIsDeclared` holds the list to the calls in
+`anchor.go`. The log is unchanged, which is once per run of one kind. The
+new alert, `HaliteNodeEvidenceReceiptRefused`, is for `mismatch` and
+`receipt` only: only the node can see those, because the hub believes it
+answered. A conflict already pages from the hub. The dashboard's node row
+has a panel, "Evidence anchor problems, by problem".
+
+**Measured** with the lab of 5.584 and the built binaries. Six jobs moved
+the hub's recorded head to 13. Then the agent was stopped, its evidence
+directory removed, the agent started again, and three `test.ping` jobs
+sent. The hub's anchor file recorded conflicts at sequence numbers 2, 4, 6
+and 8, which are the report on connect and one after each job. The node
+logged one error line, and its `/v1/metrics` said:
+
+```
+halite_node_evidence_anchor_problems_total{problem="conflict"} 4
+```
+
+**Demonstrated.** `TestAnAnchorConflictIsCountedAtEveryReport` uses a real
+hub and the same identity with a reset chain. It makes three reports and
+expects one error line and a count of 3. With the count removed from
+`anchorProblem` it fails.
+
+**Not verified.** `mismatch` and `receipt` were not produced live; the
+existing test of a receipt that does not verify covers that path, and it
+does not check the counter. No Prometheus loaded the alert rule.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -563,5 +564,79 @@ func TestAJobRecordAfterTheLogClosesIsStillALostRecord(t *testing.T) {
 	}
 	if !strings.Contains(logged.String(), "could not be written") {
 		t.Errorf("a job result after the close was lost without an error:\n%s", logged.String())
+	}
+}
+
+// A conflict is counted at every report, where the log says it once.
+//
+// The second node here is the first one with its chain reset: the same
+// identity, a new chain whose head contradicts what the hub recorded. The
+// log has one error line for it, and the reports after that were debug
+// lines and nothing else, so a chain that stayed rewritten was invisible
+// at the default level after its first report. DIVERGENCE 5.591.
+func TestAnAnchorConflictIsCountedAtEveryReport(t *testing.T) {
+	lab := newAnchorLab(t, "web1.example")
+	client := lab.client(t)
+
+	first := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\n")
+	first.nodeID = lab.nodeID
+	for i := 0; i < 3; i++ {
+		first.recordEvidence(nodeevidence.KindStart, map[string]string{"version": "test"})
+	}
+	first.reportHead(context.Background(), client)
+	if len(lab.lines(t)) != 1 {
+		t.Fatalf("the first chain was not anchored: %+v", lab.lines(t))
+	}
+
+	reset := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\n")
+	reset.nodeID = lab.nodeID
+	reset.registerEvidenceMetrics()
+	var logged bytes.Buffer
+	reset.log = testLogger(t, &logged)
+	if got := exposition(t, reset); !strings.Contains(got,
+		`halite_node_evidence_anchor_problems_total{problem="conflict"} 0`) {
+		t.Fatalf("the conflict series is not declared at 0:\n%s", got)
+	}
+	reset.recordEvidence(nodeevidence.KindStart, map[string]string{"version": "reset"})
+	for i := 0; i < 3; i++ {
+		reset.reportHead(context.Background(), client)
+	}
+
+	if got := strings.Count(logged.String(), "contradicts the chain"); got != 1 {
+		t.Errorf("the conflict was logged %d times at info and above, want once:\n%s", got, logged.String())
+	}
+	if got := exposition(t, reset); !strings.Contains(got,
+		`halite_node_evidence_anchor_problems_total{problem="conflict"} 3`) {
+		t.Errorf("three conflicting reports are not three counted:\n%s", got)
+	}
+}
+
+// Every kind anchorProblem is called with is in anchorProblems, so it is
+// declared at 0 and its first occurrence is an increase. A kind added to
+// a call and not to the list would be a series born at 1.
+func TestEveryAnchorProblemIsDeclared(t *testing.T) {
+	src, err := os.ReadFile("anchor.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, p := range anchorProblems {
+		declared[p] = true
+	}
+	calls := regexp.MustCompile(`anchorProblem\("([a-z_]+)"`).FindAllStringSubmatch(string(src), -1)
+	if len(calls) == 0 {
+		t.Fatal("no anchorProblem calls were found; this check has stopped checking")
+	}
+	used := map[string]bool{}
+	for _, c := range calls {
+		used[c[1]] = true
+		if !declared[c[1]] {
+			t.Errorf("anchorProblem(%q) is called and not declared in anchorProblems", c[1])
+		}
+	}
+	for p := range declared {
+		if !used[p] {
+			t.Errorf("%q is declared in anchorProblems and nothing reports it", p)
+		}
 	}
 }

@@ -195,8 +195,22 @@ func (n *node) anchorFailed(err error, seq uint64, hash string) {
 	}
 }
 
-// anchorProblem logs a failure the first time its kind appears.
+// anchorProblems are the kinds anchorProblem is called with, which are the
+// values of halite_node_evidence_anchor_problems_total's `problem` label
+// and are declared at 0 from the start.
+var anchorProblems = []string{"conflict", "failed", "mismatch", "receipt", "unsupported"}
+
+// anchorProblem logs a failure the first time its kind appears, and
+// counts it every time.
+//
+// The log is once per run of the same kind, so that a hub that is down
+// for an hour is one warning and not one per job. The count is what is
+// left of the later ones: before it, a conflict -- the chain rewritten,
+// reset or rolled back -- was an error line at its first report and a
+// debug line at every report after, which is invisible at the default
+// level. DIVERGENCE 5.591.
 func (n *node) anchorProblem(kind, msg string, kv ...any) {
+	n.metrics.countAnchorProblem(kind)
 	n.evidence.mu.Lock()
 	repeat := n.evidence.anchor.problem == kind
 	n.evidence.anchor.problem = kind
