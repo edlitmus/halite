@@ -38141,6 +38141,18 @@ before this was written, only locally; the window it closes was shown
 with a paused hub, not caught in a natural run. Neither test was run on
 FreeBSD or Linux.
 
+### 5.585 `halite-hub run --ttl` and the batch flags cut a duration to a number the hub reads differently
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`).
+
+**The defect.** `seconds()` turned `--ttl`, `--batch-wait` and `--batch-timeout` into whole seconds with `int(d.Seconds())` for any value that parsed. `500ms` became 0, `1500ms` became 1 and `-5s` became -5. The hub reads a ttl of 0 or less as the default of 15 minutes (1 hour for an `--offline` queue). It reads a batch timeout of 0 or less as "until the job expires" and a batch wait of 0 or less as "no wait". So an operator who typed a short or negative value got a different bound from the one typed, and no message.
+
+**Shown.** The issue measured `seconds("500ms")=0` and `seconds("-5s")=-5` on main at 2ee49b73. That `1500ms` became 1 is from reading `int(d.Seconds())`; it was not run. The test `TestRunRefusesAMalformedCommandLineAsAUsageError` has 7 new cases. `TestRunTakesADurationTheWireCanCarry` checks that `90s`, `2m`, `--batch-wait 0`, and `--batch-wait 1s` with `--batch-timeout 30s` all reach the operator-certificate step. With the new checks removed, all 7 new cases fail: the command exits 1 at the operator certificate instead of 64.
+
+**The change.** A negative value is refused. Zero is refused for `--ttl` and `--batch-timeout`: leave the flag out to get the default. `--batch-wait 0` is accepted. It means no settle time, the same as leaving the flag out. A value that is not a whole number of seconds is refused. Each refusal exits 64 (usage) before the hub is reached, and the message names the flag.
+
+**Not verified.** The change against a running hub. No hub was run. The test stops at the operator certificate in an empty root.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

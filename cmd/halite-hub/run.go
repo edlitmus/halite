@@ -133,11 +133,11 @@ func runRun(args *cli.Args) int {
 		}
 	}
 
-	ttl := seconds(args.Flag("ttl", ""), "ttl")
+	ttl := seconds(args.Flag("ttl", ""), "ttl", false)
 	subset := cli.IntFlag(args, "subset", 0, 1)
 	safeLimit := cli.IntFlag(args, "batch-safe-limit", 0, 1)
-	batchWait := seconds(args.Flag("batch-wait", ""), "batch-wait")
-	batchTimeout := seconds(args.Flag("batch-timeout", ""), "batch-timeout")
+	batchWait := seconds(args.Flag("batch-wait", ""), "batch-wait", true)
+	batchTimeout := seconds(args.Flag("batch-timeout", ""), "batch-timeout", false)
 	timeout, err := time.ParseDuration(args.Flag("timeout", "5m"))
 	if err != nil {
 		cli.Usagef("--timeout %q: %v", args.Flag("timeout", ""), err)
@@ -221,7 +221,19 @@ func runRun(args *cli.Args) int {
 // beside `args.Flag` at the call site: the audit in flags_test.go looks
 // for exactly that, and a helper that hides the name is how a flag ends
 // up documented and unparsed.
-func seconds(v, name string) int {
+//
+// It used to return int(d.Seconds()) for anything that parsed. That
+// truncates, so `--ttl 500ms` went as 0 -- which the hub reads as "not
+// given" and replaces with its default, fifteen minutes, an hour for a
+// queued job -- and `1500ms` went as 1. And it took a sign, so `--ttl=-5s`
+// went as -5, which the hub also reads as its default. An operator asking
+// for a short job got a long one, without a word. The wire cannot carry
+// what was asked for in either case, so both are refused: a value must be
+// a whole number of seconds, and positive. zeroOK is for the one flag
+// whose zero is a real request rather than the default in disguise:
+// `--batch-wait 0` is "no settle time", which is also what leaving it out
+// means. DIVERGENCE 5.585.
+func seconds(v, name string, zeroOK bool) int {
 	if v == "" {
 		return 0
 	}
@@ -229,7 +241,15 @@ func seconds(v, name string) int {
 	if err != nil {
 		cli.Usagef("--%s %q: %v", name, v, err)
 	}
-	return int(d.Seconds())
+	switch {
+	case d < 0:
+		cli.Usagef("--%s %q is negative", name, v)
+	case d == 0 && !zeroOK:
+		cli.Usagef("--%s %q is zero; leave the flag out for the hub's default", name, v)
+	case d%time.Second != 0:
+		cli.Usagef("--%s %q is not a whole number of seconds, which is what the hub is sent", name, v)
+	}
+	return int(d / time.Second)
 }
 
 func gather(client *transport.Client, sub *transport.SubmitResponse, timeout time.Duration, args *cli.Args) int {
