@@ -37781,7 +37781,7 @@ production estate has two blocks at all was not looked at. A pool of
 more than one process was not exercised; it can only make sharing rarer,
 since each process has its own cache.
 
-### 5.579 `node_grain` with no `node_grain_allow` let any node name any secret
+### 5.580 `node_grain` with no `node_grain_allow` let any node name any secret
 
 Issue 622, the first of its two decisions. With `node_grain` set, a node
 names secrets in its own grain and the hub fetches them into that node's
@@ -37831,7 +37831,7 @@ the ARN and partition tests fail if the refusal mentions
 refusal was driven through the handler. Whether the production estate
 sets `node_grain` was not looked at.
 
-### 5.580 The aws-secrets cache never evicted
+### 5.581 The aws-secrets cache never evicted
 
 Issue 622, the second decision, and the low one. The extension's cache
 held every successful fetch for the life of the process, replaced only
