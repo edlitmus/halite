@@ -38147,6 +38147,30 @@ timeout_seconds=45, which the target does not read").
 when the hub's `ssh_timeout` kills its ssh client was not looked at here;
 the comment on `oneshotSignals` says the job runs to its end.
 
+### 5.586 `state.show_highstate` printed an unregistered `runas_password`
+
+Issue 615, item 9. 5.266 masked `runas_password` by key in `renderLow`,
+because it is a password written into the tree: the redactor does not hold
+it, so masking by value cannot find it. `renderHigh`, which
+`show_highstate` and `show_sls` use, printed it. The command line and the
+job forms share the function, so it reached the terminal and, as a job,
+the hub's job cache (5.556 and 5.557 masked registered secrets only).
+
+**The change.** `renderHigh` replaces the value of a `runas_password`
+argument with `**********`, as `renderLow` does. The key stays, so the
+output still shows that a password is set.
+
+**Demonstrated.** `TestEveryStateShowFormMasksRunasPassword` runs all three
+`state.show_*` functions as jobs through `executeJob`, on a tree with a
+`cmd.run` that sets `runas` and `runas_password`. On the code before the
+change it failed for `show_highstate` and `show_sls`, with the password in
+the return; `show_lowstate` passed. It passes with the change.
+
+**Not verified.** No other key is masked by name, and no search was made
+for other passwords a state takes as an argument (for example a
+`user.present` `password`). Those are values the redactor holds only if
+they come from encrypted pillar.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
