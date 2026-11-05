@@ -38171,6 +38171,33 @@ for other passwords a state takes as an argument (for example a
 `user.present` `password`). Those are values the redactor holds only if
 they come from encrypted pillar.
 
+### 5.587 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
+
+Issue 615, item 6. An evidence record's `arg_digest` is the SHA-256 of the
+job's arguments after the node's redactor has run. The comments on
+`maxEvidenceField` and `nodeevidence.DigestString` said the digest is what a
+comparison with the hub's copy uses. For a job whose arguments held a
+secret the node's redactor knows, that is not true: the hub's job cache
+holds the arguments as sent, and the hub does not have the node's
+redactor, so it cannot compute the same digest.
+
+**Kept as it is, on purpose.** A digest of the unscrubbed text is a
+fingerprint of the secret in a file that other people read. A short
+secret, or one in a known format, can be found from its SHA-256 by
+guessing. The comparison is lost only for jobs that carried a secret, and
+for those the `arg` field already shows that something was replaced.
+
+**The change.** The two comments now say what is digested and why. The
+evidence test asserts that `arg_digest` is the digest of the recorded
+(scrubbed) text and is not the digest of the arguments as sent.
+
+**Demonstrated.** With the digest computed over the arguments with the
+secret put back, `TestArgumentsAreScrubbedBeforeTheyAreRecorded` fails on
+both new assertions.
+
+**Not verified.** No tool compares node records with the hub's job cache
+today, so nothing that reads `arg_digest` was run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

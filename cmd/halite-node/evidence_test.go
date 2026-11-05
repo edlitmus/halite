@@ -285,6 +285,17 @@ func TestArgumentsAreScrubbedBeforeTheyAreRecorded(t *testing.T) {
 	if recs[0].Detail["arg_digest"] == "" {
 		t.Error("no digest of the arguments was recorded")
 	}
+	// The digest is of the scrubbed text, not the arguments as sent. A
+	// digest of "mysql -p hunter2" is a fingerprint of the secret, and a
+	// short secret can be found from its SHA-256 by guessing; the cost is
+	// that the hub cannot reproduce this digest for a job that carried a
+	// secret. DIVERGENCE 5.587.
+	if recs[0].Detail["arg_digest"] == nodeevidence.DigestString("mysql -p hunter2") {
+		t.Error("the digest is of the unscrubbed arguments, which fingerprints the secret")
+	}
+	if recs[0].Detail["arg_digest"] != nodeevidence.DigestString(recs[0].Detail["arg"]) {
+		t.Errorf("the digest is not of the recorded (scrubbed) text %q", recs[0].Detail["arg"])
+	}
 }
 
 // The configuration record holds a digest and the files, and no values.
