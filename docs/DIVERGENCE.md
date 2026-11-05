@@ -37781,6 +37781,84 @@ production estate has two blocks at all was not looked at. A pool of
 more than one process was not exercised; it can only make sharing rarer,
 since each process has its own cache.
 
+### 5.580 `node_grain` with no `node_grain_allow` let any node name any secret
+
+Issue 622, the first of its two decisions. With `node_grain` set, a node
+names secrets in its own grain and the hub fetches them into that node's
+pillar. `node_grain_allow` bounded which, and an empty list meant any:
+Salt's module had no list at all, and the extension kept that as parity.
+So a block that set the grain and forgot the list let every node have the
+hub read every secret its credentials could, by setting a grain. 5.483
+recorded this as decided and documented, and 5.409 as the owner's call.
+
+**The owner's decision** (2026-11-05) was to refuse it. `parseConfig`
+now fails a block with `node_grain` set and the list empty or absent,
+naming both keys, the grain, what to set, that a `*` does not match `/`,
+and that removing `node_grain` is the other way out. It is refused for
+every node, including one that names nothing, because the block is wrong
+whichever node it is compiled for. `allowed` no longer reads an empty list
+as "any" either, so a `Config` built without `parseConfig` does not
+reopen it.
+
+This is not a refusal to *start*. The hub does not read an extension's
+block (`extpillar.Bridged.Config`), and the handshake carries none, so
+the hub starts and every pillar compiled with the block fails with this
+message. With `fail: ignore` on the block, the hub logs it and the node's
+pillar has none of that block's secrets. Refusing at start would need a
+config check in the extension protocol (SPEC 24); the owner chose the
+extension-only refusal.
+
+**Breaking.** A hub whose block has `node_grain` and no list stops
+compiling pillar for every node that block applies to until the list is
+set. The extension is 1.2.0.
+
+**Demonstrated.** `TestANodeGrainWithoutAnAllowListIsRefused` fails on
+`main`'s code: the block was accepted, three fetches were made, and an
+empty `allowed` list permitted a node-named secret. It passes with the
+change. With the `parseConfig` check made false it fails again (a node
+naming nothing compiled, and the node naming one got the allow list's
+message rather than this one); with the empty-list shortcut put back into
+`allowed`, its last assertion fails.
+
+Four region tests (5.324) set `node_grain` without a list. After the
+change they were refused by this check, before the region was looked at:
+two failed, and the ARN and partition tests went on passing for the wrong
+reason. They now carry allow lists wide enough to admit their ARNs, and
+the ARN and partition tests fail if the refusal mentions
+`node_grain_allow`.
+
+**Not verified.** No AWS, and no hub was started with such a block; the
+refusal was driven through the handler. Whether the production estate
+sets `node_grain` was not looked at.
+
+### 5.581 The aws-secrets cache never evicted
+
+Issue 622, the second decision, and the low one. The extension's cache
+held every successful fetch for the life of the process, replaced only
+when the same secret was fetched again, and nothing bounded how many there
+were. A node with `node_grain` names its own secret IDs, so what it
+could grow the cache to was bounded only by what exists and what the allow
+list admits (5.409, 5.483).
+
+**The change.** An LRU: at most 1,024 values and 64 MiB of secret text,
+the least recently used going first. A value larger than the byte bound is
+returned and not cached. A value found past its TTL is removed when looked
+up. 1,024 is far above what a hub's own blocks name, so a hub not pushed by
+node-named secrets should never evict, and the TTL alone decides when a
+value is refetched. That is reasoning about block sizes, not a
+measurement of the estate's.
+
+**Demonstrated.** A node naming 1,074 secrets through the handler leaves
+1,074 values cached with eviction disabled -- which is `main`'s behaviour --
+and 1,024 with it, every secret still reaching the pillar. The LRU test
+fails when `MoveToFront` is removed (it becomes FIFO and evicts the secret
+just read); the byte test fails with eviction disabled; and the expiry test
+fails when an expired value is left in place. The new tests use the new
+bounds and so do not compile on `main`.
+
+**Not verified.** Memory was not measured: 64 MiB is the text held, not the
+parsed values' size in the heap. No AWS.
+
 ### 5.582 An agentless failure was framed with Go's quoting, not JSON's
 
 Found during the issue 622 work. `halite-node oneshot` built the return of

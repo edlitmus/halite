@@ -342,8 +342,12 @@ the hub, `pillar_list` in the block reads that list out of the pillar —
 which is what the Python module's own `aws_secrets_ext_pillar` key did.
 There is also `node_grain`, which reads it from a grain; it is what some
 trees use, and it means a node's own grains decide what the hub fetches.
-Bound it with `node_grain_allow` if you need it, and prefer the pillar
-form if you have the choice.
+Prefer the pillar form if you have the choice. **`node_grain` needs
+`node_grain_allow`**: the secret IDs or ARN patterns a node may name. The
+Python module had no such list and fetched whatever a node asked for; here
+a block with `node_grain` and no list fails every pillar it is compiled
+for, saying so. A pattern's `*` does not match `/`, so `vmop/*` admits
+`vmop/db` but not `vmop/prod/db`.
 
 **A node's `region` grain no longer picks the region on its own.** The
 Python module read the grain and used it. Here a region a node supplies
