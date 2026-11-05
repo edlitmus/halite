@@ -23813,7 +23813,7 @@ grains.item fips_mode fips_build fips_module` as the way to check the FIPS
 state of an estate, so that documented command failed on every node. A
 list as one quoted argument, `grains.item '[fips_mode, fips_build]'` with
 default argument parsing, returned a single grain literally named
-`[fips_mode,fips_build]` with value null. Cause and fix are in 5.585.
+`[fips_mode,fips_build]` with value null. Cause and fix are in 5.586.
 
 **Seen, not fixed.** The operator CLI dials `localhost:<port of listen>`
 unless `--hub` is given. With `listen: 172.26.28.44:8301`, `halite-hub
@@ -38339,7 +38339,7 @@ Issue 623, from the 2026-11-03 review of the issue 321 fixes (`internal/gitfs/ba
 
 **Not verified.** FreeBSD: beastie could not be reached (its ssh agent would not sign), and mini-me has no gpg, so this ran on one Mac only. A node fetching from the hub after the withdrawal: "served" was read from the hub's own log and its cache, which the sweep keys on what is served, not from a node asking for `salt://top.sls`. A remote over ssh or https, a tag (`verify-tag`), a key that expired or was revoked rather than deleted, and a keyring change while an update is running.
 
-### 5.585 `grains.item` took one grain name, and the documented FIPS check failed
+### 5.586 `grains.item` took one grain name, and the documented FIPS check failed
 
 Found on 2026-11-05 during the issue 306 run on Ubuntu Pro's FIPS kernels
 (5.282). `halite-hub run ami-test-1-h306 grains.item fips_mode fips_build
