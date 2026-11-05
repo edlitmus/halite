@@ -1,21 +1,28 @@
-# Triage of the issue 321 audit (High and Medium findings)
+# Triage of the issue 321 audit, and what became of it
 
 Source: <https://github.com/edlitmus/halite/issues/321>, an external audit
 filed 2026-10-14 against commit `a0d5344`. This file records what was
 done to check its 20 High and 55 Medium findings (plus the design note
-M-56) on 2026-10-15, at the same commit. It is a working document for
+M-56) on 2026-10-15, at the same commit, and then what became of them, of
+the 60 Low bullets in the audit's section 5, and of the items a review of
+the fixes found on 2026-11-03. It is a working document for
 choosing and tracking fixes, not a ledger: each fix still gets its own
 `DIVERGENCE.md` section, and a `CHANGELOG.md` entry where an operator
-would notice. The status section below was brought up to date on
-2026-10-16. The triage under it is still as of 2026-10-15. Nothing holds
-this file to the code, so it drifts as work lands.
+would notice. The status sections below were last brought up to date on
+2026-11-04. The triage under them, from "How this was checked" on, is
+still as of 2026-10-15 and says what was run for the triage, not what was
+run for the fixes; the fixes' runs are in the status rows and in the
+ledger sections they cite. Nothing holds this file to the code, so it
+drifts as work lands.
 
-## Status on 2026-10-16
+## Status on 2026-11-04
 
 First checked against `main` at `d8ceba1`, after every PR that
 references issue 321 had merged. Rows for work merged since were added
-as it landed, the latest being M-06's per-source limit (#441). The
-status is as of #441, checked again on 2026-10-19; PRs after it that change only
+as it landed. The status is as of `main` at `6925720f` (#640, merged
+after the last of the close-out review's items, #634), checked on 2026-11-04: every
+row of the two close-out sections against `gh pr view` and the ledger
+heading it cites. PRs after it that change only
 this file or other documentation do not move it. The rows up to `d8ceba1` were first
 rechecked against each PR's body for parts it said it left unfixed, and
 the later rows (#375 to #426) were rechecked the same way on
@@ -24,15 +31,42 @@ the later rows (#375 to #426) were rechecked the same way on
 on 2026-10-16, at `9ce448e` (#372). The status comes from the merged PRs
 and the commit log.
 The fixes were not re-run for this update, except where a row says so.
-Issue 321 stays open, because what is below is not finished.
+
+Every High, Medium and section 5 finding now has a merged change, a
+recorded decision or a filed issue, and all twelve items of the 2026-11-03 close-out
+review (A1 to A12, below) have merged. What is left is filed as its own
+issue: B1 to B7 (#618 to #624, below), and #608, #609 and #612 to #616
+from the second pass (`2026-10-issue-321-second-pass.md`). Issue 321
+itself was still open when this was written.
 
 | | Fixed | Not fixed |
 |---|---|---|
 | High (20) | 20 | none |
-| Medium (55) | 54 | 1, half done (M-47) |
-| M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for |
-| Low (section 5) | 23 | 60 bullets listed (the audit says about 90); being taken one at a time |
-| Low (section 5) | 18 | 60 bullets listed (the audit says about 90); being taken one at a time |
+| Medium (55) | 54 | M-47 in part: `-w 30` added (#440, 5.397); the lockout half closed by decision, as Salt (5.451) |
+| M-56 (design note) | done | runners scoped by their rule's target, stricter than Salt (#426, 5.391); the API does not pass who it acts for, filed as #618 (B1) |
+| Low (section 5, 60 bullets) | 56 in full, 4 in part | the parts left: `ps.pkill` and sshd (decided, as Salt, 5.451); `security import -P` (the tool's only form, 5.45); aws-secrets' cache and allow-all default (decided in 5.483, reopened as #622); the lab's trust of a new host's SSH key on first use (an open question, 5.491) |
+| Close-out review (A1 to A12) | 12 | none; three defects found while doing them were fixed too (#631, #632, #633) |
+| Design items from that review (B1 to B7) | filed | #618 to #624, all open |
+
+**How the Low row was counted.** The audit's summary says there are
+"about 90" Low findings, but its section 5 writes down 60 bullets (12
+hub, 11 node, 14 package, 13 engine and 10 build, counted on 2026-11-04
+from the section 5 text in the issue), so 60 is what can be checked.
+5.483 matched each of the 60 to the ledger sections that fixed or decided
+it, and left seven parts open and two decided (aws-secrets, LDAP);
+5.484 to 5.486 and 5.488 to 5.492 then took the seven, and #634 (5.574)
+took the part of the redaction bullet that 5.407 had left. A bullet is counted "in
+part" when something it names was decided against or is still open.
+The two rows that stood here before (23 and 18) were both stale running
+counts: #466 duplicated the row at 18, later PRs raised one copy, and
+#464 was the last to raise it, to 23; the other copy stayed at 18 (`git
+log -L` on the two lines). Neither was counted from the bullets: the
+number was raised by hand as rows went into the Low table, and stopped
+being raised after #464 while rows kept being added. The Low table below has
+more rows than 60 because it lists each PR, and includes follow-ups and
+decisions that are not bullets of their own; its row count is not a
+count of bullets. 5.483's matching was by reading, as it says, and none
+of the fixes was re-run for this count.
 
 ### Fixed
 
@@ -135,7 +169,8 @@ Severities are this file's revised ones, from the tables below.
   legacy backend fails at once, exit 4, and `main`'s `iptables.append`
   did (DIVERGENCE 5.397). Not done: the lockout half, a firewall state
   that would leave the node unreachable. That is a design gap Salt
-  shares (5.364), not a defect with a fix.
+  shares (5.364), not a defect with a fix. Closed by decision on
+  2026-10-27 (5.451, #491): do nothing, as Salt.
 
 **Medium, not started.** None. The four marked FreeBSD, which came
 first because FreeBSD is tier 1 and carries about 80% of production,
@@ -146,13 +181,16 @@ were fixed first.
 reach, and SPEC 23.5 says so. Not done: who the API acts for is not
 passed, so a run made through the API is visible to the API's other
 callers; a webhook's runner call carries no narrowing; not run against a
-live hub.
+live hub. The 2026-11-03 review found the API's half wider than this
+(dispatch, resume and kill, not only visibility), and it is filed as
+#618 (B1, below).
 
 **Low (section 5 of the audit).** The audit lists 60 bullets and says
-there are about 90. They are being taken one at a time, from the
-section 5 text in the issue's comment; each that is fixed is listed
-here. The rest have not been triaged, and some may have been fixed in
-passing by the PRs above; that has not been looked for.
+there are about 90. They were taken one at a time, from the
+section 5 text in the issue's comment; each that was fixed is listed
+here. 5.483 then went through all 60, bullet by bullet, and 5.484 to
+5.492 took what it left open; the status table above says how the
+bullets were counted.
 
 | Bullet | PR | Done |
 |---|---|---|
@@ -247,6 +285,16 @@ passing by the PRs above; that has not been looked for.
 | `permutations`/`combinations` cap by count only | #496 | 5.460; the count was per call, as `range()`'s was (5.445): three calls of 4.2M items rendered; now charged to the render; list repetition (`[x] * n`) had the same gap and is fixed with it; counts, not memory; `batch`/`slice` not charged |
 | `state/order.go` drops self-requisites silently | #496 | 5.461; Salt 3006.28 and 3008.3 refuse eight self forms, captured; halite ran seven and skipped one; now a one-hop cycle, breaking; `listen`/`onfail`/`use`/`_any` not captured |
 | Info: `service.mask`/`unmask` and `dnsutil.hosts_*` declare no `Privileges` | none needed | `service.mask`/`unmask` gained `root` in #345 (5.308), the day after the audit; `dnsutil.hosts_*` has declared it since it was added on 2026-09-15, so that half of the bullet was not true |
+| All 60 bullets, one by one | #514 | 5.483; matched by reading, nothing re-run; left the seven parts in the rows below and two decisions |
+| `atomicfile.Write`: SELinux label replaced (the part 5.471 left) | #515 | 5.484; measured on the lab's `rocky9` (Rocky 9.8, enforcing): `/etc/hosts` went from `net_conf_t` to `etc_t`; the live test fails without the change |
+| Lab SSH allow-list refuses only `0.0.0.0/0` | #516 | 5.485; `tofu plan` over twelve inputs, seven of them passed by the old check; skips without `tofu`, so CI probably does not hold it |
+| Local signer reads its key file whatever its mode | #517 | 5.486; extension 1.0.2; unix modes and the Windows access-list branch both refused, the latter found by CI |
+| `mac_keychain`: the PKCS#12 password on argv | #523, #525 | 5.45 (a subsection) and 5.488; `security import -P` is the tool's only form, read from its help on macOS 15.8.2, so unchanged; `friendly_name` now sends it on stdin, run on macOS 27.2 with OpenSSL 4.0.3 and LibreSSL 3.3.6 |
+| `dnf_module`: dnf5 prompted to import a key (the half 5.447 left) | #528 | 5.489; a prompt is answered with end-of-file, held by a test that hangs without it; dnf5 itself not run |
+| Lab bootstrap fetched Go to a predictable `/tmp` name | #529 | 5.490; the primitive reproduced; the new path ran on `rocky9` only |
+| Lab trusts a new host's SSH key on first use | #530 | 5.491; **open question**, not changed; the stale `.known_hosts` it found is now removed by `lab-down`, run on `rocky9` |
+| `atomicfile.Write`: ACLs and other extended attributes | #531, #532 | 5.492; run as root on `rocky9` enforcing, ACL, `trusted.*` and the SELinux context identical before and after; FreeBSD and macOS keep nothing; #632 (5.566, below) moved the copy onto the open file |
+| Redaction: a multi-line secret printed line by line in `render.Error`'s window (left by 5.407) | #634 | 5.574, item A8 below; a secret used with `\|indent` is still not covered; unit tests only |
 
 **Also from section 1.** The staticcheck results (1.3) are taken in 5.456, in part.
 The two live tests with wrong assumptions on current distributions (1.1)
@@ -257,6 +305,56 @@ Each was to be corrected with the fix that touches it. The row for
 M-15 (DIVERGENCE 1.9) is corrected by 5.342 (#382), which the section now carries. The H-02 row's comments (declarations are
 signed) are true since #372, and `Runtime.Add`'s says when it became so. The others were not re-checked
 for this update.
+
+### The close-out review of 2026-11-03 (A1 to A12)
+
+Before closing the issue, the fixes were reviewed against `main` at
+`de26c91b` (#617): each finding mapped to its PR, and three reviewers in
+separate checkouts trying to get past the fixes. They found twelve
+defects in or beside the fixed code, two of them regressions the fixes
+had introduced (A1, A6). All twelve merged on 2026-11-03 and 2026-11-04,
+one PR each. "Run on" is what the PR and its ledger section say was run;
+none was re-run for this file.
+
+| Item | What it fixed | PR | DIVERGENCE | Run on, and not run |
+|---|---|---|---|---|
+| A1 | File states (`file.managed`, the edit functions, `writeConfigFile`) followed a symlink another account had planted, a regression from M-19 (#386) | #628 | 5.558, and a subsection under 5.346 | as root on beastie in a FreeBSD 15.1 jail through `halite-node`, and the live tests on the `linux`, `macos` and `freebsd` fleet legs; Windows still follows unchecked |
+| A2 | A mode or ownership change reached an inode another account had hard-linked into the managed tree (`archive.extracted`, `file.directory recurse`, `file.managed`) | #629 | 5.560 | unprivileged on macOS and on beastie (FreeBSD allows such a link by default, read there); no root run with a real second account; Linux's `fs.protected_hardlinks` not read |
+| A3 | A hub wildcard granted an extension's functions, which the node marks arbitrary code; `halite-api` set no arbitrary-code list at all | #626 | 5.564 | a real hub, node and `halite-api` on macOS, unprivileged; not FreeBSD, Linux or root |
+| A4 | A wildcard read any node's pillar through `/v1/run` and `CallRunner`, though `/v1/pillar/{id}` refused it | #625 | 5.563 | tests, and the built `halite-hub policy test`; no live API or fleet |
+| A5 | Template inputs could still crash or exhaust a process: deep values (the H-04 leftover), unmeasured `replace`/`join`/concatenation, and no render-wide string budget | #630 | 5.561, 5.562, and a subsection under 5.312 | macOS, a beastie jail, and three Ubuntu EC2 hosts as `nobody`; no real Jinja or Salt tree rendered |
+| A6 | A long glob target exhausted the hub's memory and stayed cached, and `MustCompile` could panic, a regression from #543 | #627 | 5.559, and a subsection under 5.291 | darwin/arm64 only; no live hub or API |
+| A7 | pip, npm, gem, cargo, go, composer and cpan took a package name that was an option, as root (the class M-32 fixed for OS package managers) | #637 | 5.568 | real tools through `halite-node call --local` on macOS, unprivileged; not root, Linux or FreeBSD; composer not run |
+| A8 | A multi-line secret was printed line by line in a render error's numbered window (5.407's leftover) | #634 | 5.574 | unit tests on macOS; a secret used with `\|indent` is not covered |
+| A9 | Node certificate renewal had no size cap and no frequency limit | #636 | 5.573 | unit tests; no real hub and node; record growth not measured |
+| A10 | `ssh_auth` with `config:` in the account's home followed the account's `~/.ssh` link (M-30's root skipped) | #638 | 5.569, and a subsection under 5.349 | as root on a beastie jail, Ubuntu 22.04 (EC2) and macOS 27.2: failed on `main`, passed with the fix |
+| A11 | Two tests no longer reached their defect: the JSON depth test under Go 1.27's json/v2, and `mount.set_fstab` in the `--test` audit | #635 | 5.572, and subsections under 5.312 and 5.308 | darwin/arm64 only |
+| A12 | A service name could be an option or a path to service(8) (`-R`, `../../../bin/echo`), and a newline in a hosts entry wrote another line into `/etc/hosts` | #639 | 5.570, 5.571 | as root in a beastie jail through `halite-node`; `service -R` itself, Windows and a host's own rc.d not run |
+
+**Found while doing these, and fixed:**
+
+| What | PR | DIVERGENCE | Run on, and not run |
+|---|---|---|---|
+| The hub could write a node's return after `Serve` said it had stopped (a CI flake) | #631 | 5.565 | `internal/hub` under `-race` on macOS; the CI failure itself not reproduced as it happened |
+| The extended-attribute copy (5.492) went by name after the close, so a swapped temporary name put the ACL and mode on another file; found by A2 | #632 | 5.566 | a Debian 12 container, as root and as `nobody`; no real host |
+| A reaction in flight when the hub stopped wrote its return after `serve` had returned | #633 | 5.567 | unit tests on macOS; not FreeBSD or under a service manager |
+| The hostname live tests left a Mac's unset `HostName` set, and a rename by hand raced configd; found running the `macos` leg by hand on mini-me on 2026-11-04, when GitHub's macOS runners were unavailable | #640 | 5.575, 5.576 | as root on macOS 27.3 (mini-me); FreeBSD in a Bastille jail on beastie; Ubuntu 22.04 on x86_64 and arm64 (noop2-1, noop-1); the `macos` leg on macos-15. Not run: Linux without `hostnamectl`, or an unset `HostName` on macos-15 |
+
+### Design items filed as issues (B1 to B7)
+
+The same review found seven gaps that need an owner's decision rather
+than a fix. Each is its own issue, links #321, and was open on
+2026-11-04.
+
+| Item | Issue | What |
+|---|---|---|
+| B1 | #618 | Runners called through the API run as the API, so an operator narrowed to `web*` can dispatch to, read, resume and kill beyond its scope; 5.391 recorded only the visibility half |
+| B2 | #619 | Which code-running functions (language package installs, `maven.run`, `at.at`, `cron.present`, file writers and others) a wildcard grant may include |
+| B3 | #620 | An operator's SLS rules do not cover the environment, so `allow_sls: [web.*]` applies `web.x` from any gitfs branch |
+| B4 | #621 | Argument rules are keyed by exact function name, so a rule on `state.apply` leaves `state.sls`, `highstate` and the rest unconstrained |
+| B5 | #622 | aws-secrets: **a plain bug**, the cache key ignores the block's credentials, endpoint and partition, so one block is served what another fetched (shown at cache level); and two decisions, `node_grain_allow` defaulting to allow-all, and a cache that never evicts |
+| B6 | #623 | What gitfs serves after a signing key is withdrawn: a running hub keeps the last tree that key signed |
+| B7 | #624 | The extension store does not hold a bundle's directory name and version to its signed manifest, so a signed bundle loads under another name |
 
 ## How this was checked, and what that does not cover
 
@@ -273,16 +371,29 @@ The labels below mean:
 - **PARTLY**: the mechanism is real, but part of the audit's claim is
   wrong or overstated. The correction is given.
 
-**Not verified, for every row:** the checks ran on macOS, as a
-non-root user. No real apt, dnf, pkg, apk, pfctl, nft, iptables, ufw,
-sysrc, systemd, LVM, mdadm, zfs, netplan or Linux/FreeBSD `mount` was
-driven. Nothing ran on FreeBSD. Nothing ran as root. No hub, node and API
-were run together, and nothing ran against S3, AWS, an IdP or LDAP. So
-whenever a row says what a real tool *does* with the argv halite builds,
-that is the reviewer's knowledge of the tool and has not been demonstrated.
-Rows that turn on such behaviour are marked **needs a host**.
+**Not verified by the triage, for every row below:** the triage's checks
+ran on macOS, as a non-root user. For the triage, no real apt, dnf, pkg,
+apk, pfctl, nft, iptables, ufw, sysrc, systemd, LVM, mdadm, zfs, netplan
+or Linux/FreeBSD `mount` was driven, nothing ran on FreeBSD, nothing ran
+as root, no hub, node and API were run together, and nothing ran against
+S3, AWS, an IdP or LDAP. So whenever a row below says what a real tool
+*does* with the argv halite builds, that was the reviewer's knowledge of
+the tool, not a demonstration. Rows that turn on such behaviour are
+marked **needs a host**.
 
-The ~90 Low findings in the audit's section 5 were **not checked**.
+That describes the triage of 2026-10-15, not the fixes. Many fixes
+since ran on FreeBSD 15.1, on beastie (some as root, some in Bastille
+jails) or on the `freebsd` fleet leg's VM (for example 5.323, 5.335,
+5.343 to 5.346, 5.452, 5.499, 5.505, 5.558, 5.569, 5.570), on Linux as
+root (5.352, 5.353, 5.363, 5.484, 5.492), and with a real hub and nodes
+together (5.323, 5.493, 5.564); each status row says what its fix ran
+on, and that list is not complete. No row in this file records a run
+against S3, AWS, an IdP or an LDAP server: those fixes were held to
+fakes or published vectors, and their rows say so.
+
+The ~90 Low findings in the audit's section 5 were **not checked** by
+this triage. They were taken afterwards; the status section above says
+how, and how many there turned out to be (60 written down).
 
 ## Section 1 of the audit: toolchain
 
