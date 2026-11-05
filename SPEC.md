@@ -2240,9 +2240,10 @@ Properties that are requirements, not suggestions:
   An argument constraint holds every function that takes the same names, not only the one it is
   written under: one written for any of `state.apply`, `state.sls`, `state.highstate` or the
   `state.show_*` functions holds all of them, and one written for any of the `state.orchestrate`,
-  `state.orch` or `state.orchestrate_show_sls` runners holds all three. Several in one rule all
-  hold. Otherwise a rule granting `state.*` with `allow_sls` on `state.apply` would leave
-  `state.sls` free to apply any SLS (DIVERGENCE 5.586).
+  `state.orch` or `state.orchestrate_show_sls` runners holds all three, and holds
+  `state.orch_resume` too, which is judged on the names of the run that it resumes. Several in one
+  rule all hold. Otherwise a rule granting `state.*` with `allow_sls` on `state.apply` would leave
+  `state.sls` free to apply any SLS (DIVERGENCE 5.586, 5.587).
   A role may also require a keyword with `require_kwargs: {test: true}`: the call must carry each named
   keyword with exactly that value (a bool, a string or a number, compared by type), and a call that
   omits it is refused, which is how a credential is held to a dry run. The dry-run flag counts as the

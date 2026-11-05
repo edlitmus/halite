@@ -215,7 +215,7 @@ func registerKeyRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				c.Server.announceKey(c.Principal, rec.NodeID, "accept", nil)
+				c.Server.announceKey(c.Principal, actingFor(c.OnBehalfOf), rec.NodeID, "accept", nil)
 				return keyRecord(rec, c.Server.now()), nil
 			},
 		},
@@ -234,7 +234,7 @@ func registerKeyRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				c.Server.announceKey(c.Principal, rec.NodeID, "reject", map[string]any{"reason": c.arg("reason")})
+				c.Server.announceKey(c.Principal, actingFor(c.OnBehalfOf), rec.NodeID, "reject", map[string]any{"reason": c.arg("reason")})
 				return keyRecord(rec, c.Server.now()), nil
 			},
 		},
@@ -249,7 +249,7 @@ func registerKeyRunner(r *Runners) {
 				if err := c.needAuthority(); err != nil {
 					return nil, err
 				}
-				rec, err := c.Server.revokeBy(c.Principal, c.arg("node"), c.arg("reason"))
+				rec, err := c.Server.revokeBy(c.Principal, actingFor(c.OnBehalfOf), c.arg("node"), c.arg("reason"))
 				if err != nil {
 					return nil, err
 				}
@@ -275,7 +275,7 @@ func registerKeyRunner(r *Runners) {
 					return nil, err
 				}
 				c.Server.forgetNode(c.arg("node"))
-				c.Server.announceKey(c.Principal, c.arg("node"), "delete", nil)
+				c.Server.announceKey(c.Principal, actingFor(c.OnBehalfOf), c.arg("node"), "delete", nil)
 				return true, nil
 			},
 		},
