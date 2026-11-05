@@ -38096,6 +38096,36 @@ The test passes with `-race`.
 fake unix-socket server that never replies. The journald module itself
 was not run.
 
+### 5.584 A NaN passed the counter guard and poisoned a histogram sum
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/metrics/metrics.go`).
+
+**The defect.** `Counter.Add` ignored `n < 0`. Every comparison with
+NaN is false, so a NaN passed the guard. NaN plus any number is NaN, so
+the total stayed NaN for the life of the process. `Histogram.Observe`
+added a NaN to `_sum` in the same way.
+
+**Shown.** The audit called `Add(2)`, `Add(NaN)`, `Add(1)`. The output
+was `scratch_total NaN`. It then called `Observe(1)`, `Observe(NaN)`,
+`Observe(1)`. The output was `scratch_seconds_sum NaN`.
+
+**The change.** `Counter.Add` ignores a NaN. `Histogram.Observe` drops a
+NaN completely. The NaN is not counted, not summed and not put in a
+bucket. As a result, `_count` and `_sum` still agree about the number
+of measurements.
+
+**Not changed.** `Gauge.Set(NaN)` and `Gauge.Add(NaN)` are as before. A
+gauge can be NaN in the Prometheus format, and `Set` replaces the
+value, so the gauge can recover. `Counter.Add(+Inf)` is also as before.
+The audit found no caller that passes a NaN. No metric name or label
+changes, so no dashboard changes.
+
+**Tested.** `TestANaNDoesNotPoisonACounterOrAHistogram`. With the
+counter guard removed, the output lacks `scratch_total 3`. With the
+histogram guard removed, the output lacks `scratch_seconds_sum 2`, the
+`_count 2` line and the value 2 in the `+Inf` bucket.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

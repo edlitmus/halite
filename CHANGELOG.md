@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A NaN no longer sets a counter or a histogram sum to NaN.** `Counter.Add` and `Histogram.Observe` now drop a NaN. No caller is known to pass one. No metric name or label changes. DIVERGENCE 5.584.
+
 - **A cancelled job now stops a `journald` control call at once.** `journald.rotate`, `journald.flush` and `journald.sync` talk to journald over varlink. The call read the deadline of the context only. A job that was cancelled (a job kill, or ^C by the operator) while journald did not answer still waited up to 30 seconds. The call now stops when the context ends, and the error wraps `context.Canceled`. It was tested against a fake socket that never replies, not against a real journald. DIVERGENCE 5.583.
 
 - **An agentless run that fails on a path with a control character now reports the failure.** `halite-node oneshot` quoted its error with Go's `%q`, which is not JSON, so an error naming such a path came back to the hub as `json: error calling MarshalJSON … invalid escape sequence` with no JID and exit status 0. The error is now encoded as JSON and arrives as it was, with its JID and `retcode: 1`. DIVERGENCE 5.583.

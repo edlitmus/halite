@@ -259,8 +259,15 @@ func (c *Counter) Inc() { c.Add(1) }
 
 // Add adds to the total. A negative amount is ignored: a counter that
 // went backwards would be read by every consumer as a restart.
+//
+// NaN is ignored too, and for a reason the negative test alone did not
+// reach: every comparison with NaN is false, so `n < 0` let it through,
+// and NaN plus anything is NaN, so one bad Add turned the total into
+// NaN for the life of the process (issue 614, DIVERGENCE 5.584). There
+// is no amount a NaN could stand for, and a counter cannot be repaired
+// by later Adds.
 func (c *Counter) Add(n float64) {
-	if c == nil || n < 0 {
+	if c == nil || n < 0 || math.IsNaN(n) {
 		return
 	}
 	addFloat(&c.sample().single, n)
@@ -283,8 +290,15 @@ func (g *Gauge) Add(n float64) {
 }
 
 // Observe records one measurement.
+//
+// A NaN is dropped whole: not counted, not summed, not bucketed.
+// Summed, it made `_sum` NaN for good, and every rate or mean built on
+// it with it (issue 614, DIVERGENCE 5.584); counted without being
+// summed, it would make `_count` and `_sum` disagree about how many
+// measurements there were, which is the pair every average divides. A
+// NaN is not a measurement, so it is none of them.
 func (h *Histogram) Observe(v float64) {
-	if h == nil {
+	if h == nil || math.IsNaN(v) {
 		return
 	}
 	s := h.sample()
