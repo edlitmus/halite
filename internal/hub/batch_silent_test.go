@@ -142,3 +142,37 @@ func TestABatchDeliversNoSliceAfterItsJobExpires(t *testing.T) {
 		t.Errorf("delivered to %v, want only the first slice", status.Delivered)
 	}
 }
+
+// A batch that has delivered to every node but still waits on a return
+// reads `dispatched`, not `batching` (issue 540).
+//
+// It used to stay `batching` until Settle closed it at expiry, which said
+// the hub had slices left to send when all it had was returns owed.
+func TestAFinishedBatchWithReturnsOwedIsDispatched(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	tr := &tracker{seen: map[string]time.Time{}}
+	var stops []func()
+	web1 := l.enrolled(t, "web1.example")
+	stops = append(stops, l.connectSilent(t, web1, "web1.example", `{}`))
+	stops = append(stops, l.connectTracking(t, l.enrolled(t, "web2.example"), "web2.example", tr, nil))
+	defer func() {
+		for _, stop := range stops {
+			stop()
+		}
+	}()
+
+	op := l.operator(t, "ed")
+	res, err := op.Submit(context.Background(), transport.SubmitRequest{
+		Target: "*", Fun: "test.ping", Batch: "1", BatchTimeoutSecs: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := waitForState(t, op, res.JID, string(job.Dispatched))
+	if len(status.Delivered) != 2 {
+		t.Errorf("delivered to %v, want both", status.Delivered)
+	}
+	if len(status.Missing) != 1 || status.Missing[0] != "web1.example" {
+		t.Errorf("missing = %v, want only the silent node", status.Missing)
+	}
+}

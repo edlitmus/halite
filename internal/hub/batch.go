@@ -126,6 +126,26 @@ func (s *Server) runBatches(ctx context.Context, j *job.Job, msg transport.Messa
 		}
 	}
 	s.info("batch complete", "jid", string(j.JID), "nodes", len(j.Nodes))
+	// **Delivered to everyone, so no longer batching** (issue 540). A
+	// node may still owe its return, and the job then stayed `batching`
+	// until Settle closed it at expiry -- reading as though the hub had
+	// slices left to send, when what it had was the same thing any
+	// unbatched job has once it is sent: returns owed. `dispatched` is
+	// that state, and it is what Settle, `jobs active` and the
+	// orchestrator's wait already treat as in flight. Only from
+	// `batching`, inside the record's update: a return that completed the
+	// job, or a kill, got there first and is left alone.
+	if _, err := s.Jobs.Update(j.JID, func(cur *job.Job) error {
+		if cur.State != job.Batching {
+			return errAlreadySettled
+		}
+		cur.State = job.Dispatched
+		return nil
+	}); err == nil {
+		j.State = job.Dispatched
+	} else if !errors.Is(err, errAlreadySettled) {
+		s.warn("could not record a finished batch as dispatched", "jid", string(j.JID), "error", err.Error())
+	}
 	s.completeIfDone(j.JID)
 }
 
@@ -354,7 +374,8 @@ func (s *Server) settleExpired(j *job.Job) (bool, error) {
 	return true, nil
 }
 
-// errAlreadySettled abandons a settle that another goroutine got to first.
+// errAlreadySettled abandons a change of state that another goroutine got to
+// first: a settle, or a finished batch moving to dispatched.
 var errAlreadySettled = errors.New("the job has already been settled")
 
 // runnerJobWindow is how many of the most recent jobs AbandonRunnerJobs looks
