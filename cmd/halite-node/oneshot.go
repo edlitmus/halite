@@ -356,10 +356,21 @@ func applyOneshotContent(n *node, req OneshotRequest) (*inlineTree, error) {
 var oneshotFrame = writeOneshot
 
 // writeOneshot frames the return.
+//
+// The fallback is built by encoding/json as well, never by a format
+// string. It used to be `%q`, which is Go quoting and not JSON quoting:
+// the two agree on quotes and backslashes and differ on everything else
+// (see jsonString). DIVERGENCE 5.583.
 func writeOneshot(ret *job.Return) {
 	encoded, err := json.Marshal(ret)
 	if err != nil {
-		encoded = []byte(fmt.Sprintf(`{"success":false,"return":%q}`, err.Error()))
+		encoded, _ = json.Marshal(struct {
+			JID     job.ID          `json:"jid,omitempty"`
+			Success bool            `json:"success"`
+			RetCode int             `json:"retcode"`
+			Return  json.RawMessage `json:"return"`
+		}{JID: ret.JID, RetCode: 1, Return: jsonString(
+			"the return could not be encoded: " + err.Error())})
 	}
 	fmt.Println()
 	fmt.Println(OneshotBegin)
@@ -372,12 +383,32 @@ func writeOneshot(ret *job.Return) {
 func oneshotFailure(jid string, err error) int {
 	writeOneshot(&job.Return{
 		JID: job.ID(jid), Success: false, RetCode: 1,
-		Return:      json.RawMessage(fmt.Sprintf("%q", err.Error())),
+		Return:      jsonString(err.Error()),
 		NodeVersion: version.String(),
 		Schema:      job.ReturnSchema,
 		StartTime:   time.Now().UTC().Format(time.RFC3339Nano),
 	})
 	return 1
+}
+
+// jsonString is s as a JSON string.
+//
+// Not `fmt.Sprintf("%q", s)`, which is what this used to be. Go's
+// quoting agrees with JSON's on `"` and `\`, so a Windows path came
+// through and the difference went unnoticed, but it writes a control
+// character as `\x01` or `\a`, DEL as `\x7f`, and a non-printable
+// character outside the BMP as `\U000e0001` -- none of which JSON has.
+// The return was then not valid JSON, json.Marshal refused the whole
+// job.Return, and the operator was shown the marshaller's complaint
+// about a backslash instead of the error that had happened, with the
+// JID and exit status gone with it. An error from the target names
+// paths the hub sent and paths on the target, and either may hold any
+// byte a file name can. DIVERGENCE 5.583.
+//
+// Marshalling a string cannot fail: invalid UTF-8 becomes U+FFFD.
+func jsonString(s string) json.RawMessage {
+	encoded, _ := json.Marshal(s)
+	return encoded
 }
 
 // writeInlineFile writes one file the hub sent, refusing a path that
