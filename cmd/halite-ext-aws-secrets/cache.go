@@ -11,10 +11,20 @@ import (
 
 // secretCache holds fetched values for their TTL.
 //
-// Keyed by region, secret and stage rather than by node: two nodes
-// needing the same secret is the common case, and keying by node would
-// fetch it twice. It bounds how stale a rotated secret can be on this
-// hub, which is the trade the TTL is.
+// Keyed by who fetched it -- the block's credentials, endpoint and
+// partition, see secretsClient.identity -- and by region, secret and
+// stage, but not by node: two nodes needing the same secret through the
+// same block is the common case, and keying by node would fetch it
+// twice. It bounds how stale a rotated secret can be on this hub, which
+// is the trade the TTL is.
+//
+// The identity was missing (issue 622). The host keeps one pool of
+// these processes per extension, not per block, so every
+// `aws_secrets_manager` block on a hub shares this cache, and a block
+// holding low-privilege credentials, or pointed at another endpoint, was
+// served what a different block had fetched -- with nothing reaching
+// Secrets Manager to refuse it. A cached value is reused only by a
+// block that would have sent the same signed request.
 type secretCache struct {
 	now func() time.Time
 
@@ -35,7 +45,7 @@ func newSecretCache(now func() time.Time) *secretCache {
 func (c *secretCache) fetch(ctx context.Context, client *secretsClient,
 	s Secret, region string, ttl time.Duration) (any, error) {
 
-	key := region + "|" + s.SecretID + "|" + s.Stage
+	key := client.identity() + "|" + region + "|" + s.SecretID + "|" + s.Stage
 	if ttl > 0 {
 		c.mu.Lock()
 		entry, ok := c.entries[key]
