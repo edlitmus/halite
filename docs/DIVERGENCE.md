@@ -27937,12 +27937,12 @@ Each half was broken on purpose and watched to fail:
   narrowed role running the highstate. Any that do are refused after
   this change.
 
-#### 5.584, an argument rule holds its family
+#### 5.585, an argument rule holds its family
 
 The third bullet under "Not changed, and open" is fixed. An argument
-rule now holds every function that takes the same names, so `allow_sls` written under
-`state.apply` holds `state.sls`, `state.highstate` and the `state.show_*`
-renderers in the same rule. 5.584 has the details.
+rule now holds every function that takes the same names, so `allow_sls`
+written under `state.apply` holds `state.sls`, `state.highstate` and the
+`state.show_*` renderers in the same rule. 5.585 has the details.
 
 ### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
 
@@ -38149,7 +38149,7 @@ before this was written, only locally; the window it closes was shown
 with a paused hub, not caught in a natural run. Neither test was run on
 FreeBSD or Linux.
 
-### 5.584 An argument rule held only the function it was written under
+### 5.585 An argument rule held only the function it was written under
 
 Issue 621, from the 2026-11-03 review of the issue 321 fixes. 5.320 said
 under "Not changed, and open" that a rule granting `state.*` and
