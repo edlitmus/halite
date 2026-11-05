@@ -38062,6 +38062,40 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
 
+### 5.583 A cancelled context did not stop a varlink call
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/varlink/varlink.go`). The audit ran on Linux at `main`
+2ee49b73.
+
+**The defect.** `Call` copied the deadline of the context onto the
+connection. If the context had no deadline, `Call` used 30 seconds. A
+context that was cancelled without a deadline was never read. A call to
+a service that does not answer waited the full 30 seconds.
+
+**Shown.** The audit used a server that never answers. It cancelled the
+context at 200 ms. The call was still blocked 3 s later. The only
+caller is `journaldControl` in `internal/builtin/journald.go`, which
+sends rotate, flush and sync to `io.systemd.Journal`. A cancelled job
+(a job kill, or ^C by the operator) that ran one of these against a
+stuck journald held on for up to 30 s.
+
+**The change.** `context.AfterFunc(ctx, ...)` sets the deadline of the
+connection to a time in the past when the context ends. This wakes the
+blocked write or read. The error that `Call` returns now wraps
+`ctx.Err()`, so `errors.Is(err, context.Canceled)` is true. Before, the
+error was an i/o timeout.
+
+**Tested.** `TestVarlinkStopsWhenTheContextIsCancelledWithoutADeadline`
+(`internal/varlink/varlink_test.go`) cancels the context at 150 ms with
+no deadline. With the body of the AfterFunc removed, the test fails
+with "the call was still blocked 3s after its context was cancelled".
+The test passes with `-race`.
+
+**Not verified.** No real systemd-journald was used. The test uses a
+fake unix-socket server that never replies. The journald module itself
+was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
