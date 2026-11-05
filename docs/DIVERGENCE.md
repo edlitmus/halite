@@ -38213,6 +38213,18 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/runner.go`, `cm
 
 **Not verified.** An orchestration that ran twice because of the retype. This is reasoned from the code path and shown with `event.send`, not with `state.orchestrate`. Noticed, not changed: `RunnerContext.argInt` (`internal/hub/runner.go`) still reads a string with `fmt.Sscanf`. The binder refused `abc` first in this run.
 
+### 5.591 `halite-hub extensions run --timeout` ignored a value it could not read, and started the extension before it read its other flags
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/extensionrun.go`, `parseRunTimeout`).
+
+**The defect.** `parseRunTimeout` returned 60 seconds, without a word, for any value that did not parse or was 0 or less: `--timeout 5` with no unit, `soon`, `-1s` and `0s`. `extensions verify` refuses the same values (`verifyDuration`). Also, `--kwargs` and `--args` were decoded only after the extension process was started (`pool.Warm`) and its handshake was described.
+
+**Shown.** `TestExtensionsRunReadsItsFlagsBeforeStarting` (`extensionrun_test.go`) uses a shell script as a stand-in. The script touches a mark file when it starts. Six refused forms (`--timeout 5`, `soon`, `-1s`, `0s`, `--kwargs {nope` and `--args [nope`) exit 64, name the flag, and leave no mark. The control `--timeout 5s` starts the script, and the mark is present. With main's `extensionrun.go`, all 6 fail: they exit 1 and the extension is started.
+
+**The change.** `parseRunTimeout` returns the error `--timeout %q is not a positive duration`. `runExtensionDirectly` reads `--timeout`, `--kwargs` and `--args` before it builds the bridge options and before it starts anything. Each failure prints `halite-hub extensions run: ...` and exits 64. With no flag, the default stays 60 seconds.
+
+**Not verified.** A real extension: only the stand-in script was used. Windows, where the test skips.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

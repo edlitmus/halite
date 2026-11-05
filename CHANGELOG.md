@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`halite-hub extensions run` refuses a `--timeout`, `--kwargs` or `--args` it cannot read, and does so before it starts the extension.** A `--timeout` such as `5` (no unit), `soon`, `-1s` or `0s` was replaced with 60 seconds without a message. Now each exits 64 with `halite-hub extensions run: ...` and names the flag. A `--kwargs` or `--args` that is not valid JSON is also refused with exit 64, and the extension process is not started. With no `--timeout`, the default is still 60 seconds. DIVERGENCE 5.591.
+
 - **`halite-hub runner <fun>` and `halite-hub orch` refuse a bad `--out` before they call the hub.** An unknown `--out`, for example `--out tabel`, ran the runner call and then exited 1. So a key decision, an orchestration, a resume or an event was done, and an operator who corrected the flag and ran the command again did it a second time. Now an unknown `--out` exits 64 with a usage error before anything is sent. `orch list --limit` is checked in the same way: `abc`, `5x`, `0` and `-1` exit 64 and name `--limit`. DIVERGENCE 5.590.
 
 - **`halite-hub policy test --kwarg` refuses a keyword it cannot read.** The command dropped a pair with no `=`, a bare `--kwarg`, an empty `--kwarg=`, and a positional `key=value`. With `deny_kwargs: [mods]`, the test said "allowed by role" for `--kwarg mods:evil` and exited 0, so a denied call looked allowed. Now each of these is refused with exit 64 before the policy is read. A key that appears twice is refused too. Write `--kwarg key=value`, with pairs separated by commas. A value cannot contain a comma. DIVERGENCE 5.589.
