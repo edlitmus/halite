@@ -38189,6 +38189,18 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/keys.go`, `runK
 
 **Not verified.** FreeBSD and Linux. The same lack of bounds in the issue of node and hub certificates (`certificate_lifetime`) is not touched. Noticed, not changed: `keys operator create` with a name that exists overwrites the certificate and key of that operator without asking. Main did this in the run above.
 
+### 5.589 `halite-hub policy test --kwarg` dropped a keyword it could not read
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/policy.go`, new `policyTestKwargs`).
+
+**The defect.** `policy test` split `--kwarg` on commas, kept the pairs that had an `=` and dropped the rest without a word. A bare `--kwarg` reads as `true` (`Args.Flag`) and was dropped. A positional `key=value`, which `run` takes as a keyword, went into `args.Kwargs` and `policy test` ignored it. With `deny_kwargs: [mods]`, main denied `--kwarg mods=evil`. But `mods:evil`, `mods`, a bare `--kwarg`, `--kwarg=`, `=evil` and a positional `mods=evil` were all "allowed by role" and exited 0. `mods=a,b` and `x=1,,mods=evil` were denied, but only by luck.
+
+**Shown.** `TestPolicyTestRefusesAKeywordItCannotRead` (`policy_kwarg_test.go`) has controls and 9 refused forms. The controls are: no keyword is allowed and exits 0, `mods=evil` is denied and exits 1, `mods=` with an empty value is denied, and two unrelated pairs are allowed. With the old loop put back, 6 cases exit 0 "allowed by role" and 3 exit 1 as denied. All 9 must exit 64.
+
+**The change.** Before the policy is read, each comma-separated pair must have an `=` and a key that is not empty. A bare or empty `--kwarg` is refused. A key that appears twice is refused. It was last-wins. A positional `key=value` is refused with "policy test takes keyword arguments as --kwarg key=value". Each refusal exits 64. Values are still strings, as before (5.493 added `--test` for the one keyword that is not a string). A value cannot contain a comma, because the comma is the list separator. This limit was a silent split. It is now a refusal that says the value cannot hold one.
+
+**Not verified.** Nothing beyond the command itself. `run` and the hub were not involved, because `policy test` evaluates locally.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

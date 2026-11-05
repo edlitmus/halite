@@ -124,13 +124,11 @@ func runPolicy(args *cli.Args) int {
 			cli.Usagef("policy test takes a principal, a target, and a function: " +
 				"halite-hub policy test 'cert:CN=alice' 'web*.prod' state.apply")
 		}
-		loaded, _ := loadPolicyFile(cfg)
-		kwargs := map[string]any{}
-		for _, pair := range strings.Split(args.Flag("kwarg", ""), ",") {
-			if k, v, ok := strings.Cut(pair, "="); ok {
-				kwargs[k] = v
-			}
+		kwargs, err := policyTestKwargs(args)
+		if err != nil {
+			cli.Usagef("%v", err)
 		}
+		loaded, _ := loadPolicyFile(cfg)
 		// The kind is part of the question: `web1.prod,db1.prod` is one
 		// string to a glob and two nodes to a list, and a test that
 		// could only ask the glob question would say "denied" about a
@@ -168,6 +166,49 @@ func runPolicy(args *cli.Args) int {
 	}
 	fmt.Fprintf(os.Stderr, "halite-hub policy: unknown subcommand %q\n\n%s", args.Positional[0], policyUsage)
 	return cli.ExitUsage
+}
+
+// policyTestKwargs reads `policy test`'s keyword arguments, and refuses
+// any it cannot read rather than leaving it out.
+//
+// It took the pairs of --kwarg that had an `=` and dropped the rest
+// without a word, so a typo was a question about a different request.
+// For the rules that look at keywords that is the dangerous direction:
+// with `deny_kwargs: [mods]`, `--kwarg mods=evil` was denied and
+// `--kwarg mods:evil`, `--kwarg mods` and a bare `--kwarg` were all
+// "allowed by role" -- the test a CI job runs to show a keyword is
+// refused, passing because the keyword was never asked about. The same
+// for a `key=value` written as an argument, the way `run` takes one:
+// `policy test` read it as nothing at all. Both are refused now, before
+// the policy is read. A pair needs a key and an `=`; a key given twice
+// is refused, not settled by whichever came last; and the values stay
+// strings, as they always were here (`--test` is the flag for the one
+// keyword that is not, DIVERGENCE 5.493). DIVERGENCE 5.589.
+func policyTestKwargs(args *cli.Args) (map[string]any, error) {
+	if args.Kwargs.Len() > 0 {
+		return nil, fmt.Errorf("policy test takes keyword arguments as --kwarg key=value, "+
+			"not as arguments; %d were given that way", args.Kwargs.Len())
+	}
+	kwargs := map[string]any{}
+	if !args.Has("kwarg") {
+		return kwargs, nil
+	}
+	if args.Flags["kwarg"] == "" {
+		return nil, fmt.Errorf("--kwarg needs key=value")
+	}
+	for _, pair := range strings.Split(args.Flag("kwarg", ""), ",") {
+		k, v, ok := strings.Cut(pair, "=")
+		_, twice := kwargs[k]
+		switch {
+		case !ok || k == "":
+			return nil, fmt.Errorf("--kwarg %q is not key=value; several are separated by commas, "+
+				"so a value cannot hold one", pair)
+		case twice:
+			return nil, fmt.Errorf("--kwarg gives %s twice", k)
+		}
+		kwargs[k] = v
+	}
+	return kwargs, nil
 }
 
 // pillarReadersLine is `policy show`'s account of the other set no
