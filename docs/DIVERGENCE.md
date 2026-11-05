@@ -38126,6 +38126,29 @@ counter guard removed, the output lacks `scratch_total 3`. With the
 histogram guard removed, the output lacks `scratch_seconds_sum 2`, the
 `_count 2` line and the value 2 in the `+Inf` bucket.
 
+### 5.585 Label values with a NUL byte could share a series
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/metrics/metrics.go`).
+
+**The defect.** The key of the series map was the label values joined
+with a NUL byte. `With("a\x00b","c")` and `With("a","b\x00c")` both made
+`a\x00b\x00c`. The two label sets were one series. They were counted
+together and shown under the labels of the first one.
+
+**Shown.** The audit measured those two label sets as one series with
+the value 2.
+
+**The change.** `seriesKey` writes the length of each value, then a
+colon, then the value. The boundaries are in the key, so no choice of
+values can make two keys the same. The exposition format does not
+change. The audit found no caller that passes a NUL byte.
+
+**Tested.** `TestLabelValuesContainingTheSeparatorStayDistinct` makes
+the two label sets above and expects 2 series. It also makes
+`("1:a","")`, `("","1:a")` and `("1","a")` and expects 3 series. With
+the old join put back, the first pair gives one series with the value 2.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

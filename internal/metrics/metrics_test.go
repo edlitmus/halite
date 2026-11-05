@@ -103,6 +103,39 @@ func TestANaNDoesNotPoisonACounterOrAHistogram(t *testing.T) {
 	}
 }
 
+// Two label sets whose values differ only in where a NUL falls are two
+// series. With the values joined by NUL they made one key and one line
+// with the value 2 (issue 614).
+func TestLabelValuesContainingTheSeparatorStayDistinct(t *testing.T) {
+	r := NewRegistry()
+	c := r.Counter("scratch_total", "Scratch.", "x", "y")
+	c.With("a\x00b", "c").Inc()
+	c.With("a", "b\x00c").Inc()
+
+	r.families["scratch_total"].mu.Lock()
+	n := len(r.families["scratch_total"].order)
+	r.families["scratch_total"].mu.Unlock()
+	if n != 2 {
+		t.Fatalf("two distinct label sets made %d series:\n%s", n, render(t, r))
+	}
+	if out := render(t, r); strings.Contains(out, "} 2\n") {
+		t.Errorf("one series counted both:\n%s", out)
+	}
+	// And a length prefix cannot be forged either: "1:a" as one value
+	// against "1" and "a" as two would collide under a naive scheme
+	// that wrote the length without bounding it.
+	d := r.Counter("scratch2_total", "Scratch.", "x", "y")
+	d.With("1:a", "").Inc()
+	d.With("", "1:a").Inc()
+	d.With("1", "a").Inc()
+	r.families["scratch2_total"].mu.Lock()
+	n = len(r.families["scratch2_total"].order)
+	r.families["scratch2_total"].mu.Unlock()
+	if n != 3 {
+		t.Errorf("three distinct label sets made %d series", n)
+	}
+}
+
 func TestAHistogramBucketsCumulatively(t *testing.T) {
 	r := NewRegistry()
 	h := r.Histogram("halite_job_duration_seconds", "Job duration.", []float64{0.1, 1, 10}, "fun")

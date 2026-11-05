@@ -136,7 +136,7 @@ func (f *family) bind(values []string) *sample {
 		// with its values, which reads as data rather than as a bug.
 		panic("metrics: " + f.name + " takes " + itoa(len(f.labels)) + " label values")
 	}
-	key := strings.Join(values, "\x00")
+	key := seriesKey(values)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if s, ok := f.series[key]; ok {
@@ -147,7 +147,7 @@ func (f *family) bind(values []string) *sample {
 	// is handed.
 	if len(f.order) >= MaxSeries-1 {
 		values = overflowValues(len(f.labels))
-		key = strings.Join(values, "\x00")
+		key = seriesKey(values)
 		if s, ok := f.series[key]; ok {
 			return s
 		}
@@ -159,6 +159,29 @@ func (f *family) bind(values []string) *sample {
 	f.series[key] = s
 	f.order = append(f.order, key)
 	return s
+}
+
+// seriesKey is the map key for one label set. It must be injective:
+// two different label sets that produce one key share a series, and
+// the second is counted into the first's line under the first's
+// labels.
+//
+// It used to be the values joined with NUL, on the reasoning that no label
+// value contains one. That is a claim about the inputs, and the inputs are
+// not this package's -- a function name, an event tag, a path -- so it held
+// only until one did: With("a\x00b", "c") and With("a", "b\x00c") both made
+// "a\x00b\x00c" and came out as one series with the value 2 (issue 614,
+// DIVERGENCE 5.585). Prefixing each value with its length makes the
+// boundaries part of the key rather than a byte the values are trusted not
+// to contain, so no choice of values can move one.
+func seriesKey(values []string) string {
+	var b strings.Builder
+	for _, v := range values {
+		b.WriteString(itoa(len(v)))
+		b.WriteByte(':')
+		b.WriteString(v)
+	}
+	return b.String()
 }
 
 func overflowValues(n int) []string {
