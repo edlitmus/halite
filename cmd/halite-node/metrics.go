@@ -73,8 +73,9 @@ type nodeMetrics struct {
 
 	scheduleRuns *metrics.Counter
 
-	evidenceRecords  *metrics.Counter
-	evidenceFailures *metrics.Counter
+	evidenceRecords    *metrics.Counter
+	evidenceFailures   *metrics.Counter
+	evidenceUnrecorded *metrics.Counter
 }
 
 // newNodeMetrics reads the settings and declares the families.
@@ -169,6 +170,16 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 		"Records appended to this node's evidence chain, by kind.", "kind")
 	m.evidenceFailures = r.Counter("halite_node_evidence_failures_total",
 		"Evidence records that could not be written, which are jobs with no entry.")
+	// The records a node with no open log did not try to write. Kept
+	// apart from the failures above, which are writes that were tried:
+	// a log that failed to open is reported once, and before this every
+	// record after it went nowhere and was counted nowhere, so the gauge
+	// halite_node_evidence_log_open said the log was shut and nothing
+	// said how much had been lost (DIVERGENCE 5.590). Unlabelled, so it
+	// is exported at 0 from the start.
+	m.evidenceUnrecorded = r.Counter("halite_node_evidence_unrecorded_total",
+		"Evidence records not written because this node's evidence log is not open: "+
+			"each is a job or event with no entry in the record.")
 
 	return m
 }
@@ -245,6 +256,12 @@ func (m *nodeMetrics) declareEvidenceKinds(kinds []string) {
 func (m *nodeMetrics) countEvidenceFailure() {
 	if m.on() {
 		m.evidenceFailures.Inc()
+	}
+}
+
+func (m *nodeMetrics) countEvidenceUnrecorded() {
+	if m.on() {
+		m.evidenceUnrecorded.Inc()
 	}
 }
 

@@ -530,3 +530,37 @@ func TestEveryRecordKindStartsAtZeroWhenEvidenceIsOn(t *testing.T) {
 		t.Errorf("a node with evidence off exports a record series, so absence no longer means a choice:\n%s", got)
 	}
 }
+
+// A node whose log did not open counts every record it then drops.
+//
+// The open is tried once, its failure is logged once, and before this
+// every record after it went nowhere and was counted nowhere: the gauge
+// said the log was shut and nothing said how much was lost. DIVERGENCE
+// 5.590.
+func TestRecordsDroppedForALogThatDidNotOpenAreCounted(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	n := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\nevidence_dir: "+filepath.Join(blocker, "evidence")+"\n")
+	if got := exposition(t, n); !strings.Contains(got, "halite_node_evidence_unrecorded_total 0") {
+		t.Fatalf("the counter is not exported at 0:\n%s", got)
+	}
+	n.startEvidence()
+	n.registerEvidenceMetrics()
+	for i := 0; i < 3; i++ {
+		n.recordEvidence(nodeevidence.KindJobAccepted, map[string]string{"jid": "x"})
+	}
+	got := exposition(t, n)
+	// startEvidence writes nothing once its open has failed, so the
+	// three are the loop's.
+	if !strings.Contains(got, "halite_node_evidence_unrecorded_total 3") {
+		t.Errorf("three records went nowhere and the count does not say so:\n%s", got)
+	}
+
+	off := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\nevidence: false\n")
+	off.recordEvidence(nodeevidence.KindJobAccepted, map[string]string{"jid": "x"})
+	if got := exposition(t, off); !strings.Contains(got, "halite_node_evidence_unrecorded_total 0") {
+		t.Errorf("a node that keeps no record counted a record as lost:\n%s", got)
+	}
+}

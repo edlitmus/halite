@@ -97,6 +97,13 @@ func (n *node) evidenceLog() *nodeevidence.Log {
 func (n *node) recordEvidence(kind string, detail map[string]string) {
 	log := n.evidenceLog()
 	if log == nil {
+		// Counted every time, where the line below is said once: a node
+		// configured to keep a record whose log did not open drops every
+		// record after it, and the count is how many (DIVERGENCE 5.590).
+		// Not on a node that keeps no record, which has nothing to lose.
+		if n.evidence != nil && n.evidenceOn() {
+			n.metrics.countEvidenceUnrecorded()
+		}
 		if n.evidence != nil && n.evidence.err != nil {
 			// Once per process, because the open is attempted once.
 			n.evidence.mu.Lock()

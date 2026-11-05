@@ -805,7 +805,8 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_schedule_runs_total` | counter | `name` | Scheduled jobs started, by schedule entry. |
 | `halite_node_evidence_records_total` | counter | `kind` | Records appended to the node's SPEC 25.7 chain: `job.accepted`, `job.refused`, `job.result`, `config`, `extension`, `node.start`, `node.stop` and `anchor.receipt`. Each kind is exported at 0 from the start when `evidence` is on, and none when it is off. |
 | `halite_node_evidence_failures_total` | counter | — | Evidence records that could not be written, which are jobs with no entry in the record. |
-| `halite_node_evidence_log_open` | gauge | — | 1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open, which is logged once and counted nowhere else. Absent when `evidence` is off, so 0 is never a choice. |
+| `halite_node_evidence_log_open` | gauge | — | 1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open. The failure is logged once; the records lost after it are counted by `halite_node_evidence_unrecorded_total`. Absent when `evidence` is off, so 0 is never a choice. |
+| `halite_node_evidence_unrecorded_total` | counter | — | Evidence records the node did not write because its evidence log is not open. Each one is a job or an event that has no entry in the record. 0 while the log is open, and always 0 when `evidence` is off. |
 | `halite_node_jobs_accepted_total` | counter | — | Jobs this node accepted to run: past the replay guard and the signature check, counted where the evidence record for the acceptance is written. A job refused afterwards, because the queue is full, was accepted first. Unlabelled, so it is exported at 0 and `increase()` sees the first job; `halite_node_jobs_total` is the finished jobs, by function and outcome. |
 | `halite_state_compile_duration_seconds` | histogram | — | Time to turn the tree into a low state. |
 | `halite_state_run_duration_seconds` | histogram | — | Time to apply it, not counting the line above. |
@@ -1285,10 +1286,20 @@ hub to be counted there, and neither did a record it failed to write:
         annotations:
           summary: "{{ $labels.instance }} is running jobs and recording none of them"
 
+      # Jobs ran and the node wrote no record of them, because its
+      # evidence log is not open. HaliteNodeEvidenceNotKept below says the
+      # log is shut; this one says that something has been lost, and how
+      # much, from the first job.
+      - alert: HaliteNodeEvidenceUnrecorded
+        expr: increase(halite_node_evidence_unrecorded_total[10m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} did not record {{ $value }} evidence records; its evidence log is not open"
+
       # The node is configured to keep an evidence record and its log is
-      # not open: it failed to open at startup, said so once in the log,
-      # and counted nothing. Every other evidence alert is quiet for this
-      # node. The gauge does not exist on a node with `evidence: false`, so
+      # not open: it failed to open at startup and said so once in the log.
+      # Every other evidence alert but HaliteNodeEvidenceUnrecorded is
+      # quiet for this node. The gauge does not exist on a node with `evidence: false`, so
       # a node that chose to keep no record is never matched.
       - alert: HaliteNodeEvidenceNotKept
         expr: halite_node_evidence_log_open == 0

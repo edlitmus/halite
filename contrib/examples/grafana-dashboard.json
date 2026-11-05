@@ -5995,7 +5995,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "description": "1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open. That failure is logged once and counted nowhere else, so every other evidence panel looks fine while jobs run with no record: this is the panel that shows it (HaliteNodeEvidenceNotKept alerts on it). A node with evidence turned off does not export the series, so it is missing here rather than 0.",
+          "description": "1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open. That failure is logged once, and the records lost after it are counted in Evidence records not kept, beside this. Every other evidence panel looks fine while jobs run with no record (HaliteNodeEvidenceNotKept alerts on this one). A node with evidence turned off does not export the series, so it is missing here rather than 0.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -6146,6 +6146,71 @@
           ],
           "title": "Jobs accepted",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Evidence records this node did not write because its evidence log is not open. Each is a job or an event that has no entry in the record. The log says once that the log did not open, and this is the count of what was lost after it (HaliteNodeEvidenceUnrecorded alerts when it rises). 0 while the log is open.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 52
+          },
+          "id": 91,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(halite_node_evidence_unrecorded_total{job=\"$node_job\", instance=~\"$node_instance\"}[$__range]))",
+              "refId": "A",
+              "range": true
+            }
+          ],
+          "title": "Evidence records not kept",
+          "type": "stat"
         }
       ],
       "title": "Node agents",

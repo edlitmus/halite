@@ -38265,6 +38265,49 @@ exits before it prints any check, because the clock check builds a hub
 client from the broken certificate and that calls `cli.Fatalf`. That is a
 separate defect and is not changed here.
 
+### 5.590 Records after a failed evidence-log open were lost and counted nowhere
+
+Issue 615, item 5. `evidenceLog` tries to open the chain once. When the
+open fails, `startEvidence` logs one error and every later
+`recordEvidence` returns without writing. 5.238 added the gauge
+`halite_node_evidence_log_open`, which reads 0 in that state, and its alert
+`HaliteNodeEvidenceNotKept`. Nothing said how many records were lost:
+`halite_node_evidence_failures_total` counts writes that were tried, and
+none was.
+
+**The change.** A new unlabelled counter,
+`halite_node_evidence_unrecorded_total`, goes up by one for each record
+that `recordEvidence` drops because a node configured to keep a record has
+no open log. It is exported at 0 from the start. It does not move on a node
+with `evidence: false`. `docs/metrics.md` has its row and a new alert,
+`HaliteNodeEvidenceUnrecorded` (critical, on any increase in 10 minutes).
+The dashboard's node row has a stat panel, "Evidence records not kept".
+The gauge's row and panel no longer say that the failure is counted
+nowhere else.
+
+**Measured** on macOS 26.7.2 (arm64), with the lab hub and node of 5.584
+and the built binary: `evidence_dir` set under a regular file, the agent
+started, and two `test.ping` jobs sent with `halite-hub run`. The node
+logged "this node is keeping no evidence record and is running anyway"
+once, and its `/v1/metrics` said:
+
+```
+halite_node_evidence_failures_total 0
+halite_node_evidence_log_open 0
+halite_node_evidence_unrecorded_total 4
+```
+
+Four is the two jobs' `job.accepted` and `job.result` records.
+`startEvidence` writes nothing once the open has failed, so its own records
+are not counted.
+
+**Demonstrated.** `TestRecordsDroppedForALogThatDidNotOpenAreCounted` fails
+with the count taken out of `recordEvidence`.
+
+**Not verified.** The alert rule was not loaded into a Prometheus or run
+with `promtool` (not installed here). The 5.238 test that says
+`failures_total` stays 0 for this node still passes, and is still true.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
