@@ -37593,6 +37593,64 @@ does no harm there, not that the race happens there.
 
 
 
+### 5.577 A scheduled highstate failed for as long as the hub was down
+
+The code comment on `startSchedule`, handbook chapters 16 and 23, the SPEC 12.8
+setting and the entry that introduced the scheduler all said a schedule keeps a
+node converged through a hub outage. Asked to verify that on 2026-11-04, nobody
+had.
+
+**Measured** at `6925720` with a real hub and node on Linux over loopback,
+SIGKILLing the hub. The job fired on time and returned `success: false` with
+`/v1/pillar: ... connection refused`, each time and after a node restart, with
+the tree and pillar copied into the node's local roots too, and with
+`pillar_cache_disk: true`, which was inert. `Remote.cacheFile` returned the
+fetch error with the verified file sitting in the cache, so pillar alone would
+not have fixed it. Two paths that had to agree: the scheduler's independence
+from the hub, and the two things every run asks the hub for.
+
+**The owner's decision** was that nodes use the last known good pillar and
+continue to run states without the hub. So:
+
+- `internal/pillarstore` keeps the last pillar and its secret list, AES-256-GCM
+  under an HKDF-SHA-256 key from the node's private key, bound to the node and
+  environment. `pillar_cache_disk` left `InertKeys` and defaults to on. SPEC
+  12.8 said off, and deleted on service stop; that is changed because a restart
+  during an outage is when the copy is needed.
+- `transport.Unreachable` is a list of what an outage looks like, not "any
+  failure". Refused, a 500, a failed certificate verification, a TLS alert and
+  a cancelled job are all false, so an impostor or a rejection cannot be
+  mistaken for an outage.
+- `Remote` serves the cached copy and the last whole listing when no hub
+  answers, and holds off asking for 30 seconds, chosen and not measured, so a
+  hub that drops packets costs a few timeouts per run and not one per file.
+
+**Run against the real binaries**, same machine: hub killed with the node up;
+node restarted with the hub down; a listener that accepts and never answers
+(runs converged, at 15s and 31s intervals against a 15s schedule); hub back with
+a changed pillar, picked up by the same process; `pillar_cache_disk: false`
+failing as before; a hub with a different CA on the same address, failing with
+the verification error and writing nothing; revocation of a connected node
+removing the copy, and of a node that was off, where the hub rejects its
+certificate during the handshake (`transport.Rejected`), removing it at restart. The
+canary was not in the store file. `TestAScheduledHighstateSurvivesAHubOutage`
+holds the first, second and fourth of those in CI.
+
+**Not verified.** FreeBSD: CI's FreeBSD leg will run the test, and no FreeBSD
+host has been driven by hand. A real packet-dropping network, as opposed to the
+silent listener. An HTTP/2 connection dying mid-request is matched by message
+text, because net/http's types are unexported, and was not provoked. Key
+rotation during an outage is by reasoning: the copy would fail to open and the
+run fail.
+
+**Limits that stay.** Only files a run has fetched are in the cache, and a hub
+that dies part way through a run can leave a mix of old and new files. A node
+revoked during an outage cannot hear of it until the hub returns. Nothing bounds
+the age of the copy; the log says what it is. A cached file is not re-verified
+when served, since its digest is not persisted separately from the listing.
+Plain pillar values in a run's return are still in `returns.ndjson`, as they
+were: that file is not encrypted.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

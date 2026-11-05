@@ -238,9 +238,10 @@ Look for a reaction whose output tag matches a reactor pattern, a missing
 
 **What still works.** The fleet keeps running whatever it was configured with.
 Nodes retry with backoff forever; scheduled jobs in `node.yaml` run on their
-clocks; beacons run; `halite-node state apply --local` always works. What
-stops: dispatch, new enrolment, reactions, anything needing pillar from the hub
-(unless `pillar_cache_disk` is on).
+clocks, on the last known good pillar and the cached tree; beacons run;
+`halite-node state apply --local` always works. What stops: dispatch, new
+enrolment, reactions, any change to the tree or pillar reaching a node, and
+pillar on a node with `pillar_cache_disk: false` or with no copy yet.
 
 **Diagnose.**
 

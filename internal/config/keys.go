@@ -79,7 +79,7 @@ var Keys = []Key{
 	{"pillar_source_merging_strategy", nodeHub, "smart", "smart, recurse, aggregate, or overwrite.", "12.3"},
 	{"pillar_merge_lists", nodeHub, "false", "Concatenate lists when merging pillar sources.", "12.3"},
 	{"pillar_trusted_grains", nodeHub, "", "Grains a node may use to target pillar. Custom grains are excluded by default.", "12.4"},
-	{"pillar_cache_disk", nodeOnly, "false", "Cache pillar on the node's disk, encrypted at rest.", "12.8"},
+	{"pillar_cache_disk", nodeOnly, "true", "Keep the last known good pillar on the node's disk, encrypted, for a hub outage.", "12.8"},
 	{"ext_pillar", hubOnly, "", "External pillar sources.", "12.7"},
 	{"ext_pillar_fail", hubOnly, "hard", "hard or ignore. A partial pillar is worse than no pillar.", "12.7"},
 	{"state_allowlist", nodeHub, "", "SLS names a state run may include.", "28.3"},

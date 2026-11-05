@@ -234,7 +234,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"pillar_cache_disk": {
 		Group:  "The tree: states and pillar",
-		Detail: "Keeps compiled pillar on the node so a run survives a hub outage. It is encrypted at rest because pillar is where the secrets are; it is still a copy of them on that disk.",
+		Detail: "Keeps the last pillar the hub sent under `<state_dir>/pillar-cache`, sealed with a key derived from the node's private key, and uses it when no hub answers, so a scheduled state run keeps converging through an outage and across a restart during one. It is still a copy of the secrets on that disk, and it is as old as the outage is long. A hub that answers and refuses clears it, as does a revocation. Set this to `false` for a node that must not hold secrets at rest; its state runs that read pillar then fail for as long as the hub is unreachable.",
 	},
 	"ext_pillar": {
 		Group:  "The tree: states and pillar",

@@ -137,7 +137,7 @@ Defaults here are the build's, verified; the reference has the rest.
 | `require_job_signature`, `job_signer_keys` | off | On, with keys, for sensitive nodes |
 | `startup_states` | none | `highstate`, to converge at boot |
 | `exec_path` | the process's `PATH` | Pin it so a service and a shell agree |
-| `pillar_cache_disk` | off | On, to survive a hub outage |
+| `pillar_cache_disk` | on | `false` on a node that must not hold secrets at rest; it then cannot apply pillar-reading states during a hub outage |
 | `extension_*` | none | Trust keys and pins |
 | `cmd_default_shell` | on | `false` once your `cmd.run` call sites are converted |
 | `metrics_listen` + `metrics_tls_*` | off | A node-side scrape endpoint |
