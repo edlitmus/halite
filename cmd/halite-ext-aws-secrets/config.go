@@ -103,11 +103,15 @@ type Config struct {
 	// NodeGrain is a grain naming further secrets the node wants.
 	//
 	// Salt parity, and worth being plain about: a node controls its own
-	// grains, so this lets any node ask the hub to fetch any secret the
-	// hub's credentials can read. NodeGrainAllow bounds it.
+	// grains, so this lets a node ask the hub to fetch a secret the
+	// hub's credentials can read. NodeGrainAllow bounds it, and is
+	// required with it.
 	NodeGrain string `json:"node_grain"`
 	// NodeGrainAllow are glob patterns a node-named secret ID must
-	// match. Empty allows any, which is the Salt behaviour.
+	// match. Required when NodeGrain is set: empty is refused, not read
+	// as "any" (issue 622). Salt's module had no such list and fetched
+	// whatever a node named; this extension did the same with the list
+	// empty, until 1.2.0.
 	NodeGrainAllow []string `json:"node_grain_allow"`
 	// NodeRegionAllow are the regions, beyond Region, that a node may
 	// name -- through its own `region` grain, or through the `region`
@@ -174,6 +178,18 @@ func parseConfig(raw json.RawMessage) (*Config, error) {
 		if _, err := path.Match(p, ""); err != nil {
 			return nil, fmt.Errorf("%q is not a usable pattern: %v", p, err)
 		}
+	}
+	// A grain with nothing bounding it is refused here, for every node,
+	// rather than when a node first names a secret. The block is wrong
+	// whichever node it is compiled for, and an error only some nodes
+	// meet is one an operator finds late. The hub does not read this
+	// block, so a hub with it still starts; every pillar compiled with
+	// it fails, and says this.
+	if cfg.NodeGrain != "" && len(cfg.NodeGrainAllow) == 0 {
+		return nil, fmt.Errorf("`node_grain` is set to %q and `node_grain_allow` is empty, which would let "+
+			"any node have the hub fetch any secret its credentials can read. Set `node_grain_allow` to "+
+			"the secret IDs or ARN patterns a node may name (a `*` does not match `/`, so `vmop/*` "+
+			"admits `vmop/db` and not `vmop/a/b`), or remove `node_grain`", cfg.NodeGrain)
 	}
 	// Checked here as well as where they become a host, so that a typo
 	// in the block is reported against the block rather than against
@@ -323,10 +339,11 @@ func (c *Config) secretsFor(grains, treePillar map[string]any) ([]Secret, error)
 // Refused loudly rather than skipped. A node that asks for a secret it
 // may not have is either misconfigured or probing, and both are worth
 // seeing; the failure is confined to that node's own pillar.
+//
+// An empty list permits nothing. parseConfig refuses a block that would
+// reach here with one, so this is the second of two checks; it is kept
+// so that the hole does not reopen through a Config built any other way.
 func (c *Config) allowed(secretID string) error {
-	if len(c.NodeGrainAllow) == 0 {
-		return nil
-	}
 	for _, pattern := range c.NodeGrainAllow {
 		if ok, err := path.Match(pattern, secretID); err == nil && ok {
 			return nil

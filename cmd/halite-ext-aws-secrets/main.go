@@ -68,7 +68,7 @@ import (
 
 // Version is what the handshake and `sys.list_extensions` report. It is
 // also what a pin names, so it changes when behaviour does.
-const Version = "1.1.2"
+const Version = "1.2.0"
 
 func main() {
 	// The resource limits of SPEC 24.3, applied by the extension to
