@@ -156,3 +156,26 @@ func TestEveryRunnerThatTakesOrchestrationNamesTakesThemAsSLS(t *testing.T) {
 		}
 	}
 }
+
+// An argument rule written for one orchestration runner holds every runner
+// that takes `sls`, because each compiles the orchestration it names
+// (issue 621): allow_mods written under `state.orchestrate` used to leave
+// `state.orch` free. The policy cannot read this registry, so it keeps the
+// list itself (policy.OrchestrationRunners); this holds the list to the
+// registry both ways. A runner that starts taking `sls` and is not added is
+// a runner an operator's allow_mods does not reach, and a name left on the
+// list after its runner stops taking `sls` is a refusal nobody can explain.
+func TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS(t *testing.T) {
+	reg := NewRunners()
+	var takesSLS []string
+	for _, name := range reg.Names() {
+		sig, _ := reg.sigs.Lookup(name)
+		if _, ok := sig.Param("sls"); ok {
+			takesSLS = append(takesSLS, name)
+		}
+	}
+	family := policy.OrchestrationRunners()
+	if strings.Join(takesSLS, " ") != strings.Join(family, " ") {
+		t.Errorf("the runners that take sls are %v, and the policy's orchestration family is %v", takesSLS, family)
+	}
+}
