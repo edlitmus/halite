@@ -38165,6 +38165,18 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `resol
 
 **Not verified.** The change against a running hub. Also, that a node named `no` matches on a real hub. The matching code is not changed.
 
+### 5.587 `--hub` and `listen` could not carry an IPv6 address
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `operatorClient` and `portOf`, now `hubURL`).
+
+**The defect.** An address was said to have a port if it contained a colon, and the port was taken from `listen` after its last colon. So `portOf("[::1]")` was `:1]`. Every operator command that reaches the hub through `operatorClient` was affected: `run`, `runner`, `orch`, `jobs resume`, `jobs kill`, `metrics` and `event`. `keys` is not affected, because it reads the store directly.
+
+**Shown.** Run on this Mac (macOS, darwin/arm64) on 2026-11-05. A real `halite-hub serve` listened on `[::1]:47510`, with an operator certificate from `keys operator create`. The command was `runner manage.status --hub X`. With this change, `::1`, `[::1]` and `[::1]:47510` all reach the hub, which answers "this hub has no policy, so nothing is authorized". On main at b842f005, `::1` fails with `parse "https://::1": invalid port "::1" after host`. `[::1]` dials `[::1]:443` and is refused. `[::1]:47510` reaches the hub. `TestHubURLReadsIPv6` has 15 good cases and 5 refused cases, and each output must pass `url.Parse`. The good cases include `::1`, `[::1]`, `[::1]:8443`, `2001:db8::7`, `fe80::1%en0`, a `listen` of `[::1]` and a `listen` of `[::1]:8443`, and `[::]:8443`. The refused cases are `host:`, `:8443`, `[::1`, `not:an:address` and `[]`. With the old colon logic put back, 10 cases and `TestAnUnreadableHubIsAUsageError` fail.
+
+**The change.** `hubURL(address, listen)` replaces the colon test. If the address has a scheme, it is used as written. If `net.SplitHostPort` succeeds, the address is used as `https://address`, and it is refused if the host or the port is empty (for example `host:` or `:8443`). Otherwise the brackets are removed. A host that contains a colon must parse as an IP address (zones are allowed) or it is refused. The result joins the host with the port of `listen`, or with 4510 if `listen` has none. A zone `%` is written as `%25` (RFC 6874) so that `url.Parse` accepts it. A bare IPv6 address is an address with no port: `--hub fe80::1:8443` is that address on the hub's port, and `[fe80::1]:8443` is the form that carries a port. An unreadable `--hub` is now a usage error that exits 64 and names `--hub`. The address is read before any key material is looked for, because the read moved to the top of `operatorClient`.
+
+**Not verified.** A link-local zoned address against a real hub: it is tested only in unit tests. FreeBSD and Linux. The same fault in `cmd/halite-hub/relay.go` (`--upstream`), `cmd/halite-node/enroll.go` and `cmd/halite-api/serve.go`, which build `https://%s:%d` in the same way. Those three are not changed here and are a follow-up.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

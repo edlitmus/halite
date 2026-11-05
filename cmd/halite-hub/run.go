@@ -6,7 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +43,18 @@ func operatorClient(args *cli.Args) *transport.Client {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	// The hub's address is read first, so that one that cannot be used
+	// is a usage error before any key material is looked for.
+	address := args.Flag("hub", cfg.String("hub", ""))
+	if address == "" {
+		// The operator command line most often runs on the hub itself.
+		address = "localhost"
+	}
+	url, err := hubURL(address, cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort)))
+	if err != nil {
+		cli.Usagef("%v", err)
+	}
+
 	files := pki.Files{Dir: args.Flag("pki-dir", cfg.PathUnderRoot("pki_dir", "pki"))}
 
 	name := args.Flag("as", "")
@@ -65,20 +80,6 @@ func operatorClient(args *cli.Args) *transport.Client {
 		cli.Fatalf("%v", err)
 	}
 
-	address := args.Flag("hub", cfg.String("hub", ""))
-	if address == "" {
-		// The operator command line most often runs on the hub itself.
-		address = "localhost"
-	}
-	url := address
-	if !strings.Contains(address, "://") {
-		if !strings.Contains(address, ":") {
-			listen := cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort))
-			url = fmt.Sprintf("https://%s%s", address, portOf(listen))
-		} else {
-			url = "https://" + address
-		}
-	}
 	return &transport.Client{
 		HubURL:     url,
 		CA:         ca,
@@ -104,11 +105,58 @@ func defaultOperator(files pki.Files) string {
 	return ""
 }
 
-func portOf(listen string) string {
-	if i := strings.LastIndex(listen, ":"); i >= 0 {
-		return listen[i:]
+// hubURL is the address an operator command reaches the hub at: --hub
+// (or the `hub` setting) as given when it names a scheme or a port, and
+// otherwise that host on the port the hub's own `listen` names.
+//
+// It used to decide "has a port" by whether the address held a colon, and
+// took the port as everything from the last colon of `listen`. Both are
+// wrong for IPv6, where the colons are the address. A bare `--hub ::1`
+// went out as https://::1, which is not a URL; `--hub [::1]` as
+// https://[::1], on port 443 rather than the hub's; and a `listen: [::1]`
+// with no port gave the port ":1]". net.SplitHostPort is what knows
+// which colon is the port's, and net.JoinHostPort what puts the brackets
+// back.
+//
+// A bare IPv6 address is taken as an address with no port, so
+// `--hub fe80::1:8443` is the address fe80::1:8443 on the hub's port: an
+// IPv6 address with a port is written [fe80::1]:8443, as it is in a URL.
+// An address that is neither a host, nor a host and port, nor an IPv6
+// address is refused rather than sent. DIVERGENCE 5.587.
+func hubURL(address, listen string) (string, error) {
+	if strings.Contains(address, "://") {
+		return address, nil
 	}
-	return fmt.Sprintf(":%d", transport.DefaultPort)
+	if host, port, err := net.SplitHostPort(address); err == nil {
+		if host == "" || port == "" {
+			return "", fmt.Errorf("--hub %q names no host or no port; write host:port, or the host alone", address)
+		}
+		return "https://" + address, nil
+	}
+	host := address
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	if strings.Contains(host, ":") {
+		if _, err := netip.ParseAddr(host); err != nil {
+			return "", fmt.Errorf("--hub %q is not a host, a host:port, or an IPv6 address", address)
+		}
+	}
+	if host == "" || strings.ContainsAny(host, "[]") {
+		return "", fmt.Errorf("--hub %q is not a host, a host:port, or an IPv6 address", address)
+	}
+	// A zone (fe80::1%en0) is written %25 in a URL, RFC 6874; left as
+	// `%e`, url.Parse refuses the address as a bad escape.
+	return "https://" + strings.Replace(net.JoinHostPort(host, listenPort(listen)), "%", "%25", 1), nil
+}
+
+// listenPort is the port of a `listen` address, or the hub's default
+// when it names none.
+func listenPort(listen string) string {
+	if _, port, err := net.SplitHostPort(listen); err == nil && port != "" {
+		return port
+	}
+	return strconv.Itoa(transport.DefaultPort)
 }
 
 // runRun is `halite-hub run '<target>' <function> [args...]`, the old
