@@ -38177,6 +38177,18 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `opera
 
 **Not verified.** A link-local zoned address against a real hub: it is tested only in unit tests. FreeBSD and Linux. The same fault in `cmd/halite-hub/relay.go` (`--upstream`), `cmd/halite-node/enroll.go` and `cmd/halite-api/serve.go`, which build `https://%s:%d` in the same way. Those three are not changed here and are a follow-up.
 
+### 5.588 `keys operator create --lifetime` issued a certificate that was already expired, or one that outlived the CA
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/keys.go`, `runKeysOperator`).
+
+**The defect.** The command parsed `--lifetime` after it opened the hub. A parse error went to `cli.Fatalf` and exited 1. Any value that parsed was issued: `-1h` gave a certificate that had already expired, `0` gave one that expired at the time of issue, and `876000h` gave one that lasted a century. Each was printed as a success and exited 0.
+
+**Shown.** Run on this Mac on 2026-11-05 against a real hub root. The CA was created by `halite-hub serve` and expires 2036-11-02. Main at b842f005 issued `-1h` (expiry 2026-11-05T16:53:17Z, an hour before) and `876000h` (expiry 2126-10-12), and exited 0 for both. This change refused both and exited 64. `TestOperatorLifetimeIsChecked` (`operator_lifetime_test.go`) runs `-1h`, `0`, `0s`, `soon` and `876000h`. Each exits 64, names `--lifetime` and writes no certificate. The control `48h` issues a certificate that ends 47 to 49 hours from now. With both checks disabled, `-1h`, `0`, `0s` and `876000h` fail: they exit 0 and write a certificate.
+
+**The change.** `--lifetime` is read before the hub is opened. A parse error, or a value of 0 or less, is a usage error that exits 64 and names `--lifetime`. After the hub is opened and before the certificate is issued, a lifetime that ends after the `NotAfter` of the enrollment CA is refused. It exits 64, and the message gives the expiry of the CA. The hub creates its CA with 10 years (`serve.go`), so the ceiling is about 10 years minus the age of the CA.
+
+**Not verified.** FreeBSD and Linux. The same lack of bounds in the issue of node and hub certificates (`certificate_lifetime`) is not touched. Noticed, not changed: `keys operator create` with a name that exists overwrites the certificate and key of that operator without asking. Main did this in the run above.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

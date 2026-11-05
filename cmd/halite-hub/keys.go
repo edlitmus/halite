@@ -506,11 +506,30 @@ func runKeysOperator(args *cli.Args) int {
 		cli.Usagef("operator create needs a name; it becomes the RBAC principal cert:CN=<name>")
 	}
 	name := args.Positional[2]
-	h := openHub(args, false)
-
+	// Read before the hub is opened, and refused unless positive. It was
+	// read after, with only the parse checked, and a parse failure exited
+	// 1 like a failure to issue. A negative lifetime issued a certificate
+	// already expired, zero one that expired as it was written; both
+	// printed as a success, and the operator found out at the first
+	// `run`. DIVERGENCE 5.588.
 	lifetime, err := time.ParseDuration(args.Flag("lifetime", "720h"))
 	if err != nil {
-		cli.Fatalf("--lifetime %q: %v", args.Flag("lifetime", ""), err)
+		cli.Usagef("--lifetime %q: %v", args.Flag("lifetime", ""), err)
+	}
+	if lifetime <= 0 {
+		cli.Usagef("--lifetime %q is not a positive duration", args.Flag("lifetime", ""))
+	}
+	h := openHub(args, false)
+	// And no longer than the CA that signs it. `--lifetime 876000h` issued
+	// a certificate for a century under a CA of ten years: the dates on it
+	// were never going to be what decided when it stopped working, and a
+	// certificate that says it is good until 2126 is a claim about an
+	// operator's access nobody meant to make. A lifetime the CA cannot
+	// back is refused, with the date it would have to end by.
+	if caEnd := h.auth.CA.Cert.NotAfter; time.Now().Add(lifetime).After(caEnd) {
+		cli.Usagef("--lifetime %s runs past the enrollment CA, which expires %s; "+
+			"an operator certificate cannot outlive what signed it",
+			args.Flag("lifetime", ""), caEnd.UTC().Format(time.RFC3339))
 	}
 	alg, err := pki.ParseKeyAlgorithm(h.cfg.String("key_algorithm", string(pki.ECDSAP256)))
 	if err != nil {
