@@ -38062,6 +38062,72 @@ was exercised only as `sshexec.Unframe` plus `json.Unmarshal` into
 fallback could ever emit invalid JSON -- it would need a marshaller error
 holding a raw control byte -- was not shown either way; it is gone now.
 
+### 5.584 The enrollment limit test assumed a node reaches the hub within a second
+
+Found during the issue 614 work, where it was the only failure in `make
+check`; it failed the same way on unmodified `main` at `b842f005`.
+`TestEnrollWaitRetriesWhenTheHubLimitsIt` (5.398) failed three times in
+three under `GOFIPS140=v1.0.0` and in the plain leg too, with either
+`enroll over the limit: exit 0`, or `--wait was never limited, so this
+proves nothing` together with `--wait retried after ~1.1s, sooner than
+its own interval`. The second pair reads like `enroll --wait` retrying
+before its own five-second floor, which would be a defect in 5.398's
+change. It was not one.
+
+**Measured** on macOS 26.7.2 (arm64), Go 1.27.3, at `e02c31b5`. The test
+told the hub to drain one charge a second (`EnrollSourceRate = 1`,
+burst 1), spent that charge, and then ran `halite-node enroll` as a
+subprocess, assuming its request would reach the hub inside that second.
+But `enroll` starts with `setup()`, which collects grains before it sends
+anything. Timed inside the subprocess, with a temporary print that is
+not in this change:
+
+```
+DEBUG grains took 1.237727125s
+DEBUG setup took 1.238794167s
+```
+
+The charge had drained, so the request was admitted and a certificate
+issued: exit 0. In the `--wait` half, the request after the second
+charge was also admitted at once. That gave "never limited", and the
+1.1 s was the whole admitted run, not a retry. A re-exec of the test
+binary costs about 0.03 s here. In `internal/grains` on the same Mac,
+`FQDN` alone took 0.61 s and `Collect` 0.90 s. That is this machine's
+resolver answering for its own hostname, so it varies by machine, and
+it explains why one full `make check` passed. Nothing was ever limited
+in a failing run, so `--wait`'s interval was never tested.
+
+**The change, to the test only.** The hub drains one charge per `--wait`
+interval (`1 / 5 s`), so one charge covers both runs. The sleep and the
+second charge between them are gone, because the refused request was
+not charged. `--wait` always waits at least that one interval, and that
+is exactly how long the drain takes, so its first retry is admitted
+however long the runs took to start. The test now fails only when the
+two runs together take more than five seconds to reach the hub. Its
+messages give the time since the charge, so a slow host is reported as
+a slow host, not as a `--wait` defect.
+
+**Demonstrated.** Five runs in five in the plain leg (7.7 to 8.9 s
+each), three in three under `GOFIPS140=v1.0.0`, and two in two under
+`-race`. All were run with `GOMAXPROCS=2 go test -p 2`. Broken on purpose, one at a time:
+
+| sabotage | result |
+|---|---|
+| the rate put back to 1 a second | `enroll over the limit: exit 0, 1.43s after the charge (the hub drains it in 5s)` |
+| `after = max(after, interval)` removed from `runEnroll` | `--wait retried after 4.68s, sooner than its own interval` |
+| `runEnroll` returns 2 on a 429 even under `--wait` | `enroll --wait over the limit: exit 2` |
+
+**Left alone.** `enroll` spends about a second on grains it does not
+use, before its first request. On a host whose resolver times out, that
+is up to `FQDNLookupTimeout` (2 s) more. This is the cost to the
+operator, not to the test, and it is not changed here.
+
+**Not verified.** This was not run on FreeBSD, Linux or CI runners,
+where grains may be faster or slower. The whole `cmd/halite-node`
+package passed once; a full `make check` was not run. A host
+that takes more than five seconds to start two `enroll` runs would
+still fail, and its message would now say so.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
