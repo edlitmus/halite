@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -127,15 +128,45 @@ func TestAScheduledHighstateSurvivesAHubOutage(t *testing.T) {
 	if fingerprint == "" {
 		t.Fatal("the hub never produced a fingerprint")
 	}
+	// **A fingerprint is not a listening hub.** `keys fingerprint` reads
+	// the CA from disk, and `serve` writes the CA first and listens last,
+	// after the serving certificate and everything else it sets up. The
+	// node was started in that gap once in CI's fips-test job (run
+	// 42077713188), was refused a connection fetching the CA, and exited,
+	// as `enroll` does when the hub is unreachable; the loop below then
+	// spent twenty seconds accepting a request nobody had made. The hub
+	// is ready when it answers, so that is what is waited for.
+	listening := false
+	for i := 0; i < 200 && !listening; i++ {
+		c, err := net.DialTimeout("tcp", addr, time.Second)
+		if listening = err == nil; listening {
+			c.Close()
+		} else {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	if !listening {
+		t.Fatalf("the hub never listened on %s", addr)
+	}
 	enroll := exec.Command(nodeBin, append([]string{"enroll", "--wait", "--hub-fingerprint", fingerprint}, nodeArgs...)...)
-	var enrollLog bytes.Buffer
+	var enrollLog syncBuffer
 	enroll.Stdout, enroll.Stderr = &enrollLog, &enrollLog
 	if err := enroll.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = enroll.Process.Kill() })
+	enrolled := make(chan error, 1)
+	go func() { enrolled <- enroll.Wait() }()
+	// An enroll that has ended will never be accepted, and says why: stop
+	// asking and say so, rather than asking for twenty seconds and then
+	// blaming the acceptance.
 	accepted := false
 	for i := 0; i < 200 && !accepted; i++ {
+		select {
+		case err := <-enrolled:
+			t.Fatalf("enroll ended before its request was accepted: %v\n%s", err, enrollLog.String())
+		default:
+		}
 		accepted = exec.Command(hubBin, append([]string{"keys", "accept", "outage1"}, hubArgs...)...).Run() == nil
 		if !accepted {
 			time.Sleep(100 * time.Millisecond)
@@ -144,7 +175,7 @@ func TestAScheduledHighstateSurvivesAHubOutage(t *testing.T) {
 	if !accepted {
 		t.Fatalf("the node's request was never accepted\n%s", enrollLog.String())
 	}
-	if err := enroll.Wait(); err != nil {
+	if err := <-enrolled; err != nil {
 		t.Fatalf("enroll: %v\n%s", err, enrollLog.String())
 	}
 
@@ -182,4 +213,23 @@ func TestAScheduledHighstateSurvivesAHubOutage(t *testing.T) {
 	startHub()
 	waitMarker("second-canary", "with the hub back")
 	stopNode()
+}
+
+// syncBuffer is a bytes.Buffer a child process writes to while the test
+// reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
