@@ -84,7 +84,7 @@ func (n *node) doctorHeading() string {
 // And compared with what the *agent* started with, which is the other
 // question an operator means, through the configuration record the agent
 // writes to its evidence chain at startup. This command is a separate
-// process: until DIVERGENCE 5.584 it compared the warning counts of two
+// process: until DIVERGENCE 5.587 it compared the warning counts of two
 // loads of the same file inside itself, and so reported "matches what
 // this process is running" whatever the agent had started with.
 func nodeConfigCheck(args *cli.Args, n *node) doctor.Check {
@@ -159,7 +159,7 @@ func nodeCertificateCheck(args *cli.Args, n *node) doctor.Check {
 			// it could not parse is one that passes on a broken node. As
 			// unreadable, with the reason, and not as expired: an empty
 			// certificate stood in for it, and its zero NotAfter printed
-			// as "expired -9223372036854ms ago" (DIVERGENCE 5.589).
+			// as "expired -9223372036854ms ago" (DIVERGENCE 5.592).
 			certs[label] = doctor.Expected{Unreadable: err, WarnWithin: notice}
 			continue
 		}

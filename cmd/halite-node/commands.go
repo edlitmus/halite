@@ -331,7 +331,7 @@ func renderHigh(out *state.Compiled) *value.Map {
 				// it; only the key says what it is. renderLow masked it and
 				// this did not, so `show_lowstate` hid what `show_highstate`
 				// and `show_sls` printed, to the terminal and, as a job, to
-				// the hub's job cache. DIVERGENCE 5.586.
+				// the hub's job cache. DIVERGENCE 5.589.
 				if value.KeyString(e.Key) == "runas_password" {
 					args = append(args, value.MapOf("runas_password", "**********"))
 					continue

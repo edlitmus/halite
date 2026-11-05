@@ -78,7 +78,7 @@ func TestNodeDoctorScrubsBothOutputPaths(t *testing.T) {
 // started on, not with itself.
 //
 // `doctor` is its own process, and its setup loads the file a moment
-// before the check re-reads it. Until DIVERGENCE 5.584 the check compared
+// before the check re-reads it. Until DIVERGENCE 5.587 the check compared
 // the warning counts of those two loads, so an agent started on one file
 // and a file edited since passed as "matches what this process is
 // running". The comparison is now with the configuration record the agent
@@ -149,7 +149,7 @@ func TestNodeDoctorSaysWhenItCannotCompare(t *testing.T) {
 }
 
 // A node certificate that cannot be parsed is reported as unreadable, not
-// as expired an impossible time ago. DIVERGENCE 5.589.
+// as expired an impossible time ago. DIVERGENCE 5.592.
 func TestNodeDoctorReportsAnUnreadableCertificateAsUnreadable(t *testing.T) {
 	n := nodeForEvidence(t, "")
 	dir := t.TempDir()

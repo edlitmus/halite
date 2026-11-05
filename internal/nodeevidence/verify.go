@@ -207,7 +207,7 @@ func Tail(dir string) (*Record, int, error) {
 // anything, or nil when the chain holds none.
 //
 // For `doctor`, which wants the configuration record the agent wrote when
-// it last started (DIVERGENCE 5.584). It reads segments newest first and
+// it last started (DIVERGENCE 5.587). It reads segments newest first and
 // stops at the first that holds one, so its cost is the segments written
 // since the agent last started rather than the whole history; a node that
 // has run for years without a restart pays for the segments in between,

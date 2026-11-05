@@ -1073,7 +1073,7 @@ func (h *hubContext) eventReturner(server *hub.Server) *hub.EventReturn {
 		// No sender name. This read `id`, which no hub setting declares
 		// and which could never hold anything: the Salt shim renames
 		// `id` to `node_id` as the file is loaded, so the key is gone
-		// before anything reads it (DIVERGENCE 5.588). A hub has no
+		// before anything reads it (DIVERGENCE 5.591). A hub has no
 		// identity of its own to give a returner, and the empty name is
 		// what every hub has always sent: syslog names the host from
 		// os.Hostname, and the webhook sends no X-Halite-Node header.

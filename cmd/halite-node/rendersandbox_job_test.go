@@ -21,7 +21,7 @@ import (
 // agent's deferred closeRenderSandbox closed the agent's. Each such job
 // left a child running until its pipes were finalised. Whether it happened
 // depended on whether the agent's own node had built one before the first
-// job. DIVERGENCE 5.592.
+// job. DIVERGENCE 5.595.
 //
 // The node is built by setup, as the agent's is, so the test holds the
 // wiring the agent gets rather than a hand-made node's.

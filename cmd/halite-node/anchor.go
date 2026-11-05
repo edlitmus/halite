@@ -208,7 +208,7 @@ var anchorProblems = []string{"conflict", "failed", "mismatch", "receipt", "unsu
 // left of the later ones: before it, a conflict -- the chain rewritten,
 // reset or rolled back -- was an error line at its first report and a
 // debug line at every report after, which is invisible at the default
-// level. DIVERGENCE 5.591.
+// level. DIVERGENCE 5.594.
 func (n *node) anchorProblem(kind, msg string, kv ...any) {
 	n.metrics.countAnchorProblem(kind)
 	n.evidence.mu.Lock()

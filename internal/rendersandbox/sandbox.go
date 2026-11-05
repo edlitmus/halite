@@ -288,7 +288,7 @@ var live atomic.Int64
 // close was for the agent's sandbox, which was never started; each job's
 // child was left to be reaped when its pipes were finalised. Nothing that
 // looked at one Sandbox could see that, because the one that leaked was
-// gone by the time anybody looked (DIVERGENCE 5.592).
+// gone by the time anybody looked (DIVERGENCE 5.595).
 func Live() int64 { return live.Load() }
 
 // start launches the child and reads its hello.

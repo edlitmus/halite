@@ -122,7 +122,7 @@ func writeValue(h sink, v any) {
 // redactor has run, so for a job whose arguments held a registered secret
 // the digest is not one the hub can compute from its copy; see
 // maxEvidenceField in cmd/halite-node for why that is the right way round.
-// DIVERGENCE 5.587.
+// DIVERGENCE 5.590.
 func DigestString(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return "sha256:" + hex.EncodeToString(sum[:])

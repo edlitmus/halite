@@ -60,7 +60,7 @@ func TestAStateShowJobDoesNotReturnARegisteredSecret(t *testing.T) {
 // It is a password written into the tree, not a pillar value, so the
 // redactor does not hold it and maskValue cannot find it. 5.266 masked it
 // by key in show_lowstate; show_highstate and show_sls render the high
-// data, which is a different function, and printed it (DIVERGENCE 5.586).
+// data, which is a different function, and printed it (DIVERGENCE 5.589).
 func TestEveryStateShowFormMasksRunasPassword(t *testing.T) {
 	const password = "unregistered-pw-4471"
 	n := nodeWithBrokenPillar(t)

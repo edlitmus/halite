@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 	// The render sandbox's child. The sandbox re-executes this binary with
 	// a bare environment holding only this variable; without this branch
 	// the child would be the test binary's ordinary entry point, which
-	// does not speak the sandbox's protocol (DIVERGENCE 5.592).
+	// does not speak the sandbox's protocol (DIVERGENCE 5.595).
 	if os.Getenv("HALITE_RENDER_SANDBOX") == "1" && len(os.Args) > 1 && os.Args[1] == renderSandboxCommand {
 		os.Exit(runRenderSandbox(nil))
 	}

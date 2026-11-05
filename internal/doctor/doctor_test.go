@@ -428,7 +428,7 @@ func TestFirstLineKeepsOrdinaryErrorsAlone(t *testing.T) {
 //
 // Every caller passed an empty certificate in its place, with the reason
 // in the label, and the check reported its zero NotAfter as "expired
-// -9223372036854ms ago": a duration that had overflowed. DIVERGENCE 5.589.
+// -9223372036854ms ago": a duration that had overflowed. DIVERGENCE 5.592.
 func TestAnUnreadableCertificateIsReportedAsUnreadable(t *testing.T) {
 	now := time.Now()
 	res := CertificateExpiry(map[string]Expected{
