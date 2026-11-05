@@ -1335,10 +1335,15 @@ the hub-authoritative attributes, the pillar environment, and the content hash o
 that contributed. Any change to any of those invalidates the entry. Salt's pillar cache, which is
 keyed loosely and is a known source of stale-secret incidents, is not reproduced.
 
-The node caches its pillar in memory only, never on disk, unless `pillar_cache_disk: true` is set,
-in which case the cache is encrypted at rest with a key derived from the node's private key and is
-deleted on service stop. Salt writes pillar to `/var/cache/salt/minion/pillar.cache` in plaintext
-when caching is enabled, which puts every secret that node receives on its disk.
+A node with a hub asks for its pillar on every run, and keeps the last one it received on disk so
+that it can go on converging when no hub answers (section 20.1). The copy is sealed with AES-256-GCM
+under a key derived from the node's private key with HKDF-SHA-256, is bound to the node and the
+pillar environment, and survives a service stop, because a restart during an outage is when it is
+needed. It is used only when no hub answered: a hub that refuses, a hub whose certificate does not
+verify, and a hub that fails to compile are answers, and the run fails. A refusal of the node
+(401 or 403) and a revocation remove the copy, and `pillar_cache_disk: false` both removes it and
+stops it being kept. Salt writes pillar to `/var/cache/salt/minion/pillar.cache` in plaintext when
+caching is enabled, which puts every secret that node receives on its disk.
 
 `saltutil.refresh_pillar` is `pillar.refresh`, with the old name aliased.
 
@@ -1977,6 +1982,11 @@ hour causes a `cron` job in that hour to run once at the transition; a transitio
 hour causes it to run once, not twice. A missed run because the node was off does not backfill by
 default; `catchup: true` runs it once on start.
 
+A schedule does not need the hub. A scheduled state run during an outage uses the last known good
+pillar (section 12.8) and the tree in the node's file cache, and logs how old the pillar is. A file
+the node never fetched is not available, so a state that needs one fails, and a node that has never
+reached its hub has nothing to run from.
+
 ### 20.2 The node's own reactor and self-healing
 
 A node may run a local reactor against its own event bus, so that a beacon can trigger a local state
@@ -2433,7 +2443,7 @@ should be able to check the answer against the question.
 | Arbitrary object construction from YAML | The `yaml.load` class of flaw generally | The parser can construct nine scalar and collection types and nothing else |
 | A minion executing unsigned code fetched from the master | By design in Salt | Signed, pinned, out-of-process, sandboxed extensions |
 | Insufficient authorization granularity leading to `cmd.run` for everyone | `publisher_acl` with `.*` | `arbitrary_code` functions are never granted by wildcard |
-| Secrets on disk in plaintext | The minion pillar cache | Pillar is memory-only by default and encrypted at rest when cached |
+| Secrets on disk in plaintext | The minion pillar cache | The last known good pillar is encrypted at rest under a key derived from the node's private key, and `pillar_cache_disk: false` keeps none |
 
 ### 25.3 Cryptographic inventory
 
@@ -2447,6 +2457,7 @@ Every cryptographic primitive used, so that a FIPS assessment has one table to r
 | Message authentication | HMAC-SHA-256 for webhooks, bootstrap tokens, and returner signing |
 | Password storage | PBKDF2-HMAC-SHA-512 |
 | Key derivation | HKDF-SHA-256 |
+| Last known good pillar on a node | HKDF-SHA-256 from the node's private key, AES-256-GCM with bound AAD |
 | Encrypted pillar | ECDH P-256 or RSA-OAEP for key establishment, HKDF-SHA-256, AES-256-GCM with bound AAD |
 | Signatures on artifacts, extensions, and jobs | ECDSA P-256 or P-384 over SHA-256 or SHA-384 |
 | Evidence anchor receipts | ECDSA by the enrollment CA key over SHA-256 of a domain-separated text payload (section 25.7) |

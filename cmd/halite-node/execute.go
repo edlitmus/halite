@@ -232,6 +232,7 @@ func (n *node) adoptJobEnvironment(j *job.Job) error {
 // anything else through the execution registry.
 func (n *node) runFunction(j *job.Job) (outcome, error) {
 	if fn, ok := stateFunction(j.Fun); ok {
+		n.refreshTreeListing()
 		return n.runStateJob(j, fn)
 	}
 	// A pillar that does not compile no longer fails every function.

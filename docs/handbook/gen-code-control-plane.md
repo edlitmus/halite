@@ -25,7 +25,7 @@ Everything here is crypto/tls and net/http. Section 6.1 records why at length, a
 
 There is no plaintext mode. Not for loopback, not for a test, not behind a flag — section 6.1 is explicit that such a setting is invariably found in production, and the way to be sure of that is for it not to exist.
 
-**Files:** `bootstrap.go`, `client.go`, `tls.go`, `wire.go`; with tests.
+**Files:** `bootstrap.go`, `client.go`, `tls.go`, `unreachable.go`, `wire.go`; with tests.
 
 **Exports.**
 
@@ -61,6 +61,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `RateLimited` (func): RateLimited reports whether err is the hub saying "not so fast", and how long it asked for.
 - `ReadJSON` (func): ReadJSON decodes a request body under a limit, refusing anything after the first value so that a request cannot smuggle a second one.
 - `RefusedError` (type): RefusedError is an answer that will not change on a retry: the hub understood the request and said no.
+- `Rejected` (func): Rejected reports whether the hub refused this node's certificate during the handshake, which is how a revoked or deleted node hears about it when it was not connected at the moment of revocation.
 - `RelayUpdate` (type): RelayUpdate is a relay telling its upstream that its fleet changed, at POST /v1/relay.
 - `ResumeResponse` (type): ResumeResponse is the answer to POST /v1/jobs/{jid}/resume.
 - `RunnerRequest` (type): RunnerRequest is an operator asking the hub to run one of its own functions, at POST /v1/runners.
@@ -71,6 +72,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `SubmitResponse` (type): SubmitResponse is the hub's acknowledgement: the jid and who is expected to answer, so that a caller which disconnects can still find out what happened.
 - `Subordinate` (type): Subordinate is one node behind a relay.
 - `SubscribeRequest` (type): SubscribeRequest is the body a node opens the stream with: its initial state, per SPEC 6.2.
+- `Unreachable` (func): Unreachable reports whether a request failed because no hub answered.
 - `WriteError` (func): WriteError sends a failure in the one shape.
 - `WriteJSON` (func): WriteJSON sends a value with the canonical settings of SPEC 6.4: HTML escaping off, because this is not a browser and a `&` in a command line should survive.
 

@@ -967,9 +967,10 @@ other bullets stand as they were last verified.
 - **Signed state trees** are named in the 25.1 threat model and in phase
   6's contents. Do not mistake gitfs ref verification for it: that
   verifies a ref tip, not a tree manifest.
-- **No encryption primitives exist in the tree at all** — no AES-GCM, no
-  ECDH, no RSA-OAEP, confirmed by search. That is what §4's
-  `pillar_cache_disk` actually waits on.
+- **AES-GCM exists only for the last known good pillar**
+  (`internal/pillarstore`, DIVERGENCE 5.577), under a key derived from the
+  node's own key. There is still no ECDH or RSA-OAEP, so SPEC 25.3's
+  encrypted-pillar stack is not built.
 
 ### 3.4 Testing layers that do not exist (SPEC 31)
 
@@ -1404,18 +1405,14 @@ framing §0 already gives it.
 
 ## 4. Settings that are accepted and do nothing
 
-Ten keys are **inert**: they warn at startup naming what the operator
+Nine keys are **inert**: they warn at startup naming what the operator
 gets instead, which is the honest half, and they still do nothing.
 `job_cache`, `quiesce`, `quiesce_allowlist`, `startup_states`,
 `parallel_jobs`, `socket_dir`, `node_data_cache`, `hub_type`,
-`legacy_acl`, `pillar_cache_disk`. Counted 2026-10-02 from `InertKeys` in
+`legacy_acl`. Counted 2026-11-04 from `InertKeys` in
 `internal/config/inert.go`; `ext_pillar_fail` and `tracing` left it when
-external pillar and tracing were built.
-
-`pillar_cache_disk` deserves separate mention: it is documented as
-caching pillar "encrypted at rest" (SPEC 12.8), and no encryption
-primitives exist in the tree at all (§3.3). Implementing it means writing
-the SPEC 25.3 encrypted-pillar stack, not wiring a flag.
+external pillar and tracing were built, and `pillar_cache_disk` when the
+last known good pillar was (DIVERGENCE 5.577).
 
 Three more are unread with a reason (`UnreadKeys`): `log_level_file`,
 `regex_engine` and `node_id_source` are settings with one value.
