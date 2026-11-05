@@ -37726,7 +37726,7 @@ the CLI run was the hub's own sync and list, which shares `Store.Load`
 with a node but not the node's `remoteExtensionSource`. Nothing ran on
 FreeBSD or Linux by hand; CI runs the unit tests on both.
 
-### 5.578 One `aws_secrets_manager` block was served what another block fetched
+### 5.579 One `aws_secrets_manager` block was served what another block fetched
 
 Issue 622, from the close-out review of issue 321. The extension's cache
 was keyed by region, secret and stage. The hub keeps one pool of
