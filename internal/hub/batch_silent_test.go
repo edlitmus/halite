@@ -9,20 +9,16 @@ import (
 	"github.com/edlitmus/halite/internal/transport"
 )
 
-// What a safe limit counts, recorded as it is.
+// A silent node counts against the safe limit (issue 540, DIVERGENCE 5.496).
 //
-// `--batch-safe-limit 1` stops a batch once one node has *failed*, and a
-// node that does not answer is not a failure: awaitBatch counts returns whose
-// Success is false and nothing else. A change that hangs the first node it
-// reaches, or cuts it off, therefore does not trip the limit; after the
-// batch timeout the batch warns "advanced with returns outstanding" and
-// delivers the same change to the next slice. SPEC 9.3 lists "unresponsive"
-// beside "failed" as separate states, so counting only the second is the
-// letter of it; whether a silent node should count toward the limit is the
-// operator's decision and is open (DIVERGENCE 5.496). This test says what
-// happens today, so a change in either direction is a decision and not an
-// accident.
-func TestASilentNodeIsNotCountedAgainstTheSafeLimit(t *testing.T) {
+// `--batch-safe-limit` exists to stop before the rest of the estate gets the
+// same broken change, and the broken change it caught least was the one
+// that kills its target: a node that takes the job and never answers made no
+// failed return, so after the batch timeout the batch delivered the same
+// change to the next slice. This test held that behaviour until the owner
+// decided it the other way; it now holds the decision. The silent node is
+// first, so the other two are reached only if the batch moves past it.
+func TestASilentNodeCountsAgainstTheSafeLimit(t *testing.T) {
 	l := newLab(t).withJobs(t)
 	tr := &tracker{seen: map[string]time.Time{}}
 	var stops []func()
@@ -45,38 +41,15 @@ func TestASilentNodeIsNotCountedAgainstTheSafeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// One slice a second; the silent node is first, so the other two are only
-	// reached if the batch moves past it.
-	deadline := time.Now().Add(15 * time.Second)
-	for tr.count() < 2 && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
+	status := waitForState(t, op, res.JID, "aborted")
+	if len(status.Delivered) != 1 || status.Delivered[0] != "web1.example" {
+		t.Errorf("delivered to %v, want only the silent node", status.Delivered)
 	}
-	// The tracker sees the two nodes that answer; the silent one takes the job
-	// and says nothing.
-	if tr.count() != 2 {
-		t.Fatalf("%d of the two answering nodes were given the job; a silent node stopped the batch, "+
-			"which is not what is recorded in 5.496", tr.count())
-	}
-	// The returns of the two answering nodes are recorded a moment after they
-	// are sent, so the missing list is waited on rather than read once: it
-	// settles at the silent node alone. (Read once, it still held web3 on a
-	// slow runner.)
-	var status *transport.JobStatus
-	settled := time.Now().Add(5 * time.Second)
-	for {
-		var err error
-		if status, err = op.JobStatus(context.Background(), res.JID); err != nil {
-			t.Fatal(err)
-		}
-		if len(status.Missing) <= 1 || time.Now().After(settled) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if len(status.Delivered) != 3 {
-		t.Errorf("delivered to %v, want all three", status.Delivered)
-	}
-	if len(status.Missing) != 1 || status.Missing[0] != "web1.example" {
-		t.Errorf("missing = %v, want only the silent node", status.Missing)
+	// Two seconds past the abort, which is two more slice timeouts: if the
+	// batch were still going, a second node would have been given the job.
+	time.Sleep(2 * time.Second)
+	if n := tr.count(); n != 0 {
+		t.Fatalf("%d of the answering nodes were given the job after the first node "+
+			"stayed silent; a silent node did not count against the safe limit", n)
 	}
 }

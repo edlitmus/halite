@@ -81,6 +81,8 @@ func (s *Server) runBatches(ctx context.Context, j *job.Job, msg transport.Messa
 
 		failed := s.awaitBatch(ctx, j, slice, timeout)
 
+		// failed includes the delivered nodes that have not answered; see
+		// awaitBatch.
 		if j.Batch.SafeLimit > 0 && failed >= j.Batch.SafeLimit {
 			// The point of the limit: stop before the rest of the
 			// estate gets the same broken change.
@@ -110,11 +112,36 @@ func (s *Server) runBatches(ctx context.Context, j *job.Job, msg transport.Messa
 }
 
 // awaitBatch waits for one slice's returns and reports how many of the
-// job's returns so far have failed.
+// job's nodes count against its safe limit so far.
 //
 // Failures are counted across the whole job rather than the slice,
 // because that is what a safe limit means: "stop when this many
 // machines have broken", not "this many in a row".
+//
+// **A node that has not answered counts the same as one that failed**
+// (issue 540, DIVERGENCE 5.496). It used to count only returns whose
+// Success was false, so the change the limit exists to catch least was
+// the one that kills its target: a change that hangs the node, reboots
+// it, or cuts it off from the hub produces no return at all, and the
+// batch moved on after the timeout and gave the same change to the
+// next slice. SPEC 9.3 lists "unresponsive" beside "failed" for
+// `--progress`, and it still does; for the limit they are one thing,
+// because neither is a node the operator can say the change left
+// working.
+//
+// "Has not answered" is judged when the slice's wait ends, over every
+// node the batch has delivered to. Each of those has by then had at
+// least one full slice wait: the ones in this slice have just had it,
+// and the ones in earlier slices had theirs before this slice was sent.
+// A node from an earlier slice that has since answered is counted by
+// its answer, so a slow node that came back and succeeded is not held
+// against the job. A node that was not connected when its slice was
+// delivered is counted too: the hub cannot tell "never received it"
+// from "received it and went quiet", and of the two mistakes, stopping
+// a batch that would have been fine is the safer one. `jobs resume`
+// undoes it once the node has answered; while it is still silent it
+// counts again, as a failed return always has, because the count is
+// over the whole job.
 func (s *Server) awaitBatch(ctx context.Context, j *job.Job, slice []string, timeout time.Duration) int {
 	deadline := time.Now().Add(timeout)
 	want := make(map[string]bool, len(slice))
@@ -128,7 +155,9 @@ func (s *Server) awaitBatch(ctx context.Context, j *job.Job, slice []string, tim
 			return 0
 		}
 		failed, answered := 0, 0
+		returned := make(map[string]bool, len(returns))
 		for _, r := range returns {
+			returned[r.NodeID] = true
 			if !r.Success {
 				failed++
 			}
@@ -137,11 +166,18 @@ func (s *Server) awaitBatch(ctx context.Context, j *job.Job, slice []string, tim
 			}
 		}
 		if answered >= len(slice) || time.Now().After(deadline) {
-			if answered < len(slice) {
-				s.warn("a batch advanced with returns outstanding",
-					"jid", string(j.JID), "answered", answered, "of", len(slice))
+			silent := 0
+			for _, id := range j.Delivered {
+				if !returned[id] {
+					silent++
+				}
 			}
-			return failed
+			if answered < len(slice) {
+				s.warn("a batch slice timed out with returns outstanding",
+					"jid", string(j.JID), "answered", answered, "of", len(slice),
+					"silent", silent)
+			}
+			return failed + silent
 		}
 		select {
 		case <-time.After(200 * time.Millisecond):
