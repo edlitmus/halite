@@ -23813,7 +23813,7 @@ grains.item fips_mode fips_build fips_module` as the way to check the FIPS
 state of an estate, so that documented command failed on every node. A
 list as one quoted argument, `grains.item '[fips_mode, fips_build]'` with
 default argument parsing, returned a single grain literally named
-`[fips_mode,fips_build]` with value null. Cause and fix are in 5.586.
+`[fips_mode,fips_build]` with value null. Cause and fix are in 5.587.
 
 **Seen, not fixed.** The operator CLI dials `localhost:<port of listen>`
 unless `--hub` is given. With `listen: 172.26.28.44:8301`, `halite-hub
@@ -38566,7 +38566,7 @@ Each part was broken on purpose and watched to fail:
 - **Not run on FreeBSD or Linux.** Nothing here depends on the platform,
   and CI runs the tests on all four.
 
-### 5.586 `grains.item` took one grain name, and the documented FIPS check failed
+### 5.587 `grains.item` took one grain name, and the documented FIPS check failed
 
 Found on 2026-11-05 during the issue 306 run on Ubuntu Pro's FIPS kernels
 (5.282). `halite-hub run ami-test-1-h306 grains.item fips_mode fips_build
