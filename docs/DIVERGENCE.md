@@ -27936,6 +27936,14 @@ Each half was broken on purpose and watched to fail:
 - **The fleet's own policies were not read** for roles that rely on a
   narrowed role running the highstate. Any that do are refused after
   this change.
+
+#### 5.586, an argument rule holds its family
+
+The third bullet under "Not changed, and open" is fixed. An argument
+rule now holds every function that takes the same names, so `allow_sls`
+written under `state.apply` holds `state.sls`, `state.highstate` and the
+`state.show_*` renderers in the same rule. 5.586 has the details.
+
 ### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
 
 SPEC 23.5's `allow_mods` is how a policy limits a role to named
@@ -38162,6 +38170,225 @@ Issue 623, from the 2026-11-03 review of the issue 321 fixes (`internal/gitfs/ba
 **Run live.** A real `halite-hub serve` on macOS 26.7.2 arm64 (this branch's build, and main's at e02c31b5 for comparison), Homebrew git 2.56.0 and GnuPG 2.5.24, `gitfs_update_interval: 3s`, one remote on the local disk whose `main` is one signed commit, and a `gitfs_keyring` holding only the exported public key, trusted. Both hubs started with `environments=base`. The key was deleted from the keyring with `gpg --delete-keys` while each ran. The fixed hub logged the withdrawal with the remote (`live-remote`), ref, environment, commit and gpg's `NO_PUBKEY` within one update, then `a gitfs remote now serves nothing`, and its commit's tree was gone from the cache. Main's logged only `a gitfs remote serves no environment` every three seconds and kept the tree. Restarted, both started with `environments=` (nothing).
 
 **Not verified.** FreeBSD: beastie could not be reached (its ssh agent would not sign), and mini-me has no gpg, so this ran on one Mac only. A node fetching from the hub after the withdrawal: "served" was read from the hub's own log and its cache, which the sweep keys on what is served, not from a node asking for `salt://top.sls`. A remote over ssh or https, a tag (`verify-tag`), a key that expired or was revoked rather than deleted, and a keyring change while an update is running.
+
+### 5.586 An argument rule held only the function it was written under
+
+Issue 621, from the 2026-11-03 review of the issue 321 fixes. 5.320 said
+under "Not changed, and open" that a rule granting `state.*` and
+constraining only `state.apply` left `state.highstate` and `state.sls`
+unconstrained, "and nothing warns about it". The review ran a real role
+through the policy. It granted `state.*` with `allow_sls: [web.*]` and
+`deny_kwargs: [pillar]` written under `state.apply`, and every runner with
+`allow_mods: [deploy.*]` written under `state.orchestrate`. All of these
+were **allowed**:
+
+- `state.sls db.secret`
+- `state.sls web.x` with `pillar=…`
+- `state.highstate`
+- `state.show_sls db.secret`, which renders the SLS, secrets and all
+- `state.orch sls=teardown`
+
+The cause is one line: `checkArgs` read `rule.Args[req.Fun]`, the argument
+rule written under the exact name of the function asked for. Every
+function above takes the names the rule was written to limit, under
+another name, and nothing told the operator that a sibling was a way
+round it. The checks 5.320 and 5.321 added (the highstate refusal, the
+keyword and comma list of `sls`) were sound for the function they held
+and reached no other.
+
+**The fix.** An argument rule now holds every function that takes the
+same names (`policy.ArgumentFamily`). There are two families:
+
+- **The SLS family**, for a job: every function the node answers through
+  its state compiler. The family is `state.JobFunctions`, the list the
+  node dispatches on (`stateFunction` in `cmd/halite-node`), so it holds
+  `state.apply`, `state.sls`, `state.highstate` and the five
+  `state.show_*` renderers. `runStateJob` compiles the positional names,
+  or the highstate when there are none, for all eight, so each takes what
+  `allow_sls` and `deny_sls` judge. A function the node starts answering
+  through its compiler joins the family, because both read that one list.
+- **The orchestration family**, for a runner: the runners that take
+  `sls`. These are `state.orchestrate`, `state.orch` and
+  `state.orchestrate_show_sls`. The runner registry belongs to the hub,
+  which `internal/policy` cannot import, so the list is written in the
+  policy, and `TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS` in
+  `internal/hub` holds it to the registry in both directions.
+
+`TestTheSLSFamilyIsEveryFunctionThatTakesSLSNames` holds the other side.
+It fails if the execution registry gains a function in the `state` module,
+or one with a parameter named `sls`, `mods` or `highstate`, because such
+a function would take SLS names from outside the family. There is none
+today. `kmod.present` and `kmod.absent` take `mods`, but they are state
+modules, which a job cannot call, and the names are kernel modules.
+
+**All of them hold, not the most specific.** When a rule has argument
+rules under two members of a family, a request must pass both. If the
+exact name's rule replaced the others, writing `deny_kwargs` under
+`state.sls` would lift `allow_sls` from `state.sls`, which is the same
+surprise in another form. An operator who wants different limits for
+different members writes them in different rules, each granting its own
+function. `TestEveryArgumentRuleInTheFamilyHolds` holds this.
+
+A refusal by a rule written under another name says so, because the
+request the operator is reading does not mention that name:
+
+```
+denied: db.secret is not in the SLS names this role may apply (web.*) (the args written for state.apply hold every state function a node compiles, state.sls among them)
+```
+
+**Every authorize site gets it.** `checkArgs` is the only place a
+decision reads `Rule.Args` (checked by grep for `.Args[` across the
+repository; `policy show` reads it too, to print it). It is reached only
+from `AuthorizeAs`, and `Authorize` calls that. Every site
+that authorizes calls one of those two: the hub's job submission, resume,
+kill and status (`jobs.go`), runner calls (`runner.go`, `runners_fleet.go`),
+reactions (`runners_reactor.go`), the mine (`mine.go`), the relay
+(`relay.go`), metrics, the delegation pair (`delegation.go`, 5.582),
+`halite-api` (`internal/api/authorize.go`) and `halite-hub policy test`.
+An orchestration's `salt.state` steps are submitted as `state.apply` jobs
+(`orch_steps.go`) and go through the same path.
+
+**`policy show`** now prints, under each argument rule, the functions it
+holds. For each rule that has argument rules, it also prints the
+functions the rule grants that none of them holds. A pattern is expanded
+to what the hub would grant by it, so `service.*` is counted against the
+functions this build ships and never includes a pillar reader:
+
+```
+role web
+  0. state.*, pkg.installed, service.* on *
+     state.apply: allow_sls=[web.*] deny_sls=[] allow_mods=[] deny_kwargs=[pillar]
+     state.apply: holds state.apply, state.highstate, state.show_highstate, state.show_lowstate, state.show_sls, state.show_states, state.show_top, state.sls
+     no argument rule holds: pkg.installed; service.* (all 18 it grants)
+  1. runners state.*, jobs.lookup_jid on no node (no target)
+     state.orchestrate: allow_sls=[] deny_sls=[] allow_mods=[deploy.*] deny_kwargs=[]
+     state.orchestrate: holds state.orch, state.orchestrate, state.orchestrate_show_sls
+     no argument rule holds: runner state.* (7 of the 10 it grants: state.event, state.orch_list, state.orch_resume, state.orch_show, state.pause, state.resume, state.single); runner jobs.lookup_jid
+```
+
+A rule with no argument rules gets no such line, because its listing
+already shows that nothing holds it. The issue also asked for a warning
+when the policy loads. That was not added: once the family holds,
+the case it would warn about is closed, and the `policy show` line covers
+the rest.
+
+**What an operator sees.** This fails closed, so existing roles become
+stricter, and the CHANGELOG marks it as breaking. In one rule:
+
+- An argument rule written for one member of a family now refuses
+  requests to the others that it would have refused for its own
+  function. A role with `allow_sls` on `state.apply` that also grants
+  `state.sls`, `state.highstate` or `state.show_*` in the **same rule**
+  is held to those names on all of them. Under 5.320 that refuses
+  `state.highstate`, and a `state.show_*` with no names, outright.
+- `require_kwargs: {test: true}` on `state.apply` now requires `test` on
+  the `state.show_*` renderers in that rule too. They take the flag
+  harmlessly, but a caller that does not pass it is refused.
+- `deny_kwargs: [pillar]` on `state.orchestrate` now refuses `pillar` to
+  `state.orch` and `state.orchestrate_show_sls` in that rule.
+
+The fix for a role that meant a sibling to be free is to move the
+sibling into a rule of its own. A role whose rule grants only the
+function its argument rule names sees no change. This is true of every
+example policy in `contrib/examples` and in the handbook, which were
+read for it. The existing test this broke is that case:
+`TestSLSConstraintsJudgeTheCanonicalName` wrote `deny_sls` under
+`state.sls` and `allow_sls` under `state.apply` in one rule. Its
+`state.sls ok` row was then refused by `allow_sls`. It now uses two
+rules, and that is the shape the CHANGELOG tells operators to use.
+
+#### What Salt does
+
+Read from Salt's source at `v3007.1`, `salt/utils/minions.py`. It was not
+run. `CkMinions.auth_check` walks the ACL list. A plain string entry such
+as `state.*` returns `True` as soon as `match_check` (`re.match` against
+the function name) succeeds, so no argument check runs. A dict entry such
+as `{'state.apply': {'args': [...], 'kwargs': {...}}}` goes through
+`__fun_check`, which runs `__args_check` only for a function its key
+matches. The entries are alternatives. So an ACL of `- state.*` and
+`- state.apply: {args: ['web.*']}` lets `state.sls db.secret` through on
+the first entry. Salt has the same hole, and an operator closes it there
+by writing the argument spec under a key that matches every function
+meant (`state.*`), because the key is a regular expression. Here the key
+of `args` is an exact name and a rule is one grant, so the family does
+that work. This is stricter than Salt, which never applies an argument
+spec to a function its key does not match.
+
+#### What was run
+
+`halite-hub policy test` with the role above, built from `main`
+(`e02c31b5`) and from this change, on macOS (Darwin 25.6, arm64):
+
+| Request | `main` | this change |
+|---|---|---|
+| `web1 state.sls db.secret` | allowed by `web` rule 0 | denied, `db.secret` not in `web.*` |
+| `web1 state.sls web.x --kwarg pillar=x` | allowed by `web` rule 0 | denied, `"pillar"` |
+| `web1 state.highstate` | allowed by `web` rule 0 | denied, runs the whole highstate |
+| `web1 state.show_sls db.secret` | allowed by `web` rule 0 | denied, `db.secret` not in `web.*` |
+| `'' state.orch --runner --kwarg sls=teardown` | allowed by `web` rule 1 | denied, `teardown` not in `deploy.*` |
+| `web1 state.sls web.x` | allowed by `web` rule 0 | allowed by `web` rule 0 |
+| `web1 state.apply web.x` | allowed by `web` rule 0 | allowed by `web` rule 0 |
+| `'' state.orch --runner --kwarg sls=deploy.web` | allowed by `web` rule 1 | allowed by `web` rule 1 |
+
+Tests:
+
+- `internal/policy` `TestAnArgumentRuleHoldsEveryFunctionThatTakesTheSameNames`
+  has the five cases of the issue, the remaining members of each family
+  (`state.show_top`, `state.show_lowstate`, `state.orchestrate_show_sls`),
+  allowed controls, and `state.orch_list` as a runner outside the family.
+- `internal/policy` `TestEveryArgumentRuleInTheFamilyHolds`,
+  `TestTheSLSFamilyIsEveryFunctionThatTakesSLSNames`.
+- `internal/hub` `TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS`.
+- `cmd/halite-hub` `TestPolicyShowSaysWhatNoArgumentRuleHolds` runs the
+  real `policy show`.
+
+Each part was broken on purpose and watched to fail:
+
+- **The family not read** (`argRulesFor` reading the exact name only,
+  which is `main`'s behaviour): nine rows of the first test failed,
+  including all five cases of the issue, and both rows of the second.
+  Before the fix existed, the same nine rows failed against `main`'s
+  `checkArgs`.
+- **The exact name's rule replacing the family's**: both rows of
+  `TestEveryArgumentRuleInTheFamilyHolds` failed, and the first test
+  passed, which is why the second test exists.
+- **`state.orchestrate_show_sls` dropped from the list**: the hub's
+  registry test failed, naming it, and so did the policy row for it.
+- **`policy show` counting the exact name only**: the show test failed on
+  `no argument rule holds: pkg.installed`, because `state.*` was then
+  reported as seven unheld functions.
+
+#### Not changed, and open
+
+- **`state.orch_resume` is outside the orchestration family.** It takes a
+  job ID, not `sls`, and runs the orchestration the earlier run named.
+  That run was authorized when it started, and only the same caller (or
+  a scope of `*`) may resume it (5.504). But `allow_mods` is not checked
+  again on resume, so a caller whose `allow_mods` was narrowed after the
+  first run can resume it. Putting it in the family would refuse every
+  resume under `allow_mods` ("names no orchestration"). Judging the
+  stored names would need the policy to read the run store. Neither was
+  done.
+- **The two families do not cross.** `allow_sls` written under
+  `state.orchestrate` does not hold `state.apply`, and `allow_mods`
+  under `state.apply` holds nothing that `state.apply` is asked for.
+  They are different names to different compilers.
+- **The keys of `args` are still exact names**, not patterns. A key the
+  build does not know is not refused at load. Both are as before.
+
+#### Not verified
+
+- **Not run through a hub to a node.** The decisions were shown through
+  `policy test` and the unit tests. No job was dispatched under a narrowed
+  role, and the API's path was not exercised on its own (it calls
+  `AuthorizeAs`, which reaches the same `checkArgs`).
+- **Salt was read, not run.** The account above is from one version's
+  source.
+- **The fleet's own policies were not read.** A role there that grants
+  `state.*` or `state.show_*` beside a constrained `state.apply` in one
+  rule is refused things after this change that it was allowed before.
+- **Not run on FreeBSD or Linux.** Nothing here depends on the platform,
+  and CI runs the tests on all four.
 
 ### 5.586 Spans lost to a full queue or a failed export were counted and never exposed
 

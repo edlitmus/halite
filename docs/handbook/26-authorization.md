@@ -236,6 +236,16 @@ A rule can restrict how a function is called:
 | `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name (patterns). |
 | `require_kwargs: {test: true}` | The call must carry each keyword with exactly this value, or it is refused. A bool, a string or a number; the name is exact, not a pattern; the type must match, so the string `"true"` is not `true`. |
 
+A limit holds every function that takes the same names, not only the one
+it is written under. Limits written for any of `state.apply`, `state.sls`,
+`state.highstate` or the `state.show_*` functions hold all of them, because
+the node compiles the same SLS names (or the highstate) for each. Limits
+written for any of the `state.orchestrate`, `state.orch` or
+`state.orchestrate_show_sls` runners hold all three. If a rule has limits
+under two of them, a call must pass both. So a rule that grants `state.*`
+with `allow_sls` under `state.apply` does not leave `state.sls db.secret`
+open. A function that should not be limited goes in a rule of its own.
+
 `require_kwargs: {test: true}` is how a role is held to a rehearsal. The dry-run
 flag (`run --test`, `"test": true` in the API) is a keyword on the wire, and
 both limits judge the keywords the node will receive, so `test` counts whether
@@ -349,7 +359,15 @@ with the expected exit status: write it when you write the policy and run
 it on every change.
 
 `halite-hub policy show` prints the loaded policy in a normalised form
-and, last, the never-wildcarded list for this build.
+and, last, the never-wildcarded list for this build. Under each argument
+limit it prints the functions the limit holds. For a rule with limits, it
+also prints what the rule grants that no limit holds, so a grant wider than
+its limits is visible before a request finds it:
+
+```
+     state.apply: holds state.apply, state.highstate, state.show_highstate, state.show_lowstate, state.show_sls, state.show_states, state.show_top, state.sls
+     no argument rule holds: pkg.installed; service.* (all 18 it grants)
+```
 
 Every decision is **logged**, allowed or denied, with the rule that matched:
 

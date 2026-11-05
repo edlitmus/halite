@@ -510,20 +510,23 @@ Package policy is the RBAC of SPEC section 23.5: one file, one grammar, deny by 
 
 Salt has publisher\_acl, external\_auth, peer, peer\_run, and client\_acl as five overlapping mechanisms with different syntaxes and different failure modes, which is why Salt authorization is so often wrong in practice. There is one mechanism here and a request must match one rule entirely -- target and function together, not separately.
 
-**Files:** `pillar.go`, `policy.go`, `runnerscope.go`; with tests.
+**Files:** `argfamily.go`, `pillar.go`, `policy.go`, `runnerscope.go`; with tests.
 
 **Exports.**
 
 - `ArgRule` (type): ArgRule constrains the arguments of one function.
+- `ArgumentFamily` (func): ArgumentFamily is the set of functions that take the same names as fun, sorted, or nil when fun is in no family.
 - `Binding` (type): Binding attaches roles to a principal.
 - `Decision` (type): Decision is the outcome, and why.
 - `Load` (func): Load reads a policy file.
+- `OrchestrationRunners` (func): OrchestrationRunners lists the runners that take orchestration names as `sls`, for the hub's test and for `policy show`.
 - `PillarReaders` (func): PillarReaders lists ReadsPillar's set, sorted, for `policy show`.
 - `Policy` (type): Policy is a loaded policy file.
 - `ReadsPillar` (func): ReadsPillar reports whether fun hands a node's pillar to the caller, and so is never granted by a wildcard.
 - `Request` (type): Request is what is being asked for.
 - `Rule` (type): Rule is one grant: a target pattern, the functions permitted against it, and any argument-level constraints.
 - `Scope` (type): Scope is the set of nodes a principal may reach through one runner.
+- `Unheld` (type): Unheld is one of a rule's grants and what it grants that no argument rule in the rule holds.
 
 ## `internal/api`
 
