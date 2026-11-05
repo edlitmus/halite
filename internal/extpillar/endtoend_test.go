@@ -64,7 +64,7 @@ func buildExtension(t *testing.T) string {
 // awsSecretsVersion is cmd/halite-ext-aws-secrets's Version. It moves
 // with it: a bump there fails this test until it does, which is the
 // same decision the release has to make.
-const awsSecretsVersion = "1.1.1"
+const awsSecretsVersion = "1.1.2"
 
 // installBundle writes a signed bundle into a cache the way
 // `halite-hub extensions sync` would, and returns the cache directory
@@ -177,13 +177,12 @@ func (t treeTemplates) Load(name string) (string, string, error) {
 	return "", "", template.ErrNotFound
 }
 
-func TestASignedExtensionSuppliesPillarEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds a binary")
-	}
-	aws := fakeAWS(t, map[string]string{
-		"vmop/dev/salt-api": `{"salt_api_pass":"s3cr3t"}`,
-	})
+// startExtension builds the real extension, installs it as a signed
+// bundle, verifies it as a hub would, and returns a runtime holding it
+// with a pool of one: one process, which is what a hub with several
+// blocks for this source has unless the pool grows.
+func startExtension(t *testing.T) *extension.Runtime {
+	t.Helper()
 	cache, key := installBundle(t, buildExtension(t))
 
 	// The store, with the same verification a hub does: signature
@@ -217,13 +216,24 @@ func TestASignedExtensionSuppliesPillarEndToEnd(t *testing.T) {
 		WorkDirFor: func(name string) string { return filepath.Join(work, name) },
 		// The extension reaches a link-local address for credentials
 		// unless the environment carries them, and the test's AWS is
-		// neither. Handed in the block below instead.
+		// neither. Each test hands them in its block instead.
 		PoolSize: 1,
 	}
 	t.Cleanup(rt.Close)
 	if err := rt.Add(bundle); err != nil {
 		t.Fatal(err)
 	}
+	return rt
+}
+
+func TestASignedExtensionSuppliesPillarEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a binary")
+	}
+	aws := fakeAWS(t, map[string]string{
+		"vmop/dev/salt-api": `{"salt_api_pass":"s3cr3t"}`,
+	})
+	rt := startExtension(t)
 
 	// A static key, in a file, because that is the only inline form the
 	// extension takes: a secret in the configuration guarding the other

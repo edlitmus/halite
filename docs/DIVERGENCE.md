@@ -37651,6 +37651,61 @@ when served, since its digest is not persisted separately from the listing.
 Plain pillar values in a run's return are still in `returns.ndjson`, as they
 were: that file is not encrypted.
 
+### 5.578 One `aws_secrets_manager` block was served what another block fetched
+
+Issue 622, from the close-out review of issue 321. The extension's cache
+was keyed by region, secret and stage. The hub keeps one pool of
+extension processes per extension, not per block, so every
+`aws_secrets_manager` block on a hub shares that cache, and a value one
+block fetched was handed to any other block that named the same secret in
+the same region -- whatever credentials or endpoint the other block had.
+5.324 (audit finding H-20) bounded which region a node may make the hub
+sign for; 5.409 left the cache, and 5.483 recorded it as decided and
+documented. Neither noticed that the key had no idea *who* had fetched.
+
+**Measured** with `main`'s key, at `9543d44`:
+
+- through the handler, two blocks with their own access keys against one
+  local Secrets Manager that lets only `AKIDHIGH` read `prod/db`: the
+  `AKIDLOW` block's pillar held the password, and the server saw
+  `AKIDLOW` zero times;
+- through the handler, two blocks with two endpoints serving different
+  values for one secret name: the second block read the first's value,
+  and its endpoint was called zero times;
+- and both again on the operator's path -- the real extension binary,
+  built, signed, verified by the store, run over the bridge with a pool of
+  one, the two blocks written in one hub `ext_pillar` list and compiled by
+  the pillar compiler (`internal/extpillar`,
+  `TestTwoBlocksDoNotShareWhatTheyFetched`): `restricted:db` compiled to
+  `hunter22`, and `two:k` to `from-first`.
+
+**The change.** The key now begins with `secretsClient.identity`: a
+SHA-256 over the block's endpoint and partition, and its explicit
+credentials -- access key ID, secret access key, session token, role ARN,
+role session name, web identity token file, and the provider's partition.
+Two blocks agreeing on all of those would send the same signed request,
+so one may reuse what the other fetched; two that differ in any may not.
+The secret key is hashed in rather than held: a cache key lives as long
+as the process. Credentials the chain finds for itself (the environment,
+the instance role) are the process's and the same for every block, so
+they are rightly not in it. The extension is now 1.1.2, because a block
+that used to be served another block's value now fails or reads its own.
+
+**Demonstrated.** The two handler tests
+(`TestABlockIsNotServedWhatAnotherBlocksCredentialsFetched`,
+`TestTwoEndpointsAreTwoCacheEntries`) and the end-to-end one fail with the
+values above when the key is `main`'s -- the identity taken out of it --
+and pass with it in. `TestTheSecretKeyIsPartOfTheIdentity` is new with
+the method and does not compile on `main`; with the secret key taken out
+of the identity, it fails.
+
+**Not verified.** No AWS: every server was local. A hub really holding
+two blocks was not run; the end-to-end test is the hub's own pillar path
+with the hub's process pool, not `halite-hub serve`. Whether the
+production estate has two blocks at all was not looked at. A pool of
+more than one process was not exercised; it can only make sharing rarer,
+since each process has its own cache.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
