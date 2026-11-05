@@ -99,11 +99,21 @@ func TestABlockIsNotServedWhatAnotherBlocksCredentialsFetched(t *testing.T) {
 	aws := newKeyedSecrets(t, map[string]map[string]string{
 		"AKIDHIGH": {"prod/db": "hunter22"},
 	})
+	// Encoded rather than spliced: a Windows temporary path holds
+	// backslashes, and `C:\...\a...` in a JSON literal is an invalid
+	// escape, which failed this test on windows-2022.
 	block := func(akid string) string {
-		return `{"endpoint":"` + aws.server.URL + `","region":"us-east-1",` +
-			`"access_key_id":"` + akid + `","secret_access_key_file":"` +
-			secretKeyFile(t, "secret-"+akid) + `",` +
-			`"secrets":[{"name":"db","secret_id":"prod/db"}]}`
+		b, err := json.Marshal(map[string]any{
+			"endpoint":               aws.server.URL,
+			"region":                 "us-east-1",
+			"access_key_id":          akid,
+			"secret_access_key_file": secretKeyFile(t, "secret-"+akid),
+			"secrets":                []any{map[string]any{"name": "db", "secret_id": "prod/db"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
 	}
 
 	out, err := handleBlock(t, block("AKIDHIGH"))
