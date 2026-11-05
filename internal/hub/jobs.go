@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -387,12 +388,33 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
 		return
 	}
-	decision := s.Policy.Authorize(requestForJob(principal, j))
-	s.countDecision(decision)
+	// The job's own question, asked again of whoever wants it stopped:
+	// stopping a job reaches what it reached. A caller acting for an
+	// operator has it asked of the operator too. The API used to send
+	// nothing, so the hub judged the API's grant and any operator with
+	// `jobs.kill` could stop any job at all (issue 618).
+	ob, err := readKillRequest(w, r)
+	if err != nil {
+		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
+		return
+	}
+	if err := s.checkDelegation(principal, ob); err != nil {
+		s.warn("kill refused: a claim to act for another the caller may not make",
+			"principal", principal, "jid", string(id), "on_behalf_of", actingFor(ob))
+		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused, err)
+		return
+	}
+	decision := s.authorizeFor(requestForJob(principal, j), ob)
 	if !decision.Allowed {
+		s.warn("kill refused by policy", "principal", principal, "on_behalf_of", actingFor(ob),
+			"jid", string(id), "reason", decision.Reason)
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
 			fmt.Errorf("%s", decision.Reason))
 		return
+	}
+	by := principal
+	if ob != nil {
+		by += " for " + ob.Principal
 	}
 
 	res := transport.KillResponse{JID: string(id), Unqueued: append([]string(nil), j.Queued...)}
@@ -433,18 +455,36 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 	s.countJobEnded(id)
 	for _, node := range j.Delivered {
 		if s.fleet().Send(node, transport.Message{
-			T: transport.MsgKill, JID: string(id), Reason: "cancelled by " + principal,
+			T: transport.MsgKill, JID: string(id), Reason: "cancelled by " + by,
 		}) {
 			res.Told = append(res.Told, node)
 		}
 	}
-	s.warn("job killed", "jid", string(id), "principal", principal,
+	s.warn("job killed", "jid", string(id), "principal", principal, "on_behalf_of", actingFor(ob),
 		"told", res.Told, "unqueued", res.Unqueued)
-	s.emit("halite/job/"+string(id)+"/kill", "", map[string]any{
+	killed := map[string]any{
 		"jid": string(id), "principal": principal,
 		"told": res.Told, "unqueued": res.Unqueued,
-	})
+	}
+	if ob != nil {
+		killed["on_behalf_of"] = ob.Principal
+	}
+	s.emit("halite/job/"+string(id)+"/kill", "", killed)
 	transport.WriteJSON(w, http.StatusOK, res)
+}
+
+// readKillRequest reads a kill's body, which names whom the caller acts
+// for if anybody. No body at all is a direct kill, as every caller sent
+// before the body existed.
+func readKillRequest(w http.ResponseWriter, r *http.Request) (*transport.Delegation, error) {
+	var req transport.KillRequest
+	if err := transport.ReadJSON(w, r, transport.MaxRequestBody, &req); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return req.OnBehalfOf, nil
 }
 
 // jobStatus is GET /v1/jobs/{jid}: what has come back so far.
