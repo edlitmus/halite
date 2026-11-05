@@ -36496,7 +36496,7 @@ Issue 321, the second pass, round six (`internal/tracing`).
 
 **Not verified.** A real collector going away and returning; the node and hub wiring beyond building.
 
-**The metric, since.** 5.585 adds `halite_trace_spans_dropped_total`, its alert and its panels.
+**The metric, since.** 5.586 adds `halite_trace_spans_dropped_total`, its alert and its panels.
 
 ### 5.549 The node's `fun` label took whatever name the hub sent
 
@@ -38163,7 +38163,7 @@ Issue 623, from the 2026-11-03 review of the issue 321 fixes (`internal/gitfs/ba
 
 **Not verified.** FreeBSD: beastie could not be reached (its ssh agent would not sign), and mini-me has no gpg, so this ran on one Mac only. A node fetching from the hub after the withdrawal: "served" was read from the hub's own log and its cache, which the sweep keys on what is served, not from a node asking for `salt://top.sls`. A remote over ssh or https, a tag (`verify-tag`), a key that expired or was revoked rather than deleted, and a keyring change while an update is running.
 
-### 5.585 Spans lost to a full queue or a failed export were counted and never exposed
+### 5.586 Spans lost to a full queue or a failed export were counted and never exposed
 
 Issue 609, the metric 5.548 left owed.
 
