@@ -38408,6 +38408,51 @@ built their sandbox before the first job. Which startup call does that was
 not traced. `render_sandbox_user` was not set, so no identity was dropped,
 and nothing ran as root. Not run on Linux.
 
+### 5.593 The hub keeps a return as the node sent it
+
+Issue 615, item 10, which asked whether the hub scrubs a secret from a
+return it caches (5.557 left it open). It does not, and nothing on the hub
+or the API changes a return.
+
+**Read.** `Server.returned` (internal/hub/jobs.go) stores the decoded
+`job.Return` with `Jobs.AddReturn`. It publishes an event that holds the
+jid, function, success, retcode and duration, and not the return.
+`jobStatus` (`GET /v1/jobs/{jid}`) marshals the cached returns as they
+are, after the policy check of 5.513. The API's `GET /v1/jobs/{jid}`
+forwards to the hub's `jobs.list_job` runner, and `forwardRunner` writes
+what the hub answered. The hub's redactor (`hubContext.secrets`) holds
+values that the hub decrypted, and is used for logs and for `doctor`.
+`internal/hub` and `internal/api` do not use it.
+
+**Measured** with two scratch tests, not kept:
+
+- A node with `s3cr3t-value-123` registered, through `executeJob`:
+  `cmd.run` with `echo token=s3cr3t-value-123` returned
+  `"token=s3cr3t-value-123"`. A state that runs the same command returned
+  `echo token=**********` in its name, comment and stdout. The runner
+  scrubs state results (5.109), and `state.show_*` are masked (5.557).
+- A hub with a job cache, given that `cmd.run` return through `returned`:
+  the cached return held the secret whole, and no event held it.
+
+**Kept as it is.** The output of an execution function is data that was
+asked for, and is not masked (5.268): `pillar.get` and `pillar.items`
+exist to return values, and `cmd.run 'cat /etc/app.conf'` asks for what
+the file holds. If the hub scrubbed it, these would return `**********`,
+and only for the secrets the hub had decrypted since it started. Reading a
+return is authorized as running the job's function (5.513), and the
+functions that return pillar are never granted by a wildcard (5.563). So a person who can read a `cmd.run` return could
+also have run the command.
+
+**What this leaves.** The job cache on disk holds secrets that execution
+functions returned, for `job_cache_retention`. That is a property of the
+hub's state directory. Handbook chapter 12 already says that `serve`
+refuses a file root that holds it, because that would serve every return
+in the estate to every node. It is recorded here so the next reader does
+not have to read the code again.
+
+**Not verified.** A GPG-decrypted pillar value was not used; the node test
+registered the secret directly. The API route was read and not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

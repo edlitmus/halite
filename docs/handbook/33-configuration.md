@@ -244,11 +244,12 @@ of the thing you changed behaves as intended.
 
 `doctor` is a separate process from the service. It cannot see what the
 service read when it started. On a node, the agent writes a digest of its
-configuration to the evidence record when it starts, and `halite-node doctor`
+configuration to the evidence record when it starts. `halite-node doctor`
 compares the file with that digest. `matches what the agent recorded` means
-that no edit is waiting for a restart. `differs from what the agent recorded`
-means that an edit is waiting. The hub and the API record no digest, so their
-`doctor` says `not compared`. On those, restart the service after an edit.
+that no edit needs a restart. `differs from what the agent recorded` means
+that an edit needs a restart. The hub and the API record no digest, so their
+`doctor` says `not compared`. After you edit the configuration of the hub or
+the API, restart the service.
 
 ## If it goes wrong
 
