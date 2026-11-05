@@ -38282,6 +38282,47 @@ wiring lines in the hub and the node. The tests of the `cmd` packages
 pass, and none of them fails when the `Secrets:` line in
 `cmd/*/trace.go` is removed.
 
+### 5.588 Child loggers did not share a lock, and a newline in a message started a record
+
+Issue 614, from the issue 321 second-pass audit, round twelve
+(`internal/log/log.go`). The audit found both defects by reading.
+
+**The defect, the lock.** Each `Logger` had its own `sync.Mutex`. `With`
+made a child with a new mutex over the writer of the parent. A parent
+and its child, or two children, could write at the same time. Over the
+`MultiWriter` of stderr and a log file, two records could reach the two
+sinks in a different order. Over a writer that is not safe for
+concurrent use, the records could interleave or race. halite-node calls
+`n.log = n.log.With("node_id", ...)`, and other `With` calls exist.
+
+**The change, the lock.** The mutex is now a pointer. `New` makes it,
+and every `With` child shares it.
+
+**The defect, the newline.** The console format printed the message
+whole. A message with a newline began its second line at column one. At
+column one, the line reads as a record of its own. A message can be made
+to look like one, for example `"...\nerror: forged record"`. A field
+value with a newline was already put in an indented block (DIVERGENCE
+5.261). The message was not.
+
+**The change, the newline.** The first line of the message leads the
+record line. Further lines follow it, indented by four spaces, before
+any field blocks. The JSON format does not change. It is one escaped
+string.
+
+**Shown.** `TestWithChildrenDoNotWriteAtTheSameTimeAsTheirParent` uses a
+writer that detects two writes in progress at the same time. It writes
+50 records each from a parent and two children. With a new mutex for
+each child, it fails with "149 writes overlapped".
+`TestConsoleIndentsTheRestOfAMultiLineMessage` fails with the old
+behavior put back. The continuation "error: forged record" starts at
+column one.
+
+**Not changed, not verified.** A field that is a `fmt.Stringer` with a
+newline in its text is still printed inline. Only string fields go to
+the block. A carriage return is not treated as a line break. The output
+was not watched on a real terminal or in a real log file.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

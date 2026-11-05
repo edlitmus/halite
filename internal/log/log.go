@@ -96,7 +96,18 @@ func ParseFormat(s string) (Format, bool) {
 
 // Logger writes records at or below its level.
 type Logger struct {
-	mu    sync.Mutex
+	// mu serialises writes to out, and is shared by every logger With
+	// derives from this one, because they share out.
+	//
+	// It was a mutex per Logger, so a child from With locked its own
+	// while writing to its parent's writer, and the two wrote at once
+	// (issue 614, DIVERGENCE 5.588). Over a MultiWriter of stderr and a
+	// file, two records could reach the two sinks in different orders;
+	// over a writer that is not safe for concurrent use, a buffer or a
+	// pipe wrapper, they could interleave inside a line or race. What
+	// has to be held is the writer, and there is one writer, so there
+	// is one lock.
+	mu    *sync.Mutex
 	out   io.Writer
 	level Level
 	form  Format
@@ -137,7 +148,7 @@ func New(opts Options) (*Logger, error) {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	l := &Logger{out: stderr, level: opts.Level, form: opts.Format, fields: opts.Fields,
+	l := &Logger{mu: new(sync.Mutex), out: stderr, level: opts.Level, form: opts.Format, fields: opts.Fields,
 		now: time.Now, secrets: opts.Secrets}
 	if l.fields == nil {
 		l.fields = map[string]any{}
@@ -175,7 +186,7 @@ func (l *Logger) With(key string, value any) *Logger {
 		fields[k] = v
 	}
 	fields[key] = value
-	return &Logger{out: l.out, level: l.level, form: l.form, fields: fields, now: l.now, secrets: l.secrets}
+	return &Logger{mu: l.mu, out: l.out, level: l.level, form: l.form, fields: fields, now: l.now, secrets: l.secrets}
 }
 
 // Log writes one record.
@@ -266,7 +277,17 @@ func (l *Logger) Debug(msg string, kv ...any) { l.Log(Debug, msg, kv...) }
 // somebody.
 func consoleLine(rec map[string]any, fixed map[string]any) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s: %v", rec["level"], rec["msg"])
+	// The message's first line leads, and any further lines follow the
+	// record line indented, as a multi-line field does below. Printed
+	// whole, a message with a newline in it -- an error from a command
+	// that wrote two lines, a pillar renderer's traceback -- started
+	// its second line at column one, where it read as a record of its
+	// own, and could be made to look like one with a level of its
+	// choosing (issue 614, DIVERGENCE 5.588). The JSON form needs
+	// nothing: there it is one escaped string.
+	msg := fmt.Sprint(rec["msg"])
+	head, rest, multi := strings.Cut(strings.TrimRight(msg, "\n"), "\n")
+	fmt.Fprintf(&b, "%s: %s", rec["level"], head)
 	keys := make([]string, 0, len(rec))
 	for k := range rec {
 		switch k {
@@ -292,6 +313,11 @@ func consoleLine(rec map[string]any, fixed map[string]any) string {
 			continue
 		}
 		fmt.Fprintf(&b, " %s=%v", k, rec[k])
+	}
+	if multi {
+		for _, line := range strings.Split(rest, "\n") {
+			b.WriteString("\n    " + line)
+		}
 	}
 	for _, k := range blocks {
 		fmt.Fprintf(&b, "\n  %s:", k)
