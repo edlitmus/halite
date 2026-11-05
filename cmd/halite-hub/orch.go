@@ -82,7 +82,11 @@ func orchShow(args *cli.Args) int {
 
 func orchList(args *cli.Args) int {
 	kwargs := map[string]any{}
-	if limit := args.Flag("limit", ""); limit != "" {
+	// A whole number, and sent as one. It went as the string it was
+	// typed as, which the hub read with Sscanf: `--limit abc` was 0 and
+	// listed the default, `--limit 5x` was 5, and `--limit=-1` was
+	// handed on. DIVERGENCE 5.590.
+	if limit := cli.IntFlag(args, "limit", 0, 1); limit > 0 {
 		kwargs["limit"] = limit
 	}
 	return orchCall(args, "state.orch_list", nil, kwargs)
@@ -113,7 +117,16 @@ func orchResume(args *cli.Args) int {
 }
 
 // orchCall makes the runner call and renders the answer.
+//
+// --out is read before the call. It was read after, so `orch run
+// deploy.web --out tabel` ran the orchestration and then refused the
+// format, as did a resume, and an operator who corrected the typo ran
+// it a second time. DIVERGENCE 5.590.
 func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) int {
+	timeline, format, err := cli.ParseOut("timeline", args.Flag("out", "timeline"))
+	if err != nil {
+		cli.Usagef("%v", err)
+	}
 	client := operatorClient(args)
 	res, err := client.Runner(context.Background(), transport.RunnerRequest{
 		Fun: fun, Arg: arg, Kwarg: kwargs,
@@ -123,10 +136,6 @@ func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) i
 	}
 
 	decoded, decodeErr := value.DecodeJSON(res.Return)
-	timeline, format, err := cli.ParseOut("timeline", args.Flag("out", "timeline"))
-	if err != nil {
-		cli.Fatalf("%v", err)
-	}
 	if timeline {
 		// A failed run still has a timeline, and printing it is the
 		// point: the operator's next command is `orch resume --from`,

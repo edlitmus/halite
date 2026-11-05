@@ -38201,6 +38201,18 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/policy.go`, new
 
 **Not verified.** Nothing beyond the command itself. `run` and the hub were not involved, because `policy test` evaluates locally.
 
+### 5.590 `runner` and `orch` made the call, then refused an `--out` they could not read
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/runner.go`, `cmd/halite-hub/orch.go`).
+
+**The defect.** `runner <fun>` called `client.Runner(...)` and then read `--out` with `cli.ParseFormat` and `cli.Fatalf`, which exits 1. `orch run`, `orch lint`, `orch show`, `orch list` and `orch resume` did the same in `orchCall`: the runner call came first, and then `cli.ParseOut("timeline", --out)` failed. So an unknown `--out` ran the runner (a key decision, an orchestration, a resume, an event) and then exited 1. An operator who saw the error and typed the command again ran it twice. Separately, `orch list` sent `--limit` as the string that was typed. `runner list` and `runner doc` answer locally and were already correct.
+
+**Shown.** Run on this Mac on 2026-11-05 with a real hub on `[::1]` and a policy that grants the operator every runner. `runner event.send halite/test/612 --out tabel`: main exits 1 with "unknown output format", and the job list of the hub gains an `event.send` call (1 to 2). This change exits 64 and the hub records nothing (the count is unchanged). `orch list --limit abc`: main sends it, and the hub refuses with `argument "limit": must be an integer, found string`, exit 1. This change exits 64 before it sends anything, with `--limit "abc" is not a whole number of at least 1`. `orch list --limit 5` exits 0 on both, because the argument binder of the hub accepts the string `5`. So for a well-formed number the old string was harmless. The defect was the error path and the exit code. `TestRunnerAndOrchCheckTheirFlagsBeforeTheCall` (`runner_flags_test.go`) has 7 controls that reach the operator-certificate step (exit 1). It has 10 refused forms that exit 64 without reaching it: `runner`, and `orch run`, `lint`, `show`, `list` and `resume`, each with `--out tabel`, and `orch list --limit` with `abc`, `5x`, `0` and `-1`. With main's `runner.go` and `orch.go`, all 10 fail: they exit 1 at the operator certificate.
+
+**The change.** `runner` checks `--out` with `ParseFormat` before `operatorClient`. `orchCall` checks `--out` with `ParseOut` first. Both are usage errors that exit 64. `orch list --limit` is read with `cli.IntFlag` (minimum 1) and sent as an integer.
+
+**Not verified.** An orchestration that ran twice because of the retype. This is reasoned from the code path and shown with `event.send`, not with `state.orchestrate`. Noticed, not changed: `RunnerContext.argInt` (`internal/hub/runner.go`) still reads a string with `fmt.Sscanf`. The binder refused `abc` first in this run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

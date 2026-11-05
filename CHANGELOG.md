@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`halite-hub runner <fun>` and `halite-hub orch` refuse a bad `--out` before they call the hub.** An unknown `--out`, for example `--out tabel`, ran the runner call and then exited 1. So a key decision, an orchestration, a resume or an event was done, and an operator who corrected the flag and ran the command again did it a second time. Now an unknown `--out` exits 64 with a usage error before anything is sent. `orch list --limit` is checked in the same way: `abc`, `5x`, `0` and `-1` exit 64 and name `--limit`. DIVERGENCE 5.590.
+
 - **`halite-hub policy test --kwarg` refuses a keyword it cannot read.** The command dropped a pair with no `=`, a bare `--kwarg`, an empty `--kwarg=`, and a positional `key=value`. With `deny_kwargs: [mods]`, the test said "allowed by role" for `--kwarg mods:evil` and exited 0, so a denied call looked allowed. Now each of these is refused with exit 64 before the policy is read. A key that appears twice is refused too. Write `--kwarg key=value`, with pairs separated by commas. A value cannot contain a comma. DIVERGENCE 5.589.
 
 - **`halite-hub keys operator create --lifetime` refuses a lifetime that makes a bad certificate.** The command issued `-1h` (already expired), `0` (expired at once) and `876000h` (a century), and exited 0. Now a value that does not parse, or is 0 or less, is refused with exit 64 and a message that names `--lifetime`. A lifetime that ends after the enrollment CA expires is also refused with exit 64, and the message gives the expiry of the CA. The CA lasts 10 years from creation, so the longest lifetime is about 10 years minus the age of the CA. Nothing is written when the command is refused. DIVERGENCE 5.588.
