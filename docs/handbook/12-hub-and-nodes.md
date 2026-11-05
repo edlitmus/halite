@@ -232,14 +232,14 @@ Part VI.
 | Capability | Behaviour while the hub is down |
 |---|---|
 | **Running jobs** | Nothing can be dispatched; operators' commands fail. |
-| **State tree** | A node falls back to its own configured copy of the roots, with a warning, if it has one. |
-| **Pillar** | Does **not** fall back (a state applied against missing secrets would report a convergence that never happened) unless you enabled `pillar_cache_disk`. |
+| **State tree** | A node that has used the hub's tree serves it from its file cache, with a warning. A file it never fetched is unavailable. A node that has never listed the hub's tree uses its own configured roots. |
+| **Pillar** | The last known good pillar, encrypted on disk, with a warning saying its age. Never an empty one: a node with no copy, or with `pillar_cache_disk: false`, fails runs that read pillar. |
 | **Local mode** | `halite-node state apply --local` works regardless. This is the break-glass path. |
 | **The node itself** | Stays up and retries with backoff; it does not exit. |
 
-This is why a fleet that must stay configurable through a hub outage keeps
-a copy of the tree on each node (a git checkout works) or runs the hub
-with a hot standby. [Chapter 35](35-backup-and-recovery.md) covers
+So a node's `schedule:` keeps converging through an outage, on what it last
+received. Nothing new reaches it until the hub is back: a fleet that must
+take *changes* during an outage needs a restored standby. [Chapter 35](35-backup-and-recovery.md) covers
 recovery, and [chapter 38](38-scaling.md) covers relays and sizing.
 
 ## Relays

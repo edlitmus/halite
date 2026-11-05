@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/fileperm"
@@ -33,6 +35,15 @@ type Remote struct {
 	Environments []string
 	// HashType is the digest to verify against.
 	HashType string
+	// Unreachable says whether a fetch failed because no hub answered, as
+	// opposed to a hub answering no. Only then is the cached copy served.
+	// Nil means never, so a Remote nobody configured behaves as it always
+	// did. On the consumer for the reason Fetch is: this package does not
+	// depend on internal/transport.
+	Unreachable func(error) bool
+	// Warn is told once per outage that the tree is being served from the
+	// cache.
+	Warn func(msg string, kv ...any)
 
 	// ctx is what a transfer's request is made under.
 	//
@@ -55,6 +66,50 @@ type Remote struct {
 type digestCache struct {
 	mu sync.Mutex
 	by map[string]string
+	// retryAt is when to ask the hub again after it did not answer.
+	//
+	// Without it a hub that drops packets rather than refusing them costs
+	// a handshake timeout per file, and a highstate over a few hundred
+	// files spends the whole of its schedule interval waiting to be told
+	// the same thing.
+	retryAt time.Time
+	warned  bool
+}
+
+// offlineRetry is how long a hub that did not answer is left alone.
+//
+// Chosen, not measured: long enough that one run makes a handful of attempts
+// rather than one per file, short enough that a hub coming back is noticed
+// within a run.
+const offlineRetry = 30 * time.Second
+
+func (r *Remote) holdingOff() bool {
+	r.cache.mu.Lock()
+	defer r.cache.mu.Unlock()
+	return time.Now().Before(r.cache.retryAt)
+}
+
+func (r *Remote) noteUnreachable(err error) {
+	r.cache.mu.Lock()
+	r.cache.retryAt = time.Now().Add(offlineRetry)
+	warn := !r.cache.warned
+	r.cache.warned = true
+	r.cache.mu.Unlock()
+	if warn && r.Warn != nil {
+		r.Warn("the hub cannot be reached; serving the tree from this node's cache",
+			"cache", r.Dir, "error", err.Error())
+	}
+}
+
+func (r *Remote) noteAnswered() {
+	r.cache.mu.Lock()
+	r.cache.retryAt = time.Time{}
+	r.cache.warned = false
+	r.cache.mu.Unlock()
+}
+
+func (r *Remote) unreachable(err error) bool {
+	return err != nil && r.Unreachable != nil && r.Unreachable(err)
 }
 
 // Fetch is the part of the transport this package needs. Defined here,
@@ -220,10 +275,28 @@ func (r *Remote) cacheFile(env, rel string) (string, error) {
 		etag = r.hashType() + ":" + existing
 	}
 
+	if r.Unreachable != nil && r.holdingOff() {
+		if etag != "" {
+			return path, nil
+		}
+		return "", fmt.Errorf("the hub cannot be reached and this node has no cached copy of %s/%s", env, rel)
+	}
 	body, published, notModified, err := r.Client.FetchFile(r.context(), env, rel, etag)
 	if err != nil {
+		// A copy here was verified against the hub's digest before it was
+		// moved into place, and has been readable only by this account
+		// since. It may be older than the hub's: that is what a last known
+		// good tree is. Only "nobody answered" gets here. A hub that says
+		// a file is gone or refused has answered, and the error stands.
+		if r.unreachable(err) {
+			r.noteUnreachable(err)
+			if etag != "" {
+				return path, nil
+			}
+		}
 		return "", err
 	}
+	r.noteAnswered()
 	if notModified {
 		r.remember(path, strings.TrimPrefix(etag, r.hashType()+":"))
 		return path, nil
@@ -293,14 +366,82 @@ func (r *Remote) cachePath(env, rel string) (string, error) {
 
 // ManifestFor reads the hub's listing for a subtree.
 func (r *Remote) ManifestFor(env, prefix string) (*Manifest, error) {
+	if r.Unreachable != nil && r.holdingOff() {
+		return r.savedManifest(env, prefix, errors.New("the hub cannot be reached"))
+	}
 	raw, err := r.Client.FileManifest(r.context(), env, prefix)
 	if err != nil {
+		if r.unreachable(err) {
+			r.noteUnreachable(err)
+			return r.savedManifest(env, prefix, err)
+		}
 		return nil, err
 	}
+	r.noteAnswered()
 	var m Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, fmt.Errorf("the hub's file listing is not readable: %w", err)
 	}
+	// Only a whole listing is kept: a prefix's would overwrite it with a
+	// part, and a truncated one would lay out part of a directory later.
+	if prefix == "" && !m.Truncated && r.Dir != "" {
+		if path, err := r.manifestPath(env); err == nil {
+			if err := writeAtomic(path, raw, 0o600); err != nil && r.Warn != nil {
+				r.Warn("could not keep the hub's file listing", "error", err.Error())
+			}
+		}
+	}
+	return &m, nil
+}
+
+// manifestPath is outside files/, so no path in the tree can collide with it.
+func (r *Remote) manifestPath(env string) (string, error) {
+	if strings.Contains(env, "/") || strings.Contains(env, "..") || env == "" {
+		return "", fmt.Errorf("%q is not an environment", env)
+	}
+	return filepath.Join(r.Dir, "manifests", env+".json"), nil
+}
+
+// HasCachedTree reports whether the hub's tree for an environment was ever
+// listed here. It is what lets a node restarted during an outage go on
+// using that tree rather than its own roots.
+func (r *Remote) HasCachedTree(env string) bool {
+	path, err := r.manifestPath(env)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
+
+// savedManifest answers a listing from the last whole one, cut to the prefix
+// on a path boundary. Without a saved listing the failure that brought it
+// here is what the caller gets.
+func (r *Remote) savedManifest(env, prefix string, cause error) (*Manifest, error) {
+	path, err := r.manifestPath(env)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, cause
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("the saved file listing %s is not readable: %w", path, err)
+	}
+	prefix = strings.Trim(prefix, "/")
+	if prefix == "" {
+		return &m, nil
+	}
+	kept := make([]Entry, 0, len(m.Files))
+	for _, e := range m.Files {
+		p := strings.Trim(e.Path, "/")
+		if p == prefix || strings.HasPrefix(p, prefix+"/") {
+			kept = append(kept, e)
+		}
+	}
+	m.Files, m.Prefix = kept, prefix
 	return &m, nil
 }
 
@@ -365,13 +506,9 @@ func (r *Remote) ForEnv(env string) *Remote {
 // before it can fetch it — every other consumer here asks for a path it
 // already knows the name of.
 func (r *Remote) ListPrefix(env, prefix string) ([]Entry, error) {
-	raw, err := r.Client.FileManifest(r.context(), env, prefix)
+	manifest, err := r.ManifestFor(env, prefix)
 	if err != nil {
 		return nil, err
-	}
-	var manifest Manifest
-	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return nil, fmt.Errorf("the hub's listing of %s is not readable: %w", prefix, err)
 	}
 	if manifest.Truncated {
 		// A truncated listing would make synchronization fetch part of

@@ -359,13 +359,17 @@ sees the change. To push new pillar into the node's running memory
 halite-hub run 'web*' saltutil.refresh_pillar
 ```
 
-If the hub cannot be reached, **pillar does not fall back** to anything
-local, and a command that needs it fails. This is deliberate: a state
-rendered against an empty or stale pillar would report a convergence that
-never happened. The exception is one you opt into: with
-`pillar_cache_disk: true` the node keeps its last compiled pillar,
-encrypted at rest, so a run survives a hub outage. It is still a copy of
-your secrets on that disk, which is why it is off by default.
+If the hub cannot be reached, the node uses the **last known good pillar**:
+the last one this hub sent it, kept encrypted under a key derived from the
+node's private key, across restarts. Each use logs how old it is. It never
+falls back to an empty or local pillar, because a state rendered against one
+would report a convergence that never happened, and a node with no copy fails.
+A hub that answers and refuses, or whose certificate does not verify, is not
+an outage and the run fails. Being refused or revoked removes the copy.
+
+It is still a copy of your secrets on that disk. Set `pillar_cache_disk: false`
+on a node that must not hold one, and its pillar-reading runs fail during an
+outage.
 
 ## Pillar and the hub's own limits
 
@@ -415,8 +419,8 @@ what a node will be given.
   `smart`; `aggregate` and `pillar_merge_lists` concatenate lists.
 - Secrets are **masked on output** (`--reveal` to see), kept off disk,
   and encrypted in the tree with GPG or fetched from a secrets manager.
-- An edit takes effect on the node's next request; **pillar does not fall
-  back** when the hub is unreachable, unless you enable
-  `pillar_cache_disk`.
+- An edit takes effect on the node's next request; when the hub is
+  unreachable the node uses its **last known good pillar**, unless
+  `pillar_cache_disk: false`.
 
 Next: [the top file and the file server](10-top-and-files.md).

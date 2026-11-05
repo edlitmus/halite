@@ -498,6 +498,23 @@ Pillar is the secret-bearing path, so two properties matter more here than anywh
 - `ExtRequest` (type): ExtRequest is what a source is asked for.
 - `ExtSource` (type): ExtSource is one external pillar source.
 
+## `internal/pillarstore`
+
+Import path `github.com/edlitmus/halite/internal/pillarstore`.
+
+Package pillarstore keeps a node's last known good pillar on its disk, encrypted, so that the node can keep converging while its hub cannot be reached. SPEC 12.8.
+
+The key is derived from the node's private key with HKDF-SHA-256 and the sealing is AES-256-GCM. Both are in the standard library and both are approved in FIPS mode, so this adds nothing to SPEC section 4's list.
+
+What this protects against is a copy of the file: a backup, a disk image, a read through a directory somebody opened up. It does not protect against an attacker who can read node.key, who can in any case ask the hub for this pillar and be given it.
+
+**Files:** `pillarstore.go`; with tests.
+
+**Exports.**
+
+- `Record` (type): Record is one pillar exactly as the hub sent it.
+- `Store` (type): Store is the node's copy.
+
 ## `internal/grains`
 
 Import path `github.com/edlitmus/halite/internal/grains`.

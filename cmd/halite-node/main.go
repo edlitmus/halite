@@ -264,6 +264,11 @@ type node struct {
 	// tree, so a reconnect does not probe the file server again for a
 	// tree it already has.
 	hubTree bool
+	// hubRemote is the hub's tree, whatever n.files has been wrapped in
+	// for the length of a run.
+	hubRemote *fileserver.Remote
+	// pkiDir is where this node's key is, as the command line resolved it.
+	pkiDir string
 	// beacons and schedule are the running engines, which the
 	// management functions of SPEC 16.1 and 20.1 act on. Nil on a
 	// one-shot command line, where there is nothing running to change.

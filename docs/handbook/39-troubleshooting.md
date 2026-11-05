@@ -95,7 +95,8 @@ clause: it names the setting, the command or the file.
 
 | Message or symptom | Cause | Fix |
 |---|---|---|
-| A command needing pillar fails: the hub could not be reached | Pillar does not fall back | Restore the hub, or `pillar_cache_disk: true` |
+| A command needing pillar fails: the hub could not be reached | This node holds no last known good pillar: it never received one, `pillar_cache_disk` is `false`, or its key was rotated since | Restore the hub |
+| `the hub cannot be reached; using the last known good pillar` | An outage, and the run used the copy of the age shown | Restore the hub; expected meanwhile |
 | Targeting on a grain finds the wrong nodes | The hub holds stale grains | `saltutil.refresh_grains`, then target |
 | A custom grain script is ignored | It timed out, exited non-zero or printed non-JSON | The node warns: `…: timed out and was skipped` |
 | A grain has the wrong value on one node | A custom grain with the same name as a core one wins (config block < `grains.d` < `grains` file) | Rename the custom grain |

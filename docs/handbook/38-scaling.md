@@ -232,9 +232,8 @@ Things to know before deploying one:
 
 There is one active hub. To shorten an outage, keep a restored standby
 ([chapter 35](35-backup-and-recovery.md)); to make an outage *matter less*,
-give nodes `schedule:` entries, `startup_states`, and (if secrets are
-acceptable on disk) `pillar_cache_disk: true`, so they converge on their own
-while the hub is away.
+give nodes `schedule:` entries, which converge on their own while the hub is
+away from the last known good pillar and the cached tree.
 
 ## Verify
 

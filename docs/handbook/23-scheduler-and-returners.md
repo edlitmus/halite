@@ -30,7 +30,10 @@ schedule:
 ```
 
 This matters most exactly when the hub cannot be reached: a node that
-schedules its own highstate keeps itself converged through a hub outage.
+schedules its own highstate keeps itself converged through a hub outage, on
+its last known good pillar and the tree in its file cache
+([chapter 9](09-pillar.md)). A node that has never completed a run against
+the hub has neither, and fails.
 
 What a node reports about the schedule above (the first entry, run on a
 lab node):

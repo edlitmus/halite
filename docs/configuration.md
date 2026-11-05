@@ -374,11 +374,11 @@ A mapping of environment to an ordered list of directories, searched in order, f
 
 ### `pillar_cache_disk`
 
-*`halite-node` · `false` · SPEC section 12.8*
+*`halite-node` · `true` · SPEC section 12.8*
 
-Cache pillar on the node's disk, encrypted at rest.
+Keep the last known good pillar on the node's disk, encrypted, for a hub outage.
 
-Keeps compiled pillar on the node so a run survives a hub outage. It is encrypted at rest because pillar is where the secrets are; it is still a copy of them on that disk.
+Keeps the last pillar the hub sent under `<state_dir>/pillar-cache`, sealed with a key derived from the node's private key, and uses it when no hub answers, so a scheduled state run keeps converging through an outage and across a restart during one. It is still a copy of the secrets on that disk, and it is as old as the outage is long. A hub that answers and refuses clears it, as does a revocation. Set this to `false` for a node that must not hold secrets at rest; its state runs that read pillar then fail for as long as the hub is unreachable.
 
 ### `pillar_merge_lists`
 
@@ -2233,7 +2233,7 @@ Every setting, and which programs read it.
 | `oidc_skew` | `halite-api` | `60s` | OpenID Connect |
 | `output` | `halite-node` | `nested` | Logging and diagnostics |
 | `parallel_jobs` | `halite-node` | `false` | Node execution controls |
-| `pillar_cache_disk` | `halite-node` | `false` | The tree: states and pillar |
+| `pillar_cache_disk` | `halite-node` | `true` | The tree: states and pillar |
 | `pillar_merge_lists` | `halite-node`, `halite-hub` | `false` | The tree: states and pillar |
 | `pillar_roots` | `halite-node`, `halite-hub` | — | The tree: states and pillar |
 | `pillar_source_merging_strategy` | `halite-node`, `halite-hub` | `smart` | The tree: states and pillar |

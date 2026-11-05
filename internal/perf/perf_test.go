@@ -86,9 +86,9 @@ var targets = []target{
 	{Metric: "Pillar compile, 200 pillar SLS",
 		Method: byBenchmark, Measured: "BenchmarkPillarCompile", Limit: 500 * time.Millisecond,
 		// The row names two numbers and only one of them has something
-		// behind it. There is no pillar cache in this build -- SPEC
-		// 12.8's `pillar_cache_disk` is inert and
-		// `halite_pillar_cache_hits_total` is one of the two metric
+		// behind it. There is no compiled-pillar cache on the hub -- the
+		// node's `pillar_cache_disk` is an outage copy and speeds nothing
+		// up, and `halite_pillar_cache_hits_total` is one of the two metric
 		// families of SPEC 26.2 that nothing registers -- so the cold
 		// number is measured and the cached one has nothing to measure.
 		// Benchmarking a second compile and calling it "cached" would

@@ -34,6 +34,7 @@ import (
 // configuration and whatever key material it already has.
 func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.PathUnderRoot("pki_dir", "pki"))}
+	n.pkiDir = files.Dir
 
 	address := args.Flag("hub", n.cfg.String("hub", ""))
 	if address == "" {
@@ -565,7 +566,9 @@ func runConnect(args *cli.Args) int {
 		}
 		if errors.Is(err, errRevoked) {
 			// Reconnecting after a revocation is not a retry, it is a
-			// node that will not take no for an answer. It stops.
+			// node that will not take no for an answer. It stops, and
+			// takes the secrets it was given with it.
+			n.clearPillarStore()
 			return 1
 		}
 		if err != nil {
@@ -698,6 +701,8 @@ func (n *node) attachToHub(args *cli.Args, client *transport.Client) {
 	n.useHubMine(client)
 	if !n.hubTree {
 		n.useHubTree(client)
+	} else {
+		n.refreshTreeListing()
 	}
 	if n.hubPillar == nil {
 		n.useHubPillar(client)
@@ -716,6 +721,8 @@ func (n *node) useHubTree(client *transport.Client) {
 	cacheDir := n.cfg.String("cache_dir", config.DefaultCacheDir)
 	remote := fileserver.NewRemote(client, cacheDir, nil)
 	remote.HashType = n.cfg.String("hash_type", "sha256")
+	remote.Unreachable = transport.Unreachable
+	remote.Warn = n.log.Warn
 
 	m, err := remote.ManifestFor(n.env, "")
 	if err != nil {
@@ -725,9 +732,22 @@ func (n *node) useHubTree(client *transport.Client) {
 	}
 	remote.Environments = []string{n.env}
 	n.files = remote
+	n.hubRemote = remote
 	n.hubTree = true
 	n.log.Info("compiling against the hub's tree",
 		"env", n.env, "files", len(m.Files), "cache", cacheDir)
+}
+
+// refreshTreeListing keeps the saved listing of the hub's tree current.
+//
+// The listing is what a recursive state lays out from during an outage, and a
+// node that listed the tree once, at connect, would use the month-old one. So
+// it is asked for before a state run and on a reconnect. Failure costs nothing:
+// the saved one is what is wanted then.
+func (n *node) refreshTreeListing() {
+	if n.hubRemote != nil {
+		_, _ = n.hubRemote.ManifestFor(n.env, "")
+	}
 }
 
 // useHubIfConfigured points a one-shot command at the hub, the way
@@ -867,6 +887,7 @@ func (n *node) pillarRequest(env string, all bool, grains json.RawMessage) trans
 // estate migrating one piece at a time should not lose its pillar the
 // moment it enrols.
 func (n *node) useHubPillar(client *transport.Client) {
+	n.removePillarStoreIfDisabled()
 	grains, err := value.EncodeJSON(n.grainsNow(), 0)
 	if err != nil {
 		n.log.Warn("could not encode grains for the hub", "error", err.Error())
@@ -903,13 +924,18 @@ func (n *node) useHubPillar(client *transport.Client) {
 		// the hub healthy the whole time. Reproduced by restarting a
 		// hub under a connected node.
 		//
+		// The fetcher answers from the last known good pillar when no hub
+		// answers at all. That is not the fallback refused above: it is
+		// the pillar this hub compiled for this node, not an empty one.
+		//
 		// `attachToHub` does not help, because its guard asks whether
 		// `hubPillar` is set and a permanent-failure closure is set.
 		// Making the closure do the work means the next job recovers on
 		// its own and the error an operator reads is the one happening
 		// now.
 		n.log.Error("this node's pillar could not be fetched from the hub; "+
-			"states that read pillar will fail until it can be",
+			"states that read pillar use the last known good one if this node "+
+			"holds it, and fail otherwise",
 			"error", err.Error())
 	} else {
 		n.log.Info("pillar comes from the hub", "env", probe.Env, "sls", len(probe.SLS))
@@ -939,6 +965,13 @@ func (n *node) useHubPillar(client *transport.Client) {
 				})
 				return n.compileLocalPillar()
 			}
+			if transport.Unreachable(err) {
+				if m, ok := n.lastKnownGoodPillar(env, all); ok {
+					return m, nil
+				}
+			} else {
+				n.forgetPillarIfRefused(err)
+			}
 			return nil, err
 		}
 		decoded, err := value.DecodeJSON(res.Pillar)
@@ -950,6 +983,7 @@ func (n *node) useHubPillar(client *transport.Client) {
 			return nil, fmt.Errorf("the pillar the hub sent is not a mapping")
 		}
 		n.seedPillarSecrets(m, res.Secrets)
+		n.keepPillar(env, all, res)
 		return m, nil
 	}
 }
