@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -861,4 +862,188 @@ func TestARemoteListedFirstStillShadowsALaterOneAfterACarryForward(t *testing.T)
 	if got, _ := os.ReadFile(filepath.Join(roots[0], "top.sls")); string(got) != "from a\n" {
 		t.Errorf("the first listed remote no longer comes first: %q", got)
 	}
+}
+
+// trustingKeyring makes a GnuPG home that holds only the public half of
+// the key in signer, trusted, which is what a hub's gitfs_keyring is: the
+// keys an estate trusts, with no secret in it.
+func trustingKeyring(t *testing.T, signer, fingerprint string) string {
+	t.Helper()
+	exported, err := exec.Command("gpg", "--batch", "--homedir", signer, "--armor", "--export", fingerprint).Output()
+	if err != nil || len(exported) == 0 {
+		t.Skipf("exporting the public key: %v", err)
+	}
+	home := gpgHome(t)
+	gpgIn(t, home, string(exported), "--import")
+	gpgIn(t, home, fingerprint+":6:\n", "--import-ownertrust")
+	return home
+}
+
+// withdraw removes a key from a keyring, as an operator does when a key
+// is no longer trusted.
+func withdraw(t *testing.T, home, fingerprint string) {
+	t.Helper()
+	gpgIn(t, home, "", "--yes", "--delete-keys", fingerprint)
+}
+
+func gpgIn(t *testing.T, home, stdin string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("gpg", append([]string{"--batch", "--homedir", home}, args...)...)
+	cmd.Stdin = strings.NewReader(stdin)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("gpg %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
+// signedRemote is a repository whose main is one commit signed by a fresh
+// key, and a keyring that trusts that key.
+func signedRemote(t *testing.T) (r *repo, keyring, fingerprint string) {
+	t.Helper()
+	signer := gpgHome(t)
+	fingerprint = generateKey(t, signer)
+	r = newRepo(t)
+	r.git("config", "user.signingkey", fingerprint)
+	r.git("config", "gpg.program", "gpg")
+	r.write("top.sls", "base: {}\n")
+	r.git("add", "-A")
+	signedCommit(t, r, signer, "signed")
+	return r, trustingKeyring(t, signer, fingerprint), fingerprint
+}
+
+// A key withdrawn from the keyring takes away the tree it signed on a
+// running hub, as it does on a restarted one.
+//
+// The running hub used to carry that tree forward for as long as it ran:
+// the tip no longer verified, the remote served nothing, and serving
+// nothing kept the last good tree — the one the withdrawn key had signed,
+// which when a key is withdrawn for being compromised is the tree most
+// likely to be the attacker's. Issue 623, DIVERGENCE 5.585.
+//
+// Real GnuPG and real `git verify-commit`; a skip is not a pass.
+func TestAWithdrawnKeyStopsARunningHubServingWhatItSigned(t *testing.T) {
+	r, keyring, fingerprint := signedRemote(t)
+
+	var logged []string
+	b := backendFor(t, r, func(o *Options) {
+		o.VerifySignatures = true
+		o.Keyring = keyring
+		o.Log = func(level, msg string, kv ...any) {
+			line := level + ": " + msg
+			for _, v := range kv {
+				line += " " + strings.TrimSpace(fmtAny(v))
+			}
+			t.Log(line)
+			logged = append(logged, line)
+		}
+	})
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatalf("a signed ref was not served: %v", err)
+	}
+	requireServedFile(t, b.Roots(), "base", "top.sls", "base: {}\n")
+
+	withdraw(t, keyring, fingerprint)
+	if err := b.Update(context.Background()); err == nil {
+		t.Error("an update after the only signing key was withdrawn reported success")
+	}
+	if roots := b.Roots(); len(roots) != 0 {
+		t.Errorf("a tree signed by a withdrawn key is still served: %v", roots)
+	}
+	if envs := b.Envs(); len(envs) != 0 {
+		t.Errorf("environments still served after the withdrawal: %v", envs)
+	}
+	state := b.State()
+	if len(state) != 1 || state[0].Withdrawn["main"] == "" {
+		t.Errorf("the state does not say main was withdrawn: %+v", state)
+	}
+	if got := b.Describe(); len(got) != 1 || got[0]["withdrawn"] == nil {
+		t.Errorf("fileserver.update does not report the withdrawal: %v", got)
+	}
+	named := false
+	for _, line := range logged {
+		if strings.Contains(line, "no longer verifies") && strings.Contains(line, " tree ") && strings.Contains(line, " main ") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("the withdrawn tree was not logged by remote and ref: %q", logged)
+	}
+
+	// And it stays gone: the next update has nothing to carry.
+	_ = b.Update(context.Background())
+	if roots := b.Roots(); len(roots) != 0 {
+		t.Errorf("the withdrawn tree came back on a later update: %v", roots)
+	}
+}
+
+func fmtAny(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case int:
+		return strconv.Itoa(t)
+	}
+	return ""
+}
+
+// A running hub and one restarted against the same cache and keyring
+// serve the same thing, before a key is withdrawn and after it.
+func TestARestartedHubAndARunningOneAgreeAfterAWithdrawal(t *testing.T) {
+	r, keyring, fingerprint := signedRemote(t)
+	cache := filepath.Join(t.TempDir(), "gitfs")
+	start := func() *Backend {
+		return backendFor(t, r, func(o *Options) {
+			o.VerifySignatures = true
+			o.Keyring = keyring
+			o.CacheDir = cache
+		})
+	}
+
+	running := start()
+	_ = running.Update(context.Background())
+	restarted := start()
+	_ = restarted.Update(context.Background())
+	if a, b := strings.Join(running.Envs(), ","), strings.Join(restarted.Envs(), ","); a != "base" || a != b {
+		t.Fatalf("before the withdrawal the running hub serves %q and a restarted one %q", a, b)
+	}
+
+	withdraw(t, keyring, fingerprint)
+	_ = running.Update(context.Background())
+	restarted = start()
+	_ = restarted.Update(context.Background())
+	if a, b := running.Roots(), restarted.Roots(); len(a) != 0 || len(b) != 0 {
+		t.Errorf("after the withdrawal the running hub serves %v and a restarted one %v; both should serve nothing", a, b)
+	}
+}
+
+// What the carry-forward is for still works with verification on: a kept
+// tree whose signer is still trusted is kept, when the new tip is not
+// signed and when the remote cannot be reached. Without this, a
+// re-verification that dropped everything would pass the two tests above.
+func TestAKeptTreeWhoseSignerIsStillTrustedIsKept(t *testing.T) {
+	r, keyring, _ := signedRemote(t)
+	b := backendFor(t, r, func(o *Options) {
+		o.VerifySignatures = true
+		o.Keyring = keyring
+	})
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	r.write("top.sls", "base: {'*': [unsigned]}\n")
+	r.commit("nobody signed this")
+	if err := b.Update(context.Background()); err == nil {
+		t.Error("an update whose tip is unsigned reported success")
+	}
+	requireServedFile(t, b.Roots(), "base", "top.sls", "base: {}\n")
+	if w := b.State()[0].Withdrawn; len(w) != 0 {
+		t.Errorf("a tree whose signer is trusted was reported withdrawn: %v", w)
+	}
+
+	if err := os.RemoveAll(r.dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Update(context.Background()); err == nil {
+		t.Error("an update against a vanished remote reported success")
+	}
+	requireServedFile(t, b.Roots(), "base", "top.sls", "base: {}\n")
 }
