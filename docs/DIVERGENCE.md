@@ -38141,7 +38141,7 @@ before this was written, only locally; the window it closes was shown
 with a paused hub, not caught in a natural run. Neither test was run on
 FreeBSD or Linux.
 
-### 5.584 gitfs kept serving a tree after its signer was withdrawn from the keyring
+### 5.585 gitfs kept serving a tree after its signer was withdrawn from the keyring
 
 Issue 623, from the 2026-11-03 review of the issue 321 fixes (`internal/gitfs/backend.go`).
 

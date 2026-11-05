@@ -917,7 +917,7 @@ func signedRemote(t *testing.T) (r *repo, keyring, fingerprint string) {
 // the tip no longer verified, the remote served nothing, and serving
 // nothing kept the last good tree — the one the withdrawn key had signed,
 // which when a key is withdrawn for being compromised is the tree most
-// likely to be the attacker's. Issue 623, DIVERGENCE 5.584.
+// likely to be the attacker's. Issue 623, DIVERGENCE 5.585.
 //
 // Real GnuPG and real `git verify-commit`; a skip is not a pass.
 func TestAWithdrawnKeyStopsARunningHubServingWhatItSigned(t *testing.T) {

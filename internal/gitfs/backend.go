@@ -240,7 +240,7 @@ func (b *Backend) Update(ctx context.Context) error {
 	// still keep was a tree the carry-forward had just dropped because
 	// its signer is no longer trusted: on a hub with one remote, a
 	// withdrawn key emptied byRemote and the old roots stayed served
-	// anyway (DIVERGENCE 5.584).
+	// anyway (DIVERGENCE 5.585).
 	b.roots = roots
 	if len(roots) > 0 || len(failures) == 0 {
 		b.updated = b.now()
@@ -280,7 +280,7 @@ func (b *Backend) Update(ctx context.Context) error {
 // and served nothing for that remote. Those are two paths that must agree,
 // and a key is withdrawn most often because it was compromised, when the
 // kept tree is the one most likely to be the attacker's (issue 623,
-// DIVERGENCE 5.584).
+// DIVERGENCE 5.585).
 //
 // So a kept tree is verified again on every update that would carry it,
 // against the same keyring and by the same `verify` that admitted it.
