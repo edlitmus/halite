@@ -38412,8 +38412,8 @@ second is not changed.
 **The defect.** In an agentless run (`halite-hub ssh`), the hub sends
 the state tree in the request. The node writes it to a temporary
 directory with `writeInlineFile`. The function refused any path whose
-cleaned form starts with the two bytes `..`. It refused `..data` and
-`...`, and with them the whole run. A Kubernetes ConfigMap volume writes
+cleaned form starts with the two bytes `..`. It refused `..data`, and
+with it the whole run. A Kubernetes ConfigMap volume writes
 `..data` and `..2024_...` into every directory that it mounts. A nested
 path such as `conf/..data` was already accepted. Only a top-level path
 was refused.
@@ -38425,10 +38425,23 @@ volume name and a reserved name. The function now refuses an empty path
 and `a/..` explicitly. Both clean to `.`, which is the tree itself.
 Before, they failed later with "is a directory".
 
+The function also refuses an element that has only dots, such as
+`...`, on every platform. Windows removes the dots at the end of a path
+element, so on Windows `...` is the directory that holds it. The
+windows-2022 CI legs of PR 653 showed this: the first version of this
+fix accepted `...`, and on Windows the write failed with
+`open ...\...: is a directory`. `IsLocal` does not refuse `...`,
+because it is not `..`. The path cannot leave the tree. But a tree
+that writes on FreeBSD and fails on Windows is not correct. The old
+prefix test also refused `...` on every platform, so this keeps the
+old result for that name.
+
 **Shown.** `TestAnInlineFileNamedWithTwoLeadingDotsIsWritten`
 (`cmd/halite-node/inlinefile_test.go`) fails on the old code. The
-output is `"..data" was refused` and `"..." was refused`. The test also
-shows that `""` and `a/..` were refused for the wrong reason.
+output is `"..data" was refused`. The test also shows that `""` and
+`a/..` were refused for the wrong reason. Without the dots-only check,
+it fails with `"..." was written` and `"a/..../b.sls" was written`.
+This was measured on macOS. The Windows result is from CI only.
 
 **The 0600 half is not changed.** The issue says that the function
 writes every file at 0600. We did not change this. The reason comes

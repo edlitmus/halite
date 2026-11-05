@@ -439,6 +439,19 @@ func writeInlineFile(dir, rel, body string) error {
 	if clean == "." || !filepath.IsLocal(clean) {
 		return fmt.Errorf("%q is not a path inside the tree", rel)
 	}
+	// An element made only of dots, such as "...", is refused on every
+	// platform. Windows strips trailing dots from each element, so
+	// "..." there names the directory that holds it, not a file in it:
+	// the windows-2022 CI legs of PR 653 measured `open ...\...: is a
+	// directory`. IsLocal does not catch it, because it is not "..". It
+	// cannot escape the tree, but a tree that writes a file on FreeBSD
+	// and fails on Windows is two paths that disagree, and before issue
+	// 614 the ".." prefix test refused "..." everywhere anyway.
+	for _, el := range strings.Split(clean, string(filepath.Separator)) {
+		if strings.Trim(el, ".") == "" {
+			return fmt.Errorf("%q is not a path inside the tree", rel)
+		}
+	}
 	target := filepath.Join(dir, clean)
 	if err := fileperm.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return err
