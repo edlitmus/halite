@@ -3,9 +3,13 @@ package tracing
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/edlitmus/halite/internal/redact"
 )
 
 // Tracer starts spans and hands the finished ones to an exporter.
@@ -22,6 +26,19 @@ type Tracer struct {
 	// Version is the build identity, so a span can be attributed to the
 	// binary that produced it across an upgrade.
 	Version string
+
+	// Secrets scrubs every span before it is exported: its status
+	// message, its attributes, and its name.
+	//
+	// SPEC 26.1 applies redaction at the sink, and the logger is one
+	// sink; the collector is another, and nothing on this path called
+	// the redactor (issue 614, DIVERGENCE 5.587). A span's message is
+	// an error's text -- span.Fail(err) -- and an error is exactly
+	// where a secret turns up unasked: a command line, a URL with a
+	// password in it, a pillar value quoted back by whatever refused
+	// it. That text went to the collector as it was. Nil still runs the
+	// URL-credential pass, which needs no registered values.
+	Secrets *redact.Set
 
 	// Sampler decides whether a *root* trace is recorded. A span with a
 	// parent inherits the parent's decision and never consults this.
@@ -251,6 +268,13 @@ func (t *Tracer) run() {
 		}
 		// A deadline of its own: an export that hung would hold the
 		// queue and turn dropped spans into every span.
+		// Scrubbed here, on the exporter's goroutine, rather than in
+		// finished: the redactor walks every registered value over every
+		// string, and that cost belongs to telemetry, not to the job or
+		// the state that ended the span.
+		for _, s := range batch {
+			t.scrub(s)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		var err error
 		if t.Export == nil {
@@ -295,6 +319,34 @@ func (t *Tracer) run() {
 			}
 			flush()
 			return
+		}
+	}
+}
+
+// scrub redacts a finished span in place. The span is the tracer's once
+// it has ended, so nothing else is writing it.
+//
+// An attribute is scrubbed in the form it will be exported in, which is
+// the point of doing it value by value rather than with ScrubValue
+// alone: attrValue prints anything it has no OTLP kind for -- an error,
+// a fmt.Stringer, a *url.URL -- and ScrubValue returns those untouched,
+// because it walks strings and containers. Scrubbing the printed text
+// is scrubbing what the collector receives. The two have to agree, so
+// the kinds attrValue keeps as they are are the kinds left alone here.
+func (t *Tracer) scrub(s *Span) {
+	s.Name = t.Secrets.Scrub(s.Name)
+	s.Message = t.Secrets.Scrub(s.Message)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, v := range s.attrs {
+		switch v.(type) {
+		case nil, bool, int, int64, float64, time.Duration:
+		case string:
+			s.attrs[k] = t.Secrets.Scrub(v.(string))
+		case *url.URL:
+			s.attrs[k] = t.Secrets.Scrub(v.(*url.URL).Redacted())
+		default:
+			s.attrs[k] = t.Secrets.Scrub(fmt.Sprint(v))
 		}
 	}
 }

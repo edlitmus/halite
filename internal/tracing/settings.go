@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/edlitmus/halite/internal/redact"
 )
 
 // Settings is a process's tracing configuration, already read.
@@ -28,6 +30,11 @@ type Settings struct {
 	// Service and Version identify this process in every exported span.
 	Service string
 	Version string
+
+	// Secrets is the process's redactor, the one its logger holds. A
+	// span's status message and attributes are scrubbed by it before
+	// they leave; see Tracer.Secrets.
+	Secrets *redact.Set
 }
 
 // Modes.
@@ -108,6 +115,7 @@ func TracerFrom(s Settings) (*Tracer, error) {
 	return &Tracer{
 		Service: s.Service,
 		Version: s.Version,
+		Secrets: s.Secrets,
 		Sampler: RatioSampler{Ratio: rate},
 		Export:  &OTLPExporter{Endpoint: endpoint, Timeout: 10 * time.Second},
 	}, nil

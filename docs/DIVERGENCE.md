@@ -38236,6 +38236,52 @@ not. The matcher of Salt was called directly, not through a job that a
 real Salt deployment published. `S@` inside a nodegroup or a compound target
 was not run against Salt. It uses the same code path.
 
+### 5.587 Spans were exported without redaction
+
+Issue 614, from the issue 321 second-pass audit, round nine
+(`internal/tracing`). The audit found this by reading. It did not run
+the code.
+
+**The defect.** SPEC 26.1 puts the redactor at the sink. The logger
+calls it. Nothing in `internal/tracing` called it. The status message
+of a span is the text of an error: `span.Fail(err)` sets it, and the
+node does this in `execute.go` for a failed job. The attributes are
+whatever the caller sets. Both went to the OTLP collector as they were.
+
+**The change.** `Tracer.Secrets` is a `*redact.Set`. `Settings.Secrets`
+holds it, and `TracerFrom` passes it on. Before a batch is exported,
+the exporter goroutine scrubs the name, the status message and the
+attributes of each span. An attribute is scrubbed in the form in which
+it is exported:
+
+- A string is scrubbed.
+- A `*url.URL` is written with `Redacted()`, then scrubbed.
+- An error, a Stringer or a slice is printed with `fmt.Sprint`, then
+  scrubbed. This is what the exporter would print.
+- A number, a bool or a duration is not changed.
+
+A nil set still removes the credentials from URLs.
+
+**Wiring.** `buildTracer` in `cmd/halite-hub/trace.go` is called from
+`serve.go` with `h.secrets`. `buildTracer` in `cmd/halite-node/trace.go`
+uses `n.secrets`. Both now pass the redactor of the process. This is
+the same set that the logger holds. `halite-api` builds no tracer.
+
+**Tested.** `TestASpanIsRedactedBeforeItIsExported`
+(`internal/tracing/redact_test.go`) uses a real `httptest` OTLP
+receiver. It runs `TracerFrom`, a span, `Fail`, attributes of every
+shape, `End` and `Stop`. Then it reads the body that the receiver got.
+It was broken three ways, and each way failed. With the scrub call
+removed, a registered secret and a URL password reached the collector.
+With the branch for printed kinds removed, a registered secret reached
+the collector through an error attribute. With `Secrets: s.Secrets`
+removed from `TracerFrom`, a registered secret reached the collector.
+
+**Not verified.** No real OTLP collector was used. No test covers the
+wiring lines in the hub and the node. The tests of the `cmd` packages
+pass, and none of them fails when the `Secrets:` line in
+`cmd/*/trace.go` is removed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
