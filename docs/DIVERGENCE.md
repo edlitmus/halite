@@ -38323,6 +38323,55 @@ newline in its text is still printed inline. Only string fields go to
 the block. A carriage return is not treated as a line break. The output
 was not watched on a real terminal or in a real log file.
 
+### 5.589 An inline file named with two leading dots was refused
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`cmd/halite-node/oneshot.go`, `writeInlineFile`). The audit found this by reading.
+The issue made two claims. The first was a defect and is fixed. The
+second is not changed.
+
+**The defect.** In an agentless run (`halite-hub ssh`), the hub sends
+the state tree in the request. The node writes it to a temporary
+directory with `writeInlineFile`. The function refused any path whose
+cleaned form starts with the two bytes `..`. It refused `..data` and
+`...`, and with them the whole run. A Kubernetes ConfigMap volume writes
+`..data` and `..2024_...` into every directory that it mounts. A nested
+path such as `conf/..data` was already accepted. Only a top-level path
+was refused.
+
+**The change.** The function now calls `filepath.IsLocal` on the cleaned
+path. This function works by path element. It still refuses `..`,
+`../x`, `a/../../x` and absolute paths. On Windows it also refuses a
+volume name and a reserved name. The function now refuses an empty path
+and `a/..` explicitly. Both clean to `.`, which is the tree itself.
+Before, they failed later with "is a directory".
+
+**Shown.** `TestAnInlineFileNamedWithTwoLeadingDotsIsWritten`
+(`cmd/halite-node/inlinefile_test.go`) fails on the old code. The
+output is `"..data" was refused` and `"..." was refused`. The test also
+shows that `""` and `a/..` were refused for the wrong reason.
+
+**The 0600 half is not changed.** The issue says that the function
+writes every file at 0600. We did not change this. The reason comes
+from reading the code. It is not from a test. We looked for anything
+that reads the mode of a tree file, and found nothing:
+
+- The request of the hub carries no mode. `inlineTree` in
+  `cmd/halite-hub/ssh.go` sends contents only.
+- The fetcher of the node (`Fetcher.Fetch` in `internal/fileserver`)
+  returns contents only.
+- `file.managed` and `file.recurse` write their own `mode` or
+  `file_mode`, or they use the default 0644.
+
+So no consumer can see 0600. A wider mode would show the templates of a
+state tree to every account on the target. The mode stays at 0600, and
+the code comment gives the reason. No test shows a consumer that reads
+the mode, because we found none. If one exists, this conclusion is
+wrong.
+
+**Not verified.** No real `halite-hub ssh` run against a real target
+was made. The test calls `writeInlineFile` directly.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **An agentless run (`halite-hub ssh`) no longer fails on a state tree with a top-level `..data` entry.** The node refused any path that starts with two dots, so `..data` and `...` failed the whole run. A Kubernetes ConfigMap volume writes `..data` and `..2024_...` into each directory it mounts. The node now refuses only a path that leaves the tree, so these paths are written. An empty path and `a/..` are now refused with a clear error. The files in the temporary tree are still written at mode 0600. This was not changed, because we found no consumer that reads the mode. This is a result of reading the code, not of a test. No real `halite-hub ssh` run was made. DIVERGENCE 5.589.
+
 - **A newline in a log message no longer starts a new record in the console format.** The second line of such a message began at column one, where it reads as a record of its own. Further lines are now indented by four spaces. The JSON format does not change. In addition, a logger made with `With` now shares one lock with its parent, so records reach every sink in the same order. DIVERGENCE 5.588.
 
 - **Trace spans are now redacted before they are exported.** The hub and the node sent the name, the status message and the attributes of each span to the OTLP collector as they were. The status message of a failed job is the text of the error, so it could hold a secret. The hub and the node now pass the redactor of the process to the tracer, and each span is scrubbed before export. URL credentials are removed in all cases. If you export traces, you do not need to change anything. It was tested against a local test receiver, not a real collector. DIVERGENCE 5.587.
