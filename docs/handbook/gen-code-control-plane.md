@@ -33,6 +33,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `Client` (type): Client is a node's connection to its hub.
 - `ClientConfig` (func): ClientConfig builds a node's TLS configuration.
 - `CodeOf` (func): CodeOf answers with the stable code the hub attached to a failure, or an empty string when it attached none.
+- `Delegation` (type): Delegation is who a caller says it is acting for: the operator it authenticated, and the roles that operator's token was issued with.
 - `Denylist` (type): Denylist holds revoked certificate serials.
 - `EnrollConfig` (func): EnrollConfig is the configuration a node uses before it has a certificate: it verifies the hub and presents nothing.
 - `EnrollRequest` (type): EnrollRequest is the body of a POST to /v1/enroll.
@@ -46,6 +47,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `FetchCA` (func): FetchCA obtains the hub's enrollment CA from the hub itself, trusting it only if it matches a fingerprint the operator delivered by another route.
 - `GrainsRequest` (type): GrainsRequest is PUT /v1/grains: a node pushing a refreshed fact set, per SPEC 6.2.
 - `JobStatus` (type): JobStatus is the answer to GET /v1/jobs/{jid}.
+- `KillRequest` (type): KillRequest is the body of POST /v1/jobs/{jid}/kill.
 - `KillResponse` (type): KillResponse says what a kill reached.
 - `Message` (type): Message is one line of the /v1/subscribe stream: SPEC 6.2's NDJSON, one JSON object per line, no trailing state, so a truncated stream is unambiguous.
 - `MineGetRequest` (type): MineGetRequest is POST /v1/mine/get: one node reading what others published.
@@ -84,7 +86,7 @@ Package hub is the control plane of SPEC section 6: the endpoints a node talks t
 
 The rule the whole package follows is that a node's identity comes from the certificate the TLS layer verified and never from the request body. A body says what a node wants; the certificate says who is asking.
 
-**Files:** `anchors.go`, `batch.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
+**Files:** `anchors.go`, `batch.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
 
 **Exports.**
 

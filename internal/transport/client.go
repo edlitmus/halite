@@ -858,8 +858,14 @@ func (c *Client) FollowEvents(ctx context.Context, tags []string, from string, f
 
 // KillJob stops a job that has not finished.
 func (c *Client) KillJob(ctx context.Context, jid string) (*KillResponse, error) {
+	return c.KillJobFor(ctx, jid, nil)
+}
+
+// KillJobFor is KillJob for a caller acting for an operator, which the
+// hub authorizes as well (issue 618). A nil delegation is KillJob.
+func (c *Client) KillJobFor(ctx context.Context, jid string, onBehalfOf *Delegation) (*KillResponse, error) {
 	var res KillResponse
-	if _, err := c.post(ctx, PathJob+jid+"/kill", struct{}{}, &res); err != nil {
+	if _, err := c.post(ctx, PathJob+jid+"/kill", KillRequest{OnBehalfOf: onBehalfOf}, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil

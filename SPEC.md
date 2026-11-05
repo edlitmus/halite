@@ -2201,6 +2201,9 @@ roles:
         'state.orchestrate':
           allow_mods: ['deploy.*']
 
+  api-service:
+    - act_for: ['oidc:*', 'local:*']
+
 bindings:
   - principal: 'oidc:group:sre'
     roles: ['webops', 'readonly']
@@ -2208,6 +2211,8 @@ bindings:
     roles: ['deployer']
   - principal: 'node:lb*.prod'
     roles: ['lb_peer']
+  - principal: 'cert:CN=api'
+    roles: ['api-service']
 ```
 
 Properties that are requirements, not suggestions:
@@ -2252,6 +2257,16 @@ Properties that are requirements, not suggestions:
   that touches no node needs no target. Salt grants a runner with no target and runs it with the
   master's whole reach, so this is stricter than Salt. Through the API, a runner is held to the
   operator's scope as well as the API's own.
+- **A caller acting for an operator is judged as both.** The API calls the hub with its own
+  certificate, and tells it whom it acts for: the operator and the roles their token was issued
+  with (section 23.6). The hub asks every question twice, of the certificate and of the operator,
+  and either refusing refuses: the runner, each job it sends, and a kill, which is judged against
+  the job's own target and function. A runner call or orchestration made this way belongs to the
+  certificate and the operator together, and is shown and resumed only for that pair. The hub
+  accepts the claim only from a principal whose role has `act_for` matching the operator, a list of
+  principal patterns that grants nothing else, and refuses the call from any other. Without it, the
+  hub had only the API's grant to judge, and an operator held to `web*` reached every node the API
+  could (DIVERGENCE 5.582).
 - **Every decision is logged**, allowed or denied, with the rule that matched.
 - **`halite-hub policy test`** evaluates a hypothetical request against the policy and prints the
   matching rule or the reason for denial, so a policy can be tested in CI rather than in production.

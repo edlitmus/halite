@@ -322,6 +322,48 @@ type RunnerRequest struct {
 	// API may (issue 321, M-56). Absent, the caller's scope alone; an
 	// empty list, no node at all.
 	Narrow *[]string `json:"narrow,omitempty"`
+	// OnBehalfOf is the operator the caller acts for, which the hub
+	// authorizes as well as the caller (issue 618). See Delegation.
+	OnBehalfOf *Delegation `json:"on_behalf_of,omitempty"`
+}
+
+// Delegation is who a caller says it is acting for: the operator it
+// authenticated, and the roles that operator's token was issued with.
+//
+// It exists because halite-api calls the hub with its own certificate,
+// and the hub had nothing else to judge. Narrow carried the operator's
+// target scope for the runners that read nodes (M-56), and nothing
+// carried it anywhere else: a runner that dispatches a job authorized
+// the job as the API, a job list compared owners with the API's name,
+// and a kill judged the API's grant. An operator narrowed to `web*`
+// reached `db1` through all four (issue 618).
+//
+// Unlike Narrow, it is a claim and is not taken on trust. Its roles
+// only ever narrow -- the hub authorizes the caller and the operator
+// both, and either refusing refuses -- but the name decides whose jobs
+// and orchestrations a caller sees and is written into the audit
+// record, and a body that could name anyone could read as anyone. So
+// the hub accepts it only from a certificate whose own role grants
+// `act_for` the named principal, and refuses the call outright from
+// anyone else rather than ignoring the field: ignoring it is the
+// behaviour this replaced.
+//
+// The roles travel because the hub cannot work them out. An API
+// account names roles of its own (SPEC 23.2) and a token freezes them
+// at issue (23.6); the hub's bindings know neither. They are judged
+// against the hub's policy, so a role the hub does not define grants
+// nothing, which fails closed.
+type Delegation struct {
+	Principal string   `json:"principal"`
+	Roles     []string `json:"roles,omitempty"`
+}
+
+// KillRequest is the body of POST /v1/jobs/{jid}/kill. Empty, or absent,
+// for a direct caller; the API names the operator it acts for, and the
+// hub then holds the kill to that operator's grant against the job's
+// own target too (issue 618).
+type KillRequest struct {
+	OnBehalfOf *Delegation `json:"on_behalf_of,omitempty"`
 }
 
 // RunnerResponse is what the runner returned.

@@ -90,6 +90,13 @@ type Rule struct {
 	Functions []string
 	Runners   []string
 	Args      map[string]ArgRule
+	// ActFor names the principals a caller holding this rule may act
+	// for: patterns, as a binding's principal is. It is what lets
+	// halite-api tell the hub which operator a call is for, and have the
+	// hub judge that operator as well as the API (issue 618). It grants
+	// nothing else, and nobody holds it by default: a claim from a
+	// caller without it is refused (MayActFor).
+	ActFor []string
 }
 
 // ArgRule constrains the arguments of one function.
@@ -263,8 +270,20 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 		if r.Runners, err = stringList(m, "runners"); err != nil {
 			return nil, fmt.Errorf("%s: role %q rule %d: %v", path, role, i, err)
 		}
-		if len(r.Functions) == 0 && len(r.Runners) == 0 {
-			return nil, fmt.Errorf("%s: role %q rule %d grants no functions and no runners", path, role, i)
+		if r.ActFor, err = stringList(m, "act_for"); err != nil {
+			return nil, fmt.Errorf("%s: role %q rule %d: %v", path, role, i, err)
+		}
+		if len(r.Functions) == 0 && len(r.Runners) == 0 && len(r.ActFor) == 0 {
+			return nil, fmt.Errorf("%s: role %q rule %d grants no functions, no runners and no act_for", path, role, i)
+		}
+		if len(r.Functions) == 0 && len(r.Runners) == 0 && r.Target != "" {
+			// A target on a rule that grants only act_for would read as
+			// a limit on whom or where the caller may act, and is not
+			// one; it would also make the event stream show the caller
+			// every node it covers (VisibleNode). The operator's own
+			// rules are what limit the nodes.
+			return nil, fmt.Errorf("%s: role %q rule %d grants only act_for and names a target, which act_for does not read; "+
+				"drop the target, since the operator's own rules decide which nodes are reached", path, role, i)
 		}
 		if len(r.Functions) > 0 && r.Target == "" {
 			// SPEC 23.5: target and function are authorized together,
@@ -401,6 +420,30 @@ func (p *Policy) RolesFor(principal string) []string {
 // well as fixes: `hook:github/*` now also matches `hook:github/a/b`.
 func matchPrincipal(pattern, principal string) bool {
 	return pattern == principal || fnmatch.Match(pattern, principal)
+}
+
+// MayActFor reports whether principal may tell the hub it is acting for
+// operator: whether a role bound to principal has a rule whose `act_for`
+// matches operator.
+//
+// Resolved from the bindings and never from a token: the question is
+// about the certificate on the connection, which is the one identity
+// the hub knows for itself. An empty operator is refused, so that a
+// claim naming nobody is not read as no claim. Issue 618.
+func (p *Policy) MayActFor(principal, operator string) bool {
+	if p == nil || operator == "" {
+		return false
+	}
+	for _, role := range p.RolesFor(principal) {
+		for _, rule := range p.Roles[role] {
+			for _, pattern := range rule.ActFor {
+				if matchPrincipal(pattern, operator) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // Authorize decides one request, resolving the principal's roles from
