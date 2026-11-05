@@ -277,7 +277,7 @@ func (o *orchRunner) dispatchAndWait(c *exec.Context, args *value.Map, sub Submi
 			fmt.Sprintf("Would run %s on the nodes matching %q.", sub.Fun, sub.Target), nil), nil
 	}
 
-	j, err := o.server.DispatchAs(o.principal, sub)
+	j, err := o.server.dispatchFor(o.principal, o.onBehalfOf, sub)
 	if err != nil {
 		return states.False(err.Error()), nil
 	}
@@ -319,10 +319,11 @@ func (o *orchRunner) callRunner(c *exec.Context, args *value.Map) (states.Result
 	}
 
 	out, err := o.server.CallRunner(c.Ctx, RunnerCall{
-		Principal: o.principal,
-		Fun:       fun,
-		Arg:       arg,
-		Kwarg:     kwarg,
+		Principal:  o.principal,
+		OnBehalfOf: o.onBehalfOf,
+		Fun:        fun,
+		Arg:        arg,
+		Kwarg:      kwarg,
 	})
 	if err != nil {
 		return states.False(err.Error()), nil

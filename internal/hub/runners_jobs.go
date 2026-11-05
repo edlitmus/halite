@@ -391,7 +391,11 @@ func (c *RunnerContext) jobVisible(j *job.Job) bool {
 		return true
 	}
 	if j.Target == RunnerTarget {
-		return j.Submitter == c.Principal
+		// The caller and the operator it acts for, both: through the
+		// API every operator's runner calls have the API as submitter,
+		// and comparing that alone showed each operator everyone's,
+		// `pillar.show_pillar db1` and its return included (issue 618).
+		return sameCaller(j.Submitter, j.OnBehalfOf, c.Principal, c.OnBehalfOf)
 	}
 	for _, n := range j.Nodes {
 		if c.Visible(n) {

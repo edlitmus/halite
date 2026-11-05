@@ -391,15 +391,29 @@ roles:
       functions: ['test.ping', 'state.apply']
     - target: '*'
       runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
+    - act_for: ['*']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']
 ```
 
+For a runner call and a kill the API also tells the hub whom it acts for:
+the operator and the roles their token was issued with. The hub then asks
+every question of the operator as well as of the API, and either refusing
+refuses. That covers the jobs a runner sends (`saltutil.refresh_pillar`,
+`mine.update`, every step of an orchestration), the runs and runner calls a
+caller may see or resume, and which jobs a caller may kill. The hub accepts
+the claim only from a certificate whose role has `act_for` naming that
+operator, and refuses the call from anyone else. `act_for` takes principal
+patterns, as a binding does, and grants nothing else; a rule that holds only
+`act_for` may not name a target. Without it, every runner call the API makes
+for a logged-in operator is refused (DIVERGENCE 5.578).
+
 Used with a narrow operator role, the effective rights of a person are the
 intersection. The jobs the API submits record both: `submitter` is the API's
-certificate and `on_behalf_of` is the person, which is recorded and never
-trusted for authorization. A role that is granted after a token was issued
+certificate and `on_behalf_of` is the person. A job submitted with `POST
+/v1/jobs` records `on_behalf_of` and is never authorized on it; the API
+authorizes the operator itself before it submits. A role that is granted after a token was issued
 does not widen that token (the roles were frozen at issue), so a role taken
 away is a reason to revoke the token, not a change that applies mid-session.
 

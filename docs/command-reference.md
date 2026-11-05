@@ -1438,10 +1438,20 @@ roles:
       functions: ['test.ping', 'state.apply']
     - target: '*'
       runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
+    - act_for: ['*']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']
 ```
+
+`act_for` is what lets the service tell the hub whom a runner call or a
+kill is for: the operator and their token's roles. The hub authorizes the
+operator as well as the service, for the runner, for every job it sends,
+and for a kill against the job's own target, and shows a caller only the
+runs it made for that operator. A claim from a certificate without
+`act_for` naming the operator is refused, and so, without it, is every
+runner call the service makes for a logged-in operator (DIVERGENCE
+5.578).
 
 The roles a token was *issued* with are what decide, so a role granted
 after the token was handed out does not widen it, and one taken away is

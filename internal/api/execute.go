@@ -309,7 +309,11 @@ func (s *Server) jobDetail(w http.ResponseWriter, r *http.Request, token *apitok
 		if !s.authorize(w, token, requestFor("jobs.kill", "", []string{jid}, nil, true)) {
 			return
 		}
-		res, err := s.Hub.KillJob(r.Context(), jid)
+		// The operator goes with it, and the hub holds the kill to their
+		// grant against the job's own target: the check above names no
+		// job and no target, so on its own it let anybody granted
+		// `jobs.kill` stop any job the API's role could (issue 618).
+		res, err := s.Hub.KillJobFor(r.Context(), jid, delegation(token))
 		if err != nil {
 			s.hubError(w, "killing the job", err)
 			return
@@ -349,8 +353,14 @@ func (s *Server) forwardRunner(w http.ResponseWriter, r *http.Request, token *ap
 // service's role reaches; with it the hub holds the runner to both, and
 // an operator scoped to web* reads web* through the API as directly
 // (issue 321, M-56).
+//
+// Narrow covered only the runners that read nodes. The operator now goes
+// too, with the roles the token was issued with, and the hub judges them
+// alongside the API for everything the runner does: the jobs it sends,
+// and whose runs it shows (issue 618). Narrow is still sent, because a
+// hub older than that ignores OnBehalfOf and still applies Narrow.
 func (s *Server) runnerRequest(token *apitoken.Token, fun string, arg []string, kwarg map[string]any) transport.RunnerRequest {
-	req := transport.RunnerRequest{Fun: fun, Arg: arg, Kwarg: kwarg}
+	req := transport.RunnerRequest{Fun: fun, Arg: arg, Kwarg: kwarg, OnBehalfOf: delegation(token)}
 	if token != nil {
 		targets := s.Policy.RunnerScopeFor(token.Roles, fun).Targets
 		if targets == nil {
@@ -359,4 +369,18 @@ func (s *Server) runnerRequest(token *apitoken.Token, fun string, arg []string, 
 		req.Narrow = &targets
 	}
 	return req
+}
+
+// delegation is who the API acts for, as the hub is told it: the token's
+// principal and the roles frozen into it (SPEC 23.6), which are the
+// roles this service has just authorized the request against. Nil for
+// no token, which is a call the API makes for nobody.
+func delegation(token *apitoken.Token) *transport.Delegation {
+	if token == nil {
+		return nil
+	}
+	return &transport.Delegation{
+		Principal: token.Principal,
+		Roles:     append([]string(nil), token.Roles...),
+	}
 }

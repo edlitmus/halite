@@ -53,7 +53,7 @@ func registerStateRunner(r *Runners) {
 				if c.Server.Files == nil {
 					return nil, fmt.Errorf("this hub serves no tree, so it has no orchestration to compile")
 				}
-				orch := &orchRunner{server: c.Server, principal: c.Principal, env: env}
+				orch := &orchRunner{server: c.Server, principal: c.Principal, onBehalfOf: c.OnBehalfOf, env: env}
 				registry := orchStates(orch)
 				compiled := c.Server.compileOrchestration(req, env, "", registry)
 				if err := compiled.Err(); err != nil {
@@ -158,6 +158,7 @@ func registerStateRunner(r *Runners) {
 				}
 				req := OrchRequest{
 					Principal:  c.Principal,
+					OnBehalfOf: c.OnBehalfOf,
 					SLS:        previous.SLS,
 					Env:        previous.Env,
 					Test:       c.argBool("test"),
@@ -211,8 +212,13 @@ func registerStateRunner(r *Runners) {
 // run (issue 321, M-56). It is the one rule for showing, listing and resuming:
 // resuming had its own, which was none, and returned the earlier run's step
 // comments as "Carried forward from ...". DIVERGENCE 5.504.
+//
+// "The principal who ran it" is the caller and the operator it acted for
+// together, as for a runner call's job (sameCaller): through the API the
+// principal is the API for everybody, so any operator listed, showed and
+// resumed any other's runs (issue 618).
 func (c *RunnerContext) runVisible(run *OrchRun) bool {
-	return c.Scope.Everything() || run.Principal == c.Principal
+	return c.Scope.Everything() || sameCaller(run.Principal, run.OnBehalfOf, c.Principal, c.OnBehalfOf)
 }
 
 // scopedRunWindow is how many of the most recent runs are looked through to
@@ -291,10 +297,11 @@ func orchOutcome(run *OrchRun) (any, error) {
 // entry points.
 func orchRequestFrom(c *RunnerContext) OrchRequest {
 	req := OrchRequest{
-		Principal: c.Principal,
-		SLS:       tagGlobs(c.arg("sls")),
-		Env:       c.arg("env"),
-		Test:      c.argBool("test"),
+		Principal:  c.Principal,
+		OnBehalfOf: c.OnBehalfOf,
+		SLS:        tagGlobs(c.arg("sls")),
+		Env:        c.arg("env"),
+		Test:       c.argBool("test"),
 	}
 	if raw, ok := c.Args.Get("pillar"); ok && raw != nil {
 		if m, ok := raw.(*value.Map); ok {
@@ -315,6 +322,9 @@ func orchJSON(run *OrchRun, withSteps bool) *value.Map {
 	}
 	if run.Principal != "" {
 		out.Set("principal", run.Principal)
+	}
+	if run.OnBehalfOf != "" {
+		out.Set("on_behalf_of", run.OnBehalfOf)
 	}
 	out.Set("started", run.Started.UTC().Format(time.RFC3339Nano))
 	out.Set("duration_ms", run.DurationMS)

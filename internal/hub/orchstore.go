@@ -28,6 +28,12 @@ type OrchRun struct {
 	SLS       []string `json:"sls,omitempty"`
 	Env       string   `json:"env,omitempty"`
 	Principal string   `json:"principal,omitempty"`
+	// OnBehalfOf is the operator Principal ran it for, when Principal
+	// is a caller acting for one (the API), and empty otherwise. Only
+	// written from a delegation the hub accepted. Who may see the run is
+	// the two together (runVisible); a record from before it existed has
+	// none, and is seen by its principal acting for nobody, as it was.
+	OnBehalfOf string `json:"on_behalf_of,omitempty"`
 	// ResumedFrom names the step a resumed run picked up at, and the
 	// run it picked up from.
 	ResumedFrom string `json:"resumed_from,omitempty"`

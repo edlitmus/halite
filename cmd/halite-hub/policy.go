@@ -81,13 +81,16 @@ func runPolicy(args *cli.Args) int {
 		for role, rules := range loaded.Roles {
 			fmt.Printf("role %s\n", role)
 			for i, r := range rules {
+				if len(r.ActFor) > 0 {
+					fmt.Printf("  %d. act for %s\n", i, strings.Join(r.ActFor, ", "))
+				}
 				if len(r.Runners) > 0 {
 					on := r.Target
 					if on == "" {
 						on = "no node (no target)"
 					}
 					fmt.Printf("  %d. runners %s on %s\n", i, strings.Join(r.Runners, ", "), on)
-				} else {
+				} else if len(r.Functions) > 0 {
 					fmt.Printf("  %d. %s on %s\n", i, strings.Join(r.Functions, ", "), r.Target)
 				}
 				for fn, a := range r.Args {

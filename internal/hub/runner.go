@@ -36,6 +36,12 @@ type RunnerContext struct {
 	Args      *value.Map
 	// Scope is the nodes the caller may reach through this runner.
 	Scope policy.Scope
+	// OnBehalfOf is the operator the caller acts for, already accepted
+	// (checkDelegation), and nil for a direct caller. Everything the
+	// runner does as Principal it does for this operator too: the jobs
+	// it sends are authorized for both, and the runs and jobs it shows
+	// are the ones this pair made (issue 618).
+	OnBehalfOf *transport.Delegation
 }
 
 // Visible reports whether a node is inside the caller's scope, which a
@@ -126,7 +132,10 @@ const (
 	ReachHub
 	// ReachDispatch runners reach nodes only by sending jobs, and every
 	// job is authorized against the caller's function rules as it is
-	// sent (DispatchAs), so the scope adds nothing.
+	// sent (dispatchFor), so the scope adds nothing. For a caller acting
+	// for an operator that means the operator's rules as well; it used to
+	// mean the caller's alone, which is how an operator narrowed to `web*`
+	// refreshed db1's pillar through the API (issue 618).
 	ReachDispatch
 	// ReachNodes runners read or change what the hub holds about
 	// particular nodes. A node or target named in NodeArg or TargetArg
@@ -262,6 +271,9 @@ type RunnerCall struct {
 	Kwarg     map[string]any
 	// Narrow is transport.RunnerRequest.Narrow.
 	Narrow *[]string
+	// OnBehalfOf is transport.RunnerRequest.OnBehalfOf: a claim, which
+	// CallRunner accepts only from a caller granted act_for.
+	OnBehalfOf *transport.Delegation
 }
 
 // RunnerOutcome is what came back.
@@ -286,19 +298,27 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		return nil, &UnknownRunnerError{Name: call.Fun, Known: reg.nearMisses(call.Fun)}
 	}
 
+	// A claim to act for somebody is settled before anything is asked
+	// of the policy on its strength.
+	if err := s.checkDelegation(call.Principal, call.OnBehalfOf); err != nil {
+		s.warn("runner refused: a claim to act for another the caller may not make",
+			"principal", call.Principal, "fun", call.Fun, "on_behalf_of", actingFor(call.OnBehalfOf))
+		return nil, &policyRefusal{reason: err.Error()}
+	}
+
 	// SPEC 23.5: the decision is logged either way, with the rule that
 	// matched. `Runner: true` is what makes the policy read `runners:`
 	// rather than `functions:`.
-	decision := s.Policy.Authorize(
-		policyRequestFor(call.Principal, call.Fun, "", "", call.Arg, call.Kwarg, true))
-	s.countDecision(decision)
+	decision := s.authorizeFor(
+		policyRequestFor(call.Principal, call.Fun, "", "", call.Arg, call.Kwarg, true), call.OnBehalfOf)
 	if !decision.Allowed {
 		s.warn("runner refused by policy",
-			"principal", call.Principal, "fun", call.Fun, "reason", decision.Reason)
+			"principal", call.Principal, "on_behalf_of", actingFor(call.OnBehalfOf),
+			"fun", call.Fun, "reason", decision.Reason)
 		return nil, &policyRefusal{reason: decision.Reason}
 	}
 	s.info("runner authorized",
-		"principal", call.Principal, "fun", call.Fun,
+		"principal", call.Principal, "on_behalf_of", actingFor(call.OnBehalfOf), "fun", call.Fun,
 		"role", decision.Role, "rule", decision.RuleIndex)
 
 	sig, _ := reg.sigs.Lookup(call.Fun)
@@ -319,9 +339,24 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		return nil, fmt.Errorf("%s: %s", call.Fun, strings.Join(msgs, "; "))
 	}
 
+	// The caller's scope, inside the operator's when it acts for one,
+	// inside Narrow when it sent one. Built inside out, because Within
+	// replaces what a scope was already narrowed by rather than adding to
+	// it.
 	scope := s.Policy.RunnerScope(call.Principal, call.Fun)
+	var narrower *policy.Scope
 	if call.Narrow != nil {
-		scope = scope.Within(policy.Scope{Targets: *call.Narrow})
+		narrower = &policy.Scope{Targets: *call.Narrow}
+	}
+	if call.OnBehalfOf != nil {
+		theirs := s.Policy.RunnerScopeFor(call.OnBehalfOf.Roles, call.Fun)
+		if narrower != nil {
+			theirs = theirs.Within(*narrower)
+		}
+		narrower = &theirs
+	}
+	if narrower != nil {
+		scope = scope.Within(*narrower)
 	}
 	if err := s.checkRunnerReach(reg.mods[call.Fun], scope, bound); err != nil {
 		s.warn("runner refused: outside the caller's scope",
@@ -331,22 +366,27 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 
 	jid := s.clock().Next()
 	started := s.now()
-	s.emit(tagRunNew(string(jid)), "", map[string]any{
+	newRun := map[string]any{
 		"jid":       string(jid),
 		"fun":       call.Fun,
 		"arg":       call.Arg,
 		"principal": call.Principal,
-	})
+	}
+	if call.OnBehalfOf != nil {
+		newRun["on_behalf_of"] = call.OnBehalfOf.Principal
+	}
+	s.emit(tagRunNew(string(jid)), "", newRun)
 	s.recordRunnerJob(jid, call, started)
 
 	out := &RunnerOutcome{JID: jid, Fun: call.Fun, Success: true}
 	ret, err := s.runGuarded(call.Fun, reg.fns[call.Fun], &RunnerContext{
-		Ctx:       ctx,
-		Server:    s,
-		Principal: call.Principal,
-		JID:       jid,
-		Args:      bound,
-		Scope:     scope,
+		Ctx:        ctx,
+		Server:     s,
+		Principal:  call.Principal,
+		JID:        jid,
+		Args:       bound,
+		Scope:      scope,
+		OnBehalfOf: call.OnBehalfOf,
 	})
 	out.Duration = s.now().Sub(started)
 	// The value and the error both, when a runner produced both. An
@@ -425,6 +465,9 @@ func (s *Server) recordRunnerJob(jid job.ID, call RunnerCall, started time.Time)
 		Kwarg:     call.Kwarg,
 		Created:   started,
 		Submitter: call.Principal,
+		// Who it was for, so that jobVisible can tell one operator's
+		// runner calls through the API from another's.
+		OnBehalfOf: actingFor(call.OnBehalfOf),
 		// A runner runs on the hub, so the hub is the only respondent.
 		Target: RunnerTarget,
 		Nodes:  []string{RunnerTarget},
@@ -491,11 +534,12 @@ func (s *Server) runnerCall(w http.ResponseWriter, r *http.Request, principal st
 	}
 
 	out, err := s.CallRunner(r.Context(), RunnerCall{
-		Principal: principal,
-		Fun:       req.Fun,
-		Arg:       req.Arg,
-		Kwarg:     req.Kwarg,
-		Narrow:    req.Narrow,
+		Principal:  principal,
+		Fun:        req.Fun,
+		Arg:        req.Arg,
+		Kwarg:      req.Kwarg,
+		Narrow:     req.Narrow,
+		OnBehalfOf: req.OnBehalfOf,
 	})
 	switch e := err.(type) {
 	case nil:

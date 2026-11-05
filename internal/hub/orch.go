@@ -20,12 +20,16 @@ import (
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/template"
+	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
 
 // OrchRequest is one orchestration to run.
 type OrchRequest struct {
 	Principal string
+	// OnBehalfOf is the operator Principal runs it for, already accepted
+	// by checkDelegation; every step is authorized for them as well.
+	OnBehalfOf *transport.Delegation
 	// SLS names the orchestration files, as `state.orchestrate` takes
 	// them.
 	SLS []string
@@ -47,10 +51,11 @@ type OrchRequest struct {
 // every call, and the version of that mistake is a step running with
 // someone else's permissions.
 type orchRunner struct {
-	server    *Server
-	principal string
-	env       string
-	jid       job.ID
+	server     *Server
+	principal  string
+	onBehalfOf *transport.Delegation
+	env        string
+	jid        job.ID
 
 	mu      sync.Mutex
 	details map[string]*OrchStep
@@ -92,18 +97,19 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 
 	jid := s.clock().Next()
 	run := &OrchRun{
-		JID:       jid,
-		SLS:       req.SLS,
-		Env:       env,
-		Principal: req.Principal,
-		Started:   s.now(),
-		State:     OrchRunning,
-		Test:      req.Test,
+		JID:        jid,
+		SLS:        req.SLS,
+		Env:        env,
+		Principal:  req.Principal,
+		OnBehalfOf: actingFor(req.OnBehalfOf),
+		Started:    s.now(),
+		State:      OrchRunning,
+		Test:       req.Test,
 		// What the run compiled with, for a resume to be held to.
 		PillarDigest: pillarDigest(req.Pillar),
 	}
 
-	orch := &orchRunner{server: s, principal: req.Principal, env: env, jid: jid}
+	orch := &orchRunner{server: s, principal: req.Principal, onBehalfOf: req.OnBehalfOf, env: env, jid: jid}
 	registry := orchStates(orch)
 
 	compileStarted := s.now()
@@ -128,9 +134,13 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		return nil, err
 	}
 
-	s.emit(tagOrchNew(string(jid)), "", map[string]any{
+	newOrch := map[string]any{
 		"jid": string(jid), "sls": req.SLS, "principal": req.Principal, "steps": len(compiled.Low),
-	})
+	}
+	if req.OnBehalfOf != nil {
+		newOrch["on_behalf_of"] = req.OnBehalfOf.Principal
+	}
+	s.emit(tagOrchNew(string(jid)), "", newOrch)
 	s.recordOrch(run)
 
 	result := (&runner.Runner{

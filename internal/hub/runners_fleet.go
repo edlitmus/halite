@@ -10,6 +10,7 @@ import (
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/target"
+	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -409,8 +410,11 @@ func registerSaltutilRunner(r *Runners) {
 // every node in the estate, and a runner that dispatched on the
 // strength of the runner grant alone would turn the narrower permission
 // into the wider one.
+//
+// For the operator the caller acts for too, when it acts for one: the
+// job is the operator's as much as the caller's (issue 618).
 func (c *RunnerContext) dispatch(sub Submission) (*job.Job, error) {
-	return c.Server.DispatchAs(c.Principal, sub)
+	return c.Server.dispatchFor(c.Principal, c.OnBehalfOf, sub)
 }
 
 // DispatchAs sends a fleet job on a principal's behalf, authorizing it
@@ -423,22 +427,36 @@ func (c *RunnerContext) dispatch(sub Submission) (*job.Job, error) {
 // dispatching on the strength of the outer grant alone would turn the
 // narrower permission into the wider one.
 func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) {
+	return s.dispatchFor(principal, nil, sub)
+}
+
+// dispatchFor is DispatchAs for a principal that may be acting for an
+// operator, already accepted by checkDelegation: the job is authorized
+// for both, and recorded with the operator as OnBehalfOf.
+//
+// The operator half is what issue 618 adds. Without it a runner called
+// through the API sent its jobs as the API: `saltutil.refresh_pillar`,
+// `mine.update`, and every step of `state.orchestrate`, reached whatever
+// the API's role reaches, for an operator whose own rules named `web*`.
+func (s *Server) dispatchFor(principal string, ob *transport.Delegation, sub Submission) (*job.Job, error) {
 	// The dry-run flag is part of the question: it is a keyword on the wire,
 	// and a role that requires `test: true` is answered on it (DIVERGENCE
 	// 5.493). An orchestration step with `test: true` reaches here as a
 	// Submission whose Test is set and whose Kwarg says nothing of it.
 	question := policyRequestFor(principal, sub.Fun, sub.Target, sub.TargetKind, sub.Arg, sub.Kwarg, false)
 	question.Test = sub.Test
-	decision := s.Policy.Authorize(question)
-	s.countDecision(decision)
+	decision := s.authorizeFor(question, ob)
 	if !decision.Allowed {
 		s.warn("a job dispatched on a principal's behalf was refused by policy",
-			"principal", principal, "target", sub.Target, "fun", sub.Fun,
+			"principal", principal, "on_behalf_of", actingFor(ob), "target", sub.Target, "fun", sub.Fun,
 			"reason", decision.Reason)
 		return nil, fmt.Errorf("%s may ask for this but not %s against %q: %s",
 			principal, sub.Fun, sub.Target, decision.Reason)
 	}
 	sub.Submitter = principal
+	if ob != nil {
+		sub.OnBehalfOf = ob.Principal
+	}
 	return s.Dispatch(sub)
 }
 

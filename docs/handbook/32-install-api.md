@@ -89,6 +89,11 @@ roles:
     - target: '*'
       runners: ['manage.status', 'manage.up', 'manage.down', 'jobs.list_jobs',
                 'jobs.list_job', 'cache.grains', 'event.listen', 'event.send']
+    # Lets the API tell the hub which operator a runner call or a kill is
+    # for, so the hub holds it to that operator's rules too. Without it
+    # the hub refuses every runner call the API makes for a logged-in
+    # operator.
+    - act_for: ['*']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']
