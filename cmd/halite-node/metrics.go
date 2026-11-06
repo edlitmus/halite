@@ -18,6 +18,7 @@ import (
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/metrics"
+	"github.com/edlitmus/halite/internal/tracing"
 )
 
 // nodeMetrics is what a node counts about itself.
@@ -228,6 +229,22 @@ func (m *nodeMetrics) countEvidenceRecord(kind string) {
 	if m.on() {
 		m.evidenceRecords.With(kind).Inc()
 	}
+}
+
+// countLostSpans exposes the tracer's two drop paths as
+// halite_trace_spans_dropped_total, read from the tracer at scrape time
+// (metrics.CounterFunc says why it is not a Counter fed by a hook).
+//
+// Declared whether or not tracing is on: t is nil when it is off, and a
+// nil tracer reads 0 for both reasons. The family is the same on every
+// node, so a rule over it does not have to know which nodes trace, and
+// each series is at 0 before its first loss for increase() to see it.
+func (m *nodeMetrics) countLostSpans(t *tracing.Tracer) {
+	if !m.on() {
+		return
+	}
+	m.registry.CounterFunc(tracing.LostMetric, tracing.LostMetricHelp, "reason", tracing.LostReasons,
+		func(reason string) float64 { return float64(t.Lost(reason)) })
 }
 
 // declareEvidenceKinds exports the record counter at 0 for each kind.
