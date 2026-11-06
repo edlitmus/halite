@@ -97,6 +97,13 @@ func (n *node) evidenceLog() *nodeevidence.Log {
 func (n *node) recordEvidence(kind string, detail map[string]string) {
 	log := n.evidenceLog()
 	if log == nil {
+		// Counted every time, where the line below is said once: a node
+		// configured to keep a record whose log did not open drops every
+		// record after it, and the count is how many (DIVERGENCE 5.595).
+		// Not on a node that keeps no record, which has nothing to lose.
+		if n.evidence != nil && n.evidenceOn() {
+			n.metrics.countEvidenceUnrecorded()
+		}
 		if n.evidence != nil && n.evidence.err != nil {
 			// Once per process, because the open is attempted once.
 			n.evidence.mu.Lock()
@@ -162,6 +169,7 @@ func (n *node) registerEvidenceMetrics() {
 	// increase() reads 0, and HaliteNodeEvidenceStopped fires on a node that
 	// recorded the job correctly (DIVERGENCE 5.239).
 	n.metrics.declareEvidenceKinds(nodeevidence.Kinds)
+	n.metrics.declareAnchorProblems(anchorProblems)
 	n.metrics.gauge("halite_node_evidence_log_open",
 		"1 when this node has its evidence chain open for writing; 0 when it is configured "+
 			"to keep one and is not, because the log failed to open. Absent when evidence is off.",
@@ -296,8 +304,17 @@ func (n *node) recordExtensionChange(name, bundleVersion, status, reason string)
 //
 // A job's arguments are whatever an operator typed and can be enormous; a
 // record is a line in a file somebody has to read. Truncating loses
-// information, so the untruncated text is digested alongside it and the
-// digest is what a comparison with the hub's record uses.
+// information, so the untruncated text is digested alongside it.
+//
+// What is digested is the *scrubbed* text, the same text `arg` holds
+// before truncation. So the digest matches one computed from the hub's
+// copy of the arguments only when they held no secret this node's
+// redactor knows; when they did, the digest is of the text with the
+// secret replaced, and the hub cannot reproduce it. That is deliberate.
+// A digest of the unscrubbed text is a fingerprint of the secret, in a
+// file whose purpose is to be read by somebody else, and a short secret
+// can be recovered from its SHA-256 by guessing. The comparison it
+// costs is the one for jobs that carried a secret. DIVERGENCE 5.592.
 const maxEvidenceField = 1024
 
 // jobDetail is what the record holds about a job.

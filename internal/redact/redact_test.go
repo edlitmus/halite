@@ -496,3 +496,47 @@ func TestScrubLinesKeepsTheLineCount(t *testing.T) {
 		t.Errorf("a nil set changed the text: %q", got)
 	}
 }
+
+// MaskValue is for a job's return: registered values only, a whole short
+// secret too, and a report of whether anything changed. Issue 659.
+func TestMaskValueMasksRegisteredValuesOnly(t *testing.T) {
+	s := New()
+	s.Add("hunter2-long")
+	s.Add("pw123") // short: Holds, never Scrub
+
+	in := value.NewMap(4)
+	in.Set("stdout", "login hunter2-long ok")
+	in.Set("whole", "pw123")
+	in.Set("inside", "pw1234 and pw123 in text")
+	in.Set("url", "ssh://git@example.com/repo")
+	in.Set("hunter2-long", int64(1))
+	got, changed := s.MaskValue(in)
+	if !changed {
+		t.Fatal("MaskValue reported no change")
+	}
+	m := got.(*value.Map)
+	for key, want := range map[any]any{
+		"stdout": "login " + Placeholder + " ok",
+		// A whole short secret is masked, as `pillar items` masks it...
+		"whole": Placeholder,
+		// ...and is not hunted inside text, which would take every word
+		// that resembles it.
+		"inside": "pw1234 and pw123 in text",
+		// No URL pass: `git` was never a secret.
+		"url":       "ssh://git@example.com/repo",
+		Placeholder: int64(1),
+	} {
+		if v, _ := m.Get(key); v != want {
+			t.Errorf("%v = %#v, want %#v", key, v, want)
+		}
+	}
+
+	same := []any{"nothing here", Placeholder, int64(3), map[string]any{"k": "v"}}
+	if _, changed := s.MaskValue(same); changed {
+		t.Error("MaskValue reported a change in a value holding no secret")
+	}
+	var nilSet *Set
+	if v, changed := nilSet.MaskValue("hunter2-long"); changed || v != "hunter2-long" {
+		t.Errorf("a nil set masked %v", v)
+	}
+}

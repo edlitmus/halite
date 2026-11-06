@@ -203,6 +203,39 @@ func Tail(dir string) (*Record, int, error) {
 	return nil, len(segments), nil
 }
 
+// LastOfKind reads the most recent record of one kind, without verifying
+// anything, or nil when the chain holds none.
+//
+// For `doctor`, which wants the configuration record the agent wrote when
+// it last started (DIVERGENCE 5.589). It reads segments newest first and
+// stops at the first that holds one, so its cost is the segments written
+// since the agent last started rather than the whole history; a node that
+// has run for years without a restart pays for the segments in between,
+// which are bounded by `evidence_max_bytes` each.
+func LastOfKind(dir, kind string) (*Record, error) {
+	segments, err := Segments(dir)
+	if err != nil {
+		return nil, err
+	}
+	for i := len(segments) - 1; i >= 0; i-- {
+		var found *Record
+		if _, err := scanLines(segments[i], func(_ int, line []byte) error {
+			var r Record
+			if json.Unmarshal(line, &r) != nil || r.Kind != kind {
+				return nil
+			}
+			found = &r
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		if found != nil {
+			return found, nil
+		}
+	}
+	return nil, nil
+}
+
 // orNothing renders an absent previous hash for a message.
 func orNothing(hash string) string {
 	if hash == "" {

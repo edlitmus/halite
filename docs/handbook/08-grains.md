@@ -90,7 +90,7 @@ A few that are worth knowing by heart:
 | `virtual` | `physical`, `kvm`, `VMware`, … | Different tuning for VMs. |
 | `num_cpus`, `mem_total` | integers | Sizing: `worker_processes {{ grains['num_cpus'] }}`. |
 | `ipv4` | a list | The node's addresses, loopback included. |
-| `fips_mode` | true/false | Whether this build and host are in FIPS mode. |
+| `fips_mode` | true/false | The host kernel's FIPS state alone, not the binary's. `fips_build` and `fips_enabled` describe the binary. |
 
 `id` is the node ID. It is chosen once, at enrollment, in this order:
 `node_id` in the configuration file, the `HALITE_NODE_ID` environment
