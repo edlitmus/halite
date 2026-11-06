@@ -157,11 +157,14 @@ func (t *Tracer) Stop(ctx context.Context) {
 	}
 }
 
-// Dropped is how many spans were discarded because the queue was full.
+// Failed is how many spans were lost because the exporter did not take
+// the batch they were in: the collector refused it, could not be
+// reached, or took longer than the export's deadline.
 //
-// Reported rather than logged per span: a hub under enough load to drop
-// spans would produce a log line per drop, which costs more than the
-// tracing did. The hub turns this into a counter.
+// Reported rather than logged per span: a hub under enough load to lose
+// spans would produce a log line per span, which costs more than the
+// tracing did. Both binaries expose it, with Dropped, as
+// halite_trace_spans_dropped_total; see Lost.
 func (t *Tracer) Failed() int64 {
 	if t == nil {
 		return 0
@@ -176,6 +179,45 @@ func (t *Tracer) Dropped() int64 {
 		return 0
 	}
 	return t.dropped.Load()
+}
+
+// The reasons a span is lost, as the `reason` label of
+// halite_trace_spans_dropped_total. A queue that was full is Dropped and
+// an export that failed is Failed.
+const (
+	LostQueueFull    = "queue_full"
+	LostExportFailed = "export_failed"
+)
+
+// LostMetric is the counter both binaries expose Lost as, labelled by
+// reason. Named here, once, so that the hub's family and the node's
+// cannot drift apart in name or help text: they are read by one alert.
+const (
+	LostMetric     = "halite_trace_spans_dropped_total"
+	LostMetricHelp = "Spans this process recorded and never exported, by why: " +
+		"queue_full (the export queue was full) or export_failed (the exporter did not take the batch)."
+)
+
+// LostReasons is every reason Lost answers for, which is what each
+// binary declares its counter from: the set is closed, so each series is
+// exported at zero before the first loss and increase() sees that loss.
+// TestLostAnswersForEveryReason holds this list to Lost.
+var LostReasons = []string{LostQueueFull, LostExportFailed}
+
+// Lost is Dropped or Failed, by the reason's label value, and 0 for a
+// reason it does not know or on a nil Tracer -- which is tracing off,
+// where nothing can be lost.
+//
+// The metric reads this at scrape time rather than keeping a count of
+// its own; metrics.CounterFunc says why.
+func (t *Tracer) Lost(reason string) int64 {
+	switch reason {
+	case LostQueueFull:
+		return t.Dropped()
+	case LostExportFailed:
+		return t.Failed()
+	}
+	return 0
 }
 
 // StartSpan begins a span, using parent when it is valid.

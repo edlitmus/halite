@@ -11,6 +11,7 @@ package policy
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -101,8 +102,17 @@ type Rule struct {
 
 // ArgRule constrains the arguments of one function.
 type ArgRule struct {
-	AllowSLS   []string
-	DenySLS    []string
+	AllowSLS []string
+	DenySLS  []string
+	// AllowEnv and DenyEnv limit the environment a call may choose: the
+	// `saltenv` of a job, the `env` of an orchestration. Patterns, as
+	// allow_sls takes. With gitfs every branch is an environment, so a
+	// role with `allow_sls: [web.*]` and no environment rule could apply
+	// web.x from any branch somebody with push rights made, whatever the
+	// role's author meant by web.x (issue 620). See requestEnv for which
+	// environment a request is judged on.
+	AllowEnv   []string
+	DenyEnv    []string
 	AllowMods  []string
 	DenyKwargs []string
 	// RequireKwargs names keywords a call must carry, each with exactly
@@ -146,6 +156,31 @@ type Request struct {
 	// `test` the node never reads from Kwarg, and a role that requires
 	// `test: true` would refuse every dry run. DIVERGENCE 5.493.
 	Test bool
+	// Env is the environment the job will be dispatched with: the
+	// `saltenv` of a fleet job, which the node adopts (adoptJobEnvironment
+	// in cmd/halite-node), and for a resume the environment of the run it
+	// picks up. Like TargetKind it must be the value handed to Dispatch,
+	// or the policy judges one environment and the node runs another
+	// (issue 620). An orchestration runner's environment is read from its
+	// own `env` argument instead (requestEnv), so a runner request needs
+	// this only for `state.orch_resume`.
+	Env string
+	// Resumes is, for a `state.orch_resume`, the orchestration names of
+	// the run it picks up, read by the hub from its run store. They are
+	// what deny_sls and allow_mods judge for a resume (runnerNames), since
+	// the request itself names only a job ID.
+	//
+	// nil means the names are not known yet, and is what the hub's first
+	// question about a resume carries: CallRunner authorizes before the
+	// run is looked up, and looking it up first would answer a caller who
+	// may not see the run with that run's names in the refusal. The
+	// runner asks again with the names once it has found the run and
+	// checked the caller may see it, and that second answer is the one
+	// that lets the resume run. So a nil Resumes leaves the names to that
+	// second question rather than refusing every resume under allow_mods
+	// as one that "names no orchestration". Every other rule -- the grant,
+	// deny_kwargs, require_kwargs -- is judged on both. Issue 649.
+	Resumes []string
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
 	//
@@ -260,6 +295,9 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 			return nil, fmt.Errorf("%s: role %q rule %d is not a mapping", path, role, i)
 		}
 		r := Rule{Args: map[string]ArgRule{}}
+		if err := unknownKey(m, ruleKeys, "a rule"); err != nil {
+			return nil, fmt.Errorf("%s: role %q rule %d: %v", path, role, i, err)
+		}
 		if v, ok := m.Get("target"); ok {
 			r.Target, _ = v.(string)
 		}
@@ -302,6 +340,9 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 				if !ok {
 					return nil, fmt.Errorf("%s: role %q rule %d: args for %q is not a mapping", path, role, i, fn)
 				}
+				if err := unknownKey(cm, argRuleKeys, "an argument rule"); err != nil {
+					return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
+				}
 				var ar ArgRule
 				if ar.RequireKwargs, err = requireKwargs(cm); err != nil {
 					return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
@@ -312,7 +353,12 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 				}{
 					{"allow_sls", &ar.AllowSLS}, {"deny_sls", &ar.DenySLS},
 					{"allow_mods", &ar.AllowMods}, {"deny_kwargs", &ar.DenyKwargs},
+					{"allow_env", &ar.AllowEnv}, {"deny_env", &ar.DenyEnv},
 				} {
+					// A key read here must also be in argRuleKeys, or it
+					// is refused before it is read;
+					// TestEveryArgRuleKeyLoadsAndIsRead holds the two
+					// lists together.
 					if *f.dst, err = stringList(cm, f.key); err != nil {
 						return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
 					}
@@ -323,6 +369,99 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// ruleKeys and argRuleKeys are every key a rule, and an argument rule, is
+// read for. Any other key is refused at load, naming it.
+//
+// They used to be ignored, and a misspelling of a restriction is a
+// restriction that is not there: `allow_envv: [base]` under state.apply
+// loaded, and `policy test` answered "allowed" for prod (DIVERGENCE 5.602).
+// A typo in an allow or deny list, or in `require_kwargs`, fails open, and
+// so does one in the rule's own `args` -- `arg:` drops every argument rule
+// the role was written with. A rule-level typo of `functions`, `runners`
+// or `target` was already caught by the checks that a rule grants
+// something and that functions name a target, but not always (a rule that
+// grants functions and misspells `runners` loaded), and the rule is the
+// same grammar, so it is held the same way.
+//
+// The same refusal also means an older hub or API refuses a policy written
+// for a newer one, rather than enforcing it without the newer limits; that
+// is the direction to fail in, since the older program cannot enforce what
+// it does not know.
+//
+// The top level (`roles`, `bindings`) and a binding (`principal`, `roles`)
+// are not held to this. A misspelling there grants less, not more -- a
+// role no binding names, or a binding with no roles -- and is refused by
+// the checks that a binding names a principal and only defined roles, or
+// is plain from `policy show`. A top-level key is also where a YAML anchor
+// shared between roles is conventionally parked, which refusing would
+// break for no gain.
+var (
+	ruleKeys    = []string{"act_for", "args", "functions", "runners", "target"}
+	argRuleKeys = []string{"allow_env", "allow_mods", "allow_sls", "deny_env", "deny_kwargs", "deny_sls", "require_kwargs"}
+)
+
+// unknownKey refuses a key of m that is not in known, naming the first such
+// key in file order, the keys that are known, and the nearest of them when
+// one is close enough to be what was meant.
+func unknownKey(m *value.Map, known []string, what string) error {
+	for _, e := range m.Entries() {
+		k := value.KeyString(e.Key)
+		if slices.Contains(known, k) {
+			continue
+		}
+		hint := ""
+		if guess := closestKey(k, known); guess != "" {
+			hint = fmt.Sprintf("; did you mean `%s`?", guess)
+		}
+		return fmt.Errorf("`%s` is not a key of %s (known: %s)%s", k, what, strings.Join(known, ", "), hint)
+	}
+	return nil
+}
+
+// closestKey is the known key within a small edit distance of k, or "".
+// The same measure as internal/cli's flag suggestion; it is repeated rather
+// than imported because a policy parser has no business depending on the
+// command-line package.
+func closestKey(k string, known []string) string {
+	limit := 2
+	if len(k) <= 3 {
+		limit = 1
+	}
+	best, bestDistance := "", 0
+	for _, candidate := range known {
+		d := editDistance(k, candidate)
+		if d > limit {
+			continue
+		}
+		// known is sorted, so a tie keeps the first name.
+		if best == "" || d < bestDistance {
+			best, bestDistance = candidate, d
+		}
+	}
+	return best
+}
+
+// editDistance is Levenshtein over bytes; policy keys are ASCII.
+func editDistance(a, b string) int {
+	previous := make([]int, len(b)+1)
+	current := make([]int, len(b)+1)
+	for j := range previous {
+		previous[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		current[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			current[j] = min(previous[j]+1, current[j-1]+1, previous[j-1]+cost)
+		}
+		previous, current = current, previous
+	}
+	return previous[len(b)]
 }
 
 // requireKwargs reads `require_kwargs`: a mapping from a keyword name to the
@@ -608,13 +747,22 @@ func (p *Policy) VisibleNode(roles []string, node string) bool {
 // It is what an event with no node is filtered by: a job's, a key's, or
 // the reactor's own events are not about a node, so target coverage has
 // nothing to compare. Someone bound to no rule sees none of them.
+//
+// A rule that grants only `act_for` is not counted. `act_for` lets a
+// caller name whom it acts for and grants nothing else (Rule.ActFor), so
+// a token whose roles hold only that rule must not see every job, key
+// and reactor event because the rule exists. Counting every rule, as
+// this did, read "has a rule" as "may see", which was true until
+// issue 618 added a rule that permits nothing (issue 649).
 func (p *Policy) HasAnyRule(roles []string) bool {
 	if p == nil {
 		return false
 	}
 	for _, role := range roles {
-		if len(p.Roles[role]) > 0 {
-			return true
+		for _, rule := range p.Roles[role] {
+			if len(rule.Functions) > 0 || len(rule.Runners) > 0 {
+				return true
+			}
 		}
 	}
 	return false
@@ -819,11 +967,38 @@ func toFloat(v any) (float64, bool) {
 
 // checkArgs applies the argument-level constraints, returning the
 // reason a request is refused or the empty string.
+//
+// The constraints are every argument rule written for the function or for
+// another that takes the same names (argRulesFor, ArgumentFamily), and each
+// must pass. Read by the exact name, as it was, a rule granting `state.*`
+// with allow_sls under `state.apply` left `state.sls` free to apply any SLS
+// in the tree (issue 621). This is the one place a decision reads
+// Rule.Args, so every site that authorizes -- the hub's jobs, runners,
+// reactions, mine and relay, and halite-api -- reaches it through Authorize
+// or AuthorizeAs.
+//
+// A refusal by a rule written for another function says so, because the
+// operator reading it wrote that rule under the other name and is looking at
+// a request that does not mention it.
 func checkArgs(rule Rule, req Request) string {
-	constraint, ok := rule.Args[req.Fun]
-	if !ok {
-		return ""
+	for _, c := range argRulesFor(rule, req.Fun, req.Runner) {
+		if reason := checkArgRule(c.rule, req); reason != "" {
+			if c.written != req.Fun {
+				family := "every state function a node compiles"
+				if req.Runner {
+					family = "every runner that runs an orchestration by its names"
+				}
+				reason += fmt.Sprintf(" (the args written for %s hold %s, %s among them)",
+					c.written, family, req.Fun)
+			}
+			return reason
+		}
 	}
+	return ""
+}
+
+// checkArgRule applies one argument rule to a request.
+func checkArgRule(constraint ArgRule, req Request) string {
 	kwargs := req.wireKwargs()
 	for _, kwarg := range constraint.DenyKwargs {
 		for name := range kwargs {
@@ -837,12 +1012,22 @@ func checkArgs(rule Rule, req Request) string {
 	if reason := checkRequired(constraint.RequireKwargs, kwargs, req.Fun); reason != "" {
 		return reason
 	}
+	if reason := checkEnv(constraint, req); reason != "" {
+		return reason
+	}
 	// The names deny_sls and allow_mods judge. For a job they are the
 	// positional arguments, as they always were; for a runner they are
 	// the names the orchestration runners will compile, which is a
 	// different set -- see runnerNames.
 	names := req.Arg
 	if req.Runner && (len(constraint.DenySLS) > 0 || len(constraint.AllowMods) > 0) {
+		if req.Fun == resumeRunner && req.Resumes == nil {
+			// Not known until the hub has read the run; it asks again
+			// with them (Request.Resumes). Returning here skips the
+			// name checks only: deny_kwargs and require_kwargs above
+			// have already been judged.
+			return ""
+		}
 		var reason string
 		names, reason = runnerNames(req)
 		if reason != "" {
@@ -934,6 +1119,77 @@ func checkArgs(rule Rule, req Request) string {
 	return ""
 }
 
+// checkEnv applies allow_env and deny_env.
+func checkEnv(constraint ArgRule, req Request) string {
+	if len(constraint.AllowEnv) == 0 && len(constraint.DenyEnv) == 0 {
+		return ""
+	}
+	env, judged, reason := requestEnv(req)
+	if reason != "" {
+		return reason
+	}
+	if !judged {
+		return ""
+	}
+	if matchAny(constraint.DenyEnv, env) {
+		return fmt.Sprintf("%s may not be run in the environment %q by this role", req.Fun, env)
+	}
+	if len(constraint.AllowEnv) > 0 && !matchAny(constraint.AllowEnv, env) {
+		return fmt.Sprintf("%s may not be run in the environment %q by this role, which allows %s",
+			req.Fun, env, strings.Join(constraint.AllowEnv, ", "))
+	}
+	return ""
+}
+
+// requestEnv is the environment a request runs in, and whether there is
+// one to judge.
+//
+//   - A fleet job runs in Request.Env. An empty one is not judged: the job
+//     names no environment and the node runs in its own configured one,
+//     which the caller did not choose and the hub does not know. That is
+//     the node's `env_allowlist` and `env_denylist` to limit, not a role's.
+//   - An orchestration runner compiles from its `env` argument, by keyword
+//     or as the second positional argument (the runner's signature is
+//     sls, env, …), and from `base` when there is none (Server.Orchestrate
+//     in internal/hub). So the environment is always judged, and an absent
+//     one is judged as `base`, because that is where the run will compile.
+//     A keyword `env` that is not a string cannot be judged and is refused.
+//   - `state.orch_resume` names a job, and runs in the environment the
+//     earlier run used, which the hub gives in Request.Env with the names
+//     (Request.Resumes). The first question, with no names yet, is not
+//     judged here either; the second is.
+//   - Any other runner is not judged: none takes an environment that
+//     dispatches a job.
+func requestEnv(req Request) (env string, judged bool, reason string) {
+	if !req.Runner {
+		return req.Env, req.Env != "", ""
+	}
+	if req.Fun == resumeRunner {
+		return req.Env, req.Resumes != nil, ""
+	}
+	isOrch := false
+	for _, name := range orchestrationRunners {
+		isOrch = isOrch || name == req.Fun
+	}
+	if !isOrch {
+		return "", false, ""
+	}
+	if raw, ok := req.Kwarg["env"]; ok && raw != nil {
+		s, isString := raw.(string)
+		if !isString {
+			return "", false, fmt.Sprintf("%s was given `env` as %T, which this policy cannot check; give it as a string",
+				req.Fun, raw)
+		}
+		if s != "" {
+			return s, true, ""
+		}
+	}
+	if len(req.Arg) > 1 && req.Arg[1] != "" {
+		return req.Arg[1], true, ""
+	}
+	return "base", true, ""
+}
+
 // runnerNames is the set of orchestration names a runner request will
 // compile, which is what deny_sls and allow_mods have to judge. It must
 // agree with the hub, which binds the call against the runner's
@@ -962,6 +1218,12 @@ func checkArgs(rule Rule, req Request) string {
 // have to rely on the signature to keep a value it never read from
 // being allowed.
 func runnerNames(req Request) ([]string, string) {
+	// A resume names a job, and runs the names the job's run was given.
+	// Those were split when that run started (orchRequestFrom), so they
+	// are taken as they are.
+	if req.Fun == resumeRunner {
+		return req.Resumes, ""
+	}
 	var names []string
 	for _, arg := range req.Arg {
 		names = append(names, splitNames(arg)...)

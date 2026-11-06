@@ -324,13 +324,20 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	}
 	namePrincipal(w, cfg.Principal)
 
-	// The tag carries the path, and the payload carries the principal
-	// the delivery authenticated as -- so a reactor authorizes on who
-	// sent it rather than on what the body claims.
+	// The tag carries the path, which is what names the hook on the
+	// bus. The payload carries no `_principal`: event.send stamps it
+	// with the connection's certificate, which is this API's, over
+	// whatever the payload says (internal/hub runners_tree.go), so the
+	// hook's own principal that used to be set here never reached the
+	// bus, and the docs that said it did were describing this line
+	// rather than the event. A delivery is sent with no delegation, and
+	// the hub refuses a `halite/hook/` tag from a delegated event.send,
+	// so a hook event whose `_principal` is this API's certificate is
+	// one this API verified. A direct caller granted event.send can
+	// still write the tag, under its own certificate (issue 649).
 	tag := "halite/hook/" + path
 	payload := map[string]any{
-		"_principal": cfg.Principal,
-		"_remote":    remoteHost(r),
+		"_remote": remoteHost(r),
 	}
 	// The body is carried as what it parsed to when it is JSON, and as
 	// the text otherwise: a reaction reading `data['body']['version']`

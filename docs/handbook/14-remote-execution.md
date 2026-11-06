@@ -253,16 +253,23 @@ side loop, and a dropped connection abandons half an estate with nothing
 recording where it stopped.)
 
 **What the limit counts.** A node that *failed* (it answered, and the answer
-was a failure). A node that does not answer is not counted: after
-`--batch-timeout` the batch notes "advanced with returns outstanding" and delivers
-the next slice, so a change that hangs or cuts off the first node it reaches does
-not trip the limit. Without `--batch-timeout` the wait for a slice is the job's whole
-lifetime (15 minutes unless `--ttl` says otherwise; read in the code and not
-run), so set `--batch-timeout` too. In the hub's own test, with three stub
-nodes, one silent, `--batch 1 --batch-safe-limit 1 --batch-timeout 1`: both
-other nodes were given the job and the silent one was left in the job's missing
-list. A finished batch with a node still owing its return stays `batching`
-until the job expires and is settled.
+was a failure), and a node that has *not answered* when its batch's wait ends.
+A change that hangs, reboots or cuts off the first node it reaches therefore
+stops the run, the same as one that fails on it. A node that was not connected
+when its batch was sent counts too: the hub cannot tell it from one that went
+quiet. If the run stopped for a node that was only slow, and that node has
+answered since, `halite-hub jobs resume <jid>` carries on from where it stopped.
+A node that is still silent counts again, so the resumed run stops after its
+next batch; and a job that has expired cannot be resumed.
+
+**How long a batch waits.** `--batch-timeout`, or five minutes if you do not
+set it, and never past the job's expiry (15 minutes unless `--ttl` says
+otherwise). A node that takes longer than that to answer counts against the
+limit, so **set `--batch-timeout` for a `state.apply` that takes more than five
+minutes**. The hub does not send a batch to a job that has expired: it stops,
+and the job is `aborted` with the rest of the nodes never reached. A run that
+has reached every node but is still waiting for an answer shows `dispatched`.
+In the hub's own tests, with stub nodes and not on a real fleet.
 
 `--batch-safe-limit` is the one to always set. A change that fails on the
 first node will usually fail on the next hundred, and you want to stop at

@@ -156,3 +156,95 @@ func TestEveryRunnerThatTakesOrchestrationNamesTakesThemAsSLS(t *testing.T) {
 		}
 	}
 }
+
+// An argument rule written for one orchestration runner holds every runner
+// that takes `sls`, because each compiles the orchestration it names
+// (issue 621): allow_mods written under `state.orchestrate` used to leave
+// `state.orch` free. The policy cannot read this registry, so it keeps the
+// list itself (policy.OrchestrationRunners); this holds the list to the
+// registry both ways. A runner that starts taking `sls` and is not added is
+// a runner an operator's allow_mods does not reach, and a name left on the
+// list after its runner stops taking `sls` is a refusal nobody can explain.
+func TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS(t *testing.T) {
+	reg := NewRunners()
+	var takesSLS []string
+	for _, name := range reg.Names() {
+		sig, _ := reg.sigs.Lookup(name)
+		if _, ok := sig.Param("sls"); ok {
+			takesSLS = append(takesSLS, name)
+		}
+	}
+	family := policy.OrchestrationRunners()
+	if strings.Join(takesSLS, " ") != strings.Join(family, " ") {
+		t.Errorf("the runners that take sls are %v, and the policy's orchestration family is %v", takesSLS, family)
+	}
+}
+
+// `state.orch_resume` runs the orchestration names of an earlier run, so
+// allow_mods written for the orchestration family holds it, judged on
+// those names. It takes a job ID and no `sls`, and the policy cannot read
+// the run store, so CallRunner's question could not see the names; a role
+// whose allow_mods was narrowed after a run started could resume it
+// (DIVERGENCE 5.586, "Not changed, and open"; issue 649). The runner now
+// asks again once it has found the run.
+func TestAllowModsHoldsAResumeToTheRunsNames(t *testing.T) {
+	step := func(id string) string {
+		return id + ":\n  salt.runner:\n    - name: manage.status\n"
+	}
+	l := orchLab(t, map[string]string{
+		"deploy/web.sls":          step("deploy_web"),
+		"teardown/everything.sls": step("teardown_everything"),
+	})
+	// The runs were started before the role was narrowed: Orchestrate
+	// itself does not ask the policy, so each is the caller's own run
+	// whatever the policy says now.
+	started := map[string]string{}
+	for _, sls := range []string{"deploy.web", "teardown.everything"} {
+		run, err := l.server.Orchestrate(context.Background(), OrchRequest{
+			Principal: "cert:CN=ci-pipeline", SLS: []string{sls}, Test: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		started[sls] = string(run.JID)
+	}
+
+	loaded, _, err := policy.Load([]byte(`
+roles:
+  deployer:
+    - runners: ['state.orchestrate', 'state.orch_resume']
+      args:
+        'state.orchestrate':
+          allow_mods: ['deploy.*']
+bindings:
+  - principal: 'cert:CN=ci-pipeline'
+    roles: ['deployer']
+`), "orch-policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogued(loaded)
+	l.server.Policy = loaded
+
+	resume := func(sls, from string) *RunnerOutcome {
+		t.Helper()
+		out, err := l.server.CallRunner(context.Background(), RunnerCall{
+			Principal: "cert:CN=ci-pipeline", Fun: "state.orch_resume",
+			Arg: []string{started[sls], from}, Kwarg: map[string]any{"test": true},
+		})
+		if err != nil {
+			t.Fatalf("resuming %s: %v", sls, err)
+		}
+		return out
+	}
+	if out := resume("deploy.web", "deploy_web"); !out.Success {
+		t.Errorf("a resume of a run inside allow_mods was refused: %s", out.Err)
+	}
+	out := resume("teardown.everything", "teardown_everything")
+	if out.Success {
+		t.Fatal("a resume of teardown.everything ran under allow_mods: ['deploy.*']")
+	}
+	if !strings.Contains(out.Err, "teardown.everything is not in the modules this role may orchestrate") {
+		t.Errorf("the refusal does not name the run's orchestration: %s", out.Err)
+	}
+}

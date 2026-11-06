@@ -9,6 +9,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/fileperm"
+	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
@@ -27,6 +28,9 @@ policy flags:
                        list, compound, ...), as the job would be sent;
                        the default is a glob
   --kwarg <k=v>        an argument to include, repeatable as a comma list
+  --env <name>         the environment (saltenv) the job would be sent
+                       with; an orchestration runner reads its own
+                       env= keyword instead
 `
 
 // policyPath is where the file lives.
@@ -77,6 +81,7 @@ func runPolicy(args *cli.Args) int {
 	switch args.Positional[0] {
 	case "show":
 		loaded, path := loadPolicyFile(cfg)
+		runnerCatalog := hub.NewRunners().Names()
 		fmt.Printf("policy %s\n\n", path)
 		for role, rules := range loaded.Roles {
 			fmt.Printf("role %s\n", role)
@@ -93,13 +98,7 @@ func runPolicy(args *cli.Args) int {
 				} else if len(r.Functions) > 0 {
 					fmt.Printf("  %d. %s on %s\n", i, strings.Join(r.Functions, ", "), r.Target)
 				}
-				for fn, a := range r.Args {
-					fmt.Printf("     %s: allow_sls=%v deny_sls=%v allow_mods=%v deny_kwargs=%v\n",
-						fn, a.AllowSLS, a.DenySLS, a.AllowMods, a.DenyKwargs)
-					if len(a.RequireKwargs) > 0 {
-						fmt.Printf("     %s: require_kwargs=%v\n", fn, a.RequireKwargs)
-					}
-				}
+				printArgRules(loaded, r, runnerCatalog)
 			}
 		}
 		fmt.Println()
@@ -144,6 +143,11 @@ func runPolicy(args *cli.Args) int {
 			Kwarg:      kwargs,
 			Test:       args.Bool("test", false),
 			Runner:     args.Bool("runner", false),
+			// The environment is part of the question for the same
+			// reason the kind is: allow_env and deny_env judge it, and
+			// a test that could not give one would say "allowed" about
+			// a job the hub refuses (issue 620).
+			Env: args.Flag("env", ""),
 		}
 		decision := loaded.Authorize(req)
 		fmt.Println(decision.String())
@@ -168,6 +172,68 @@ func runPolicy(args *cli.Args) int {
 	}
 	fmt.Fprintf(os.Stderr, "halite-hub policy: unknown subcommand %q\n\n%s", args.Positional[0], policyUsage)
 	return cli.ExitUsage
+}
+
+// printArgRules prints a rule's argument rules, which functions each one
+// holds, and what the rule grants that none of them holds.
+//
+// An argument rule is written under one function's name and holds every
+// function that takes the same names (policy.ArgumentFamily, issue 621), so
+// the line says which those are: an operator reading `state.apply:
+// allow_sls=[web.*]` could not otherwise tell that it holds state.sls too.
+// And a rule that has argument rules and grants a function none of them
+// holds is the shape issue 621 was -- `state.*` granted, a rule written for
+// state.apply -- so it is printed for every rule that has any. A rule with
+// no argument rules holds nothing, which its listing already shows.
+func printArgRules(loaded *policy.Policy, r policy.Rule, runnerCatalog []string) {
+	if len(r.Args) == 0 {
+		return
+	}
+	written := make([]string, 0, len(r.Args))
+	for fn := range r.Args {
+		written = append(written, fn)
+	}
+	for _, fn := range sorted(written) {
+		a := r.Args[fn]
+		fmt.Printf("     %s: allow_sls=%v deny_sls=%v allow_mods=%v deny_kwargs=%v\n",
+			fn, a.AllowSLS, a.DenySLS, a.AllowMods, a.DenyKwargs)
+		if len(a.AllowEnv) > 0 || len(a.DenyEnv) > 0 {
+			fmt.Printf("     %s: allow_env=%v deny_env=%v\n", fn, a.AllowEnv, a.DenyEnv)
+		}
+		if len(a.RequireKwargs) > 0 {
+			fmt.Printf("     %s: require_kwargs=%v\n", fn, a.RequireKwargs)
+		}
+		// Which family a name is in depends on whether it is asked for as
+		// a job or a runner; a rule's args do not say which, so both are
+		// printed when both apply.
+		for _, runner := range []bool{false, true} {
+			if family := policy.ArgumentFamily(fn, runner); len(family) > 0 {
+				fmt.Printf("     %s: holds %s\n", fn, strings.Join(family, ", "))
+			}
+		}
+	}
+	unheld := loaded.UnheldGrants(r, runnerCatalog)
+	if len(unheld) == 0 {
+		fmt.Printf("     every function this rule grants is held by an argument rule\n")
+		return
+	}
+	var parts []string
+	for _, u := range unheld {
+		label := u.Pattern
+		if u.Runner {
+			label = "runner " + label
+		}
+		switch {
+		case u.Pattern == u.Names[0] && u.Granted == 1:
+			parts = append(parts, label)
+		case len(u.Names) == u.Granted:
+			parts = append(parts, fmt.Sprintf("%s (all %d it grants)", label, u.Granted))
+		default:
+			parts = append(parts, fmt.Sprintf("%s (%d of the %d it grants: %s)",
+				label, len(u.Names), u.Granted, strings.Join(u.Names, ", ")))
+		}
+	}
+	fmt.Printf("     no argument rule holds: %s\n", strings.Join(parts, "; "))
 }
 
 // pillarReadersLine is `policy show`'s account of the other set no
