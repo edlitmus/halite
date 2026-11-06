@@ -1438,7 +1438,7 @@ roles:
       functions: ['test.ping', 'state.apply']
     - target: '*'
       runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
-    - act_for: ['*']
+    - act_for: ['local:*', 'ldap:*', 'oidc:*']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']
@@ -1634,10 +1634,14 @@ still being delivered. `auth: token` is the other mode; `auth: mtls` is
 refused at load, because the API does not request client certificates.
 The `rate_limit` counts authenticated deliveries only.
 
-A delivery becomes an event under `halite/hook/<path>` carrying
-`_principal`, the identity the delivery authenticated as, so a reaction
-authorizes on that and never on the payload — the payload is written by
-whoever sent it. The `principal` a hook names is an ordinary RBAC
+A delivery becomes an event under `halite/hook/<path>`. Its `_principal` is
+the certificate of the API (`cert:CN=api` by default), and the tag path names
+the hook. An operator who acts through the API cannot send a `halite/hook/`
+tag. A caller with its own certificate and `event.send` can, but then
+`_principal` is that certificate. So a hook event whose `_principal` is the
+certificate of the API, with no `_on_behalf_of`, is a delivery that the API
+verified. A reaction never authorizes on the payload, because whoever sent
+it wrote it. The `principal` a hook names is an ordinary RBAC
 identity: it gets a binding in the policy file like any other, and a
 hook that may cause a deployment says so there.
 

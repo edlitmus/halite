@@ -146,6 +146,22 @@ type Request struct {
 	// `test` the node never reads from Kwarg, and a role that requires
 	// `test: true` would refuse every dry run. DIVERGENCE 5.493.
 	Test bool
+	// Resumes is, for a `state.orch_resume`, the orchestration names of
+	// the run it picks up, read by the hub from its run store. They are
+	// what deny_sls and allow_mods judge for a resume (runnerNames), since
+	// the request itself names only a job ID.
+	//
+	// nil means the names are not known yet, and is what the hub's first
+	// question about a resume carries: CallRunner authorizes before the
+	// run is looked up, and looking it up first would answer a caller who
+	// may not see the run with that run's names in the refusal. The
+	// runner asks again with the names once it has found the run and
+	// checked the caller may see it, and that second answer is the one
+	// that lets the resume run. So a nil Resumes leaves the names to that
+	// second question rather than refusing every resume under allow_mods
+	// as one that "names no orchestration". Every other rule -- the grant,
+	// deny_kwargs, require_kwargs -- is judged on both. Issue 649.
+	Resumes []string
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
 	//
@@ -608,13 +624,22 @@ func (p *Policy) VisibleNode(roles []string, node string) bool {
 // It is what an event with no node is filtered by: a job's, a key's, or
 // the reactor's own events are not about a node, so target coverage has
 // nothing to compare. Someone bound to no rule sees none of them.
+//
+// A rule that grants only `act_for` is not counted. `act_for` lets a
+// caller name whom it acts for and grants nothing else (Rule.ActFor), so
+// a token whose roles hold only that rule must not see every job, key
+// and reactor event because the rule exists. Counting every rule, as
+// this did, read "has a rule" as "may see", which was true until
+// issue 618 added a rule that permits nothing (issue 649).
 func (p *Policy) HasAnyRule(roles []string) bool {
 	if p == nil {
 		return false
 	}
 	for _, role := range roles {
-		if len(p.Roles[role]) > 0 {
-			return true
+		for _, rule := range p.Roles[role] {
+			if len(rule.Functions) > 0 || len(rule.Runners) > 0 {
+				return true
+			}
 		}
 	}
 	return false
@@ -838,7 +863,7 @@ func checkArgs(rule Rule, req Request) string {
 			if c.written != req.Fun {
 				family := "every state function a node compiles"
 				if req.Runner {
-					family = "every runner that takes orchestration names"
+					family = "every runner that runs an orchestration by its names"
 				}
 				reason += fmt.Sprintf(" (the args written for %s hold %s, %s among them)",
 					c.written, family, req.Fun)
@@ -870,6 +895,13 @@ func checkArgRule(constraint ArgRule, req Request) string {
 	// different set -- see runnerNames.
 	names := req.Arg
 	if req.Runner && (len(constraint.DenySLS) > 0 || len(constraint.AllowMods) > 0) {
+		if req.Fun == resumeRunner && req.Resumes == nil {
+			// Not known until the hub has read the run; it asks again
+			// with them (Request.Resumes). Returning here skips the
+			// name checks only: deny_kwargs and require_kwargs above
+			// have already been judged.
+			return ""
+		}
 		var reason string
 		names, reason = runnerNames(req)
 		if reason != "" {
@@ -989,6 +1021,12 @@ func checkArgRule(constraint ArgRule, req Request) string {
 // have to rely on the signature to keep a value it never read from
 // being allowed.
 func runnerNames(req Request) ([]string, string) {
+	// A resume names a job, and runs the names the job's run was given.
+	// Those were split when that run started (orchRequestFrom), so they
+	// are taken as they are.
+	if req.Fun == resumeRunner {
+		return req.Resumes, ""
+	}
 	var names []string
 	for _, arg := range req.Arg {
 		names = append(names, splitNames(arg)...)

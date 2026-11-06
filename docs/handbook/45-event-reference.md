@@ -88,7 +88,7 @@ it asks for ([chapter 18](18-events.md)).
 
 | Tag | Emitted | `data` |
 |---|---|---|
-| `halite/key/<node>/<action>` | A key lifecycle action taken through the hub's runners | |
+| `halite/key/<node>/<action>` | A key lifecycle action taken through the hub's runners | `principal`, `on_behalf_of` (through the API), `reason` (reject, revoke), `via` (terminal) |
 
 (Actions taken with the `halite-hub keys` command edit the key store directly;
 the enrolment events above are the record of requests and acceptances.)
@@ -114,7 +114,7 @@ the enrolment events above are the record of requests and acceptances.)
 | Tag | Emitted | `data` |
 |---|---|---|
 | `halite/hook/<path>` | A webhook delivery was accepted by the API | `_principal`, `_remote`, `body` |
-| any tag you choose, from the hub (`event.send`) | A runner or reaction puts it there | what you passed, plus `_principal` |
+| any tag you choose, from the hub (`event.send`) | A runner or reaction puts it there | what you passed, plus `_principal`, and `_on_behalf_of` (only when sent through the API for an operator) |
 | `halite/audit/…` | A convention, not a reserved family: use it for events that record that something was done | |
 
 ### Errors
@@ -132,7 +132,11 @@ the enrolment events above are the record of requests and acceptances.)
   middle segment is the sender's certified identity.
 - **From the hub**, `halite-hub runner event.send tag=… data=…` accepts any tag
   rooted at `halite/`, and records the principal that sent it in
-  `data._principal` (taken from the connection, never from the payload).
+  `data._principal` (taken from the connection, never from the payload). When
+  an operator sends it through the API, the event also carries
+  `data._on_behalf_of`, the operator. An operator who acts through the API
+  cannot send a tag `halite/hook/...`, because the API writes that namespace for
+  a delivery that it verified.
 - Choose a prefix for **your own** events that no reactor pattern matches, so a
   reaction cannot trigger itself.
 - Keep `data` small and flat. It is carried in the bus and every returner.

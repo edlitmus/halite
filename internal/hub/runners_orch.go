@@ -156,6 +156,18 @@ func registerStateRunner(r *Runners) {
 				if !c.runVisible(previous) {
 					return nil, fmt.Errorf("%s: %w", id, job.ErrNoJob)
 				}
+				// The second question about a resume, now that its names
+				// are known (policy.Request.Resumes). CallRunner's could
+				// not judge allow_mods or deny_sls, because the request
+				// names a job; this one judges the names the run will
+				// compile again, for the caller and for the operator it
+				// acts for. Without it a role whose allow_mods was
+				// narrowed after a run started could resume that run,
+				// and one whose allow_mods never covered a run it could
+				// see (a scope of `*`) could resume another's (issue 649).
+				if err := c.authorizeResume(previous); err != nil {
+					return nil, err
+				}
 				req := OrchRequest{
 					Principal:  c.Principal,
 					OnBehalfOf: c.OnBehalfOf,
@@ -295,6 +307,34 @@ func orchOutcome(run *OrchRun) (any, error) {
 
 // orchRequestFrom reads the arguments common to the orchestration
 // entry points.
+// authorizeResume asks the policy again about a `state.orch_resume`, with
+// the names of the run it picks up.
+//
+// The keywords are the two that change what the resume does, as the caller
+// gave them: `pillar` when there is one and `test` when it is true.
+// CallRunner's question had the caller's keywords as sent, and this one sees
+// them only bound, with the defaults filled in; passing the bound `test:
+// false` would refuse every resume under a `deny_kwargs: [test]` that the
+// first question let through. The names are what this question is for, and
+// the rest was judged there.
+func (c *RunnerContext) authorizeResume(previous *OrchRun) error {
+	kwarg := map[string]any{}
+	if v, ok := c.Args.Get("pillar"); ok && v != nil {
+		kwarg["pillar"] = v
+	}
+	req := policyRequestFor(c.Principal, "state.orch_resume", "", "", nil, kwarg, true)
+	req.Test = c.argBool("test")
+	req.Resumes = append([]string{}, previous.SLS...)
+	decision := c.Server.authorizeFor(req, c.OnBehalfOf)
+	if !decision.Allowed {
+		c.Server.warn("runner refused by policy",
+			"principal", c.Principal, "on_behalf_of", actingFor(c.OnBehalfOf),
+			"fun", "state.orch_resume", "resumes", previous.JID, "reason", decision.Reason)
+		return &policyRefusal{reason: decision.Reason}
+	}
+	return nil
+}
+
 func orchRequestFrom(c *RunnerContext) OrchRequest {
 	req := OrchRequest{
 		Principal:  c.Principal,

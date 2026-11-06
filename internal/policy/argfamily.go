@@ -22,6 +22,14 @@ var orchestrationRunners = []string{
 	"state.orchestrate_show_sls",
 }
 
+// resumeRunner picks up an earlier orchestration run. It takes a job ID,
+// not `sls`, so it is not one of orchestrationRunners; but what it runs is
+// the earlier run's orchestration names, compiled again, so the argument
+// rules of that family hold it too. Its names come from the run store, which
+// this package cannot read: the hub gives them as Request.Resumes (issue 649,
+// the item PR 657 left open in DIVERGENCE 5.586).
+const resumeRunner = "state.orch_resume"
+
 // OrchestrationRunners lists the runners that take orchestration names as
 // `sls`, for the hub's test and for `policy show`.
 func OrchestrationRunners() []string {
@@ -49,7 +57,8 @@ func OrchestrationRunners() []string {
 //     keywords a state run reads. It is state.JobFunctions, the list the
 //     node dispatches on, so a function the node starts answering joins
 //     it without anyone remembering to.
-//   - The orchestration family, a runner's: the runners that take `sls`.
+//   - The orchestration family, a runner's: the runners that take `sls`,
+//     and `state.orch_resume`, which runs the names an earlier run took.
 //
 // A runner request is in the second family only, and a job in the first
 // only: Rule.Args is one map for both, and `state.orchestrate` the job
@@ -57,7 +66,7 @@ func OrchestrationRunners() []string {
 func ArgumentFamily(fun string, runner bool) []string {
 	var members []string
 	if runner {
-		members = OrchestrationRunners()
+		members = append(OrchestrationRunners(), resumeRunner)
 	} else {
 		members = state.JobFunctions()
 	}
