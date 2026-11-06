@@ -39562,6 +39562,133 @@ that is wrongly allowed now returns at once, and the failure prints.
 - **Nothing was run on FreeBSD by hand.** The code does not depend on the
   platform. CI runs the tests.
 
+### 5.602 A misspelt key in a policy rule was ignored, and failed open
+
+Found while adding `allow_env` (5.601, "Not changed, and open"). It was
+run, not only read.
+
+#### The defect
+
+`parseRules` in `internal/policy/policy.go` read each key it knew from a
+rule and from an argument rule, and did not look at any other key. A
+misspelt key was therefore a limit that was not there, and nothing said
+so. With the build of 5.601, this rule loaded:
+
+```yaml
+roles:
+  ops:
+    - target: '*'
+      functions: ['state.apply']
+      args:
+        'state.apply':
+          allow_envv: ['base']
+```
+
+`halite-hub policy test --env prod cert:CN=ops web1 state.apply web`
+answered `allowed by role "ops" rule 0` and exited 0. `policy show`
+printed the argument rule with every list empty, and it printed no line
+for the environment, so the misspelling was visible only to a reader who
+compared the output with the file.
+
+The same was true of every argument rule: `allow_sls`, `deny_sls`,
+`allow_mods`, `deny_kwargs`, `require_kwargs`, `allow_env` and `deny_env`.
+It was true one level up as well. `arg:` in place of `args:` dropped every
+argument rule of the rule. `runner:` beside `functions:` dropped the
+runners. The checks that a rule grants something and that `functions`
+names a `target` caught some rule-level misspellings, but not these.
+
+It also meant that **an older hub or API enforced a newer policy without
+its newer limits**: a hub from before 5.601 reads `allow_env` as an
+unknown key, and so ignores it.
+
+No commit and no ledger section says that unknown keys were accepted on
+purpose. The parser has read only the keys it knows since the policy was
+added (`96c28edb`), and the message of that commit is silent on the
+point. Other settings with their own grammar already refuse a misspelt
+key: `gitfs_remotes`, `s3_buckets` and `extension_pins` (5.555).
+
+#### The fix
+
+`policy.Load` refuses an unknown key in a rule or in an argument rule. The
+error names the file, the role, the rule index, the function for an
+argument rule, the key, the keys that are known, and the nearest known key
+when one is within two edits:
+
+```
+policy.yaml: role "ops" rule 0: args for "state.apply": `allow_envv` is not a key of an argument rule (known: allow_env, allow_mods, allow_sls, deny_env, deny_kwargs, deny_sls, require_kwargs); did you mean `allow_env`?
+```
+
+The known keys are two lists, `ruleKeys` and `argRuleKeys`. Two paths must
+agree here: the list, and the code that reads each key. Each direction is
+tested.
+
+- A key that is read and is missing from the list is refused before it is
+  read. Removing `deny_env` from the list made
+  `TestAllowEnvJudgesTheEnvironmentARequestRunsIn` fail.
+- A key in the list that nothing reads would load and enforce nothing.
+  `TestEveryArgRuleKeyLoadsAndIsRead` loads each key and requires that the
+  argument rule is not empty. Adding an unread `zz_unread` to the list made
+  it fail.
+
+`TestAnUnknownKeyInARuleIsRefusedByName` loads five policies: `allow_envv`,
+`deny_kwarg` beside a good `allow_sls`, a key that nothing is close to,
+`arg:`, and `runner:` beside `functions:`. With the argument-rule check
+removed, the first three loaded and the test failed. With the rule-level
+check removed, the last two loaded and the test failed.
+
+The hub (`serve`), the API (`serve`), `policy test` and `policy show`
+all load through `policy.Load`, and the hub and the API stop at start on a
+load error. **A policy that has a misspelling, and that loaded before,
+now stops the hub and the API from starting.** That is a breaking change,
+and it is the intent: the old behaviour enforced a policy weaker than the
+one written. `halite-hub doctor` reports the error too.
+
+#### Where unknown keys are still accepted, and why
+
+- **The top level** (`roles`, `bindings`). A misspelling there grants less,
+  not more. `role:` defines no roles, and a binding that names one is then
+  refused as naming an undefined role. `binding:` binds nobody. A top-level
+  key is also a common place to keep a YAML anchor that several roles use,
+  and refusing it would break that for no gain.
+- **A binding** (`principal`, `roles`). `principals:` is refused already,
+  as a binding that names no principal. `role:` gives a binding with no
+  roles, which grants nothing and shows in `policy show`.
+
+Both fail closed. If a later section finds a key at either level whose
+misspelling grants more, it should be refused there too.
+
+#### Checked
+
+- `contrib/examples/policy.yaml` and the four handbook policies under
+  `contrib/examples/handbook/` load with `halite-hub policy show` from
+  this build. The first two are also loaded by tests in `cmd/halite-hub`.
+  The three under `automation/` are loaded by no test, which is not
+  changed here.
+- Every fenced block in `docs/`, `docs/handbook/`, `SPEC.md`, `README.md`
+  and `plan.md` that contains `roles:` and `functions` or `runners` was
+  loaded with a temporary test: 17 blocks, and none was refused for an
+  unknown key. One `SPEC.md` block is refused for a binding to a role it
+  does not define, which is a fragment and is not changed here. The test
+  was not committed.
+- The example in `halite-policy(5)` and the policy in
+  `contrib/examples/tree/pillar/halite/hub.sls` were read: they use only
+  known keys. Neither was loaded.
+- The two binaries were compared on the policy above: the build of 5.601
+  answered `allowed`, and this build refused to load it with the error
+  above, from both `policy test` and `policy show`.
+
+#### Not verified
+
+- **No hub or API was started with a policy that is refused.** The stop at
+  start is read from `cmd/halite-hub/serve.go` and
+  `cmd/halite-api/serve.go` (`cli.Fatalf`), not run.
+- **No policy from a real estate was loaded.** A key that an operator
+  added on purpose, as a note to a reader (`comment:` in a rule, for
+  example), is now refused. None of the examples has one. The fleet's own
+  policy files were not checked.
+- **Nothing was run on FreeBSD by hand.** The code does not depend on the
+  platform. CI runs the tests.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
