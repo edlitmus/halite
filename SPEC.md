@@ -670,7 +670,8 @@ output schema is frozen and versioned, so downstream tooling can depend on it.
 |---|---|
 | `--batch=N` or `--batch=25%` | Execute against at most N nodes at a time, waiting for returns before advancing |
 | `--batch-wait=S` | Settle time between batches |
-| `--batch-safe-limit=N` | Abort the batch once N nodes have failed; a node that does not answer is not counted (DIVERGENCE 5.496) |
+| `--batch-timeout=S` | How long each slice waits for its returns. The default is 5 minutes. A slice never waits past the expiry of the job |
+| `--batch-safe-limit=N` | Abort the batch once N of the nodes it has delivered to have failed or have not answered when their slice's wait ends (DIVERGENCE 5.496) |
 | `--subset=N` | Execute against a random N of the matched set |
 | `--async` | Return the `jid` immediately |
 | `--timeout=S` | Per-node return timeout |
@@ -680,6 +681,9 @@ output schema is frozen and versioned, so downstream tooling can depend on it.
 Batching is implemented on the hub, not in the CLI. In Salt, `--batch` is client-side, so closing
 the terminal abandons the batch mid-flight. Here the batch is a hub-side job group with its own
 record, so it survives client disconnection and is resumable with `halite-hub jobs resume <jid>`.
+The hub never delivers a slice to a job that has expired. It stops the batch and closes the job as
+`aborted`. When the batch has delivered to every node but a return is still owed, the job shows state
+`dispatched`, not `batching`.
 
 ### 9.4 Returns and the job cache
 
@@ -2243,7 +2247,7 @@ Properties that are requirements, not suggestions:
   `state.orch` or `state.orchestrate_show_sls` runners holds all three, and holds
   `state.orch_resume` too, which is judged on the names of the run that it resumes. Several in one
   rule all hold. Otherwise a rule granting `state.*` with `allow_sls` on `state.apply` would leave
-  `state.sls` free to apply any SLS (DIVERGENCE 5.586, 5.587).
+  `state.sls` free to apply any SLS (DIVERGENCE 5.586, 5.599).
   A role may also require a keyword with `require_kwargs: {test: true}`: the call must carry each named
   keyword with exactly that value (a bool, a string or a number, compared by type), and a call that
   omits it is refused, which is how a credential is held to a dry run. The dry-run flag counts as the
@@ -2251,7 +2255,7 @@ Properties that are requirements, not suggestions:
   A role may also limit the environment with `allow_env` and `deny_env` (patterns). They judge the
   `saltenv` of a job and the `env` of an orchestration, and a resume on the environment of the run
   that it resumes. A job with an empty environment is not judged, because the node runs it in its
-  own environment, and an orchestration with no `env` is judged as `base` (DIVERGENCE 5.589).
+  own environment, and an orchestration with no `env` is judged as `base` (DIVERGENCE 5.601).
   A key that a rule or an argument constraint does not know is refused at load, naming it: a
   misspelt constraint would otherwise be one that is not there, and a hub older than the policy
   would enforce it without the constraints it does not know (DIVERGENCE 5.590).
@@ -2266,7 +2270,7 @@ Properties that are requirements, not suggestions:
   which a node has loaded (DIVERGENCE 5.564). Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
   `.*`. `file.*` other than `file.write` and `file.replace`, and the `ssh_auth.present` and
   `sudo.present` states, write content that can become code. A wildcard grants them, by decision
-  (DIVERGENCE 5.588).
+  (DIVERGENCE 5.600).
 - **Reading a node's pillar is a distinct permission** (section 22.1), and is never granted by a
   wildcard either: `functions: ['*']` does not include `pillar.items`, `pillar.raw`, `pillar.get` or
   `config.get`, and `runners: ['*']` does not include `pillar.show_pillar` or `cache.pillar`. It is

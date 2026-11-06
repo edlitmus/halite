@@ -498,7 +498,12 @@ func (s *Server) recordRunnerReturn(out *RunnerOutcome, started time.Time) {
 	if !out.Success {
 		retcode = 1
 	}
-	added, err := s.Jobs.AddReturn(&job.Return{
+	// A runner's return is cached like a node's, and masked like one.
+	// Only the cached copy: runnerCall answers the operator who called
+	// it from the outcome directly, unchanged. The copy that outlives the
+	// call, and that `jobs.lookup_jid` serves to whoever reads the job
+	// later, is the one issue 659 is about. See scrubReturn.
+	cached := &job.Return{
 		JID:        out.JID,
 		NodeID:     RunnerTarget,
 		Fun:        out.Fun,
@@ -509,7 +514,9 @@ func (s *Server) recordRunnerReturn(out *RunnerOutcome, started time.Time) {
 		StartTime:  started.UTC().Format(time.RFC3339Nano),
 		DurationMS: out.Duration.Milliseconds(),
 		Schema:     job.ReturnSchema,
-	})
+	}
+	s.scrubReturn(cached)
+	added, err := s.Jobs.AddReturn(cached)
 	if err != nil {
 		s.warn("could not record a runner return", "jid", string(out.JID), "error", err.Error())
 		return

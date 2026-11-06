@@ -283,6 +283,73 @@ func (s *Set) ScrubValue(v any) any {
 	return v
 }
 
+// MaskValue replaces the registered values inside a parsed value, and
+// reports whether it replaced any. It is for data a caller asked for --
+// a job's return -- where ScrubValue is for diagnostics, and it differs
+// from ScrubValue in two ways, both deliberate.
+//
+// A string that is, whole, a registered secret is replaced even when it
+// is too short for Scrub to find inside text (Holds). That is what the
+// node's `pillar items` does with a five-character password, and a
+// `pillar.get` of the same password is the same disclosure.
+//
+// URLCredentials is not run. This masks what the set holds and nothing
+// else. The credential scanner rewrites every `scheme://user@` it sees,
+// which in a diagnostic costs nothing and in a command's output turns
+// `ssh://git@host/repo` into `ssh://<redacted>@host/repo` for a user
+// name that was never secret. A credential in a URL that *is* a
+// registered value is still masked, by the set.
+//
+// The second result lets a caller keep the bytes it was given when
+// nothing matched, rather than re-encoding a value that did not change:
+// a return that arrived already masked is then stored exactly as it came.
+func (s *Set) MaskValue(v any) (any, bool) {
+	if s == nil {
+		return v, false
+	}
+	switch t := v.(type) {
+	case string:
+		if s.Holds(t) {
+			return Placeholder, true
+		}
+		out := s.replaceOutside(t, nil, nil)
+		return out, out != t
+	case []any:
+		changed := false
+		out := make([]any, len(t))
+		for i, item := range t {
+			var c bool
+			out[i], c = s.MaskValue(item)
+			changed = changed || c
+		}
+		return out, changed
+	case map[string]any:
+		changed := false
+		out := make(map[string]any, len(t))
+		for k, item := range t {
+			mk, ck := s.MaskValue(k)
+			mv, cv := s.MaskValue(item)
+			key, _ := mk.(string)
+			out[key] = mv
+			changed = changed || ck || cv
+		}
+		return out, changed
+	case *value.Map:
+		// Keys as well as values, for ScrubValue's reason: a mapping
+		// keyed by a token carries the token in its key.
+		changed := false
+		out := value.NewMap(t.Len())
+		for _, e := range t.Entries() {
+			mk, ck := s.MaskValue(e.Key)
+			mv, cv := s.MaskValue(e.Val)
+			out.SetAt(mk, mv, e.KeyPos, e.ValPos)
+			changed = changed || ck || cv
+		}
+		return out, changed
+	}
+	return v, false
+}
+
 // Keep marks text that must survive scrubbing.
 //
 // The schema of a state return is not data. `file.recurse`, a state's

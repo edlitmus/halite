@@ -304,9 +304,14 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 		}
 		req["grains"] = json.RawMessage(encoded)
 	}
-	if t.Timeout > 0 {
-		req["timeout_seconds"] = t.Timeout.Seconds()
-	}
+	// No `timeout_seconds`. It used to be sent from the roster's
+	// `timeout`, and the target read nothing of it (DIVERGENCE 5.590).
+	// It must not be read either: the roster's `timeout` is ssh's
+	// ConnectTimeout, defaulted to 30 seconds by roster.applyDefaults, so
+	// a target that honoured it as a bound on the run would stop every
+	// agentless highstate after half a minute. The run is bounded by
+	// `ssh_timeout` (or `--timeout`) on this side, which is what
+	// sshexec.Options.Timeout carries.
 
 	// SPEC 21.1: pillar and file server content are compiled on the hub
 	// and sent inline. That is what lets a target hold no state tree

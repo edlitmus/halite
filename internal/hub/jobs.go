@@ -93,6 +93,9 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		return
 	}
 
+	// Before the cache, and so before everything that reads it: the
+	// event, a relay's forward, the job routes. See scrubReturn.
+	s.scrubReturn(&ret)
 	fresh, err := s.Jobs.AddReturn(&ret)
 	if errors.Is(err, job.ErrNoJob) {
 		// A node returning against a job this hub never dispatched is

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/edlitmus/halite/internal/cli"
 	hlog "github.com/edlitmus/halite/internal/log"
@@ -36,6 +37,13 @@ func runRenderSandbox(_ *cli.Args) int {
 	return 0
 }
 
+// sandboxHolder is the render sandbox one node and every copy of it
+// share. See the `sandbox` field on node.
+type sandboxHolder struct {
+	mu sync.Mutex
+	sb *rendersandbox.Sandbox
+}
+
 // renderEngine returns the engine this node's compilations use.
 //
 // Nil when `render_sandbox` is off, which is the default and which means
@@ -43,15 +51,32 @@ func runRenderSandbox(_ *cli.Args) int {
 // existed. The sandbox is built once per node and reused, because a
 // highstate renders fifty files and a process per file is the cost that
 // would make an operator turn it off.
+//
+// Once per node means once for the agent and all its jobs. Each job runs
+// on a copy of the node, and when the sandbox was a field of the node, a
+// copy that found it nil built its own: its child was never closed, and
+// lived until the garbage collector finalised its pipes. Whether the agent
+// had built one before the first job decided whether the jobs shared it or
+// each leaked one. The holder is a pointer the copies share, so there is
+// one child and runConnect closes it. DIVERGENCE 5.597.
 func (n *node) renderEngine() render.Engine {
 	if !n.cfg.Bool("render_sandbox", false) {
 		return nil
 	}
-	if n.sandbox != nil {
-		return n.sandbox
+	h := n.sandbox
+	if h == nil {
+		// A node built without setup, which only a test does. It gets a
+		// holder of its own, which its copies then share.
+		h = &sandboxHolder{}
+		n.sandbox = h
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.sb != nil {
+		return h.sb
 	}
 
-	n.sandbox = rendersandbox.New(rendersandbox.Config{
+	h.sb = rendersandbox.New(rendersandbox.Config{
 		Args:  []string{renderSandboxCommand},
 		User:  n.cfg.String("render_sandbox_user", ""),
 		Group: n.cfg.String("render_sandbox_group", ""),
@@ -66,15 +91,15 @@ func (n *node) renderEngine() render.Engine {
 	// turns this on is entitled to know that the identity was not
 	// dropped because the node is not root, rather than to assume it
 	// was.
-	for _, line := range n.sandbox.Describe() {
+	for _, line := range h.sb.Describe() {
 		n.log.Info("render sandbox: "+line, "component", "render")
 	}
 	// A control that was asked for and is not applied is a warning, not
 	// a line in a description an operator has to go looking for.
-	for _, line := range n.sandbox.Unenforced() {
+	for _, line := range h.sb.Unenforced() {
 		n.log.Warn("render sandbox: "+line, "component", "render")
 	}
-	return n.sandbox
+	return h.sb
 }
 
 // childLog turns the child's standard error into the node's log, a line
@@ -92,13 +117,22 @@ func (w *childLog) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// closeRenderSandbox ends the child, if one was started.
+// closeRenderSandbox ends the child, if one was started. It ends the one
+// every copy of this node shares, so only the owner of the node calls it:
+// runConnect when the agent stops, never a job.
 func (n *node) closeRenderSandbox() {
-	if n.sandbox == nil {
+	h := n.sandbox
+	if h == nil {
 		return
 	}
-	if err := n.sandbox.Close(); err != nil {
+	h.mu.Lock()
+	sb := h.sb
+	h.sb = nil
+	h.mu.Unlock()
+	if sb == nil {
+		return
+	}
+	if err := sb.Close(); err != nil {
 		n.log.Debug(fmt.Sprintf("render sandbox: %v", err), "component", "render")
 	}
-	n.sandbox = nil
 }

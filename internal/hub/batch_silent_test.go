@@ -6,23 +6,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
-// What a safe limit counts, recorded as it is.
+// A silent node counts against the safe limit (issue 540, DIVERGENCE 5.496).
 //
-// `--batch-safe-limit 1` stops a batch once one node has *failed*, and a
-// node that does not answer is not a failure: awaitBatch counts returns whose
-// Success is false and nothing else. A change that hangs the first node it
-// reaches, or cuts it off, therefore does not trip the limit; after the
-// batch timeout the batch warns "advanced with returns outstanding" and
-// delivers the same change to the next slice. SPEC 9.3 lists "unresponsive"
-// beside "failed" as separate states, so counting only the second is the
-// letter of it; whether a silent node should count toward the limit is the
-// operator's decision and is open (DIVERGENCE 5.496). This test says what
-// happens today, so a change in either direction is a decision and not an
-// accident.
-func TestASilentNodeIsNotCountedAgainstTheSafeLimit(t *testing.T) {
+// `--batch-safe-limit` exists to stop before the rest of the estate gets the
+// same broken change, and the broken change it caught least was the one
+// that kills its target: a node that takes the job and never answers made no
+// failed return, so after the batch timeout the batch delivered the same
+// change to the next slice. This test held that behaviour until the owner
+// decided it the other way; it now holds the decision. The silent node is
+// first, so the other two are reached only if the batch moves past it.
+func TestASilentNodeCountsAgainstTheSafeLimit(t *testing.T) {
 	l := newLab(t).withJobs(t)
 	tr := &tracker{seen: map[string]time.Time{}}
 	var stops []func()
@@ -45,36 +42,135 @@ func TestASilentNodeIsNotCountedAgainstTheSafeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// One slice a second; the silent node is first, so the other two are only
-	// reached if the batch moves past it.
-	deadline := time.Now().Add(15 * time.Second)
-	for tr.count() < 2 && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
+	status := waitForState(t, op, res.JID, "aborted")
+	if len(status.Delivered) != 1 || status.Delivered[0] != "web1.example" {
+		t.Errorf("delivered to %v, want only the silent node", status.Delivered)
 	}
-	// The tracker sees the two nodes that answer; the silent one takes the job
-	// and says nothing.
-	if tr.count() != 2 {
-		t.Fatalf("%d of the two answering nodes were given the job; a silent node stopped the batch, "+
-			"which is not what is recorded in 5.496", tr.count())
+	// Two seconds past the abort, which is two more slice timeouts: if the
+	// batch were still going, a second node would have been given the job.
+	time.Sleep(2 * time.Second)
+	if n := tr.count(); n != 0 {
+		t.Fatalf("%d of the answering nodes were given the job after the first node "+
+			"stayed silent; a silent node did not count against the safe limit", n)
 	}
-	// The returns of the two answering nodes are recorded a moment after they
-	// are sent, so the missing list is waited on rather than read once: it
-	// settles at the silent node alone. (Read once, it still held web3 on a
-	// slow runner.)
-	var status *transport.JobStatus
-	settled := time.Now().Add(5 * time.Second)
+}
+
+// With no `--batch-timeout`, a slice waits DefaultBatchTimeout and not the
+// job's whole lifetime, and no wait runs past the expiry (issue 540).
+//
+// The old default was time.Until(j.Expires): with the default 15-minute
+// lifetime, one silent node held the rollout for 15 minutes.
+func TestTheDefaultSliceWaitIsBoundedAndStopsAtTheExpiry(t *testing.T) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name       string
+		configured time.Duration
+		expires    time.Time
+		want       time.Duration
+	}{
+		{"no timeout, a default-length job", 0, now.Add(job.DefaultTTL), DefaultBatchTimeout},
+		{"no timeout, a short job", 0, now.Add(time.Minute), time.Minute},
+		{"an operator's timeout", 30 * time.Second, now.Add(job.DefaultTTL), 30 * time.Second},
+		{"an operator's timeout past the expiry", time.Hour, now.Add(job.DefaultTTL), job.DefaultTTL},
+		{"already expired", 0, now.Add(-time.Second), 0},
+	}
+	for _, c := range cases {
+		if got := sliceWait(c.configured, c.expires, now); got != c.want {
+			t.Errorf("%s: waits %v, want %v", c.name, got, c.want)
+		}
+	}
+	if DefaultBatchTimeout >= job.DefaultTTL {
+		t.Errorf("the default slice wait %v is not shorter than a job's default lifetime %v; "+
+			"one silent slice would use the whole job up", DefaultBatchTimeout, job.DefaultTTL)
+	}
+}
+
+// A batch delivers no slice once its job has expired (issue 540).
+//
+// The node would refuse it (TestANodeRefusesAJobThatHasExpired in
+// cmd/halite-node), so it would change nothing, and each refusal is a
+// failed return. The hub's clock is moved past the expiry while the first
+// slice is waiting on a silent node; the next two nodes must not be given
+// the job, and the job is closed as Settle closes an expired job with nodes
+// never reached: aborted.
+func TestABatchDeliversNoSliceAfterItsJobExpires(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	tr := &tracker{seen: map[string]time.Time{}}
+	var stops []func()
+	web1 := l.enrolled(t, "web1.example")
+	stops = append(stops, l.connectSilent(t, web1, "web1.example", `{}`))
+	for _, id := range []string{"web2.example", "web3.example"} {
+		stops = append(stops, l.connectTracking(t, l.enrolled(t, id), id, tr, nil))
+	}
+	defer func() {
+		for _, stop := range stops {
+			stop()
+		}
+	}()
+
+	op := l.operator(t, "ed")
+	res, err := op.Submit(context.Background(), transport.SubmitRequest{
+		Target: "*", Fun: "test.ping", Batch: "1", BatchTimeoutSecs: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first slice is out before the clock moves, so what is tested is
+	// the step between slices and not whether the first was sent.
+	deadline := time.Now().Add(5 * time.Second)
 	for {
-		var err error
-		if status, err = op.JobStatus(context.Background(), res.JID); err != nil {
+		status, err := op.JobStatus(context.Background(), res.JID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if len(status.Missing) <= 1 || time.Now().After(settled) {
+		if len(status.Delivered) == 1 {
 			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the first slice was never delivered: %v", status.Delivered)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if len(status.Delivered) != 3 {
-		t.Errorf("delivered to %v, want all three", status.Delivered)
+	l.advance(job.DefaultTTL + time.Minute)
+
+	status := waitForState(t, op, res.JID, string(job.Aborted))
+	time.Sleep(2 * time.Second)
+	if n := tr.count(); n != 0 {
+		t.Fatalf("%d nodes were given a job that had expired", n)
+	}
+	if len(status.Delivered) != 1 {
+		t.Errorf("delivered to %v, want only the first slice", status.Delivered)
+	}
+}
+
+// A batch that has delivered to every node but still waits on a return
+// reads `dispatched`, not `batching` (issue 540).
+//
+// It used to stay `batching` until Settle closed it at expiry, which said
+// the hub had slices left to send when all it had was returns owed.
+func TestAFinishedBatchWithReturnsOwedIsDispatched(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	tr := &tracker{seen: map[string]time.Time{}}
+	var stops []func()
+	web1 := l.enrolled(t, "web1.example")
+	stops = append(stops, l.connectSilent(t, web1, "web1.example", `{}`))
+	stops = append(stops, l.connectTracking(t, l.enrolled(t, "web2.example"), "web2.example", tr, nil))
+	defer func() {
+		for _, stop := range stops {
+			stop()
+		}
+	}()
+
+	op := l.operator(t, "ed")
+	res, err := op.Submit(context.Background(), transport.SubmitRequest{
+		Target: "*", Fun: "test.ping", Batch: "1", BatchTimeoutSecs: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := waitForState(t, op, res.JID, string(job.Dispatched))
+	if len(status.Delivered) != 2 {
+		t.Errorf("delivered to %v, want both", status.Delivered)
 	}
 	if len(status.Missing) != 1 || status.Missing[0] != "web1.example" {
 		t.Errorf("missing = %v, want only the silent node", status.Missing)

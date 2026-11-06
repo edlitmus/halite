@@ -86,7 +86,7 @@ Package hub is the control plane of SPEC section 6: the endpoints a node talks t
 
 The rule the whole package follows is that a node's identity comes from the certificate the TLS layer verified and never from the request body. A body says what a node wants; the certificate says who is asking.
 
-**Files:** `anchors.go`, `batch.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
+**Files:** `anchors.go`, `batch.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `returnscrub.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
 
 **Exports.**
 
@@ -771,6 +771,7 @@ The two halves bind opposite parties. A node that rewrites its chain contradicts
 - `CheckHead` (func): CheckHead reports whether (seq, hash) is something Log could have produced as a head: a sequence number from 1, and a SHA-256 in the form hashOf writes.
 - `Digest` (func): Digest is a stable fingerprint of a configuration mapping.
 - `DigestString` (func): DigestString fingerprints one string, for a field a record holds in truncated form.
+- `LastOfKind` (func): LastOfKind reads the most recent record of one kind, without verifying anything, or nil when the chain holds none.
 - `Log` (type): Log is the append-only chain.
 - `Open` (func): Open prepares the chain in dir, creating it if necessary, and recovers the head of an existing one.
 - `Options` (type): Options configure a log.
