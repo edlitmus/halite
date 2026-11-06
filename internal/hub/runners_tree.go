@@ -304,6 +304,11 @@ func registerEventRunner(r *Runners) {
 				if err := eventbus.ValidTag(tag); err != nil {
 					return nil, err
 				}
+				if c.OnBehalfOf != nil && isHookTag(tag) {
+					return nil, fmt.Errorf("%s acts here for %s, and %q is a webhook delivery's tag; "+
+						"halite/hook/ is written by the API for a delivery it verified, "+
+						"never by an operator through it (issue 649)", c.Principal, c.OnBehalfOf.Principal, tag)
+				}
 				data, err := eventData(c.Args)
 				if err != nil {
 					return nil, err
@@ -312,7 +317,21 @@ func registerEventRunner(r *Runners) {
 				// the payload: a reaction that fires on this tag will
 				// be asked who caused it, and the answer has to come
 				// from the connection, not from the body.
+				//
+				// Through the API the connection is the API, so the
+				// operator it acts for is recorded beside it, from the
+				// delegation the hub accepted (checkDelegation) and
+				// never from the body: a payload's own `_on_behalf_of`
+				// is removed, or a direct caller could write one and be
+				// read as an operator it is not. `_principal` stays the
+				// certificate, which is what it has always meant, so a
+				// reaction that already compares it is not changed
+				// (issue 649).
 				data["_principal"] = c.Principal
+				delete(data, "_on_behalf_of")
+				if c.OnBehalfOf != nil {
+					data["_on_behalf_of"] = c.OnBehalfOf.Principal
+				}
 				offset, err := c.Server.publish(tag, "", string(c.JID), data)
 				if err != nil {
 					return nil, err
@@ -524,6 +543,23 @@ func eventData(args *value.Map) (map[string]any, error) {
 		return out, nil
 	}
 	return nil, fmt.Errorf("the data argument is a mapping, not %s", value.TypeName(raw))
+}
+
+// isHookTag reports whether a tag is in the namespace the API writes a
+// verified webhook delivery to (SPEC 17.1, `halite/hook/<path>`).
+//
+// The hub refuses one from a delegated `event.send`. A delivery reaches
+// the hub as the API's own call with no delegation, carrying
+// `_principal: cert:CN=api`; an operator's `event.send` through the API
+// carried exactly the same, so an operator granted `event.send` could
+// put `halite/hook/github/push` on the bus and nothing told it from a
+// delivery the API had verified (DIVERGENCE 5.582, "Not changed"). With
+// the operator now recorded as `_on_behalf_of` a careful reaction could
+// tell, but a reaction that matches the tag and nothing else, which is
+// what the handbook's examples do, could not. A direct caller is not
+// refused: its `_principal` is its own certificate, never the API's.
+func isHookTag(tag string) bool {
+	return tag == "halite/hook" || strings.HasPrefix(tag, "halite/hook/")
 }
 
 func tagGlobs(spec string) []string {

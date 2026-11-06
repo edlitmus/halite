@@ -47,7 +47,12 @@ func registerCargo(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. A crate's build
+				// script (`build.rs`) runs at install, as root on the node: code the
+				// crate's author chose. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				crates, err := langNames(args, "crates")
@@ -167,7 +172,13 @@ func registerGoTool(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. `go install`
+				// builds a module the caller names, at a version the caller names,
+				// and puts the program where the node will run it. Issue 619
+				// (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				pkgs, err := langNames(args, "pkgs")
@@ -266,7 +277,13 @@ func registerComposer(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. Composer runs
+				// the project's scripts and the code of any plugin a required
+				// package brings, and this module passes neither `--no-scripts`
+				// nor `--no-plugins`. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				pkgs, err := langNames(args, "pkgs")
@@ -359,7 +376,12 @@ func registerCpan(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. Installing a
+				// CPAN module runs its Makefile.PL or Build.PL as root: code the
+				// module's author chose. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				modules, err := langNames(args, "modules")
@@ -463,7 +485,13 @@ func registerMaven(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestUnreliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. `goals` can
+				// name any plugin goal, and the exec plugin's runs a program: the
+				// caller's choice of code. Issue 619 (DIVERGENCE 5.297's second
+				// tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				argv := []string{"--batch-mode"}

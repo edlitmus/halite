@@ -324,3 +324,42 @@ func TestMergingIsStable(t *testing.T) {
 		t.Errorf("families are not in name order:\n%s", first)
 	}
 }
+
+// A counter read at exposition time exports every value it was declared
+// with, at zero, before anything moves it -- which is what lets
+// increase() see the first event (DIVERGENCE 5.235) -- and then follows
+// its source rather than a copy of it.
+func TestACounterFuncExportsEveryValueAndFollowsItsSource(t *testing.T) {
+	r := NewRegistry()
+	lost := map[string]float64{}
+	r.CounterFunc("halite_trace_spans_dropped_total", "Spans lost.", "reason",
+		[]string{"queue_full", "export_failed"}, func(reason string) float64 { return lost[reason] })
+
+	out := render(t, r)
+	for _, want := range []string{
+		"# TYPE halite_trace_spans_dropped_total counter\n",
+		"halite_trace_spans_dropped_total{reason=\"export_failed\"} 0\n",
+		"halite_trace_spans_dropped_total{reason=\"queue_full\"} 0\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("before the first event, no %q:\n%s", strings.TrimSpace(want), out)
+		}
+	}
+	// Name order, like every other family's series.
+	if strings.Index(out, "export_failed") > strings.Index(out, "queue_full") {
+		t.Errorf("the series are not in label order:\n%s", out)
+	}
+
+	lost["export_failed"] = 12
+	if out := render(t, r); !strings.Contains(out, "{reason=\"export_failed\"} 12\n") ||
+		!strings.Contains(out, "{reason=\"queue_full\"} 0\n") {
+		t.Errorf("the counter did not follow its source:\n%s", out)
+	}
+
+	// A nil registry declares nothing and does not call the source.
+	var none *Registry
+	none.CounterFunc("halite_x_total", "x", "reason", []string{"a"}, func(string) float64 {
+		t.Fatal("a nil registry read its source")
+		return 0
+	})
+}

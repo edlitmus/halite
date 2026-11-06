@@ -670,7 +670,8 @@ output schema is frozen and versioned, so downstream tooling can depend on it.
 |---|---|
 | `--batch=N` or `--batch=25%` | Execute against at most N nodes at a time, waiting for returns before advancing |
 | `--batch-wait=S` | Settle time between batches |
-| `--batch-safe-limit=N` | Abort the batch once N nodes have failed; a node that does not answer is not counted (DIVERGENCE 5.496) |
+| `--batch-timeout=S` | How long each slice waits for its returns. The default is 5 minutes. A slice never waits past the expiry of the job |
+| `--batch-safe-limit=N` | Abort the batch once N of the nodes it has delivered to have failed or have not answered when their slice's wait ends (DIVERGENCE 5.496) |
 | `--subset=N` | Execute against a random N of the matched set |
 | `--async` | Return the `jid` immediately |
 | `--timeout=S` | Per-node return timeout |
@@ -680,6 +681,9 @@ output schema is frozen and versioned, so downstream tooling can depend on it.
 Batching is implemented on the hub, not in the CLI. In Salt, `--batch` is client-side, so closing
 the terminal abandons the batch mid-flight. Here the batch is a hub-side job group with its own
 record, so it survives client disconnection and is resumable with `halite-hub jobs resume <jid>`.
+The hub never delivers a slice to a job that has expired. It stops the batch and closes the job as
+`aborted`. When the batch has delivered to every node but a return is still owed, the job shows state
+`dispatched`, not `batching`.
 
 ### 9.4 Returns and the job cache
 
@@ -1387,6 +1391,17 @@ together are a large C dependency with its own CVE history, and it inherits the 
   `git verify-commit` or `git verify-tag`. A ref that fails verification is not served, and the
   failure is an event. Salt cannot do this, and it is the single control that turns the file server
   from a code-delivery path into a signed code-delivery path.
+- **A remote that serves nothing keeps its last good tree, while that tree still verifies.** A
+  remote that cannot be reached, or whose every ref is refused, goes on serving what it served
+  before rather than emptying the file server. With `gitfs_verify_signatures: true` the kept tree
+  is verified again, against the keyring as it is at that update, every time it would be carried
+  forward. A tree whose signer has been removed from the keyring (or whose signature gpg no longer
+  accepts for any other reason) is dropped: the remote then serves nothing, the hub logs the remote,
+  ref and commit by name, and `fileserver.update` reports it under `withdrawn`. This is what a hub
+  restarted with the same keyring does, since it has no tree to keep, and a key is most often
+  withdrawn because it was compromised, when the kept tree is the one most likely to be an
+  attacker's. The keyring is not watched: a withdrawal takes effect at the next update, periodic at
+  `gitfs_update_interval` or on demand, and with the interval at `0` only on demand.
 - Fetch is periodic with jitter, plus on demand through `halite-hub files update`, plus on a
   webhook to `halite-api` at `/v1/hook/gitfs` with an HMAC-authenticated body.
 
@@ -2226,17 +2241,33 @@ Properties that are requirements, not suggestions:
   SLS names, and may be forbidden from passing `pillar` on the command line, which is otherwise a
   trivial way to bypass pillar-based authorization. A restriction to SLS names excludes the
   highstate: a request that names no SLS, or `state.highstate`, is refused under `allow_sls`.
+  An argument constraint holds every function that takes the same names, not only the one it is
+  written under: one written for any of `state.apply`, `state.sls`, `state.highstate` or the
+  `state.show_*` functions holds all of them, and one written for any of the `state.orchestrate`,
+  `state.orch` or `state.orchestrate_show_sls` runners holds all three, and holds
+  `state.orch_resume` too, which is judged on the names of the run that it resumes. Several in one
+  rule all hold. Otherwise a rule granting `state.*` with `allow_sls` on `state.apply` would leave
+  `state.sls` free to apply any SLS (DIVERGENCE 5.586, 5.599).
   A role may also require a keyword with `require_kwargs: {test: true}`: the call must carry each named
   keyword with exactly that value (a bool, a string or a number, compared by type), and a call that
   omits it is refused, which is how a credential is held to a dry run. The dry-run flag counts as the
   keyword `test`, because that is what the node receives (DIVERGENCE 5.493).
+  A role may also limit the environment with `allow_env` and `deny_env` (patterns). They judge the
+  `saltenv` of a job and the `env` of an orchestration, and a resume on the environment of the run
+  that it resumes. A job with an empty environment is not judged, because the node runs it in its
+  own environment, and an orchestration with no `env` is judged as `base` (DIVERGENCE 5.601).
 - **`cmd.run` is a distinct permission** from every other function and is never granted by a
   wildcard. `functions: ['*']` does not include `cmd.run`, `cmd.script`, `cmd.shell`, `module.run`,
-  `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.
+  `file.write`, `file.replace`, the language package installers `pip.install`, `npm.install`,
+  `gem.install`, `cargo.install`, `go.install`, `composer.require`, `cpan.install`,
+  `virtualenv.create` and `maven.run`, the deferred-execution functions `at.at`, `cron.present` and
+  `win_task.create`, or any function whose signature declares `arbitrary_code: true`.
   Nor does it include a function the hub's build does not ship, which is how an extension's
   function is seen from the hub: the node marks every one `arbitrary_code`, and the hub cannot know
   which a node has loaded (DIVERGENCE 5.564). Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
-  `.*`.
+  `.*`. `file.*` other than `file.write` and `file.replace`, and the `ssh_auth.present` and
+  `sudo.present` states, write content that can become code. A wildcard grants them, by decision
+  (DIVERGENCE 5.600).
 - **Reading a node's pillar is a distinct permission** (section 22.1), and is never granted by a
   wildcard either: `functions: ['*']` does not include `pillar.items`, `pillar.raw`, `pillar.get` or
   `config.get`, and `runners: ['*']` does not include `pillar.show_pillar` or `cache.pillar`. It is

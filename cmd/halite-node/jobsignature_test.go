@@ -480,6 +480,11 @@ func TestASignedPillarTargetIsRefusedWhenThisNodesPillarWillNotCompile(t *testin
 func TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode(t *testing.T) {
 	for i, fun := range []string{
 		"cmd.run", "cmd.shell", "cmd.script", "cmd.script_retcode", "cmd.exec_code", "cmd.run_bg",
+		// The second tier (issue 619): each makes the node run code the
+		// caller chose, later or through a package's install step.
+		"pip.install", "npm.install", "gem.install", "cargo.install", "go.install",
+		"composer.require", "cpan.install", "virtualenv.create", "maven.run",
+		"at.at", "win_task.create",
 	} {
 		n, _ := signedNode(t, "[arbitrary_code]")
 		msg := jobMessage(t, fmt.Sprintf("20261015T0800000000%02d", i))

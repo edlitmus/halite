@@ -20,6 +20,27 @@ import (
 // can be sure of, and the whole point of these is to be trusted at the
 // moment somebody is already having a bad day.
 
+// Running is what this command knows about the configuration the
+// long-running service started with.
+//
+// `doctor` is a process of its own. Before DIVERGENCE 5.589 every caller
+// said the file matched "what this process is running" -- the node by
+// comparing two loads of the file inside the doctor's own process, the hub
+// and the API by passing true -- and the process running was the doctor.
+// A service started on last month's file passed. So the comparison is now
+// stated or it is not made: Known says whether there was anything to
+// compare with, and Basis says what it was, or why there was nothing.
+type Running struct {
+	// Known is true when Same means something.
+	Known bool
+	// Same is whether the file's digest is the one the service recorded.
+	Same bool
+	// Basis is shown to the operator. With Known it names what the file
+	// was compared with ("the configuration record the agent wrote when it
+	// started, at …"); without, it says why no comparison was made.
+	Basis string
+}
+
 // ConfigValidity reports whether the configuration this process is
 // running with loaded cleanly.
 //
@@ -28,7 +49,7 @@ import (
 // case is a file edited since the service started, where the running
 // process is fine and the next restart is not. That is a failure an
 // operator finds at the worst possible moment otherwise.
-func ConfigValidity(path string, loadErr error, unknownKeys []string, restartsClean bool) Check {
+func ConfigValidity(path string, loadErr error, unknownKeys []string, running Running) Check {
 	return Check{
 		Name:  "configuration validity",
 		Roles: []string{RoleNode, RoleHub, RoleAPI},
@@ -51,15 +72,24 @@ func ConfigValidity(path string, loadErr error, unknownKeys []string, restartsCl
 					"or remove it."
 				return res
 			}
-			if !restartsClean {
+			if running.Known && !running.Same {
 				res.Status = Warn
-				res.Detail = fmt.Sprintf("%s loads but differs from what this process started with", path)
-				res.Remedy = "The file has been edited since this process started. Restart to " +
+				res.Detail = fmt.Sprintf("%s loads but differs from %s", path, running.Basis)
+				res.Remedy = "The file has been edited since the service started. Restart to " +
 					"pick it up, or revert the file."
 				return res
 			}
 			res.Status = Pass
-			res.Detail = path + " loads, and matches what this process is running"
+			if running.Known {
+				res.Detail = fmt.Sprintf("%s loads, and matches %s", path, running.Basis)
+				return res
+			}
+			// Pass, because the question this check exists for -- will
+			// the next restart start? -- has been answered. The second
+			// question has not, and the detail says so rather than
+			// leaving the reader to assume it was asked.
+			res.Detail = fmt.Sprintf("%s loads; not compared with what the service is running: %s",
+				path, running.Basis)
 			return res
 		},
 	}
@@ -84,6 +114,13 @@ type Expected struct {
 	// AbsentDetail replaces the sentence used when Cert is nil, for the
 	// cases where "named here and not present" is not what happened.
 	AbsentDetail string
+	// Unreadable is why the file is there and could not be parsed. It
+	// fails the check, with the reason and no dates. Callers used to
+	// pass an empty certificate in its place, so the check reported a
+	// zero NotAfter as "expired -9223372036854ms ago" -- a duration that
+	// overflowed -- beside a label that already said it was unreadable.
+	// DIVERGENCE 5.594.
+	Unreadable error
 	// WarnWithin is how long before expiry to begin saying so.
 	//
 	// Per certificate, because the certificates in one key directory do
@@ -123,10 +160,15 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 			}
 			sort.Strings(names)
 
-			var absent, unissued, expired, expiring, details []string
+			var absent, unissued, unreadable, expired, expiring, details []string
 			for _, name := range names {
 				want := certs[name]
 				cert := want.Cert
+				if want.Unreadable != nil {
+					unreadable = append(unreadable, fmt.Sprintf("%s could not be read: %v",
+						name, want.Unreadable))
+					continue
+				}
 				// Named by the configuration and not on disk. Reported,
 				// because the alternative is a check that passes for a
 				// reason nobody can see.
@@ -157,10 +199,11 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 				}
 			}
 			switch {
-			case len(expired) > 0 || len(absent) > 0:
+			case len(expired) > 0 || len(absent) > 0 || len(unreadable) > 0:
 				res.Status = Fail
-				res.Detail = strings.Join(append(append(expired, absent...), expiring...), "; ")
-				res.Remedy = "Nothing will connect with an expired or missing certificate.\n" +
+				failed := append(append(append([]string(nil), unreadable...), expired...), absent...)
+				res.Detail = strings.Join(append(failed, expiring...), "; ")
+				res.Remedy = "Nothing will connect with an expired, missing or unreadable certificate.\n" +
 					"A node renews with `halite-node renew`; a hub's is reissued from its CA; " +
 					"an operator's with `halite-hub keys operator create <name>`, which keeps " +
 					"the same cert:CN=<name> the policy binds."

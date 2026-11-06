@@ -141,9 +141,13 @@ func TestASignedDeliveryReachesTheBus(t *testing.T) {
 		t.Errorf("the answer is %s", out)
 	}
 
-	// It reached the hub as an event, carrying the principal the
-	// delivery authenticated as — so a reactor authorizes on that
-	// rather than on the payload.
+	// It reached the hub as the API's own call. With no delegation,
+	// because the hub refuses a `halite/hook/` tag from a delegated
+	// event.send (issue 649), and with no `_principal` in the payload,
+	// because the hub stamps `_principal` with the connection's
+	// certificate over whatever a payload says. The hook's principal
+	// this test used to look for was set here and never reached the
+	// bus; a fake hub could not show that.
 	var sent string
 	for _, call := range hub.seen {
 		if strings.Contains(call.body, "event.send") {
@@ -153,8 +157,11 @@ func TestASignedDeliveryReachesTheBus(t *testing.T) {
 	if sent == "" {
 		t.Fatal("nothing reached the bus")
 	}
-	if !strings.Contains(sent, "hook:deploy") {
-		t.Errorf("the event does not carry the principal: %s", sent)
+	if strings.Contains(sent, "on_behalf_of") {
+		t.Errorf("a webhook delivery was sent as a delegated call, which the hub refuses for a hook tag: %s", sent)
+	}
+	if strings.Contains(sent, "_principal") {
+		t.Errorf("the payload carries a _principal the hub will overwrite: %s", sent)
 	}
 
 	// The shape matters as much as the content: `event.send` declares

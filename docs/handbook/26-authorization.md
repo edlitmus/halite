@@ -234,7 +234,31 @@ A rule can restrict how a function is called:
 | `deny_sls: [...]` | ...or must not name these. |
 | `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. Each name is checked, positional or the `sls` keyword, and each name of a comma list on its own. |
 | `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name (patterns). |
+| `allow_env: [base]` | The call may run only in these environments (patterns). The environment is the `saltenv` of a job or the `env` of an orchestration. |
+| `deny_env: [release-*]` | ...or must not run in these. `deny_env` is checked first. |
 | `require_kwargs: {test: true}` | The call must carry each keyword with exactly this value, or it is refused. A bool, a string or a number; the name is exact, not a pattern; the type must match, so the string `"true"` is not `true`. |
+
+A limit holds every function that takes the same names, not only the one
+it is written under. Limits written for any of `state.apply`, `state.sls`,
+`state.highstate` or the `state.show_*` functions hold all of them, because
+the node compiles the same SLS names (or the highstate) for each. Limits
+written for any of the `state.orchestrate`, `state.orch` or
+`state.orchestrate_show_sls` runners hold all three, and hold
+`state.orch_resume` too. A resume is judged on the names of the run that it
+resumes. If a rule has limits under two of them, a call must pass both. So a rule that grants `state.*`
+with `allow_sls` under `state.apply` does not leave `state.sls db.secret`
+open. A function that should not be limited goes in a rule of its own.
+
+`allow_env` and `deny_env` judge the environment that the caller chooses. With
+gitfs every branch is an environment, so without them a role with
+`allow_sls: [web.*]` can apply `web.x` from any branch. For a job, the policy
+judges its `saltenv`. A job with no `saltenv` runs in the environment of the
+node and is not judged: limit that case with `env_allowlist` on the node. For
+an orchestration, the policy judges the `env` argument, as a keyword or as the
+second positional argument, and an orchestration with no `env` is judged as
+`base`. A resume is judged on the environment of the run that it resumes. An
+older hub or API ignores these two keys silently, and so does this build for a
+key that it does not know. Upgrade first and check the spelling.
 
 `require_kwargs: {test: true}` is how a role is held to a rehearsal. The dry-run
 flag (`run --test`, `"test": true` in the API) is a keyword on the wire, and
@@ -253,10 +277,12 @@ A function whose signature says `arbitrary_code` can run anything. They are
 never granted by a pattern; a role must **name** them:
 
 ```
-never granted by a wildcard: cmd.exec_code, cmd.retcode, cmd.run, cmd.run_all,
-cmd.run_bg, cmd.run_stderr, cmd.run_stdout, cmd.script, cmd.script_retcode,
-cmd.shell, cmd.wait, file.replace, file.write, module.run, module.wait,
-schedule.add, schedule.modify, schedule.run_job
+never granted by a wildcard: at.at, cargo.install, cmd.exec_code, cmd.retcode,
+cmd.run, cmd.run_all, cmd.run_bg, cmd.run_stderr, cmd.run_stdout, cmd.script,
+cmd.script_retcode, cmd.shell, cmd.wait, composer.require, cpan.install,
+cron.present, file.replace, file.write, gem.install, go.install, maven.run,
+module.run, module.wait, npm.install, pip.install, schedule.add,
+schedule.modify, schedule.run_job, virtualenv.create, win_task.create
 
 nor any function this build does not ship, such as an extension's
 ```
@@ -264,7 +290,9 @@ nor any function this build does not ship, such as an extension's
 (That is `halite-hub policy show` for this build.) The list is taken from
 the signatures the build ships, so a function marked in a later build is
 covered without anyone remembering to add it. `functions: ['*']` therefore
-covers `pkg.installed` and not `cmd.run`.
+covers `pkg.installed` and not `cmd.run`. The list includes the language package
+installers and the schedulers, such as `pip.install` and `at.at`. It does not include `file.*`
+(other than `file.write` and `file.replace`), `ssh_auth.present` or `sudo.present`.
 
 The last line is the other half. A pattern grants only a function the
 hub's build ships and knows is not arbitrary code. An extension's
@@ -344,12 +372,21 @@ can be tested in CI. Each of these was run against the policy above:
 `--runner` evaluates the function as a hub runner and `--kwarg k=v` supplies
 an argument. `--target-kind` reads the target as the kind a job would be sent
 with (`L`, `C`, `E`, `G`, … or `list`, `compound`, …). Without it, the target
-is a glob. A test suite for your policy is a shell script of these lines
+is a glob. `--env <name>` gives the environment (`saltenv`) that the job would
+be sent with, so that `allow_env` and `deny_env` can judge it. A test suite for your policy is a shell script of these lines
 with the expected exit status: write it when you write the policy and run
 it on every change.
 
 `halite-hub policy show` prints the loaded policy in a normalised form
-and, last, the never-wildcarded list for this build.
+and, last, the never-wildcarded list for this build. Under each argument
+limit it prints the functions the limit holds. For a rule with limits, it
+also prints what the rule grants that no limit holds, so a grant wider than
+its limits is visible before a request finds it:
+
+```
+     state.apply: holds state.apply, state.highstate, state.show_highstate, state.show_lowstate, state.show_sls, state.show_states, state.show_top, state.sls
+     no argument rule holds: pkg.installed; service.* (all 18 it grants)
+```
 
 Every decision is **logged**, allowed or denied, with the rule that matched:
 
@@ -391,7 +428,7 @@ roles:
       functions: ['test.ping', 'state.apply']
     - target: '*'
       runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
-    - act_for: ['*']
+    - act_for: ['local:*', 'ldap:*', 'oidc:*']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']
@@ -407,13 +444,25 @@ the claim only from a certificate whose role has `act_for` naming that
 operator, and refuses the call from anyone else. `act_for` takes principal
 patterns, as a binding does, and grants nothing else; a rule that holds only
 `act_for` may not name a target. Without it, every runner call the API makes
-for a logged-in operator is refused (DIVERGENCE 5.582).
+for a logged-in operator is refused (DIVERGENCE 5.582). The example lists the
+three kinds of principal that the API makes. Keep only the sources that your
+API uses.
+
+The hub judges the operator by the roles in the token, against the
+`policy.yaml` of the hub. So that file must define every role that an API
+token can carry. A role that the hub does not define grants nothing, and the
+hub refuses the call. If the API and the hub run on different hosts, keep the
+two copies of `policy.yaml` the same. A copy that drifts narrows or refuses
+operators (DIVERGENCE 5.599).
 
 Used with a narrow operator role, the effective rights of a person are the
 intersection. The jobs the API submits record both: `submitter` is the API's
 certificate and `on_behalf_of` is the person. A job submitted with `POST
 /v1/jobs` records `on_behalf_of` and is never authorized on it; the API
-authorizes the operator itself before it submits. A role that is granted after a token was issued
+authorizes the operator itself before it submits. An `event.send` through the
+API records the person as `_on_behalf_of` in the event, and a key action
+through the API records the person as `on_behalf_of` in the key event (DIVERGENCE
+5.599). A role that is granted after a token was issued
 does not widen that token (the roles were frozen at issue), so a role taken
 away is a reason to revoke the token, not a change that applies mid-session.
 

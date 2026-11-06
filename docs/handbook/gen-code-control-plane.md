@@ -86,7 +86,7 @@ Package hub is the control plane of SPEC section 6: the endpoints a node talks t
 
 The rule the whole package follows is that a node's identity comes from the certificate the TLS layer verified and never from the request body. A body says what a node wants; the certificate says who is asking.
 
-**Files:** `anchors.go`, `batch.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
+**Files:** `anchors.go`, `batch.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `returnscrub.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
 
 **Exports.**
 
@@ -510,20 +510,23 @@ Package policy is the RBAC of SPEC section 23.5: one file, one grammar, deny by 
 
 Salt has publisher\_acl, external\_auth, peer, peer\_run, and client\_acl as five overlapping mechanisms with different syntaxes and different failure modes, which is why Salt authorization is so often wrong in practice. There is one mechanism here and a request must match one rule entirely -- target and function together, not separately.
 
-**Files:** `pillar.go`, `policy.go`, `runnerscope.go`; with tests.
+**Files:** `argfamily.go`, `pillar.go`, `policy.go`, `runnerscope.go`; with tests.
 
 **Exports.**
 
 - `ArgRule` (type): ArgRule constrains the arguments of one function.
+- `ArgumentFamily` (func): ArgumentFamily is the set of functions that take the same names as fun, sorted, or nil when fun is in no family.
 - `Binding` (type): Binding attaches roles to a principal.
 - `Decision` (type): Decision is the outcome, and why.
 - `Load` (func): Load reads a policy file.
+- `OrchestrationRunners` (func): OrchestrationRunners lists the runners that take orchestration names as `sls`, for the hub's test and for `policy show`.
 - `PillarReaders` (func): PillarReaders lists ReadsPillar's set, sorted, for `policy show`.
 - `Policy` (type): Policy is a loaded policy file.
 - `ReadsPillar` (func): ReadsPillar reports whether fun hands a node's pillar to the caller, and so is never granted by a wildcard.
 - `Request` (type): Request is what is being asked for.
 - `Rule` (type): Rule is one grant: a target pattern, the functions permitted against it, and any argument-level constraints.
 - `Scope` (type): Scope is the set of nodes a principal may reach through one runner.
+- `Unheld` (type): Unheld is one of a rule's grants and what it grants that no argument rule in the rule holds.
 
 ## `internal/api`
 
@@ -768,6 +771,7 @@ The two halves bind opposite parties. A node that rewrites its chain contradicts
 - `CheckHead` (func): CheckHead reports whether (seq, hash) is something Log could have produced as a head: a sequence number from 1, and a SHA-256 in the form hashOf writes.
 - `Digest` (func): Digest is a stable fingerprint of a configuration mapping.
 - `DigestString` (func): DigestString fingerprints one string, for a field a record holds in truncated form.
+- `LastOfKind` (func): LastOfKind reads the most recent record of one kind, without verifying anything, or nil when the chain holds none.
 - `Log` (type): Log is the append-only chain.
 - `Open` (func): Open prepares the chain in dir, creating it if necessary, and recovers the head of an existing one.
 - `Options` (type): Options configure a log.

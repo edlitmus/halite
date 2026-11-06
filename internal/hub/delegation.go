@@ -24,6 +24,14 @@ import (
 // naming a powerful operator; but the operator's name also decides whose
 // runs a caller sees, and is written into every record as who asked,
 // so a caller may name one only with `act_for` in its own role.
+//
+// "Every record" is the jobs a delegated runner sends, the runner call's
+// own job record and its `halite/run/<jid>/new` event, an orchestration
+// run, the `halite/key/<node>/<action>` event of a key action, and an
+// event put on the bus with `event.send` (`_on_behalf_of`, beside the
+// `_principal` that stays the certificate). The last two were added by
+// issue 649; before it, a key accepted or an event sent through the API
+// named only the API.
 
 // checkDelegation refuses a claim to act for an operator from a caller
 // the policy does not let make it.
@@ -88,10 +96,17 @@ func actingFor(ob *transport.Delegation) string {
 // every other operator's runs. The operator alone would let any caller
 // with `act_for` read as anyone it may name, which is its grant, but also
 // let a direct operator read their API-made runs by a rule nobody wrote.
-// A record's OnBehalfOf is only ever written from a delegation the hub
-// accepted (recordRunnerJob, Orchestrate), so it can be compared;
-// a job's from POST /v1/jobs is the submitter's say-so, and jobVisible
-// never asks this of a fleet job.
+// A runner call's or a run's OnBehalfOf is only ever written from a
+// delegation the hub accepted (recordRunnerJob, Orchestrate), so it can
+// be compared. A fleet job's, from POST /v1/jobs, is the submitter's
+// say-so, and jobVisible does ask this of one: it tells a runner call
+// by its target, RunnerTarget, and a fleet job aimed at a node named
+// `hub` has the same target. That reads a fleet job's OnBehalfOf as if
+// the hub had accepted it, but gains nobody another's job, because the
+// submitter has to match too and a submitter only ever names its own
+// operators. Its effect is to narrow: a scoped caller who may see the
+// node `hub` sees only its own jobs to it, not everybody's (issue 649,
+// recorded and left as it is).
 func sameCaller(submitter, onBehalfOf string, principal string, ob *transport.Delegation) bool {
 	return submitter == principal && onBehalfOf == actingFor(ob)
 }

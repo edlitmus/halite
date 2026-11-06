@@ -204,7 +204,7 @@ halite-node doctor
 ```
 halite-node doctor — web1.lab
 
-  pass  configuration validity           …/node1.yaml loads, and matches what this process is running
+  pass  configuration validity           …/node1.yaml loads, and matches what the agent recorded when it last started (evidence record 2, 2026-11-05T18:56:05.241805Z)
   pass  certificate validity and expiry  the hub's CA: 3649 days left; this node's certificate: 89 days left
   pass  connectivity                     127.0.0.1 answered in 2ms: halite-hub 0.1.0-7-g… ok
   pass  clock skew against the hub       within 1m of the hub (299ms ahead of)

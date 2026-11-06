@@ -241,6 +241,15 @@ gitfs_keyring: /usr/local/etc/halite/gitfs-keyring
   and the failure is an event. This is the control that turns a file
   server from a code-delivery path into a *signed* code-delivery path.
   Turn it on for any tree that can change a production machine.
+- A remote that is unreachable, or whose new tip is refused, **keeps
+  serving its last good tree** — but with verification on, only while that
+  tree still verifies. **Removing a key from `gitfs_keyring` takes away
+  every tree it signed** at the next update: the remote serves nothing,
+  the hub logs `a gitfs tree is no longer served because its signature no
+  longer verifies` with the remote and ref, and `fileserver.update` lists
+  the ref under `withdrawn`. The keyring is not watched; run
+  `halite-hub runner fileserver.update` to make a withdrawal take effect
+  now.
 
 Credentials for a private repository go in the environment of the hub
 process or an SSH key, never on a command line where they would appear in

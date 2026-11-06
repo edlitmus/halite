@@ -23673,6 +23673,184 @@ no network path between hosts was used. One distribution, one kernel (RHEL 9's);
 Ubuntu Pro's FIPS kernel was not tried. `make check` was not run on this
 branch; this is documentation.
 
+#### The published arm64 archive, and Ubuntu Pro's FIPS kernels (issue 306)
+
+2026-11-05, two AWS hosts in us-east-1, reached through SSM as root. Both
+were already in kernel FIPS mode on Ubuntu Pro `fips-updates`. Neither was
+rebooted or moved into or out of FIPS mode for this run.
+
+- `ami-test-1`: i-06bb649fb9f76b3f6, c8g.2xlarge (Graviton), AMI
+  ami-06a7244b703c98422, **arm64**, Ubuntu 24.04.5 LTS, kernel
+  6.8.0-1067-aws-fips, `/proc/sys/crypto/fips_enabled` 1, `fips=1` on the
+  kernel command line. OpenSSL 3.0.13 with the provider "Ubuntu 24.04
+  OpenSSL Cryptographic Module" 3.0.13-0ubuntu3.15+Fips2 active.
+- `noop2-1`: i-0cc603ffb64dfbeea, c6a.2xlarge, AMI ami-09db3cf260e84b5d2,
+  **amd64**, Ubuntu 22.04.5 LTS, kernel 5.15.0-1117-aws-fips,
+  `fips_enabled` 1, `fips=1`. OpenSSL 3.0.2.
+
+Both hosts had AppArmor on and `/tmp` mounted `noexec`, so all work was
+under `/root`. Both also run Salt's agent; it was still active afterwards and
+`dmesg` showed no OOM kill.
+
+**The archives.** The published v0.1.1 archives were fetched on each host
+from the GitHub release: `halite-0.1.1-linux-arm64-fips.tar.gz` on
+`ami-test-1`, `halite-0.1.1-linux-amd64-fips.tar.gz` on `noop2-1`, and the
+ordinary `halite-0.1.1-linux-<arch>.tar.gz` on each. `sha256sum -c` against
+the release's SHA256SUMS said OK on both. The build identity printed was
+`0.1.1+f4a60b7a93a4 (fips v1.0.0)`. This is the first time the *published*
+arm64 `-fips` archive was opened and run. 5.83 ran arm64 `-fips` binaries
+built from source, on Ubuntu 22.04 arm64 (kernel 5.15.0-1114-aws-fips),
+before any release carried them.
+
+**The binaries.** On both hosts, with `GODEBUG=fips140=on`, each of
+`halite-hub-fips`, `halite-api-fips` and `halite-node-fips` printed `fips
+mode on, module v1.0.0, self-tests passed` from `version`, rc 0, six runs
+in all. Without `GODEBUG`, `halite-node-fips version` also said `fips mode
+on`, because the build defaults to it. With `GODEBUG=fips140=off`,
+`version` printed only the identity line and no `fips mode on`.
+
+**The grains.** `halite-node[-fips] grains get <grain>`, identical on both
+hosts:
+
+| grain | `-fips` | `-fips`, `fips140=off` | ordinary build |
+|---|---|---|---|
+| `fips_mode` | True | True | True |
+| `fips_build` | True | True | False |
+| `fips_enabled` | True | False | False |
+| `fips_module` | v1.0.0 | v1.0.0 | (empty) |
+
+So `fips_mode` is the kernel's state alone, as 1.11 says. The handbook said
+otherwise in two places (see below).
+
+**doctor, in all three directions.** On both hosts:
+
+- `halite-node-fips doctor`, before any hub existed: `pass FIPS mode
+  consistency  the kernel is in FIPS mode and this is a FIPS build (module
+  v1.0.0, in FIPS mode)`.
+- The ordinary `halite-node doctor`: `warn FIPS mode consistency  the
+  kernel is in FIPS mode and this is not a FIPS build`.
+
+On `ami-test-1` only, `GODEBUG=fips140=off halite-node-fips doctor`: `warn
+... the kernel is in FIPS mode and this FIPS build (module v1.0.0) is not
+running in FIPS mode`. This is the third branch, and the Rocky run did not
+reach it. With the services up: `halite-hub-fips doctor` on `noop2-1` gave
+7 pass, 1 skip, FIPS row pass. `halite-node-fips doctor` on `ami-test-1`,
+enrolled and connected, gave 10 pass, 1 skip; the connectivity row read
+`172.26.28.44 answered in 2ms: halite-hub 0.1.1+f4a60b7a93a4 (fips v1.0.0)
+ok` and the FIPS row passed. `halite-api-fips doctor` gave 3 pass, 1 warn;
+the warn is the 2-day self-signed serving certificate made for the test.
+The FIPS row passed.
+
+**Hub, node and API as services, across two hosts.** The hub ran on
+`noop2-1` (amd64) and the node on `ami-test-1` (arm64). Only TCP 22 and
+8301 were open between them, so the hub had `listen: 172.26.28.44:8301`.
+The units and drop-ins came from the archive's `service/systemd/` and
+`service/systemd/fips/`. Only the `-fips` binaries were installed, with no
+`/usr/local/bin/halite-hub` and so on, so a unit could start only if the
+drop-in's `ExecStart` replaced the base one. `systemctl cat` showed the base
+`ExecStart`, then `Environment=GODEBUG=fips140=on`, an empty `ExecStart=`
+and the `-fips` `ExecStart`. Each of `halite-hub`, `halite-node` and
+`halite-api` was active; `/proc/<pid>/exe` was the `-fips` file;
+`/proc/<pid>/environ` held `GODEBUG=fips140=on`; the journal at priority
+`err` had 0 lines for all three.
+
+- Hub, first start: it created the enrollment CA (ecdsa-p256) and a
+  serving certificate for `localhost,127.0.0.1,::1,noop2-1,noop2-1.ref…,
+  172.26.28.44`. Then `keys operator create ed --admin` and a restart.
+- Node: a `node.yaml` with the hub at 172.26.28.44, `hub_port` 8301 and the
+  pinned fingerprint. `enroll` returned rc 2 (pending). On the hub, `keys
+  list` showed the fingerprint the node had printed (42:c2:95:…). After
+  `keys accept`, `enroll` printed `enrolled`, the unit started, and
+  `manage.status` showed `up: [ami-test-1-h306]`.
+- API: `halite-api-fips` on `noop2-1` as a service under its drop-in,
+  `listen` 127.0.0.1:4511, hub 172.26.28.44:8301, its own operator
+  certificate `api` and a self-signed P-256 serving certificate. `halite-api-fips
+  account hash` gave `pbkdf2-sha512$…`. With curl (the host's OpenSSL, in
+  FIPS mode): `/v1/readyz` answered ready; `/v1/login` returned a token; a
+  wrong password got 401; `/v1/run` of `test.ping` returned true from the
+  arm64 node; `grains.item` of `fips_build` returned true; `cmd.run` got 403
+  `no rule in [webops] permits cmd.run against "ami-test-1-h306"`. curl
+  negotiated TLSv1.3 and TLS_AES_128_GCM_SHA256.
+
+**Jobs.** From the hub: `test.ping` returned True. `grains.item` for
+`fips_mode`, `fips_build` and `fips_enabled` returned true each,
+`fips_module` `v1.0.0`, `cpuarch` `aarch64` and `kernelrelease`
+`6.8.0-1067-aws-fips`. A `state.apply` of a `file.managed`
+(`/root/h306/managed.txt`, mode 0600) reported changed=1; a second apply
+reported the file already in the requested state. On the node the file had
+the contents, mode 600, owner root.
+
+**TLS.** From `ami-test-1`'s OpenSSL (the FIPS provider) to the hub, with
+`-alpn halite/1,h2`: TLSv1.3, TLS_AES_128_GCM_SHA256, server temporary key
+ECDH prime256v1, an ECDSA signature, and the SANs above. Without ALPN the
+hub refused (alert 80) and logged `does not speak halite/1`. That is
+expected, and chapter 30 of the handbook already passes `-alpn`.
+
+**An open question: Ed25519.** The hub's CertificateRequest listed
+`0x07+0x08` (Ed25519, 0x0807) among the signature algorithms it accepts,
+with `fips140=on`. SPEC 27.4 says "Ed25519 is unavailable" in FIPS mode.
+Go's own list for its native FIPS 140-3 mode (`crypto/tls/defaults_fips140.go`,
+`allowedSignatureAlgorithmsFIPS`) includes Ed25519; the list without it is
+the boringcrypto one. halite's own key generation (`internal/builtin/x509.go`,
+`key_algorithm`) still refuses ed25519 under FIPS by its own rule. This was
+not investigated further. It is a question and not a conclusion: SPEC 27.4
+and the Go list may disagree about what the TLS handshake accepts, and
+nothing here settles which one is right.
+
+**Two handbook sentences were wrong, and are corrected with this change.**
+`docs/handbook/08-grains.md` had the row `fips_mode | true/false | Whether
+this build and host are in FIPS mode.` `docs/handbook/28-hardening.md` said
+"The `fips_mode` grain is a pair, the host kernel's state *and* the
+binary's". The table above shows both are wrong: the ordinary build on a
+FIPS kernel reads `fips_mode: True`. The grain is the kernel's state;
+`fips_build`, `fips_enabled` and `fips_module` describe the binary.
+
+**A defect: `grains.item` took one name.** `halite-hub run ami-test-1-h306
+grains.item fips_mode fips_build fips_enabled fips_module cpuarch
+kernelrelease` returned `grains.item: takes at most 1 positional
+arguments, got 6`. `docs/operations.md` gives `halite-hub run '*'
+grains.item fips_mode fips_build fips_module` as the way to check the FIPS
+state of an estate, so that documented command failed on every node. A
+list as one quoted argument, `grains.item '[fips_mode, fips_build]'` with
+default argument parsing, returned a single grain literally named
+`[fips_mode,fips_build]` with value null. Cause and fix are in 5.587.
+
+**Seen, not fixed.** The operator CLI dials `localhost:<port of listen>`
+unless `--hub` is given. With `listen: 172.26.28.44:8301`, `halite-hub
+runner manage.status` failed: `dial tcp 127.0.0.1:8301: connect:
+connection refused`. `--hub 172.26.28.44` after the subcommand worked. The
+code is `operatorClient` in `cmd/halite-hub/run.go`.
+
+**Not covered.**
+
+- main (b842f005) was not run on the hosts, only v0.1.1. The FIPS code
+  changed little since then: `internal/fips`, the grain,
+  `internal/doctor/fips.go` and the drop-ins are unchanged, and
+  `cmd/halite-node/doctor.go` changed 2 lines.
+- No reboot. Neither host was moved into or out of FIPS mode, so
+  `fips_mode: False` on these kernels was not seen.
+- Ubuntu Pro's certified (non-updates) `fips` kernel. Both hosts are
+  `fips-updates`. SPEC 14.1 says `fips_mode` also reads the Ubuntu Pro FIPS
+  package state; the code (`internal/grains/platform_linux.go`) reads only
+  `/proc/sys/crypto/fips_enabled`. That is not changed here.
+- The arm64 host ran only the node. The hub and the API ran on amd64.
+  `halite-hub-fips` and `halite-api-fips` on arm64 ran `version` only.
+- One node; no token enrolment; no TOTP (it is disabled in FIPS by design,
+  and was not tried); no upgrade. The units were started, not enabled,
+  and no host was rebooted, so a start at boot was not seen.
+- RHEL family: only the earlier Rocky 9.8 run.
+
+Issue 306's arm64 half is now run, for the node. The hub and the API on
+arm64 ran `version` only.
+
+**Cleanup.** The units, drop-ins, binaries, `/etc/halite`, `/var/lib/halite`,
+`/var/cache/halite`, `/var/log/halite`, `/srv/halite`, `/root/h306` and the
+`halite` user were removed from both hosts, then `daemon-reload`.
+Afterwards neither host had a halite file, process, user or listening
+port. Salt's agent was active on both and `dmesg` showed no OOM kill. One
+slip: an `rmdir /srv` in the cleanup also removed the empty stock `/srv`.
+It was recreated as root:root 0755 on both.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
@@ -24985,6 +25163,13 @@ Each was broken on purpose, and each failed:
   not this defect, and it was not changed.
 - **macOS only.** The tests ran on macOS (Darwin 25.6). CI runs them on
   the other platforms.
+
+#### Since: issue 620
+
+The environment now goes with the kind at every place that asks the policy, so
+`allow_env` and `deny_env` judge the environment that is dispatched. The
+list of places is in 5.601.
+
 ### 5.297 Four functions that run caller-supplied code were not arbitrary code
 
 SPEC 23.5 says a wildcard grant never includes a function marked
@@ -25095,6 +25280,13 @@ SPEC 23.5, not for this change.
   platforms.
 - The second-tier list above came from reading parameter names in the
   registry. It is not complete.
+#### Since: issue 619
+
+The second tier above is decided. Eleven execution functions and the
+`cron.present` state are now marked `arbitrary_code`, and the rest of the
+list keeps its grants. The reasons, the list that is kept and what is
+still open are in 5.600.
+
 ### 5.298 `cpan.module_version` ran the module name as Perl
 
 `cpan.module_version` asked perl for a module's version like this:
@@ -27936,6 +28128,14 @@ Each half was broken on purpose and watched to fail:
 - **The fleet's own policies were not read** for roles that rely on a
   narrowed role running the highstate. Any that do are refused after
   this change.
+
+#### 5.586, an argument rule holds its family
+
+The third bullet under "Not changed, and open" is fixed. An argument
+rule now holds every function that takes the same names, so `allow_sls`
+written under `state.apply` holds `state.sls`, `state.highstate` and the
+`state.show_*` renderers in the same rule. 5.586 has the details.
+
 ### 5.321 `allow_mods` never judged a name `halite-hub orch run` sent
 
 SPEC 23.5's `allow_mods` is how a policy limits a role to named
@@ -35845,11 +36045,25 @@ Issue 321, the audit pass over the hub files the first audit did not read (`inte
 
 **What "fail" means.** `awaitBatch` counts returns whose `Success` is false and nothing else. A node that takes the job and never answers (a change that hangs it, reboots it, or cuts it off from the hub) is not a failure: after the batch timeout the batch logs "advanced with returns outstanding" and delivers the same change to the next slice. SPEC 9.3 lists "unresponsive" beside "failed" as separate states, so this is the letter of it; but the limit exists "to stop before the rest of the estate gets the same broken change", and the broken change that kills its target is the one it does not stop.
 
-**Shown.** `TestASilentNodeIsNotCountedAgainstTheSafeLimit`, a hub with three stub nodes, the first silent, `Batch: 1`, `BatchSafeLimit: 1`, `BatchTimeoutSecs: 1`: the other two were given the job, the silent one was the only node in the job's missing list, and the hub logged `batch complete`. The test records today's behaviour so that a change either way is a decision; it does not say the behaviour is right.
+**Shown.** TestASilentNodeIsNotCountedAgainstTheSafeLimit (since inverted and renamed `TestASilentNodeCountsAgainstTheSafeLimit`, issue 540), a hub with three stub nodes, the first silent, `Batch: 1`, `BatchSafeLimit: 1`, `BatchTimeoutSecs: 1`: the other two were given the job, the silent one was the only node in the job's missing list, and the hub logged `batch complete`. The test records today's behaviour so that a change either way is a decision; it does not say the behaviour is right.
 
 **Read, not run.** Without `--batch-timeout` the wait per slice is `time.Until(j.Expires)` taken once, which is the job's whole lifetime, 15 minutes by default (`job.DefaultTTL`), and each slice waits that long again: a silent node in a slice holds the batch for 15 minutes, and the slices after it are delivered to a job that has expired. What a node does with an expired job (refuses it, by `job` package) was not run through a batch. A batch that has delivered to everyone but still waits on a return stays in state `batching` (the hub's own test showed it, 30 s after `batch complete`) until `Settle` closes it at expiry.
 
 **Not changed: three decisions for the owner.** Whether a node that has not answered within the batch timeout should count toward the safe limit; whether the default per-slice timeout should be the job's whole lifetime; and whether a finished batch with returns outstanding should read as `batching` or `dispatched`. Chapter 14 now says what each does today and tells the operator to set `--batch-timeout`. **Not verified:** any of this on a real hub and node, FreeBSD, `make check`.
+
+#### Decided and changed (issue 540)
+
+The owner decided all three. Each is its own commit, with a test that failed when the change was taken back out.
+
+**A silent node counts against the safe limit.** `awaitBatch` now returns the failed returns plus every delivered node with no return at all, judged when the slice's wait ends. Every delivered node has by then had at least one full slice wait. A node from an earlier slice that answered late is counted by its answer, so a slow node that came back and succeeded is not held against the job. A node that was not connected when its slice was delivered counts too: the hub cannot tell "never received it" from "received it and went quiet", and stopping a batch that would have been fine is the safer of the two mistakes. `jobs resume` undoes it only once the node has answered: the count is over the whole job, so a node still silent counts again and the resumed batch stops after one slice, as a failed return already did before this change (read in `Resume` and `awaitBatch`, not run). An expired job is not resumable (`errJobExpired`). TestASilentNodeIsNotCountedAgainstTheSafeLimit is inverted and renamed `TestASilentNodeCountsAgainstTheSafeLimit`: the same hub, three stub nodes, the first silent, `Batch: 1`, `BatchSafeLimit: 1`, `BatchTimeoutSecs: 1`; the job is `aborted`, delivered to the silent node only, and two seconds later neither answering node has been given it. With the silent count removed (all three changes otherwise in place) it failed: `is "dispatched" after five seconds, not "aborted" (2 returns)`, both answering nodes having been given the job. The log line `a batch advanced with returns outstanding` is now `a batch slice timed out with returns outstanding` and names how many delivered nodes are silent, because the batch may now stop rather than advance.
+
+**The default slice wait is five minutes, and nothing is delivered after the expiry.** `DefaultBatchTimeout` is 5 minutes, chosen and not measured: a third of the default 15-minute lifetime, so one silent slice cannot use the job up, and long enough, it is assumed, for an ordinary `state.apply`. No highstate has been timed against it, and a slow node is now a silent one as far as the limit goes, so a run longer than five minutes needs `--batch-timeout`. `sliceWait` caps every slice's wait, default or explicit, at the job's expiry and is taken per slice. Before each slice, a batch whose job has expired stops and closes the job through `settleExpired`, which is the body `Settle` already used, moved out so that the two close an expired batch by the same code (aborted, with nodes never delivered to). The state change there is made only from `dispatched` or `batching`, inside the record's update, so `Settle` and the batch reaching one job at once count its expiry once.
+
+What a node does with an expired job was found out by running it, not by reading: `TestANodeRefusesAJobThatHasExpired` passes a stream message one second past its expiry through `acceptJob`. The node queued nothing, ran nothing, and sent a return with `success: false`, `retcode: 1` and `refused: … expired`. So the slices the old code sent after expiry changed nothing on their nodes, and each refusal was a failed return that a safe limit counted as a broken machine. `TestABatchDeliversNoSliceAfterItsJobExpires` moves the hub's clock past the expiry while a silent first slice waits; the job closes `aborted`, delivered to that node only. With the expiry check removed, the stub nodes were given the expired job and the job stayed `batching` (2 returns). `TestTheDefaultSliceWaitIsBoundedAndStopsAtTheExpiry` holds the arithmetic, and failed at `waits 15m0s, want 5m0s` with the old default put back.
+
+**A finished batch with returns owed is `dispatched`.** After `batch complete` the job moves from `batching` to `dispatched`, again only from `batching` inside the update, so a return that completed it or a kill that got there first is left alone; `completeIfDone` then runs as before. `dispatched` is what `Settle`, `jobs active` and the orchestrator's wait already treat as in flight, and the orchestrator no longer waits on `batching` for a batch that has nothing left to send. `TestAFinishedBatchWithReturnsOwedIsDispatched` (two stub nodes, the first silent) reads `dispatched` with the silent node missing; with the transition reverted it stayed `batching`.
+
+**Not verified.** None of this on a real hub and real nodes: every run above is the hub's test lab with stub nodes, and the node test calls `acceptJob` directly. Not run on FreeBSD (tier 1) or Linux; the tests ran on macOS only. The five-minute default against a real `state.apply`. A node whose clock is ahead of the hub's refusing a slice delivered just before the expiry, which would now count against the limit as a failed return.
 
 ### 5.497 Two reactor entries with the same tag shared one set of controls
 
@@ -35886,7 +36100,7 @@ Issue 321, the second audit pass. 5.494 to 5.498 each list FreeBSD as not run; t
 | Reactor, reaction, dedupe, debounce, chaos (`-run 'Reactor|Reaction|TwoEntries|TwoDebounced|EventsAlready|AnEventStillDebouncing|TheTracker|DebouncedAndDropped|AnEventTheQueue|CountingChains|AChainSeen|Causality|Dedup|Throttle|RateLimit'`) | 25 | 1 |
 | Batch, safe limit, resume, subset (`-run 'Batch|SafeLimit|SilentNode|Resum|Subset'`) | 20 | 0 |
 
-Passing there: `TestCountingChainsDoesNotSweepOnEveryEvent` and `TestAChainSeenAgainIsNotForgotten` (5.494); `TestAnEventStillDebouncingWhenTheReactorStopsIsReactedToAfterARestart`, `TestEventsAlreadyReactedToAreNotRepeatedAfterARestart`, `TestDebouncedAndDroppedEventsStopHoldingThePosition`, `TestAnEventTheQueueDropsStopsHoldingThePosition` and `TestARestartedReactorResumesFromWhereItStopped` (5.495); `TestASilentNodeIsNotCountedAgainstTheSafeLimit` (5.496); `TestTwoEntriesWithTheSameTagAreEachReactedTo` and `TestTwoDebouncedEntriesWithTheSameTagAreEachReactedTo` (5.497); `TestReactorTestAndTheReactorAgreeOnACallerReaction` (5.498).
+Passing there: `TestCountingChainsDoesNotSweepOnEveryEvent` and `TestAChainSeenAgainIsNotForgotten` (5.494); `TestAnEventStillDebouncingWhenTheReactorStopsIsReactedToAfterARestart`, `TestEventsAlreadyReactedToAreNotRepeatedAfterARestart`, `TestDebouncedAndDroppedEventsStopHoldingThePosition`, `TestAnEventTheQueueDropsStopsHoldingThePosition` and `TestARestartedReactorResumesFromWhereItStopped` (5.495); TestASilentNodeIsNotCountedAgainstTheSafeLimit (since inverted and renamed `TestASilentNodeCountsAgainstTheSafeLimit`, issue 540) (5.496); `TestTwoEntriesWithTheSameTagAreEachReactedTo` and `TestTwoDebouncedEntriesWithTheSameTagAreEachReactedTo` (5.497); `TestReactorTestAndTheReactorAgreeOnACallerReaction` (5.498).
 
 **The one failure is the jail, not FreeBSD.** `TestTheHandbookReactionsDispatchWhatChapterTwentyOneSays` opens `../../contrib/examples/handbook/automation/reactor/node-started.sls`, which a lone test binary has no source tree to find. It was not re-run in a checkout there. The `internal/atomicfile` binary, run alongside for completeness, failed three repository-scanning audits (`TestNothingElseWritesThroughATempFileAndARename`, `TestNoExemptionOutlivesItsFunction`, `TestNothingElseRenamesWithTheStandardLibrary`) for the same reason: each inspected nothing (`only 0 functions were inspected`). Its other five tests passed. On FreeBSD that run shows nothing about 5.492, whose xattr and ACL copy is Linux code and a no-op there.
 
@@ -36495,6 +36709,8 @@ Issue 321, the second pass, round six (`internal/tracing`).
 **Not added.** A metric. `halite_trace_spans_dropped_total` would need a row in `docs/metrics.md`, an alert and a dashboard panel (a change to the metrics surface is made with the dashboard), and the SPEC 26.2 counter is still owed; the logged count is what an operator has until then.
 
 **Not verified.** A real collector going away and returning; the node and hub wiring beyond building.
+
+**The metric, since.** 5.588 adds `halite_trace_spans_dropped_total`, its alert and its panels.
 
 ### 5.549 The node's `fun` label took whatever name the hub sent
 
@@ -37998,6 +38214,14 @@ local accounts were. An API newer than its hub was not run, and the
 claim that the older hub ignores the field is from reading `ReadJSON`,
 which does not refuse unknown fields.
 
+#### Since: issue 649
+
+Two statements here were corrected. `event.send` through the API now
+records the operator as `_on_behalf_of`, and key actions through the API
+record `on_behalf_of`. The claim in `docs/command-reference.md` that the
+`_principal` of a hook event is the identity of the delivery was wrong:
+it is the certificate of the API. DIVERGENCE 5.599 has the details.
+
 ### 5.583 An agentless failure was framed with Go's quoting, not JSON's
 
 Found during the issue 622 work. `halite-node oneshot` built the return of
@@ -38140,6 +38364,1203 @@ behaviour change for the node, and is left as a question.
 before this was written, only locally; the window it closes was shown
 with a paused hub, not caught in a natural run. Neither test was run on
 FreeBSD or Linux.
+
+### 5.585 gitfs kept serving a tree after its signer was withdrawn from the keyring
+
+Issue 623, from the 2026-11-03 review of the issue 321 fixes (`internal/gitfs/backend.go`).
+
+**The defect.** Two paths that must agree. With `gitfs_verify_signatures: true`, a remote whose every ref was refused served nothing this update, and serving nothing kept its last good tree (5.293, and per remote since 5.550, PR 601). When a signing key was removed from `gitfs_keyring`, the next update refused the tip, and the tree that key had signed was carried forward and served for as long as the hub ran; the comment in `Update` said so on purpose ("an operator who withdraws trust from a signing key should get the last tree that verified"). A hub restarted with the same keyring had no tree to carry and served nothing for that remote. A key is withdrawn most often because it was compromised, and then the kept tree is the one most likely to be the attacker's: the verification of the served commit that 5.292 (H-19) made exact was being skipped for exactly the tree it mattered for. A second guard under the first hid the same thing on a hub with one remote: "a total failure leaves the previous tree in place" kept `b.roots` whenever nothing was served, so even emptying the carry-forward left the old tree served.
+
+**Decided** (the user, on issue 623): when the keyring changes, re-verify what is served and drop what no longer verifies, as a restart does. Written into SPEC 13.3.
+
+**How a keyring change is noticed.** It is not, and never was. `gitfs_keyring` is a GnuPG home that `git verify-commit` hands to gpg on every call, so a change reaches the hub at the next update: every `gitfs_update_interval` (5m by default, one ticker shared with S3), or on `halite-hub runner fileserver.update`. There is no file watch, and no reload rebuilds the backend. So the trigger chosen is that every update which would carry a tree forward verifies it again, with the same `verify` and keyring that admitted it, rather than a second mechanism that tries to notice the keyring changed. A digest of `pubring.kbx` would be a second thing to disagree: an imported revocation, a trustdb edit or an expiry changes what gpg answers without necessarily changing what the digest covered. Asked the same question of the same gpg, a running hub and a restarted one agree by construction. It costs one `git verify-commit` per kept ref, only on an update where that ref's remote served nothing. The trigger did not widen the change: nothing outside `internal/gitfs` was touched.
+
+**The change.** `byRemote` keeps the ref with each served directory. A remote that served nothing has its kept trees passed to `reverify`, which verifies each against the remote's mirror on disk (whether or not this update reached the remote; an unreachable remote is exactly when the kept tree is served) and drops each that fails. Each drop is logged at warn, `a gitfs tree is no longer served because its signature no longer verifies`, with the remote, ref, environment, commit and gpg's reason; a remote left with nothing is logged as `a gitfs remote now serves nothing`; and `RemoteState.Withdrawn` carries the refs, which `fileserver.update` reports under `withdrawn`. The total-failure guard is gone: since 5.550 the per-remote carry-forward is what keeps a failed remote's tree, and the only thing that guard could still keep was a tree the carry-forward had just dropped. With verification off nothing changes.
+
+**Shown.** Against real GnuPG 2.5.24 and git 2.56.0 on macOS 26.7.2, with the hub's keyring holding only the exported public key, trusted, and the withdrawal done as `gpg --delete-keys`. `TestAWithdrawnKeyStopsARunningHubServingWhatItSigned` and `TestARestartedHubAndARunningOneAgreeAfterAWithdrawal` fail on main's `backend.go` (given only the new field, so they compile): the running hub still served `base` from the withdrawn commit's tree while a restarted one served nothing. Each half of the change was then broken on its own and both tests failed each time: `reverify` returning the kept trees unchanged, and the total-failure guard put back with `reverify` intact. `TestAKeptTreeWhoseSignerIsStillTrustedIsKept` holds the other side: an unsigned new tip, and then the remote deleted, still leave the signed tree served; it fails when `reverify` drops everything, which would otherwise pass the first two.
+
+**Not changed, and still disagreeing.** A restart and a running hub still differ when the new tip is refused while its signer is trusted (an unsigned push): the running hub keeps the last good tree, which still verifies, and a restarted one has none to keep. That is the carry-forward doing what 5.293 and 5.550 meant it to, and not what issue 623 asked about.
+
+**Run live.** A real `halite-hub serve` on macOS 26.7.2 arm64 (this branch's build, and main's at e02c31b5 for comparison), Homebrew git 2.56.0 and GnuPG 2.5.24, `gitfs_update_interval: 3s`, one remote on the local disk whose `main` is one signed commit, and a `gitfs_keyring` holding only the exported public key, trusted. Both hubs started with `environments=base`. The key was deleted from the keyring with `gpg --delete-keys` while each ran. The fixed hub logged the withdrawal with the remote (`live-remote`), ref, environment, commit and gpg's `NO_PUBKEY` within one update, then `a gitfs remote now serves nothing`, and its commit's tree was gone from the cache. Main's logged only `a gitfs remote serves no environment` every three seconds and kept the tree. Restarted, both started with `environments=` (nothing).
+
+**Not verified.** FreeBSD: beastie could not be reached (its ssh agent would not sign), and mini-me has no gpg, so this ran on one Mac only. A node fetching from the hub after the withdrawal: "served" was read from the hub's own log and its cache, which the sweep keys on what is served, not from a node asking for `salt://top.sls`. A remote over ssh or https, a tag (`verify-tag`), a key that expired or was revoked rather than deleted, and a keyring change while an update is running.
+
+### 5.586 An argument rule held only the function it was written under
+
+Issue 621, from the 2026-11-03 review of the issue 321 fixes. 5.320 said
+under "Not changed, and open" that a rule granting `state.*` and
+constraining only `state.apply` left `state.highstate` and `state.sls`
+unconstrained, "and nothing warns about it". The review ran a real role
+through the policy. It granted `state.*` with `allow_sls: [web.*]` and
+`deny_kwargs: [pillar]` written under `state.apply`, and every runner with
+`allow_mods: [deploy.*]` written under `state.orchestrate`. All of these
+were **allowed**:
+
+- `state.sls db.secret`
+- `state.sls web.x` with `pillar=…`
+- `state.highstate`
+- `state.show_sls db.secret`, which renders the SLS, secrets and all
+- `state.orch sls=teardown`
+
+The cause is one line: `checkArgs` read `rule.Args[req.Fun]`, the argument
+rule written under the exact name of the function asked for. Every
+function above takes the names the rule was written to limit, under
+another name, and nothing told the operator that a sibling was a way
+round it. The checks 5.320 and 5.321 added (the highstate refusal, the
+keyword and comma list of `sls`) were sound for the function they held
+and reached no other.
+
+**The fix.** An argument rule now holds every function that takes the
+same names (`policy.ArgumentFamily`). There are two families:
+
+- **The SLS family**, for a job: every function the node answers through
+  its state compiler. The family is `state.JobFunctions`, the list the
+  node dispatches on (`stateFunction` in `cmd/halite-node`), so it holds
+  `state.apply`, `state.sls`, `state.highstate` and the five
+  `state.show_*` renderers. `runStateJob` compiles the positional names,
+  or the highstate when there are none, for all eight, so each takes what
+  `allow_sls` and `deny_sls` judge. A function the node starts answering
+  through its compiler joins the family, because both read that one list.
+- **The orchestration family**, for a runner: the runners that take
+  `sls`. These are `state.orchestrate`, `state.orch` and
+  `state.orchestrate_show_sls`. The runner registry belongs to the hub,
+  which `internal/policy` cannot import, so the list is written in the
+  policy, and `TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS` in
+  `internal/hub` holds it to the registry in both directions.
+
+`TestTheSLSFamilyIsEveryFunctionThatTakesSLSNames` holds the other side.
+It fails if the execution registry gains a function in the `state` module,
+or one with a parameter named `sls`, `mods` or `highstate`, because such
+a function would take SLS names from outside the family. There is none
+today. `kmod.present` and `kmod.absent` take `mods`, but they are state
+modules, which a job cannot call, and the names are kernel modules.
+
+**All of them hold, not the most specific.** When a rule has argument
+rules under two members of a family, a request must pass both. If the
+exact name's rule replaced the others, writing `deny_kwargs` under
+`state.sls` would lift `allow_sls` from `state.sls`, which is the same
+surprise in another form. An operator who wants different limits for
+different members writes them in different rules, each granting its own
+function. `TestEveryArgumentRuleInTheFamilyHolds` holds this.
+
+A refusal by a rule written under another name says so, because the
+request the operator is reading does not mention that name:
+
+```
+denied: db.secret is not in the SLS names this role may apply (web.*) (the args written for state.apply hold every state function a node compiles, state.sls among them)
+```
+
+**Every authorize site gets it.** `checkArgs` is the only place a
+decision reads `Rule.Args` (checked by grep for `.Args[` across the
+repository; `policy show` reads it too, to print it). It is reached only
+from `AuthorizeAs`, and `Authorize` calls that. Every site
+that authorizes calls one of those two: the hub's job submission, resume,
+kill and status (`jobs.go`), runner calls (`runner.go`, `runners_fleet.go`),
+reactions (`runners_reactor.go`), the mine (`mine.go`), the relay
+(`relay.go`), metrics, the delegation pair (`delegation.go`, 5.582),
+`halite-api` (`internal/api/authorize.go`) and `halite-hub policy test`.
+An orchestration's `salt.state` steps are submitted as `state.apply` jobs
+(`orch_steps.go`) and go through the same path.
+
+**`policy show`** now prints, under each argument rule, the functions it
+holds. For each rule that has argument rules, it also prints the
+functions the rule grants that none of them holds. A pattern is expanded
+to what the hub would grant by it, so `service.*` is counted against the
+functions this build ships and never includes a pillar reader:
+
+```
+role web
+  0. state.*, pkg.installed, service.* on *
+     state.apply: allow_sls=[web.*] deny_sls=[] allow_mods=[] deny_kwargs=[pillar]
+     state.apply: holds state.apply, state.highstate, state.show_highstate, state.show_lowstate, state.show_sls, state.show_states, state.show_top, state.sls
+     no argument rule holds: pkg.installed; service.* (all 18 it grants)
+  1. runners state.*, jobs.lookup_jid on no node (no target)
+     state.orchestrate: allow_sls=[] deny_sls=[] allow_mods=[deploy.*] deny_kwargs=[]
+     state.orchestrate: holds state.orch, state.orchestrate, state.orchestrate_show_sls
+     no argument rule holds: runner state.* (7 of the 10 it grants: state.event, state.orch_list, state.orch_resume, state.orch_show, state.pause, state.resume, state.single); runner jobs.lookup_jid
+```
+
+A rule with no argument rules gets no such line, because its listing
+already shows that nothing holds it. The issue also asked for a warning
+when the policy loads. That was not added: once the family holds,
+the case it would warn about is closed, and the `policy show` line covers
+the rest.
+
+**What an operator sees.** This fails closed, so existing roles become
+stricter, and the CHANGELOG marks it as breaking. In one rule:
+
+- An argument rule written for one member of a family now refuses
+  requests to the others that it would have refused for its own
+  function. A role with `allow_sls` on `state.apply` that also grants
+  `state.sls`, `state.highstate` or `state.show_*` in the **same rule**
+  is held to those names on all of them. Under 5.320 that refuses
+  `state.highstate`, and a `state.show_*` with no names, outright.
+- `require_kwargs: {test: true}` on `state.apply` now requires `test` on
+  the `state.show_*` renderers in that rule too. They take the flag
+  harmlessly, but a caller that does not pass it is refused.
+- `deny_kwargs: [pillar]` on `state.orchestrate` now refuses `pillar` to
+  `state.orch` and `state.orchestrate_show_sls` in that rule.
+
+The fix for a role that meant a sibling to be free is to move the
+sibling into a rule of its own. A role whose rule grants only the
+function its argument rule names sees no change. This is true of every
+example policy in `contrib/examples` and in the handbook, which were
+read for it. The existing test this broke is that case:
+`TestSLSConstraintsJudgeTheCanonicalName` wrote `deny_sls` under
+`state.sls` and `allow_sls` under `state.apply` in one rule. Its
+`state.sls ok` row was then refused by `allow_sls`. It now uses two
+rules, and that is the shape the CHANGELOG tells operators to use.
+
+#### What Salt does
+
+Read from Salt's source at `v3007.1`, `salt/utils/minions.py`. It was not
+run. `CkMinions.auth_check` walks the ACL list. A plain string entry such
+as `state.*` returns `True` as soon as `match_check` (`re.match` against
+the function name) succeeds, so no argument check runs. A dict entry such
+as `{'state.apply': {'args': [...], 'kwargs': {...}}}` goes through
+`__fun_check`, which runs `__args_check` only for a function its key
+matches. The entries are alternatives. So an ACL of `- state.*` and
+`- state.apply: {args: ['web.*']}` lets `state.sls db.secret` through on
+the first entry. Salt has the same hole, and an operator closes it there
+by writing the argument spec under a key that matches every function
+meant (`state.*`), because the key is a regular expression. Here the key
+of `args` is an exact name and a rule is one grant, so the family does
+that work. This is stricter than Salt, which never applies an argument
+spec to a function its key does not match.
+
+#### What was run
+
+`halite-hub policy test` with the role above, built from `main`
+(`e02c31b5`) and from this change, on macOS (Darwin 25.6, arm64):
+
+| Request | `main` | this change |
+|---|---|---|
+| `web1 state.sls db.secret` | allowed by `web` rule 0 | denied, `db.secret` not in `web.*` |
+| `web1 state.sls web.x --kwarg pillar=x` | allowed by `web` rule 0 | denied, `"pillar"` |
+| `web1 state.highstate` | allowed by `web` rule 0 | denied, runs the whole highstate |
+| `web1 state.show_sls db.secret` | allowed by `web` rule 0 | denied, `db.secret` not in `web.*` |
+| `'' state.orch --runner --kwarg sls=teardown` | allowed by `web` rule 1 | denied, `teardown` not in `deploy.*` |
+| `web1 state.sls web.x` | allowed by `web` rule 0 | allowed by `web` rule 0 |
+| `web1 state.apply web.x` | allowed by `web` rule 0 | allowed by `web` rule 0 |
+| `'' state.orch --runner --kwarg sls=deploy.web` | allowed by `web` rule 1 | allowed by `web` rule 1 |
+
+Tests:
+
+- `internal/policy` `TestAnArgumentRuleHoldsEveryFunctionThatTakesTheSameNames`
+  has the five cases of the issue, the remaining members of each family
+  (`state.show_top`, `state.show_lowstate`, `state.orchestrate_show_sls`),
+  allowed controls, and `state.orch_list` as a runner outside the family.
+- `internal/policy` `TestEveryArgumentRuleInTheFamilyHolds`,
+  `TestTheSLSFamilyIsEveryFunctionThatTakesSLSNames`.
+- `internal/hub` `TestTheOrchestrationFamilyIsEveryRunnerThatTakesSLS`.
+- `cmd/halite-hub` `TestPolicyShowSaysWhatNoArgumentRuleHolds` runs the
+  real `policy show`.
+
+Each part was broken on purpose and watched to fail:
+
+- **The family not read** (`argRulesFor` reading the exact name only,
+  which is `main`'s behaviour): nine rows of the first test failed,
+  including all five cases of the issue, and both rows of the second.
+  Before the fix existed, the same nine rows failed against `main`'s
+  `checkArgs`.
+- **The exact name's rule replacing the family's**: both rows of
+  `TestEveryArgumentRuleInTheFamilyHolds` failed, and the first test
+  passed, which is why the second test exists.
+- **`state.orchestrate_show_sls` dropped from the list**: the hub's
+  registry test failed, naming it, and so did the policy row for it.
+- **`policy show` counting the exact name only**: the show test failed on
+  `no argument rule holds: pkg.installed`, because `state.*` was then
+  reported as seven unheld functions.
+
+#### Not changed, and open
+
+- **`state.orch_resume` is outside the orchestration family.** It takes a
+  job ID, not `sls`, and runs the orchestration the earlier run named.
+  That run was authorized when it started, and only the same caller (or
+  a scope of `*`) may resume it (5.504). But `allow_mods` is not checked
+  again on resume, so a caller whose `allow_mods` was narrowed after the
+  first run can resume it. Putting it in the family would refuse every
+  resume under `allow_mods` ("names no orchestration"). Judging the
+  stored names would need the policy to read the run store. Neither was
+  done.
+- **The two families do not cross.** `allow_sls` written under
+  `state.orchestrate` does not hold `state.apply`, and `allow_mods`
+  under `state.apply` holds nothing that `state.apply` is asked for.
+  They are different names to different compilers.
+- **The keys of `args` are still exact names**, not patterns. A key the
+  build does not know is not refused at load. Both are as before.
+
+#### Not verified
+
+- **Not run through a hub to a node.** The decisions were shown through
+  `policy test` and the unit tests. No job was dispatched under a narrowed
+  role, and the API's path was not exercised on its own (it calls
+  `AuthorizeAs`, which reaches the same `checkArgs`).
+- **Salt was read, not run.** The account above is from one version's
+  source.
+- **The fleet's own policies were not read.** A role there that grants
+  `state.*` or `state.show_*` beside a constrained `state.apply` in one
+  rule is refused things after this change that it was allowed before.
+- **Not run on FreeBSD or Linux.** Nothing here depends on the platform,
+  and CI runs the tests on all four.
+
+### 5.587 `grains.item` took one grain name, and the documented FIPS check failed
+
+Found on 2026-11-05 during the issue 306 run on Ubuntu Pro's FIPS kernels
+(5.282). `halite-hub run ami-test-1-h306 grains.item fips_mode fips_build
+fips_enabled fips_module cpuarch kernelrelease` returned `grains.item: takes
+at most 1 positional arguments, got 6`. `docs/operations.md` gives
+`halite-hub run '*' grains.item fips_mode fips_build fips_module` as the way
+to check an estate's FIPS state, so the documented command failed on every
+node. Salt's `grains.item` takes `*args`. Passing the names as one quoted
+list, `grains.item '[fips_mode, fips_build]'` with default argument parsing,
+did not fail, but it asked for one grain literally named
+`[fips_mode,fips_build]` and returned null.
+
+**Cause.** `internal/builtin/introspect.go` declared `names` as one
+`signature.List` parameter and not as a variadic one. Two paths that must
+agree did not: the documented command line and the signature that bound it.
+
+**Fix.** `names` is now variadic, as the argument vector of `cmd.run` is.
+A list passed as one argument is flattened. That form is what
+`--legacy-arg-parse`, a state's YAML or a keyword `names=[…]` give, and it
+was the only multi-name form that worked before the change, so it must keep
+working.
+
+**Test.** `TestGrainsItemTakesSeveralNames`
+(`internal/builtin/grains_item_test.go`) covers one name, several names, a
+list as one argument, and the keyword form. Before the fix it failed on
+"several names" only. It was broken on purpose twice. Without `Variadic:
+true`, "several names" fails. Without the flattening, "a list as one
+argument" fails.
+
+**Not verified.** The fix was not run on a host. The hosts ran v0.1.1,
+which has the defect, and the fix is not in any release. The test goes
+through the same `Bind` path that refused the call, but nobody has run
+`halite-hub run '*' grains.item …` with several names against a node since
+the change.
+
+### 5.588 Spans lost to a full queue or a failed export were counted and never exposed
+
+Issue 609, the metric 5.548 left owed.
+
+**The defect.** SPEC 26.2 asks for a counter behind every drop path. Since
+5.548 the tracer counted both of its own -- `Dropped()` for a full export
+queue, `Failed()` for a batch the exporter did not take -- and only logged
+them. Neither binary exposed either, so a collector that was down showed
+nothing an alert could see.
+
+**The change.** `halite_trace_spans_dropped_total{reason="queue_full"|"export_failed"}`
+on the hub (`internal/hub/metrics.go`) and on the node
+(`cmd/halite-node/metrics.go`, declared by `buildTracer`). It is read from
+the tracer at scrape time through a new `metrics.CounterFunc`, not counted
+again by a callback into a `Counter`: the tracer already keeps both totals
+and its shutdown line reads them, so a callback would be a second count
+that had to agree with the first, fed by a hook every drop path had to
+call. `CounterFunc` takes a closed set of label values, so both series are
+exported at 0 from the first scrape, tracing on or off (a nil tracer reads
+0), and `increase()` sees the first loss. `tracing.Lost(reason)` maps the
+label to the count; `LostReasons` is the set. A row in each table of
+`docs/metrics.md`, the `HaliteTraceSpansDropped` rule (no job filter, so it
+covers both scrapes; a 10-minute window held for 15 minutes, so one short
+loss does not fire), and a panel in the hub service row and in the node
+row of the example dashboard (version 7). The doc comment on `Failed`,
+which began "Dropped is", is corrected.
+
+**Shown.** The hub test scrapes `/v1/metrics` as an operator from a hub
+with tracing off, one whose exporter takes every batch and one whose
+exporter refuses: both reasons are present at 0 in the first two, and
+`export_failed` is 3 after three refused batches in the third. The node
+test builds the tracer through `buildTracer` with the real OTLP exporter
+against a local HTTP server answering 200 or 503 and scrapes the node's
+TLS endpoint: the same three outcomes. Broken on purpose, one at a time:
+the tracer not counting failed batches fails the hub, node and tracer
+tests; `Lost` reading `Failed` for `queue_full` fails the same three;
+`buildTracer` not declaring the family fails the node test; the
+exposition skipping `CounterFunc` series fails the registry and hub tests.
+`promtool` 2.55.1 (darwin-arm64, checksum from the release's
+`sha256sums.txt`) accepts all 32 rules in the `docs/metrics.md` blocks,
+and `promtool test rules` on synthetic series shows the rule silent at 10
+minutes and firing at 25 for a node whose collector stays down, silent at
+8, 14, 20 and 40 minutes after one loss of 3 spans, and silent for a hub
+at 0 throughout. Removing `for:`, widening the window to 20 minutes, and
+a threshold of 1000 each fail one of those cases. The rule test is not
+committed: CI has no `promtool`.
+
+**Not verified.** A real OpenTelemetry collector going away and returning;
+a real Prometheus scraping either binary; Grafana importing the new
+panels; `queue_full` moving through either binary's scrape (it is shown
+in the tracer test, and the binaries read it through the same `Lost`).
+The API service does not trace, so it has no such counter.
+
+### 5.589 `doctor` compared the configuration file with itself
+
+Issue 615, item 1, from the issue 321 second-pass audit. `halite-node
+doctor` says whether the file on disk is what the agent is running. It
+cannot know: `doctor` is its own process. `setup` loaded the file and
+`nodeConfigCheck` loaded it again a moment later, and the check compared
+the warning counts of those two loads. It said "loads, and matches what
+this process is running" whatever the agent had started with. The hub's
+and the API's `doctor` passed `true` and said the same sentence about
+themselves.
+
+**Measured** on macOS 26.7.2 (arm64), with a throwaway hub and an enrolled
+node in a scratch directory and the agent running (`halite-node connect`).
+After the agent started, `log_level: info` was changed to `debug` in
+`node.yaml`. `main`'s `halite-node doctor` at `e02c31b` said:
+
+```
+  pass  configuration validity           …/node/node.yaml loads, and matches what this process is running
+```
+
+**The change.** The agent already writes a `config` record to its evidence
+chain when it starts: a digest of its settings (`nodeevidence.Digest`).
+`nodeevidence.LastOfKind` reads the newest record of a kind, newest segment
+first, and the node's check compares the file's digest with that record's.
+The detail names the record and its time, because the record is from the
+agent's last start and an agent that has stopped since is not told apart.
+With evidence off, no record, or a chain it cannot read, the check says
+"not compared" and why. `doctor.ConfigValidity` takes a `doctor.Running`
+in place of the bool, so a caller cannot claim a comparison it did not
+make. The hub and the API record no digest, so theirs now say "not
+compared … records nothing to compare it with". Handbook chapter 33 told
+operators that the old phrase meant "no edit is waiting for a restart";
+it now says which `doctor` can tell and which cannot.
+
+The same edited file, with the built binary:
+
+```
+  warn  configuration validity           …/node/node.yaml loads but differs from what the agent recorded when it last started (evidence record 2, 2026-11-05T18:56:05.241805Z)
+```
+
+and, with the edit reverted, `pass … matches what the agent recorded when
+it last started (evidence record 2, …)`.
+
+**Demonstrated.** `TestNodeDoctorComparesTheFileWithWhatTheAgentStartedOn`
+starts an agent's chain, edits the file, and builds the doctor's node from
+the edited file as `setup` does. With `Same` forced to true, which is what
+`main`'s comparison amounts to, the edited case fails ("a file edited since
+the agent started passed"). `TestNodeDoctorSaysWhenItCannotCompare` covers
+a node with no record.
+
+**Not verified.** Run on macOS only, not on FreeBSD or Linux. A hub or API
+digest was not added; their `doctor` now declines the question rather
+than answering it. A `doctor` run as an account that cannot read the
+evidence directory reports the read error; that path was not run.
+### 5.590 The one-shot request's `timeout_seconds` was sent and never read
+
+Issue 615, item 3. `halite-hub ssh` put the roster target's `timeout` into
+the request as `timeout_seconds`. `OneshotRequest.Timeout` declared it,
+with the comment "bounds the run on the target", and nothing read it: one
+declaration, one writer.
+
+The roster's `timeout` is not a bound on the run. `sshexec.sshArgs` passes
+it to ssh as `ConnectTimeout`, and `roster.applyDefaults` sets it to 30
+seconds when the roster does not. So the hub sent `timeout_seconds: 30` to
+every target, and a target that honoured the comment would stop every
+agentless highstate after 30 seconds. The hub's own wait is `ssh_timeout`
+or `--timeout` (`sshexec.Options.Timeout`), and that already bounded the
+run from the hub's side.
+
+**The change.** The hub no longer sends the field, and the field is gone
+from `OneshotRequest`. A hub older than this still sends it, and
+`json.Unmarshal` ignores a field the struct does not declare, so the
+request still runs. Handbook chapter 17 now says what `timeout` is and
+which setting bounds the wait.
+
+**Demonstrated.** `TestAnAgentlessRequestCarriesNoTimeoutTheTargetIgnores`
+builds the request for a target with a 45-second `timeout`. With the line
+that sent it put back, it fails ("the request carries
+timeout_seconds=45, which the target does not read").
+
+**Not verified.** No agentless run over ssh was made. What a target does
+when the hub's `ssh_timeout` kills its ssh client was not looked at here;
+the comment on `oneshotSignals` says the job runs to its end.
+### 5.591 `state.show_highstate` printed an unregistered `runas_password`
+
+Issue 615, item 9. 5.266 masked `runas_password` by key in `renderLow`,
+because it is a password written into the tree: the redactor does not hold
+it, so masking by value cannot find it. `renderHigh`, which
+`show_highstate` and `show_sls` use, printed it. The command line and the
+job forms share the function, so it reached the terminal and, as a job,
+the hub's job cache (5.556 and 5.557 masked registered secrets only).
+
+**The change.** `renderHigh` replaces the value of a `runas_password`
+argument with `**********`, as `renderLow` does. The key stays, so the
+output still shows that a password is set.
+
+**Demonstrated.** `TestEveryStateShowFormMasksRunasPassword` runs all three
+`state.show_*` functions as jobs through `executeJob`, on a tree with a
+`cmd.run` that sets `runas` and `runas_password`. On the code before the
+change it failed for `show_highstate` and `show_sls`, with the password in
+the return; `show_lowstate` passed. It passes with the change.
+
+**Not verified.** No other key is masked by name, and no search was made
+for other passwords a state takes as an argument (for example a
+`user.present` `password`). Those are values the redactor holds only if
+they come from encrypted pillar.
+### 5.592 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
+
+Issue 615, item 6. An evidence record's `arg_digest` is the SHA-256 of the
+job's arguments after the node's redactor has run. The comments on
+`maxEvidenceField` and `nodeevidence.DigestString` said the digest is what a
+comparison with the hub's copy uses. For a job whose arguments held a
+secret the node's redactor knows, that is not true: the hub's job cache
+holds the arguments as sent, and the hub does not have the node's
+redactor, so it cannot compute the same digest.
+
+**Kept as it is, on purpose.** A digest of the unscrubbed text is a
+fingerprint of the secret in a file that other people read. A short
+secret, or one in a known format, can be found from its SHA-256 by
+guessing. The comparison is lost only for jobs that carried a secret, and
+for those the `arg` field already shows that something was replaced.
+
+**The change.** The two comments now say what is digested and why. The
+evidence test asserts that `arg_digest` is the digest of the recorded
+(scrubbed) text and is not the digest of the arguments as sent.
+
+**Demonstrated.** With the digest computed over the arguments with the
+secret put back, `TestArgumentsAreScrubbedBeforeTheyAreRecorded` fails on
+both new assertions.
+
+**Not verified.** No tool compares node records with the hub's job cache
+today, so nothing that reads `arg_digest` was run.
+### 5.593 The hub's event returner read `id`, which could never be set
+
+Issue 615, item 7. 5.545 made an audit of every setting the programs read,
+and named one exception: the hub's `eventReturner` passed
+`cfg.String("id", "")` to the returner as its sender's name, and no hub
+setting declares `id`. It was left for a decision about whether a hub has
+an identity for its returners.
+
+It could not have one through this read. The Salt shim renames `id` to
+`node_id` as any file is loaded, the hub's included. A `hub.yaml` holding
+`id: hub1.example`, loaded as `config.Hub`, reads `id` as `""` and
+`node_id` as `hub1.example`, with the shim's warning (scratch test, not
+kept). So every hub has sent an empty name: the syslog returner uses
+`os.Hostname`, and the webhook returner sends no `X-Halite-Node` header.
+
+**Decided:** a hub has no identity for its returners beyond its host name,
+which is what it has always sent. A new setting would be a SPEC change,
+and nothing has asked for one.
+
+**The change.** The read is gone and the empty name is passed with a
+comment that says why. The audit has no exceptions now.
+
+**Demonstrated.** With the read put back,
+`TestEverySettingTheProgramsReadIsDeclared` fails and names
+`id (../../cmd/halite-hub/serve.go)`.
+
+**Not verified.** No event returner was run on a hub for this change. The
+behaviour is the same by construction, because the value passed is the
+value the read always returned.
+### 5.594 `doctor` reported an unreadable certificate as expired before time began
+
+Issue 615, item 8. When a certificate file was there and did not parse, the
+node's, hub's and API's `doctor` put the read error in the label and passed
+`&x509.Certificate{}` in its place. `CertificateExpiry` then subtracted
+"now" from a zero `NotAfter`, which overflows `time.Duration`.
+
+**Measured** on macOS 26.7.2 (arm64), with `main`'s binaries at `e02c31b`
+and the lab of 5.589, `node.crt` and `hub.crt` replaced with a line of text:
+
+```
+  fail  certificate validity and expiry  this node's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
+  fail  certificate validity and expiry  this hub's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
+```
+
+**The change.** `doctor.Expected` has an `Unreadable` error. A certificate
+with one fails the check as "could not be read", with the reason and no
+dates, and the remedy names unreadable certificates. The six call sites
+(one in the node, one in the hub, four in the API) pass the error in place
+of an empty certificate. The same files with the built binaries:
+
+```
+  fail  certificate validity and expiry  this node's certificate could not be read: no PEM block found where a certificate was expected
+  fail  certificate validity and expiry  this hub's certificate could not be read: no PEM block found where a certificate was expected
+```
+
+**Demonstrated.** `TestAnUnreadableCertificateIsReportedAsUnreadable`
+(internal/doctor) fails when the `Unreadable` branch is disabled.
+`TestNodeDoctorReportsAnUnreadableCertificateAsUnreadable` fails with the
+node's old call put back, and prints `expired -9223372036854ms ago`.
+
+**Not verified.** The API's four sites were changed the same way and not
+run. The node run above had no `hub` set: with one, `halite-node doctor`
+exits before it prints any check, because the clock check builds a hub
+client from the broken certificate and that calls `cli.Fatalf`. That is a
+separate defect and is not changed here.
+### 5.595 Records after a failed evidence-log open were lost and counted nowhere
+
+Issue 615, item 5. `evidenceLog` tries to open the chain once. When the
+open fails, `startEvidence` logs one error and every later
+`recordEvidence` returns without writing. 5.238 added the gauge
+`halite_node_evidence_log_open`, which reads 0 in that state, and its alert
+`HaliteNodeEvidenceNotKept`. Nothing said how many records were lost:
+`halite_node_evidence_failures_total` counts writes that were tried, and
+none was.
+
+**The change.** A new unlabelled counter,
+`halite_node_evidence_unrecorded_total`, goes up by one for each record
+that `recordEvidence` drops because a node configured to keep a record has
+no open log. It is exported at 0 from the start. It does not move on a node
+with `evidence: false`. `docs/metrics.md` has its row and a new alert,
+`HaliteNodeEvidenceUnrecorded` (critical, on any increase in 10 minutes).
+The dashboard's node row has a stat panel, "Evidence records not kept".
+The gauge's row and panel no longer say that the failure is counted
+nowhere else.
+
+**Measured** on macOS 26.7.2 (arm64), with the lab hub and node of 5.589
+and the built binary: `evidence_dir` set under a regular file, the agent
+started, and two `test.ping` jobs sent with `halite-hub run`. The node
+logged "this node is keeping no evidence record and is running anyway"
+once, and its `/v1/metrics` said:
+
+```
+halite_node_evidence_failures_total 0
+halite_node_evidence_log_open 0
+halite_node_evidence_unrecorded_total 4
+```
+
+Four is the two jobs' `job.accepted` and `job.result` records.
+`startEvidence` writes nothing once the open has failed, so its own records
+are not counted.
+
+**Demonstrated.** `TestRecordsDroppedForALogThatDidNotOpenAreCounted` fails
+with the count taken out of `recordEvidence`.
+
+**Not verified.** The alert rule was not loaded into a Prometheus or run
+with `promtool` (not installed here). The 5.238 test that says
+`failures_total` stays 0 for this node still passes, and is still true.
+### 5.596 An evidence-anchor conflict was invisible after its first log line
+
+Issue 615, item 4. `anchorProblem` logs a kind of anchor failure once, at
+error level for a conflict and at warning for the others, and logs each
+later report of the same kind at debug until a report succeeds. A conflict
+means that the hub holds a head this chain contradicts: the chain was
+rewritten, reset or rolled back. While the chain stays behind the head the
+hub holds, every report conflicts. After the first, a node at the default
+log level said nothing, and no node metric counted it. The hub counts
+conflicts (`halite_hub_evidence_anchors_total{result="conflict"}`) and
+`HaliteEvidenceConflict` pages for them, but without a node label.
+
+**The change.** `halite_node_evidence_anchor_problems_total{problem}`
+counts every call of `anchorProblem`. The problems are `conflict`,
+`failed`, `mismatch`, `receipt` and `unsupported`, and each is exported at
+0 on a node that keeps a record, as the record kinds are (5.239).
+`TestEveryAnchorProblemIsDeclared` holds the list to the calls in
+`anchor.go`. The log is unchanged, which is once per run of one kind. The
+new alert, `HaliteNodeEvidenceReceiptRefused`, is for `mismatch` and
+`receipt` only: only the node can see those, because the hub believes it
+answered. A conflict already pages from the hub. The dashboard's node row
+has a panel, "Evidence anchor problems, by problem".
+
+**Measured** with the lab of 5.589 and the built binaries. Six jobs moved
+the hub's recorded head to 13. Then the agent was stopped, its evidence
+directory removed, the agent started again, and three `test.ping` jobs
+sent. The hub's anchor file recorded conflicts at sequence numbers 2, 4, 6
+and 8, which are the report on connect and one after each job. The node
+logged one error line, and its `/v1/metrics` said:
+
+```
+halite_node_evidence_anchor_problems_total{problem="conflict"} 4
+```
+
+**Demonstrated.** `TestAnAnchorConflictIsCountedAtEveryReport` uses a real
+hub and the same identity with a reset chain. It makes three reports and
+expects one error line and a count of 3. With the count removed from
+`anchorProblem` it fails.
+
+**Not verified.** `mismatch` and `receipt` were not produced live; the
+existing test of a receipt that does not verify covers that path, and it
+does not check the counter. No Prometheus loaded the alert rule.
+### 5.597 A job could build a render sandbox that nothing closed
+
+Issue 615, item 2. A job runs on a shallow copy of the node (`forJob`).
+`renderEngine` kept the sandbox in a field of whatever node it was called
+on, and built one when that field was nil. A copy whose parent had no
+sandbox yet built its own, and nothing closed it: `runConnect`'s deferred
+`closeRenderSandbox` closes the agent's. The child lived until the garbage
+collector finalised its pipes.
+
+**Whether it happens depends on the order.** The audit read it as "each
+job's child is a process of its own". On both hosts below, the agent's own
+node built its sandbox at startup: the description lines are logged after
+`metrics listening` and before `connecting`. The job copies inherited the
+pointer and shared that one child. So a running agent did not leak in
+these runs. The leak is the path where a job copy reaches `renderEngine`
+before the agent's node does. A node built by `setup` that runs a job
+before anything else renders is that path, and in the test below it left
+three children for three jobs.
+
+**The change.** The node holds a pointer to a `sandboxHolder` (a mutex and
+the sandbox). `setup` creates it, the copies share it, `renderEngine`
+builds the sandbox under the lock once, and `closeRenderSandbox` closes
+the shared one. One child serves the agent and all its jobs, as in the
+order that worked, and the agent's close ends it.
+`rendersandbox.Live` counts the children this process has started and not
+yet reaped, so that a test can see a child it holds no reference to. The
+node's `TestMain` now serves the child when the sandbox re-executes the
+test binary. Without that, the child would have run the test binary's
+ordinary entry point, which does not speak the sandbox protocol.
+
+**Demonstrated.** `TestJobsShareOneRenderSandboxChildAndTheAgentEndsIt`
+builds the node with `setup`, sets `render_sandbox: true` and runs three
+`state.show_lowstate` jobs on a templated SLS. It expects one live child,
+and none after `closeRenderSandbox`. With the holder taken out of `setup`,
+which is `main`'s per-copy behaviour, it fails: three children, and three
+after the close.
+
+**Run live** with `render_sandbox: true`, a throwaway hub and an enrolled
+agent, three `state.show_lowstate` jobs through `halite-hub run`, and the
+agent's child processes counted with `ps`:
+
+- macOS 26.7.2 (arm64), in the lab of 5.589: one child during the jobs and
+  none 0.2 s after `SIGTERM` to the agent; the description logged once.
+  `main`'s binary at `e02c31b`: one child, as above.
+- beastie, FreeBSD 15.1-RELEASE-p6 (amd64), binaries cross-built from this
+  change and from `main`, run as an unprivileged user under `/tmp` on
+  loopback ports. Both: one child after three jobs, none one second after
+  the agent stopped, and the description logged once. The lab was removed
+  afterwards. The first count there was wrong: FreeBSD's `ps` reads
+  `-o ppid=,command=` as one column, so it counted nothing until the
+  columns were given as separate `-o` flags.
+
+**Not verified.** The leak was not produced live, because both agents
+built their sandbox before the first job. Which startup call does that was
+not traced. `render_sandbox_user` was not set, so no identity was dropped,
+and nothing ran as root. Not run on Linux.
+### 5.598 The hub keeps a return as the node sent it
+
+Issue 615, item 10, which asked whether the hub scrubs a secret from a
+return it caches (5.557 left it open). It does not, and nothing on the hub
+or the API changes a return.
+
+**Read.** `Server.returned` (internal/hub/jobs.go) stores the decoded
+`job.Return` with `Jobs.AddReturn`. It publishes an event that holds the
+jid, function, success, retcode and duration, and not the return.
+`jobStatus` (`GET /v1/jobs/{jid}`) marshals the cached returns as they
+are, after the policy check of 5.513. The API's `GET /v1/jobs/{jid}`
+forwards to the hub's `jobs.list_job` runner, and `forwardRunner` writes
+what the hub answered. The hub's redactor (`hubContext.secrets`) holds
+values that the hub decrypted, and is used for logs and for `doctor`.
+`internal/hub` and `internal/api` do not use it.
+
+**Measured** with two scratch tests, not kept:
+
+- A node with `s3cr3t-value-123` registered, through `executeJob`:
+  `cmd.run` with `echo token=s3cr3t-value-123` returned
+  `"token=s3cr3t-value-123"`. A state that runs the same command returned
+  `echo token=**********` in its name, comment and stdout. The runner
+  scrubs state results (5.109), and `state.show_*` are masked (5.557).
+- A hub with a job cache, given that `cmd.run` return through `returned`:
+  the cached return held the secret whole, and no event held it.
+
+**Kept as it is.** The output of an execution function is data that was
+asked for, and is not masked (5.268): `pillar.get` and `pillar.items`
+exist to return values, and `cmd.run 'cat /etc/app.conf'` asks for what
+the file holds. If the hub scrubbed it, these would return `**********`,
+and only for the secrets the hub had decrypted since it started. Reading a
+return is authorized as running the job's function (5.513), and the
+functions that return pillar are never granted by a wildcard (5.563). So a person who can read a `cmd.run` return could
+also have run the command.
+
+**What this leaves.** The job cache on disk holds secrets that execution
+functions returned, for `job_cache_retention`. That is a property of the
+hub's state directory. Handbook chapter 12 already says that `serve`
+refuses a file root that holds it, because that would serve every return
+in the estate to every node. It is recorded here so the next reader does
+not have to read the code again.
+
+**Not verified.** A GPG-decrypted pillar value was not used; the node test
+registered the secret directly. The API route was read and not run.
+
+#### The owner reversed this decision (issue 659)
+
+5.598 recorded that the hub keeps a return as the node sent it, because execution output is data the caller asked for (5.268) and reading a return is authorized as running the job's function (5.513). The owner did not accept this for registered secrets. A secret in a cached return outlives the job, reaches anyone who can read the job later, and is copied into returners and exports. Issue 659 asks the hub to mask registered secrets before it caches or serves a return.
+
+**Changed.** `Server.returned` (internal/hub/jobs.go) now calls `scrubReturn` (internal/hub/returnscrub.go) before `Jobs.AddReturn`. Every other route starts from the copy the hub files: the `ret` event, `OnReturn`, the event returner, `GET /v1/jobs/{jid}`, the `jobs.lookup_jid`, `jobs.list_job` and `jobs.print_job` runners, and the API's `GET /v1/jobs/{jid}`. One scrub at the door covers them. `recordRunnerReturn` (internal/hub/runner.go) masks a runner's return in the job cache too. The caller of the runner still gets the direct answer unmasked.
+
+**The set.** The hub uses its own redactor set, read from `PillarOptions.Secrets`. `OnSecret` fills the same set, so the set that masks cannot differ from the set that learns (5.110 was a field that was declared and never assigned). A node asks the hub to compile its pillar before every job (`compilePillarOrErr` in cmd/halite-node/execute.go), and seeds its own set from that answer. So the hub has just learned the values when the return arrives.
+
+**What mask means.** `redact.Set.MaskValue` (internal/redact/redact.go) replaces registered values, in keys and in values, with `**********`. It masks a whole string that is a registered secret, even if it is shorter than 6 characters. It does not run the URL-credential scanner, so `ssh://git@host/repo` stays. A return with nothing to mask is kept byte for byte. Measured: encoding again through the value model turns `1.0` into `1`, `-0` into `0`, and an integer wider than 64 bits into `1.2345678901234568e+29`. A return that held a secret is encoded again, so it carries those changes. A return that the value model cannot read (measured: a duplicate key) and that holds a secret is kept as one JSON string of the masked text. The hub logs a warning.
+
+**Not covered.**
+
+- A secret that the node configured itself (`seedConfiguredSecrets`) never reaches the hub. A node that compiles its own pillar has the same gap. Only the node could mask these, and it does not mask an execution return.
+- A return that arrives after a hub restart, from a job that ran on a last-known-good pillar. The hub's set is in memory, and only a compile fills it again.
+- The job arguments. A secret typed into the command (`cmd.run 'echo s3cr3t'`) stays in the `arg` of the job record and in the `halite/job/<jid>/new` event. Masking it at submit would change what the node runs. The first version of the test failed on this. The `fun_args` copy in the return is masked.
+- The set holds values decrypted for every node, so a value decrypted for another node is masked too.
+
+**Consequence.** Anything that read a password out of a cached `cmd.run` return now gets `**********`. This includes `pillar.get` and `pillar.items` run as a job through the hub. 5.268 still holds in one sense: the caller gets the output, with registered secrets masked.
+
+**Measured.** `TestARegisteredSecretIsMaskedInEveryRouteAReturnTakes` (internal/hub/return_secret_test.go) failed on seven routes with the scrub call removed: the cache on disk, the hub job route, the three runners, the API, and the relay forward. The `ret` event and the event returner never carried the return, so they passed both ways. `TestAnAlreadyMaskedReturnIsKeptAsItArrived`, `TestAReturnTheValueModelCannotReadIsMaskedAsText` and `TestARunnersCachedReturnIsMaskedAndItsAnswerIsNot` each failed with their part of the change removed.
+
+**Not verified.** Nothing ran on a live hub or node. The secret was not a GPG-decrypted value. It came from a secret external pillar source in a test. Not measured: whether the set of a node and the set of the hub differ in practice on the estate, and the cost of decoding every return on a busy hub.
+
+### 5.599 What an operator did through the API still named the API
+
+Issue 649, from the review of the change in 5.582 (PR 647). That change
+made the hub judge the operator for runner calls and kills. The review
+looked for the places where the API still spoke for the operator, and
+found four. It also found a list of smaller faults. Each is below.
+
+#### `event.send` named only the API
+
+5.582 said under "Not changed" that every event sent through the API
+carries `cert:CN=api`. An operator who held `event.send` could send
+`halite/hook/github/push` through the API. The event was the same as a
+verified webhook delivery, because both carry `_principal: cert:CN=api`.
+A reaction that matched only the tag, as the examples in the handbook do,
+could not tell them apart.
+
+- `_principal` is still the certificate of the connection. Its meaning is
+  not changed.
+- When the call carries a delegation, the hub now adds
+  `_on_behalf_of: <operator>`, for example `local:bob`. The value comes
+  from the delegation that the hub accepted, never from the payload.
+- The hub always removes an `_on_behalf_of` key that the payload carries.
+  A direct caller cannot forge one.
+- A delegated `event.send` can no longer send the tag `halite/hook` or a
+  tag that starts with `halite/hook/`. The error says that the API writes
+  this namespace for a delivery that it verified. A direct caller is not
+  refused, because its `_principal` is its own certificate. The webhook
+  delivery of the API is a call without a delegation, so webhooks work as
+  before.
+
+`docs/command-reference.md` said that the `_principal` of a hook event is
+"the identity the delivery authenticated as". This was wrong, and the
+code of the API was wrong in the same way. `internal/api/hook.go` set
+`_principal` to the principal of the hook, and `event.send` replaced it
+with the certificate of the API every time. The value never reached the
+bus. The API no longer sets it. A hook event carries the certificate of
+the API (`cert:CN=api` by default), and the tag path `halite/hook/<path>`
+names the hook. The example in handbook chapter 27 was already correct.
+
+#### Key actions named only the API
+
+`key.accept`, `key.reject`, `key.revoke` and `key.delete` now pass the
+operator of the delegation to `announceKey` and `revokeBy`. The event
+`halite/key/<node>/<action>` carries `on_behalf_of: <operator>` beside
+`principal: cert:CN=api` when the action came through the API. The log
+line `enrollment revoked` carries `on_behalf_of` too. The key store itself
+records no principal, before or after this change. So "the revocation
+record" of the issue is this event and this log line. An action taken
+with `halite-hub keys` is announced by the reconcile loop with
+`via: terminal` and has no principal. This is as before.
+
+#### A role with only `act_for` saw events that name no node
+
+`Policy.HasAnyRule` is the test that halite-api used for an event that
+names no node (the job and reactor events on `GET /v1/events` and
+`/v1/ws/events`). It counted a rule that holds only `act_for` as a rule.
+A token whose roles held nothing else saw every such event. `HasAnyRule` now counts only a
+rule that grants `functions` or `runners`.
+
+#### `state.orch_resume` was not held to `allow_mods`
+
+This is the first item of "Not changed, and open" in 5.586. The runner
+takes a job ID and runs the names of the earlier run again. `allow_mods`
+written for `state.orchestrate` did not hold it. A caller whose
+`allow_mods` was narrowed after a run started could still resume that
+run.
+
+`state.orch_resume` is now in the orchestration family:
+`policy.ArgumentFamily` returns `state.orch`, `state.orch_resume`,
+`state.orchestrate` and `state.orchestrate_show_sls`. The list of runners
+that take `sls` (`policy.OrchestrationRunners`) is not changed. It still
+has three names.
+
+The runner asks the policy two questions.
+
+1. `CallRunner` asks first, before it looks up the run. The names are not
+   known yet (`Request.Resumes` is nil). So `deny_sls` and `allow_mods`
+   wait for the second question, and the other rules (the grant,
+   `deny_kwargs`, `require_kwargs`) are judged. If the hub looked up the
+   run first, a refusal could carry the names of the run of another
+   caller.
+2. The runner finds the run and checks that the caller can see it (5.504).
+   It then asks again, with `Resumes` set to the stored SLS names of the
+   run, for the caller and for the operator it acts for. Its `pillar`
+   (if given) and `test` (if true) go in as keywords. This answer decides.
+
+The refusal now reads, for example, `teardown.everything is not in the
+modules this role may orchestrate (deploy.*) (the args written for
+state.orchestrate hold every runner that runs an orchestration by its
+names, state.orch_resume among them)`. The family phrase was "every runner
+that takes orchestration names". It changed because `state.orch_resume`
+takes no names. `halite-hub policy show` now prints
+`state.orchestrate: holds state.orch, state.orch_resume, state.orchestrate,
+state.orchestrate_show_sls`. It no longer lists `state.orch_resume` under
+"no argument rule holds" for a rule that has orchestration argument rules.
+
+#### The smaller items
+
+- **A wrong comment about `hub`.** The comment in `sameCaller`
+  (`internal/hub/delegation.go`) said that `jobVisible` never asks this of
+  a fleet job. That is wrong. `jobVisible` tells a runner call by the
+  target `hub`, and a fleet job sent to a node named `hub` takes the same
+  branch. The submitter must match too, so another operator cannot read
+  the job. The effect is a narrowing: a scoped caller who can see the node
+  `hub` sees only its own fleet jobs to it. The comment is corrected. The
+  behaviour is not changed.
+- **The hub must define every role that an API token can carry.** The hub
+  judges the operator by the roles in the delegation, against its own
+  `policy.yaml`. A role that the hub does not define grants nothing, so
+  the call is refused. If the API and the hub run on different hosts, two
+  copies of `policy.yaml` that drift apart narrow or refuse operators
+  without a message that says why. The handbook and the changelog now say
+  this.
+- **`act_for: ['*']` in the examples.** The handbook and the command
+  reference showed this in three places (chapters 26 and 32, and the
+  command reference). It lets the API claim any principal. The examples
+  now show `['local:*', 'ldap:*', 'oidc:*']`, which are the three kinds of
+  principal that the API makes, and say to keep only the sources that the
+  estate uses. The example in SPEC (`['oidc:*', 'local:*']`) is not
+  changed.
+
+#### What an operator sees
+
+- **An operator sees fewer events.** This applies only if every role of
+  the token is an `act_for` rule alone. That token no longer sees job and
+  reactor events that name no node.
+- **A delegated `event.send` of a `halite/hook/` tag is refused.** An
+  operator granted `event.send` could do this before.
+- **Events sent through the API carry `_on_behalf_of`**, and key events
+  carry `on_behalf_of`.
+- **A hook event carries the certificate of the API.** It always did. The
+  documentation said it did not.
+- **Stricter, and breaking for some roles.** A role that has `allow_mods`
+  or `deny_sls` written for any orchestration runner, in a rule that also
+  grants `state.orch_resume`, now has a resume refused when the names of
+  the run are outside those limits. Run `halite-hub policy show` against
+  the policy before you upgrade. The line `holds` for the orchestration
+  rule now lists `state.orch_resume`.
+
+#### Tests
+
+- `internal/api` `TestAnActForOnlyRoleSeesNoNodelessEvents`.
+- `internal/hub` `TestEventSendThroughTheAPIRecordsTheOperator` and
+  `TestKeyActionsThroughTheAPIRecordTheOperator`. Both drive a real
+  `api.Server` in front of the hub (`newAPILab`).
+- `internal/hub` `TestAllowModsHoldsAResumeToTheRunsNames`. It calls
+  `CallRunner` directly.
+- `cmd/halite-hub` `TestPolicyShowSaysWhatNoArgumentRuleHolds`, updated
+  for the new family.
+
+Each part was broken on purpose and watched to fail:
+
+- **`HasAnyRule` reverted**: the events test failed with three errors.
+- **The hook refusal removed**: the `event.send` test failed.
+- **The deletion of a payload `_on_behalf_of` removed**: the same test
+  failed.
+- **`_on_behalf_of` not set**: the same test failed.
+- **`on_behalf_of` not written in `announceKey`**: all four tags (accept,
+  revoke, reject, delete) failed.
+- **The second question of the runner removed**: the resume test failed.
+- **`state.orch_resume` removed from the family**: the resume test failed.
+- **The deferral for a nil `Resumes` removed**: every resume under
+  `allow_mods` was refused as naming no orchestration, and the test
+  failed.
+
+#### Not changed
+
+- **Kill.** Any operator who holds a runner can still mark the runner-call
+  job of another operator as aborted (the first item of "Not changed" in
+  5.582). It stops nothing that runs on the hub. It stays open.
+- **The `hub` node name.** A fleet job sent to a node named `hub` is seen
+  as a runner call by `jobVisible`. This is recorded above and not
+  changed.
+
+#### Not verified
+
+- **Nothing ran on a live hub with an API and an operator policy.** Every
+  test is in-process: an `httptest` API in front of an in-process hub, on
+  loopback.
+- **Not run by hand on FreeBSD.** The change is authorization code with no
+  platform dependency, and the FreeBSD leg of CI runs the tests.
+- **OIDC and LDAP principals as the operator were not exercised.** Local
+  accounts were.
+
+### 5.600 The second tier of arbitrary code is decided
+
+5.297 marked four `cmd.*` functions and left a "second tier" open: the
+functions that make a node run code the caller chose, later or
+indirectly. Issue 619 asked the owner to decide. It also showed that a
+hub wildcard granted `maven.run`, `pip.install` and `at.at`. The owner
+decided, and this entry records the decision and the reason for each name.
+
+#### What is marked
+
+Each function below now declares `arbitrary_code: true`. A pattern, such as
+`'*'` or `pip.*`, does not grant it. A role must name it.
+
+Eleven execution functions:
+
+- `pip.install`, `npm.install`, `gem.install`, `cargo.install` and
+  `cpan.install`. The install step of a package runs as root on the node:
+  a `setup.py`, an npm lifecycle script, a native extension of a gem, a
+  `build.rs`, a `Makefile.PL`. The author of the package chose that code.
+  `pip.install` also takes `index_url` and `npm.install` takes `registry`,
+  so the caller chooses the source of the package.
+- `go.install`. It builds a module that the caller names, at a version that
+  the caller names. It puts the program where the node will run it.
+- `composer.require`. Composer runs the scripts of the project and the code
+  of plugins. This module passes neither `--no-scripts` nor `--no-plugins`.
+- `virtualenv.create`. It runs the `python` that the caller names.
+- `maven.run`. `goals` can name any plugin goal, and the goal of the exec
+  plugin runs a program. This was traced in the code and in the issue. It
+  was not run.
+- `at.at` and `win_task.create`. The caller writes a command line. `atd` or
+  the Task Scheduler runs it later. A delay is not a limit.
+
+One state:
+
+- `cron.present`. The caller writes a command line. `cron` runs it later.
+
+#### What is kept
+
+These write content that can become code, and the owner considered them
+with the second tier. They keep their wildcard grants.
+
+- `file.*` other than `file.write` and `file.replace`. For example
+  `file.append`, `file.patch`, `file.copy`, `file.touch`, `file.remove`
+  and the `file.managed` state. 5.16 marked `file.write` and
+  `file.replace`, and SPEC 23.5 already names them.
+- The `ssh_auth.present` state.
+- The `sudo.present` state.
+
+SPEC 23.5 now says this in words, so a later change to one of these is a
+decision about SPEC and not an edit of a signature.
+
+#### What an operator sees
+
+- **A wildcard no longer grants the twelve.** A role that relied on `'*'`
+  or on a pattern for any of them must now name each one in `functions`.
+  This is breaking for such a role. Run `halite-hub policy show` against the
+  policy before you upgrade.
+- **A node with `require_job_signature: [arbitrary_code]` refuses the
+  eleven execution functions unsigned.** The node decides the class from its
+  execution registry only (`requires` in `cmd/halite-node/jobsignature.go`).
+- **`halite-hub policy show` lists the twelve** in its line "never granted
+  by a wildcard". Handbook chapter 26 shows that line as this build prints
+  it.
+
+#### The limit for `cron.present`
+
+`cron.present` is a state. A job does not call it by name. Marking it
+changes the decision of the hub for that name: the wildcard check and the
+list in `policy show`. It does not change what a node refuses unsigned. The
+node reads only the signatures of execution functions. A node applies an SLS
+that contains `cron.present` under the `state` class of
+`require_job_signature` (`state.apply`, `state.sls`, `state.highstate`), not
+under `arbitrary_code`. A node that requires a signature for
+`arbitrary_code` and not for `state` or `mutating` accepts such an SLS
+unsigned; that is read from `requires` in `cmd/halite-node/jobsignature.go`,
+not tested. There is
+no `cron.set_job` execution function in this build, as 5.297 said.
+
+#### Not marked, and still open
+
+Issue 619 did not decide these. They keep their grants and are not changed:
+
+- the states `at.present`, `at.absent`, `win_task.present` and
+  `win_task.absent`;
+- the functions `win_task.run`, `win_task.set_enabled` and `composer.install`;
+- the package states `pip.installed`, `npm.installed` and `gem.installed`;
+- the other functions of the modules above.
+
+This list is from the names in the registry. Whether any of them belongs in
+the class is open. Where `.installed` states are concerned, the same
+reasoning as for `pip.install` can apply, and nobody has decided it.
+
+#### Tests
+
+- `internal/builtin` `TestTheSecondTierIsMarkedAndTheRestIsNot`. It holds
+  the twelve as marked. It also holds the kept list as not marked: the
+  execution functions `file.append`, `file.patch`, `file.copy`,
+  `file.touch` and `file.remove`, and the states `file.managed`,
+  `file.append`, `ssh_auth.present` and `sudo.present`.
+- `cmd/halite-node` `TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode`
+  now holds the eleven execution functions beside the six `cmd.*` ones.
+- `cmd/halite-hub` `TestChapterTwentySixListsWhatPolicyShowPrints` holds the
+  handbook line to the real output of `policy show`.
+- `TestTheHubAndTheNodeAgreeOnArbitraryCode` and the wildcard check in
+  `backends_test.go` cover the hub side for any marked function.
+
+Each was broken on purpose and watched to fail:
+
+- **`pip.install` and `cron.present` unmarked**: `TestTheSecondTierIsMarkedAndTheRestIsNot`
+  failed with two errors.
+- **The execution function `file.append` marked**: the same test failed.
+- **`pip.install` unmarked**: the node test failed with "an unsigned
+  pip.install was accepted".
+- **The handbook line left as it was**: the chapter test failed with twelve
+  names missing.
+
+#### Not verified
+
+- **No running hub with a policy file was used.** No real node with
+  `require_job_signature` was used either. The node refusal was tested
+  through `acceptJob` in the same process.
+- **None of the twelve functions was run to show its path to code.** The
+  reasons come from reading the modules and the documented behaviour of the
+  tools. A package install script was not seen to run. The exec plugin of
+  `maven.run` was traced and not run.
+- **The tests ran on macOS only.** CI runs them on all four platforms.
+
+### 5.601 An operator's SLS rules did not cover the environment
+
+Issue 620, found by the review of the fixes for issue 321 on 2026-11-03.
+The finding was read in code and not run.
+
+#### The defect
+
+`policy.Request` had no environment. The node adopts the `Env` of a job
+(`adoptJobEnvironment` in `cmd/halite-node/execute.go`). With gitfs, every
+branch is an environment. A role with `allow_sls: [web.*]` could therefore
+apply `web.x` from any branch, including a branch made by somebody who has
+push rights and no signing key. Two limits existed, and neither is part of
+the role of an operator: the node-wide `env_allowlist` and `env_denylist`
+(SPEC 28.3), and `gitfs_verify_signatures`.
+
+#### The fix
+
+`policy.Request.Env` is the environment that the job will be dispatched
+with. As with `TargetKind` (5.296), it must be the value that is given to
+`Dispatch`. Two new argument rules limit it: `allow_env` and `deny_env`.
+They take patterns, as `allow_sls` does, and are written under a function
+in `args:`. The policy checks `deny_env` first. Then, if `allow_env` is
+set, the environment must match it.
+
+They are argument rules, so the function family holds them (5.586). A rule
+under `state.apply` holds `state.sls`, `state.highstate` and the
+`state.show_*` functions. A rule under `state.orchestrate` holds
+`state.orch`, `state.orchestrate_show_sls` and `state.orch_resume`.
+
+`requestEnv` in `internal/policy/policy.go` decides which environment the
+policy judges:
+
+- **A fleet job:** `Request.Env`. **An empty environment is not judged.**
+  The job names no environment, and the node runs in its own configured
+  environment. The caller did not choose it and the hub does not know it.
+  The `env_allowlist` and `env_denylist` of the node limit that case. This
+  is a limit of the rule.
+- **An orchestration runner** (`state.orchestrate`, `state.orch`,
+  `state.orchestrate_show_sls`): its own `env` argument, as a keyword or as
+  the second positional argument. **An absent `env` is judged as `base`**,
+  because the run compiles from `base` when it has none
+  (`Server.Orchestrate`). So the policy always judges these runners. A
+  keyword `env` that is not a string is refused, with the reason that the
+  policy cannot check it.
+- **`state.orch_resume`:** the environment of the run that it resumes. The
+  hub gives it on the second question, together with `Resumes` (5.599). The
+  first question does not judge it.
+- **Any other runner:** not judged. None takes an environment that
+  dispatches a job.
+
+The refusal reads `state.apply may not be run in the environment "attacker"
+by this role, which allows base`. For `deny_env` it reads `... may not be
+run in the environment "release-bad" by this role`.
+
+#### Every place that asks the policy
+
+The list comes from `grep -rn "policy.Request{\|policyRequestFor(\|requestFor(\|jobRequestFor("`.
+
+| # | Place | What it passes for the environment | Tested |
+|---|---|---|---|
+| 1 | `POST /v1/jobs` (`Server.submit`, `internal/hub/jobs.go`) | `req.Env` | yes |
+| 2 | `POST /v1/jobs/{jid}/resume` (`Server.resume`) | `existing.Env` | yes |
+| 3 | `requestForJob` (`jobs.go`), used to read the status of a job and to kill it | `j.Env` | yes, through kill |
+| 4 | `dispatchFor` (`internal/hub/runners_fleet.go`): each job that a runner, an orchestration step or a reaction sends | `sub.Env` | yes, with a step that sets `saltenv: attacker` inside a run in `base` |
+| 5 | `CallRunner` (`internal/hub/runner.go`) | no change in the hub. The policy reads the `env` argument of the orchestration runner, as `runnerNames` reads `sls`. | yes, by keyword and by position |
+| 6 | `authorizeResume`, the second question of `state.orch_resume` (`internal/hub/runners_orch.go`) | `previous.Env` | yes |
+| 7 | `wouldAuthorize` (the plan of `reactor.test`), the mine read (`mine.go`), the relay (`relay.go`, two places), the metrics endpoint (`metrics_endpoint.go`), and every question of halite-api about a runner, key, node, metric or event that names no job environment | no environment. Not changed. | no |
+| 8 | `jobRequestFor` (`internal/api/authorize.go`) for `/v1/run` local clients (`execute.go`) and `/v1/nodes/{id}/state` (`nodes.go`, `applyState`) | `req.Env` (`saltenv`). The argument `env` is now required, as `kind` is. | yes |
+| 9 | `/v1/orch` and the `runner` client of halite-api | the forwarded `env` keyword or position, which the policy reads (`requestEnv`) | yes: `saltenv` on `/v1/orch`, `kwarg.env`, and `arg[1]` |
+| 10 | `halite-hub policy test` (`cmd/halite-hub/policy.go`) | the new flag `--env <name>` | yes |
+
+Item 8 matters because halite-api authorizes the operator itself before it
+submits the job. The hub then judges only the certificate of the API. So
+the question to the API was the only one that asked the operator about the
+environment.
+
+Reactions, `saltutil.refresh_*` and `mine.update` dispatch with no `Env`.
+The policy judges nothing for them. This agrees with the rule for an empty
+environment: the node uses its own.
+
+#### Tests
+
+- `internal/policy` `TestAllowEnvJudgesTheEnvironmentARequestRunsIn`: allow,
+  deny, an empty job environment that is not judged, the function family,
+  keyword, position, absent as `base`, a non-string `env` that is refused,
+  and the first and second question of a resume.
+- `internal/hub` `TestAllowEnvHoldsEveryHubSiteThatDispatches`, with the
+  subtests submit, a recorded job (resume and kill), the orchestration
+  runner, an orchestration step, and a resumed orchestration.
+- `internal/api` `TestAllowEnvHoldsEveryAPIPathThatChoosesAnEnvironment`.
+- `cmd/halite-hub` `TestPolicyTestAndShowKnowTheEnvironment`.
+
+Each was broken on purpose and watched to fail:
+
+- **Policy:** an absent `env` not judged as `base`, the positional argument
+  ignored, the `deny_env` check removed, the deferral for a resume removed,
+  a non-string `env` accepted, and the parse of the two keys removed. Each
+  made the test fail.
+- **Hub:** `Env` removed at `submit`, `resume`, `requestForJob`,
+  `dispatchFor` and `authorizeResume`, and the keyword `env` of the runner
+  ignored. Each made its own subtest fail.
+- **API:** `req.Env = env` removed in `jobRequestFor`. Both `/v1/run` and
+  `/v1/nodes/{id}/state` failed.
+- **CLI:** the use of the `--env` flag removed. The test failed.
+
+One fault in the test itself. The subtest for a job resume first hung. A
+resume that the policy wrongly allowed starts a background batch, and the
+test waits for it. The fixture job is now complete and delivered. A resume
+that is wrongly allowed now returns at once, and the failure prints.
+
+#### What an operator sees
+
+- **The rules are new and optional.** A policy without `allow_env` and
+  `deny_env` behaves as before. Nothing becomes stricter when you upgrade.
+- **An older hub or API ignores `allow_env` and `deny_env` silently.** The
+  policy loader reads only the argument-rule keys that it knows, and it
+  does not refuse the others. This was demonstrated with this build. A rule
+  with the misspelled key `allow_envv: ['base']` under `state.apply` loaded
+  without an error, and `halite-hub policy test ... state.apply web`
+  answered "allowed by role web rule 0". Upgrade the hub and halite-api
+  before you write `allow_env`, and check the spelling.
+- **The rule judges the environment that a caller chooses.** A job with no
+  `saltenv` runs in the environment of the node and is not judged. Use the
+  `env_allowlist` of the node for that case.
+- **An orchestration with no `env` is judged as `base`.** If `allow_env`
+  under `state.orchestrate` does not include `base`, the role cannot run an
+  orchestration without naming an allowed environment.
+- `halite-hub policy test --env <name>` asks the question for a job sent
+  with that `saltenv`. `halite-hub policy show` prints
+  `<function>: allow_env=[...] deny_env=[...]` for a rule that has one.
+
+#### Not changed, and open
+
+- **An unknown argument-rule key is accepted without an error.** This is
+  the cause of the misspelling above. It is a separate defect that fails
+  open: a typing error in `allow_sls` is ignored in the same way. It is not
+  fixed here. It needs its own change.
+- **A state inside an SLS can fetch a file from another environment** with
+  `salt://path?saltenv=other` (`fileserver.EnvFromURI`). `allow_env` limits
+  the environment of the job. It does not limit what an SLS in that
+  environment fetches. That SLS comes from the allowed environment, so the
+  same control applies to it, but the policy does not judge it. This was
+  not tested.
+- **Reactions and the maintenance jobs that runners send carry no
+  environment.** See the rule for an empty environment above.
+
+#### Not verified
+
+- **No live hub, halite-api, gitfs remote with branches, or node was used.**
+  All the tests run in one process.
+- **Nothing was run on FreeBSD by hand.** The code does not depend on the
+  platform. CI runs the tests.
 
 ### 5.585 `halite-hub run --ttl` and the batch flags cut a duration to a number the hub reads differently
 
