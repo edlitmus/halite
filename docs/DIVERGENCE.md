@@ -39785,7 +39785,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/jobs.go`).
 
 **Not verified.** How long `jobs active` takes on a large real cache. It reads one JSON file for each job, and the time was not measured. Noticed, not changed: the `Settle` of the hub (`internal/hub/batch.go`) still reads only the newest 500 jobs to expire old ones, so it never settles a job that is older than that.
 
-### 5.585 A cancelled context did not stop a varlink call
+### 5.611 A cancelled context did not stop a varlink call
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/varlink/varlink.go`). The audit ran on Linux at `main`
@@ -39819,7 +39819,7 @@ The test passes with `-race`.
 fake unix-socket server that never replies. The journald module itself
 was not run.
 
-### 5.586 A NaN passed the counter guard and poisoned a histogram sum
+### 5.612 A NaN passed the counter guard and poisoned a histogram sum
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/metrics/metrics.go`).
@@ -39849,7 +39849,7 @@ counter guard removed, the output lacks `scratch_total 3`. With the
 histogram guard removed, the output lacks `scratch_seconds_sum 2`, the
 `_count 2` line and the value 2 in the `+Inf` bucket.
 
-### 5.587 Label values with a NUL byte could share a series
+### 5.613 Label values with a NUL byte could share a series
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/metrics/metrics.go`).
@@ -39872,7 +39872,7 @@ the two label sets above and expects 2 series. It also makes
 `("1:a","")`, `("","1:a")` and `("1","a")` and expects 3 series. With
 the old join put back, the first pair gives one series with the value 2.
 
-### 5.588 -S and S@ now give the answers that Salt 3007.1 gives
+### 5.614 -S and S@ now give the answers that Salt 3007.1 gives
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`internal/target/target.go`, `compileSubnet`).
@@ -39959,7 +39959,7 @@ not. The matcher of Salt was called directly, not through a job that a
 real Salt deployment published. `S@` inside a nodegroup or a compound target
 was not run against Salt. It uses the same code path.
 
-### 5.589 Spans were exported without redaction
+### 5.615 Spans were exported without redaction
 
 Issue 614, from the issue 321 second-pass audit, round nine
 (`internal/tracing`). The audit found this by reading. It did not run
@@ -40005,7 +40005,7 @@ wiring lines in the hub and the node. The tests of the `cmd` packages
 pass, and none of them fails when the `Secrets:` line in
 `cmd/*/trace.go` is removed.
 
-### 5.590 Child loggers did not share a lock, and a newline in a message started a record
+### 5.616 Child loggers did not share a lock, and a newline in a message started a record
 
 Issue 614, from the issue 321 second-pass audit, round twelve
 (`internal/log/log.go`). The audit found both defects by reading.
@@ -40046,7 +40046,7 @@ newline in its text is still printed inline. Only string fields go to
 the block. A carriage return is not treated as a line break. The output
 was not watched on a real terminal or in a real log file.
 
-### 5.591 An inline file named with two leading dots was refused
+### 5.617 An inline file named with two leading dots was refused
 
 Issue 614, from the issue 321 second-pass audit, round five
 (`cmd/halite-node/oneshot.go`, `writeInlineFile`). The audit found this by reading.

@@ -81,7 +81,7 @@ func Call(ctx context.Context, socketPath, method string, params any) (json.RawM
 	// a parent whose own work failed -- carries no deadline for the
 	// branch above to copy, so before this the call sat out the full
 	// thirty seconds against a service that never answered (issue 614,
-	// DIVERGENCE 5.585). Pulling the connection's deadline into the past
+	// DIVERGENCE 5.611). Pulling the connection's deadline into the past
 	// when the context ends wakes the blocked Write or Read at once; the
 	// error that comes out of it is then a timeout, which is not what
 	// happened, so the context's own error is reported in its place.
