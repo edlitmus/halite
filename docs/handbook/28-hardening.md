@@ -245,8 +245,9 @@ Cryptographic Module, and runs with FIPS mode enforced. In that mode TLS is
 restricted to approved suites and P-256/P-384 key exchange, Ed25519 is
 unavailable, and the TOTP second factor (which needs SHA-1) is disabled.
 `halite-node version` on a FIPS build reports the module and self-test
-status. The `fips_mode` grain is a pair, the host kernel's state *and* the
-binary's, and a mismatch is a `doctor` warning. The FIPS set is Linux only
+status. The `fips_mode` grain is the host kernel's state alone;
+`fips_build`, `fips_enabled` and `fips_module` describe the binary. A mismatch
+between the two is a `doctor` warning. The FIPS set is Linux only
 (amd64 and arm64) for now; `make install-fips` installs it beside the ordinary
 binaries, and the systemd drop-ins that enforce the mode are installed
 separately because they change what a unit runs.
@@ -272,11 +273,29 @@ the wrong file. Ask the binary, not its name:
 > ran under the shipped base units and `service/systemd/fips/` drop-ins (the
 > processes' environment held `GODEBUG=fips140=on` and their executables were the
 > `-fips` files), the node enrolled, answered `test.ping` and applied a state.
-> **Not run:** arm64 (Vultr sells no ARM instance, and the arm64 archive was
-> not opened), `halite-api-fips` as a service (only its `version`), a node on
-> another host, and an upgrade. **A trap for whoever repeats it on a lab host:**
+> **Not run:** a node on another host than the hub, on Rocky (that run had
+> both on one host), and an upgrade. **A trap for whoever repeats it on a lab host:**
 > after the reboot RHEL 9's `sshd` in FIPS mode refused an ed25519 login key, so
 > a host raised with one cannot be reached; use an ECDSA or RSA key.
+>
+> On 2026-11-05 the published v0.1.1 `linux-arm64-fips` and `linux-amd64-fips`
+> archives, and the ordinary archives, were fetched and checked against
+> SHA256SUMS on two Ubuntu hosts already in kernel FIPS mode on Ubuntu Pro
+> `fips-updates`: `ami-test-1` (arm64, Ubuntu 24.04.5, kernel
+> 6.8.0-1067-aws-fips) and `noop2-1` (amd64, Ubuntu 22.04.5, kernel
+> 5.15.0-1117-aws-fips). All six `-fips` binaries reported `fips mode on,
+> module v1.0.0, self-tests passed`. The hub (amd64), the API (amd64) and the
+> node (arm64) ran as services under the shipped drop-ins, with only the
+> `-fips` binaries installed. The node enrolled across the two hosts and
+> answered `test.ping`, `grains.item` and a `state.apply`; the API logged in an
+> account and ran `test.ping` through to the node. `doctor` showed all three
+> branches of its FIPS row: pass for a FIPS build, warn for an ordinary build
+> on a FIPS kernel, and warn for a FIPS build run with `GODEBUG=fips140=off`.
+> **Not run in that pass:** `halite-hub-fips` and `halite-api-fips` on arm64
+> (`version` only), the ordinary and `-fips` builds on a kernel that was not in
+> FIPS mode (so `fips_mode: False` was not seen), Ubuntu Pro's certified `fips`
+> kernel, a second node, token enrolment, TOTP, an upgrade, and any release
+> after v0.1.1. The ledger entry is DIVERGENCE 5.282.
 
 ## Secrets: where they are and are not
 
