@@ -23673,6 +23673,184 @@ no network path between hosts was used. One distribution, one kernel (RHEL 9's);
 Ubuntu Pro's FIPS kernel was not tried. `make check` was not run on this
 branch; this is documentation.
 
+#### The published arm64 archive, and Ubuntu Pro's FIPS kernels (issue 306)
+
+2026-11-05, two AWS hosts in us-east-1, reached through SSM as root. Both
+were already in kernel FIPS mode on Ubuntu Pro `fips-updates`. Neither was
+rebooted or moved into or out of FIPS mode for this run.
+
+- `ami-test-1`: i-06bb649fb9f76b3f6, c8g.2xlarge (Graviton), AMI
+  ami-06a7244b703c98422, **arm64**, Ubuntu 24.04.5 LTS, kernel
+  6.8.0-1067-aws-fips, `/proc/sys/crypto/fips_enabled` 1, `fips=1` on the
+  kernel command line. OpenSSL 3.0.13 with the provider "Ubuntu 24.04
+  OpenSSL Cryptographic Module" 3.0.13-0ubuntu3.15+Fips2 active.
+- `noop2-1`: i-0cc603ffb64dfbeea, c6a.2xlarge, AMI ami-09db3cf260e84b5d2,
+  **amd64**, Ubuntu 22.04.5 LTS, kernel 5.15.0-1117-aws-fips,
+  `fips_enabled` 1, `fips=1`. OpenSSL 3.0.2.
+
+Both hosts had AppArmor on and `/tmp` mounted `noexec`, so all work was
+under `/root`. Both also run Salt's agent; it was still active afterwards and
+`dmesg` showed no OOM kill.
+
+**The archives.** The published v0.1.1 archives were fetched on each host
+from the GitHub release: `halite-0.1.1-linux-arm64-fips.tar.gz` on
+`ami-test-1`, `halite-0.1.1-linux-amd64-fips.tar.gz` on `noop2-1`, and the
+ordinary `halite-0.1.1-linux-<arch>.tar.gz` on each. `sha256sum -c` against
+the release's SHA256SUMS said OK on both. The build identity printed was
+`0.1.1+f4a60b7a93a4 (fips v1.0.0)`. This is the first time the *published*
+arm64 `-fips` archive was opened and run. 5.83 ran arm64 `-fips` binaries
+built from source, on Ubuntu 22.04 arm64 (kernel 5.15.0-1114-aws-fips),
+before any release carried them.
+
+**The binaries.** On both hosts, with `GODEBUG=fips140=on`, each of
+`halite-hub-fips`, `halite-api-fips` and `halite-node-fips` printed `fips
+mode on, module v1.0.0, self-tests passed` from `version`, rc 0, six runs
+in all. Without `GODEBUG`, `halite-node-fips version` also said `fips mode
+on`, because the build defaults to it. With `GODEBUG=fips140=off`,
+`version` printed only the identity line and no `fips mode on`.
+
+**The grains.** `halite-node[-fips] grains get <grain>`, identical on both
+hosts:
+
+| grain | `-fips` | `-fips`, `fips140=off` | ordinary build |
+|---|---|---|---|
+| `fips_mode` | True | True | True |
+| `fips_build` | True | True | False |
+| `fips_enabled` | True | False | False |
+| `fips_module` | v1.0.0 | v1.0.0 | (empty) |
+
+So `fips_mode` is the kernel's state alone, as 1.11 says. The handbook said
+otherwise in two places (see below).
+
+**doctor, in all three directions.** On both hosts:
+
+- `halite-node-fips doctor`, before any hub existed: `pass FIPS mode
+  consistency  the kernel is in FIPS mode and this is a FIPS build (module
+  v1.0.0, in FIPS mode)`.
+- The ordinary `halite-node doctor`: `warn FIPS mode consistency  the
+  kernel is in FIPS mode and this is not a FIPS build`.
+
+On `ami-test-1` only, `GODEBUG=fips140=off halite-node-fips doctor`: `warn
+... the kernel is in FIPS mode and this FIPS build (module v1.0.0) is not
+running in FIPS mode`. This is the third branch, and the Rocky run did not
+reach it. With the services up: `halite-hub-fips doctor` on `noop2-1` gave
+7 pass, 1 skip, FIPS row pass. `halite-node-fips doctor` on `ami-test-1`,
+enrolled and connected, gave 10 pass, 1 skip; the connectivity row read
+`172.26.28.44 answered in 2ms: halite-hub 0.1.1+f4a60b7a93a4 (fips v1.0.0)
+ok` and the FIPS row passed. `halite-api-fips doctor` gave 3 pass, 1 warn;
+the warn is the 2-day self-signed serving certificate made for the test.
+The FIPS row passed.
+
+**Hub, node and API as services, across two hosts.** The hub ran on
+`noop2-1` (amd64) and the node on `ami-test-1` (arm64). Only TCP 22 and
+8301 were open between them, so the hub had `listen: 172.26.28.44:8301`.
+The units and drop-ins came from the archive's `service/systemd/` and
+`service/systemd/fips/`. Only the `-fips` binaries were installed, with no
+`/usr/local/bin/halite-hub` and so on, so a unit could start only if the
+drop-in's `ExecStart` replaced the base one. `systemctl cat` showed the base
+`ExecStart`, then `Environment=GODEBUG=fips140=on`, an empty `ExecStart=`
+and the `-fips` `ExecStart`. Each of `halite-hub`, `halite-node` and
+`halite-api` was active; `/proc/<pid>/exe` was the `-fips` file;
+`/proc/<pid>/environ` held `GODEBUG=fips140=on`; the journal at priority
+`err` had 0 lines for all three.
+
+- Hub, first start: it created the enrollment CA (ecdsa-p256) and a
+  serving certificate for `localhost,127.0.0.1,::1,noop2-1,noop2-1.ref…,
+  172.26.28.44`. Then `keys operator create ed --admin` and a restart.
+- Node: a `node.yaml` with the hub at 172.26.28.44, `hub_port` 8301 and the
+  pinned fingerprint. `enroll` returned rc 2 (pending). On the hub, `keys
+  list` showed the fingerprint the node had printed (42:c2:95:…). After
+  `keys accept`, `enroll` printed `enrolled`, the unit started, and
+  `manage.status` showed `up: [ami-test-1-h306]`.
+- API: `halite-api-fips` on `noop2-1` as a service under its drop-in,
+  `listen` 127.0.0.1:4511, hub 172.26.28.44:8301, its own operator
+  certificate `api` and a self-signed P-256 serving certificate. `halite-api-fips
+  account hash` gave `pbkdf2-sha512$…`. With curl (the host's OpenSSL, in
+  FIPS mode): `/v1/readyz` answered ready; `/v1/login` returned a token; a
+  wrong password got 401; `/v1/run` of `test.ping` returned true from the
+  arm64 node; `grains.item` of `fips_build` returned true; `cmd.run` got 403
+  `no rule in [webops] permits cmd.run against "ami-test-1-h306"`. curl
+  negotiated TLSv1.3 and TLS_AES_128_GCM_SHA256.
+
+**Jobs.** From the hub: `test.ping` returned True. `grains.item` for
+`fips_mode`, `fips_build` and `fips_enabled` returned true each,
+`fips_module` `v1.0.0`, `cpuarch` `aarch64` and `kernelrelease`
+`6.8.0-1067-aws-fips`. A `state.apply` of a `file.managed`
+(`/root/h306/managed.txt`, mode 0600) reported changed=1; a second apply
+reported the file already in the requested state. On the node the file had
+the contents, mode 600, owner root.
+
+**TLS.** From `ami-test-1`'s OpenSSL (the FIPS provider) to the hub, with
+`-alpn halite/1,h2`: TLSv1.3, TLS_AES_128_GCM_SHA256, server temporary key
+ECDH prime256v1, an ECDSA signature, and the SANs above. Without ALPN the
+hub refused (alert 80) and logged `does not speak halite/1`. That is
+expected, and chapter 30 of the handbook already passes `-alpn`.
+
+**An open question: Ed25519.** The hub's CertificateRequest listed
+`0x07+0x08` (Ed25519, 0x0807) among the signature algorithms it accepts,
+with `fips140=on`. SPEC 27.4 says "Ed25519 is unavailable" in FIPS mode.
+Go's own list for its native FIPS 140-3 mode (`crypto/tls/defaults_fips140.go`,
+`allowedSignatureAlgorithmsFIPS`) includes Ed25519; the list without it is
+the boringcrypto one. halite's own key generation (`internal/builtin/x509.go`,
+`key_algorithm`) still refuses ed25519 under FIPS by its own rule. This was
+not investigated further. It is a question and not a conclusion: SPEC 27.4
+and the Go list may disagree about what the TLS handshake accepts, and
+nothing here settles which one is right.
+
+**Two handbook sentences were wrong, and are corrected with this change.**
+`docs/handbook/08-grains.md` had the row `fips_mode | true/false | Whether
+this build and host are in FIPS mode.` `docs/handbook/28-hardening.md` said
+"The `fips_mode` grain is a pair, the host kernel's state *and* the
+binary's". The table above shows both are wrong: the ordinary build on a
+FIPS kernel reads `fips_mode: True`. The grain is the kernel's state;
+`fips_build`, `fips_enabled` and `fips_module` describe the binary.
+
+**A defect: `grains.item` took one name.** `halite-hub run ami-test-1-h306
+grains.item fips_mode fips_build fips_enabled fips_module cpuarch
+kernelrelease` returned `grains.item: takes at most 1 positional
+arguments, got 6`. `docs/operations.md` gives `halite-hub run '*'
+grains.item fips_mode fips_build fips_module` as the way to check the FIPS
+state of an estate, so that documented command failed on every node. A
+list as one quoted argument, `grains.item '[fips_mode, fips_build]'` with
+default argument parsing, returned a single grain literally named
+`[fips_mode,fips_build]` with value null. Cause and fix are in 5.587.
+
+**Seen, not fixed.** The operator CLI dials `localhost:<port of listen>`
+unless `--hub` is given. With `listen: 172.26.28.44:8301`, `halite-hub
+runner manage.status` failed: `dial tcp 127.0.0.1:8301: connect:
+connection refused`. `--hub 172.26.28.44` after the subcommand worked. The
+code is `operatorClient` in `cmd/halite-hub/run.go`.
+
+**Not covered.**
+
+- main (b842f005) was not run on the hosts, only v0.1.1. The FIPS code
+  changed little since then: `internal/fips`, the grain,
+  `internal/doctor/fips.go` and the drop-ins are unchanged, and
+  `cmd/halite-node/doctor.go` changed 2 lines.
+- No reboot. Neither host was moved into or out of FIPS mode, so
+  `fips_mode: False` on these kernels was not seen.
+- Ubuntu Pro's certified (non-updates) `fips` kernel. Both hosts are
+  `fips-updates`. SPEC 14.1 says `fips_mode` also reads the Ubuntu Pro FIPS
+  package state; the code (`internal/grains/platform_linux.go`) reads only
+  `/proc/sys/crypto/fips_enabled`. That is not changed here.
+- The arm64 host ran only the node. The hub and the API ran on amd64.
+  `halite-hub-fips` and `halite-api-fips` on arm64 ran `version` only.
+- One node; no token enrolment; no TOTP (it is disabled in FIPS by design,
+  and was not tried); no upgrade. The units were started, not enabled,
+  and no host was rebooted, so a start at boot was not seen.
+- RHEL family: only the earlier Rocky 9.8 run.
+
+Issue 306's arm64 half is now run, for the node. The hub and the API on
+arm64 ran `version` only.
+
+**Cleanup.** The units, drop-ins, binaries, `/etc/halite`, `/var/lib/halite`,
+`/var/cache/halite`, `/var/log/halite`, `/srv/halite`, `/root/h306` and the
+`halite` user were removed from both hosts, then `daemon-reload`.
+Afterwards neither host had a halite file, process, user or listening
+port. Salt's agent was active on both and `dmesg` showed no OOM kill. One
+slip: an `rmdir /srv` in the cleanup also removed the empty stock `/srv`.
+It was recreated as root:root 0755 on both.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
@@ -36504,6 +36682,8 @@ Issue 321, the second pass, round six (`internal/tracing`).
 
 **Not verified.** A real collector going away and returning; the node and hub wiring beyond building.
 
+**The metric, since.** 5.588 adds `halite_trace_spans_dropped_total`, its alert and its panels.
+
 ### 5.549 The node's `fun` label took whatever name the hub sent
 
 Issue 321, the second pass, round seven (`cmd/halite-node/metrics.go`, `cmd/halite-node/execute.go`).
@@ -38388,7 +38568,96 @@ Each part was broken on purpose and watched to fail:
 - **Not run on FreeBSD or Linux.** Nothing here depends on the platform,
   and CI runs the tests on all four.
 
-### 5.587 `doctor` compared the configuration file with itself
+### 5.587 `grains.item` took one grain name, and the documented FIPS check failed
+
+Found on 2026-11-05 during the issue 306 run on Ubuntu Pro's FIPS kernels
+(5.282). `halite-hub run ami-test-1-h306 grains.item fips_mode fips_build
+fips_enabled fips_module cpuarch kernelrelease` returned `grains.item: takes
+at most 1 positional arguments, got 6`. `docs/operations.md` gives
+`halite-hub run '*' grains.item fips_mode fips_build fips_module` as the way
+to check an estate's FIPS state, so the documented command failed on every
+node. Salt's `grains.item` takes `*args`. Passing the names as one quoted
+list, `grains.item '[fips_mode, fips_build]'` with default argument parsing,
+did not fail, but it asked for one grain literally named
+`[fips_mode,fips_build]` and returned null.
+
+**Cause.** `internal/builtin/introspect.go` declared `names` as one
+`signature.List` parameter and not as a variadic one. Two paths that must
+agree did not: the documented command line and the signature that bound it.
+
+**Fix.** `names` is now variadic, as the argument vector of `cmd.run` is.
+A list passed as one argument is flattened. That form is what
+`--legacy-arg-parse`, a state's YAML or a keyword `names=[…]` give, and it
+was the only multi-name form that worked before the change, so it must keep
+working.
+
+**Test.** `TestGrainsItemTakesSeveralNames`
+(`internal/builtin/grains_item_test.go`) covers one name, several names, a
+list as one argument, and the keyword form. Before the fix it failed on
+"several names" only. It was broken on purpose twice. Without `Variadic:
+true`, "several names" fails. Without the flattening, "a list as one
+argument" fails.
+
+**Not verified.** The fix was not run on a host. The hosts ran v0.1.1,
+which has the defect, and the fix is not in any release. The test goes
+through the same `Bind` path that refused the call, but nobody has run
+`halite-hub run '*' grains.item …` with several names against a node since
+the change.
+
+### 5.588 Spans lost to a full queue or a failed export were counted and never exposed
+
+Issue 609, the metric 5.548 left owed.
+
+**The defect.** SPEC 26.2 asks for a counter behind every drop path. Since
+5.548 the tracer counted both of its own -- `Dropped()` for a full export
+queue, `Failed()` for a batch the exporter did not take -- and only logged
+them. Neither binary exposed either, so a collector that was down showed
+nothing an alert could see.
+
+**The change.** `halite_trace_spans_dropped_total{reason="queue_full"|"export_failed"}`
+on the hub (`internal/hub/metrics.go`) and on the node
+(`cmd/halite-node/metrics.go`, declared by `buildTracer`). It is read from
+the tracer at scrape time through a new `metrics.CounterFunc`, not counted
+again by a callback into a `Counter`: the tracer already keeps both totals
+and its shutdown line reads them, so a callback would be a second count
+that had to agree with the first, fed by a hook every drop path had to
+call. `CounterFunc` takes a closed set of label values, so both series are
+exported at 0 from the first scrape, tracing on or off (a nil tracer reads
+0), and `increase()` sees the first loss. `tracing.Lost(reason)` maps the
+label to the count; `LostReasons` is the set. A row in each table of
+`docs/metrics.md`, the `HaliteTraceSpansDropped` rule (no job filter, so it
+covers both scrapes; a 10-minute window held for 15 minutes, so one short
+loss does not fire), and a panel in the hub service row and in the node
+row of the example dashboard (version 7). The doc comment on `Failed`,
+which began "Dropped is", is corrected.
+
+**Shown.** The hub test scrapes `/v1/metrics` as an operator from a hub
+with tracing off, one whose exporter takes every batch and one whose
+exporter refuses: both reasons are present at 0 in the first two, and
+`export_failed` is 3 after three refused batches in the third. The node
+test builds the tracer through `buildTracer` with the real OTLP exporter
+against a local HTTP server answering 200 or 503 and scrapes the node's
+TLS endpoint: the same three outcomes. Broken on purpose, one at a time:
+the tracer not counting failed batches fails the hub, node and tracer
+tests; `Lost` reading `Failed` for `queue_full` fails the same three;
+`buildTracer` not declaring the family fails the node test; the
+exposition skipping `CounterFunc` series fails the registry and hub tests.
+`promtool` 2.55.1 (darwin-arm64, checksum from the release's
+`sha256sums.txt`) accepts all 32 rules in the `docs/metrics.md` blocks,
+and `promtool test rules` on synthetic series shows the rule silent at 10
+minutes and firing at 25 for a node whose collector stays down, silent at
+8, 14, 20 and 40 minutes after one loss of 3 spans, and silent for a hub
+at 0 throughout. Removing `for:`, widening the window to 20 minutes, and
+a threshold of 1000 each fail one of those cases. The rule test is not
+committed: CI has no `promtool`.
+
+**Not verified.** A real OpenTelemetry collector going away and returning;
+a real Prometheus scraping either binary; Grafana importing the new
+panels; `queue_full` moving through either binary's scrape (it is shown
+in the tracer test, and the binaries read it through the same `Lost`).
+The API service does not trace, so it has no such counter.
+
+### 5.589 `doctor` compared the configuration file with itself
 
 Issue 615, item 1, from the issue 321 second-pass audit. `halite-node
 doctor` says whether the file on disk is what the agent is running. It
@@ -38442,8 +38711,7 @@ a node with no record.
 digest was not added; their `doctor` now declines the question rather
 than answering it. A `doctor` run as an account that cannot read the
 evidence directory reports the read error; that path was not run.
-
-### 5.588 The one-shot request's `timeout_seconds` was sent and never read
+### 5.590 The one-shot request's `timeout_seconds` was sent and never read
 
 Issue 615, item 3. `halite-hub ssh` put the roster target's `timeout` into
 the request as `timeout_seconds`. `OneshotRequest.Timeout` declared it,
@@ -38472,8 +38740,7 @@ timeout_seconds=45, which the target does not read").
 **Not verified.** No agentless run over ssh was made. What a target does
 when the hub's `ssh_timeout` kills its ssh client was not looked at here;
 the comment on `oneshotSignals` says the job runs to its end.
-
-### 5.589 `state.show_highstate` printed an unregistered `runas_password`
+### 5.591 `state.show_highstate` printed an unregistered `runas_password`
 
 Issue 615, item 9. 5.266 masked `runas_password` by key in `renderLow`,
 because it is a password written into the tree: the redactor does not hold
@@ -38496,8 +38763,7 @@ the return; `show_lowstate` passed. It passes with the change.
 for other passwords a state takes as an argument (for example a
 `user.present` `password`). Those are values the redactor holds only if
 they come from encrypted pillar.
-
-### 5.590 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
+### 5.592 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
 
 Issue 615, item 6. An evidence record's `arg_digest` is the SHA-256 of the
 job's arguments after the node's redactor has run. The comments on
@@ -38523,8 +38789,7 @@ both new assertions.
 
 **Not verified.** No tool compares node records with the hub's job cache
 today, so nothing that reads `arg_digest` was run.
-
-### 5.591 The hub's event returner read `id`, which could never be set
+### 5.593 The hub's event returner read `id`, which could never be set
 
 Issue 615, item 7. 5.545 made an audit of every setting the programs read,
 and named one exception: the hub's `eventReturner` passed
@@ -38553,8 +38818,7 @@ comment that says why. The audit has no exceptions now.
 **Not verified.** No event returner was run on a hub for this change. The
 behaviour is the same by construction, because the value passed is the
 value the read always returned.
-
-### 5.592 `doctor` reported an unreadable certificate as expired before time began
+### 5.594 `doctor` reported an unreadable certificate as expired before time began
 
 Issue 615, item 8. When a certificate file was there and did not parse, the
 node's, hub's and API's `doctor` put the read error in the label and passed
@@ -38562,7 +38826,7 @@ node's, hub's and API's `doctor` put the read error in the label and passed
 "now" from a zero `NotAfter`, which overflows `time.Duration`.
 
 **Measured** on macOS 26.7.2 (arm64), with `main`'s binaries at `e02c31b`
-and the lab of 5.587, `node.crt` and `hub.crt` replaced with a line of text:
+and the lab of 5.589, `node.crt` and `hub.crt` replaced with a line of text:
 
 ```
   fail  certificate validity and expiry  this node's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
@@ -38590,8 +38854,7 @@ run. The node run above had no `hub` set: with one, `halite-node doctor`
 exits before it prints any check, because the clock check builds a hub
 client from the broken certificate and that calls `cli.Fatalf`. That is a
 separate defect and is not changed here.
-
-### 5.593 Records after a failed evidence-log open were lost and counted nowhere
+### 5.595 Records after a failed evidence-log open were lost and counted nowhere
 
 Issue 615, item 5. `evidenceLog` tries to open the chain once. When the
 open fails, `startEvidence` logs one error and every later
@@ -38611,7 +38874,7 @@ The dashboard's node row has a stat panel, "Evidence records not kept".
 The gauge's row and panel no longer say that the failure is counted
 nowhere else.
 
-**Measured** on macOS 26.7.2 (arm64), with the lab hub and node of 5.587
+**Measured** on macOS 26.7.2 (arm64), with the lab hub and node of 5.589
 and the built binary: `evidence_dir` set under a regular file, the agent
 started, and two `test.ping` jobs sent with `halite-hub run`. The node
 logged "this node is keeping no evidence record and is running anyway"
@@ -38633,8 +38896,7 @@ with the count taken out of `recordEvidence`.
 **Not verified.** The alert rule was not loaded into a Prometheus or run
 with `promtool` (not installed here). The 5.238 test that says
 `failures_total` stays 0 for this node still passes, and is still true.
-
-### 5.594 An evidence-anchor conflict was invisible after its first log line
+### 5.596 An evidence-anchor conflict was invisible after its first log line
 
 Issue 615, item 4. `anchorProblem` logs a kind of anchor failure once, at
 error level for a conflict and at warning for the others, and logs each
@@ -38657,7 +38919,7 @@ new alert, `HaliteNodeEvidenceReceiptRefused`, is for `mismatch` and
 answered. A conflict already pages from the hub. The dashboard's node row
 has a panel, "Evidence anchor problems, by problem".
 
-**Measured** with the lab of 5.587 and the built binaries. Six jobs moved
+**Measured** with the lab of 5.589 and the built binaries. Six jobs moved
 the hub's recorded head to 13. Then the agent was stopped, its evidence
 directory removed, the agent started again, and three `test.ping` jobs
 sent. The hub's anchor file recorded conflicts at sequence numbers 2, 4, 6
@@ -38676,8 +38938,7 @@ expects one error line and a count of 3. With the count removed from
 **Not verified.** `mismatch` and `receipt` were not produced live; the
 existing test of a receipt that does not verify covers that path, and it
 does not check the counter. No Prometheus loaded the alert rule.
-
-### 5.595 A job could build a render sandbox that nothing closed
+### 5.597 A job could build a render sandbox that nothing closed
 
 Issue 615, item 2. A job runs on a shallow copy of the node (`forJob`).
 `renderEngine` kept the sandbox in a field of whatever node it was called
@@ -38718,7 +38979,7 @@ after the close.
 agent, three `state.show_lowstate` jobs through `halite-hub run`, and the
 agent's child processes counted with `ps`:
 
-- macOS 26.7.2 (arm64), in the lab of 5.587: one child during the jobs and
+- macOS 26.7.2 (arm64), in the lab of 5.589: one child during the jobs and
   none 0.2 s after `SIGTERM` to the agent; the description logged once.
   `main`'s binary at `e02c31b`: one child, as above.
 - beastie, FreeBSD 15.1-RELEASE-p6 (amd64), binaries cross-built from this
@@ -38733,8 +38994,7 @@ agent's child processes counted with `ps`:
 built their sandbox before the first job. Which startup call does that was
 not traced. `render_sandbox_user` was not set, so no identity was dropped,
 and nothing ran as root. Not run on Linux.
-
-### 5.596 The hub keeps a return as the node sent it
+### 5.598 The hub keeps a return as the node sent it
 
 Issue 615, item 10, which asked whether the hub scrubs a secret from a
 return it caches (5.557 left it open). It does not, and nothing on the hub
@@ -38781,7 +39041,7 @@ registered the secret directly. The API route was read and not run.
 
 #### The owner reversed this decision (issue 659)
 
-5.596 recorded that the hub keeps a return as the node sent it, because execution output is data the caller asked for (5.268) and reading a return is authorized as running the job's function (5.513). The owner did not accept this for registered secrets. A secret in a cached return outlives the job, reaches anyone who can read the job later, and is copied into returners and exports. Issue 659 asks the hub to mask registered secrets before it caches or serves a return.
+5.598 recorded that the hub keeps a return as the node sent it, because execution output is data the caller asked for (5.268) and reading a return is authorized as running the job's function (5.513). The owner did not accept this for registered secrets. A secret in a cached return outlives the job, reaches anyone who can read the job later, and is copied into returners and exports. Issue 659 asks the hub to mask registered secrets before it caches or serves a return.
 
 **Changed.** `Server.returned` (internal/hub/jobs.go) now calls `scrubReturn` (internal/hub/returnscrub.go) before `Jobs.AddReturn`. Every other route starts from the copy the hub files: the `ret` event, `OnReturn`, the event returner, `GET /v1/jobs/{jid}`, the `jobs.lookup_jid`, `jobs.list_job` and `jobs.print_job` runners, and the API's `GET /v1/jobs/{jid}`. One scrub at the door covers them. `recordRunnerReturn` (internal/hub/runner.go) masks a runner's return in the job cache too. The caller of the runner still gets the direct answer unmasked.
 

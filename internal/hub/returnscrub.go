@@ -25,7 +25,7 @@ func (s *Server) secrets() *redact.Set {
 }
 
 // scrubReturn masks the registered secrets in a return before the hub
-// keeps it. DIVERGENCE 5.596, and the subsection under it for issue 659.
+// keeps it. DIVERGENCE 5.598, and the subsection under it for issue 659.
 //
 // It is called on the way in, before Jobs.AddReturn, and that placement
 // is the whole design. Every other place a return goes starts from the
@@ -43,7 +43,7 @@ func (s *Server) secrets() *redact.Set {
 // masked as `pillar items` and `state apply` already mask them on the
 // node. A secret in a cached return outlives the job, reaches anyone
 // allowed to read the job later, and is copied into returners and
-// exports, which is why the owner reversed 5.596's decision.
+// exports, which is why the owner reversed 5.598's decision.
 //
 // **Why the hub's own set is enough, and where it is not.** A node asks
 // the hub to compile its pillar for every job it runs, state or not
@@ -72,7 +72,7 @@ func (s *Server) secrets() *redact.Set {
 //     hub's set is in memory and is refilled by compiles, not by restart.
 //
 // For the first two the node would have to mask its own return; issue
-// 659 chose the hub, and those cases are listed as not done in 5.596's
+// 659 chose the hub, and those cases are listed as not done in 5.598's
 // subsection. The set is also the hub's whole set, not this node's, so a
 // value decrypted for another node is masked here too. That masks too
 // much, never too little, and a hub cannot tell which node a value

@@ -23,7 +23,7 @@ import (
 // Running is what this command knows about the configuration the
 // long-running service started with.
 //
-// `doctor` is a process of its own. Before DIVERGENCE 5.587 every caller
+// `doctor` is a process of its own. Before DIVERGENCE 5.589 every caller
 // said the file matched "what this process is running" -- the node by
 // comparing two loads of the file inside the doctor's own process, the hub
 // and the API by passing true -- and the process running was the doctor.
@@ -119,7 +119,7 @@ type Expected struct {
 	// pass an empty certificate in its place, so the check reported a
 	// zero NotAfter as "expired -9223372036854ms ago" -- a duration that
 	// overflowed -- beside a label that already said it was unreadable.
-	// DIVERGENCE 5.592.
+	// DIVERGENCE 5.594.
 	Unreadable error
 	// WarnWithin is how long before expiry to begin saying so.
 	//

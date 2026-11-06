@@ -92,3 +92,56 @@ func TestExportErrorsAreLoggedOncePerMinute(t *testing.T) {
 		t.Errorf("five failures in a row logged %v, want one line for the first", lines)
 	}
 }
+
+// Lost is what halite_trace_spans_dropped_total reads, by its label. Each
+// reason in LostReasons must answer from its own drop path, or a series
+// is exported that can never move -- an alert on it is silent for ever
+// -- or two reasons report one path between them.
+func TestLostAnswersForEveryReason(t *testing.T) {
+	// A full queue: the exporter is wedged, so nothing leaves it.
+	sink := &collect{block: make(chan struct{})}
+	full := &Tracer{Sampler: AlwaysSample{}, Export: sink, QueueDepth: 1, BatchSize: 1, BatchWait: time.Hour}
+	full.Start()
+	for i := 0; i < 50; i++ {
+		full.StartSpan(SpanContext{}, "job", KindServer).End()
+	}
+	close(sink.block)
+	full.Stop(context.Background())
+
+	// A failed export: three batches of one, each refused.
+	failed := &Tracer{Sampler: AlwaysSample{}, Export: failingExporter{}, BatchSize: 1, BatchWait: time.Hour}
+	failed.Start()
+	for i := 0; i < 3; i++ {
+		failed.StartSpan(SpanContext{}, "job", KindServer).End()
+	}
+	failed.Stop(context.Background())
+
+	if full.Dropped() == 0 || failed.Failed() != 3 {
+		t.Fatalf("the setup lost nothing (dropped %d, failed %d); this test established nothing",
+			full.Dropped(), failed.Failed())
+	}
+	want := map[string]struct{ full, failed int64 }{
+		LostQueueFull:    {full.Dropped(), 0},
+		LostExportFailed: {full.Failed(), 3},
+	}
+	if len(LostReasons) != len(want) {
+		t.Fatalf("LostReasons is %v; this test knows %d reasons", LostReasons, len(want))
+	}
+	for _, reason := range LostReasons {
+		w, ok := want[reason]
+		if !ok {
+			t.Errorf("LostReasons names %q, which this test does not know", reason)
+			continue
+		}
+		if got := full.Lost(reason); got != w.full {
+			t.Errorf("a full queue: Lost(%q) = %d, want %d", reason, got, w.full)
+		}
+		if got := failed.Lost(reason); got != w.failed {
+			t.Errorf("a failing exporter: Lost(%q) = %d, want %d", reason, got, w.failed)
+		}
+	}
+	var off *Tracer
+	if off.Lost(LostExportFailed) != 0 || failed.Lost("unheard_of") != 0 {
+		t.Error("a nil tracer or an unknown reason lost something")
+	}
+}

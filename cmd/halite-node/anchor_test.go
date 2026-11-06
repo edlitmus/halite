@@ -573,7 +573,7 @@ func TestAJobRecordAfterTheLogClosesIsStillALostRecord(t *testing.T) {
 // identity, a new chain whose head contradicts what the hub recorded. The
 // log has one error line for it, and the reports after that were debug
 // lines and nothing else, so a chain that stayed rewritten was invisible
-// at the default level after its first report. DIVERGENCE 5.594.
+// at the default level after its first report. DIVERGENCE 5.596.
 func TestAnAnchorConflictIsCountedAtEveryReport(t *testing.T) {
 	lab := newAnchorLab(t, "web1.example")
 	client := lab.client(t)

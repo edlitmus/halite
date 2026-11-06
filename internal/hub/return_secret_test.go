@@ -27,7 +27,7 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
-// Issue 659, and the subsection under DIVERGENCE 5.596: the hub masks
+// Issue 659, and the subsection under DIVERGENCE 5.598: the hub masks
 // the registered secrets in a return before it keeps it, and so before
 // every place a return goes from there.
 
@@ -324,14 +324,14 @@ func (r *returnSecretLab) everywhere(t *testing.T, jid string) map[string]string
 
 // **A registered secret in a cmd.run return is masked wherever the
 // return goes.** Before issue 659 the hub kept the return as the node
-// sent it (5.596), so the password a `cat` printed was in the cache on
+// sent it (5.598), so the password a `cat` printed was in the cache on
 // disk, in both job routes, in the three `jobs.*` runners and through the
 // API.
 //
 // The command does not contain the secret; its output does. A command
 // that does contain one is in the job's own record and its `new` event as
 // the operator typed it, which is the job's arguments and not its return,
-// and is recorded in 5.596's subsection as not done.
+// and is recorded in 5.598's subsection as not done.
 //
 // The `ret` event and the event returner never carried the return, and
 // are checked so that a change which adds it there has to mask it too.

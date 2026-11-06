@@ -57,14 +57,23 @@ func registerGrainsModule(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "grains", Function: "item",
-				Doc:      "Return one or more grains as a mapping.",
-				Params:   []signature.Param{req("names", signature.List, "The grain names.")},
+				Doc: "Return one or more grains as a mapping.",
+				// Variadic, as Salt's `grains.item(*args)` is: the
+				// command line is `grains.item os os_family`, one name
+				// per argument. A single List parameter made the second
+				// name an error on every node, and the command
+				// docs/operations.md gives for checking an estate's FIPS
+				// state was one of the casualties (issue 306).
+				Params: []signature.Param{{
+					Name: "names", Type: signature.List, Required: true, Variadic: true,
+					Doc: "The grain names, one per argument, or one list of them.",
+				}},
 				TestMode: signature.TestNotApplicable,
 				Section:  "14",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				out := value.NewMap(4)
-				for _, name := range states.Strings(args, "names") {
+				for _, name := range grainNames(args) {
 					v, _ := c.Grains.Get(name)
 					out.Set(name, v)
 				}
@@ -719,4 +728,32 @@ func syncExtensions(function string, kinds []string, doc string) exec.Module {
 			return c.SyncExtensions(kinds)
 		},
 	}
+}
+
+// grainNames reads `grains.item`'s names, which arrive in one of three
+// shapes: each name its own argument, which the variadic binding
+// collects into a list of strings; a single list, from a state's YAML or
+// a keyword `names=[…]`; or, from --legacy-arg-parse, a list as one of
+// the arguments, which the binding wraps in a second list. The last was
+// the only multi-name form that worked before `names` was variadic, so
+// it is flattened rather than read as one grain called "[os, os_family]".
+func grainNames(args *value.Map) []string {
+	v, _ := args.Get("names")
+	var out []string
+	var walk func(any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case nil:
+		case []any:
+			for _, item := range t {
+				walk(item)
+			}
+		case []string:
+			out = append(out, t...)
+		default:
+			out = append(out, value.KeyString(t))
+		}
+	}
+	walk(v)
+	return out
 }

@@ -766,6 +766,7 @@ themselves, under whatever you call that job.
 | `halite_beacon_events_total` | counter | `beacon` | Beacon events received from nodes. |
 | `halite_beacon_dropped_total` | counter | `beacon` | Beacon events a node's bounded queue discarded, from the overflow event it sends. |
 | `halite_authz_decisions_total` | counter | `result` | Every policy decision, allowed and denied. |
+| `halite_trace_spans_dropped_total` | counter | `reason` | Trace spans that were lost, by `reason`. `queue_full`: the export queue (2048 deep by default) was full, so the tracer dropped a finished span. Dropping is deliberate, because a slow collector must not slow a job. `export_failed`: the span was in a batch that the exporter did not take. The collector refused it (for example HTTP 503), could not be reached, or did not answer within the 30-second export deadline. Batches are also counted here when no exporter is configured. Both series are exported at 0 from the first scrape, with tracing on or off. |
 
 ### The API
 
@@ -819,6 +820,7 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_beacon_rate_limited_total` | counter | `beacon` | Beacon events the rate limit refused, which is not a loss. |
 | `halite_beacon_failures_total` | counter | `beacon` | Beacon polls that failed. |
 | `halite_beacon_queue_depth` | gauge | — | Beacon events waiting to be sent. |
+| `halite_trace_spans_dropped_total` | counter | `reason` | Trace spans this node lost, by `reason`: `queue_full` (the export queue was full) or `export_failed` (the collector refused the batch, could not be reached, or did not answer within 30 seconds). Present only when the node sets `metrics_listen`. Both series are exported at 0 from the start, with tracing on or off. The hub exports the same family for its own spans. |
 
 `halite_beacon_events_total`, `halite_beacon_dropped_total`,
 `halite_state_run_duration_seconds` and
@@ -851,6 +853,8 @@ depends on whether the family carries labels:
   for it until something is observed, so `increase(...) > 0` cannot
   fire — which is the answer you want, but not because the counter said
   zero.
+
+`halite_trace_spans_dropped_total` is the exception to this. It is labelled, but both of its `reason` values (`queue_full` and `export_failed`) are exported at 0 from the first scrape, so `increase()` sees the first loss. This holds whether tracing is on or off.
 
 The distinction matters when a rule is not firing and you are deciding
 whether that is good news. `halite-hub metrics --filter` keeps the
@@ -1054,6 +1058,19 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "Reactions were discarded; the queue overflowed"
+
+      # Trace spans are being lost. Either the tracer's export queue is
+      # full, or the collector refused the batch, could not be reached,
+      # or did not answer in time. The `reason` label says which. The
+      # window is 10m and the rule waits 15m, so one short loss, such as
+      # a collector restart, does not fire. Loss that continues for about
+      # 15 minutes does. Only traces are missing, so this is a warning.
+      - alert: HaliteTraceSpansDropped
+        expr: increase(halite_trace_spans_dropped_total[10m]) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }} is losing trace spans: {{ $labels.reason }}"
 
       # A node getting no pillar. SPEC 12.7 prefers that to a partial
       # one, which makes this the signal that something is wrong rather

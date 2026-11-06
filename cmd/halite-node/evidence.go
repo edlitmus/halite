@@ -99,7 +99,7 @@ func (n *node) recordEvidence(kind string, detail map[string]string) {
 	if log == nil {
 		// Counted every time, where the line below is said once: a node
 		// configured to keep a record whose log did not open drops every
-		// record after it, and the count is how many (DIVERGENCE 5.593).
+		// record after it, and the count is how many (DIVERGENCE 5.595).
 		// Not on a node that keeps no record, which has nothing to lose.
 		if n.evidence != nil && n.evidenceOn() {
 			n.metrics.countEvidenceUnrecorded()
@@ -314,7 +314,7 @@ func (n *node) recordExtensionChange(name, bundleVersion, status, reason string)
 // A digest of the unscrubbed text is a fingerprint of the secret, in a
 // file whose purpose is to be read by somebody else, and a short secret
 // can be recovered from its SHA-256 by guessing. The comparison it
-// costs is the one for jobs that carried a secret. DIVERGENCE 5.590.
+// costs is the one for jobs that carried a secret. DIVERGENCE 5.592.
 const maxEvidenceField = 1024
 
 // jobDetail is what the record holds about a job.

@@ -289,7 +289,7 @@ func TestArgumentsAreScrubbedBeforeTheyAreRecorded(t *testing.T) {
 	// digest of "mysql -p hunter2" is a fingerprint of the secret, and a
 	// short secret can be found from its SHA-256 by guessing; the cost is
 	// that the hub cannot reproduce this digest for a job that carried a
-	// secret. DIVERGENCE 5.590.
+	// secret. DIVERGENCE 5.592.
 	if recs[0].Detail["arg_digest"] == nodeevidence.DigestString("mysql -p hunter2") {
 		t.Error("the digest is of the unscrubbed arguments, which fingerprints the secret")
 	}
@@ -536,7 +536,7 @@ func TestEveryRecordKindStartsAtZeroWhenEvidenceIsOn(t *testing.T) {
 // The open is tried once, its failure is logged once, and before this
 // every record after it went nowhere and was counted nowhere: the gauge
 // said the log was shut and nothing said how much was lost. DIVERGENCE
-// 5.593.
+// 5.595.
 func TestRecordsDroppedForALogThatDidNotOpenAreCounted(t *testing.T) {
 	blocker := filepath.Join(t.TempDir(), "afile")
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {

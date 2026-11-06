@@ -14,6 +14,7 @@ package metrics
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,6 +86,11 @@ type family struct {
 	// than stored: a queue's depth is the queue's business, and a copy
 	// kept in step with it is a second thing to get wrong.
 	read func() float64
+	// readEach is the same for a counter with one label whose values are
+	// a closed set, fixed when it is declared: each of fixed is a series,
+	// read by readEach at exposition time. See CounterFunc.
+	readEach func(value string) float64
+	fixed    []string
 }
 
 type sample struct {
@@ -214,6 +220,40 @@ func (r *Registry) GaugeFunc(name, help string, read func() float64) {
 	}
 	f.mu.Lock()
 	f.read = read
+	f.mu.Unlock()
+}
+
+// CounterFunc declares a counter whose series are read at exposition
+// time: one per value in values, under the single label named label.
+//
+// It exists for a total that something else already keeps, where a
+// Counter beside it would be a copy. The tracer counts the spans it lost
+// in its own atomics (Tracer.Dropped and Failed), its shutdown line reads
+// those, and so would any test; a Counter fed by a callback would be a
+// second count that has to agree with the first, kept in step by a hook
+// that has to be set before the first drop and on every path that drops.
+// That pair is the commonest shape of defect in this repository, so the
+// metric reads the tracer's count instead of keeping one. GaugeFunc is
+// the same argument for a value that goes down.
+//
+// The values are a closed set named now, so every series is exported
+// from the first scrape -- at zero until something moves it -- and
+// increase() sees the first event. That is what a labelled Counter
+// cannot do without each value being bound in advance by hand
+// (DIVERGENCE 5.235). A read that goes backwards is a restart to every
+// consumer of the exposition, so read must be monotonic; that is the
+// caller's to keep, and the reason this takes a function over a total
+// rather than over a value that can be set.
+func (r *Registry) CounterFunc(name, help, label string, values []string, read func(value string) float64) {
+	f := r.register(name, help, counterKind, []string{label}, nil)
+	if f == nil {
+		return
+	}
+	fixed := append([]string(nil), values...)
+	sort.Strings(fixed)
+	f.mu.Lock()
+	f.readEach = read
+	f.fixed = fixed
 	f.mu.Unlock()
 }
 

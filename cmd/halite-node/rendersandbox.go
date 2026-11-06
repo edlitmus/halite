@@ -58,7 +58,7 @@ type sandboxHolder struct {
 // lived until the garbage collector finalised its pipes. Whether the agent
 // had built one before the first job decided whether the jobs shared it or
 // each leaked one. The holder is a pointer the copies share, so there is
-// one child and runConnect closes it. DIVERGENCE 5.595.
+// one child and runConnect closes it. DIVERGENCE 5.597.
 func (n *node) renderEngine() render.Engine {
 	if !n.cfg.Bool("render_sandbox", false) {
 		return nil

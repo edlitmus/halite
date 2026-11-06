@@ -64,7 +64,7 @@ func TestAnAgentlessRunSendsABinaryFileUnaltered(t *testing.T) {
 //
 // The roster's `timeout` is ssh's ConnectTimeout. The hub used to send it
 // on as `timeout_seconds`, which the target's OneshotRequest declared as
-// "bounds the run on the target" and read nowhere (DIVERGENCE 5.588). A
+// "bounds the run on the target" and read nowhere (DIVERGENCE 5.590). A
 // field sent and ignored is a promise nobody keeps, and honouring this one
 // would stop every agentless run at the roster's 30-second default.
 func TestAnAgentlessRequestCarriesNoTimeoutTheTargetIgnores(t *testing.T) {
