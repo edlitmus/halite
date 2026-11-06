@@ -142,7 +142,7 @@ func (f *family) bind(values []string) *sample {
 		// with its values, which reads as data rather than as a bug.
 		panic("metrics: " + f.name + " takes " + itoa(len(f.labels)) + " label values")
 	}
-	key := strings.Join(values, "\x00")
+	key := seriesKey(values)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if s, ok := f.series[key]; ok {
@@ -153,7 +153,7 @@ func (f *family) bind(values []string) *sample {
 	// is handed.
 	if len(f.order) >= MaxSeries-1 {
 		values = overflowValues(len(f.labels))
-		key = strings.Join(values, "\x00")
+		key = seriesKey(values)
 		if s, ok := f.series[key]; ok {
 			return s
 		}
@@ -165,6 +165,29 @@ func (f *family) bind(values []string) *sample {
 	f.series[key] = s
 	f.order = append(f.order, key)
 	return s
+}
+
+// seriesKey is the map key for one label set. It must be injective:
+// two different label sets that produce one key share a series, and
+// the second is counted into the first's line under the first's
+// labels.
+//
+// It used to be the values joined with NUL, on the reasoning that no label
+// value contains one. That is a claim about the inputs, and the inputs are
+// not this package's -- a function name, an event tag, a path -- so it held
+// only until one did: With("a\x00b", "c") and With("a", "b\x00c") both made
+// "a\x00b\x00c" and came out as one series with the value 2 (issue 614,
+// DIVERGENCE 5.613). Prefixing each value with its length makes the
+// boundaries part of the key rather than a byte the values are trusted not
+// to contain, so no choice of values can move one.
+func seriesKey(values []string) string {
+	var b strings.Builder
+	for _, v := range values {
+		b.WriteString(itoa(len(v)))
+		b.WriteByte(':')
+		b.WriteString(v)
+	}
+	return b.String()
 }
 
 func overflowValues(n int) []string {
@@ -299,8 +322,15 @@ func (c *Counter) Inc() { c.Add(1) }
 
 // Add adds to the total. A negative amount is ignored: a counter that
 // went backwards would be read by every consumer as a restart.
+//
+// NaN is ignored too, and for a reason the negative test alone did not
+// reach: every comparison with NaN is false, so `n < 0` let it through,
+// and NaN plus anything is NaN, so one bad Add turned the total into
+// NaN for the life of the process (issue 614, DIVERGENCE 5.612). There
+// is no amount a NaN could stand for, and a counter cannot be repaired
+// by later Adds.
 func (c *Counter) Add(n float64) {
-	if c == nil || n < 0 {
+	if c == nil || n < 0 || math.IsNaN(n) {
 		return
 	}
 	addFloat(&c.sample().single, n)
@@ -323,8 +353,15 @@ func (g *Gauge) Add(n float64) {
 }
 
 // Observe records one measurement.
+//
+// A NaN is dropped whole: not counted, not summed, not bucketed.
+// Summed, it made `_sum` NaN for good, and every rate or mean built on
+// it with it (issue 614, DIVERGENCE 5.612); counted without being
+// summed, it would make `_count` and `_sum` disagree about how many
+// measurements there were, which is the pair every average divides. A
+// NaN is not a measurement, so it is none of them.
 func (h *Histogram) Observe(v float64) {
-	if h == nil {
+	if h == nil || math.IsNaN(v) {
 		return
 	}
 	s := h.sample()

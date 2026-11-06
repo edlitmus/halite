@@ -39785,6 +39785,329 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/jobs.go`).
 
 **Not verified.** How long `jobs active` takes on a large real cache. It reads one JSON file for each job, and the time was not measured. Noticed, not changed: the `Settle` of the hub (`internal/hub/batch.go`) still reads only the newest 500 jobs to expire old ones, so it never settles a job that is older than that.
 
+### 5.611 A cancelled context did not stop a varlink call
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/varlink/varlink.go`). The audit ran on Linux at `main`
+2ee49b73.
+
+**The defect.** `Call` copied the deadline of the context onto the
+connection. If the context had no deadline, `Call` used 30 seconds. A
+context that was cancelled without a deadline was never read. A call to
+a service that does not answer waited the full 30 seconds.
+
+**Shown.** The audit used a server that never answers. It cancelled the
+context at 200 ms. The call was still blocked 3 s later. The only
+caller is `journaldControl` in `internal/builtin/journald.go`, which
+sends rotate, flush and sync to `io.systemd.Journal`. A cancelled job
+(a job kill, or ^C by the operator) that ran one of these against a
+stuck journald held on for up to 30 s.
+
+**The change.** `context.AfterFunc(ctx, ...)` sets the deadline of the
+connection to a time in the past when the context ends. This wakes the
+blocked write or read. The error that `Call` returns now wraps
+`ctx.Err()`, so `errors.Is(err, context.Canceled)` is true. Before, the
+error was an i/o timeout.
+
+**Tested.** `TestVarlinkStopsWhenTheContextIsCancelledWithoutADeadline`
+(`internal/varlink/varlink_test.go`) cancels the context at 150 ms with
+no deadline. With the body of the AfterFunc removed, the test fails
+with "the call was still blocked 3s after its context was cancelled".
+The test passes with `-race`.
+
+**Not verified.** No real systemd-journald was used. The test uses a
+fake unix-socket server that never replies. The journald module itself
+was not run.
+
+### 5.612 A NaN passed the counter guard and poisoned a histogram sum
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/metrics/metrics.go`).
+
+**The defect.** `Counter.Add` ignored `n < 0`. Every comparison with
+NaN is false, so a NaN passed the guard. NaN plus any number is NaN, so
+the total stayed NaN for the life of the process. `Histogram.Observe`
+added a NaN to `_sum` in the same way.
+
+**Shown.** The audit called `Add(2)`, `Add(NaN)`, `Add(1)`. The output
+was `scratch_total NaN`. It then called `Observe(1)`, `Observe(NaN)`,
+`Observe(1)`. The output was `scratch_seconds_sum NaN`.
+
+**The change.** `Counter.Add` ignores a NaN. `Histogram.Observe` drops a
+NaN completely. The NaN is not counted, not summed and not put in a
+bucket. As a result, `_count` and `_sum` still agree about the number
+of measurements.
+
+**Not changed.** `Gauge.Set(NaN)` and `Gauge.Add(NaN)` are as before. A
+gauge can be NaN in the Prometheus format, and `Set` replaces the
+value, so the gauge can recover. `Counter.Add(+Inf)` is also as before.
+The audit found no caller that passes a NaN. No metric name or label
+changes, so no dashboard changes.
+
+**Tested.** `TestANaNDoesNotPoisonACounterOrAHistogram`. With the
+counter guard removed, the output lacks `scratch_total 3`. With the
+histogram guard removed, the output lacks `scratch_seconds_sum 2`, the
+`_count 2` line and the value 2 in the `+Inf` bucket.
+
+### 5.613 Label values with a NUL byte could share a series
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/metrics/metrics.go`).
+
+**The defect.** The key of the series map was the label values joined
+with a NUL byte. `With("a\x00b","c")` and `With("a","b\x00c")` both made
+`a\x00b\x00c`. The two label sets were one series. They were counted
+together and shown under the labels of the first one.
+
+**Shown.** The audit measured those two label sets as one series with
+the value 2.
+
+**The change.** `seriesKey` writes the length of each value, then a
+colon, then the value. The boundaries are in the key, so no choice of
+values can make two keys the same. The exposition format does not
+change. The audit found no caller that passes a NUL byte.
+
+**Tested.** `TestLabelValuesContainingTheSeparatorStayDistinct` makes
+the two label sets above and expects 2 series. It also makes
+`("1:a","")`, `("","1:a")` and `("1","a")` and expects 3 series. With
+the old join put back, the first pair gives one series with the value 2.
+
+### 5.614 -S and S@ now give the answers that Salt 3007.1 gives
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`internal/target/target.go`, `compileSubnet`).
+
+**The defect.** The issue named three cases. An `ipv6` grain with a
+zone (`fe80::1%eth0`) did not match `fe80::/10` or `fe80::1`. The
+expression `::ffff:10.0.0.1` did not match the grain `10.0.0.1`. The
+target `-S ::ffff:10.0.0.2` did not match the mapped grain that it
+names. Two paths had to agree here: our matcher and the matcher of
+Salt.
+
+**Shown.** We asked Salt, and we did not take the answers from the
+issue. Salt 3007.1 from PyPI ran in a virtualenv on macOS with CPython
+3.10.22. This is the Python that the onedir build of Salt 3007 ships. We
+called `salt.matchers.ipcidr_match.match(expr, opts={"grains": ...})`
+directly. We used 8 sets of grains and 22 expressions, which gave 176
+answers. They are stored in `internal/target/testdata/ipcidr-salt3007.json`.
+The script that made them is beside it (`ipcidr-salt3007.py`). A second
+run of the script gives a byte-identical file.
+
+**What Salt does.** This comes from the source of Salt and from the
+capture.
+
+- The family of the expression picks the grain. An IPv4 expression reads
+  the `ipv4` grain only. An IPv6 expression reads the `ipv6` grain
+  only. An IPv4-mapped address is IPv6.
+- A bare address is compared as a string. Salt writes the expression in
+  canonical form and compares it with each grain as written. The zone is
+  part of the string. A grain that is not in canonical form
+  (`2001:0db8:0:...:0005`) is not found by address, only by network.
+- A network is a containment test on the parsed grain. A zone does not
+  stop it. In Salt, `fe80::/10` and `::/0` match `fe80::1%eth0`.
+
+**The issue was wrong in two cases.** The issue expected `::ffff:10.0.0.1`
+to match the grain `10.0.0.1`. Salt says no, because the expression is
+IPv6 and the grain is in `ipv4`. Our code already gave the answer of
+Salt here. The issue also expected `fe80::1` to match the grain
+`fe80::1%eth0`. Salt says no here too, because the zone is part of the
+string. Our code was right in the first case and the issue was wrong in
+both. The other cases in the issue were real differences.
+
+**What the old code did.** It read both grains for every expression. It
+also removed the mapping from every grain address. As a result:
+
+- `-S 10.0.0.2` matched the mapped grain `::ffff:10.0.0.2`. Salt: no.
+- `-S ::ffff:10.0.0.2` and `::ffff:a00:2` did not match it. Salt: yes.
+- `::ffff:0:0/96` did not match it. Salt: yes.
+- `Prefix.Contains` in Go's `netip` says no to every zoned address, so
+  `fe80::/10` and `::/0` never matched a zoned grain. Salt: yes.
+- A grain that is not in canonical form was matched by address. Salt: no.
+
+Against the capture, the old code disagreed with Salt in 19 answers.
+
+**The change.** The family of the expression picks the grain. An address
+is an exact string compare of `netip.Addr.String()` with the grain. A
+network is `Prefix.Contains(addr.WithZone(""))`. The canonical form of
+Go's `netip` and of CPython agree on the cases that matter: the longest
+run of zeros is compressed, the first run wins a tie, a single zero
+group is not compressed, and a mapped address is written in dotted form.
+The capture has rows for each of these.
+
+**Kept different on purpose.** Salt parses a network strictly. So
+`10.0.0.1/24`, with host bits set, is an invalid target in Salt and
+matches nothing. We mask it to `10.0.0.0/24`. An expression that cannot
+be parsed matches nothing in Salt, and Salt logs it. We refuse to
+compile the target, as before. The test names both cases.
+
+**What an operator sees.** The grain collector of halite never writes a
+zoned or mapped `ipv6` grain. It drops the zone and files a mapped
+address under `ipv4`. These cases come from static or custom grains. In
+these edge cases only, a `-S` or `S@` target can reach a different set
+of nodes than before. Plain IPv4 and plain IPv6 targets against
+canonical grains do not change.
+
+**Tested.** `TestSubnetAgreesWithSalt`
+(`internal/target/subnet_salt_test.go`) holds the capture. It was broken
+three ways, and each way failed. The whole old matcher gave 19
+failures. With the zone strip removed, `fe80::/10` and `::/0` failed
+against a zoned grain. With the family taken after the mapping was
+removed, the mapped rows failed.
+
+**Not verified.** Only Salt 3007.1 was asked. Salt 3006 and 3008 were
+not. The matcher of Salt was called directly, not through a job that a
+real Salt deployment published. `S@` inside a nodegroup or a compound target
+was not run against Salt. It uses the same code path.
+
+### 5.615 Spans were exported without redaction
+
+Issue 614, from the issue 321 second-pass audit, round nine
+(`internal/tracing`). The audit found this by reading. It did not run
+the code.
+
+**The defect.** SPEC 26.1 puts the redactor at the sink. The logger
+calls it. Nothing in `internal/tracing` called it. The status message
+of a span is the text of an error: `span.Fail(err)` sets it, and the
+node does this in `execute.go` for a failed job. The attributes are
+whatever the caller sets. Both went to the OTLP collector as they were.
+
+**The change.** `Tracer.Secrets` is a `*redact.Set`. `Settings.Secrets`
+holds it, and `TracerFrom` passes it on. Before a batch is exported,
+the exporter goroutine scrubs the name, the status message and the
+attributes of each span. An attribute is scrubbed in the form in which
+it is exported:
+
+- A string is scrubbed.
+- A `*url.URL` is written with `Redacted()`, then scrubbed.
+- An error, a Stringer or a slice is printed with `fmt.Sprint`, then
+  scrubbed. This is what the exporter would print.
+- A number, a bool or a duration is not changed.
+
+A nil set still removes the credentials from URLs.
+
+**Wiring.** `buildTracer` in `cmd/halite-hub/trace.go` is called from
+`serve.go` with `h.secrets`. `buildTracer` in `cmd/halite-node/trace.go`
+uses `n.secrets`. Both now pass the redactor of the process. This is
+the same set that the logger holds. `halite-api` builds no tracer.
+
+**Tested.** `TestASpanIsRedactedBeforeItIsExported`
+(`internal/tracing/redact_test.go`) uses a real `httptest` OTLP
+receiver. It runs `TracerFrom`, a span, `Fail`, attributes of every
+shape, `End` and `Stop`. Then it reads the body that the receiver got.
+It was broken three ways, and each way failed. With the scrub call
+removed, a registered secret and a URL password reached the collector.
+With the branch for printed kinds removed, a registered secret reached
+the collector through an error attribute. With `Secrets: s.Secrets`
+removed from `TracerFrom`, a registered secret reached the collector.
+
+**Not verified.** No real OTLP collector was used. No test covers the
+wiring lines in the hub and the node. The tests of the `cmd` packages
+pass, and none of them fails when the `Secrets:` line in
+`cmd/*/trace.go` is removed.
+
+### 5.616 Child loggers did not share a lock, and a newline in a message started a record
+
+Issue 614, from the issue 321 second-pass audit, round twelve
+(`internal/log/log.go`). The audit found both defects by reading.
+
+**The defect, the lock.** Each `Logger` had its own `sync.Mutex`. `With`
+made a child with a new mutex over the writer of the parent. A parent
+and its child, or two children, could write at the same time. Over the
+`MultiWriter` of stderr and a log file, two records could reach the two
+sinks in a different order. Over a writer that is not safe for
+concurrent use, the records could interleave or race. halite-node calls
+`n.log = n.log.With("node_id", ...)`, and other `With` calls exist.
+
+**The change, the lock.** The mutex is now a pointer. `New` makes it,
+and every `With` child shares it.
+
+**The defect, the newline.** The console format printed the message
+whole. A message with a newline began its second line at column one. At
+column one, the line reads as a record of its own. A message can be made
+to look like one, for example `"...\nerror: forged record"`. A field
+value with a newline was already put in an indented block (DIVERGENCE
+5.261). The message was not.
+
+**The change, the newline.** The first line of the message leads the
+record line. Further lines follow it, indented by four spaces, before
+any field blocks. The JSON format does not change. It is one escaped
+string.
+
+**Shown.** `TestWithChildrenDoNotWriteAtTheSameTimeAsTheirParent` uses a
+writer that detects two writes in progress at the same time. It writes
+50 records each from a parent and two children. With a new mutex for
+each child, it fails with "149 writes overlapped".
+`TestConsoleIndentsTheRestOfAMultiLineMessage` fails with the old
+behavior put back. The continuation "error: forged record" starts at
+column one.
+
+**Not changed, not verified.** A field that is a `fmt.Stringer` with a
+newline in its text is still printed inline. Only string fields go to
+the block. A carriage return is not treated as a line break. The output
+was not watched on a real terminal or in a real log file.
+
+### 5.617 An inline file named with two leading dots was refused
+
+Issue 614, from the issue 321 second-pass audit, round five
+(`cmd/halite-node/oneshot.go`, `writeInlineFile`). The audit found this by reading.
+The issue made two claims. The first was a defect and is fixed. The
+second is not changed.
+
+**The defect.** In an agentless run (`halite-hub ssh`), the hub sends
+the state tree in the request. The node writes it to a temporary
+directory with `writeInlineFile`. The function refused any path whose
+cleaned form starts with the two bytes `..`. It refused `..data`, and
+with it the whole run. A Kubernetes ConfigMap volume writes
+`..data` and `..2024_...` into every directory that it mounts. A nested
+path such as `conf/..data` was already accepted. Only a top-level path
+was refused.
+
+**The change.** The function now calls `filepath.IsLocal` on the cleaned
+path. This function works by path element. It still refuses `..`,
+`../x`, `a/../../x` and absolute paths. On Windows it also refuses a
+volume name and a reserved name. The function now refuses an empty path
+and `a/..` explicitly. Both clean to `.`, which is the tree itself.
+Before, they failed later with "is a directory".
+
+The function also refuses an element that has only dots, such as
+`...`, on every platform. Windows removes the dots at the end of a path
+element, so on Windows `...` is the directory that holds it. The
+windows-2022 CI legs of PR 653 showed this: the first version of this
+fix accepted `...`, and on Windows the write failed with
+`open ...\...: is a directory`. `IsLocal` does not refuse `...`,
+because it is not `..`. The path cannot leave the tree. But a tree
+that writes on FreeBSD and fails on Windows is not correct. The old
+prefix test also refused `...` on every platform, so this keeps the
+old result for that name.
+
+**Shown.** `TestAnInlineFileNamedWithTwoLeadingDotsIsWritten`
+(`cmd/halite-node/inlinefile_test.go`) fails on the old code. The
+output is `"..data" was refused`. The test also shows that `""` and
+`a/..` were refused for the wrong reason. Without the dots-only check,
+it fails with `"..." was written` and `"a/..../b.sls" was written`.
+This was measured on macOS. The Windows result is from CI only.
+
+**The 0600 half is not changed.** The issue says that the function
+writes every file at 0600. We did not change this. The reason comes
+from reading the code. It is not from a test. We looked for anything
+that reads the mode of a tree file, and found nothing:
+
+- The request of the hub carries no mode. `inlineTree` in
+  `cmd/halite-hub/ssh.go` sends contents only.
+- The fetcher of the node (`Fetcher.Fetch` in `internal/fileserver`)
+  returns contents only.
+- `file.managed` and `file.recurse` write their own `mode` or
+  `file_mode`, or they use the default 0644.
+
+So no consumer can see 0600. A wider mode would show the templates of a
+state tree to every account on the target. The mode stays at 0600, and
+the code comment gives the reason. No test shows a consumer that reads
+the mode, because we found none. If one exists, this conclusion is
+wrong.
+
+**Not verified.** No real `halite-hub ssh` run against a real target
+was made. The test calls `writeInlineFile` directly.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -76,12 +76,32 @@ func Call(ctx context.Context, socketPath, method string, params any) (json.RawM
 	}
 	_ = conn.SetDeadline(deadline)
 
+	// A deadline is only half of what a context says. A context that is
+	// cancelled without one -- an operator's ^C, a job killed by the hub,
+	// a parent whose own work failed -- carries no deadline for the
+	// branch above to copy, so before this the call sat out the full
+	// thirty seconds against a service that never answered (issue 614,
+	// DIVERGENCE 5.611). Pulling the connection's deadline into the past
+	// when the context ends wakes the blocked Write or Read at once; the
+	// error that comes out of it is then a timeout, which is not what
+	// happened, so the context's own error is reported in its place.
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.SetDeadline(time.Unix(1, 0))
+	})
+	defer stop()
+
 	if _, err := conn.Write(append(req, 0)); err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, fmt.Errorf("varlink: writing request: %w", cerr)
+		}
 		return nil, fmt.Errorf("varlink: writing request: %w", err)
 	}
 
 	reply, err := readFrame(conn)
 	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, fmt.Errorf("varlink: reading reply: %w", cerr)
+		}
 		return nil, err
 	}
 	var r response

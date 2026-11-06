@@ -48,6 +48,10 @@ func (n *node) buildTracer() {
 		SampleRateSet: n.cfg.IsSet("tracing_sample_rate"),
 		Service:       "halite-node",
 		Version:       version.String(),
+		// The logger's redactor, the one pillar secrets are added to as
+		// the node learns them, so a span says no more than a log line
+		// would. Issue 614.
+		Secrets: n.secrets,
 	})
 	if err != nil {
 		n.log.Error("tracing is configured incorrectly and is off", "error", err.Error(), "component", "tracing")

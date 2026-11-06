@@ -400,7 +400,7 @@ func runServe(args *cli.Args) int {
 	// Started before the server so that a span from the first dispatch
 	// has somewhere to go, and drained after it so that the last batch
 	// before a restart is not the one that is lost.
-	tracer := buildTracer(h.cfg, h.log, "halite-hub")
+	tracer := buildTracer(h.cfg, h.log, h.secrets, "halite-hub")
 	defer stopTracer(tracer, h.log)
 
 	server := &hub.Server{

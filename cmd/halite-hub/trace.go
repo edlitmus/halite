@@ -6,6 +6,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/config"
 	hlog "github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -27,7 +28,7 @@ import (
 // fatal: a hub that refuses to start because a collector URL has a typo
 // in it takes a fleet's management with it, and no telemetry is worth
 // that. The operator is told once, at startup, at error level.
-func buildTracer(cfg *config.Config, log *hlog.Logger, service string) *tracing.Tracer {
+func buildTracer(cfg *config.Config, log *hlog.Logger, secrets *redact.Set, service string) *tracing.Tracer {
 	t, err := tracing.TracerFrom(tracing.Settings{
 		Mode:          cfg.String("tracing", "off"),
 		Endpoint:      cfg.String("tracing_endpoint", ""),
@@ -35,6 +36,9 @@ func buildTracer(cfg *config.Config, log *hlog.Logger, service string) *tracing.
 		SampleRateSet: cfg.IsSet("tracing_sample_rate"),
 		Service:       service,
 		Version:       version.String(),
+		// The logger's redactor, so a span says no more than a log
+		// line would. Issue 614.
+		Secrets: secrets,
 	})
 	if err != nil {
 		log.Error("tracing is configured incorrectly and is off",

@@ -712,48 +712,98 @@ func globMatch(pattern, s string) bool {
 }
 
 // compileSubnet matches an address or a CIDR against the node's address
-// grains.
+// grains, the way Salt's ipcidr matcher does
+// (salt/matchers/ipcidr_match.py, 3007.1). Issue 614 found three places it
+// did not (DIVERGENCE 5.614), and asking Salt showed the issue's own
+// expectation was wrong about one of them; the answers are in
+// testdata/ipcidr-salt3007.json, which the tests hold this to.
+//
+// The rules, as Salt runs them:
+//
+//   - The expression's family picks the grain. An IPv4 expression reads
+//     only `ipv4` and an IPv6 one only `ipv6`, and an IPv4-mapped address
+//     (`::ffff:10.0.0.1`) is IPv6. So `-S ::ffff:10.0.0.1` does not reach
+//     the grain `10.0.0.1`, and `-S 10.0.0.2` does not reach the mapped
+//     grain `::ffff:10.0.0.2`. This used to read both grains and unmap
+//     every address, which gave the second of those a match Salt never
+//     gives, and the mapped expression no match at all, because it was
+//     compared still mapped against grains that had been unmapped.
+//
+//   - An address is compared as a string: the expression's canonical form
+//     against each grain as it is written. A zone is part of both, so
+//     `fe80::1%eth0` matches that grain and `fe80::1` does not. netip's
+//     String and CPython's str agree on the canonical form -- the longest
+//     run of zero groups compressed, the first on a tie, a single zero
+//     group left alone, a mapped address dotted -- and the capture has a
+//     row for each of those that a grain could spell differently.
+//     A grain written in a non-canonical form, which halite's own grain
+//     collector never writes, is therefore not found by address, only by
+//     network; that is what Salt does too.
+//
+//   - A network is a containment test on the parsed grain, and a zone does
+//     not keep an address out: Salt's `fe80::/10` matches `fe80::1%eth0`.
+//     netip's Prefix.Contains says no to any zoned address, so the zone
+//     is dropped before asking. This is the row that made a link-local
+//     grain unreachable by any network.
+//
+// One difference is kept on purpose and is not this function's to settle:
+// Salt parses a network strictly, so `10.0.0.1/24` (host bits set) is an
+// invalid target there and matches nothing, where here it is masked to
+// `10.0.0.0/24`. The capture records Salt's answer; the test names the
+// exception.
 func compileSubnet(expr string) (node, error) {
-	if prefix, err := netip.ParsePrefix(expr); err == nil {
-		p := prefix.Masked()
+	// Salt tries an address first and a network second, and so does
+	// this: `fe80::1%eth0` is an address, and no prefix parses it.
+	if addr, err := netip.ParseAddr(expr); err == nil {
+		key := addressGrain(addr)
+		want := addr.String()
 		return funcNode(func(n Node) bool {
-			return anyAddress(n, func(a netip.Addr) bool { return p.Contains(a) })
+			return anyGrainAddress(n, key, func(s string) bool { return s == want })
 		}), nil
 	}
-	addr, err := netip.ParseAddr(expr)
+	prefix, err := netip.ParsePrefix(expr)
 	if err != nil {
 		return nil, &Error{Expr: expr, Msg: fmt.Sprintf("%q is neither an address nor a network", expr)}
 	}
+	p := prefix.Masked()
 	return funcNode(func(n Node) bool {
-		return anyAddress(n, func(a netip.Addr) bool { return a == addr })
+		return anyGrainAddress(n, addressGrain(p.Addr()), func(s string) bool {
+			a, err := netip.ParseAddr(s)
+			if err != nil {
+				return false
+			}
+			return p.Contains(a.WithZone(""))
+		})
 	}), nil
 }
 
-func anyAddress(n Node, pred func(netip.Addr) bool) bool {
+// addressGrain is the grain an expression of a's family is matched
+// against. An IPv4-mapped address is IPv6 here, as it is to Python's
+// ipaddress: Is4 is false for it.
+func addressGrain(a netip.Addr) string {
+	if a.Is4() {
+		return "ipv4"
+	}
+	return "ipv6"
+}
+
+// anyGrainAddress reports whether any string in the node's list grain
+// key satisfies pred.
+func anyGrainAddress(n Node, key string, pred func(string) bool) bool {
 	if n.Grains == nil {
 		return false
 	}
-	for _, key := range []string{"ipv4", "ipv6"} {
-		v, ok := n.Grains.Get(key)
-		if !ok {
-			continue
-		}
-		list, ok := v.([]any)
-		if !ok {
-			continue
-		}
-		for _, item := range list {
-			s, ok := item.(string)
-			if !ok {
-				continue
-			}
-			a, err := netip.ParseAddr(s)
-			if err != nil {
-				continue
-			}
-			if pred(a.Unmap()) {
-				return true
-			}
+	v, ok := n.Grains.Get(key)
+	if !ok {
+		return false
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range list {
+		if s, ok := item.(string); ok && pred(s) {
+			return true
 		}
 	}
 	return false

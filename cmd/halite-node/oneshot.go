@@ -420,14 +420,39 @@ func jsonString(s string) json.RawMessage {
 // The paths come from the hub, which is trusted — and a check that
 // costs nothing is a check worth having on anything that writes to
 // disk from a message.
+//
+// The test is filepath.IsLocal, which asks the question by path element.
+// It was a prefix test on the cleaned path, `..` as two bytes, which
+// refused `..data` and `..2024_11_05` -- names, not a way out of anything,
+// and the ones a Kubernetes ConfigMap volume writes into every directory
+// it mounts -- so a tree holding one failed the whole run (issue 614,
+// DIVERGENCE 5.617). A `..` element, an absolute path, an empty one and,
+// on Windows, a volume name or a reserved device name are still refused.
+//
+// Every file is written 0600 in a 0700 directory, and that is kept. The
+// request carries no mode -- the hub reads contents from its tree, not
+// modes -- and nothing on the node reads one back: the fetcher hands a
+// state the contents, and the state writes the mode it was given or
+// its own default. A wider mode would be read by nothing, and would
+// show a state tree's templates to every account on the target.
 func writeInlineFile(dir, rel, body string) error {
-	clean := filepath.Clean(rel)
-	if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	// Clean makes "" and "a/.." into ".", which IsLocal accepts and
+	// which names the tree itself rather than a file in it.
+	if clean == "." || !filepath.IsLocal(clean) {
 		return fmt.Errorf("%q is not a path inside the tree", rel)
 	}
-	for _, segment := range strings.Split(filepath.ToSlash(clean), "/") {
-		if segment == ".." {
-			return fmt.Errorf("%q leaves the tree", rel)
+	// An element made only of dots, such as "...", is refused on every
+	// platform. Windows strips trailing dots from each element, so
+	// "..." there names the directory that holds it, not a file in it:
+	// the windows-2022 CI legs of PR 653 measured `open ...\...: is a
+	// directory`. IsLocal does not catch it, because it is not "..". It
+	// cannot escape the tree, but a tree that writes a file on FreeBSD
+	// and fails on Windows is two paths that disagree, and before issue
+	// 614 the ".." prefix test refused "..." everywhere anyway.
+	for _, el := range strings.Split(clean, string(filepath.Separator)) {
+		if strings.Trim(el, ".") == "" {
+			return fmt.Errorf("%q is not a path inside the tree", rel)
 		}
 	}
 	target := filepath.Join(dir, clean)

@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -153,6 +155,68 @@ func TestVarlinkRespectsAContextDeadline(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("the deadline was not honoured: waited %s", elapsed)
+	}
+}
+
+// A context cancelled without a deadline must end the call too. Before
+// issue 614 only ctx.Deadline() was consulted, so a cancel with no
+// deadline left the call blocked for the 30-second default -- measured
+// at "still blocked 3 s later" in the audit.
+func TestVarlinkStopsWhenTheContextIsCancelledWithoutADeadline(t *testing.T) {
+	sock := shortSockPath(t)
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var (
+		mu   sync.Mutex
+		held []net.Conn
+	)
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range held {
+			c.Close()
+		}
+	})
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, conn) // hold it open, never write
+			mu.Unlock()
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatal("the test needs a context with no deadline")
+	}
+	time.AfterFunc(150*time.Millisecond, cancel)
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := Call(ctx, sock, "com.example.Slow", nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a cancelled call returned no error")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("the error does not say the context was cancelled: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Errorf("the cancel was honoured late: %s", elapsed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the call was still blocked 3s after its context was cancelled")
 	}
 }
 

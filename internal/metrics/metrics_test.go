@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -66,6 +67,72 @@ func TestACounterRefusesToGoBackwards(t *testing.T) {
 	c.Add(-3)
 	if out := render(t, r); !strings.Contains(out, "halite_authz_decisions_total 5") {
 		t.Errorf("the counter moved backwards:\n%s", out)
+	}
+}
+
+// NaN compares false with everything, so the negative-amount guard did
+// not stop it, and once summed it never left. Issue 614 measured both:
+// `scratch_total NaN` after Add(2), Add(NaN), Add(1), and
+// `scratch_seconds_sum NaN` after Observe(1), Observe(NaN), Observe(1).
+func TestANaNDoesNotPoisonACounterOrAHistogram(t *testing.T) {
+	r := NewRegistry()
+	c := r.Counter("scratch_total", "Scratch.")
+	c.Add(2)
+	c.Add(math.NaN())
+	c.Add(1)
+	h := r.Histogram("scratch_seconds", "Scratch.", []float64{1, 10})
+	h.Observe(1)
+	h.Observe(math.NaN())
+	h.Observe(1)
+
+	out := render(t, r)
+	for _, want := range []string{
+		"scratch_total 3\n",
+		"scratch_seconds_sum 2\n",
+		// Dropped whole: _count agrees with _sum about how many
+		// measurements there were.
+		"scratch_seconds_count 2\n",
+		`scratch_seconds_bucket{le="+Inf"} 2` + "\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the exposition is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "NaN") {
+		t.Errorf("a NaN reached the exposition:\n%s", out)
+	}
+}
+
+// Two label sets whose values differ only in where a NUL falls are two
+// series. With the values joined by NUL they made one key and one line
+// with the value 2 (issue 614).
+func TestLabelValuesContainingTheSeparatorStayDistinct(t *testing.T) {
+	r := NewRegistry()
+	c := r.Counter("scratch_total", "Scratch.", "x", "y")
+	c.With("a\x00b", "c").Inc()
+	c.With("a", "b\x00c").Inc()
+
+	r.families["scratch_total"].mu.Lock()
+	n := len(r.families["scratch_total"].order)
+	r.families["scratch_total"].mu.Unlock()
+	if n != 2 {
+		t.Fatalf("two distinct label sets made %d series:\n%s", n, render(t, r))
+	}
+	if out := render(t, r); strings.Contains(out, "} 2\n") {
+		t.Errorf("one series counted both:\n%s", out)
+	}
+	// And a length prefix cannot be forged either: "1:a" as one value
+	// against "1" and "a" as two would collide under a naive scheme
+	// that wrote the length without bounding it.
+	d := r.Counter("scratch2_total", "Scratch.", "x", "y")
+	d.With("1:a", "").Inc()
+	d.With("", "1:a").Inc()
+	d.With("1", "a").Inc()
+	r.families["scratch2_total"].mu.Lock()
+	n = len(r.families["scratch2_total"].order)
+	r.families["scratch2_total"].mu.Unlock()
+	if n != 3 {
+		t.Errorf("three distinct label sets made %d series", n)
 	}
 }
 
