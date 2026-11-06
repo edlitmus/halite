@@ -38192,7 +38192,7 @@ Two statements here were corrected. `event.send` through the API now
 records the operator as `_on_behalf_of`, and key actions through the API
 record `on_behalf_of`. The claim in `docs/command-reference.md` that the
 `_principal` of a hook event is the identity of the delivery was wrong:
-it is the certificate of the API. DIVERGENCE 5.587 has the details.
+it is the certificate of the API. DIVERGENCE 5.599 has the details.
 
 ### 5.583 An agentless failure was framed with Go's quoting, not JSON's
 
@@ -39047,7 +39047,7 @@ not have to read the code again.
 **Not verified.** A GPG-decrypted pillar value was not used; the node test
 registered the secret directly. The API route was read and not run.
 
-### 5.587 What an operator did through the API still named the API
+### 5.599 What an operator did through the API still named the API
 
 Issue 649, from the review of the change in 5.582 (PR 647). That change
 made the hub judge the operator for runner calls and kills. The review
