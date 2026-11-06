@@ -47,7 +47,13 @@ func runDoctor(args *cli.Args) int {
 	}
 
 	report := doctor.Run(context.Background(), doctor.RoleAPI, []doctor.Check{
-		doctor.ConfigValidity(shown, loadErr, cfg.Warnings, true),
+		doctor.ConfigValidity(shown, loadErr, cfg.Warnings, doctor.Running{
+			// The running API records no digest of what it started with, and
+			// this command is another process. It used to say "matches what
+			// this process is running", which was true of the doctor and of
+			// nothing an operator meant (DIVERGENCE 5.589).
+			Basis: "the running API records nothing to compare it with",
+		}),
 		apiCertificateCheck(args, cfg),
 		apiConnectivityCheck(args, cfg),
 		apiFIPSCheck(),
@@ -119,8 +125,8 @@ func apiCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 		cert, err := readCertFile(p)
 		switch {
 		case err != nil:
-			certs[label+" (unreadable: "+err.Error()+")"] = doctor.Expected{
-				Cert: &x509.Certificate{}, WarnWithin: servingNotice,
+			certs[label] = doctor.Expected{
+				Unreadable: err, WarnWithin: servingNotice,
 			}
 		default:
 			certs[label] = doctor.Expected{Cert: cert, WarnWithin: servingNotice}
@@ -140,15 +146,15 @@ func apiCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 		if err == nil {
 			certs[operatorLabel] = doctor.Expected{Cert: cert, WarnWithin: operatorNotice}
 		} else {
-			certs[operatorLabel+" (unreadable: "+err.Error()+")"] = doctor.Expected{
-				Cert: &x509.Certificate{}, WarnWithin: operatorNotice,
+			certs[operatorLabel] = doctor.Expected{
+				Unreadable: err, WarnWithin: operatorNotice,
 			}
 		}
 	} else if files.Exists(operatorFile) {
 		cert, err := files.ReadCert(operatorFile)
 		if err != nil {
-			certs[operatorLabel+" (unreadable: "+err.Error()+")"] = doctor.Expected{
-				Cert: &x509.Certificate{}, WarnWithin: operatorNotice,
+			certs[operatorLabel] = doctor.Expected{
+				Unreadable: err, WarnWithin: operatorNotice,
 			}
 		} else {
 			certs[operatorLabel] = doctor.Expected{Cert: cert, WarnWithin: operatorNotice}
@@ -170,8 +176,8 @@ func apiCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 		if cert, err := files.ReadCert(pki.CACertFile); err == nil {
 			certs["the hub's CA"] = doctor.Expected{Cert: cert, WarnWithin: servingNotice}
 		} else {
-			certs["the hub's CA (unreadable: "+err.Error()+")"] = doctor.Expected{
-				Cert: &x509.Certificate{}, WarnWithin: servingNotice,
+			certs["the hub's CA"] = doctor.Expected{
+				Unreadable: err, WarnWithin: servingNotice,
 			}
 		}
 	}

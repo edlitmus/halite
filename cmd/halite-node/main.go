@@ -33,7 +33,6 @@ import (
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
-	"github.com/edlitmus/halite/internal/rendersandbox"
 	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
@@ -229,9 +228,14 @@ type node struct {
 	files   stateTree
 	pillars *fileserver.Roots
 	undef   template.UndefinedMode
-	// sandbox is SPEC 25.4's render child, built on first use when
-	// `render_sandbox` is on and nil when it is off.
-	sandbox *rendersandbox.Sandbox
+	// sandbox holds SPEC 25.4's render child, built on first use when
+	// `render_sandbox` is on. A pointer to a holder rather than the
+	// sandbox itself, because a job runs on a shallow copy of the node:
+	// with the sandbox as a field, a copy that found it nil built one of
+	// its own, and the agent's close never reached it (DIVERGENCE 5.597).
+	// The holder is shared, so the agent and every job use one child and
+	// the agent closes it.
+	sandbox *sandboxHolder
 	// args and root are kept so that a job from a hub naming a
 	// different environment can have its roots rebuilt, rather than
 	// silently running against the environment this invocation happened
@@ -365,6 +369,7 @@ func setup(args *cli.Args) *node {
 		grainsMu:      &sync.RWMutex{},
 		statesRunning: new(atomic.Int64),
 		evidence:      &evidenceState{},
+		sandbox:       &sandboxHolder{},
 		metrics:       newNodeMetrics(cfg),
 		cfg:           cfg,
 		log:           logger,

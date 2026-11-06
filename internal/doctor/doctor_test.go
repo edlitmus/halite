@@ -31,7 +31,7 @@ func all(t *testing.T) []Check {
 	t.Helper()
 	kernel := false
 	return []Check{
-		ConfigValidity("/etc/halite/node.yaml", nil, nil, true),
+		ConfigValidity("/etc/halite/node.yaml", nil, nil, Running{Known: true, Same: true, Basis: "the record"}),
 		ClockSkew(time.Second, nil, time.Minute),
 		CertificateExpiry(map[string]Expected{
 			"node": {
@@ -143,9 +143,10 @@ func everyOutcome(t *testing.T) []Result {
 	var checks []Check
 
 	checks = append(checks,
-		ConfigValidity("/etc/halite/node.yaml", errors.New("line 3: bad indent"), nil, true),
-		ConfigValidity("/etc/halite/node.yaml", nil, []string{"tracing"}, true),
-		ConfigValidity("/etc/halite/node.yaml", nil, nil, false),
+		ConfigValidity("/etc/halite/node.yaml", errors.New("line 3: bad indent"), nil, Running{}),
+		ConfigValidity("/etc/halite/node.yaml", nil, []string{"tracing"}, Running{}),
+		ConfigValidity("/etc/halite/node.yaml", nil, nil, Running{Known: true, Basis: "the record"}),
+		ConfigValidity("/etc/halite/node.yaml", nil, nil, Running{Basis: "nothing to compare"}),
 
 		CertificateExpiry(nil, now),
 		CertificateExpiry(map[string]Expected{
@@ -418,6 +419,38 @@ func TestFirstLineKeepsOrdinaryErrorsAlone(t *testing.T) {
 	} {
 		if got := firstLine(tc.in); got != tc.want {
 			t.Errorf("firstLine(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// A certificate file that is there and cannot be parsed fails, says why,
+// and gives no dates.
+//
+// Every caller passed an empty certificate in its place, with the reason
+// in the label, and the check reported its zero NotAfter as "expired
+// -9223372036854ms ago": a duration that had overflowed. DIVERGENCE 5.594.
+func TestAnUnreadableCertificateIsReportedAsUnreadable(t *testing.T) {
+	now := time.Now()
+	res := CertificateExpiry(map[string]Expected{
+		"this node's certificate": {
+			Unreadable: errors.New("no PEM block found where a certificate was expected"),
+			WarnWithin: 14 * 24 * time.Hour,
+		},
+		"the hub's CA": {
+			Cert:       &x509.Certificate{NotBefore: now.Add(-time.Hour), NotAfter: now.Add(90 * 24 * time.Hour)},
+			WarnWithin: 14 * 24 * time.Hour,
+		},
+	}, now).Run(context.Background())
+	if res.Status != Fail {
+		t.Errorf("status %s, want fail", res.Status)
+	}
+	want := "this node's certificate could not be read: no PEM block found"
+	if !strings.Contains(res.Detail, want) {
+		t.Errorf("detail %q does not say %q", res.Detail, want)
+	}
+	for _, nonsense := range []string{"expired", "ms ago", "-9223372036854"} {
+		if strings.Contains(res.Detail, nonsense) {
+			t.Errorf("detail %q says %q of a certificate nobody could read", res.Detail, nonsense)
 		}
 	}
 }

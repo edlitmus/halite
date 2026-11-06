@@ -37,6 +37,10 @@ import (
 // which is the difference between this and the silence the inert-key
 // table used to describe.
 func (n *node) buildTracer() {
+	// Whatever this ends with, tracing on or off, the counter of lost
+	// spans reads it. n.tracer is set once, here, before the agent
+	// serves a scrape, and never replaced.
+	defer func() { n.metrics.countLostSpans(n.tracer) }()
 	t, err := tracing.TracerFrom(tracing.Settings{
 		Mode:          n.cfg.String("tracing", "off"),
 		Endpoint:      n.cfg.String("tracing_endpoint", ""),

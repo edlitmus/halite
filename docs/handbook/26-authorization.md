@@ -453,7 +453,7 @@ The hub judges the operator by the roles in the token, against the
 token can carry. A role that the hub does not define grants nothing, and the
 hub refuses the call. If the API and the hub run on different hosts, keep the
 two copies of `policy.yaml` the same. A copy that drifts narrows or refuses
-operators (DIVERGENCE 5.587).
+operators (DIVERGENCE 5.599).
 
 Used with a narrow operator role, the effective rights of a person are the
 intersection. The jobs the API submits record both: `submitter` is the API's
@@ -462,7 +462,7 @@ certificate and `on_behalf_of` is the person. A job submitted with `POST
 authorizes the operator itself before it submits. An `event.send` through the
 API records the person as `_on_behalf_of` in the event, and a key action
 through the API records the person as `on_behalf_of` in the key event (DIVERGENCE
-5.587). A role that is granted after a token was issued
+5.599). A role that is granted after a token was issued
 does not widen that token (the roles were frozen at issue), so a role taken
 away is a reason to revoke the token, not a change that applies mid-session.
 
