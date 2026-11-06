@@ -11,6 +11,7 @@ package policy
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -294,6 +295,9 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 			return nil, fmt.Errorf("%s: role %q rule %d is not a mapping", path, role, i)
 		}
 		r := Rule{Args: map[string]ArgRule{}}
+		if err := unknownKey(m, ruleKeys, "a rule"); err != nil {
+			return nil, fmt.Errorf("%s: role %q rule %d: %v", path, role, i, err)
+		}
 		if v, ok := m.Get("target"); ok {
 			r.Target, _ = v.(string)
 		}
@@ -336,6 +340,9 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 				if !ok {
 					return nil, fmt.Errorf("%s: role %q rule %d: args for %q is not a mapping", path, role, i, fn)
 				}
+				if err := unknownKey(cm, argRuleKeys, "an argument rule"); err != nil {
+					return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
+				}
 				var ar ArgRule
 				if ar.RequireKwargs, err = requireKwargs(cm); err != nil {
 					return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
@@ -348,6 +355,10 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 					{"allow_mods", &ar.AllowMods}, {"deny_kwargs", &ar.DenyKwargs},
 					{"allow_env", &ar.AllowEnv}, {"deny_env", &ar.DenyEnv},
 				} {
+					// A key read here must also be in argRuleKeys, or it
+					// is refused before it is read;
+					// TestEveryArgRuleKeyLoadsAndIsRead holds the two
+					// lists together.
 					if *f.dst, err = stringList(cm, f.key); err != nil {
 						return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
 					}
@@ -358,6 +369,99 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// ruleKeys and argRuleKeys are every key a rule, and an argument rule, is
+// read for. Any other key is refused at load, naming it.
+//
+// They used to be ignored, and a misspelling of a restriction is a
+// restriction that is not there: `allow_envv: [base]` under state.apply
+// loaded, and `policy test` answered "allowed" for prod (DIVERGENCE 5.590).
+// A typo in an allow or deny list, or in `require_kwargs`, fails open, and
+// so does one in the rule's own `args` -- `arg:` drops every argument rule
+// the role was written with. A rule-level typo of `functions`, `runners`
+// or `target` was already caught by the checks that a rule grants
+// something and that functions name a target, but not always (a rule that
+// grants functions and misspells `runners` loaded), and the rule is the
+// same grammar, so it is held the same way.
+//
+// The same refusal also means an older hub or API refuses a policy written
+// for a newer one, rather than enforcing it without the newer limits; that
+// is the direction to fail in, since the older program cannot enforce what
+// it does not know.
+//
+// The top level (`roles`, `bindings`) and a binding (`principal`, `roles`)
+// are not held to this. A misspelling there grants less, not more -- a
+// role no binding names, or a binding with no roles -- and is refused by
+// the checks that a binding names a principal and only defined roles, or
+// is plain from `policy show`. A top-level key is also where a YAML anchor
+// shared between roles is conventionally parked, which refusing would
+// break for no gain.
+var (
+	ruleKeys    = []string{"act_for", "args", "functions", "runners", "target"}
+	argRuleKeys = []string{"allow_env", "allow_mods", "allow_sls", "deny_env", "deny_kwargs", "deny_sls", "require_kwargs"}
+)
+
+// unknownKey refuses a key of m that is not in known, naming the first such
+// key in file order, the keys that are known, and the nearest of them when
+// one is close enough to be what was meant.
+func unknownKey(m *value.Map, known []string, what string) error {
+	for _, e := range m.Entries() {
+		k := value.KeyString(e.Key)
+		if slices.Contains(known, k) {
+			continue
+		}
+		hint := ""
+		if guess := closestKey(k, known); guess != "" {
+			hint = fmt.Sprintf("; did you mean `%s`?", guess)
+		}
+		return fmt.Errorf("`%s` is not a key of %s (known: %s)%s", k, what, strings.Join(known, ", "), hint)
+	}
+	return nil
+}
+
+// closestKey is the known key within a small edit distance of k, or "".
+// The same measure as internal/cli's flag suggestion; it is repeated rather
+// than imported because a policy parser has no business depending on the
+// command-line package.
+func closestKey(k string, known []string) string {
+	limit := 2
+	if len(k) <= 3 {
+		limit = 1
+	}
+	best, bestDistance := "", 0
+	for _, candidate := range known {
+		d := editDistance(k, candidate)
+		if d > limit {
+			continue
+		}
+		// known is sorted, so a tie keeps the first name.
+		if best == "" || d < bestDistance {
+			best, bestDistance = candidate, d
+		}
+	}
+	return best
+}
+
+// editDistance is Levenshtein over bytes; policy keys are ASCII.
+func editDistance(a, b string) int {
+	previous := make([]int, len(b)+1)
+	current := make([]int, len(b)+1)
+	for j := range previous {
+		previous[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		current[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			current[j] = min(previous[j]+1, current[j-1]+1, previous[j-1]+cost)
+		}
+		previous, current = current, previous
+	}
+	return previous[len(b)]
 }
 
 // requireKwargs reads `require_kwargs`: a mapping from a keyword name to the

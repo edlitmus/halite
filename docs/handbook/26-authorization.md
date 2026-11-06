@@ -257,8 +257,14 @@ node and is not judged: limit that case with `env_allowlist` on the node. For
 an orchestration, the policy judges the `env` argument, as a keyword or as the
 second positional argument, and an orchestration with no `env` is judged as
 `base`. A resume is judged on the environment of the run that it resumes. An
-older hub or API ignores these two keys silently, and so does this build for a
-key that it does not know. Upgrade first and check the spelling.
+older hub or API ignores these two keys silently. Upgrade first.
+
+A key that a rule or an argument rule does not know is refused, and the
+policy does not load. The error names the role, the rule index, the key, and
+the nearest known key, so `allow_envv` is reported as a misspelling of
+`allow_env` and is not a limit that is silently absent. The hub and the API
+do not start with such a policy. `halite-hub policy show` reports the same
+error.
 
 `require_kwargs: {test: true}` is how a role is held to a rehearsal. The dry-run
 flag (`run --test`, `"test": true` in the API) is a keyword on the wire, and

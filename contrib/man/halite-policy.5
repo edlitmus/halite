@@ -65,6 +65,10 @@ A call that omits the keyword, or gives another value or another type, is refuse
 The dry-run flag counts as the keyword
 .Ql test .
 .El
+.Pp
+Any other key in a rule, or in an argument rule, is refused, and the
+policy does not load: a misspelt limit would otherwise be a limit that
+is not there.
 .Sh PRINCIPALS
 .Bl -tag -width "reactor:name" -compact
 .It Li cert:CN=name
