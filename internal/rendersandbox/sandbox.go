@@ -58,6 +58,7 @@ import (
 	"os/exec"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/edlitmus/halite/internal/render"
@@ -272,7 +273,23 @@ type childProcess struct {
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
 	pid    int
+	once   sync.Once
 }
+
+// live counts the children this process has started and not yet waited
+// for, across every Sandbox. See Live.
+var live atomic.Int64
+
+// Live reports how many render sandbox children this process has started
+// and not yet ended and reaped.
+//
+// It is how a caller proves it releases what it starts. A node job ran on
+// a copy of the node that built a sandbox of its own, and the agent's
+// close was for the agent's sandbox, which was never started; each job's
+// child was left to be reaped when its pipes were finalised. Nothing that
+// looked at one Sandbox could see that, because the one that leaked was
+// gone by the time anybody looked (DIVERGENCE 5.597).
+func Live() int64 { return live.Load() }
 
 // start launches the child and reads its hello.
 func start(cfg Config) (*childProcess, error) {
@@ -342,6 +359,7 @@ func start(cfg Config) (*childProcess, error) {
 	_ = childOut.Close()
 
 	c := &childProcess{cmd: cmd, stdin: stdin, stdout: stdout, pid: cmd.Process.Pid}
+	live.Add(1)
 	hello, err := readFrame(stdout)
 	if err != nil {
 		_ = c.close()
@@ -361,12 +379,17 @@ func start(cfg Config) (*childProcess, error) {
 }
 
 func (c *childProcess) close() error {
-	_ = c.stdin.Close()
-	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-	}
-	_ = c.stdout.Close()
-	return c.cmd.Wait()
+	var err error
+	c.once.Do(func() {
+		_ = c.stdin.Close()
+		if c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		_ = c.stdout.Close()
+		err = c.cmd.Wait()
+		live.Add(-1)
+	})
+	return err
 }
 
 // render performs one exchange: the request, then the callbacks the

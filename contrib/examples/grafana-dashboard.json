@@ -3896,12 +3896,104 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Spans the hub recorded and never exported, per second, by why: queue_full is a span dropped because the export queue was full, export_failed is a span in a batch the collector did not take (down, refusing, or slower than the 30-second export deadline). Both lines sit at 0 on a hub with tracing off. Losing spans never slows a job; it costs only the traces. HaliteTraceSpansDropped alerts on a loss that lasts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "spans/s",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 150
+      },
+      "id": 91,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(halite_trace_spans_dropped_total{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "refId": "A",
+          "range": true,
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "title": "Trace spans lost, by reason",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 150
+        "y": 158
       },
       "id": 49,
       "panels": [],
@@ -3969,7 +4061,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 151
+        "y": 159
       },
       "id": 50,
       "options": {
@@ -4061,7 +4153,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 151
+        "y": 159
       },
       "id": 51,
       "options": {
@@ -4164,7 +4256,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 159
+        "y": 167
       },
       "id": 52,
       "options": {
@@ -4256,7 +4348,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 159
+        "y": 167
       },
       "id": 53,
       "options": {
@@ -4316,7 +4408,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 167
+        "y": 175
       },
       "id": 54,
       "options": {
@@ -4409,7 +4501,7 @@
         "h": 4,
         "w": 9,
         "x": 6,
-        "y": 167
+        "y": 175
       },
       "id": 55,
       "options": {
@@ -4512,7 +4604,7 @@
         "h": 4,
         "w": 9,
         "x": 15,
-        "y": 167
+        "y": 175
       },
       "id": 56,
       "options": {
@@ -4549,7 +4641,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 171
+        "y": 179
       },
       "id": 69,
       "panels": [
@@ -6060,6 +6152,71 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
+          "description": "Evidence records this node did not write because its evidence log is not open. Each is a job or an event that has no entry in the record. The log says once that the log did not open, and this is the count of what was lost after it (HaliteNodeEvidenceUnrecorded alerts when it rises). 0 while the log is open.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 52
+          },
+          "id": 93,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(halite_node_evidence_unrecorded_total{job=\"$node_job\", instance=~\"$node_instance\"}[$__range]))",
+              "refId": "A",
+              "range": true
+            }
+          ],
+          "title": "Evidence records not kept",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "description": "Jobs this node accepted to run, per second: past the replay guard and the signature check, counted where the evidence record for the acceptance is written. Compare with Evidence records, by kind: jobs accepted while the records are flat is what HaliteNodeEvidenceStopped alerts on. A job refused afterwards because the queue was full was accepted first.",
           "fieldConfig": {
             "defaults": {
@@ -6146,6 +6303,190 @@
           ],
           "title": "Jobs accepted",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Spans the nodes recorded and never exported, per second, by why: queue_full (the export queue was full) or export_failed (the collector did not take the batch). Both are 0 on a node with tracing off. A node's loss never reaches the hub, so this is the only place it shows.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "spans/s",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 56
+          },
+          "id": 92,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (reason) (rate(halite_trace_spans_dropped_total{job=\"$node_job\", instance=~\"$node_instance\"}[5m]))",
+              "refId": "A",
+              "range": true,
+              "legendFormat": "{{reason}}"
+            }
+          ],
+          "title": "Trace spans lost, by reason",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Reports of this node's evidence head that the hub did not anchor, or whose receipt the node did not file. conflict: the chain was rewritten, reset or rolled back since it last reported (HaliteEvidenceConflict pages for it from the hub). mismatch and receipt: the node refused the hub's receipt (HaliteNodeEvidenceReceiptRefused). unsupported: the hub keeps no anchors. failed: the report did not reach the hub. The node's log says each problem once; this counts every report.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 12,
+            "x": 0,
+            "y": 64
+          },
+          "id": 94,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (problem) (increase(halite_node_evidence_anchor_problems_total{job=\"$node_job\", instance=~\"$node_instance\"}[5m]))",
+              "refId": "A",
+              "range": true,
+              "legendFormat": "{{problem}}"
+            }
+          ],
+          "title": "Evidence anchor problems, by problem",
+          "type": "timeseries"
         }
       ],
       "title": "Node agents",
@@ -6157,7 +6498,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 172
+        "y": 180
       },
       "id": 75,
       "panels": [
@@ -6534,7 +6875,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 173
+        "y": 181
       },
       "id": 76,
       "panels": [],
@@ -6573,7 +6914,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 174
+        "y": 182
       },
       "id": 77,
       "options": {
@@ -6770,6 +7111,6 @@
   "timezone": "",
   "title": "halite",
   "uid": "halite-control-plane",
-  "version": 6,
+  "version": 7,
   "weekStart": ""
 }

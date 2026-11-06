@@ -320,7 +320,7 @@ halite-hub doctor
 ```
 halite-hub doctor — /etc/halite/hub.yaml
 
-  pass  configuration validity           /etc/halite/hub.yaml loads, and matches what this process is running
+  pass  configuration validity           /etc/halite/hub.yaml loads; not compared with what the service is running: the running hub records nothing to compare it with
   pass  certificate validity and expiry  operator ed: 29 days left; the enrollment CA: 3649 days left; this hub's certificate: 89 days left
   pass  file server reachability         file_roots for base: 1 root(s)
   pass  pillar compilation               compiles, 2 top-level key(s)

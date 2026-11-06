@@ -12,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/nodeevidence"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/transport"
 
 	"github.com/edlitmus/halite/internal/metrics"
@@ -226,6 +227,15 @@ func (s *Server) setupMetrics() {
 		m.eventsDropped.With(reason)
 	}
 	m.orchRuns.With("compile_failed")
+
+	// SPEC 26.2's counter for the tracer's two drop paths. Read from the
+	// tracer at scrape time rather than counted here: the tracer already
+	// keeps both totals, and its shutdown line reads them too, so a copy
+	// would be a second count that had to agree (metrics.CounterFunc).
+	// s.Tracer is nil with tracing off and reads 0, so both series exist
+	// on every hub and HaliteTraceSpansDropped sees the first loss.
+	r.CounterFunc(tracing.LostMetric, tracing.LostMetricHelp, "reason", tracing.LostReasons,
+		func(reason string) float64 { return float64(s.Tracer.Lost(reason)) })
 
 	r.GaugeFunc("halite_hub_nodes_connected",
 		"Nodes with a live subscribe stream.", func() float64 {

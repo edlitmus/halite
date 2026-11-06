@@ -285,6 +285,17 @@ func TestArgumentsAreScrubbedBeforeTheyAreRecorded(t *testing.T) {
 	if recs[0].Detail["arg_digest"] == "" {
 		t.Error("no digest of the arguments was recorded")
 	}
+	// The digest is of the scrubbed text, not the arguments as sent. A
+	// digest of "mysql -p hunter2" is a fingerprint of the secret, and a
+	// short secret can be found from its SHA-256 by guessing; the cost is
+	// that the hub cannot reproduce this digest for a job that carried a
+	// secret. DIVERGENCE 5.592.
+	if recs[0].Detail["arg_digest"] == nodeevidence.DigestString("mysql -p hunter2") {
+		t.Error("the digest is of the unscrubbed arguments, which fingerprints the secret")
+	}
+	if recs[0].Detail["arg_digest"] != nodeevidence.DigestString(recs[0].Detail["arg"]) {
+		t.Errorf("the digest is not of the recorded (scrubbed) text %q", recs[0].Detail["arg"])
+	}
 }
 
 // The configuration record holds a digest and the files, and no values.
@@ -517,5 +528,39 @@ func TestEveryRecordKindStartsAtZeroWhenEvidenceIsOn(t *testing.T) {
 	off.registerEvidenceMetrics()
 	if got := exposition(t, off); strings.Contains(got, "halite_node_evidence_records_total{") {
 		t.Errorf("a node with evidence off exports a record series, so absence no longer means a choice:\n%s", got)
+	}
+}
+
+// A node whose log did not open counts every record it then drops.
+//
+// The open is tried once, its failure is logged once, and before this
+// every record after it went nowhere and was counted nowhere: the gauge
+// said the log was shut and nothing said how much was lost. DIVERGENCE
+// 5.595.
+func TestRecordsDroppedForALogThatDidNotOpenAreCounted(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	n := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\nevidence_dir: "+filepath.Join(blocker, "evidence")+"\n")
+	if got := exposition(t, n); !strings.Contains(got, "halite_node_evidence_unrecorded_total 0") {
+		t.Fatalf("the counter is not exported at 0:\n%s", got)
+	}
+	n.startEvidence()
+	n.registerEvidenceMetrics()
+	for i := 0; i < 3; i++ {
+		n.recordEvidence(nodeevidence.KindJobAccepted, map[string]string{"jid": "x"})
+	}
+	got := exposition(t, n)
+	// startEvidence writes nothing once its open has failed, so the
+	// three are the loop's.
+	if !strings.Contains(got, "halite_node_evidence_unrecorded_total 3") {
+		t.Errorf("three records went nowhere and the count does not say so:\n%s", got)
+	}
+
+	off := nodeForEvidence(t, "metrics_listen: 127.0.0.1:0\nevidence: false\n")
+	off.recordEvidence(nodeevidence.KindJobAccepted, map[string]string{"jid": "x"})
+	if got := exposition(t, off); !strings.Contains(got, "halite_node_evidence_unrecorded_total 0") {
+		t.Errorf("a node that keeps no record counted a record as lost:\n%s", got)
 	}
 }

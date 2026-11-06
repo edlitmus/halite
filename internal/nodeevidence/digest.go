@@ -117,6 +117,12 @@ func writeValue(h sink, v any) {
 // comparison uses: a job's arguments can be larger than any sane line in
 // a file, and a record that silently dropped the rest could not be
 // checked against the hub's copy at all.
+//
+// It digests what it is given. The node gives it the arguments after its
+// redactor has run, so for a job whose arguments held a registered secret
+// the digest is not one the hub can compute from its copy; see
+// maxEvidenceField in cmd/halite-node for why that is the right way round.
+// DIVERGENCE 5.592.
 func DigestString(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return "sha256:" + hex.EncodeToString(sum[:])

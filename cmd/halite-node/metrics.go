@@ -18,6 +18,7 @@ import (
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/metrics"
+	"github.com/edlitmus/halite/internal/tracing"
 )
 
 // nodeMetrics is what a node counts about itself.
@@ -73,8 +74,10 @@ type nodeMetrics struct {
 
 	scheduleRuns *metrics.Counter
 
-	evidenceRecords  *metrics.Counter
-	evidenceFailures *metrics.Counter
+	evidenceRecords    *metrics.Counter
+	evidenceFailures   *metrics.Counter
+	evidenceUnrecorded *metrics.Counter
+	anchorProblems     *metrics.Counter
 }
 
 // newNodeMetrics reads the settings and declares the families.
@@ -169,6 +172,24 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 		"Records appended to this node's evidence chain, by kind.", "kind")
 	m.evidenceFailures = r.Counter("halite_node_evidence_failures_total",
 		"Evidence records that could not be written, which are jobs with no entry.")
+	// The records a node with no open log did not try to write. Kept
+	// apart from the failures above, which are writes that were tried:
+	// a log that failed to open is reported once, and before this every
+	// record after it went nowhere and was counted nowhere, so the gauge
+	// halite_node_evidence_log_open said the log was shut and nothing
+	// said how much had been lost (DIVERGENCE 5.595). Unlabelled, so it
+	// is exported at 0 from the start.
+	m.evidenceUnrecorded = r.Counter("halite_node_evidence_unrecorded_total",
+		"Evidence records not written because this node's evidence log is not open: "+
+			"each is a job or event with no entry in the record.")
+	// Every report the hub would not anchor, or answered with a receipt
+	// this node would not file, by why. The log says each kind once and
+	// then drops to debug until the reports recover, so a conflict -- the
+	// chain rewritten -- was an error line at its first report and
+	// invisible after that (DIVERGENCE 5.596). The problems are declared
+	// at 0 with the record kinds, on a node that keeps a record.
+	m.anchorProblems = r.Counter("halite_node_evidence_anchor_problems_total",
+		"Reports of this node's evidence head that were not anchored, by problem.", "problem")
 
 	return m
 }
@@ -230,6 +251,22 @@ func (m *nodeMetrics) countEvidenceRecord(kind string) {
 	}
 }
 
+// countLostSpans exposes the tracer's two drop paths as
+// halite_trace_spans_dropped_total, read from the tracer at scrape time
+// (metrics.CounterFunc says why it is not a Counter fed by a hook).
+//
+// Declared whether or not tracing is on: t is nil when it is off, and a
+// nil tracer reads 0 for both reasons. The family is the same on every
+// node, so a rule over it does not have to know which nodes trace, and
+// each series is at 0 before its first loss for increase() to see it.
+func (m *nodeMetrics) countLostSpans(t *tracing.Tracer) {
+	if !m.on() {
+		return
+	}
+	m.registry.CounterFunc(tracing.LostMetric, tracing.LostMetricHelp, "reason", tracing.LostReasons,
+		func(reason string) float64 { return float64(t.Lost(reason)) })
+}
+
 // declareEvidenceKinds exports the record counter at 0 for each kind.
 // Called only for a node that keeps a record: on one that does not, the
 // absence of the series is how an alert tells a choice from a failure.
@@ -245,6 +282,30 @@ func (m *nodeMetrics) declareEvidenceKinds(kinds []string) {
 func (m *nodeMetrics) countEvidenceFailure() {
 	if m.on() {
 		m.evidenceFailures.Inc()
+	}
+}
+
+func (m *nodeMetrics) countEvidenceUnrecorded() {
+	if m.on() {
+		m.evidenceUnrecorded.Inc()
+	}
+}
+
+// declareAnchorProblems exports the anchor problem counter at 0 for each
+// problem, beside declareEvidenceKinds and for the same reason: the first
+// conflict is then an increase, not a series born at 1.
+func (m *nodeMetrics) declareAnchorProblems(problems []string) {
+	if !m.on() {
+		return
+	}
+	for _, p := range problems {
+		m.anchorProblems.With(p)
+	}
+}
+
+func (m *nodeMetrics) countAnchorProblem(problem string) {
+	if m.on() {
+		m.anchorProblems.With(problem).Inc()
 	}
 }
 
