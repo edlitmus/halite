@@ -101,8 +101,17 @@ type Rule struct {
 
 // ArgRule constrains the arguments of one function.
 type ArgRule struct {
-	AllowSLS   []string
-	DenySLS    []string
+	AllowSLS []string
+	DenySLS  []string
+	// AllowEnv and DenyEnv limit the environment a call may choose: the
+	// `saltenv` of a job, the `env` of an orchestration. Patterns, as
+	// allow_sls takes. With gitfs every branch is an environment, so a
+	// role with `allow_sls: [web.*]` and no environment rule could apply
+	// web.x from any branch somebody with push rights made, whatever the
+	// role's author meant by web.x (issue 620). See requestEnv for which
+	// environment a request is judged on.
+	AllowEnv   []string
+	DenyEnv    []string
 	AllowMods  []string
 	DenyKwargs []string
 	// RequireKwargs names keywords a call must carry, each with exactly
@@ -146,6 +155,15 @@ type Request struct {
 	// `test` the node never reads from Kwarg, and a role that requires
 	// `test: true` would refuse every dry run. DIVERGENCE 5.493.
 	Test bool
+	// Env is the environment the job will be dispatched with: the
+	// `saltenv` of a fleet job, which the node adopts (adoptJobEnvironment
+	// in cmd/halite-node), and for a resume the environment of the run it
+	// picks up. Like TargetKind it must be the value handed to Dispatch,
+	// or the policy judges one environment and the node runs another
+	// (issue 620). An orchestration runner's environment is read from its
+	// own `env` argument instead (requestEnv), so a runner request needs
+	// this only for `state.orch_resume`.
+	Env string
 	// Resumes is, for a `state.orch_resume`, the orchestration names of
 	// the run it picks up, read by the hub from its run store. They are
 	// what deny_sls and allow_mods judge for a resume (runnerNames), since
@@ -328,6 +346,7 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 				}{
 					{"allow_sls", &ar.AllowSLS}, {"deny_sls", &ar.DenySLS},
 					{"allow_mods", &ar.AllowMods}, {"deny_kwargs", &ar.DenyKwargs},
+					{"allow_env", &ar.AllowEnv}, {"deny_env", &ar.DenyEnv},
 				} {
 					if *f.dst, err = stringList(cm, f.key); err != nil {
 						return nil, fmt.Errorf("%s: role %q rule %d: args for %q: %v", path, role, i, fn, err)
@@ -889,6 +908,9 @@ func checkArgRule(constraint ArgRule, req Request) string {
 	if reason := checkRequired(constraint.RequireKwargs, kwargs, req.Fun); reason != "" {
 		return reason
 	}
+	if reason := checkEnv(constraint, req); reason != "" {
+		return reason
+	}
 	// The names deny_sls and allow_mods judge. For a job they are the
 	// positional arguments, as they always were; for a runner they are
 	// the names the orchestration runners will compile, which is a
@@ -991,6 +1013,77 @@ func checkArgRule(constraint ArgRule, req Request) string {
 		}
 	}
 	return ""
+}
+
+// checkEnv applies allow_env and deny_env.
+func checkEnv(constraint ArgRule, req Request) string {
+	if len(constraint.AllowEnv) == 0 && len(constraint.DenyEnv) == 0 {
+		return ""
+	}
+	env, judged, reason := requestEnv(req)
+	if reason != "" {
+		return reason
+	}
+	if !judged {
+		return ""
+	}
+	if matchAny(constraint.DenyEnv, env) {
+		return fmt.Sprintf("%s may not be run in the environment %q by this role", req.Fun, env)
+	}
+	if len(constraint.AllowEnv) > 0 && !matchAny(constraint.AllowEnv, env) {
+		return fmt.Sprintf("%s may not be run in the environment %q by this role, which allows %s",
+			req.Fun, env, strings.Join(constraint.AllowEnv, ", "))
+	}
+	return ""
+}
+
+// requestEnv is the environment a request runs in, and whether there is
+// one to judge.
+//
+//   - A fleet job runs in Request.Env. An empty one is not judged: the job
+//     names no environment and the node runs in its own configured one,
+//     which the caller did not choose and the hub does not know. That is
+//     the node's `env_allowlist` and `env_denylist` to limit, not a role's.
+//   - An orchestration runner compiles from its `env` argument, by keyword
+//     or as the second positional argument (the runner's signature is
+//     sls, env, …), and from `base` when there is none (Server.Orchestrate
+//     in internal/hub). So the environment is always judged, and an absent
+//     one is judged as `base`, because that is where the run will compile.
+//     A keyword `env` that is not a string cannot be judged and is refused.
+//   - `state.orch_resume` names a job, and runs in the environment the
+//     earlier run used, which the hub gives in Request.Env with the names
+//     (Request.Resumes). The first question, with no names yet, is not
+//     judged here either; the second is.
+//   - Any other runner is not judged: none takes an environment that
+//     dispatches a job.
+func requestEnv(req Request) (env string, judged bool, reason string) {
+	if !req.Runner {
+		return req.Env, req.Env != "", ""
+	}
+	if req.Fun == resumeRunner {
+		return req.Env, req.Resumes != nil, ""
+	}
+	isOrch := false
+	for _, name := range orchestrationRunners {
+		isOrch = isOrch || name == req.Fun
+	}
+	if !isOrch {
+		return "", false, ""
+	}
+	if raw, ok := req.Kwarg["env"]; ok && raw != nil {
+		s, isString := raw.(string)
+		if !isString {
+			return "", false, fmt.Sprintf("%s was given `env` as %T, which this policy cannot check; give it as a string",
+				req.Fun, raw)
+		}
+		if s != "" {
+			return s, true, ""
+		}
+	}
+	if len(req.Arg) > 1 && req.Arg[1] != "" {
+		return req.Arg[1], true, ""
+	}
+	return "base", true, ""
 }
 
 // runnerNames is the set of orchestration names a runner request will

@@ -445,6 +445,9 @@ func (s *Server) dispatchFor(principal string, ob *transport.Delegation, sub Sub
 	// Submission whose Test is set and whose Kwarg says nothing of it.
 	question := policyRequestFor(principal, sub.Fun, sub.Target, sub.TargetKind, sub.Arg, sub.Kwarg, false)
 	question.Test = sub.Test
+	// And the environment, which an orchestration step sets from the
+	// run's `env` or its own `saltenv` (issue 620).
+	question.Env = sub.Env
 	decision := s.authorizeFor(question, ob)
 	if !decision.Allowed {
 		s.warn("a job dispatched on a principal's behalf was refused by policy",
