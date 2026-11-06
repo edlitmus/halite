@@ -25168,7 +25168,7 @@ Each was broken on purpose, and each failed:
 
 The environment now goes with the kind at every place that asks the policy, so
 `allow_env` and `deny_env` judge the environment that is dispatched. The
-list of places is in 5.589.
+list of places is in 5.601.
 
 ### 5.297 Four functions that run caller-supplied code were not arbitrary code
 
@@ -39395,7 +39395,7 @@ Each was broken on purpose and watched to fail:
   `maven.run` was traced and not run.
 - **The tests ran on macOS only.** CI runs them on all four platforms.
 
-### 5.589 An operator's SLS rules did not cover the environment
+### 5.601 An operator's SLS rules did not cover the environment
 
 Issue 620, found by the review of the fixes for issue 321 on 2026-11-03.
 The finding was read in code and not run.
@@ -39440,7 +39440,7 @@ policy judges:
   keyword `env` that is not a string is refused, with the reason that the
   policy cannot check it.
 - **`state.orch_resume`:** the environment of the run that it resumes. The
-  hub gives it on the second question, together with `Resumes` (5.587). The
+  hub gives it on the second question, together with `Resumes` (5.599). The
   first question does not judge it.
 - **Any other runner:** not judged. None takes an environment that
   dispatches a job.

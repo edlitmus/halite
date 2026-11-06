@@ -2251,7 +2251,7 @@ Properties that are requirements, not suggestions:
   A role may also limit the environment with `allow_env` and `deny_env` (patterns). They judge the
   `saltenv` of a job and the `env` of an orchestration, and a resume on the environment of the run
   that it resumes. A job with an empty environment is not judged, because the node runs it in its
-  own environment, and an orchestration with no `env` is judged as `base` (DIVERGENCE 5.589).
+  own environment, and an orchestration with no `env` is judged as `base` (DIVERGENCE 5.601).
 - **`cmd.run` is a distinct permission** from every other function and is never granted by a
   wildcard. `functions: ['*']` does not include `cmd.run`, `cmd.script`, `cmd.shell`, `module.run`,
   `file.write`, `file.replace`, the language package installers `pip.install`, `npm.install`,
