@@ -2250,11 +2250,16 @@ Properties that are requirements, not suggestions:
   keyword `test`, because that is what the node receives (DIVERGENCE 5.493).
 - **`cmd.run` is a distinct permission** from every other function and is never granted by a
   wildcard. `functions: ['*']` does not include `cmd.run`, `cmd.script`, `cmd.shell`, `module.run`,
-  `file.write`, `file.replace`, or any function whose signature declares `arbitrary_code: true`.
+  `file.write`, `file.replace`, the language package installers `pip.install`, `npm.install`,
+  `gem.install`, `cargo.install`, `go.install`, `composer.require`, `cpan.install`,
+  `virtualenv.create` and `maven.run`, the deferred-execution functions `at.at`, `cron.present` and
+  `win_task.create`, or any function whose signature declares `arbitrary_code: true`.
   Nor does it include a function the hub's build does not ship, which is how an extension's
   function is seen from the hub: the node marks every one `arbitrary_code`, and the hub cannot know
   which a node has loaded (DIVERGENCE 5.564). Granting them requires naming them. Salt's `.*` grants everything, and everybody's Salt ACL grants
-  `.*`.
+  `.*`. `file.*` other than `file.write` and `file.replace`, and the `ssh_auth.present` and
+  `sudo.present` states, write content that can become code. A wildcard grants them, by decision
+  (DIVERGENCE 5.600).
 - **Reading a node's pillar is a distinct permission** (section 22.1), and is never granted by a
   wildcard either: `functions: ['*']` does not include `pillar.items`, `pillar.raw`, `pillar.get` or
   `config.get`, and `runners: ['*']` does not include `pillar.show_pillar` or `cache.pillar`. It is

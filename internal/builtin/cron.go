@@ -84,7 +84,12 @@ func registerCron(r *Registries) {
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{signature.PrivTargetAccount},
-				Section:    "15.5",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. The entry is a
+				// command line the caller writes, run by cron. A delay is not a
+				// limit. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.5",
 			},
 			Fn: cronPresent,
 		},

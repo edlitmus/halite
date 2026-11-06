@@ -25273,6 +25273,13 @@ SPEC 23.5, not for this change.
   platforms.
 - The second-tier list above came from reading parameter names in the
   registry. It is not complete.
+#### Since: issue 619
+
+The second tier above is decided. Eleven execution functions and the
+`cron.present` state are now marked `arbitrary_code`, and the rest of the
+list keeps its grants. The reasons, the list that is kept and what is
+still open are in 5.600.
+
 ### 5.298 `cpan.module_version` ran the module name as Perl
 
 `cpan.module_version` asked perl for a module's version like this:
@@ -39253,6 +39260,133 @@ Each part was broken on purpose and watched to fail:
   platform dependency, and the FreeBSD leg of CI runs the tests.
 - **OIDC and LDAP principals as the operator were not exercised.** Local
   accounts were.
+
+### 5.600 The second tier of arbitrary code is decided
+
+5.297 marked four `cmd.*` functions and left a "second tier" open: the
+functions that make a node run code the caller chose, later or
+indirectly. Issue 619 asked the owner to decide. It also showed that a
+hub wildcard granted `maven.run`, `pip.install` and `at.at`. The owner
+decided, and this entry records the decision and the reason for each name.
+
+#### What is marked
+
+Each function below now declares `arbitrary_code: true`. A pattern, such as
+`'*'` or `pip.*`, does not grant it. A role must name it.
+
+Eleven execution functions:
+
+- `pip.install`, `npm.install`, `gem.install`, `cargo.install` and
+  `cpan.install`. The install step of a package runs as root on the node:
+  a `setup.py`, an npm lifecycle script, a native extension of a gem, a
+  `build.rs`, a `Makefile.PL`. The author of the package chose that code.
+  `pip.install` also takes `index_url` and `npm.install` takes `registry`,
+  so the caller chooses the source of the package.
+- `go.install`. It builds a module that the caller names, at a version that
+  the caller names. It puts the program where the node will run it.
+- `composer.require`. Composer runs the scripts of the project and the code
+  of plugins. This module passes neither `--no-scripts` nor `--no-plugins`.
+- `virtualenv.create`. It runs the `python` that the caller names.
+- `maven.run`. `goals` can name any plugin goal, and the goal of the exec
+  plugin runs a program. This was traced in the code and in the issue. It
+  was not run.
+- `at.at` and `win_task.create`. The caller writes a command line. `atd` or
+  the Task Scheduler runs it later. A delay is not a limit.
+
+One state:
+
+- `cron.present`. The caller writes a command line. `cron` runs it later.
+
+#### What is kept
+
+These write content that can become code, and the owner considered them
+with the second tier. They keep their wildcard grants.
+
+- `file.*` other than `file.write` and `file.replace`. For example
+  `file.append`, `file.patch`, `file.copy`, `file.touch`, `file.remove`
+  and the `file.managed` state. 5.16 marked `file.write` and
+  `file.replace`, and SPEC 23.5 already names them.
+- The `ssh_auth.present` state.
+- The `sudo.present` state.
+
+SPEC 23.5 now says this in words, so a later change to one of these is a
+decision about SPEC and not an edit of a signature.
+
+#### What an operator sees
+
+- **A wildcard no longer grants the twelve.** A role that relied on `'*'`
+  or on a pattern for any of them must now name each one in `functions`.
+  This is breaking for such a role. Run `halite-hub policy show` against the
+  policy before you upgrade.
+- **A node with `require_job_signature: [arbitrary_code]` refuses the
+  eleven execution functions unsigned.** The node decides the class from its
+  execution registry only (`requires` in `cmd/halite-node/jobsignature.go`).
+- **`halite-hub policy show` lists the twelve** in its line "never granted
+  by a wildcard". Handbook chapter 26 shows that line as this build prints
+  it.
+
+#### The limit for `cron.present`
+
+`cron.present` is a state. A job does not call it by name. Marking it
+changes the decision of the hub for that name: the wildcard check and the
+list in `policy show`. It does not change what a node refuses unsigned. The
+node reads only the signatures of execution functions. A node applies an SLS
+that contains `cron.present` under the `state` class of
+`require_job_signature` (`state.apply`, `state.sls`, `state.highstate`), not
+under `arbitrary_code`. A node that requires a signature for
+`arbitrary_code` and not for `state` or `mutating` accepts such an SLS
+unsigned; that is read from `requires` in `cmd/halite-node/jobsignature.go`,
+not tested. There is
+no `cron.set_job` execution function in this build, as 5.297 said.
+
+#### Not marked, and still open
+
+Issue 619 did not decide these. They keep their grants and are not changed:
+
+- the states `at.present`, `at.absent`, `win_task.present` and
+  `win_task.absent`;
+- the functions `win_task.run`, `win_task.set_enabled` and `composer.install`;
+- the package states `pip.installed`, `npm.installed` and `gem.installed`;
+- the other functions of the modules above.
+
+This list is from the names in the registry. Whether any of them belongs in
+the class is open. Where `.installed` states are concerned, the same
+reasoning as for `pip.install` can apply, and nobody has decided it.
+
+#### Tests
+
+- `internal/builtin` `TestTheSecondTierIsMarkedAndTheRestIsNot`. It holds
+  the twelve as marked. It also holds the kept list as not marked: the
+  execution functions `file.append`, `file.patch`, `file.copy`,
+  `file.touch` and `file.remove`, and the states `file.managed`,
+  `file.append`, `ssh_auth.present` and `sudo.present`.
+- `cmd/halite-node` `TestEveryCodeRunningFunctionNeedsASignatureUnderArbitraryCode`
+  now holds the eleven execution functions beside the six `cmd.*` ones.
+- `cmd/halite-hub` `TestChapterTwentySixListsWhatPolicyShowPrints` holds the
+  handbook line to the real output of `policy show`.
+- `TestTheHubAndTheNodeAgreeOnArbitraryCode` and the wildcard check in
+  `backends_test.go` cover the hub side for any marked function.
+
+Each was broken on purpose and watched to fail:
+
+- **`pip.install` and `cron.present` unmarked**: `TestTheSecondTierIsMarkedAndTheRestIsNot`
+  failed with two errors.
+- **The execution function `file.append` marked**: the same test failed.
+- **`pip.install` unmarked**: the node test failed with "an unsigned
+  pip.install was accepted".
+- **The handbook line left as it was**: the chapter test failed with twelve
+  names missing.
+
+#### Not verified
+
+- **No running hub with a policy file was used.** No real node with
+  `require_job_signature` was used either. The node refusal was tested
+  through `acceptJob` in the same process.
+- **None of the twelve functions was run to show its path to code.** The
+  reasons come from reading the modules and the documented behaviour of the
+  tools. A package install script was not seen to run. The exec plugin of
+  `maven.run` was traced and not run.
+- **The tests ran on macOS only.** CI runs them on all four platforms.
 
 ## 6. Everything else not started
 
