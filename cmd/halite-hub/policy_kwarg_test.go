@@ -13,7 +13,7 @@ import (
 // so with `deny_kwargs: [mods]` a typo or a bare flag read "allowed by
 // role": the question asked was about a request with no keyword at all.
 // A `key=value` written as an argument, the way `run` takes one, was
-// dropped the same way. Each is a usage error now. DIVERGENCE 5.589.
+// dropped the same way. Each is a usage error now. DIVERGENCE 5.607.
 func TestPolicyTestRefusesAKeywordItCannotRead(t *testing.T) {
 	root := t.TempDir()
 	policyYAML := `roles:

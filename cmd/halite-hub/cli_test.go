@@ -430,7 +430,7 @@ func TestAMatcherFlagCarriesTheTarget(t *testing.T) {
 		{"glob with a kind flag before it", []string{"-E", "web.*", "test.ping"}, "E", "web.*", "test.ping"},
 		// A target that is also a word for true or false is still a
 		// target. These were read as a bare switch and dropped, and the
-		// command said it needed a target. DIVERGENCE 5.586.
+		// command said it needed a target. DIVERGENCE 5.604.
 		{"a list of one node named 1", []string{"-L", "1", "test.ping"}, "L", "1", "test.ping"},
 		{"a node named no", []string{"-L", "no", "test.ping"}, "L", "no", "test.ping"},
 		{"a node named on", []string{"--list", "on", "test.ping"}, "list", "on", "test.ping"},

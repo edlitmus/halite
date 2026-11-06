@@ -14,7 +14,7 @@ import (
 // Each is a usage error now, before the hub is reached: in this empty
 // root, reaching for the hub fails at the operator certificate, so a 64
 // without that message is the check, not a refusal from further in.
-// DIVERGENCE 5.590.
+// DIVERGENCE 5.608.
 func TestRunnerAndOrchCheckTheirFlagsBeforeTheCall(t *testing.T) {
 	root := t.TempDir()
 

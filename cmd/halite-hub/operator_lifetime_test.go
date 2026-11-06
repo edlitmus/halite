@@ -19,7 +19,7 @@ import (
 // 876000h one good for a century under a CA of ten. Each printed as a
 // success. Now a lifetime that is not positive is refused before the hub
 // is opened, one that runs past the CA is refused before anything is
-// issued, and neither leaves a certificate behind. DIVERGENCE 5.588.
+// issued, and neither leaves a certificate behind. DIVERGENCE 5.606.
 func TestOperatorLifetimeIsChecked(t *testing.T) {
 	root := t.TempDir()
 	pkiDir := filepath.Join(root, "pki")

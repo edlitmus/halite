@@ -14,7 +14,7 @@ import (
 // `jobs active` read the 200 most recent jobs and answered "nothing is in
 // flight" when none of those was. A batch with a long TTL is still going
 // after any number of shorter jobs have been sent past it, and that is
-// the answer an operator checks before a restart. DIVERGENCE 5.592.
+// the answer an operator checks before a restart. DIVERGENCE 5.610.
 func TestJobsActiveFindsAnOldJobStillInFlight(t *testing.T) {
 	root := t.TempDir()
 	state := filepath.Join(root, "state")

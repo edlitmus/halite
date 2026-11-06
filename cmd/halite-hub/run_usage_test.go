@@ -55,7 +55,7 @@ func TestRunRefusesAMalformedCommandLineAsAUsageError(t *testing.T) {
 		{"a bad batch wait", []string{"--batch-wait", "soon", "*", "test.ping"}, "--batch-wait"},
 		// The wire carries whole seconds, and 0 or less is the hub's
 		// default: 500ms went as 0 and became fifteen minutes, and -5s
-		// went as -5 and became the same. DIVERGENCE 5.585.
+		// went as -5 and became the same. DIVERGENCE 5.603.
 		{"a ttl under a second", []string{"--ttl", "500ms", "*", "test.ping"}, "--ttl"},
 		{"a ttl that is not whole seconds", []string{"--ttl", "1500ms", "*", "test.ping"}, "--ttl"},
 		{"a negative ttl", []string{"--ttl=-5s", "*", "test.ping"}, "--ttl"},
@@ -85,7 +85,7 @@ func TestRunRefusesAMalformedCommandLineAsAUsageError(t *testing.T) {
 // through, and so does `--batch-wait 0`, which asks for no settle time
 // and is the one zero that means what it says. Each reaches the operator
 // certificate, which in this empty root is as far as `run` gets.
-// DIVERGENCE 5.585.
+// DIVERGENCE 5.603.
 func TestRunTakesADurationTheWireCanCarry(t *testing.T) {
 	root := t.TempDir()
 	for _, flags := range [][]string{

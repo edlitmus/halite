@@ -185,7 +185,7 @@ func anyContains(list []string, want string) bool {
 // verify` refuses the same values. And --kwargs and --args were decoded
 // after the extension had been started. Each is a usage error now, before
 // the extension is started: the script below leaves a mark when it is
-// run, and a refused command line must leave none. DIVERGENCE 5.591.
+// run, and a refused command line must leave none. DIVERGENCE 5.609.
 func TestExtensionsRunReadsItsFlagsBeforeStarting(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in extension is a shell script")

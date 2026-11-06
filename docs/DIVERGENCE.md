@@ -39689,7 +39689,7 @@ misspelling grants more, it should be refused there too.
 - **Nothing was run on FreeBSD by hand.** The code does not depend on the
   platform. CI runs the tests.
 
-### 5.585 `halite-hub run --ttl` and the batch flags cut a duration to a number the hub reads differently
+### 5.603 `halite-hub run --ttl` and the batch flags cut a duration to a number the hub reads differently
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`).
 
@@ -39701,7 +39701,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`).
 
 **Not verified.** The change against a running hub. No hub was run. The test stops at the operator certificate in an empty root.
 
-### 5.586 A matcher flag whose value was `true`, `no`, `1` or `off` lost its target
+### 5.604 A matcher flag whose value was `true`, `no`, `1` or `off` lost its target
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `resolveTarget`, shared by `run` and `ssh`).
 
@@ -39713,7 +39713,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `resol
 
 **Not verified.** The change against a running hub. Also, that a node named `no` matches on a real hub. The matching code is not changed.
 
-### 5.587 `--hub` and `listen` could not carry an IPv6 address
+### 5.605 `--hub` and `listen` could not carry an IPv6 address
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `operatorClient` and `portOf`, now `hubURL`).
 
@@ -39725,7 +39725,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `opera
 
 **Not verified.** A link-local zoned address against a real hub: it is tested only in unit tests. FreeBSD and Linux. The same fault in `cmd/halite-hub/relay.go` (`--upstream`), `cmd/halite-node/enroll.go` and `cmd/halite-api/serve.go`, which build `https://%s:%d` in the same way. Those three are not changed here and are a follow-up.
 
-### 5.588 `keys operator create --lifetime` issued a certificate that was already expired, or one that outlived the CA
+### 5.606 `keys operator create --lifetime` issued a certificate that was already expired, or one that outlived the CA
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/keys.go`, `runKeysOperator`).
 
@@ -39737,7 +39737,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/keys.go`, `runK
 
 **Not verified.** FreeBSD and Linux. The same lack of bounds in the issue of node and hub certificates (`certificate_lifetime`) is not touched. Noticed, not changed: `keys operator create` with a name that exists overwrites the certificate and key of that operator without asking. Main did this in the run above.
 
-### 5.589 `halite-hub policy test --kwarg` dropped a keyword it could not read
+### 5.607 `halite-hub policy test --kwarg` dropped a keyword it could not read
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/policy.go`, new `policyTestKwargs`).
 
@@ -39749,7 +39749,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/policy.go`, new
 
 **Not verified.** Nothing beyond the command itself. `run` and the hub were not involved, because `policy test` evaluates locally.
 
-### 5.590 `runner` and `orch` made the call, then refused an `--out` they could not read
+### 5.608 `runner` and `orch` made the call, then refused an `--out` they could not read
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/runner.go`, `cmd/halite-hub/orch.go`).
 
@@ -39761,7 +39761,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/runner.go`, `cm
 
 **Not verified.** An orchestration that ran twice because of the retype. This is reasoned from the code path and shown with `event.send`, not with `state.orchestrate`. Noticed, not changed: `RunnerContext.argInt` (`internal/hub/runner.go`) still reads a string with `fmt.Sscanf`. The binder refused `abc` first in this run.
 
-### 5.591 `halite-hub extensions run --timeout` ignored a value it could not read, and started the extension before it read its other flags
+### 5.609 `halite-hub extensions run --timeout` ignored a value it could not read, and started the extension before it read its other flags
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/extensionrun.go`, `parseRunTimeout`).
 
@@ -39773,7 +39773,7 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/extensionrun.go
 
 **Not verified.** A real extension: only the stand-in script was used. Windows, where the test skips.
 
-### 5.592 `halite-hub jobs active` said "nothing is in flight" when an older job was
+### 5.610 `halite-hub jobs active` said "nothing is in flight" when an older job was
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/jobs.go`).
 

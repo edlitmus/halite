@@ -49,7 +49,7 @@ func runRunner(args *cli.Args) int {
 	// `state.orchestrate` runs one, `event.send` puts an event on the bus.
 	// `--out tabel` ran the runner and then exited with a usage error,
 	// and the operator who retyped it ran it again. `run` has checked
-	// its --out first since 5.225. DIVERGENCE 5.590.
+	// its --out first since 5.225. DIVERGENCE 5.608.
 	format, err := cli.ParseFormat(args.Flag("out", "nested"))
 	if err != nil {
 		cli.Usagef("%v", err)

@@ -187,7 +187,7 @@ func runPolicy(args *cli.Args) int {
 // the policy is read. A pair needs a key and an `=`; a key given twice
 // is refused, not settled by whichever came last; and the values stay
 // strings, as they always were here (`--test` is the flag for the one
-// keyword that is not, DIVERGENCE 5.493). DIVERGENCE 5.589.
+// keyword that is not, DIVERGENCE 5.493). DIVERGENCE 5.607.
 func policyTestKwargs(args *cli.Args) (map[string]any, error) {
 	if args.Kwargs.Len() > 0 {
 		return nil, fmt.Errorf("policy test takes keyword arguments as --kwarg key=value, "+

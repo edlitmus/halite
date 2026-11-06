@@ -122,7 +122,7 @@ func defaultOperator(files pki.Files) string {
 // `--hub fe80::1:8443` is the address fe80::1:8443 on the hub's port: an
 // IPv6 address with a port is written [fe80::1]:8443, as it is in a URL.
 // An address that is neither a host, nor a host and port, nor an IPv6
-// address is refused rather than sent. DIVERGENCE 5.587.
+// address is refused rather than sent. DIVERGENCE 5.605.
 func hubURL(address, listen string) (string, error) {
 	if strings.Contains(address, "://") {
 		return address, nil
@@ -280,7 +280,7 @@ func runRun(args *cli.Args) int {
 // a whole number of seconds, and positive. zeroOK is for the one flag
 // whose zero is a real request rather than the default in disguise:
 // `--batch-wait 0` is "no settle time", which is also what leaving it out
-// means. DIVERGENCE 5.585.
+// means. DIVERGENCE 5.603.
 func seconds(v, name string, zeroOK bool) int {
 	if v == "" {
 		return 0
@@ -472,7 +472,7 @@ func resolveTarget(args *cli.Args) (kind, target, fun string, rest []string, err
 		// node named `no` or `web1,on` could not be given to a matcher
 		// flag at all. The parser never hands a switch a word: a token
 		// after `-L` is always its value, so every word here is a target
-		// somebody typed. DIVERGENCE 5.586.
+		// somebody typed. DIVERGENCE 5.604.
 		if v != "" {
 			target = v
 		}

@@ -48,7 +48,7 @@ func runExtensionDirectly(args *cli.Args) int {
 	// unit) or `--timeout=-1s` ran with a minute and said nothing, where
 	// `extensions verify` refuses the same value; and --kwargs and --args
 	// were decoded after the process was up and its handshake printed.
-	// DIVERGENCE 5.591.
+	// DIVERGENCE 5.609.
 	timeout, err := parseRunTimeout(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions run: %v\n", err)

@@ -11,7 +11,7 @@ import (
 // colon, and took the port as everything from the last colon of
 // `listen`, which is wrong for IPv6 on both sides: `--hub ::1` went out
 // as https://::1, `--hub [::1]` as https://[::1] on port 443, and a
-// `listen: [::1]` gave the port ":1]". DIVERGENCE 5.587.
+// `listen: [::1]` gave the port ":1]". DIVERGENCE 5.605.
 func TestHubURLReadsIPv6(t *testing.T) {
 	for _, c := range []struct {
 		address, listen, want string

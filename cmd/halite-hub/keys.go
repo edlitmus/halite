@@ -511,7 +511,7 @@ func runKeysOperator(args *cli.Args) int {
 	// 1 like a failure to issue. A negative lifetime issued a certificate
 	// already expired, zero one that expired as it was written; both
 	// printed as a success, and the operator found out at the first
-	// `run`. DIVERGENCE 5.588.
+	// `run`. DIVERGENCE 5.606.
 	lifetime, err := time.ParseDuration(args.Flag("lifetime", "720h"))
 	if err != nil {
 		cli.Usagef("--lifetime %q: %v", args.Flag("lifetime", ""), err)

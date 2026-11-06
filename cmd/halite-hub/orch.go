@@ -85,7 +85,7 @@ func orchList(args *cli.Args) int {
 	// A whole number, and sent as one. It went as the string it was
 	// typed as, which the hub read with Sscanf: `--limit abc` was 0 and
 	// listed the default, `--limit 5x` was 5, and `--limit=-1` was
-	// handed on. DIVERGENCE 5.590.
+	// handed on. DIVERGENCE 5.608.
 	if limit := cli.IntFlag(args, "limit", 0, 1); limit > 0 {
 		kwargs["limit"] = limit
 	}
@@ -121,7 +121,7 @@ func orchResume(args *cli.Args) int {
 // --out is read before the call. It was read after, so `orch run
 // deploy.web --out tabel` ran the orchestration and then refused the
 // format, as did a resume, and an operator who corrected the typo ran
-// it a second time. DIVERGENCE 5.590.
+// it a second time. DIVERGENCE 5.608.
 func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) int {
 	timeline, format, err := cli.ParseOut("timeline", args.Flag("out", "timeline"))
 	if err != nil {

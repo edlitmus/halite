@@ -176,7 +176,7 @@ func runJobs(args *cli.Args) int {
 		// point at which the scan could stop and be sure. The cost is a
 		// read of each record, within the retention the cache already
 		// enforces, and the hub reads the whole cache the same way to
-		// seed its offline queue (queueIndex.seed). DIVERGENCE 5.592.
+		// seed its offline queue (queueIndex.seed). DIVERGENCE 5.610.
 		jobs, err := cache().List(0)
 		if err != nil {
 			cli.Fatalf("%v", err)
