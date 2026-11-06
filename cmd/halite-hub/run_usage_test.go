@@ -53,6 +53,16 @@ func TestRunRefusesAMalformedCommandLineAsAUsageError(t *testing.T) {
 		{"a bad ttl", []string{"--ttl", "soon", "*", "test.ping"}, "--ttl"},
 		{"a bad timeout", []string{"--timeout", "soon", "*", "test.ping"}, "--timeout"},
 		{"a bad batch wait", []string{"--batch-wait", "soon", "*", "test.ping"}, "--batch-wait"},
+		// The wire carries whole seconds, and 0 or less is the hub's
+		// default: 500ms went as 0 and became fifteen minutes, and -5s
+		// went as -5 and became the same. DIVERGENCE 5.603.
+		{"a ttl under a second", []string{"--ttl", "500ms", "*", "test.ping"}, "--ttl"},
+		{"a ttl that is not whole seconds", []string{"--ttl", "1500ms", "*", "test.ping"}, "--ttl"},
+		{"a negative ttl", []string{"--ttl=-5s", "*", "test.ping"}, "--ttl"},
+		{"a ttl of zero", []string{"--ttl", "0s", "*", "test.ping"}, "--ttl"},
+		{"a negative batch wait", []string{"--batch-wait=-1s", "*", "test.ping"}, "--batch-wait"},
+		{"a batch timeout of zero", []string{"--batch-timeout", "0", "*", "test.ping"}, "--batch-timeout"},
+		{"a batch timeout under a second", []string{"--batch-timeout", "200ms", "*", "test.ping"}, "--batch-timeout"},
 		{"an argument that looks like JSON and is not", []string{"*", "test.ping", "x={nope"}, "did not parse"},
 		{"an output format that does not exist", []string{"--out", "table", "*", "test.ping"}, "table"},
 		{"two signers", []string{"--sign-key", "k", "--sign-extension", "e", "*", "test.ping"}, "two different signers"},
@@ -68,5 +78,30 @@ func TestRunRefusesAMalformedCommandLineAsAUsageError(t *testing.T) {
 			t.Errorf("%s: reached for the hub before the command line was understood: %s",
 				tc.name, res.stderr)
 		}
+	}
+}
+
+// The other side of the cases above: a duration the wire can carry goes
+// through, and so does `--batch-wait 0`, which asks for no settle time
+// and is the one zero that means what it says. Each reaches the operator
+// certificate, which in this empty root is as far as `run` gets.
+// DIVERGENCE 5.603.
+func TestRunTakesADurationTheWireCanCarry(t *testing.T) {
+	root := t.TempDir()
+	for _, flags := range [][]string{
+		{"--ttl", "90s"},
+		{"--ttl", "2m"},
+		{"--batch-wait", "0"},
+		{"--batch-wait", "1s", "--batch-timeout", "30s"},
+	} {
+		argv := append(append([]string{"run", "--root", root}, flags...), "*", "test.ping")
+		res := run(t, argv...)
+		if res.code != 1 || !strings.Contains(res.stderr, "operator certificate") {
+			t.Errorf("%v: exited %d (%s); a well-formed duration should reach the operator certificate",
+				flags, res.code, res.stderr)
+		}
+	}
+	if got := seconds("90s", "ttl", false); got != 90 {
+		t.Errorf("seconds(90s) = %d, want 90", got)
 	}
 }

@@ -428,6 +428,20 @@ func TestAMatcherFlagCarriesTheTarget(t *testing.T) {
 		{"list", []string{"-L", "a.example,b.example", "test.ping"}, "L", "a.example,b.example", "test.ping"},
 		{"plain glob", []string{"*", "test.ping"}, "", "*", "test.ping"},
 		{"glob with a kind flag before it", []string{"-E", "web.*", "test.ping"}, "E", "web.*", "test.ping"},
+		// A target that is also a word for true or false is still a
+		// target. These were read as a bare switch and dropped, and the
+		// command said it needed a target. DIVERGENCE 5.604.
+		{"a list of one node named 1", []string{"-L", "1", "test.ping"}, "L", "1", "test.ping"},
+		{"a node named no", []string{"-L", "no", "test.ping"}, "L", "no", "test.ping"},
+		{"a node named on", []string{"--list", "on", "test.ping"}, "list", "on", "test.ping"},
+		{"a glob named yes", []string{"-E", "yes", "test.ping"}, "E", "yes", "test.ping"},
+		{"a nodegroup named off", []string{"-N", "off", "test.ping"}, "N", "off", "test.ping"},
+		{"TRUE in capitals", []string{"-L", "TRUE", "test.ping"}, "L", "TRUE", "test.ping"},
+		{"false with =", []string{"--list=false", "test.ping"}, "list", "false", "test.ping"},
+		{"0", []string{"-L", "0", "test.ping"}, "L", "0", "test.ping"},
+		// A bare flag, written last, is still a switch, and the target
+		// is the first positional.
+		{"a bare flag at the end", []string{"web1", "test.ping", "-L"}, "L", "web1", "test.ping"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			args, err := cli.Parse(c.argv)
