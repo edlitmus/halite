@@ -25278,7 +25278,7 @@ SPEC 23.5, not for this change.
 The second tier above is decided. Eleven execution functions and the
 `cron.present` state are now marked `arbitrary_code`, and the rest of the
 list keeps its grants. The reasons, the list that is kept and what is
-still open are in 5.588.
+still open are in 5.600.
 
 ### 5.298 `cpan.module_version` ran the module name as Perl
 
@@ -39261,7 +39261,7 @@ Each part was broken on purpose and watched to fail:
 - **OIDC and LDAP principals as the operator were not exercised.** Local
   accounts were.
 
-### 5.588 The second tier of arbitrary code is decided
+### 5.600 The second tier of arbitrary code is decided
 
 5.297 marked four `cmd.*` functions and left a "second tier" open: the
 functions that make a node run code the caller chose, later or
