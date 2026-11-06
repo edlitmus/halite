@@ -179,3 +179,59 @@ func anyContains(list []string, want string) bool {
 	}
 	return false
 }
+
+// `extensions run --timeout` took anything it could not read, and
+// anything not positive, as sixty seconds without a word; `extensions
+// verify` refuses the same values. And --kwargs and --args were decoded
+// after the extension had been started. Each is a usage error now, before
+// the extension is started: the script below leaves a mark when it is
+// run, and a refused command line must leave none. DIVERGENCE 5.609.
+func TestExtensionsRunReadsItsFlagsBeforeStarting(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in extension is a shell script")
+	}
+	dir := t.TempDir()
+	mark := filepath.Join(dir, "started")
+	script := filepath.Join(dir, "myext")
+	body := "#!/bin/sh\ntouch '" + mark + "'\nexit 1\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		flags []string
+		says  string
+	}{
+		{"a timeout with no unit", []string{"--timeout", "5"}, "--timeout"},
+		{"a timeout that is not a duration", []string{"--timeout", "soon"}, "--timeout"},
+		{"a negative timeout", []string{"--timeout=-1s"}, "--timeout"},
+		{"a timeout of zero", []string{"--timeout", "0s"}, "--timeout"},
+		{"kwargs that are not JSON", []string{"--kwargs", "{nope"}, "--kwargs"},
+		{"args that are not JSON", []string{"--args", "[nope"}, "--args"},
+	} {
+		argv := append([]string{"extensions", "run", script, "ping"}, tc.flags...)
+		res := run(t, argv...)
+		if res.code != 64 {
+			t.Errorf("%s: exited %d, want 64: %s", tc.name, res.code, res.stderr)
+		}
+		if !strings.Contains(res.stderr, tc.says) {
+			t.Errorf("%s: the message does not say %q: %s", tc.name, tc.says, res.stderr)
+		}
+		if _, err := os.Stat(mark); err == nil {
+			t.Errorf("%s: the extension was started before the command line was read", tc.name)
+			_ = os.Remove(mark)
+		}
+	}
+
+	// The control: a readable timeout starts the extension, which is
+	// how this test knows the mark means what it says.
+	res := run(t, "extensions", "run", script, "ping", "--timeout", "5s")
+	if res.code == 64 {
+		t.Fatalf("--timeout 5s was refused: %s", res.stderr)
+	}
+	if _, err := os.Stat(mark); err != nil {
+		t.Fatalf("a well-formed command line did not start the extension (exit %d: %s); "+
+			"the mark is not a test of anything", res.code, res.stderr)
+	}
+}

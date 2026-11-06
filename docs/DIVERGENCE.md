@@ -39689,6 +39689,102 @@ misspelling grants more, it should be refused there too.
 - **Nothing was run on FreeBSD by hand.** The code does not depend on the
   platform. CI runs the tests.
 
+### 5.603 `halite-hub run --ttl` and the batch flags cut a duration to a number the hub reads differently
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`).
+
+**The defect.** `seconds()` turned `--ttl`, `--batch-wait` and `--batch-timeout` into whole seconds with `int(d.Seconds())` for any value that parsed. `500ms` became 0, `1500ms` became 1 and `-5s` became -5. The hub reads a ttl of 0 or less as the default of 15 minutes (1 hour for an `--offline` queue). It reads a batch timeout of 0 or less as "until the job expires" and a batch wait of 0 or less as "no wait". So an operator who typed a short or negative value got a different bound from the one typed, and no message.
+
+**Shown.** The issue measured `seconds("500ms")=0` and `seconds("-5s")=-5` on main at 2ee49b73. That `1500ms` became 1 is from reading `int(d.Seconds())`; it was not run. The test `TestRunRefusesAMalformedCommandLineAsAUsageError` has 7 new cases. `TestRunTakesADurationTheWireCanCarry` checks that `90s`, `2m`, `--batch-wait 0`, and `--batch-wait 1s` with `--batch-timeout 30s` all reach the operator-certificate step. With the new checks removed, all 7 new cases fail: the command exits 1 at the operator certificate instead of 64.
+
+**The change.** A negative value is refused. Zero is refused for `--ttl` and `--batch-timeout`: leave the flag out to get the default. `--batch-wait 0` is accepted. It means no settle time, the same as leaving the flag out. A value that is not a whole number of seconds is refused. Each refusal exits 64 (usage) before the hub is reached, and the message names the flag.
+
+**Not verified.** The change against a running hub. No hub was run. The test stops at the operator certificate in an empty root.
+
+### 5.604 A matcher flag whose value was `true`, `no`, `1` or `off` lost its target
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `resolveTarget`, shared by `run` and `ssh`).
+
+**The defect.** `resolveTarget` read a matcher flag value (`-L`, `-E`, `-G`, `-P`, `-I`, `-J`, `-S`, `-N`, `-C` and the long forms such as `--list`, `--pcre` and `--grain`) as a bare switch when the value was `true`, `yes`, `1`, `on`, `false`, `no`, `0` or `off`, in any case. The target was dropped and the command failed with "run needs a target and a function". `-L web1` worked, but `-L no` did not. This was wrong because `cli.Parse` gives a single-letter flag, and a long flag that is not boolean, the next token as its value whenever that token does not start with `-`. So a word after `-L` is always something the operator typed as a target. The flag is empty only when it is written last, before another flag, or as `--list=`.
+
+**Shown.** `TestAMatcherFlagCarriesTheTarget` has 9 new cases: `-L 1`, `-L no`, `--list on`, `-E yes`, `-N off`, `-L TRUE`, `--list=false`, `-L 0`, and a bare `-L` at the end. `TestCommandMatrixTargetsParse` still passes. With the bool-word check put back, the 8 bool-word cases fail.
+
+**The change.** Any non-empty value is the target, and `isBoolWord` is removed. A bare flag with an empty value still means a switch, and the target is the first positional argument. One form changes meaning: `--grain=true 'os:FreeBSD' test.ping` now targets the grain expression `true` and runs the function `os:FreeBSD`. Nobody is known to write this, and the documented form is `-G 'expr' fun`. `halite-hub ssh` has the same change because it uses the same `resolveTarget`.
+
+**Not verified.** The change against a running hub. Also, that a node named `no` matches on a real hub. The matching code is not changed.
+
+### 5.605 `--hub` and `listen` could not carry an IPv6 address
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/run.go`, `operatorClient` and `portOf`, now `hubURL`).
+
+**The defect.** An address was said to have a port if it contained a colon, and the port was taken from `listen` after its last colon. So `portOf("[::1]")` was `:1]`. Every operator command that reaches the hub through `operatorClient` was affected: `run`, `runner`, `orch`, `jobs resume`, `jobs kill`, `metrics` and `event`. `keys` is not affected, because it reads the store directly.
+
+**Shown.** Run on this Mac (macOS, darwin/arm64) on 2026-11-05. A real `halite-hub serve` listened on `[::1]:47510`, with an operator certificate from `keys operator create`. The command was `runner manage.status --hub X`. With this change, `::1`, `[::1]` and `[::1]:47510` all reach the hub, which answers "this hub has no policy, so nothing is authorized". On main at b842f005, `::1` fails with `parse "https://::1": invalid port "::1" after host`. `[::1]` dials `[::1]:443` and is refused. `[::1]:47510` reaches the hub. `TestHubURLReadsIPv6` has 15 good cases and 5 refused cases, and each output must pass `url.Parse`. The good cases include `::1`, `[::1]`, `[::1]:8443`, `2001:db8::7`, `fe80::1%en0`, a `listen` of `[::1]` and a `listen` of `[::1]:8443`, and `[::]:8443`. The refused cases are `host:`, `:8443`, `[::1`, `not:an:address` and `[]`. With the old colon logic put back, 10 cases and `TestAnUnreadableHubIsAUsageError` fail.
+
+**The change.** `hubURL(address, listen)` replaces the colon test. If the address has a scheme, it is used as written. If `net.SplitHostPort` succeeds, the address is used as `https://address`, and it is refused if the host or the port is empty (for example `host:` or `:8443`). Otherwise the brackets are removed. A host that contains a colon must parse as an IP address (zones are allowed) or it is refused. The result joins the host with the port of `listen`, or with 4510 if `listen` has none. A zone `%` is written as `%25` (RFC 6874) so that `url.Parse` accepts it. A bare IPv6 address is an address with no port: `--hub fe80::1:8443` is that address on the hub's port, and `[fe80::1]:8443` is the form that carries a port. An unreadable `--hub` is now a usage error that exits 64 and names `--hub`. The address is read before any key material is looked for, because the read moved to the top of `operatorClient`.
+
+**Not verified.** A link-local zoned address against a real hub: it is tested only in unit tests. FreeBSD and Linux. The same fault in `cmd/halite-hub/relay.go` (`--upstream`), `cmd/halite-node/enroll.go` and `cmd/halite-api/serve.go`, which build `https://%s:%d` in the same way. Those three are not changed here and are a follow-up.
+
+### 5.606 `keys operator create --lifetime` issued a certificate that was already expired, or one that outlived the CA
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/keys.go`, `runKeysOperator`).
+
+**The defect.** The command parsed `--lifetime` after it opened the hub. A parse error went to `cli.Fatalf` and exited 1. Any value that parsed was issued: `-1h` gave a certificate that had already expired, `0` gave one that expired at the time of issue, and `876000h` gave one that lasted a century. Each was printed as a success and exited 0.
+
+**Shown.** Run on this Mac on 2026-11-05 against a real hub root. The CA was created by `halite-hub serve` and expires 2036-11-02. Main at b842f005 issued `-1h` (expiry 2026-11-05T16:53:17Z, an hour before) and `876000h` (expiry 2126-10-12), and exited 0 for both. This change refused both and exited 64. `TestOperatorLifetimeIsChecked` (`operator_lifetime_test.go`) runs `-1h`, `0`, `0s`, `soon` and `876000h`. Each exits 64, names `--lifetime` and writes no certificate. The control `48h` issues a certificate that ends 47 to 49 hours from now. With both checks disabled, `-1h`, `0`, `0s` and `876000h` fail: they exit 0 and write a certificate.
+
+**The change.** `--lifetime` is read before the hub is opened. A parse error, or a value of 0 or less, is a usage error that exits 64 and names `--lifetime`. After the hub is opened and before the certificate is issued, a lifetime that ends after the `NotAfter` of the enrollment CA is refused. It exits 64, and the message gives the expiry of the CA. The hub creates its CA with 10 years (`serve.go`), so the ceiling is about 10 years minus the age of the CA.
+
+**Not verified.** FreeBSD and Linux. The same lack of bounds in the issue of node and hub certificates (`certificate_lifetime`) is not touched. Noticed, not changed: `keys operator create` with a name that exists overwrites the certificate and key of that operator without asking. Main did this in the run above.
+
+### 5.607 `halite-hub policy test --kwarg` dropped a keyword it could not read
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/policy.go`, new `policyTestKwargs`).
+
+**The defect.** `policy test` split `--kwarg` on commas, kept the pairs that had an `=` and dropped the rest without a word. A bare `--kwarg` reads as `true` (`Args.Flag`) and was dropped. A positional `key=value`, which `run` takes as a keyword, went into `args.Kwargs` and `policy test` ignored it. With `deny_kwargs: [mods]`, main denied `--kwarg mods=evil`. But `mods:evil`, `mods`, a bare `--kwarg`, `--kwarg=`, `=evil` and a positional `mods=evil` were all "allowed by role" and exited 0. `mods=a,b` and `x=1,,mods=evil` were denied, but only by luck.
+
+**Shown.** `TestPolicyTestRefusesAKeywordItCannotRead` (`policy_kwarg_test.go`) has controls and 9 refused forms. The controls are: no keyword is allowed and exits 0, `mods=evil` is denied and exits 1, `mods=` with an empty value is denied, and two unrelated pairs are allowed. With the old loop put back, 6 cases exit 0 "allowed by role" and 3 exit 1 as denied. All 9 must exit 64.
+
+**The change.** Before the policy is read, each comma-separated pair must have an `=` and a key that is not empty. A bare or empty `--kwarg` is refused. A key that appears twice is refused. It was last-wins. A positional `key=value` is refused with "policy test takes keyword arguments as --kwarg key=value". Each refusal exits 64. Values are still strings, as before (5.493 added `--test` for the one keyword that is not a string). A value cannot contain a comma, because the comma is the list separator. This limit was a silent split. It is now a refusal that says the value cannot hold one.
+
+**Not verified.** Nothing beyond the command itself. `run` and the hub were not involved, because `policy test` evaluates locally.
+
+### 5.608 `runner` and `orch` made the call, then refused an `--out` they could not read
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/runner.go`, `cmd/halite-hub/orch.go`).
+
+**The defect.** `runner <fun>` called `client.Runner(...)` and then read `--out` with `cli.ParseFormat` and `cli.Fatalf`, which exits 1. `orch run`, `orch lint`, `orch show`, `orch list` and `orch resume` did the same in `orchCall`: the runner call came first, and then `cli.ParseOut("timeline", --out)` failed. So an unknown `--out` ran the runner (a key decision, an orchestration, a resume, an event) and then exited 1. An operator who saw the error and typed the command again ran it twice. Separately, `orch list` sent `--limit` as the string that was typed. `runner list` and `runner doc` answer locally and were already correct.
+
+**Shown.** Run on this Mac on 2026-11-05 with a real hub on `[::1]` and a policy that grants the operator every runner. `runner event.send halite/test/612 --out tabel`: main exits 1 with "unknown output format", and the job list of the hub gains an `event.send` call (1 to 2). This change exits 64 and the hub records nothing (the count is unchanged). `orch list --limit abc`: main sends it, and the hub refuses with `argument "limit": must be an integer, found string`, exit 1. This change exits 64 before it sends anything, with `--limit "abc" is not a whole number of at least 1`. `orch list --limit 5` exits 0 on both, because the argument binder of the hub accepts the string `5`. So for a well-formed number the old string was harmless. The defect was the error path and the exit code. `TestRunnerAndOrchCheckTheirFlagsBeforeTheCall` (`runner_flags_test.go`) has 7 controls that reach the operator-certificate step (exit 1). It has 10 refused forms that exit 64 without reaching it: `runner`, and `orch run`, `lint`, `show`, `list` and `resume`, each with `--out tabel`, and `orch list --limit` with `abc`, `5x`, `0` and `-1`. With main's `runner.go` and `orch.go`, all 10 fail: they exit 1 at the operator certificate.
+
+**The change.** `runner` checks `--out` with `ParseFormat` before `operatorClient`. `orchCall` checks `--out` with `ParseOut` first. Both are usage errors that exit 64. `orch list --limit` is read with `cli.IntFlag` (minimum 1) and sent as an integer.
+
+**Not verified.** An orchestration that ran twice because of the retype. This is reasoned from the code path and shown with `event.send`, not with `state.orchestrate`. Noticed, not changed: `RunnerContext.argInt` (`internal/hub/runner.go`) still reads a string with `fmt.Sscanf`. The binder refused `abc` first in this run.
+
+### 5.609 `halite-hub extensions run --timeout` ignored a value it could not read, and started the extension before it read its other flags
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/extensionrun.go`, `parseRunTimeout`).
+
+**The defect.** `parseRunTimeout` returned 60 seconds, without a word, for any value that did not parse or was 0 or less: `--timeout 5` with no unit, `soon`, `-1s` and `0s`. `extensions verify` refuses the same values (`verifyDuration`). Also, `--kwargs` and `--args` were decoded only after the extension process was started (`pool.Warm`) and its handshake was described.
+
+**Shown.** `TestExtensionsRunReadsItsFlagsBeforeStarting` (`extensionrun_test.go`) uses a shell script as a stand-in. The script touches a mark file when it starts. Six refused forms (`--timeout 5`, `soon`, `-1s`, `0s`, `--kwargs {nope` and `--args [nope`) exit 64, name the flag, and leave no mark. The control `--timeout 5s` starts the script, and the mark is present. With main's `extensionrun.go`, all 6 fail: they exit 1 and the extension is started.
+
+**The change.** `parseRunTimeout` returns the error `--timeout %q is not a positive duration`. `runExtensionDirectly` reads `--timeout`, `--kwargs` and `--args` before it builds the bridge options and before it starts anything. Each failure prints `halite-hub extensions run: ...` and exits 64. With no flag, the default stays 60 seconds.
+
+**Not verified.** A real extension: only the stand-in script was used. Windows, where the test skips.
+
+### 5.610 `halite-hub jobs active` said "nothing is in flight" when an older job was
+
+Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/jobs.go`).
+
+**The defect.** `jobs active` read `cache().List(200)`, the 200 most recent jobs. If none of them was batching, or dispatched with returns missing, and not expired, it printed "nothing is in flight" and exited 0. No ceiling exists on the TTL: the hub takes any `--ttl`, and a value of 0 or less means the default of 15 minutes (1 hour if queued). So an older job can be in flight behind any number of newer ones.
+
+**Shown.** `TestJobsActiveFindsAnOldJobStillInFlight` (`jobs_active_test.go`) starts a batching job an hour ago with 23 hours left and 2 of its 4 nodes delivered. It then adds 201 complete jobs after it. `jobs active` must list the jid of the batch and must not say "nothing is in flight". With `List(200)` put back, both assertions fail.
+
+**The change.** `jobs active` reads `cache().List(0)`, which is every job in the cache. The cache is bounded by `job_cache_retention` (30 days by default) and `job_cache_max_size`. This is the same rule as `queueIndex.seed` (`internal/hub/queue.go`), which reads `List(0)`.
+
+**Not verified.** How long `jobs active` takes on a large real cache. It reads one JSON file for each job, and the time was not measured. Noticed, not changed: the `Settle` of the hub (`internal/hub/batch.go`) still reads only the newest 500 jobs to expire old ones, so it never settles a job that is older than that.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

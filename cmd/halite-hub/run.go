@@ -6,7 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +43,18 @@ func operatorClient(args *cli.Args) *transport.Client {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	// The hub's address is read first, so that one that cannot be used
+	// is a usage error before any key material is looked for.
+	address := args.Flag("hub", cfg.String("hub", ""))
+	if address == "" {
+		// The operator command line most often runs on the hub itself.
+		address = "localhost"
+	}
+	url, err := hubURL(address, cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort)))
+	if err != nil {
+		cli.Usagef("%v", err)
+	}
+
 	files := pki.Files{Dir: args.Flag("pki-dir", cfg.PathUnderRoot("pki_dir", "pki"))}
 
 	name := args.Flag("as", "")
@@ -65,20 +80,6 @@ func operatorClient(args *cli.Args) *transport.Client {
 		cli.Fatalf("%v", err)
 	}
 
-	address := args.Flag("hub", cfg.String("hub", ""))
-	if address == "" {
-		// The operator command line most often runs on the hub itself.
-		address = "localhost"
-	}
-	url := address
-	if !strings.Contains(address, "://") {
-		if !strings.Contains(address, ":") {
-			listen := cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort))
-			url = fmt.Sprintf("https://%s%s", address, portOf(listen))
-		} else {
-			url = "https://" + address
-		}
-	}
 	return &transport.Client{
 		HubURL:     url,
 		CA:         ca,
@@ -104,11 +105,58 @@ func defaultOperator(files pki.Files) string {
 	return ""
 }
 
-func portOf(listen string) string {
-	if i := strings.LastIndex(listen, ":"); i >= 0 {
-		return listen[i:]
+// hubURL is the address an operator command reaches the hub at: --hub
+// (or the `hub` setting) as given when it names a scheme or a port, and
+// otherwise that host on the port the hub's own `listen` names.
+//
+// It used to decide "has a port" by whether the address held a colon, and
+// took the port as everything from the last colon of `listen`. Both are
+// wrong for IPv6, where the colons are the address. A bare `--hub ::1`
+// went out as https://::1, which is not a URL; `--hub [::1]` as
+// https://[::1], on port 443 rather than the hub's; and a `listen: [::1]`
+// with no port gave the port ":1]". net.SplitHostPort is what knows
+// which colon is the port's, and net.JoinHostPort what puts the brackets
+// back.
+//
+// A bare IPv6 address is taken as an address with no port, so
+// `--hub fe80::1:8443` is the address fe80::1:8443 on the hub's port: an
+// IPv6 address with a port is written [fe80::1]:8443, as it is in a URL.
+// An address that is neither a host, nor a host and port, nor an IPv6
+// address is refused rather than sent. DIVERGENCE 5.605.
+func hubURL(address, listen string) (string, error) {
+	if strings.Contains(address, "://") {
+		return address, nil
 	}
-	return fmt.Sprintf(":%d", transport.DefaultPort)
+	if host, port, err := net.SplitHostPort(address); err == nil {
+		if host == "" || port == "" {
+			return "", fmt.Errorf("--hub %q names no host or no port; write host:port, or the host alone", address)
+		}
+		return "https://" + address, nil
+	}
+	host := address
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	if strings.Contains(host, ":") {
+		if _, err := netip.ParseAddr(host); err != nil {
+			return "", fmt.Errorf("--hub %q is not a host, a host:port, or an IPv6 address", address)
+		}
+	}
+	if host == "" || strings.ContainsAny(host, "[]") {
+		return "", fmt.Errorf("--hub %q is not a host, a host:port, or an IPv6 address", address)
+	}
+	// A zone (fe80::1%en0) is written %25 in a URL, RFC 6874; left as
+	// `%e`, url.Parse refuses the address as a bad escape.
+	return "https://" + strings.Replace(net.JoinHostPort(host, listenPort(listen)), "%", "%25", 1), nil
+}
+
+// listenPort is the port of a `listen` address, or the hub's default
+// when it names none.
+func listenPort(listen string) string {
+	if _, port, err := net.SplitHostPort(listen); err == nil && port != "" {
+		return port
+	}
+	return strconv.Itoa(transport.DefaultPort)
 }
 
 // runRun is `halite-hub run '<target>' <function> [args...]`, the old
@@ -133,11 +181,11 @@ func runRun(args *cli.Args) int {
 		}
 	}
 
-	ttl := seconds(args.Flag("ttl", ""), "ttl")
+	ttl := seconds(args.Flag("ttl", ""), "ttl", false)
 	subset := cli.IntFlag(args, "subset", 0, 1)
 	safeLimit := cli.IntFlag(args, "batch-safe-limit", 0, 1)
-	batchWait := seconds(args.Flag("batch-wait", ""), "batch-wait")
-	batchTimeout := seconds(args.Flag("batch-timeout", ""), "batch-timeout")
+	batchWait := seconds(args.Flag("batch-wait", ""), "batch-wait", true)
+	batchTimeout := seconds(args.Flag("batch-timeout", ""), "batch-timeout", false)
 	timeout, err := time.ParseDuration(args.Flag("timeout", "5m"))
 	if err != nil {
 		cli.Usagef("--timeout %q: %v", args.Flag("timeout", ""), err)
@@ -221,7 +269,19 @@ func runRun(args *cli.Args) int {
 // beside `args.Flag` at the call site: the audit in flags_test.go looks
 // for exactly that, and a helper that hides the name is how a flag ends
 // up documented and unparsed.
-func seconds(v, name string) int {
+//
+// It used to return int(d.Seconds()) for anything that parsed. That
+// truncates, so `--ttl 500ms` went as 0 -- which the hub reads as "not
+// given" and replaces with its default, fifteen minutes, an hour for a
+// queued job -- and `1500ms` went as 1. And it took a sign, so `--ttl=-5s`
+// went as -5, which the hub also reads as its default. An operator asking
+// for a short job got a long one, without a word. The wire cannot carry
+// what was asked for in either case, so both are refused: a value must be
+// a whole number of seconds, and positive. zeroOK is for the one flag
+// whose zero is a real request rather than the default in disguise:
+// `--batch-wait 0` is "no settle time", which is also what leaving it out
+// means. DIVERGENCE 5.603.
+func seconds(v, name string, zeroOK bool) int {
 	if v == "" {
 		return 0
 	}
@@ -229,7 +289,15 @@ func seconds(v, name string) int {
 	if err != nil {
 		cli.Usagef("--%s %q: %v", name, v, err)
 	}
-	return int(d.Seconds())
+	switch {
+	case d < 0:
+		cli.Usagef("--%s %q is negative", name, v)
+	case d == 0 && !zeroOK:
+		cli.Usagef("--%s %q is zero; leave the flag out for the hub's default", name, v)
+	case d%time.Second != 0:
+		cli.Usagef("--%s %q is not a whole number of seconds, which is what the hub is sent", name, v)
+	}
+	return int(d / time.Second)
 }
 
 func gather(client *transport.Client, sub *transport.SubmitResponse, timeout time.Duration, args *cli.Args) int {
@@ -394,9 +462,18 @@ func resolveTarget(args *cli.Args) (kind, target, fun string, rest []string, err
 			continue
 		}
 		kind = flag
-		// `-G 'os:FreeBSD'` carries the target; a bare `-G` before a
-		// positional one does not.
-		if v != "" && !isBoolWord(v) {
+		// `-G 'os:FreeBSD'` carries the target; a bare `-G` does not --
+		// one written last, or before another flag, which is the only way
+		// the parser leaves it empty.
+		//
+		// A value that read as a boolean word -- 1, 0, yes, no, on, off,
+		// true, false -- used to be taken for a switch and dropped, so
+		// `-L 1 test.ping` lost its target and said it needed one, and a
+		// node named `no` or `web1,on` could not be given to a matcher
+		// flag at all. The parser never hands a switch a word: a token
+		// after `-L` is always its value, so every word here is a target
+		// somebody typed. DIVERGENCE 5.604.
+		if v != "" {
 			target = v
 		}
 		break
@@ -423,16 +500,6 @@ func resolveTarget(args *cli.Args) (kind, target, fun string, rest []string, err
 var matcherFlags = []string{"L", "E", "G", "P", "I", "J", "S", "N", "C",
 	"list", "pcre", "grain", "grain_pcre", "pillar", "pillar_pcre",
 	"ipcidr", "nodegroup", "compound"}
-
-// isBoolWord reports whether a flag's value is one of the words that
-// means the flag was written as a switch rather than given a target.
-func isBoolWord(v string) bool {
-	switch strings.ToLower(v) {
-	case "true", "yes", "1", "on", "false", "no", "0", "off":
-		return true
-	}
-	return false
-}
 
 // prepareSigning settles the three things a signer must choose rather
 // than the hub, because the signature covers them and a signer cannot

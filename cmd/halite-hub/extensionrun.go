@@ -43,11 +43,32 @@ func runExtensionDirectly(args *cli.Args) int {
 	if len(args.Positional) > 2 {
 		function = args.Positional[2]
 	}
+	// Every flag is read before the extension is started. --timeout was
+	// read with any failure taken as 60 seconds, so `--timeout 5` (no
+	// unit) or `--timeout=-1s` ran with a minute and said nothing, where
+	// `extensions verify` refuses the same value; and --kwargs and --args
+	// were decoded after the process was up and its handshake printed.
+	// DIVERGENCE 5.609.
+	timeout, err := parseRunTimeout(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "halite-hub extensions run: %v\n", err)
+		return cli.ExitUsage
+	}
+	kwargs, decodeErr := decodeRunJSON(args.Flag("kwargs", ""))
+	if decodeErr != nil {
+		fmt.Fprintf(os.Stderr, "halite-hub extensions run: --kwargs: %v\n", decodeErr)
+		return cli.ExitUsage
+	}
+	callArgs, decodeErr := decodeRunJSON(args.Flag("args", ""))
+	if decodeErr != nil {
+		fmt.Fprintf(os.Stderr, "halite-hub extensions run: --args: %v\n", decodeErr)
+		return cli.ExitUsage
+	}
 
 	opts := bridge.Options{
 		Path:    path,
 		Kind:    args.Flag("kind", ""),
-		Timeout: parseRunTimeout(args),
+		Timeout: timeout,
 		OnLog: func(level, message string) {
 			fmt.Fprintf(os.Stderr, "  log   [%s] %s\n", level, message)
 		},
@@ -75,7 +96,7 @@ func runExtensionDirectly(args *cli.Args) int {
 	pool := bridge.NewPool(opts, 1)
 	defer pool.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), parseRunTimeout(args)+10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+10*time.Second)
 	defer cancel()
 
 	if err := pool.Warm(ctx); err != nil {
@@ -101,17 +122,6 @@ func runExtensionDirectly(args *cli.Args) int {
 			return 1
 		}
 		return 0
-	}
-
-	kwargs, decodeErr := decodeRunJSON(args.Flag("kwargs", ""))
-	if decodeErr != nil {
-		fmt.Fprintf(os.Stderr, "halite-hub extensions run: --kwargs: %v\n", decodeErr)
-		return cli.ExitUsage
-	}
-	callArgs, decodeErr := decodeRunJSON(args.Flag("args", ""))
-	if decodeErr != nil {
-		fmt.Fprintf(os.Stderr, "halite-hub extensions run: --args: %v\n", decodeErr)
-		return cli.ExitUsage
 	}
 
 	if !quiet {
@@ -260,13 +270,16 @@ func resolveExtensionPath(arg string) (string, error) {
 	return abs, nil
 }
 
-func parseRunTimeout(args *cli.Args) time.Duration {
+// parseRunTimeout reads --timeout: 60 seconds when it is not given, and
+// otherwise a positive duration or an error, as `extensions verify`
+// reads it.
+func parseRunTimeout(args *cli.Args) (time.Duration, error) {
 	raw := args.Flag("timeout", "60s")
 	d, err := time.ParseDuration(raw)
 	if err != nil || d <= 0 {
-		return 60 * time.Second
+		return 0, fmt.Errorf("--timeout %q is not a positive duration", raw)
 	}
-	return d
+	return d, nil
 }
 
 // decodeRunJSON reads a --kwargs or --args value, which may be absent.
