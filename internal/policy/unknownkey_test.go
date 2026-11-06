@@ -8,7 +8,7 @@ import (
 
 // A key a rule or an argument rule is not read for is refused at load,
 // naming it. It used to be ignored: `allow_envv: [base]` loaded, and the
-// role ran state.apply in any environment (DIVERGENCE 5.590).
+// role ran state.apply in any environment (DIVERGENCE 5.602).
 func TestAnUnknownKeyInARuleIsRefusedByName(t *testing.T) {
 	cases := []struct {
 		name string

@@ -2258,7 +2258,7 @@ Properties that are requirements, not suggestions:
   own environment, and an orchestration with no `env` is judged as `base` (DIVERGENCE 5.601).
   A key that a rule or an argument constraint does not know is refused at load, naming it: a
   misspelt constraint would otherwise be one that is not there, and a hub older than the policy
-  would enforce it without the constraints it does not know (DIVERGENCE 5.590).
+  would enforce it without the constraints it does not know (DIVERGENCE 5.602).
 - **`cmd.run` is a distinct permission** from every other function and is never granted by a
   wildcard. `functions: ['*']` does not include `cmd.run`, `cmd.script`, `cmd.shell`, `module.run`,
   `file.write`, `file.replace`, the language package installers `pip.install`, `npm.install`,

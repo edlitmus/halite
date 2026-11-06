@@ -376,7 +376,7 @@ func parseRules(role string, v any, path string) ([]Rule, error) {
 //
 // They used to be ignored, and a misspelling of a restriction is a
 // restriction that is not there: `allow_envv: [base]` under state.apply
-// loaded, and `policy test` answered "allowed" for prod (DIVERGENCE 5.590).
+// loaded, and `policy test` answered "allowed" for prod (DIVERGENCE 5.602).
 // A typo in an allow or deny list, or in `require_kwargs`, fails open, and
 // so does one in the rule's own `args` -- `arg:` drops every argument rule
 // the role was written with. A rule-level typo of `functions`, `runners`

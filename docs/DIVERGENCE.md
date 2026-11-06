@@ -39562,9 +39562,9 @@ that is wrongly allowed now returns at once, and the failure prints.
 - **Nothing was run on FreeBSD by hand.** The code does not depend on the
   platform. CI runs the tests.
 
-### 5.590 A misspelt key in a policy rule was ignored, and failed open
+### 5.602 A misspelt key in a policy rule was ignored, and failed open
 
-Found while adding `allow_env` (5.589, "Not changed, and open"). It was
+Found while adding `allow_env` (5.601, "Not changed, and open"). It was
 run, not only read.
 
 #### The defect
@@ -39572,7 +39572,7 @@ run, not only read.
 `parseRules` in `internal/policy/policy.go` read each key it knew from a
 rule and from an argument rule, and did not look at any other key. A
 misspelt key was therefore a limit that was not there, and nothing said
-so. With the build of 5.589, this rule loaded:
+so. With the build of 5.601, this rule loaded:
 
 ```yaml
 roles:
@@ -39598,7 +39598,7 @@ runners. The checks that a rule grants something and that `functions`
 names a `target` caught some rule-level misspellings, but not these.
 
 It also meant that **an older hub or API enforced a newer policy without
-its newer limits**: a hub from before 5.589 reads `allow_env` as an
+its newer limits**: a hub from before 5.601 reads `allow_env` as an
 unknown key, and so ignores it.
 
 No commit and no ledger section says that unknown keys were accepted on
@@ -39673,7 +39673,7 @@ misspelling grants more, it should be refused there too.
 - The example in `halite-policy(5)` and the policy in
   `contrib/examples/tree/pillar/halite/hub.sls` were read: they use only
   known keys. Neither was loaded.
-- The two binaries were compared on the policy above: the build of 5.589
+- The two binaries were compared on the policy above: the build of 5.601
   answered `allowed`, and this build refused to load it with the error
   above, from both `policy test` and `policy show`.
 
