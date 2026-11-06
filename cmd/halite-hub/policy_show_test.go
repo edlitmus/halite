@@ -63,3 +63,38 @@ bindings:
 		t.Errorf("want the unheld line for the two rules that have argument rules only:\n%s", res.stdout)
 	}
 }
+
+// `policy test --env` asks the question the hub asks of a job sent with a
+// `saltenv`, and `policy show` prints a role's environment rules (issue
+// 620). Without the flag a test could not give an environment, and would
+// say "allowed" about a job the hub refuses.
+func TestPolicyTestAndShowKnowTheEnvironment(t *testing.T) {
+	root := t.TempDir()
+	src := `
+roles:
+  web:
+    - target: '*'
+      functions: ['state.apply']
+      args:
+        'state.apply':
+          allow_env: ['base']
+bindings:
+  - principal: 'cert:CN=web'
+    roles: ['web']
+`
+	if err := os.WriteFile(filepath.Join(root, "policy.yaml"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := run(t, "policy", "test", "--root", root, "--env", "attacker", "cert:CN=web", "web1", "state.apply", "web")
+	if res.code == 0 || !strings.Contains(res.stdout, `environment "attacker"`) {
+		t.Errorf("policy test --env attacker exited %d: %s%s", res.code, res.stdout, res.stderr)
+	}
+	res = run(t, "policy", "test", "--root", root, "--env", "base", "cert:CN=web", "web1", "state.apply", "web")
+	if res.code != 0 {
+		t.Errorf("policy test --env base exited %d: %s%s", res.code, res.stdout, res.stderr)
+	}
+	res = run(t, "policy", "show", "--root", root)
+	if !strings.Contains(res.stdout, "state.apply: allow_env=[base] deny_env=[]\n") {
+		t.Errorf("policy show does not print the environment rule:\n%s", res.stdout)
+	}
+}

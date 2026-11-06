@@ -119,7 +119,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, token *apitoken
 			"`tgt` is %d bytes; the limit is %d", len(req.Target), target.MaxExprLen))
 		return
 	}
-	if !s.authorize(w, token, jobRequestFor(req.Function, req.Target, req.targetKind(), req.Arg, req.Kwarg, req.Test)) {
+	if !s.authorize(w, token, jobRequestFor(req.Function, req.Target, req.targetKind(), req.Arg, req.Kwarg, req.Test, req.Env)) {
 		return
 	}
 

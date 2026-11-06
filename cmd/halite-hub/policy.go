@@ -28,6 +28,9 @@ policy flags:
                        list, compound, ...), as the job would be sent;
                        the default is a glob
   --kwarg <k=v>        an argument to include, repeatable as a comma list
+  --env <name>         the environment (saltenv) the job would be sent
+                       with; an orchestration runner reads its own
+                       env= keyword instead
 `
 
 // policyPath is where the file lives.
@@ -140,6 +143,11 @@ func runPolicy(args *cli.Args) int {
 			Kwarg:      kwargs,
 			Test:       args.Bool("test", false),
 			Runner:     args.Bool("runner", false),
+			// The environment is part of the question for the same
+			// reason the kind is: allow_env and deny_env judge it, and
+			// a test that could not give one would say "allowed" about
+			// a job the hub refuses (issue 620).
+			Env: args.Flag("env", ""),
 		}
 		decision := loaded.Authorize(req)
 		fmt.Println(decision.String())
@@ -189,6 +197,9 @@ func printArgRules(loaded *policy.Policy, r policy.Rule, runnerCatalog []string)
 		a := r.Args[fn]
 		fmt.Printf("     %s: allow_sls=%v deny_sls=%v allow_mods=%v deny_kwargs=%v\n",
 			fn, a.AllowSLS, a.DenySLS, a.AllowMods, a.DenyKwargs)
+		if len(a.AllowEnv) > 0 || len(a.DenyEnv) > 0 {
+			fmt.Printf("     %s: allow_env=%v deny_env=%v\n", fn, a.AllowEnv, a.DenyEnv)
+		}
 		if len(a.RequireKwargs) > 0 {
 			fmt.Printf("     %s: require_kwargs=%v\n", fn, a.RequireKwargs)
 		}

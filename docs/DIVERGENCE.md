@@ -24985,6 +24985,13 @@ Each was broken on purpose, and each failed:
   not this defect, and it was not changed.
 - **macOS only.** The tests ran on macOS (Darwin 25.6). CI runs them on
   the other platforms.
+
+#### Since: issue 620
+
+The environment now goes with the kind at every place that asks the policy, so
+`allow_env` and `deny_env` judge the environment that is dispatched. The
+list of places is in 5.589.
+
 ### 5.297 Four functions that run caller-supplied code were not arbitrary code
 
 SPEC 23.5 says a wildcard grant never includes a function marked
@@ -38713,6 +38720,159 @@ Each was broken on purpose and watched to fail:
   tools. A package install script was not seen to run. The exec plugin of
   `maven.run` was traced and not run.
 - **The tests ran on macOS only.** CI runs them on all four platforms.
+
+### 5.589 An operator's SLS rules did not cover the environment
+
+Issue 620, found by the review of the fixes for issue 321 on 2026-11-03.
+The finding was read in code and not run.
+
+#### The defect
+
+`policy.Request` had no environment. The node adopts the `Env` of a job
+(`adoptJobEnvironment` in `cmd/halite-node/execute.go`). With gitfs, every
+branch is an environment. A role with `allow_sls: [web.*]` could therefore
+apply `web.x` from any branch, including a branch made by somebody who has
+push rights and no signing key. Two limits existed, and neither is part of
+the role of an operator: the node-wide `env_allowlist` and `env_denylist`
+(SPEC 28.3), and `gitfs_verify_signatures`.
+
+#### The fix
+
+`policy.Request.Env` is the environment that the job will be dispatched
+with. As with `TargetKind` (5.296), it must be the value that is given to
+`Dispatch`. Two new argument rules limit it: `allow_env` and `deny_env`.
+They take patterns, as `allow_sls` does, and are written under a function
+in `args:`. The policy checks `deny_env` first. Then, if `allow_env` is
+set, the environment must match it.
+
+They are argument rules, so the function family holds them (5.586). A rule
+under `state.apply` holds `state.sls`, `state.highstate` and the
+`state.show_*` functions. A rule under `state.orchestrate` holds
+`state.orch`, `state.orchestrate_show_sls` and `state.orch_resume`.
+
+`requestEnv` in `internal/policy/policy.go` decides which environment the
+policy judges:
+
+- **A fleet job:** `Request.Env`. **An empty environment is not judged.**
+  The job names no environment, and the node runs in its own configured
+  environment. The caller did not choose it and the hub does not know it.
+  The `env_allowlist` and `env_denylist` of the node limit that case. This
+  is a limit of the rule.
+- **An orchestration runner** (`state.orchestrate`, `state.orch`,
+  `state.orchestrate_show_sls`): its own `env` argument, as a keyword or as
+  the second positional argument. **An absent `env` is judged as `base`**,
+  because the run compiles from `base` when it has none
+  (`Server.Orchestrate`). So the policy always judges these runners. A
+  keyword `env` that is not a string is refused, with the reason that the
+  policy cannot check it.
+- **`state.orch_resume`:** the environment of the run that it resumes. The
+  hub gives it on the second question, together with `Resumes` (5.587). The
+  first question does not judge it.
+- **Any other runner:** not judged. None takes an environment that
+  dispatches a job.
+
+The refusal reads `state.apply may not be run in the environment "attacker"
+by this role, which allows base`. For `deny_env` it reads `... may not be
+run in the environment "release-bad" by this role`.
+
+#### Every place that asks the policy
+
+The list comes from `grep -rn "policy.Request{\|policyRequestFor(\|requestFor(\|jobRequestFor("`.
+
+| # | Place | What it passes for the environment | Tested |
+|---|---|---|---|
+| 1 | `POST /v1/jobs` (`Server.submit`, `internal/hub/jobs.go`) | `req.Env` | yes |
+| 2 | `POST /v1/jobs/{jid}/resume` (`Server.resume`) | `existing.Env` | yes |
+| 3 | `requestForJob` (`jobs.go`), used to read the status of a job and to kill it | `j.Env` | yes, through kill |
+| 4 | `dispatchFor` (`internal/hub/runners_fleet.go`): each job that a runner, an orchestration step or a reaction sends | `sub.Env` | yes, with a step that sets `saltenv: attacker` inside a run in `base` |
+| 5 | `CallRunner` (`internal/hub/runner.go`) | no change in the hub. The policy reads the `env` argument of the orchestration runner, as `runnerNames` reads `sls`. | yes, by keyword and by position |
+| 6 | `authorizeResume`, the second question of `state.orch_resume` (`internal/hub/runners_orch.go`) | `previous.Env` | yes |
+| 7 | `wouldAuthorize` (the plan of `reactor.test`), the mine read (`mine.go`), the relay (`relay.go`, two places), the metrics endpoint (`metrics_endpoint.go`), and every question of halite-api about a runner, key, node, metric or event that names no job environment | no environment. Not changed. | no |
+| 8 | `jobRequestFor` (`internal/api/authorize.go`) for `/v1/run` local clients (`execute.go`) and `/v1/nodes/{id}/state` (`nodes.go`, `applyState`) | `req.Env` (`saltenv`). The argument `env` is now required, as `kind` is. | yes |
+| 9 | `/v1/orch` and the `runner` client of halite-api | the forwarded `env` keyword or position, which the policy reads (`requestEnv`) | yes: `saltenv` on `/v1/orch`, `kwarg.env`, and `arg[1]` |
+| 10 | `halite-hub policy test` (`cmd/halite-hub/policy.go`) | the new flag `--env <name>` | yes |
+
+Item 8 matters because halite-api authorizes the operator itself before it
+submits the job. The hub then judges only the certificate of the API. So
+the question to the API was the only one that asked the operator about the
+environment.
+
+Reactions, `saltutil.refresh_*` and `mine.update` dispatch with no `Env`.
+The policy judges nothing for them. This agrees with the rule for an empty
+environment: the node uses its own.
+
+#### Tests
+
+- `internal/policy` `TestAllowEnvJudgesTheEnvironmentARequestRunsIn`: allow,
+  deny, an empty job environment that is not judged, the function family,
+  keyword, position, absent as `base`, a non-string `env` that is refused,
+  and the first and second question of a resume.
+- `internal/hub` `TestAllowEnvHoldsEveryHubSiteThatDispatches`, with the
+  subtests submit, a recorded job (resume and kill), the orchestration
+  runner, an orchestration step, and a resumed orchestration.
+- `internal/api` `TestAllowEnvHoldsEveryAPIPathThatChoosesAnEnvironment`.
+- `cmd/halite-hub` `TestPolicyTestAndShowKnowTheEnvironment`.
+
+Each was broken on purpose and watched to fail:
+
+- **Policy:** an absent `env` not judged as `base`, the positional argument
+  ignored, the `deny_env` check removed, the deferral for a resume removed,
+  a non-string `env` accepted, and the parse of the two keys removed. Each
+  made the test fail.
+- **Hub:** `Env` removed at `submit`, `resume`, `requestForJob`,
+  `dispatchFor` and `authorizeResume`, and the keyword `env` of the runner
+  ignored. Each made its own subtest fail.
+- **API:** `req.Env = env` removed in `jobRequestFor`. Both `/v1/run` and
+  `/v1/nodes/{id}/state` failed.
+- **CLI:** the use of the `--env` flag removed. The test failed.
+
+One fault in the test itself. The subtest for a job resume first hung. A
+resume that the policy wrongly allowed starts a background batch, and the
+test waits for it. The fixture job is now complete and delivered. A resume
+that is wrongly allowed now returns at once, and the failure prints.
+
+#### What an operator sees
+
+- **The rules are new and optional.** A policy without `allow_env` and
+  `deny_env` behaves as before. Nothing becomes stricter when you upgrade.
+- **An older hub or API ignores `allow_env` and `deny_env` silently.** The
+  policy loader reads only the argument-rule keys that it knows, and it
+  does not refuse the others. This was demonstrated with this build. A rule
+  with the misspelled key `allow_envv: ['base']` under `state.apply` loaded
+  without an error, and `halite-hub policy test ... state.apply web`
+  answered "allowed by role web rule 0". Upgrade the hub and halite-api
+  before you write `allow_env`, and check the spelling.
+- **The rule judges the environment that a caller chooses.** A job with no
+  `saltenv` runs in the environment of the node and is not judged. Use the
+  `env_allowlist` of the node for that case.
+- **An orchestration with no `env` is judged as `base`.** If `allow_env`
+  under `state.orchestrate` does not include `base`, the role cannot run an
+  orchestration without naming an allowed environment.
+- `halite-hub policy test --env <name>` asks the question for a job sent
+  with that `saltenv`. `halite-hub policy show` prints
+  `<function>: allow_env=[...] deny_env=[...]` for a rule that has one.
+
+#### Not changed, and open
+
+- **An unknown argument-rule key is accepted without an error.** This is
+  the cause of the misspelling above. It is a separate defect that fails
+  open: a typing error in `allow_sls` is ignored in the same way. It is not
+  fixed here. It needs its own change.
+- **A state inside an SLS can fetch a file from another environment** with
+  `salt://path?saltenv=other` (`fileserver.EnvFromURI`). `allow_env` limits
+  the environment of the job. It does not limit what an SLS in that
+  environment fetches. That SLS comes from the allowed environment, so the
+  same control applies to it, but the policy does not judge it. This was
+  not tested.
+- **Reactions and the maintenance jobs that runners send carry no
+  environment.** See the rule for an empty environment above.
+
+#### Not verified
+
+- **No live hub, halite-api, gitfs remote with branches, or node was used.**
+  All the tests run in one process.
+- **Nothing was run on FreeBSD by hand.** The code does not depend on the
+  platform. CI runs the tests.
 
 ## 6. Everything else not started
 

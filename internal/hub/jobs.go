@@ -247,6 +247,9 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		Arg:        req.Arg,
 		Kwarg:      req.Kwarg,
 		Test:       req.Test,
+		// The environment goes with the job as the kind does: it is
+		// what Dispatch sends and the node adopts (issue 620).
+		Env: req.Env,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {
@@ -337,6 +340,7 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request, principal string
 		Arg:        existing.Arg,
 		Kwarg:      existing.Kwarg,
 		Test:       existing.Test,
+		Env:        existing.Env,
 	})
 	s.countDecision(decision)
 	if !decision.Allowed {
@@ -571,7 +575,7 @@ func requestForJob(principal string, j *job.Job) policy.Request {
 	}
 	return policy.Request{
 		Principal: principal, Target: j.Target, TargetKind: j.TargetKind,
-		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test,
+		Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg, Test: j.Test, Env: j.Env,
 	}
 }
 

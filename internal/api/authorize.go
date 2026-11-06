@@ -68,10 +68,16 @@ func requestFor(fun, target string, arg []string, kwarg map[string]any, runner b
 // is a keyword on the wire; a role that requires `test: true` is answered on
 // it, and a caller that left it out would have every dry run refused.
 // DIVERGENCE 5.493.
-func jobRequestFor(fun, target, kind string, arg []string, kwarg map[string]any, test bool) policy.Request {
+//
+// env is the `saltenv` the job will be submitted with, required for the
+// reason kind is: a role's allow_env and deny_env judge it, and a question
+// that left it out would let a role limited to `base` run from any branch
+// (issue 620).
+func jobRequestFor(fun, target, kind string, arg []string, kwarg map[string]any, test bool, env string) policy.Request {
 	req := requestFor(fun, target, arg, kwarg, false)
 	req.TargetKind = kind
 	req.Test = test
+	req.Env = env
 	return req
 }
 

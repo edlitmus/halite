@@ -234,6 +234,8 @@ A rule can restrict how a function is called:
 | `deny_sls: [...]` | ...or must not name these. |
 | `allow_mods: [deploy.*]` | `state.orchestrate` may run only these orchestrations. Each name is checked, positional or the `sls` keyword, and each name of a comma list on its own. |
 | `deny_kwargs: [pillar]` | The call may not pass a keyword argument of this name (patterns). |
+| `allow_env: [base]` | The call may run only in these environments (patterns). The environment is the `saltenv` of a job or the `env` of an orchestration. |
+| `deny_env: [release-*]` | ...or must not run in these. `deny_env` is checked first. |
 | `require_kwargs: {test: true}` | The call must carry each keyword with exactly this value, or it is refused. A bool, a string or a number; the name is exact, not a pattern; the type must match, so the string `"true"` is not `true`. |
 
 A limit holds every function that takes the same names, not only the one
@@ -246,6 +248,17 @@ written for any of the `state.orchestrate`, `state.orch` or
 resumes. If a rule has limits under two of them, a call must pass both. So a rule that grants `state.*`
 with `allow_sls` under `state.apply` does not leave `state.sls db.secret`
 open. A function that should not be limited goes in a rule of its own.
+
+`allow_env` and `deny_env` judge the environment that the caller chooses. With
+gitfs every branch is an environment, so without them a role with
+`allow_sls: [web.*]` can apply `web.x` from any branch. For a job, the policy
+judges its `saltenv`. A job with no `saltenv` runs in the environment of the
+node and is not judged: limit that case with `env_allowlist` on the node. For
+an orchestration, the policy judges the `env` argument, as a keyword or as the
+second positional argument, and an orchestration with no `env` is judged as
+`base`. A resume is judged on the environment of the run that it resumes. An
+older hub or API ignores these two keys silently, and so does this build for a
+key that it does not know. Upgrade first and check the spelling.
 
 `require_kwargs: {test: true}` is how a role is held to a rehearsal. The dry-run
 flag (`run --test`, `"test": true` in the API) is a keyword on the wire, and
@@ -359,7 +372,8 @@ can be tested in CI. Each of these was run against the policy above:
 `--runner` evaluates the function as a hub runner and `--kwarg k=v` supplies
 an argument. `--target-kind` reads the target as the kind a job would be sent
 with (`L`, `C`, `E`, `G`, … or `list`, `compound`, …). Without it, the target
-is a glob. A test suite for your policy is a shell script of these lines
+is a glob. `--env <name>` gives the environment (`saltenv`) that the job would
+be sent with, so that `allow_env` and `deny_env` can judge it. A test suite for your policy is a shell script of these lines
 with the expected exit status: write it when you write the policy and run
 it on every change.
 

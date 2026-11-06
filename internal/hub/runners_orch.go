@@ -325,6 +325,9 @@ func (c *RunnerContext) authorizeResume(previous *OrchRun) error {
 	req := policyRequestFor(c.Principal, "state.orch_resume", "", "", nil, kwarg, true)
 	req.Test = c.argBool("test")
 	req.Resumes = append([]string{}, previous.SLS...)
+	// The environment the resumed run compiles from, which is the earlier
+	// run's (issue 620).
+	req.Env = previous.Env
 	decision := c.Server.authorizeFor(req, c.OnBehalfOf)
 	if !decision.Allowed {
 		c.Server.warn("runner refused by policy",
