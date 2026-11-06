@@ -231,6 +231,7 @@ Stated here rather than left to be discovered. A template that calls an executio
 **Exports.**
 
 - `Config` (type): Config is how a sandbox is set up.
+- `Live` (func): Live reports how many render sandbox children this process has started and not yet ended and reaped.
 - `New` (func): New returns a sandbox.
 - `Sandbox` (type): Sandbox is a render.Engine that renders in a child process.
 - `Serve` (func): Serve runs the child protocol until stdin closes.

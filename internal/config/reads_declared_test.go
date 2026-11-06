@@ -19,16 +19,16 @@ import (
 // in place of the setting the node enforces. The audit that existed ran the
 // other way, declared and never read. DIVERGENCE 5.545.
 //
-// `id` is read by the hub's event returner, where nothing sets it, and is
-// the one known exception; it is a decision about whether the hub has an
-// identity for its returners, and is left as it was.
+// There are no exceptions. `id` was one: the hub's event returner read it,
+// and the Salt shim renames `id` to `node_id` on load, so it was always
+// empty. The read is gone (DIVERGENCE 5.593).
 func TestEverySettingTheProgramsReadIsDeclared(t *testing.T) {
 	declared := map[string]bool{}
 	for _, k := range Keys {
 		declared[k.Name] = true
 	}
 	read := regexp.MustCompile(`\b(?:cfg|config)\.(?:String|Bool|Int|Int64|Duration|StringSlice|Map|Roots|PathUnderRoot)\("([a-z][a-z0-9_]*)"`)
-	known := map[string]bool{"id": true}
+	known := map[string]bool{}
 
 	var missing []string
 	for _, dir := range []string{"../../cmd", "../../internal"} {

@@ -68,7 +68,7 @@ line saying what to do about anything that is not a pass.
 $ halite-node doctor --root . --config node.yaml
 halite-node doctor — web1.example
 
-  pass  configuration validity           node.yaml loads, and matches what this process is running
+  pass  configuration validity           node.yaml loads, and matches what the agent recorded when it last started (evidence record 2, 2026-11-05T18:56:05.241805Z)
   pass  certificate validity and expiry  the hub's CA: 3649 days left; this node's certificate: 89 days left
   pass  connectivity                     127.0.0.1:45510 answered in 1ms: halite-hub 0.0.0-dev+bb5a08dd8fe0 ok
   pass  clock skew against the hub       within 1m of the hub (236ms ahead of)
@@ -204,7 +204,7 @@ counts:
 checks:
   configuration validity:
     status: pass
-    detail: node.yaml loads, and matches what this process is running
+    detail: node.yaml loads, and matches what the agent recorded when it last started (evidence record 2, 2026-11-05T18:56:05.241805Z)
     remedy: ''
   certificate validity and expiry:
     status: pass

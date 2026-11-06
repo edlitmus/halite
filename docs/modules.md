@@ -3124,12 +3124,12 @@ grains.has_value(key: string)
 Return one or more grains as a mapping.
 
 ```
-grains.item(names: list)
+grains.item(*names: list)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `names` | list | *required* | The grain names. |
+| `names` | list | *required* | The grain names, one per argument, or one list of them. |
 
 *SPEC section 14*
 

@@ -195,6 +195,7 @@ A check that says "certificate expires in 3 days" and stops has moved the proble
 - `Report` (type): Report is a run of the checks.
 - `Result` (type): Result is one check's answer.
 - `Run` (func): Run performs every check that applies to the role, in order.
+- `Running` (type): Running is what this command knows about the configuration the long-running service started with.
 - `Status` (type): Status is what a check found.
 - `Value` (func): Value renders a report for `--out json` or `yaml`, so that a state can read it.
 
