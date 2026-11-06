@@ -39047,6 +39047,29 @@ not have to read the code again.
 **Not verified.** A GPG-decrypted pillar value was not used; the node test
 registered the secret directly. The API route was read and not run.
 
+#### The owner reversed this decision (issue 659)
+
+5.598 recorded that the hub keeps a return as the node sent it, because execution output is data the caller asked for (5.268) and reading a return is authorized as running the job's function (5.513). The owner did not accept this for registered secrets. A secret in a cached return outlives the job, reaches anyone who can read the job later, and is copied into returners and exports. Issue 659 asks the hub to mask registered secrets before it caches or serves a return.
+
+**Changed.** `Server.returned` (internal/hub/jobs.go) now calls `scrubReturn` (internal/hub/returnscrub.go) before `Jobs.AddReturn`. Every other route starts from the copy the hub files: the `ret` event, `OnReturn`, the event returner, `GET /v1/jobs/{jid}`, the `jobs.lookup_jid`, `jobs.list_job` and `jobs.print_job` runners, and the API's `GET /v1/jobs/{jid}`. One scrub at the door covers them. `recordRunnerReturn` (internal/hub/runner.go) masks a runner's return in the job cache too. The caller of the runner still gets the direct answer unmasked.
+
+**The set.** The hub uses its own redactor set, read from `PillarOptions.Secrets`. `OnSecret` fills the same set, so the set that masks cannot differ from the set that learns (5.110 was a field that was declared and never assigned). A node asks the hub to compile its pillar before every job (`compilePillarOrErr` in cmd/halite-node/execute.go), and seeds its own set from that answer. So the hub has just learned the values when the return arrives.
+
+**What mask means.** `redact.Set.MaskValue` (internal/redact/redact.go) replaces registered values, in keys and in values, with `**********`. It masks a whole string that is a registered secret, even if it is shorter than 6 characters. It does not run the URL-credential scanner, so `ssh://git@host/repo` stays. A return with nothing to mask is kept byte for byte. Measured: encoding again through the value model turns `1.0` into `1`, `-0` into `0`, and an integer wider than 64 bits into `1.2345678901234568e+29`. A return that held a secret is encoded again, so it carries those changes. A return that the value model cannot read (measured: a duplicate key) and that holds a secret is kept as one JSON string of the masked text. The hub logs a warning.
+
+**Not covered.**
+
+- A secret that the node configured itself (`seedConfiguredSecrets`) never reaches the hub. A node that compiles its own pillar has the same gap. Only the node could mask these, and it does not mask an execution return.
+- A return that arrives after a hub restart, from a job that ran on a last-known-good pillar. The hub's set is in memory, and only a compile fills it again.
+- The job arguments. A secret typed into the command (`cmd.run 'echo s3cr3t'`) stays in the `arg` of the job record and in the `halite/job/<jid>/new` event. Masking it at submit would change what the node runs. The first version of the test failed on this. The `fun_args` copy in the return is masked.
+- The set holds values decrypted for every node, so a value decrypted for another node is masked too.
+
+**Consequence.** Anything that read a password out of a cached `cmd.run` return now gets `**********`. This includes `pillar.get` and `pillar.items` run as a job through the hub. 5.268 still holds in one sense: the caller gets the output, with registered secrets masked.
+
+**Measured.** `TestARegisteredSecretIsMaskedInEveryRouteAReturnTakes` (internal/hub/return_secret_test.go) failed on seven routes with the scrub call removed: the cache on disk, the hub job route, the three runners, the API, and the relay forward. The `ret` event and the event returner never carried the return, so they passed both ways. `TestAnAlreadyMaskedReturnIsKeptAsItArrived`, `TestAReturnTheValueModelCannotReadIsMaskedAsText` and `TestARunnersCachedReturnIsMaskedAndItsAnswerIsNot` each failed with their part of the change removed.
+
+**Not verified.** Nothing ran on a live hub or node. The secret was not a GPG-decrypted value. It came from a secret external pillar source in a test. Not measured: whether the set of a node and the set of the hub differ in practice on the estate, and the cost of decoding every return on a busy hub.
+
 ### 5.599 What an operator did through the API still named the API
 
 Issue 649, from the review of the change in 5.582 (PR 647). That change
