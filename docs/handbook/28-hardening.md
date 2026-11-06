@@ -296,6 +296,19 @@ the wrong file. Ask the binary, not its name:
 > FIPS mode (so `fips_mode: False` was not seen), Ubuntu Pro's certified `fips`
 > kernel, a second node, token enrolment, TOTP, an upgrade, and any release
 > after v0.1.1. The ledger entry is DIVERGENCE 5.282.
+>
+> On 2026-11-06 main (0.1.1-329-g5d314a40a398) was built from source on two
+> arm64 Ubuntu 24.04.5 hosts, both on kernel 6.8.0-1067-aws-fips. The hub, the
+> API and the node ran as services under the drop-ins, all on arm64. The
+> `-fips` binaries were the only ones installed. A node enrolled with a token,
+> with no `keys accept`. `grains.item` with six names returned all six. A third
+> arm64 host, on Ubuntu 22.04.5 with a kernel that is not in FIPS mode, gave
+> `fips_mode: False` for both builds. On that host `doctor` warned for the FIPS
+> build and passed for the ordinary build, so all four branches of its FIPS row
+> have been seen. The ledger entry is the same, DIVERGENCE 5.282.
+> **Not run:** main on amd64, Ubuntu Pro's certified `fips` kernel, a reboot or
+> a move of a host into or out of FIPS mode, start at boot, TOTP, an upgrade,
+> and a release archive of main.
 
 ## Secrets: where they are and are not
 
