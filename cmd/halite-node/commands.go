@@ -325,6 +325,17 @@ func renderHigh(out *state.Compiled) *value.Map {
 		for _, f := range d.Funcs {
 			args := make([]any, 0, f.Args.Len())
 			for _, e := range f.Args.Entries() {
+				// The password the state runs as is never shown, here as in
+				// renderLow (5.266). It is a value written in the tree, so
+				// the redactor does not hold it and maskValue cannot find
+				// it; only the key says what it is. renderLow masked it and
+				// this did not, so `show_lowstate` hid what `show_highstate`
+				// and `show_sls` printed, to the terminal and, as a job, to
+				// the hub's job cache. DIVERGENCE 5.591.
+				if value.KeyString(e.Key) == "runas_password" {
+					args = append(args, value.MapOf("runas_password", "**********"))
+					continue
+				}
 				args = append(args, value.MapOf(value.KeyString(e.Key), e.Val))
 			}
 			body.Set(f.Name(), args)

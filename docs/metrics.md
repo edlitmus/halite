@@ -806,7 +806,9 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_schedule_runs_total` | counter | `name` | Scheduled jobs started, by schedule entry. |
 | `halite_node_evidence_records_total` | counter | `kind` | Records appended to the node's SPEC 25.7 chain: `job.accepted`, `job.refused`, `job.result`, `config`, `extension`, `node.start`, `node.stop` and `anchor.receipt`. Each kind is exported at 0 from the start when `evidence` is on, and none when it is off. |
 | `halite_node_evidence_failures_total` | counter | — | Evidence records that could not be written, which are jobs with no entry in the record. |
-| `halite_node_evidence_log_open` | gauge | — | 1 when the node has its evidence chain open for writing; 0 when it is configured to keep one and the log failed to open, which is logged once and counted nowhere else. Absent when `evidence` is off, so 0 is never a choice. |
+| `halite_node_evidence_log_open` | gauge | — | The value is 1 when the node has its evidence chain open for writing. The value is 0 when the node must keep a chain and the log failed to open. The node logs the failure once. `halite_node_evidence_unrecorded_total` counts the records that the node loses after the failure. The metric is absent when `evidence` is off, so the value 0 never means that `evidence` is off. |
+| `halite_node_evidence_unrecorded_total` | counter | — | The number of evidence records that the node did not write, because its evidence log is not open. Each of these records is a job or an event that has no entry in the record. The value is 0 while the log is open. The value is always 0 when `evidence` is off. |
+| `halite_node_evidence_anchor_problems_total` | counter | `problem` | The number of reports of the evidence head of the node that the hub did not anchor, or that came back with a receipt that the node did not file. The values of `problem` are: `conflict` (the hub holds a head that this chain contradicts), `mismatch` (the receipt is for a different head), `receipt` (the receipt does not verify against the CA that the node pins), `unsupported` (the hub keeps no anchors), and `failed` (the report did not reach the hub). The counter counts every report, but the node logs each problem once. When `evidence` is on, the node exports each value of `problem` at 0. When `evidence` is off, the node exports none. |
 | `halite_node_jobs_accepted_total` | counter | — | Jobs this node accepted to run: past the replay guard and the signature check, counted where the evidence record for the acceptance is written. A job refused afterwards, because the queue is full, was accepted first. Unlabelled, so it is exported at 0 and `increase()` sees the first job; `halite_node_jobs_total` is the finished jobs, by function and outcome. |
 | `halite_state_compile_duration_seconds` | histogram | — | Time to turn the tree into a low state. |
 | `halite_state_run_duration_seconds` | histogram | — | Time to apply it, not counting the line above. |
@@ -1302,10 +1304,31 @@ hub to be counted there, and neither did a record it failed to write:
         annotations:
           summary: "{{ $labels.instance }} is running jobs and recording none of them"
 
+      # Jobs ran and the node wrote no record of them, because its
+      # evidence log is not open. HaliteNodeEvidenceNotKept below says the
+      # log is shut; this one says that something has been lost, and how
+      # much, from the first job.
+      - alert: HaliteNodeEvidenceUnrecorded
+        expr: increase(halite_node_evidence_unrecorded_total[10m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} did not record {{ $value }} evidence records; its evidence log is not open"
+
+      # The node got a receipt it would not file: one for a head it did
+      # not report, or one that does not verify against the CA it pins.
+      # Only the node can see this; the hub believes it answered. A
+      # conflict is not here, because HaliteEvidenceConflict pages for it
+      # from the hub.
+      - alert: HaliteNodeEvidenceReceiptRefused
+        expr: increase(halite_node_evidence_anchor_problems_total{problem=~"mismatch|receipt"}[15m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} refused the hub's evidence receipt: {{ $labels.problem }}"
+
       # The node is configured to keep an evidence record and its log is
-      # not open: it failed to open at startup, said so once in the log,
-      # and counted nothing. Every other evidence alert is quiet for this
-      # node. The gauge does not exist on a node with `evidence: false`, so
+      # not open: it failed to open at startup and said so once in the log.
+      # Every other evidence alert but HaliteNodeEvidenceUnrecorded is
+      # quiet for this node. The gauge does not exist on a node with `evidence: false`, so
       # a node that chose to keep no record is never matched.
       - alert: HaliteNodeEvidenceNotKept
         expr: halite_node_evidence_log_open == 0

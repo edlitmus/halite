@@ -38657,6 +38657,388 @@ panels; `queue_full` moving through either binary's scrape (it is shown
 in the tracer test, and the binaries read it through the same `Lost`).
 The API service does not trace, so it has no such counter.
 
+### 5.589 `doctor` compared the configuration file with itself
+
+Issue 615, item 1, from the issue 321 second-pass audit. `halite-node
+doctor` says whether the file on disk is what the agent is running. It
+cannot know: `doctor` is its own process. `setup` loaded the file and
+`nodeConfigCheck` loaded it again a moment later, and the check compared
+the warning counts of those two loads. It said "loads, and matches what
+this process is running" whatever the agent had started with. The hub's
+and the API's `doctor` passed `true` and said the same sentence about
+themselves.
+
+**Measured** on macOS 26.7.2 (arm64), with a throwaway hub and an enrolled
+node in a scratch directory and the agent running (`halite-node connect`).
+After the agent started, `log_level: info` was changed to `debug` in
+`node.yaml`. `main`'s `halite-node doctor` at `e02c31b` said:
+
+```
+  pass  configuration validity           …/node/node.yaml loads, and matches what this process is running
+```
+
+**The change.** The agent already writes a `config` record to its evidence
+chain when it starts: a digest of its settings (`nodeevidence.Digest`).
+`nodeevidence.LastOfKind` reads the newest record of a kind, newest segment
+first, and the node's check compares the file's digest with that record's.
+The detail names the record and its time, because the record is from the
+agent's last start and an agent that has stopped since is not told apart.
+With evidence off, no record, or a chain it cannot read, the check says
+"not compared" and why. `doctor.ConfigValidity` takes a `doctor.Running`
+in place of the bool, so a caller cannot claim a comparison it did not
+make. The hub and the API record no digest, so theirs now say "not
+compared … records nothing to compare it with". Handbook chapter 33 told
+operators that the old phrase meant "no edit is waiting for a restart";
+it now says which `doctor` can tell and which cannot.
+
+The same edited file, with the built binary:
+
+```
+  warn  configuration validity           …/node/node.yaml loads but differs from what the agent recorded when it last started (evidence record 2, 2026-11-05T18:56:05.241805Z)
+```
+
+and, with the edit reverted, `pass … matches what the agent recorded when
+it last started (evidence record 2, …)`.
+
+**Demonstrated.** `TestNodeDoctorComparesTheFileWithWhatTheAgentStartedOn`
+starts an agent's chain, edits the file, and builds the doctor's node from
+the edited file as `setup` does. With `Same` forced to true, which is what
+`main`'s comparison amounts to, the edited case fails ("a file edited since
+the agent started passed"). `TestNodeDoctorSaysWhenItCannotCompare` covers
+a node with no record.
+
+**Not verified.** Run on macOS only, not on FreeBSD or Linux. A hub or API
+digest was not added; their `doctor` now declines the question rather
+than answering it. A `doctor` run as an account that cannot read the
+evidence directory reports the read error; that path was not run.
+### 5.590 The one-shot request's `timeout_seconds` was sent and never read
+
+Issue 615, item 3. `halite-hub ssh` put the roster target's `timeout` into
+the request as `timeout_seconds`. `OneshotRequest.Timeout` declared it,
+with the comment "bounds the run on the target", and nothing read it: one
+declaration, one writer.
+
+The roster's `timeout` is not a bound on the run. `sshexec.sshArgs` passes
+it to ssh as `ConnectTimeout`, and `roster.applyDefaults` sets it to 30
+seconds when the roster does not. So the hub sent `timeout_seconds: 30` to
+every target, and a target that honoured the comment would stop every
+agentless highstate after 30 seconds. The hub's own wait is `ssh_timeout`
+or `--timeout` (`sshexec.Options.Timeout`), and that already bounded the
+run from the hub's side.
+
+**The change.** The hub no longer sends the field, and the field is gone
+from `OneshotRequest`. A hub older than this still sends it, and
+`json.Unmarshal` ignores a field the struct does not declare, so the
+request still runs. Handbook chapter 17 now says what `timeout` is and
+which setting bounds the wait.
+
+**Demonstrated.** `TestAnAgentlessRequestCarriesNoTimeoutTheTargetIgnores`
+builds the request for a target with a 45-second `timeout`. With the line
+that sent it put back, it fails ("the request carries
+timeout_seconds=45, which the target does not read").
+
+**Not verified.** No agentless run over ssh was made. What a target does
+when the hub's `ssh_timeout` kills its ssh client was not looked at here;
+the comment on `oneshotSignals` says the job runs to its end.
+### 5.591 `state.show_highstate` printed an unregistered `runas_password`
+
+Issue 615, item 9. 5.266 masked `runas_password` by key in `renderLow`,
+because it is a password written into the tree: the redactor does not hold
+it, so masking by value cannot find it. `renderHigh`, which
+`show_highstate` and `show_sls` use, printed it. The command line and the
+job forms share the function, so it reached the terminal and, as a job,
+the hub's job cache (5.556 and 5.557 masked registered secrets only).
+
+**The change.** `renderHigh` replaces the value of a `runas_password`
+argument with `**********`, as `renderLow` does. The key stays, so the
+output still shows that a password is set.
+
+**Demonstrated.** `TestEveryStateShowFormMasksRunasPassword` runs all three
+`state.show_*` functions as jobs through `executeJob`, on a tree with a
+`cmd.run` that sets `runas` and `runas_password`. On the code before the
+change it failed for `show_highstate` and `show_sls`, with the password in
+the return; `show_lowstate` passed. It passes with the change.
+
+**Not verified.** No other key is masked by name, and no search was made
+for other passwords a state takes as an argument (for example a
+`user.present` `password`). Those are values the redactor holds only if
+they come from encrypted pillar.
+### 5.592 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
+
+Issue 615, item 6. An evidence record's `arg_digest` is the SHA-256 of the
+job's arguments after the node's redactor has run. The comments on
+`maxEvidenceField` and `nodeevidence.DigestString` said the digest is what a
+comparison with the hub's copy uses. For a job whose arguments held a
+secret the node's redactor knows, that is not true: the hub's job cache
+holds the arguments as sent, and the hub does not have the node's
+redactor, so it cannot compute the same digest.
+
+**Kept as it is, on purpose.** A digest of the unscrubbed text is a
+fingerprint of the secret in a file that other people read. A short
+secret, or one in a known format, can be found from its SHA-256 by
+guessing. The comparison is lost only for jobs that carried a secret, and
+for those the `arg` field already shows that something was replaced.
+
+**The change.** The two comments now say what is digested and why. The
+evidence test asserts that `arg_digest` is the digest of the recorded
+(scrubbed) text and is not the digest of the arguments as sent.
+
+**Demonstrated.** With the digest computed over the arguments with the
+secret put back, `TestArgumentsAreScrubbedBeforeTheyAreRecorded` fails on
+both new assertions.
+
+**Not verified.** No tool compares node records with the hub's job cache
+today, so nothing that reads `arg_digest` was run.
+### 5.593 The hub's event returner read `id`, which could never be set
+
+Issue 615, item 7. 5.545 made an audit of every setting the programs read,
+and named one exception: the hub's `eventReturner` passed
+`cfg.String("id", "")` to the returner as its sender's name, and no hub
+setting declares `id`. It was left for a decision about whether a hub has
+an identity for its returners.
+
+It could not have one through this read. The Salt shim renames `id` to
+`node_id` as any file is loaded, the hub's included. A `hub.yaml` holding
+`id: hub1.example`, loaded as `config.Hub`, reads `id` as `""` and
+`node_id` as `hub1.example`, with the shim's warning (scratch test, not
+kept). So every hub has sent an empty name: the syslog returner uses
+`os.Hostname`, and the webhook returner sends no `X-Halite-Node` header.
+
+**Decided:** a hub has no identity for its returners beyond its host name,
+which is what it has always sent. A new setting would be a SPEC change,
+and nothing has asked for one.
+
+**The change.** The read is gone and the empty name is passed with a
+comment that says why. The audit has no exceptions now.
+
+**Demonstrated.** With the read put back,
+`TestEverySettingTheProgramsReadIsDeclared` fails and names
+`id (../../cmd/halite-hub/serve.go)`.
+
+**Not verified.** No event returner was run on a hub for this change. The
+behaviour is the same by construction, because the value passed is the
+value the read always returned.
+### 5.594 `doctor` reported an unreadable certificate as expired before time began
+
+Issue 615, item 8. When a certificate file was there and did not parse, the
+node's, hub's and API's `doctor` put the read error in the label and passed
+`&x509.Certificate{}` in its place. `CertificateExpiry` then subtracted
+"now" from a zero `NotAfter`, which overflows `time.Duration`.
+
+**Measured** on macOS 26.7.2 (arm64), with `main`'s binaries at `e02c31b`
+and the lab of 5.589, `node.crt` and `hub.crt` replaced with a line of text:
+
+```
+  fail  certificate validity and expiry  this node's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
+  fail  certificate validity and expiry  this hub's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
+```
+
+**The change.** `doctor.Expected` has an `Unreadable` error. A certificate
+with one fails the check as "could not be read", with the reason and no
+dates, and the remedy names unreadable certificates. The six call sites
+(one in the node, one in the hub, four in the API) pass the error in place
+of an empty certificate. The same files with the built binaries:
+
+```
+  fail  certificate validity and expiry  this node's certificate could not be read: no PEM block found where a certificate was expected
+  fail  certificate validity and expiry  this hub's certificate could not be read: no PEM block found where a certificate was expected
+```
+
+**Demonstrated.** `TestAnUnreadableCertificateIsReportedAsUnreadable`
+(internal/doctor) fails when the `Unreadable` branch is disabled.
+`TestNodeDoctorReportsAnUnreadableCertificateAsUnreadable` fails with the
+node's old call put back, and prints `expired -9223372036854ms ago`.
+
+**Not verified.** The API's four sites were changed the same way and not
+run. The node run above had no `hub` set: with one, `halite-node doctor`
+exits before it prints any check, because the clock check builds a hub
+client from the broken certificate and that calls `cli.Fatalf`. That is a
+separate defect and is not changed here.
+### 5.595 Records after a failed evidence-log open were lost and counted nowhere
+
+Issue 615, item 5. `evidenceLog` tries to open the chain once. When the
+open fails, `startEvidence` logs one error and every later
+`recordEvidence` returns without writing. 5.238 added the gauge
+`halite_node_evidence_log_open`, which reads 0 in that state, and its alert
+`HaliteNodeEvidenceNotKept`. Nothing said how many records were lost:
+`halite_node_evidence_failures_total` counts writes that were tried, and
+none was.
+
+**The change.** A new unlabelled counter,
+`halite_node_evidence_unrecorded_total`, goes up by one for each record
+that `recordEvidence` drops because a node configured to keep a record has
+no open log. It is exported at 0 from the start. It does not move on a node
+with `evidence: false`. `docs/metrics.md` has its row and a new alert,
+`HaliteNodeEvidenceUnrecorded` (critical, on any increase in 10 minutes).
+The dashboard's node row has a stat panel, "Evidence records not kept".
+The gauge's row and panel no longer say that the failure is counted
+nowhere else.
+
+**Measured** on macOS 26.7.2 (arm64), with the lab hub and node of 5.589
+and the built binary: `evidence_dir` set under a regular file, the agent
+started, and two `test.ping` jobs sent with `halite-hub run`. The node
+logged "this node is keeping no evidence record and is running anyway"
+once, and its `/v1/metrics` said:
+
+```
+halite_node_evidence_failures_total 0
+halite_node_evidence_log_open 0
+halite_node_evidence_unrecorded_total 4
+```
+
+Four is the two jobs' `job.accepted` and `job.result` records.
+`startEvidence` writes nothing once the open has failed, so its own records
+are not counted.
+
+**Demonstrated.** `TestRecordsDroppedForALogThatDidNotOpenAreCounted` fails
+with the count taken out of `recordEvidence`.
+
+**Not verified.** The alert rule was not loaded into a Prometheus or run
+with `promtool` (not installed here). The 5.238 test that says
+`failures_total` stays 0 for this node still passes, and is still true.
+### 5.596 An evidence-anchor conflict was invisible after its first log line
+
+Issue 615, item 4. `anchorProblem` logs a kind of anchor failure once, at
+error level for a conflict and at warning for the others, and logs each
+later report of the same kind at debug until a report succeeds. A conflict
+means that the hub holds a head this chain contradicts: the chain was
+rewritten, reset or rolled back. While the chain stays behind the head the
+hub holds, every report conflicts. After the first, a node at the default
+log level said nothing, and no node metric counted it. The hub counts
+conflicts (`halite_hub_evidence_anchors_total{result="conflict"}`) and
+`HaliteEvidenceConflict` pages for them, but without a node label.
+
+**The change.** `halite_node_evidence_anchor_problems_total{problem}`
+counts every call of `anchorProblem`. The problems are `conflict`,
+`failed`, `mismatch`, `receipt` and `unsupported`, and each is exported at
+0 on a node that keeps a record, as the record kinds are (5.239).
+`TestEveryAnchorProblemIsDeclared` holds the list to the calls in
+`anchor.go`. The log is unchanged, which is once per run of one kind. The
+new alert, `HaliteNodeEvidenceReceiptRefused`, is for `mismatch` and
+`receipt` only: only the node can see those, because the hub believes it
+answered. A conflict already pages from the hub. The dashboard's node row
+has a panel, "Evidence anchor problems, by problem".
+
+**Measured** with the lab of 5.589 and the built binaries. Six jobs moved
+the hub's recorded head to 13. Then the agent was stopped, its evidence
+directory removed, the agent started again, and three `test.ping` jobs
+sent. The hub's anchor file recorded conflicts at sequence numbers 2, 4, 6
+and 8, which are the report on connect and one after each job. The node
+logged one error line, and its `/v1/metrics` said:
+
+```
+halite_node_evidence_anchor_problems_total{problem="conflict"} 4
+```
+
+**Demonstrated.** `TestAnAnchorConflictIsCountedAtEveryReport` uses a real
+hub and the same identity with a reset chain. It makes three reports and
+expects one error line and a count of 3. With the count removed from
+`anchorProblem` it fails.
+
+**Not verified.** `mismatch` and `receipt` were not produced live; the
+existing test of a receipt that does not verify covers that path, and it
+does not check the counter. No Prometheus loaded the alert rule.
+### 5.597 A job could build a render sandbox that nothing closed
+
+Issue 615, item 2. A job runs on a shallow copy of the node (`forJob`).
+`renderEngine` kept the sandbox in a field of whatever node it was called
+on, and built one when that field was nil. A copy whose parent had no
+sandbox yet built its own, and nothing closed it: `runConnect`'s deferred
+`closeRenderSandbox` closes the agent's. The child lived until the garbage
+collector finalised its pipes.
+
+**Whether it happens depends on the order.** The audit read it as "each
+job's child is a process of its own". On both hosts below, the agent's own
+node built its sandbox at startup: the description lines are logged after
+`metrics listening` and before `connecting`. The job copies inherited the
+pointer and shared that one child. So a running agent did not leak in
+these runs. The leak is the path where a job copy reaches `renderEngine`
+before the agent's node does. A node built by `setup` that runs a job
+before anything else renders is that path, and in the test below it left
+three children for three jobs.
+
+**The change.** The node holds a pointer to a `sandboxHolder` (a mutex and
+the sandbox). `setup` creates it, the copies share it, `renderEngine`
+builds the sandbox under the lock once, and `closeRenderSandbox` closes
+the shared one. One child serves the agent and all its jobs, as in the
+order that worked, and the agent's close ends it.
+`rendersandbox.Live` counts the children this process has started and not
+yet reaped, so that a test can see a child it holds no reference to. The
+node's `TestMain` now serves the child when the sandbox re-executes the
+test binary. Without that, the child would have run the test binary's
+ordinary entry point, which does not speak the sandbox protocol.
+
+**Demonstrated.** `TestJobsShareOneRenderSandboxChildAndTheAgentEndsIt`
+builds the node with `setup`, sets `render_sandbox: true` and runs three
+`state.show_lowstate` jobs on a templated SLS. It expects one live child,
+and none after `closeRenderSandbox`. With the holder taken out of `setup`,
+which is `main`'s per-copy behaviour, it fails: three children, and three
+after the close.
+
+**Run live** with `render_sandbox: true`, a throwaway hub and an enrolled
+agent, three `state.show_lowstate` jobs through `halite-hub run`, and the
+agent's child processes counted with `ps`:
+
+- macOS 26.7.2 (arm64), in the lab of 5.589: one child during the jobs and
+  none 0.2 s after `SIGTERM` to the agent; the description logged once.
+  `main`'s binary at `e02c31b`: one child, as above.
+- beastie, FreeBSD 15.1-RELEASE-p6 (amd64), binaries cross-built from this
+  change and from `main`, run as an unprivileged user under `/tmp` on
+  loopback ports. Both: one child after three jobs, none one second after
+  the agent stopped, and the description logged once. The lab was removed
+  afterwards. The first count there was wrong: FreeBSD's `ps` reads
+  `-o ppid=,command=` as one column, so it counted nothing until the
+  columns were given as separate `-o` flags.
+
+**Not verified.** The leak was not produced live, because both agents
+built their sandbox before the first job. Which startup call does that was
+not traced. `render_sandbox_user` was not set, so no identity was dropped,
+and nothing ran as root. Not run on Linux.
+### 5.598 The hub keeps a return as the node sent it
+
+Issue 615, item 10, which asked whether the hub scrubs a secret from a
+return it caches (5.557 left it open). It does not, and nothing on the hub
+or the API changes a return.
+
+**Read.** `Server.returned` (internal/hub/jobs.go) stores the decoded
+`job.Return` with `Jobs.AddReturn`. It publishes an event that holds the
+jid, function, success, retcode and duration, and not the return.
+`jobStatus` (`GET /v1/jobs/{jid}`) marshals the cached returns as they
+are, after the policy check of 5.513. The API's `GET /v1/jobs/{jid}`
+forwards to the hub's `jobs.list_job` runner, and `forwardRunner` writes
+what the hub answered. The hub's redactor (`hubContext.secrets`) holds
+values that the hub decrypted, and is used for logs and for `doctor`.
+`internal/hub` and `internal/api` do not use it.
+
+**Measured** with two scratch tests, not kept:
+
+- A node with `s3cr3t-value-123` registered, through `executeJob`:
+  `cmd.run` with `echo token=s3cr3t-value-123` returned
+  `"token=s3cr3t-value-123"`. A state that runs the same command returned
+  `echo token=**********` in its name, comment and stdout. The runner
+  scrubs state results (5.109), and `state.show_*` are masked (5.557).
+- A hub with a job cache, given that `cmd.run` return through `returned`:
+  the cached return held the secret whole, and no event held it.
+
+**Kept as it is.** The output of an execution function is data that was
+asked for, and is not masked (5.268): `pillar.get` and `pillar.items`
+exist to return values, and `cmd.run 'cat /etc/app.conf'` asks for what
+the file holds. If the hub scrubbed it, these would return `**********`,
+and only for the secrets the hub had decrypted since it started. Reading a
+return is authorized as running the job's function (5.513), and the
+functions that return pillar are never granted by a wildcard (5.563). So a person who can read a `cmd.run` return could
+also have run the command.
+
+**What this leaves.** The job cache on disk holds secrets that execution
+functions returned, for `job_cache_retention`. That is a property of the
+hub's state directory. Handbook chapter 12 already says that `serve`
+refuses a file root that holds it, because that would serve every return
+in the estate to every node. It is recorded here so the next reader does
+not have to read the code again.
+
+**Not verified.** A GPG-decrypted pillar value was not used; the node test
+registered the secret directly. The API route was read and not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

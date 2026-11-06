@@ -6152,6 +6152,71 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
+          "description": "Evidence records this node did not write because its evidence log is not open. Each is a job or an event that has no entry in the record. The log says once that the log did not open, and this is the count of what was lost after it (HaliteNodeEvidenceUnrecorded alerts when it rises). 0 while the log is open.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 52
+          },
+          "id": 93,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(halite_node_evidence_unrecorded_total{job=\"$node_job\", instance=~\"$node_instance\"}[$__range]))",
+              "refId": "A",
+              "range": true
+            }
+          ],
+          "title": "Evidence records not kept",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "description": "Jobs this node accepted to run, per second: past the replay guard and the signature check, counted where the evidence record for the acceptance is written. Compare with Evidence records, by kind: jobs accepted while the records are flat is what HaliteNodeEvidenceStopped alerts on. A job refused afterwards because the queue was full was accepted first.",
           "fieldConfig": {
             "defaults": {
@@ -6329,6 +6394,98 @@
             }
           ],
           "title": "Trace spans lost, by reason",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Reports of this node's evidence head that the hub did not anchor, or whose receipt the node did not file. conflict: the chain was rewritten, reset or rolled back since it last reported (HaliteEvidenceConflict pages for it from the hub). mismatch and receipt: the node refused the hub's receipt (HaliteNodeEvidenceReceiptRefused). unsupported: the hub keeps no anchors. failed: the report did not reach the hub. The node's log says each problem once; this counts every report.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 12,
+            "x": 0,
+            "y": 64
+          },
+          "id": 94,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (problem) (increase(halite_node_evidence_anchor_problems_total{job=\"$node_job\", instance=~\"$node_instance\"}[5m]))",
+              "refId": "A",
+              "range": true,
+              "legendFormat": "{{problem}}"
+            }
+          ],
+          "title": "Evidence anchor problems, by problem",
           "type": "timeseries"
         }
       ],
