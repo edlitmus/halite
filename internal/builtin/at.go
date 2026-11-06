@@ -104,7 +104,12 @@ func registerAt(r *Registries) {
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Platforms:  atPlatforms,
-				Section:    "15.2",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. The job is a
+				// shell command line the caller writes, run later by atd. A delay is
+				// not a limit. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.2",
 			},
 			Fn: atAtFn,
 		},

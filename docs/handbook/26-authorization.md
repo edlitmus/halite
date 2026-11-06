@@ -264,10 +264,12 @@ A function whose signature says `arbitrary_code` can run anything. They are
 never granted by a pattern; a role must **name** them:
 
 ```
-never granted by a wildcard: cmd.exec_code, cmd.retcode, cmd.run, cmd.run_all,
-cmd.run_bg, cmd.run_stderr, cmd.run_stdout, cmd.script, cmd.script_retcode,
-cmd.shell, cmd.wait, file.replace, file.write, module.run, module.wait,
-schedule.add, schedule.modify, schedule.run_job
+never granted by a wildcard: at.at, cargo.install, cmd.exec_code, cmd.retcode,
+cmd.run, cmd.run_all, cmd.run_bg, cmd.run_stderr, cmd.run_stdout, cmd.script,
+cmd.script_retcode, cmd.shell, cmd.wait, composer.require, cpan.install,
+cron.present, file.replace, file.write, gem.install, go.install, maven.run,
+module.run, module.wait, npm.install, pip.install, schedule.add,
+schedule.modify, schedule.run_job, virtualenv.create, win_task.create
 
 nor any function this build does not ship, such as an extension's
 ```
@@ -275,7 +277,9 @@ nor any function this build does not ship, such as an extension's
 (That is `halite-hub policy show` for this build.) The list is taken from
 the signatures the build ships, so a function marked in a later build is
 covered without anyone remembering to add it. `functions: ['*']` therefore
-covers `pkg.installed` and not `cmd.run`.
+covers `pkg.installed` and not `cmd.run`. The list includes the language package
+installers and the schedulers, such as `pip.install` and `at.at`. It does not include `file.*`
+(other than `file.write` and `file.replace`), `ssh_auth.present` or `sudo.present`.
 
 The last line is the other half. A pattern grants only a function the
 hub's build ships and knows is not arbitrary code. An extension's

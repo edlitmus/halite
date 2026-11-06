@@ -986,6 +986,60 @@ func TestEveryFunctionThatRunsCallerCodeIsMarked(t *testing.T) {
 	}
 }
 
+// secondTier is the owner's decision on DIVERGENCE 5.297's second tier
+// (issue 619): the functions that make a node run code the caller chose,
+// later or indirectly, and that a wildcard grant therefore no longer
+// includes. Each declares arbitrary_code in the registry named.
+var secondTier = map[string][]string{
+	"exec": {
+		"pip.install", "npm.install", "gem.install", "cargo.install", "go.install",
+		"composer.require", "cpan.install", "virtualenv.create", "maven.run",
+		"at.at", "win_task.create",
+	},
+	"state": {"cron.present"},
+}
+
+// The other half of the decision: these write content that can become
+// code (a file, an authorized key, a sudoers rule) and were considered
+// with the second tier, and they keep their wildcard grants. A test that
+// held only the marked list would let one of these be marked later with
+// nothing recording that the owner decided otherwise. file.write and
+// file.replace were marked by 5.16 and are not in this list.
+var secondTierKept = map[string][]string{
+	"exec":  {"file.append", "file.patch", "file.copy", "file.touch", "file.remove"},
+	"state": {"file.managed", "file.append", "ssh_auth.present", "sudo.present"},
+}
+
+func TestTheSecondTierIsMarkedAndTheRestIsNot(t *testing.T) {
+	r := New()
+	registries := map[string]*signature.Registry{"exec": r.Exec.Signatures(), "state": r.States.Signatures()}
+	for kind, names := range secondTier {
+		for _, name := range names {
+			sig, ok := registries[kind].Lookup(name)
+			if !ok {
+				t.Errorf("the %s function %s is missing", kind, name)
+				continue
+			}
+			if !sig.ArbitraryCode {
+				t.Errorf("the %s function %s runs code the caller chose and must declare arbitrary_code (issue 619)", kind, name)
+			}
+		}
+	}
+	for kind, names := range secondTierKept {
+		for _, name := range names {
+			sig, ok := registries[kind].Lookup(name)
+			if !ok {
+				t.Errorf("the %s function %s is missing; the decision of issue 619 names it", kind, name)
+				continue
+			}
+			if sig.ArbitraryCode {
+				t.Errorf("the %s function %s declares arbitrary_code; issue 619 decided it keeps its wildcard grant, "+
+					"so changing that is a SPEC 23.5 decision, not a signature edit", kind, name)
+			}
+		}
+	}
+}
+
 // TestEveryStateModuleDeclaresItsTestMode is the check that keeps the
 // signature honest as modules are added.
 func TestEveryStateModuleDeclaresItsTestMode(t *testing.T) {

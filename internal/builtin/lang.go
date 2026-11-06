@@ -180,7 +180,14 @@ func registerPip(r *Registries) {
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.4",
+				// SPEC 23.5: never granted by a wildcard, and refused unsigned on a
+				// node that requires a signature for arbitrary_code. A package's
+				// install step runs as root on the node: a setup.py, an npm
+				// lifecycle script, a gem's native extension are all code the
+				// package's author chose, and `index_url` lets the caller choose the
+				// index it comes from. Issue 619 (DIVERGENCE 5.297's second tier).
+				ArbitraryCode: true,
+				Section:       "15.4",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				pkgs, err := langNames(args, "pkgs")

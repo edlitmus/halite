@@ -276,7 +276,7 @@ at.at(timespec: string, cmd: string, queue: string = )
 | `cmd` | string | *required* | The shell command or script to run. |
 | `queue` | string | `` | Which queue letter to use; the tool's own default if empty. |
 
-*changes the system · honours `--test` · SPEC section 15.2*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.2*
 
 #### `at.atc`
 
@@ -564,7 +564,7 @@ cargo.install(crates: list, version: string = , locked: bool = true)
 | `version` | string | `` | A version to pin all of them to. |
 | `locked` | bool | `true` | Pass --locked, so the crate's own lock file decides its dependencies. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `cargo.list`
 
@@ -948,7 +948,7 @@ composer.require(dir: path, pkgs: list)
 | `dir` | path | *required* | The project directory. |
 | `pkgs` | list | *required* | Package specifiers, such as `monolog/monolog:^3.0`. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `composer.version`
 
@@ -1016,7 +1016,7 @@ cpan.install(modules: list)
 |---|---|---|---|
 | `modules` | list | *required* | Module names, such as `JSON::PP`. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `cpan.module_version`
 
@@ -2907,7 +2907,7 @@ gem.install(gems: list, version: string = )
 | `gems` | list | *required* | Gem names. |
 | `version` | string | `` | A version to pin all of them to. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `gem.list`
 
@@ -3042,7 +3042,7 @@ go.install(pkgs: list, cwd: path = )
 | `pkgs` | list | *required* | Package paths, such as `golang.org/x/tools/cmd/stringer@latest`. |
 | `cwd` | path | `` | A module directory to run in. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `go.version`
 
@@ -5317,7 +5317,7 @@ maven.run(dir: path, goals: list, properties: map)
 | `goals` | list | *required* | Goals, such as `clean` and `package`. |
 | `properties` | map | — | Properties passed as -Dname=value. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.4*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.4*
 
 #### `maven.version`
 
@@ -6239,7 +6239,7 @@ npm.install(pkgs: list, dir: path = , registry: string = )
 | `dir` | path | `` | The project directory. Empty installs globally. |
 | `registry` | string | `` | An alternative registry. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `npm.list`
 
@@ -6562,7 +6562,7 @@ pip.install(pkgs: list, bin_env: path = , upgrade: bool = false, index_url: stri
 | `upgrade` | bool | `false` | Pass --upgrade. |
 | `index_url` | string | `` | An alternative index. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `pip.list`
 
@@ -9372,7 +9372,7 @@ virtualenv.create(path: path, python: path = , system_site_packages: bool = fals
 | `python` | path | `` | The interpreter to build it from. |
 | `system_site_packages` | bool | `false` | Give it the system packages. |
 
-*changes the system · honours `--test` · SPEC section 15.4*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.4*
 
 #### `virtualenv.version`
 
@@ -9740,7 +9740,7 @@ win_task.create(name: string, command: string = , arguments: string = , working_
 | `trigger` | string | `` | When it runs: `boot`, `logon`, `daily at HH:MM` or `once at HH:MM`. Empty registers a task that runs only when something asks it to. |
 | `xml` | string | `` | The scheduler's own definition, for a task this vocabulary cannot express. Everything else is ignored when this is given. |
 
-*changes the system · honours `--test` · SPEC section 15.3*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.3*
 
 #### `win_task.delete`
 
@@ -10480,7 +10480,7 @@ cron.present(name: string, user: string = root, minute: string = *, hour: string
 | `comment` | string | `` | A human note kept with the entry. |
 | `special` | string | `` | A @reboot-style shorthand, replacing the five fields. |
 
-*changes the system · honours `--test` · SPEC section 15.5*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.5*
 
 ### `debconf`
 
