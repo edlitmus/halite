@@ -119,6 +119,40 @@ bindings:
 	}
 }
 
+// A role whose only rule is `act_for` grants nothing but the right to
+// name an operator, so it must not see the events that name no node.
+// HasAnyRule counted any rule, and such a token saw every job, key and
+// reactor event (issue 649).
+func TestAnActForOnlyRoleSeesNoNodelessEvents(t *testing.T) {
+	loaded, _, err := policy.Load([]byte(`
+roles:
+  delegate:
+    - act_for: ['local:*']
+  watcher:
+    - runners: ['jobs.*']
+bindings:
+  - principal: 'cert:CN=api'
+    roles: ['delegate']
+`), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogued(loaded)
+	if loaded.HasAnyRule([]string{"delegate"}) {
+		t.Error("a role that holds only act_for counts as granting something")
+	}
+	if !loaded.HasAnyRule([]string{"delegate", "watcher"}) {
+		t.Error("an act_for role beside a real grant hides the real grant")
+	}
+	s := &Server{Policy: loaded}
+	token := &apitoken.Token{Principal: "local:delegate", Roles: []string{"delegate"}}
+	for _, tag := range []string{"halite/job/20260824T1/new", "halite/reactor/error"} {
+		if s.visible(token, &eventbus.Event{Tag: tag}) {
+			t.Errorf("an act_for-only token sees %q", tag)
+		}
+	}
+}
+
 // A WebSocket upgrade has to survive every wrapper the server puts
 // around a handler.
 //

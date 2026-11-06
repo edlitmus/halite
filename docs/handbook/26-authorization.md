@@ -241,8 +241,9 @@ it is written under. Limits written for any of `state.apply`, `state.sls`,
 `state.highstate` or the `state.show_*` functions hold all of them, because
 the node compiles the same SLS names (or the highstate) for each. Limits
 written for any of the `state.orchestrate`, `state.orch` or
-`state.orchestrate_show_sls` runners hold all three. If a rule has limits
-under two of them, a call must pass both. So a rule that grants `state.*`
+`state.orchestrate_show_sls` runners hold all three, and hold
+`state.orch_resume` too. A resume is judged on the names of the run that it
+resumes. If a rule has limits under two of them, a call must pass both. So a rule that grants `state.*`
 with `allow_sls` under `state.apply` does not leave `state.sls db.secret`
 open. A function that should not be limited goes in a rule of its own.
 
@@ -409,7 +410,7 @@ roles:
       functions: ['test.ping', 'state.apply']
     - target: '*'
       runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
-    - act_for: ['*']
+    - act_for: ['local:*', 'ldap:*', 'oidc:*']
 bindings:
   - principal: 'cert:CN=api'
     roles: ['api-service']
@@ -425,13 +426,25 @@ the claim only from a certificate whose role has `act_for` naming that
 operator, and refuses the call from anyone else. `act_for` takes principal
 patterns, as a binding does, and grants nothing else; a rule that holds only
 `act_for` may not name a target. Without it, every runner call the API makes
-for a logged-in operator is refused (DIVERGENCE 5.582).
+for a logged-in operator is refused (DIVERGENCE 5.582). The example lists the
+three kinds of principal that the API makes. Keep only the sources that your
+API uses.
+
+The hub judges the operator by the roles in the token, against the
+`policy.yaml` of the hub. So that file must define every role that an API
+token can carry. A role that the hub does not define grants nothing, and the
+hub refuses the call. If the API and the hub run on different hosts, keep the
+two copies of `policy.yaml` the same. A copy that drifts narrows or refuses
+operators (DIVERGENCE 5.599).
 
 Used with a narrow operator role, the effective rights of a person are the
 intersection. The jobs the API submits record both: `submitter` is the API's
 certificate and `on_behalf_of` is the person. A job submitted with `POST
 /v1/jobs` records `on_behalf_of` and is never authorized on it; the API
-authorizes the operator itself before it submits. A role that is granted after a token was issued
+authorizes the operator itself before it submits. An `event.send` through the
+API records the person as `_on_behalf_of` in the event, and a key action
+through the API records the person as `on_behalf_of` in the key event (DIVERGENCE
+5.599). A role that is granted after a token was issued
 does not widen that token (the roles were frozen at issue), so a role taken
 away is a reason to revoke the token, not a change that applies mid-session.
 

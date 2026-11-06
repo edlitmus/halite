@@ -50,7 +50,7 @@ bindings:
 			"state.show_sls, state.show_states, state.show_top, state.sls\n",
 		// state.* is held whole, so only the exact name is left.
 		"     no argument rule holds: pkg.installed\n",
-		"state.orchestrate: holds state.orch, state.orchestrate, state.orchestrate_show_sls\n",
+		"state.orchestrate: holds state.orch, state.orch_resume, state.orchestrate, state.orchestrate_show_sls\n",
 		"     no argument rule holds: runner jobs.lookup_jid\n",
 		"     every function this rule grants is held by an argument rule\n",
 	} {

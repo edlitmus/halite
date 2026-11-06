@@ -38200,6 +38200,14 @@ local accounts were. An API newer than its hub was not run, and the
 claim that the older hub ignores the field is from reading `ReadJSON`,
 which does not refuse unknown fields.
 
+#### Since: issue 649
+
+Two statements here were corrected. `event.send` through the API now
+records the operator as `_on_behalf_of`, and key actions through the API
+record `on_behalf_of`. The claim in `docs/command-reference.md` that the
+`_principal` of a hook event is the identity of the delivery was wrong:
+it is the certificate of the API. DIVERGENCE 5.599 has the details.
+
 ### 5.583 An agentless failure was framed with Go's quoting, not JSON's
 
 Found during the issue 622 work. `halite-node oneshot` built the return of
@@ -39052,6 +39060,213 @@ not have to read the code again.
 
 **Not verified.** A GPG-decrypted pillar value was not used; the node test
 registered the secret directly. The API route was read and not run.
+
+#### The owner reversed this decision (issue 659)
+
+5.598 recorded that the hub keeps a return as the node sent it, because execution output is data the caller asked for (5.268) and reading a return is authorized as running the job's function (5.513). The owner did not accept this for registered secrets. A secret in a cached return outlives the job, reaches anyone who can read the job later, and is copied into returners and exports. Issue 659 asks the hub to mask registered secrets before it caches or serves a return.
+
+**Changed.** `Server.returned` (internal/hub/jobs.go) now calls `scrubReturn` (internal/hub/returnscrub.go) before `Jobs.AddReturn`. Every other route starts from the copy the hub files: the `ret` event, `OnReturn`, the event returner, `GET /v1/jobs/{jid}`, the `jobs.lookup_jid`, `jobs.list_job` and `jobs.print_job` runners, and the API's `GET /v1/jobs/{jid}`. One scrub at the door covers them. `recordRunnerReturn` (internal/hub/runner.go) masks a runner's return in the job cache too. The caller of the runner still gets the direct answer unmasked.
+
+**The set.** The hub uses its own redactor set, read from `PillarOptions.Secrets`. `OnSecret` fills the same set, so the set that masks cannot differ from the set that learns (5.110 was a field that was declared and never assigned). A node asks the hub to compile its pillar before every job (`compilePillarOrErr` in cmd/halite-node/execute.go), and seeds its own set from that answer. So the hub has just learned the values when the return arrives.
+
+**What mask means.** `redact.Set.MaskValue` (internal/redact/redact.go) replaces registered values, in keys and in values, with `**********`. It masks a whole string that is a registered secret, even if it is shorter than 6 characters. It does not run the URL-credential scanner, so `ssh://git@host/repo` stays. A return with nothing to mask is kept byte for byte. Measured: encoding again through the value model turns `1.0` into `1`, `-0` into `0`, and an integer wider than 64 bits into `1.2345678901234568e+29`. A return that held a secret is encoded again, so it carries those changes. A return that the value model cannot read (measured: a duplicate key) and that holds a secret is kept as one JSON string of the masked text. The hub logs a warning.
+
+**Not covered.**
+
+- A secret that the node configured itself (`seedConfiguredSecrets`) never reaches the hub. A node that compiles its own pillar has the same gap. Only the node could mask these, and it does not mask an execution return.
+- A return that arrives after a hub restart, from a job that ran on a last-known-good pillar. The hub's set is in memory, and only a compile fills it again.
+- The job arguments. A secret typed into the command (`cmd.run 'echo s3cr3t'`) stays in the `arg` of the job record and in the `halite/job/<jid>/new` event. Masking it at submit would change what the node runs. The first version of the test failed on this. The `fun_args` copy in the return is masked.
+- The set holds values decrypted for every node, so a value decrypted for another node is masked too.
+
+**Consequence.** Anything that read a password out of a cached `cmd.run` return now gets `**********`. This includes `pillar.get` and `pillar.items` run as a job through the hub. 5.268 still holds in one sense: the caller gets the output, with registered secrets masked.
+
+**Measured.** `TestARegisteredSecretIsMaskedInEveryRouteAReturnTakes` (internal/hub/return_secret_test.go) failed on seven routes with the scrub call removed: the cache on disk, the hub job route, the three runners, the API, and the relay forward. The `ret` event and the event returner never carried the return, so they passed both ways. `TestAnAlreadyMaskedReturnIsKeptAsItArrived`, `TestAReturnTheValueModelCannotReadIsMaskedAsText` and `TestARunnersCachedReturnIsMaskedAndItsAnswerIsNot` each failed with their part of the change removed.
+
+**Not verified.** Nothing ran on a live hub or node. The secret was not a GPG-decrypted value. It came from a secret external pillar source in a test. Not measured: whether the set of a node and the set of the hub differ in practice on the estate, and the cost of decoding every return on a busy hub.
+
+### 5.599 What an operator did through the API still named the API
+
+Issue 649, from the review of the change in 5.582 (PR 647). That change
+made the hub judge the operator for runner calls and kills. The review
+looked for the places where the API still spoke for the operator, and
+found four. It also found a list of smaller faults. Each is below.
+
+#### `event.send` named only the API
+
+5.582 said under "Not changed" that every event sent through the API
+carries `cert:CN=api`. An operator who held `event.send` could send
+`halite/hook/github/push` through the API. The event was the same as a
+verified webhook delivery, because both carry `_principal: cert:CN=api`.
+A reaction that matched only the tag, as the examples in the handbook do,
+could not tell them apart.
+
+- `_principal` is still the certificate of the connection. Its meaning is
+  not changed.
+- When the call carries a delegation, the hub now adds
+  `_on_behalf_of: <operator>`, for example `local:bob`. The value comes
+  from the delegation that the hub accepted, never from the payload.
+- The hub always removes an `_on_behalf_of` key that the payload carries.
+  A direct caller cannot forge one.
+- A delegated `event.send` can no longer send the tag `halite/hook` or a
+  tag that starts with `halite/hook/`. The error says that the API writes
+  this namespace for a delivery that it verified. A direct caller is not
+  refused, because its `_principal` is its own certificate. The webhook
+  delivery of the API is a call without a delegation, so webhooks work as
+  before.
+
+`docs/command-reference.md` said that the `_principal` of a hook event is
+"the identity the delivery authenticated as". This was wrong, and the
+code of the API was wrong in the same way. `internal/api/hook.go` set
+`_principal` to the principal of the hook, and `event.send` replaced it
+with the certificate of the API every time. The value never reached the
+bus. The API no longer sets it. A hook event carries the certificate of
+the API (`cert:CN=api` by default), and the tag path `halite/hook/<path>`
+names the hook. The example in handbook chapter 27 was already correct.
+
+#### Key actions named only the API
+
+`key.accept`, `key.reject`, `key.revoke` and `key.delete` now pass the
+operator of the delegation to `announceKey` and `revokeBy`. The event
+`halite/key/<node>/<action>` carries `on_behalf_of: <operator>` beside
+`principal: cert:CN=api` when the action came through the API. The log
+line `enrollment revoked` carries `on_behalf_of` too. The key store itself
+records no principal, before or after this change. So "the revocation
+record" of the issue is this event and this log line. An action taken
+with `halite-hub keys` is announced by the reconcile loop with
+`via: terminal` and has no principal. This is as before.
+
+#### A role with only `act_for` saw events that name no node
+
+`Policy.HasAnyRule` is the test that halite-api used for an event that
+names no node (the job and reactor events on `GET /v1/events` and
+`/v1/ws/events`). It counted a rule that holds only `act_for` as a rule.
+A token whose roles held nothing else saw every such event. `HasAnyRule` now counts only a
+rule that grants `functions` or `runners`.
+
+#### `state.orch_resume` was not held to `allow_mods`
+
+This is the first item of "Not changed, and open" in 5.586. The runner
+takes a job ID and runs the names of the earlier run again. `allow_mods`
+written for `state.orchestrate` did not hold it. A caller whose
+`allow_mods` was narrowed after a run started could still resume that
+run.
+
+`state.orch_resume` is now in the orchestration family:
+`policy.ArgumentFamily` returns `state.orch`, `state.orch_resume`,
+`state.orchestrate` and `state.orchestrate_show_sls`. The list of runners
+that take `sls` (`policy.OrchestrationRunners`) is not changed. It still
+has three names.
+
+The runner asks the policy two questions.
+
+1. `CallRunner` asks first, before it looks up the run. The names are not
+   known yet (`Request.Resumes` is nil). So `deny_sls` and `allow_mods`
+   wait for the second question, and the other rules (the grant,
+   `deny_kwargs`, `require_kwargs`) are judged. If the hub looked up the
+   run first, a refusal could carry the names of the run of another
+   caller.
+2. The runner finds the run and checks that the caller can see it (5.504).
+   It then asks again, with `Resumes` set to the stored SLS names of the
+   run, for the caller and for the operator it acts for. Its `pillar`
+   (if given) and `test` (if true) go in as keywords. This answer decides.
+
+The refusal now reads, for example, `teardown.everything is not in the
+modules this role may orchestrate (deploy.*) (the args written for
+state.orchestrate hold every runner that runs an orchestration by its
+names, state.orch_resume among them)`. The family phrase was "every runner
+that takes orchestration names". It changed because `state.orch_resume`
+takes no names. `halite-hub policy show` now prints
+`state.orchestrate: holds state.orch, state.orch_resume, state.orchestrate,
+state.orchestrate_show_sls`. It no longer lists `state.orch_resume` under
+"no argument rule holds" for a rule that has orchestration argument rules.
+
+#### The smaller items
+
+- **A wrong comment about `hub`.** The comment in `sameCaller`
+  (`internal/hub/delegation.go`) said that `jobVisible` never asks this of
+  a fleet job. That is wrong. `jobVisible` tells a runner call by the
+  target `hub`, and a fleet job sent to a node named `hub` takes the same
+  branch. The submitter must match too, so another operator cannot read
+  the job. The effect is a narrowing: a scoped caller who can see the node
+  `hub` sees only its own fleet jobs to it. The comment is corrected. The
+  behaviour is not changed.
+- **The hub must define every role that an API token can carry.** The hub
+  judges the operator by the roles in the delegation, against its own
+  `policy.yaml`. A role that the hub does not define grants nothing, so
+  the call is refused. If the API and the hub run on different hosts, two
+  copies of `policy.yaml` that drift apart narrow or refuse operators
+  without a message that says why. The handbook and the changelog now say
+  this.
+- **`act_for: ['*']` in the examples.** The handbook and the command
+  reference showed this in three places (chapters 26 and 32, and the
+  command reference). It lets the API claim any principal. The examples
+  now show `['local:*', 'ldap:*', 'oidc:*']`, which are the three kinds of
+  principal that the API makes, and say to keep only the sources that the
+  estate uses. The example in SPEC (`['oidc:*', 'local:*']`) is not
+  changed.
+
+#### What an operator sees
+
+- **An operator sees fewer events.** This applies only if every role of
+  the token is an `act_for` rule alone. That token no longer sees job and
+  reactor events that name no node.
+- **A delegated `event.send` of a `halite/hook/` tag is refused.** An
+  operator granted `event.send` could do this before.
+- **Events sent through the API carry `_on_behalf_of`**, and key events
+  carry `on_behalf_of`.
+- **A hook event carries the certificate of the API.** It always did. The
+  documentation said it did not.
+- **Stricter, and breaking for some roles.** A role that has `allow_mods`
+  or `deny_sls` written for any orchestration runner, in a rule that also
+  grants `state.orch_resume`, now has a resume refused when the names of
+  the run are outside those limits. Run `halite-hub policy show` against
+  the policy before you upgrade. The line `holds` for the orchestration
+  rule now lists `state.orch_resume`.
+
+#### Tests
+
+- `internal/api` `TestAnActForOnlyRoleSeesNoNodelessEvents`.
+- `internal/hub` `TestEventSendThroughTheAPIRecordsTheOperator` and
+  `TestKeyActionsThroughTheAPIRecordTheOperator`. Both drive a real
+  `api.Server` in front of the hub (`newAPILab`).
+- `internal/hub` `TestAllowModsHoldsAResumeToTheRunsNames`. It calls
+  `CallRunner` directly.
+- `cmd/halite-hub` `TestPolicyShowSaysWhatNoArgumentRuleHolds`, updated
+  for the new family.
+
+Each part was broken on purpose and watched to fail:
+
+- **`HasAnyRule` reverted**: the events test failed with three errors.
+- **The hook refusal removed**: the `event.send` test failed.
+- **The deletion of a payload `_on_behalf_of` removed**: the same test
+  failed.
+- **`_on_behalf_of` not set**: the same test failed.
+- **`on_behalf_of` not written in `announceKey`**: all four tags (accept,
+  revoke, reject, delete) failed.
+- **The second question of the runner removed**: the resume test failed.
+- **`state.orch_resume` removed from the family**: the resume test failed.
+- **The deferral for a nil `Resumes` removed**: every resume under
+  `allow_mods` was refused as naming no orchestration, and the test
+  failed.
+
+#### Not changed
+
+- **Kill.** Any operator who holds a runner can still mark the runner-call
+  job of another operator as aborted (the first item of "Not changed" in
+  5.582). It stops nothing that runs on the hub. It stays open.
+- **The `hub` node name.** A fleet job sent to a node named `hub` is seen
+  as a runner call by `jobVisible`. This is recorded above and not
+  changed.
+
+#### Not verified
+
+- **Nothing ran on a live hub with an API and an operator policy.** Every
+  test is in-process: an `httptest` API in front of an in-process hub, on
+  loopback.
+- **Not run by hand on FreeBSD.** The change is authorization code with no
+  platform dependency, and the FreeBSD leg of CI runs the tests.
+- **OIDC and LDAP principals as the operator were not exercised.** Local
+  accounts were.
 
 ## 6. Everything else not started
 
