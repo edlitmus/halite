@@ -21,7 +21,7 @@ import (
 //
 // There are no exceptions. `id` was one: the hub's event returner read it,
 // and the Salt shim renames `id` to `node_id` on load, so it was always
-// empty. The read is gone (DIVERGENCE 5.591).
+// empty. The read is gone (DIVERGENCE 5.593).
 func TestEverySettingTheProgramsReadIsDeclared(t *testing.T) {
 	declared := map[string]bool{}
 	for _, k := range Keys {

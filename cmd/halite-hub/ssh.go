@@ -305,7 +305,7 @@ func sshRequest(h *hubContext, t roster.Target, jid, fun string,
 		req["grains"] = json.RawMessage(encoded)
 	}
 	// No `timeout_seconds`. It used to be sent from the roster's
-	// `timeout`, and the target read nothing of it (DIVERGENCE 5.588).
+	// `timeout`, and the target read nothing of it (DIVERGENCE 5.590).
 	// It must not be read either: the roster's `timeout` is ssh's
 	// ConnectTimeout, defaulted to 30 seconds by roster.applyDefaults, so
 	// a target that honoured it as a bound on the run would stop every

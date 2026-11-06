@@ -38657,7 +38657,7 @@ panels; `queue_full` moving through either binary's scrape (it is shown
 in the tracer test, and the binaries read it through the same `Lost`).
 The API service does not trace, so it has no such counter.
 
-### 5.587 `doctor` compared the configuration file with itself
+### 5.589 `doctor` compared the configuration file with itself
 
 Issue 615, item 1, from the issue 321 second-pass audit. `halite-node
 doctor` says whether the file on disk is what the agent is running. It
@@ -38711,8 +38711,7 @@ a node with no record.
 digest was not added; their `doctor` now declines the question rather
 than answering it. A `doctor` run as an account that cannot read the
 evidence directory reports the read error; that path was not run.
-
-### 5.588 The one-shot request's `timeout_seconds` was sent and never read
+### 5.590 The one-shot request's `timeout_seconds` was sent and never read
 
 Issue 615, item 3. `halite-hub ssh` put the roster target's `timeout` into
 the request as `timeout_seconds`. `OneshotRequest.Timeout` declared it,
@@ -38741,8 +38740,7 @@ timeout_seconds=45, which the target does not read").
 **Not verified.** No agentless run over ssh was made. What a target does
 when the hub's `ssh_timeout` kills its ssh client was not looked at here;
 the comment on `oneshotSignals` says the job runs to its end.
-
-### 5.589 `state.show_highstate` printed an unregistered `runas_password`
+### 5.591 `state.show_highstate` printed an unregistered `runas_password`
 
 Issue 615, item 9. 5.266 masked `runas_password` by key in `renderLow`,
 because it is a password written into the tree: the redactor does not hold
@@ -38765,8 +38763,7 @@ the return; `show_lowstate` passed. It passes with the change.
 for other passwords a state takes as an argument (for example a
 `user.present` `password`). Those are values the redactor holds only if
 they come from encrypted pillar.
-
-### 5.590 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
+### 5.592 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
 
 Issue 615, item 6. An evidence record's `arg_digest` is the SHA-256 of the
 job's arguments after the node's redactor has run. The comments on
@@ -38792,8 +38789,7 @@ both new assertions.
 
 **Not verified.** No tool compares node records with the hub's job cache
 today, so nothing that reads `arg_digest` was run.
-
-### 5.591 The hub's event returner read `id`, which could never be set
+### 5.593 The hub's event returner read `id`, which could never be set
 
 Issue 615, item 7. 5.545 made an audit of every setting the programs read,
 and named one exception: the hub's `eventReturner` passed
@@ -38822,8 +38818,7 @@ comment that says why. The audit has no exceptions now.
 **Not verified.** No event returner was run on a hub for this change. The
 behaviour is the same by construction, because the value passed is the
 value the read always returned.
-
-### 5.592 `doctor` reported an unreadable certificate as expired before time began
+### 5.594 `doctor` reported an unreadable certificate as expired before time began
 
 Issue 615, item 8. When a certificate file was there and did not parse, the
 node's, hub's and API's `doctor` put the read error in the label and passed
@@ -38831,7 +38826,7 @@ node's, hub's and API's `doctor` put the read error in the label and passed
 "now" from a zero `NotAfter`, which overflows `time.Duration`.
 
 **Measured** on macOS 26.7.2 (arm64), with `main`'s binaries at `e02c31b`
-and the lab of 5.587, `node.crt` and `hub.crt` replaced with a line of text:
+and the lab of 5.589, `node.crt` and `hub.crt` replaced with a line of text:
 
 ```
   fail  certificate validity and expiry  this node's certificate (unreadable: no PEM block found where a certificate was expected) expired -9223372036854ms ago
@@ -38859,8 +38854,7 @@ run. The node run above had no `hub` set: with one, `halite-node doctor`
 exits before it prints any check, because the clock check builds a hub
 client from the broken certificate and that calls `cli.Fatalf`. That is a
 separate defect and is not changed here.
-
-### 5.593 Records after a failed evidence-log open were lost and counted nowhere
+### 5.595 Records after a failed evidence-log open were lost and counted nowhere
 
 Issue 615, item 5. `evidenceLog` tries to open the chain once. When the
 open fails, `startEvidence` logs one error and every later
@@ -38880,7 +38874,7 @@ The dashboard's node row has a stat panel, "Evidence records not kept".
 The gauge's row and panel no longer say that the failure is counted
 nowhere else.
 
-**Measured** on macOS 26.7.2 (arm64), with the lab hub and node of 5.587
+**Measured** on macOS 26.7.2 (arm64), with the lab hub and node of 5.589
 and the built binary: `evidence_dir` set under a regular file, the agent
 started, and two `test.ping` jobs sent with `halite-hub run`. The node
 logged "this node is keeping no evidence record and is running anyway"
@@ -38902,8 +38896,7 @@ with the count taken out of `recordEvidence`.
 **Not verified.** The alert rule was not loaded into a Prometheus or run
 with `promtool` (not installed here). The 5.238 test that says
 `failures_total` stays 0 for this node still passes, and is still true.
-
-### 5.594 An evidence-anchor conflict was invisible after its first log line
+### 5.596 An evidence-anchor conflict was invisible after its first log line
 
 Issue 615, item 4. `anchorProblem` logs a kind of anchor failure once, at
 error level for a conflict and at warning for the others, and logs each
@@ -38926,7 +38919,7 @@ new alert, `HaliteNodeEvidenceReceiptRefused`, is for `mismatch` and
 answered. A conflict already pages from the hub. The dashboard's node row
 has a panel, "Evidence anchor problems, by problem".
 
-**Measured** with the lab of 5.587 and the built binaries. Six jobs moved
+**Measured** with the lab of 5.589 and the built binaries. Six jobs moved
 the hub's recorded head to 13. Then the agent was stopped, its evidence
 directory removed, the agent started again, and three `test.ping` jobs
 sent. The hub's anchor file recorded conflicts at sequence numbers 2, 4, 6
@@ -38945,8 +38938,7 @@ expects one error line and a count of 3. With the count removed from
 **Not verified.** `mismatch` and `receipt` were not produced live; the
 existing test of a receipt that does not verify covers that path, and it
 does not check the counter. No Prometheus loaded the alert rule.
-
-### 5.595 A job could build a render sandbox that nothing closed
+### 5.597 A job could build a render sandbox that nothing closed
 
 Issue 615, item 2. A job runs on a shallow copy of the node (`forJob`).
 `renderEngine` kept the sandbox in a field of whatever node it was called
@@ -38987,7 +38979,7 @@ after the close.
 agent, three `state.show_lowstate` jobs through `halite-hub run`, and the
 agent's child processes counted with `ps`:
 
-- macOS 26.7.2 (arm64), in the lab of 5.587: one child during the jobs and
+- macOS 26.7.2 (arm64), in the lab of 5.589: one child during the jobs and
   none 0.2 s after `SIGTERM` to the agent; the description logged once.
   `main`'s binary at `e02c31b`: one child, as above.
 - beastie, FreeBSD 15.1-RELEASE-p6 (amd64), binaries cross-built from this
@@ -39002,8 +38994,7 @@ agent's child processes counted with `ps`:
 built their sandbox before the first job. Which startup call does that was
 not traced. `render_sandbox_user` was not set, so no identity was dropped,
 and nothing ran as root. Not run on Linux.
-
-### 5.596 The hub keeps a return as the node sent it
+### 5.598 The hub keeps a return as the node sent it
 
 Issue 615, item 10, which asked whether the hub scrubs a secret from a
 return it caches (5.557 left it open). It does not, and nothing on the hub

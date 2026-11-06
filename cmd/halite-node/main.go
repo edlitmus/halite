@@ -232,7 +232,7 @@ type node struct {
 	// `render_sandbox` is on. A pointer to a holder rather than the
 	// sandbox itself, because a job runs on a shallow copy of the node:
 	// with the sandbox as a field, a copy that found it nil built one of
-	// its own, and the agent's close never reached it (DIVERGENCE 5.595).
+	// its own, and the agent's close never reached it (DIVERGENCE 5.597).
 	// The holder is shared, so the agent and every job use one child and
 	// the agent closes it.
 	sandbox *sandboxHolder

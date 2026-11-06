@@ -65,7 +65,7 @@ func runDoctor(args *cli.Args) int {
 			// The running hub records no digest of what it started with, and
 			// this command is another process. It used to say "matches what
 			// this process is running", which was true of the doctor and of
-			// nothing an operator meant (DIVERGENCE 5.587).
+			// nothing an operator meant (DIVERGENCE 5.589).
 			Basis: "the running hub records nothing to compare it with",
 		}),
 		hubCertificateCheck(args, cfg),
@@ -196,7 +196,7 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 			// it could not parse is one that passes on a broken hub. As
 			// unreadable, with the reason, and not as expired: an empty
 			// certificate stood in for it, and its zero NotAfter printed
-			// as "expired -9223372036854ms ago" (DIVERGENCE 5.592).
+			// as "expired -9223372036854ms ago" (DIVERGENCE 5.594).
 			certs[label] = doctor.Expected{Unreadable: err, WarnWithin: notice}
 			return
 		}
