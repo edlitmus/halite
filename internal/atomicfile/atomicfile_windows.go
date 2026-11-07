@@ -45,23 +45,41 @@ import (
 // half-closed handle — is reported rather than hung on.
 const retryWindow = 2 * time.Second
 
-// transient reports whether an error is one of the two sharing failures
-// that mean "somebody else has it open right now" rather than "you may
-// not do this". paths are the files the failed operation touched.
-func transient(err error, paths ...string) bool {
+// verdict is what retry does with one failure.
+type verdict int
+
+const (
+	permanent   verdict = iota // report it
+	transient                  // somebody has it open: wait for them
+	unexplained                // denied, and nobody holds it now
+)
+
+// classify sorts a failure. paths are the files the operation touched.
+func classify(err error, paths ...string) verdict {
 	if errors.Is(err, syscall.Errno(windows.ERROR_SHARING_VIOLATION)) {
-		return true
+		return transient
 	}
 	if !errors.Is(err, syscall.Errno(windows.ERROR_ACCESS_DENIED)) {
-		return false
+		return permanent
 	}
 	for _, p := range paths {
 		if heldOpen(p) {
-			return true
+			return transient
 		}
 	}
-	return false
+	return unexplained
 }
+
+// quietDenials is how many times a denial with nobody holding the file
+// is tried again before it is believed.
+//
+// The probe runs after the failure, so a reader that let go in between
+// leaves a denial the probe cannot explain. The race leg on the
+// windows-2022 runner lost that race in TestAReplaceAndAReadDoNotBlockEachOther
+// with the probe alone. A real refusal fails the same way every time, so
+// three more tries a few milliseconds apart cost it under ten
+// milliseconds, against the two seconds it cost before.
+const quietDenials = 3
 
 // heldOpen reports whether somebody else has path open.
 //
@@ -113,10 +131,24 @@ func heldOpen(path string) bool {
 func retry(op func() error, paths ...string) error {
 	deadline := time.Now().Add(retryWindow)
 	backoff := time.Millisecond
+	quiet := 0
 	for {
 		err := op()
-		if err == nil || time.Now().After(deadline) || !transient(err, paths...) {
+		if err == nil || time.Now().After(deadline) {
 			return err
+		}
+		switch classify(err, paths...) {
+		case permanent:
+			return err
+		case unexplained:
+			if quiet >= quietDenials {
+				return err
+			}
+			quiet++
+		case transient:
+			// A reader seen is a reader active, so a denial that
+			// follows is more likely the next one than a refusal.
+			quiet = 0
 		}
 		time.Sleep(backoff)
 		if backoff < 32*time.Millisecond {
