@@ -21,7 +21,7 @@ import (
 //
 // The two returned functions are hooks the platform that needs them
 // uses; on unix everything can be arranged before the child starts.
-func confineTree(c *exec.Cmd) (afterStart func(), cleanup func()) {
+func confineTree(c *exec.Cmd) (afterStart func() error, cleanup func(), err error) {
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &syscall.SysProcAttr{}
 	}
@@ -36,5 +36,5 @@ func confineTree(c *exec.Cmd) (afterStart func(), cleanup func()) {
 		_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
 		return c.Process.Kill()
 	}
-	return func() {}, func() {}
+	return func() error { return nil }, func() {}, nil
 }

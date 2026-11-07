@@ -40564,6 +40564,66 @@ error text is the same.
 run antivirus that holds a file. The runner has Defender, but nothing targeted
 the test files. We did not run a delete-pending file.
 
+### 5.620 A job object that is assigned late, and a confinement that failed silently
+
+Issue 608 items 1 and 2, `internal/exec` and `internal/bridge`. The two items
+had different results. Item 1 did not reproduce and is not fixed. Item 2 is
+fixed.
+
+**Item 1, the lead.** `confineTree` (`internal/exec/proc_windows.go`) and
+`applyPlatform` (`internal/bridge/sandbox_windows.go`) create the job, start the
+process, and then assign it. A grandchild that starts in the gap would escape
+the job.
+
+**Item 1, shown.** `TestTimeoutKillsAGrandchildStartedBeforeTheChildsMain`
+(`internal/exec/confine_windows_test.go`) has the helper child start a
+grandchild from a Go `init` function. That is the earliest code that a Go
+program runs. The test does 40 rounds with a 300ms timeout. Then it waits 4s
+and counts the grandchildren that wrote their marker. We ran it on the unchanged
+code on a GitHub-hosted windows-2022 runner (Windows Server 2022), PR 668, run
+42299120791. The CI legs run the suite as a standard local account. The test
+passed on the `test` and `race` legs. 0 of 40 escaped. We changed nothing.
+
+The reason is reasoning, not a measurement. The gap is a few system calls. A Go
+child needs milliseconds for the loader and the runtime before its own code
+runs. The gap is real in principle. A native program that starts a child from
+DLL initialisation might win it. Nothing here showed one.
+
+**Note for a future fixer (not built).** A suspended start needs no wrapper
+process. Use `CREATE_SUSPENDED` in `SysProcAttr.CreationFlags`, assign the job,
+find the one thread with `CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD)`, and call
+`ResumeThread`. `x/sys` has all of these.
+
+**Item 2, the defect.** `confineTree` returned functions that do nothing when
+`CreateJobObject` or `SetInformationJobObject` failed. It ignored a failed
+`OpenProcess` or `AssignProcessToJobObject`. It wrote no log line.
+`applyPlatform` returned errors for the same failures.
+
+**Item 2, the change.** `confineTree` now returns `(afterStart func() error,
+cleanup func(), err error)` on every platform. `OSRunner.Run` passes an error to
+`confinementOff`. That function writes one warning for each process, with an
+atomic flag. The command still runs. `OSRunner.Warn` is new. The node
+(`cmd/halite-node/main.go`) sends it to its log with `component=exec`. A nil
+`Warn` writes to standard error. The extension sandbox still refuses on failure,
+because there the job object carries the limits of the manifest.
+
+**Item 2, shown.** A healthy runner cannot make these failures on demand. So the
+test cannot run on main, where the seam does not exist.
+`TestAnUnconfinedCommandIsSaidOnce` (`internal/exec/confinewarn_windows_test.go`)
+replaces `createJobObject` and `assignProcessToJobObject` with failing
+functions. It runs two commands. It needs both to run and one warning.
+`TestAConfinedCommandSaysNothing` guards the normal path. One commit adds the
+seams with the warning switched off. On the runner (PR 668, second push) both
+subtests failed with "the runner said 0 things about confinement over two
+commands, want 1". The commit that turns the warning on: both subtests passed on the `test` and `race` Windows legs (PR 668, commit `4f5dd9da`).
+
+**Who sees it.** An operator on Windows sees one warning line in the node log if
+confinement fails. Nothing else changes.
+
+**Not verified.** We did not run a real failure of `CreateJobObject` or
+`AssignProcessToJobObject`. We did not run the extension path. It is unchanged.
+We did not run a domain-joined host.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"fmt"
 	"os/exec"
 	"unsafe"
 
@@ -26,14 +27,15 @@ import (
 // and gives no way to resume a suspended thread. A process that forks in
 // the microseconds before the assignment escapes the job; a process that
 // forks after it does not, and neither did anything before this existed.
-func confineTree(c *exec.Cmd) (afterStart func(), cleanup func()) {
+func confineTree(c *exec.Cmd) (afterStart func() error, cleanup func(), err error) {
+	noAfter := func() error { return nil }
 	nothing := func() {}
 
-	job, err := windows.CreateJobObject(nil, nil)
+	job, err := createJobObject(nil, nil)
 	if err != nil {
 		// Without a job the command still runs; only the tree kill is
-		// lost. Failing the command over it would be worse than the gap.
-		return nothing, nothing
+		// lost. The caller says so, once (OSRunner.confinementOff).
+		return noAfter, nothing, fmt.Errorf("creating a job object: %w", err)
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
@@ -44,7 +46,7 @@ func confineTree(c *exec.Cmd) (afterStart func(), cleanup func()) {
 		windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 		_ = windows.CloseHandle(job)
-		return nothing, nothing
+		return noAfter, nothing, fmt.Errorf("setting the job object's kill-on-close limit: %w", err)
 	}
 
 	// Its own process group as well, so a console signal aimed at
@@ -65,18 +67,29 @@ func confineTree(c *exec.Cmd) (afterStart func(), cleanup func()) {
 		return nil
 	}
 
-	afterStart = func() {
+	afterStart = func() error {
 		if c.Process == nil {
-			return
+			return nil
 		}
 		h, err := windows.OpenProcess(
 			windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(c.Process.Pid))
 		if err != nil {
-			return
+			return fmt.Errorf("opening the child to confine it: %w", err)
 		}
 		defer windows.CloseHandle(h)
-		_ = windows.AssignProcessToJobObject(job, h)
+		if err := assignProcessToJobObject(job, h); err != nil {
+			return fmt.Errorf("assigning the child to its job object: %w", err)
+		}
+		return nil
 	}
 	cleanup = func() { _ = windows.CloseHandle(job) }
-	return afterStart, cleanup
+	return afterStart, cleanup, nil
 }
+
+// The two calls a test makes fail. Neither failure can be produced on a
+// healthy machine on demand, and the path that handles them is the one
+// that was silent.
+var (
+	createJobObject          = windows.CreateJobObject
+	assignProcessToJobObject = windows.AssignProcessToJobObject
+)

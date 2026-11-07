@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, the node now logs one warning if it cannot confine the commands that it runs.** Before, a failure to make or assign the job object was silent. A command that timed out could leave the processes that it started running. The command still runs. The warning appears once for each process, with `component=exec`. The extension sandbox still refuses on the same failure. A grandchild that escapes the job during start did not reproduce, and nothing was changed for it. DIVERGENCE 5.620.
+
 - **On Windows, a permission error from a file write or read now appears at once, not after two seconds.** The code treated each "Access is denied." as a reader that holds the file, and retried for two seconds. Now it waits only while another handle holds the file. A refusal with no holder is tried three more times within 10 ms and then reported. The error text is the same. A file in the delete-pending state is also reported at once; nothing in halite deletes a file that it replaces. DIVERGENCE 5.619.
 
 - **`verify-release.yml` now checks the detached signatures after any publish.** A job named `signatures` runs when a release is published, and by dispatch with a tag. It fails if the release was made public without a signature, or with a signature that does not verify. `make release-publish` now uses the same script, `tools/verify-signatures.sh`, so the check before and after publish is one copy. Nothing is prevented. A person with write access can still publish a draft, and a failed run does not unpublish it. It is detected. The job does not start for a release that a workflow publishes with its `GITHUB_TOKEN`. The job has not yet run on GitHub. DIVERGENCE 5.618.
