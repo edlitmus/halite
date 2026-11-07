@@ -9,15 +9,15 @@ import (
 // Apply carries out what the mode asks for.
 //
 // The read-only attribute is set either way, because a caller that asked
-// for a file with no write bits meant it. A mode that denies group and
-// other means "no other account may read this", which on this platform
-// is an access control list granting the owner, SYSTEM and
-// Administrators and nobody else.
+// for a file with no write bits meant it. A mode that grants other
+// accounts nothing means "no other account may read this", which on this
+// platform is an access control list granting the owner, SYSTEM and
+// Administrators and nobody else. See Private for which modes those are.
 func Apply(path string, mode os.FileMode) error {
 	if err := os.Chmod(path, mode); err != nil {
 		return err
 	}
-	if mode&0o077 != 0 {
+	if !Private(mode) {
 		return nil
 	}
 	// A directory takes the inheriting form, or the restriction stops
@@ -35,7 +35,7 @@ func ApplyFile(f *os.File, mode os.FileMode) error {
 	if err := f.Chmod(mode); err != nil {
 		return err
 	}
-	if mode&0o077 != 0 {
+	if !Private(mode) {
 		return nil
 	}
 	return winsec.Restrict(f.Name())

@@ -40689,6 +40689,61 @@ domain-joined host. We did not run an object entry on anything but an NTFS file.
 We do not know if NTFS honours an object entry with a GUID on a file. The code
 reports it as reachable in that case.
 
+### 5.622 A group-only mode is private on Windows
+
+Issue 608 item 4, `internal/fileperm`. The owner made the decision. Read, not
+run, before this.
+
+**The defect.** On Windows, `fileperm.Apply` and `ApplyFile` gave a path the
+private list only when `mode&0o077 == 0`. The private list is the owner, SYSTEM
+and Administrators, with inheritance off. A mode such as 0640 only set the
+read-only attribute. The path kept the inherited list of its parent. That list
+can let in each account that the parent lets in. This is wider than the mode
+asks, in the one respect that Windows can enforce. A Windows file has no group.
+
+**The decision.** On 2026-11-07 the owner chose from three options: make a
+group-only mode private, keep the behavior and document it, or refuse the mode.
+The owner chose the first. A mode with no bits for other accounts is private on
+Windows. So 0640, 0660 and 0750 get the same list as 0600. A mode with any other
+bit, such as 0644 or 0755, keeps the inherited list as before.
+
+**The change.** New `fileperm.Private(mode) bool` in
+`internal/fileperm/private.go`. It is `mode.Perm()&0o007 == 0`. Unix still
+applies the mode as given. `Apply`, `ApplyFile`, and `plannedMode` and
+`applyMode` in `internal/builtin/mode_windows.go` now use it. The no-creates
+audit in `internal/fileperm/nocreates_test.go` used `mode&0o077 == 0`. It now
+uses the same rule. It found no new call. Tests that used 0640 and 0750 as
+modes that cannot be carried out now use 0644 and 0755.
+
+**Shown.** The tests are in `internal/fileperm/group_windows_test.go`. We
+committed them first. We ran them on the unchanged code on a GitHub-hosted
+windows-2022 runner (Windows Server 2022), PR 670. The CI legs run the suite as
+a standard local account. They failed. After `Apply` with 0640, 0660 and 0620,
+`[Everyone BUILTIN\Users]` could still reach the file. After `ApplyFile` with
+0640, the same. After `Apply` with 0750, `[Everyone CREATOR OWNER BUILTIN\Users]`
+could reach the directory. `[BUILTIN\Users]` could reach a file made inside it
+afterwards. The guard `TestAModeWithOtherBitsKeepsTheInheritedList` (0644)
+passed. The tests are `TestAGroupOnlyModeMakesAFilePrivate`,
+`TestAGroupOnlyModeMakesAnOpenFilePrivate` and
+`TestAGroupOnlyModeMakesADirectoryPrivate`.
+`TestAGroupOnlyModeIsCarriedOutAsAnAccessControlList`
+(`internal/builtin/mode_windows_test.go`) covers `file.managed` with 0640.
+Result with the change: all of these passed on the `test` and `race` Windows legs (PR 670, commit `24c0395f`).
+
+**What an operator sees.** On Windows, a file or directory whose mode grants
+nothing to other accounts is now private. Only the owner, SYSTEM and
+Administrators can reach it. `file.managed` with `mode: '0640'` now restricts the
+file and converges with no warning. Before, it warned "not applied". A state
+that set 0640 and relied on a group, or on the list of the parent, to let
+another account read the file now locks that account out. To give access to one
+account, use `win_dacl` to grant it.
+
+The digest of `halite-ext-signer-local` is recorded again. The version stays
+1.0.2, because it calls only `fileperm.Others`, which did not change.
+
+**Not verified.** We did not run a domain-joined host. We did not run a group
+that should have had access.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
