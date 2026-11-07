@@ -40284,6 +40284,71 @@ wrong.
 **Not verified.** No real `halite-hub ssh` run against a real target
 was made. The test calls `writeInlineFile` directly.
 
+### 5.618 Windows access-list checks missed entries that can alter a file
+
+Issue 608 item 3, from the issue 321 second-pass audit, round twelve
+(`internal/winsec`). The audit found these by reading. It did not run the
+code.
+
+**The defect.** `winsec.Others` says whether an account other than the owner
+can reach a file. Three defects made it say no when the answer was yes, and a
+fourth made `enablePrivilege` say yes when the answer was no.
+
+- It reported an entry only if the mask had a bit from a short list of
+  "readish" bits. An account that could delete the file, append to it, or
+  write its attributes or extended attributes was not reported.
+- It skipped every entry that was not a plain allow entry. A conditional
+  (callback) allow entry was never counted.
+- It read the SID of an object entry at offset 8, as for a plain entry. An
+  object entry has a flags word and up to two 16-byte GUIDs first. `Entries`
+  listed the trustee as `S-1-3128596159`.
+- `enablePrivilege` called `windows.GetLastError()`. That function is a system
+  call. The Go runtime sets the last error to 0 before every call, so it always
+  returned 0 and the function always said yes. The issue guessed a thread
+  change. The cause is stronger than that guess. `SetOwner` named the wrong
+  missing privilege in its error hint.
+
+**Shown.** The tests are in `internal/winsec/others_windows_test.go`. We
+committed them first and ran them on the unchanged code on a GitHub-hosted
+windows-2022 runner (Windows Server 2022), PR 666, run 42299108635. The CI legs
+run the suite as a standard local account. All four of these failed:
+`TestOthersNamesAnAccountThatCanAlterTheFileWithoutReadingIt` (all four
+subtests returned `[]`), `TestOthersNamesAConditionalGrant`,
+`TestEntriesNamesTheAccountOfAnObjectEntry`, and
+`TestEnablePrivilegeSaysNoForAPrivilegeTheTokenLacks`. The last one got true
+for three privileges that the token does not hold.
+
+**The change.** New file `internal/winsec/ace_windows.go`. `readACE` reads each
+of the eight entry types at its own layout. `Others` counts every allow type
+and reports any mask bit that is not `SYNCHRONIZE` or `FILE_READ_ATTRIBUTES`.
+`Entries` reads the SID at the right layout. `enablePrivilege` reads the token
+back and makes sure that the privilege is present and enabled.
+`halite-ext-signer-local` moves from 1.0.2 to 1.0.3. It refuses a key file that
+`Others` says another account can reach. So on Windows it can now refuse a key
+file that it accepted before, for example one that Users may delete.
+
+With the change, every test in the file passes on the `test` and `race` Windows
+legs (PR 666, commit `5e08f8ec`).
+
+**Did not reproduce.** The lead said that an inherit-only entry on a file is
+reported wrongly. The first test passed on the old code. A second test wrote
+`(A;OIIO;FR;;;BU)` to a file in SDDL and read the list back. The entry was
+gone. NTFS does not keep an inherit-only entry on a file. We changed nothing
+for this lead. `TestNTFSDoesNotKeepAnInheritOnlyEntryOnAFile` holds the fact.
+It fails if NTFS ever keeps one.
+
+**Not fixed.** `readEntries` drops conditional and object entries when `Grant`
+or `Revoke` rewrite a list. We found this here. We did not change it.
+
+**Who sees it.** Callers of `fileperm.Others` on Windows: `internal/config`,
+the mode check of `file.managed` (`plannedMode`), and the local signer. A
+`win_dacl` listing now names the right account for an object entry.
+
+**Not verified.** We did not run an administrator token. We did not run a
+domain-joined host. We did not run an object entry on anything but an NTFS file.
+We do not know if NTFS honours an object entry with a GUID on a file. The code
+reports it as reachable in that case.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
