@@ -272,7 +272,7 @@ That is not cosmetic. halite writes a shared signing secret, an enrollment key, 
 
 Apply carries out what a mode asks for. Others answers the question the mode was being read for, and names the accounts rather than a number, because on one of these platforms the number means nothing.
 
-**Files:** `advice.go`, `create.go`, `doc.go`, `fileperm_unix.go`, `fileperm_windows.go`; with tests.
+**Files:** `advice.go`, `create.go`, `doc.go`, `fileperm_unix.go`, `fileperm_windows.go`, `private.go`; with tests.
 
 **Exports.**
 
@@ -282,6 +282,7 @@ Apply carries out what a mode asks for. Others answers the question the mode was
 - `MkdirAll` (func): MkdirAll makes a directory and everything above it, then restricts the directory itself if anything beyond its owner can reach it.
 - `OpenFile` (func): OpenFile opens a file and restricts it to the accounts the mode allows.
 - `Others` (func): Others names what can read the file beyond its owner.
+- `Private` (func): Private reports whether a mode asks for the private access list on Windows.
 - `WriteFile` (func): WriteFile writes a file and restricts it if anything beyond its owner can reach it.
 
 ## `internal/fileperm/permtest`
