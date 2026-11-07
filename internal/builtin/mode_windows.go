@@ -22,10 +22,12 @@ import (
 // to tell drift from noise. Three of the file conformance cases failed
 // on exactly this.
 //
-// One part of a mode does mean something here. A mode that denies group
-// and other is a statement that no other account may read the file, and
+// One part of a mode does mean something here. A mode that denies other
+// accounts is a statement that no other account may read the file, and
 // that is expressible: an access control list granting the owner,
-// SYSTEM and Administrators and nobody else. See internal/fileperm.
+// SYSTEM and Administrators and nobody else. The group bits do not
+// change that, because a Windows file has no group, so 0640 is as
+// private here as 0600. See fileperm.Private.
 //
 // The rest of a mode — the difference between 0644 and 0755, an execute
 // bit, a setgid bit — has no counterpart. SPEC 15.3 puts it in
@@ -36,7 +38,7 @@ import (
 // plannedMode reports whether a file's permissions already satisfy the
 // requested mode, and what to record when they do not.
 func plannedMode(path string, info os.FileInfo, want os.FileMode) (differs bool, change *value.Map, warning string) {
-	if want.Perm()&0o077 != 0 {
+	if !fileperm.Private(want) {
 		return false, nil, fmt.Sprintf(
 			"the mode %s is not applied to %s: Windows has no POSIX mode, and the "+
 				"permissions this build can set here are `private` or inherited. "+
@@ -55,7 +57,7 @@ func plannedMode(path string, info os.FileInfo, want os.FileMode) (differs bool,
 
 // applyMode carries out the part of a mode that means something here.
 func applyMode(path string, want os.FileMode) error {
-	if want.Perm()&0o077 != 0 {
+	if !fileperm.Private(want) {
 		// Not an error: modeDiffers has already said it will not be
 		// applied, and failing the state over a mode the tree is
 		// entitled to write would stop every cross-platform tree.

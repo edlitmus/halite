@@ -13,7 +13,7 @@ import (
 // A mode this platform cannot carry out is said so once and then leaves
 // the state converged.
 //
-// Before this, `mode: '0640'` compared the 0666 that os.Stat synthesises
+// Before this, `mode: '0644'` compared the 0666 that os.Stat synthesises
 // against 0640, found them different, ran a chmod that changed nothing,
 // and found them different again on the next run. No file state on
 // Windows ever converged: every run reported a change, so `state.apply`
@@ -22,7 +22,7 @@ import (
 func TestAModeThatCannotBeCarriedOutIsSaidSoOnceAndConverges(t *testing.T) {
 	r := New()
 	path := filepath.Join(t.TempDir(), "app.conf")
-	args := value.MapOf("name", path, "contents", "x\n", "mode", "0640")
+	args := value.MapOf("name", path, "contents", "x\n", "mode", "0644")
 
 	first := run(t, r, "file.managed", args, false)
 	if !first.Succeeded() {
@@ -37,7 +37,7 @@ func TestAModeThatCannotBeCarriedOutIsSaidSoOnceAndConverges(t *testing.T) {
 		t.Fatal("nothing was said about a mode that was not applied")
 	}
 	joined := strings.Join(second.Warnings, "\n")
-	for _, want := range []string{"0640", "win_dacl", path} {
+	for _, want := range []string{"0644", "win_dacl", path} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the warning does not mention %q: %s", want, joined)
 		}
@@ -70,6 +70,33 @@ func TestAPrivateModeIsCarriedOutAsAnAccessControlList(t *testing.T) {
 	}
 	// A private mode is a request this platform can meet, so nothing is
 	// warned about and the state converges.
+	second := run(t, r, "file.managed", args, false)
+	if second.HasChanges() {
+		t.Errorf("the second run reported changes: %+v", second.Changes)
+	}
+	if len(second.Warnings) != 0 {
+		t.Errorf("a mode that was carried out should not warn: %v", second.Warnings)
+	}
+}
+
+// A mode with group bits and nothing for other accounts is private here
+// too, since a Windows file has no group (issue 608 item 4). It used to
+// be the mode above that could not be carried out, and was warned about
+// and skipped while the file kept its parent's list.
+func TestAGroupOnlyModeIsCarriedOutAsAnAccessControlList(t *testing.T) {
+	r := New()
+	path := filepath.Join(t.TempDir(), "app.conf")
+	args := value.MapOf("name", path, "contents", "x\n", "mode", "0640")
+	if res := run(t, r, "file.managed", args, false); !res.Succeeded() {
+		t.Fatalf("the state failed: %+v", res)
+	}
+	others, err := fileperm.Others(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(others) != 0 {
+		t.Errorf("a file written with mode 0640 can be read by %v", others)
+	}
 	second := run(t, r, "file.managed", args, false)
 	if second.HasChanges() {
 		t.Errorf("the second run reported changes: %+v", second.Changes)
@@ -142,8 +169,8 @@ func TestRecursingAModeWithNoMeaningHerePlansNothing(t *testing.T) {
 	args := value.MapOf(
 		"name", root,
 		"mode", "0755",
-		"dir_mode", "0750",
-		"file_mode", "0640",
+		"dir_mode", "0755",
+		"file_mode", "0644",
 		"recurse", []any{"mode"},
 	)
 	if _, err := r.States.Call(newCtx(false), "file.directory", args); err != nil {

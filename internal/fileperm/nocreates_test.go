@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -37,10 +38,12 @@ import (
 // # What it looks for, and what it cannot
 //
 // A call to `os.MkdirAll`, `os.WriteFile` or `os.OpenFile` whose mode is a
-// **literal that denies group and other**. The test for that is
-// `mode&0o077 == 0`, which is the same expression `Apply` uses to decide
-// whether the platform needs more than a chmod — one rule, not two that have
-// to be kept in step.
+// **literal that denies other accounts**. The test for that is `Private`,
+// which is what `Apply` uses to decide whether the platform needs more than a
+// chmod — one rule, not two that have to be kept in step. It was
+// `mode&0o077 == 0` until a mode with group bits became private on Windows
+// (issue 608 item 4), and a literal 0o640 became one more mode the standard
+// library would leave open there.
 //
 // A mode that is not a literal is skipped, and there is no way round that:
 // `os.MkdirAll(target, os.FileMode(h.Mode).Perm()|0o700)` in the tar extractor
@@ -231,7 +234,7 @@ func TestNothingElseCreatesAPrivateFileWithTheStandardLibrary(t *testing.T) {
 					return true
 				}
 				mode, isLiteral := privateModeLiteral(call)
-				if !isLiteral || mode&0o077 != 0 {
+				if !isLiteral || !Private(os.FileMode(mode)) {
 					return true
 				}
 				ruled++
@@ -242,8 +245,8 @@ func TestNothingElseCreatesAPrivateFileWithTheStandardLibrary(t *testing.T) {
 					}
 					return true
 				}
-				t.Errorf("%s:%d %s calls os.%s with mode %#o, which denies group and "+
-					"other — and on Windows says nothing at all: a directory mode is not "+
+				t.Errorf("%s:%d %s calls os.%s with mode %#o, which denies other "+
+					"accounts — and on Windows says nothing at all: a directory mode is not "+
 					"an access control decision there and a file mode is the read-only "+
 					"attribute. Use %s, which carries the intent out on both platforms. "+
 					"internal/pki said it the standard library's way for a year, about the "+
