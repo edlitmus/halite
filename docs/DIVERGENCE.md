@@ -40689,7 +40689,7 @@ domain-joined host. We did not run an object entry on anything but an NTFS file.
 We do not know if NTFS honours an object entry with a GUID on a file. The code
 reports it as reachable in that case.
 
-### 5.618 A group-only mode is private on Windows
+### 5.622 A group-only mode is private on Windows
 
 Issue 608 item 4, `internal/fileperm`. The owner made the decision. Read, not
 run, before this.

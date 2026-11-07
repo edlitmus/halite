@@ -15,7 +15,7 @@ import "os"
 // return log or a temporary script left it readable by every account the
 // parent folder lets in, which is wider than the mode asked for in the
 // one respect that can be enforced. The owner chose the narrower reading
-// on 2026-11-07 (issue 608 item 4, DIVERGENCE 5.618).
+// on 2026-11-07 (issue 608 item 4, DIVERGENCE 5.622).
 //
 // The audit in nocreates_test.go asks the same question of a literal
 // mode passed to the standard library, so that the two are one rule.
