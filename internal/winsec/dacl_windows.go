@@ -205,7 +205,7 @@ func Entries(path string) ([]ACE, error) {
 		// Read at the layout the entry's type has. An object entry's SID
 		// sits after a flags word and up to two GUIDs, and reading it at
 		// a plain entry's offset named whatever those bytes spelled
-		// (issue 608 item 3, DIVERGENCE 5.618).
+		// (issue 608 item 3, DIVERGENCE 5.621).
 		ace := readACE(raw)
 		kind := ""
 		switch ace.typ {
@@ -620,7 +620,7 @@ func enablePrivilege(name string) bool {
 	// the answer was always zero and this always said yes. A standard
 	// account was told it held SeRestorePrivilege, and SetOwner's error
 	// blamed the wrong thing (shown on a windows-2022 runner, issue 608
-	// item 3, DIVERGENCE 5.618).
+	// item 3, DIVERGENCE 5.621).
 	//
 	// So the token is asked instead. That is the question this function
 	// answers in the first place, and it does not depend on how the

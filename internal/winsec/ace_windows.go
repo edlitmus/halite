@@ -12,7 +12,7 @@ import (
 // names only the first two, and this package read every entry as the
 // first: GetAce hands back a pointer to the header, and casting that to
 // ACCESS_ALLOWED_ACE is right for four of the eight types and wrong for
-// the other four (issue 608 item 3, DIVERGENCE 5.618).
+// the other four (issue 608 item 3, DIVERGENCE 5.621).
 const (
 	aceAllowed               = 0x0 // header, mask, SID
 	aceDenied                = 0x1 // header, mask, SID

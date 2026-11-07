@@ -40624,7 +40624,7 @@ confinement fails. Nothing else changes.
 `AssignProcessToJobObject`. We did not run the extension path. It is unchanged.
 We did not run a domain-joined host.
 
-### 5.618 Windows access-list checks missed entries that can alter a file
+### 5.621 Windows access-list checks missed entries that can alter a file
 
 Issue 608 item 3, from the issue 321 second-pass audit, round twelve
 (`internal/winsec`). The audit found these by reading. It did not run the

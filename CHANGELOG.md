@@ -21,7 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **On Windows, a file that another account can alter is now reported as reachable.** The access-list check missed entries that grant delete, append or attribute writes, conditional entries, and the account of an object entry. It also said yes to privileges that the token does not hold. `halite-ext-signer-local` is now 1.0.3. It can refuse a key file that it accepted before, for example one that Users may delete. If it refuses, restrict the file with `win_dacl`. `win_dacl` listings now name the right account for an object entry. DIVERGENCE 5.618.
+- **On Windows, a file that another account can alter is now reported as reachable.** The access-list check missed entries that grant delete, append or attribute writes, conditional entries, and the account of an object entry. It also said yes to privileges that the token does not hold. `halite-ext-signer-local` is now 1.0.3. It can refuse a key file that it accepted before, for example one that Users may delete. If it refuses, restrict the file with `win_dacl`. `win_dacl` listings now name the right account for an object entry. DIVERGENCE 5.621.
 
 - **On Windows, the node now logs one warning if it cannot confine the commands that it runs.** Before, a failure to make or assign the job object was silent. A command that timed out could leave the processes that it started running. The command still runs. The warning appears once for each process, with `component=exec`. The extension sandbox still refuses on the same failure. A grandchild that escapes the job during start did not reproduce, and nothing was changed for it. DIVERGENCE 5.620.
 

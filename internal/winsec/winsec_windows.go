@@ -21,7 +21,7 @@ const fullControl = windows.GENERIC_ALL
 // FILE_APPEND_DATA, FILE_WRITE_ATTRIBUTES or FILE_WRITE_EA was not
 // reported, though DELETE alone lets it remove a key file and put
 // another in its place, and FILE_APPEND_DATA lets it add a line to one.
-// Shown on a windows-2022 runner (issue 608 item 3, DIVERGENCE 5.618).
+// Shown on a windows-2022 runner (issue 608 item 3, DIVERGENCE 5.621).
 // Naming what is safe rather than what is dangerous means a right
 // nobody thought of is reported rather than missed.
 const harmless = windows.SYNCHRONIZE | windows.FILE_READ_ATTRIBUTES
@@ -139,7 +139,7 @@ func Others(path string) ([]string, error) {
 	// all, so there is nothing to skip there, and on a directory it is
 	// what every file later created inside will be given, which is what
 	// a directory called private makes a promise about (DIVERGENCE
-	// 5.618, TestNTFSDoesNotKeepAnInheritOnlyEntryOnAFile).
+	// 5.621, TestNTFSDoesNotKeepAnInheritOnlyEntryOnAFile).
 	var out []string
 	seen := map[string]bool{}
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
