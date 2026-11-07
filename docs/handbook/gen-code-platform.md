@@ -385,7 +385,7 @@ A POSIX mode does not exist on Windows. os.Stat synthesises one from the read-on
 
 The equivalent control is the discretionary access control list. A file that grants access only to its owner, to SYSTEM and to the local Administrators group, with inheritance from the parent blocked, is as private as mode 0600 — and, unlike a mode, it says so in the terms an administrator on this platform reads.
 
-**Files:** `dacl_windows.go`, `doc.go`, `winsec_windows.go`; with tests.
+**Files:** `ace_windows.go`, `dacl_windows.go`, `doc.go`, `winsec_windows.go`; with tests.
 
 ## `internal/winsvc`
 

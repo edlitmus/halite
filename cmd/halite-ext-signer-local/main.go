@@ -47,7 +47,7 @@ import (
 )
 
 // Version is what the handshake and `sys.list_extensions` report.
-const Version = "1.0.2"
+const Version = "1.0.3"
 
 func main() {
 	// SPEC 24.3's self-applied limits, the way every extension in this
