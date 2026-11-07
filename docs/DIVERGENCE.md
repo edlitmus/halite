@@ -40564,7 +40564,7 @@ error text is the same.
 run antivirus that holds a file. The runner has Defender, but nothing targeted
 the test files. We did not run a delete-pending file.
 
-### 5.618 A job object that is assigned late, and a confinement that failed silently
+### 5.620 A job object that is assigned late, and a confinement that failed silently
 
 Issue 608 items 1 and 2, `internal/exec` and `internal/bridge`. The two items
 had different results. Item 1 did not reproduce and is not fixed. Item 2 is
