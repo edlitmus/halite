@@ -28,7 +28,7 @@ import (
 // causes the first. The windows-2022 runner showed otherwise: with
 // Read holding the destination, the replace still failed with
 // ERROR_ACCESS_DENIED, and only the retry had been hiding it
-// (TestAReplaceAndAReadDoNotBlockEachOther, DIVERGENCE 5.618). So any
+// (TestAReplaceAndAReadDoNotBlockEachOther, DIVERGENCE 5.619). So any
 // reader can cause the first, whatever sharing it asks for. Which part
 // of the replace refuses a destination opened with FILE_SHARE_DELETE
 // was not isolated; that it does was measured.
@@ -37,7 +37,7 @@ import (
 // is also what a real refusal returns -- a read-only destination, a deny
 // entry, a directory this account may not write -- and those were
 // retried too, so every caller that met one waited out the whole window
-// before it was told (issue 614, DIVERGENCE 5.618). See heldOpen.
+// before it was told (issue 614, DIVERGENCE 5.619). See heldOpen.
 
 // retryWindow is how long a caller waits for the other party to let go.
 // Long enough to cover a read of a job file on a loaded machine, short
