@@ -723,11 +723,8 @@ var confinementWarned atomic.Bool
 // It was silent: confineTree returned functions that did nothing when
 // the job could not be created or its limit set, and ignored a failed
 // assignment, so a command that was meant to be confined was not and
-// nothing said so (issue 608 item 2, DIVERGENCE 5.620).
+// nothing said so (issue 608 item 2, DIVERGENCE 5.618).
 func (r *OSRunner) confinementOff(cmd Command, err error) {
-	if true { // DELIBERATELY SILENT: shows the test fails without the warning
-		return
-	}
 	if !confinementWarned.CompareAndSwap(false, true) {
 		return
 	}
