@@ -21,16 +21,23 @@ import (
 //     with ERROR_SHARING_VIOLATION.
 //
 // Both are transient by construction: the other party is mid-read or
-// mid-rename and will be finished in microseconds. Read requests
-// FILE_SHARE_DELETE so that it never causes the first, and both retry
-// briefly for the case where the other party is code that does not,
-// which includes every os.ReadFile in the standard library.
+// mid-rename and will be finished in microseconds, so both are retried
+// briefly.
+//
+// This said that Read, because it asks for FILE_SHARE_DELETE, never
+// causes the first. The windows-2022 runner showed otherwise: with
+// Read holding the destination, the replace still failed with
+// ERROR_ACCESS_DENIED, and only the retry had been hiding it
+// (TestAReplaceAndAReadDoNotBlockEachOther, DIVERGENCE 5.618). So any
+// reader can cause the first, whatever sharing it asks for. Which part
+// of the replace refuses a destination opened with FILE_SHARE_DELETE
+// was not isolated; that it does was measured.
 //
 // The first is only transient when it means a reader. ERROR_ACCESS_DENIED
 // is also what a real refusal returns -- a read-only destination, a deny
 // entry, a directory this account may not write -- and those were
 // retried too, so every caller that met one waited out the whole window
-// before it was told (issue 614, DIVERGENCE 5.619). See heldOpen.
+// before it was told (issue 614, DIVERGENCE 5.618). See heldOpen.
 
 // retryWindow is how long a caller waits for the other party to let go.
 // Long enough to cover a read of a job file on a loaded machine, short
@@ -56,19 +63,22 @@ func transient(err error, paths ...string) bool {
 	return false
 }
 
-// heldOpen reports whether somebody has path open in a way that stops it
-// being deleted or replaced.
+// heldOpen reports whether somebody else has path open.
 //
-// It asks by opening the path for DELETE with every sharing flag set. If
-// another handle was opened without FILE_SHARE_DELETE -- os.Open's way --
-// this open fails with ERROR_SHARING_VIOLATION, and that is the reader
-// the retry is for. A permission refusal fails with ERROR_ACCESS_DENIED,
-// and a read-only file or a missing one does not fail with a sharing
-// violation at all, so none of them is waited on.
+// It asks by opening the path for DELETE and sharing nothing. Any other
+// handle on the file, whatever sharing it asked for, makes that open
+// fail with ERROR_SHARING_VIOLATION, and that is the reader the retry is
+// for. A permission refusal fails with ERROR_ACCESS_DENIED, and a
+// read-only file or a missing one does not fail with a sharing violation
+// at all, so none of them is waited on.
 //
-// The probe shares everything, so it cannot itself become the reason a
-// concurrent writer's replace fails: an opener that shares delete does
-// not stop a replace, which is what Read relies on.
+// The first version of this probe shared everything, so it saw only a
+// reader that had not shared delete -- os.Open's way -- and missed one
+// that had, which is Read. The runner caught it the same day.
+//
+// The probe holds the file for the length of one open and close. A
+// concurrent replace or Read that meets it gets a sharing failure,
+// which is transient here, and waits it out like any other.
 //
 // One transient denial this cannot see: a file in the delete-pending
 // state, deleted while somebody still holds it, also refuses an open
@@ -82,7 +92,7 @@ func heldOpen(path string) bool {
 	h, err := windows.CreateFile(
 		name,
 		windows.DELETE,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		0,
 		nil,
 		windows.OPEN_EXISTING,
 		// A directory cannot be opened without it, and a directory is a
