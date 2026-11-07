@@ -77,35 +77,31 @@ func TestOthersNamesAnAccountThatCanAlterTheFileWithoutReadingIt(t *testing.T) {
 	}
 }
 
-// An inherit-only entry on a file applies to nothing: a file has no
-// children to pass it to. Reporting it calls a private file open.
-//
-// The first run of this test granted the entry through Grant, and it
-// passed on the old code too. So the entry is written here in SDDL,
-// and the test first checks that NTFS kept it. Without that check, the
-// test would pass because the entry was never stored.
-func TestOthersIgnoresAnInheritOnlyEntryOnAFile(t *testing.T) {
+// Issue 608 said Others reported an inherit-only entry on a file, which
+// applies to nothing. It did not reproduce: NTFS does not keep such an
+// entry on a file. Granted through Grant, and written directly in SDDL,
+// it was gone when the list was read back, on the windows-2022 runner.
+// This holds that fact, because Others has no special case for it and
+// would need one if it stopped being true.
+func TestNTFSDoesNotKeepAnInheritOnlyEntryOnAFile(t *testing.T) {
 	path := privateFile(t)
 	setSDDL(t, path, ownerSDDL(t, path)+`(A;OIIO;FR;;;BU)`)
 	entries, err := Entries(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored := false
 	for _, e := range entries {
-		if mentionsUsers([]string{e.Trustee}) && e.AppliesTo == "files_only" {
-			stored = true
+		if mentionsUsers([]string{e.Trustee}) {
+			t.Fatalf("NTFS kept an entry for Users on a file (%+v); Others reports it, "+
+				"and whether it should is open again (issue 608 item 3)", e)
 		}
-	}
-	if !stored {
-		t.Fatalf("NTFS did not keep an inherit-only entry on a file, so there is nothing to test; the list is %+v", entries)
 	}
 	others, err := Others(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(others) != 0 {
-		t.Errorf("an inherit-only entry made a file look open to %v; the list is %+v", others, entries)
+		t.Errorf("a private file is reported open to %v; the list is %+v", others, entries)
 	}
 }
 
@@ -194,12 +190,13 @@ func TestEntriesNamesTheAccountOfAnObjectEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var trustees []string
+	var trustees, described []string
 	for _, e := range entries {
-		trustees = append(trustees, e.Trustee+" ("+e.Kind+")")
+		trustees = append(trustees, e.Trustee)
+		described = append(described, e.Trustee+" ("+e.Kind+")")
 	}
 	if !mentionsUsers(trustees) {
-		t.Errorf("the object entry for Users was listed under another name; the trustees are %v", trustees)
+		t.Errorf("the object entry for Users was listed under another name; the trustees are %v", described)
 	}
 	others, err := Others(path)
 	if err != nil {

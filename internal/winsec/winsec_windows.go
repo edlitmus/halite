@@ -4,7 +4,6 @@ package winsec
 
 import (
 	"fmt"
-	"os"
 
 	"golang.org/x/sys/windows"
 )
@@ -134,17 +133,13 @@ func Others(path string) ([]string, error) {
 		return []string{"Everyone"}, nil
 	}
 
-	// A file has nothing to pass an inherit-only entry to, so on a file
-	// such an entry grants nothing and is not a reason to call it open.
-	// On a directory it is what every file later created inside will be
-	// given, which is exactly what a directory called private promises
-	// about, so there it is reported. A path whose kind cannot be read is
-	// treated as a directory: the answer that reports more.
-	isDir := true
-	if info, err := os.Stat(path); err == nil {
-		isDir = info.IsDir()
-	}
-
+	// An inherit-only entry is reported like any other. Issue 608 said
+	// one on a file was reported though it applies to nothing; on the
+	// windows-2022 runner NTFS did not keep such an entry on a file at
+	// all, so there is nothing to skip there, and on a directory it is
+	// what every file later created inside will be given, which is what
+	// a directory called private makes a promise about (DIVERGENCE
+	// 5.618, TestNTFSDoesNotKeepAnInheritOnlyEntryOnAFile).
 	var out []string
 	seen := map[string]bool{}
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
@@ -164,9 +159,6 @@ func Others(path string) ([]string, error) {
 			// whether or not its GUID narrows it, for the same reason.
 			// Both were skipped, so a file readable by Users under a
 			// condition every member of Users meets was private.
-			continue
-		}
-		if ace.flags&windows.INHERIT_ONLY_ACE != 0 && !isDir {
 			continue
 		}
 		if ace.mask&^harmless == 0 {
