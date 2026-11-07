@@ -198,30 +198,37 @@ func Entries(path string) ([]ACE, error) {
 
 	out := make([]ACE, 0, dacl.AceCount)
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
+		var raw *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &raw); err != nil {
 			return nil, fmt.Errorf("reading the permissions of %s: %w", path, err)
 		}
+		// Read at the layout the entry's type has. An object entry's SID
+		// sits after a flags word and up to two GUIDs, and reading it at
+		// a plain entry's offset named whatever those bytes spelled
+		// (issue 608 item 3, DIVERGENCE 5.618).
+		ace := readACE(raw)
 		kind := ""
-		switch ace.Header.AceType {
+		switch ace.typ {
 		case windows.ACCESS_ALLOWED_ACE_TYPE:
 			kind = "allow"
 		case windows.ACCESS_DENIED_ACE_TYPE:
 			kind = "deny"
 		default:
-			// An audit or an object entry. Not this module's to report,
-			// and skipping it silently would make a listing that says
-			// "these are the entries" untrue — so it is named.
-			kind = fmt.Sprintf("other(type %d)", ace.Header.AceType)
+			// A conditional or an object entry. Not this module's to
+			// write, and not "allow" or "deny" either: a state comparing
+			// against "allow" must not take a conditional grant for an
+			// unconditional one. Skipping it silently would make a
+			// listing that says "these are the entries" untrue, so it is
+			// named, with the account it is for.
+			kind = fmt.Sprintf("other(type %d)", ace.typ)
 		}
-		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
 		out = append(out, ACE{
-			Trustee:    describe(sid),
+			Trustee:    describe(ace.sid),
 			Kind:       kind,
-			Permission: PermissionName(uint32(ace.Mask)),
-			Mask:       uint32(ace.Mask),
-			AppliesTo:  ScopeName(uint32(ace.Header.AceFlags)),
-			Inherited:  ace.Header.AceFlags&windows.INHERITED_ACE != 0,
+			Permission: PermissionName(ace.mask),
+			Mask:       ace.mask,
+			AppliesTo:  ScopeName(uint32(ace.flags)),
+			Inherited:  ace.flags&windows.INHERITED_ACE != 0,
 		})
 	}
 	return out, nil
@@ -606,9 +613,42 @@ func enablePrivilege(name string) bool {
 		return false
 	}
 	// AdjustTokenPrivileges reports success when it enabled *some* of
-	// what it was asked for, including none of it. The last error is the
-	// only way to tell.
-	return windows.GetLastError() != windows.ERROR_NOT_ALL_ASSIGNED
+	// what it was asked for, including none of it, and says which only
+	// through the last error. That was read with windows.GetLastError,
+	// which cannot see it: Go's runtime sets the thread's last error to
+	// zero before every system call it makes, GetLastError included, so
+	// the answer was always zero and this always said yes. A standard
+	// account was told it held SeRestorePrivilege, and SetOwner's error
+	// blamed the wrong thing (shown on a windows-2022 runner, issue 608
+	// item 3, DIVERGENCE 5.618).
+	//
+	// So the token is asked instead. That is the question this function
+	// answers in the first place, and it does not depend on how the
+	// runtime makes a call.
+	return privilegeEnabled(token, luid)
+}
+
+// privilegeEnabled reports whether a token carries a privilege and has
+// it enabled.
+func privilegeEnabled(token windows.Token, luid windows.LUID) bool {
+	var n uint32
+	// The first call fails with ERROR_INSUFFICIENT_BUFFER and says how
+	// much it needs; that is its documented use.
+	_ = windows.GetTokenInformation(token, windows.TokenPrivileges, nil, 0, &n)
+	if n == 0 {
+		return false
+	}
+	buf := make([]byte, n)
+	if err := windows.GetTokenInformation(token, windows.TokenPrivileges, &buf[0], n, &n); err != nil {
+		return false
+	}
+	held := (*windows.Tokenprivileges)(unsafe.Pointer(&buf[0]))
+	for _, p := range held.AllPrivileges() {
+		if p.Luid == luid {
+			return p.Attributes&windows.SE_PRIVILEGE_ENABLED != 0
+		}
+	}
+	return false
 }
 
 // PermissionLevels are the names this build understands, for a message

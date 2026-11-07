@@ -79,12 +79,27 @@ func TestOthersNamesAnAccountThatCanAlterTheFileWithoutReadingIt(t *testing.T) {
 
 // An inherit-only entry on a file applies to nothing: a file has no
 // children to pass it to. Reporting it calls a private file open.
+//
+// The first run of this test granted the entry through Grant, and it
+// passed on the old code too. So the entry is written here in SDDL,
+// and the test first checks that NTFS kept it. Without that check, the
+// test would pass because the entry was never stored.
 func TestOthersIgnoresAnInheritOnlyEntryOnAFile(t *testing.T) {
 	path := privateFile(t)
-	if err := Grant(path, users, "read", "files_only", false); err != nil {
-		t.Fatalf("granting Users an inherit-only read: %v", err)
+	setSDDL(t, path, ownerSDDL(t, path)+`(A;OIIO;FR;;;BU)`)
+	entries, err := Entries(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	entries, _ := Entries(path)
+	stored := false
+	for _, e := range entries {
+		if mentionsUsers([]string{e.Trustee}) && e.AppliesTo == "files_only" {
+			stored = true
+		}
+	}
+	if !stored {
+		t.Fatalf("NTFS did not keep an inherit-only entry on a file, so there is nothing to test; the list is %+v", entries)
+	}
 	others, err := Others(path)
 	if err != nil {
 		t.Fatal(err)

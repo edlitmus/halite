@@ -4,7 +4,7 @@ package winsec
 
 import (
 	"fmt"
-	"unsafe"
+	"os"
 
 	"golang.org/x/sys/windows"
 )
@@ -13,13 +13,19 @@ import (
 // same authority mode 0600 gives a unix owner, which is everything.
 const fullControl = windows.GENERIC_ALL
 
-// readish is the set of rights that mean a trustee can see the
-// contents. A trustee granted any of them is a trustee the file is not
-// private from.
-const readish = windows.GENERIC_READ | windows.GENERIC_ALL |
-	windows.GENERIC_EXECUTE | windows.GENERIC_WRITE |
-	windows.FILE_READ_DATA | windows.FILE_WRITE_DATA |
-	windows.READ_CONTROL | windows.WRITE_DAC | windows.WRITE_OWNER
+// harmless is the whole of what an entry may grant another account and
+// leave a file private: waiting on its handle, and reading its size and
+// times. Everything else is reported.
+//
+// This was the other way round, a list of the rights that count
+// ("readish"), and the list was short. An account granted only DELETE,
+// FILE_APPEND_DATA, FILE_WRITE_ATTRIBUTES or FILE_WRITE_EA was not
+// reported, though DELETE alone lets it remove a key file and put
+// another in its place, and FILE_APPEND_DATA lets it add a line to one.
+// Shown on a windows-2022 runner (issue 608 item 3, DIVERGENCE 5.618).
+// Naming what is safe rather than what is dangerous means a right
+// nobody thought of is reported rather than missed.
+const harmless = windows.SYNCHRONIZE | windows.FILE_READ_ATTRIBUTES
 
 // wellKnown returns the SIDs that are allowed to reach any file halite
 // keeps private: the machine account services run as, and the group
@@ -128,26 +134,48 @@ func Others(path string) ([]string, error) {
 		return []string{"Everyone"}, nil
 	}
 
+	// A file has nothing to pass an inherit-only entry to, so on a file
+	// such an entry grants nothing and is not a reason to call it open.
+	// On a directory it is what every file later created inside will be
+	// given, which is exactly what a directory called private promises
+	// about, so there it is reported. A path whose kind cannot be read is
+	// treated as a directory: the answer that reports more.
+	isDir := true
+	if info, err := os.Stat(path); err == nil {
+		isDir = info.IsDir()
+	}
+
 	var out []string
 	seen := map[string]bool{}
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
+		var raw *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &raw); err != nil {
 			return nil, fmt.Errorf("reading the permissions of %s: %w", path, err)
 		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-			// A deny entry cannot widen access, and this build does not
-			// write one, so it is not a reason to call a file open.
+		ace := readACE(raw)
+		if !ace.allow {
+			// A deny entry cannot widen access, so it is not a reason to
+			// call a file open.
+			//
+			// Every allow type counts, not only the plain one. A
+			// conditional entry grants whenever its condition holds,
+			// and this check cannot evaluate the condition for every
+			// account that might meet it; an object entry is reported
+			// whether or not its GUID narrows it, for the same reason.
+			// Both were skipped, so a file readable by Users under a
+			// condition every member of Users meets was private.
 			continue
 		}
-		if ace.Mask&readish == 0 {
+		if ace.flags&windows.INHERIT_ONLY_ACE != 0 && !isDir {
 			continue
 		}
-		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if isAnyOf(sid, allowed) {
+		if ace.mask&^harmless == 0 {
 			continue
 		}
-		name := describe(sid)
+		if isAnyOf(ace.sid, allowed) {
+			continue
+		}
+		name := describe(ace.sid)
 		if !seen[name] {
 			seen[name] = true
 			out = append(out, name)
