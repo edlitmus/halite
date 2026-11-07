@@ -22337,6 +22337,7 @@ empty list. Making the function never refuse fails the first.
   in a second place. Not changed here.
 - Doctor's remedy line under a failed pillar compilation still points at
   `halite-node pillar items`, which is the wrong advice for this failure.
+
 ### 5.259 The hub never renewed its own certificate
 
 Mapping what the example tree would have to manage found that the hub's
@@ -22549,6 +22550,7 @@ sandbox. Each fails.
 - Agentless (`halite-hub ssh`) pillar compiles and the hub's `doctor`
   are not wired to `OnRendered`. Nor are managed-file templates, which
   are file contents rather than SLS.
+
 ### 5.262 A tree halite manages itself with, held to compiling
 
 The owner asked for example states and pillar with which halite-hub,
@@ -22723,6 +22725,7 @@ Tests, each broken on purpose:
   says once that the new one cannot be loaded. This was not provoked;
   neither run showed it.
 - `halite-api`'s operator certificate is still loaded once (5.254).
+
 ### 5.264 The hub would not start until DNS answered
 
 5.259's end-to-end test stalled for over ten seconds between the hub
@@ -22835,6 +22838,7 @@ all go into the module's arguments in `applyPerNameArgs`. A per-name
 parameter of this function"), where Salt treats it as an option.
 
 **Not covered:** only run on macOS.
+
 ### 5.267 Agentless pillar was compiled by a second compiler, without ext_pillar
 
 `halite-hub ssh` compiles a roster target's pillar on the hub and sends it
@@ -22893,6 +22897,7 @@ sources fails it on all three Secrets Manager checks.
   `internal/extpillar` has the signed chain end to end.
 - `halite-hub doctor`'s pillar check still builds its own compiler, and
   does not run external sources.
+
 ### 5.268 `halite-hub ssh target pillar.items` answered `{}`
 
 Found while showing 5.267 live. An agentless target is sent its pillar
@@ -22976,6 +22981,7 @@ has no `mode`, and `file.directory` documents its 0755 default.
 
 **Not covered:** ownership of the directories created was not exercised
 as root. Only run on macOS.
+
 ### 5.270 A name's own arguments all went to the module
 
 5.266 recorded this. `applyPerNameArgs` put every argument given to one
@@ -23029,6 +23035,7 @@ and they mean this. The four citations it added (here, the CHANGELOG,
 `parentdir.go` and `parentdir_test.go`) were changed by hand, line by
 line. The other 5.267's citations were left alone; `ledger renumber`
 cannot tell them apart once both are on main.
+
 ### 5.271 halite-api presented the operator certificate it started with
 
 5.254 named this and left it. `hubClient` in `cmd/halite-api/serve.go`
@@ -23064,6 +23071,7 @@ Loading the pair once, the old behaviour, fails it with the old serial.
   estate's tree is not yet re-issuing the certificate. That is a change
   to the salt tree, made alongside this one.
 - The example tree's re-issue state has still not been applied anywhere.
+
 ### 5.272 The three-release Salt gate tripped Docker Hub's rate limit
 
 After 5.265 ran the Salt differential against three releases at once,
@@ -23084,6 +23092,7 @@ official image; the registry is not the one rate-limiting.
 every change is for CI to show. If it fails the same way, the next step
 is logging in to a registry, which needs a credential this project does
 not hold in CI.
+
 ### 5.273 Three answers to "what is this host called"
 
 5.264 found three lookups of this host's fully qualified name, and they
@@ -23130,6 +23139,7 @@ Tests:
 
 **Not covered:** no real host with a foreign PTR name was used; the cases
 are a fake resolver's. Only run on macOS.
+
 ### 5.274 Warnings wrapped on whitespace, where Salt's break at hyphens
 
 5.245 ported Salt's highstate outputter and named one place it knowingly
@@ -24182,6 +24192,7 @@ this; the root run used uid 65534 in a temp directory); Windows and other
 platforms without uids, where `inheritOwner` is a no-op by design; the node's
 own message, which still says only "the hub's log says why" (the hub's log now
 says why at start, which is as far as this goes).
+
 ### 5.286 `HaliteNodesAbsent` could not say which node
 
 The alert was `halite_hub_keys_accepted - halite_hub_nodes_connected > 0`: two
@@ -24207,6 +24218,7 @@ Prometheus or delivered through Alertmanager, and the live rules are in the
 salt tree (edlitmus/salt), not here, so beastie does not have this until it is
 added there. I did not break it on purpose against a node that is up but
 disconnected.
+
 ### 5.287 The hub's unit restarted a hub that could not start, 427 times
 
 On a real v0.1.1 hub (2026-10-12, Ubuntu 22.04 arm64, the FIPS build),
@@ -24313,6 +24325,7 @@ cannot drift apart again. Each was broken on purpose and each failed:
   unit on both, so an API whose address is late at boot stays down.
 - **The node was not audited.** No one has checked whether `halite-node
   connect` exits 1 for anything transient.
+
 ### 5.288 An unset `pillarenv` compiled one environment, where Salt merges every one
 
 Found by pointing the hub module at a reference stack whose pillar lives in two
@@ -24591,6 +24604,7 @@ of its own, that is a separate change.
   not run. Only `repro`, on one machine, was run.
 - **The advisories themselves.** No advisory was reproduced against
   go1.26.6, or shown to be absent on go1.27.2.
+
 ### 5.291 A deeply nested target expression ended the hub
 
 Audit H-12. The compound parser in `internal/target/compound.go` is
@@ -24699,6 +24713,7 @@ were cut from 200,000 terms to 90,000 and 70,000 to fit under it; both
 are still past the 30,000 at which the old code overflowed, and
 `TestHostileShapesFit` keeps them under the cap so that they test the
 parser and not the cap.
+
 ### 5.292 gitfs verified a branch by its name and served it by its commit
 
 With `gitfs_verify_signatures: true`, `verify` ran
@@ -24791,6 +24806,7 @@ On this Mac all three signed tests ran and passed rather than skipping.
   that starts refusing a ref after this change can therefore keep
   pointing at a tree directory that is gone. That is audit M-49 and is a
   separate change.
+
 ### 5.293 gitfs kept the last good tree's path and swept away its files
 
 `Update` keeps the last good tree when a reachable remote serves
@@ -24866,6 +24882,7 @@ here; they reach the same `len(result.Refs) == 0` path as the symlink.
 No hub was run: this is the backend under `go test` on macOS. The
 existing window between the sweep removing a replaced tree and the
 hub's file server switching to the new roots is unchanged.
+
 ### 5.294 `state_denylist` refused one spelling of an SLS name, and the loader accepted five
 
 Review finding M-54, reproduced for the compiler before it was changed.
@@ -25063,6 +25080,7 @@ No node received a job. Nobody has checked the estate's policy files for
 `allow_sls` or `deny_sls` patterns written for a non-canonical spelling,
 which would now match nothing. Everything ran on macOS (Darwin 25.6)
 only.
+
 ### 5.295 `file_ignore_glob` hid only the first level of what it named
 
 Review finding M-55, reproduced before it was changed.
@@ -25187,6 +25205,7 @@ and it was not made here.
   hide it from nodes too: a nested file that a state still needs is
   now refused.
 - The tests ran on macOS (Darwin 25.6) only.
+
 ### 5.296 A scoped role reached any node by naming a list, a compound or a pcre
 
 Audit H-01, reproduced before it was fixed. The policy decided whether a
@@ -25538,6 +25557,7 @@ and were not changed:
   with the clean environment of SPEC 25.4, and that was not reproduced.
 - A valid name still loads that installed module's code from `@INC`.
   This was true before as well, and the check does not change it.
+
 ### 5.299 `file.line` compared `match` as a substring, so `^PermitRootLogin` never matched
 
 Audit finding H-08. `file.line`'s `match`, `before` and `after` were
@@ -25624,6 +25644,7 @@ Not verified: no real sshd read the result, no real Salt was run against
 these cases (the Salt behaviour above is from reading its source and from
 re-running its matcher expression in plain Python), and it ran on macOS
 only. `file`'s evidence level is unchanged.
+
 ### 5.300 An archive could write, and delete, outside its destination through its own symlinks
 
 `archive.extracted` and `archive.extract` said, in the module's own
@@ -25758,6 +25779,7 @@ extracts three times, twice with `overwrite` unset and once with it set.
 - **The race with a concurrent writer** in the destination, which the
   root closes on unix, has no test. That it is closed is a property of
   `os.Root`, read from its documentation.
+
 ### 5.301 A background command ignored `runas` and ran as root
 
 `cmd.run` with `bg: true` and `runas: deploy` started the command as the
@@ -25836,6 +25858,7 @@ runner each started the program). With the old `cmd_more.go` alone,
   kernel's on each unix; it was seen only on macOS here.
 - **Windows** refuses every `runas` (`credential_windows.go`), and now
   refuses it for a background command too. Not run on Windows.
+
 ### 5.302 A `listen` reaction ran without its state's guards or account
 
 The handbook (chapter 6) says `listen` is `watch` with the reaction
@@ -25905,6 +25928,7 @@ control passed. With `runListeners` calling `execute` directly
   it does not see the chunk's `runas`. That is true for the main pass as
   well and was not changed here. Whether Salt applies `runas` to a
   `fun:` condition was not checked.
+
 ### 5.303 A request in flight could un-revoke an API token
 
 Found by review, not reported from a host. `apitoken.Store.Redeem` runs
@@ -25964,6 +25988,7 @@ store on every request, to find the one whose digest matches (M-07 in
 the review that found this). That is a cost that grows with the store.
 It is not a correctness defect, and it has its own fix (an index by
 digest) that is not this one.
+
 ### 5.304 The login backoff locked a name's owner out, and held no spray
 
 Found by the audit of issue #321 (M-09), and reproduced against the
@@ -26073,6 +26098,7 @@ address", and the budget.
   handler with 105 hashes. The handler tests show the same keying with
   one hash each.
 - No real client or directory was used. Only run on macOS.
+
 ### 5.305 An unknown login name was checked at a third of a real one's cost
 
 Found by the audit of issue #321 (M-10). 5.232 says a failed local
@@ -26157,6 +26183,7 @@ already measured. Nothing was measured again.
 Only a comment changed. No code changed and no test covers it, so there
 was nothing to break on purpose. The claims in it were checked by reading
 `unknownAccount` and `Verify` in `internal/account/account.go`.
+
 ### 5.306 A binary another account planted in `thin_dir` was run as root
 
 Found by audit (H-07), by reading the code, and confirmed by a test
@@ -26321,6 +26348,7 @@ untrue.
 - **Related defects, not fixed here.** M-14: ssh option injection
   through a roster's `host` or `user`. M-28: the temporary tree a
   `oneshot` run makes is never removed.
+
 ### 5.307 A package name could be a package manager's option, run as root
 
 Audit M-32. Every `pkg` provider builds `tool verb [options] name...`,
@@ -26454,6 +26482,7 @@ The call was then put back and the tests passed.
 **Not verified.** No dnf was run. Nothing here runs dnf. Only macOS
 (Darwin 25.6). No `CHANGELOG.md` entry, because only an error message
 changes, and only for a spec that was refused already.
+
 ### 5.308 Thirty-four functions acted under `--test`, and the audit for it could not see them
 
 5.135 built `TestEveryMutatingFunctionHonoursItsTestModeClaim` and said
@@ -26643,6 +26672,7 @@ other function failed the static check. So no other function had passed
 `auditMustReach` names 24 functions now, not 23: `mount.set_fstab`
 joined it, off Windows, after it stopped being reached without anything
 failing. See 5.572.
+
 ### 5.309 A dotted unit name was sent to systemd without `.service`
 
 Audit finding H-14. `withServiceSuffix` decided whether a name already had
@@ -26760,6 +26790,7 @@ real host first.
 cover this read too, if it calls `service.masked` on
 `halite-probe1.2` with the bus dial forced to fail. Run on macOS
 (Darwin 25.6) only.
+
 ### 5.310 `mdadm.create` would overwrite a filesystem it said it refused
 
 The package comment in `mdadm.go` and the `force` parameter's doc both
@@ -26864,6 +26895,7 @@ failed.
   it was raised for (superblock and existing-array refusals, the
   mutating functions) are still the paths that ran. The note now says
   the signature probe has not.
+
 ### 5.311 `zfs.filesystem_present` set `atime=false`, and a quota it already had, every run
 
 Found by an audit (H-18) and reproduced with a scripted runner before
@@ -26999,6 +27031,7 @@ Each was restored and the tests passed.
 - **yes/no.** No settable property takes `yes|no` as far as zfsprops(7)
   and zpoolprops(7) say, so a boolean is always rendered `on`/`off`. A
   declared `"yes"` string is passed through unchanged.
+
 ### 5.312 A template could end the process that rendered it
 
 The hub compiles pillar in its own process, and a node renders in its
@@ -27535,6 +27568,7 @@ Each part was broken on purpose and the tests failed:
   different files, so they are still reported as different devices.
 - The tests ran on macOS (Darwin 25.6) only. CI runs them on Linux and
   FreeBSD.
+
 ### 5.314 A time zone name was a path, and `../secret` was one
 
 Found by a security review, and reproduced here before anything was
@@ -27631,6 +27665,7 @@ it makes of the record. The grammar was checked against macOS's tree
 only; FreeBSD's and Linux distributions' trees, including their `posix/`
 and `right/` copies, were not walked. The `timezone` evidence level is
 unchanged: this narrows what it accepts and adds no new run.
+
 ### 5.315 `pf` sorted its anchor, so a deny shadowed every allow inside it
 
 5.31 says `quick` "makes a rule's effect independent of the anchor's
@@ -27713,6 +27748,7 @@ allow-then-deny test and the removal test failed. With a reversed sort
 - **Hosts already converged.** It is not known whether any host in the
   fleet has an anchor with overlapping rules. Any that does keeps the
   sorted order until it is flushed, as above.
+
 ### 5.316 `netplan.managed` reported a refused document converged on the next run
 
 Audit item M-36, reproduced with the fake runner before it was changed.
@@ -27808,6 +27844,7 @@ it.
 - **`apply: true` on a file that already matches** does not apply. That
   is as documented ("after writing") and was not changed.
 - Tested on macOS (Darwin 25.6) only. CI runs the unit tests on Linux.
+
 ### 5.317 `hostname.system` reported a short name converged on a request for the qualified one
 
 Audit item M-39, reproduced before it was changed. `sameHostname`
@@ -27896,6 +27933,7 @@ Each was broken on purpose:
   boot-time record does not have, the state now changes the boot-time
   record, where before it did not. Which CI machines are like that has
   not been checked. The live tests were not run for this change.
+
 ### 5.318 An agentless run left the hub's state tree on the target
 
 `halite-node oneshot` -- what `halite-hub ssh` runs on a target -- makes
@@ -28494,6 +28532,7 @@ pointed back at `req.Arg`.
   fleet's reactor and policy files were not read for any that would be.
 - **Not run on FreeBSD or Linux.** Nothing here is platform-specific;
   CI runs the tests on all four.
+
 ### 5.322 A firewall value could carry a second pf rule
 
 `firewall.allowed` with
@@ -28593,6 +28632,7 @@ removed, its test failed.
 - **The table name rule** (31 characters, `[A-Za-z0-9_-]`) is a
   conservative subset of what pf takes. It is not taken from pf's
   source.
+
 ### 5.323 A renewal could undo a revocation, and the key store had no lock file
 
 Found by review, not reported from a host. `keystore.Authority.Revoke`
@@ -28764,6 +28804,7 @@ the cost should be small, but that is not measured.
 the old serial in memory only. The record keeps just the current
 serial, so a hub restart forgets every superseded one (M-05 in the
 review that found this). That has its own fix. It is not this one.
+
 ### 5.324 A node's `region` grain chose the host the hub sent its AWS credentials to
 
 Audit finding H-20. `aws_secrets_manager` built its endpoint as
@@ -29071,6 +29112,7 @@ this host had only this package failing.
 `live_noexec_linux_test.go` skip on this host ("cannot mount a tmpfs …
 in this namespace") under any umask. They use the helper now, but they
 have not run with it here. CI's Linux leg is where they run.
+
 ### 5.327 Webhook ingress: a delivery twice, a sender starved, and an `mtls` that could not work
 
 Three defects in `/v1/hook/{path}` (SPEC 22.2), found by reading
@@ -29191,6 +29233,7 @@ Each was broken on purpose and watched to fail:
   one address each keep their own, as they each kept their own nonce
   cache before; a copy that reaches each is delivered twice. Unchanged
   by this, and not new.
+
 ### 5.328 A hub could replay a signed job: after a restart, after a flood, or with a new nonce
 
 **Found by** a security review (M-02), and reproduced before anything was
@@ -29328,6 +29371,7 @@ Each was broken on purpose and watched failing:
   no write cache. Whether the SSDs' own cache is protected against
   power loss was not checked, and a sub-millisecond `fsync` cannot tell
   the two cases apart.
+
 ### 5.329 `not S@10.0.0.0/8` delivered a pillar to every host inside 10/8
 
 Found by a security review, and reproduced here before anything was
@@ -29410,6 +29454,7 @@ directory holds no files at all, so no top file there meets the new
 refusal. No other hub's pillar tree was searched. `internal/pillar` and
 `internal/target` passed natively on FreeBSD 15.1 (beastie) under
 `-race`, and on Linux after the merge with main.
+
 ### 5.330 A signed dry run could be turned into a real run, and a signature need not expire
 
 **Found by** a security review (M-04), and reproduced before anything was
@@ -29619,6 +29664,7 @@ that it then runs.
 executable and then fork in a goroutine were not searched for. The 1000
 clean runs are evidence against the race, not proof that the window is
 closed on every machine.
+
 ### 5.333 An extension's signature covered its files and not its manifest
 
 Issue 321 finding H-02, and the one High that the triage held back as "a
@@ -29883,6 +29929,7 @@ same `sysrc -n` probe defect described above. None
 of the 39 real mismatched scripts was enabled or disabled, only the
 probes: several (`ipfw`, `securelevel`, `noshutdown`) would change how
 beastie boots.
+
 ### 5.336 mount spoke Linux on the BSDs: `defaults` and `-o remount`
 
 Issue 321 finding M-44, which the triage could only mark PARTLY: macOS's
@@ -29960,6 +30007,7 @@ I broke each half on purpose: keeping `defaults` failed
 - A real block device, `mount.unmounted`, and a boot were not tried.
 - A filesystem type whose options differ (tmpfs refused `noatime` on
   FreeBSD) was not explored.
+
 ### 5.337 An fstab line written without a type was unreadable, and rewritten for ever
 
 Issue 321 finding M-35. `entryFromArgs` requires a mount point and a
@@ -29996,6 +30044,7 @@ mounts. Disabling the check failed it.
 
 **Not verified.** Neither platform was booted with such a line; their
 refusals were taken from `mount` reading a scratch table.
+
 ### 5.338 Unauthenticated enrollment had no bounds, and a bogus token could hold a name
 
 Issue 321 finding M-06. `POST /v1/enroll` is the one route a caller
@@ -30126,6 +30175,7 @@ other sources (`job/new` carries the node list, which grows with the
 estate) are covered by the same stand-in rather than bounded at their
 source. Not run on FreeBSD or against a live hub; the tests run the
 real handlers over loopback TLS.
+
 ### 5.340 Any enrolled node could answer a job it was never sent
 
 Issue 321 finding M-12. `Cache.AddReturn` checked only that `job.json`
@@ -30162,6 +30212,7 @@ the chunk check the chunk test does.
 
 **Not done.** M-13's other half, a per-node quota on `/v1/event` and on
 return size, is its own item. Not run against a live hub or on FreeBSD.
+
 ### 5.341 One enrolled node could push the fleet's history off the bus and the job cache
 
 Issue 321 finding M-13. Both stores are bounded by size and prune
@@ -30206,6 +30257,7 @@ volume.
 **Not done.** No quota on what operators submit, which is theirs to
 spend. The job cache's 10 GiB is still filled by legitimate returns over
 time, by design. Not run against a live hub or on FreeBSD.
+
 ### 5.342 A relay could claim any node the upstream did not have connected
 
 Issue 321 finding M-15, which the triage marked as recorded but wrongly,
@@ -30368,6 +30420,7 @@ third.
 is refused, with the advice to quote it. It never got the mode it wrote.
 beastie's production tree is empty. The repository's example trees and
 docs hold no unquoted mode.
+
 ### 5.345 setuid, setgid and sticky never reached a file, and a new directory took the umask
 
 Issue 321 findings M-23 and M-31, in one section because the same run
@@ -30419,6 +30472,7 @@ does. A directory with setgid managed as `'0755'` loses setgid.
 
 **Not done.** `file.recurse`'s modes are M-22's, and `recurse: [mode]`
 following symlinks is M-29's.
+
 ### 5.346 A file state replaced a symbolic link instead of writing through it
 
 Issue 321 finding M-19. `writeAtomic` renames a new file over its path,
@@ -30526,6 +30580,7 @@ Two more in the same code, found while there:
 is not corrected. Salt's `E@` regular-expression form of the patterns is
 not supported, as it was not before. Not run on a host: the tests use a
 real file server over a temporary root, under `go test`.
+
 ### 5.348 file.directory's recursive mode change followed a link swapped in after the plan
 
 Issue 321 finding M-29, which the audit marked PLAUSIBLE ("race; not
@@ -30560,6 +30615,7 @@ for ownership there.
 **Not done.** The ownership half was not run against a swap: making one
 needs a second account, and the swapped-parent case is covered by the
 same root for both. Not run as root on a host.
+
 ### 5.349 Root wrote a named account's ~/.ssh files wherever the account's link pointed
 
 Issue 321 finding M-30. The triage marked it CONFIRMED by trace, "needs
@@ -30611,6 +30667,7 @@ what the account has since put at it: `config:
 path through the same link the default path refuses. Fixed by deciding on
 where the path lands rather than on whether `config` was given; see
 5.569.
+
 ### 5.350 git.latest's `user` was never read, so every checkout was root's
 
 Issue 321 finding M-24. `git.latest` declared `user` ("Run git as this
@@ -30641,6 +30698,7 @@ command ran as "".
 **Not done.** The other git functions take no `user`. A clone as the
 account needs the target's parent to be writable by it, as it does for
 Salt. `git` has no evidence entry, and this does not add one.
+
 ### 5.351 enroll --force broke the node's identity whenever the hub did not issue at once
 
 Issue 321 finding M-25, which the triage found worse than reported.
@@ -30727,6 +30785,7 @@ passed with it made in `/tmp`.
 **Not done.** `cmd.script` with a `salt://` source was not run as
 another account; it shares `tempScript` with `exec_code`. Windows keeps
 its own model and is not changed.
+
 ### 5.353 An alias of a live LVM physical volume looked like a fresh disk
 
 Issue 321 finding M-42, which the triage marked PARTLY: the argv was
@@ -30769,6 +30828,7 @@ of a state's device can be relied on to match it.
 the triage records as Salt parity. A real `/dev/disk/by-id` link to a
 physical disk was not used; the loop device has no udev by-id name
 other than the `lvm-pv-uuid-` one LVM's own rules make.
+
 ### 5.354 Four modules spliced a free-form value into a root-read file or script
 
 Issue 321 finding M-45, the four sites that can run something as root or
@@ -30838,6 +30898,7 @@ draws: `;` and `#` outside a quoted string.
 
 The module itself was not driven against nft, nor were modprobe, apt
 and mount: those tests use scripted runners and temporary directories.
+
 ### 5.355 rc.conf, sysctl and debconf took a value that became code or another line
 
 Issue 321 finding M-45's smaller sites, which the triage left "traced
@@ -30876,6 +30937,7 @@ only". One of them is not small.
 **Not verified.** sysctl and debconf were not driven against the real
 tools. The sysrc measurement used a scratch file, not /etc/rc.conf, and
 no boot.
+
 ### 5.356 gitfs read a whole archive into memory before checking its size
 
 Issue 321 finding M-53. `materialise` ran `git archive` into a
@@ -30921,6 +30983,7 @@ there is a second FreeBSD check, in an emulated VM.
 
 **Not done.** The limits are the existing constants, not configuration.
 Not run against a real remote or on the hub.
+
 ### 5.357 s3fs served stale, truncated and deleted files
 
 Issue 321 finding M-51, CONFIRMED by trace and "not run against S3". The
@@ -30962,6 +31025,7 @@ fake server answers the listing and the GETs. A multipart ETag was not
 exercised. Environments that disappear entirely from a bucket stop being
 served, because the roots are rebuilt from the listing, but their
 directories are left on disk.
+
 ### 5.358 govulncheck ran nowhere, and `make vuln` ran whichever version was newest
 
 Issue 321 finding M-03, which the triage left half done: the toolchain
@@ -30988,6 +31052,7 @@ none, in 32 s.
 **Not done.** The job needs the network and is not part of `make
 check`, by design. The pin will age, and moving it is a change like any
 other.
+
 ### 5.359 A chained comparison or a power gave a different answer from Jinja, silently
 
 Issue 321 finding M-52, the half of it where a tree silently takes a
@@ -31030,6 +31095,7 @@ seven wrong:
 
 None of these changes the branch a comparison takes; each is a separate
 change.
+
 ### 5.360 A renewal interrupted between its key and its certificate lost the certificate
 
 Issue 321 finding M-26, Low; the triage corrected "unrecoverable" to
@@ -31104,6 +31170,7 @@ is removed.
 in the `(none):` spelling the parser already records. Whether
 `dnf install tree-1.8.0`, sent when the package is absent, installs the
 newest release of 1.8.0 was not run; that argv is unchanged.
+
 ### 5.362 iptables.save and nftables.save reported a change on every run
 
 Issue 321 finding M-40, Low; the triage found the iptables half
@@ -31657,6 +31724,7 @@ child has gone. The package passes, with `-race` too.
 
 **Not verified.** That the CI failure was this and nothing else: it was
 seen once, and the fix was not run on a loaded CI runner before merge.
+
 ### 5.385 A pkcs12 bundle was readable while openssl wrote it
 
 Issue 321, a section 5 (Low) finding: "`openssl.pkcs12_export` writes the
@@ -31677,6 +31745,7 @@ sees `-rw-------` on a temporary name. The real-openssl tests in
 this writes.
 
 **Not verified.** LibreSSL, and FreeBSD's base openssl; neither was run.
+
 ### 5.386 A file listing could place a file outside file.recurse's destination
 
 Issue 321, a section 5 (Low) finding: "`file.recurse` joins hub-listed
@@ -31706,6 +31775,7 @@ listing never went through it.
 
 **Not done.** The audit's "`cacheFile` accepts a body with no published
 digest" was not looked at. Not run against a real hub.
+
 ### 5.387 A policy list dropped the items that were not strings
 
 Issue 321, a section 5 (Low) finding: "`policy.go` `stringList` silently
@@ -31731,6 +31801,7 @@ warnings.
 
 **Not done.** `matchPrincipal`'s use of `path.Match`, where `/` in a
 principal can defeat a `*` (PLAUSIBLE in the audit), was not looked at.
+
 ### 5.388 A TOTP code could be used to log in more than once
 
 Issue 321, a section 5 (Low) finding: "TOTP codes are replayable inside
@@ -31753,6 +31824,7 @@ logins racing with one code cannot both have it
 **Not done.** It is in memory: a restart forgets it, and a code accepted
 in the ninety seconds before a restart can be used once more after it.
 LDAP and OIDC logins do not use TOTP and are unchanged.
+
 ### 5.389 The API took a request body with text after the JSON
 
 Issue 321, a section 5 (Low) finding: "`readJSON` (`api/auth.go`) accepts
@@ -31769,6 +31841,7 @@ something after the JSON value", which covers both.
 Nothing was reachable through it but a login that also carried rubbish;
 it is recorded because the hub and the API are meant to read a body the
 same way.
+
 ### 5.390 The API listener left its curves to Go in FIPS mode
 
 Issue 321, a section 5 (Low) finding: "The API listener does not restrict
@@ -31794,6 +31867,7 @@ on an earlier toolchain; 5.15's own table measured a hub that set its
 curves itself, and does not show what Go's TLS did without that.
 
 **Not verified.** `fips140=only`, and toolchains other than go1.27.2.
+
 ### 5.391 A runner reached every node, whatever its holder's other rules said
 
 Issue 321 design note M-56: "runners are not scoped. SPEC 23.5 does not
@@ -33473,6 +33547,7 @@ becomes `Smith\`. This was noticed in passing and not fixed.
 asked. The fake parses the BER this client sends, so it shows the
 encoding is the assertion intended, not that every server answers it
 alike.
+
 ### 5.421 Every action was named by a tag its owner could move
 
 Issue 321, a Low finding in section 5: the workflows named their
@@ -33565,6 +33640,7 @@ change.
 **Not verified.** No jid from a running hub was checked. Nothing was
 looked for that might have stored a jid in the `+` form. `NewID` cannot
 produce one.
+
 ### 5.423 A merge to main could leave its commit with no CI result
 
 Issue 321, a Low finding in section 5: ci.yml's `concurrency` grouped
@@ -33819,6 +33895,7 @@ of `halite-node enroll`". `--token=<secret>` enrolled.
 **The change:** the test writes `--token=`. The CLI is not changed: a
 value that begins with `-` is still taken for a flag after a space, as
 the handbook documents.
+
 ### 5.430 `lvm.lvresize` called LVM's own rounding a shrink
 
 Issue 321, section 5, an Info bullet: `lvm.lvresize` calls a rounded-up
@@ -33853,6 +33930,7 @@ rounding removed. The `lvm` evidence note names both runs.
 get wrong. Extents other than 4 MiB, and `extents` given as a count or a
 percentage, which are not compared here at all. Not run on this host,
 which has no root.
+
 ### 5.431 The job cache kept a mutex for every job it had ever updated
 
 Issue 321, Low (one of three leaks in one bullet): `job.Cache.locks` is
@@ -33889,6 +33967,7 @@ not changed: `eventbus.Wait` and `certreload.Load`.
 
 **Not verified.** No hub was run long enough to see the map grow, or to
 see it stay flat.
+
 ### 5.432 A followed event stream registered its wait after its read
 
 Issue 321, Low (one of three leaks in one bullet): `eventbus.Wait`
@@ -33944,6 +34023,7 @@ is one per closed stream, not one per heartbeat.
 
 **Not verified.** Not run against a live hub. The 25-second delay was
 shown with the hook, not seen in the field.
+
 ### 5.433 The OIDC log took a login's state and any length of caller text
 
 Issue 321, Low: in `halite-api`, `oidcCallback` logs `req.Error` and
@@ -33983,6 +34063,7 @@ query on `state` stops matching it.
 **Not verified.** No real identity provider's refusal was logged. The
 256-byte bound was not checked against a real provider's
 `error_description`.
+
 ### 5.434 `keys operator create --admin` wrote a policy the hub could not read
 
 Issue 321, Low, marked plausible: `bootstrapAdmin` writes the bootstrap
@@ -34074,6 +34155,7 @@ package passes.
 reply, and was not looked at for the same text. Other handlers that
 return `err.Error()` from their own code (not from the hub) were not
 audited. Not run against a live hub.
+
 ### 5.436 `ps.pkill` and `ps.kill_pid` would signal init and the node itself
 
 Issue 321, Low: `ps.pkill` has no guard against signalling PID 1, the node
@@ -34110,6 +34192,7 @@ tests (`HALITE_SYSTEM_LIVE=1`, Ubuntu 24.04, no root) pass with it.
 libxo JSON; the rule is not platform-specific but the fixture is. No real
 init or node process was signalled. As root, another account's process is
 still the case nothing has run.
+
 ### 5.437 A grain provider's output limit bounded nothing
 
 Issue 321, Low: `maxProviderOutput` does not bound memory as its comment
@@ -34202,6 +34285,7 @@ Streaming it needs a write path in `internal/atomicfile` that takes a
 reader, which is a larger change than this. The zip byte limit trusts
 `UncompressedSize64` for entries it does not read. Not run on FreeBSD,
 macOS or Windows beyond CI's unit tests.
+
 ### 5.439 The enrollment token could only be given where `ps` shows it
 
 Issue 321, Low: the enrollment token is accepted only as `--token <secret>`
@@ -34241,6 +34325,7 @@ run on FreeBSD: the rc script was parse-checked with `sh -n` only, and its
 `--token-file` flag was never exercised under `rc.d`. The node was not
 enrolled against a real hub with a token file; the run above stopped at
 the connection.
+
 ### 5.440 `pkg.installed` reported Changed for a package that was still absent
 
 Issue 321, Low: `pkg.installed` reports Changed without verifying the
@@ -35968,6 +36053,7 @@ runner images carry it was not checked, so CI probably does not hold this; a
 run by a person with `tofu` does. A full `make lab-plan` with the new condition was not run. The lab's other
 two Info items (host-key trust on first use, the predictable `/tmp` tarball
 path) are untouched.
+
 ### 5.486 The local signer read its key file whatever its mode
 
 Issue 321, section 5, the half 5.412 left: "the local signer reads its key
@@ -37165,6 +37251,7 @@ VM). Each log was read for the test names, not only the job's result.
   not a link. The kernel still follows it, as it did before #386 and
   as Salt does: `followLink` acts only when the named file is a link.
   That is a separate, older hole and is not changed here.
+
 ### 5.559 A long glob target exhausted the hub's memory, and kept it
 
 Issue 321, the close-out review of 2026-11-03, item A6: a regression from 5.501 (#543), measured by the reviewer on main `de26c91b`.
@@ -37209,6 +37296,7 @@ The new tests could not be run against main `de26c91b` itself, because `fnmatch.
 **Behaviour change.** A target over 1 MiB, a glob with `*?[` over 1 KiB, or an expression whose globs and regexes come to more than 32 KiB is refused. A top file is compiled by the same code, so a top-file target over a limit is now an error.
 
 **Not verified.** No hub or API was run; the measurements are from `internal/fnmatch` and `internal/target` on one Mac, not FreeBSD or Linux. Not limited: the expansion of a nodegroup, which is configuration and is checked against the budget but not against `MaxExprLen`; and `file.recurse`'s `include_pat`/`exclude_pat`. Those are state arguments, matched with `fnmatch.Match` on the node, uncapped but now under the bounded cache. Whether a request can supply one directly, rather than through a state file, was not traced. Measured against nothing real: whether any top file or policy in use has a glob over 1 KiB. None was looked for.
+
 ### 5.560 A hard link carried a mode or ownership change out of the managed tree
 
 Issue 321, the close-out review of 2026-11-03, item A2 (`internal/builtin/entryattrs_unix.go`; the symbolic-link half is 5.300 and M-29).
@@ -37264,6 +37352,7 @@ On both, everything passes with the change. On both, de26c91b with the same test
 **Found, not changed.**
 - `internal/atomicfile/xattr_linux.go` copies a replaced file's extended attributes onto the temporary file with `setxattr` and `chmod` by path, after the close. In a directory the account owns, the account controls both the replaced file's ACL and the temporary name. That is the same swap, onto another file's ACL, and it is Linux only. It is left for its own change because it is in another package and needs `fsetxattr`, which `syscall` does not export.
 - `logrotate.go`, `sudo_state.go` and `netplan.go` chmod or chown by name only in root's directories (`/etc/logrotate.d`, a private `MkdirTemp`, `/etc/sudoers.d`, `/etc/netplan`). They are left as they are.
+
 ### 5.561 `replace`, `join` and concatenation built strings nothing measured
 
 5.312 bounded the builtins that make a string larger than their inputs
@@ -37307,6 +37396,7 @@ filters.
 (freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
 all with go1.27.3; see 5.312's subsection above. Salt has no such limit
 to compare with.
+
 ### 5.562 The strings a render built were limited one at a time
 
 5.312 held each string a builtin makes to `MaxOutput`, and 5.445 and
@@ -37376,6 +37466,7 @@ string makes one-character strings).
 (freebsd/amd64) and on Ubuntu 22.04 and 24.04 (linux/arm64 and amd64),
 all with go1.27.3; see 5.312's subsection. No real tree was rendered
 with the counter.
+
 ### 5.563 A wildcard read any node's pillar on every route but one
 
 Issue 321, the 2026-11-03 review of the fixes, item A4 (`internal/policy/pillar.go`, `policy.go`, `runnerscope.go`; the per-endpoint flag was added in 5.13).
@@ -37397,6 +37488,7 @@ The set is a list in the policy package rather than a flag in the signatures, as
 **What an operator sees.** A role that read pillar through a wildcard no longer does. That includes the hub's check of the API's own principal: an `api-service` role with `runners: ['*']` now has `GET /v1/pillar/{id}` refused at the hub even for an operator whose own role names the runner. The API roles the documentation shows either name `pillar.show_pillar` (chapter 26, the command reference) or grant no pillar at all (chapter 32, `docs/metrics.md`). The example policies' administrators (`contrib/examples/policy.yaml`, the example tree's `hub.sls`) now name the pillar readers or are bound to a role that does, and `docs/from-salt.md` says so beside the arbitrary-code warning.
 
 **Not verified.** An extension function that returns pillar is not on the list, and nothing would add it; that needs a signature declaration, which this change does not make. `halite-hub ssh <target> pillar.items` is not authorized by the policy at all (it runs with the hub's own authority), and was not changed. Other ways a `*` role can see pillar-derived values were not audited: `state.show_*` renders pillar into states (masked only for registered secrets, 5.557), `state.orchestrate_show_sls` renders the orchestration, `mine.get` returns what nodes published, and a job's return read back through `jobs.lookup_jid` is authorized as the job's function, so it follows this rule by construction but was not tested for it. The orchestration's `salt.runner` route was not run; it calls the same `CallRunner` the operator test exercises. Nothing here was run against a real fleet or a real API deployment, and no live test covers it.
+
 ### 5.564 A wildcard on the hub granted an extension's functions
 
 Issue 321, the close-out review of 2026-11-03, item A3 (`internal/policy/policy.go`, `cmd/halite-hub/serve.go`, `cmd/halite-api/serve.go`; the built-in half of the same agreement is 5.297).
@@ -37416,6 +37508,7 @@ Issue 321, the close-out review of 2026-11-03, item A3 (`internal/policy/policy.
 **Run.** On 2026-11-03, on macOS 26.7.2 (arm64, Go 1.27.3, Python 3.15.2), unprivileged: a real `halite-hub serve`, a `halite-node connect` enrolled to it, and `halite-api serve`, all on 127.0.0.1, built once from this change and once from its parent `de26c91b`. The node ran a signed, pinned Python extension of kind `module` providing `myext.exec`, fetched with `saltutil.sync_modules` and loaded on a restart (`sys.list_extensions` showed it, `signed_by: proof`). On the parent, `halite-hub run n1.local myext.exec` returned `myext.exec ran on the node` for a role of `['*']`, a role of `['myext.*', 'test.*']`, and the administrator role `keys operator create --admin` writes (`'*'` plus the named built-ins); `policy test` said `allowed by role "wildcard"`. Through the parent's `halite-api`, an account whose role was `['*']` got HTTP 200 for both `myext.exec` and `cmd.run` (`echo` ran on the node), the API's own role naming both. On this change the hub refused all three roles with the "not a function this build ships" reason before dispatch; a role naming `myext.exec` ran it; `['*']` still ran `test.ping` and reached the node's compiler with `state.show_highstate`. Through this change's API the `['*']` account got 403 for `myext.exec` and for `cmd.run`, with the hub's reasons, and 200 for `test.ping`; an account naming `myext.exec` got 200 and the node's answer. `policy show` printed the new line. The administrator bootstrap role is one of the roles the change narrows: it no longer reaches an extension's function until the function is named in it.
 
 **Not verified.** No hub, node or API ran on FreeBSD or Linux, nor as root; the run above was one node on macOS. The safety of the rule leans on the node refusing an extension function whose name is a built-in's (`registerExtensionFunctions`), which was read and has no test. Version skew is not covered: a hub newer than its nodes ships a function an older node lacks, and if an extension on that node registers the name, a wildcard on the hub grants it. A pattern in `runners:` is unchanged; runners run on the hub and are not extensions.
+
 ### 5.565 The hub could write a node's return after Serve said it had stopped
 
 CI run 41682208877, `race (macos-15)`, on a branch that did not touch the hub (`internal/hub/inflight.go`, `internal/hub/listen.go`).
@@ -37431,6 +37524,7 @@ In a test that is a removed directory. In production it is a return written, and
 **The change.** `wait` now closes the gate as it reads the count, under the same lock, and `enter` refuses once the gate is closed. A handler either entered before `wait` looked, and is waited for, or arrives after, and is refused. There is no third case. A refused request is answered 503 with `Connection: close` and runs nothing. A node treats 503 as transient (`transport.Permanent` is false outside 4xx) and retries the return, so the answer goes to the hub that replaces this one rather than being lost.
 
 **Not verified.** The failing CI run was not reproduced as it happened. The original test passed 8 times out of 8 locally, and the hook forces the same window rather than finding it by chance. Whether the CI flake was this window and not another writer is inferred: in the lab, `AddReturn` is reached only from the return handler and from `CallRunner`, called from a handler or from work under `goBackground`, all of which `Serve` waits for. **The hub as `serve` runs it has writers outside that accounting, and this does not fix them.** The reactor's workers (`Reactor.start`), `Reconcile`, `maintain` and the event returner are started with a bare `go` in `cmd/halite-hub/serve.go`, nothing waits for them, and a runner reaction ends in `recordRunnerReturn`, so a reaction in flight can still write a return after `Serve` has returned. That was read, not run, and is left for its own change. A node retrying a refused return against a real hub restart was not run.
+
 ### 5.566 A copied ACL landed on whatever the temporary name pointed at
 
 Issue 321, the close-out review of 2026-11-03, item A2's "Found, not changed" (`internal/atomicfile/xattr_linux.go`; the attribute copy is 5.492).
@@ -37475,6 +37569,7 @@ The rest of `internal/atomicfile` and `internal/builtin` pass in the same image,
 **Found, not changed.**
 - What the account swapped the temporary name for is still renamed into place, and `Write` reports success. The contents went to the orphaned inode. In the account's own directory, that is the account's business. It leaves the next run to write the file again.
 - `prepare` still receives the temporary file's name. Its one ownership caller, `writeAtomic`'s `keepOwnership`, is `Lchown` by name on this branch, which a hard link redirects. A2 (PR 629, not merged when this was written) routes it through `changeEntryAt`.
+
 ### 5.567 A reaction in flight when the hub stopped wrote its return after `serve` had returned
 
 Found by reading (`cmd/halite-hub/serve.go`, `internal/hub/reactor.go`), as the follow-up to the change that refuses a request read as the hub stops (a separate branch at the time of writing): that closes the hub's request path at stop, and leaves the loops `serve` starts beside it.
@@ -37490,6 +37585,7 @@ A worker the stop cut short still does not release its event (`reactorWorker.run
 **Broken on purpose.** With the wait removed from `Run` the test fails as above. With the wait kept, `reactorWorker.run` releasing its event regardless of the context, and the `ctx.Done` branch of `Run` waiting for the workers before its final commit (the obvious way to write this, and wrong), it fails on the offset: `"00000001:381", want "00000001:0"`. Restored, it passes, and the `Reactor|Reaction|Reacted|Debounc|EventReturn|Serve` tests of `internal/hub` pass under `-race`.
 
 **Not verified.** The `serve` half has no test that holds one of its loops across a stop: it is checked by building, by the `cmd/halite-hub` tests that start a real `serve` and stop it with SIGINT (which still stop), and by reading. Neither the two-second "waiting" log nor a second signal ending the wait was run. A shutdown now takes as long as the slowest reaction in flight, which is `reactor_timeout` (60 seconds by default) only where the runner honours its context; one that does not is ended by the second signal, or by the service manager's stop timeout, where it has one. Still not waited for: the relay's goroutines (`startRelay`), and a debounce timer that fires after the stop, which can emit `halite/reactor/loop` or `halite/reactor/overflow` onto the bus from `enqueue` with no worker left to run it. None of it was run on FreeBSD or under a service manager; `make check` was not run.
+
 ### 5.568 A language package manager's name could be its option, run as root
 
 Issue 321, the close-out review of 2026-11-03, item A7 (`internal/builtin/lang.go`, `lang_more.go`, `lang_build.go`, `lang_states.go`). The language half of 5.307, whose "Not verified" said `pip`, `npm` and `gem` "were not looked at".
@@ -37513,6 +37609,7 @@ The rule is 5.307's, not one per ecosystem, for the reason `pkgValidateName` giv
 **Tests.** `TestLangRefusesOptionInjection` calls every one of those functions with a payload, in a dry run and a real one, through a recording runner, and requires a refusal and no command at all. On 5c44bed3 it failed 48 times (24 calls, each in both modes). `TestLangEveryNameTakingFunctionIsCovered` holds the list to the registry: a function of those seven modules taking `name`, `pkgs`, `gems`, `crates` or `modules` must be in it. Broken on purpose, one at a time: `langNames` not validating fails the eleven execution functions; `langValidateSpecs` returning nil fails the six states; the two `version` checks and `go.env`'s check removed fail those three cases; `cpan.install` dropped from the list fails the coverage test.
 
 **Not verified.** Nothing ran as root, on FreeBSD or on Linux. composer was not run at all. go's `-toolexec` was shown to parse, not to run. The explicit options that take a URL on purpose (`pip.install`'s `index_url`, `npm`'s `registry`) are unchanged: they are the tree asking for an index, not a name being read as one. `maven.run`'s `goals` reach `mvn` as they stand and were not changed: a goal list is a build invocation that a tree may legitimately fill with options. The value `parseSpec` makes of a scoped npm name (an empty name, so a state cannot compare it with the installed list) is pinned by `TestParseSpec` and was not changed. The evidence levels of these modules are unchanged: the runs above show what each tool reads, not that an install through halite works.
+
 ### 5.569 A `config` path in the account's home still followed the account's link
 
 Issue 321 close-out item A10, found by reading `sshAccountFileFor` after
@@ -37592,6 +37689,7 @@ links to follow, not this one. A relative `config` is resolved against
 the node's working directory, as it was; how Salt resolves one was not
 checked here. A home that is itself a link, or writable by others, is
 trusted, as 5.349 says.
+
 ### 5.570 A service name could be an option or a path to service(8)
 
 Issue 321, the close-out review of 2026-11-03, item A12, first half: an injection of the M-45 class (5.354, 5.355) that the M-45 sweep did not reach, because the name goes into argv rather than into a file.
@@ -37614,6 +37712,7 @@ The test-mode audit (`TestEveryMutatingFunctionHonoursItsTestModeClaim`) gave ev
 - `service.mask`, `unmask` and `masked` were checked only for being refused, not on a systemd node.
 - `service -R` itself was never run, in the jail or on beastie. `-l` stood in for it.
 - Only inside a jail, not on a FreeBSD host's own rc.d. The jail shares beastie's 15.1-RELEASE-p6 kernel and base.
+
 ### 5.571 A newline in a hosts entry wrote another line into /etc/hosts
 
 Issue 321, the close-out review of 2026-11-03, item A12, second half.
@@ -37627,6 +37726,7 @@ Issue 321, the close-out review of 2026-11-03, item A12, second half.
 **Run as root in a jail on beastie** (the same jail and binaries as 5.570), against the jail's own `/etc/hosts`. `host.present` was given a name holding a newline and then `10.6.6.6 a12-evil.example`. Main wrote `10.6.6.6 a12-evil.example` into the file as a line of its own, and reported `Result: True`. This change refused the state, naming the `\n`, and left the file alone. An ordinary entry in the same run was written by both. The new test fails against main's code in the jail and passes with this change.
 
 **Not verified.** Neither the C library's reader nor any other resolver was asked how it reads a line with one of these characters. The refusal does not depend on how they read it. Only `host.present` was run end to end. `dnsutil.hosts_append` was run only through the test, in the jail and on macOS.
+
 ### 5.572 `mount.set_fstab` fell out of the `--test` audit, and nothing failed
 
 `TestEveryMutatingFunctionHonoursItsTestModeClaim` (5.308) reported 180
@@ -37682,6 +37782,7 @@ still invisible to it, unless it is in `auditMustReach`.
 stand-in for FreeBSD and Linux, not a run on them; CI's Linux and
 FreeBSD legs run the test. Not run on Windows, where `set_fstab` is
 left out of the list.
+
 ### 5.573 A node could renew as often, and with as large a request, as it liked
 
 Issue 321, the close-out review of 2026-11-03, item A9 (`internal/keystore/authority.go`; the size bound on enrollment is issue 321's M-06, the superseded serials 5.392).
@@ -37709,6 +37810,7 @@ Broken on purpose, and each restored after:
 - every superseded serial counted, live or not: the frequency test fails, because the refusal never lifts.
 
 **Not verified.** Nothing ran against a real hub and node. The tests drive `Authority.Renew` directly; the HTTP status and the node's renewal loop's reaction to a refusal were read, not run. The record size and write volume were not measured; "quadratic" is from reading `issue` and `Store.put`. `MaxSuperseded` is a constant, not a setting. An estate with a `certificate_lifetime` far shorter than its renewal check could reach it, though the check scales with the lifetime (`pki.RenewalCheckEvery`), so a node on schedule should not. Repeated delete-and-re-enroll still grows the tombstones; that is an operator's or a token's decision, and is not bounded here. No live test covers renewal, and none was added.
+
 ### 5.574 A multi-line secret was printed line by line in a render error's window
 
 Issue 321, the part of the Low "redaction gaps" bullet that 5.407 left
@@ -38923,6 +39025,7 @@ a node with no record.
 digest was not added; their `doctor` now declines the question rather
 than answering it. A `doctor` run as an account that cannot read the
 evidence directory reports the read error; that path was not run.
+
 ### 5.590 The one-shot request's `timeout_seconds` was sent and never read
 
 Issue 615, item 3. `halite-hub ssh` put the roster target's `timeout` into
@@ -38952,6 +39055,7 @@ timeout_seconds=45, which the target does not read").
 **Not verified.** No agentless run over ssh was made. What a target does
 when the hub's `ssh_timeout` kills its ssh client was not looked at here;
 the comment on `oneshotSignals` says the job runs to its end.
+
 ### 5.591 `state.show_highstate` printed an unregistered `runas_password`
 
 Issue 615, item 9. 5.266 masked `runas_password` by key in `renderLow`,
@@ -38975,6 +39079,7 @@ the return; `show_lowstate` passed. It passes with the change.
 for other passwords a state takes as an argument (for example a
 `user.present` `password`). Those are values the redactor holds only if
 they come from encrypted pillar.
+
 ### 5.592 `arg_digest` is of the scrubbed arguments, and its comments said otherwise
 
 Issue 615, item 6. An evidence record's `arg_digest` is the SHA-256 of the
@@ -39001,6 +39106,7 @@ both new assertions.
 
 **Not verified.** No tool compares node records with the hub's job cache
 today, so nothing that reads `arg_digest` was run.
+
 ### 5.593 The hub's event returner read `id`, which could never be set
 
 Issue 615, item 7. 5.545 made an audit of every setting the programs read,
@@ -39030,6 +39136,7 @@ comment that says why. The audit has no exceptions now.
 **Not verified.** No event returner was run on a hub for this change. The
 behaviour is the same by construction, because the value passed is the
 value the read always returned.
+
 ### 5.594 `doctor` reported an unreadable certificate as expired before time began
 
 Issue 615, item 8. When a certificate file was there and did not parse, the
@@ -39066,6 +39173,7 @@ run. The node run above had no `hub` set: with one, `halite-node doctor`
 exits before it prints any check, because the clock check builds a hub
 client from the broken certificate and that calls `cli.Fatalf`. That is a
 separate defect and is not changed here.
+
 ### 5.595 Records after a failed evidence-log open were lost and counted nowhere
 
 Issue 615, item 5. `evidenceLog` tries to open the chain once. When the
@@ -39108,6 +39216,7 @@ with the count taken out of `recordEvidence`.
 **Not verified.** The alert rule was not loaded into a Prometheus or run
 with `promtool` (not installed here). The 5.238 test that says
 `failures_total` stays 0 for this node still passes, and is still true.
+
 ### 5.596 An evidence-anchor conflict was invisible after its first log line
 
 Issue 615, item 4. `anchorProblem` logs a kind of anchor failure once, at
@@ -39150,6 +39259,7 @@ expects one error line and a count of 3. With the count removed from
 **Not verified.** `mismatch` and `receipt` were not produced live; the
 existing test of a receipt that does not verify covers that path, and it
 does not check the counter. No Prometheus loaded the alert rule.
+
 ### 5.597 A job could build a render sandbox that nothing closed
 
 Issue 615, item 2. A job runs on a shallow copy of the node (`forJob`).
@@ -39206,6 +39316,7 @@ agent's child processes counted with `ps`:
 built their sandbox before the first job. Which startup call does that was
 not traced. `render_sandbox_user` was not set, so no identity was dropped,
 and nothing ran as root. Not run on Linux.
+
 ### 5.598 The hub keeps a return as the node sent it
 
 Issue 615, item 10, which asked whether the hub scrubs a secret from a
@@ -40392,6 +40503,66 @@ must name the identity that signed.
   and the owner makes it. `aws sso login` and `aws login` were not tried
   for that account.
 - Section 5.278 is not changed. It remains as written.
+
+### 5.619 atomicfile retried a real refusal for two seconds
+
+Issue 614, last row (`internal/atomicfile`, Windows), from the issue 321
+second-pass audit. The audit found this by reading. It did not run the code.
+
+**The defect.** `transient()` treated every `ERROR_ACCESS_DENIED` as "somebody
+has the file open". `MoveFileEx` returns that code when it replaces a file that
+a reader opened without `FILE_SHARE_DELETE`. A real refusal returns the same
+code. A deny entry, a read-only file and a directory are real refusals. So the
+code retried each of them until the window ended.
+
+**Shown.** The tests are in `internal/atomicfile/atomicfile_windows_test.go`.
+We committed them first and ran them on the unchanged code on a GitHub-hosted
+windows-2022 runner (Windows Server 2022), PR 667, run 42299115400. The CI legs
+run the suite as a standard local account.
+`TestReadingAFileThisAccountMayNotReadFailsAtOnce` failed: `Read` took 2.0076297s
+to fail. `TestReplacingAReadOnlyFileFailsAtOnce` failed: `Rename` took
+2.0106552s to fail with "Access is denied.". The guard
+`TestReplacingAFileSomebodyIsReadingWaitsForThem` passed. It holds the case that
+the retry is for. A test fails if a refusal takes 500ms or more.
+
+**The change.** `ERROR_SHARING_VIOLATION` is still always transient.
+`ERROR_ACCESS_DENIED` is transient only if `heldOpen(path)` is true for a path
+that the operation touched. `heldOpen` opens the path for DELETE and shares
+nothing. It is true only when that open fails with `ERROR_SHARING_VIOLATION`.
+Any open handle causes that failure.
+
+**The second finding.** The old comment said that `Read` "never causes" the
+first error, because `Read` asks for `FILE_SHARE_DELETE`. That was wrong. The
+first probe shared everything. The runner then failed the existing test
+`TestAReplaceAndAReadDoNotBlockEachOther`. With `Read` holding the destination,
+the replace still failed with "Access is denied." The old code passed that test
+only because it retried every denial. We measured that this happens. We did not
+find which step of the replace refuses.
+
+**The three probes.**
+
+1. It shared everything. It missed a reader that shares delete.
+2. It shared nothing. The plain `test` leg passed. The `race` leg failed the
+   same test. The probe runs after the failed replace. If the reader closes in
+   between, a denial remains that nothing explains.
+3. Now, a denial with no holder is retried up to 3 more times, after 1, 2 and 4
+   ms. Seeing a holder resets that count. A real refusal fails the same way each
+   time, so it costs less than 10 ms. Result: both Windows legs, `test` and `race`, passed (PR 667, commit `a31c67b1`).
+
+The probe holds the file for one open and close. A replace or a `Read` that
+meets it gets a sharing failure. That failure is transient and is retried.
+
+**Known gap.** A delete-pending file also refuses an open with
+`ERROR_ACCESS_DENIED`. It is now reported at once and is not waited for. The
+code says so. Nothing in halite deletes a file that it replaces.
+
+**Who sees it.** Each caller of atomicfile on Windows (job cache, returns,
+state files) gets a permission error at once and not after two seconds. The
+error text is the same.
+
+**Not verified.** We did not run anything but NTFS on a CI runner. We did not
+run antivirus that holds a file. The runner has Defender, but nothing targeted
+the test files. We did not run a delete-pending file.
 
 ## 6. Everything else not started
 
