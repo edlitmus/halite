@@ -40108,6 +40108,115 @@ wrong.
 **Not verified.** No real `halite-hub ssh` run against a real target
 was made. The test calls `writeInlineFile` directly.
 
+### 5.618 Anyone with write access could publish a release without the signature gate
+
+Issue 311. DIVERGENCE 5.278 made `make release-publish` check the
+signatures before it makes a release public. Its second "Not covered"
+item said that the gate checks what was signed, and not who may run it.
+Any maintainer can publish a draft from the release page, and the gate is
+then not run.
+
+**The options.** The owner has two accounts with access: the admin
+account, and a work account with write access. A workflow token with
+`contents: write` can also publish a draft. GitHub has no permission
+that stops an account with write access from publishing a draft. A
+protected environment with required reviewers gates only a workflow job
+that names it. A tag ruleset controls who can create, update or delete
+`v*` tags, and not who publishes a draft. Four options were put to the
+owner:
+
+1. Detect. `verify-release.yml` also checks the signatures after any
+   publish. This was the recommendation.
+2. Detect, and add a `v*` tag ruleset. This is an admin-only setting.
+3. Accept the risk and document it.
+4. Publish through a dispatch workflow and a protected `release`
+   environment. This does not close the gap alone, because the button on
+   the release page stays.
+
+**The decision.** The owner chose option 1 on 2026-11-06. No repository
+setting changed.
+
+**The change.** `tools/verify-signatures.sh TAG [REPO]` downloads the
+release with `gh release download` into a temporary directory. It then
+runs `go run ./tools/relsign verify -published -dist <dir> -pub
+contrib/keys/halite-release.pub`. The variable `RELEASE_PUB` replaces
+the key. `make release-publish` now calls this script, and not its own
+inline download and `relsign` call. The check is the same, and there is
+one copy of it. `.github/workflows/verify-release.yml` has a second job,
+`signatures`. It runs the script on `release: published`, and by dispatch
+with a tag. It has no AWS credentials and uses only the public key.
+
+**Seen.** On 2026-11-07, the script ran from a macOS workstation against
+the real releases:
+
+- v0.1.1: "SHA256SUMS and the 36 published artifacts" verify against
+  `contrib/keys/halite-release.pub`. The exit code was 0.
+- v0.1.0: "SHA256SUMS and the 16 published artifacts" verify. The exit
+  code was 0. v0.1.0 has no SBOMs.
+- v0.1.1 with a freshly generated P-256 public key in `RELEASE_PUB`:
+  every archive and SBOM reported "the signature does not verify". The
+  exit code was 1.
+
+**Tests broken on purpose.**
+`TestTheSignatureCheckBeforeAndAfterPublishIsOneScript`
+(`internal/buildpolicy/publishcheck_test.go`) holds these facts. The
+script runs `relsign verify -published`. `release-publish` runs the
+script, and not `relsign` directly, and it does so before
+`--draft=false`. `verify-release.yml` triggers on `release: published`
+and runs the script. Four breaks each made it fail, and the restored
+files pass:
+
+- `release-publish` put back to an inline `relsign` call.
+- The `run` line of the script removed from the workflow.
+- The trigger changed to `created`.
+- `-published` removed from the script.
+
+**Signing through SSO or an assumed role.** The issue also asked for a
+signing through SSO or an assumed role. This was not done. The key
+(`alias/halite-release`) is in an AWS account that the workstation cannot
+reach. Its access is to the SSO roles of an organization. None of those
+accounts has a KMS alias with "halite" in it. This was checked in all 17
+enabled regions of the account that the AWS tooling uses. So no `Sign`
+call with the release key was made through SSO or a role. v0.1.1 is
+still the only signing with the current key, and it used the static key
+and secret of an IAM user. The owner decided on 2026-11-06 that the next
+real release is signed this way, and not a local `dist/` made for the
+purpose. Nothing was tagged, published, dispatched or written to Rekor.
+
+What was shown is narrower. `go run ./tools/relsign pubkey` uses the KMS
+client of halite (`internal/awskms`). It ran with temporary credentials
+from `aws configure export-credentials --format env`. The request asked
+the real KMS service, in us-east-2, for the public key of the alias
+`alias/halite-311-does-not-exist`:
+
+- With the credentials as exported: `NotFoundException`. KMS accepted
+  the authentication, with the session token.
+- With `AWS_SESSION_TOKEN` removed: `UnrecognizedClientException`.
+- With one middle character of the token changed:
+  `UnrecognizedClientException`.
+- With the secret key changed: `InvalidSignatureException`.
+
+When one character was added to the end of the token, KMS still accepted
+it. This is the behavior of the service and not of halite. The next
+release must do the steps in `docs/releasing.md`, and then that document
+must name the identity that signed.
+
+**Not covered:**
+- This detects and does not prevent. A failed run does not unpublish a
+  release.
+- The `signatures` job does not start for a release that a workflow
+  publishes with its `GITHUB_TOKEN`. GitHub does not send the event.
+- The `signatures` job has not run on GitHub. It checks out the default
+  branch, so it can run only after the merge. The first run is the next
+  publish, or a dispatch after the merge.
+- No `Sign` call with the release key was made through SSO or an assumed
+  role. The key policy was not read, because its account was not
+  reachable, so whether it grants `kms:Sign` to such a principal is not
+  known. If a grant is needed, it is a change in the account of the key,
+  and the owner makes it. `aws sso login` and `aws login` were not tried
+  for that account.
+- Section 5.278 is not changed. It remains as written.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

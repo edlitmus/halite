@@ -15,6 +15,16 @@
 # If that ever changes this will stop running, and nothing will say so --
 # which is why it can also be dispatched by hand with a tag.
 #
+# The second job checks the detached signatures, with the same script
+# `make release-publish` runs before it makes a draft public. That target
+# is the gate, but it is a procedure and not a permission: anyone with
+# write access can publish a draft from GitHub's release page, and nothing
+# GitHub offers prevents it (a protected environment gates a workflow job,
+# a tag ruleset gates who makes a tag; neither gates that button). The
+# owner chose to detect it rather than try to prevent it (issue 311,
+# docs/releasing.md "Who may publish"): a release made public unsigned, or
+# with a signature that does not verify, makes this run fail.
+#
 # A failing run does not unpublish anything. It is a red mark on the
 # release for a person to read; whether a release is pulled is their call.
 name: Verify release
@@ -48,3 +58,24 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
           REPO: ${{ github.repository }}
         run: sh tools/verify-archives.sh "$TAG" "$REPO"
+
+  # The detached signatures, against the committed public key. No AWS
+  # credentials: verifying needs only the public half.
+  signatures:
+    name: every published file is signed with the release key
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27.3"
+          cache: false
+      - name: signatures of the manifest, each archive and each SBOM
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          REPO: ${{ github.repository }}
+        run: sh tools/verify-signatures.sh "$TAG" "$REPO"
