@@ -764,7 +764,11 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		SaveConfig:   n.saveRuntimeConfig,
 		LoadConfig:   n.loadRuntimeConfig,
 		ReloadConfig: n.reloadRuntimeConfig,
-		Runner:       &exec.OSRunner{},
+		// The runner's own warnings -- today, that a command could not be
+		// confined -- reach the node's log rather than standard error.
+		Runner: &exec.OSRunner{Warn: func(msg string) {
+			n.log.Warn(msg, "component", "exec")
+		}},
 		// `pillar.refresh` rebuilds through the same path a run uses,
 		// so a node on a hub asks the hub and a local one recompiles
 		// its roots, without the module knowing which it is.

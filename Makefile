@@ -668,6 +668,12 @@ release-pubkey:
 # release.yml creates the release as a draft for this, so that a release
 # is never public before it is signed. TAG names it: make release-publish
 # TAG=v0.2.0. DIVERGENCE 5.278.
+#
+# The download and the check are tools/verify-signatures.sh, which
+# verify-release.yml runs again once a release is public. GitHub's own
+# Publish button skips this target, and nothing in GitHub stops an account
+# with write access from pressing it, so the check after the fact is what
+# notices (issue 311). One script, so the two checks are the same check.
 RELEASE_REPO ?= edlitmus/halite
 
 release-publish:
@@ -676,10 +682,7 @@ release-publish:
 	if [ "$$draft" != "true" ]; then \
 		echo "release-publish: $(TAG) is not a draft; it is already public" >&2; exit 1; \
 	fi; \
-	dir=`mktemp -d` || exit 1; \
-	trap 'rm -rf "$$dir"' EXIT; \
-	gh release download "$(TAG)" --repo "$(RELEASE_REPO)" -D "$$dir" || exit 1; \
-	env $(DEV_ENV) go run ./tools/relsign verify -published -dist "$$dir" -pub "$(RELEASE_PUB)" || { \
+	RELEASE_PUB="$(RELEASE_PUB)" sh tools/verify-signatures.sh "$(TAG)" "$(RELEASE_REPO)" || { \
 		echo "release-publish: $(TAG) stays a draft" >&2; exit 1; }; \
 	gh release edit "$(TAG)" --repo "$(RELEASE_REPO)" --draft=false && \
 	echo "release-publish: $(TAG) is public"

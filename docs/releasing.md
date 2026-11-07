@@ -244,8 +244,10 @@ Linux builders' digests byte for byte has not been demonstrated, and on
 a Mac `make` must be `bmake` or `gmake`.
 
 **4. Sign, check, upload** to the draft, naming its tag. Credentials come from the environment, from whatever identity
-the key's policy lets sign (an SSO login, an assumed role); with the
-AWS CLI:
+the key's policy lets sign (an SSO login, an assumed role). The key
+policy must grant `kms:Sign` to that identity. No release has yet been
+signed through SSO or a role (see "What is and is not covered"). With
+the AWS CLI:
 
 ```sh
 eval "$(aws configure export-credentials --format env)"
@@ -292,6 +294,64 @@ release public. Anything wrong leaves it a draft and says what. Before
 DIVERGENCE 5.278 the workflow published the release live and the
 signatures followed, so a release was public and unsigned in between;
 v0.1.0 was.
+
+### Who may publish
+
+The gate is a procedure. It is not a permission. `make release-publish`
+runs the check, but nothing makes a person run it.
+
+Two accounts have write access to the repository, and both belong to the
+owner. One is the admin account. The other is a work account with write
+access. A workflow token with `contents: write` can also publish a
+draft. Any of these can publish a draft from the release page without
+the gate.
+
+GitHub has no setting that closes this. A protected environment with
+required reviewers gates only a workflow job that names the environment.
+A tag ruleset controls who can create, update or delete `v*` tags. It
+does not control who publishes a draft. If publishing moves into a
+workflow behind an environment, the button on the release page stays.
+
+Four options were put to the owner:
+
+1. Detect. Check the signatures after any publish. This costs one
+   workflow job and prevents nothing.
+2. Detect, and add a `v*` tag ruleset. This costs an admin-only setting,
+   and the ruleset still does not stop a publish.
+3. Accept the risk and document it. This costs nothing, and a bad
+   release can stay public without notice.
+4. Publish through a dispatch workflow behind a protected `release`
+   environment. This costs a new workflow, and it does not close the gap
+   alone.
+
+The owner chose option 1 on 2026-11-06. No repository setting changed.
+
+Two callers now run one script, `tools/verify-signatures.sh`. It
+downloads the published release and runs `relsign verify -published`
+against `contrib/keys/halite-release.pub`. `make release-publish` calls
+it before it makes the release public. The `signatures` job in
+`.github/workflows/verify-release.yml` calls it on `release: published`,
+and by dispatch with a tag. The job has no AWS credentials. It uses only
+the public key.
+
+This detects. It does not prevent. A failed run does not unpublish the
+release. The job does not start for a release that a workflow publishes
+with its `GITHUB_TOKEN`. GitHub does not send the event for such a
+release. The job has not yet run on GitHub. It checks out the default
+branch, so the first run is after the merge. That run is the next
+publish, or a dispatch.
+
+To run the check by hand:
+
+```sh
+sh tools/verify-signatures.sh <tag>
+```
+
+Run from a macOS workstation on 2026-11-07, it exited 0 for v0.1.1 (36 published artifacts) and
+for v0.1.0 (16, which has no SBOMs). With a freshly generated public key
+in place of the committed one, it reported every archive and SBOM of
+v0.1.1 as "the signature does not verify", and exited 1. See DIVERGENCE
+5.618, and 5.278 for the gate itself.
 
 ### What is and is not covered
 
@@ -371,13 +431,46 @@ OS markers for those, ELF x86-64 and aarch64, ppc64le, riscv64 and s390x
 v0.1.0 exits non-zero on all 16 of its archives, on layout alone, which is
 right: they predate the handbook and service files.
 
-**Not covered:** the credentials were a static key and secret in the
-environment, so SSO and an assumed role were still not tried. The archives'
-contents below the top level were not compared with a checkout, and only
+**Not covered:** no release has been signed through SSO or an assumed
+role. v0.1.1 is the only signing with the current key. It used the static
+key and secret of an IAM user, in the environment. The key is in an AWS
+account that the workstation used for this work cannot reach. The
+owner decided on 2026-11-06 that the next real release is where this is
+done, and not a local `dist/` made for the purpose. What was shown is
+narrower. `go run ./tools/relsign pubkey` uses the KMS client of halite
+(`internal/awskms`). It ran with temporary credentials from `aws
+configure export-credentials --format env`, so the environment held a
+session token. The request asked the real KMS service for the key of an
+alias that does not exist, in us-east-2. KMS answered `NotFoundException`.
+That answer shows that KMS accepted the authentication, with the token.
+With the token removed, and with one middle character of the token
+changed, KMS answered `UnrecognizedClientException`. With the secret
+changed, it answered `InvalidSignatureException`. A `Sign` call with the
+release key under an SSO or role principal was not made. The key policy
+was not read, so whether it grants `kms:Sign` to such a principal is not
+known.
+
+The next release must do these steps in order:
+
+1. In the account of the key, make a role or an Identity Center
+   permission set, if there is none. The key policy must grant it
+   `kms:Sign` and `kms:GetPublicKey`.
+2. On the signing workstation, make an AWS CLI profile for it, with
+   `sso_session`, with `role_arn` and `source_profile`, or with `aws
+   login`.
+3. Log in with `aws sso login --profile <profile>`, or `aws login`. Then
+   run `eval "$(aws configure export-credentials --profile <profile>
+   --format env)"` and `export AWS_REGION=<the key's region>`.
+4. Run the steps above: `make release-sign`, `make release-verify`, the
+   upload and `make release-publish`.
+5. Write in this document the identity that signed. The CloudTrail
+   `Sign` records name the principal.
+
+The archives' contents below the top level were not compared with a checkout, and only
 the first binary of each was inspected, by `file`, which says what format a
 binary is and not that it runs: none of them but linux-amd64 has been run
 on its platform, and no `-fips` binary has run on a host in kernel FIPS
 mode. `.github/workflows/verify-release.yml` runs `verify-archives.sh` when a
 release is published, and by hand for any tag; for v0.1.1 itself the
-run above was by hand. The gate
-checks what was signed, not who may run it (5.278).
+run above was by hand. Who may publish a draft is
+not checked by the gate. See "Who may publish" above (5.618).

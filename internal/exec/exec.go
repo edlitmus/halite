@@ -695,6 +695,47 @@ type OSRunner struct {
 	// credentials, no pillar values, and an explicit PATH. SPEC section
 	// 25.4.
 	DefaultEnv []string
+
+	// Warn receives a warning the runner has to give about itself rather
+	// than about one command: today, that a command it started could not
+	// be confined (see confinementOff). Nil writes it to standard error,
+	// so that a runner nobody wired a logger into still says it.
+	Warn func(msg string)
+}
+
+// confinementWarned makes the confinement warning once per process. It
+// is a property of the machine and the account the node runs as, not of
+// one command, and a line per command would bury everything else.
+var confinementWarned atomic.Bool
+
+// confinementOff says, once, that a command is running unconfined.
+//
+// The command still runs. On unix there is nothing to fail; on Windows
+// the job object is what lets a timeout kill the processes a command
+// started, and refusing every command because that could not be set up
+// would stop a node to protect it from a timeout it may never have. The
+// extension sandbox makes the other choice and refuses the extension
+// (internal/bridge applyPlatform), because there the job object carries
+// the limits the manifest declared, and an extension running without
+// the limits it declared is running under a different contract. Both
+// now notice every failure; they differ only in what they do about it.
+//
+// It was silent: confineTree returned functions that did nothing when
+// the job could not be created or its limit set, and ignored a failed
+// assignment, so a command that was meant to be confined was not and
+// nothing said so (issue 608 item 2, DIVERGENCE 5.620).
+func (r *OSRunner) confinementOff(cmd Command, err error) {
+	if !confinementWarned.CompareAndSwap(false, true) {
+		return
+	}
+	msg := fmt.Sprintf("commands are running without process confinement: %v. "+
+		"A command that times out may leave the processes it started running. "+
+		"First seen running %s; this is said once per process", err, cmd.String())
+	if r.Warn != nil {
+		r.Warn(msg)
+		return
+	}
+	fmt.Fprintln(os.Stderr, "halite: warning: "+msg)
 }
 
 // applyUmask rewrites a command so the child runs under a given umask.
@@ -856,8 +897,11 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	// bound how long Wait may block after that kill on a pipe some
 	// descendant left open. Without this a Timeout on a command that
 	// forks waits the runaway out instead of stopping it.
-	afterStart, cleanup := confineTree(c)
+	afterStart, cleanup, confineErr := confineTree(c)
 	defer cleanup()
+	if confineErr != nil {
+		r.confinementOff(cmd, confineErr)
+	}
 	c.WaitDelay = waitDelay
 
 	stdout := &limitedBuffer{max: cmd.MaxOutput, over: &overLimit, cancel: stopRun}
@@ -870,7 +914,9 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	// confine a child once it exists has somewhere to do it.
 	err = c.Start()
 	if err == nil {
-		afterStart()
+		if aerr := afterStart(); aerr != nil {
+			r.confinementOff(cmd, aerr)
+		}
 		err = c.Wait()
 	}
 	res := Result{
