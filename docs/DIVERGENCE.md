@@ -40284,6 +40284,66 @@ wrong.
 **Not verified.** No real `halite-hub ssh` run against a real target
 was made. The test calls `writeInlineFile` directly.
 
+### 5.618 atomicfile retried a real refusal for two seconds
+
+Issue 614, last row (`internal/atomicfile`, Windows), from the issue 321
+second-pass audit. The audit found this by reading. It did not run the code.
+
+**The defect.** `transient()` treated every `ERROR_ACCESS_DENIED` as "somebody
+has the file open". `MoveFileEx` returns that code when it replaces a file that
+a reader opened without `FILE_SHARE_DELETE`. A real refusal returns the same
+code. A deny entry, a read-only file and a directory are real refusals. So the
+code retried each of them until the window ended.
+
+**Shown.** The tests are in `internal/atomicfile/atomicfile_windows_test.go`.
+We committed them first and ran them on the unchanged code on a GitHub-hosted
+windows-2022 runner (Windows Server 2022), PR 667, run 42299115400. The CI legs
+run the suite as a standard local account.
+`TestReadingAFileThisAccountMayNotReadFailsAtOnce` failed: `Read` took 2.0076297s
+to fail. `TestReplacingAReadOnlyFileFailsAtOnce` failed: `Rename` took
+2.0106552s to fail with "Access is denied.". The guard
+`TestReplacingAFileSomebodyIsReadingWaitsForThem` passed. It holds the case that
+the retry is for. A test fails if a refusal takes 500ms or more.
+
+**The change.** `ERROR_SHARING_VIOLATION` is still always transient.
+`ERROR_ACCESS_DENIED` is transient only if `heldOpen(path)` is true for a path
+that the operation touched. `heldOpen` opens the path for DELETE and shares
+nothing. It is true only when that open fails with `ERROR_SHARING_VIOLATION`.
+Any open handle causes that failure.
+
+**The second finding.** The old comment said that `Read` "never causes" the
+first error, because `Read` asks for `FILE_SHARE_DELETE`. That was wrong. The
+first probe shared everything. The runner then failed the existing test
+`TestAReplaceAndAReadDoNotBlockEachOther`. With `Read` holding the destination,
+the replace still failed with "Access is denied." The old code passed that test
+only because it retried every denial. We measured that this happens. We did not
+find which step of the replace refuses.
+
+**The three probes.**
+
+1. It shared everything. It missed a reader that shares delete.
+2. It shared nothing. The plain `test` leg passed. The `race` leg failed the
+   same test. The probe runs after the failed replace. If the reader closes in
+   between, a denial remains that nothing explains.
+3. Now, a denial with no holder is retried up to 3 more times, after 1, 2 and 4
+   ms. Seeing a holder resets that count. A real refusal fails the same way each
+   time, so it costs less than 10 ms. Result: both Windows legs, `test` and `race`, passed (PR 667, commit `a31c67b1`).
+
+The probe holds the file for one open and close. A replace or a `Read` that
+meets it gets a sharing failure. That failure is transient and is retried.
+
+**Known gap.** A delete-pending file also refuses an open with
+`ERROR_ACCESS_DENIED`. It is now reported at once and is not waited for. The
+code says so. Nothing in halite deletes a file that it replaces.
+
+**Who sees it.** Each caller of atomicfile on Windows (job cache, returns,
+state files) gets a permission error at once and not after two seconds. The
+error text is the same.
+
+**Not verified.** We did not run anything but NTFS on a CI runner. We did not
+run antivirus that holds a file. The runner has Defender, but nothing targeted
+the test files. We did not run a delete-pending file.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

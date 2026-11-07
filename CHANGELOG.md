@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, a permission error from a file write or read now appears at once, not after two seconds.** The code treated each "Access is denied." as a reader that holds the file, and retried for two seconds. Now it waits only while another handle holds the file. A refusal with no holder is tried three more times within 10 ms and then reported. The error text is the same. A file in the delete-pending state is also reported at once; nothing in halite deletes a file that it replaces. DIVERGENCE 5.618.
+
 - **An agentless run (`halite-hub ssh`) no longer fails on a state tree with a top-level `..data` entry.** The node refused any path that starts with two dots, so `..data` failed the whole run. A Kubernetes ConfigMap volume writes `..data` and `..2024_...` into each directory it mounts. The node now refuses only a path that leaves the tree, so these paths are written. An empty path, `a/..`, and a path element of only dots (such as `...`, which Windows reads as the directory that holds it) are refused with a clear error. The files in the temporary tree are still written at mode 0600. This was not changed, because we found no consumer that reads the mode. This is a result of reading the code, not of a test. No real `halite-hub ssh` run was made. DIVERGENCE 5.617.
 
 - **A newline in a log message no longer starts a new record in the console format.** The second line of such a message began at column one, where it reads as a record of its own. Further lines are now indented by four spaces. The JSON format does not change. In addition, a logger made with `With` now shares one lock with its parent, so records reach every sink in the same order. DIVERGENCE 5.616.
