@@ -730,6 +730,7 @@ themselves, under whatever you call that job.
 | `halite_hub_nodes_connected` | gauge | — | Nodes holding an open subscribe stream, relayed ones included. |
 | `halite_hub_node_connect_total` | counter | — | Connections accepted. |
 | `halite_hub_node_disconnect_total` | counter | `reason` | The other half, and why. |
+| `halite_hub_node_connect_refused_total` | counter | — | Subscribes refused because the hub already held `max_node_connections` streams. Any rise is a node that is not connected and is running from its cache; add a relay or raise the cap. |
 | `halite_hub_keys_accepted` | gauge | — | Nodes holding an issued certificate. |
 | `halite_hub_keys_pending` | gauge | — | Enrollment requests waiting for an operator. |
 | `halite_hub_keys_expired` | gauge | — | Accepted nodes whose certificate has already run out. |

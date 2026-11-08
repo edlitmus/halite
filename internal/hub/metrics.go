@@ -27,6 +27,9 @@ import (
 type hubMetrics struct {
 	nodeConnects    *metrics.Counter
 	nodeDisconnects *metrics.Counter
+	// nodeConnectRefused counts subscribes refused because the hub held
+	// max_node_connections streams.
+	nodeConnectRefused *metrics.Counter
 
 	jobsDispatched  *metrics.Counter
 	jobDuration     *metrics.Histogram
@@ -97,6 +100,8 @@ func (s *Server) setupMetrics() {
 			"Node subscribe streams opened."),
 		nodeDisconnects: r.Counter("halite_hub_node_disconnect_total",
 			"Node subscribe streams closed, by why they closed.", "reason"),
+		nodeConnectRefused: r.Counter("halite_hub_node_connect_refused_total",
+			"Node subscribe streams refused because the hub held max_node_connections."),
 
 		jobsDispatched: r.Counter("halite_jobs_dispatched_total",
 			"Jobs dispatched, by function.", "fun"),

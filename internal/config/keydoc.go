@@ -996,6 +996,10 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Identity and connection",
 		Detail: "Read by the hub. How many charged enrollment requests one address may make at once before `enroll_source_rate` applies: a rack of machines behind one address enrolled in manual mode. Below one, the default of 32 is used.",
 	},
+	"max_node_connections": {
+		Group:  "Identity and connection",
+		Detail: "Read by the hub. How many node subscribe streams -- the long-lived connection each node holds -- the hub keeps at once. A node over it is answered 503 with the code `hub_full` before its request body is read, keeps running from what it last received, as it would through an outage, and reconnects on its own backoff; it is counted as `halite_hub_node_connect_refused_total`, and the hub logs a warning at most once a minute. A node that already holds a stream is never refused, because its new stream replaces the old one. A relay counts as one, whatever is behind it. A node's other requests -- returns, pillar, files -- are not counted or refused, so a full hub does not lose a job's result. Each stream holds a file descriptor and a node's other requests hold more, so the hub's descriptor limit (`LimitNOFILE` in the shipped unit, 65,536) must be well above this; raise both together. Below one, the default of 25,000 is used.",
+	},
 	"node_event_rate": {
 		Group:  "Identity and connection",
 		Detail: "Read by the hub. How many bytes of event data (`event.send`, beacons) one node may post a second, sustained, as a token bucket; an event over it is refused with 429 and counted as `halite_events_dropped_total{reason=\"node_rate\"}`. The bus is bounded by size and pruned oldest first, so without this one node could push every node's history off it. The default, 64 KiB a second, is a node sending a beacon event several times a second with room to spare.",

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **The hub now enforces SPEC's connection cap: `max_node_connections`, default 25,000.** Before, nothing counted connections, although SPEC and the handbook both said there was a cap. A node that subscribes past the cap now gets a 503 with the code `hub_full`, before the hub reads its request. The node keeps running from what it last received, as it does during an outage, and reconnects on its own backoff. The hub counts each refusal as `halite_hub_node_connect_refused_total` and logs a warning at most once a minute. What is counted is subscribe streams, one per node, and a relay counts as one. A node's returns, pillar and file requests are never refused. The hub also limits each connection to SPEC's 64 concurrent HTTP/2 streams. Before, it allowed net/http's default of 250. Each stream holds a file descriptor, so raise `LimitNOFILE` (65,536 in the shipped unit) before you raise the cap. DIVERGENCE 5.637.
+
 - **On Windows, `service.enabled`, `service.disabled` and `win_service.get_start_type` now return an error when a service's configuration cannot be read, instead of silently answering as though it had none.** A service whose status could be read but whose configuration could not previously came back as an empty start type, which `Enabled` and `Disabled` both read as a confident "no" rather than "unknown". DIVERGENCE 5.636.
 
 - **Enrolling a new node no longer reads every record in the key store.** The hub counted pending requests, for the bound of 1,024, by opening every record under the store's lock, so each new name cost the size of the estate: 131 ms per identity into a store of 500 and 936 ms into one of 8,000 in a benchmark, and about an hour to issue 20,000 at the rate measured on AWS. It now counts a `pending-index` directory in the key store, made by the first enrolment after upgrading, which reads every record once. The bound is unchanged. DIVERGENCE 5.635.
@@ -198,7 +200,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 - **Six settings the programs read are now declared, so they are no longer reported as ignored.** `hub_timeout`, `beacon_tick`, `output`, `gitfs_timeout` and `s3_timeout` were honoured and warned about; they are in the reference now. `halite-node doctor` read a setting that does not exist (`require_signed_extensions`) for whether extensions must be signed and so reported, on a default node, that unsigned ones would load; it reads `extension_require_signature`, which defaults to true. Its remedies named settings that are not settings. DIVERGENCE 5.545.
 
-The configuration reference explains each of the 238 settings in the
+The configuration reference explains each of the 239 settings in the
 
 - **The D-Bus client no longer panics, loops or over-allocates on a malformed message.** An empty or bare-bracket signature, an array of empty structs, deeply nested variants and an oversized length were each a panic, a hang, or an allocation as large as the peer said. They are now errors. `x` and `d` decode to `int64` and `float64`. DIVERGENCE 5.544.
 
@@ -7375,7 +7377,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 238 settings in the
+The configuration reference explains each of the 239 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

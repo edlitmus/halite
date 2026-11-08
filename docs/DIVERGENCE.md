@@ -41906,6 +41906,112 @@ the plumbing, not that such a service exists. `win_service.info`, which
 still reports the zero-valued fields with no error for a caller who reads
 them as diagnostic prose rather than deciding something from them; left
 alone on purpose; see the comment in `statusOf`.
+### 5.637 SPEC 6.5's connection cap and stream limit were written down and not enforced
+
+Found while planning the simfleet scale run (`docs/simfleet-aws-plan.md`
+§1.2, PR edlitmus/halite#680), whose step 4 tests the cap and had to expect
+it to fail. A document and the code disagreed, in both directions:
+
+- SPEC 6.5 lists "Maximum node connections per hub | 25,000, configured"
+  and "Maximum concurrent HTTP/2 streams per node connection | 64", under
+  "every limit is configured, has a default, and is enforced before
+  allocation".
+- `docs/handbook/38-scaling.md` said "default max 25,000 per hub".
+- `internal/transport/wire.go` said, correctly, that the connection count
+  and the stream count were among the limits that "arrive with the
+  endpoints that need them". Nothing in `internal/hub` or
+  `internal/transport` counted connections, there was no configuration key,
+  and the hub's `http.Server` advertised net/http's own HTTP/2 default of
+  250 concurrent streams.
+
+**The change.** A hub key, `max_node_connections` (default 25,000; below one
+uses the default), bounds the subscribe streams the hub holds. A subscribe
+over it is answered `503` with the new code `hub_full`, naming the setting,
+and is counted as `halite_hub_node_connect_refused_total`; the hub logs a
+warning at most once a minute, with how many refusals it did not log. The
+hub's server sets `HTTP2.MaxConcurrentStreams` to
+`transport.MaxConcurrentStreams`, 64.
+
+**What is counted, and why that is a reading of SPEC rather than its
+words.** SPEC says "node connections". What is counted is subscribe streams,
+one per node (a reconnect replaces the old one), and a relay is one. Three
+alternatives were rejected:
+
+- *Every TCP connection with a node certificate.* A node opens other
+  requests beside its stream -- a return, a pillar, a file -- so this counts
+  a node twice while it posts a return, and at the cap it refuses the
+  return. A return refused because the hub is full is a job result lost to
+  protect a resource the return never held.
+- *Every TCP connection.* The hub serves nodes, operators and enrollment on
+  one port, so a full hub would lock its operators out of the one tool that
+  would let them see why.
+- *Refusing at the TLS handshake*, which is where a cap counted at accept
+  has to refuse. Go's server answers a failed `VerifyConnection` with a
+  `bad certificate` alert and nothing else, and `transport.Rejected` reads
+  that alert as this node's revocation: `forgetPillarIfRefused` deletes the
+  node's cached pillar. A hub that was merely full would have told every
+  node over the cap that it had been thrown out.
+
+A 503 is what a node treats as an outage (`transport.Unreachable`): it runs
+on from what it last received and reconnects on its own backoff. It is not a
+`RefusedError`, so it does not clear the pillar.
+
+The check is made twice: once before the request body is read, so a node
+over the cap is not first allowed to send up to `MaxGrainsPayload` of
+grains, and once under the fleet's lock in `Fleet.attachLimited`, which is
+what decides when two nodes arrive for the last slot.
+
+**Shown.** In `internal/hub/connlimit_test.go`, run on this Mac (darwin/arm64,
+go1.27.3), `GOMAXPROCS=2 go test -count=1 -p 2`:
+
+- `TestTheHubRefusesANodeOverItsConnectionCap`: a lab hub capped at two,
+  three enrolled nodes over real mutual TLS. The third is refused with 503
+  and `hub_full`; `Unreachable` is true and `Rejected` false; a node already
+  connected reconnects at the cap; the third gets in once the second leaves;
+  the counter reads 1.
+- `TestTheCapHoldsWhenNodesArriveTogether`: fifty goroutines attaching to a
+  fleet capped at ten get exactly ten.
+- `TestTheHubAllowsSPECsConcurrentStreamsPerConnection`: eighty requests held
+  open against the hub's own server settings; no connection carried more
+  than 64 at once.
+
+Each was broken on purpose and watched failing:
+
+- With the `HTTP2` setting removed, the stream test failed: `one connection
+  carried 80 streams at once, want SPEC 6.5's 64`.
+- With both checks disabled, the cap test failed with `a third node
+  subscribed to a hub capped at two`, and the concurrency test with `50 of
+  50 nodes attached to a fleet capped at 10`.
+- With only the pre-check in place (the attach unchecked), the concurrency
+  test still failed the same way. That is the race the second check exists
+  for.
+- With the exemption for a node that already holds a stream removed, the
+  cap test failed: `a connected node could not reconnect to a full hub`.
+
+One thing the stream test turned up. The test first held its client to one
+connection with `MaxConnsPerHost: 1`, and the client opened a second one
+anyway: Go's client does not count an HTTP/2 connection against
+`MaxConnsPerHost` once it has been handed to HTTP/2. So a Go client at the
+hub's stream limit dials another connection. It does not wait. The limit
+bounds what one connection holds, not what one node may ask for at once.
+The test counts per connection for that reason.
+
+**Not verified.**
+
+- The cap at its real size. Nothing here has held 25,000 streams. That is
+  simfleet step 4's job, and it now has something to test.
+- The `halite-node` binary's behavior against a full hub. The tests drive
+  `transport.Client`, the code the node uses. They do not drive the node's
+  reconnect loop (`cmd/halite-node/enroll.go`).
+- File descriptors. `contrib/systemd/halite-hub.service` still sets
+  `LimitNOFILE=65536`. The simfleet AWS run saw over 18,000 hub descriptors
+  at 5,000 nodes (PR edlitmus/halite#680). At that rate, 25,000 nodes need
+  more than 65,536, so the default cap can be unreachable on the shipped
+  unit. That descriptor count is not on `main` yet, so this change leaves the
+  unit alone. The handbook and the key's documentation say to raise both
+  together.
+
+
 
 ## 6. Everything else not started
 
