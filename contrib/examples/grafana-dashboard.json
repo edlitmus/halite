@@ -799,7 +799,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Subscribe streams opened, and closed by reason. A pair of matching slopes is nodes reconnecting in a loop, which reads as a healthy connected count sampled at the wrong moment.",
+      "description": "Subscribe streams opened, and closed by reason. A pair of matching slopes is nodes reconnecting in a loop, which reads as a healthy connected count sampled at the wrong moment. \"refused\" is subscribes turned away because the hub already held max_node_connections streams: any rise is a node that is not connected and is running from its cache.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -892,6 +892,17 @@
           "refId": "B",
           "range": true,
           "legendFormat": "{{reason}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum (rate(halite_hub_node_connect_refused_total{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "refId": "C",
+          "range": true,
+          "legendFormat": "refused"
         }
       ],
       "title": "Connects and disconnects",
@@ -7111,6 +7122,6 @@
   "timezone": "",
   "title": "halite",
   "uid": "halite-control-plane",
-  "version": 7,
+  "version": 8,
   "weekStart": ""
 }
