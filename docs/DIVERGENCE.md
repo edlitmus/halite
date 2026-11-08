@@ -1888,31 +1888,38 @@ section 4.1. What is still uncovered is what needs a hub.
 ### 5.2 The fourteen test layers
 
 Every layer SPEC 31 requires beyond the unit layer of 5.1, and where each
-stands. Seven are present, one of them stronger than specified, five are
+stands. Nine are present, one of them stronger than specified, three are
 partial, and one is absent. Nothing is unverified any more: the
-reproducibility layer was, and it is now partial with the limit stated
-rather than the question left open.
+reproducibility layer was, and two builders have now agreed on both
+published tags, with the limits stated rather than the question left
+open.
 
-Four rows moved after this table was first written and each said
-"blocked on phase 2" long after phase 2 landed: chaos and upgrade are
-built, scale is partial, and integration is the one that is still
-absent.
+Six rows have moved since this table was first written, and only two of
+the six moved because something was built. Four said "blocked on phase 2"
+long after phase 2 landed: chaos and upgrade are built, scale is partial,
+and integration is the one that is still absent. The fifth is
+reproducibility, which went on saying a second builder had never been
+tried for a month after two of them agreed on a published release
+(5.632). The sixth is the version-comparison differential, which named a
+host it needed and already had (5.633). The pattern is the argument for
+reading this table against the build rather than maintaining it beside
+one.
 
 | Layer | Status |
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 40 disagree by design, 31 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 164 of 198 agree, 25 are outside the subset, 9 are gaps — see 5.5 and 5.68. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
-| Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
-| Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
+| Differential, version comparison | **present** for all three orderings. `pkg.version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's, since libpkg is its own specification. FreeBSD: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. RPM: `TestLiveRpmVersionCmpAgreesWithRpm` drives rpm's own comparison through its embedded Lua, and the `fleetcheck-rocky9` and `fleetcheck-alma8` legs fail if it skips — the `evr` subtest ran on rpm 4.16.1.3 on Rocky 9. Debian: `TestLiveDpkgVersionCmpAgreesWithDpkg` drives `dpkg --compare-versions` in the `fleetcheck` leg, and `TestDebianOrderingMatchesACapturedDpkg` holds the ordering to dpkg 1.22.22's captured answers on every machine. This row said both halves "need a Debian or RHEL host"; the lab and the container legs had been that host for some time (5.633). |
+| Conformance, state modules | **present** and stronger than specified — see 1.4. **150 of the build's 152 state functions have a conformance case**, 97 of them only on a live machine, 2 excused by name and 6 covered only because the harness can express a state that changes nothing. This row said "6 of the 46 state functions", which was stale and also the wrong denominator: 46 is SPEC 15.5's count of core state *modules*. The numbers here are logged by the accounting subtest of `TestFileStatesConformToTestMode`, which fails if a function has neither a case nor an entry in `unconformed` (5.633). |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
-| Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder, all of which belong to phases that have not started. |
+| Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. An eighth function, `FuzzCodec` over the render sandbox's value codec, is in the suite but not in `make fuzz`. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder. This row said those four "belong to phases that have not started". All four of those subsystems ship now, so the gap is a gap rather than a schedule (5.632). |
 | Integration | **absent.** No containerised hub-plus-nodes harness across the tier 1 matrix. The repository has two containers and a virtual machine — the Salt differential image, the Debian container of 5.35, and the ZFS machine of 6.1 — and each is a correctness harness for one subsystem rather than a matrix. This is the last layer with nothing behind it. |
 | Scale | **partial.** `internal/perf` carries all thirteen rows of SPEC 30 with what measures each, held to SPEC's own table in both directions. The two rows SPEC measures with a benchmark are measured: the highstate compile of 500 states over 50 SLS files, and the cold pillar compile of 200 pillar SLS. `make perf` runs them and fails if either is over its target; `make perf-bench` is the raw measurement. The eleven rows that need the simulated node harness, a soak, or the integration matrix are still unmeasured, and so is the *cached* half of the pillar row, because no pillar cache exists to measure. See 5.57. |
-| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other, because there has never been a second version. See 4.13. |
+| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other. This row said that was because "there has never been a second version"; there have been two since `v0.1.1` on 2026-10-12, and nothing recorded here has run one against the other (5.632). See 4.13. |
 | Chaos | **present.** All eight of SPEC's scenarios are registered in `internal/chaos` with a defined behaviour and a stated limit, each with a test that names it, and a ninth is registered that SPEC does not name: the concurrent-writer shape that three defects in a fortnight all had. `make chaos` runs the layer with `-v`, which is the point of it. Its first run found a reader resuming from a pruned event-bus offset being silently skipped forward. See 5.29. |
-| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. Clean against the database of 2026-08-21. No static analysis beyond `go vet`. No external review. |
-| Reproducibility | **partial.** `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine — not the two independent builders SPEC 31 asks for — but it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. A second builder has still never been tried. |
+| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. `ci.yml` runs it on every push and pull request at the version `make vuln` pins, and it was clean on 2026-11-08. The external review SPEC 31 asks for before 1.0 **has happened**: issue 321, filed by an outside contributor on 2026-10-14 against `a0d5344`, closed with every High, Medium and section 5 finding fixed, decided or filed as an issue of its own (`docs/audits/2026-10-issue-321-triage.md`). It reached the enrollment flow, the RBAC evaluator and the extension sandbox by name, and the hub port's pre-authentication surface through the enrollment work; whether `internal/transport` itself was read is recorded neither way. What it does not establish is coverage, and it said so itself: it listed the files it never read, a second pass over part of that list found four more defects, and the list is still long (`docs/audits/2026-10-issue-321-second-pass.md`). No static analysis beyond `go vet`. See 5.632. |
+| Reproducibility | **present**, with its limits named. `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine, and it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. The property SPEC 4.3 and SPEC 31 actually ask for is `release.yml`'s, and it has it: every tag is built on `ubuntu-24.04` and on `ubuntu-22.04`, each manifest must list at least 80 artifacts so that two short ones cannot compare equal, and a difference fails the release before anything is signed or published. The two builders have agreed on both published tags, on 90 artifacts each (5.632). What is still untried is a builder outside this project's CI: both are GitHub-hosted x86_64 Linux images, so every non-Linux artifact is cross-compiled on Linux, no second architecture has built a release, and nobody outside the project has reproduced a published digest. |
 
 ### 5.3 What fuzzing found
 
@@ -40942,6 +40949,1118 @@ Git's `/usr/bin/whoami`, which has no `/priv`, ahead of the real
 `internal/winsec` was not touched.
 
 
+
+### 5.626 Issue 308's remaining procedures, run in FreeBSD jails and on two Linux hosts
+
+Issue 308, after 5.283, 5.284 and 5.482. The procedures 5.482 still listed as
+not run were run on 2026-11-07 and 2026-11-08.
+
+**Where.** FreeBSD: bastille thin jails on `beastie`, whose kernel is FreeBSD
+15.1-RELEASE-p6 (amd64). The hub ran on a 14.5-RELEASE userland, made from
+`base.txz` with no patches. The node ran on a 15.1-RELEASE userland. A new jail
+was made for each run and destroyed afterwards. The jails shared the loopback
+interface `bastille0` and had no outbound network. The build was `bmake dist`
+from `main` at `5d314a40`. `sha256sum -c` passed, but there was no attestation
+or signature to check. Linux: the shared AWS test hosts `noop-1` (hub, Ubuntu
+22.04.5, kernel 6.8.0-1066-aws, arm64) and `noop2-1` (node, Ubuntu 24.04.5,
+kernel 6.8.0-1067-aws-fips, arm64), as root through SSM. They are not fresh:
+both run salt-minion, postfix and sssd. Everything halite was removed from both   <!-- lexicon:allow -->
+afterwards, and salt-minion was still active. The binaries were built on   <!-- lexicon:allow -->
+`noop2-1` from `main` at `07a37840` with go1.27.3. Only TCP 22 and 8301 are open
+between the hosts, so the hub listened on 8301.
+
+**A jail cannot show** kernel modules, most `sysctl`s, a real boot (the jail's
+`/etc/rc` runs when the jail starts, but there is no loader, kernel or `devd`, and
+the network is up before it), a host firewall, or a wire between hosts.
+
+**Found, each with its own fix:**
+
+- 5.623: replacing the agent from the tree with `file.managed` (chapter 36)
+  made a 60 MB return of a line diff of the two binaries. The hub refused it, and
+  the operator's `run` never got an answer.
+- 5.624: `examples/hub.yaml`, in every archive, set FreeBSD's `pki_dir`,
+  `state_dir` and `policy`. On Linux, a hub started from it as chapter 30
+  step 4 says stopped at once with status 78.
+- 5.625: on FreeBSD with no packages, `/usr/local` is empty. `make install`
+  refused as root, and chapter 30's `install … /usr/local/etc/rc.d/` failed with
+  `No such file or directory`.
+
+**Corrected in the handbook, with no code change:**
+
+- **The FreeBSD user-data script** needs `/usr/local/bin/halite-node` in full,
+  because rc(8) sets `PATH=/sbin:/bin:/usr/sbin:/usr/bin`. The first run failed
+  with `halite-node: not found` and exit 127. It also needs `install -d` for
+  `/usr/local/bin`. With both, run from `/etc/rc.local` at jail start, it
+  enrolled by token. On Linux the chapter's script ran as written, as a
+  transient systemd unit, whose PATH has `/usr/local/bin`.
+- **Chapter 24's crontab entry** was two lines joined by a backslash. `crontab`
+  refused it (`bad minute`), because cron has no line continuation.
+- **A node that does not answer is reported** by cron itself, to the crontab's
+  owner, as `not connected` and `no answer`. The report's address gets nothing.
+- **A second operator certificate** (`reporter`) in `pki_dir` makes every plain
+  command on that host refuse until `--as` is given.
+
+**Run as the chapters say, and as they said it would go:** chapter 30 on the
+14.5 hub (`doctor` `6 pass, 2 skip`) and on Linux after 5.624's change by hand
+(`7 pass, 1 skip`). Chapter 31's token enrolment by user-data on both
+platforms, over the jail network and over the VPC, with no tunnel. Chapter 24's
+drift report from root's crontab on the 14.5 hub with dma and `mail -E`: two
+mails while the node drifted, and none on two ticks after it converged. The
+example tree's `halite/node.sls` with its own pillar, on the 15.1 node: it
+returned first, and the node restarted 30 seconds later and came back up. The
+`node.yaml` it writes has no `hub_fingerprint` or `node_id`, which did no harm
+to an enrolled node with a cached ID. Chapter 36's upgrade by a state, with
+5.623's fix.
+
+**Seen and not explained.** `service halite_hub restart` twice stopped at
+`Waiting for PIDS: <pid>`, in rc.subr's `pwait`, after the hub had logged `the
+hub stopped` and was gone from the host. A new `pwait` on the same pid returned
+at once. Ten restarts in a row each took about a second. FreeBSD's `timeout(1)`
+waits for every descendant, so wrapping `service … restart` in it always times
+out and then kills the daemon. That says nothing about halite, but it cost an
+hour here.
+
+**Not run.** cloud-init itself, and FreeBSD's nuageinit (a jail has no config
+drive). The agentless bootstrap with a Linux target (chapter 17). A Linux
+upgrade by a state, and a whole fleet upgrade. Mail off the machine. The
+`halite-api` paths. A FreeBSD host on real hardware or a VM for any of this.
+`make check` for this documentation change ran only in CI.
+
+### 5.627 Four of `cpu_flags`' feature numbers were wrong on Windows
+
+Issue 608 item 5, lead L1 (`internal/grains/platform_windows.go`). Found by
+reading, in the issue 321 second-pass audit. Checked against the Win32
+feature numbers `golang.org/x/sys/windows` carries from winnt.h, then run on
+this Windows 11 host.
+
+**The defect.** `processorFeatures_` named four feature numbers wrong:
+
+- `sse4_1` used 36, which is `PF_SSSE3_INSTRUCTIONS_AVAILABLE`. The real
+  `PF_SSE4_1_INSTRUCTIONS_AVAILABLE` is 37.
+- `sse4_2` used 37 (SSE4.1's own number) instead of 38.
+- `vmx` used 17, which is `PF_XSAVE_ENABLED` — true on any CPU with the
+  `xsave` instruction, which is unrelated to virtualization firmware. The
+  real `PF_VIRT_FIRMWARE_ENABLED` is 21.
+- `aes` used 25, which is `PF_ARM_64BIT_LOADSTORE_ATOMIC`. winnt.h defines
+  no x86 feature number for AES-NI that `IsProcessorFeaturePresent` can
+  answer at all, so the grain was naming a feature it never checked.
+
+On this machine all of SSSE3, SSE4.1, SSE4.2, XSAVE and
+`VIRT_FIRMWARE_ENABLED` happen to read true, so the four numbers were
+*right by accident* here: a tree branching on `sse4_1` or `vmx` got the
+answer it expected, for the wrong reason. A machine with SSSE3 but not
+SSE4.1 — a Core 2, say — or one without Hyper-V's virtualization firmware
+active would not have been so lucky, and would have been told the wrong
+thing by a number that looked plausible.
+
+**Shown.** `TestProcessorFeatureNumbersMatchTheWindowsHeader`
+(`internal/grains/platform_windows_test.go`) checks the table's numbers
+against the named `windows.PF_*` constants. On the unchanged code it failed:
+
+```
+vmx uses feature number 17, want 21 (the real winnt.h number)
+sse4_1 uses feature number 36, want 37 (the real winnt.h number)
+sse4_2 uses feature number 37, want 38 (the real winnt.h number)
+cpu_flags claims to answer "aes" with feature number 25, which is an ARM flag unrelated to AES-NI
+```
+
+Before writing the test, `IsProcessorFeaturePresent` was called directly for
+both the old and the real numbers on this host (Windows 11, build 26100) to
+confirm which of the four actually differ in practice here: feature 25 read
+false, and 17/36/37 read the same as 21/37/38 respectively, which is the
+"right by accident" finding above.
+
+**The change.** `processorFeatures_` now uses the `windows.PF_*` constants
+by name instead of bare numbers, so a future entry that is off by one fails
+the same test rather than reading plausibly. `aes` is no longer in the
+table.
+
+With the change, `TestProcessorFeatureNumbersMatchTheWindowsHeader` and the
+rest of `internal/grains` pass (`go test ./internal/grains/... -count=1`, this
+host).
+
+**What an operator sees.** `cpu_flags` no longer lists `aes` on Windows. A
+tree that branched on it for an AES-NI capability it was never actually
+testing stops matching; nothing here ever made that branch correct. `vmx`
+now means `PF_VIRT_FIRMWARE_ENABLED` rather than XSAVE — on a machine
+without Hyper-V's virtualization firmware active, `vmx` now reads false
+where it used to read true.
+
+**Not verified.** We did not run a CPU old enough for the numbering bug to
+change `sse4_1` or `sse4_2`'s answer. We did not run a machine with
+virtualization firmware disabled to see `vmx` read false.
+
+### 5.628 A manual Windows service is not enabled, but it is not disabled either
+
+Issue 608 item 5, lead L3 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service.go`, `internal/builtin/service_windows.go`). Found
+by reading, in the issue 321 second-pass audit. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winsvc.Enabled` reports `StartType == "auto" ||
+"auto_delayed"`, which is right on its own: a `manual` service is not one the
+machine brings up at boot. But `service.dead`'s and `service.enabled`'s /
+`service.disabled`'s shared boot-state logic decided whether to call
+`Disable` by comparing `Enabled()` against what was wanted, and a `manual`
+service already reads `Enabled() == false`, the same as a `disabled` one.
+`service.dead` with `enable: False`, or `service.disabled`, on a `manual`
+service therefore reported "already disabled" and never called `Disable` at
+all -- leaving it `manual` forever, which is exactly the gap the Windows
+`Disable` provider's own doc comment already named: "a manual service still
+starts when something asks for it... which `manual` does not guarantee."
+The code's comment stated the intent the code one call away did not carry
+out.
+
+**Shown.** `TestBootStateNeedsChangeTellsManualFromDisabled`
+(`internal/builtin/service_test.go`) is a cross-platform unit test against a
+fake provider with Windows' three-state shape. On the old comparison
+(`now != want`, with no third state) it failed:
+
+```
+a manual service reported no change needed to become disabled
+```
+
+`TestServiceDisabledMovesAManualServiceToDisabled`
+(`internal/builtin/service_windows_test.go`) drives the real thing --
+`EventLog` set to `manual`, then `service.disabled`, then read back -- but
+this process is a standard account in the Administrators group with no
+elevated token, and `winsvc.SetStartType` needs `SC_MANAGER_ALL_ACCESS`, so it
+skips here with "needs administrator rights". **Not run**: the real `winsvc`
+and `service.disabled` path together, on an elevated token.
+
+**The change.** A new optional interface, `serviceDisableChecker`, lets a
+provider report its own "is this exactly my `Disable`'d state" when
+`Enabled()`'s boolean conflates it with something else. `bootStateNeedsChange`
+uses it only when moving *toward* disabled; moving toward enabled is
+unchanged, since nothing here has a third state above `Enabled() == true`.
+`windowsProvider.Disabled` reports `StartType == "disabled"`. Every other
+provider (`systemd`, FreeBSD rc, OpenRC, sysvinit, launchd) does not
+implement the interface, and `bootStateNeedsChange` falls back to the
+original plain comparison for them --
+`TestBootStateNeedsChangeIsAPlainComparisonWithNoThirdState` holds that
+nothing changed for them.
+
+With the change, the cross-platform unit test passes
+(`go test ./internal/builtin/... -count=1`, this host), and the rest of the
+package's suite, including every other platform's service tests, stays
+green.
+
+**What an operator sees.** On Windows, `service.dead` with `enable: False`,
+and `service.disabled`, now move a `manual` service to `disabled` rather
+than leaving it `manual` and reporting success. A tree that depended on the
+old behavior -- relying on `manual` to satisfy `enable: False` -- now sees a
+change on its next run and the service's start type actually move.
+
+**Not verified.** The real mutation on a Windows service, only the unit test
+against a fake provider. An elevated token. A domain-joined host.
+
+### 5.629 A return too large for the hub was lost without trace
+
+The sequel to 5.623, which removed the ordinary way to reach the limit and
+left the loss itself as it was.
+
+**The defect.** The hub takes a return of at most `transport.MaxReturnBody`,
+16 MiB (SPEC 6.5). Past that, `returned` (`internal/hub/jobs.go`) answered
+`400` and logged nothing. The node (`postReturns`,
+`cmd/halite-node/enroll.go`) took the `400` as permanent, logged `the hub
+refused a return` and dropped the return. The job had run. In 5.623 it had
+replaced the node's own binary and succeeded. The operator's `halite-hub run`
+waited for an answer that never came, and the hub's log said nothing about
+the job after `job dispatched`.
+
+**The decision.** The node measures the return before it posts it. If the
+hub would refuse it for its size, the node sends a stand-in in its place,
+`job.Return.Oversized`: the same jid, node, function and arguments, with
+`success: false` and a body that says how large the return was, what the
+limit is, and what the job itself reported (`job_success`, `job_retcode`).
+The retcode is the job's own when that is non-zero, and 1 when it was zero,
+because a lost result must not read as a success to a script that looks
+only at the exit code. `Out` is dropped, because it may be what made the
+return too large. The job settles and the operator is told why.
+
+The hub now logs the refusal, with the node from the certificate and the
+jid read from the first 4 KiB of the body (the node writes `jid` first).
+That is for a node that does not send a stand-in: one built before this
+change, or a body that is malformed for another reason. Its `400` and its
+code are as they were.
+
+**Not built: SPEC 6.5's "then the node paginates by chunk".** A chunked
+return is still refused, and the result past the limit is not kept
+anywhere the hub can reach. Paging would need the hub to hold and
+reassemble parts, a bound on the whole as well as on each part, and a
+returner and a job cache that take a return in parts; the stand-in is the
+honest answer until somebody needs a 16 MiB result at the hub. SPEC 6.5
+still says the node paginates.
+
+**Two paths that must agree.** The node decides by the length of
+`transport.EncodeBody`, which is the client's own encoder, now exported,
+and so the body it sends byte for byte. `json.Marshal` would have measured
+four bytes too many for a return holding a `<`, because it escapes it and
+omits the newline. `TestTheNodeAndTheHubAgreeWhereTheReturnLimitIs`
+(`cmd/halite-node/return_size_test.go`) holds the boundary on both sides
+against `transport.ReadJSON`, the hub's own read. `TestAReturnOfExactlyTheLimitIsTaken`
+(`internal/hub/node_quota_test.go`) holds the same boundary against a real
+hub over TLS.
+
+**Shown.** `TestAnOversizedReturnArrivesAsAFailureNamingItsSize` runs the
+node's send path (`sendReturn`) against the hub's check. With the call to
+`fitReturn` removed, the hub took no return and both node tests failed. With
+`<` for `<=`, and with `json.Marshal` as the measure, a return of exactly
+the limit was replaced where the hub would have taken it, and the boundary
+test failed. `TestAnOversizedReturnIsLoggedAndItsStandInSettlesTheJob`
+posts a 16 MiB return to a lab hub, checks the hub's log names the jid and
+the node, then posts the stand-in and checks the job is answered. With the
+log line removed, and with the jid left out of it, it failed. `TestPeekJID`
+covers a cut-off body, a later `jid` key and a nested one.
+`TestOversizedIsAFailureThatKeepsTheJobsOwnAnswer` (`internal/job`) covers
+the retcode rule.
+
+**Not verified.** No real node was run with a return over the limit after
+the change; the tests drive the node's send path and a lab hub in one
+process, not the binaries. The FreeBSD jails of 5.623 were not used again.
+A relay forwards what its own hub took, which is at most the same limit, so
+it was not changed or run. A node built before this change still loses an
+oversized return, and the hub's log line is all there is of it.
+
+### 5.630 cmd.exe parses neither its quotes nor its own switch the way everything else does
+
+Issue 608 item 5, leads L2, L19 and L20 (`internal/exec/shell_windows.go`,
+`internal/builtin/cmd_more.go`). Found by reading, in the issue 321
+second-pass audit. Checked and run on this Windows 11 host.
+
+**L2, the defect.** `shellCommand` handed a Shell command's script to
+`exec.Cmd` as one argument. `os/exec` on Windows escapes an argument's own
+double quotes as `\"` when it builds the command line, which is the
+convention the Microsoft C runtime's `argv` parser expects and assumes every
+child uses. cmd.exe does not: it pairs quotes itself and gives a backslash no
+special meaning, so the backslash reached it as a literal character and the
+quote still closed the pair. A script holding a double quote --
+`cmd.run 'echo "a" & echo "b"'` -- ran as different text than the one given.
+
+**L2, shown.** On the unchanged code, `echo "hello world"` run through
+`cmd.run` with `shell: true` returned `\"hello world\"`:
+
+```go
+c := exec.Command(`C:\Windows\system32\cmd.exe`, "/c", `echo "hello world"`)
+// CombinedOutput(): "\\\"hello world\\\"\r\n"
+```
+
+Building the command line by hand and handing it to `SysProcAttr.CmdLine`,
+which bypasses `os/exec`'s own escaping, returns the literal text instead:
+
+```go
+c.SysProcAttr = &windows.SysProcAttr{CmdLine: `/c echo "hello world"`}
+// CombinedOutput(): "\"hello world\"\r\n"
+```
+
+`TestAQuotedShellScriptIsNotMangledByCmdExe`
+(`internal/exec/shell_windows_test.go`) holds this through `OSRunner.Run`.
+
+**L19, the defect.** `shellCommand` passed `/c` to whatever `shell:` named,
+not only cmd.exe. PowerShell and pwsh happen to also accept `/c` --
+undocumented, confirmed on this host -- but Git's bash does not: it reads an
+unrecognised switch as a path, and `/c` is the drive letter Git mounts `C:\`
+on, so `shell: bash` failed every run with "/c: /c: Is a directory" and ran
+nothing.
+
+**L19, shown.** `TestShellPicksTheRightSwitchForEachInterpreter`
+(`internal/exec/shell_windows_test.go`) runs `echo hello` with `shell:` set
+to bash and to Windows PowerShell on this host. Bash failed on the unchanged
+code with exactly that error; PowerShell passed on the unchanged code too,
+which is the "right by accident" shape -- it stopped being an accident once
+`shellFlag` named `-Command` for it instead of relying on the undocumented
+acceptance of `/c`.
+
+**L20, the defect and shown.** `cmd.script`'s `shell` option ran
+`<shell> <path> <args...>` -- the interpreter, then the script file
+positionally, the way `bash script.sh` or `powershell -File script.ps1`
+read a file. cmd.exe has no such mode: `cmd.exe C:\x.cmd`, with no switch,
+starts an interactive session, ignores the path, and exits 0:
+
+```go
+c := exec.Command(`C:\Windows\system32\cmd.exe`, `C:\...\x.cmd`)
+// CombinedOutput(): "Microsoft Windows [Version ...]\r\n(c) Microsoft
+// Corporation. ...\r\n\r\nC:\...>" -- the script never ran, exit 0
+```
+
+So `cmd.script` with `shell: cmd` reported success having run nothing.
+`TestCmdScriptWithShellCmdRunsTheScript`
+(`internal/builtin/cmd_more_windows_test.go`) failed with the interactive
+banner as its "stdout" on the unchanged code.
+
+**The change.** `shellFlag(shell)` names the switch by the interpreter's own
+base name: `/c` for cmd.exe, `-Command` for Windows PowerShell and pwsh,
+`-c` for anything else (bash, sh, zsh, …). `shellCommand` uses it instead of
+a bare `/c`. `applyShellCmdLine` sets `SysProcAttr.CmdLine` by hand, only
+when the flag is `/c`, so only cmd.exe's command line bypasses `os/exec`'s
+escaping; every other interpreter here parses `argv` the same way `os/exec`
+assumes. `exec.ShellRunFlag` gives `cmd.script` the same `/c` cmd.exe needs
+before a bare path, and nothing for every other shell, which already runs
+one.
+
+With the change, all three tests above pass
+(`go test ./internal/exec/... ./internal/builtin/... -count=1`, this host),
+and the rest of both packages' suites stay green.
+
+**What an operator sees.** `cmd.run` with `shell: true` on Windows no longer
+corrupts a command line that holds a double quote. `shell: bash` now runs
+the command instead of failing with "Is a directory" on every call.
+`cmd.script` with `shell: cmd` now runs the script instead of silently
+reporting success for nothing.
+
+**Not verified.** We did not run WSL's bash, only Git's. We did not run a
+shell named by a path this host does not have (zsh, dash, ksh); `shellFlag`
+treats any name it does not recognise as POSIX-style, read rather than run.
+
+### 5.631 win_task's comparisons disagreed with the scheduler's own reading of what it was given
+
+Issue 608 item 5, leads L4, L6, L7 and L8 (`internal/wintask`). Found by
+reading, in the issue 321 second-pass audit. Checked and run on this Windows
+11 host, including three real round trips through `schtasks.exe` under this
+account (no administrator rights were available or needed for any of them).
+
+**L4, the defect.** `startBoundary` zero-pads an hour before writing it into
+a generated trigger's `StartBoundary`, so `daily at 3:00` is registered as
+`03:00`. The scheduler always reads a `StartBoundary` back the same way --
+padded -- but `normalizeTrigger`, which `sameTriggers` uses to compare a
+declaration against a reading, left the declared side exactly as written.
+`daily at 3:00` and the scheduler's own `daily at 03:00` never compared
+equal, so `win_task.present` replaced the task on every run for any hour
+written as one digit.
+
+**L4, shown.** `TestADailyTriggerWithAnUnpaddedHourConverges`
+(`internal/wintask/schtasks_windows_test.go`) creates a real task with
+`Triggers: []string{"daily at 3:30"}`, reads it back -- which already
+confirms the scheduler's own reading is padded, `"daily at 03:30"` -- and
+checks `SameDefinition` against the original unpadded declaration. On the
+unchanged `normalizeTrigger` it failed, reporting every field matched except
+`Triggers: ["daily at 3:30"] != ["daily at 03:30"]`.
+
+**L6, the defect and shown.** `SameDefinition` did not compare `Description`
+at all -- not missing a guard, simply absent from the function. A
+`description` change made through `win_task.present` was accepted, written
+by `Create`, and then never checked again: the next run saw whatever
+`Description` the host had as a match regardless. `TestDescriptionIsComparedWhenDeclared`
+failed on the unchanged code with "a different description compared equal".
+
+**L7, the defect.** `decodeUTF16`'s fallback, for output that is neither
+UTF-16 nor has a UTF-16 byte-order mark, returned the raw bytes as a Go
+string. schtasks' own declaration claims UTF-16 and lies (DIVERGENCE 4.6
+already established that much), but what it writes when redirected is not
+UTF-8 either: a console application writing text with the CRT's narrow
+functions once its output is not a console writes it in the OEM code page.
+Confirmed on this host (OEM code page 437, from `chcp`): `cmd /c echo café`,
+redirected through `exec.Command`, wrote 'é' as the single byte 0x82, which
+is cp437's 'é' and is not valid UTF-8 on its own. Fed straight to
+`encoding/xml`, as the unchanged code did, that byte alone reproduces "XML
+syntax error on line 1: invalid UTF-8" -- confirmed directly, not inferred.
+So a task whose Description, Author or path held a non-ASCII character could
+not be read back by `Info` at all, and `win_task.present` tried to recreate
+it on every run.
+
+**L7, shown.** `TestANonASCIIDescriptionSurvivesTheOEMCodePage` feeds
+`parseXML` a document with `caf\x82` (cp437 for "café") as a Description. On
+the unchanged fallback it failed with exactly the XML error reproduced
+above; after the fix it reads back "café".
+
+**L7, the change.** `decodeSingleByte` (`internal/wintask/schtasks_windows.go`)
+calls `MultiByteToWideChar` with `CP_OEMCP` -- 1, not among the vendored
+`windows.CP_*` constants, so declared locally -- when the bytes are not
+already valid UTF-8, and passes valid UTF-8 through untouched. A
+Windows-only correction; `internal/wintask/decodeoem_other.go` is a no-op
+stub for every other platform, where nothing here ever drives a real
+scheduler.
+
+**L8, the defect.** The scheduler adds a `<URI>` element, naming the task's
+own registered path, to every task's `RegistrationInfo` on registration --
+confirmed against a real, already-shipped task on this host
+(`\Microsoft\Windows\Time Synchronization\SynchronizeTime`), whose read-back
+carries one though nothing says the original shipped definition ever did.
+`SameXML` normalized whitespace and the encoding declaration before
+comparing, both of which the scheduler also rewrites, but not this, so a
+task declared as raw XML with no `<URI>` -- the ordinary case, since nothing
+in the schema requires one and nothing a state author writes would think to
+add one -- never matched the read-back and `win_task.present` given XML
+tried to recreate the task on every run.
+
+**L8, shown.** `TestSameXMLIgnoresAnAddedURI` compares two synthetic
+documents differing only by a `<URI>` element. It failed on the unchanged
+`normalizeXML` with "a document with no URI never matched one with an added
+URI and nothing else different", and a second case in the same test holds
+that a real difference elsewhere is still caught.
+
+A real `Create`/`Info` round trip through XML (also tried, and not kept as a
+test) differs from the declaration in more than the URI -- element order, an
+added `LogonType`, a default `Enabled` left out -- which `SameXML` is
+already documented to treat as a real change, correctly by its own stated
+rule ("reports a change that is not one rather than missing one that is").
+That is why the test above compares two synthetic documents rather than a
+live round trip: the live one does not converge even after this fix, for
+reasons this fix does not touch.
+
+**The change, together.** `padClock`, shared between `startBoundary` and the
+new padding branch of `normalizeTrigger`, is the one place a clock time is
+validated and zero-padded (L4). `SameDefinition` gained a `Description`
+comparison, guarded the same way every other optional field here is -- only
+checked when the state declared one -- so an omitted `description` still
+reports no change on its own, consistent with
+`TestOnlyWhatWasDeclaredIsCompared` (L6). `decodeUTF16`'s single-byte
+fallback goes through the new `decodeSingleByte` (L7). `normalizeXML` strips
+a `<URI>` element from both sides before comparing, the same way it already
+stripped the encoding declaration (L8).
+
+With the change, `go test ./internal/wintask/... ./internal/builtin/...
+-count=1` is green on this host, including the three tests above and the
+pre-existing suite -- `TestATaskIsCreatedReadBackAndDeleted`,
+`TestWinTaskPresentRegistersAndThenConverges` and
+`TestOnlyWhatWasDeclaredIsCompared` among them, each a real task created
+under this account and deleted after.
+
+**Lead L5, not fixed, and not the same shape as the four above.**
+`GenerateXML` defaults an omitted `RunAs`, `RunLevel` and `Triggers` to
+SYSTEM, `LeastPrivilege` and no trigger when it creates a task, and
+`SameDefinition` does not check either against that default when the
+declaration omits it -- the same asymmetry L4/L6 had, on its face. It is not
+fixed here, because `TestOnlyWhatWasDeclaredIsCompared` already asserts, by
+name, that an omitted field reports no change regardless of what the host
+has -- "a partial declaration reported a change it did not ask about" -- and
+that assertion is not a gap in the rule the comment above `SameDefinition`
+states, it is that rule, applied to exactly this case, on purpose. Making
+`RunAs` and `Triggers` the exception would change what `win_task.present`
+with no `run_as` or no trigger promises today, for every estate already
+relying on the current answer, and that is the owner's call to make, not a
+parsing defect to close. `SameDefinition`'s comment now says so, and the
+case stays open rather than being decided by whoever read it next.
+
+**Not verified.** A domain-joined host, where `canonicalAccount`'s SID
+lookup behaves differently. A host whose OEM code page is not 437 -- this
+fix's byte, `0x82` for 'é', is specific to it. Administrator rights, for a
+task registered to run as SYSTEM or another account, which nothing here
+needed: all three real round trips ran as this account.
+
+### 5.632 Four rows of 5.2 described a build that had moved on
+
+The commonest defect here is a pair of things that must say the same
+thing and do not. This is that pair with prose as the wrong half, twice
+in one table, and it was found by reading 5.2 beside the workflows and
+the tracker rather than by any test.
+
+**The reproducibility row said "a second builder has still never been
+tried."** `.github/workflows/release.yml` opens with the line *"SPEC
+4.3's two-builder reproducibility check, on every tag"*, and its own
+comment makes the row's argument for it: `make repro` builds twice on one
+machine, that is not the property SPEC asks for, and the only way to have
+the property is to use two builders. The workflow was written to close
+the gap the row still described. Chapter 6.2 of this ledger already said
+so — *"`release.yml` builds a tag on two runner images and compares the
+digests, which is SPEC 4.3's two-builder check"* — and then ended with
+*"Reproducible builds: see 5.2"*, pointing at the sentence that denied
+it.
+
+**Shown.** `release.yml` has completed successfully six times: three
+`workflow_dispatch` runs (2026-09-25 twice, 2026-10-12) and both tags,
+`v0.1.0` on 2026-10-10 and `v0.1.1` on 2026-10-12. Each run builds the
+same commit on `ubuntu-24.04` and on `ubuntu-22.04` and then diffs the
+two `SHA256SUMS`. On the `v0.1.1` run (38294541095) each builder produced
+a 90-artifact manifest of 8571 bytes, and the compare job printed *"two
+builders produced identical binaries"*. That job refuses a manifest
+shorter than 80 lines first, so two truncated manifests cannot pass by
+comparing equal to each other, and `.github/toolchain-check.sh` asserts
+each runner's Go is the pinned toolchain, because two runner images are
+two chances to drift and a build that changed with the compiler would be
+a different build rather than a reproducibility failure.
+
+**What it still does not establish.** Both builders are GitHub-hosted
+x86_64 Linux images from one provider. Every non-Linux artifact is
+cross-compiled on Linux, no second architecture has built a release, and
+nobody outside this project has reproduced a published digest. The row
+now says that instead of denying the whole layer.
+
+**The security row said "No external review."** Issue 321 is one: filed
+on 2026-10-14 by an outside contributor against `a0d5344`, 20 High, 55
+Medium, 60 section 5 bullets and a design note, and now closed with every
+one of them fixed, decided or filed as its own issue. Its triage and its
+second pass are `docs/audits/2026-10-issue-321-triage.md` and
+`docs/audits/2026-10-issue-321-second-pass.md`, and the ledger sections
+it produced run from 5.284 to 5.622. **The owner ruled on 2026-11-08 that
+it satisfies SPEC 31's external review and the phase 6 line item.**
+
+The row says what the review was and what it was not. It reached the
+enrollment flow, the RBAC evaluator and the extension sandbox by name;
+whether `internal/transport` itself was read is recorded neither way, and
+the audit's own section 8 listed the files it never opened. Four of
+321's follow-ups are still open — #608 (Windows leads), #613 (needs a
+real AWS account), #616 and #643 (the operator-visible changes, for the
+release notes) — so SPEC 32's "review findings closed" is close rather
+than reached.
+
+**Two more rows, found by reading the rest of the table rather than by
+being asked about it.** Neither changes a verdict; both gave a reason
+that had expired. The **fuzz** row said the four absent targets "belong
+to phases that have not started". The wire protocol, the cron parser, the
+roster and the bridge all ship now, so those four are a gap and not a
+schedule. It also said `make
+fuzz` "runs all seven functions" without saying that an eighth exists —
+`FuzzCodec`, over the render sandbox's value codec — which `make fuzz`
+does not run. The **upgrade** row said two halite versions had never run
+against each other "because there has never been a second version";
+there have been two since `v0.1.1`, and the thing that is actually
+missing is the run.
+
+**Two rows were read and left alone, and each is a lead rather than a
+correction.** The version-comparison row says the Debian and RPM halves
+of the differential need a Debian or RHEL host, which `vercmp_test.go`
+still says too — but `fleetcheck`'s Debian container, the EL and SUSE
+containers and the Vultr lab all now exist, so the blocker is soft and
+worth reprobing. The state-module conformance row quotes "6 of the 46
+state functions"; that count was not re-derived here, and a grep over
+the harness's call sites suggests it is low by a lot.
+
+**Why none of them was caught.** Nothing holds 5.2's table to anything.
+The module tables of chapter 2 are audited against the registries in
+both directions; this table is a judgement about what has been run, and
+no test reads the tracker or the workflow history.
+`TestNoProseDeniesADeliveredPhase` exists for exactly this failure and
+could not see any of them: it matches a denial in the same sentence as a
+**phase** number, and these rows denied a mechanism, a tool and a
+release. It did fire on this entry's first draft, which quoted the fuzz
+row's expired sentence beside the number of the phase that had landed.
+The guard cannot tell a quotation from a claim, so the draft was
+rewritten rather than the guard loosened.
+
+**What was added.** `TestLedgerLayerTallyMatchesTheRows` holds 5.2's
+preamble to its own rows: the counts of present, partial and absent, and
+the "fourteen" in the heading against the thirteen rows plus the unit
+layer of 5.1. That is the half of this that can be mechanical, and it is
+worth having because the preamble has now drifted three times — twice
+with rows that said "blocked on phase 2" after phase 2 landed, and once
+here, where moving reproducibility to present changed two of the three
+counts.
+
+**Not covered.** No test can establish that a row describing what has
+been run is current; that stays a reading. Of the thirteen rows, four
+were corrected here, two were read and left as leads, two — scale and
+integration — were confirmed current while answering a different question
+on the same day, and **five were not re-checked at all**: both
+conformance rows, the Salt differential, property and chaos. So this is
+four rows corrected, not a clean table. The figures in the conformance
+rows are the ones least likely to have drifted, because each sits beside
+a deviation table its own suite enforces in both directions; that is the
+rows' own claim and it was not re-derived here either.
+
+### 5.633 Two rows named a blocker they no longer had
+
+5.632 left two rows of 5.2 as leads rather than corrections. Both turned
+out to be wrong in the same way, and neither needed anything built: the
+version-comparison row named a host it already had, and the
+state-conformance row quoted a count that was stale and measured in the
+wrong unit.
+
+**The version-comparison row said the Debian and RPM halves "need a
+Debian or RHEL host".** The RPM half had had one for weeks:
+`TestLiveRpmVersionCmpAgreesWithRpm` runs in the `fleetcheck-rocky9` and
+`fleetcheck-alma8` legs, `contrib/docker/fleet-rpm/run.sh` fails the run
+if it skips, and on 2026-11-08 the Rocky leg logged `rpm 4.16.1.3` and
+passed both it and its `evr` subtest. The Debian half had a host too, in
+two senses: `make fleetcheck` runs `-run TestLive` against a real Debian
+with a real dpkg, so a live dpkg differential written any time in the
+last two months would have run in CI on the day it was written — and
+this estate has Debian-family machines on it.
+
+**What a real dpkg answered.** All 25 vectors of `debianVectors` were put
+to dpkg 1.22.22 on Debian 13 (trixie), x86_64, on 2026-11-08, by asking
+`lt`, `eq` and `gt` for each pair and recording which held. Every answer
+matched the table. dpkg warned about none of them, because every version
+in the table begins with a digit and so is inside Debian policy — worth
+knowing, since dpkg warns and compares anyway, and a vector that relies
+on that would have been invisible.
+
+The answers are captured in
+`internal/builtin/testdata/dpkg-1.22.22-trixie.tsv` rather than left as a
+run somebody remembers. Three things now hold the ordering:
+
+- `TestDebianOrderingMatchesACapturedDpkg` checks `CompareDebian` and
+  `pkg.version_cmp` against those captured answers, on every machine and
+  every platform, with no dpkg needed.
+- `TestLiveDpkgVersionCmpAgreesWithDpkg` is the differential proper, for
+  the `fleetcheck` leg: it asks the dpkg that is there, logs its version,
+  and reports any pair dpkg warns about.
+- Both read **one** vector table, and the fixture check fails in both
+  directions — a vector with no captured answer is one no dpkg has ever
+  been asked, and a captured answer for a vector that has gone is a line
+  nothing reads.
+
+**The dispatch, not just the algorithm.** `scheme: auto` reads
+`os_family` from the node's grains and falls back to the RPM ordering for
+a family it does not recognise, silently. So a Debian node whose grain
+failed to say "Debian" would compare Debian versions by rpm's rules, and
+the two disagree — `1.0` against `1_0` is equal to rpm and not to dpkg.
+The live test now asserts that on a machine with dpkg, the real grains
+resolve to the Debian ordering.
+
+**The trigger paths were part of the fault.** The `debian` leg of
+`fleet.yml` listed `internal/builtin/pkg*.go`, which catches
+`pkg_vercmp.go` — the dispatch — and missed `vercmp.go`, which is the
+algorithm. The Debian and RPM orderings could have been rewritten without
+the one leg that has a real dpkg or rpm ever running. `vercmp*.go`,
+`live_dpkg*.go` and the fixture are in the paths now.
+
+**Breaks run.** Inverting the tilde rule in `debianOrder` — one
+character, `return -1` to `return 1` — produced 12 disagreements against
+the captured answers, `1.0~rc1` against `1.0` among them, which is the
+case the rule exists for: getting it backwards installs a release
+candidate over a release. Adding a vector with no captured answer failed
+the fixture's other direction. The first attempt at that first break
+edited the wrong line and the test passed; the pass was the finding, not
+the evidence, and it was redone.
+
+**The eight RPM pairs read from rpmver.c.**
+`TestRPMAbsentReleaseSortsBeforeAnyRelease`'s comment said "no real rpm
+has been asked them". Five of the eight were already in the `evr`
+subtest's list and rpm 4.16.1.3 answered them on Rocky 9. The three it
+did not reach — `1.0` against `1.0-5` and against `1.1-5`, and `1.1`
+against `1.0-5` — are in that list now, so the next run of the leg asks
+the whole table.
+
+**The state-conformance row said "6 of the 46 state functions".** The
+accounting subtest of `TestFileStatesConformToTestMode` logs the real
+figures and has all along: **150 of 152** state functions have a
+conformance case, 97 of them only on a live machine, 2 excused by name in
+`unconformed`, and 6 with a case only because the harness can express a
+state that changes nothing. The row was stale by a factor of twenty-five
+and its denominator was the wrong quantity — 46 is SPEC 15.5's count of
+core state *modules*, and the row counted functions. The row now cites
+the test that logs it, so the next reader has a command rather than a
+number.
+
+**Not covered.** One dpkg, on one day: 1.22.22 on x86_64, Debian 13.
+No second dpkg version has been asked, nothing has been asked on arm64,
+and a captured fixture cannot notice dpkg changing its mind — that is
+what the live test in the `fleetcheck` leg is for, and **it has not run
+yet.** It skipped on the development host, correctly, because FreeBSD has
+no dpkg; the push that carries this entry is what first runs it, in the
+`debian` leg, and the three new RPM pairs with it in the `rpm` legs.
+Until those logs exist, the Debian differential is a captured oracle and
+a test that has never executed against a live tool.
+
+One methodological note, because it changes what the capture is worth:
+the test binary could not be copied to the Debian host from this session,
+so dpkg was asked over ssh with a read-only script and the comparison was
+made here. That is the same oracle and the same 25 answers, but it is not
+the test running there, and the distinction is why the paragraph above
+says the live test has not run.
+
+### 5.634 Every return re-read every return before it, so a job to n nodes cost n²
+
+Found by the scale harness of 5.279, at the first size past the one it
+had been run at. One `test.ping` to 5,000 simfleet nodes, on an 8-vCPU,
+16 GiB hub on AWS on 2026-11-08, took the hub's resident memory from
+2.2 GB to 14.2 GB in 60 seconds. The host thrashed, and the hub accepted
+1,508 of the 5,000 returns. At 1,000 nodes the peak was 928 MB. (The run
+is written up on the branch of edlitmus/halite#680, as a subsection of
+5.279 that main does not have yet.)
+
+**The defect.** The return handler (`returned`, `internal/hub/jobs.go`)
+called `completeIfDone` after every fresh return. `completeIfDone` called
+`job.Cache.Missing`, which read the job's record and then called
+`Returns`, which opened, read and decoded every return file already filed
+for the job. So the k-th return of a job did k file reads, and a job to n
+nodes did about n²/2. The handler also read the job's record, with its
+whole node list, three more times per return: once in `AddReturn` for the
+target check, and twice for the function and the correlation chain.
+
+**Shown, before the fix.** `BenchmarkReturnsForOneJob`
+(`internal/hub/return_scale_test.go`) files one return per node for one
+job through `returned` itself, from eight goroutines. On an Apple M4 Pro,
+macOS, GOMAXPROCS=2, on 2026-11-08:
+
+| nodes | time | allocated |
+|---:|---:|---:|
+| 250 | 3.5 s | 104 MB |
+| 500 | 7.5 s | 406 MB |
+| 1,000 | 23.4 s | 1.58 GB |
+| 2,000 | 82.0 s | 6.80 GB |
+
+The allocation grows by four for each doubling. A CPU profile at 1,000
+nodes put 90% of the time in `completeIfDone` → `Missing` → `Returns`,
+most of it in `open(2)` on the return files. The allocation profile put
+64% of all bytes under `completeIfDone`, and 47% under `Cache.Get`
+(decoding the record's node list), which `Missing`, `AddReturn` and the
+handler all called. So the cause was the one the code suggested, and the
+record reads were a second quadratic term behind it.
+
+**The fix.** `job.Cache.File` files a return and returns a `job.Filing`:
+whether the return was fresh, how many targets are still owed, and the
+record's function and correlation. Behind it is a per-job `returnIndex`
+in memory: the job's targets, the nodes that have answered, and a count.
+It is built once per job, from the record and a listing of the returns
+directory (names only, no decoding), and `File` keeps it current. The
+handler now calls `completeIfDone` only on the return that takes the count
+to zero, and reads the record no more. `completeIfDone` still asks
+`Missing` and still goes through `Update`. So the count decides *when* the
+question is asked, and the answer comes from disk as before. A complete or
+aborted job is still not completed again (5.515), and the race with the
+spool-clearing goroutine that `Update` exists for (4.11) is not changed.
+`AddReturn` is now a wrapper over `File`. The runner's return
+(`internal/hub/runner.go`) is gated in the same way.
+
+Two rules make the count trustworthy, and each has a test that fails
+without it:
+
+- **The count goes down only after the file is on disk.** If it went down
+  first, the return that reached zero could call `Missing` while another
+  node's file was still being written. `Missing` would report that node,
+  and nothing would be completed. The other return had seen a count above
+  zero, so it would not ask. The job would stay dispatched until it
+  expired.
+- **A retry that arrives while the first copy is being written waits for
+  it.** Before, the existence check (`os.Stat`) and the write were two
+  steps. Two copies of one return that arrived together were both written
+  and both counted as fresh, which gave two events and two metric counts.
+  The count cannot tolerate that, so this is fixed here and not in a
+  separate change.
+
+An index is never dropped while somebody is filing through it. It is
+dropped when its job is complete, when `Prune` removes the job, and, for
+idle indexes, when more than 256 jobs are indexed. A dropped index is
+rebuilt from disk the next time it is needed. A refused jid leaves no
+index.
+
+**Shown, after the fix.** The same benchmark, same machine:
+
+| nodes | time | allocated |
+|---:|---:|---:|
+| 250 | 2.5 s | 3.5 MB |
+| 500 | 4.6 s | 6.9 MB |
+| 1,000 | 9.2 s | 13.7 MB |
+| 2,000 | 18.6 s | 27.6 MB |
+
+Every column doubles when n doubles. At 1,000 nodes the CPU profile had
+1.05 s of samples in a 10.2 s run. The rest is the time spent waiting for
+each return's durable write (`atomicfile.Write`), which is per return and
+intended, and is slow on this laptop's disk.
+
+`TestAReturnCostsTheSameWhateverTheSizeOfTheJob` files every return of a
+job to 40 nodes and of a job to 320, and fails if the bytes allocated per
+return grow by more than 2.5 times. On the original code it measured 96 KB
+and 584 KB per return (6.1 times) and failed. With only the
+`Remaining == 0` gate removed, it measured 5.4 times and failed. With the
+fix it measured 15.7 KB and 14.0 KB (0.9 times). In `internal/job`,
+`TestConcurrentReturnsReachZeroOnceWithNothingMissing` files 200 nodes'
+returns at once, each one twice. With the count moved before the write, it
+failed on 3 runs of 3 (3, 18 and 142 nodes missing at zero). With the
+retry wait removed, nodes were fresh twice. With the rebuild ignoring
+files already on disk, `TestARestartedCacheCountsTheReturnsAlreadyFiled`
+and `TestAFinishedJobsIndexIsDroppedAndRebuilt` failed.
+
+**Not verified.** Simfleet has not been run again at 1,000 or 5,000 nodes
+on AWS. That is the next step in the plan, and it needs approval. So
+nothing here says the hub now survives 5,000 nodes, only that this cost is
+gone. The benchmark ran only on macOS, not on FreeBSD or Linux. Other
+places still read every return of a job, but once per poll, not once per
+return: the batch wait (`awaitBatch`, every 200 ms), `GET /v1/jobs/<jid>`
+(which also reads them all a second time through `Missing`), and an
+orchestration step's `awaitReturns`. An operator who polls a 5,000-node
+job pays for 5,000 reads on each poll. That was not measured. Delivering
+a spooled job to a node that reconnects reads and writes the whole record
+(`internal/hub/queue.go`). For a job that is spooled to thousands of nodes
+that all reconnect at once, that is also n² in total, and it was not
+measured either.
+
+### 5.635 Every new name read every record in the key store
+
+Found by `simfleet setup` in the AWS run recorded under 5.279 (PR 680, open
+as this is written): it issued 5,000 identities at 20, 39, 56, 75 and 93
+seconds per thousand, on one core, in-process through `keystore.Authority`,
+and the cost per identity rose in a straight line with the store's size. It
+was not profiled there. Measured and fixed on this Mac (Apple M4 Pro,
+macOS, APFS).
+
+**The defect.** `Authority.Enroll` asks `roomForPending`
+(`internal/keystore/authority.go`) before it writes a pending record for a
+name it has not seen, which is issue 321's M-06 bound of
+`DefaultMaxPending`, 1,024. `roomForPending` called `Store.countPending`,
+which opened and parsed every record in the store, under the store's lock,
+to count the pending ones. Its comment said the cost "is paid only for a
+name not seen before", as though that made it rare. An enrolment storm, and
+a fleet growing past 20,000, are made of exactly those names: identity
+issue for 20,000 nodes at the AWS rate would take about an hour, and while
+it ran the lock was held against every accept, renewal and revocation, from
+the hub and from `halite-hub keys` alike.
+
+**Measured.** `BenchmarkIssueIntoAStoreOf`
+(`internal/keystore/pending_bench_test.go`) does what `simfleet setup` does
+per identity -- enrol, accept, enrol to collect -- into a store already
+holding 500, 2,000 or 8,000 accepted records, `GOMAXPROCS=2`, 200
+identities each:
+
+| store | before | after (three runs of 100) |
+|---|---|---|
+| 500 | 131 ms | 34, 34, 35 ms |
+| 2,000 | 417 ms | 39, 37, 33 ms |
+| 8,000 | 936 ms | 45, 41, 47 ms |
+
+A CPU profile of the 8,000 case before the change: 59.0 s of 67.8 s
+sampled were under `countPending`, 87% of the whole and nearly all of the
+timed loop (the rest is filling the store), and 51 s of those were in
+`open(2)` from `os.ReadFile`. Parsing was not the cost; opening 8,000 files
+was. After the change, in a run that also built the index inside the
+timing, reading the index is 0.05 s of 8.35 s sampled and the one-time build
+0.68 s; `put` -- the record writes and their fsyncs -- is most of what
+remains. The table's "after" column builds the index before the timer.
+
+`simfleet setup -n 3000` itself, after the change, `GOMAXPROCS=1` on the
+same Mac: about 40, 46 and 45 seconds per thousand identities (2m11.6s in
+all), flat where the AWS run rose in a straight line, and
+`keys/pending-index` empty at the end, every request having been accepted.
+The before-change setup was not run here, so the Mac's absolute numbers
+cannot be compared with the AWS host's.
+
+The 8,000 row still costs about 10 ms more than the 500 row. The profile
+does not put it on the count, and it was not chased further; a filesystem
+with 8,000 entries in one directory making the create, rename and sync of
+each write slower is the obvious guess, and is a guess.
+
+**The change.** A pending index: `keys/pending-index/`, one empty file per
+pending record, named for the node (`internal/keystore/pending.go`).
+Counting reads names, stops at the limit, and parses nothing, so it costs
+at most `MaxPending` directory entries whatever the store's size. The
+record stays the authority on a node's state, and the index keeps one rule
+that holds through a crash at any point: **every pending record has a
+marker.** `put` writes the marker before a record becomes pending and
+removes it after a record stops being pending; `delete` removes it after
+the record. A crash between the two steps can only leave a marker too many.
+An overcount is trusted only below the limit, where it refuses nothing; at
+the limit every marker is checked against its record, stale ones are
+removed, and the refusal is made on the exact number. So the answer is the
+one the full scan gave, `DefaultMaxPending` means what it meant, and the
+lock discipline is unchanged: everything runs inside `locked`, as the scan
+did.
+
+A store from before the index is indexed by its first count, once, by
+reading every record into `pending-index.building` and renaming it into
+place, so an interrupted build is never mistaken for an index. A failure to
+remove a marker is not reported, because the record is already written and
+the marker is an overcount.
+
+**Shown.** `internal/keystore/pending_test.go`, each broken on purpose:
+
+- `TestANewNameDoesNotReadTheOtherRecords` fills a store with 50 accepted
+  records, enrols once, overwrites all 50 with text that is not JSON, and
+  enrols again. With `countPending` put back to a scan of the store it fails
+  with `the record for old000000.example ... is not readable`. Timing would
+  have been a flaky test; a record the count has no reason to open is not.
+  It then fills the bound and checks the refusal is the bound's, not that
+  parse error: the check at the limit reads only pending records.
+- `TestAStaleMarkerDoesNotRefuseANewName` leaves markers for an accepted
+  record and a deleted one. With the check at the limit removed -- the
+  markers trusted as the count -- it fails: `3 enrollment requests are
+  already pending` at a limit of 2 with one pending.
+- `TestDecidingARequestRemovesItsMarker`: with `delete`'s unmark removed it
+  fails, `the index holds [delete.example stays.example]`.
+- `TestAStoreWithoutAnIndexIsIndexedFromItsRecords`: with the build reading
+  no records it fails -- two pending records written before the index, at a
+  limit of two, and a third was let in.
+
+One break did **not** fail, and it is recorded because it would be easy to
+read the test as claiming it: reusing an interrupted build directory instead
+of clearing it passes. That is correct behaviour rather than a gap: a
+rebuild writes a marker for every pending record anyway, and a leftover
+marker is an overcount. What is load-bearing in the build is that it is
+renamed into place only when complete, and showing that needs a crash
+mid-build, which nothing here makes.
+
+**What an operator sees.** A directory `pending-index` in the key store,
+created by the first enrolment after upgrading; that enrolment reads every
+record once. Enrolment of new names no longer slows as the estate grows.
+`keys list`, `keys accept --all` and every other reader still read the
+records, not the index.
+
+**Not verified.**
+
+- Any platform but this Mac. Not run on FreeBSD, Linux or Windows; the
+  directory rename and the remove of a marker on Windows in particular.
+- `simfleet setup` on AWS, or at 20,000, after the change. It was run at
+  3,000 on this Mac only.
+- A crash at any of the steps the ordering is for. The rule is argued, and
+  each step's absence is tested, but nothing kills the process between a
+  marker and a record.
+- Records that reach the store without `put`: a record file copied in by
+  hand, or a pending record written by a halite older than the index after
+  the index was built (a downgrade, then an upgrade). Those are not counted
+  until decided, which loosens the bound by that many. The bound is against
+  an unauthenticated caller filling the disk, and neither is one.
+- A caller hammering a store that is genuinely at the limit pays the check
+  at the limit on each request: up to `MaxPending` record reads under the
+  lock, where the scan read the whole store. Bounded, and smaller than
+  before, but not O(1).
+
+### 5.636 A failed config read answered Enabled's question with no as though it knew
+
+Issue 608 item 5, lead L22 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service_windows.go`, `internal/builtin/win_service_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked and run on
+this Windows 11 host.
+
+**The defect.** `statusOf` reads a service's status, then its configuration;
+when the configuration read failed it returned `(out, nil)` with every
+configuration field -- `StartType`, `Account`, `BinaryPath`, `DisplayName`,
+`Description` -- left at the zero value and no error at all. The comment
+reasoned correctly about the common question, `service.status`: "the status
+is the answer... and a configuration this process may not read is not a
+reason to fail the whole query." But `Enabled` and the `Disabled` PR #679
+added both decide a boolean from `StartType` alone, and an empty string is
+not `"auto"` or `"auto_delayed"` -- it reads exactly like `"manual"`, with
+no error to say the reading was never made. `win_service.get_start_type`
+had the milder version of the same gap: an empty string compared against
+any real start type as a mismatch, which at least pushes a state toward
+calling `SetStartType` rather than silently agreeing, but is still not the
+value anybody asked `GetValue` for.
+
+A healthy service and a normal account cannot make the real
+`QueryServiceConfig` fail on demand -- confirmed by trying it on EventLog,
+where it always succeeds here -- so this was never exercised by running
+anything, including the live legs that drove `Enabled`'s own fix in
+PR #679.
+
+**Shown.** `queryConfig` is now a `var` holding the real implementation, so
+`TestAFailedConfigReadIsAnErrorNotASilentNo`
+(`internal/winsvc/winsvc_windows_test.go`) can replace it with one that
+always fails, the same seam `internal/exec`'s confinement-warning test
+(5.620) used for `createJobObject`. On the unchanged `Enabled`:
+
+```
+Enabled with no config read returned (false, nil); want an error
+```
+
+**The change.** `Status` gained a `ConfigErr error` field, set when
+`queryConfig` fails; `Query` and `service.status`'s callers are unaffected,
+since `State` and `PID` are still real and the overall call still succeeds.
+`Enabled`, `builtin`'s `windowsProvider.Disabled`, and
+`winServiceStartType` each now check it first and return it as their own
+error rather than reading the zero-valued `StartType` as a fact.
+
+With the change, `go test ./internal/winsvc/... ./internal/builtin/...
+-count=1` is green on this host, including the test above.
+
+**Lead L21, checked, did not fully reproduce.** The same read named
+`internal/exec/shell_windows.go`'s clean environment as missing
+`ProgramFiles`, `SystemDrive`, `USERPROFILE`, `APPDATA`, `ProgramData`,
+`PSModulePath` and `COMPUTERNAME`. Run for real: PowerShell started under
+exactly this build's clean environment (confirmed with `exec.Command` and
+that exact variable list) resolved `$env:PSModulePath` to a sensible
+default on its own -- `C:\Users\ed\Documents\WindowsPowerShell\Modules;...`
+-- without `PSModulePath` or `USERPROFILE` set at all, and
+`Get-Module -ListAvailable` found 98 modules. PowerShell resolves its
+module and profile paths through the user's token rather than reading
+those two names back out of the environment it was given, at least for
+this build and this host. The other five names were not independently
+checked, and a program that reads `%APPDATA%` or `%ProgramFiles%`
+literally -- most command-line tools that are not themselves .NET, since
+.NET's own callers tend toward the token-based path PowerShell took here --
+plausibly still gets nothing for them. Not changed without a demonstrated
+failure to point at, per CLAUDE.md's own rule for this repository.
+
+**Not verified.** A service whose configuration genuinely cannot be read by
+this account rather than by an injected failure -- the injected one proves
+the plumbing, not that such a service exists. `win_service.info`, which
+still reports the zero-valued fields with no error for a caller who reads
+them as diagnostic prose rather than deciding something from them; left
+alone on purpose; see the comment in `statusOf`.
+
+### 5.637 An account's SID and its name were never the same account, and a resource descriptor read back empty
+
+Issue 608 item 5, leads L15 and L16 (`internal/builtin/win_dacl.go`,
+`internal/winreg/winreg_windows.go`). Found by reading, in the issue 321
+second-pass audit. Checked and run on this Windows 11 host.
+
+**L15, the defect.** `sameAccount` compared two account strings
+case-insensitively, falling back to comparing everything after the last
+backslash. Two gaps:
+
+- A SID never equalled the name it resolves to. `winsec.describe`
+  (`internal/winsec/winsec_windows.go`) renders a trustee that does not
+  resolve -- a deleted account, or one from an unreachable domain -- as
+  the SID's own string form, which has no backslash, so `bareAccount`
+  returns it whole. Compared against the name the same SID resolves to
+  elsewhere, the two never matched.
+- Two accounts that merely share a short name -- `CORP\ed` and `HOST\ed`
+  -- compared equal, because the comparison never asked whether they were
+  actually the same SID, only whether their text after the last backslash
+  agreed.
+
+**L15, shown.** `TestASIDStringAndTheNameItResolvesToAreOneAccount`
+(`internal/builtin/win_dacl_windows_test.go`) compares this host's own
+account by its real SID (`S-1-5-21-1772322385-3744737199-1319263849-1001`,
+from `os/user`) against its name (`ED-PC\ed`). It failed on the unchanged
+comparison -- confirming the first gap for real, not by description.
+
+**L15, the change.** `sameAccount` now tries `sameAccountBySID` first:
+resolve both sides to a SID and compare those, falling back to the old
+bare-name comparison only when a side does not resolve. Resolution tries
+`windows.StringToSid` before `windows.LookupSID`, because the SID string
+form is not a name `LookupSID` accepts -- confirmed on this host, where
+`windows.LookupSID("", "S-1-5-21-...")` returned "No mapping between
+account names and security IDs was done" for exactly the string
+`winsec.describe` can hand back. The function this calls,
+`sameAccountBySID`, lives in a new Windows-only file (`win_dacl_windows.go`
+already, next to the rest of this module's Windows half) because
+`win_dacl.go` itself has no build tag and compiles on every platform;
+`win_dacl_other.go` carries a no-op stub.
+
+**L15, the second gap -- not demonstrated.** `CORP\ed` and `HOST\ed` both
+failing to resolve here (this host is not domain-joined and has neither
+account) means the fallback this fix keeps is exercised the same way it
+always was, which is where leads L15 named the collision as still
+possible: two different domains that each fail to resolve independently
+still compare by bare name. True by construction of the fallback, not
+shown with two real, resolvable, colliding accounts -- that needs a second
+machine or a domain controller, neither available here.
+
+**L16, the defect.** `readFrom`'s default branch -- every registry value
+type this build has no named case for -- read with `GetBinaryValue`, which
+Go's own `x/sys/windows/registry` refuses for anything but `REG_BINARY`
+(checked against the vendored source: `if typ != BINARY { return nil, typ,
+ErrUnexpectedType }`). Every other type fell into the same `if err != nil`
+branch the code used for a genuinely empty `REG_NONE`, so `REG_LINK`,
+`REG_DWORD_BIG_ENDIAN`, `REG_RESOURCE_LIST`,
+`REG_FULL_RESOURCE_DESCRIPTOR` and `REG_RESOURCE_REQUIREMENTS_LIST` all
+read back as present and empty, with the real error thrown away.
+
+**L16, shown.** `HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`'s
+`Configuration Data` is a real, machine-shipped
+`REG_FULL_RESOURCE_DESCRIPTOR` holding sixteen non-zero bytes --
+`FFFFFFFFFFFFFFFF0000000000000000`, checked with `reg query`. Called
+directly, `GetBinaryValue` on it returned "unexpected key value type".
+`TestAResourceDescriptorValueIsReadNotEmptied`
+(`internal/winreg/winreg_windows_test.go`) reads this real value through
+`ReadValue` and failed on the unchanged code: "Configuration Data read
+back empty; it has real bytes".
+
+**L16, the change.** The default branch no longer calls `GetBinaryValue`
+at all. `GetValue`, which `readFrom` already calls once to learn the
+type and the size, has no type check -- it reads a value by its size
+alone -- so the branch now allocates a buffer of that size and calls
+`GetValue` again to fill it. A genuinely empty value (`size == 0`, which
+is what a `REG_NONE` with no data actually looks like) still reports
+present and empty with no error; anything else that still fails is now a
+real returned error naming the registry type.
+
+With the change, `go test ./internal/winreg/... ./internal/builtin/...
+-count=1` is green on this host, including both tests above.
+
+**Who sees it.** `win_dacl.has_permission`, `win_dacl.present` and anything
+else that compares accounts by name (L15): two differently-domained
+accounts sharing a short name no longer compare equal when both resolve.
+`win_registry.read_value` and `win_registry.value_present`'s comparison
+(L16): a value of a type this build does not name by one of its five
+words now reads its real bytes, or a real error, instead of silently
+reading empty.
+
+**Not verified.** A domain-joined host, for either lead: L15's SID
+resolution across a real domain controller, and L16's registry values on
+a domain-joined machine's own hardware tree, which was not compared
+against this one.
 
 ## 6. Everything else not started
 

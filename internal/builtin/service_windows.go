@@ -39,6 +39,21 @@ func (windowsProvider) Enabled(c *exec.Context, name string) (bool, error) {
 	return winsvc.Enabled(name)
 }
 
+// Disabled implements serviceDisableChecker. `manual` reads as not
+// enabled, the same as `disabled` does, but only `disabled` is the
+// state Disable sets and the one that guarantees the service will not
+// start on its own.
+func (windowsProvider) Disabled(c *exec.Context, name string) (bool, error) {
+	s, err := winsvc.Query(name)
+	if err != nil {
+		return false, err
+	}
+	if s.ConfigErr != nil {
+		return false, fmt.Errorf("reading %q's start type: %w", name, s.ConfigErr)
+	}
+	return s.StartType == "disabled", nil
+}
+
 func (windowsProvider) Start(c *exec.Context, name string) error { return winsvc.Start(name) }
 
 func (windowsProvider) Stop(c *exec.Context, name string) error { return winsvc.Stop(name) }

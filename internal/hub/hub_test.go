@@ -38,6 +38,12 @@ type lab struct {
 	// skew is how far this hub's clock is ahead of the wall clock, in
 	// nanoseconds. See advance.
 	skew *atomic.Int64
+
+	// logs is everything the hub has logged, for a test whose claim is
+	// that the hub said something. Held rather than swapped in, because
+	// Server.Log is read by the serving goroutines and assigning it on a
+	// hub that is already serving is the race advance describes.
+	logs *logTail
 }
 
 // advance moves this hub's clock forward, for a test about a window that
@@ -100,7 +106,8 @@ func newLab(t *testing.T) *lab {
 	// The hub logs into the test's own output. Without this a handler
 	// that says "its log says why" says it into nothing, and
 	// diagnosing a failing test means adding the logger first.
-	logger, err := hlog.New(hlog.Options{Level: hlog.Debug, Format: hlog.Console, Stderr: testWriter{t}})
+	logs := &logTail{}
+	logger, err := hlog.New(hlog.Options{Level: hlog.Debug, Format: hlog.Console, Stderr: testWriter{t, logs}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,6 +154,7 @@ func newLab(t *testing.T) *lab {
 		ln:     ln,
 		served: done,
 		skew:   skew,
+		logs:   logs,
 	}
 	t.Cleanup(func() { l.stop(t) })
 	return l
@@ -154,11 +162,35 @@ func newLab(t *testing.T) *lab {
 
 // testWriter sends the hub's log to the test's output, where it is
 // shown only for a test that fails.
-type testWriter struct{ t *testing.T }
+type testWriter struct {
+	t    *testing.T
+	tail *logTail
+}
 
 func (w testWriter) Write(p []byte) (int, error) {
 	w.t.Logf("hub: %s", strings.TrimRight(string(p), "\n"))
+	if w.tail != nil {
+		w.tail.write(p)
+	}
 	return len(p), nil
+}
+
+// logTail keeps what the hub logged, for a test to read.
+type logTail struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (l *logTail) write(p []byte) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buf.Write(p)
+}
+
+func (l *logTail) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
 func port(t *testing.T, addr string) string {
