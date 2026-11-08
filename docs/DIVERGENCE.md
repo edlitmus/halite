@@ -41086,6 +41086,74 @@ change on its next run and the service's start type actually move.
 **Not verified.** The real mutation on a Windows service, only the unit test
 against a fake provider. An elevated token. A domain-joined host.
 
+### 5.629 A return too large for the hub was lost without trace
+
+The sequel to 5.623, which removed the ordinary way to reach the limit and
+left the loss itself as it was.
+
+**The defect.** The hub takes a return of at most `transport.MaxReturnBody`,
+16 MiB (SPEC 6.5). Past that, `returned` (`internal/hub/jobs.go`) answered
+`400` and logged nothing. The node (`postReturns`,
+`cmd/halite-node/enroll.go`) took the `400` as permanent, logged `the hub
+refused a return` and dropped the return. The job had run. In 5.623 it had
+replaced the node's own binary and succeeded. The operator's `halite-hub run`
+waited for an answer that never came, and the hub's log said nothing about
+the job after `job dispatched`.
+
+**The decision.** The node measures the return before it posts it. If the
+hub would refuse it for its size, the node sends a stand-in in its place,
+`job.Return.Oversized`: the same jid, node, function and arguments, with
+`success: false` and a body that says how large the return was, what the
+limit is, and what the job itself reported (`job_success`, `job_retcode`).
+The retcode is the job's own when that is non-zero, and 1 when it was zero,
+because a lost result must not read as a success to a script that looks
+only at the exit code. `Out` is dropped, because it may be what made the
+return too large. The job settles and the operator is told why.
+
+The hub now logs the refusal, with the node from the certificate and the
+jid read from the first 4 KiB of the body (the node writes `jid` first).
+That is for a node that does not send a stand-in: one built before this
+change, or a body that is malformed for another reason. Its `400` and its
+code are as they were.
+
+**Not built: SPEC 6.5's "then the node paginates by chunk".** A chunked
+return is still refused, and the result past the limit is not kept
+anywhere the hub can reach. Paging would need the hub to hold and
+reassemble parts, a bound on the whole as well as on each part, and a
+returner and a job cache that take a return in parts; the stand-in is the
+honest answer until somebody needs a 16 MiB result at the hub. SPEC 6.5
+still says the node paginates.
+
+**Two paths that must agree.** The node decides by the length of
+`transport.EncodeBody`, which is the client's own encoder, now exported,
+and so the body it sends byte for byte. `json.Marshal` would have measured
+four bytes too many for a return holding a `<`, because it escapes it and
+omits the newline. `TestTheNodeAndTheHubAgreeWhereTheReturnLimitIs`
+(`cmd/halite-node/return_size_test.go`) holds the boundary on both sides
+against `transport.ReadJSON`, the hub's own read. `TestAReturnOfExactlyTheLimitIsTaken`
+(`internal/hub/node_quota_test.go`) holds the same boundary against a real
+hub over TLS.
+
+**Shown.** `TestAnOversizedReturnArrivesAsAFailureNamingItsSize` runs the
+node's send path (`sendReturn`) against the hub's check. With the call to
+`fitReturn` removed, the hub took no return and both node tests failed. With
+`<` for `<=`, and with `json.Marshal` as the measure, a return of exactly
+the limit was replaced where the hub would have taken it, and the boundary
+test failed. `TestAnOversizedReturnIsLoggedAndItsStandInSettlesTheJob`
+posts a 16 MiB return to a lab hub, checks the hub's log names the jid and
+the node, then posts the stand-in and checks the job is answered. With the
+log line removed, and with the jid left out of it, it failed. `TestPeekJID`
+covers a cut-off body, a later `jid` key and a nested one.
+`TestOversizedIsAFailureThatKeepsTheJobsOwnAnswer` (`internal/job`) covers
+the retcode rule.
+
+**Not verified.** No real node was run with a return over the limit after
+the change; the tests drive the node's send path and a lab hub in one
+process, not the binaries. The FreeBSD jails of 5.623 were not used again.
+A relay forwards what its own hub took, which is at most the same limit, so
+it was not changed or run. A node built before this change still loses an
+oversized return, and the hub's log line is all there is of it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
