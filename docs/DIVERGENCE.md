@@ -40882,6 +40882,62 @@ run gave `/usr/local/etc/halite`, its `pki`, `/var/db/halite`,
 the test runs it where it is installed). Linux with a missing
 `/etc/systemd/system` was not seen; systemd always has it.
 
+### 5.626 A TPM's presence was read from a key every Windows has, not from the TPM
+
+Issue 608 item 5, leads L10, L11 and L12 (`internal/grains/platform_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked and run on
+this Windows 11 host, an AMD desktop with a real TPM 2.0.
+
+**L11, the defect.** `tpm` answered from `hasKey` on
+`SYSTEM\CurrentControlSet\Services\TPM` -- whether the driver's service key
+exists, not whether a TPM is attached. A driver's service registration is
+not evidence of its hardware: `vmbus`, the Hyper-V bus driver, has
+`Start=0` (boot-start) in this registry though this machine is a physical
+desktop and not a VM (checked with `reg query`), so the same mechanism that
+makes `tpm` answer from a key would make a `vmbus` grain say "virtualized"
+on hardware. This host could not show the negative case directly -- it has
+a real TPM 2.0 (`Get-PnpDevice -Class SecurityDevices`: "Trusted Platform
+Module 2.0", status OK) -- so the defect is demonstrated by the `vmbus`
+analogy and by reasoning about how a PnP driver's service state works,
+not by a host where the old code answered wrong.
+
+**L11, the change.** `tpm` now answers `winsvc.Running("TPM")`: whether the
+driver is in the running state, which a PnP driver reaches only once its
+matching device enumerates. Querying a service's status needs no privilege,
+same as reading the key did. `hasKey`, now unused, is removed.
+
+**L11, shown.** `TestTPMGrainAnswersFromTheRunningDriverNotTheKey`
+(`internal/grains/platform_windows_test.go`) asserts `tpm == true` on this
+host, cross-checked independently against `Get-PnpDevice`. It does not
+distinguish the fix from the old code here, because both answer true on a
+machine that genuinely has a TPM; it locks in the right answer on the one
+real machine available and documents the mechanism for a reader who does
+have a TPM-less one to try.
+
+**L10, did not reproduce.** The lead said `EnclosureType` is probably not a
+registry value, so `chassis` always falls through to `SystemFamily`. On this
+host, `HKLM\HARDWARE\DESCRIPTION\System\BIOS\EnclosureType` is `REG_DWORD`,
+value 3 (checked with `reg query`), and the `chassis` grain reads `"Desktop"`
+-- which is what this machine is. `chassisType` took the `EnclosureType`
+branch, not the `SystemFamily` fallback the lead was concerned about.
+Nothing changed for this lead.
+
+**L12, read and not a defect.** The lead noted that `uuid` is `MachineGuid`,
+which a cloned VM image carries into every clone, and is not the SMBIOS
+UUID Salt reports. True, and already said by the code: `collectHardware`'s
+comment names the SMBIOS UUID as the alternative, explains why it is not
+used (`GetSystemFirmwareTable` and a full table parse, for a value that is
+not what this build chose to optimise for), and states the reasoning for
+`MachineGuid` instead -- stability across a reinstall of the same image,
+which an estate inventory cares about more than matching Salt's choice.
+SPEC 15.1 names `uuid` among the Hardware grains without specifying which
+source a platform uses. Nothing here contradicts a stated requirement; the
+lead's caveat was already the comment's own caveat.
+
+**Not verified.** A machine with no TPM, to see `winsvc.Running("TPM")`
+read false there. A machine where `EnclosureType` really is absent or not a
+`REG_DWORD`, which would be the case the lead's L10 concern described.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, the `tpm` grain now answers from whether the TPM driver is actually running rather than from a service key that exists on every install.** A machine with no TPM would have reported `tpm: true` from the key alone; a PnP driver only reaches the running state once its matching device enumerates. DIVERGENCE 5.626.
+
 - **`make install` now works on a FreeBSD host with nothing in `/usr/local`.** It refused as root (`cannot write /usr/local/etc/halite — run make install as root`), or failed with `No such file or directory` when `/usr/local/bin` or `/usr/local/etc/rc.d` was missing. It now makes those directories. DIVERGENCE 5.625.
 
 - **`examples/hub.yaml` and `examples/node-with-hub.yaml` no longer set FreeBSD paths.** They set `pki_dir`, `state_dir` and `policy` to `/usr/local/etc/halite/…` and `/var/db/halite`, and the same files are in the Linux archives. A Linux hub started from the example, as chapter 30 of the handbook says, stopped at once with `mkdir /usr/local/etc/halite: read-only file system`. The settings are now commented out, so each platform's default applies. If you copied the example onto Linux, delete those lines. DIVERGENCE 5.624.

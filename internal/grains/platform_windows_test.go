@@ -180,6 +180,26 @@ func TestProductNameIsCorrectedForTheBuild(t *testing.T) {
 	}
 }
 
+// The tpm grain used to answer from the TPM driver's service key, which
+// exists on every Windows install whether or not a TPM is attached --
+// confirmed on this host by analogy: `vmbus`, the Hyper-V bus driver,
+// has the same boot-start registration though this machine is not a
+// VM. It now answers from whether the driver is actually running, which
+// a PnP driver only is once its device enumerates. This host has a real
+// TPM 2.0 (`Get-PnpDevice -Class SecurityDevices`: "Trusted Platform
+// Module 2.0", status OK), so the grain should say so (issue 608 item 5,
+// lead L11).
+func TestTPMGrainAnswersFromTheRunningDriverNotTheKey(t *testing.T) {
+	g := collect(t, Options{})
+	got, ok := g.Get("tpm")
+	if !ok {
+		t.Fatal("tpm is absent")
+	}
+	if got != true {
+		t.Errorf("tpm = %#v, want true: this host has a real TPM 2.0 (confirmed with Get-PnpDevice)", got)
+	}
+}
+
 func str(t *testing.T, g *value.Map, key string) string {
 	t.Helper()
 	v, ok := g.Get(key)
