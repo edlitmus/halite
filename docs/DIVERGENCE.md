@@ -41369,6 +41369,124 @@ lookup behaves differently. A host whose OEM code page is not 437 -- this
 fix's byte, `0x82` for 'é', is specific to it. Administrator rights, for a
 task registered to run as SYSTEM or another account, which nothing here
 needed: all three real round trips ran as this account.
+### 5.632 Every return re-read every return before it, so a job to n nodes cost n²
+
+Found by the scale harness of 5.279, at the first size past the one it
+had been run at. One `test.ping` to 5,000 simfleet nodes, on an 8-vCPU,
+16 GiB hub on AWS on 2026-11-08, took the hub's resident memory from
+2.2 GB to 14.2 GB in 60 seconds. The host thrashed, and the hub accepted
+1,508 of the 5,000 returns. At 1,000 nodes the peak was 928 MB. (The run
+is written up on the branch of edlitmus/halite#680, as a subsection of
+5.279 that main does not have yet.)
+
+**The defect.** The return handler (`returned`, `internal/hub/jobs.go`)
+called `completeIfDone` after every fresh return. `completeIfDone` called
+`job.Cache.Missing`, which read the job's record and then called
+`Returns`, which opened, read and decoded every return file already filed
+for the job. So the k-th return of a job did k file reads, and a job to n
+nodes did about n²/2. The handler also read the job's record, with its
+whole node list, three more times per return: once in `AddReturn` for the
+target check, and twice for the function and the correlation chain.
+
+**Shown, before the fix.** `BenchmarkReturnsForOneJob`
+(`internal/hub/return_scale_test.go`) files one return per node for one
+job through `returned` itself, from eight goroutines. On an Apple M4 Pro,
+macOS, GOMAXPROCS=2, on 2026-11-08:
+
+| nodes | time | allocated |
+|---:|---:|---:|
+| 250 | 3.5 s | 104 MB |
+| 500 | 7.5 s | 406 MB |
+| 1,000 | 23.4 s | 1.58 GB |
+| 2,000 | 82.0 s | 6.80 GB |
+
+The allocation grows by four for each doubling. A CPU profile at 1,000
+nodes put 90% of the time in `completeIfDone` → `Missing` → `Returns`,
+most of it in `open(2)` on the return files. The allocation profile put
+64% of all bytes under `completeIfDone`, and 47% under `Cache.Get`
+(decoding the record's node list), which `Missing`, `AddReturn` and the
+handler all called. So the cause was the one the code suggested, and the
+record reads were a second quadratic term behind it.
+
+**The fix.** `job.Cache.File` files a return and returns a `job.Filing`:
+whether the return was fresh, how many targets are still owed, and the
+record's function and correlation. Behind it is a per-job `returnIndex`
+in memory: the job's targets, the nodes that have answered, and a count.
+It is built once per job, from the record and a listing of the returns
+directory (names only, no decoding), and `File` keeps it current. The
+handler now calls `completeIfDone` only on the return that takes the count
+to zero, and reads the record no more. `completeIfDone` still asks
+`Missing` and still goes through `Update`. So the count decides *when* the
+question is asked, and the answer comes from disk as before. A complete or
+aborted job is still not completed again (5.515), and the race with the
+spool-clearing goroutine that `Update` exists for (4.11) is not changed.
+`AddReturn` is now a wrapper over `File`. The runner's return
+(`internal/hub/runner.go`) is gated in the same way.
+
+Two rules make the count trustworthy, and each has a test that fails
+without it:
+
+- **The count goes down only after the file is on disk.** If it went down
+  first, the return that reached zero could call `Missing` while another
+  node's file was still being written. `Missing` would report that node,
+  and nothing would be completed. The other return had seen a count above
+  zero, so it would not ask. The job would stay dispatched until it
+  expired.
+- **A retry that arrives while the first copy is being written waits for
+  it.** Before, the existence check (`os.Stat`) and the write were two
+  steps. Two copies of one return that arrived together were both written
+  and both counted as fresh, which gave two events and two metric counts.
+  The count cannot tolerate that, so this is fixed here and not in a
+  separate change.
+
+An index is never dropped while somebody is filing through it. It is
+dropped when its job is complete, when `Prune` removes the job, and, for
+idle indexes, when more than 256 jobs are indexed. A dropped index is
+rebuilt from disk the next time it is needed. A refused jid leaves no
+index.
+
+**Shown, after the fix.** The same benchmark, same machine:
+
+| nodes | time | allocated |
+|---:|---:|---:|
+| 250 | 2.5 s | 3.5 MB |
+| 500 | 4.6 s | 6.9 MB |
+| 1,000 | 9.2 s | 13.7 MB |
+| 2,000 | 18.6 s | 27.6 MB |
+
+Every column doubles when n doubles. At 1,000 nodes the CPU profile had
+1.05 s of samples in a 10.2 s run. The rest is the time spent waiting for
+each return's durable write (`atomicfile.Write`), which is per return and
+intended, and is slow on this laptop's disk.
+
+`TestAReturnCostsTheSameWhateverTheSizeOfTheJob` files every return of a
+job to 40 nodes and of a job to 320, and fails if the bytes allocated per
+return grow by more than 2.5 times. On the original code it measured 96 KB
+and 584 KB per return (6.1 times) and failed. With only the
+`Remaining == 0` gate removed, it measured 5.4 times and failed. With the
+fix it measured 15.7 KB and 14.0 KB (0.9 times). In `internal/job`,
+`TestConcurrentReturnsReachZeroOnceWithNothingMissing` files 200 nodes'
+returns at once, each one twice. With the count moved before the write, it
+failed on 3 runs of 3 (3, 18 and 142 nodes missing at zero). With the
+retry wait removed, nodes were fresh twice. With the rebuild ignoring
+files already on disk, `TestARestartedCacheCountsTheReturnsAlreadyFiled`
+and `TestAFinishedJobsIndexIsDroppedAndRebuilt` failed.
+
+**Not verified.** Simfleet has not been run again at 1,000 or 5,000 nodes
+on AWS. That is the next step in the plan, and it needs approval. So
+nothing here says the hub now survives 5,000 nodes, only that this cost is
+gone. The benchmark ran only on macOS, not on FreeBSD or Linux. Other
+places still read every return of a job, but once per poll, not once per
+return: the batch wait (`awaitBatch`, every 200 ms), `GET /v1/jobs/<jid>`
+(which also reads them all a second time through `Missing`), and an
+orchestration step's `awaitReturns`. An operator who polls a 5,000-node
+job pays for 5,000 reads on each poll. That was not measured. Delivering
+a spooled job to a node that reconnects reads and writes the whole record
+(`internal/hub/queue.go`). For a job that is spooled to thousands of nodes
+that all reconnect at once, that is also n² in total, and it was not
+measured either.
+
+
 
 ## 6. Everything else not started
 
