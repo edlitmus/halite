@@ -119,7 +119,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 	// Before the cache, and so before everything that reads it: the
 	// event, a relay's forward, the job routes. See scrubReturn.
 	s.scrubReturn(&ret)
-	fresh, err := s.Jobs.AddReturn(&ret)
+	filed, err := s.Jobs.File(&ret)
 	if errors.Is(err, job.ErrNoJob) {
 		// A node returning against a job this hub never dispatched is
 		// either a replay or a node talking to the wrong hub. Both are
@@ -138,13 +138,13 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
-	if fresh {
+	if filed.Fresh {
 		// The function the job was submitted with, from the record; the
-		// return's own `fun` is a node's text (DIVERGENCE 5.532).
-		recorded := ""
-		if j, err := s.Jobs.Get(ret.JID); err == nil {
-			recorded = j.Fun
-		}
+		// return's own `fun` is a node's text (DIVERGENCE 5.532). File
+		// read it from the record, so this does not read the record
+		// again: with a node set of thousands, reading it on every
+		// return is the other half of what DIVERGENCE 5.634 measured.
+		recorded := filed.Fun
 		s.countReturn(&ret, recorded)
 		if s.OnReturn != nil {
 			// A relay forwards it upstream. In the background, because
@@ -159,13 +159,8 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 			"success", ret.Success, "retcode", ret.RetCode, "duration_ms", ret.DurationMS)
 		// The chain the job belongs to travels with its returns, so a
 		// reactor watching a state result can tell what caused the run
-		// it is looking at. A job the hub no longer has a record of
-		// carries none, which is the honest answer.
-		chain, ranAState := "", false
-		if j, err := s.Jobs.Get(ret.JID); err == nil {
-			chain = j.Correlation
-			ranAState = appliesState(j.Fun)
-		}
+		// it is looking at. From the record, through File, as above.
+		chain, ranAState := filed.Correlation, appliesState(filed.Fun)
 		s.emitCorrelated(tagJobRet(string(ret.JID), ran), ran, chain, map[string]any{
 			"jid": string(ret.JID), "fun": ret.Fun,
 			"success": ret.Success, "retcode": ret.RetCode, "duration_ms": ret.DurationMS,
@@ -189,7 +184,14 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 				"jid": string(ret.JID), "retcode": ret.RetCode,
 			})
 		}
-		s.completeIfDone(ret.JID)
+		// Only on the return that left nobody outstanding. Asking on
+		// every return was what made a job to n nodes cost n² reads:
+		// completeIfDone asks Missing, which reads and decodes every
+		// return filed so far. The count decides when to ask; Missing,
+		// as before, decides the answer. DIVERGENCE 5.634.
+		if filed.Remaining == 0 {
+			s.completeIfDone(ret.JID)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -197,6 +199,10 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 // completeIfDone marks a job complete once every expected node has
 // answered, so that `jobs list` distinguishes finished from waiting
 // without re-reading every return.
+//
+// It reads every return (through Missing), so it is called once per job
+// from the return path -- when job.Filing.Remaining reaches zero -- and
+// not once per return. See DIVERGENCE 5.634.
 func (s *Server) completeIfDone(id job.ID) {
 	missing, err := s.Jobs.Missing(id)
 	if err != nil || len(missing) > 0 {
