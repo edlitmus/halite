@@ -49,8 +49,8 @@ status; in outline:
 
 The ledger also states honestly what each layer does *not* establish, such as that
 the Salt differential compares test-mode predictions and not the result of an
-apply, or that a reproducibility check on one machine is not two independent
-builders.
+apply, or that both release builders are GitHub-hosted Linux images, so no second
+architecture and no party outside the project has reproduced a published digest.
 
 ## Live tests and the lab
 

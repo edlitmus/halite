@@ -1,0 +1,43 @@
+# The Debian ordering as a real dpkg answers it.
+#
+# Captured 2026-11-08 from dpkg 1.22.22 on Debian GNU/Linux 13 (trixie),
+# x86_64, by putting `lt`, `eq` and `gt` to `dpkg --compare-versions` for
+# each pair and recording which one held. Not written from the policy
+# manual: the manual is what the table in vercmp_test.go was already
+# built from, and a fixture written from the same document would test the
+# document twice.
+#
+# dpkg warned about none of these: every version here begins with a
+# digit, so all 25 are inside Debian policy.
+#
+# One line per pair: first version, the relation that held, second
+# version. `vercmp_fixture_test.go` holds this file and `debianVectors`
+# to each other in both directions, so a vector with no captured answer
+# fails as loudly as a captured answer for a vector that has gone.
+#
+# DIVERGENCE 5.633.
+1.0	=	1.0
+1.0	<	1.1
+1.9	<	1.10
+1.0	<	1.0.1
+1.0-1	<	1.0-2
+1.0-1	=	1.0-1
+1:1.0	>	2.0
+1:1.0	<	2:0.1
+0:1.0	=	1.0
+1.0~rc1	<	1.0
+1.0~rc1	<	1.0~rc2
+1.0~~	<	1.0~
+1.0~	<	1.0
+1.0~beta1~svn1245	<	1.0~beta1
+1.0~beta1	<	1.0
+1.0a	<	1.0b
+1.0a	>	1.0
+1.0+b1	>	1.0
+1.007	=	1.7
+1.0-007	=	1.0-7
+1.0-beta-1	<	1.0-beta-2
+2.4.7-1	<	2.4.7-2
+1:2.4.7-1	>	2.4.8-1
+5.4.0-1023.24	<	5.4.0-1023.25
+1.2.3-1~bpo11+1	<	1.2.3-1
