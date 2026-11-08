@@ -41907,7 +41907,7 @@ still reports the zero-valued fields with no error for a caller who reads
 them as diagnostic prose rather than deciding something from them; left
 alone on purpose; see the comment in `statusOf`.
 
-### 5.629 An account's SID and its name were never the same account, and a resource descriptor read back empty
+### 5.637 An account's SID and its name were never the same account, and a resource descriptor read back empty
 
 Issue 608 item 5, leads L15 and L16 (`internal/builtin/win_dacl.go`,
 `internal/winreg/winreg_windows.go`). Found by reading, in the issue 321
