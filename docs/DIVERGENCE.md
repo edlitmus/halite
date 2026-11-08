@@ -1888,15 +1888,18 @@ section 4.1. What is still uncovered is what needs a hub.
 ### 5.2 The fourteen test layers
 
 Every layer SPEC 31 requires beyond the unit layer of 5.1, and where each
-stands. Seven are present, one of them stronger than specified, five are
+stands. Eight are present, one of them stronger than specified, four are
 partial, and one is absent. Nothing is unverified any more: the
-reproducibility layer was, and it is now partial with the limit stated
-rather than the question left open.
+reproducibility layer was, and two builders have now agreed on both
+published tags, with the limits stated rather than the question left
+open.
 
-Four rows moved after this table was first written and each said
-"blocked on phase 2" long after phase 2 landed: chaos and upgrade are
-built, scale is partial, and integration is the one that is still
-absent.
+Five rows have moved since this table was first written. Four of them
+said "blocked on phase 2" long after phase 2 landed: chaos and upgrade
+are built, scale is partial, and integration is the one that is still
+absent. The fifth is reproducibility, which went on saying a second
+builder had never been tried for a month after two of them agreed on a
+published release (5.627).
 
 | Layer | Status |
 |---|---|
@@ -1906,13 +1909,13 @@ absent.
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
-| Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder, all of which belong to phases that have not started. |
+| Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. An eighth function, `FuzzCodec` over the render sandbox's value codec, is in the suite but not in `make fuzz`. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder. This row said those four "belong to phases that have not started". All four of those subsystems ship now, so the gap is a gap rather than a schedule (5.627). |
 | Integration | **absent.** No containerised hub-plus-nodes harness across the tier 1 matrix. The repository has two containers and a virtual machine — the Salt differential image, the Debian container of 5.35, and the ZFS machine of 6.1 — and each is a correctness harness for one subsystem rather than a matrix. This is the last layer with nothing behind it. |
 | Scale | **partial.** `internal/perf` carries all thirteen rows of SPEC 30 with what measures each, held to SPEC's own table in both directions. The two rows SPEC measures with a benchmark are measured: the highstate compile of 500 states over 50 SLS files, and the cold pillar compile of 200 pillar SLS. `make perf` runs them and fails if either is over its target; `make perf-bench` is the raw measurement. The eleven rows that need the simulated node harness, a soak, or the integration matrix are still unmeasured, and so is the *cached* half of the pillar row, because no pillar cache exists to measure. See 5.57. |
-| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other, because there has never been a second version. See 4.13. |
+| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other. This row said that was because "there has never been a second version"; there have been two since `v0.1.1` on 2026-10-12, and nothing recorded here has run one against the other (5.627). See 4.13. |
 | Chaos | **present.** All eight of SPEC's scenarios are registered in `internal/chaos` with a defined behaviour and a stated limit, each with a test that names it, and a ninth is registered that SPEC does not name: the concurrent-writer shape that three defects in a fortnight all had. `make chaos` runs the layer with `-v`, which is the point of it. Its first run found a reader resuming from a pruned event-bus offset being silently skipped forward. See 5.29. |
-| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. Clean against the database of 2026-08-21. No static analysis beyond `go vet`. No external review. |
-| Reproducibility | **partial.** `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine — not the two independent builders SPEC 31 asks for — but it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. A second builder has still never been tried. |
+| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. `ci.yml` runs it on every push and pull request at the version `make vuln` pins, and it was clean on 2026-11-08. The external review SPEC 31 asks for before 1.0 **has happened**: issue 321, filed by an outside contributor on 2026-10-14 against `a0d5344`, closed with every High, Medium and section 5 finding fixed, decided or filed as an issue of its own (`docs/audits/2026-10-issue-321-triage.md`). It reached the enrollment flow, the RBAC evaluator and the extension sandbox by name, and the hub port's pre-authentication surface through the enrollment work; whether `internal/transport` itself was read is recorded neither way. What it does not establish is coverage, and it said so itself: it listed the files it never read, a second pass over part of that list found four more defects, and the list is still long (`docs/audits/2026-10-issue-321-second-pass.md`). No static analysis beyond `go vet`. See 5.627. |
+| Reproducibility | **present**, with its limits named. `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine, and it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. The property SPEC 4.3 and SPEC 31 actually ask for is `release.yml`'s, and it has it: every tag is built on `ubuntu-24.04` and on `ubuntu-22.04`, each manifest must list at least 80 artifacts so that two short ones cannot compare equal, and a difference fails the release before anything is signed or published. The two builders have agreed on both published tags, on 90 artifacts each (5.627). What is still untried is a builder outside this project's CI: both are GitHub-hosted x86_64 Linux images, so every non-Linux artifact is cross-compiled on Linux, no second architecture has built a release, and nobody outside the project has reproduced a published digest. |
 
 ### 5.3 What fuzzing found
 
@@ -40957,6 +40960,116 @@ drive). The agentless bootstrap with a Linux target (chapter 17). A Linux
 upgrade by a state, and a whole fleet upgrade. Mail off the machine. The
 `halite-api` paths. A FreeBSD host on real hardware or a VM for any of this.
 `make check` for this documentation change ran only in CI.
+### 5.627 Four rows of 5.2 described a build that had moved on
+
+The commonest defect here is a pair of things that must say the same
+thing and do not. This is that pair with prose as the wrong half, twice
+in one table, and it was found by reading 5.2 beside the workflows and
+the tracker rather than by any test.
+
+**The reproducibility row said "a second builder has still never been
+tried."** `.github/workflows/release.yml` opens with the line *"SPEC
+4.3's two-builder reproducibility check, on every tag"*, and its own
+comment makes the row's argument for it: `make repro` builds twice on one
+machine, that is not the property SPEC asks for, and the only way to have
+the property is to use two builders. The workflow was written to close
+the gap the row still described. Chapter 6.2 of this ledger already said
+so — *"`release.yml` builds a tag on two runner images and compares the
+digests, which is SPEC 4.3's two-builder check"* — and then ended with
+*"Reproducible builds: see 5.2"*, pointing at the sentence that denied
+it.
+
+**Shown.** `release.yml` has completed successfully six times: three
+`workflow_dispatch` runs (2026-09-25 twice, 2026-10-12) and both tags,
+`v0.1.0` on 2026-10-10 and `v0.1.1` on 2026-10-12. Each run builds the
+same commit on `ubuntu-24.04` and on `ubuntu-22.04` and then diffs the
+two `SHA256SUMS`. On the `v0.1.1` run (38294541095) each builder produced
+a 90-artifact manifest of 8571 bytes, and the compare job printed *"two
+builders produced identical binaries"*. That job refuses a manifest
+shorter than 80 lines first, so two truncated manifests cannot pass by
+comparing equal to each other, and `.github/toolchain-check.sh` asserts
+each runner's Go is the pinned toolchain, because two runner images are
+two chances to drift and a build that changed with the compiler would be
+a different build rather than a reproducibility failure.
+
+**What it still does not establish.** Both builders are GitHub-hosted
+x86_64 Linux images from one provider. Every non-Linux artifact is
+cross-compiled on Linux, no second architecture has built a release, and
+nobody outside this project has reproduced a published digest. The row
+now says that instead of denying the whole layer.
+
+**The security row said "No external review."** Issue 321 is one: filed
+on 2026-10-14 by an outside contributor against `a0d5344`, 20 High, 55
+Medium, 60 section 5 bullets and a design note, and now closed with every
+one of them fixed, decided or filed as its own issue. Its triage and its
+second pass are `docs/audits/2026-10-issue-321-triage.md` and
+`docs/audits/2026-10-issue-321-second-pass.md`, and the ledger sections
+it produced run from 5.284 to 5.622. **The owner ruled on 2026-11-08 that
+it satisfies SPEC 31's external review and the phase 6 line item.**
+
+The row says what the review was and what it was not. It reached the
+enrollment flow, the RBAC evaluator and the extension sandbox by name;
+whether `internal/transport` itself was read is recorded neither way, and
+the audit's own section 8 listed the files it never opened. Four of
+321's follow-ups are still open — #608 (Windows leads), #613 (needs a
+real AWS account), #616 and #643 (the operator-visible changes, for the
+release notes) — so SPEC 32's "review findings closed" is close rather
+than reached.
+
+**Two more rows, found by reading the rest of the table rather than by
+being asked about it.** Neither changes a verdict; both gave a reason
+that had expired. The **fuzz** row said the four absent targets "belong
+to phases that have not started". The wire protocol, the cron parser, the
+roster and the bridge all ship now, so those four are a gap and not a
+schedule. It also said `make
+fuzz` "runs all seven functions" without saying that an eighth exists —
+`FuzzCodec`, over the render sandbox's value codec — which `make fuzz`
+does not run. The **upgrade** row said two halite versions had never run
+against each other "because there has never been a second version";
+there have been two since `v0.1.1`, and the thing that is actually
+missing is the run.
+
+**Two rows were read and left alone, and each is a lead rather than a
+correction.** The version-comparison row says the Debian and RPM halves
+of the differential need a Debian or RHEL host, which `vercmp_test.go`
+still says too — but `fleetcheck`'s Debian container, the EL and SUSE
+containers and the Vultr lab all now exist, so the blocker is soft and
+worth reprobing. The state-module conformance row quotes "6 of the 46
+state functions"; that count was not re-derived here, and a grep over
+the harness's call sites suggests it is low by a lot.
+
+**Why none of them was caught.** Nothing holds 5.2's table to anything.
+The module tables of chapter 2 are audited against the registries in
+both directions; this table is a judgement about what has been run, and
+no test reads the tracker or the workflow history.
+`TestNoProseDeniesADeliveredPhase` exists for exactly this failure and
+could not see any of them: it matches a denial in the same sentence as a
+**phase** number, and these rows denied a mechanism, a tool and a
+release. It did fire on this entry's first draft, which quoted the fuzz
+row's expired sentence beside the number of the phase that had landed.
+The guard cannot tell a quotation from a claim, so the draft was
+rewritten rather than the guard loosened.
+
+**What was added.** `TestLedgerLayerTallyMatchesTheRows` holds 5.2's
+preamble to its own rows: the counts of present, partial and absent, and
+the "fourteen" in the heading against the thirteen rows plus the unit
+layer of 5.1. That is the half of this that can be mechanical, and it is
+worth having because the preamble has now drifted three times — twice
+with rows that said "blocked on phase 2" after phase 2 landed, and once
+here, where moving reproducibility to present changed two of the three
+counts.
+
+**Not covered.** No test can establish that a row describing what has
+been run is current; that stays a reading. Of the thirteen rows, four
+were corrected here, two were read and left as leads, two — scale and
+integration — were confirmed current while answering a different question
+on the same day, and **five were not re-checked at all**: both
+conformance rows, the Salt differential, property and chaos. So this is
+four rows corrected, not a clean table. The figures in the conformance
+rows are the ones least likely to have drifted, because each sits beside
+a deviation table its own suite enforces in both directions; that is the
+rows' own claim and it was not re-derived here either.
+
 
 ### 5.627 Four of `cpu_flags`' feature numbers were wrong on Windows
 
