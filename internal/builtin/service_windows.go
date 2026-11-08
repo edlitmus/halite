@@ -48,6 +48,9 @@ func (windowsProvider) Disabled(c *exec.Context, name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if s.ConfigErr != nil {
+		return false, fmt.Errorf("reading %q's start type: %w", name, s.ConfigErr)
+	}
 	return s.StartType == "disabled", nil
 }
 

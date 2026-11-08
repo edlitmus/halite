@@ -41834,6 +41834,79 @@ records, not the index.
   lock, where the scan read the whole store. Bounded, and smaller than
   before, but not O(1).
 
+### 5.636 A failed config read answered Enabled's question with no as though it knew
+
+Issue 608 item 5, lead L22 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service_windows.go`, `internal/builtin/win_service_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked and run on
+this Windows 11 host.
+
+**The defect.** `statusOf` reads a service's status, then its configuration;
+when the configuration read failed it returned `(out, nil)` with every
+configuration field -- `StartType`, `Account`, `BinaryPath`, `DisplayName`,
+`Description` -- left at the zero value and no error at all. The comment
+reasoned correctly about the common question, `service.status`: "the status
+is the answer... and a configuration this process may not read is not a
+reason to fail the whole query." But `Enabled` and the `Disabled` PR #679
+added both decide a boolean from `StartType` alone, and an empty string is
+not `"auto"` or `"auto_delayed"` -- it reads exactly like `"manual"`, with
+no error to say the reading was never made. `win_service.get_start_type`
+had the milder version of the same gap: an empty string compared against
+any real start type as a mismatch, which at least pushes a state toward
+calling `SetStartType` rather than silently agreeing, but is still not the
+value anybody asked `GetValue` for.
+
+A healthy service and a normal account cannot make the real
+`QueryServiceConfig` fail on demand -- confirmed by trying it on EventLog,
+where it always succeeds here -- so this was never exercised by running
+anything, including the live legs that drove `Enabled`'s own fix in
+PR #679.
+
+**Shown.** `queryConfig` is now a `var` holding the real implementation, so
+`TestAFailedConfigReadIsAnErrorNotASilentNo`
+(`internal/winsvc/winsvc_windows_test.go`) can replace it with one that
+always fails, the same seam `internal/exec`'s confinement-warning test
+(5.620) used for `createJobObject`. On the unchanged `Enabled`:
+
+```
+Enabled with no config read returned (false, nil); want an error
+```
+
+**The change.** `Status` gained a `ConfigErr error` field, set when
+`queryConfig` fails; `Query` and `service.status`'s callers are unaffected,
+since `State` and `PID` are still real and the overall call still succeeds.
+`Enabled`, `builtin`'s `windowsProvider.Disabled`, and
+`winServiceStartType` each now check it first and return it as their own
+error rather than reading the zero-valued `StartType` as a fact.
+
+With the change, `go test ./internal/winsvc/... ./internal/builtin/...
+-count=1` is green on this host, including the test above.
+
+**Lead L21, checked, did not fully reproduce.** The same read named
+`internal/exec/shell_windows.go`'s clean environment as missing
+`ProgramFiles`, `SystemDrive`, `USERPROFILE`, `APPDATA`, `ProgramData`,
+`PSModulePath` and `COMPUTERNAME`. Run for real: PowerShell started under
+exactly this build's clean environment (confirmed with `exec.Command` and
+that exact variable list) resolved `$env:PSModulePath` to a sensible
+default on its own -- `C:\Users\ed\Documents\WindowsPowerShell\Modules;...`
+-- without `PSModulePath` or `USERPROFILE` set at all, and
+`Get-Module -ListAvailable` found 98 modules. PowerShell resolves its
+module and profile paths through the user's token rather than reading
+those two names back out of the environment it was given, at least for
+this build and this host. The other five names were not independently
+checked, and a program that reads `%APPDATA%` or `%ProgramFiles%`
+literally -- most command-line tools that are not themselves .NET, since
+.NET's own callers tend toward the token-based path PowerShell took here --
+plausibly still gets nothing for them. Not changed without a demonstrated
+failure to point at, per CLAUDE.md's own rule for this repository.
+
+**Not verified.** A service whose configuration genuinely cannot be read by
+this account rather than by an injected failure -- the injected one proves
+the plumbing, not that such a service exists. `win_service.info`, which
+still reports the zero-valued fields with no error for a caller who reads
+them as diagnostic prose rather than deciding something from them; left
+alone on purpose; see the comment in `statusOf`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
