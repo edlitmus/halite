@@ -41572,22 +41572,40 @@ core state *modules*, and the row counted functions. The row now cites
 the test that logs it, so the next reader has a command rather than a
 number.
 
-**Not covered.** One dpkg, on one day: 1.22.22 on x86_64, Debian 13.
-No second dpkg version has been asked, nothing has been asked on arm64,
-and a captured fixture cannot notice dpkg changing its mind — that is
-what the live test in the `fleetcheck` leg is for, and **it has not run
-yet.** It skipped on the development host, correctly, because FreeBSD has
-no dpkg; the push that carries this entry is what first runs it, in the
-`debian` leg, and the three new RPM pairs with it in the `rpm` legs.
-Until those logs exist, the Debian differential is a captured oracle and
-a test that has never executed against a live tool.
+**The run.** The paragraph here said the live test had never executed and
+that the push carrying this entry was what would first run it. It ran, in
+the same run that pushed it (Fleet 42518184078, the `debian` job):
+
+- **dpkg 1.21.23 on amd64**, in the bookworm container — *not* the
+  1.22.22 the fixture was captured from. All 25 vectors agreed there too,
+  and 0 were outside Debian policy. Two dpkg versions, from two Debian
+  releases, now answer this table the same way, which is worth more than
+  the one the capture gave: a fixture cannot notice dpkg changing its
+  mind, and the second version is the first evidence that it has not.
+- The dispatch subtest logged `os_family "Debian" resolves to the
+  "debian" ordering`, so the silent fall-back to rpm's rules is not what
+  a real Debian machine gets.
+- The three RPM pairs were answered by **rpm 4.16.1.3 on Rocky 9** in the
+  same run, `TestLiveRpmVersionCmpAgreesWithRpm/evr` passing with the
+  extended list. On AlmaLinux 8.10 that subtest skipped, saying `rpm
+  4.14.3: rpm.vercmp is raw rpmvercmp before 4.16, not an EVR
+  comparison` — the documented allowed skip, not a silent one.
+
+**Not covered.** Two dpkg versions, both x86_64: nothing has asked an
+arm64 dpkg, and no dpkg older than 1.21 has been asked anything. The
+`fleetcheck` leg has no equivalent of `run.sh`'s skip check, so a future
+change that made `requireDpkg` skip there would pass quietly; the rpm
+legs would not. And the vectors are still the vectors — 25 pairs chosen
+because dpkg's own suite and the policy manual call them hard, which is
+not the same as a sweep.
 
 One methodological note, because it changes what the capture is worth:
 the test binary could not be copied to the Debian host from this session,
 so dpkg was asked over ssh with a read-only script and the comparison was
 made here. That is the same oracle and the same 25 answers, but it is not
-the test running there, and the distinction is why the paragraph above
-says the live test has not run.
+the test running there. The distinction mattered for as long as the leg
+had not run, and the leg has now run against a second dpkg, which is the
+stronger evidence anyway.
 
 ### 5.634 Every return re-read every return before it, so a job to n nodes cost n²
 
