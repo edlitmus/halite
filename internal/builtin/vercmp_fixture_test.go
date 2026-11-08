@@ -26,10 +26,11 @@ const dpkgFixture = "dpkg-1.22.22-trixie.tsv"
 //
 // This closes that on any machine, by holding the implementation to what
 // a real dpkg actually answered. A captured oracle is weaker than the
-// live one in exactly one way, and the comment in the fixture says which:
-// it is one dpkg, on one day. It is stronger in the way that matters most
-// here, because it runs in the ordinary suite on every platform instead
-// of only where dpkg exists.
+// live one in exactly one way: it cannot notice dpkg changing its mind.
+// The `debian` leg is what watches for that, and it has answered the same
+// 25 pairs on a second dpkg version already. The fixture is stronger in
+// the way that matters most here, because it runs in the ordinary suite
+// on every platform instead of only where dpkg exists.
 func TestDebianOrderingMatchesACapturedDpkg(t *testing.T) {
 	captured := readDpkgFixture(t)
 
