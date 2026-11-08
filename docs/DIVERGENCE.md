@@ -40882,6 +40882,210 @@ run gave `/usr/local/etc/halite`, its `pki`, `/var/db/halite`,
 the test runs it where it is installed). Linux with a missing
 `/etc/systemd/system` was not seen; systemd always has it.
 
+### 5.626 Issue 308's remaining procedures, run in FreeBSD jails and on two Linux hosts
+
+Issue 308, after 5.283, 5.284 and 5.482. The procedures 5.482 still listed as
+not run were run on 2026-11-07 and 2026-11-08.
+
+**Where.** FreeBSD: bastille thin jails on `beastie`, whose kernel is FreeBSD
+15.1-RELEASE-p6 (amd64). The hub ran on a 14.5-RELEASE userland, made from
+`base.txz` with no patches. The node ran on a 15.1-RELEASE userland. A new jail
+was made for each run and destroyed afterwards. The jails shared the loopback
+interface `bastille0` and had no outbound network. The build was `bmake dist`
+from `main` at `5d314a40`. `sha256sum -c` passed, but there was no attestation
+or signature to check. Linux: the shared AWS test hosts `noop-1` (hub, Ubuntu
+22.04.5, kernel 6.8.0-1066-aws, arm64) and `noop2-1` (node, Ubuntu 24.04.5,
+kernel 6.8.0-1067-aws-fips, arm64), as root through SSM. They are not fresh:
+both run salt-minion, postfix and sssd. Everything halite was removed from both   <!-- lexicon:allow -->
+afterwards, and salt-minion was still active. The binaries were built on   <!-- lexicon:allow -->
+`noop2-1` from `main` at `07a37840` with go1.27.3. Only TCP 22 and 8301 are open
+between the hosts, so the hub listened on 8301.
+
+**A jail cannot show** kernel modules, most `sysctl`s, a real boot (the jail's
+`/etc/rc` runs when the jail starts, but there is no loader, kernel or `devd`, and
+the network is up before it), a host firewall, or a wire between hosts.
+
+**Found, each with its own fix:**
+
+- 5.623: replacing the agent from the tree with `file.managed` (chapter 36)
+  made a 60 MB return of a line diff of the two binaries. The hub refused it, and
+  the operator's `run` never got an answer.
+- 5.624: `examples/hub.yaml`, in every archive, set FreeBSD's `pki_dir`,
+  `state_dir` and `policy`. On Linux, a hub started from it as chapter 30
+  step 4 says stopped at once with status 78.
+- 5.625: on FreeBSD with no packages, `/usr/local` is empty. `make install`
+  refused as root, and chapter 30's `install … /usr/local/etc/rc.d/` failed with
+  `No such file or directory`.
+
+**Corrected in the handbook, with no code change:**
+
+- **The FreeBSD user-data script** needs `/usr/local/bin/halite-node` in full,
+  because rc(8) sets `PATH=/sbin:/bin:/usr/sbin:/usr/bin`. The first run failed
+  with `halite-node: not found` and exit 127. It also needs `install -d` for
+  `/usr/local/bin`. With both, run from `/etc/rc.local` at jail start, it
+  enrolled by token. On Linux the chapter's script ran as written, as a
+  transient systemd unit, whose PATH has `/usr/local/bin`.
+- **Chapter 24's crontab entry** was two lines joined by a backslash. `crontab`
+  refused it (`bad minute`), because cron has no line continuation.
+- **A node that does not answer is reported** by cron itself, to the crontab's
+  owner, as `not connected` and `no answer`. The report's address gets nothing.
+- **A second operator certificate** (`reporter`) in `pki_dir` makes every plain
+  command on that host refuse until `--as` is given.
+
+**Run as the chapters say, and as they said it would go:** chapter 30 on the
+14.5 hub (`doctor` `6 pass, 2 skip`) and on Linux after 5.624's change by hand
+(`7 pass, 1 skip`). Chapter 31's token enrolment by user-data on both
+platforms, over the jail network and over the VPC, with no tunnel. Chapter 24's
+drift report from root's crontab on the 14.5 hub with dma and `mail -E`: two
+mails while the node drifted, and none on two ticks after it converged. The
+example tree's `halite/node.sls` with its own pillar, on the 15.1 node: it
+returned first, and the node restarted 30 seconds later and came back up. The
+`node.yaml` it writes has no `hub_fingerprint` or `node_id`, which did no harm
+to an enrolled node with a cached ID. Chapter 36's upgrade by a state, with
+5.623's fix.
+
+**Seen and not explained.** `service halite_hub restart` twice stopped at
+`Waiting for PIDS: <pid>`, in rc.subr's `pwait`, after the hub had logged `the
+hub stopped` and was gone from the host. A new `pwait` on the same pid returned
+at once. Ten restarts in a row each took about a second. FreeBSD's `timeout(1)`
+waits for every descendant, so wrapping `service … restart` in it always times
+out and then kills the daemon. That says nothing about halite, but it cost an
+hour here.
+
+**Not run.** cloud-init itself, and FreeBSD's nuageinit (a jail has no config
+drive). The agentless bootstrap with a Linux target (chapter 17). A Linux
+upgrade by a state, and a whole fleet upgrade. Mail off the machine. The
+`halite-api` paths. A FreeBSD host on real hardware or a VM for any of this.
+`make check` for this documentation change ran only in CI.
+
+### 5.627 Four of `cpu_flags`' feature numbers were wrong on Windows
+
+Issue 608 item 5, lead L1 (`internal/grains/platform_windows.go`). Found by
+reading, in the issue 321 second-pass audit. Checked against the Win32
+feature numbers `golang.org/x/sys/windows` carries from winnt.h, then run on
+this Windows 11 host.
+
+**The defect.** `processorFeatures_` named four feature numbers wrong:
+
+- `sse4_1` used 36, which is `PF_SSSE3_INSTRUCTIONS_AVAILABLE`. The real
+  `PF_SSE4_1_INSTRUCTIONS_AVAILABLE` is 37.
+- `sse4_2` used 37 (SSE4.1's own number) instead of 38.
+- `vmx` used 17, which is `PF_XSAVE_ENABLED` — true on any CPU with the
+  `xsave` instruction, which is unrelated to virtualization firmware. The
+  real `PF_VIRT_FIRMWARE_ENABLED` is 21.
+- `aes` used 25, which is `PF_ARM_64BIT_LOADSTORE_ATOMIC`. winnt.h defines
+  no x86 feature number for AES-NI that `IsProcessorFeaturePresent` can
+  answer at all, so the grain was naming a feature it never checked.
+
+On this machine all of SSSE3, SSE4.1, SSE4.2, XSAVE and
+`VIRT_FIRMWARE_ENABLED` happen to read true, so the four numbers were
+*right by accident* here: a tree branching on `sse4_1` or `vmx` got the
+answer it expected, for the wrong reason. A machine with SSSE3 but not
+SSE4.1 — a Core 2, say — or one without Hyper-V's virtualization firmware
+active would not have been so lucky, and would have been told the wrong
+thing by a number that looked plausible.
+
+**Shown.** `TestProcessorFeatureNumbersMatchTheWindowsHeader`
+(`internal/grains/platform_windows_test.go`) checks the table's numbers
+against the named `windows.PF_*` constants. On the unchanged code it failed:
+
+```
+vmx uses feature number 17, want 21 (the real winnt.h number)
+sse4_1 uses feature number 36, want 37 (the real winnt.h number)
+sse4_2 uses feature number 37, want 38 (the real winnt.h number)
+cpu_flags claims to answer "aes" with feature number 25, which is an ARM flag unrelated to AES-NI
+```
+
+Before writing the test, `IsProcessorFeaturePresent` was called directly for
+both the old and the real numbers on this host (Windows 11, build 26100) to
+confirm which of the four actually differ in practice here: feature 25 read
+false, and 17/36/37 read the same as 21/37/38 respectively, which is the
+"right by accident" finding above.
+
+**The change.** `processorFeatures_` now uses the `windows.PF_*` constants
+by name instead of bare numbers, so a future entry that is off by one fails
+the same test rather than reading plausibly. `aes` is no longer in the
+table.
+
+With the change, `TestProcessorFeatureNumbersMatchTheWindowsHeader` and the
+rest of `internal/grains` pass (`go test ./internal/grains/... -count=1`, this
+host).
+
+**What an operator sees.** `cpu_flags` no longer lists `aes` on Windows. A
+tree that branched on it for an AES-NI capability it was never actually
+testing stops matching; nothing here ever made that branch correct. `vmx`
+now means `PF_VIRT_FIRMWARE_ENABLED` rather than XSAVE — on a machine
+without Hyper-V's virtualization firmware active, `vmx` now reads false
+where it used to read true.
+
+**Not verified.** We did not run a CPU old enough for the numbering bug to
+change `sse4_1` or `sse4_2`'s answer. We did not run a machine with
+virtualization firmware disabled to see `vmx` read false.
+
+### 5.628 A manual Windows service is not enabled, but it is not disabled either
+
+Issue 608 item 5, lead L3 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service.go`, `internal/builtin/service_windows.go`). Found
+by reading, in the issue 321 second-pass audit. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winsvc.Enabled` reports `StartType == "auto" ||
+"auto_delayed"`, which is right on its own: a `manual` service is not one the
+machine brings up at boot. But `service.dead`'s and `service.enabled`'s /
+`service.disabled`'s shared boot-state logic decided whether to call
+`Disable` by comparing `Enabled()` against what was wanted, and a `manual`
+service already reads `Enabled() == false`, the same as a `disabled` one.
+`service.dead` with `enable: False`, or `service.disabled`, on a `manual`
+service therefore reported "already disabled" and never called `Disable` at
+all -- leaving it `manual` forever, which is exactly the gap the Windows
+`Disable` provider's own doc comment already named: "a manual service still
+starts when something asks for it... which `manual` does not guarantee."
+The code's comment stated the intent the code one call away did not carry
+out.
+
+**Shown.** `TestBootStateNeedsChangeTellsManualFromDisabled`
+(`internal/builtin/service_test.go`) is a cross-platform unit test against a
+fake provider with Windows' three-state shape. On the old comparison
+(`now != want`, with no third state) it failed:
+
+```
+a manual service reported no change needed to become disabled
+```
+
+`TestServiceDisabledMovesAManualServiceToDisabled`
+(`internal/builtin/service_windows_test.go`) drives the real thing --
+`EventLog` set to `manual`, then `service.disabled`, then read back -- but
+this process is a standard account in the Administrators group with no
+elevated token, and `winsvc.SetStartType` needs `SC_MANAGER_ALL_ACCESS`, so it
+skips here with "needs administrator rights". **Not run**: the real `winsvc`
+and `service.disabled` path together, on an elevated token.
+
+**The change.** A new optional interface, `serviceDisableChecker`, lets a
+provider report its own "is this exactly my `Disable`'d state" when
+`Enabled()`'s boolean conflates it with something else. `bootStateNeedsChange`
+uses it only when moving *toward* disabled; moving toward enabled is
+unchanged, since nothing here has a third state above `Enabled() == true`.
+`windowsProvider.Disabled` reports `StartType == "disabled"`. Every other
+provider (`systemd`, FreeBSD rc, OpenRC, sysvinit, launchd) does not
+implement the interface, and `bootStateNeedsChange` falls back to the
+original plain comparison for them --
+`TestBootStateNeedsChangeIsAPlainComparisonWithNoThirdState` holds that
+nothing changed for them.
+
+With the change, the cross-platform unit test passes
+(`go test ./internal/builtin/... -count=1`, this host), and the rest of the
+package's suite, including every other platform's service tests, stays
+green.
+
+**What an operator sees.** On Windows, `service.dead` with `enable: False`,
+and `service.disabled`, now move a `manual` service to `disabled` rather
+than leaving it `manual` and reporting success. A tree that depended on the
+old behavior -- relying on `manual` to satisfy `enable: False` -- now sees a
+change on its next run and the service's start type actually move.
+
+**Not verified.** The real mutation on a Windows service, only the unit test
+against a fake provider. An elevated token. A domain-joined host.
+
 ### 5.626 A return too large for the hub was lost without trace
 
 The sequel to 5.623, which removed the ordinary way to reach the limit and

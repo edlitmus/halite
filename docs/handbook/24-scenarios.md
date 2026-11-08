@@ -334,12 +334,30 @@ run, including the failure, the rollback and the resume, in
 
 ```sh
 # crontab on the host that runs operator commands
-17 6 * * *  halite-hub run '*' state.apply --test --out json --as reporter \
-              | /usr/local/bin/drift-report.sh | mail -E -s "halite drift" ops@example.com
+17 6 * * *  halite-hub run '*' state.apply --test --out json --as reporter | /usr/local/bin/drift-report.sh | mail -E -s "halite drift" ops@example.com
 ```
 
-(`mail -E` sends nothing on an empty body: a converged fleet is silent.) The
-script is `drift-report.sh` from [chapter 16](16-fleet-operations.md). Give
+(`mail -E` sends nothing on an empty body: a converged fleet is silent.) Write
+the entry on **one line**. Cron has no line continuation. When the entry was
+split with a backslash, `crontab` refused the file: `"/root/crontab.root":2:
+bad minute` and `crontab: errors in crontab file, can't install`. Written on
+one line, it installed.
+
+Set `MAILTO` in the crontab. A node that does not answer is not in the
+report. Cron itself mails the error text of `halite-hub` to the owner of the
+crontab, not to the address in the report line. With a stopped node, each
+tick sent that owner a mail from `Cron Daemon` with these two lines of
+standard error: `node1.lab.example.com: not connected` and
+`node1.lab.example.com: no answer`. Put the address that must see this in
+`MAILTO`.
+
+If the `pki_dir` of the host holds a second operator certificate (here,
+`reporter` next to your own), a plain command on that host needs `--as`. For
+example, `halite-hub runner manage.status` refused with: `halite: there are 2
+operator certificates in /usr/local/etc/halite/pki (ed, reporter); say which
+with --as`. The crontab line above already names `--as reporter`.
+
+The script is `drift-report.sh` from [chapter 16](16-fleet-operations.md). Give
 the `reporter` certificate a role that may run `state.apply` only as a
 rehearsal, with `require_kwargs` (chapter 26):
 
@@ -386,7 +404,16 @@ goal; a non-empty one lists the node, the state and what it would change.
 > refused (`no rule in [reporter] permits test.ping against "*"`). **Not run:**
 > the same through `halite-api` and from a schedule or an orchestration step
 > (the unit tests cover those paths; no live run did), delivery to an address
-> off the machine, and FreeBSD's `mail`.
+> off the machine. **FreeBSD** (DIVERGENCE 5.626): the same was run as root
+> in a FreeBSD 14.5-RELEASE jail (hub and `reporter` certificate on the hub
+> host; a 15.1 node in another jail), with `dma` as the mail system and
+> FreeBSD's `mail -E`, every minute. Cron's own `PATH` found `halite-hub` and
+> `jq`, so the crontab needed no `PATH` line. While the node drifted, two
+> mails arrived in `/var/mail/root`, one per tick, and none came after the
+> node converged. With the node stopped, cron mailed the two stderr lines
+> shown above. The jail's cron runs with a jitter of up to 60 seconds, so
+> ticks came late. **Not run:** `halite-api`, delivery to an address off the
+> machine, and a FreeBSD host that is not a jail.
 
 ## Designing your own
 
