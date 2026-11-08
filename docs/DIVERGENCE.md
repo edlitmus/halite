@@ -40799,6 +40799,41 @@ and `manage.versions` then showed the node on the binary from the tree.
 diffed as text. Linux, macOS and Windows nodes were not run; the change is not
 platform code.
 
+### 5.624 The example hub.yaml in the Linux archive set FreeBSD's paths
+
+**Found** on 2026-11-08 while running chapter 30 on Linux for issue 308, as
+root on the shared AWS test host noop-1 (Ubuntu 22.04.5 LTS, kernel
+6.8.0-1066-aws, arm64), from `main` at `07a37840`. Step 4 says to start from
+`examples/hub.yaml`, and adds that `pki_dir`, `state_dir` and `policy` "have
+correct platform defaults: do not set them". The example set all three, to
+`/usr/local/etc/halite/pki`, `/var/db/halite` and
+`/usr/local/etc/halite/policy.yaml`. The same file is in every archive. The
+Linux archive built from `5d314a40` held those lines too. Installed as the
+step says, the hub started under the shipped unit and stopped at once:
+`halite: creating /usr/local/etc/halite/pki: mkdir /usr/local/etc/halite:
+read-only file system`, then `status=78/CONFIG`. The unit's
+`ProtectSystem=strict` allows only `/etc/halite/pki`, so the FreeBSD path is
+read-only. Without the unit, the hub would have made a second configuration
+tree under `/usr/local/etc` instead. `examples/node-with-hub.yaml` set the
+node's `pki_dir` to the FreeBSD path in the same way.
+
+Deleting the three lines from the copied file was the whole fix. The hub
+then made its CA in `/etc/halite/pki`, and `doctor` gave `7 pass, 1 skip`.
+
+**Changed.** The four settings are commented out in the two examples. Each
+says what the default is on Linux and on FreeBSD, and to set it only to move
+it. `TestExamplesNameNoPlatformSpecificPath` (`internal/config`) reads every
+example in `contrib/examples` and fails on any line that is not a comment and
+names a directory from `config.PathTable` whose Linux and FreeBSD values
+differ. The cache and log directories are the same on both, so they are
+allowed. Before the examples were changed, it failed on the four lines and
+named each one.
+
+**Not verified.** The corrected example was not installed on a Linux host and
+started. The run above deleted the same three lines by hand. The FreeBSD run
+of chapter 30 (jail `h308hub`, 14.5-RELEASE userland) used the old example
+with its FreeBSD paths, which are the defaults there.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -151,3 +151,60 @@ func TestCommentedExampleKeysAreRealKeysForTheirProgram(t *testing.T) {
 	}
 	t.Logf("checked %d example keys", checked)
 }
+
+// No example sets a path that is right on one platform and wrong on the
+// other.
+//
+// The same contrib/examples goes into every release archive, Linux and
+// FreeBSD alike, and chapter 30 of the handbook says to start a hub from
+// examples/hub.yaml. That file set pki_dir, state_dir and policy to the
+// FreeBSD paths. Copied onto Ubuntu as the chapter says, the hub was
+// refused by its own unit at first start: `creating
+// /usr/local/etc/halite/pki: mkdir /usr/local/etc/halite: read-only file
+// system`, status 78 (DIVERGENCE 5.624). Every one of those settings has a
+// default that is right for the platform it runs on, so an example that
+// leaves them commented is right everywhere.
+//
+// A directory that is the same on every platform (the cache and log
+// directories) is not refused: it is right wherever the archive lands.
+func TestExamplesNameNoPlatformSpecificPath(t *testing.T) {
+	var differ []string
+	for _, p := range PathTable() {
+		if p.Linux != p.BSD {
+			differ = append(differ, p.Linux, p.BSD)
+		}
+	}
+	dir := filepath.Join("..", "..", "contrib", "examples")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		for i, line := range strings.Split(string(b), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			for _, d := range differ {
+				if strings.Contains(line, d+"/") || strings.HasSuffix(strings.TrimRight(line, " '\""), d) {
+					t.Errorf("%s:%d sets %q, which is a path on one platform only; "+
+						"leave it commented so the platform's default applies:\n\t%s",
+						e.Name(), i+1, d, line)
+					break
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("there are no examples; this check has stopped checking anything")
+	}
+}
