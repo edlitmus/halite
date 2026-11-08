@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -202,6 +203,24 @@ func TestAccountNamesAreComparedTheWayWindowsDoes(t *testing.T) {
 	}
 	if sameAccount("Administrators", "Users") {
 		t.Error("two different groups compared equal")
+	}
+}
+
+// A trustee that does not resolve -- a deleted account, or one from a
+// domain this machine cannot reach -- is rendered as its SID's own
+// string form (winsec's `describe`). The bare-name comparison alone
+// never recognises that as the same account its name resolves to,
+// because the SID side has no backslash to split a bare name out of:
+// `bareAccount` on a SID returns the whole SID, which an EqualFold
+// against a bare account name never matches (issue 608 item 5, lead
+// L15's "a SID never equals a name" half).
+func TestASIDStringAndTheNameItResolvesToAreOneAccount(t *testing.T) {
+	me, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameAccount(me.Uid, me.Username) {
+		t.Errorf("%q (a SID) and %q (the name it resolves to) should be one account", me.Uid, me.Username)
 	}
 }
 
