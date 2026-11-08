@@ -15,7 +15,7 @@
 # to each other in both directions, so a vector with no captured answer
 # fails as loudly as a captured answer for a vector that has gone.
 #
-# DIVERGENCE 5.631.
+# DIVERGENCE 5.633.
 1.0	=	1.0
 1.0	<	1.1
 1.9	<	1.10

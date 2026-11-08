@@ -22,7 +22,7 @@ import (
 // `vercmp_test.go`, as "needs a Debian or RHEL host". That was true when
 // it was written and had stopped being true: `make fleetcheck` runs a
 // real Debian with a real dpkg, and this project has had Debian-family
-// machines to hand since. See 5.631.
+// machines to hand since. See 5.633.
 //
 // Like the rpm reads, this needs neither root nor `HALITE_SYSTEM_LIVE`:
 // `dpkg --compare-versions` parses two strings and exits, touching no

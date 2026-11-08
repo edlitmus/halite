@@ -200,7 +200,7 @@ func TestLiveRpmVersionCmpAgreesWithRpm(t *testing.T) {
 			// read out of rpmver.c is also put to an rpm. A missing release
 			// sorting before any release is the rule they exist for, and
 			// `1.0` against `1.1-5` checks that the version segment still
-			// decides first (5.631).
+			// decides first (5.633).
 			{"1.0", "1.0-5"}, {"1.0", "1.1-5"}, {"1.1", "1.0-5"},
 		}
 		for _, p := range evrPairs {

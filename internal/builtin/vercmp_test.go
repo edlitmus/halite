@@ -22,7 +22,7 @@ import (
 //   - Debian, on a real dpkg, in `TestLiveDpkgVersionCmpAgreesWithDpkg`
 //     for the `fleetcheck` leg, and as captured answers in
 //     `TestDebianOrderingMatchesACapturedDpkg`, which runs everywhere.
-//     DIVERGENCE 5.631.
+//     DIVERGENCE 5.633.
 //
 // So a vector added here is checked against the published vectors *and*
 // against what a real dpkg answered; the fixture check fails on a vector
@@ -198,7 +198,7 @@ func TestRPMOrderingIsRpm416sEVRComparison(t *testing.T) {
 // eight pairs below are in that subtest's list and rpm 4.16.1.3 has
 // answered them. The three it did not reach -- `1.0` against `1.0-5` and
 // `1.1-5`, and `1.1` against `1.0-5` -- are in it now, so the next run of
-// that leg asks the whole table (5.631).
+// that leg asks the whole table (5.633).
 func TestRPMAbsentReleaseSortsBeforeAnyRelease(t *testing.T) {
 	for _, c := range []struct {
 		a, b string

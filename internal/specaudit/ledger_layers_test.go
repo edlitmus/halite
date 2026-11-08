@@ -15,11 +15,11 @@ import (
 // They have rotted three times. Four rows once said "blocked on phase 2"
 // long after phase 2 landed; the reproducibility row went on denying a
 // second builder for a month after two of them agreed on a published tag
-// (5.630); and the edit that fixed the second changed two of the three
+// (5.632); and the edit that fixed the second changed two of the three
 // counts, which is exactly the moment a hand-written tally goes stale.
 //
 // This holds the sentence to the rows. It cannot check that a row is
-// *true* — that is a judgement about what somebody has run, and 5.630 is
+// *true* — that is a judgement about what somebody has run, and 5.632 is
 // the argument for reading rather than trusting it — but a count is
 // arithmetic, and arithmetic should not be left to the reader.
 func TestLedgerLayerTallyMatchesTheRows(t *testing.T) {

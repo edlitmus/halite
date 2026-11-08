@@ -18,7 +18,7 @@ const dpkgFixture = "dpkg-1.22.22-trixie.tsv"
 // version-comparison differential that runs on every machine.
 //
 // `TestLiveDpkgVersionCmpAgreesWithDpkg` is the differential proper and
-// it needs a Debian host, so until 5.631 it had never run: SPEC 31's row
+// it needs a Debian host, so until 5.633 it had never run: SPEC 31's row
 // said as much, and `TestCompareDebian` was left holding a table written
 // from dpkg's test suite and the policy manual -- a table that agrees
 // with the documentation by construction, and with dpkg only if the
