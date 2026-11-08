@@ -8,12 +8,25 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 )
 
-// The cases below are the ones dpkg's and rpm's own test suites use.
-// SPEC section 31 asks for a differential test against
-// `dpkg --compare-versions` and `rpmdev-vercmp`, which needs a Debian or
-// RHEL host to run; until there is one, their published vectors are the
-// nearest honest thing, and they are the cases the algorithms are known
-// to get wrong.
+// The cases below are the ones dpkg's and rpm's own test suites use:
+// the cases the algorithms are known to get wrong.
+//
+// SPEC section 31 asks for a differential against
+// `dpkg --compare-versions` and `rpmdev-vercmp`. This comment used to end
+// "until there is one, their published vectors are the nearest honest
+// thing", and both halves now exist:
+//
+//   - rpm, on a real rpm, in `TestLiveRpmVersionCmpAgreesWithRpm`. The
+//     `fleetcheck-rocky9` and `fleetcheck-alma8` legs drive it and fail
+//     if it skips.
+//   - Debian, on a real dpkg, in `TestLiveDpkgVersionCmpAgreesWithDpkg`
+//     for the `fleetcheck` leg, and as captured answers in
+//     `TestDebianOrderingMatchesACapturedDpkg`, which runs everywhere.
+//     DIVERGENCE 5.631.
+//
+// So a vector added here is checked against the published vectors *and*
+// against what a real dpkg answered; the fixture check fails on a vector
+// no dpkg has ever been asked.
 
 func checkCmp(t *testing.T, name string, cmp func(string, string) int, a, want, b string) {
 	t.Helper()
@@ -30,52 +43,59 @@ func checkCmp(t *testing.T, name string, cmp func(string, string) int, a, want, 
 	}
 }
 
+// debianVectors are the cases both Debian oracles answer: this package's
+// `CompareDebian` below, and a real `dpkg --compare-versions` in
+// `TestLiveDpkgVersionCmpAgreesWithDpkg`. One table, because a vector
+// the offline test holds and the differential does not is a case nothing
+// has ever put to dpkg, and the gap would not be visible from either
+// test.
+var debianVectors = [][3]string{
+	{"1.0", "=", "1.0"},
+	{"1.0", "<", "1.1"},
+	{"1.9", "<", "1.10"},
+	{"1.0", "<", "1.0.1"},
+	{"1.0-1", "<", "1.0-2"},
+	{"1.0-1", "=", "1.0-1"},
+
+	// The epoch beats everything after it.
+	{"1:1.0", ">", "2.0"},
+	{"1:1.0", "<", "2:0.1"},
+	{"0:1.0", "=", "1.0"},
+
+	// The tilde sorts before everything, including the empty string.
+	// Getting this backwards installs a release candidate over a
+	// release, which is the reason it is called out in SPEC 15.2.
+	{"1.0~rc1", "<", "1.0"},
+	{"1.0~rc1", "<", "1.0~rc2"},
+	{"1.0~~", "<", "1.0~"},
+	{"1.0~", "<", "1.0"},
+	{"1.0~beta1~svn1245", "<", "1.0~beta1"},
+	{"1.0~beta1", "<", "1.0"},
+
+	// Letters sort before every other non-letter, so an alpha
+	// release precedes the plain version's separator.
+	{"1.0a", "<", "1.0b"},
+	{"1.0a", ">", "1.0"},
+	{"1.0+b1", ">", "1.0"},
+
+	// Leading zeros in a digit run do not count.
+	{"1.007", "=", "1.7"},
+	{"1.0-007", "=", "1.0-7"},
+
+	// A hyphen in the upstream version belongs to the upstream
+	// version; only the last one starts the revision.
+	{"1.0-beta-1", "<", "1.0-beta-2"},
+
+	// Real ones, from Debian archives.
+	{"2.4.7-1", "<", "2.4.7-2"},
+	{"1:2.4.7-1", ">", "2.4.8-1"},
+	{"5.4.0-1023.24", "<", "5.4.0-1023.25"},
+	{"1.2.3-1~bpo11+1", "<", "1.2.3-1"},
+}
+
 // From dpkg's t/Dpkg_Version.t and the Debian policy manual.
 func TestCompareDebian(t *testing.T) {
-	cases := [][3]string{
-		{"1.0", "=", "1.0"},
-		{"1.0", "<", "1.1"},
-		{"1.9", "<", "1.10"},
-		{"1.0", "<", "1.0.1"},
-		{"1.0-1", "<", "1.0-2"},
-		{"1.0-1", "=", "1.0-1"},
-
-		// The epoch beats everything after it.
-		{"1:1.0", ">", "2.0"},
-		{"1:1.0", "<", "2:0.1"},
-		{"0:1.0", "=", "1.0"},
-
-		// The tilde sorts before everything, including the empty string.
-		// Getting this backwards installs a release candidate over a
-		// release, which is the reason it is called out in SPEC 15.2.
-		{"1.0~rc1", "<", "1.0"},
-		{"1.0~rc1", "<", "1.0~rc2"},
-		{"1.0~~", "<", "1.0~"},
-		{"1.0~", "<", "1.0"},
-		{"1.0~beta1~svn1245", "<", "1.0~beta1"},
-		{"1.0~beta1", "<", "1.0"},
-
-		// Letters sort before every other non-letter, so an alpha
-		// release precedes the plain version's separator.
-		{"1.0a", "<", "1.0b"},
-		{"1.0a", ">", "1.0"},
-		{"1.0+b1", ">", "1.0"},
-
-		// Leading zeros in a digit run do not count.
-		{"1.007", "=", "1.7"},
-		{"1.0-007", "=", "1.0-7"},
-
-		// A hyphen in the upstream version belongs to the upstream
-		// version; only the last one starts the revision.
-		{"1.0-beta-1", "<", "1.0-beta-2"},
-
-		// Real ones, from Debian archives.
-		{"2.4.7-1", "<", "2.4.7-2"},
-		{"1:2.4.7-1", ">", "2.4.8-1"},
-		{"5.4.0-1023.24", "<", "5.4.0-1023.25"},
-		{"1.2.3-1~bpo11+1", "<", "1.2.3-1"},
-	}
-	for _, c := range cases {
+	for _, c := range debianVectors {
 		checkCmp(t, "debian", CompareDebian, c[0], c[1], c[2])
 	}
 }
@@ -170,9 +190,15 @@ func TestRPMOrderingIsRpm416sEVRComparison(t *testing.T) {
 
 // These follow from rpmverCmp in rpmio/rpmver.c at tag rpm-4.16.1.3 -- a
 // missing epoch is "0", and a missing release sorts before any release,
-// an empty one included -- read from the source, and no real rpm has been
-// asked them. The live differential asks them on an rpm >= 4.16 host;
-// until one runs it, they are the source's answers and nothing more.
+// an empty one included.
+//
+// They were read from the source and this comment said "no real rpm has
+// been asked them", which stopped being true once the `rpm (rocky9)` leg
+// began driving `TestLiveRpmVersionCmpAgreesWithRpm/evr`: five of the
+// eight pairs below are in that subtest's list and rpm 4.16.1.3 has
+// answered them. The three it did not reach -- `1.0` against `1.0-5` and
+// `1.1-5`, and `1.1` against `1.0-5` -- are in it now, so the next run of
+// that leg asks the whole table (5.631).
 func TestRPMAbsentReleaseSortsBeforeAnyRelease(t *testing.T) {
 	for _, c := range []struct {
 		a, b string
