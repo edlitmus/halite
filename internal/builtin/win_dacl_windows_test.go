@@ -340,7 +340,7 @@ func TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee(t *testing.T) 
 		t.Error("an account with a deny entry was reported as having a permission its separate allow entry covers")
 	}
 
-	// A sanity check on the fixture itself: Entries sees both.
+	// A precondition on the fixture itself: Entries sees both.
 	entries, err := winsec.Entries(path)
 	if err != nil {
 		t.Fatal(err)
