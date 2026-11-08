@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, `cpu_flags` no longer lists `aes`, and `sse4_1`, `sse4_2` and `vmx` now use the right Win32 feature numbers.** Four of the grain's feature numbers were wrong: `sse4_1` and `sse4_2` each named the number for the generation below them, `vmx` named XSAVE instead of virtualization firmware, and `aes` named an unrelated ARM flag because winnt.h has no x86 AES-NI number `IsProcessorFeaturePresent` can answer. On this host all four happened to read the same as the numbers they should have been, so the effect was invisible here; a CPU with SSSE3 but not SSE4.1, or a machine without Hyper-V's virtualization firmware active, would have been told the wrong thing. `aes` is removed rather than pointed at a feature that does not test it. DIVERGENCE 5.627.
+
 - **`make install` now works on a FreeBSD host with nothing in `/usr/local`.** It refused as root (`cannot write /usr/local/etc/halite — run make install as root`), or failed with `No such file or directory` when `/usr/local/bin` or `/usr/local/etc/rc.d` was missing. It now makes those directories. DIVERGENCE 5.625.
 
 - **`examples/hub.yaml` and `examples/node-with-hub.yaml` no longer set FreeBSD paths.** They set `pki_dir`, `state_dir` and `policy` to `/usr/local/etc/halite/…` and `/var/db/halite`, and the same files are in the Linux archives. A Linux hub started from the example, as chapter 30 of the handbook says, stopped at once with `mkdir /usr/local/etc/halite: read-only file system`. The settings are now commented out, so each platform's default applies. If you copied the example onto Linux, delete those lines. DIVERGENCE 5.624.
