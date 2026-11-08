@@ -21,7 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **On Windows, `service.enabled`, `service.disabled` and `win_service.get_start_type` now return an error when a service's configuration cannot be read, instead of silently answering as though it had none.** A service whose status could be read but whose configuration could not previously came back as an empty start type, which `Enabled` and `Disabled` both read as a confident "no" rather than "unknown". DIVERGENCE 5.630.
+- **On Windows, `service.enabled`, `service.disabled` and `win_service.get_start_type` now return an error when a service's configuration cannot be read, instead of silently answering as though it had none.** A service whose status could be read but whose configuration could not previously came back as an empty start type, which `Enabled` and `Disabled` both read as a confident "no" rather than "unknown". DIVERGENCE 5.636.
 
 - **Enrolling a new node no longer reads every record in the key store.** The hub counted pending requests, for the bound of 1,024, by opening every record under the store's lock, so each new name cost the size of the estate: 131 ms per identity into a store of 500 and 936 ms into one of 8,000 in a benchmark, and about an hour to issue 20,000 at the rate measured on AWS. It now counts a `pending-index` directory in the key store, made by the first enrolment after upgrading, which reads every record once. The bound is unchanged. DIVERGENCE 5.635.
 

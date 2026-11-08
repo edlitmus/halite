@@ -41834,7 +41834,7 @@ records, not the index.
   lock, where the scan read the whole store. Bounded, and smaller than
   before, but not O(1).
 
-### 5.630 A failed config read answered Enabled's question with no as though it knew
+### 5.636 A failed config read answered Enabled's question with no as though it knew
 
 Issue 608 item 5, lead L22 (`internal/winsvc/winsvc_windows.go`,
 `internal/builtin/service_windows.go`, `internal/builtin/win_service_windows.go`).
