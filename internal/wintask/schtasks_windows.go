@@ -9,12 +9,46 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/sys/windows"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileperm"
 )
+
+// cpOEMCP is CP_OEMCP from WinNls.h: "use the system's current OEM code
+// page", which is not among the vendored windows.CP_* constants.
+const cpOEMCP = 1
+
+// decodeSingleByte decodes schtasks' output when it is neither UTF-16
+// nor already valid UTF-8.
+//
+// schtasks declares `encoding="UTF-16"` on everything it prints and then
+// writes single-byte text once its output is not a console -- that part
+// was already known (decodeUTF16's doc comment). What single-byte
+// encoding was not: a console application that writes text with the
+// CRT's narrow functions writes it in the OEM code page once redirected,
+// not UTF-8 and not the host's ANSI code page. Confirmed on this host
+// (OEM code page 437): `cmd /c echo café`, redirected, wrote 'é' as the
+// single byte 0x82, which is cp437's 'é' and is not valid UTF-8 on its
+// own -- feeding that byte straight to encoding/xml, as the unchanged
+// code did, fails with "XML syntax error on line 1: invalid UTF-8". So a
+// task whose Description, Author or path held a non-ASCII character
+// could not be read back at all, and `win_task.present` tried to
+// recreate it on every run. ASCII is valid UTF-8 on its own and is
+// unaffected either way (issue 608 item 5, lead L7).
+func decodeSingleByte(raw []byte) string {
+	if len(raw) == 0 || utf8.Valid(raw) {
+		return string(raw)
+	}
+	wide := make([]uint16, len(raw))
+	n, err := windows.MultiByteToWideChar(cpOEMCP, 0, &raw[0], int32(len(raw)), &wide[0], int32(len(wide)))
+	if err != nil || n == 0 {
+		return string(raw)
+	}
+	return windows.UTF16ToString(wide[:n])
+}
 
 // ErrNotExist is returned for a task that is not there.
 //
@@ -411,25 +445,40 @@ func generateTrigger(t Task) (string, error) {
 // converge. 1970 is before any Windows and is what a task created this
 // way should say forever.
 func startBoundary(clock string) (string, error) {
+	hh, mm, ok := padClock(clock)
+	if !ok {
+		return "", fmt.Errorf("%q is not a time of day; write it as HH:MM", clock)
+	}
+	if hh > "23" || mm > "59" {
+		return "", fmt.Errorf("%q is not a time of day", clock)
+	}
+	return fmt.Sprintf("1970-01-01T%s:%s:00", hh, mm), nil
+}
+
+// padClock splits a clock time into its zero-padded hour and minute, the
+// same validation startBoundary applies before writing one into a
+// trigger. Shared with normalizeTrigger, which has to recognise
+// `daily at 3:00` and `daily at 03:00` as the same trigger: the scheduler
+// always reads one back padded, so a declaration's own unpadded hour
+// never matched it and the task was replaced on every run (issue 608
+// item 5, lead L4).
+func padClock(clock string) (hh, mm string, ok bool) {
 	trimmed := strings.TrimSpace(clock)
 	hh, mm, found := strings.Cut(trimmed, ":")
 	if !found || len(hh) == 0 || len(hh) > 2 || len(mm) != 2 {
-		return "", fmt.Errorf("%q is not a time of day; write it as HH:MM", clock)
+		return "", "", false
 	}
 	for _, part := range []string{hh, mm} {
 		for _, r := range part {
 			if r < '0' || r > '9' {
-				return "", fmt.Errorf("%q is not a time of day; write it as HH:MM", clock)
+				return "", "", false
 			}
 		}
 	}
 	if len(hh) == 1 {
 		hh = "0" + hh
 	}
-	if hh > "23" || mm > "59" {
-		return "", fmt.Errorf("%q is not a time of day", clock)
-	}
-	return fmt.Sprintf("1970-01-01T%s:%s:00", hh, mm), nil
+	return hh, mm, true
 }
 
 // escape renders text safe inside an element.
@@ -444,7 +493,22 @@ func escape(s string) string {
 //
 // Only those. A task read back from the scheduler carries forty settings
 // the declaration never mentioned, and comparing them all would make
-// every state report a change forever.
+// every state report a change forever. Description followed that rule
+// in spirit but was simply missing: it was not compared at all, declared
+// or not, so a description change made through a state was silently
+// never applied (issue 608 item 5, lead L6).
+//
+// Not fixed here, and worth the owner's attention rather than a unilateral
+// change: GenerateXML gives an omitted RunAs, RunLevel or Triggers list a
+// specific default when it creates a task -- SYSTEM, LeastPrivilege, no
+// trigger -- but this function, by the rule above, does not check an
+// omitted field against anything and so never notices the live task
+// drifting away from that default. Leads L5's two halves. Whether that is
+// the same "only what was declared" rule applied consistently, or a gap
+// in it -- TestOnlyWhatWasDeclaredIsCompared asserts the former for
+// exactly this case -- is a decision, not a parsing bug, and changing it
+// would change what `win_task.present` with no `run_as` or no trigger
+// promises for every estate already relying on today's answer.
 func SameDefinition(declared, current Task) bool {
 	if declared.Command != "" && !strings.EqualFold(declared.Command, current.Command) {
 		return false
@@ -457,6 +521,9 @@ func SameDefinition(declared, current Task) bool {
 		return false
 	}
 	if declared.Enabled != current.Enabled {
+		return false
+	}
+	if declared.Description != "" && declared.Description != current.Description {
 		return false
 	}
 	if declared.RunLevel != "" && !strings.EqualFold(declared.RunLevel, current.RunLevel) {
@@ -547,7 +614,11 @@ func sameTriggers(declared, current []string) bool {
 }
 
 // normalizeTrigger renders a declaration and a reading into one form, so
-// that `boot` and `at boot` compare equal.
+// that `boot` and `at boot` compare equal -- and so that `daily at 3:00`
+// and the scheduler's own `daily at 03:00` do too. The scheduler always
+// reads a clock time back zero-padded; a declaration that left the hour
+// unpadded never matched it, and `win_task.present` replaced the task on
+// every run (issue 608 item 5, lead L4).
 func normalizeTrigger(s string) string {
 	t := strings.ToLower(strings.TrimSpace(s))
 	switch t {
@@ -555,6 +626,11 @@ func normalizeTrigger(s string) string {
 		return "at boot"
 	case "logon", "at logon":
 		return "at logon"
+	}
+	if i := strings.LastIndex(t, " at "); i >= 0 {
+		if hh, mm, ok := padClock(t[i+len(" at "):]); ok {
+			return t[:i+len(" at ")] + hh + ":" + mm
+		}
 	}
 	return t
 }

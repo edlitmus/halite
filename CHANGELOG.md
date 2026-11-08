@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`win_task.present` now converges in three cases that used to replace the task on every run, and now applies a description change it used to silently ignore.** A daily or one-time trigger written with a one-digit hour, such as `3:00`, never matched the scheduler's own padded reading, `03:00`. A declaration given as raw XML never matched the scheduler's read-back, which always adds a `<URI>` element the declaration did not have to. A task whose description, author or path held a non-ASCII character could not be read back at all, because schtasks writes such text in the OEM code page once its output is redirected, not UTF-8. `SameDefinition` did not compare `description` at all, declared or not, so a description change made through a state was accepted and then never checked again. DIVERGENCE 5.631.
+
 - **On Windows, `cmd.run` with `shell: true` no longer corrupts a command holding a double quote, `shell: bash` now runs instead of failing with "Is a directory", and `cmd.script` with `shell: cmd` now runs the script instead of silently reporting success for nothing.** cmd.exe parses quotes and its own switches differently from every other interpreter `shell:` can name, and the code assumed one convention for all of them. DIVERGENCE 5.630.
 
 - **On Windows, `service.dead` with `enable: False` and `service.disabled` now move a `manual` service to `disabled` instead of leaving it `manual` and reporting success.** A `manual` service already read as not enabled, the same as a `disabled` one, so the shared boot-state logic saw nothing to change. A tree that depended on the old behavior now sees a change on its next run. DIVERGENCE 5.628.

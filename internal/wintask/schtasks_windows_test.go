@@ -364,3 +364,113 @@ func TestOnlyWhatWasDeclaredIsCompared(t *testing.T) {
 		t.Error("`boot` and `at boot` should be one trigger")
 	}
 }
+
+// SameDefinition never compared Description at all, declared or not, so
+// a description change made through a state was silently never applied
+// (issue 608 item 5, lead L6).
+func TestDescriptionIsComparedWhenDeclared(t *testing.T) {
+	current := Task{Command: "cmd.exe", Description: "old"}
+	if SameDefinition(Task{Command: "cmd.exe", Description: "new"}, current) {
+		t.Error("a different description compared equal")
+	}
+	if !SameDefinition(Task{Command: "cmd.exe", Description: "old"}, current) {
+		t.Error("the same description compared unequal")
+	}
+	// Consistent with every other optional field here: omitting it is
+	// not declaring that it must be empty.
+	if !SameDefinition(Task{Command: "cmd.exe"}, current) {
+		t.Error("omitting the description reported a change it did not ask about")
+	}
+}
+
+// A daily trigger declared with an unpadded hour, "3:30" rather than
+// "03:30", has to converge against the scheduler's own padded reading
+// of the same trigger, or win_task.present replaced the task on every
+// run (issue 608 item 5, lead L4).
+func TestADailyTriggerWithAnUnpaddedHourConverges(t *testing.T) {
+	c := ctx(t)
+	const path = `\halite-test\unpadded-hour`
+	t.Cleanup(func() { _ = Delete(c, path) })
+
+	me, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Task{
+		Path: path, Command: `C:\Windows\System32\cmd.exe`, Arguments: "/c exit 0",
+		RunAs: me.Username, Enabled: true,
+		Triggers: []string{"daily at 3:30"},
+	}
+	if err := Create(c, want); err != nil {
+		if strings.Contains(err.Error(), "denied") || strings.Contains(err.Error(), "Access") {
+			t.Skip("creating a scheduled task needs administrator rights, and this process does not have them")
+		}
+		t.Fatalf("creating: %v", err)
+	}
+	got, err := Info(c, path)
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if len(got.Triggers) != 1 || got.Triggers[0] != "daily at 03:30" {
+		t.Fatalf("triggers = %v, want the scheduler's own padded reading [daily at 03:30]", got.Triggers)
+	}
+	if !SameDefinition(want, got) {
+		t.Errorf("an unpadded hour in the declaration never matched the scheduler's padded reading:\n  want %+v\n  got  %+v", want, got)
+	}
+}
+
+// A declaration given as XML names no URI -- nothing in the schema
+// requires one and nothing a state author writes would think to -- but
+// the scheduler adds one to RegistrationInfo on registration, naming the
+// task's own path. Confirmed against a real, already-registered task on
+// this host (`\Microsoft\Windows\Time Synchronization\SynchronizeTime`),
+// which carries a `<URI>` though nothing says its own shipped definition
+// ever did. SameXML has to see past that or win_task.present given raw
+// XML never converges (issue 608 item 5, lead L8).
+//
+// The two documents here differ only in the URI -- a real Create/Info
+// round trip differs in more than that (element order, an added
+// LogonType, a default Enabled left out), which SameXML is documented to
+// treat as a real change and this is not testing.
+func TestSameXMLIgnoresAnAddedURI(t *testing.T) {
+	declared := `<?xml version="1.0" encoding="UTF-16"?>` +
+		`<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">` +
+		`<RegistrationInfo><Author>halite</Author></RegistrationInfo>` +
+		`<Actions><Exec><Command>cmd.exe</Command></Exec></Actions></Task>`
+	current := `<?xml version="1.0" encoding="UTF-16"?>` +
+		`<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">` +
+		`<RegistrationInfo><Author>halite</Author><URI>\halite\x</URI></RegistrationInfo>` +
+		`<Actions><Exec><Command>cmd.exe</Command></Exec></Actions></Task>`
+	if !SameXML(declared, current) {
+		t.Error("a document with no URI never matched one with an added URI and nothing else different")
+	}
+	// Still a real difference everywhere else.
+	if SameXML(declared, strings.Replace(current, "cmd.exe", "other.exe", 1)) {
+		t.Error("a real difference was hidden along with the URI")
+	}
+}
+
+// schtasks writes non-ASCII text in the OEM code page once its output
+// is redirected rather than going to a console, not UTF-8 -- confirmed
+// on this host (OEM code page 437): 'é' comes back as the single byte
+// 0x82. Fed straight to encoding/xml, as the unchanged code did, that
+// byte is not valid UTF-8 on its own and the parse failed outright, so
+// a task whose Description, Author or path held a non-ASCII character
+// could not be read back at all (issue 608 item 5, lead L7).
+//
+// This assumes OEM code page 437, which is what an English-locale
+// Windows -- including this host and GitHub's windows-2022 runners --
+// uses; a host with a different OEM code page would encode 'é'
+// differently and this fixture would need its own byte.
+func TestANonASCIIDescriptionSurvivesTheOEMCodePage(t *testing.T) {
+	raw := []byte("<Task><RegistrationInfo><Description>caf\x82</Description></RegistrationInfo>" +
+		"<Actions><Exec><Command>cmd.exe</Command></Exec></Actions></Task>")
+	parsed, err := parseXML(raw)
+	if err != nil {
+		t.Fatalf("a cp437-encoded description could not be read: %v", err)
+	}
+	got := toTask(`\x`, parsed, string(raw))
+	if got.Description != "café" {
+		t.Errorf("description = %q, want %q", got.Description, "café")
+	}
+}
