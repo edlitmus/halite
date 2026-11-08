@@ -40744,6 +40744,61 @@ The digest of `halite-ext-signer-local` is recorded again. The version stays
 **Not verified.** We did not run a domain-joined host. We did not run a group
 that should have had access.
 
+### 5.623 Replacing a binary file returned its line diff, and the hub refused it
+
+**Found** on 2026-11-08 while running chapter 36's upgrade "by halite itself"
+for issue 308, in two bastille jails on `beastie` (host FreeBSD 15.1-RELEASE-p6):
+a hub on a 14.5-RELEASE userland and a node on 15.1-RELEASE, both from `main`
+at `5d314a40`. A state placed a new `halite-node` (17,088,682 bytes) from the
+tree with `file.managed` and scheduled the deferred restart. The node ran it:
+`job finished ... retcode 0, success true`. Then it logged `the hub refused a
+return ... /v1/return: the request body: http: request body too large`. The
+hub logged nothing about the job after `job dispatched`. The operator's
+`halite-hub run ... state.sls upgrade` was still waiting four minutes later,
+after the node had restarted on the new binary and reconnected.
+
+**Why.** `unifiedDiff` (`internal/builtin/fileutil.go`), behind the `diff` of
+`file.managed`, `file.copy` and `file.diff`, split both files on newlines and
+wrote out every line that differed. For two builds of one program that is
+nearly the whole of both. Run locally against the same two files, the return was
+60,268,347 bytes of JSON with a 17,226,733-byte `diff`. The hub's limit for a
+return is `transport.MaxReturnBody`, 16 MiB. Salt does not diff a binary file.
+Its `file.get_diff` returns `Replace binary file`, `Replace binary file with text
+file` or `Replace text file with binary file`.
+
+**Changed.** A file with a NUL byte in its first 8000 bytes is binary, which is
+the test git and GNU diff use. When either side is binary, the diff is one of
+Salt's three strings. A binary file where there was no file, or an empty one,
+is `New binary file`. Salt says `New file` for any new file, but halite shows
+a new text file's lines, so this keeps that difference and names the case.
+Salt also calls a file binary when more than 30% of its bytes are outside
+printable ASCII. halite does not, because that rule fits a configuration file
+written in Japanese or Greek.
+
+**Shown.** `TestFileManagedNamesABinaryReplacementRatherThanDiffingIt`
+(`internal/builtin/builtin_test.go`) replaces binary with binary, binary with
+text, text with binary, and nothing with binary, in test mode and for real. It
+checks the `diff` is the one string, then `file.copy` with the same pair. With
+`fileutil.go` put back to `main`'s version, all four cases failed, and each
+`diff` started `--- …/halite-node (current)`.
+
+**Not changed: the lost return.** A return over 16 MiB is still refused with
+`400` and nothing in the hub's log. The node logs one warning and does not
+retry, and the operator's `run` waits for an answer that never comes. SPEC
+6.5's "the node paginates by chunk" is not built. This entry removes the way
+an ordinary upgrade reached that limit. It does not change what happens when
+something else reaches it.
+
+**Run with the fix**, in the same jails: the node's agent was replaced by hand
+with a build of this change, then the same state replaced it again from the
+tree. `halite-hub run` returned in one second with `diff: Replace binary file`
+and `Succeeded: 2 (changed=2)`, rc 0. The deferred restart ran 30 seconds later,
+and `manage.versions` then showed the node on the binary from the tree.
+
+**Not verified.** A file whose first NUL comes after 8000 bytes is still
+diffed as text. Linux, macOS and Windows nodes were not run; the change is not
+platform code.
+
 ### 5.624 The example hub.yaml in the Linux archive set FreeBSD's paths
 
 **Found** on 2026-11-08 while running chapter 30 on Linux for issue 308, as
