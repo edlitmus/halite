@@ -40958,7 +40958,7 @@ upgrade by a state, and a whole fleet upgrade. Mail off the machine. The
 `halite-api` paths. A FreeBSD host on real hardware or a VM for any of this.
 `make check` for this documentation change ran only in CI.
 
-### 5.623 Four of `cpu_flags`' feature numbers were wrong on Windows
+### 5.627 Four of `cpu_flags`' feature numbers were wrong on Windows
 
 Issue 608 item 5, lead L1 (`internal/grains/platform_windows.go`). Found by
 reading, in the issue 321 second-pass audit. Checked against the Win32
