@@ -10,6 +10,10 @@
 # dpkg warned about none of these: every version here begins with a
 # digit, so all 25 are inside Debian policy.
 #
+# A second dpkg has since agreed: 1.21.23 on amd64, in the bookworm
+# container of the `debian` fleet leg, answered all 25 the same way
+# (`TestLiveDpkgVersionCmpAgreesWithDpkg`, Fleet run 42518184078).
+#
 # One line per pair: first version, the relation that held, second
 # version. `vercmp_fixture_test.go` holds this file and `debianVectors`
 # to each other in both directions, so a vector with no captured answer

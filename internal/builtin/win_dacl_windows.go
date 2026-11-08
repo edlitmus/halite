@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/winsec"
 )
@@ -69,6 +71,17 @@ func winDACLHasPermission(path, trustee, permission string, exact bool) (bool, e
 	entries, err := winsec.Entries(path)
 	if err != nil {
 		return false, err
+	}
+	// A deny entry disqualifies the trustee outright, whatever its own
+	// mask: Windows evaluates deny before allow, so any explicit deny
+	// means the account does not have the access an allow entry alone
+	// would suggest. Checked in its own pass rather than inline in the
+	// loop below, so a deny entry that sorts after a matching allow in
+	// Entries' order still disqualifies it.
+	for _, e := range entries {
+		if sameAccount(e.Trustee, trustee) && e.Kind == "deny" {
+			return false, nil
+		}
 	}
 	for _, e := range entries {
 		if !sameAccount(e.Trustee, trustee) || e.Kind != "allow" {
@@ -137,4 +150,37 @@ func winDACLEntryFor(path, trustee string) (string, error) {
 	// Reported as it is rather than collapsed, so a state that is about
 	// to replace two entries with one says so.
 	return strings.Join(found, ", "), nil
+}
+
+// sameAccountBySID resolves both accounts and reports whether they are
+// the same SID. ok is false, asking sameAccount to fall back to the
+// bare-name comparison, when either side does not resolve.
+func sameAccountBySID(a, b string) (same, ok bool) {
+	sidA, okA := accountSID(a)
+	if !okA {
+		return false, false
+	}
+	sidB, okB := accountSID(b)
+	if !okB {
+		return false, false
+	}
+	return sidA.Equals(sidB), true
+}
+
+// accountSID resolves an account to its SID, either of the two forms
+// winsec hands back (describe, in internal/winsec/winsec_windows.go):
+// a name, which needs a lookup, or the SID's own string form for an
+// account that did not resolve there -- which StringToSid parses
+// directly, with no lookup and nothing to reach a domain controller
+// for. Tried first, because it is the cheap case and because
+// LookupSID's own name resolution rejects a SID string outright
+// ("No mapping between account names and security IDs was done"),
+// confirmed on this host.
+func accountSID(s string) (*windows.SID, bool) {
+	trimmed := strings.TrimSpace(s)
+	if sid, err := windows.StringToSid(trimmed); err == nil {
+		return sid, true
+	}
+	sid, _, _, err := windows.LookupSID("", trimmed)
+	return sid, err == nil
 }

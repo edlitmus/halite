@@ -41572,22 +41572,40 @@ core state *modules*, and the row counted functions. The row now cites
 the test that logs it, so the next reader has a command rather than a
 number.
 
-**Not covered.** One dpkg, on one day: 1.22.22 on x86_64, Debian 13.
-No second dpkg version has been asked, nothing has been asked on arm64,
-and a captured fixture cannot notice dpkg changing its mind — that is
-what the live test in the `fleetcheck` leg is for, and **it has not run
-yet.** It skipped on the development host, correctly, because FreeBSD has
-no dpkg; the push that carries this entry is what first runs it, in the
-`debian` leg, and the three new RPM pairs with it in the `rpm` legs.
-Until those logs exist, the Debian differential is a captured oracle and
-a test that has never executed against a live tool.
+**The run.** The paragraph here said the live test had never executed and
+that the push carrying this entry was what would first run it. It ran, in
+the same run that pushed it (Fleet 42518184078, the `debian` job):
+
+- **dpkg 1.21.23 on amd64**, in the bookworm container — *not* the
+  1.22.22 the fixture was captured from. All 25 vectors agreed there too,
+  and 0 were outside Debian policy. Two dpkg versions, from two Debian
+  releases, now answer this table the same way, which is worth more than
+  the one the capture gave: a fixture cannot notice dpkg changing its
+  mind, and the second version is the first evidence that it has not.
+- The dispatch subtest logged `os_family "Debian" resolves to the
+  "debian" ordering`, so the silent fall-back to rpm's rules is not what
+  a real Debian machine gets.
+- The three RPM pairs were answered by **rpm 4.16.1.3 on Rocky 9** in the
+  same run, `TestLiveRpmVersionCmpAgreesWithRpm/evr` passing with the
+  extended list. On AlmaLinux 8.10 that subtest skipped, saying `rpm
+  4.14.3: rpm.vercmp is raw rpmvercmp before 4.16, not an EVR
+  comparison` — the documented allowed skip, not a silent one.
+
+**Not covered.** Two dpkg versions, both x86_64: nothing has asked an
+arm64 dpkg, and no dpkg older than 1.21 has been asked anything. The
+`fleetcheck` leg has no equivalent of `run.sh`'s skip check, so a future
+change that made `requireDpkg` skip there would pass quietly; the rpm
+legs would not. And the vectors are still the vectors — 25 pairs chosen
+because dpkg's own suite and the policy manual call them hard, which is
+not the same as a sweep.
 
 One methodological note, because it changes what the capture is worth:
 the test binary could not be copied to the Debian host from this session,
 so dpkg was asked over ssh with a read-only script and the comparison was
 made here. That is the same oracle and the same 25 answers, but it is not
-the test running there, and the distinction is why the paragraph above
-says the live test has not run.
+the test running there. The distinction mattered for as long as the leg
+had not run, and the leg has now run against a second dpkg, which is the
+stronger evidence anyway.
 
 ### 5.634 Every return re-read every return before it, so a job to n nodes cost n²
 
@@ -42012,6 +42030,160 @@ The test counts per connection for that reason.
   together.
 
 
+
+### 5.637 An account's SID and its name were never the same account, and a resource descriptor read back empty
+
+Issue 608 item 5, leads L15 and L16 (`internal/builtin/win_dacl.go`,
+`internal/winreg/winreg_windows.go`). Found by reading, in the issue 321
+second-pass audit. Checked and run on this Windows 11 host.
+
+**L15, the defect.** `sameAccount` compared two account strings
+case-insensitively, falling back to comparing everything after the last
+backslash. Two gaps:
+
+- A SID never equalled the name it resolves to. `winsec.describe`
+  (`internal/winsec/winsec_windows.go`) renders a trustee that does not
+  resolve -- a deleted account, or one from an unreachable domain -- as
+  the SID's own string form, which has no backslash, so `bareAccount`
+  returns it whole. Compared against the name the same SID resolves to
+  elsewhere, the two never matched.
+- Two accounts that merely share a short name -- `CORP\ed` and `HOST\ed`
+  -- compared equal, because the comparison never asked whether they were
+  actually the same SID, only whether their text after the last backslash
+  agreed.
+
+**L15, shown.** `TestASIDStringAndTheNameItResolvesToAreOneAccount`
+(`internal/builtin/win_dacl_windows_test.go`) compares this host's own
+account by its real SID (`S-1-5-21-1772322385-3744737199-1319263849-1001`,
+from `os/user`) against its name (`ED-PC\ed`). It failed on the unchanged
+comparison -- confirming the first gap for real, not by description.
+
+**L15, the change.** `sameAccount` now tries `sameAccountBySID` first:
+resolve both sides to a SID and compare those, falling back to the old
+bare-name comparison only when a side does not resolve. Resolution tries
+`windows.StringToSid` before `windows.LookupSID`, because the SID string
+form is not a name `LookupSID` accepts -- confirmed on this host, where
+`windows.LookupSID("", "S-1-5-21-...")` returned "No mapping between
+account names and security IDs was done" for exactly the string
+`winsec.describe` can hand back. The function this calls,
+`sameAccountBySID`, lives in a new Windows-only file (`win_dacl_windows.go`
+already, next to the rest of this module's Windows half) because
+`win_dacl.go` itself has no build tag and compiles on every platform;
+`win_dacl_other.go` carries a no-op stub.
+
+**L15, the second gap -- not demonstrated.** `CORP\ed` and `HOST\ed` both
+failing to resolve here (this host is not domain-joined and has neither
+account) means the fallback this fix keeps is exercised the same way it
+always was, which is where leads L15 named the collision as still
+possible: two different domains that each fail to resolve independently
+still compare by bare name. True by construction of the fallback, not
+shown with two real, resolvable, colliding accounts -- that needs a second
+machine or a domain controller, neither available here.
+
+**L16, the defect.** `readFrom`'s default branch -- every registry value
+type this build has no named case for -- read with `GetBinaryValue`, which
+Go's own `x/sys/windows/registry` refuses for anything but `REG_BINARY`
+(checked against the vendored source: `if typ != BINARY { return nil, typ,
+ErrUnexpectedType }`). Every other type fell into the same `if err != nil`
+branch the code used for a genuinely empty `REG_NONE`, so `REG_LINK`,
+`REG_DWORD_BIG_ENDIAN`, `REG_RESOURCE_LIST`,
+`REG_FULL_RESOURCE_DESCRIPTOR` and `REG_RESOURCE_REQUIREMENTS_LIST` all
+read back as present and empty, with the real error thrown away.
+
+**L16, shown.** `HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`'s
+`Configuration Data` is a real, machine-shipped
+`REG_FULL_RESOURCE_DESCRIPTOR` holding sixteen non-zero bytes --
+`FFFFFFFFFFFFFFFF0000000000000000`, checked with `reg query`. Called
+directly, `GetBinaryValue` on it returned "unexpected key value type".
+`TestAResourceDescriptorValueIsReadNotEmptied`
+(`internal/winreg/winreg_windows_test.go`) reads this real value through
+`ReadValue` and failed on the unchanged code: "Configuration Data read
+back empty; it has real bytes".
+
+**L16, the change.** The default branch no longer calls `GetBinaryValue`
+at all. `GetValue`, which `readFrom` already calls once to learn the
+type and the size, has no type check -- it reads a value by its size
+alone -- so the branch now allocates a buffer of that size and calls
+`GetValue` again to fill it. A genuinely empty value (`size == 0`, which
+is what a `REG_NONE` with no data actually looks like) still reports
+present and empty with no error; anything else that still fails is now a
+real returned error naming the registry type.
+
+With the change, `go test ./internal/winreg/... ./internal/builtin/...
+-count=1` is green on this host, including both tests above.
+
+**Who sees it.** `win_dacl.has_permission`, `win_dacl.present` and anything
+else that compares accounts by name (L15): two differently-domained
+accounts sharing a short name no longer compare equal when both resolve.
+`win_registry.read_value` and `win_registry.value_present`'s comparison
+(L16): a value of a type this build does not name by one of its five
+words now reads its real bytes, or a real error, instead of silently
+reading empty.
+
+**Not verified.** A domain-joined host, for either lead: L15's SID
+resolution across a real domain controller, and L16's registry values on
+a domain-joined machine's own hardware tree, which was not compared
+against this one.
+
+### 5.638 win_dacl.has_permission trusted a matching allow without checking for a deny
+
+Issue 608 item 5, lead L13 (`internal/builtin/win_dacl_windows.go`). Found by
+reading, in the issue 321 second-pass audit, which called it out as a
+contradiction of the function's own comment. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winDACLHasPermission`'s own doc comment: "A deny entry
+never counts as having a permission, whatever its mask: Windows evaluates
+deny first, so an account with a deny entry does not have the access the
+mask names." The loop it describes only *skipped* a deny entry
+(`e.Kind != "allow"`) rather than checking whether the trustee had one
+before trusting a matching allow. A trustee with both an allow entry wide
+enough to cover the permission asked about and a separate deny entry --
+not necessarily on the same mask, and not necessarily sorted after the
+allow in `Entries`' order -- was reported as having the access, exactly the
+case the comment says never to report.
+
+The existing test, `TestHasPermissionAnswersAtLeastAndExactly`, did not
+catch this: it uses `winsec.Grant` for both the allow and the deny it
+checks, and `Grant` replaces whatever entry a trustee already has
+(`dacl_windows.go`'s `kept` filter drops any existing entry for the same
+SID before adding the new one), so the account it tested never actually
+held two entries at once. The deny case there passed for the plain reason
+that no allow entry was left to find, not because the deny was checked.
+
+**Shown.** `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+(`internal/builtin/win_dacl_windows_test.go`) writes a real ACL with
+`windows.ACLFromEntries` carrying two explicit entries for `Everyone` --
+denied `write`, separately allowed `full_control` -- bypassing `Grant`'s
+one-entry-per-trustee replacement so both land on the file at once, in
+Windows' own canonical order (deny before allow). On the unchanged loop it
+failed: "an account with a deny entry was reported as having a permission
+its separate allow entry covers".
+
+**The change.** `winDACLHasPermission` now makes a first pass over
+`Entries` for any deny entry naming the trustee and returns false
+immediately if it finds one, before the existing allow-matching loop runs
+at all.
+
+With the change, `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+and the rest of `internal/builtin`'s suite pass
+(`go test ./internal/builtin/... -count=1`, this host).
+
+**Who sees it.** `win_dacl.has_permission`, and anything that reads it --
+an `onlyif` condition, or a state comparing a declared permission against
+what a trustee has. A trustee denied something and separately allowed
+something wider was reported as having the narrower access; it no longer
+is.
+
+**Not verified.** A domain account. A deny entry inherited from a parent
+rather than explicit (`Entries` carries both kinds, and this fix does not
+distinguish them, by design: an inherited deny still disqualifies). An
+unrelated pre-existing failure was seen running `internal/winsec`'s own
+suite on this host, `TestEnablePrivilegeSaysNoForAPrivilegeTheTokenLacks`
+(`whoami /priv: exit status 1`) -- this shell's `PATH` resolves `whoami` to
+Git's `/usr/bin/whoami`, which has no `/priv`, ahead of the real
+`System32\whoami.exe`. Not caused by this change, and not fixed here:
+`internal/winsec` was not touched.
 
 ## 6. Everything else not started
 

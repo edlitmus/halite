@@ -435,12 +435,30 @@ func currentOrNone(s string) string {
 
 // sameAccount compares two account names the way Windows does.
 //
-// Case-insensitively, and treating a bare name as the machine's own:
-// `Administrators` and `BUILTIN\Administrators` name one group, and a
-// state that reported a change between them would never converge.
+// By SID first: `Administrators` and `BUILTIN\Administrators` resolve
+// to the same SID, and so do a SID's own string form and the name it
+// resolves to -- `S-1-5-21-...-1001` and `ED-PC\ed` are one account,
+// which the bare-name comparison alone never sees, since the SID side
+// has no backslash to split on (issue 608 item 5, lead L15's "a SID
+// never equals a name" half).
+//
+// Only when a side does not resolve -- a SID from a domain this
+// machine cannot reach, or an account that no longer exists -- does
+// this fall back to comparing the bare name case-insensitively, which
+// is the whole of what the comparison used to do. That fallback is
+// also where this stays wrong for the case leads L15 named: `CORP\ed`
+// and `HOST\ed`, two different accounts that merely share a short
+// name, compare equal when one side's domain cannot be resolved here
+// -- not demonstrated on this host, which is not domain-joined and has
+// no second machine or domain to produce a genuine collision with, but
+// true of the fallback by construction once two different domains
+// both fail to resolve to the same SID some other way.
 func sameAccount(a, b string) bool {
 	if strings.EqualFold(a, b) {
 		return true
+	}
+	if same, ok := sameAccountBySID(a, b); ok {
+		return same
 	}
 	return strings.EqualFold(bareAccount(a), bareAccount(b))
 }
