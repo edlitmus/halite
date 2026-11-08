@@ -20,7 +20,7 @@ import (
 // k-th return of a job read k files, a job to n nodes cost n²/2 reads,
 // and one `test.ping` to 5,000 simulated nodes took a 16 GiB hub from
 // 2.2 GB to 14.2 GB in a minute and accepted 1,508 of the returns.
-// DIVERGENCE 5.632 has the measurements.
+// DIVERGENCE 5.634 has the measurements.
 type Filing struct {
 	// Fresh is false for a return this hub already had from that node:
 	// a retry, which SPEC 6.2 says must not count twice.

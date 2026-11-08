@@ -96,7 +96,7 @@ func BenchmarkReturnsForOneJob(b *testing.B) {
 // read the job's record -- its whole node list -- three more times. The
 // k-th return of a job did k reads, a job to n nodes did n²/2, and one
 // `test.ping` to 5,000 simulated nodes took a 16 GiB hub from 2.2 GB to
-// 14.2 GB in a minute. DIVERGENCE 5.632.
+// 14.2 GB in a minute. DIVERGENCE 5.634.
 //
 // Measured as bytes allocated per return, because that is deterministic
 // where time is not, and because memory is what ran out. Two jobs, one

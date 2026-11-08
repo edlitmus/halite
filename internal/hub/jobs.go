@@ -143,7 +143,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		// return's own `fun` is a node's text (DIVERGENCE 5.532). File
 		// read it from the record, so this does not read the record
 		// again: with a node set of thousands, reading it on every
-		// return is the other half of what DIVERGENCE 5.632 measured.
+		// return is the other half of what DIVERGENCE 5.634 measured.
 		recorded := filed.Fun
 		s.countReturn(&ret, recorded)
 		if s.OnReturn != nil {
@@ -188,7 +188,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		// every return was what made a job to n nodes cost n² reads:
 		// completeIfDone asks Missing, which reads and decodes every
 		// return filed so far. The count decides when to ask; Missing,
-		// as before, decides the answer. DIVERGENCE 5.632.
+		// as before, decides the answer. DIVERGENCE 5.634.
 		if filed.Remaining == 0 {
 			s.completeIfDone(ret.JID)
 		}
@@ -202,7 +202,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 //
 // It reads every return (through Missing), so it is called once per job
 // from the return path -- when job.Filing.Remaining reaches zero -- and
-// not once per return. See DIVERGENCE 5.632.
+// not once per return. See DIVERGENCE 5.634.
 func (s *Server) completeIfDone(id job.ID) {
 	missing, err := s.Jobs.Missing(id)
 	if err != nil || len(missing) > 0 {
