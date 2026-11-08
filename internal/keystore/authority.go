@@ -394,7 +394,7 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 // maxPending names, and reads records only when the count reaches the
 // limit, and then only the pending ones. It used to read every record
 // in the store, and said the cost was "paid only for a name not seen
-// before" as though that made it rare (DIVERGENCE 5.632).
+// before" as though that made it rare (DIVERGENCE 5.635).
 func (a *Authority) roomForPending() error {
 	n, err := a.Store.countPending(a.maxPending())
 	if err != nil {

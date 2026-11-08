@@ -27,7 +27,7 @@ import (
 // 131, 417 and 936 ms per identity into stores of 500, 2,000 and 8,000 on
 // a Mac, and its CPU profile put 87% of the run in this count, almost all
 // of it in open(2). With the index it is about 34, 37 and 45 ms. DIVERGENCE
-// 5.632.
+// 5.635.
 //
 // The index is a directory with one empty file per pending record, named
 // for the node. Counting it reads names and stops at the limit, so it

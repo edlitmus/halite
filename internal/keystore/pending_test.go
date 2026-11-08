@@ -33,7 +33,7 @@ func markers(t *testing.T, s *Store) []string {
 // room for one more pending record before it writes one, and it used to
 // answer by reading and parsing every record under the store's lock, so
 // each identity cost the store's size: `simfleet setup` slowed in a
-// straight line, 20 to 93 seconds per thousand (DIVERGENCE 5.279, 5.632).
+// straight line, 20 to 93 seconds per thousand (DIVERGENCE 5.279, 5.635).
 //
 // Timing that would be a flaky test, so this one makes every record that
 // is not pending unreadable instead. The count never needed them, and a
