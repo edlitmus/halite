@@ -40744,6 +40744,70 @@ The digest of `halite-ext-signer-local` is recorded again. The version stays
 **Not verified.** We did not run a domain-joined host. We did not run a group
 that should have had access.
 
+### 5.623 Four of `cpu_flags`' feature numbers were wrong on Windows
+
+Issue 608 item 5, lead L1 (`internal/grains/platform_windows.go`). Found by
+reading, in the issue 321 second-pass audit. Checked against the Win32
+feature numbers `golang.org/x/sys/windows` carries from winnt.h, then run on
+this Windows 11 host.
+
+**The defect.** `processorFeatures_` named four feature numbers wrong:
+
+- `sse4_1` used 36, which is `PF_SSSE3_INSTRUCTIONS_AVAILABLE`. The real
+  `PF_SSE4_1_INSTRUCTIONS_AVAILABLE` is 37.
+- `sse4_2` used 37 (SSE4.1's own number) instead of 38.
+- `vmx` used 17, which is `PF_XSAVE_ENABLED` — true on any CPU with the
+  `xsave` instruction, which is unrelated to virtualization firmware. The
+  real `PF_VIRT_FIRMWARE_ENABLED` is 21.
+- `aes` used 25, which is `PF_ARM_64BIT_LOADSTORE_ATOMIC`. winnt.h defines
+  no x86 feature number for AES-NI that `IsProcessorFeaturePresent` can
+  answer at all, so the grain was naming a feature it never checked.
+
+On this machine all of SSSE3, SSE4.1, SSE4.2, XSAVE and
+`VIRT_FIRMWARE_ENABLED` happen to read true, so the four numbers were
+*right by accident* here: a tree branching on `sse4_1` or `vmx` got the
+answer it expected, for the wrong reason. A machine with SSSE3 but not
+SSE4.1 — a Core 2, say — or one without Hyper-V's virtualization firmware
+active would not have been so lucky, and would have been told the wrong
+thing by a number that looked plausible.
+
+**Shown.** `TestProcessorFeatureNumbersMatchTheWindowsHeader`
+(`internal/grains/platform_windows_test.go`) checks the table's numbers
+against the named `windows.PF_*` constants. On the unchanged code it failed:
+
+```
+vmx uses feature number 17, want 21 (the real winnt.h number)
+sse4_1 uses feature number 36, want 37 (the real winnt.h number)
+sse4_2 uses feature number 37, want 38 (the real winnt.h number)
+cpu_flags claims to answer "aes" with feature number 25, which is an ARM flag unrelated to AES-NI
+```
+
+Before writing the test, `IsProcessorFeaturePresent` was called directly for
+both the old and the real numbers on this host (Windows 11, build 26100) to
+confirm which of the four actually differ in practice here: feature 25 read
+false, and 17/36/37 read the same as 21/37/38 respectively, which is the
+"right by accident" finding above.
+
+**The change.** `processorFeatures_` now uses the `windows.PF_*` constants
+by name instead of bare numbers, so a future entry that is off by one fails
+the same test rather than reading plausibly. `aes` is no longer in the
+table.
+
+With the change, `TestProcessorFeatureNumbersMatchTheWindowsHeader` and the
+rest of `internal/grains` pass (`go test ./internal/grains/... -count=1`, this
+host).
+
+**What an operator sees.** `cpu_flags` no longer lists `aes` on Windows. A
+tree that branched on it for an AES-NI capability it was never actually
+testing stops matching; nothing here ever made that branch correct. `vmx`
+now means `PF_VIRT_FIRMWARE_ENABLED` rather than XSAVE — on a machine
+without Hyper-V's virtualization firmware active, `vmx` now reads false
+where it used to read true.
+
+**Not verified.** We did not run a CPU old enough for the numbering bug to
+change `sse4_1` or `sse4_2`'s answer. We did not run a machine with
+virtualization firmware disabled to see `vmx` read false.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
