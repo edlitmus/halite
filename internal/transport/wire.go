@@ -35,7 +35,9 @@ const (
 	MaxEnrollBody = 64 << 10
 	// MaxReturnBody is SPEC 6.5's maximum single return payload, which
 	// the hub enforces on /v1/return. SPEC's "then the node paginates
-	// by chunk" is not built; a chunked return is refused.
+	// by chunk" is not built; a chunked return is refused. A node with
+	// a larger return sends job.Return.Oversized in its place, measured
+	// by EncodeBody (DIVERGENCE 5.629).
 	MaxReturnBody     = 16 << 20
 	HandshakeTimeout  = 10 * time.Second
 	IdleStreamTimeout = 90 * time.Second

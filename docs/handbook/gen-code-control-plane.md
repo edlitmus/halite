@@ -35,6 +35,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `CodeOf` (func): CodeOf answers with the stable code the hub attached to a failure, or an empty string when it attached none.
 - `Delegation` (type): Delegation is who a caller says it is acting for: the operator it authenticated, and the roles that operator's token was issued with.
 - `Denylist` (type): Denylist holds revoked certificate serials.
+- `EncodeBody` (func): EncodeBody is the request body post sends for v, byte for byte, because it is marshal's own output.
 - `EnrollConfig` (func): EnrollConfig is the configuration a node uses before it has a certificate: it verifies the hub and presents nothing.
 - `EnrollRequest` (type): EnrollRequest is the body of a POST to /v1/enroll.
 - `EnrollResponse` (type): EnrollResponse is the answer.

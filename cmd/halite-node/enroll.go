@@ -1065,43 +1065,82 @@ func (n *node) refuse(j *job.Job, err error) {
 // failure: a return that is lost because the connection blinked is a
 // job that looks unresponsive for ever.
 func (n *node) postReturns(ctx context.Context, args *cli.Args, returns <-chan *job.Return) {
-	send := func(ret *job.Return) {
-		client, _ := n.hubClient(args)
-		for attempt := 0; attempt < 5; attempt++ {
-			err := client.Return(ctx, ret)
-			if err == nil {
-				return
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if transport.Permanent(err) {
-				// The hub understood and said no. Retrying a refusal
-				// is how a node spends its evening arguing with a hub
-				// that has already answered.
-				n.log.Warn("the hub refused a return",
-					"jid", string(ret.JID), "error", err.Error())
-				return
-			}
-			n.log.Warn("could not post a return", "jid", string(ret.JID), "error", err.Error())
-			select {
-			case <-time.After(time.Duration(attempt+1) * time.Second):
-			case <-ctx.Done():
-				return
-			}
-		}
-		n.log.Error("giving up on a return", "jid", string(ret.JID))
-	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case ret := <-returns:
-			send(ret)
+			client, _ := n.hubClient(args)
+			n.sendReturn(ctx, client, ret)
 		case ret := <-n.refusals:
-			send(ret)
+			client, _ := n.hubClient(args)
+			n.sendReturn(ctx, client, ret)
 		}
 	}
+}
+
+// returnPoster is the one method of transport.Client that sendReturn
+// uses, so that a test can put the hub's own check behind it.
+type returnPoster interface {
+	Return(ctx context.Context, ret any) error
+}
+
+// sendReturn posts one return, retrying what may succeed on a retry.
+func (n *node) sendReturn(ctx context.Context, client returnPoster, ret *job.Return) {
+	ret = n.fitReturn(ret)
+	for attempt := 0; attempt < 5; attempt++ {
+		err := client.Return(ctx, ret)
+		if err == nil {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if transport.Permanent(err) {
+			// The hub understood and said no. Retrying a refusal
+			// is how a node spends its evening arguing with a hub
+			// that has already answered.
+			n.log.Warn("the hub refused a return",
+				"jid", string(ret.JID), "error", err.Error())
+			return
+		}
+		n.log.Warn("could not post a return", "jid", string(ret.JID), "error", err.Error())
+		select {
+		case <-time.After(time.Duration(attempt+1) * time.Second):
+		case <-ctx.Done():
+			return
+		}
+	}
+	n.log.Error("giving up on a return", "jid", string(ret.JID))
+}
+
+// fitReturn is ret, or the stand-in job.Return.Oversized for it when
+// the hub would refuse it for its size.
+//
+// Measured here, before the post, because after it there is nothing to
+// do: the hub's refusal is a 400 that names no job (it stops reading
+// at the limit, before it knows whose return it was), it is permanent,
+// and the node used to log one line and drop the return. The job had
+// run, and the operator's `halite-hub run` waited on an answer that
+// never came. Seen in FreeBSD jails on 2026-11-08: a 60 MB state
+// return from a node that had just replaced its own binary.
+//
+// The measure is transport.EncodeBody, which is the body post sends,
+// and the limit is the one the hub's handler reads with; the test holds
+// the boundary against transport.ReadJSON itself, so that the node and
+// the hub cannot disagree about a return within a byte of it.
+func (n *node) fitReturn(ret *job.Return) *job.Return {
+	body, err := transport.EncodeBody(ret)
+	size := len(body)
+	if err != nil || size <= transport.MaxReturnBody {
+		// An encoding error is post's to report, with its own words;
+		// the stand-in would hide what is wrong with the return.
+		return ret
+	}
+	n.log.Warn("a return is too large for the hub; sending a failure that says so instead",
+		"jid", string(ret.JID), "fun", ret.Fun, "bytes", size, "limit", transport.MaxReturnBody,
+		"job_success", ret.Success)
+	return ret.Oversized(size, transport.MaxReturnBody)
 }
 
 // errRevoked ends the connect loop rather than restarting it.

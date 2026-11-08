@@ -255,9 +255,32 @@ func formatMode(m os.FileMode) string {
 //
 // It backs `--diff` in test mode, which is the difference between "this
 // file would change" and "here is what would change about it".
+//
+// A binary file is not diffed: it is named, in Salt's words. The line
+// diff of two executables is their whole contents written out as text,
+// which made replacing a 17 MB halite-node from the tree a 60 MB return.
+// The hub refuses a return over transport.MaxReturnBody, so the job that
+// did the upgrade, and succeeded, was never answered (DIVERGENCE 5.623).
+// Salt's file.get_diff says the same three things for the same reason.
 func unifiedDiff(oldText, newText, label string) string {
 	if oldText == newText {
 		return ""
+	}
+	if oldBin, newBin := looksBinary(oldText), looksBinary(newText); oldBin || newBin {
+		switch {
+		case oldBin && newBin:
+			return "Replace binary file"
+		case oldBin:
+			return "Replace binary file with text file"
+		case oldText == "":
+			// No file, or an empty one: there is no text being
+			// replaced, and saying so would describe a file that
+			// is not there. Salt reports any new file as "New
+			// file"; this keeps the word that matters here.
+			return "New binary file"
+		default:
+			return "Replace text file with binary file"
+		}
 	}
 	oldLines := splitKeepEmpty(oldText)
 	newLines := splitKeepEmpty(newText)
@@ -295,6 +318,24 @@ func unifiedDiff(oldText, newText, label string) string {
 		fmt.Fprintf(&b, " %s\n", oldLines[i])
 	}
 	return b.String()
+}
+
+// binarySniff is how much of a file looksBinary reads: git's figure for
+// the same question.
+const binarySniff = 8000
+
+// looksBinary reports whether data is a binary file rather than text: a
+// NUL byte in its first binarySniff bytes, which is the test git and GNU
+// diff use. Salt's is_binary also counts the share of bytes outside
+// printable ASCII and calls more than 30% binary, which is true of a
+// configuration file written in Japanese or Greek; a file of UTF-8 text
+// has no NUL in it, and an executable, an archive or an image has one
+// in its first few bytes.
+func looksBinary(data string) bool {
+	if len(data) > binarySniff {
+		data = data[:binarySniff]
+	}
+	return strings.IndexByte(data, 0) >= 0
 }
 
 func splitKeepEmpty(s string) []string {

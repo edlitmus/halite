@@ -220,3 +220,141 @@ func TestInstallManStagesIntoADirectoryThatDoesNotExistYet(t *testing.T) {
 		t.Skip("no make on this machine could evaluate the Makefile, so install-man was not run")
 	}
 }
+
+// `make install` puts everything in place on a host that has nothing
+// under /usr/local yet.
+//
+// A FreeBSD host with no packages has an empty /usr/local: no bin, no
+// etc, no etc/rc.d. `make install` run as root in a fresh 14.5-RELEASE
+// jail refused with "cannot write /usr/local/etc/halite — run make install
+// as root", because it asked only whether a directory or its parent was
+// writable; and where the parent was, it went on to `install` a file into
+// a directory that did not exist ("No such file or directory"). The
+// chapter 30 runbook's own `install … /usr/local/etc/rc.d/` failed the same
+// way (DIVERGENCE 5.625).
+//
+// This runs the real target, not a dry run, from a copy of the parts of
+// the repository it reads, with stand-in programs in bin/ so that nothing
+// has to be built, into a staged root where every path is two or more
+// directories below anything that exists. The staged root is what makes it
+// runnable unprivileged; what it cannot show is root on a real /usr/local,
+// which the jail run did. HALITE_USER names an account that does not
+// exist, so the directories are left to the user running the test, as the
+// target says it does.
+func TestInstallMakesTheDirectoriesItInstallsInto(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install runs install(1) and sh; there is no Windows install")
+	}
+	root := repoRoot(t)
+	var makes []string
+	for _, name := range []string{"bmake", "gmake", "make"} {
+		if p, err := exec.LookPath(name); err == nil {
+			makes = append(makes, p)
+		}
+	}
+	if len(makes) == 0 {
+		t.Skip("no make on this machine")
+	}
+
+	// A copy of what the install targets read.
+	src := t.TempDir()
+	copyTree(t, root, src, "Makefile", "go.mod", "contrib/rc.d", "contrib/systemd", "contrib/man")
+	if err := os.MkdirAll(filepath.Join(src, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range []string{"halite-node", "halite-hub", "halite-api"} {
+		if err := os.WriteFile(filepath.Join(src, "bin", b), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ran := 0
+	for _, mk := range makes {
+		for _, tc := range []struct {
+			os, servicedir string
+			services       []string
+		}{
+			{"FreeBSD", "usr/local/etc/rc.d", []string{"halite_hub", "halite_node", "halite_api"}},
+			{"Linux", "etc/systemd/system", []string{"halite-hub.service", "halite-node.service", "halite-api.service"}},
+		} {
+			t.Run(filepath.Base(mk)+"/"+tc.os, func(t *testing.T) {
+				probe := exec.Command(mk, "make-supports-bang")
+				probe.Dir, probe.Env = src, withoutMakeFlags(os.Environ())
+				if out, err := probe.CombinedOutput(); err != nil {
+					t.Skipf("%s cannot evaluate the Makefile: %v\n%s", mk, err, out)
+				}
+				stage := filepath.Join(t.TempDir(), "fresh")
+				args := []string{"install", "INSTALL_OS=" + tc.os, "HALITE_USER=halite-test-no-such-account"}
+				for _, v := range [][2]string{{"BINDIR", "usr/local/bin"}, {"CONFDIR", "usr/local/etc/halite"},
+					{"STATEDIR", "var/db/halite"}, {"CACHEDIR", "var/cache/halite"}, {"LOGDIR", "var/log/halite"},
+					{"SERVICEDIR", tc.servicedir}, {"MANDIR", "usr/local/share/man/man8"}} {
+					args = append(args, v[0]+"="+filepath.Join(stage, v[1]))
+				}
+				cmd := exec.Command(mk, args...)
+				cmd.Dir, cmd.Env = src, withoutMakeFlags(os.Environ())
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("%s install into a root with nothing in it: %v\n%s", mk, err, out)
+				}
+				ran++
+				want := []string{"usr/local/bin/halite-hub", "usr/local/bin/halite-node", "usr/local/bin/halite-api",
+					"usr/local/share/man/man8/halite-hub.8"}
+				for _, s := range tc.services {
+					want = append(want, filepath.Join(tc.servicedir, s))
+				}
+				for _, w := range want {
+					if _, err := os.Stat(filepath.Join(stage, w)); err != nil {
+						t.Errorf("%s was not installed: %v", w, err)
+					}
+				}
+				for _, d := range []string{"usr/local/etc/halite/pki", "var/db/halite", "var/cache/halite", "var/log/halite"} {
+					if fi, err := os.Stat(filepath.Join(stage, d)); err != nil || !fi.IsDir() {
+						t.Errorf("the directory %s was not made: %v", d, err)
+					}
+				}
+				if t.Failed() {
+					t.Logf("%s output:\n%s", mk, out)
+				}
+			})
+		}
+	}
+	if ran == 0 {
+		t.Skip("no make on this machine could evaluate the Makefile, so install was not run")
+	}
+}
+
+// copyTree copies the named files and directories from one root to
+// another, keeping their modes.
+func copyTree(t *testing.T, from, to string, names ...string) {
+	t.Helper()
+	for _, n := range names {
+		err := filepath.WalkDir(filepath.Join(from, n), func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(from, p)
+			if err != nil {
+				return err
+			}
+			dst := filepath.Join(to, rel)
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return os.MkdirAll(dst, 0o755)
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(dst, b, info.Mode().Perm())
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

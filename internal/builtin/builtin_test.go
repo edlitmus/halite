@@ -549,6 +549,83 @@ func TestFileManagedShowsADiff(t *testing.T) {
 	}
 }
 
+// A binary file is named, not diffed. Replacing a 17 MB halite-node from
+// the tree on a FreeBSD node made a 60 MB return of its line diff, which
+// the hub refused, so the job that upgraded the node was never answered
+// (DIVERGENCE 5.623). The size the hub would see is what is checked: the
+// diff must not grow with the file.
+func TestFileManagedNamesABinaryReplacementRatherThanDiffingIt(t *testing.T) {
+	r := New()
+	dir := t.TempDir()
+	// Two "executables": a NUL in the header, then a megabyte of lines
+	// that differ throughout, which is what a line diff of two builds
+	// of one program looks like.
+	binary := func(tag string) []byte {
+		var b strings.Builder
+		b.WriteString("\x7fELF\x02\x01\x01\x00")
+		for i := 0; i < 1<<15; i++ {
+			fmt.Fprintf(&b, "%s line %d of a program\n", tag, i)
+		}
+		return []byte(b.String())
+	}
+	src := filepath.Join(dir, "halite-node.new")
+	if err := os.WriteFile(src, binary("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := filepath.Join(dir, "text.conf")
+	if err := os.WriteFile(text, []byte("port = 80\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name    string
+		current []byte // nil: the file does not exist
+		source  string
+		want    string
+	}{
+		{"binary over binary", binary("old"), src, "Replace binary file"},
+		{"binary over text", []byte("port = 80\n"), src, "Replace text file with binary file"},
+		{"text over binary", binary("old"), text, "Replace binary file with text file"},
+		{"binary where there was none", nil, src, "New binary file"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "halite-node")
+			if tc.current != nil {
+				if err := os.WriteFile(path, tc.current, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, test := range []bool{true, false} {
+				res := run(t, r, "file.managed", value.MapOf("name", path, "source", tc.source), test)
+				diff, _ := res.Changes.Get("diff")
+				if diff != tc.want {
+					got := fmt.Sprint(diff)
+					if len(got) > 200 {
+						got = fmt.Sprintf("%.200s… (%d bytes)", got, len(got))
+					}
+					t.Errorf("test=%v: diff = %q, want %q", test, got, tc.want)
+				}
+			}
+			b, _ := os.ReadFile(path)
+			want, _ := os.ReadFile(tc.source)
+			if string(b) != string(want) {
+				t.Error("the file was not replaced")
+			}
+		})
+	}
+
+	// file.copy and file.diff share the diff and say the same.
+	dst := filepath.Join(dir, "copy")
+	if err := os.WriteFile(dst, binary("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := run(t, r, "file.copy", value.MapOf("name", dst, "source", src), true)
+	if diff, _ := res.Changes.Get("diff"); diff != "Replace binary file" {
+		t.Errorf("file.copy diff = %.200v", diff)
+	}
+}
+
 func TestFileManagedIsIdempotent(t *testing.T) {
 	r := New()
 	dir := t.TempDir()
