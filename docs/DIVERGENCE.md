@@ -41022,6 +41022,70 @@ where it used to read true.
 change `sse4_1` or `sse4_2`'s answer. We did not run a machine with
 virtualization firmware disabled to see `vmx` read false.
 
+### 5.628 A manual Windows service is not enabled, but it is not disabled either
+
+Issue 608 item 5, lead L3 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service.go`, `internal/builtin/service_windows.go`). Found
+by reading, in the issue 321 second-pass audit. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winsvc.Enabled` reports `StartType == "auto" ||
+"auto_delayed"`, which is right on its own: a `manual` service is not one the
+machine brings up at boot. But `service.dead`'s and `service.enabled`'s /
+`service.disabled`'s shared boot-state logic decided whether to call
+`Disable` by comparing `Enabled()` against what was wanted, and a `manual`
+service already reads `Enabled() == false`, the same as a `disabled` one.
+`service.dead` with `enable: False`, or `service.disabled`, on a `manual`
+service therefore reported "already disabled" and never called `Disable` at
+all -- leaving it `manual` forever, which is exactly the gap the Windows
+`Disable` provider's own doc comment already named: "a manual service still
+starts when something asks for it... which `manual` does not guarantee."
+The code's comment stated the intent the code one call away did not carry
+out.
+
+**Shown.** `TestBootStateNeedsChangeTellsManualFromDisabled`
+(`internal/builtin/service_test.go`) is a cross-platform unit test against a
+fake provider with Windows' three-state shape. On the old comparison
+(`now != want`, with no third state) it failed:
+
+```
+a manual service reported no change needed to become disabled
+```
+
+`TestServiceDisabledMovesAManualServiceToDisabled`
+(`internal/builtin/service_windows_test.go`) drives the real thing --
+`EventLog` set to `manual`, then `service.disabled`, then read back -- but
+this process is a standard account in the Administrators group with no
+elevated token, and `winsvc.SetStartType` needs `SC_MANAGER_ALL_ACCESS`, so it
+skips here with "needs administrator rights". **Not run**: the real `winsvc`
+and `service.disabled` path together, on an elevated token.
+
+**The change.** A new optional interface, `serviceDisableChecker`, lets a
+provider report its own "is this exactly my `Disable`'d state" when
+`Enabled()`'s boolean conflates it with something else. `bootStateNeedsChange`
+uses it only when moving *toward* disabled; moving toward enabled is
+unchanged, since nothing here has a third state above `Enabled() == true`.
+`windowsProvider.Disabled` reports `StartType == "disabled"`. Every other
+provider (`systemd`, FreeBSD rc, OpenRC, sysvinit, launchd) does not
+implement the interface, and `bootStateNeedsChange` falls back to the
+original plain comparison for them --
+`TestBootStateNeedsChangeIsAPlainComparisonWithNoThirdState` holds that
+nothing changed for them.
+
+With the change, the cross-platform unit test passes
+(`go test ./internal/builtin/... -count=1`, this host), and the rest of the
+package's suite, including every other platform's service tests, stays
+green.
+
+**What an operator sees.** On Windows, `service.dead` with `enable: False`,
+and `service.disabled`, now move a `manual` service to `disabled` rather
+than leaving it `manual` and reporting success. A tree that depended on the
+old behavior -- relying on `manual` to satisfy `enable: False` -- now sees a
+change on its next run and the service's start type actually move.
+
+**Not verified.** The real mutation on a Windows service, only the unit test
+against a fake provider. An elevated token. A domain-joined host.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
