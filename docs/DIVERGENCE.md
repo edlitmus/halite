@@ -41154,7 +41154,7 @@ A relay forwards what its own hub took, which is at most the same limit, so
 it was not changed or run. A node built before this change still loses an
 oversized return, and the hub's log line is all there is of it.
 
-### 5.623 cmd.exe parses neither its quotes nor its own switch the way everything else does
+### 5.630 cmd.exe parses neither its quotes nor its own switch the way everything else does
 
 Issue 608 item 5, leads L2, L19 and L20 (`internal/exec/shell_windows.go`,
 `internal/builtin/cmd_more.go`). Found by reading, in the issue 321
