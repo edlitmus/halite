@@ -408,6 +408,7 @@ A module function receives its arguments already bound and type-checked against 
 - `Registry` (type): Registry holds the execution modules a build ships.
 - `Result` (type)
 - `ScheduleControl` (type): ScheduleControl is the runtime management of SPEC 20.1.
+- `ShellRunFlag` (func): ShellRunFlag is a Windows-only correction for cmd.exe, which cannot run a file given positionally.
 - `TemplateDispatcher` (type): TemplateDispatcher adapts a registry and a context to the `salt` object a template sees, so that `salt['pillar.get']('a:b')` in an SLS file calls the same function `halite-node call pillar.get a:b` does.
 - `UnknownFunctionError` (type): UnknownFunctionError names the functions a caller may have meant.
 
