@@ -40799,6 +40799,132 @@ and `manage.versions` then showed the node on the binary from the tree.
 diffed as text. Linux, macOS and Windows nodes were not run; the change is not
 platform code.
 
+### 5.624 win_task's comparisons disagreed with the scheduler's own reading of what it was given
+
+Issue 608 item 5, leads L4, L6, L7 and L8 (`internal/wintask`). Found by
+reading, in the issue 321 second-pass audit. Checked and run on this Windows
+11 host, including three real round trips through `schtasks.exe` under this
+account (no administrator rights were available or needed for any of them).
+
+**L4, the defect.** `startBoundary` zero-pads an hour before writing it into
+a generated trigger's `StartBoundary`, so `daily at 3:00` is registered as
+`03:00`. The scheduler always reads a `StartBoundary` back the same way --
+padded -- but `normalizeTrigger`, which `sameTriggers` uses to compare a
+declaration against a reading, left the declared side exactly as written.
+`daily at 3:00` and the scheduler's own `daily at 03:00` never compared
+equal, so `win_task.present` replaced the task on every run for any hour
+written as one digit.
+
+**L4, shown.** `TestADailyTriggerWithAnUnpaddedHourConverges`
+(`internal/wintask/schtasks_windows_test.go`) creates a real task with
+`Triggers: []string{"daily at 3:30"}`, reads it back -- which already
+confirms the scheduler's own reading is padded, `"daily at 03:30"` -- and
+checks `SameDefinition` against the original unpadded declaration. On the
+unchanged `normalizeTrigger` it failed, reporting every field matched except
+`Triggers: ["daily at 3:30"] != ["daily at 03:30"]`.
+
+**L6, the defect and shown.** `SameDefinition` did not compare `Description`
+at all -- not missing a guard, simply absent from the function. A
+`description` change made through `win_task.present` was accepted, written
+by `Create`, and then never checked again: the next run saw whatever
+`Description` the host had as a match regardless. `TestDescriptionIsComparedWhenDeclared`
+failed on the unchanged code with "a different description compared equal".
+
+**L7, the defect.** `decodeUTF16`'s fallback, for output that is neither
+UTF-16 nor has a UTF-16 byte-order mark, returned the raw bytes as a Go
+string. schtasks' own declaration claims UTF-16 and lies (DIVERGENCE 4.6
+already established that much), but what it writes when redirected is not
+UTF-8 either: a console application writing text with the CRT's narrow
+functions once its output is not a console writes it in the OEM code page.
+Confirmed on this host (OEM code page 437, from `chcp`): `cmd /c echo café`,
+redirected through `exec.Command`, wrote 'é' as the single byte 0x82, which
+is cp437's 'é' and is not valid UTF-8 on its own. Fed straight to
+`encoding/xml`, as the unchanged code did, that byte alone reproduces "XML
+syntax error on line 1: invalid UTF-8" -- confirmed directly, not inferred.
+So a task whose Description, Author or path held a non-ASCII character could
+not be read back by `Info` at all, and `win_task.present` tried to recreate
+it on every run.
+
+**L7, shown.** `TestANonASCIIDescriptionSurvivesTheOEMCodePage` feeds
+`parseXML` a document with `caf\x82` (cp437 for "café") as a Description. On
+the unchanged fallback it failed with exactly the XML error reproduced
+above; after the fix it reads back "café".
+
+**L7, the change.** `decodeSingleByte` (`internal/wintask/schtasks_windows.go`)
+calls `MultiByteToWideChar` with `CP_OEMCP` -- 1, not among the vendored
+`windows.CP_*` constants, so declared locally -- when the bytes are not
+already valid UTF-8, and passes valid UTF-8 through untouched. A
+Windows-only correction; `internal/wintask/decodeoem_other.go` is a no-op
+stub for every other platform, where nothing here ever drives a real
+scheduler.
+
+**L8, the defect.** The scheduler adds a `<URI>` element, naming the task's
+own registered path, to every task's `RegistrationInfo` on registration --
+confirmed against a real, already-shipped task on this host
+(`\Microsoft\Windows\Time Synchronization\SynchronizeTime`), whose read-back
+carries one though nothing says the original shipped definition ever did.
+`SameXML` normalized whitespace and the encoding declaration before
+comparing, both of which the scheduler also rewrites, but not this, so a
+task declared as raw XML with no `<URI>` -- the ordinary case, since nothing
+in the schema requires one and nothing a state author writes would think to
+add one -- never matched the read-back and `win_task.present` given XML
+tried to recreate the task on every run.
+
+**L8, shown.** `TestSameXMLIgnoresAnAddedURI` compares two synthetic
+documents differing only by a `<URI>` element. It failed on the unchanged
+`normalizeXML` with "a document with no URI never matched one with an added
+URI and nothing else different", and a second case in the same test holds
+that a real difference elsewhere is still caught.
+
+A real `Create`/`Info` round trip through XML (also tried, and not kept as a
+test) differs from the declaration in more than the URI -- element order, an
+added `LogonType`, a default `Enabled` left out -- which `SameXML` is
+already documented to treat as a real change, correctly by its own stated
+rule ("reports a change that is not one rather than missing one that is").
+That is why the test above compares two synthetic documents rather than a
+live round trip: the live one does not converge even after this fix, for
+reasons this fix does not touch.
+
+**The change, together.** `padClock`, shared between `startBoundary` and the
+new padding branch of `normalizeTrigger`, is the one place a clock time is
+validated and zero-padded (L4). `SameDefinition` gained a `Description`
+comparison, guarded the same way every other optional field here is -- only
+checked when the state declared one -- so an omitted `description` still
+reports no change on its own, consistent with
+`TestOnlyWhatWasDeclaredIsCompared` (L6). `decodeUTF16`'s single-byte
+fallback goes through the new `decodeSingleByte` (L7). `normalizeXML` strips
+a `<URI>` element from both sides before comparing, the same way it already
+stripped the encoding declaration (L8).
+
+With the change, `go test ./internal/wintask/... ./internal/builtin/...
+-count=1` is green on this host, including the three tests above and the
+pre-existing suite -- `TestATaskIsCreatedReadBackAndDeleted`,
+`TestWinTaskPresentRegistersAndThenConverges` and
+`TestOnlyWhatWasDeclaredIsCompared` among them, each a real task created
+under this account and deleted after.
+
+**Lead L5, not fixed, and not the same shape as the four above.**
+`GenerateXML` defaults an omitted `RunAs`, `RunLevel` and `Triggers` to
+SYSTEM, `LeastPrivilege` and no trigger when it creates a task, and
+`SameDefinition` does not check either against that default when the
+declaration omits it -- the same asymmetry L4/L6 had, on its face. It is not
+fixed here, because `TestOnlyWhatWasDeclaredIsCompared` already asserts, by
+name, that an omitted field reports no change regardless of what the host
+has -- "a partial declaration reported a change it did not ask about" -- and
+that assertion is not a gap in the rule the comment above `SameDefinition`
+states, it is that rule, applied to exactly this case, on purpose. Making
+`RunAs` and `Triggers` the exception would change what `win_task.present`
+with no `run_as` or no trigger promises today, for every estate already
+relying on the current answer, and that is the owner's call to make, not a
+parsing defect to close. `SameDefinition`'s comment now says so, and the
+case stays open rather than being decided by whoever read it next.
+
+**Not verified.** A domain-joined host, where `canonicalAccount`'s SID
+lookup behaves differently. A host whose OEM code page is not 437 -- this
+fix's byte, `0x82` for 'é', is specific to it. Administrator rights, for a
+task registered to run as SYSTEM or another account, which nothing here
+needed: all three real round trips ran as this account.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
