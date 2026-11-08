@@ -45,7 +45,7 @@ const (
 	// SETTINGS frame. Without it the hub advertised net/http's own
 	// default, 250. A Go client at the limit does not fail the next
 	// request: it dials a second connection, and MaxConnsPerHost does
-	// not stop it once the first is HTTP/2 (measured, DIVERGENCE 5.637)
+	// not stop it once the first is HTTP/2 (measured, DIVERGENCE 5.639)
 	// -- so this bounds what one connection may hold, not what one node
 	// may ask for.
 	MaxConcurrentStreams = 64
