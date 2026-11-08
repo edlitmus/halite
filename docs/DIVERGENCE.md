@@ -40896,8 +40896,8 @@ from `main` at `5d314a40`. `sha256sum -c` passed, but there was no attestation
 or signature to check. Linux: the shared AWS test hosts `noop-1` (hub, Ubuntu
 22.04.5, kernel 6.8.0-1066-aws, arm64) and `noop2-1` (node, Ubuntu 24.04.5,
 kernel 6.8.0-1067-aws-fips, arm64), as root through SSM. They are not fresh:
-both run salt-minion, postfix and sssd. Everything halite was removed from both
-afterwards, and salt-minion was still active. The binaries were built on
+both run salt-minion, postfix and sssd. Everything halite was removed from both   <!-- lexicon:allow -->
+afterwards, and salt-minion was still active. The binaries were built on   <!-- lexicon:allow -->
 `noop2-1` from `main` at `07a37840` with go1.27.3. Only TCP 22 and 8301 are open
 between the hosts, so the hub listened on 8301.
 

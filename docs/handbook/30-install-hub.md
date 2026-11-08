@@ -35,7 +35,7 @@ from a directory you control, one working operator, and a green
 > (host kernel 15.1-RELEASE-p6, amd64), as root, from the `freebsd-amd64`
 > archive built locally with `bmake dist`. The Linux hub ran as root on
 > `noop-1` (Ubuntu 22.04.5 LTS, arm64), with binaries built from `main`. That
-> host is shared and was not fresh: it also runs `salt-minion`, `postfix` and
+> host is shared and was not fresh: it also runs `salt-minion`, `postfix` and <!-- lexicon:allow -->
 > `sssd`. These runs found three defects, all in the steps below: step 3
 > (DIVERGENCE 5.625), step 4 (DIVERGENCE 5.624) and step 6 (DIVERGENCE 5.625).
 > **A jail cannot show** kernel modules, many sysctls, a real boot (no
