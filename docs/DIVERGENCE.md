@@ -40744,6 +40744,82 @@ The digest of `halite-ext-signer-local` is recorded again. The version stays
 **Not verified.** We did not run a domain-joined host. We did not run a group
 that should have had access.
 
+### 5.626 Issue 308's remaining procedures, run in FreeBSD jails and on two Linux hosts
+
+Issue 308, after 5.283, 5.284 and 5.482. The procedures 5.482 still listed as
+not run were run on 2026-11-07 and 2026-11-08.
+
+**Where.** FreeBSD: bastille thin jails on `beastie`, whose kernel is FreeBSD
+15.1-RELEASE-p6 (amd64). The hub ran on a 14.5-RELEASE userland, made from
+`base.txz` with no patches. The node ran on a 15.1-RELEASE userland. A new jail
+was made for each run and destroyed afterwards. The jails shared the loopback
+interface `bastille0` and had no outbound network. The build was `bmake dist`
+from `main` at `5d314a40`. `sha256sum -c` passed, but there was no attestation
+or signature to check. Linux: the shared AWS test hosts `noop-1` (hub, Ubuntu
+22.04.5, kernel 6.8.0-1066-aws, arm64) and `noop2-1` (node, Ubuntu 24.04.5,
+kernel 6.8.0-1067-aws-fips, arm64), as root through SSM. They are not fresh:
+both run salt-minion, postfix and sssd. Everything halite was removed from both
+afterwards, and salt-minion was still active. The binaries were built on
+`noop2-1` from `main` at `07a37840` with go1.27.3. Only TCP 22 and 8301 are open
+between the hosts, so the hub listened on 8301.
+
+**A jail cannot show** kernel modules, most `sysctl`s, a real boot (the jail's
+`/etc/rc` runs when the jail starts, but there is no loader, kernel or `devd`, and
+the network is up before it), a host firewall, or a wire between hosts.
+
+**Found, each with its own fix:**
+
+- 5.623: replacing the agent from the tree with `file.managed` (chapter 36)
+  made a 60 MB return of a line diff of the two binaries. The hub refused it, and
+  the operator's `run` never got an answer.
+- 5.624: `examples/hub.yaml`, in every archive, set FreeBSD's `pki_dir`,
+  `state_dir` and `policy`. On Linux, a hub started from it as chapter 30
+  step 4 says stopped at once with status 78.
+- 5.625: on FreeBSD with no packages, `/usr/local` is empty. `make install`
+  refused as root, and chapter 30's `install … /usr/local/etc/rc.d/` failed with
+  `No such file or directory`.
+
+**Corrected in the handbook, with no code change:**
+
+- **The FreeBSD user-data script** needs `/usr/local/bin/halite-node` in full,
+  because rc(8) sets `PATH=/sbin:/bin:/usr/sbin:/usr/bin`. The first run failed
+  with `halite-node: not found` and exit 127. It also needs `install -d` for
+  `/usr/local/bin`. With both, run from `/etc/rc.local` at jail start, it
+  enrolled by token. On Linux the chapter's script ran as written, as a
+  transient systemd unit, whose PATH has `/usr/local/bin`.
+- **Chapter 24's crontab entry** was two lines joined by a backslash. `crontab`
+  refused it (`bad minute`), because cron has no line continuation.
+- **A node that does not answer is reported** by cron itself, to the crontab's
+  owner, as `not connected` and `no answer`. The report's address gets nothing.
+- **A second operator certificate** (`reporter`) in `pki_dir` makes every plain
+  command on that host refuse until `--as` is given.
+
+**Run as the chapters say, and as they said it would go:** chapter 30 on the
+14.5 hub (`doctor` `6 pass, 2 skip`) and on Linux after 5.624's change by hand
+(`7 pass, 1 skip`). Chapter 31's token enrolment by user-data on both
+platforms, over the jail network and over the VPC, with no tunnel. Chapter 24's
+drift report from root's crontab on the 14.5 hub with dma and `mail -E`: two
+mails while the node drifted, and none on two ticks after it converged. The
+example tree's `halite/node.sls` with its own pillar, on the 15.1 node: it
+returned first, and the node restarted 30 seconds later and came back up. The
+`node.yaml` it writes has no `hub_fingerprint` or `node_id`, which did no harm
+to an enrolled node with a cached ID. Chapter 36's upgrade by a state, with
+5.623's fix.
+
+**Seen and not explained.** `service halite_hub restart` twice stopped at
+`Waiting for PIDS: <pid>`, in rc.subr's `pwait`, after the hub had logged `the
+hub stopped` and was gone from the host. A new `pwait` on the same pid returned
+at once. Ten restarts in a row each took about a second. FreeBSD's `timeout(1)`
+waits for every descendant, so wrapping `service … restart` in it always times
+out and then kills the daemon. That says nothing about halite, but it cost an
+hour here.
+
+**Not run.** cloud-init itself, and FreeBSD's nuageinit (a jail has no config
+drive). The agentless bootstrap with a Linux target (chapter 17). A Linux
+upgrade by a state, and a whole fleet upgrade. Mail off the machine. The
+`halite-api` paths. A FreeBSD host on real hardware or a VM for any of this.
+`make check` for this documentation change ran only in CI.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
