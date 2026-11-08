@@ -97,7 +97,18 @@ service manager. **Not run by this project:**
   state of the same shape inside a real job on Ubuntu 26.04 and FreeBSD
   15.1: the job returned first and the node restarted after it and came back
   up (DIVERGENCE 5.482). The timer's `30` is `30` to `90` seconds on Linux.
-  `halite/node.sls` itself, with this tree's pillar, was not applied.
+  `halite/node.sls` itself, with this tree's pillar, **was applied on
+  FreeBSD** (DIVERGENCE 5.626): a 15.1 node in a jail, a 14.5 hub in another
+  jail, with this tree's states and pillar copied to the hub. A rehearsal and
+  then the real run gave `node.yaml was rewritten as yaml`, ran the `daemon(8)`
+  restart, and ended `Succeeded: 3 (changed=2)`, exit 0. The job returned at
+  once. The node restarted about 30 seconds later, came back `up`, and started
+  the `nightly_highstate` schedule. The `node.yaml` that the state wrote drops
+  `hub_fingerprint` and `node_id`, because the pillar does not carry them (the
+  enrolment had written both). The node still worked because it already held
+  its certificate, and `node_id` caching kept its ID. **Not tried:** a node
+  that has lost its certificate. The rc script would then enrol without a
+  pinned fingerprint. **Linux:** `halite/node.sls` was not applied.
 - **The hub and the API restarting on a change,** the operator
   certificate re-issued as `halite` and picked up by the running API, and
   the API CA and serving certificate on a real hub host.
