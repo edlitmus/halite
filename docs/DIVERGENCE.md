@@ -41852,6 +41852,233 @@ records, not the index.
   lock, where the scan read the whole store. Bounded, and smaller than
   before, but not O(1).
 
+### 5.636 A failed config read answered Enabled's question with no as though it knew
+
+Issue 608 item 5, lead L22 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service_windows.go`, `internal/builtin/win_service_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked and run on
+this Windows 11 host.
+
+**The defect.** `statusOf` reads a service's status, then its configuration;
+when the configuration read failed it returned `(out, nil)` with every
+configuration field -- `StartType`, `Account`, `BinaryPath`, `DisplayName`,
+`Description` -- left at the zero value and no error at all. The comment
+reasoned correctly about the common question, `service.status`: "the status
+is the answer... and a configuration this process may not read is not a
+reason to fail the whole query." But `Enabled` and the `Disabled` PR #679
+added both decide a boolean from `StartType` alone, and an empty string is
+not `"auto"` or `"auto_delayed"` -- it reads exactly like `"manual"`, with
+no error to say the reading was never made. `win_service.get_start_type`
+had the milder version of the same gap: an empty string compared against
+any real start type as a mismatch, which at least pushes a state toward
+calling `SetStartType` rather than silently agreeing, but is still not the
+value anybody asked `GetValue` for.
+
+A healthy service and a normal account cannot make the real
+`QueryServiceConfig` fail on demand -- confirmed by trying it on EventLog,
+where it always succeeds here -- so this was never exercised by running
+anything, including the live legs that drove `Enabled`'s own fix in
+PR #679.
+
+**Shown.** `queryConfig` is now a `var` holding the real implementation, so
+`TestAFailedConfigReadIsAnErrorNotASilentNo`
+(`internal/winsvc/winsvc_windows_test.go`) can replace it with one that
+always fails, the same seam `internal/exec`'s confinement-warning test
+(5.620) used for `createJobObject`. On the unchanged `Enabled`:
+
+```
+Enabled with no config read returned (false, nil); want an error
+```
+
+**The change.** `Status` gained a `ConfigErr error` field, set when
+`queryConfig` fails; `Query` and `service.status`'s callers are unaffected,
+since `State` and `PID` are still real and the overall call still succeeds.
+`Enabled`, `builtin`'s `windowsProvider.Disabled`, and
+`winServiceStartType` each now check it first and return it as their own
+error rather than reading the zero-valued `StartType` as a fact.
+
+With the change, `go test ./internal/winsvc/... ./internal/builtin/...
+-count=1` is green on this host, including the test above.
+
+**Lead L21, checked, did not fully reproduce.** The same read named
+`internal/exec/shell_windows.go`'s clean environment as missing
+`ProgramFiles`, `SystemDrive`, `USERPROFILE`, `APPDATA`, `ProgramData`,
+`PSModulePath` and `COMPUTERNAME`. Run for real: PowerShell started under
+exactly this build's clean environment (confirmed with `exec.Command` and
+that exact variable list) resolved `$env:PSModulePath` to a sensible
+default on its own -- `C:\Users\ed\Documents\WindowsPowerShell\Modules;...`
+-- without `PSModulePath` or `USERPROFILE` set at all, and
+`Get-Module -ListAvailable` found 98 modules. PowerShell resolves its
+module and profile paths through the user's token rather than reading
+those two names back out of the environment it was given, at least for
+this build and this host. The other five names were not independently
+checked, and a program that reads `%APPDATA%` or `%ProgramFiles%`
+literally -- most command-line tools that are not themselves .NET, since
+.NET's own callers tend toward the token-based path PowerShell took here --
+plausibly still gets nothing for them. Not changed without a demonstrated
+failure to point at, per CLAUDE.md's own rule for this repository.
+
+**Not verified.** A service whose configuration genuinely cannot be read by
+this account rather than by an injected failure -- the injected one proves
+the plumbing, not that such a service exists. `win_service.info`, which
+still reports the zero-valued fields with no error for a caller who reads
+them as diagnostic prose rather than deciding something from them; left
+alone on purpose; see the comment in `statusOf`.
+
+### 5.637 An account's SID and its name were never the same account, and a resource descriptor read back empty
+
+Issue 608 item 5, leads L15 and L16 (`internal/builtin/win_dacl.go`,
+`internal/winreg/winreg_windows.go`). Found by reading, in the issue 321
+second-pass audit. Checked and run on this Windows 11 host.
+
+**L15, the defect.** `sameAccount` compared two account strings
+case-insensitively, falling back to comparing everything after the last
+backslash. Two gaps:
+
+- A SID never equalled the name it resolves to. `winsec.describe`
+  (`internal/winsec/winsec_windows.go`) renders a trustee that does not
+  resolve -- a deleted account, or one from an unreachable domain -- as
+  the SID's own string form, which has no backslash, so `bareAccount`
+  returns it whole. Compared against the name the same SID resolves to
+  elsewhere, the two never matched.
+- Two accounts that merely share a short name -- `CORP\ed` and `HOST\ed`
+  -- compared equal, because the comparison never asked whether they were
+  actually the same SID, only whether their text after the last backslash
+  agreed.
+
+**L15, shown.** `TestASIDStringAndTheNameItResolvesToAreOneAccount`
+(`internal/builtin/win_dacl_windows_test.go`) compares this host's own
+account by its real SID (`S-1-5-21-1772322385-3744737199-1319263849-1001`,
+from `os/user`) against its name (`ED-PC\ed`). It failed on the unchanged
+comparison -- confirming the first gap for real, not by description.
+
+**L15, the change.** `sameAccount` now tries `sameAccountBySID` first:
+resolve both sides to a SID and compare those, falling back to the old
+bare-name comparison only when a side does not resolve. Resolution tries
+`windows.StringToSid` before `windows.LookupSID`, because the SID string
+form is not a name `LookupSID` accepts -- confirmed on this host, where
+`windows.LookupSID("", "S-1-5-21-...")` returned "No mapping between
+account names and security IDs was done" for exactly the string
+`winsec.describe` can hand back. The function this calls,
+`sameAccountBySID`, lives in a new Windows-only file (`win_dacl_windows.go`
+already, next to the rest of this module's Windows half) because
+`win_dacl.go` itself has no build tag and compiles on every platform;
+`win_dacl_other.go` carries a no-op stub.
+
+**L15, the second gap -- not demonstrated.** `CORP\ed` and `HOST\ed` both
+failing to resolve here (this host is not domain-joined and has neither
+account) means the fallback this fix keeps is exercised the same way it
+always was, which is where leads L15 named the collision as still
+possible: two different domains that each fail to resolve independently
+still compare by bare name. True by construction of the fallback, not
+shown with two real, resolvable, colliding accounts -- that needs a second
+machine or a domain controller, neither available here.
+
+**L16, the defect.** `readFrom`'s default branch -- every registry value
+type this build has no named case for -- read with `GetBinaryValue`, which
+Go's own `x/sys/windows/registry` refuses for anything but `REG_BINARY`
+(checked against the vendored source: `if typ != BINARY { return nil, typ,
+ErrUnexpectedType }`). Every other type fell into the same `if err != nil`
+branch the code used for a genuinely empty `REG_NONE`, so `REG_LINK`,
+`REG_DWORD_BIG_ENDIAN`, `REG_RESOURCE_LIST`,
+`REG_FULL_RESOURCE_DESCRIPTOR` and `REG_RESOURCE_REQUIREMENTS_LIST` all
+read back as present and empty, with the real error thrown away.
+
+**L16, shown.** `HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`'s
+`Configuration Data` is a real, machine-shipped
+`REG_FULL_RESOURCE_DESCRIPTOR` holding sixteen non-zero bytes --
+`FFFFFFFFFFFFFFFF0000000000000000`, checked with `reg query`. Called
+directly, `GetBinaryValue` on it returned "unexpected key value type".
+`TestAResourceDescriptorValueIsReadNotEmptied`
+(`internal/winreg/winreg_windows_test.go`) reads this real value through
+`ReadValue` and failed on the unchanged code: "Configuration Data read
+back empty; it has real bytes".
+
+**L16, the change.** The default branch no longer calls `GetBinaryValue`
+at all. `GetValue`, which `readFrom` already calls once to learn the
+type and the size, has no type check -- it reads a value by its size
+alone -- so the branch now allocates a buffer of that size and calls
+`GetValue` again to fill it. A genuinely empty value (`size == 0`, which
+is what a `REG_NONE` with no data actually looks like) still reports
+present and empty with no error; anything else that still fails is now a
+real returned error naming the registry type.
+
+With the change, `go test ./internal/winreg/... ./internal/builtin/...
+-count=1` is green on this host, including both tests above.
+
+**Who sees it.** `win_dacl.has_permission`, `win_dacl.present` and anything
+else that compares accounts by name (L15): two differently-domained
+accounts sharing a short name no longer compare equal when both resolve.
+`win_registry.read_value` and `win_registry.value_present`'s comparison
+(L16): a value of a type this build does not name by one of its five
+words now reads its real bytes, or a real error, instead of silently
+reading empty.
+
+**Not verified.** A domain-joined host, for either lead: L15's SID
+resolution across a real domain controller, and L16's registry values on
+a domain-joined machine's own hardware tree, which was not compared
+against this one.
+
+### 5.638 win_dacl.has_permission trusted a matching allow without checking for a deny
+
+Issue 608 item 5, lead L13 (`internal/builtin/win_dacl_windows.go`). Found by
+reading, in the issue 321 second-pass audit, which called it out as a
+contradiction of the function's own comment. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winDACLHasPermission`'s own doc comment: "A deny entry
+never counts as having a permission, whatever its mask: Windows evaluates
+deny first, so an account with a deny entry does not have the access the
+mask names." The loop it describes only *skipped* a deny entry
+(`e.Kind != "allow"`) rather than checking whether the trustee had one
+before trusting a matching allow. A trustee with both an allow entry wide
+enough to cover the permission asked about and a separate deny entry --
+not necessarily on the same mask, and not necessarily sorted after the
+allow in `Entries`' order -- was reported as having the access, exactly the
+case the comment says never to report.
+
+The existing test, `TestHasPermissionAnswersAtLeastAndExactly`, did not
+catch this: it uses `winsec.Grant` for both the allow and the deny it
+checks, and `Grant` replaces whatever entry a trustee already has
+(`dacl_windows.go`'s `kept` filter drops any existing entry for the same
+SID before adding the new one), so the account it tested never actually
+held two entries at once. The deny case there passed for the plain reason
+that no allow entry was left to find, not because the deny was checked.
+
+**Shown.** `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+(`internal/builtin/win_dacl_windows_test.go`) writes a real ACL with
+`windows.ACLFromEntries` carrying two explicit entries for `Everyone` --
+denied `write`, separately allowed `full_control` -- bypassing `Grant`'s
+one-entry-per-trustee replacement so both land on the file at once, in
+Windows' own canonical order (deny before allow). On the unchanged loop it
+failed: "an account with a deny entry was reported as having a permission
+its separate allow entry covers".
+
+**The change.** `winDACLHasPermission` now makes a first pass over
+`Entries` for any deny entry naming the trustee and returns false
+immediately if it finds one, before the existing allow-matching loop runs
+at all.
+
+With the change, `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+and the rest of `internal/builtin`'s suite pass
+(`go test ./internal/builtin/... -count=1`, this host).
+
+**Who sees it.** `win_dacl.has_permission`, and anything that reads it --
+an `onlyif` condition, or a state comparing a declared permission against
+what a trustee has. A trustee denied something and separately allowed
+something wider was reported as having the narrower access; it no longer
+is.
+
+**Not verified.** A domain account. A deny entry inherited from a parent
+rather than explicit (`Entries` carries both kinds, and this fix does not
+distinguish them, by design: an inherited deny still disqualifies). An
+unrelated pre-existing failure was seen running `internal/winsec`'s own
+suite on this host, `TestEnablePrivilegeSaysNoForAPrivilegeTheTokenLacks`
+(`whoami /priv: exit status 1`) -- this shell's `PATH` resolves `whoami` to
+Git's `/usr/bin/whoami`, which has no `/priv`, ahead of the real
+`System32\whoami.exe`. Not caused by this change, and not fixed here:
+`internal/winsec` was not touched.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

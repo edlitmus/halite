@@ -203,7 +203,7 @@ func ReadValue(hive, path, name string, view View) (Value, error) {
 }
 
 func readFrom(k registry.Key, name, hive, path string) (Value, error) {
-	_, valtype, err := k.GetValue(name, nil)
+	size, valtype, err := k.GetValue(name, nil)
 	if err != nil {
 		if errors.Is(err, registry.ErrNotExist) {
 			return Value{}, fmt.Errorf("%s\\%s has no value named %q: %w",
@@ -241,17 +241,34 @@ func readFrom(k registry.Key, name, hive, path string) (Value, error) {
 		}
 		out.Data = int64(n)
 	default:
-		// Binary, and anything this build has no name for. Hex rather
-		// than a byte list, because it is what regedit shows and what a
-		// state file can hold without becoming unreadable.
-		raw, _, err := k.GetBinaryValue(name)
-		if err != nil {
-			// A type with no binary reading — REG_NONE with no data —
-			// is reported as present and empty rather than as an error.
+		// Binary, and anything this build has no name for — REG_NONE,
+		// REG_LINK, REG_DWORD_BIG_ENDIAN, REG_RESOURCE_LIST,
+		// REG_FULL_RESOURCE_DESCRIPTOR, REG_RESOURCE_REQUIREMENTS_LIST.
+		// Hex rather than a byte list, because it is what regedit shows
+		// and what a state file can hold without becoming unreadable.
+		//
+		// GetBinaryValue refuses every type here but REG_BINARY itself
+		// -- confirmed on this host, where
+		// HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0's
+		// "Configuration Data", a real REG_FULL_RESOURCE_DESCRIPTOR
+		// holding 16 non-zero bytes, returned "unexpected key value
+		// type" rather than those bytes. The old code read that error
+		// the same as a REG_NONE with no data at all and silently
+		// reported the value as present and empty either way, losing
+		// the distinction and the error both. GetValue has no type
+		// check; it reads a value by its size alone, which `size`
+		// above already carries.
+		if size == 0 {
 			out.Data = ""
 			return out, nil
 		}
-		out.Data = hex.EncodeToString(raw)
+		raw := make([]byte, size)
+		n, _, err := k.GetValue(name, raw)
+		if err != nil {
+			return Value{}, fmt.Errorf("reading %s\\%s\\%s (type %d): %w",
+				strings.ToUpper(hive), path, name, valtype, err)
+		}
+		out.Data = hex.EncodeToString(raw[:n])
 	}
 	return out, nil
 }
