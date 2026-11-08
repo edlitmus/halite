@@ -41244,7 +41244,7 @@ reporting success for nothing.
 shell named by a path this host does not have (zsh, dash, ksh); `shellFlag`
 treats any name it does not recognise as POSIX-style, read rather than run.
 
-### 5.624 win_task's comparisons disagreed with the scheduler's own reading of what it was given
+### 5.631 win_task's comparisons disagreed with the scheduler's own reading of what it was given
 
 Issue 608 item 5, leads L4, L6, L7 and L8 (`internal/wintask`). Found by
 reading, in the issue 321 second-pass audit. Checked and run on this Windows
