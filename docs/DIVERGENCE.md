@@ -41369,6 +41369,135 @@ lookup behaves differently. A host whose OEM code page is not 437 -- this
 fix's byte, `0x82` for 'é', is specific to it. Administrator rights, for a
 task registered to run as SYSTEM or another account, which nothing here
 needed: all three real round trips ran as this account.
+### 5.632 Every new name read every record in the key store
+
+Found by `simfleet setup` in the AWS run recorded under 5.279 (PR 680, open
+as this is written): it issued 5,000 identities at 20, 39, 56, 75 and 93
+seconds per thousand, on one core, in-process through `keystore.Authority`,
+and the cost per identity rose in a straight line with the store's size. It
+was not profiled there. Measured and fixed on this Mac (Apple M4 Pro,
+macOS, APFS).
+
+**The defect.** `Authority.Enroll` asks `roomForPending`
+(`internal/keystore/authority.go`) before it writes a pending record for a
+name it has not seen, which is issue 321's M-06 bound of
+`DefaultMaxPending`, 1,024. `roomForPending` called `Store.countPending`,
+which opened and parsed every record in the store, under the store's lock,
+to count the pending ones. Its comment said the cost "is paid only for a
+name not seen before", as though that made it rare. An enrolment storm, and
+a fleet growing past 20,000, are made of exactly those names: identity
+issue for 20,000 nodes at the AWS rate would take about an hour, and while
+it ran the lock was held against every accept, renewal and revocation, from
+the hub and from `halite-hub keys` alike.
+
+**Measured.** `BenchmarkIssueIntoAStoreOf`
+(`internal/keystore/pending_bench_test.go`) does what `simfleet setup` does
+per identity -- enrol, accept, enrol to collect -- into a store already
+holding 500, 2,000 or 8,000 accepted records, `GOMAXPROCS=2`, 200
+identities each:
+
+| store | before | after (three runs of 100) |
+|---|---|---|
+| 500 | 131 ms | 34, 34, 35 ms |
+| 2,000 | 417 ms | 39, 37, 33 ms |
+| 8,000 | 936 ms | 45, 41, 47 ms |
+
+A CPU profile of the 8,000 case before the change: 59.0 s of 67.8 s
+sampled were under `countPending`, 87% of the whole and nearly all of the
+timed loop (the rest is filling the store), and 51 s of those were in
+`open(2)` from `os.ReadFile`. Parsing was not the cost; opening 8,000 files
+was. After the change, in a run that also built the index inside the
+timing, reading the index is 0.05 s of 8.35 s sampled and the one-time build
+0.68 s; `put` -- the record writes and their fsyncs -- is most of what
+remains. The table's "after" column builds the index before the timer.
+
+`simfleet setup -n 3000` itself, after the change, `GOMAXPROCS=1` on the
+same Mac: about 40, 46 and 45 seconds per thousand identities (2m11.6s in
+all), flat where the AWS run rose in a straight line, and
+`keys/pending-index` empty at the end, every request having been accepted.
+The before-change setup was not run here, so the Mac's absolute numbers
+cannot be compared with the AWS host's.
+
+The 8,000 row still costs about 10 ms more than the 500 row. The profile
+does not put it on the count, and it was not chased further; a filesystem
+with 8,000 entries in one directory making the create, rename and sync of
+each write slower is the obvious guess, and is a guess.
+
+**The change.** A pending index: `keys/pending-index/`, one empty file per
+pending record, named for the node (`internal/keystore/pending.go`).
+Counting reads names, stops at the limit, and parses nothing, so it costs
+at most `MaxPending` directory entries whatever the store's size. The
+record stays the authority on a node's state, and the index keeps one rule
+that holds through a crash at any point: **every pending record has a
+marker.** `put` writes the marker before a record becomes pending and
+removes it after a record stops being pending; `delete` removes it after
+the record. A crash between the two steps can only leave a marker too many.
+An overcount is trusted only below the limit, where it refuses nothing; at
+the limit every marker is checked against its record, stale ones are
+removed, and the refusal is made on the exact number. So the answer is the
+one the full scan gave, `DefaultMaxPending` means what it meant, and the
+lock discipline is unchanged: everything runs inside `locked`, as the scan
+did.
+
+A store from before the index is indexed by its first count, once, by
+reading every record into `pending-index.building` and renaming it into
+place, so an interrupted build is never mistaken for an index. A failure to
+remove a marker is not reported, because the record is already written and
+the marker is an overcount.
+
+**Shown.** `internal/keystore/pending_test.go`, each broken on purpose:
+
+- `TestANewNameDoesNotReadTheOtherRecords` fills a store with 50 accepted
+  records, enrols once, overwrites all 50 with text that is not JSON, and
+  enrols again. With `countPending` put back to a scan of the store it fails
+  with `the record for old000000.example ... is not readable`. Timing would
+  have been a flaky test; a record the count has no reason to open is not.
+  It then fills the bound and checks the refusal is the bound's, not that
+  parse error: the check at the limit reads only pending records.
+- `TestAStaleMarkerDoesNotRefuseANewName` leaves markers for an accepted
+  record and a deleted one. With the check at the limit removed -- the
+  markers trusted as the count -- it fails: `3 enrollment requests are
+  already pending` at a limit of 2 with one pending.
+- `TestDecidingARequestRemovesItsMarker`: with `delete`'s unmark removed it
+  fails, `the index holds [delete.example stays.example]`.
+- `TestAStoreWithoutAnIndexIsIndexedFromItsRecords`: with the build reading
+  no records it fails -- two pending records written before the index, at a
+  limit of two, and a third was let in.
+
+One break did **not** fail, and it is recorded because it would be easy to
+read the test as claiming it: reusing an interrupted build directory instead
+of clearing it passes. That is correct behaviour rather than a gap: a
+rebuild writes a marker for every pending record anyway, and a leftover
+marker is an overcount. What is load-bearing in the build is that it is
+renamed into place only when complete, and showing that needs a crash
+mid-build, which nothing here makes.
+
+**What an operator sees.** A directory `pending-index` in the key store,
+created by the first enrolment after upgrading; that enrolment reads every
+record once. Enrolment of new names no longer slows as the estate grows.
+`keys list`, `keys accept --all` and every other reader still read the
+records, not the index.
+
+**Not verified.**
+
+- Any platform but this Mac. Not run on FreeBSD, Linux or Windows; the
+  directory rename and the remove of a marker on Windows in particular.
+- `simfleet setup` on AWS, or at 20,000, after the change. It was run at
+  3,000 on this Mac only.
+- A crash at any of the steps the ordering is for. The rule is argued, and
+  each step's absence is tested, but nothing kills the process between a
+  marker and a record.
+- Records that reach the store without `put`: a record file copied in by
+  hand, or a pending record written by a halite older than the index after
+  the index was built (a downgrade, then an upgrade). Those are not counted
+  until decided, which loosens the bound by that many. The bound is against
+  an unauthenticated caller filling the disk, and neither is one.
+- A caller hammering a store that is genuinely at the limit pays the check
+  at the limit on each request: up to `MaxPending` record reads under the
+  lock, where the scan read the whole store. Bounded, and smaller than
+  before, but not O(1).
+
+
 
 ## 6. Everything else not started
 

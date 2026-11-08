@@ -15,7 +15,7 @@ import (
 )
 
 // crlNumberName is the file holding the last CRL number issued. It is not
-// a .json file, so List and countPending do not read it as a node.
+// a .json file, so List does not read it as a node.
 const crlNumberName = "crl-number"
 
 // CRLEntries is every serial the hub denies that a CRL should name: the

@@ -354,7 +354,21 @@ func (s *Store) put(rec *Record) error {
 	if err != nil {
 		return fmt.Errorf("encoding the record for %s: %w", rec.NodeID, err)
 	}
-	return writeAtomic(path, append(raw, '\n'), 0o600)
+	// The pending index's marker goes down before a pending record and
+	// comes off after any other, so that a crash between the two can only
+	// overcount. See pendingIndexName.
+	if rec.State == Pending {
+		if err := s.markPending(rec.NodeID); err != nil {
+			return err
+		}
+	}
+	if err := writeAtomic(path, append(raw, '\n'), 0o600); err != nil {
+		return err
+	}
+	if rec.State != Pending {
+		s.unmarkPending(rec.NodeID)
+	}
+	return nil
 }
 
 // Delete removes a record entirely. SPEC 7.4 lists it as an operator
@@ -401,29 +415,8 @@ func (s *Store) delete(nodeID string, now time.Time) ([]DeletedCert, error) {
 		}
 		return nil, fmt.Errorf("deleting the record for %s: %w", nodeID, err)
 	}
+	s.unmarkPending(nodeID)
 	return kept, nil
-}
-
-// countPending counts the pending records. The caller holds the lock.
-func (s *Store) countPending() (int, error) {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		return 0, fmt.Errorf("reading the key store at %s: %w", s.dir, err)
-	}
-	n := 0
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		rec, err := s.get(e.Name()[:len(e.Name())-len(".json")])
-		if err != nil {
-			return 0, err
-		}
-		if rec.State == Pending {
-			n++
-		}
-	}
-	return n, nil
 }
 
 // List returns every record, in node ID order.
