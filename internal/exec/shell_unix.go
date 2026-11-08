@@ -4,6 +4,7 @@ package exec
 
 import (
 	"os"
+	"os/exec"
 )
 
 // defaultPath is the search path a spawned process gets when nothing else
@@ -45,6 +46,16 @@ func cleanEnv() []string {
 		"HALITE=1",
 	}
 }
+
+// applyShellCmdLine is a Windows-only correction for cmd.exe's quoting;
+// a POSIX shell's argv is passed to execve untouched, so there is
+// nothing here to override.
+func applyShellCmdLine(c *exec.Cmd, shell, script string) {}
+
+// ShellRunFlag is a Windows-only correction for cmd.exe, which cannot
+// run a file given positionally. Every shell here can, so there is no
+// flag to add.
+func ShellRunFlag(shell string) string { return "" }
 
 // shellSeparator ends one command in a Shell string so another can
 // follow. `;` on a POSIX shell, `&` in cmd.exe.

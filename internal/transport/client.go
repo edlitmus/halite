@@ -270,6 +270,17 @@ func (c *Client) post(ctx context.Context, path string, body, out any) (status i
 	return res.StatusCode, nil
 }
 
+// EncodeBody is the request body post sends for v, byte for byte,
+// because it is marshal's own output.
+//
+// It exists so that a node can ask whether a return fits under
+// MaxReturnBody before the hub has to refuse it. Measuring with
+// json.Marshal instead would be a second encoder that agrees with this
+// one only by coincidence -- it escapes `<`, `>` and `&`, which this
+// one does not, and omits the trailing newline -- and a return within a
+// few bytes of the limit would be measured as fitting and refused.
+func EncodeBody(v any) ([]byte, error) { return marshal(v) }
+
 func marshal(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

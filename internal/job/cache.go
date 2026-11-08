@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -48,6 +47,14 @@ type Cache struct {
 	// that changes a record that already exists.
 	mu    sync.Mutex
 	locks map[ID]*jobLock
+
+	// idxMu guards idx: per job, which targets have answered. See
+	// returnIndex and File.
+	idxMu sync.Mutex
+	idx   map[ID]*returnIndex
+	// maxIndexed overrides maxIndexedJobs, for a test that would
+	// otherwise write hundreds of jobs to reach it.
+	maxIndexed int
 }
 
 // jobLock is one job's mutex and how many callers hold or wait for it,
@@ -168,7 +175,11 @@ func (c *Cache) Put(j *Job) error {
 	if err != nil {
 		return fmt.Errorf("encoding the record for %s: %w", j.JID, err)
 	}
-	return writeAtomic(filepath.Join(dir, "job.json"), append(raw, '\n'), 0o600)
+	if err := writeAtomic(filepath.Join(dir, "job.json"), append(raw, '\n'), 0o600); err != nil {
+		return err
+	}
+	c.refreshIndex(j)
+	return nil
 }
 
 // Update changes a job's record without losing a concurrent change.
@@ -299,37 +310,12 @@ func (c *Cache) Get(id ID) (*Job, error) {
 // What a caller-chosen chunk did do was let one node write a file per
 // number against any job, which is half of M-13. A pagination that is
 // built will say what it needs here.
+//
+// A wrapper over File, which also says what the filing learned about the
+// job; the hub's return handler uses that.
 func (c *Cache) AddReturn(r *Return) (bool, error) {
-	dir, err := c.jobDir(r.JID)
-	if err != nil {
-		return false, err
-	}
-	if r.Chunk != 0 {
-		return false, fmt.Errorf("the return from %s is chunk %d, and this hub takes one return per node, chunk 0", r.NodeID, r.Chunk)
-	}
-	j, err := c.Get(r.JID)
-	if err != nil {
-		return false, err
-	}
-	if !slices.Contains(j.Nodes, r.NodeID) {
-		return false, fmt.Errorf("%s: %w: %s", r.JID, ErrNotTargeted, r.NodeID)
-	}
-	name := returnFile(r.NodeID, r.Chunk)
-	if name == "" {
-		return false, fmt.Errorf("%q is not a node identity", r.NodeID)
-	}
-	path := filepath.Join(dir, "returns", name)
-	if _, err := os.Stat(path); err == nil {
-		return false, nil
-	}
-	raw, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return false, fmt.Errorf("encoding the return from %s: %w", r.NodeID, err)
-	}
-	if err := writeAtomic(path, append(raw, '\n'), 0o600); err != nil {
-		return false, err
-	}
-	return true, nil
+	f, err := c.File(r)
+	return f.Fresh, err
 }
 
 // returnFile names a return's file, and refuses a node identity that
@@ -499,6 +485,7 @@ func (c *Cache) Prune() (int, error) {
 				if err := os.RemoveAll(path); err != nil {
 					return removed, err
 				}
+				c.forgetIndex(id)
 				removed++
 				continue
 			}
@@ -516,6 +503,7 @@ func (c *Cache) Prune() (int, error) {
 			if err := os.RemoveAll(s.path); err != nil {
 				return removed, err
 			}
+			c.forgetIndex(s.id)
 			total -= s.bytes
 			removed++
 		}

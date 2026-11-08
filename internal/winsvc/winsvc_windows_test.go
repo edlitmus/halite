@@ -3,8 +3,11 @@
 package winsvc
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 // The manager is asked about a service every Windows has.
@@ -60,6 +63,48 @@ func TestQueryReadsARealService(t *testing.T) {
 	}
 	if !Exists(name) {
 		t.Error("Exists says the event log is not there")
+	}
+}
+
+// A healthy service and a normal account cannot make the real
+// QueryServiceConfig fail on demand, so statusOf's ConfigErr path was
+// never exercised on this host or (since nothing calls Query with that
+// in mind) any other. Enabled and Disabled each decide a boolean from
+// StartType alone, and StartType is the zero value, empty string, when
+// ConfigErr is set -- an empty string that is not "auto" or
+// "auto_delayed" reads exactly like "manual", and Enabled said so with
+// no error at all (issue 608 item 5, lead L22).
+func TestAFailedConfigReadIsAnErrorNotASilentNo(t *testing.T) {
+	const name = "EventLog"
+	// The event log is really enabled; this is the fact the unfixed
+	// code got wrong when the config could not be read.
+	before, err := Enabled(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before {
+		t.Fatal("the event log is not reported as enabled before the fault is injected")
+	}
+
+	was := queryConfig
+	queryConfig = func(h windows.Handle) (*windows.QUERY_SERVICE_CONFIG, error) {
+		return nil, fmt.Errorf("injected: the configuration could not be read")
+	}
+	defer func() { queryConfig = was }()
+
+	s, err := Query(name)
+	if err != nil {
+		t.Fatalf("Query itself should still succeed on a status it can read: %v", err)
+	}
+	if s.ConfigErr == nil {
+		t.Fatal("ConfigErr is nil after the injected failure")
+	}
+	if s.StartType != "" {
+		t.Errorf("StartType = %q, want the zero value alongside ConfigErr", s.StartType)
+	}
+
+	if enabled, err := Enabled(name); err == nil {
+		t.Errorf("Enabled with no config read returned (%v, nil); want an error", enabled)
 	}
 }
 
