@@ -41086,7 +41086,7 @@ change on its next run and the service's start type actually move.
 **Not verified.** The real mutation on a Windows service, only the unit test
 against a fake provider. An elevated token. A domain-joined host.
 
-### 5.626 A return too large for the hub was lost without trace
+### 5.629 A return too large for the hub was lost without trace
 
 The sequel to 5.623, which removed the ordinary way to reach the limit and
 left the loss itself as it was.

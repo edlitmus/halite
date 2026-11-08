@@ -37,7 +37,7 @@ const (
 	// the hub enforces on /v1/return. SPEC's "then the node paginates
 	// by chunk" is not built; a chunked return is refused. A node with
 	// a larger return sends job.Return.Oversized in its place, measured
-	// by EncodeBody (DIVERGENCE 5.626).
+	// by EncodeBody (DIVERGENCE 5.629).
 	MaxReturnBody     = 16 << 20
 	HandshakeTimeout  = 10 * time.Second
 	IdleStreamTimeout = 90 * time.Second

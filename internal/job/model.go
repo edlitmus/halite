@@ -373,7 +373,7 @@ func SigningPayload(j *Job) jobsign.Payload {
 }
 
 // Oversized is the return a node sends in place of one too large for
-// the hub to take (SPEC 6.5, DIVERGENCE 5.626).
+// the hub to take (SPEC 6.5, DIVERGENCE 5.629).
 //
 // The hub refuses a return past its bound before it has read enough to
 // know whose it is, and the node used to treat that refusal like any
