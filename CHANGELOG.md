@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, `service.dead` with `enable: False` and `service.disabled` now move a `manual` service to `disabled` instead of leaving it `manual` and reporting success.** A `manual` service already read as not enabled, the same as a `disabled` one, so the shared boot-state logic saw nothing to change. A tree that depended on the old behavior now sees a change on its next run. DIVERGENCE 5.624.
+
 - **Replacing a binary file now reports `Replace binary file` instead of a line diff of both files.** `file.managed`, `file.copy` and `file.diff` wrote out every differing line, so placing a new 17 MB `halite-node` from the tree made a 60 MB return. The hub refused it as too large, and the operator's `run` never got an answer, although the job had succeeded. A file with a NUL byte in its first 8000 bytes counts as binary. The other strings are Salt's, `Replace binary file with text file` and `Replace text file with binary file`, and `New binary file` when there was no file. A return over 16 MiB for any other reason is still lost. DIVERGENCE 5.623.
 
 - **BREAKING on Windows: a mode with no bits for other accounts, such as 0640 or 0750, now makes a file or directory private.** Only the owner, SYSTEM and Administrators can reach it, and inheritance from the parent is off. Before, only the read-only attribute was set. `file.managed` with `mode: '0640'` now converges with no warning. If a state relied on a group, or on the list of the parent, to let another account read the file, that account is now locked out. Use `win_dacl` to grant a named account. A mode with other bits, such as 0644, does not change. DIVERGENCE 5.622.
