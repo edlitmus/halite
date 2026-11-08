@@ -41154,6 +41154,96 @@ A relay forwards what its own hub took, which is at most the same limit, so
 it was not changed or run. A node built before this change still loses an
 oversized return, and the hub's log line is all there is of it.
 
+### 5.630 cmd.exe parses neither its quotes nor its own switch the way everything else does
+
+Issue 608 item 5, leads L2, L19 and L20 (`internal/exec/shell_windows.go`,
+`internal/builtin/cmd_more.go`). Found by reading, in the issue 321
+second-pass audit. Checked and run on this Windows 11 host.
+
+**L2, the defect.** `shellCommand` handed a Shell command's script to
+`exec.Cmd` as one argument. `os/exec` on Windows escapes an argument's own
+double quotes as `\"` when it builds the command line, which is the
+convention the Microsoft C runtime's `argv` parser expects and assumes every
+child uses. cmd.exe does not: it pairs quotes itself and gives a backslash no
+special meaning, so the backslash reached it as a literal character and the
+quote still closed the pair. A script holding a double quote --
+`cmd.run 'echo "a" & echo "b"'` -- ran as different text than the one given.
+
+**L2, shown.** On the unchanged code, `echo "hello world"` run through
+`cmd.run` with `shell: true` returned `\"hello world\"`:
+
+```go
+c := exec.Command(`C:\Windows\system32\cmd.exe`, "/c", `echo "hello world"`)
+// CombinedOutput(): "\\\"hello world\\\"\r\n"
+```
+
+Building the command line by hand and handing it to `SysProcAttr.CmdLine`,
+which bypasses `os/exec`'s own escaping, returns the literal text instead:
+
+```go
+c.SysProcAttr = &windows.SysProcAttr{CmdLine: `/c echo "hello world"`}
+// CombinedOutput(): "\"hello world\"\r\n"
+```
+
+`TestAQuotedShellScriptIsNotMangledByCmdExe`
+(`internal/exec/shell_windows_test.go`) holds this through `OSRunner.Run`.
+
+**L19, the defect.** `shellCommand` passed `/c` to whatever `shell:` named,
+not only cmd.exe. PowerShell and pwsh happen to also accept `/c` --
+undocumented, confirmed on this host -- but Git's bash does not: it reads an
+unrecognised switch as a path, and `/c` is the drive letter Git mounts `C:\`
+on, so `shell: bash` failed every run with "/c: /c: Is a directory" and ran
+nothing.
+
+**L19, shown.** `TestShellPicksTheRightSwitchForEachInterpreter`
+(`internal/exec/shell_windows_test.go`) runs `echo hello` with `shell:` set
+to bash and to Windows PowerShell on this host. Bash failed on the unchanged
+code with exactly that error; PowerShell passed on the unchanged code too,
+which is the "right by accident" shape -- it stopped being an accident once
+`shellFlag` named `-Command` for it instead of relying on the undocumented
+acceptance of `/c`.
+
+**L20, the defect and shown.** `cmd.script`'s `shell` option ran
+`<shell> <path> <args...>` -- the interpreter, then the script file
+positionally, the way `bash script.sh` or `powershell -File script.ps1`
+read a file. cmd.exe has no such mode: `cmd.exe C:\x.cmd`, with no switch,
+starts an interactive session, ignores the path, and exits 0:
+
+```go
+c := exec.Command(`C:\Windows\system32\cmd.exe`, `C:\...\x.cmd`)
+// CombinedOutput(): "Microsoft Windows [Version ...]\r\n(c) Microsoft
+// Corporation. ...\r\n\r\nC:\...>" -- the script never ran, exit 0
+```
+
+So `cmd.script` with `shell: cmd` reported success having run nothing.
+`TestCmdScriptWithShellCmdRunsTheScript`
+(`internal/builtin/cmd_more_windows_test.go`) failed with the interactive
+banner as its "stdout" on the unchanged code.
+
+**The change.** `shellFlag(shell)` names the switch by the interpreter's own
+base name: `/c` for cmd.exe, `-Command` for Windows PowerShell and pwsh,
+`-c` for anything else (bash, sh, zsh, …). `shellCommand` uses it instead of
+a bare `/c`. `applyShellCmdLine` sets `SysProcAttr.CmdLine` by hand, only
+when the flag is `/c`, so only cmd.exe's command line bypasses `os/exec`'s
+escaping; every other interpreter here parses `argv` the same way `os/exec`
+assumes. `exec.ShellRunFlag` gives `cmd.script` the same `/c` cmd.exe needs
+before a bare path, and nothing for every other shell, which already runs
+one.
+
+With the change, all three tests above pass
+(`go test ./internal/exec/... ./internal/builtin/... -count=1`, this host),
+and the rest of both packages' suites stay green.
+
+**What an operator sees.** `cmd.run` with `shell: true` on Windows no longer
+corrupts a command line that holds a double quote. `shell: bash` now runs
+the command instead of failing with "Is a directory" on every call.
+`cmd.script` with `shell: cmd` now runs the script instead of silently
+reporting success for nothing.
+
+**Not verified.** We did not run WSL's bash, only Git's. We did not run a
+shell named by a path this host does not have (zsh, dash, ksh); `shellFlag`
+treats any name it does not recognise as POSIX-style, read rather than run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

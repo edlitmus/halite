@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, `cmd.run` with `shell: true` no longer corrupts a command holding a double quote, `shell: bash` now runs instead of failing with "Is a directory", and `cmd.script` with `shell: cmd` now runs the script instead of silently reporting success for nothing.** cmd.exe parses quotes and its own switches differently from every other interpreter `shell:` can name, and the code assumed one convention for all of them. DIVERGENCE 5.630.
+
 - **On Windows, `service.dead` with `enable: False` and `service.disabled` now move a `manual` service to `disabled` instead of leaving it `manual` and reporting success.** A `manual` service already read as not enabled, the same as a `disabled` one, so the shared boot-state logic saw nothing to change. A tree that depended on the old behavior now sees a change on its next run. DIVERGENCE 5.628.
 
 - **On Windows, `cpu_flags` no longer lists `aes`, and `sse4_1`, `sse4_2` and `vmx` now use the right Win32 feature numbers.** Four of the grain's feature numbers were wrong: `sse4_1` and `sse4_2` each named the number for the generation below them, `vmx` named XSAVE instead of virtualization firmware, and `aes` named an unrelated ARM flag because winnt.h has no x86 AES-NI number `IsProcessorFeaturePresent` can answer. On this host all four happened to read the same as the numbers they should have been, so the effect was invisible here; a CPU with SSSE3 but not SSE4.1, or a machine without Hyper-V's virtualization firmware active, would have been told the wrong thing. `aes` is removed rather than pointed at a feature that does not test it. DIVERGENCE 5.627.
