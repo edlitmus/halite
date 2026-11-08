@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,29 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 	// this read MaxRequestBody, 64 MiB, and a node was sent the job, so
 	// it could file that much against every job it got (issue 321,
 	// M-13).
+	//
+	// The first bytes are kept as they are read, because a refusal must
+	// be said here as well as to the node. It was not: a return past the
+	// bound answered 400, logged nothing, and the node logged one line
+	// and dropped it, so the hub held a job that had run and never
+	// answered and no account anywhere it looked of why (seen
+	// 2026-11-08, a 60 MB state return). The node now sends a stand-in
+	// instead (job.Return.Oversized), and this is for the node that
+	// does not: an older build, or a relay forwarding one.
+	head := &prefixWriter{max: 4096}
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.TeeReader(r.Body, head), r.Body}
 	if err := transport.ReadJSON(w, r, transport.MaxReturnBody, &ret); err != nil {
+		var tooBig *http.MaxBytesError
+		kv := []any{"node_id", nodeID, "jid", peekJID(head.buf), "error", err.Error()}
+		if errors.As(err, &tooBig) {
+			kv = append(kv, "limit", transport.MaxReturnBody)
+			s.warn("a return was refused for its size; the job will not hear from this node", kv...)
+		} else {
+			s.warn("a return was refused as malformed", kv...)
+		}
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
@@ -592,4 +615,56 @@ func appliesState(fun string) bool {
 		return true
 	}
 	return false
+}
+
+// prefixWriter keeps the first max bytes written to it and discards the
+// rest, so that teeing a 60 MB body into it costs 4 KiB.
+type prefixWriter struct {
+	buf []byte
+	max int
+}
+
+func (p *prefixWriter) Write(b []byte) (int, error) {
+	if room := p.max - len(p.buf); room > 0 {
+		if len(b) < room {
+			room = len(b)
+		}
+		p.buf = append(p.buf, b[:room]...)
+	}
+	return len(b), nil
+}
+
+// peekJID reads a top-level "jid" out of the start of a JSON object
+// that may be cut off anywhere, or answers "" when the prefix does not
+// hold one.
+//
+// It is for the log line only. A node marshals job.Return in field
+// order, so the jid is the first key and well inside the prefix; a body
+// whose jid is not there gets a log line without one, and nothing
+// decides anything on the strength of it -- the node's identity, which
+// is the part that matters for finding the machine, comes from its
+// certificate, not from here.
+func peekJID(prefix []byte) string {
+	dec := json.NewDecoder(bytes.NewReader(prefix))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return ""
+	}
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		if key == "jid" {
+			var jid string
+			if dec.Decode(&jid) != nil {
+				return ""
+			}
+			return jid
+		}
+		var skip json.RawMessage
+		if dec.Decode(&skip) != nil {
+			return ""
+		}
+	}
+	return ""
 }

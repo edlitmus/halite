@@ -348,6 +348,12 @@ func runScript(c *exec.Context, args *value.Map, wantOutput bool) (any, error) {
 	var argv []string
 	if shell := states.Str(args, "shell", ""); shell != "" {
 		argv = append(argv, shell)
+		// cmd.exe cannot run a file handed to it positionally; it
+		// needs /c first, same as cmd.run's shell form. Every other
+		// shell here runs a path argument directly.
+		if flag := exec.ShellRunFlag(shell); flag != "" {
+			argv = append(argv, flag)
+		}
 	} else {
 		// A kind the platform does not start on its own gets the
 		// program that does start it: a .ps1 is not an executable

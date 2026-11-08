@@ -40799,6 +40799,451 @@ and `manage.versions` then showed the node on the binary from the tree.
 diffed as text. Linux, macOS and Windows nodes were not run; the change is not
 platform code.
 
+### 5.624 The example hub.yaml in the Linux archive set FreeBSD's paths
+
+**Found** on 2026-11-08 while running chapter 30 on Linux for issue 308, as
+root on the shared AWS test host noop-1 (Ubuntu 22.04.5 LTS, kernel
+6.8.0-1066-aws, arm64), from `main` at `07a37840`. Step 4 says to start from
+`examples/hub.yaml`, and adds that `pki_dir`, `state_dir` and `policy` "have
+correct platform defaults: do not set them". The example set all three, to
+`/usr/local/etc/halite/pki`, `/var/db/halite` and
+`/usr/local/etc/halite/policy.yaml`. The same file is in every archive. The
+Linux archive built from `5d314a40` held those lines too. Installed as the
+step says, the hub started under the shipped unit and stopped at once:
+`halite: creating /usr/local/etc/halite/pki: mkdir /usr/local/etc/halite:
+read-only file system`, then `status=78/CONFIG`. The unit's
+`ProtectSystem=strict` allows only `/etc/halite/pki`, so the FreeBSD path is
+read-only. Without the unit, the hub would have made a second configuration
+tree under `/usr/local/etc` instead. `examples/node-with-hub.yaml` set the
+node's `pki_dir` to the FreeBSD path in the same way.
+
+Deleting the three lines from the copied file was the whole fix. The hub
+then made its CA in `/etc/halite/pki`, and `doctor` gave `7 pass, 1 skip`.
+
+**Changed.** The four settings are commented out in the two examples. Each
+says what the default is on Linux and on FreeBSD, and to set it only to move
+it. `TestExamplesNameNoPlatformSpecificPath` (`internal/config`) reads every
+example in `contrib/examples` and fails on any line that is not a comment and
+names a directory from `config.PathTable` whose Linux and FreeBSD values
+differ. The cache and log directories are the same on both, so they are
+allowed. Before the examples were changed, it failed on the four lines and
+named each one.
+
+**Not verified.** The corrected example was not installed on a Linux host and
+started. The run above deleted the same three lines by hand. The FreeBSD run
+of chapter 30 (jail `h308hub`, 14.5-RELEASE userland) used the old example
+with its FreeBSD paths, which are the defaults there.
+
+### 5.625 `make install` refused, as root, on a FreeBSD host with nothing in `/usr/local`
+
+**Found** on 2026-11-08 for issue 308, in a bastille jail on `beastie` (host
+FreeBSD 15.1-RELEASE-p6) with a 14.5-RELEASE userland, made from `base.txz`
+with no packages. On such a host `/usr/local` is empty: there is no `bin`,
+no `etc` and no `etc/rc.d`. A 15.1-RELEASE jail made from bastille's pkgbase
+set had no `/usr/local/bin` either. `make install` run as root, with
+`bin/` built and the `halite` account made, refused:
+
+```
+cannot write /usr/local/etc/halite — run make install as root, or point BINDIR,
+CONFDIR, STATEDIR, CACHEDIR, LOGDIR and SERVICEDIR somewhere writable
+```
+
+The check asked only whether each directory or its parent was writable,
+and `/usr/local/etc` did not exist. Where the parent did exist, the check
+passed, and the next step failed instead. `install -m 0755 bin/halite-hub
+/usr/local/bin/halite-hub` and `install -m 0555 … /usr/local/etc/rc.d/` do not
+make the directory. The chapter 30 runbook's own `install -m 0555
+service/rc.d/halite_hub /usr/local/etc/rc.d/` failed in the same jail with
+`install: /usr/local/etc/rc.d: No such file or directory`. 5.482's FreeBSD
+run did not see this because the Vultr image has packages.
+
+**Changed.** `install`, `install-service` and `install-fips` look for the
+nearest directory that exists above each target, and check that it is
+writable (`NEAREST_EXISTING`). They then `install -d` `BINDIR` and
+`SERVICEDIR` before putting files in them. The message for a directory that
+really cannot be written has not changed.
+
+**Shown.** `TestInstallMakesTheDirectoriesItInstallsInto`
+(`internal/buildpolicy`) runs the real `install` target from a copy of the
+`Makefile`, `go.mod` and `contrib/{rc.d,systemd,man}`, with stand-in programs
+in `bin/`. It installs into a staged root where every path is at least two
+levels below anything that exists, for FreeBSD and Linux, with every make on
+the machine that can read the Makefile. It requires the binaries, the service
+files, a manual page and the four directories. With `main`'s Makefile, both
+`bmake` legs failed with the jail's message, `cannot write …/fresh/usr/local/bin
+— run make install as root`. The stock macOS make skips, as the Makefile
+refuses it. Then the fixed Makefile was run as root in a new jail like the one
+above. `make install` exited 0 without the account and again with it. It made
+`/usr/local/bin`, `/usr/local/etc/rc.d` and the man directories, and the second
+run gave `/usr/local/etc/halite`, its `pki`, `/var/db/halite`,
+`/var/cache/halite` and `/var/log/halite` to `halite`.
+
+**Not verified.** GNU make on Linux was not run (the Mac has no `gmake`;
+the test runs it where it is installed). Linux with a missing
+`/etc/systemd/system` was not seen; systemd always has it.
+
+### 5.626 Issue 308's remaining procedures, run in FreeBSD jails and on two Linux hosts
+
+Issue 308, after 5.283, 5.284 and 5.482. The procedures 5.482 still listed as
+not run were run on 2026-11-07 and 2026-11-08.
+
+**Where.** FreeBSD: bastille thin jails on `beastie`, whose kernel is FreeBSD
+15.1-RELEASE-p6 (amd64). The hub ran on a 14.5-RELEASE userland, made from
+`base.txz` with no patches. The node ran on a 15.1-RELEASE userland. A new jail
+was made for each run and destroyed afterwards. The jails shared the loopback
+interface `bastille0` and had no outbound network. The build was `bmake dist`
+from `main` at `5d314a40`. `sha256sum -c` passed, but there was no attestation
+or signature to check. Linux: the shared AWS test hosts `noop-1` (hub, Ubuntu
+22.04.5, kernel 6.8.0-1066-aws, arm64) and `noop2-1` (node, Ubuntu 24.04.5,
+kernel 6.8.0-1067-aws-fips, arm64), as root through SSM. They are not fresh:
+both run salt-minion, postfix and sssd. Everything halite was removed from both   <!-- lexicon:allow -->
+afterwards, and salt-minion was still active. The binaries were built on   <!-- lexicon:allow -->
+`noop2-1` from `main` at `07a37840` with go1.27.3. Only TCP 22 and 8301 are open
+between the hosts, so the hub listened on 8301.
+
+**A jail cannot show** kernel modules, most `sysctl`s, a real boot (the jail's
+`/etc/rc` runs when the jail starts, but there is no loader, kernel or `devd`, and
+the network is up before it), a host firewall, or a wire between hosts.
+
+**Found, each with its own fix:**
+
+- 5.623: replacing the agent from the tree with `file.managed` (chapter 36)
+  made a 60 MB return of a line diff of the two binaries. The hub refused it, and
+  the operator's `run` never got an answer.
+- 5.624: `examples/hub.yaml`, in every archive, set FreeBSD's `pki_dir`,
+  `state_dir` and `policy`. On Linux, a hub started from it as chapter 30
+  step 4 says stopped at once with status 78.
+- 5.625: on FreeBSD with no packages, `/usr/local` is empty. `make install`
+  refused as root, and chapter 30's `install … /usr/local/etc/rc.d/` failed with
+  `No such file or directory`.
+
+**Corrected in the handbook, with no code change:**
+
+- **The FreeBSD user-data script** needs `/usr/local/bin/halite-node` in full,
+  because rc(8) sets `PATH=/sbin:/bin:/usr/sbin:/usr/bin`. The first run failed
+  with `halite-node: not found` and exit 127. It also needs `install -d` for
+  `/usr/local/bin`. With both, run from `/etc/rc.local` at jail start, it
+  enrolled by token. On Linux the chapter's script ran as written, as a
+  transient systemd unit, whose PATH has `/usr/local/bin`.
+- **Chapter 24's crontab entry** was two lines joined by a backslash. `crontab`
+  refused it (`bad minute`), because cron has no line continuation.
+- **A node that does not answer is reported** by cron itself, to the crontab's
+  owner, as `not connected` and `no answer`. The report's address gets nothing.
+- **A second operator certificate** (`reporter`) in `pki_dir` makes every plain
+  command on that host refuse until `--as` is given.
+
+**Run as the chapters say, and as they said it would go:** chapter 30 on the
+14.5 hub (`doctor` `6 pass, 2 skip`) and on Linux after 5.624's change by hand
+(`7 pass, 1 skip`). Chapter 31's token enrolment by user-data on both
+platforms, over the jail network and over the VPC, with no tunnel. Chapter 24's
+drift report from root's crontab on the 14.5 hub with dma and `mail -E`: two
+mails while the node drifted, and none on two ticks after it converged. The
+example tree's `halite/node.sls` with its own pillar, on the 15.1 node: it
+returned first, and the node restarted 30 seconds later and came back up. The
+`node.yaml` it writes has no `hub_fingerprint` or `node_id`, which did no harm
+to an enrolled node with a cached ID. Chapter 36's upgrade by a state, with
+5.623's fix.
+
+**Seen and not explained.** `service halite_hub restart` twice stopped at
+`Waiting for PIDS: <pid>`, in rc.subr's `pwait`, after the hub had logged `the
+hub stopped` and was gone from the host. A new `pwait` on the same pid returned
+at once. Ten restarts in a row each took about a second. FreeBSD's `timeout(1)`
+waits for every descendant, so wrapping `service … restart` in it always times
+out and then kills the daemon. That says nothing about halite, but it cost an
+hour here.
+
+**Not run.** cloud-init itself, and FreeBSD's nuageinit (a jail has no config
+drive). The agentless bootstrap with a Linux target (chapter 17). A Linux
+upgrade by a state, and a whole fleet upgrade. Mail off the machine. The
+`halite-api` paths. A FreeBSD host on real hardware or a VM for any of this.
+`make check` for this documentation change ran only in CI.
+
+### 5.627 Four of `cpu_flags`' feature numbers were wrong on Windows
+
+Issue 608 item 5, lead L1 (`internal/grains/platform_windows.go`). Found by
+reading, in the issue 321 second-pass audit. Checked against the Win32
+feature numbers `golang.org/x/sys/windows` carries from winnt.h, then run on
+this Windows 11 host.
+
+**The defect.** `processorFeatures_` named four feature numbers wrong:
+
+- `sse4_1` used 36, which is `PF_SSSE3_INSTRUCTIONS_AVAILABLE`. The real
+  `PF_SSE4_1_INSTRUCTIONS_AVAILABLE` is 37.
+- `sse4_2` used 37 (SSE4.1's own number) instead of 38.
+- `vmx` used 17, which is `PF_XSAVE_ENABLED` — true on any CPU with the
+  `xsave` instruction, which is unrelated to virtualization firmware. The
+  real `PF_VIRT_FIRMWARE_ENABLED` is 21.
+- `aes` used 25, which is `PF_ARM_64BIT_LOADSTORE_ATOMIC`. winnt.h defines
+  no x86 feature number for AES-NI that `IsProcessorFeaturePresent` can
+  answer at all, so the grain was naming a feature it never checked.
+
+On this machine all of SSSE3, SSE4.1, SSE4.2, XSAVE and
+`VIRT_FIRMWARE_ENABLED` happen to read true, so the four numbers were
+*right by accident* here: a tree branching on `sse4_1` or `vmx` got the
+answer it expected, for the wrong reason. A machine with SSSE3 but not
+SSE4.1 — a Core 2, say — or one without Hyper-V's virtualization firmware
+active would not have been so lucky, and would have been told the wrong
+thing by a number that looked plausible.
+
+**Shown.** `TestProcessorFeatureNumbersMatchTheWindowsHeader`
+(`internal/grains/platform_windows_test.go`) checks the table's numbers
+against the named `windows.PF_*` constants. On the unchanged code it failed:
+
+```
+vmx uses feature number 17, want 21 (the real winnt.h number)
+sse4_1 uses feature number 36, want 37 (the real winnt.h number)
+sse4_2 uses feature number 37, want 38 (the real winnt.h number)
+cpu_flags claims to answer "aes" with feature number 25, which is an ARM flag unrelated to AES-NI
+```
+
+Before writing the test, `IsProcessorFeaturePresent` was called directly for
+both the old and the real numbers on this host (Windows 11, build 26100) to
+confirm which of the four actually differ in practice here: feature 25 read
+false, and 17/36/37 read the same as 21/37/38 respectively, which is the
+"right by accident" finding above.
+
+**The change.** `processorFeatures_` now uses the `windows.PF_*` constants
+by name instead of bare numbers, so a future entry that is off by one fails
+the same test rather than reading plausibly. `aes` is no longer in the
+table.
+
+With the change, `TestProcessorFeatureNumbersMatchTheWindowsHeader` and the
+rest of `internal/grains` pass (`go test ./internal/grains/... -count=1`, this
+host).
+
+**What an operator sees.** `cpu_flags` no longer lists `aes` on Windows. A
+tree that branched on it for an AES-NI capability it was never actually
+testing stops matching; nothing here ever made that branch correct. `vmx`
+now means `PF_VIRT_FIRMWARE_ENABLED` rather than XSAVE — on a machine
+without Hyper-V's virtualization firmware active, `vmx` now reads false
+where it used to read true.
+
+**Not verified.** We did not run a CPU old enough for the numbering bug to
+change `sse4_1` or `sse4_2`'s answer. We did not run a machine with
+virtualization firmware disabled to see `vmx` read false.
+
+### 5.628 A manual Windows service is not enabled, but it is not disabled either
+
+Issue 608 item 5, lead L3 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service.go`, `internal/builtin/service_windows.go`). Found
+by reading, in the issue 321 second-pass audit. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winsvc.Enabled` reports `StartType == "auto" ||
+"auto_delayed"`, which is right on its own: a `manual` service is not one the
+machine brings up at boot. But `service.dead`'s and `service.enabled`'s /
+`service.disabled`'s shared boot-state logic decided whether to call
+`Disable` by comparing `Enabled()` against what was wanted, and a `manual`
+service already reads `Enabled() == false`, the same as a `disabled` one.
+`service.dead` with `enable: False`, or `service.disabled`, on a `manual`
+service therefore reported "already disabled" and never called `Disable` at
+all -- leaving it `manual` forever, which is exactly the gap the Windows
+`Disable` provider's own doc comment already named: "a manual service still
+starts when something asks for it... which `manual` does not guarantee."
+The code's comment stated the intent the code one call away did not carry
+out.
+
+**Shown.** `TestBootStateNeedsChangeTellsManualFromDisabled`
+(`internal/builtin/service_test.go`) is a cross-platform unit test against a
+fake provider with Windows' three-state shape. On the old comparison
+(`now != want`, with no third state) it failed:
+
+```
+a manual service reported no change needed to become disabled
+```
+
+`TestServiceDisabledMovesAManualServiceToDisabled`
+(`internal/builtin/service_windows_test.go`) drives the real thing --
+`EventLog` set to `manual`, then `service.disabled`, then read back -- but
+this process is a standard account in the Administrators group with no
+elevated token, and `winsvc.SetStartType` needs `SC_MANAGER_ALL_ACCESS`, so it
+skips here with "needs administrator rights". **Not run**: the real `winsvc`
+and `service.disabled` path together, on an elevated token.
+
+**The change.** A new optional interface, `serviceDisableChecker`, lets a
+provider report its own "is this exactly my `Disable`'d state" when
+`Enabled()`'s boolean conflates it with something else. `bootStateNeedsChange`
+uses it only when moving *toward* disabled; moving toward enabled is
+unchanged, since nothing here has a third state above `Enabled() == true`.
+`windowsProvider.Disabled` reports `StartType == "disabled"`. Every other
+provider (`systemd`, FreeBSD rc, OpenRC, sysvinit, launchd) does not
+implement the interface, and `bootStateNeedsChange` falls back to the
+original plain comparison for them --
+`TestBootStateNeedsChangeIsAPlainComparisonWithNoThirdState` holds that
+nothing changed for them.
+
+With the change, the cross-platform unit test passes
+(`go test ./internal/builtin/... -count=1`, this host), and the rest of the
+package's suite, including every other platform's service tests, stays
+green.
+
+**What an operator sees.** On Windows, `service.dead` with `enable: False`,
+and `service.disabled`, now move a `manual` service to `disabled` rather
+than leaving it `manual` and reporting success. A tree that depended on the
+old behavior -- relying on `manual` to satisfy `enable: False` -- now sees a
+change on its next run and the service's start type actually move.
+
+**Not verified.** The real mutation on a Windows service, only the unit test
+against a fake provider. An elevated token. A domain-joined host.
+
+### 5.629 A return too large for the hub was lost without trace
+
+The sequel to 5.623, which removed the ordinary way to reach the limit and
+left the loss itself as it was.
+
+**The defect.** The hub takes a return of at most `transport.MaxReturnBody`,
+16 MiB (SPEC 6.5). Past that, `returned` (`internal/hub/jobs.go`) answered
+`400` and logged nothing. The node (`postReturns`,
+`cmd/halite-node/enroll.go`) took the `400` as permanent, logged `the hub
+refused a return` and dropped the return. The job had run. In 5.623 it had
+replaced the node's own binary and succeeded. The operator's `halite-hub run`
+waited for an answer that never came, and the hub's log said nothing about
+the job after `job dispatched`.
+
+**The decision.** The node measures the return before it posts it. If the
+hub would refuse it for its size, the node sends a stand-in in its place,
+`job.Return.Oversized`: the same jid, node, function and arguments, with
+`success: false` and a body that says how large the return was, what the
+limit is, and what the job itself reported (`job_success`, `job_retcode`).
+The retcode is the job's own when that is non-zero, and 1 when it was zero,
+because a lost result must not read as a success to a script that looks
+only at the exit code. `Out` is dropped, because it may be what made the
+return too large. The job settles and the operator is told why.
+
+The hub now logs the refusal, with the node from the certificate and the
+jid read from the first 4 KiB of the body (the node writes `jid` first).
+That is for a node that does not send a stand-in: one built before this
+change, or a body that is malformed for another reason. Its `400` and its
+code are as they were.
+
+**Not built: SPEC 6.5's "then the node paginates by chunk".** A chunked
+return is still refused, and the result past the limit is not kept
+anywhere the hub can reach. Paging would need the hub to hold and
+reassemble parts, a bound on the whole as well as on each part, and a
+returner and a job cache that take a return in parts; the stand-in is the
+honest answer until somebody needs a 16 MiB result at the hub. SPEC 6.5
+still says the node paginates.
+
+**Two paths that must agree.** The node decides by the length of
+`transport.EncodeBody`, which is the client's own encoder, now exported,
+and so the body it sends byte for byte. `json.Marshal` would have measured
+four bytes too many for a return holding a `<`, because it escapes it and
+omits the newline. `TestTheNodeAndTheHubAgreeWhereTheReturnLimitIs`
+(`cmd/halite-node/return_size_test.go`) holds the boundary on both sides
+against `transport.ReadJSON`, the hub's own read. `TestAReturnOfExactlyTheLimitIsTaken`
+(`internal/hub/node_quota_test.go`) holds the same boundary against a real
+hub over TLS.
+
+**Shown.** `TestAnOversizedReturnArrivesAsAFailureNamingItsSize` runs the
+node's send path (`sendReturn`) against the hub's check. With the call to
+`fitReturn` removed, the hub took no return and both node tests failed. With
+`<` for `<=`, and with `json.Marshal` as the measure, a return of exactly
+the limit was replaced where the hub would have taken it, and the boundary
+test failed. `TestAnOversizedReturnIsLoggedAndItsStandInSettlesTheJob`
+posts a 16 MiB return to a lab hub, checks the hub's log names the jid and
+the node, then posts the stand-in and checks the job is answered. With the
+log line removed, and with the jid left out of it, it failed. `TestPeekJID`
+covers a cut-off body, a later `jid` key and a nested one.
+`TestOversizedIsAFailureThatKeepsTheJobsOwnAnswer` (`internal/job`) covers
+the retcode rule.
+
+**Not verified.** No real node was run with a return over the limit after
+the change; the tests drive the node's send path and a lab hub in one
+process, not the binaries. The FreeBSD jails of 5.623 were not used again.
+A relay forwards what its own hub took, which is at most the same limit, so
+it was not changed or run. A node built before this change still loses an
+oversized return, and the hub's log line is all there is of it.
+
+### 5.630 cmd.exe parses neither its quotes nor its own switch the way everything else does
+
+Issue 608 item 5, leads L2, L19 and L20 (`internal/exec/shell_windows.go`,
+`internal/builtin/cmd_more.go`). Found by reading, in the issue 321
+second-pass audit. Checked and run on this Windows 11 host.
+
+**L2, the defect.** `shellCommand` handed a Shell command's script to
+`exec.Cmd` as one argument. `os/exec` on Windows escapes an argument's own
+double quotes as `\"` when it builds the command line, which is the
+convention the Microsoft C runtime's `argv` parser expects and assumes every
+child uses. cmd.exe does not: it pairs quotes itself and gives a backslash no
+special meaning, so the backslash reached it as a literal character and the
+quote still closed the pair. A script holding a double quote --
+`cmd.run 'echo "a" & echo "b"'` -- ran as different text than the one given.
+
+**L2, shown.** On the unchanged code, `echo "hello world"` run through
+`cmd.run` with `shell: true` returned `\"hello world\"`:
+
+```go
+c := exec.Command(`C:\Windows\system32\cmd.exe`, "/c", `echo "hello world"`)
+// CombinedOutput(): "\\\"hello world\\\"\r\n"
+```
+
+Building the command line by hand and handing it to `SysProcAttr.CmdLine`,
+which bypasses `os/exec`'s own escaping, returns the literal text instead:
+
+```go
+c.SysProcAttr = &windows.SysProcAttr{CmdLine: `/c echo "hello world"`}
+// CombinedOutput(): "\"hello world\"\r\n"
+```
+
+`TestAQuotedShellScriptIsNotMangledByCmdExe`
+(`internal/exec/shell_windows_test.go`) holds this through `OSRunner.Run`.
+
+**L19, the defect.** `shellCommand` passed `/c` to whatever `shell:` named,
+not only cmd.exe. PowerShell and pwsh happen to also accept `/c` --
+undocumented, confirmed on this host -- but Git's bash does not: it reads an
+unrecognised switch as a path, and `/c` is the drive letter Git mounts `C:\`
+on, so `shell: bash` failed every run with "/c: /c: Is a directory" and ran
+nothing.
+
+**L19, shown.** `TestShellPicksTheRightSwitchForEachInterpreter`
+(`internal/exec/shell_windows_test.go`) runs `echo hello` with `shell:` set
+to bash and to Windows PowerShell on this host. Bash failed on the unchanged
+code with exactly that error; PowerShell passed on the unchanged code too,
+which is the "right by accident" shape -- it stopped being an accident once
+`shellFlag` named `-Command` for it instead of relying on the undocumented
+acceptance of `/c`.
+
+**L20, the defect and shown.** `cmd.script`'s `shell` option ran
+`<shell> <path> <args...>` -- the interpreter, then the script file
+positionally, the way `bash script.sh` or `powershell -File script.ps1`
+read a file. cmd.exe has no such mode: `cmd.exe C:\x.cmd`, with no switch,
+starts an interactive session, ignores the path, and exits 0:
+
+```go
+c := exec.Command(`C:\Windows\system32\cmd.exe`, `C:\...\x.cmd`)
+// CombinedOutput(): "Microsoft Windows [Version ...]\r\n(c) Microsoft
+// Corporation. ...\r\n\r\nC:\...>" -- the script never ran, exit 0
+```
+
+So `cmd.script` with `shell: cmd` reported success having run nothing.
+`TestCmdScriptWithShellCmdRunsTheScript`
+(`internal/builtin/cmd_more_windows_test.go`) failed with the interactive
+banner as its "stdout" on the unchanged code.
+
+**The change.** `shellFlag(shell)` names the switch by the interpreter's own
+base name: `/c` for cmd.exe, `-Command` for Windows PowerShell and pwsh,
+`-c` for anything else (bash, sh, zsh, …). `shellCommand` uses it instead of
+a bare `/c`. `applyShellCmdLine` sets `SysProcAttr.CmdLine` by hand, only
+when the flag is `/c`, so only cmd.exe's command line bypasses `os/exec`'s
+escaping; every other interpreter here parses `argv` the same way `os/exec`
+assumes. `exec.ShellRunFlag` gives `cmd.script` the same `/c` cmd.exe needs
+before a bare path, and nothing for every other shell, which already runs
+one.
+
+With the change, all three tests above pass
+(`go test ./internal/exec/... ./internal/builtin/... -count=1`, this host),
+and the rest of both packages' suites stay green.
+
+**What an operator sees.** `cmd.run` with `shell: true` on Windows no longer
+corrupts a command line that holds a double quote. `shell: bash` now runs
+the command instead of failing with "Is a directory" on every call.
+`cmd.script` with `shell: cmd` now runs the script instead of silently
+reporting success for nothing.
+
+**Not verified.** We did not run WSL's bash, only Git's. We did not run a
+shell named by a path this host does not have (zsh, dash, ksh); `shellFlag`
+treats any name it does not recognise as POSIX-style, read rather than run.
+
 ### 5.624 win_task's comparisons disagreed with the scheduler's own reading of what it was given
 
 Issue 608 item 5, leads L4, L6, L7 and L8 (`internal/wintask`). Found by

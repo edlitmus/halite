@@ -31,6 +31,50 @@ type serviceProvider interface {
 	Disable(c *exec.Context, name string) error
 }
 
+// serviceDisableChecker is an extra interface a provider implements when
+// `Enabled`'s boolean is not enough to tell whether `Disable` has
+// something left to do.
+//
+// Everywhere but Windows, a service is enabled or it is not, and `!now`
+// already means `Disable` would be a no-op. Windows has a third start
+// type, `manual`, which `Enabled` also reports as false because a
+// service that only starts when asked is not one the machine brings up
+// -- but `service.dead` with `enable: False` means the machine must not
+// bring it up at all, which `manual` does not guarantee and `disabled`
+// does. Checking only `Enabled() == false` before deciding there is
+// nothing to do left a manual service manual forever: `Disable` was
+// never called, because the state thought it had nothing to change.
+type serviceDisableChecker interface {
+	// Disabled reports whether Disable has already been carried out --
+	// the provider's one state that guarantees the service will not
+	// start on its own, as opposed to merely not being its "enabled"
+	// state.
+	Disabled(c *exec.Context, name string) (bool, error)
+}
+
+// bootStateNeedsChange reports the service's current enabled/disabled
+// reading and whether reaching `want` needs a call to Enable or
+// Disable. The two differ only for a provider with a state `Enabled`
+// cannot distinguish from "disabled" -- see serviceDisableChecker.
+func bootStateNeedsChange(p serviceProvider, c *exec.Context, name string, want bool) (now bool, needsChange bool, err error) {
+	now, err = p.Enabled(c, name)
+	if err != nil {
+		return false, false, err
+	}
+	if want || now {
+		return now, now != want, nil
+	}
+	dc, ok := p.(serviceDisableChecker)
+	if !ok {
+		return now, false, nil
+	}
+	disabled, err := dc.Disabled(c, name)
+	if err != nil {
+		return now, false, err
+	}
+	return now, !disabled, nil
+}
+
 var serviceProviders = []serviceProvider{
 	systemdProvider{},
 	freebsdRCProvider{},
@@ -343,13 +387,13 @@ func serviceDead(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	wantEnabled, manageBoot := boolArg(args, "enable")
-	enabledNow := false
+	enabledNow, bootChangeNeeded := false, false
 	if manageBoot {
-		enabledNow, err = p.Enabled(c, name)
+		enabledNow, bootChangeNeeded, err = bootStateNeedsChange(p, c, name, wantEnabled)
 		if err != nil {
 			return states.False(fmt.Sprintf("The boot state of %s could not be read: %v", name, err)), nil
 		}
-		if enabledNow != wantEnabled {
+		if bootChangeNeeded {
 			changes.Set("enabled", states.Change(enabledNow, wantEnabled))
 		}
 	}
@@ -358,19 +402,19 @@ func serviceDead(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.True(fmt.Sprintf("The service %s is already stopped.", name)), nil
 	}
 	if c.Test {
-		return states.WouldChange(describeServiceChange(name, running, manageBoot && enabledNow != wantEnabled, wantEnabled, false, true), changes), nil
+		return states.WouldChange(describeServiceChange(name, running, manageBoot && bootChangeNeeded, wantEnabled, false, true), changes), nil
 	}
 	if running {
 		if err := p.Stop(c, name); err != nil {
 			return states.False(fmt.Sprintf("The service %s could not be stopped: %v", name, err)), nil
 		}
 	}
-	if manageBoot && enabledNow != wantEnabled {
+	if manageBoot && bootChangeNeeded {
 		if err := applyBootState(p, c, name, wantEnabled); err != nil {
 			return states.False(fmt.Sprintf("The boot state of %s could not be set: %v", name, err)), nil
 		}
 	}
-	return states.Changed(describeServiceChange(name, running, manageBoot && enabledNow != wantEnabled, wantEnabled, false, false), changes), nil
+	return states.Changed(describeServiceChange(name, running, manageBoot && bootChangeNeeded, wantEnabled, false, false), changes), nil
 }
 
 func serviceBootState(c *exec.Context, args *value.Map, want bool) (states.Result, error) {
@@ -382,7 +426,7 @@ func serviceBootState(c *exec.Context, args *value.Map, want bool) (states.Resul
 	if err != nil {
 		return states.False(fmt.Sprintf("No service provider is available: %v", err)), nil
 	}
-	now, err := p.Enabled(c, name)
+	now, needsChange, err := bootStateNeedsChange(p, c, name, want)
 	if err != nil {
 		return states.False(fmt.Sprintf("The boot state of %s could not be read: %v", name, err)), nil
 	}
@@ -390,7 +434,7 @@ func serviceBootState(c *exec.Context, args *value.Map, want bool) (states.Resul
 	if !want {
 		verb = "disabled"
 	}
-	if now == want {
+	if !needsChange {
 		return states.True(fmt.Sprintf("The service %s is already %s at boot.", name, verb)), nil
 	}
 	changes := value.MapOf("enabled", states.Change(now, want))
