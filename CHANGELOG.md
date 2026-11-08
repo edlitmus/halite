@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, `win_dacl.has_permission` now refuses a trustee with a deny entry even when a separate allow entry would otherwise cover the permission asked about.** `win_dacl.has_permission`'s own documented rule is that a deny entry disqualifies a trustee outright; the code only skipped over a deny entry rather than checking for one, so a trustee denied one thing and separately allowed something wider was reported as having the narrower access. An `onlyif` or a state comparison that relied on this answer could have proceeded as though access existed when Windows would actually refuse it. DIVERGENCE 5.638.
+
 - **On Windows, two accounts that merely share a short name across different domains no longer compare equal, and a SID now compares equal to the name it resolves to.** `win_dacl`'s account comparison fell back to the text after the last backslash whenever it did not match outright, which also meant a SID's own string form -- what an unresolvable trustee reads back as -- never matched the name it resolves to elsewhere. It now resolves both sides to a SID and compares those first. DIVERGENCE 5.637.
 
 - **On Windows, `win_registry.read_value` and `win_registry.value_present` now read a registry value of a type this build does not name by one of its five words, instead of reporting it as present and empty.** `REG_LINK`, `REG_DWORD_BIG_ENDIAN`, `REG_RESOURCE_LIST`, `REG_FULL_RESOURCE_DESCRIPTOR` and `REG_RESOURCE_REQUIREMENTS_LIST` all read back empty, with the real error thrown away; confirmed on a real, machine-shipped value under `HARDWARE\DESCRIPTION\System\CentralProcessor`. DIVERGENCE 5.637.

@@ -42001,6 +42001,66 @@ resolution across a real domain controller, and L16's registry values on
 a domain-joined machine's own hardware tree, which was not compared
 against this one.
 
+### 5.638 win_dacl.has_permission trusted a matching allow without checking for a deny
+
+Issue 608 item 5, lead L13 (`internal/builtin/win_dacl_windows.go`). Found by
+reading, in the issue 321 second-pass audit, which called it out as a
+contradiction of the function's own comment. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winDACLHasPermission`'s own doc comment: "A deny entry
+never counts as having a permission, whatever its mask: Windows evaluates
+deny first, so an account with a deny entry does not have the access the
+mask names." The loop it describes only *skipped* a deny entry
+(`e.Kind != "allow"`) rather than checking whether the trustee had one
+before trusting a matching allow. A trustee with both an allow entry wide
+enough to cover the permission asked about and a separate deny entry --
+not necessarily on the same mask, and not necessarily sorted after the
+allow in `Entries`' order -- was reported as having the access, exactly the
+case the comment says never to report.
+
+The existing test, `TestHasPermissionAnswersAtLeastAndExactly`, did not
+catch this: it uses `winsec.Grant` for both the allow and the deny it
+checks, and `Grant` replaces whatever entry a trustee already has
+(`dacl_windows.go`'s `kept` filter drops any existing entry for the same
+SID before adding the new one), so the account it tested never actually
+held two entries at once. The deny case there passed for the plain reason
+that no allow entry was left to find, not because the deny was checked.
+
+**Shown.** `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+(`internal/builtin/win_dacl_windows_test.go`) writes a real ACL with
+`windows.ACLFromEntries` carrying two explicit entries for `Everyone` --
+denied `write`, separately allowed `full_control` -- bypassing `Grant`'s
+one-entry-per-trustee replacement so both land on the file at once, in
+Windows' own canonical order (deny before allow). On the unchanged loop it
+failed: "an account with a deny entry was reported as having a permission
+its separate allow entry covers".
+
+**The change.** `winDACLHasPermission` now makes a first pass over
+`Entries` for any deny entry naming the trustee and returns false
+immediately if it finds one, before the existing allow-matching loop runs
+at all.
+
+With the change, `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+and the rest of `internal/builtin`'s suite pass
+(`go test ./internal/builtin/... -count=1`, this host).
+
+**Who sees it.** `win_dacl.has_permission`, and anything that reads it --
+an `onlyif` condition, or a state comparing a declared permission against
+what a trustee has. A trustee denied something and separately allowed
+something wider was reported as having the narrower access; it no longer
+is.
+
+**Not verified.** A domain account. A deny entry inherited from a parent
+rather than explicit (`Entries` carries both kinds, and this fix does not
+distinguish them, by design: an inherited deny still disqualifies). An
+unrelated pre-existing failure was seen running `internal/winsec`'s own
+suite on this host, `TestEnablePrivilegeSaysNoForAPrivilegeTheTokenLacks`
+(`whoami /priv: exit status 1`) -- this shell's `PATH` resolves `whoami` to
+Git's `/usr/bin/whoami`, which has no `/priv`, ahead of the real
+`System32\whoami.exe`. Not caused by this change, and not fixed here:
+`internal/winsec` was not touched.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
