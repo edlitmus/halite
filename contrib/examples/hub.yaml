@@ -11,10 +11,16 @@ listen: :4510
 
 # The enrollment CA and the hub's own serving certificate. `serve`
 # creates the CA on first run and says so.
-pki_dir: /usr/local/etc/halite/pki
+#
+# These two and `policy` below are left to their defaults, which are
+# the platform's: /etc/halite/pki and /var/lib/halite on Linux,
+# /usr/local/etc/halite/pki and /var/db/halite on FreeBSD. This file goes
+# into every release archive, so a path set here is wrong on one of them.
+# Set one only to move it.
+# pki_dir: /usr/local/etc/halite/pki
 # The key store lives under here, in keys/. Losing it means the fleet
 # enrols again, so it is durable state and not cache.
-state_dir: /var/db/halite
+# state_dir: /var/db/halite
 
 # manual, token, or attested. There is deliberately no auto_accept:
 # `halite-hub keys token create --ttl 1h` is the automatic path, and
@@ -53,8 +59,8 @@ pillar_source_merging_strategy: smart
 #
 # `halite-hub keys operator create <name> --admin` writes a starting
 # one. `halite-hub policy test` evaluates a request against it, which
-# belongs in CI.
-policy: /usr/local/etc/halite/policy.yaml
+# belongs in CI. The default is policy.yaml beside this file.
+# policy: /usr/local/etc/halite/policy.yaml
 
 # How long a job and its returns are kept, and the ceiling on the whole
 # store. Whichever binds first wins, and the hub enforces both.

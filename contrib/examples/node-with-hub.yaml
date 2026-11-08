@@ -26,8 +26,10 @@ hub_fingerprint: sha256:00000000000000000000000000000000000000000000000000000000
 # hub_ca_file: /var/db/halite/hub-ca.crt
 
 # Where this node keeps its key. The private key is generated here and
-# never leaves: the hub holds nothing that can impersonate a node.
-pki_dir: /usr/local/etc/halite/pki
+# never leaves: the hub holds nothing that can impersonate a node. The
+# default is the platform's, /etc/halite/pki on Linux and
+# /usr/local/etc/halite/pki on FreeBSD; set it only to move it.
+# pki_dir: /usr/local/etc/halite/pki
 
 # static uses the first hub that answers; failover rotates through a list.
 hub_type: static
