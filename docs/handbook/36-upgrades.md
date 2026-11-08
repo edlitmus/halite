@@ -141,8 +141,21 @@ A node's binary is just a file. How you replace it depends on how you ship it:
   seconds". The same restart written directly in the state (`systemctl
   restart` or `service restart`) was run as a control: the hub's `run` never
   returned, and on FreeBSD the node stayed **down**, the rc script saying `could
-  not enrol (exit 141); not starting`. Not run: a whole fleet upgrade, and
-  replacing the binary with the state.
+  not enrol (exit 141); not starting`. **Replacing the binary with the state
+  was run on FreeBSD** (jails, a 15.1 node and a 14.5 hub; DIVERGENCE 5.626).
+  The state placed a new `halite-node` (17,088,682 bytes) with `file.managed`
+  and restarted the agent with the deferred `daemon(8)` command. The first
+  time, it went wrong. The node ran the job and restarted on the new binary.
+  The hub refused the return: `/v1/return: the request body: http: request body
+  too large`. The return held a line diff of the two binaries, about 60 MB,
+  and the limit is 16 MiB. The hub logged nothing for the job, and the
+  operator's `halite-hub run` was still waiting four minutes later. This is
+  DIVERGENCE 5.623. It is fixed: a binary file is now reported as `Replace
+  binary file`. With the fixed agent on the node, the same state returned in
+  one second (`Succeeded: 2 (changed=2)`), the restart ran 30 seconds later,
+  and `manage.versions` showed the node on the new build. A return of more than
+  16 MiB for any other reason is still lost in the same way. **Not run:**
+  replacing the binary with the state on Linux, and a whole fleet upgrade.
 - **By hand**, for a few nodes: the same three commands as the hub, with
   `halite-node` and `halite_node`.
 
