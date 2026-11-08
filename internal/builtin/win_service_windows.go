@@ -39,6 +39,9 @@ func winServiceStartType(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if s.ConfigErr != nil {
+		return "", fmt.Errorf("reading %q's start type: %w", name, s.ConfigErr)
+	}
 	return s.StartType, nil
 }
 
