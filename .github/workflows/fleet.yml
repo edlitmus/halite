@@ -40,6 +40,15 @@ on:
       - "internal/builtin/netplan*.go"
       - "internal/builtin/service*.go"
       - "internal/builtin/pkg*.go"
+      # The version orderings and the differential that holds them to the
+      # real tools. `pkg*.go` above already catches `pkg_vercmp.go`, the
+      # dispatch, and missed `vercmp.go`, the algorithm -- so the Debian
+      # and RPM orderings could be rewritten without the one leg that has
+      # a real dpkg or rpm ever running. The fixture is here too: a
+      # captured oracle that changes is a reason to ask the tool again.
+      - "internal/builtin/vercmp*.go"
+      - "internal/builtin/live_dpkg*.go"
+      - "internal/builtin/testdata/dpkg-*.tsv"
       # `quota` and `lvm` are here and `pam` and `openssl_cert` are not,
       # and the difference is what each needs to be driven. The latter
       # two change nothing outside a directory the test owns, so they run
