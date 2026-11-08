@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, `win_dacl.has_permission` now refuses a trustee with a deny entry even when a separate allow entry would otherwise cover the permission asked about.** `win_dacl.has_permission`'s own documented rule is that a deny entry disqualifies a trustee outright; the code only skipped over a deny entry rather than checking for one, so a trustee denied one thing and separately allowed something wider was reported as having the narrower access. An `onlyif` or a state comparison that relied on this answer could have proceeded as though access existed when Windows would actually refuse it. DIVERGENCE 5.626.
+
 - **`make install` now works on a FreeBSD host with nothing in `/usr/local`.** It refused as root (`cannot write /usr/local/etc/halite — run make install as root`), or failed with `No such file or directory` when `/usr/local/bin` or `/usr/local/etc/rc.d` was missing. It now makes those directories. DIVERGENCE 5.625.
 
 - **`examples/hub.yaml` and `examples/node-with-hub.yaml` no longer set FreeBSD paths.** They set `pki_dir`, `state_dir` and `policy` to `/usr/local/etc/halite/…` and `/var/db/halite`, and the same files are in the Linux archives. A Linux hub started from the example, as chapter 30 of the handbook says, stopped at once with `mkdir /usr/local/etc/halite: read-only file system`. The settings are now commented out, so each platform's default applies. If you copied the example onto Linux, delete those lines. DIVERGENCE 5.624.

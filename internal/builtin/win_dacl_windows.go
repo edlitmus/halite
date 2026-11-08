@@ -70,6 +70,17 @@ func winDACLHasPermission(path, trustee, permission string, exact bool) (bool, e
 	if err != nil {
 		return false, err
 	}
+	// A deny entry disqualifies the trustee outright, whatever its own
+	// mask: Windows evaluates deny before allow, so any explicit deny
+	// means the account does not have the access an allow entry alone
+	// would suggest. Checked in its own pass rather than inline in the
+	// loop below, so a deny entry that sorts after a matching allow in
+	// Entries' order still disqualifies it.
+	for _, e := range entries {
+		if sameAccount(e.Trustee, trustee) && e.Kind == "deny" {
+			return false, nil
+		}
+	}
 	for _, e := range entries {
 		if !sameAccount(e.Trustee, trustee) || e.Kind != "allow" {
 			continue
