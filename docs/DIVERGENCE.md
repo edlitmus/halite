@@ -40744,6 +40744,144 @@ The digest of `halite-ext-signer-local` is recorded again. The version stays
 **Not verified.** We did not run a domain-joined host. We did not run a group
 that should have had access.
 
+### 5.623 Replacing a binary file returned its line diff, and the hub refused it
+
+**Found** on 2026-11-08 while running chapter 36's upgrade "by halite itself"
+for issue 308, in two bastille jails on `beastie` (host FreeBSD 15.1-RELEASE-p6):
+a hub on a 14.5-RELEASE userland and a node on 15.1-RELEASE, both from `main`
+at `5d314a40`. A state placed a new `halite-node` (17,088,682 bytes) from the
+tree with `file.managed` and scheduled the deferred restart. The node ran it:
+`job finished ... retcode 0, success true`. Then it logged `the hub refused a
+return ... /v1/return: the request body: http: request body too large`. The
+hub logged nothing about the job after `job dispatched`. The operator's
+`halite-hub run ... state.sls upgrade` was still waiting four minutes later,
+after the node had restarted on the new binary and reconnected.
+
+**Why.** `unifiedDiff` (`internal/builtin/fileutil.go`), behind the `diff` of
+`file.managed`, `file.copy` and `file.diff`, split both files on newlines and
+wrote out every line that differed. For two builds of one program that is
+nearly the whole of both. Run locally against the same two files, the return was
+60,268,347 bytes of JSON with a 17,226,733-byte `diff`. The hub's limit for a
+return is `transport.MaxReturnBody`, 16 MiB. Salt does not diff a binary file.
+Its `file.get_diff` returns `Replace binary file`, `Replace binary file with text
+file` or `Replace text file with binary file`.
+
+**Changed.** A file with a NUL byte in its first 8000 bytes is binary, which is
+the test git and GNU diff use. When either side is binary, the diff is one of
+Salt's three strings. A binary file where there was no file, or an empty one,
+is `New binary file`. Salt says `New file` for any new file, but halite shows
+a new text file's lines, so this keeps that difference and names the case.
+Salt also calls a file binary when more than 30% of its bytes are outside
+printable ASCII. halite does not, because that rule fits a configuration file
+written in Japanese or Greek.
+
+**Shown.** `TestFileManagedNamesABinaryReplacementRatherThanDiffingIt`
+(`internal/builtin/builtin_test.go`) replaces binary with binary, binary with
+text, text with binary, and nothing with binary, in test mode and for real. It
+checks the `diff` is the one string, then `file.copy` with the same pair. With
+`fileutil.go` put back to `main`'s version, all four cases failed, and each
+`diff` started `--- …/halite-node (current)`.
+
+**Not changed: the lost return.** A return over 16 MiB is still refused with
+`400` and nothing in the hub's log. The node logs one warning and does not
+retry, and the operator's `run` waits for an answer that never comes. SPEC
+6.5's "the node paginates by chunk" is not built. This entry removes the way
+an ordinary upgrade reached that limit. It does not change what happens when
+something else reaches it.
+
+**Run with the fix**, in the same jails: the node's agent was replaced by hand
+with a build of this change, then the same state replaced it again from the
+tree. `halite-hub run` returned in one second with `diff: Replace binary file`
+and `Succeeded: 2 (changed=2)`, rc 0. The deferred restart ran 30 seconds later,
+and `manage.versions` then showed the node on the binary from the tree.
+
+**Not verified.** A file whose first NUL comes after 8000 bytes is still
+diffed as text. Linux, macOS and Windows nodes were not run; the change is not
+platform code.
+
+### 5.624 The example hub.yaml in the Linux archive set FreeBSD's paths
+
+**Found** on 2026-11-08 while running chapter 30 on Linux for issue 308, as
+root on the shared AWS test host noop-1 (Ubuntu 22.04.5 LTS, kernel
+6.8.0-1066-aws, arm64), from `main` at `07a37840`. Step 4 says to start from
+`examples/hub.yaml`, and adds that `pki_dir`, `state_dir` and `policy` "have
+correct platform defaults: do not set them". The example set all three, to
+`/usr/local/etc/halite/pki`, `/var/db/halite` and
+`/usr/local/etc/halite/policy.yaml`. The same file is in every archive. The
+Linux archive built from `5d314a40` held those lines too. Installed as the
+step says, the hub started under the shipped unit and stopped at once:
+`halite: creating /usr/local/etc/halite/pki: mkdir /usr/local/etc/halite:
+read-only file system`, then `status=78/CONFIG`. The unit's
+`ProtectSystem=strict` allows only `/etc/halite/pki`, so the FreeBSD path is
+read-only. Without the unit, the hub would have made a second configuration
+tree under `/usr/local/etc` instead. `examples/node-with-hub.yaml` set the
+node's `pki_dir` to the FreeBSD path in the same way.
+
+Deleting the three lines from the copied file was the whole fix. The hub
+then made its CA in `/etc/halite/pki`, and `doctor` gave `7 pass, 1 skip`.
+
+**Changed.** The four settings are commented out in the two examples. Each
+says what the default is on Linux and on FreeBSD, and to set it only to move
+it. `TestExamplesNameNoPlatformSpecificPath` (`internal/config`) reads every
+example in `contrib/examples` and fails on any line that is not a comment and
+names a directory from `config.PathTable` whose Linux and FreeBSD values
+differ. The cache and log directories are the same on both, so they are
+allowed. Before the examples were changed, it failed on the four lines and
+named each one.
+
+**Not verified.** The corrected example was not installed on a Linux host and
+started. The run above deleted the same three lines by hand. The FreeBSD run
+of chapter 30 (jail `h308hub`, 14.5-RELEASE userland) used the old example
+with its FreeBSD paths, which are the defaults there.
+
+### 5.625 `make install` refused, as root, on a FreeBSD host with nothing in `/usr/local`
+
+**Found** on 2026-11-08 for issue 308, in a bastille jail on `beastie` (host
+FreeBSD 15.1-RELEASE-p6) with a 14.5-RELEASE userland, made from `base.txz`
+with no packages. On such a host `/usr/local` is empty: there is no `bin`,
+no `etc` and no `etc/rc.d`. A 15.1-RELEASE jail made from bastille's pkgbase
+set had no `/usr/local/bin` either. `make install` run as root, with
+`bin/` built and the `halite` account made, refused:
+
+```
+cannot write /usr/local/etc/halite — run make install as root, or point BINDIR,
+CONFDIR, STATEDIR, CACHEDIR, LOGDIR and SERVICEDIR somewhere writable
+```
+
+The check asked only whether each directory or its parent was writable,
+and `/usr/local/etc` did not exist. Where the parent did exist, the check
+passed, and the next step failed instead. `install -m 0755 bin/halite-hub
+/usr/local/bin/halite-hub` and `install -m 0555 … /usr/local/etc/rc.d/` do not
+make the directory. The chapter 30 runbook's own `install -m 0555
+service/rc.d/halite_hub /usr/local/etc/rc.d/` failed in the same jail with
+`install: /usr/local/etc/rc.d: No such file or directory`. 5.482's FreeBSD
+run did not see this because the Vultr image has packages.
+
+**Changed.** `install`, `install-service` and `install-fips` look for the
+nearest directory that exists above each target, and check that it is
+writable (`NEAREST_EXISTING`). They then `install -d` `BINDIR` and
+`SERVICEDIR` before putting files in them. The message for a directory that
+really cannot be written has not changed.
+
+**Shown.** `TestInstallMakesTheDirectoriesItInstallsInto`
+(`internal/buildpolicy`) runs the real `install` target from a copy of the
+`Makefile`, `go.mod` and `contrib/{rc.d,systemd,man}`, with stand-in programs
+in `bin/`. It installs into a staged root where every path is at least two
+levels below anything that exists, for FreeBSD and Linux, with every make on
+the machine that can read the Makefile. It requires the binaries, the service
+files, a manual page and the four directories. With `main`'s Makefile, both
+`bmake` legs failed with the jail's message, `cannot write …/fresh/usr/local/bin
+— run make install as root`. The stock macOS make skips, as the Makefile
+refuses it. Then the fixed Makefile was run as root in a new jail like the one
+above. `make install` exited 0 without the account and again with it. It made
+`/usr/local/bin`, `/usr/local/etc/rc.d` and the man directories, and the second
+run gave `/usr/local/etc/halite`, its `pki`, `/var/db/halite`,
+`/var/cache/halite` and `/var/log/halite` to `halite`.
+
+**Not verified.** GNU make on Linux was not run (the Mac has no `gmake`;
+the test runs it where it is installed). Linux with a missing
+`/etc/systemd/system` was not seen; systemd always has it.
+
 ### 5.626 Issue 308's remaining procedures, run in FreeBSD jails and on two Linux hosts
 
 Issue 308, after 5.283, 5.284 and 5.482. The procedures 5.482 still listed as
