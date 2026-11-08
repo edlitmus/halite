@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/pki"
 )
 
@@ -199,8 +200,10 @@ func (s *Store) ensurePendingIndex() error {
 		}
 	}
 	// A rename lost to a power cut leaves no index, which is rebuilt; the
-	// build directory never stands in for one.
-	if err := os.Rename(build, s.pendingDir()); err != nil {
+	// build directory never stands in for one. Through atomicfile.Rename,
+	// which on Windows waits out another handle on either path rather than
+	// failing the enrolment that happened to be first after an upgrade.
+	if err := atomicfile.Rename(build, s.pendingDir()); err != nil {
 		return fmt.Errorf("building the pending index: %w", err)
 	}
 	return nil
