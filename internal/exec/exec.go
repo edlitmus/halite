@@ -863,8 +863,10 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 		// %ComSpec% names. This said /bin/sh everywhere, so `shell: true`
 		// and every cmd.shell failed on Windows with "file not found"
 		// naming a path that platform has never had.
-		argv := shellCommand(strings.Join(cmd.Argv, " "), cmd.ShellPath)
+		script := strings.Join(cmd.Argv, " ")
+		argv := shellCommand(script, cmd.ShellPath)
 		c = exec.CommandContext(ctx, argv[0], argv[1:]...)
+		applyShellCmdLine(c, argv[0], script)
 	} else {
 		c = exec.CommandContext(ctx, cmd.Argv[0], cmd.Argv[1:]...)
 	}

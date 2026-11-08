@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, `cmd.run` with `shell: true` no longer corrupts a command holding a double quote, `shell: bash` now runs instead of failing with "Is a directory", and `cmd.script` with `shell: cmd` now runs the script instead of silently reporting success for nothing.** cmd.exe parses quotes and its own switches differently from every other interpreter `shell:` can name, and the code assumed one convention for all of them. DIVERGENCE 5.623.
+
 - **BREAKING on Windows: a mode with no bits for other accounts, such as 0640 or 0750, now makes a file or directory private.** Only the owner, SYSTEM and Administrators can reach it, and inheritance from the parent is off. Before, only the read-only attribute was set. `file.managed` with `mode: '0640'` now converges with no warning. If a state relied on a group, or on the list of the parent, to let another account read the file, that account is now locked out. Use `win_dacl` to grant a named account. A mode with other bits, such as 0644, does not change. DIVERGENCE 5.622.
 
 - **On Windows, a file that another account can alter is now reported as reachable.** The access-list check missed entries that grant delete, append or attribute writes, conditional entries, and the account of an object entry. It also said yes to privileges that the token does not hold. `halite-ext-signer-local` is now 1.0.3. It can refuse a key file that it accepted before, for example one that Users may delete. If it refuses, restrict the file with `win_dacl`. `win_dacl` listings now name the right account for an object entry. DIVERGENCE 5.621.
