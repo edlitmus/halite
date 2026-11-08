@@ -40744,6 +40744,54 @@ The digest of `halite-ext-signer-local` is recorded again. The version stays
 **Not verified.** We did not run a domain-joined host. We did not run a group
 that should have had access.
 
+### 5.625 `make install` refused, as root, on a FreeBSD host with nothing in `/usr/local`
+
+**Found** on 2026-11-08 for issue 308, in a bastille jail on `beastie` (host
+FreeBSD 15.1-RELEASE-p6) with a 14.5-RELEASE userland, made from `base.txz`
+with no packages. On such a host `/usr/local` is empty: there is no `bin`,
+no `etc` and no `etc/rc.d`. A 15.1-RELEASE jail made from bastille's pkgbase
+set had no `/usr/local/bin` either. `make install` run as root, with
+`bin/` built and the `halite` account made, refused:
+
+```
+cannot write /usr/local/etc/halite — run make install as root, or point BINDIR,
+CONFDIR, STATEDIR, CACHEDIR, LOGDIR and SERVICEDIR somewhere writable
+```
+
+The check asked only whether each directory or its parent was writable,
+and `/usr/local/etc` did not exist. Where the parent did exist, the check
+passed, and the next step failed instead. `install -m 0755 bin/halite-hub
+/usr/local/bin/halite-hub` and `install -m 0555 … /usr/local/etc/rc.d/` do not
+make the directory. The chapter 30 runbook's own `install -m 0555
+service/rc.d/halite_hub /usr/local/etc/rc.d/` failed in the same jail with
+`install: /usr/local/etc/rc.d: No such file or directory`. 5.482's FreeBSD
+run did not see this because the Vultr image has packages.
+
+**Changed.** `install`, `install-service` and `install-fips` look for the
+nearest directory that exists above each target, and check that it is
+writable (`NEAREST_EXISTING`). They then `install -d` `BINDIR` and
+`SERVICEDIR` before putting files in them. The message for a directory that
+really cannot be written has not changed.
+
+**Shown.** `TestInstallMakesTheDirectoriesItInstallsInto`
+(`internal/buildpolicy`) runs the real `install` target from a copy of the
+`Makefile`, `go.mod` and `contrib/{rc.d,systemd,man}`, with stand-in programs
+in `bin/`. It installs into a staged root where every path is at least two
+levels below anything that exists, for FreeBSD and Linux, with every make on
+the machine that can read the Makefile. It requires the binaries, the service
+files, a manual page and the four directories. With `main`'s Makefile, both
+`bmake` legs failed with the jail's message, `cannot write …/fresh/usr/local/bin
+— run make install as root`. The stock macOS make skips, as the Makefile
+refuses it. Then the fixed Makefile was run as root in a new jail like the one
+above. `make install` exited 0 without the account and again with it. It made
+`/usr/local/bin`, `/usr/local/etc/rc.d` and the man directories, and the second
+run gave `/usr/local/etc/halite`, its `pki`, `/var/db/halite`,
+`/var/cache/halite` and `/var/log/halite` to `halite`.
+
+**Not verified.** GNU make on Linux was not run (the Mac has no `gmake`;
+the test runs it where it is installed). Linux with a missing
+`/etc/systemd/system` was not seen; systemd always has it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
