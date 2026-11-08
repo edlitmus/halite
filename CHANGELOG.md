@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **The hub now enforces SPEC's connection cap: `max_node_connections`, default 25,000.** Before, nothing counted connections, although SPEC and the handbook both said there was a cap. A node that subscribes past the cap now gets a 503 with the code `hub_full`, before the hub reads its request. The node keeps running from what it last received, as it does during an outage, and reconnects on its own backoff. The hub counts each refusal as `halite_hub_node_connect_refused_total` and logs a warning at most once a minute. What is counted is subscribe streams, one per node, and a relay counts as one. A node's returns, pillar and file requests are never refused. The hub also limits each connection to SPEC's 64 concurrent HTTP/2 streams. Before, it allowed net/http's default of 250. Each stream holds a file descriptor, so raise `LimitNOFILE` (65,536 in the shipped unit) before you raise the cap. DIVERGENCE 5.639.
+
 - **On Windows, `win_dacl.has_permission` now refuses a trustee with a deny entry even when a separate allow entry would otherwise cover the permission asked about.** `win_dacl.has_permission`'s own documented rule is that a deny entry disqualifies a trustee outright; the code only skipped over a deny entry rather than checking for one, so a trustee denied one thing and separately allowed something wider was reported as having the narrower access. An `onlyif` or a state comparison that relied on this answer could have proceeded as though access existed when Windows would actually refuse it. DIVERGENCE 5.638.
 
 - **On Windows, two accounts that merely share a short name across different domains no longer compare equal, and a SID now compares equal to the name it resolves to.** `win_dacl`'s account comparison fell back to the text after the last backslash whenever it did not match outright, which also meant a SID's own string form -- what an unresolvable trustee reads back as -- never matched the name it resolves to elsewhere. It now resolves both sides to a SID and compares those first. DIVERGENCE 5.637.
@@ -204,7 +206,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 - **Six settings the programs read are now declared, so they are no longer reported as ignored.** `hub_timeout`, `beacon_tick`, `output`, `gitfs_timeout` and `s3_timeout` were honoured and warned about; they are in the reference now. `halite-node doctor` read a setting that does not exist (`require_signed_extensions`) for whether extensions must be signed and so reported, on a default node, that unsigned ones would load; it reads `extension_require_signature`, which defaults to true. Its remedies named settings that are not settings. DIVERGENCE 5.545.
 
-The configuration reference explains each of the 238 settings in the
+The configuration reference explains each of the 239 settings in the
 
 - **The D-Bus client no longer panics, loops or over-allocates on a malformed message.** An empty or bare-bracket signature, an array of empty structs, deeply nested variants and an oversized length were each a panic, a hang, or an allocation as large as the peer said. They are now errors. `x` and `d` decode to `int64` and `float64`. DIVERGENCE 5.544.
 
@@ -7381,7 +7383,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 238 settings in the
+The configuration reference explains each of the 239 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

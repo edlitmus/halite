@@ -252,6 +252,7 @@ var Keys = []Key{
 	{"evidence_max_bytes", nodeOnly, "67108864", "Seal the current chain segment once it reaches this size.", "25.7"},
 	{"evidence_anchor_rate", hubOnly, "1", "Evidence-head reports one node may make per second, sustained; over it a report is refused with 429.", "25.7"},
 	{"evidence_anchor_burst", hubOnly, "60", "Evidence-head reports one node may make at once before evidence_anchor_rate applies.", "25.7"},
+	{"max_node_connections", hubOnly, "25000", "Node subscribe streams the hub holds at once; one more is refused with 503 until a node leaves.", "6.5"},
 	{"node_event_rate", hubOnly, "65536", "Bytes of event data one node may post a second, sustained; over it an event is refused with 429.", "17.1"},
 	{"node_event_burst", hubOnly, "8388608", "Bytes of event data one node may post at once before node_event_rate applies.", "17.1"},
 	{"extension_trust_keys", nodeHub, "", "Keys whose signed extension bundles this node accepts, as `<name> <base64>`.", "24.4"},

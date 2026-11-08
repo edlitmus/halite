@@ -45,7 +45,7 @@ measured in tens of seconds. The targets are set to be a clear improvement.
 
 | Load | Driven by | Scales with |
 |---|---|---|
-| **Connections** | One long-lived HTTP/2 connection per node (default max 25,000 per hub) | node count |
+| **Connections** | One long-lived subscribe stream per node, at most `max_node_connections` (default 25,000) per hub; a relay counts as one | node count |
 | **Returns** | A node files each return as it completes; each opens a new request | jobs × nodes |
 | **Pillar compilation** | Each node asks at every highstate; compiled on the hub, per node, **on every request** | highstates/hour × nodes × pillar size |
 | **File server** | Each node fetches a manifest then only changed files | nodes × tree churn |
@@ -107,7 +107,15 @@ Disk: the **job cache** and **event log** are bounded by retention and size
 (defaults 720 h and 10 GiB / 4 GiB); size `state_dir` above their sum, put it
 on storage that does not share a spindle with the tree, and keep the **tree**
 out of it. Memory: dominated by connections and caches. File descriptors: one
-per node plus headroom (`LimitNOFILE=65536` in the unit; raise it before 25,000).
+per node for its stream, more while it posts returns and fetches files, plus
+headroom. The shipped unit sets `LimitNOFILE=65536`; raise it before the fleet
+nears `max_node_connections`, and raise the two together.
+
+A node past `max_node_connections` is refused with a 503 (`hub_full`). It runs
+on from what it last received and keeps reconnecting, so a full hub looks like
+an outage to those nodes. It does not look like a revocation. Watch
+`halite_hub_node_connect_refused_total`: if it rises, a node is not
+connected. Add a relay or raise the cap.
 
 Watch, in the order that matters ([chapter 34](34-monitoring.md)):
 `halite_hub_request_duration_seconds` and `halite_pillar_compile_duration_seconds`

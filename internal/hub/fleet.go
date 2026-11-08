@@ -89,14 +89,25 @@ func (s *Server) LiveFleet() *Fleet { return s.fleet() }
 func NewFleet() *Fleet { return newFleet() }
 
 func (f *Fleet) attach(nodeID string, now time.Time) *stream {
+	st, _ := f.attachLimited(nodeID, now, 0)
+	return st
+}
+
+// attachLimited is attach, refused -- nil and false -- when the fleet
+// already holds max streams and nodeID is not one of them. A max of
+// zero or below is no limit. See DefaultMaxNodeConnections.
+func (f *Fleet) attachLimited(nodeID string, now time.Time, max int) (*stream, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if max > 0 && f.fullLocked(nodeID, max) {
+		return nil, false
+	}
 	st := &stream{
 		nodeID: nodeID,
 		out:    make(chan transport.Message, queueDepth),
 		done:   make(chan struct{}),
 		since:  now,
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	if old, ok := f.streams[nodeID]; ok {
 		old.close()
 	}
@@ -109,7 +120,7 @@ func (f *Fleet) attach(nodeID string, now time.Time) *stream {
 			f.route(nodeID, p.subordinates)
 		}
 	}
-	return st
+	return st, true
 }
 
 // detach removes a stream, unless it has already been replaced by a

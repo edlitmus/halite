@@ -37,16 +37,7 @@ func Listen(addr string, cert *ServingCert, ca *x509.Certificate, denied *transp
 
 // Serve runs the control plane until the context ends.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
-	srv := &http.Server{
-		Handler: s.Handler(),
-		// SPEC 6.5's handshake timeout. There is deliberately no write
-		// timeout: the subscribe stream is meant to stay open, and a
-		// write deadline would cut it at a fixed age.
-		ReadHeaderTimeout: transport.HandshakeTimeout,
-		IdleTimeout:       transport.IdleStreamTimeout,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
-		ErrorLog:          nil,
-	}
+	srv := newHTTPServer(ctx, s.Handler())
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -74,4 +65,24 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		return nil
 	}
 	return err
+}
+
+// newHTTPServer is the server Serve runs, with every setting it has.
+// Apart from Serve so that a test can put a handler of its own behind
+// the same settings: the stream limit is a property of the connection,
+// and the hub has no route that holds sixty-five streams open.
+func newHTTPServer(ctx context.Context, handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler: handler,
+		// SPEC 6.5's handshake timeout. There is deliberately no write
+		// timeout: the subscribe stream is meant to stay open, and a
+		// write deadline would cut it at a fixed age.
+		ReadHeaderTimeout: transport.HandshakeTimeout,
+		IdleTimeout:       transport.IdleStreamTimeout,
+		// SPEC 6.5's concurrent stream limit, advertised to every peer
+		// in the server's SETTINGS. Without it net/http advertised 250.
+		HTTP2:       &http.HTTP2Config{MaxConcurrentStreams: transport.MaxConcurrentStreams},
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		ErrorLog:    nil,
+	}
 }
