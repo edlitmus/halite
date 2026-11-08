@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`make install` now works on a FreeBSD host with nothing in `/usr/local`.** It refused as root (`cannot write /usr/local/etc/halite — run make install as root`), or failed with `No such file or directory` when `/usr/local/bin` or `/usr/local/etc/rc.d` was missing. It now makes those directories. DIVERGENCE 5.625.
+
 - **`examples/hub.yaml` and `examples/node-with-hub.yaml` no longer set FreeBSD paths.** They set `pki_dir`, `state_dir` and `policy` to `/usr/local/etc/halite/…` and `/var/db/halite`, and the same files are in the Linux archives. A Linux hub started from the example, as chapter 30 of the handbook says, stopped at once with `mkdir /usr/local/etc/halite: read-only file system`. The settings are now commented out, so each platform's default applies. If you copied the example onto Linux, delete those lines. DIVERGENCE 5.624.
 
 - **Replacing a binary file now reports `Replace binary file` instead of a line diff of both files.** `file.managed`, `file.copy` and `file.diff` wrote out every differing line, so placing a new 17 MB `halite-node` from the tree made a 60 MB return. The hub refused it as too large, and the operator's `run` never got an answer, although the job had succeeded. A file with a NUL byte in its first 8000 bytes counts as binary. The other strings are Salt's, `Replace binary file with text file` and `Replace text file with binary file`, and `New binary file` when there was no file. A return over 16 MiB for any other reason is still lost. DIVERGENCE 5.623.

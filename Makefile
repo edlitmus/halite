@@ -766,17 +766,35 @@ INSTALL_SERVICEDIR_rcd = "$(SERVICEDIR)"
 INSTALL_SERVICEDIR_systemd = "$(SERVICEDIR)"
 INSTALL_SERVICEDIR_darwin =
 
-INSTALL_SERVICE_CHECK_rcd = p=`dirname "$(SERVICEDIR)"`; \
-	{ test -w "$(SERVICEDIR)" 2>/dev/null || test -w "$$p"; } || { \
+# NEAREST_EXISTING sets $$a to $$d, or to the nearest directory above it
+# that exists: the one install -d would have to write in to make $$d.
+#
+# The checks used to ask whether the directory or its parent was
+# writable, and stop there. On a FreeBSD host with no packages there is
+# nothing at all under /usr/local -- no bin, no etc, no etc/rc.d -- so
+# neither existed, and `make install` run as root refused with "cannot
+# write /usr/local/etc/halite — run make install as root". The same
+# check passing was no better: /usr/local writable meant /usr/local/bin
+# was assumed to exist, and `install -m 0755 bin/halite-node
+# /usr/local/bin/halite-node` then failed with "No such file or
+# directory". Both were seen in a fresh 14.5-RELEASE jail (DIVERGENCE
+# 5.625). The directories are now made before anything is put in them.
+NEAREST_EXISTING = a="$$d"; \
+	while [ ! -e "$$a" ] && [ "$$a" != "/" ] && [ "$$a" != "." ]; do a=`dirname "$$a"`; done
+
+INSTALL_SERVICE_CHECK_rcd = d="$(SERVICEDIR)"; $(NEAREST_EXISTING); \
+	test -w "$$a" || { \
 		echo "cannot write $(SERVICEDIR) — run as root, or set SERVICEDIR" >&2; exit 1; }
 INSTALL_SERVICE_CHECK_systemd = $(INSTALL_SERVICE_CHECK_rcd)
 INSTALL_SERVICE_CHECK_darwin = true
 
-INSTALL_SERVICE_rcd = for f in contrib/rc.d/*; do \
+INSTALL_SERVICE_rcd = install -d -m 0755 "$(SERVICEDIR)" || exit 1; \
+	for f in contrib/rc.d/*; do \
 		echo "  $(SERVICEDIR)/`basename $$f`"; \
 		install -m 0555 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
 	done
-INSTALL_SERVICE_systemd = for f in contrib/systemd/*.service contrib/systemd/*.timer; do \
+INSTALL_SERVICE_systemd = install -d -m 0755 "$(SERVICEDIR)" || exit 1; \
+	for f in contrib/systemd/*.service contrib/systemd/*.timer; do \
 		echo "  $(SERVICEDIR)/`basename $$f`"; \
 		install -m 0644 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
 	done; \
@@ -817,13 +835,14 @@ install: make-supports-bang
 		echo "  ! bin/ is older than the source; 'make build' first if that is not deliberate" >&2; \
 	fi
 	@for d in "$(BINDIR)" "$(CONFDIR)" $(INSTALL_SERVICEDIR_$(INSTALL_KIND)); do \
-		p=`dirname "$$d"`; \
-		{ test -w "$$d" 2>/dev/null || test -w "$$p"; } || { \
+		$(NEAREST_EXISTING); \
+		test -w "$$a" || { \
 			echo "cannot write $$d — run make install as root, or point BINDIR," >&2; \
 			echo "CONFDIR, STATEDIR, CACHEDIR, LOGDIR and SERVICEDIR somewhere writable" >&2; \
 			exit 1; }; \
 	done
 	@echo "installing for $(INSTALL_OS)"
+	@install -d -m 0755 "$(BINDIR)"
 	@for b in $(BINARIES); do \
 		echo "  $(BINDIR)/$$b"; \
 		install -m 0755 bin/$$b $(BINDIR)/$$b || exit 1; \
@@ -914,8 +933,9 @@ install-fips: make-supports-bang
 			echo "bin/$$b-fips is missing. Run 'make fips' as yourself first." >&2; \
 			exit 1; }; \
 	done
-	@{ test -w "$(BINDIR)" 2>/dev/null || test -w `dirname "$(BINDIR)"`; } || { \
+	@d="$(BINDIR)"; $(NEAREST_EXISTING); test -w "$$a" || { \
 		echo "cannot write $(BINDIR) — run as root, or set BINDIR" >&2; exit 1; }
+	@install -d -m 0755 "$(BINDIR)"
 	@for b in $(BINARIES); do \
 		echo "  $(BINDIR)/$$b-fips"; \
 		install -m 0755 bin/$$b-fips $(BINDIR)/$$b-fips || exit 1; \
