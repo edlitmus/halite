@@ -42184,6 +42184,60 @@ The test counts per connection for that reason.
   unit alone. The handbook and the key's documentation say to raise both
   together.
 
+### 5.640 Grant and Revoke dropped a conditional or an object entry instead of refusing
+
+Issue 608 item 5, the `readEntries` follow-up (`internal/winsec/dacl_windows.go`).
+Found while fixing lead L13 (DIVERGENCE 5.621), recorded there as "found
+here, not fixed" and carried into issue 608's "still open" list. Checked
+and run on this Windows 11 host.
+
+**The defect.** `readEntries` -- the internal helper `Grant`, `Revoke` and
+both directions of `SetInheritance` use to rebuild a path's whole access
+list -- skipped any entry that was not a plain allow or deny, with a
+comment that already named the risk: "This module does not write them and
+cannot faithfully rewrite them, so carrying one through a replace would
+corrupt it." It then carried on anyway, silently, which is exactly the
+corruption the comment described: calling `Grant` for one trustee could
+make a conditional or an object entry belonging to an entirely different
+trustee vanish, with no error and no warning.
+
+**Shown.** `TestGrantRefusesRatherThanDroppingAConditionalEntry`
+(`internal/winsec/others_windows_test.go`) writes a private file with a
+conditional entry for `BUILTIN\Users` (the same SDDL, `(XA;;FR;;;BU;
+(Member_of {SID(BU)}))`, 5.621's own conditional-entry test uses), then
+calls `Grant` for `Everyone` -- a trustee with nothing to do with the
+conditional entry. On the unchanged code it failed: `Grant` returned
+success, and the conditional entry was gone when read back.
+
+**The change.** `readEntries`'s default case now returns an error naming
+the path and the ACE type, instead of skipping the entry. `Grant`,
+`Revoke` and `SetInheritance` already propagate whatever `readEntries`
+returns, so no other change was needed: a file with an access control
+entry this module cannot faithfully carry through a rewrite now refuses
+the rewrite outright, rather than silently dropping the entry. This is a
+narrower fix than rewriting the list faithfully (reading, in a future
+change, the raw bytes of the entries this module does not model and
+writing them back unchanged); refusing is the safe direction available
+without that larger piece of work.
+
+With the change, `go test ./internal/winsec/... ./internal/builtin/...
+-count=1` is green on this host, including the test above; the rest of
+`internal/winsec`'s suite is unaffected except for one unrelated,
+pre-existing failure already recorded in DIVERGENCE 5.626's PR (`whoami`
+resolving to Git's own copy on this host's `PATH` rather than
+`System32\whoami.exe`).
+
+**What an operator sees.** `win_dacl.grant`, `win_dacl.revoke`,
+`win_dacl.present` and `win_dacl.set_inheritance` now refuse, naming the
+reason, on a file that holds a conditional or an object access control
+entry for any trustee -- not only the one the call names. Before, the
+call would have succeeded and the other trustee's entry would have been
+gone.
+
+**Not verified.** Faithfully preserving the entry through a rewrite,
+rather than refusing the rewrite. A directory, rather than a file, with
+an inherited conditional or object entry.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
