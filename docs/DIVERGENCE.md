@@ -12496,7 +12496,7 @@ macOS 26.7:
 
 ```
 _lpadmin\t\tGroupMembership = (
-    "ed.silva"
+    "someuser"
 )
 ```
 
@@ -23494,13 +23494,13 @@ was a day old).
 #### Run at 1,000 and 5,000 nodes on AWS (2026-11-08): the hub does not survive a ping to 5,000
 
 Step 0 of `docs/simfleet-aws-plan.md`, on two existing hosts in AWS
-us-east-1, run over SSM as root. **The hub** was ami-test-1, a
+us-east-1, run over SSM as root. **The hub** was host-c, a
 c8g.2xlarge (8 Graviton vCPU, 15.7 GiB, Ubuntu 24.04, kernel
 `6.8.0-1067-aws-fips`). That host also runs the estate's configuration
-agent and a security agent of about 500 MB. **The fleet** was noop2-1, a
+agent and a security agent of about 500 MB. **The fleet** was host-b, a
 c7g.2xlarge of the same OS and kernel. Both are arm64. The binaries were
-built on noop2-1 from `1bd9a6c8` with Go 1.27.3 and the vendored flags.
-The hub listened on `172.26.28.27:8301`, because the security group opens
+built on host-b from `1bd9a6c8` with Go 1.27.3 and the vendored flags.
+The hub listened on `<host-c-ip>:<port>`, because the security group opens
 nothing else between the two, under a transient unit with
 `LimitNOFILE=262144`. Hub memory came from `/proc/<pid>/status`, sampled
 on the hub host every 5 s. `-hub-pid` cannot reach another host.
@@ -23827,12 +23827,11 @@ branch; this is documentation.
 were already in kernel FIPS mode on Ubuntu Pro `fips-updates`. Neither was
 rebooted or moved into or out of FIPS mode for this run.
 
-- `ami-test-1`: i-06bb649fb9f76b3f6, c8g.2xlarge (Graviton), AMI
-  ami-06a7244b703c98422, **arm64**, Ubuntu 24.04.5 LTS, kernel
+- `host-c`: c8g.2xlarge (Graviton), **arm64**, Ubuntu 24.04.5 LTS, kernel
   6.8.0-1067-aws-fips, `/proc/sys/crypto/fips_enabled` 1, `fips=1` on the
   kernel command line. OpenSSL 3.0.13 with the provider "Ubuntu 24.04
   OpenSSL Cryptographic Module" 3.0.13-0ubuntu3.15+Fips2 active.
-- `noop2-1`: i-0cc603ffb64dfbeea, c6a.2xlarge, AMI ami-09db3cf260e84b5d2,
+- `host-b`: c6a.2xlarge,
   **amd64**, Ubuntu 22.04.5 LTS, kernel 5.15.0-1117-aws-fips,
   `fips_enabled` 1, `fips=1`. OpenSSL 3.0.2.
 
@@ -23842,7 +23841,7 @@ under `/root`. Both also run Salt's agent; it was still active afterwards and
 
 **The archives.** The published v0.1.1 archives were fetched on each host
 from the GitHub release: `halite-0.1.1-linux-arm64-fips.tar.gz` on
-`ami-test-1`, `halite-0.1.1-linux-amd64-fips.tar.gz` on `noop2-1`, and the
+`host-c`, `halite-0.1.1-linux-amd64-fips.tar.gz` on `host-b`, and the
 ordinary `halite-0.1.1-linux-<arch>.tar.gz` on each. `sha256sum -c` against
 the release's SHA256SUMS said OK on both. The build identity printed was
 `0.1.1+f4a60b7a93a4 (fips v1.0.0)`. This is the first time the *published*
@@ -23878,20 +23877,20 @@ otherwise in two places (see below).
 - The ordinary `halite-node doctor`: `warn FIPS mode consistency  the
   kernel is in FIPS mode and this is not a FIPS build`.
 
-On `ami-test-1` only, `GODEBUG=fips140=off halite-node-fips doctor`: `warn
+On `host-c` only, `GODEBUG=fips140=off halite-node-fips doctor`: `warn
 ... the kernel is in FIPS mode and this FIPS build (module v1.0.0) is not
 running in FIPS mode`. This is the third branch, and the Rocky run did not
-reach it. With the services up: `halite-hub-fips doctor` on `noop2-1` gave
-7 pass, 1 skip, FIPS row pass. `halite-node-fips doctor` on `ami-test-1`,
+reach it. With the services up: `halite-hub-fips doctor` on `host-b` gave
+7 pass, 1 skip, FIPS row pass. `halite-node-fips doctor` on `host-c`,
 enrolled and connected, gave 10 pass, 1 skip; the connectivity row read
-`172.26.28.44 answered in 2ms: halite-hub 0.1.1+f4a60b7a93a4 (fips v1.0.0)
+`<host-b-ip> answered in 2ms: halite-hub 0.1.1+f4a60b7a93a4 (fips v1.0.0)
 ok` and the FIPS row passed. `halite-api-fips doctor` gave 3 pass, 1 warn;
 the warn is the 2-day self-signed serving certificate made for the test.
 The FIPS row passed.
 
 **Hub, node and API as services, across two hosts.** The hub ran on
-`noop2-1` (amd64) and the node on `ami-test-1` (arm64). Only TCP 22 and
-8301 were open between them, so the hub had `listen: 172.26.28.44:8301`.
+`host-b` (amd64) and the node on `host-c` (arm64). Only TCP 22 and
+<port> were open between them, so the hub had `listen: <host-b-ip>:<port>`.
 The units and drop-ins came from the archive's `service/systemd/` and
 `service/systemd/fips/`. Only the `-fips` binaries were installed, with no
 `/usr/local/bin/halite-hub` and so on, so a unit could start only if the
@@ -23903,21 +23902,21 @@ and the `-fips` `ExecStart`. Each of `halite-hub`, `halite-node` and
 `err` had 0 lines for all three.
 
 - Hub, first start: it created the enrollment CA (ecdsa-p256) and a
-  serving certificate for `localhost,127.0.0.1,::1,noop2-1,noop2-1.ref…,
-  172.26.28.44`. Then `keys operator create ed --admin` and a restart.
-- Node: a `node.yaml` with the hub at 172.26.28.44, `hub_port` 8301 and the
+  serving certificate for `localhost,127.0.0.1,::1,host-b,host-b.<domain>…,
+  <host-b-ip>`. Then `keys operator create ed --admin` and a restart.
+- Node: a `node.yaml` with the hub at <host-b-ip>, `hub_port` <port> and the
   pinned fingerprint. `enroll` returned rc 2 (pending). On the hub, `keys
   list` showed the fingerprint the node had printed (42:c2:95:…). After
   `keys accept`, `enroll` printed `enrolled`, the unit started, and
-  `manage.status` showed `up: [ami-test-1-h306]`.
-- API: `halite-api-fips` on `noop2-1` as a service under its drop-in,
-  `listen` 127.0.0.1:4511, hub 172.26.28.44:8301, its own operator
+  `manage.status` showed `up: [host-c-h306]`.
+- API: `halite-api-fips` on `host-b` as a service under its drop-in,
+  `listen` 127.0.0.1:4511, hub <host-b-ip>:<port>, its own operator
   certificate `api` and a self-signed P-256 serving certificate. `halite-api-fips
   account hash` gave `pbkdf2-sha512$…`. With curl (the host's OpenSSL, in
   FIPS mode): `/v1/readyz` answered ready; `/v1/login` returned a token; a
   wrong password got 401; `/v1/run` of `test.ping` returned true from the
   arm64 node; `grains.item` of `fips_build` returned true; `cmd.run` got 403
-  `no rule in [webops] permits cmd.run against "ami-test-1-h306"`. curl
+  `no rule in [webops] permits cmd.run against "host-c-h306"`. curl
   negotiated TLSv1.3 and TLS_AES_128_GCM_SHA256.
 
 **Jobs.** From the hub: `test.ping` returned True. `grains.item` for
@@ -23928,7 +23927,7 @@ and the `-fips` `ExecStart`. Each of `halite-hub`, `halite-node` and
 reported the file already in the requested state. On the node the file had
 the contents, mode 600, owner root.
 
-**TLS.** From `ami-test-1`'s OpenSSL (the FIPS provider) to the hub, with
+**TLS.** From `host-c`'s OpenSSL (the FIPS provider) to the hub, with
 `-alpn halite/1,h2`: TLSv1.3, TLS_AES_128_GCM_SHA256, server temporary key
 ECDH prime256v1, an ECDSA signature, and the SANs above. Without ALPN the
 hub refused (alert 80) and logged `does not speak halite/1`. That is
@@ -23953,7 +23952,7 @@ binary's". The table above shows both are wrong: the ordinary build on a
 FIPS kernel reads `fips_mode: True`. The grain is the kernel's state;
 `fips_build`, `fips_enabled` and `fips_module` describe the binary.
 
-**A defect: `grains.item` took one name.** `halite-hub run ami-test-1-h306
+**A defect: `grains.item` took one name.** `halite-hub run host-c-h306
 grains.item fips_mode fips_build fips_enabled fips_module cpuarch
 kernelrelease` returned `grains.item: takes at most 1 positional
 arguments, got 6`. `docs/operations.md` gives `halite-hub run '*'
@@ -23964,9 +23963,9 @@ default argument parsing, returned a single grain literally named
 `[fips_mode,fips_build]` with value null. Cause and fix are in 5.587.
 
 **Seen, not fixed.** The operator CLI dials `localhost:<port of listen>`
-unless `--hub` is given. With `listen: 172.26.28.44:8301`, `halite-hub
-runner manage.status` failed: `dial tcp 127.0.0.1:8301: connect:
-connection refused`. `--hub 172.26.28.44` after the subcommand worked. The
+unless `--hub` is given. With `listen: <host-b-ip>:<port>`, `halite-hub
+runner manage.status` failed: `dial tcp 127.0.0.1:4510: connect:
+connection refused`. `--hub <host-b-ip>` after the subcommand worked. The
 code is `operatorClient` in `cmd/halite-hub/run.go`.
 
 **Not covered.**
@@ -24005,15 +24004,14 @@ It was recreated as root:root 0755 on both.
 hosts are not the same as in the run of 2026-11-05. Neither of the FIPS
 hosts was rebooted or moved into or out of FIPS mode.
 
-- `noop2-1`: i-006f246cd18577514, c7g.2xlarge, **arm64**, Ubuntu 24.04.5
+- `host-b`: c7g.2xlarge, **arm64**, Ubuntu 24.04.5
   LTS, kernel 6.8.0-1067-aws-fips, `fips_enabled` 1, `fips=1`, Ubuntu Pro
-  `fips-updates`, 15.6 GB RAM, IP 172.26.28.12. This is a different
-  instance from the `noop2-1` of the first run (i-0cc603ffb64dfbeea,
-  amd64). That instance is gone.
-- `ami-test-1`: the same instance as before. i-06bb649fb9f76b3f6,
-  c8g.2xlarge, arm64, Ubuntu 24.04.5, kernel 6.8.0-1067-aws-fips,
-  `fips_enabled` 1, `fips-updates`, IP 172.26.28.27.
-- `noop-1`: i-03fbc6a267417b38f, c7g.2xlarge, arm64, Ubuntu 22.04.5,
+  `fips-updates`, 15.6 GB RAM, IP <host-b-ip>. This is a different
+  instance from the `host-b` of the first run (amd64). That instance is gone.
+- `host-c`: the same instance as before. c8g.2xlarge, arm64, Ubuntu
+  24.04.5, kernel 6.8.0-1067-aws-fips,
+  `fips_enabled` 1, `fips-updates`, IP <host-c-ip>.
+- `host-a`: c7g.2xlarge, arm64, Ubuntu 22.04.5,
   kernel 6.8.0-1066-aws, **not a FIPS kernel**. The file
   `/proc/sys/crypto/fips_enabled` does not exist. Ubuntu Pro `fips` and
   `fips-updates` are disabled. RAM is 15.6 GB.
@@ -24022,8 +24020,8 @@ No amd64 FIPS host remained, so main was not run on amd64. All three hosts
 run Salt's agent. It was active after every step and `dmesg | grep -i oom`
 gave 0 lines on all three.
 
-**The build.** Main was built from source on `noop2-1` and, separately, on
-`ami-test-1`. Each host got Go 1.27.3 linux-arm64 from go.dev. The sha256
+**The build.** Main was built from source on `host-b` and, separately, on
+`host-c`. Each host got Go 1.27.3 linux-arm64 from go.dev. The sha256
 (a06e9930…5f49) matched the one in go.dev's published JSON. Each host
 cloned `https://github.com/edlitmus/halite` and checked out 5d314a40, which
 was main at that time. The environment was the one that the Makefile's
@@ -24035,9 +24033,9 @@ the Makefile is BSD make, so `make` was not used. The identity printed was
 `0.1.1-329-g5d314a40a398+5d314a40a398 (fips v1.0.0)`. The builds of the two
 hosts are byte-identical: hub-fips 5f55f433…0656, api-fips d8cace6f…5f49,
 node-fips 064fb902…7c6c7b, node 66b7ff3d…6643. amd64 binaries were also
-cross-built on `noop2-1`. They were never run.
+cross-built on `host-b`. They were never run.
 
-**Local checks on `noop2-1`.** `version` of the three `-fips` binaries with
+**Local checks on `host-b`.** `version` of the three `-fips` binaries with
 `fips140=on` printed `fips mode on, module v1.0.0, self-tests passed`. With
 `fips140=off` it printed only the identity line. The grains table is the
 same as in the first run: `fips_mode` True, True, True and `fips_build`
@@ -24045,11 +24043,11 @@ True, True, False for the `-fips`, `-fips` with `fips140=off` and ordinary
 builds. The `doctor` FIPS row passed for `-fips`, and warned for
 `fips140=off` and for the ordinary build, with the texts of the first run.
 
-**A host that is not in FIPS mode.** `noop-1` ran the main `node-fips` and
-`node`. Both were fetched over TCP 8301 from a `python3 -m http.server`
-that ran for at most 900 seconds as a transient systemd unit on `noop2-1`.
-The unit was stopped afterwards. The sha256 matched on `noop-1`. Nothing was
-compiled on `noop-1`.
+**A host that is not in FIPS mode.** `host-a` ran the main `node-fips` and
+`node`. Both were fetched over TCP <port> from a `python3 -m http.server`
+that ran for at most 900 seconds as a transient systemd unit on `host-b`.
+The unit was stopped afterwards. The sha256 matched on `host-a`. Nothing was
+compiled on `host-a`.
 
 - `fips_mode` was **False** for both builds. `fips_build` was True and
   False, `fips_enabled` True and False, and `fips_module` `v1.0.0` and
@@ -24062,8 +24060,8 @@ compiled on `noop-1`.
 
 All four branches of the FIPS row have now been seen on Ubuntu arm64.
 
-**Hub, API and node as services.** The hub and the API ran on `noop2-1` and
-the node on `ami-test-1`. Both hosts are arm64 with a FIPS kernel. Only the
+**Hub, API and node as services.** The hub and the API ran on `host-b` and
+the node on `host-c`. Both hosts are arm64 with a FIPS kernel. Only the
 `-fips` binaries were installed in `/usr/local/bin`. The units came from
 `contrib/systemd/` and the drop-ins from `contrib/systemd/fips/` in the
 checkout. The archive's `service/systemd/` is built from these files. For
@@ -24071,7 +24069,7 @@ the hub, the node and the API: the unit was active, `/proc/<pid>/exe` was
 the `-fips` file, `environ` held `GODEBUG=fips140=on`, and the journal at
 priority `err` had 0 lines.
 
-**Token enrolment.** `hub.yaml` had `listen: 172.26.28.12:8301` and
+**Token enrolment.** `hub.yaml` had `listen: <host-b-ip>:<port>` and
 `enrollment_mode: token`. At first start the hub made an enrollment CA
 (ecdsa-p256, fingerprint 5c:8a:c2:…:a6:01). `keys operator create ed
 --admin` and `keys operator create api` made two operators. The policy got
@@ -24082,17 +24080,17 @@ runners `manage.status`, `manage.up`, `manage.down`, `jobs.list_jobs`,
 to `api-service`. Then the hub restarted.
 
 The token was made with `keys token create --ttl 1h --nodes
-'ami-test-1-h306' --cidr 172.26.28.27/32` (id 8edf73ca6875, 1 use). On
-`ami-test-1` the `node.yaml` held the hub address, `hub_port` 8301, the CA
-fingerprint and the node id `ami-test-1-h306`. `halite-node-fips enroll
+'host-c-h306' --cidr <host-c-ip>/32` (id 8edf73ca6875, 1 use). On
+`host-c` the `node.yaml` held the hub address, `hub_port` <port>, the CA
+fingerprint and the node id `host-c-h306`. `halite-node-fips enroll
 --token=…` printed `enrolled` the first time, rc 0, with no `keys accept`.
 It also printed a note that `--token` is visible in the process table and
 that `--token-file` avoids this. Afterwards `keys token list` on the hub
-showed `spent (1 of 1 uses)`, the scope `ami-test-1-h306
-172.26.28.27/32` and `admitted ami-test-1-h306`.
+showed `spent (1 of 1 uses)`, the scope `host-c-h306
+<host-c-ip>/32` and `admitted host-c-h306`.
 
-**Jobs.** From the hub, with `--hub 172.26.28.12 --as ed`: `manage.status`
-showed `up: [ami-test-1-h306]` and `test.ping` returned True.
+**Jobs.** From the hub, with `--hub <host-b-ip> --as ed`: `manage.status`
+showed `up: [host-c-h306]` and `test.ping` returned True.
 `grains.item fips_mode fips_build fips_enabled fips_module cpuarch
 kernelrelease` (six names) **returned all six**: True, True, True,
 `v1.0.0`, `aarch64` and `6.8.0-1067-aws-fips`. This is the fix of 5.587 run
@@ -24104,7 +24102,7 @@ were right and the file was mode 600, owner root.
 
 **doctor.** `halite-hub-fips doctor`: 7 pass, 1 skip, FIPS row pass.
 `halite-node-fips doctor`, connected: 10 pass, 1 skip. The connectivity
-row read `172.26.28.12 answered in 2ms: halite-hub
+row read `<host-b-ip> answered in 2ms: halite-hub
 0.1.1-329-g5d314a40a398+5d314a40a398 (fips v1.0.0) ok`. `halite-api-fips
 doctor`: 3 pass, 1 warn, and the connectivity row to the hub was ok. The
 warn is the 2-day self-signed serving certificate (`expires in 47h`). The
@@ -24113,18 +24111,18 @@ FIPS row passed in all three.
 **API.** With curl (the host's OpenSSL, in FIPS mode): `/v1/readyz`
 answered ready. A login as `alice` returned a token. A wrong password got
 401. `{"client":"local","tgt":"*","fun":"test.ping"}` returned 200 and true
-from `ami-test-1-h306`. `grains.item` with `"arg":["fips_mode","fips_build"]`
+from `host-c-h306`. `grains.item` with `"arg":["fips_mode","fips_build"]`
 returned 200 and true for both, so two names went through the API. `cmd.run`
 got 403 `no rule in [webops] permits cmd.run against "*"`. curl negotiated
 TLSv1.3, TLS_AES_128_GCM_SHA256, prime256v1 and ALPN h2.
 
 **Seen again, not fixed.** The operator CLI without `--hub` failed with
-`dial tcp 127.0.0.1:8301: connect: connection refused`. This is the same
+`dial tcp 127.0.0.1:4510: connect: connection refused`. This is the same
 as in the first run, and it is still on main.
 
 **An observation on Ed25519.** The first run left a question open. The
 hub's CertificateRequest was read again with `openssl s_client -alpn
-'halite/1,h2' -trace` from `ami-test-1`. It listed `ecdsa_secp256r1_sha256`,
+'halite/1,h2' -trace` from `host-c`. It listed `ecdsa_secp256r1_sha256`,
 `ecdsa_secp384r1_sha384`, `ecdsa_secp521r1_sha512`, `ed25519` (0x0807) and
 `rsa_pss_rsae_sha256`, `_sha384` and `_sha512`. The OpenSSL FIPS provider on
 the host shared all of them except `ed25519`. In Go 1.27.3,
@@ -24160,7 +24158,7 @@ settle whether SPEC 27.4 ("Ed25519 is unavailable") must change.
 `/srv/halite`, `/root/h306` (the Go toolchain, the checkout and the build
 cache), `/root/h306-managed.txt` and the `halite` user were removed. Then
 `daemon-reload` ran, and the HTTP server unit was stopped. Afterwards each
-host had 0 halite files, 0 processes, nothing on port 8301 and no user. The
+host had 0 halite files, 0 processes, nothing on port <port> and no user. The
 directory `/srv` was left in place. Salt's agent was active and there was no
 OOM kill.
 
@@ -27524,8 +27522,8 @@ passed.
 **Run on Linux.** At `cf90bbce`, on three AWS EC2 instances, with
 go1.27.3 from go.dev checked against its published SHA-256, as `nobody`
 through `setpriv`, 2026-11-03: ref-salt1 (Ubuntu 22.04.5 LTS, kernel
-5.15.0-1119-aws-fips with FIPS enabled, linux/arm64), noop2-1 (Ubuntu
-22.04.5, 5.15.0-1117-aws-fips, FIPS enabled, linux/amd64) and ami-test-1
+5.15.0-1119-aws-fips with FIPS enabled, linux/arm64), host-b (Ubuntu
+22.04.5, 5.15.0-1117-aws-fips, FIPS enabled, linux/amd64) and host-c
 (Ubuntu 24.04.5, 7.0.0-1014-aws, linux/arm64). The same nine packages
 passed on each, and with the measure disabled the counts were the same
 on each as on darwin (44 and 9 in the parent; 44 deep, 42 by overflow,
@@ -37441,11 +37439,11 @@ Issue 321, the close-out review of 2026-11-03, item A2 (`internal/builtin/entrya
 
 **The defect.** 5.300 and M-29 made the changes a state applies under a directory another account can write go through an `os.Root` and `Lchown`, and M-29's reasoning ended "the worst a swap can do is redirect a change to another path in the tree being managed". That is true of a symbolic link and false of a hard link, which is not followed because it is not a pointer: it is a second name for the same file. An account that owns a directory a state manages can replace a name in it with a hard link to a root-owned file on the same filesystem, and the next run applies the change to that file, as root. Three forms were shown on de26c91b: `archive.extracted` with `group:` (it re-applies ownership to every name in the archive on every run); `file.directory` with `recurse:` (the outside file went to 0644); and `file.managed` with `replace: False` and `mode:` or `group:`. Every other path-based caller of `applyMode`, `applyOwnership` and `keepOwnership` had the same shape, and so did the temporary file the `ssh_auth` and `ssh_known_hosts` account writer renames into `~/.ssh` (chmod and chown by name, after the close), `~/.ssh` itself, and the temporary bundle `openssl_cert.pkcs12_create` chmods beside its target.
 
-**Is it reachable on the estate.** On FreeBSD, yes by default: `security.bsd.hardlink_check_uid` and `hardlink_check_gid` are 0, so an unprivileged account may link a file it does not own. Read on beastie (FreeBSD 15.1-RELEASE-p6) with `sysctl` on 2026-11-03, with nothing setting them in `/etc/sysctl.conf`. On Linux, `fs.protected_hardlinks=1` (systemd's default, and Ubuntu's) refuses the link to a file the account does not own. Seen in a Debian 12 container on Docker Desktop's Linux kernel (arm64): `ln` as the account failed with "Operation not permitted". Also read on four Ubuntu hosts of the eds-test lab with `sysctl`, through SSM, on 2026-11-03; all had it set to 1:
+**Is it reachable on the estate.** On FreeBSD, yes by default: `security.bsd.hardlink_check_uid` and `hardlink_check_gid` are 0, so an unprivileged account may link a file it does not own. Read on beastie (FreeBSD 15.1-RELEASE-p6) with `sysctl` on 2026-11-03, with nothing setting them in `/etc/sysctl.conf`. On Linux, `fs.protected_hardlinks=1` (systemd's default, and Ubuntu's) refuses the link to a file the account does not own. Seen in a Debian 12 container on Docker Desktop's Linux kernel (arm64): `ln` as the account failed with "Operation not permitted". Also read on four Ubuntu hosts of an AWS test lab with `sysctl`, through SSM, on 2026-11-03; all had it set to 1:
 - ref-salt1: 22.04.5, 5.15.0-1119-aws-fips, arm64;
-- noop-1: 22.04.5, 5.15.0-1119-aws-fips, arm64;
-- noop2-1: 22.04.5, 5.15.0-1117-aws-fips, x86_64;
-- ami-test-1: 24.04.5, 7.0.0-1014-aws, arm64.
+- host-a: 22.04.5, 5.15.0-1119-aws-fips, arm64;
+- host-b: 22.04.5, 5.15.0-1117-aws-fips, x86_64;
+- host-c: 24.04.5, 7.0.0-1014-aws, arm64.
 
 On all three it is set by `/usr/lib/sysctl.d/99-protect-links.conf`, and on the three 22.04 hosts by `50-default.conf` as well. So on the Ubuntu estate an account cannot plant the link to a root file, and the defect is FreeBSD's by default. A Linux host with the setting turned off would be exposed again, and the change does not depend on it.
 
@@ -37474,9 +37472,9 @@ All ten pass unprivileged on macOS 26 (arm64) and on beastie, FreeBSD 15.1 (amd6
 - With the change, all three refuse, naming the hard link. All ten unit tests also run there as root, with no skips, and pass.
 - The fresh extraction gives the archive's nested symbolic link to the account with no warning. With the deepest-first sort taken out, the link stays root's and the run warns: the case only a root run can see.
 
-**Shown on real Ubuntu hosts, as root.** The same test, the ten unit tests and `TestLiveSSHFilesForAnotherAccount` ran from a clone of 256ee889, with Go 1.27.3 from go.dev (sha256 checked), through SSM on 2026-11-03. Two hosts of the eds-test lab:
-- noop2-1: Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64, FIPS enabled;
-- ami-test-1: Ubuntu 24.04.5, 7.0.0-1014-aws, arm64.
+**Shown on real Ubuntu hosts, as root.** The same test, the ten unit tests and `TestLiveSSHFilesForAnotherAccount` ran from a clone of 256ee889, with Go 1.27.3 from go.dev (sha256 checked), through SSM on 2026-11-03. Two hosts of an AWS test lab:
+- host-b: Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64, FIPS enabled;
+- host-c: Ubuntu 24.04.5, 7.0.0-1014-aws, arm64.
 
 On both, everything passes with the change. On both, de26c91b with the same tests copied in fails every refusal case and hands the root's file to the throwaway account (`1004:0 0644`, and `0600` for `archive.extracted`). The ssh account writer works on both builds. The kernel refused the account's own `ln` on both, as on the Docker run. The hosts mount `/tmp` `noexec`, so the toolchain and the build ran from `/root`. The test data was still made in `/tmp`, on the same filesystem as the planted link. Nothing was left on either host afterwards: no files under `/root/a2` or `/tmp`, and no test account or group.
 
@@ -37671,7 +37669,7 @@ Issue 321, the close-out review of 2026-11-03, item A2's "Found, not changed" (`
 
 The reading side had the same shape. The replaced file was read by name with `listxattr` and `getxattr`, which follow a symbolic link, after an `lstat` in `WritePrepared` that only moved the window.
 
-**Is it reachable on the estate.** The symbolic-link form needs nothing but the directory. `fs.protected_symlinks` restricts following a link only in a sticky world-writable directory, which a home directory is not. The live test below followed the account's link as root with `fs.protected_symlinks=1` (Docker Desktop's 7.0.14-linuxkit kernel). It was not tried on an estate host. The hard-link form needs a link to a file the account does not own, which `fs.protected_hardlinks=1` refuses. The A2 entry (PR 629) read that setting as 1 on four Ubuntu hosts of the eds-test lab, so on the Ubuntu estate the hard-link form reaches only files the account already owns.
+**Is it reachable on the estate.** The symbolic-link form needs nothing but the directory. `fs.protected_symlinks` restricts following a link only in a sticky world-writable directory, which a home directory is not. The live test below followed the account's link as root with `fs.protected_symlinks=1` (Docker Desktop's 7.0.14-linuxkit kernel). It was not tried on an estate host. The hard-link form needs a link to a file the account does not own, which `fs.protected_hardlinks=1` refuses. The A2 entry (PR 629) read that setting as 1 on four Ubuntu hosts of an AWS test lab, so on the Ubuntu estate the hard-link form reaches only files the account already owns.
 
 **The change.**
 - The attributes are copied onto the open temporary file, before the close, with `fsetxattr`, and the mode is re-applied with `fchmod` (`f.Chmod`). `syscall` exports `Setxattr` and not the f-calls, and the vendored module that has them is not allowed (`internal/buildpolicy`), so `fsetxattr`, `fgetxattr` and `flistxattr` are made with `syscall.Syscall6` and the `SYS_*` numbers `syscall` already has for every Linux architecture.
@@ -37775,7 +37773,7 @@ was **chowned to the account** and had the managed key appended:
 
 - beastie, in a throwaway thin Bastille jail, FreeBSD 15.1-RELEASE-p6:
   "the target's file was given to uid 1001";
-- noop2-1, Ubuntu 22.04.5 LTS (5.15.0-1117-aws-fips): "given to uid
+- host-b, Ubuntu 22.04.5 LTS (5.15.0-1117-aws-fips): "given to uid
   1004";
 - mini-me, macOS 27.2 (26B123) on arm64: "given to uid 502". There the
   home was `/tmp/halsc<pid>`, and /tmp is itself a link to /private/tmp,
@@ -38159,17 +38157,17 @@ in them has a boot-time name.
   behind. With `hostname=halite-hn` set first, everything passed,
   including the running-versus-boot test, which skips without one. The
   jail was destroyed afterwards.
-- **Linux**: noop2-1 (Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64,
+- **Linux**: host-b (Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64,
   systemd-hostnamed running), through SSM, built there from the branch.
   With `/etc/hostname` present, everything passed and the file was
   byte-identical afterwards. With the file removed, everything passed
   and it was still absent afterwards. With the clearing step disabled,
-  the conformance case failed with "/etc/hostname holds "noop2-1" and
+  the conformance case failed with "/etc/hostname holds "host-b" and
   held "" before this test", and the file was left behind. The original
-  file was put back byte for byte. The same three runs on noop-1
+  file was put back byte for byte. The same three runs on host-a
   (Ubuntu 22.04.5, 5.15.0-1119-aws-fips, arm64) gave the same results,
-  with "/etc/hostname holds "noop-1"" in the broken run. Those binaries
-  were cross-built on noop2-1 and checked by sha256 on noop-1.
+  with "/etc/hostname holds "host-a"" in the broken run. Those binaries
+  were cross-built on host-b and checked by sha256 on host-a.
 
 **Not verified.**
 
@@ -39012,7 +39010,7 @@ Each part was broken on purpose and watched to fail:
 ### 5.587 `grains.item` took one grain name, and the documented FIPS check failed
 
 Found on 2026-11-05 during the issue 306 run on Ubuntu Pro's FIPS kernels
-(5.282). `halite-hub run ami-test-1-h306 grains.item fips_mode fips_build
+(5.282). `halite-hub run host-c-h306 grains.item fips_mode fips_build
 fips_enabled fips_module cpuarch kernelrelease` returned `grains.item: takes
 at most 1 positional arguments, got 6`. `docs/operations.md` gives
 `halite-hub run '*' grains.item fips_mode fips_build fips_module` as the way
@@ -39047,7 +39045,7 @@ the change.
 
 #### Run on a host
 
-On 2026-11-06, main at 5d314a40 ran on `noop2-1` (hub) and `ami-test-1`
+On 2026-11-06, main at 5d314a40 ran on `host-b` (hub) and `host-c`
 (node). Both are arm64 and use Ubuntu Pro FIPS kernels. `halite-hub run
 '*' grains.item fips_mode fips_build fips_enabled fips_module cpuarch
 kernelrelease` returned all six values. The API passed two names in
@@ -40940,7 +40938,7 @@ platform code.
 ### 5.624 The example hub.yaml in the Linux archive set FreeBSD's paths
 
 **Found** on 2026-11-08 while running chapter 30 on Linux for issue 308, as
-root on the shared AWS test host noop-1 (Ubuntu 22.04.5 LTS, kernel
+root on the shared AWS test host host-a (Ubuntu 22.04.5 LTS, kernel
 6.8.0-1066-aws, arm64), from `main` at `07a37840`. Step 4 says to start from
 `examples/hub.yaml`, and adds that `pki_dir`, `state_dir` and `policy` "have
 correct platform defaults: do not set them". The example set all three, to
@@ -41031,13 +41029,13 @@ not run were run on 2026-11-07 and 2026-11-08.
 was made for each run and destroyed afterwards. The jails shared the loopback
 interface `bastille0` and had no outbound network. The build was `bmake dist`
 from `main` at `5d314a40`. `sha256sum -c` passed, but there was no attestation
-or signature to check. Linux: the shared AWS test hosts `noop-1` (hub, Ubuntu
-22.04.5, kernel 6.8.0-1066-aws, arm64) and `noop2-1` (node, Ubuntu 24.04.5,
+or signature to check. Linux: the shared AWS test hosts `host-a` (hub, Ubuntu
+22.04.5, kernel 6.8.0-1066-aws, arm64) and `host-b` (node, Ubuntu 24.04.5,
 kernel 6.8.0-1067-aws-fips, arm64), as root through SSM. They are not fresh:
 both run salt-minion, postfix and sssd. Everything halite was removed from both   <!-- lexicon:allow -->
 afterwards, and salt-minion was still active. The binaries were built on   <!-- lexicon:allow -->
-`noop2-1` from `main` at `07a37840` with go1.27.3. Only TCP 22 and 8301 are open
-between the hosts, so the hub listened on 8301.
+`host-b` from `main` at `07a37840` with go1.27.3. Only TCP 22 and <port> are open
+between the hosts, so the hub listened on <port>.
 
 **A jail cannot show** kernel modules, most `sysctl`s, a real boot (the jail's
 `/etc/rc` runs when the jail starts, but there is no loader, kernel or `devd`, and
