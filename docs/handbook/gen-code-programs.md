@@ -276,5 +276,14 @@ A real node opens a new client, and so a new TLS connection, for every return it
 
 A number from one machine running both the hub and the fleet is indicative, not SPEC 30's verdict: the table names "one 16-core hub", and a fleet on the same machine takes CPU from it. -hub and -root make the fleet runnable from another machine than the hub, given a copy of DIR.
 
-**Files:** `main.go`.
+A fleet larger than one machine can hold is several drivers, each running its own range of nodes with -first and -n and submitting nothing; one \`simfleet submit\` sends a single job to all of them; and \`simfleet merge\` times that job across every driver's file, against the same SPEC 30 row a single-process run reports:
+
+	simfleet run -root DIR -hub H -first 1 -n 5000 -no-submit -out a.json
+	simfleet run -root DIR -hub H -first 5001 -n 5000 -no-submit -out b.json
+	simfleet submit -root DIR -hub H -fun test.ping -out ping.json
+	simfleet merge -submit ping.json a.json b.json
+
+\-json appends each result as one JSON line, for a run's archive.
+
+**Files:** `main.go`, `multi.go`, `record.go`; with tests.
 
