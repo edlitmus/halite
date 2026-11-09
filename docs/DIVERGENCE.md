@@ -23622,6 +23622,71 @@ at 20,000: 1.6 GB at 5,000 does not extrapolate to anything safely
 without a run. **Not covered:** a 16-core hub, FreeBSD, a profile, the
 connection cap (not merged when this ran), and any size above 5,000.
 
+#### Step 1 on a dedicated 16-core hub (2026-11-09): both rows met at 5,000, no disconnects in 10 minutes
+
+Step 1 of `docs/simfleet-aws-plan.md`, the first run on hosts raised for
+it by `contrib/tofu/aws-simfleet`, in us-east-1, one availability zone,
+driven over SSM as root. **The hub** was a c7g.4xlarge (16 Graviton
+vCPU, 30 GiB, stock Canonical Ubuntu 24.04, kernel `7.0.0-1014-aws`),
+running nothing but the hub. **The driver** was a c7g.xlarge (4 vCPU,
+8 GiB, same image). The module's user data had set the sysctls, chrony
+against Amazon Time Sync (offsets about 2 µs on both) and the four-hour
+halt, all checked on the hosts before the run. Both binaries were built
+on an existing arm64 test host from `main` at `0026d9fa`, with Go 1.27.3
+(sha256 checked against go.dev's list) and the vendored flags, and their
+sha256 sums matched on arrival. The hub ran under a transient unit with
+`LimitNOFILE=262144` and a `MemoryMax=24G` guard it never approached,
+listening on the one port the security group opens between hosts.
+`setup` ran on the hub host and its directory was copied to the driver.
+
+**Setup:** 5,000 identities in 73.6 s, the same as the re-run above.
+
+| | Result |
+|---|---|
+| Connect | 5,000 of 5,000 in 7.7 s |
+| `test.ping` | received p95 303 ms; returned 5,000 of 5,000, p50 1.46 s, **p95 1.88 s**, last 1.96 s; 0 return errors: **MET** |
+| `state.apply` | submit 300 ms; **last received 300 ms**; returned 5,000 of 5,000, p95 1.75 s; 0 return errors: **MET** |
+| Hold, 10 min | `halite_hub_nodes_connected` 5,000 at each of ten one-minute scrapes; no `halite_hub_node_disconnect_total` until the driver exited, then 5,000 `client_gone` |
+| Hub CPU while idle | 36.2 s over the 486 s after the return connections closed: 7.5% of one core, 0.47% of the 16 |
+| Hub RSS | 582 MB as the connections finished; **1.50 GB peak**, about 95 s after them; 900 MB holding 5,000 streams; 228 MB after the driver left. cgroup peak 1.75 GB |
+| Driver | peak 1.42 GB RSS, 15,006 descriptors |
+
+The hub's own count agrees with the harness:
+`halite_job_returns_total{result="succeeded"}` read 10,000 and
+`halite_jobs_missing_returns` 0. Its journal at priority `warning` was
+empty, with no TLS handshake error, and the unit never restarted. The
+ENA `conntrack_allowance_exceeded`, `pps_allowance_exceeded` and
+bandwidth counters stayed at 0; `conntrack_allowance_available` read
+about 1.23 million on the hub, which puts a number on the plan's open
+question about the c7g.4xlarge's tracked-connection allowance.
+
+**The peak is the idle return connections, not the jobs.** It came with
+15,002 established sockets: the 5,000 streams plus one connection per
+return, 10,000 of them, held open until the client's 90 s idle timeout
+(limit L10 of the plan). When they closed, the hub fell to 900 MB and
+2,492 threads, and stayed there. That 900 MB for 5,000 idle streams is
+about 180 KB a stream. Four times it is about 3.6 GB at 20,000 before a
+job runs, against SPEC 30's 4 GiB. That is arithmetic from one size, not
+a measurement, and memory per stream need not be linear; it is the
+number step 3 has to test, and the reason L10 (H9) is worth settling
+before it.
+
+**The harness printed "last -8ms after the hub accepted the job"** for
+the ping. A node had the job 8 ms before `Submit` returned to the
+submitter, because the hub dispatches before it answers. The reading is
+true, and the field is only there to expose a slow accept (L11); a
+negative value means there was none.
+
+**Teardown, checked** with read-only calls after `tofu destroy`: both
+instances `terminated`; no volume, placement group or network interface
+left with `Project=halite-simfleet` in us-east-1, and no instance in
+us-east-2. The build directory was removed from the build host.
+
+**Not covered:** either row at its own size (10,000 and 20,000), the
+4 GiB row, more than one driver (so `simfleet merge` across hosts has
+still not run), FreeBSD, a profile of the idle CPU (7.5% of a core for
+5,000 idle streams is not explained here), and `-reuse-client`.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
