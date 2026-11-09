@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **On Windows, a file's warning about the mode it cannot apply now points at `win_dacl.present` instead of claiming this build does not have it.** `win_dacl` shipped; the warning text and a nearby comment did not catch up. DIVERGENCE 5.631.
+
 - **On Windows, `cmd.run` with `shell: true` no longer corrupts a command holding a double quote, `shell: bash` now runs instead of failing with "Is a directory", and `cmd.script` with `shell: cmd` now runs the script instead of silently reporting success for nothing.** cmd.exe parses quotes and its own switches differently from every other interpreter `shell:` can name, and the code assumed one convention for all of them. DIVERGENCE 5.630.
 
 - **On Windows, `service.dead` with `enable: False` and `service.disabled` now move a `manual` service to `disabled` instead of leaving it `manual` and reporting success.** A `manual` service already read as not enabled, the same as a `disabled` one, so the shared boot-state logic saw nothing to change. A tree that depended on the old behavior now sees a change on its next run. DIVERGENCE 5.628.
