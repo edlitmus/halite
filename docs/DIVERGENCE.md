@@ -42315,6 +42315,86 @@ The test counts per connection for that reason.
   unit alone. The handbook and the key's documentation say to raise both
   together.
 
+### 5.640 The scale harness could only measure what one machine could hold
+
+Found while planning the simfleet scale run (`docs/simfleet-aws-plan.md`
+§1.1). Every SPEC 30 row the harness exists for is above what one driver
+host holds: 10,000 nodes for the two dispatch rows, 20,000 for nodes per
+hub and hub memory. Step 0 measured that a driver needs about 200 KiB per
+simulated node and opens three connections per node during a job, so a
+driver is sized at 5,000. And `simfleet run` could not be split:
+
+- **One process submitted and measured its own nodes (L1).** Four
+  drivers gave four separate jobs of 5,000, each timed against its own
+  quarter. That is not "a `test.ping` to 10,000 nodes", and adding the
+  four answers together would have been a claim about a job that never
+  existed.
+- **Only one measured job could be in flight (L2).** The harness timed
+  whatever job arrived while it was measuring, because a node can answer
+  before `Submit` has told the harness the jid. A second job in that
+  window would have been counted as the first.
+- **The connect wait was a fixed five minutes (L8).** It was too short
+  for 20,000 nodes at a slow ramp, and could not be changed.
+- **The output was prose only (L9).** Nothing could be archived or
+  merged across drivers.
+- **The dispatch time hid a blocked submit (L11).** On step 0's first
+  run at 5,000, `Submit` took 25.5 s and the dispatch still read MET at
+  26.05 s. That reading is true from the operator's side, because the
+  clock starts when the job is sent, but nothing in the line said 25 s of
+  it was the hub refusing to answer.
+
+**Fixed.** Arrival and return times are now kept per job, by jid, for
+every simulated node. That removes L2: two jobs are two records, and a
+node that answers before `Submit` returns is filed under the right one.
+On top of that:
+
+- `run -first F -n N -no-submit -out FILE` is one driver of several. It
+  submits nothing, answers what arrives, and rewrites FILE atomically
+  every 5 s and on exit, so a driver killed outright leaves its last
+  complete picture.
+- `simfleet submit -fun F -out FILE` sends one job to the whole fleet
+  and records when it was sent, when the hub accepted it, and what the
+  hub matched.
+- `simfleet merge -submit FILE DRIVER.json...` times that one job across
+  every driver. It refuses two drivers that ran the same node. It counts
+  every node a driver ran, including a driver whose file never mentions
+  the job: those nodes never received it, and leaving them out would
+  report 10 of 10 for a 20-node fleet.
+- `-connect-timeout` replaces the fixed five minutes.
+- `-json FILE` appends each result as one JSON line, from `run` and from
+  `merge` alike.
+- Each result now prints the last arrival measured from when the hub
+  accepted the job, beside the one measured from when it was sent. The
+  verdict is still taken from the send.
+
+A single-process run and a merged one go through the same `summarize`
+and the same `print`, so they cannot report the same data two ways.
+
+**Demonstrated.** `TestTwoDriversOneJob` builds `halite-hub` and
+`simfleet` and runs them over a real socket: `setup` for 20 nodes, a hub,
+two drivers on ranges 1-10 and 11-20, one `submit`, then `merge`, which
+must report 20 of 20 from two drivers, MET. It then runs the
+single-process path with `-ping -apply -json`, and checks that each JSON
+line names the same jid as the printed output. Three unit tests hold
+`merge`'s accounting and the two clocks.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| `merge` expects only the nodes a driver reported | `TestMergeCountsADriverThatNeverSawTheJob` |
+| `merge` drops its duplicate check | `TestMergeRefusesTheSameNodeInTwoDrivers` |
+| the after-accept time measured from the send | `TestDispatchVerdictCountsTheSubmit`, and the merge test |
+| the verdict measured from the accept | `TestDispatchVerdictCountsTheSubmit` |
+| every job filed under one fixed key, as before | `TestTwoDriversOneJob`: the drivers never record the job's returns |
+
+**Not covered:** more than one host. Every process in the test ran on one
+Mac, so `merge`'s comparison of one host's clock with another's is
+untested. The run kit is meant to record each host's chrony offset, and
+it does not exist yet. Windows does not run the end-to-end test, because
+the test stops its drivers with an interrupt. No AWS run has used any of
+this yet.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

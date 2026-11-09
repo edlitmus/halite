@@ -7,11 +7,11 @@ re-run on `dbbf053d` met both SPEC 30 rows at 5,000, and the hub peaked
 at 1.6 GB (§11.1). §10 has the order of work from here. The next steps
 that bill, 1 to 3, still need approval.
 
-The region (us-east-1), the use of ami-test-1 and noop2-1, and a
-`DryRun` launch were approved on 2026-11-08. No AWS resource has been
-created. The launches were dry runs only. ami-test-1 was rebooted once
-to recover it, after the first run (§11). The AWS facts come from calls made on 2026-11-08
-(account 360915197767, SSO role `SRE`, the `preprod` profile). The
+The region (us-east-1), the use of two existing test hosts (host B and
+host C, §2), and a `DryRun` launch were approved on 2026-11-08. No AWS
+resource has been created. The launches were dry runs only. Host C was
+rebooted once to recover it, after the first run (§11). The AWS facts
+come from read-only calls made on 2026-11-08 in a test account. The
 claims about halite come from the code at `bde5719b` and `1bd9a6c8`.
 Where this page states what a run *will* show, it is a hypothesis, and
 it is marked as one.
@@ -50,15 +50,15 @@ worked around before the step that depends on it.
 
 | # | Limit | Where | Affects |
 |---|---|---|---|
-| L1 | **One process submits and measures its own nodes.** `run` submits to `P-*` and times only the sims in its own process. Several driver hosts give several separate jobs, not one job to the whole fleet. | `measure` | Every step above one driver |
-| L2 | **Only one measured job may be in flight.** Any job that arrives during the window is timed as the measured one (DIVERGENCE 5.279). | `answer`, `measure` | Return-volume step |
+| L1 | **Fixed (DIVERGENCE 5.640):** `run -no-submit`, `submit`, `merge`. **One process submits and measures its own nodes.** `run` submits to `P-*` and times only the sims in its own process. Several driver hosts give several separate jobs, not one job to the whole fleet. | `measure` | Every step above one driver |
+| L2 | **Fixed (5.640):** times are kept per jid. **Only one measured job may be in flight.** Any job that arrives during the window is timed as the measured one (DIVERGENCE 5.279). | `answer`, `measure` | Return-volume step |
 | L3 | **Reconnect pacing does not match the node.** A sim waits a fixed 1 s and retries. `halite-node` uses exponential backoff from 1 s to 60 s with ±20% jitter (`cmd/halite-node/reconnect.go`, DIVERGENCE 5.546). A reconnect storm from simfleet is harsher and more synchronised than a real fleet. | `connect` | Reconnect storm |
 | L4 | **Return retry does not match the node.** A sim counts a failed return and gives up. `postReturns` in `halite-node` tries 5 times with a growing delay. Under overload, a real fleet adds load and simfleet removes it. | `answer` | Every step near saturation |
 | L5 | **No batch.** `run` sends no `Batch` field, although `transport.SubmitRequest` has `Batch`, `BatchWaitSeconds`, `BatchSafeLimit` and `BatchTimeoutSecs`. | `measure` | Batch step |
 | L6 | **No enrolment over the wire.** `setup` bypasses `/v1/enroll`. That path is what an enrolment storm stresses, with its per-source limit (32 at once, then one every 10 s) and `DefaultMaxPending` = 1,024 (`internal/keystore/authority.go`). | `setupCmd` | Enrolment storm |
 | L7 | **Hub memory only on the same host.** `-hub-pid` reads `ps -o rss=` locally. The hub registers no process or Go runtime metrics (no resident memory, goroutines or file descriptors in `/v1/metrics`), so a hub on another host must be sampled there. | `rss`, `internal/hub/metrics.go` | Every step |
-| L8 | **Connect wait is fixed at 5 minutes.** Below 1,000/s per driver it is too short for large fleets. | `runCmd` | Steps ≥ 20k |
-| L9 | **Output is prose only.** No machine-readable result to archive or merge across drivers. | `measure` | Every step |
+| L8 | **Fixed (5.640):** `-connect-timeout`. **Connect wait is fixed at 5 minutes.** Below 1,000/s per driver it is too short for large fleets. | `runCmd` | Steps ≥ 20k |
+| L9 | **Fixed (5.640):** `-json`, and the drivers' files. **Output is prose only.** No machine-readable result to archive or merge across drivers. | `measure` | Every step |
 | L10 | **One client per job, never closed.** Each job makes a new `transport.Client` (unless `-reuse-client`). The old one's idle connection stays open until `IdleConnTimeout` (90 s). Whether `halite-node`'s `hubClient` does the same has **not** been checked. That is a pair that must agree. | `connect` | Return volume, FDs |
 
 ### 1.2 Limits on the hub side, found by reading the code
@@ -83,41 +83,31 @@ worked around before the step that depends on it.
 
 ## 2. What exists in AWS (read-only, 2026-11-08)
 
-**The hosts are in us-east-1, not us-east-2.** `DescribeInstances` with
-`Name` tags `noop*` and `ami-test*` returns nothing in us-east-2. In
-us-east-1 it returns three instances. The sibling notes from the FIPS
-run (2026-11-06) found them in us-east-1 too. This plan uses us-east-1,
-which was confirmed on 2026-11-08.
+The test account has three existing hosts, in us-east-1. This page
+calls them by letter; their names, instance IDs and addresses are
+specific to that account and are left out.
 
-| Host | Instance | Type | Arch | OS | Launched |
-|---|---|---|---|---|---|
-| noop-1 | i-03fbc6a267417b38f | c7g.2xlarge (8 vCPU, 16 GiB) | arm64 | Ubuntu 22.04 | 2026-11-06 |
-| noop2-1 | i-006f246cd18577514 | c7g.2xlarge (8 vCPU, 16 GiB) | arm64 | Ubuntu 24.04 | 2026-11-06 |
-| ami-test-1 | i-06bb649fb9f76b3f6 | c8g.2xlarge (8 vCPU, 16 GiB) | arm64 | Ubuntu 24.04 | 2026-11-04 |
+| Host | Type | Arch | OS |
+|---|---|---|---|
+| host A | c7g.2xlarge (8 vCPU, 16 GiB) | arm64 | Ubuntu 22.04 |
+| host B | c7g.2xlarge (8 vCPU, 16 GiB) | arm64 | Ubuntu 24.04 |
+| host C | c8g.2xlarge (8 vCPU, 16 GiB) | arm64 | Ubuntu 24.04 |
 
-noop-1 and noop2-1 have been relaunched since the earlier notes
-(t4g.micro and c6a.2xlarge then). All three are SSM `Online`, in VPC
-`eds-test-ref-vpc` (172.26.16.0/20), subnet
-`eds-test-ref-public-subnet-us-east-1a` (55 free addresses), tagged
-`Environment=eds-test`. They carry the instance profile whose role has
-`AmazonSSMManagedInstanceCore` and `EVBGSecretsManagerReadOnly`, and
-nothing for S3.
+All three are SSM `Online`, in one VPC and one public subnet. They
+carry an instance profile whose role has `AmazonSSMManagedInstanceCore`
+and nothing for S3.
 
-**Security groups (not to be changed):**
+**Security groups (not to be changed):** the hosts' security group
+allows SSH and ICMP from internal ranges, and one other TCP and UDP port
+from the whole VPC. Egress is open.
 
-- `sg-0b7fcef992bf49dee` (`eds-test-ref-private-ssh-sg`): TCP 22 and
-  ICMP echo from the internal ranges; **TCP and UDP 8301 from
-  172.26.16.0/20**, which is the whole VPC. Egress is open.
-- `sg-01d2ef83fda7f9e68` (`eds-test-ref-public-ssh-sg`): TCP 22 from
-  nine /32 addresses.
-
-So the only port open between hosts in the VPC, other than SSH, is
-**8301**. The hub's default port, 4510, is closed. **The plan runs the
-hub with `--listen <private-ip>:8301`.** No security group change is
-needed, and no new security group is needed. Port 8301 is Consul's
-gossip port, and Consul is not running on these hosts (memory note,
-2026-11-04). That is not checked on new instances, but they start from
-a stock image that has no Consul.
+So the only port open between hosts in the VPC, other than SSH, is that
+one, called `<port>` on this page. The hub's default port, 4510, is
+closed. **The plan runs the hub with `--listen <private-ip>:<port>`.**
+No security group change is needed, and no new security group is
+needed. The port belongs to another service that is not running on
+these hosts. That is not checked on new instances, but they start from
+a stock image that does not have it.
 
 **Network:** six private /23 subnets (one per AZ, about 500 free
 addresses each) route `0.0.0.0/0` through a NAT gateway per AZ. They
@@ -138,8 +128,8 @@ c7i.8xlarge $1.428/h; gp3 $0.08 per GB-month.
 
 ### 3.1 Placement
 
-- **Region us-east-1, one AZ (us-east-1a), private subnet
-  `subnet-0f5f4746cc29bee00`** (172.26.16.0/23, 501 free). One AZ keeps
+- **Region us-east-1, one AZ, one private /23 subnet** (about 500
+  free addresses). One AZ keeps
   traffic free (same-AZ private traffic is not billed; cross-AZ traffic
   is $0.01/GB each way) and keeps latency out of the numbers. A private
   subnet means no public address, so the hub is reachable only inside
@@ -147,7 +137,7 @@ c7i.8xlarge $1.428/h; gp3 $0.08 per GB-month.
 - **A cluster placement group** for the hub and the drivers, so that the
   network between them is not the variable. This is one more resource
   to create and delete. It is optional at ≤ 10k.
-- **Security group `sg-0b7fcef992bf49dee` only**, attached as it is.
+- **The existing hosts' security group only**, attached as it is.
 - **Access only through SSM** (Session Manager and Run Command). No SSH
   keys, no public addresses.
 - **The existing instance profile**, so SSM works. Passing it needs
@@ -161,8 +151,8 @@ c7i.8xlarge $1.428/h; gp3 $0.08 per GB-month.
 - **AMI: Canonical Ubuntu 24.04 arm64**, resolved at apply time from the
   public SSM parameter
   `/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id`.
-  Not the image the eds-test hosts run. Those hosts run the Salt agent
-  for the estate, and a copy of that image could enrol itself with the
+  Not the image the existing hosts run. Those hosts run a configuration
+  management agent, and a copy of that image could enrol itself with the
   estate's configuration server. That risk is an assumption. Nobody has
   checked it, and a stock image avoids it.
 
@@ -170,14 +160,14 @@ c7i.8xlarge $1.428/h; gp3 $0.08 per GB-month.
 
 | Role | Type | Why |
 |---|---|---|
-| **Hub** | **c7g.4xlarge** (16 vCPU, 32 GiB), $0.58/h | SPEC 30 names "one 16-core hub". A Graviton vCPU is a physical core, so 16 vCPU is 16 cores. On x86 a vCPU is a hyperthread, so the x86 match is a 32-vCPU size (c6a.8xlarge, $1.224/h). arm64 also matches all three existing hosts and noop2-1's build. 32 GiB is 8 times the 4 GiB target, so memory pressure cannot hide a result. |
+| **Hub** | **c7g.4xlarge** (16 vCPU, 32 GiB), $0.58/h | SPEC 30 names "one 16-core hub". A Graviton vCPU is a physical core, so 16 vCPU is 16 cores. On x86 a vCPU is a hyperthread, so the x86 match is a 32-vCPU size (c6a.8xlarge, $1.224/h). arm64 also matches all three existing hosts and host B's build. 32 GiB is 8 times the 4 GiB target, so memory pressure cannot hide a result. |
 | **Driver** | **c7g.xlarge** (4 vCPU, 8 GiB), $0.145/h, **5,000 sims each** | See below. |
-| **Observer and build host** | **noop2-1**, as it is | Already running and billing. Builds the arm64 binaries (never noop-1). Runs Prometheus and Grafana against the hub. Runs `simfleet submit` (H1). |
+| **Observer and build host** | **host B**, as it is | Already running and billing. Builds the arm64 binaries (never host A, which is too small). Runs Prometheus and Grafana against the hub. Runs `simfleet submit` (H1). |
 
 **Why 5,000 sims per driver (part arithmetic, part assumption):**
 
 - *Ports (arithmetic).* All of a driver's connections go from one source
-  address to one hub `ip:8301`, so each needs its own ephemeral port.
+  address to one hub `ip:<port>`, so each needs its own ephemeral port.
   Linux's default range (32768-60999) has 28,232 ports. 5,000 streams,
   plus 5,000 new connections per job that stay idle for up to 90 s (L10),
   plus TIME_WAIT, leaves room for about two jobs a minute. At 10,000 per
@@ -205,9 +195,9 @@ pinned in `versions.tf`, lock file committed, state local and ignored
   resources.** Root volumes are gp3 with `delete_on_termination = true`:
   hub 50 GiB, drivers 20 GiB.
 - Tags on everything: `Name=simfleet-<role>-<n>`, `Project=halite-simfleet`,
-  `Environment=eds-test`, `Owner=ed.silva`, `ExpiresAt=<RFC 3339>`.
-  Whether the account's tag policy needs more tags is **not known**.
-  The `eb-standard-resource-tags` module suggests it might.
+  `Environment=<environment>`, `Owner=<owner>`, `ExpiresAt=<RFC 3339>`.
+  Whether an account's tag policy needs more tags depends on the
+  account.
 - **A dead man's switch:** `instance_initiated_shutdown_behavior = "terminate"`,
   and user-data that runs `shutdown -h +${ttl_minutes}` at boot. An
   instance that is forgotten terminates itself after 4 hours. This does
@@ -227,7 +217,7 @@ through `tail`), the Prometheus data directory, and the hub-host samplers.
 
 | Step | Sims | Where | Proves |
 |---|---|---|---|
-| **0. Smoke on existing hosts** | 1,000 then 5,000 | Hub on **ami-test-1**, one driver on **noop2-1** | The mechanism across hosts on port 8301. Per-sim cost on the driver (sizes §3.2). The owed break-on-purpose of `setup`'s re-run fix (5.279): revert the skip, grow 1,000 to 5,000, see the refusal, restore it, see it pass. Hub resident memory read on the hub host (fixes 5.279's wrong `-hub-pid`). The FreeBSD-shaped `ps -o rss=` call on Linux only. **$0 added**, but it uses shared hosts (§8). |
+| **0. Smoke on existing hosts** | 1,000 then 5,000 | Hub on **host C**, one driver on **host B** | The mechanism across hosts on `<port>`. Per-sim cost on the driver (sizes §3.2). The owed break-on-purpose of `setup`'s re-run fix (5.279): revert the skip, grow 1,000 to 5,000, see the refusal, restore it, see it pass. Hub resident memory read on the hub host (fixes 5.279's wrong `-hub-pid`). The FreeBSD-shaped `ps -o rss=` call on Linux only. **$0 added**, but it uses shared hosts (§8). |
 | **1. Dedicated hub, one driver** | 5,000 | New hub + 1 driver | The new layout works. A baseline for hub CPU and memory per 1,000 connections. |
 | **2. SPEC 30's dispatch rows** | 10,000 | Hub + 2 drivers | `test.ping` to 10,000: 95% of returns ≤ 10 s. `state.apply` dispatch to 10,000: all received ≤ 30 s. Needs H1. |
 | **3. Nodes per hub, hub memory** | 20,000 | Hub + 4 drivers (+1 spare) | 20,000 connected and held for 30 min. Hub RSS < 4 GiB. Both dispatch rows again at 20k (beyond SPEC, as information). Reconnect storm. Batch. Return volume. |
@@ -269,14 +259,14 @@ listed in the order the steps need them.
 
 | # | Change | Needed by |
 |---|---|---|
-| H1 | Split submit from measure. `run -no-submit` records, for each sim, the jid and the arrival and return times, as JSON. A new `simfleet submit` sends one job to the whole fleet. A `simfleet merge` reads the drivers' files and computes p50, p95 and last against the submit time. Clocks: Amazon Time Sync through chrony on every host, with `chronyc tracking` offsets recorded before and after each run. Sub-millisecond offset is **assumed**, and that assumption is checked by the recorded offset. | 2+ |
+| H1 | **Done (5.640)**, except the chrony offsets, which belong to the run kit. Split submit from measure. `run -no-submit` records, for each sim, the jid and the arrival and return times, as JSON. A new `simfleet submit` sends one job to the whole fleet. A `simfleet merge` reads the drivers' files and computes p50, p95 and last against the submit time. Clocks: Amazon Time Sync through chrony on every host, with `chronyc tracking` offsets recorded before and after each run. Sub-millisecond offset is **assumed**, and that assumption is checked by the recorded offset. | 2+ |
 | H2 | Use the node's reconnect pacing. Move `reconnect` out of `cmd/halite-node` into a shared internal package, so that the two cannot drift. | Reconnect storm |
 | H3 | Retry returns as `postReturns` does. Same reason. | 3+ |
 | H4 | Pass through `-batch`, `-batch-wait`. | Batch |
 | H5 | `simfleet enroll-storm`: real `/v1/enroll` calls, with optional token. | Enrolment storm |
 | H6 | A hub-host sampler (a script in the run kit, not in the binary): every 5 s, write the `halite-hub` RSS (`ps -o rss=`), FD count (`/proc/PID/fd`), threads, `ss -s`, and the ENA counters (`ethtool -S`: `conntrack_allowance_available`, `conntrack_allowance_exceeded`, `pps_allowance_exceeded`, `bw_in_allowance_exceeded`, `bw_out_allowance_exceeded`). | All |
-| H7 | A flag for the connect deadline. | 3+ |
-| H8 | `-json` output for each measurement. | All |
+| H7 | **Done (5.640):** `-connect-timeout`. A flag for the connect deadline. | 3+ |
+| H8 | **Done (5.640):** `-json`. `-json` output for each measurement. | All |
 | H9 | Check L10 against `halite-node`, and make simfleet do what the node does. | Return volume |
 
 Also worth doing, but not this plan: process and Go runtime metrics on
@@ -289,8 +279,8 @@ SPEC 26.2 conversation.
 
 | Source | What | How |
 |---|---|---|
-| **simfleet** | Connected count and time; received and returned p50, p95 and last; return errors; SPEC 30 MET or NOT MET | stdout written with `tee` to `/root/simfleet/runs/<step>/<host>.txt`, and `-json` once H8 exists. Copied back over 8301 or SSM. |
-| **Hub `/v1/metrics`** | `halite_hub_nodes_connected`, `halite_hub_node_connect_total`, `halite_hub_node_disconnect_total{reason}`, `halite_jobs_dispatched_total`, `halite_job_returns_total`, `halite_jobs_missing_returns`, `halite_hub_request_duration_seconds{route}`, `halite_hub_requests_total{route,code}`, `halite_hub_enrollments_total{result}`, `halite_events_dropped_total`, `halite_event_subscriber_lag_seconds` | ~~Prometheus scrapes it directly.~~ **It cannot.** The hub refuses any TLS client that does not offer the `halite/1` ALPN (`transport.requireProtocol`), and step 0's curl was refused that way. Use `halite-hub metrics --hub <ip>:8301 --cert operator.crt --key operator.key --server-name <ip>` in a loop on the observer, writing exposition files. A Prometheus that needs live data would need a small ALPN-speaking proxy. That loop has **not** been run. |
+| **simfleet** | Connected count and time; received and returned p50, p95 and last; return errors; SPEC 30 MET or NOT MET | stdout written with `tee` to `/root/simfleet/runs/<step>/<host>.txt`, and `-json` once H8 exists. Copied back over `<port>` or SSM. |
+| **Hub `/v1/metrics`** | `halite_hub_nodes_connected`, `halite_hub_node_connect_total`, `halite_hub_node_disconnect_total{reason}`, `halite_jobs_dispatched_total`, `halite_job_returns_total`, `halite_jobs_missing_returns`, `halite_hub_request_duration_seconds{route}`, `halite_hub_requests_total{route,code}`, `halite_hub_enrollments_total{result}`, `halite_events_dropped_total`, `halite_event_subscriber_lag_seconds` | ~~Prometheus scrapes it directly.~~ **It cannot.** The hub refuses any TLS client that does not offer the `halite/1` ALPN (`transport.requireProtocol`), and step 0's curl was refused that way. Use `halite-hub metrics --hub <ip>:<port> --cert operator.crt --key operator.key --server-name <ip>` in a loop on the observer, writing exposition files. A Prometheus that needs live data would need a small ALPN-speaking proxy. That loop has **not** been run. |
 | **Grafana** | The panels in `contrib/examples/grafana-dashboard.json`: nodes connected, connects and disconnects, missing returns, dispatched, returns, enrolments, request duration by route | Only if the scrape above feeds a Prometheus. The dashboard has **no** hub-process panel, because the hub exports no such metric (L7). |
 | **Hub host** | RSS, FDs, threads, sockets, ENA allowance counters | H6 sampler, to `/root/simfleet/runs/<step>/hub-samples.tsv` |
 | **CloudWatch** | `CPUUtilization`, `NetworkIn`, `NetworkOut`, `NetworkPacketsIn` for the hub and drivers | Basic monitoring (5-minute, free) as an independent check of CPU and of the network. Detailed monitoring (1-minute) costs a few cents a run, and is worth turning on for step 3. Memory needs the CloudWatch agent. The plan does not install it, and gets memory from H6 instead. |
@@ -316,9 +306,9 @@ recorded the same way.
 ## 6. Cost per run
 
 On-demand us-east-1 prices from §2. gp3 is under $0.05 a run at these
-sizes and is left out. Same-AZ traffic is free. Binaries go from noop2-1
+sizes and is left out. Same-AZ traffic is free. Binaries go from host B
 to the new hosts inside the VPC, so NAT data is only package installs
-(Prometheus and Grafana on noop2-1, under 1 GB, about $0.05). Hours are
+(Prometheus and Grafana on host B, under 1 GB, about $0.05). Hours are
 an estimate of wall time with the instances up, including setup.
 
 | Run | Instances | $/h | Hours | Estimate |
@@ -338,7 +328,7 @@ steps 1-3, about $13 for step 5.
 In this order, in the same session that raised the instances:
 
 1. Copy the run outputs back (simfleet files, H6 samples, a Prometheus
-   snapshot from noop2-1) to the scratch notes folder, and record them.
+   snapshot from host B) to a scratch folder, and record them.
 2. `tofu destroy` in `contrib/tofu/aws-simfleet/`.
 3. **Check with read-only calls, not with tofu's word for it**, in
    us-east-1:
@@ -350,23 +340,23 @@ In this order, in the same session that raised the instances:
    - `DescribeNetworkInterfaces`, filter description or tag: **must be
      empty**.
 4. On the existing hosts: stop Prometheus, Grafana, any `http.server`
-   on 8301, and any hub or simfleet process. Remove `/root/simfleet`
+   on `<port>`, and any hub or simfleet process. Remove `/root/simfleet`
    (`/tmp` is noexec there, so work lives under `/root`). Confirm that
    the hosts' own agent is still active (`systemctl is-active` on it)
-   and that `dmesg` shows no OOM kill (memory note, 2026-11-04).
+   and that `dmesg` shows no OOM kill.
 5. Write in the run record that teardown was checked, with the time.
 
 ## 8. Risks
 
-- **Shared hosts.** noop2-1 and ami-test-1 are the eds-test hosts that
-  other sessions use (FIPS work, issue 306). Step 0 puts a hub and
-  5,000 connections on them. Ask before using them, and check for other
-  running sessions first. noop-1 is not used, and is never a build host.
-- **The estate's agent on the existing hosts.** Load on those hosts
-  could starve it, as the OOM did on 2026-11-04. Step 0 stays at 5,000.
-- **Port 8301 is shared with Consul's gossip port in this VPC's security
-  group.** If anything else in 172.26.16.0/20 speaks Consul gossip to
-  these addresses, it reaches the hub's TLS listener and fails the
+- **Shared hosts.** Host B and host C are test hosts that other work
+  uses (FIPS work, issue 306). Step 0 puts a hub and 5,000 connections
+  on them. Ask before using them, and check for other running work
+  first. Host A is not used, and is never a build host.
+- **The configuration agent on the existing hosts.** Load on those
+  hosts could starve it, as an earlier OOM did. Step 0 stays at 5,000.
+- **`<port>` belongs to another service in this VPC's security group.**
+  If anything else in the VPC speaks that service's protocol to these
+  addresses, it reaches the hub's TLS listener and fails the
   handshake. That is harmless to both, but it adds noise to
   `halite_hub_requests_total`.
 - **AWS connection tracking.** The security group's ingress rule is by
@@ -387,7 +377,7 @@ In this order, in the same session that raised the instances:
 ## 9. What is not known yet
 
 - ~~Whether us-east-1 is the region meant.~~ Confirmed.
-- ~~Whether the SRE role can pass the instance profile, launch instances
+- ~~Whether the account's role can pass the instance profile, launch instances
   with these tags, and create a placement group.~~ It can. All three
   passed `DryRun` (§3.1). The `DryRun` also covered the tag policy for
   these tags.
@@ -422,7 +412,7 @@ this plan:
 Revised after step 0. Items 1, 3 and 5 of the first order are done.
 
 1. ~~Approve this plan, and confirm the region.~~ Done 2026-11-08.
-2. ~~Step 0 on ami-test-1 and noop2-1.~~ Done 2026-11-08 (§11).
+2. ~~Step 0 on host C and host B.~~ Done 2026-11-08 (§11).
 3. ~~`RunInstances` `DryRun` for permissions.~~ Done 2026-11-08 (§3.1).
 4. ~~**Fix the hub's return path**~~ Done: #689, merged as
    `adcbcc89`. The keystore's per-name scan was fixed too: #688, merged
@@ -430,7 +420,7 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
 5. ~~**Re-run step 0 at 5,000 with that fix**~~ Done 2026-11-08 on
    `dbbf053d` (§11.1). 5,000 of 5,000 returns, hub peak 1.61 GB:
    passed.
-6. Harness PRs: H8, H6, H1, H7, then H2, H3, H9, then H4, H5. *(code; no
+6. Harness PRs: ~~H8, H1, H7~~ done (5.640); H6, then H2, H3, H9, then H4, H5. *(code; no
    AWS)*
 7. `contrib/tofu/aws-simfleet/` PR, and `tofu plan` (read-only).
 8. Steps 1-3, one session, `tofu apply`, then teardown. *(ask first; it
@@ -445,10 +435,10 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
 
 Full numbers, setup and caveats are in DIVERGENCE 5.279. In short:
 
-**Hosts.** Hub on ami-test-1 (c8g.2xlarge, 8 vCPU, 15.7 GiB), fleet on
-noop2-1 (c7g.2xlarge). Both are arm64 Ubuntu 24.04 on a FIPS kernel,
+**Hosts.** Hub on host C (c8g.2xlarge, 8 vCPU, 15.7 GiB), fleet on
+host B (c7g.2xlarge). Both are arm64 Ubuntu 24.04 on a FIPS kernel,
 and both run other agents. Built from `1bd9a6c8` with Go 1.27.3. The hub
-listened on `172.26.28.27:8301`.
+listened on `<private-ip>:<port>`.
 
 | | 1,000 nodes | 5,000 nodes |
 |---|---|---|
@@ -466,13 +456,13 @@ listened on `172.26.28.27:8301`.
 - The metrics scrape plan was wrong (§5).
 - A driver needs about 200 KiB per sim.
 
-**L11 (new).** `measure`'s dispatch clock starts before `Submit`. When
+**L11 (new; addressed in 5.640: each result now also shows the last arrival after the hub accepted the job).** `measure`'s dispatch clock starts before `Submit`. When
 `Submit` itself blocks, the time goes on the dispatch clock, and the
 verdict reads MET on a hub that took 25 s to accept the job. The dispatch
 row needs the time from `Submit` returning, or both times shown.
 
 **Cleanup, checked.** On both hosts: no simfleet units, no processes, no
-`/root/simfleet`, nothing listening on 8301, the Salt agent active, and
+`/root/simfleet`, nothing listening on `<port>`, the configuration agent active, and
 no OOM this boot. No AWS resource exists for this run.
 
 ### 11.1 Re-run after the fixes (2026-11-08)
