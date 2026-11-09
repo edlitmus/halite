@@ -422,18 +422,31 @@ func generateTrigger(t Task) (string, error) {
 			"      <ScheduleByDay>\n        <DaysInterval>1</DaysInterval>\n      </ScheduleByDay>\n" +
 			"    </CalendarTrigger>\n", nil
 	case strings.HasPrefix(lower, "once at "):
-		clock := strings.TrimSpace(spec[len("once at "):])
-		start, err := startBoundary(clock)
-		if err != nil {
-			return "", err
-		}
-		return "    <TimeTrigger>\n" +
-			"      <StartBoundary>" + start + "</StartBoundary>\n" +
-			"      <Enabled>true</Enabled>\n" +
-			"    </TimeTrigger>\n", nil
+		// `once at HH:MM` names a clock time, not a date, and a
+		// TimeTrigger needs both: unlike a CalendarTrigger, which only
+		// asks when in the day to run and uses the fixed date for
+		// nothing but satisfying the schema, a TimeTrigger's
+		// StartBoundary is the one moment it fires, ever. Writing
+		// 1970 there -- the same fixed date "daily at" uses, where it
+		// is right -- produced a task the scheduler accepts and then
+		// never runs: confirmed on this host, where `schtasks /query
+		// /v` on exactly such a task reported "Next Run Time: N/A"
+		// and never scheduled it (issue 608 item 5, lead L9). Picking
+		// today or tomorrow instead would not be idempotent -- the
+		// boundary generated today differs from the one generated
+		// tomorrow, so a state re-applying the same declaration would
+		// recreate the task forever, the failure mode "daily at"'s
+		// fixed date exists to avoid. Refused instead, matching the
+		// refusal below for anything else this build cannot
+		// correctly express.
+		return "", fmt.Errorf("%q cannot be generated: a one-time trigger needs a date as well as "+
+			"a clock time, which this form does not take, and a task created without one "+
+			"is accepted by the scheduler and then never runs. "+
+			"Give win_task.present the scheduler's own XML with an explicit StartBoundary, "+
+			"or trigger the task once with win_task.run", spec)
 	}
 	return "", fmt.Errorf("%q is not a trigger this build generates; it writes "+
-		"`boot`, `logon`, `daily at HH:MM` and `once at HH:MM`. "+
+		"`boot`, `logon` and `daily at HH:MM`. "+
 		"Anything else is declared by giving win_task.present the scheduler's own XML", spec)
 }
 

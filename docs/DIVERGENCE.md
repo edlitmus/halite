@@ -42315,6 +42315,78 @@ The test counts per connection for that reason.
   unit alone. The handbook and the key's documentation say to raise both
   together.
 
+### 5.640 `once at HH:MM` generated a trigger the scheduler accepted and never ran
+
+Issue 608 item 5, lead L9 (`internal/wintask/schtasks_windows.go`,
+`internal/builtin/win_task.go`). Found by reading, in the issue 321
+second-pass audit, and left open after items 1 through 4 rather than
+decided, because it changes what a declared trigger promises. Checked and
+run on this Windows 11 host; no longer open.
+
+**The defect, confirmed.** `generateTrigger`'s `once at HH:MM` case wrote
+`startBoundary(clock)` into a `TimeTrigger`, the same helper `daily at
+HH:MM` uses for a `CalendarTrigger`. For `daily at`, the fixed placeholder
+date, 1970, is correct: a `CalendarTrigger` only reads the clock out of its
+`StartBoundary`, and a date would need to be today's to look sensible,
+which would make the generated XML differ from what is stored on every
+run and never converge -- exactly the reason 1970 was chosen there. A
+`TimeTrigger` is not a calendar trigger: its `StartBoundary` is not "what
+time of day", it is the one moment the trigger fires, ever, and 1970 is a
+moment already fifty-odd years gone.
+
+**Shown.** `TestARealTimeTriggerDatedNineteenSeventyNeverRuns`
+(`internal/wintask/schtasks_windows_test.go`) registers a real task, as
+this account, with a `TimeTrigger` whose `StartBoundary` is
+`1970-01-01T03:30:00` -- exactly what the unchanged `generateTrigger`
+wrote for `once at 03:30`. `schtasks /query /tn ... /v /fo list` on it
+reports:
+
+```
+Next Run Time:                        N/A
+```
+
+The scheduler accepted the task and will never run it. No error, no
+warning; `win_task.present` with `trigger: "once at 03:30"` reported
+success and the task sat there, permanently dormant, unless
+`win_task.run` triggered it by hand.
+
+**Why this was not a one-line fix.** Writing today's or tomorrow's date
+instead would make the trigger real, but not idempotent: the `StartBoundary`
+`generateTrigger` would write today differs from the one it would write
+tomorrow, so a state re-applying the same declaration on two different
+days would see two different generated documents and -- depending on how
+the comparison is built -- either recreate the task forever or compare
+against a boundary that has already passed, which is the same failure in
+a different shape. `daily at HH:MM`'s fixed date avoids exactly this by
+never needing a real date at all. A one-time trigger cannot avoid needing
+one.
+
+**The change.** `once at HH:MM` is refused, with a message naming why
+(no date, a task created without one is accepted and never runs) and what
+to do instead (`win_task.present` with the scheduler's own XML, which
+takes a real `StartBoundary`, or `win_task.run` to fire the task once by
+hand). This matches `generateTrigger`'s existing shape: it already refuses
+a trigger this build cannot correctly express rather than approximating
+one, for more than one trigger and for a schedule it does not name at all.
+The `trigger` doc strings of `win_task.present` and `win_task.create` no
+longer offer `once at HH:MM` as something this vocabulary can express.
+
+With the change, `go test ./internal/wintask/... ./internal/builtin/...
+-count=1` is green on this host, including both tests above, and
+`docs/modules.md` was regenerated for the two doc strings.
+
+**What an operator sees.** `win_task.present` and `win_task.create` with
+`trigger: "once at HH:MM"` now refuse, naming why, instead of silently
+registering a task that never runs. Any tree already using that form was
+relying on behavior that never worked in the first place -- the task it
+declared never ran on its own either -- so this closes a gap rather than
+changing one that worked.
+
+**Not verified.** Whether a future build should accept an explicit date
+(`once at 2027-03-01 03:30`, say) is a decision for later, not answered
+here: it needs its own vocabulary and its own convergence rule, which
+this change does not attempt.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
