@@ -205,8 +205,8 @@ pinned in `versions.tf`, lock file committed, state local and ignored
 - Outputs: instance IDs and private IPs, as `lab.sh`-style JSON, so the
   run script can address hosts by role.
 
-The module is code and will be its own PR. Until it exists, nothing can
-be raised. `tofu plan` reads AWS and creates nothing. `tofu apply` is
+The module now exists, with H6's sampler in `kit/`; its README says
+what has and has not been run. Nothing has been raised with it. `tofu plan` reads AWS and creates nothing. `tofu apply` is
 the step that bills, and it needs the user's approval every time.
 
 ## 4. The scale steps
@@ -264,7 +264,7 @@ listed in the order the steps need them.
 | H3 | Retry returns as `postReturns` does. Same reason. | 3+ |
 | H4 | Pass through `-batch`, `-batch-wait`. | Batch |
 | H5 | `simfleet enroll-storm`: real `/v1/enroll` calls, with optional token. | Enrolment storm |
-| H6 | A hub-host sampler (a script in the run kit, not in the binary): every 5 s, write the `halite-hub` RSS (`ps -o rss=`), FD count (`/proc/PID/fd`), threads, `ss -s`, and the ENA counters (`ethtool -S`: `conntrack_allowance_available`, `conntrack_allowance_exceeded`, `pps_allowance_exceeded`, `bw_in_allowance_exceeded`, `bw_out_allowance_exceeded`). | All |
+| H6 | **Done:** `contrib/tofu/aws-simfleet/kit/sampler.sh`, run on host B. A hub-host sampler (a script in the run kit, not in the binary): every 5 s, write the `halite-hub` RSS (`ps -o rss=`), FD count (`/proc/PID/fd`), threads, `ss -s`, and the ENA counters (`ethtool -S`: `conntrack_allowance_available`, `conntrack_allowance_exceeded`, `pps_allowance_exceeded`, `bw_in_allowance_exceeded`, `bw_out_allowance_exceeded`). | All |
 | H7 | **Done (5.640):** `-connect-timeout`. A flag for the connect deadline. | 3+ |
 | H8 | **Done (5.640):** `-json`. `-json` output for each measurement. | All |
 | H9 | Check L10 against `halite-node`, and make simfleet do what the node does. | Return volume |
@@ -420,9 +420,12 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
 5. ~~**Re-run step 0 at 5,000 with that fix**~~ Done 2026-11-08 on
    `dbbf053d` (§11.1). 5,000 of 5,000 returns, hub peak 1.61 GB:
    passed.
-6. Harness PRs: ~~H8, H1, H7~~ done (5.640); H6, then H2, H3, H9, then H4, H5. *(code; no
-   AWS)*
-7. `contrib/tofu/aws-simfleet/` PR, and `tofu plan` (read-only).
+6. Harness PRs: ~~H8, H1, H7~~ done (5.640); ~~H6~~ done
+   (`contrib/tofu/aws-simfleet/kit/sampler.sh`); then H2, H3, H9, then
+   H4, H5. *(code; no AWS)*
+7. ~~`contrib/tofu/aws-simfleet/` PR~~ written, with a mocked
+   `tofu test`; `tofu plan` against the test account ran on 2026-11-09:
+   2 to add, nothing else. Nothing applied.
 8. Steps 1-3, one session, `tofu apply`, then teardown. *(ask first; it
    bills)*
 9. Step 4. Step 3F. Step 5 only if 4 passed and the relay work is done.
