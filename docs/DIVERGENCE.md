@@ -23484,6 +23484,137 @@ was a day old).
 
 `plan.md` 3.1a has the steps for a suitable host.
 
+#### Run at 1,000 and 5,000 nodes on AWS (2026-11-08): the hub does not survive a ping to 5,000
+
+Step 0 of `docs/simfleet-aws-plan.md`, on two existing hosts in AWS
+us-east-1, run over SSM as root. **The hub** was ami-test-1, a
+c8g.2xlarge (8 Graviton vCPU, 15.7 GiB, Ubuntu 24.04, kernel
+`6.8.0-1067-aws-fips`). That host also runs the estate's configuration
+agent and a security agent of about 500 MB. **The fleet** was noop2-1, a
+c7g.2xlarge of the same OS and kernel. Both are arm64. The binaries were
+built on noop2-1 from `1bd9a6c8` with Go 1.27.3 and the vendored flags.
+The hub listened on `172.26.28.27:8301`, because the security group opens
+nothing else between the two, under a transient unit with
+`LimitNOFILE=262144`. Hub memory came from `/proc/<pid>/status`, sampled
+on the hub host every 5 s. `-hub-pid` cannot reach another host.
+
+**The re-run fix holds, and was broken on purpose.** With the skip
+replaced by `if false`, growing 200 identities to 300 was refused:
+`sim-00002.simfleet is already known by a different key`. The real
+binary grew the same copy to 300, and `sim-00001`'s certificate was
+byte-identical before and after.
+
+**1,000 nodes: both rows met, at this size.** All 1,000 connected in
+1.6 s. `test.ping` was received by all of them with p95 248 ms, and
+returned by all of them with p95 4.07 s. `state.apply` reached the last
+node at 217 ms. There were no return errors. Hub resident memory was
+118 MB idle and peaked at 928 MB during the ping. 1,000 nodes is a tenth
+of either SPEC row.
+
+**5,000 nodes: not met, and the host went down with it.** All 5,000
+connected in 6.8 s, and the ping reached every node by 361 ms. Then:
+
+| Seconds after the streams opened | Hub RSS | FDs | Threads |
+|---|---|---|---|
+| 5 | 2.2 GB | 10,869 | 889 |
+| 15 | 6.8 GB | 12,098 | 889 |
+| 25 | 10.5 GB | 12,942 | 889 |
+| 60 | 14.2 GB | 12,483 | 889 |
+| at the end | 15.3 GB | 4,290 | 3,730 |
+
+The hub used about seven of the eight cores. Only 1,508 of 5,000 returns
+were accepted (p50 47 s) and 3,492 failed. The hub logged 1,585 failed
+TLS handshakes (EOF, broken pipe) from returns that gave up. The
+`state.apply` that followed waited 25.5 s in `Submit` before it was
+accepted, and 662 of its 5,000 returns arrived. The harness printed MET
+for that dispatch at 26.05 s, because its clock starts before `Submit`
+returns. That MET is the clock, not the hub. The host then thrashed. It
+had no swap and almost no free memory. EBS reads ran at about
+210,000 a minute, the root volume's queue held at 3, and SSM stopped
+answering. It was rebooted with `RebootInstances` 16 minutes later. No
+OOM kill was logged. **SPEC 30 asks for under 4 GiB at 20,000 nodes. At
+5,000 nodes the hub passed 14 GiB during one ping.**
+
+**The likely cause, read from the code and not yet shown by a profile or
+a fix.** For each new return, `completeIfDone` calls `Cache.Missing`,
+which calls `Cache.Returns`. That reads and parses every return already
+filed for the job (`internal/hub/jobs.go`, `internal/job/cache.go`). So
+the k-th return of a job reads k files, and one job to 5,000 nodes is
+about 12.5 million reads and parses. Thousands of handlers do this at
+once, each with its own parsed copy. That fits the memory, the CPU and
+the read storm once the page cache was gone. At 1,000 nodes it is
+500,000 reads, which fits the 928 MB peak. Until a fix is measured, this
+is a hypothesis.
+
+**A second cost, on enrolment.** `simfleet setup` issued 5,000 identities
+at 20, 39, 56, 75 and 93 s per thousand, on one core. The cost per
+identity rises with the size of the store. `roomForPending` calls
+`countPending`, which reads every record in the store for each name it
+has not seen before (`internal/keystore`). Its comment says the cost "is
+paid only for a name not seen before", and an enrolment storm is made of
+exactly those names. Not profiled.
+
+**What the run showed about the plan itself.** The hub refuses a TLS
+client that does not offer the `halite/1` ALPN. That refusal is
+deliberate (`transport.requireProtocol`). So neither curl nor a stock
+Prometheus can scrape `/v1/metrics`. `halite-hub metrics` with `--hub`,
+`--cert` and `--key` is the route, and it was not run. The driver used
+about 1.0 GB for 5,000 streams, and 1.3 GB with returns in flight, so
+the plan's estimate of 5,000 sims on a 4-vCPU, 8 GiB driver stands.
+
+**Not covered:** `-reuse-client` (the run started after the hub host had
+failed, and was stopped). Anything on a 16-core host. Anything on
+FreeBSD. A profile of the hub. A run with the cause fixed. The 1,000-node
+numbers on a host without the other two agents.
+
+#### Re-run at 5,000 after both fixes (2026-11-08): both rows met at 5,000, hub peak 1.6 GB
+
+The same two hosts, the same harness, the same order of runs, about four
+hours later. The only change was the build: `main` at `dbbf053d`, which
+has the two fixes the run above pointed at. They are #689, *every return
+re-read every return before it*, and #688, *every new name read every
+record in the key store*. It does not have the connection-cap work. The
+hub unit gained `MemoryMax=12G` and `MemorySwapMax=0`, so that a repeat
+of the run above would kill the hub rather than the host. It never came
+near the limit. The run above, on `1bd9a6c8`, is the before half of this
+comparison: the same hosts and the same commands, without the two fixes.
+
+**Setup is now linear.** 5,000 identities took 73.4 s, at 13.6, 14.8,
+14.9, 15.1 and 15.0 s per thousand. Before, it took 283 s, at 20 to 93 s
+per thousand and rising.
+
+| Run | Ping returned | Ping p95 | Apply submit | Apply last received | Hub peak RSS |
+|---|---|---|---|---|---|
+| 1,000 nodes | 1,000 of 1,000 | 465 ms (was 4.07 s) | 321 ms | 290 ms | 353 MB (was 928 MB) |
+| 5,000 nodes | 5,000 of 5,000 (was 1,508) | 1.87 s (was 59.5 s) | 803 ms (was 25.5 s) | 842 ms | 1.61 GB (was 15.3 GB) |
+| 5,000, `-reuse-client` | 5,000 of 5,000 | 1.43 s | 273 ms | 287 ms | 0.99 GB |
+
+None of the three runs had a return error. Every 5,000-node run connected
+in 6.6 to 6.7 s. After the 5,000-node run the hub fell back to about
+265 MB, and after the last run it settled at 474 MB. The cgroup's peak,
+page cache included, was 1.88 GB. The hub used 69.6 s of CPU across all
+three runs. This boot's journal has no TLS handshake error at all, where
+the run above logged about 1,585. It has only the two expected warnings
+about the 4,000 nodes absent from each 1,000-node job. The ENA
+`conntrack_allowance_exceeded` and `pps_allowance_exceeded` counters
+stayed at 0 on the hub. The driver peaked at 1.27 GB and 15,006 file
+descriptors, and used 8.2 s of CPU.
+
+**The scrape works by the route the run above named.** `halite-hub
+metrics --hub --server-name --pki-dir --cert --key`, run from the driver,
+answered every time (181 lines before the first run, 244 after). After
+the last run it read `halite_job_returns_total{result="succeeded"} 22000`.
+That is exactly 2 × 1,000 + 4 × 5,000, so the hub's own count agrees with
+the harness. `halite_jobs_expired_total` read 0.
+
+**What this does and does not show.** It shows that, on these hosts,
+both SPEC 30 rows are met at 5,000 nodes, and that the hub's memory at
+5,000 is about a tenth of what it was. It does not show either row at
+the SPEC's own sizes, 10,000 and 20,000. It does not show the 4 GiB row
+at 20,000: 1.6 GB at 5,000 does not extrapolate to anything safely
+without a run. **Not covered:** a 16-core hub, FreeBSD, a profile, the
+connection cap (not merged when this ran), and any size above 5,000.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four

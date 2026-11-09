@@ -809,10 +809,27 @@ What was found by running it, and is fixed in the working tree: `setup`
 was not re-runnable. Growing a fleet from 200 to 2,000 identities
 regenerated a key for `sim-00001`, which the hub correctly refused as
 "already known by a different key". `setup` now keeps any identity whose
-certificate is already on disk. **That fix has not itself been re-run**:
-the run that would have shown it was stopped when the host turned out to
-be unsuitable. It should be broken on purpose (revert the skip, grow a
-fleet, watch the refusal) before it is believed.
+certificate is already on disk. ~~That fix has not itself been re-run.~~
+**It has now been re-run, and broken on purpose** (2026-11-08,
+DIVERGENCE 5.279): with the skip removed, a grow from 200 to 300 was
+refused. With the skip in place, the grow succeeded and left
+`sim-00001`'s certificate unchanged.
+
+**Run at 1,000 and 5,000 on AWS (2026-11-08, DIVERGENCE 5.279).** At
+1,000, both dispatch rows were met with room. **At 5,000 the hub did not
+survive one `test.ping`.** Its resident memory passed 14 GiB on a
+15.7 GiB host, only 1,508 returns were accepted, and the host had to be
+rebooted. The likely cause is that every return re-reads every return
+already filed for its job (`completeIfDone` → `Missing` → `Returns`).
+That was a code reading at the time. **It was then fixed (#689), along with
+the keystore's per-name scan (#688), and step 0 was re-run at 5,000 on
+the same hosts:** 5,000 of 5,000 ping returns with p95 1.87 s, the apply
+reaching every node in 842 ms, and hub memory peaking at 1.61 GB
+(DIVERGENCE 5.279). Both rows are met at 5,000. Neither has been run at
+its own size. `docs/simfleet-aws-plan.md` has the next steps.
+
+The list below is what the 200-node run left unverified, kept as written.
+What the AWS run answered is in 5.279.
 
 What was not verified:
 

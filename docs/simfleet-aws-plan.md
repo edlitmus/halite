@@ -1,16 +1,24 @@
 # Plan: driving simfleet at scale on AWS
 
-**Status: a draft for approval. Nothing in it has been run.** No AWS
-resource has been created, changed or started for it. Every AWS fact
-below comes from read-only calls made on 2026-11-08 (account
-360915197767, SSO role `SRE`, the `preprod` profile), and every claim
-about halite comes from the code at `origin/main` `bde5719b`. Where
-this page states what a run *will* show, it is a hypothesis, and it is
-marked as one.
+**Status: step 0 has run twice (2026-11-08).** The first run, on
+`1bd9a6c8`, stopped the plan: at 5,000 nodes the hub did not survive one
+`test.ping`. The two defects it found were fixed (#689, #688). The
+re-run on `dbbf053d` met both SPEC 30 rows at 5,000, and the hub peaked
+at 1.6 GB (§11.1). §10 has the order of work from here. The next steps
+that bill, 1 to 3, still need approval.
+
+The region (us-east-1), the use of ami-test-1 and noop2-1, and a
+`DryRun` launch were approved on 2026-11-08. No AWS resource has been
+created. The launches were dry runs only. ami-test-1 was rebooted once
+to recover it, after the first run (§11). The AWS facts come from calls made on 2026-11-08
+(account 360915197767, SSO role `SRE`, the `preprod` profile). The
+claims about halite come from the code at `bde5719b` and `1bd9a6c8`.
+Where this page states what a run *will* show, it is a hypothesis, and
+it is marked as one.
 
 The purpose is the run that `plan.md` 3.1a and DIVERGENCE 5.279 say is
-still owed. `tools/simfleet` exists, and has run once at 200 nodes on a
-workstation. None of SPEC 30's harness rows has been measured.
+still owed. Before step 0, `tools/simfleet` had run once, at 200 nodes
+on a workstation. None of SPEC 30's harness rows has been measured.
 
 ## 1. What simfleet is today
 
@@ -78,8 +86,8 @@ worked around before the step that depends on it.
 **The hosts are in us-east-1, not us-east-2.** `DescribeInstances` with
 `Name` tags `noop*` and `ami-test*` returns nothing in us-east-2. In
 us-east-1 it returns three instances. The sibling notes from the FIPS
-run (2026-11-06) found them in us-east-1 too. This plan uses us-east-1.
-**Please confirm.**
+run (2026-11-06) found them in us-east-1 too. This plan uses us-east-1,
+which was confirmed on 2026-11-08.
 
 | Host | Instance | Type | Arch | OS | Launched |
 |---|---|---|---|---|---|
@@ -143,9 +151,13 @@ c7i.8xlarge $1.428/h; gp3 $0.08 per GB-month.
 - **Access only through SSM** (Session Manager and Run Command). No SSH
   keys, no public addresses.
 - **The existing instance profile**, so SSM works. Passing it needs
-  `iam:PassRole` on that role. **Whether the SRE role has it is not
-  known.** A `RunInstances` call with `DryRun=true` answers that without
-  creating anything. It is the first thing to ask permission for.
+  `iam:PassRole` on that role. **It has.** `RunInstances` with
+  `DryRun=true` answered "Request would have succeeded" (2026-11-08) for
+  c7g.4xlarge and c7g.xlarge. Each call carried this instance profile,
+  subnet and security group, no public address, IMDSv2 required,
+  terminate-on-shutdown, a 50 GiB gp3 root, and the tags in §3.3 on the
+  instance and the volume. `CreatePlacementGroup` (cluster) with
+  `DryRun=true` answered the same.
 - **AMI: Canonical Ubuntu 24.04 arm64**, resolved at apply time from the
   public SSM parameter
   `/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id`.
@@ -278,8 +290,8 @@ SPEC 26.2 conversation.
 | Source | What | How |
 |---|---|---|
 | **simfleet** | Connected count and time; received and returned p50, p95 and last; return errors; SPEC 30 MET or NOT MET | stdout written with `tee` to `/root/simfleet/runs/<step>/<host>.txt`, and `-json` once H8 exists. Copied back over 8301 or SSM. |
-| **Hub `/v1/metrics`** | `halite_hub_nodes_connected`, `halite_hub_node_connect_total`, `halite_hub_node_disconnect_total{reason}`, `halite_jobs_dispatched_total`, `halite_job_returns_total`, `halite_jobs_missing_returns`, `halite_hub_request_duration_seconds{route}`, `halite_hub_requests_total{route,code}`, `halite_hub_enrollments_total{result}`, `halite_events_dropped_total`, `halite_event_subscriber_lag_seconds` | Prometheus on **noop2-1** scrapes `https://<hub>:8301/v1/metrics` every 5 s, with the simfleet operator certificate. The policy `setup` writes grants `runners: ['*']`, which covers `metrics.show`. **That scrape has not been tried.** |
-| **Grafana** | The panels in `contrib/examples/grafana-dashboard.json`: nodes connected, connects and disconnects, missing returns, dispatched, returns, enrolments, request duration by route | Grafana on noop2-1, viewed through an SSM port-forward. The dashboard has **no** hub-process panel, because the hub exports no such metric (L7). |
+| **Hub `/v1/metrics`** | `halite_hub_nodes_connected`, `halite_hub_node_connect_total`, `halite_hub_node_disconnect_total{reason}`, `halite_jobs_dispatched_total`, `halite_job_returns_total`, `halite_jobs_missing_returns`, `halite_hub_request_duration_seconds{route}`, `halite_hub_requests_total{route,code}`, `halite_hub_enrollments_total{result}`, `halite_events_dropped_total`, `halite_event_subscriber_lag_seconds` | ~~Prometheus scrapes it directly.~~ **It cannot.** The hub refuses any TLS client that does not offer the `halite/1` ALPN (`transport.requireProtocol`), and step 0's curl was refused that way. Use `halite-hub metrics --hub <ip>:8301 --cert operator.crt --key operator.key --server-name <ip>` in a loop on the observer, writing exposition files. A Prometheus that needs live data would need a small ALPN-speaking proxy. That loop has **not** been run. |
+| **Grafana** | The panels in `contrib/examples/grafana-dashboard.json`: nodes connected, connects and disconnects, missing returns, dispatched, returns, enrolments, request duration by route | Only if the scrape above feeds a Prometheus. The dashboard has **no** hub-process panel, because the hub exports no such metric (L7). |
 | **Hub host** | RSS, FDs, threads, sockets, ENA allowance counters | H6 sampler, to `/root/simfleet/runs/<step>/hub-samples.tsv` |
 | **CloudWatch** | `CPUUtilization`, `NetworkIn`, `NetworkOut`, `NetworkPacketsIn` for the hub and drivers | Basic monitoring (5-minute, free) as an independent check of CPU and of the network. Detailed monitoring (1-minute) costs a few cents a run, and is worth turning on for step 3. Memory needs the CloudWatch agent. The plan does not install it, and gets memory from H6 instead. |
 | **Drivers** | CPU, RSS of simfleet, ephemeral ports used, `ss -s` | The H6 script, pointed at the simfleet PID |
@@ -374,16 +386,22 @@ In this order, in the same session that raised the instances:
 
 ## 9. What is not known yet
 
-- Whether us-east-1 is the region meant (the task said us-east-2. The
-  hosts are not there).
-- Whether the SRE role can pass the instance profile, launch instances
-  with these tags, and create a placement group. A `DryRun` answers the
-  first two without creating anything.
-- Whether the account's tag policy requires more tags.
+- ~~Whether us-east-1 is the region meant.~~ Confirmed.
+- ~~Whether the SRE role can pass the instance profile, launch instances
+  with these tags, and create a placement group.~~ It can. All three
+  passed `DryRun` (§3.1). The `DryRun` also covered the tag policy for
+  these tags.
 - Whether the official FreeBSD AMIs can be launched in this account.
-- Per-sim memory and CPU on a driver (step 0 measures it).
-- Whether the hub's TLS handshake rate or its per-return work is the
-  first limit (step 2 or 3 shows which).
+- ~~Per-sim memory and CPU on a driver.~~ About 200 KiB per sim with
+  returns in flight (1.0 GB for 5,000 streams, 1.3 GB at peak), and
+  little CPU (§11).
+- ~~Whether the hub's TLS handshake rate or its per-return work is the
+  first limit.~~ The per-return work, by a wide margin, on the evidence
+  of §11. That is not yet proven by a profile.
+- How long `simfleet setup` takes at 20,000. 5,000 took 283 s, and the
+  cost per thousand rose in a straight line (§11). Extrapolating that
+  line gives about an hour for 20,000. That is arithmetic, not a
+  measurement.
 - Whether `halite-node` also leaves one idle connection per return
   (L10, H9).
 - Whether relays can be fed by simfleet without changes (step 5).
@@ -401,17 +419,90 @@ this plan:
 
 ## 10. Order of work, and what needs approval
 
-1. Approve this plan, and confirm the region. *(user)*
-2. Harness PRs: H8, H6, H1, H7, then H2, H3, H9, then H4, H5. *(code; no
+Revised after step 0. Items 1, 3 and 5 of the first order are done.
+
+1. ~~Approve this plan, and confirm the region.~~ Done 2026-11-08.
+2. ~~Step 0 on ami-test-1 and noop2-1.~~ Done 2026-11-08 (§11).
+3. ~~`RunInstances` `DryRun` for permissions.~~ Done 2026-11-08 (§3.1).
+4. ~~**Fix the hub's return path**~~ Done: #689, merged as
+   `adcbcc89`. The keystore's per-name scan was fixed too: #688, merged
+   as `c1a61e7e`.
+5. ~~**Re-run step 0 at 5,000 with that fix**~~ Done 2026-11-08 on
+   `dbbf053d` (§11.1). 5,000 of 5,000 returns, hub peak 1.61 GB:
+   passed.
+6. Harness PRs: H8, H6, H1, H7, then H2, H3, H9, then H4, H5. *(code; no
    AWS)*
-3. Step 0 on ami-test-1 and noop2-1. *(needs approval to use those
-   hosts)*
-4. `contrib/tofu/aws-simfleet/` PR, and `tofu plan` (read-only).
-5. `RunInstances` `DryRun` for permissions. *(ask first)*
-6. Steps 1-3, one session, `tofu apply`, then teardown. *(ask first; it
+7. `contrib/tofu/aws-simfleet/` PR, and `tofu plan` (read-only).
+8. Steps 1-3, one session, `tofu apply`, then teardown. *(ask first; it
    bills)*
-7. Step 4. Step 3F. Step 5 only if 4 passed and the relay work is done.
+9. Step 4. Step 3F. Step 5 only if 4 passed and the relay work is done.
    *(each asked for separately)*
-8. Each result goes into DIVERGENCE 5.279 as a subsection, into
-   `internal/perf`'s rows, into `plan.md` 3.1a, and into handbook
-   chapter 38's table, in the same change as the run.
+10. Each result goes into DIVERGENCE 5.279 as a subsection, into
+    `internal/perf`'s rows, into `plan.md` 3.1a, and into handbook
+    chapter 38's table, in the same change as the run.
+
+## 11. Step 0 results (2026-11-08)
+
+Full numbers, setup and caveats are in DIVERGENCE 5.279. In short:
+
+**Hosts.** Hub on ami-test-1 (c8g.2xlarge, 8 vCPU, 15.7 GiB), fleet on
+noop2-1 (c7g.2xlarge). Both are arm64 Ubuntu 24.04 on a FIPS kernel,
+and both run other agents. Built from `1bd9a6c8` with Go 1.27.3. The hub
+listened on `172.26.28.27:8301`.
+
+| | 1,000 nodes | 5,000 nodes |
+|---|---|---|
+| Connected | 1,000 in 1.6 s | 5,000 in 6.8 s |
+| `test.ping` received | p95 248 ms | last 361 ms |
+| `test.ping` returned | 1,000 of 1,000, p95 4.07 s: **MET** at this size | **1,508 of 5,000**, p50 47 s, 3,492 errors: **NOT MET** |
+| `state.apply` dispatch | last 217 ms: MET | `Submit` blocked 25.5 s, then the last node had it at 26.05 s. The harness printed MET, which is an artefact of its clock (L11 below). |
+| Hub RSS | 118 MB idle, 928 MB peak | **14.2 GB within 60 s, 15.3 GB at the end** |
+| Hub host | fine | thrashed with no free memory, SSM lost, rebooted after 16 min |
+
+**Other results:**
+- `setup`'s re-run fix was broken on purpose and held.
+- setup's rate fell from 50 to 11 identities a second as the store grew
+  (the keystore's `countPending` reads every record per new name).
+- The metrics scrape plan was wrong (§5).
+- A driver needs about 200 KiB per sim.
+
+**L11 (new).** `measure`'s dispatch clock starts before `Submit`. When
+`Submit` itself blocks, the time goes on the dispatch clock, and the
+verdict reads MET on a hub that took 25 s to accept the job. The dispatch
+row needs the time from `Submit` returning, or both times shown.
+
+**Cleanup, checked.** On both hosts: no simfleet units, no processes, no
+`/root/simfleet`, nothing listening on 8301, the Salt agent active, and
+no OOM this boot. No AWS resource exists for this run.
+
+### 11.1 Re-run after the fixes (2026-11-08)
+
+The same hosts, harness and order of runs, built from `main` at
+`dbbf053d`, which has #689 and #688 but not the connection cap. The hub
+unit added `MemoryMax=12G` as a guard against another thrash. It was
+never reached. The full numbers are in DIVERGENCE 5.279.
+
+| | 1,000 nodes | 5,000 nodes | 5,000, `-reuse-client` |
+|---|---|---|---|
+| Connected | 1,000 in 1.65 s | 5,000 in 6.7 s | 5,000 in 6.6 s |
+| `test.ping` returned | 1,000 of 1,000, p95 465 ms: **MET** | **5,000 of 5,000**, p95 1.87 s: **MET** | 5,000 of 5,000, p95 1.43 s: MET |
+| `state.apply` | submit 321 ms, last received 290 ms: MET | submit 803 ms, last received 842 ms: **MET** | submit 273 ms, last 287 ms: MET |
+| Return errors | 0 | 0 | 0 |
+| Hub peak RSS | 353 MB | **1.61 GB** | 0.99 GB |
+
+- `setup` issued 5,000 identities in 73.4 s, at about 15 s per thousand
+  throughout. Before the fix it took 283 s and slowed as it went.
+- The hub logged no TLS handshake errors. The ENA allowance counters
+  stayed at 0.
+- `halite-hub metrics`, run from the driver, worked every time.
+  `halite_job_returns_total{result="succeeded"}` read 22,000, which
+  matches the harness's count exactly.
+- The driver peaked at 1.27 GB for 5,000 sims, the same as before.
+- With the submit now taking under a second, L11 no longer changes a
+  verdict at this size. It is still a harness defect, which H1 fixes.
+- Cleanup was checked on both hosts as above.
+
+**What this does not show.** Neither SPEC row at its own size (10,000
+and 20,000), the 4 GiB row at 20,000, a 16-core hub, FreeBSD, or a
+profile. 1.6 GB at 5,000 is encouraging for the 4 GiB row, but it does
+not extrapolate to 20,000 without a run. That is step 1's job.

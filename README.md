@@ -85,7 +85,7 @@ create: put the tree in a directory you own and pass that to
 | [Evidence](docs/evidence.md) | What has been run against a real tool and what has not, per module, generated from the code. |
 | [Releasing](docs/releasing.md) | What a tag does, how to check a download, and how a release is signed. |
 | [DIVERGENCE.md](docs/DIVERGENCE.md) | What is not built, what differs from the spec, and every test layer's real state. |
-| [Scale run plan](docs/simfleet-aws-plan.md) | A draft, not yet run: how `tools/simfleet` is to measure SPEC 30's hub rows on AWS, step by step from 1,000 to 50,000 simulated nodes. |
+| [Scale run plan](docs/simfleet-aws-plan.md) | How `tools/simfleet` is to measure SPEC 30's hub rows on AWS, from 1,000 to 50,000 simulated nodes, step by step. Step 0 has run: the hub failed at 5,000, was fixed, and passed at 5,000 on the re-run. |
 
 The three generated pages come from `tools/gendocs` and are checked
 against the code by a test, so they cannot drift from the build. The
