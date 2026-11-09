@@ -42009,10 +42009,12 @@ With the change, `go test ./internal/winreg/... ./internal/builtin/...
 **Who sees it.** `win_dacl.has_permission`, `win_dacl.present` and anything
 else that compares accounts by name (L15): two differently-domained
 accounts sharing a short name no longer compare equal when both resolve.
-`win_registry.read_value` and `win_registry.value_present`'s comparison
+`win_registry.read_value` and `win_registry.value_exists`, which calls it
 (L16): a value of a type this build does not name by one of its five
 words now reads its real bytes, or a real error, instead of silently
-reading empty.
+reading empty. `win_registry` ships no state module at all -- SPEC 15.5
+does not name one (DIVERGENCE 4.6) -- so there is no `value_present` to
+affect.
 
 **Not verified.** A domain-joined host, for either lead: L15's SID
 resolution across a real domain controller, and L16's registry values on
@@ -42183,6 +42185,46 @@ The test counts per connection for that reason.
   unit. That descriptor count is not on `main` yet, so this change leaves the
   unit alone. The handbook and the key's documentation say to raise both
   together.
+
+### 5.640 Two leads about winreg that were not bugs, and a mistake of this ledger's own
+
+Issue 608 item 5, leads L25 and L26 (`internal/winreg/winreg_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked on this
+Windows 11 host; not run.
+
+**L25, not verified.** `DeleteKey` opens a key's parent in the view asked
+for and deletes the named child from that handle, which the lead questioned
+because `RegDeleteKey` (what it calls) takes no WOW64 flag of its own --
+only `RegDeleteKeyEx` does, in its `samDesired` parameter. Whether the
+parent handle's own view carries through to a child deleted by name from
+it needed a real split hive to answer. `HKCU\Software`, which this
+project's winreg tests use because it needs no administrator rights, does
+not split by WOW64 at all: `reg query ... /reg:32` and `/reg:64` against
+the same `HKCU\Software` key returned the same data on this host, checked
+directly. The split that exists, under `HKLM\SOFTWARE`, refused a write
+with "Access is denied" to this account, also checked directly. Left as
+the lead found it.
+
+**L26, checked, did not reproduce as described.** `SameData` does have a
+`case` for each of the five types this build can write, so the claim that
+it "ignores the value type" does not hold: reading it answers the
+question, which is the same way several other leads in this issue have
+turned out not to need running anything (5.626, 5.630's "did not fully
+reproduce"). What the lead got right: "nothing calls it" -- confirmed, a
+`grep` for `SameData(` outside its own test finds only its definition.
+`win_registry` ships no state module at all, which is DIVERGENCE 4.6's own
+decision, not a gap: SPEC 15.5 does not name one, and Salt's `reg.present`
+is "a decision for a person rather than a quiet addition." `SameData` is
+that decision's unused preparation, not a defect; left alone.
+
+**A mistake of this ledger's own, found while checking L26.** DIVERGENCE
+5.629 (PR #686, this issue's L15/L16 entry) said the fix reached
+"`win_registry.read_value` and `win_registry.value_present`'s comparison."
+`value_present` does not exist, for the reason the paragraph above gives,
+and the CHANGELOG entry for the same change repeated the error. Both
+corrected here, to `win_registry.read_value` and `value_exists`, which
+calls it. A claim nobody demonstrated is a defect whoever wrote it,
+including this ledger about its own prior entry.
 
 ## 6. Everything else not started
 
