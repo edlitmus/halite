@@ -828,6 +828,15 @@ reaching every node in 842 ms, and hub memory peaking at 1.61 GB
 (DIVERGENCE 5.279). Both rows are met at 5,000. Neither has been run at
 its own size. `docs/simfleet-aws-plan.md` has the next steps.
 
+**Step 1, on a dedicated 16-core hub (2026-11-09, DIVERGENCE 5.279).**
+Raised with `contrib/tofu/aws-simfleet`, built from `0026d9fa`: at 5,000
+nodes, ping p95 1.88 s and every node had the apply within 300 ms, with
+no return errors, and no node disconnected in a 10-minute hold. The hub
+peaked at 1.50 GB while 10,000 idle return connections were still open,
+then held 5,000 streams in about 900 MB. That is about 180 KB a stream,
+or roughly 3.6 GB at 20,000 by arithmetic, which is close enough to the
+4 GiB row that only step 3 can say.
+
 The list below is what the 200-node run left unverified, kept as written.
 What the AWS run answered is in 5.279.
 

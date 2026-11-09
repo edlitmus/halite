@@ -426,8 +426,9 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
 7. ~~`contrib/tofu/aws-simfleet/` PR~~ written, with a mocked
    `tofu test`; `tofu plan` against the test account ran on 2026-11-09:
    2 to add, nothing else. Nothing applied.
-8. Steps 1-3, one session, `tofu apply`, then teardown. *(ask first; it
-   bills)*
+8. ~~Step 1~~ done 2026-11-09 (§11.2), applied and torn down in one
+   session. Steps 2-3 next, one session, `tofu apply`, then teardown.
+   *(ask first; it bills)*
 9. Step 4. Step 3F. Step 5 only if 4 passed and the relay work is done.
    *(each asked for separately)*
 10. Each result goes into DIVERGENCE 5.279 as a subsection, into
@@ -499,3 +500,34 @@ never reached. The full numbers are in DIVERGENCE 5.279.
 and 20,000), the 4 GiB row at 20,000, a 16-core hub, FreeBSD, or a
 profile. 1.6 GB at 5,000 is encouraging for the 4 GiB row, but it does
 not extrapolate to 20,000 without a run. That is step 1's job.
+
+### 11.2 Step 1, a dedicated hub and one driver (2026-11-09)
+
+Raised with this module (c7g.4xlarge hub, one c7g.xlarge driver,
+stock Ubuntu 24.04 arm64), built from `main` at `0026d9fa`. The user
+data was checked on both hosts first: the halt was scheduled, the
+sysctls were set, and chrony read about 2 µs from Amazon Time Sync. The
+full numbers are in DIVERGENCE 5.279.
+
+| 5,000 nodes | Result |
+|---|---|
+| Connected | 5,000 in 7.7 s |
+| `test.ping` returned | 5,000 of 5,000, p95 1.88 s: **MET** |
+| `state.apply` | submit 300 ms, last received 300 ms: **MET** |
+| 10 min hold | 0 disconnects |
+| Hub idle CPU | 7.5% of one core (0.47% of 16): passes step 1's < 10% |
+| Hub peak RSS | 1.50 GB (with 10,000 idle return connections open); 900 MB holding 5,000 streams |
+
+- The ENA `conntrack_allowance_available` read about 1.23 million on
+  the c7g.4xlarge, and every exceeded counter stayed at 0. That answers
+  §8's question about this size's tracked-connection allowance.
+- About 180 KB per idle stream would be about 3.6 GB at 20,000 before any
+  job. That is arithmetic, not a measurement; step 3 measures it. Fixing
+  L10 (H9) first would remove the 10,000 idle return connections from
+  the peak.
+- Teardown was checked with read-only calls: both instances
+  `terminated`, nothing left with the project tag. About 25 minutes of
+  instance time, under $0.50.
+
+**Not covered:** 10,000 and 20,000, more than one driver, FreeBSD, and a
+profile of the idle CPU.
