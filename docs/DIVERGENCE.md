@@ -42532,7 +42532,7 @@ behaviour, for measuring a fleet of nodes built before this change.
   connection idle for 90 s each time too. They run far less often than
   returns, and are left as they are.
 
-### 5.640 The debian leg drove the whole live suite and nothing checked that any of it ran
+### 5.642 The debian leg drove the whole live suite and nothing checked that any of it ran
 
 5.633 named this and left it open: "the `fleetcheck` leg has no equivalent
 of `run.sh`'s skip check, so a future change that made `requireDpkg` skip
@@ -42614,7 +42614,6 @@ container — `TestLivePS*`, the proc beacon, the `reboot` reads, the tmpfs
 listing — are swept in by the catch-all filter and are claimed by nothing:
 this entry closes the debian leg's own claim, not the general case of a
 test that passes on a leg whose list does not mention it.
-
 
 ## 6. Everything else not started
 

@@ -195,7 +195,7 @@ jobs:
       #
       # The image's run.sh drives the suite and fails the leg when a test
       # it claims skipped or stopped existing, the way the rpm legs have
-      # since 5.178. Until 5.640 this leg had no such check and most of
+      # since 5.178. Until 5.642 this leg had no such check and most of
       # what `-run TestLive` selects skips here on purpose, so a green run
       # with nothing Debian in it was possible.
       - name: drive the modules
