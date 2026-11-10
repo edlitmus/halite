@@ -42921,6 +42921,43 @@ changing one that worked.
 here: it needs its own vocabulary and its own convergence rule, which
 this change does not attempt.
 
+### 5.648 Two stale sentences and a stub signature `go vet` already knew was wrong
+
+Issue 608 item 5, leads L27 and L28 (`internal/builtin/mode_windows.go`,
+`ownership_windows.go`, `ownership_other.go`). Found by reading, in the
+issue 321 second-pass audit, both already confirmed by the audit itself
+without needing this machine. Re-checked on this host anyway.
+
+**L27.** `win_dacl` shipped (DIVERGENCE 5.142 and the module list), and
+`ownership_windows.go`'s own top-of-file comment already says so: "It does
+now, so a `user:` on a file state does what it says." Fifty lines later in
+the same file, `keepOwnership`'s comment still said the opposite: "ownership
+is win_dacl's, which is not in this build." `mode_windows.go` had the wider
+version of the same leftover sentence, in both a comment and the warning
+text an operator actually sees: "SPEC 15.3 puts the rest in win_dacl, which
+this build does not have." Both rewritten. The warning now points at
+`win_dacl.present` by name; `TestAModeThatCannotBeCarriedOutIsSaidSoOnceAndConverges`
+(`internal/builtin/mode_windows_test.go`) checks for `win_dacl.present` and
+checks `does not have` is gone.
+
+**L28.** `ownership_other.go`'s `addOwnership` stub -- for a platform that
+is neither `unix` nor `windows`, which nothing this project ships targets --
+took two arguments; the real ones (`ownership_unix.go`, `ownership_windows.go`)
+and every caller (`file.go:175`) pass three. `GOOS=plan9 go vet
+./internal/builtin/...`, exactly as the audit ran it, failed with "too many
+arguments in call to addOwnership" before the fix and passes after. Nothing
+builds for plan9 in this project's CI or releases; the mismatch is only
+reachable by asking `vet` to check that one stub file's signature against
+its callers, which is what `GOOS=plan9` is for here.
+
+With the change, `go test ./internal/builtin/... -count=1` stays green on
+this host, `GOOS=plan9 go vet ./internal/builtin/...` passes, and
+`GOOS=linux/darwin/freebsd/plan9 go build ./internal/builtin/...` all
+succeed.
+
+**Not verified.** Nothing; both leads were confirmed by a build check
+alone, run here and matching what the audit already found by reading.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

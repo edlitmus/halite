@@ -17,7 +17,7 @@ import (
 // win_dacl module of SPEC section 15.3 owns it. Until that ships, a state
 // that asks for ownership here is refused rather than silently ignored.
 
-func addOwnership(m *value.Map, info os.FileInfo) {}
+func addOwnership(m *value.Map, path string, info os.FileInfo) {}
 
 func plannedOwnership(path string, exists bool, wantUser, wantGroup string) (*value.Map, bool, error) {
 	if wantUser == "" && wantGroup == "" {
