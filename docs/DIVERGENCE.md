@@ -42458,6 +42458,80 @@ it does not exist yet. Windows does not run the end-to-end test, because
 the test stops its drivers with an interrupt. No AWS run has used any of
 this yet.
 
+### 5.641 A node left a connection open on the hub for every return it filed
+
+Found while settling limit L10 of the simfleet plan
+(`docs/simfleet-aws-plan.md`, H9). simfleet's own comment said a real
+node opens a new client for every return, and the plan had not checked
+it. It was true. `postReturns` called `hubClient` for each return, and
+each call builds a new `transport.Client`, which builds a new
+`http.Transport` on its first request: a new TCP connection and a new
+TLS handshake. Nothing closed it, so it stayed open and idle on the hub
+for `IdleStreamTimeout`, 90 s.
+
+So the cost the harness measured was the node's, not the harness's. On
+step 1 of the scale run (5.279, 2026-11-09), two jobs to 5,000
+simulated nodes left 10,000 idle return connections beside the 5,000
+streams: 15,002 established at the hub. Resident memory peaked at
+1.50 GB, against about 900 MB holding the streams alone. A real fleet
+of 5,000 nodes would have done the same. By arithmetic, not
+measurement, a job every 30 s to 20,000 nodes would hold 60,000 return
+connections, with `LimitNOFILE` at 65,536 in the shipped unit.
+
+**Fixed.** `postReturns` keeps one client, `returnClient`, from one
+return to the next. It still calls `hubClient` for every return and
+compares what that read with what the kept client was built from: the
+hub's address, the server name, the CA and the certificate. While they
+are the same, the kept client is used, on its open connection. When one
+changes (a renewal, a CA rotation, a new `hub`), the new client is used
+and the old one's idle connections are closed, so the first return after
+a renewal still presents the new certificate, as before.
+`transport.Client.CloseIdleConnections` is new, for that.
+
+Two alternatives were not taken. `transport.Client.CertFiles` follows
+the certificate but not the CA or the address, which `hubClient` reads
+again each time. Posting returns on the subscribe stream's own client
+would need no second connection at all, but a stream that has stopped
+answering without closing would hold the returns until it reconnects.
+
+simfleet now does what the node does: one returns client per simulated
+node, kept, separate from its stream. `-reuse-client` still files
+returns on the stream's connection. `-client-per-return` is the old
+behaviour, for measuring a fleet of nodes built before this change.
+
+**Demonstrated** on darwin/arm64, go1.27.3, by tests only:
+
+- `TestReturnsShareOneConnectionUntilTheCertificateChanges` runs
+  `postReturns` against a real `hub.Server` behind a listener that
+  counts the connections it accepts. 20 returns open 1 connection. A
+  certificate reissued in the node's PKI directory makes the next
+  return open a second.
+- `TestCloseIdleConnectionsClosesTheConnection` watches the server see
+  the client's connection close after `CloseIdleConnections`.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| a new client per return, as before | the node test: 20 returns opened 19 connections at the moment of counting (the 20th still in flight) |
+| the kept client used whatever changed | the node test: 1 connection after the renewal, want 2 |
+| `CloseIdleConnections` does nothing | the transport test: the server still held the connection after 5 s |
+
+**Not covered:**
+
+- No test sees the node close the old client's connection when its
+  certificate changes. The node test counts connections opened, not
+  closed. The transport test covers the method, not the call to it.
+- No run on AWS, or on any fleet. How much of step 1's 1.50 GB peak this
+  removes has not been measured; step 3 at 20,000 is where it shows.
+- No real `halite-node` binary against a real hub: the test drives the
+  node's `postReturns` function in process.
+- Not run on FreeBSD or Linux; the change has no platform-specific code.
+- The anchor reporter (`startAnchoring`) and the grains refresh
+  (`refreshGrains`) still build a new client each time, and so leave a
+  connection idle for 90 s each time too. They run far less often than
+  returns, and are left as they are.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

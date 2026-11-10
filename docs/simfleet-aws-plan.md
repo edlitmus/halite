@@ -31,8 +31,8 @@ with two subcommands:
   certificate, and N node identities. It issues the identities in process
   through `keystore.Authority` (Enroll, Accept, Enroll), against the
   key store under `DIR/state/keys`. **It does not use `/v1/enroll`.**
-- `simfleet run -root DIR -hub ADDR -n N [-ping] [-apply] [-reuse-client]
-  [-ramp R] [-hub-pid PID] [-hold D]` loads N identities, opens one
+- `simfleet run -root DIR -hub ADDR -n N [-ping] [-apply]
+  [-reuse-client | -client-per-return] [-ramp R] [-hub-pid PID] [-hold D]` loads N identities, opens one
   mutual-TLS subscribe stream per node through `transport.Client` at R
   connects per second, then optionally times one `test.ping` (SPEC 30:
   95% of returns in 10 s) and one `state.apply` dispatch (SPEC 30: full
@@ -59,7 +59,7 @@ worked around before the step that depends on it.
 | L7 | **Hub memory only on the same host.** `-hub-pid` reads `ps -o rss=` locally. The hub registers no process or Go runtime metrics (no resident memory, goroutines or file descriptors in `/v1/metrics`), so a hub on another host must be sampled there. | `rss`, `internal/hub/metrics.go` | Every step |
 | L8 | **Fixed (5.640):** `-connect-timeout`. **Connect wait is fixed at 5 minutes.** Below 1,000/s per driver it is too short for large fleets. | `runCmd` | Steps ≥ 20k |
 | L9 | **Fixed (5.640):** `-json`, and the drivers' files. **Output is prose only.** No machine-readable result to archive or merge across drivers. | `measure` | Every step |
-| L10 | **One client per job, never closed.** Each job makes a new `transport.Client` (unless `-reuse-client`). The old one's idle connection stays open until `IdleConnTimeout` (90 s). Whether `halite-node`'s `hubClient` does the same has **not** been checked. That is a pair that must agree. | `connect` | Return volume, FDs |
+| L10 | **Fixed (5.641):** `halite-node` did the same, so the defect was the node's; both now keep one returns client per node. **One client per job, never closed.** Each job makes a new `transport.Client` (unless `-reuse-client`). The old one's idle connection stays open until `IdleConnTimeout` (90 s). Whether `halite-node`'s `hubClient` does the same has **not** been checked. That is a pair that must agree. | `connect` | Return volume, FDs |
 
 ### 1.2 Limits on the hub side, found by reading the code
 
@@ -75,7 +75,9 @@ worked around before the step that depends on it.
   `LimitNOFILE=65536`. With 25,000 streams, plus one connection per
   return that can stay idle for 90 s (L10), the hub could need more than
   50,000 descriptors during one `test.ping`. This is arithmetic, not a
-  measurement.
+  measurement. Since 5.641 a node keeps one returns connection, so the
+  same arithmetic gives about 50,000 at most whatever the job rate,
+  and a fleet of older nodes still gives the first figure.
 - **Enrolment limits** (L6) are deliberate. An enrolment storm from a
   few driver addresses is *meant* to be refused. That test checks that
   the limiter holds and the hub stays healthy. It does not check
@@ -172,7 +174,9 @@ c7i.8xlarge $1.428/h; gp3 $0.08 per GB-month.
   plus 5,000 new connections per job that stay idle for up to 90 s (L10),
   plus TIME_WAIT, leaves room for about two jobs a minute. At 10,000 per
   driver, two jobs inside 90 s would run out. Drivers widen the range to
-  `1024 65535` anyway.
+  `1024 65535` anyway. Since 5.641 that is the `-client-per-return`
+  case only: by default a driver uses two ports per node, 10,000 at
+  5,000 nodes, whatever the job rate.
 - *Memory and CPU (assumption).* A Go TLS client with an HTTP/2
   transport and its goroutines is guessed at 50-200 KiB. 5,000 sims
   would then use 0.25-1 GiB, well inside 8 GiB. The handshake burst of a
@@ -234,8 +238,9 @@ through `tail`), the Prometheus data directory, and the hub-host samplers.
   with at least 120 s between jobs, so that idle connections (L10) and
   TIME_WAIT from one job do not count against the next.
 - **Return volume:** 10 pings in a row at 120 s intervals, then the same
-  with `-reuse-client`. This puts a number on the per-return connection
-  cost that 5.279 left open. Watch hub FDs, `ss -s`, and
+  with `-reuse-client` and with `-client-per-return`. This puts a number
+  on the per-return connection cost that 5.279 left open: the default is
+  a node since 5.641, and `-client-per-return` is one built before it. Watch hub FDs, `ss -s`, and
   `halite_hub_request_duration_seconds{route="/v1/return"}`.
 - **Batch:** `state.apply` with `batch: 10%` and then `batch: 500`
   (needs H4). Check that no more than one batch is in flight, and
@@ -267,7 +272,7 @@ listed in the order the steps need them.
 | H6 | **Done:** `contrib/tofu/aws-simfleet/kit/sampler.sh`, run on host B. A hub-host sampler (a script in the run kit, not in the binary): every 5 s, write the `halite-hub` RSS (`ps -o rss=`), FD count (`/proc/PID/fd`), threads, `ss -s`, and the ENA counters (`ethtool -S`: `conntrack_allowance_available`, `conntrack_allowance_exceeded`, `pps_allowance_exceeded`, `bw_in_allowance_exceeded`, `bw_out_allowance_exceeded`). | All |
 | H7 | **Done (5.640):** `-connect-timeout`. A flag for the connect deadline. | 3+ |
 | H8 | **Done (5.640):** `-json`. `-json` output for each measurement. | All |
-| H9 | Check L10 against `halite-node`, and make simfleet do what the node does. | Return volume |
+| H9 | **Done (5.641):** the node did the same, and was fixed with it. Check L10 against `halite-node`, and make simfleet do what the node does. | Return volume |
 
 Also worth doing, but not this plan: process and Go runtime metrics on
 the hub (`process_resident_memory_bytes`, `go_goroutines`,
@@ -367,8 +372,8 @@ In this order, in the same session that raised the instances:
   hub result.
 - **simfleet is harsher than a fleet in some ways and gentler in
   others** (L3, L4, L10). A NOT MET from today's harness may be the
-  harness. Fix H2, H3 and H9 before you believe a reconnect or
-  saturation result.
+  harness. Fix H2 and H3 before you believe a reconnect or
+  saturation result (H9 is done, 5.641).
 - **One-AZ, one-placement-group numbers are best case.** Production
   nodes are on other networks, with more latency and loss.
 - **Billing:** forgetting teardown. The dead man's switch limits it,
@@ -392,8 +397,8 @@ In this order, in the same session that raised the instances:
   cost per thousand rose in a straight line (§11). Extrapolating that
   line gives about an hour for 20,000. That is arithmetic, not a
   measurement.
-- Whether `halite-node` also leaves one idle connection per return
-  (L10, H9).
+- ~~Whether `halite-node` also leaves one idle connection per return
+  (L10, H9).~~ It did, and no longer does (5.641).
 - Whether relays can be fed by simfleet without changes (step 5).
 - What the hub does at 25,000 connections (nothing stops it, §1.2).
 
@@ -421,8 +426,8 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
    `dbbf053d` (§11.1). 5,000 of 5,000 returns, hub peak 1.61 GB:
    passed.
 6. Harness PRs: ~~H8, H1, H7~~ done (5.640); ~~H6~~ done
-   (`contrib/tofu/aws-simfleet/kit/sampler.sh`); then H2, H3, H9, then
-   H4, H5. *(code; no AWS)*
+   (`contrib/tofu/aws-simfleet/kit/sampler.sh`); ~~H9~~ done (5.641);
+   then H2, H3, then H4, H5. *(code; no AWS)*
 7. ~~`contrib/tofu/aws-simfleet/` PR~~ written, with a mocked
    `tofu test`; `tofu plan` against the test account ran on 2026-11-09:
    2 to add, nothing else. Nothing applied.
@@ -524,7 +529,8 @@ full numbers are in DIVERGENCE 5.279.
 - About 180 KB per idle stream would be about 3.6 GB at 20,000 before any
   job. That is arithmetic, not a measurement; step 3 measures it. Fixing
   L10 (H9) first would remove the 10,000 idle return connections from
-  the peak.
+  the peak. It is fixed (5.641), and how much of the peak that removes
+  has not been measured.
 - Teardown was checked with read-only calls: both instances
   `terminated`, nothing left with the project tag. About 25 minutes of
   instance time, under $0.50.

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,6 +37,23 @@ type anchorLab struct {
 	anchors string
 	pkiDir  string
 	nodeID  string
+	// accepted is how many connections the hub's listener has taken,
+	// which is what a node costs the hub in sockets.
+	accepted *atomic.Int64
+}
+
+// countingListener counts the connections it accepts.
+type countingListener struct {
+	net.Listener
+	n *atomic.Int64
+}
+
+func (l countingListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err == nil {
+		l.n.Add(1)
+	}
+	return c, err
 }
 
 func newAnchorLab(t *testing.T, nodeID string) *anchorLab {
@@ -85,14 +104,25 @@ func newAnchorLab(t *testing.T, nodeID string) *anchorLab {
 	if err != nil {
 		t.Fatal(err)
 	}
+	accepted := new(atomic.Int64)
+	ln = countingListener{Listener: ln, n: accepted}
 	anchorDir := t.TempDir()
 	store, err := hub.OpenAnchorStore(anchorDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A job cache, so that a return the node posts is answered as the
+	// hub answers one: a return for a job this hub never sent is
+	// refused, which is final, where a hub with no cache says 503 and
+	// the node retries for ten seconds.
+	jobs, err := job.OpenCache(filepath.Join(anchorDir, "jobs"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := &hub.Server{
 		Authority:    &keystore.Authority{CA: ca},
 		Anchors:      store,
+		Jobs:         jobs,
 		Fleet:        hub.NewFleet(),
 		PingInterval: time.Second,
 	}
@@ -104,6 +134,7 @@ func newAnchorLab(t *testing.T, nodeID string) *anchorLab {
 	return &anchorLab{
 		server: srv, ca: ca, addr: ln.Addr().String(),
 		anchors: filepath.Join(anchorDir, nodeID+".jsonl"), pkiDir: pkiDir, nodeID: nodeID,
+		accepted: accepted,
 	}
 }
 
