@@ -52,8 +52,8 @@ worked around before the step that depends on it.
 |---|---|---|---|
 | L1 | **Fixed (DIVERGENCE 5.640):** `run -no-submit`, `submit`, `merge`. **One process submits and measures its own nodes.** `run` submits to `P-*` and times only the sims in its own process. Several driver hosts give several separate jobs, not one job to the whole fleet. | `measure` | Every step above one driver |
 | L2 | **Fixed (5.640):** times are kept per jid. **Only one measured job may be in flight.** Any job that arrives during the window is timed as the measured one (DIVERGENCE 5.279). | `answer`, `measure` | Return-volume step |
-| L3 | **Reconnect pacing does not match the node.** A sim waits a fixed 1 s and retries. `halite-node` uses exponential backoff from 1 s to 60 s with ±20% jitter (`cmd/halite-node/reconnect.go`, DIVERGENCE 5.546). A reconnect storm from simfleet is harsher and more synchronised than a real fleet. | `connect` | Reconnect storm |
-| L4 | **Return retry does not match the node.** A sim counts a failed return and gives up. `postReturns` in `halite-node` tries 5 times with a growing delay. Under overload, a real fleet adds load and simfleet removes it. | `answer` | Every step near saturation |
+| L3 | **Fixed (5.642):** both use `internal/nodelink`'s pacer. **Reconnect pacing does not match the node.** A sim waits a fixed 1 s and retries. `halite-node` uses exponential backoff from 1 s to 60 s with ±20% jitter (`internal/nodelink/reconnect.go`, moved from `cmd/halite-node`; #597). A reconnect storm from simfleet is harsher and more synchronised than a real fleet. | `connect` | Reconnect storm |
+| L4 | **Fixed (5.642):** both use `nodelink.PostReturn`. **Return retry does not match the node.** A sim counts a failed return and gives up. `postReturns` in `halite-node` tries 5 times with a growing delay. Under overload, a real fleet adds load and simfleet removes it. | `answer` | Every step near saturation |
 | L5 | **No batch.** `run` sends no `Batch` field, although `transport.SubmitRequest` has `Batch`, `BatchWaitSeconds`, `BatchSafeLimit` and `BatchTimeoutSecs`. | `measure` | Batch step |
 | L6 | **No enrolment over the wire.** `setup` bypasses `/v1/enroll`. That path is what an enrolment storm stresses, with its per-source limit (32 at once, then one every 10 s) and `DefaultMaxPending` = 1,024 (`internal/keystore/authority.go`). | `setupCmd` | Enrolment storm |
 | L7 | **Hub memory only on the same host.** `-hub-pid` reads `ps -o rss=` locally. The hub registers no process or Go runtime metrics (no resident memory, goroutines or file descriptors in `/v1/metrics`), so a hub on another host must be sampled there. | `rss`, `internal/hub/metrics.go` | Every step |
@@ -265,8 +265,8 @@ listed in the order the steps need them.
 | # | Change | Needed by |
 |---|---|---|
 | H1 | **Done (5.640)**, except the chrony offsets, which belong to the run kit. Split submit from measure. `run -no-submit` records, for each sim, the jid and the arrival and return times, as JSON. A new `simfleet submit` sends one job to the whole fleet. A `simfleet merge` reads the drivers' files and computes p50, p95 and last against the submit time. Clocks: Amazon Time Sync through chrony on every host, with `chronyc tracking` offsets recorded before and after each run. Sub-millisecond offset is **assumed**, and that assumption is checked by the recorded offset. | 2+ |
-| H2 | Use the node's reconnect pacing. Move `reconnect` out of `cmd/halite-node` into a shared internal package, so that the two cannot drift. | Reconnect storm |
-| H3 | Retry returns as `postReturns` does. Same reason. | 3+ |
+| H2 | **Done (5.642):** `internal/nodelink`. Use the node's reconnect pacing. Move `reconnect` out of `cmd/halite-node` into a shared internal package, so that the two cannot drift. | Reconnect storm |
+| H3 | **Done (5.642):** `nodelink.PostReturn`. Retry returns as `postReturns` does. Same reason. | 3+ |
 | H4 | Pass through `-batch`, `-batch-wait`. | Batch |
 | H5 | `simfleet enroll-storm`: real `/v1/enroll` calls, with optional token. | Enrolment storm |
 | H6 | **Done:** `contrib/tofu/aws-simfleet/kit/sampler.sh`, run on host B. A hub-host sampler (a script in the run kit, not in the binary): every 5 s, write the `halite-hub` RSS (`ps -o rss=`), FD count (`/proc/PID/fd`), threads, `ss -s`, and the ENA counters (`ethtool -S`: `conntrack_allowance_available`, `conntrack_allowance_exceeded`, `pps_allowance_exceeded`, `bw_in_allowance_exceeded`, `bw_out_allowance_exceeded`). | All |
@@ -371,9 +371,10 @@ In this order, in the same session that raised the instances:
   `conntrack_allowance_exceeded` so that this cannot be mistaken for a
   hub result.
 - **simfleet is harsher than a fleet in some ways and gentler in
-  others** (L3, L4, L10). A NOT MET from today's harness may be the
-  harness. Fix H2 and H3 before you believe a reconnect or
-  saturation result (H9 is done, 5.641).
+  others** (L3, L4, L10). A NOT MET from the harness before 5.641 and
+  5.642 may be the harness: H9, H2 and H3 are done, so a sim now
+  reconnects, retries and holds connections as a node does. A reconnect
+  or saturation result from an older build should be run again.
 - **One-AZ, one-placement-group numbers are best case.** Production
   nodes are on other networks, with more latency and loss.
 - **Billing:** forgetting teardown. The dead man's switch limits it,
@@ -427,7 +428,7 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
    passed.
 6. Harness PRs: ~~H8, H1, H7~~ done (5.640); ~~H6~~ done
    (`contrib/tofu/aws-simfleet/kit/sampler.sh`); ~~H9~~ done (5.641);
-   then H2, H3, then H4, H5. *(code; no AWS)*
+   ~~H2, H3~~ done (5.642); then H4, H5. *(code; no AWS)*
 7. ~~`contrib/tofu/aws-simfleet/` PR~~ written, with a mocked
    `tofu test`; `tofu plan` against the test account ran on 2026-11-09:
    2 to add, nothing else. Nothing applied.

@@ -66,12 +66,12 @@ and ` + "`grains`" + ` supply the data.`,
 		Title: "The control plane: hub, transport, identity, events",
 		Intro: `The second half is distributed systems. These packages carry jobs from an
 operator to nodes and results back, decide who may do what, keep the records, and
-hold the CA. ` + "`transport`" + ` is the mutual-TLS substrate; ` + "`hub`" + ` is the server built on
+hold the CA. ` + "`transport`" + ` is the mutual-TLS substrate, and ` + "`nodelink`" + ` how a node paces its use of it; ` + "`hub`" + ` is the server built on
 it; ` + "`pki`" + ` and ` + "`keystore`" + ` are identity; ` + "`policy`" + ` is authorization; ` + "`eventbus`" + `,
 ` + "`job`" + ` and ` + "`returner`" + ` are the durable records; ` + "`beacon`" + ` and ` + "`schedule`" + ` run on
 nodes; ` + "`api`" + ` and its login packages are the HTTP face.`,
 		Packages: []string{
-			"internal/transport", "internal/hub", "internal/relay", "internal/job",
+			"internal/transport", "internal/nodelink", "internal/hub", "internal/relay", "internal/job",
 			"internal/jobsign", "internal/eventbus", "internal/returner", "internal/beacon",
 			"internal/schedule", "internal/fileserver", "internal/gitfs", "internal/s3fs",
 			"internal/pki", "internal/keystore", "internal/certreload", "internal/renewal",

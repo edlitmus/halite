@@ -22,7 +22,7 @@ Command halite-node is the endpoint agent and the local executor. It replaces th
 
 This build carries everything a node does about its own tree without a hub, and everything it does with one: enrollment, renewal, the subscribe stream, running the jobs that arrive on it, hub-compiled pillar, the file server as a source, beacons, the scheduler, and the mine.
 
-**Files:** `anchor.go`, `beacons.go`, `commands.go`, `doctor.go`, `enroll.go`, `event.go`, `evidence.go`, `execute.go`, `extensions.go`, `grainopts.go`, `jobsignature.go`, `main.go`, `metrics.go`, `mine.go`, `oneshot.go`, `pillarcache.go`, `pillarstore.go`, `reconnect.go`, `rendersandbox.go`, `renewal.go`, `returner.go`, `runtimeconfig.go`, `schedule.go`, `trace.go`; with tests.
+**Files:** `anchor.go`, `beacons.go`, `commands.go`, `doctor.go`, `enroll.go`, `event.go`, `evidence.go`, `execute.go`, `extensions.go`, `grainopts.go`, `jobsignature.go`, `main.go`, `metrics.go`, `mine.go`, `oneshot.go`, `pillarcache.go`, `pillarstore.go`, `rendersandbox.go`, `renewal.go`, `returner.go`, `runtimeconfig.go`, `schedule.go`, `trace.go`; with tests.
 
 ## `cmd/halite-hub`
 
@@ -269,6 +269,8 @@ What is real and what is simulated:
   - What is simulated is the work: a node answers \`test.ping\` with \`true\` and any other function with an empty, successful result, at once. The rows measured here are the hub's, not a node's.
 
 A real node posts its returns on one client of its own, kept from one return to the next and separate from its stream, so that the hub holds two connections per node at most (\`returnClient\` in halite-node). The simulated nodes do the same by default. -reuse-client files returns on the stream's own connection instead, to measure what the second one costs; -client-per-return opens a new connection for every return and never closes it, which is what a node built before DIVERGENCE 5.641 does, to measure a fleet that has not been upgraded.
+
+A simulated node reconnects at the node's pace and retries a return as the node does, through the same code (internal/nodelink), so that a reconnect storm or a hub near saturation sees what a fleet would give it.
 
 	simfleet setup -root DIR -n 20000
 	halite-hub serve --root DIR --config DIR/hub.yaml --listen 127.0.0.1:4510 --names localhost,127.0.0.1
