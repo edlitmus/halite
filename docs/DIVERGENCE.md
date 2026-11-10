@@ -43079,7 +43079,7 @@ shared `summarize` and not by a run of its own; across drivers the
 in-flight count and the gaps are on several clocks, and are worth only
 what the hosts' recorded offsets say.
 
-### 5.626 A TPM's presence was read from a key every Windows has, not from the TPM
+### 5.651 A TPM's presence was read from a key every Windows has, not from the TPM
 
 Issue 608 item 5, leads L10, L11 and L12 (`internal/grains/platform_windows.go`).
 Found by reading, in the issue 321 second-pass audit. Checked and run on

@@ -264,7 +264,7 @@ func collectSecurity(g *value.Map) {
 	// lead L11). That was measured on a GitHub-hosted windows-2022
 	// runner, a Hyper-V VM with no TPM: the key is there, the driver is
 	// stopped with exit code 1077, and no device is bound to it
-	// (DIVERGENCE 5.626). Querying it needs no privilege either.
+	// (DIVERGENCE 5.651). Querying it needs no privilege either.
 	tpmRunning, _ := winsvc.Running("TPM")
 	g.Set("tpm", tpmRunning)
 	// Kernel lockdown is a Linux concept.
