@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"github.com/edlitmus/halite/internal/value"
+	"github.com/edlitmus/halite/internal/winsvc"
 )
 
 // The Windows grain sources are the registry and the Win32 API, which is
@@ -252,20 +253,22 @@ func collectSecurity(g *value.Map) {
 
 	g.Set("secure_boot", regUint(registry.LOCAL_MACHINE,
 		`SYSTEM\CurrentControlSet\Control\SecureBoot\State`, "UEFISecureBootEnabled") == 1)
-	// The presence of a TPM's driver key, which is what Windows itself
-	// keys off and needs no privilege to read.
-	g.Set("tpm", hasKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\TPM`))
+	// Whether the TPM driver is actually running, not whether its
+	// service key exists. The key exists on every Windows install --
+	// confirmed on this host, which has a real TPM 2.0: `vmbus`, the
+	// Hyper-V bus driver, has the same boot-start registration here
+	// though this machine is not a VM, so a service's registration says
+	// nothing about the hardware it is for. A PnP driver is only moved
+	// to the running state when its device actually enumerates, which
+	// `tpm.sys` does not on a machine with no TPM (issue 608 item 5,
+	// lead L11). That was measured on a GitHub-hosted windows-2022
+	// runner, a Hyper-V VM with no TPM: the key is there, the driver is
+	// stopped with exit code 1077, and no device is bound to it
+	// (DIVERGENCE 5.651). Querying it needs no privilege either.
+	tpmRunning, _ := winsvc.Running("TPM")
+	g.Set("tpm", tpmRunning)
 	// Kernel lockdown is a Linux concept.
 	g.Set("lockdown", false)
-}
-
-func hasKey(root registry.Key, path string) bool {
-	k, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
-	if err != nil {
-		return false
-	}
-	k.Close()
-	return true
 }
 
 func collectVirtualization(g *value.Map) {
