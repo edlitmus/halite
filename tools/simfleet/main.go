@@ -20,11 +20,14 @@
 //     `true` and any other function with an empty, successful result, at
 //     once. The rows measured here are the hub's, not a node's.
 //
-// A real node opens a new client, and so a new TLS connection, for every
-// return it files (`postReturns` in halite-node builds one per return).
-// The simulated nodes do the same by default, so the hub sees the load a
-// fleet of real nodes would give it; -reuse-client files returns on one
-// connection per node instead, to measure what that costs.
+// A real node posts its returns on one client of its own, kept from one
+// return to the next and separate from its stream, so that the hub holds
+// two connections per node at most (`returnClient` in halite-node). The
+// simulated nodes do the same by default. -reuse-client files returns on
+// the stream's own connection instead, to measure what the second one
+// costs; -client-per-return opens a new connection for every return and
+// never closes it, which is what a node built before DIVERGENCE 5.641
+// does, to measure a fleet that has not been upgraded.
 //
 //	simfleet setup -root DIR -n 20000
 //	halite-hub serve --root DIR --config DIR/hub.yaml --listen 127.0.0.1:4510 --names localhost,127.0.0.1
@@ -266,6 +269,7 @@ type fleet struct {
 	hubURL, serverName string
 	ca                 *x509.Certificate
 	reuse              bool
+	perReturn          bool
 	sims               []*sim
 	connected          atomic.Int64
 	jobs               *jobs
@@ -284,7 +288,8 @@ func runCmd(args []string) error {
 	hubPID := fs.Int("hub-pid", 0, "the hub's process id, to report its resident memory")
 	ping := fs.Bool("ping", false, "time a test.ping to every simulated node")
 	apply := fs.Bool("apply", false, "time a state.apply dispatch to every simulated node")
-	reuse := fs.Bool("reuse-client", false, "file returns on one connection per node, rather than a new one per return as a real node does")
+	reuse := fs.Bool("reuse-client", false, "file returns on the stream's own connection, rather than on a second one per node as a real node does")
+	perReturn := fs.Bool("client-per-return", false, "file each return on a new connection, never closed, as a node before DIVERGENCE 5.641 does")
 	hold := fs.Duration("hold", 0, "stay connected this long after measuring; with -no-submit, how long to run (0: until interrupted)")
 	jsonOut := fs.String("json", "", "also append each measurement, as one JSON line, to this file")
 	noSubmit := fs.Bool("no-submit", false, "submit nothing: answer whatever jobs arrive, and write what each node saw to -out for `simfleet merge`")
@@ -293,6 +298,9 @@ func runCmd(args []string) error {
 	_ = fs.Parse(args)
 	if *root == "" {
 		return errors.New("-root is required")
+	}
+	if *reuse && *perReturn {
+		return errors.New("-reuse-client and -client-per-return are two different ways to file returns; give one")
 	}
 	if *noSubmit && (*ping || *apply) {
 		return errors.New("-no-submit submits nothing, so it cannot also -ping or -apply; run `simfleet submit` instead")
@@ -312,7 +320,7 @@ func runCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	f := &fleet{hubURL: "https://" + *hub, serverName: *serverName, ca: ca, reuse: *reuse, jobs: newJobs(*n)}
+	f := &fleet{hubURL: "https://" + *hub, serverName: *serverName, ca: ca, reuse: *reuse, perReturn: *perReturn, jobs: newJobs(*n)}
 	for i := *first; i < *first+*n; i++ {
 		id := nodeID(*prefix, i)
 		base := filepath.Join(*root, "fleet", id)
@@ -420,7 +428,14 @@ func (f *fleet) client(s *sim) *transport.Client {
 // connect holds one node's stream open, reconnecting as a node does.
 func (f *fleet) connect(ctx context.Context, s *sim) {
 	stream := f.client(s)
-	returns := stream
+	// The returns client, as halite-node's postReturns keeps it: one,
+	// built once, not the stream's. Across a reconnect it is kept too,
+	// because what a node compares (the hub, the CA, its certificate) is
+	// the same for a simulated node for the whole run.
+	returns := f.client(s)
+	if f.reuse {
+		returns = stream
+	}
 	grains, _ := json.Marshal(map[string]any{"id": s.id, "os": "Simulated", "kernel": "simfleet"})
 	for ctx.Err() == nil {
 		opened := false
@@ -428,7 +443,7 @@ func (f *fleet) connect(ctx context.Context, s *sim) {
 			func() { opened = true; f.connected.Add(1) },
 			func(msg transport.Message) error {
 				if msg.T == transport.MsgJob {
-					if !f.reuse {
+					if f.perReturn {
 						returns = f.client(s)
 					}
 					go f.answer(ctx, returns, s, msg)

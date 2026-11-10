@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
@@ -1065,18 +1066,104 @@ func (n *node) refuse(j *job.Job, err error) {
 // failure: a return that is lost because the connection blinked is a
 // job that looks unresponsive for ever.
 func (n *node) postReturns(ctx context.Context, args *cli.Args, returns <-chan *job.Return) {
+	var via returnClient
+	defer via.close()
+	client := func() *transport.Client {
+		fresh, _ := n.hubClient(args)
+		return via.use(fresh)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case ret := <-returns:
-			client, _ := n.hubClient(args)
-			n.sendReturn(ctx, client, ret)
+			n.sendReturn(ctx, client(), ret)
 		case ret := <-n.refusals:
-			client, _ := n.hubClient(args)
-			n.sendReturn(ctx, client, ret)
+			n.sendReturn(ctx, client(), ret)
 		}
 	}
+}
+
+// returnClient is the one hub client a node posts its returns with, kept
+// from one return to the next while nothing it was built from changes.
+//
+// postReturns used to post each return with the client hubClient had
+// just built, and each of those is a new http.Transport: a new TCP
+// connection, a new TLS handshake, and -- since nothing closed it -- a
+// connection left open and idle on the hub for IdleStreamTimeout (90 s)
+// after the return was filed. A job to 5,000 nodes left 5,000 of them,
+// on top of the 5,000 subscribe streams; two jobs inside 90 s, 10,000.
+// simfleet copies the node, and on its first run on a dedicated hub
+// (DIVERGENCE 5.279, step 1) the hub held 15,002 established
+// connections and its resident memory went from about 900 MB holding
+// the streams to 1.5 GB, which is what SPEC 30's 4 GiB row at 20,000
+// would have been extrapolated from.
+//
+// hubClient is still called for every return, and what it read is
+// compared with what the kept client was built from, so the node goes
+// on doing what it did on a renewal or a CA rotation: the first return
+// after either is posted with the new certificate, on a new connection,
+// and the old client's idle connections are closed rather than left to
+// time out. That is why this compares rather than using
+// transport.Client.CertFiles, which would follow the certificate and
+// not the CA or the hub's address, and why reading the disk again is
+// kept: it is two small files a return, and it is what a renewal's
+// interrupted install is finished by (renewal.Recover, in hubClient).
+//
+// Not the subscribe stream's client, which would put the returns on the
+// stream's own connection and need no second one at all: a stream that
+// has stopped answering without closing would take the returns with it
+// until the stream's reconnect, and a return the node could have filed
+// on a fresh connection is a job that looks unanswered.
+//
+// Only postReturns's goroutine uses one, so it has no lock.
+type returnClient struct {
+	cur *transport.Client
+}
+
+// use is the client to post with: the kept one if fresh describes the
+// same hub, CA and certificate, and fresh otherwise.
+func (r *returnClient) use(fresh *transport.Client) *transport.Client {
+	if r.cur != nil && sameHubClient(r.cur, fresh) {
+		return r.cur
+	}
+	r.close()
+	r.cur = fresh
+	return fresh
+}
+
+func (r *returnClient) close() {
+	if r.cur != nil {
+		r.cur.CloseIdleConnections()
+	}
+}
+
+// sameHubClient is whether a and b would open the same connection: the
+// same address, the same name checked in the hub's certificate, the same
+// CA, and the same certificate presented. The certificate stands for its
+// key, which it binds.
+func sameHubClient(a, b *transport.Client) bool {
+	if a.HubURL != b.HubURL || a.ServerName != b.ServerName {
+		return false
+	}
+	if (a.CA == nil) != (b.CA == nil) || (a.CA != nil && !bytes.Equal(a.CA.Raw, b.CA.Raw)) {
+		return false
+	}
+	if (a.Cert == nil) != (b.Cert == nil) {
+		return false
+	}
+	if a.Cert == nil {
+		return true
+	}
+	if len(a.Cert.Certificate) != len(b.Cert.Certificate) {
+		return false
+	}
+	for i := range a.Cert.Certificate {
+		if !bytes.Equal(a.Cert.Certificate[i], b.Cert.Certificate[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // returnPoster is the one method of transport.Client that sendReturn

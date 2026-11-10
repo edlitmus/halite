@@ -852,6 +852,9 @@ What was not verified:
   returns the jid. That is sound only while one job is in flight.
 - The default of a new TLS connection per return (as `halite-node` does)
   against `-reuse-client`; the cost difference has not been measured.
+  (Since 5.641 neither does that by default: the node and simfleet keep
+  one returns connection per node, and `-client-per-return` is the old
+  behaviour.)
 - FreeBSD, which is tier 1 and about 80% of production. The `ps`-based
   RSS reading is written to answer on both, but has only run on Linux.
 
