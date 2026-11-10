@@ -42788,7 +42788,8 @@ the lead found it.
 `case` for each of the five types this build can write, so the claim that
 it "ignores the value type" does not hold: reading it answers the
 question, which is the same way several other leads in this issue have
-turned out not to need running anything (5.626, 5.630's "did not fully
+turned out not to need running anything (L12 in PR #683's TPM section,
+not yet merged, "read and not a defect"; 5.636's "did not fully
 reproduce"). What the lead got right: "nothing calls it" -- confirmed, a
 `grep` for `SameData(` outside its own test finds only its definition.
 `win_registry` ships no state module at all, which is DIVERGENCE 4.6's own
@@ -42797,12 +42798,15 @@ is "a decision for a person rather than a quiet addition." `SameData` is
 that decision's unused preparation, not a defect; left alone.
 
 **A mistake of this ledger's own, found while checking L26.** DIVERGENCE
-5.629 (PR #686, this issue's L15/L16 entry) said the fix reached
+5.637 (PR #686, this issue's L15/L16 entry) said the fix reached
 "`win_registry.read_value` and `win_registry.value_present`'s comparison."
 `value_present` does not exist, for the reason the paragraph above gives,
-and the CHANGELOG entry for the same change repeated the error. Both
-corrected here, to `win_registry.read_value` and `value_exists`, which
-calls it. A claim nobody demonstrated is a defect whoever wrote it,
+and the CHANGELOG entry for the same change repeated the error. The
+CHANGELOG entry now names `win_registry.read_value` only. `value_exists`
+also reaches the changed code (`winreg.ValueExists` calls `ReadValue`),
+but by reading the code it answered true for such a value before the fix
+and answers true after it, so nothing an operator sees changed there;
+that was not run. A claim nobody demonstrated is a defect whoever wrote it,
 including this ledger about its own prior entry.
 
 ## 6. Everything else not started
