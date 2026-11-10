@@ -55,6 +55,12 @@
 //	simfleet submit -root DIR -hub H -fun test.ping -out ping.json
 //	simfleet merge -submit ping.json a.json b.json
 //
+// -batch, -batch-wait and -batch-timeout, on run or submit, send the job
+// a slice at a time as `halite-hub run --batch` does. A batched result has
+// no SPEC 30 verdict, and reports instead the most nodes that had the job
+// at once and the time from one slice's last return to the next slice's
+// first arrival.
+//
 // `simfleet enroll-storm` is the one command that enrols over the wire:
 // many machines asking for an identity at once, against the hub's
 // per-source limiter and its bound on pending requests.
@@ -326,6 +332,7 @@ func runCmd(args []string) error {
 	noSubmit := fs.Bool("no-submit", false, "submit nothing: answer whatever jobs arrive, and write what each node saw to -out for `simfleet merge`")
 	out := fs.String("out", "", "with -no-submit, the file to write each job's arrival and return times to")
 	driver := fs.String("driver", "", "this driver's name in -out (default: the host name)")
+	batch := addBatchFlags(fs)
 	_ = fs.Parse(args)
 	if *root == "" {
 		return errors.New("-root is required")
@@ -341,6 +348,12 @@ func runCmd(args []string) error {
 	}
 	if *first < 1 {
 		return errors.New("-first counts from 1")
+	}
+	if err := batch.check(); err != nil {
+		return err
+	}
+	if *noSubmit && batch.on() {
+		return errors.New("-no-submit submits nothing, so it has no batch; give -batch to `simfleet submit`")
 	}
 	if *driver == "" {
 		*driver, _ = os.Hostname()
@@ -397,7 +410,7 @@ func runCmd(args []string) error {
 		if !m.on {
 			continue
 		}
-		res, err := f.measure(ctx, op, m.fun, *prefix)
+		res, err := f.measure(ctx, op, m.fun, *prefix, batch)
 		if err != nil {
 			return err
 		}
@@ -534,9 +547,9 @@ func (f *fleet) operator(root string) (*transport.Client, error) {
 // before Submit is sent: a node can answer before Submit has returned,
 // and an operator waits through the submit too. How long the submit
 // itself took is reported beside it.
-func (f *fleet) measure(ctx context.Context, op *transport.Client, fun, prefix string) (result, error) {
+func (f *fleet) measure(ctx context.Context, op *transport.Client, fun, prefix string, batch batchFlags) (result, error) {
 	t0 := time.Now()
-	resp, err := op.Submit(ctx, transport.SubmitRequest{Target: prefix + "-*", Fun: fun})
+	resp, err := op.Submit(ctx, batch.request(prefix+"-*", fun))
 	t1 := time.Now()
 	if err != nil {
 		return result{}, fmt.Errorf("submitting %s: %w", fun, err)
@@ -547,11 +560,24 @@ func (f *fleet) measure(ctx context.Context, op *transport.Client, fun, prefix s
 		target = 10 * time.Second
 	}
 	wait := time.Now().Add(target*3 + 30*time.Second)
-	for time.Now().Before(wait) && filled(rec.returned) < len(f.sims) {
+	if resp.Batch > 0 {
+		wait = time.Now().Add(batch.patience())
+	}
+	for last := 0; time.Now().Before(wait); {
+		n := filled(rec.returned)
+		if n >= len(f.sims) {
+			break
+		}
+		// A batched job is waited for from its last progress, not from
+		// the submit (batchFlags.patience).
+		if resp.Batch > 0 && n > last {
+			wait = time.Now().Add(batch.patience())
+			last = n
+		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	sub := submitFile{JID: resp.JID, Fun: fun, Target: prefix + "-*", Matched: len(resp.Nodes), Absent: len(resp.Absent),
-		SubmitStart: t0, SubmitEnd: t1}
+		SubmitStart: t0, SubmitEnd: t1, Batch: resp.Batch}
 	return summarize(sub, len(f.sims), load(rec.received), load(rec.returned), rec.returnErrs.Load(), 1), nil
 }
 

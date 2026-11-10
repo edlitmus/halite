@@ -21,7 +21,13 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **`simfleet enroll-storm` makes enrolment requests over the wire, as `halite-node enroll` does.** Each request uses a new key and its own connection, and is sent once. It counts the hub's answers by the names `halite_hub_enrollments_total` uses, with the time each took. `simfleet setup -enrollment token` sets the hub to token mode and mints a token for the storm. Before, the harness issued every identity in process and never reached `/v1/enroll`, its limiter, or the bound on pending requests. DIVERGENCE 5.649.
+- **`simfleet enroll-storm` makes enrolment requests over the wire, as `halite-node enroll` does.** Each request uses a new key and its own connection, and is sent once. It counts the hub's answers by the names `halite_hub_enrollments_total` uses, with the time each took. `simfleet setup -enrollment token` sets the hub to token mode and mints a token for the storm. Before, the harness issued every identity in process and never reached `/v1/enroll`, its limiter, or the bound on pending requests. DIVERGENCE 5.651.
+
+- **`simfleet run` and `simfleet submit` can now send a batched job.** They take `-batch`, `-batch-wait` and `-batch-timeout`, spelt and checked as `halite-hub run` does. A batched result has no SPEC 30 verdict. It reports the slice size the hub chose, the most nodes that had the job at once, which is at most one slice if the hub batched as it should, and the time from one slice's last return to the next slice's first arrival. DIVERGENCE 5.650.
+
+- **On Windows, `win_dacl.grant`, `win_dacl.revoke`, `win_dacl.present` and `win_dacl.set_inheritance` now refuse to rewrite a file's access list when it holds a conditional or an object access control entry, instead of silently dropping it.** Before, granting or revoking access for one trustee could make a conditional or an object entry belonging to an entirely different trustee vanish, with no error. DIVERGENCE 5.649.
+
+- **On Windows, a file's warning about the mode it cannot apply now points at `win_dacl.present` instead of claiming this build does not have it.** `win_dacl` shipped; the warning text and a nearby comment did not catch up. DIVERGENCE 5.648.
 
 - **On Windows, `win_task.present` and `win_task.create` now refuse `trigger: "once at HH:MM"` instead of silently registering a task that never runs.** A one-time trigger needs a date as well as a clock time; writing the fixed placeholder date `daily at HH:MM` uses (1970) produced a task the scheduler accepted and then never scheduled — confirmed directly with `schtasks /query /v`, which reported `Next Run Time: N/A`. A tree using this form was already relying on a task that never ran on its own; declare the schedule as the scheduler's own XML (which takes a real `StartBoundary`) instead, or trigger the task once with `win_task.run`. DIVERGENCE 5.647.
 

@@ -6,7 +6,6 @@ import (
 	"net"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -128,16 +127,6 @@ func stormHub(t *testing.T, mode string, setupArgs ...string) (sf, root, addr st
 	})
 	return sf, root, addr
 }
-
-// exe is what Windows needs on the end of a program's name for exec to
-// find it by path: `go build -o bin/simfleet` writes that name exactly,
-// and on Windows a file without .exe is not something exec will run.
-var exe = func() string {
-	if runtime.GOOS == "windows" {
-		return ".exe"
-	}
-	return ""
-}()
 
 func oneStorm(t *testing.T, path string) stormResult {
 	t.Helper()

@@ -178,6 +178,51 @@ func TestOthersNamesAConditionalGrant(t *testing.T) {
 	}
 }
 
+// Grant and Revoke rebuild the whole list from readEntries, which used
+// to skip a conditional or an object entry silently -- found while
+// fixing issue 608 item 3 (DIVERGENCE 5.621), not fixed there. A
+// trustee's conditional grant on a file, left alone by a Grant call for
+// a completely different trustee, used to vanish the moment that call
+// touched the file at all.
+func TestGrantRefusesRatherThanDroppingAConditionalEntry(t *testing.T) {
+	path := privateFile(t)
+	setSDDL(t, path, ownerSDDL(t, path)+`(XA;;FR;;;BU;(Member_of {SID(BU)}))`)
+
+	before, err := Entries(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mentionsUsers(entriesTrustees(before)) {
+		t.Fatalf("the fixture's own conditional entry is not there: %+v", before)
+	}
+
+	// Everyone, not Users: this call has nothing to do with the
+	// conditional entry above, and should not be able to touch it.
+	err = Grant(path, "Everyone", "read", "this_folder_only", false)
+	if err == nil {
+		t.Fatal("Grant accepted a list it cannot faithfully rewrite")
+	}
+	if !strings.Contains(err.Error(), "cannot rewrite") {
+		t.Errorf("the refusal does not say why: %v", err)
+	}
+
+	after, err := Entries(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mentionsUsers(entriesTrustees(after)) {
+		t.Fatalf("the conditional entry was dropped by a Grant that refused: before %+v, after %+v", before, after)
+	}
+}
+
+func entriesTrustees(entries []ACE) []string {
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Trustee
+	}
+	return out
+}
+
 // An object entry carries a flags word and up to two GUIDs before its
 // SID. Reading it at the layout of a plain entry names whatever those
 // bytes happen to spell rather than the account the entry is for.

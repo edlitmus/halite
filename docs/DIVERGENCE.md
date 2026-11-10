@@ -42921,7 +42921,164 @@ changing one that worked.
 here: it needs its own vocabulary and its own convergence rule, which
 this change does not attempt.
 
-### 5.649 simfleet never made an enrolment request over the wire
+### 5.648 Two stale sentences and a stub signature `go vet` already knew was wrong
+
+Issue 608 item 5, leads L27 and L28 (`internal/builtin/mode_windows.go`,
+`ownership_windows.go`, `ownership_other.go`). Found by reading, in the
+issue 321 second-pass audit, both already confirmed by the audit itself
+without needing this machine. Re-checked on this host anyway.
+
+**L27.** `win_dacl` shipped (DIVERGENCE 5.142 and the module list), and
+`ownership_windows.go`'s own top-of-file comment already says so: "It does
+now, so a `user:` on a file state does what it says." Fifty lines later in
+the same file, `keepOwnership`'s comment still said the opposite: "ownership
+is win_dacl's, which is not in this build." `mode_windows.go` had the wider
+version of the same leftover sentence, in both a comment and the warning
+text an operator actually sees: "SPEC 15.3 puts the rest in win_dacl, which
+this build does not have." Both rewritten. The warning now points at
+`win_dacl.present` by name; `TestAModeThatCannotBeCarriedOutIsSaidSoOnceAndConverges`
+(`internal/builtin/mode_windows_test.go`) checks for `win_dacl.present` and
+checks `does not have` is gone.
+
+**L28.** `ownership_other.go`'s `addOwnership` stub -- for a platform that
+is neither `unix` nor `windows`, which nothing this project ships targets --
+took two arguments; the real ones (`ownership_unix.go`, `ownership_windows.go`)
+and every caller (`file.go:175`) pass three. `GOOS=plan9 go vet
+./internal/builtin/...`, exactly as the audit ran it, failed with "too many
+arguments in call to addOwnership" before the fix and passes after. Nothing
+builds for plan9 in this project's CI or releases; the mismatch is only
+reachable by asking `vet` to check that one stub file's signature against
+its callers, which is what `GOOS=plan9` is for here.
+
+With the change, `go test ./internal/builtin/... -count=1` stays green on
+this host, `GOOS=plan9 go vet ./internal/builtin/...` passes, and
+`GOOS=linux/darwin/freebsd/plan9 go build ./internal/builtin/...` all
+succeed.
+
+**Not verified.** Nothing; both leads were confirmed by a build check
+alone, run here and matching what the audit already found by reading.
+
+### 5.649 Grant and Revoke dropped a conditional or an object entry instead of refusing
+
+Issue 608 item 5, the `readEntries` follow-up (`internal/winsec/dacl_windows.go`).
+Found while fixing issue 608 item 3 (DIVERGENCE 5.621), recorded there as "found
+here, not fixed" and carried into issue 608's "still open" list. Checked
+and run on this Windows 11 host.
+
+**The defect.** `readEntries` -- the internal helper `Grant`, `Revoke` and
+both directions of `SetInheritance` use to rebuild a path's whole access
+list -- skipped any entry that was not a plain allow or deny, with a
+comment that already named the risk: "This module does not write them and
+cannot faithfully rewrite them, so carrying one through a replace would
+corrupt it." It then carried on anyway, silently, which is exactly the
+corruption the comment described: calling `Grant` for one trustee could
+make a conditional or an object entry belonging to an entirely different
+trustee vanish, with no error and no warning.
+
+**Shown.** `TestGrantRefusesRatherThanDroppingAConditionalEntry`
+(`internal/winsec/others_windows_test.go`) writes a private file with a
+conditional entry for `BUILTIN\Users` (the same SDDL, `(XA;;FR;;;BU;
+(Member_of {SID(BU)}))`, 5.621's own conditional-entry test uses), then
+calls `Grant` for `Everyone` -- a trustee with nothing to do with the
+conditional entry. On the unchanged code it failed: `Grant` returned
+success, and the conditional entry was gone when read back.
+
+**The change.** `readEntries`'s default case now returns an error naming
+the path and the ACE type, instead of skipping the entry. `Grant`,
+`Revoke` and `SetInheritance` already propagate whatever `readEntries`
+returns, so no other change was needed: a file with an access control
+entry this module cannot faithfully carry through a rewrite now refuses
+the rewrite outright, rather than silently dropping the entry. This is a
+narrower fix than rewriting the list faithfully (reading, in a future
+change, the raw bytes of the entries this module does not model and
+writing them back unchanged); refusing is the safe direction available
+without that larger piece of work.
+
+With the change, `go test ./internal/winsec/... ./internal/builtin/...
+-count=1` is green on this host, including the test above; the rest of
+`internal/winsec`'s suite is unaffected except for one unrelated,
+pre-existing failure already recorded in DIVERGENCE 5.638 (`whoami`
+resolving to Git's own copy on this host's `PATH` rather than
+`System32\whoami.exe`).
+
+**What an operator sees.** `win_dacl.grant`, `win_dacl.revoke`,
+`win_dacl.present` and `win_dacl.set_inheritance` now refuse, naming the
+reason, on a file that holds a conditional or an object access control
+entry for any trustee -- not only the one the call names. Before, the
+call would have succeeded and the other trustee's entry would have been
+gone.
+
+**Not verified.** Faithfully preserving the entry through a rewrite,
+rather than refusing the rewrite. A directory, rather than a file, with
+an inherited conditional or object entry.
+
+### 5.650 simfleet could not send a batched job
+
+Limit L5 of the simfleet plan (`docs/simfleet-aws-plan.md`, H4).
+`transport.SubmitRequest` has carried SPEC 9.3's batch fields since
+batching was built, and `halite-hub run --batch` sends them, but
+simfleet's `run` and `submit` sent neither, so the plan's batch step
+had nothing to run: every job simfleet measured went to every node at
+once.
+
+**Fixed.** `run` and `submit` take `-batch`, `-batch-wait` and
+`-batch-timeout`, spelt as `halite-hub run` spells them and refused as
+it refuses them: a wait or timeout that is negative or not a whole
+number of seconds, which the wire would truncate, and a wait or timeout
+without `-batch`. `-batch-safe-limit` is left out, because a simulated
+node always succeeds and only a timeout could trip it. `run -no-submit`
+refuses `-batch`, since it submits nothing. The result of a batched job:
+
+- carries the size the hub resolved, and no SPEC 30 verdict, because
+  both rows are for a job sent to every node at once and a batch is slow
+  on purpose;
+- reports the most nodes that had the job and had not had their return
+  accepted at any one moment, worked out from the nodes' own times, not
+  from the hub's account of itself. One slice at a time means at most
+  the slice size, and the output says which it was;
+- reports the time from each slice's last return to the next slice's
+  first arrival, while the slices did not overlap.
+
+`run` waits for a batched job from its last progress rather than from
+the submit: the batch timeout (5 minutes if not given), plus the wait,
+plus 30 s, with no new return. A fixed deadline from the submit is
+wrong for a job whose length is what is being measured.
+
+**Demonstrated** on darwin/arm64, go1.27.3, against a real
+`halite-hub serve` on loopback (`TestABatchedJobAgainstARealHub`): 20
+simulated nodes, `-batch 25% -batch-wait 1s`. The hub resolved 5 a
+slice; 4 slices; at most 5 nodes in flight; every gap 1.22 s, which is
+the 1 s wait plus the hub's 200 ms poll for a slice's returns and the
+delivery. Unit tests hold the arithmetic: one slice at a time, two
+slices in flight, a node that never answered, a hand-over in one clock
+tick, no verdict, and the flags' refusals.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| the batch not put on the request | `TestABatchedJobAgainstARealHub`, `TestBatchFlagsRefuseWhatTheHubCannotBeSent` |
+| a SPEC 30 verdict given to a batched job | `TestABatchedJobHasNoVerdict` |
+| fractional seconds accepted | `TestBatchFlagsRefuseWhatTheHubCannotBeSent` |
+| gaps given for slices that overlap | `TestBatchOfSeesTwoSlicesInFlight` |
+| an arrival counted before a return at the same instant | `TestBatchOfAHandOverInOneTick`, which was written after this break first passed every test |
+| a node that never answered counted in flight for ever | `TestBatchOfLeavesOutANodeThatNeverAnswered`; a first attempt at the break left the node a return at time 0, cancelling itself, and passed |
+
+**Seen while doing this, not fixed and not measured.** The hub's
+`awaitBatch` (`internal/hub/batch.go`) polls for a slice's returns by
+reading and decoding every return the job has filed so far, every
+200 ms, for as long as the slice is out. By reading, a job to 10,000
+nodes in slices of 500 reads up to 9,500 return files five times a second by its
+last slice. That is the shape 5.634 removed from the completion check;
+whether it costs anything a hub notices is what the batch step will
+show, and nobody has run it.
+
+**Not covered:** no run on AWS, and no batch larger than 20 nodes. The
+multi-driver path (`submit -batch`, then `merge`) is covered by the
+shared `summarize` and not by a run of its own; across drivers the
+in-flight count and the gaps are on several clocks, and are worth only
+what the hosts' recorded offsets say.
+### 5.651 simfleet never made an enrolment request over the wire
 
 Limit L6 of the simfleet plan (`docs/simfleet-aws-plan.md`, H5).
 `simfleet setup` issues its node identities in process, through
@@ -42978,6 +43135,8 @@ reaches the 1,024 pending records needs 32 or more source addresses,
 which the plan's drivers do not have. The 160 ms a pending answer took
 on loopback was not looked into: it is one machine, eight at a time,
 and is reported here as what was seen, not as a cost.
+
+
 
 ## 6. Everything else not started
 
