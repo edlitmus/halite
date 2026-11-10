@@ -40897,22 +40897,42 @@ desktop and not a VM (checked with `reg query`), so the same mechanism that
 makes `tpm` answer from a key would make a `vmbus` grain say "virtualized"
 on hardware. This host could not show the negative case directly -- it has
 a real TPM 2.0 (`Get-PnpDevice -Class SecurityDevices`: "Trusted Platform
-Module 2.0", status OK) -- so the defect is demonstrated by the `vmbus`
-analogy and by reasoning about how a PnP driver's service state works,
-not by a host where the old code answered wrong.
+Module 2.0", status OK). A GitHub-hosted windows-2022 runner did show it
+(see "L11, shown").
 
 **L11, the change.** `tpm` now answers `winsvc.Running("TPM")`: whether the
 driver is in the running state, which a PnP driver reaches only once its
 matching device enumerates. Querying a service's status needs no privilege,
 same as reading the key did. `hasKey`, now unused, is removed.
 
-**L11, shown.** `TestTPMGrainAnswersFromTheRunningDriverNotTheKey`
-(`internal/grains/platform_windows_test.go`) asserts `tpm == true` on this
-host, cross-checked independently against `Get-PnpDevice`. It does not
-distinguish the fix from the old code here, because both answer true on a
-machine that genuinely has a TPM; it locks in the right answer on the one
-real machine available and documents the mechanism for a reader who does
-have a TPM-less one to try.
+**L11, shown.** The first test asserted `tpm == true`, because this host
+has a TPM. It failed on both Windows CI legs (run 42511768917): a
+windows-2022 runner has no TPM. So the assertion was a fact about one
+machine, not about Windows.
+
+A probe on the runner (run 42879528505, PR 707, a throwaway PR closed
+without merge) recorded these facts, as the standard account `halite-ci`:
+
+- `Win32_ComputerSystem` is Microsoft Corporation, `Virtual Machine`;
+  the OS is Windows Server 2022 Datacenter, 10.0.20348.
+- No Plug and Play device is bound to the `TPM` driver, and there is no
+  `SecurityDevices` class at all.
+- The `TPM` service key exists. `sc qc TPM` shows `tpm.sys`, demand
+  start. `sc query TPM` shows `STOPPED`, exit code 1077 (the driver was
+  never started).
+- So the old code answered `tpm: true` on a machine with no TPM. The new
+  code answers `false`.
+- `Get-Tpm` and the `Win32_Tpm` class need an administrator, so the CI
+  account cannot use them.
+
+`TestTPMGrainAgreesWithThePlugAndPlayDeviceList`
+(`internal/grains/tpm_windows_test.go`) replaces the first test. It asks
+CIM how many working `Win32_PnPEntity` devices are bound to the `TPM`
+driver, which needs no privilege, and holds the grain to that answer on
+the host where it runs. With the change, it passes on the runner. With
+the old key-based code put back (PR 707, second push), it fails on the runner (run 42882044036):
+`tpm = true, but Plug and Play lists 0 working device(s) bound to the TPM
+driver, so want false`.
 
 **L10, did not reproduce.** The lead said `EnclosureType` is probably not a
 registry value, so `chassis` always falls through to `SystemFamily`. On this
@@ -40934,8 +40954,9 @@ SPEC 15.1 names `uuid` among the Hardware grains without specifying which
 source a platform uses. Nothing here contradicts a stated requirement; the
 lead's caveat was already the comment's own caveat.
 
-**Not verified.** A machine with no TPM, to see `winsvc.Running("TPM")`
-read false there. A machine where `EnclosureType` really is absent or not a
+**Not verified.** A machine with a TPM whose driver failed to start,
+where the grain says false and Plug and Play may still list the device.
+A machine where `EnclosureType` really is absent or not a
 `REG_DWORD`, which would be the case the lead's L10 concern described.
 
 ## 6. Everything else not started

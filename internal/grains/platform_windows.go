@@ -259,7 +259,10 @@ func collectSecurity(g *value.Map) {
 	// nothing about the hardware it is for. A PnP driver is only moved
 	// to the running state when its device actually enumerates, which
 	// `tpm.sys` does not on a machine with no TPM (issue 608 item 5,
-	// lead L11). Querying it needs no privilege either.
+	// lead L11). That was measured on a GitHub-hosted windows-2022
+	// runner, a Hyper-V VM with no TPM: the key is there, the driver is
+	// stopped with exit code 1077, and no device is bound to it
+	// (DIVERGENCE 5.626). Querying it needs no privilege either.
 	tpmRunning, _ := winsvc.Running("TPM")
 	g.Set("tpm", tpmRunning)
 	// Kernel lockdown is a Linux concept.
