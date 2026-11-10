@@ -42765,7 +42765,7 @@ original default, unchanged. `win_dacl.grant`, the one-shot execution
 module with the identically-worded old default, which has no comparison to
 converge and was left alone on purpose.
 
-### 5.640 Two leads about winreg that were not bugs, and a mistake of this ledger's own
+### 5.645 Two leads about winreg that were not bugs, and a mistake of this ledger's own
 
 Issue 608 item 5, leads L25 and L26 (`internal/winreg/winreg_windows.go`).
 Found by reading, in the issue 321 second-pass audit. Checked on this
