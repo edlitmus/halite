@@ -212,7 +212,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 - **A failed write or seal no longer costs the evidence log the next record as well.** A write that failed part way left partial bytes that the next record was appended after, and a refused seal left the log holding a closed file, failing every later record until a restart. The segment is cut back to the last whole record, and a segment that cannot be sealed keeps growing and taking records. DIVERGENCE 5.547.
 
-
+- **`hub_tries` now counts failed attempts in a row, so a node no longer gives up on a healthy hub.** It counted every attempt since the node started and never reset the count, so a node set to give up after five stopped after its fifth dropped stream, however far apart the drops were. The count and the reconnect wait now reset when the hub accepts a stream. Before, a node that had been refused a few times waited a minute after every later drop. The wait now varies by ±20%, so nodes that lose the hub together do not all come back at the same moment. `hub_tries: 0` still retries for ever. DIVERGENCE 5.546.
 
 - **Six settings the programs read are now declared, so they are no longer reported as ignored.** `hub_timeout`, `beacon_tick`, `output`, `gitfs_timeout` and `s3_timeout` were honoured and warned about; they are in the reference now. `halite-node doctor` read a setting that does not exist (`require_signed_extensions`) for whether extensions must be signed and so reported, on a default node, that unsigned ones would load; it reads `extension_require_signature`, which defaults to true. Its remedies named settings that are not settings. DIVERGENCE 5.545.
 
