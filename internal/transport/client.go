@@ -207,6 +207,23 @@ func (t tracePropagating) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.next.RoundTrip(req)
 }
 
+// CloseIdleConnections closes the connections this client opened and is
+// not using. One in use -- a subscribe stream, a request in flight -- is
+// left to finish.
+//
+// For a caller that replaces one Client with another and is done with
+// the first: without it the old client's connections stay open, idle,
+// until IdleStreamTimeout, and the hub holds every one of them. The
+// node's return poster does this when what it reads from disk changes.
+func (c *Client) CloseIdleConnections() {
+	c.mu.Lock()
+	h := c.http
+	c.mu.Unlock()
+	if h != nil {
+		h.CloseIdleConnections()
+	}
+}
+
 // Reset drops the cached HTTP client, so that a certificate collected
 // or renewed takes effect on the next request.
 func (c *Client) Reset() {

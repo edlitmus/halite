@@ -158,6 +158,8 @@ var ExemptPaths = []string{
 	// exempt, because that one is this project's own statement of which
 	// provider build it uses.
 	"contrib/tofu/.terraform/",
+	// The same cache for the AWS module beside the lab.
+	"contrib/tofu/aws-simfleet/.terraform/",
 	// Build output is not source.
 	"bin/",
 	"dist/",
