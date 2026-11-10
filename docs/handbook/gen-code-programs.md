@@ -285,7 +285,13 @@ A fleet larger than one machine can hold is several drivers, each running its ow
 	simfleet submit -root DIR -hub H -fun test.ping -out ping.json
 	simfleet merge -submit ping.json a.json b.json
 
+\`simfleet enroll-storm\` is the one command that enrols over the wire: many machines asking for an identity at once, against the hub's per-source limiter and its bound on pending requests.
+
+	simfleet enroll-storm -root DIR -hub H -n 2000
+	simfleet setup -root DIR -enrollment token -token-uses 2000   (then restart the hub)
+	simfleet enroll-storm -root DIR -hub H -n 2000 -token-file DIR/bootstrap.token
+
 \-json appends each result as one JSON line, for a run's archive.
 
-**Files:** `main.go`, `multi.go`, `record.go`; with tests.
+**Files:** `main.go`, `multi.go`, `record.go`, `storm.go`; with tests.
 
