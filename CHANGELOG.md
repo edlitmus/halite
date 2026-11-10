@@ -21,7 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **`simfleet enroll-storm` makes enrolment requests over the wire, as `halite-node enroll` does.** Each request uses a new key and its own connection, and is sent once. It counts the hub's answers by the names `halite_hub_enrollments_total` uses, with the time each took. `simfleet setup -enrollment token` sets the hub to token mode and mints a token for the storm. Before, the harness issued every identity in process and never reached `/v1/enroll`, its limiter, or the bound on pending requests. DIVERGENCE 5.651.
+- **`simfleet enroll-storm` makes enrolment requests over the wire, as `halite-node enroll` does.** Each request uses a new key and its own connection, and is sent once. It counts the hub's answers by the names `halite_hub_enrollments_total` uses, with the time each took. `simfleet setup -enrollment token` sets the hub to token mode and mints a token for the storm. Before, the harness issued every identity in process and never reached `/v1/enroll`, its limiter, or the bound on pending requests. DIVERGENCE 5.652.
 
 - **On Windows, the `tpm` grain now answers from whether the TPM driver is actually running rather than from a service key that exists on every install.** A machine with no TPM reported `tpm: true`. A GitHub-hosted Windows Server 2022 runner, a Hyper-V virtual machine with no TPM, did so; it now reports `false`. DIVERGENCE 5.651.
 

@@ -55,7 +55,7 @@ worked around before the step that depends on it.
 | L3 | **Fixed (5.643):** both use `internal/nodelink`'s pacer. **Reconnect pacing does not match the node.** A sim waits a fixed 1 s and retries. `halite-node` uses exponential backoff from 1 s to 60 s with ±20% jitter (`internal/nodelink/reconnect.go`, moved from `cmd/halite-node`; #597). A reconnect storm from simfleet is harsher and more synchronised than a real fleet. | `connect` | Reconnect storm |
 | L4 | **Fixed (5.643):** both use `nodelink.PostReturn`. **Return retry does not match the node.** A sim counts a failed return and gives up. `postReturns` in `halite-node` tries 5 times with a growing delay. Under overload, a real fleet adds load and simfleet removes it. | `answer` | Every step near saturation |
 | L5 | **Fixed (5.650):** `-batch`, `-batch-wait`, `-batch-timeout`. **No batch.** `run` sends no `Batch` field, although `transport.SubmitRequest` has `Batch`, `BatchWaitSeconds`, `BatchSafeLimit` and `BatchTimeoutSecs`. | `measure` | Batch step |
-| L6 | **Fixed (5.651):** `simfleet enroll-storm`. **No enrolment over the wire.** `setup` bypasses `/v1/enroll`. That path is what an enrolment storm stresses, with its per-source limit (32 at once, then one every 10 s) and `DefaultMaxPending` = 1,024 (`internal/keystore/authority.go`). | `setupCmd` | Enrolment storm |
+| L6 | **Fixed (5.652):** `simfleet enroll-storm`. **No enrolment over the wire.** `setup` bypasses `/v1/enroll`. That path is what an enrolment storm stresses, with its per-source limit (32 at once, then one every 10 s) and `DefaultMaxPending` = 1,024 (`internal/keystore/authority.go`). | `setupCmd` | Enrolment storm |
 | L7 | **Hub memory only on the same host.** `-hub-pid` reads `ps -o rss=` locally. The hub registers no process or Go runtime metrics (no resident memory, goroutines or file descriptors in `/v1/metrics`), so a hub on another host must be sampled there. | `rss`, `internal/hub/metrics.go` | Every step |
 | L8 | **Fixed (5.640):** `-connect-timeout`. **Connect wait is fixed at 5 minutes.** Below 1,000/s per driver it is too short for large fleets. | `runCmd` | Steps ≥ 20k |
 | L9 | **Fixed (5.640):** `-json`, and the drivers' files. **Output is prose only.** No machine-readable result to archive or merge across drivers. | `measure` | Every step |
@@ -261,7 +261,7 @@ through `tail`), the Prometheus data directory, and the hub-host samplers.
   Each driver is one address, and the limiter admits 32 from each, so
   with a few drivers pending stays far below 1,024; reaching that bound
   needs 32 or more source addresses, which this plan does not provide
-  (5.651). Then run in `token` mode for throughput, with `-first` past
+  (5.652). Then run in `token` mode for throughput, with `-first` past
   the manual run's names, since those are already pending. SPEC 30 has
   no enrolment row, so these criteria are ours, and the record says so.
 
@@ -276,7 +276,7 @@ listed in the order the steps need them.
 | H2 | **Done (5.643):** `internal/nodelink`. Use the node's reconnect pacing. Move `reconnect` out of `cmd/halite-node` into a shared internal package, so that the two cannot drift. | Reconnect storm |
 | H3 | **Done (5.643):** `nodelink.PostReturn`. Retry returns as `postReturns` does. Same reason. | 3+ |
 | H4 | **Done (5.650):** on `run` and `submit`, with `-batch-timeout`; the result reports the most nodes in flight and the gap between slices. Pass through `-batch`, `-batch-wait`. | Batch |
-| H5 | **Done (5.651):** with `setup -enrollment token` to mint the token. `simfleet enroll-storm`: real `/v1/enroll` calls, with optional token. | Enrolment storm |
+| H5 | **Done (5.652):** with `setup -enrollment token` to mint the token. `simfleet enroll-storm`: real `/v1/enroll` calls, with optional token. | Enrolment storm |
 | H6 | **Done:** `contrib/tofu/aws-simfleet/kit/sampler.sh`, run on host B. A hub-host sampler (a script in the run kit, not in the binary): every 5 s, write the `halite-hub` RSS (`ps -o rss=`), FD count (`/proc/PID/fd`), threads, `ss -s`, and the ENA counters (`ethtool -S`: `conntrack_allowance_available`, `conntrack_allowance_exceeded`, `pps_allowance_exceeded`, `bw_in_allowance_exceeded`, `bw_out_allowance_exceeded`). | All |
 | H7 | **Done (5.640):** `-connect-timeout`. A flag for the connect deadline. | 3+ |
 | H8 | **Done (5.640):** `-json`. `-json` output for each measurement. | All |
@@ -436,7 +436,7 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
    passed.
 6. Harness PRs: ~~H8, H1, H7~~ done (5.640); ~~H6~~ done
    (`contrib/tofu/aws-simfleet/kit/sampler.sh`); ~~H9~~ done (5.641);
-   ~~H2, H3~~ done (5.643); ~~H4~~ done (5.650); ~~H5~~ done (5.651). *(code; no AWS)*
+   ~~H2, H3~~ done (5.643); ~~H4~~ done (5.650); ~~H5~~ done (5.652). *(code; no AWS)*
 7. ~~`contrib/tofu/aws-simfleet/` PR~~ written, with a mocked
    `tofu test`; `tofu plan` against the test account ran on 2026-11-09:
    2 to add, nothing else. Nothing applied.
