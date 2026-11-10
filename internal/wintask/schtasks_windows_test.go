@@ -370,15 +370,48 @@ func TestWellKnownAccountsCompareEqualByEitherName(t *testing.T) {
 	}
 }
 
-// The parser has to survive the document schtasks actually prints:
-// an encoding declaration it does not honour, and doubled carriage
+// The parser has to survive the document schtasks actually prints: an
+// encoding declaration it does not honour, and doubled carriage
 // returns.
+//
+// This is schtasks' own output, captured on this host (issue 608 item
+// 5, lead L17, which found the fixture here built by hand instead):
+// `Create` with `Task{Command: "cmd.exe", Enabled: false, RunAs:
+// "S-1-5-18"}`, then `/query /tn ... /xml ONE`, redirected the same way
+// `run` redirects it. Shortened to the elements this test and
+// `toTask` read; the rest is the shape of a real document, not a
+// guess at one.
 func TestTheParserSurvivesWhatSchtasksActuallyPrints(t *testing.T) {
 	raw := "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\r\n" +
 		"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\r\n" +
-		"  <Settings><Enabled>false</Enabled></Settings>\r\r\n" +
-		"  <Actions><Exec><Command>cmd.exe</Command></Exec></Actions>\r\r\n" +
-		"</Task>\r\r\n"
+		"  <RegistrationInfo>\r\r\n" +
+		"    <Author>halite</Author>\r\r\n" +
+		"    <URI>\\halite-capture-test</URI>\r\r\n" +
+		"  </RegistrationInfo>\r\r\n" +
+		"  <Principals>\r\r\n" +
+		"    <Principal id=\"Author\">\r\r\n" +
+		"      <UserId>S-1-5-18</UserId>\r\r\n" +
+		"      <LogonType>InteractiveToken</LogonType>\r\r\n" +
+		"    </Principal>\r\r\n" +
+		"  </Principals>\r\r\n" +
+		"  <Settings>\r\r\n" +
+		"    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\r\n" +
+		"    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\r\n" +
+		"    <Enabled>false</Enabled>\r\r\n" +
+		"    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\r\n" +
+		"    <StartWhenAvailable>true</StartWhenAvailable>\r\r\n" +
+		"    <IdleSettings>\r\r\n" +
+		"      <StopOnIdleEnd>true</StopOnIdleEnd>\r\r\n" +
+		"      <RestartOnIdle>false</RestartOnIdle>\r\r\n" +
+		"    </IdleSettings>\r\r\n" +
+		"  </Settings>\r\r\n" +
+		"  <Triggers />\r\r\n" +
+		"  <Actions Context=\"Author\">\r\r\n" +
+		"    <Exec>\r\r\n" +
+		"      <Command>cmd.exe</Command>\r\r\n" +
+		"    </Exec>\r\r\n" +
+		"  </Actions>\r\r\n" +
+		"</Task>"
 	parsed, err := parseXML([]byte(raw))
 	if err != nil {
 		t.Fatalf("the document schtasks prints could not be read: %v", err)

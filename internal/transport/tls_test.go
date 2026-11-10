@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -17,6 +18,8 @@ type fixture struct {
 	ca     *pki.CA
 	url    string
 	denied *Denylist
+	// closed is sent to each time the server sees a connection close.
+	closed chan struct{}
 }
 
 // newFixture stands up a real TLS server with the real configurations,
@@ -46,10 +49,18 @@ func newFixture(t *testing.T, handler http.Handler) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{Handler: handler}
+	closed := make(chan struct{}, 64)
+	srv := &http.Server{Handler: handler, ConnState: func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			select {
+			case closed <- struct{}{}:
+			default:
+			}
+		}
+	}}
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Close() })
-	return &fixture{ca: ca, url: "https://" + ln.Addr().String(), denied: denied}
+	return &fixture{ca: ca, url: "https://" + ln.Addr().String(), denied: denied, closed: closed}
 }
 
 // enrolledPair issues to a node and returns the material, so a test can

@@ -34,7 +34,7 @@ from a directory you control, one working operator, and a green
 > `main`. The hub ran on FreeBSD 14.5-RELEASE in a bastille jail on `beastie`
 > (host kernel 15.1-RELEASE-p6, amd64), as root, from the `freebsd-amd64`
 > archive built locally with `bmake dist`. The Linux hub ran as root on
-> `noop-1` (Ubuntu 22.04.5 LTS, arm64), with binaries built from `main`. That
+> `host-a` (Ubuntu 22.04.5 LTS, arm64), with binaries built from `main`. That
 > host is shared and was not fresh: it also runs `salt-minion`, `postfix` and <!-- lexicon:allow -->
 > `sssd`. These runs found three defects, all in the steps below: step 3
 > (DIVERGENCE 5.625), step 4 (DIVERGENCE 5.624) and step 6 (DIVERGENCE 5.625).
@@ -195,7 +195,7 @@ metrics: true
 In the archives built up to and including those before DIVERGENCE 5.624,
 `examples/hub.yaml` sets these three keys to FreeBSD paths. This is also true
 of the Linux archive. If you keep them on Linux, the hub stops at once. On
-`noop-1` the log said `halite: creating /usr/local/etc/halite/pki: mkdir
+`host-a` the log said `halite: creating /usr/local/etc/halite/pki: mkdir
 /usr/local/etc/halite: read-only file system`, and systemd reported
 `status=78/CONFIG`. After the three lines were deleted, the hub started and
 made its CA in `/etc/halite/pki`. On FreeBSD the paths are correct. Keep them.
@@ -418,7 +418,7 @@ hub no node has joined is untested.
 | FreeBSD: `install: /usr/local/etc/rc.d: No such file or directory` | The host has no packages, so `/usr/local/etc/rc.d` does not exist | `sudo install -d -m 0755 /usr/local/etc/rc.d`, then install the script again (step 6) |
 | Linux: the hub stops at once with `mkdir /usr/local/etc/halite: read-only file system`, and systemd shows `status=78/CONFIG` | The example `hub.yaml` sets `pki_dir`, `state_dir` and `policy` to FreeBSD paths | Delete those three lines from `hub.yaml` (step 4), then start the hub |
 | FreeBSD: `service halite_hub restart` waits at `Waiting for PIDS: <pid>` and does not return | The cause is not known. It happened twice in a jail. The hub had already logged `the hub stopped`, and the process did not exist. A new `pwait <pid>` returned at once. | Stop the waiting `pwait` process. The restart then finishes and starts the hub. Ten more restarts in a row took about one second each. |
-| Linux, with a specific `listen:` address: `halite-hub runner manage.status` says `dial tcp 127.0.0.1:8301: connect: connection refused` | The command dials `localhost`, and the hub listens on the one address only | Add `--hub ADDRESS:PORT` after the subcommand, for example `--hub 172.26.28.10:8301` |
+| Linux, with a specific `listen:` address: `halite-hub runner manage.status` says `dial tcp 127.0.0.1:4510: connect: connection refused` | The command dials `localhost`, and the hub listens on the one address only | Add `--hub ADDRESS:PORT` after the subcommand, for example `--hub 10.0.0.10:4510` |
 | Nothing listens on 4510 | Firewall, or another service has the port | `listen:` in `hub.yaml`, or free the port |
 | `doctor` warns about the pillar | A pillar file does not compile | Run `halite-node pillar items --local --pillar-root …` against it |
 

@@ -1044,12 +1044,19 @@ FLEETCHECK_IMAGE ?= halite-fleet:bookworm
 fleetcheck-image:
 	docker build -t $(FLEETCHECK_IMAGE) contrib/docker/fleet
 
+# The test command is contrib/docker/fleet/run.sh's, not this recipe's.
+# It used to be here, and the script ended by exec'ing whatever the
+# recipe passed: the run happened and nothing checked that the Debian
+# tests in it had not all skipped, which is the one failure a leg like
+# this has. The script now runs the suite and holds it to a list of tests
+# that must have passed, the way the rpm legs have since 5.178, and it
+# refuses an argument so that this recipe cannot drift back into being a
+# second way to start it.
 fleetcheck: fleetcheck-image
 	docker run --rm --network none \
 		-v "$(CURDIR)":/src -w /src \
 		-v halite-gocache:/gocache -v halite-gomodcache:/gomodcache \
-		$(FLEETCHECK_IMAGE) \
-		go test -count=1 -v -run TestLive ./internal/builtin/
+		$(FLEETCHECK_IMAGE)
 
 # `make fleetcheck-rocky9`, `fleetcheck-alma8` and `fleetcheck-leap16`
 # drive the RHEL and SUSE rows the way `fleetcheck` drives Debian's.
