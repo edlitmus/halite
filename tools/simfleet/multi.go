@@ -51,9 +51,13 @@ func submitCmd(args []string) error {
 	prefix := fs.String("prefix", "sim", "the node id prefix setup used")
 	fun := fs.String("fun", "test.ping", "the function to send to every simulated node")
 	out := fs.String("out", "", "write when the job was sent and accepted, as JSON, here")
+	batch := addBatchFlags(fs)
 	_ = fs.Parse(args)
 	if *root == "" || *out == "" {
 		return errors.New("-root and -out are required")
+	}
+	if err := batch.check(); err != nil {
+		return err
 	}
 	ca, err := pki.Files{Dir: filepath.Join(*root, "pki")}.ReadCert(pki.CACertFile)
 	if err != nil {
@@ -65,13 +69,13 @@ func submitCmd(args []string) error {
 	}
 	target := *prefix + "-*"
 	start := time.Now()
-	resp, err := op.Submit(context.Background(), transport.SubmitRequest{Target: target, Fun: *fun})
+	resp, err := op.Submit(context.Background(), batch.request(target, *fun))
 	end := time.Now()
 	if err != nil {
 		return fmt.Errorf("submitting %s: %w", *fun, err)
 	}
 	sub := submitFile{JID: resp.JID, Fun: *fun, Target: target, Matched: len(resp.Nodes), Absent: len(resp.Absent),
-		SubmitStart: start, SubmitEnd: end}
+		SubmitStart: start, SubmitEnd: end, Batch: resp.Batch}
 	b, err := json.MarshalIndent(sub, "", "  ")
 	if err != nil {
 		return err
