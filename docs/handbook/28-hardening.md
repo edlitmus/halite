@@ -281,8 +281,8 @@ the wrong file. Ask the binary, not its name:
 > On 2026-11-05 the published v0.1.1 `linux-arm64-fips` and `linux-amd64-fips`
 > archives, and the ordinary archives, were fetched and checked against
 > SHA256SUMS on two Ubuntu hosts already in kernel FIPS mode on Ubuntu Pro
-> `fips-updates`: `ami-test-1` (arm64, Ubuntu 24.04.5, kernel
-> 6.8.0-1067-aws-fips) and `noop2-1` (amd64, Ubuntu 22.04.5, kernel
+> `fips-updates`: `host-c` (arm64, Ubuntu 24.04.5, kernel
+> 6.8.0-1067-aws-fips) and `host-b` (amd64, Ubuntu 22.04.5, kernel
 > 5.15.0-1117-aws-fips). All six `-fips` binaries reported `fips mode on,
 > module v1.0.0, self-tests passed`. The hub (amd64), the API (amd64) and the
 > node (arm64) ran as services under the shipped drop-ins, with only the

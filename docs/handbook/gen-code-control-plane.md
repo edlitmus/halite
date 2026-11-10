@@ -6,7 +6,7 @@
 
 The second half is distributed systems. These packages carry jobs from an
 operator to nodes and results back, decide who may do what, keep the records, and
-hold the CA. `transport` is the mutual-TLS substrate; `hub` is the server built on
+hold the CA. `transport` is the mutual-TLS substrate, and `nodelink` how a node paces its use of it; `hub` is the server built on
 it; `pki` and `keystore` are identity; `policy` is authorization; `eventbus`,
 `job` and `returner` are the durable records; `beacon` and `schedule` run on
 nodes; `api` and its login packages are the HTTP face.
@@ -78,6 +78,23 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `Unreachable` (func): Unreachable reports whether a request failed because no hub answered.
 - `WriteError` (func): WriteError sends a failure in the one shape.
 - `WriteJSON` (func): WriteJSON sends a value with the canonical settings of SPEC 6.4: HTML escaping off, because this is not a browser and a `&` in a command line should survive.
+
+## `internal/nodelink`
+
+Import path `github.com/edlitmus/halite/internal/nodelink`.
+
+Package nodelink is how a node holds its link to the hub: the pace of its reconnects, and how it retries a return the hub did not take.
+
+It is shared by halite-node and simfleet, which simulates thousands of nodes against one hub to measure SPEC 30's rows. The two used to have their own copies: simfleet reconnected every second where a node backs off to a minute with jitter, and gave up on a return at its first failure where a node tries five times. So a reconnect storm from simfleet was harsher and more synchronised than a fleet's, and near saturation a fleet adds load that simfleet took away (DIVERGENCE 5.643, limits L3 and L4 of docs/simfleet-aws-plan.md). One copy means a change to the node's behaviour is a change to what simfleet measures.
+
+**Files:** `reconnect.go`, `returns.go`; with tests.
+
+**Exports.**
+
+- `NewReconnect` (func): NewReconnect is a pacer that gives up after tries failures in a row; zero is never.
+- `PostReturn` (func): PostReturn posts one return, retrying a failure that may succeed on a retry: a return lost because the connection blinked is a job that looks unanswered for ever.
+- `Poster` (type): Poster is the one method of transport.Client that PostReturn uses, so that a test can put anything behind it.
+- `Reconnect` (type): Reconnect is the pace of an agent's attempts to hold its stream to the hub, and the point at which `hub_tries` says to stop.
 
 ## `internal/hub`
 

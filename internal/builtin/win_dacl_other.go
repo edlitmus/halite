@@ -45,3 +45,9 @@ func winDACLEntryFor(path, trustee string) (string, error) { return "", notWindo
 // sameAccountBySID is a Windows-only correction to sameAccount's
 // bare-name fallback; nothing here ever resolves a Windows SID.
 func sameAccountBySID(a, b string) (same, ok bool) { return false, false }
+
+// canonicalPermissionAndScope is a Windows-only correction;
+// winDACLEntryFor already refuses before this is ever reached here.
+func canonicalPermissionAndScope(permission, scope string) (string, string, error) {
+	return permission, scope, nil
+}
