@@ -42921,6 +42921,73 @@ changing one that worked.
 here: it needs its own vocabulary and its own convergence rule, which
 this change does not attempt.
 
+### 5.648 simfleet could not send a batched job
+
+Limit L5 of the simfleet plan (`docs/simfleet-aws-plan.md`, H4).
+`transport.SubmitRequest` has carried SPEC 9.3's batch fields since
+batching was built, and `halite-hub run --batch` sends them, but
+simfleet's `run` and `submit` sent neither, so the plan's batch step
+had nothing to run: every job simfleet measured went to every node at
+once.
+
+**Fixed.** `run` and `submit` take `-batch`, `-batch-wait` and
+`-batch-timeout`, spelt as `halite-hub run` spells them and refused as
+it refuses them: a wait or timeout that is negative or not a whole
+number of seconds, which the wire would truncate, and a wait or timeout
+without `-batch`. `-batch-safe-limit` is left out, because a simulated
+node always succeeds and only a timeout could trip it. `run -no-submit`
+refuses `-batch`, since it submits nothing. The result of a batched job:
+
+- carries the size the hub resolved, and no SPEC 30 verdict, because
+  both rows are for a job sent to every node at once and a batch is slow
+  on purpose;
+- reports the most nodes that had the job and had not had their return
+  accepted at any one moment, worked out from the nodes' own times, not
+  from the hub's account of itself. One slice at a time means at most
+  the slice size, and the output says which it was;
+- reports the time from each slice's last return to the next slice's
+  first arrival, while the slices did not overlap.
+
+`run` waits for a batched job from its last progress rather than from
+the submit: the batch timeout (5 minutes if not given), plus the wait,
+plus 30 s, with no new return. A fixed deadline from the submit is
+wrong for a job whose length is what is being measured.
+
+**Demonstrated** on darwin/arm64, go1.27.3, against a real
+`halite-hub serve` on loopback (`TestABatchedJobAgainstARealHub`): 20
+simulated nodes, `-batch 25% -batch-wait 1s`. The hub resolved 5 a
+slice; 4 slices; at most 5 nodes in flight; every gap 1.22 s, which is
+the 1 s wait plus the hub's 200 ms poll for a slice's returns and the
+delivery. Unit tests hold the arithmetic: one slice at a time, two
+slices in flight, a node that never answered, a hand-over in one clock
+tick, no verdict, and the flags' refusals.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| the batch not put on the request | `TestABatchedJobAgainstARealHub`, `TestBatchFlagsRefuseWhatTheHubCannotBeSent` |
+| a SPEC 30 verdict given to a batched job | `TestABatchedJobHasNoVerdict` |
+| fractional seconds accepted | `TestBatchFlagsRefuseWhatTheHubCannotBeSent` |
+| gaps given for slices that overlap | `TestBatchOfSeesTwoSlicesInFlight` |
+| an arrival counted before a return at the same instant | `TestBatchOfAHandOverInOneTick`, which was written after this break first passed every test |
+| a node that never answered counted in flight for ever | `TestBatchOfLeavesOutANodeThatNeverAnswered`; a first attempt at the break left the node a return at time 0, cancelling itself, and passed |
+
+**Seen while doing this, not fixed and not measured.** The hub's
+`awaitBatch` (`internal/hub/batch.go`) polls for a slice's returns by
+reading and decoding every return the job has filed so far, every
+200 ms, for as long as the slice is out. By reading, a job to 10,000
+nodes in slices of 500 reads up to 9,500 return files five times a second by its
+last slice. That is the shape 5.634 removed from the completion check;
+whether it costs anything a hub notices is what the batch step will
+show, and nobody has run it.
+
+**Not covered:** no run on AWS, and no batch larger than 20 nodes. The
+multi-driver path (`submit -batch`, then `merge`) is covered by the
+shared `summarize` and not by a run of its own; across drivers the
+in-flight count and the gaps are on several clocks, and are worth only
+what the hosts' recorded offsets say.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

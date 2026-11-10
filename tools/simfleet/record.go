@@ -110,6 +110,9 @@ type submitFile struct {
 	Absent      int       `json:"absent"`
 	SubmitStart time.Time `json:"submit_start"`
 	SubmitEnd   time.Time `json:"submit_end"`
+	// Batch is the slice size the hub resolved -batch to, as it answered
+	// the submit; zero for an unbatched job.
+	Batch int `json:"batch,omitempty"`
 }
 
 // latency is one distribution, in seconds from the start of the submit.
@@ -140,8 +143,9 @@ type result struct {
 	// verdict is taken from the send, which is what an operator waits
 	// through; this is shown beside it because a submit that blocks for
 	// 25 s otherwise hides inside a MET (limit L11).
-	ReceivedAfterAccept float64 `json:"last_received_after_accept_seconds"`
-	Verdict             *spec30 `json:"verdict,omitempty"`
+	ReceivedAfterAccept float64      `json:"last_received_after_accept_seconds"`
+	Verdict             *spec30      `json:"verdict,omitempty"`
+	Batch               *batchResult `json:"batch,omitempty"`
 }
 
 type spec30 struct {
@@ -181,6 +185,14 @@ func summarize(sub submitFile, expected int, received, returned []int64, returnE
 	}
 	if len(recv) > 0 {
 		r.ReceivedAfterAccept = (time.Duration(t0) + pct(recv, 100) - time.Duration(sub.SubmitEnd.UnixNano())).Seconds()
+	}
+	// A batched job gets no SPEC 30 verdict. The rows are "a test.ping
+	// to 10,000" and "a state.apply dispatch to 10,000", and a job sent a
+	// slice at a time is slower on purpose: judging it against either
+	// would report the batch as NOT MET for doing what it was asked.
+	if sub.Batch > 0 {
+		r.Batch = batchOf(sub.Batch, expected, received, returned)
+		return r
 	}
 	if target, what, ok := spec30Row(sub.Fun); ok {
 		v := &spec30{Want: expected, Target: target.Seconds()}
@@ -242,6 +254,19 @@ func (r result) print(w io.Writer) {
 		secs(r.ReceivedAfterAccept))
 	fmt.Fprintf(w, "  returned by %d of %d: p50 %s, p95 %s, last %s; %d return error(s)\n",
 		r.Returned.Count, r.Expected, secs(r.Returned.P50), secs(r.Returned.P95), secs(r.Returned.Last), r.ReturnErrors)
+	if b := r.Batch; b != nil {
+		fmt.Fprintf(w, "  batch of %d, %d slice(s): at most %d node(s) had the job at once, ", b.Size, b.Slices, b.PeakInFlight)
+		if b.PeakInFlight <= b.Size {
+			fmt.Fprintf(w, "so one slice at a time\n")
+		} else {
+			fmt.Fprintf(w, "MORE THAN ONE SLICE IN FLIGHT\n")
+		}
+		if g := b.Gaps; g != nil {
+			fmt.Fprintf(w, "  from a slice's last return to the next slice's first arrival: p50 %s, p95 %s, max %s\n",
+				secs(g.P50), secs(g.P95), secs(g.Last))
+		}
+		fmt.Fprintf(w, "  no SPEC 30 verdict: its rows are for a job sent to every node at once\n")
+	}
 	if v := r.Verdict; v != nil {
 		word := "MET"
 		if !v.Met {

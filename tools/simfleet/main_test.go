@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +210,86 @@ func TestTwoDriversOneJob(t *testing.T) {
 			t.Fatalf("the JSON names jid %s for %s, and the printed output does not:\n%s", r.JID, r.Fun, out)
 		}
 	}
+}
+
+// A batched job against the real hub: every return comes back, the hub
+// resolved the size, at most one slice was ever in flight, and each gap
+// between slices is at least the -batch-wait the hub was given. No SPEC
+// 30 verdict, because the rows are for an unbatched job.
+func TestABatchedJobAgainstARealHub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs a hub and the harness")
+	}
+	sf, root, addr := startHub(t, 20)
+	jsonl := filepath.Join(t.TempDir(), "batch.jsonl")
+	out, err := exec.Command(sf, "run", "-root", root, "-hub", addr, "-server-name", "127.0.0.1",
+		"-n", "20", "-ping", "-batch", "25%", "-batch-wait", "1s", "-json", jsonl).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
+	}
+	t.Logf("simfleet run printed:\n%s", out)
+	r := oneResult(t, jsonl)
+	b := r.Batch
+	if r.Returned.Count != 20 || r.Verdict != nil || b == nil {
+		t.Fatalf("result %+v, batch %+v; want 20 returns, no verdict, a batch\n%s", r, b, out)
+	}
+	if b.Size != 5 || b.Slices != 4 || b.PeakInFlight < 1 || b.PeakInFlight > 5 {
+		t.Fatalf("batch %+v; want 25%% of 20 = 5 a slice, 4 slices, 1 to 5 in flight\n%s", b, out)
+	}
+	if b.Gaps == nil || b.Gaps.Count != 3 || b.Gaps.P50 < 1 {
+		t.Fatalf("gaps %+v; want 3, each at least the 1 s -batch-wait\n%s", b.Gaps, out)
+	}
+	if !strings.Contains(string(out), "so one slice at a time") || strings.Contains(string(out), "SPEC 30 95%") {
+		t.Fatalf("run printed:\n%s", out)
+	}
+}
+
+// startHub builds the hub and simfleet, sets up n identities and serves
+// them, and returns the simfleet binary, the root and the hub's address.
+func startHub(t *testing.T, n int) (sf, root, addr string) {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	for _, pkg := range []string{"cmd/halite-hub", "tools/simfleet"} {
+		out, err := exec.Command("go", "build", "-o", filepath.Join(bin, filepath.Base(pkg)),
+			"github.com/edlitmus/halite/"+pkg).CombinedOutput()
+		if err != nil {
+			t.Fatalf("building %s: %v\n%s", pkg, err, out)
+		}
+	}
+	sf = filepath.Join(bin, "simfleet")
+	root = filepath.Join(dir, "fleet")
+	if out, err := exec.Command(sf, "setup", "-root", root, "-n", strconv.Itoa(n)).CombinedOutput(); err != nil {
+		t.Fatalf("setup: %v\n%s", err, out)
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr = l.Addr().String()
+	l.Close()
+	var hubLog bytes.Buffer
+	hub := exec.Command(filepath.Join(bin, "halite-hub"), "serve", "--root", root, "--config", filepath.Join(root, "hub.yaml"),
+		"--listen", addr, "--names", "127.0.0.1,localhost")
+	hub.Stdout, hub.Stderr = &hubLog, &hubLog
+	if err := hub.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = hub.Process.Kill()
+		_ = hub.Wait()
+		if t.Failed() {
+			t.Logf("hub:\n%s", hubLog.String())
+		}
+	})
+	waitFor(t, "the hub to listen", func() bool {
+		c, err := net.Dial("tcp", addr)
+		if err == nil {
+			c.Close()
+		}
+		return err == nil
+	})
+	return sf, root, addr
 }
 
 func oneResult(t *testing.T, path string) result {

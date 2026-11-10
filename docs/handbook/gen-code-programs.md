@@ -285,7 +285,9 @@ A fleet larger than one machine can hold is several drivers, each running its ow
 	simfleet submit -root DIR -hub H -fun test.ping -out ping.json
 	simfleet merge -submit ping.json a.json b.json
 
+\-batch, -batch-wait and -batch-timeout, on run or submit, send the job a slice at a time as \`halite-hub run --batch\` does. A batched result has no SPEC 30 verdict, and reports instead the most nodes that had the job at once and the time from one slice's last return to the next slice's first arrival.
+
 \-json appends each result as one JSON line, for a run's archive.
 
-**Files:** `main.go`, `multi.go`, `record.go`; with tests.
+**Files:** `batch.go`, `main.go`, `multi.go`, `record.go`; with tests.
 
