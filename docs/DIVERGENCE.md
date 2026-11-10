@@ -42763,7 +42763,7 @@ original default, unchanged. `win_dacl.grant`, the one-shot execution
 module with the identically-worded old default, which has no comparison to
 converge and was left alone on purpose.
 
-### 5.640 A wintask fixture replaced with a capture, and two leads that stayed leads
+### 5.645 A wintask fixture replaced with a capture, and two leads that stayed leads
 
 Issue 608 item 5, leads L17, L18 and L29. Found by reading, in the issue
 321 second-pass audit. Checked on this Windows 11 host.
