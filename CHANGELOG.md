@@ -21,7 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **On Windows, a file's warning about the mode it cannot apply now points at `win_dacl.present` instead of claiming this build does not have it.** `win_dacl` shipped; the warning text and a nearby comment did not catch up. DIVERGENCE 5.631.
+- **On Windows, a file's warning about the mode it cannot apply now points at `win_dacl.present` instead of claiming this build does not have it.** `win_dacl` shipped; the warning text and a nearby comment did not catch up. DIVERGENCE 5.648.
 
 - **On Windows, `win_task.present` and `win_task.create` now refuse `trigger: "once at HH:MM"` instead of silently registering a task that never runs.** A one-time trigger needs a date as well as a clock time; writing the fixed placeholder date `daily at HH:MM` uses (1970) produced a task the scheduler accepted and then never scheduled — confirmed directly with `schtasks /query /v`, which reported `Next Run Time: N/A`. A tree using this form was already relying on a task that never ran on its own; declare the schedule as the scheduler's own XML (which takes a real `StartBoundary`) instead, or trigger the task once with `win_task.run`. DIVERGENCE 5.647.
 

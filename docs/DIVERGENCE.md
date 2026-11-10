@@ -42921,7 +42921,7 @@ changing one that worked.
 here: it needs its own vocabulary and its own convergence rule, which
 this change does not attempt.
 
-### 5.631 Two stale sentences and a stub signature `go vet` already knew was wrong
+### 5.648 Two stale sentences and a stub signature `go vet` already knew was wrong
 
 Issue 608 item 5, leads L27 and L28 (`internal/builtin/mode_windows.go`,
 `ownership_windows.go`, `ownership_other.go`). Found by reading, in the
