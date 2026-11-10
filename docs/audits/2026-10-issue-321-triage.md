@@ -338,7 +338,7 @@ none was re-run for this file.
 | The hub could write a node's return after `Serve` said it had stopped (a CI flake) | #631 | 5.565 | `internal/hub` under `-race` on macOS; the CI failure itself not reproduced as it happened |
 | The extended-attribute copy (5.492) went by name after the close, so a swapped temporary name put the ACL and mode on another file; found by A2 | #632 | 5.566 | a Debian 12 container, as root and as `nobody`; no real host |
 | A reaction in flight when the hub stopped wrote its return after `serve` had returned | #633 | 5.567 | unit tests on macOS; not FreeBSD or under a service manager |
-| The hostname live tests left a Mac's unset `HostName` set, and a rename by hand raced configd; found running the `macos` leg by hand on mini-me on 2026-11-04, when GitHub's macOS runners were unavailable | #640 | 5.575, 5.576 | as root on macOS 27.3 (mini-me); FreeBSD in a Bastille jail on beastie; Ubuntu 22.04 on x86_64 and arm64 (noop2-1, noop-1); the `macos` leg on macos-15. Not run: Linux without `hostnamectl`, or an unset `HostName` on macos-15 |
+| The hostname live tests left a Mac's unset `HostName` set, and a rename by hand raced configd; found running the `macos` leg by hand on mini-me on 2026-11-04, when GitHub's macOS runners were unavailable | #640 | 5.575, 5.576 | as root on macOS 27.3 (mini-me); FreeBSD in a Bastille jail on beastie; Ubuntu 22.04 on x86_64 and arm64 (host-b, host-a); the `macos` leg on macos-15. Not run: Linux without `hostnamectl`, or an unset `HostName` on macos-15 |
 
 ### Design items filed as issues (B1 to B7)
 
