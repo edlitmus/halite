@@ -37134,7 +37134,19 @@ Issue 321, the second pass, round six (`internal/config`, `internal/doctor`, `cm
 
 **Not changed.** The hub's event returner reads `id` for the node identity it stamps, and nothing sets it; whether a hub has such an identity is a decision, and the audit names it as the one exception. Not run: `nodeExtensionCheck` on a node holding an unsigned extension, which needs a runtime with a bundle.
 
+### 5.546 `hub_tries` counted every attempt the node had ever made, and the reconnect wait never came back down
 
+Issue 321, the second pass, round six (`cmd/halite-node/enroll.go`, `cmd/halite-node/reconnect.go`).
+
+**The defect.** `hub_tries` is documented as "reconnect attempts before giving up", and the connect loop counted every attempt the process had made and never reset the count. A node set to give up after five that held its stream for a month and then lost it five times over the following year stopped, with a healthy hub, having never failed to connect. The same loop doubled its backoff (1 s to a ceiling of 60 s) on every end of the stream and put it back to 1 s only on a clean one, so a node that had been refused a few times once waited a minute after every later drop however long the stream had stood. There was no jitter: every node of a fleet that lost the hub together waited the same time and came back together.
+
+**Shown.** At the time of the fix, by reading the old loop, which was not run; the new tests pin the new behaviour and do not run the old. Afterwards, on 2026-11-03, against a real hub and a real node in a FreeBSD 15.1 jail on beastie, over loopback, with `hub_tries: 3` and five restarts of the hub: the tree of `7dfe5541`, before this change, exited at the second restart, "giving up" after 3 attempts; `main` after #611 was alive after all five, with 11 connection attempts and no "giving up" (`docs/audits/2026-10-issue-321-second-pass.md`, "Validated afterwards").
+
+**The change.** The pace is its own type, `reconnect`. The hub accepting the stream resets both the count and the wait, so `hub_tries` counts attempts since a stream last opened and zero still retries for ever. A clean end still puts the wait back to 1 s. The wait is the backoff times a factor from 0.8 to 1.2, read from `crypto/rand` because SPEC 25.3 admits no other source (the first form used `math/rand` and `TestNoMathRand` failed it on every leg); if the system source fails, the factor is 1. The `runConnect` comment that said a job arriving was refused, untrue for a long time, is replaced. The tests: three failures in a row give up after ten streams that opened and closed did not; the waits run 1, 2, 4, 8, 16, 32, 60, 60 seconds and are 1 s again after a stream opens and after a clean end; the jitter spans 800 ms to 1.2 s; the source stays in [0, 1).
+
+**Late.** #597 cited this number from the code, its tests and the audit, and added two blank lines here and two in `CHANGELOG.md` where the entries should have been; both of its commits did the same, so the text was not lost in a restack, it was never written. The ledger audit checks citations inside this file only, so nothing failed. This section was written afterwards from the commit, its tests and the audit document.
+
+**Not verified.** Whether the jitter spreads a real fleet's return: the jail run had one node, and nothing has measured many nodes reconnecting to a hub that came back (the simfleet plan's L3 notes its sims do not pace as the node does). The 60 s ceiling and a hub gone for minutes on a real node; the loop on Linux, macOS or Windows against a real hub; `make check` at the time of #597, which its commits say was not run beyond the buildpolicy and policy packages.
 
 ### 5.547 A failed write or a failed seal cost the evidence log more than the record that failed
 
