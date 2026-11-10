@@ -42921,7 +42921,7 @@ changing one that worked.
 here: it needs its own vocabulary and its own convergence rule, which
 this change does not attempt.
 
-### 5.640 Grant and Revoke dropped a conditional or an object entry instead of refusing
+### 5.648 Grant and Revoke dropped a conditional or an object entry instead of refusing
 
 Issue 608 item 5, the `readEntries` follow-up (`internal/winsec/dacl_windows.go`).
 Found while fixing lead L13 (DIVERGENCE 5.621), recorded there as "found
