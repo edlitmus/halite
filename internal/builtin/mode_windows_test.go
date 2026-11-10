@@ -37,10 +37,15 @@ func TestAModeThatCannotBeCarriedOutIsSaidSoOnceAndConverges(t *testing.T) {
 		t.Fatal("nothing was said about a mode that was not applied")
 	}
 	joined := strings.Join(second.Warnings, "\n")
-	for _, want := range []string{"0644", "win_dacl", path} {
+	for _, want := range []string{"0644", "win_dacl.present", path} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the warning does not mention %q: %s", want, joined)
 		}
+	}
+	// win_dacl shipped; the warning should point at it rather than
+	// claim this build does not have it (issue 608 item 5, lead L27).
+	if strings.Contains(joined, "does not have") {
+		t.Errorf("the warning says this build lacks win_dacl, which it does not: %s", joined)
 	}
 
 	// Test mode agrees with what an apply would do.
