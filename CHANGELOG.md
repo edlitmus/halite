@@ -21,7 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **On Windows, `win_dacl.grant`, `win_dacl.revoke`, `win_dacl.present` and `win_dacl.set_inheritance` now refuse to rewrite a file's access list when it holds a conditional or an object access control entry, instead of silently dropping it.** Before, granting or revoking access for one trustee could make a conditional or an object entry belonging to an entirely different trustee vanish, with no error. DIVERGENCE 5.648.
+- **On Windows, `win_dacl.grant`, `win_dacl.revoke`, `win_dacl.present` and `win_dacl.set_inheritance` now refuse to rewrite a file's access list when it holds a conditional or an object access control entry, instead of silently dropping it.** Before, granting or revoking access for one trustee could make a conditional or an object entry belonging to an entirely different trustee vanish, with no error. DIVERGENCE 5.649.
 
 - **On Windows, a file's warning about the mode it cannot apply now points at `win_dacl.present` instead of claiming this build does not have it.** `win_dacl` shipped; the warning text and a nearby comment did not catch up. DIVERGENCE 5.648.
 

@@ -42958,7 +42958,7 @@ succeed.
 **Not verified.** Nothing; both leads were confirmed by a build check
 alone, run here and matching what the audit already found by reading.
 
-### 5.648 Grant and Revoke dropped a conditional or an object entry instead of refusing
+### 5.649 Grant and Revoke dropped a conditional or an object entry instead of refusing
 
 Issue 608 item 5, the `readEntries` follow-up (`internal/winsec/dacl_windows.go`).
 Found while fixing issue 608 item 3 (DIVERGENCE 5.621), recorded there as "found
