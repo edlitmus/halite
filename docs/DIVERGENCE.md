@@ -42697,7 +42697,7 @@ it; that is left for a change of its own.
 - simfleet counts a return error but not a retry, so a run cannot say
   how much of its load was retries.
 
-### 5.640 win_dacl.present's default scope could not converge on a file, and its comparison was case-sensitive where winsec's reading never is
+### 5.644 win_dacl.present's default scope could not converge on a file, and its comparison was case-sensitive where winsec's reading never is
 
 Issue 608 item 5, lead L14 (`internal/builtin/win_dacl.go`,
 `win_dacl_windows.go`, `win_dacl_other.go`). Found by reading, in the issue
