@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
@@ -23,6 +24,7 @@ import (
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/job"
 	hlog "github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/nodelink"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/renewal"
 	"github.com/edlitmus/halite/internal/transport"
@@ -531,10 +533,10 @@ func runConnect(args *cli.Args) int {
 	n.startSchedule(ctx)
 	n.startMine(ctx)
 
-	pace := newReconnect(n.cfg.Int("hub_tries", 0))
+	pace := nodelink.NewReconnect(n.cfg.Int("hub_tries", 0))
 
 	for ctx.Err() == nil {
-		pace.attempting()
+		pace.Attempting()
 		// Rebuilt on every reconnect so that a renewal that happened while
 		// this process was running takes effect: the certificate is
 		// read from disk here, not once at startup.
@@ -555,7 +557,7 @@ func runConnect(args *cli.Args) int {
 		}, func() {
 			// The hub has accepted the stream: the failures before it are
 			// over, for `hub_tries` and for the backoff.
-			pace.opened()
+			pace.Opened()
 			n.requestAnchor()
 		}, func(msg transport.Message) error {
 			return n.handle(msg)
@@ -578,9 +580,9 @@ func runConnect(args *cli.Args) int {
 			// next attempt is not backed off.
 			n.log.Info("the hub closed the stream")
 		}
-		wait, giveUp := pace.ended(err == nil)
+		wait, giveUp := pace.Ended(err == nil)
 		if giveUp {
-			n.log.Error("giving up", "attempts", pace.attempt)
+			n.log.Error("giving up", "attempts", pace.Attempts())
 			return 1
 		}
 		select {
@@ -1065,43 +1067,158 @@ func (n *node) refuse(j *job.Job, err error) {
 // failure: a return that is lost because the connection blinked is a
 // job that looks unresponsive for ever.
 func (n *node) postReturns(ctx context.Context, args *cli.Args, returns <-chan *job.Return) {
-	send := func(ret *job.Return) {
-		client, _ := n.hubClient(args)
-		for attempt := 0; attempt < 5; attempt++ {
-			err := client.Return(ctx, ret)
-			if err == nil {
-				return
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if transport.Permanent(err) {
-				// The hub understood and said no. Retrying a refusal
-				// is how a node spends its evening arguing with a hub
-				// that has already answered.
-				n.log.Warn("the hub refused a return",
-					"jid", string(ret.JID), "error", err.Error())
-				return
-			}
-			n.log.Warn("could not post a return", "jid", string(ret.JID), "error", err.Error())
-			select {
-			case <-time.After(time.Duration(attempt+1) * time.Second):
-			case <-ctx.Done():
-				return
-			}
-		}
-		n.log.Error("giving up on a return", "jid", string(ret.JID))
+	var via returnClient
+	defer via.close()
+	client := func() *transport.Client {
+		fresh, _ := n.hubClient(args)
+		return via.use(fresh)
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case ret := <-returns:
-			send(ret)
+			n.sendReturn(ctx, client(), ret)
 		case ret := <-n.refusals:
-			send(ret)
+			n.sendReturn(ctx, client(), ret)
 		}
 	}
+}
+
+// returnClient is the one hub client a node posts its returns with, kept
+// from one return to the next while nothing it was built from changes.
+//
+// postReturns used to post each return with the client hubClient had
+// just built, and each of those is a new http.Transport: a new TCP
+// connection, a new TLS handshake, and -- since nothing closed it -- a
+// connection left open and idle on the hub for IdleStreamTimeout (90 s)
+// after the return was filed. A job to 5,000 nodes left 5,000 of them,
+// on top of the 5,000 subscribe streams; two jobs inside 90 s, 10,000.
+// simfleet copies the node, and on its first run on a dedicated hub
+// (DIVERGENCE 5.279, step 1) the hub held 15,002 established
+// connections and its resident memory went from about 900 MB holding
+// the streams to 1.5 GB, which is what SPEC 30's 4 GiB row at 20,000
+// would have been extrapolated from.
+//
+// hubClient is still called for every return, and what it read is
+// compared with what the kept client was built from, so the node goes
+// on doing what it did on a renewal or a CA rotation: the first return
+// after either is posted with the new certificate, on a new connection,
+// and the old client's idle connections are closed rather than left to
+// time out. That is why this compares rather than using
+// transport.Client.CertFiles, which would follow the certificate and
+// not the CA or the hub's address, and why reading the disk again is
+// kept: it is two small files a return, and it is what a renewal's
+// interrupted install is finished by (renewal.Recover, in hubClient).
+//
+// Not the subscribe stream's client, which would put the returns on the
+// stream's own connection and need no second one at all: a stream that
+// has stopped answering without closing would take the returns with it
+// until the stream's reconnect, and a return the node could have filed
+// on a fresh connection is a job that looks unanswered.
+//
+// Only postReturns's goroutine uses one, so it has no lock.
+type returnClient struct {
+	cur *transport.Client
+}
+
+// use is the client to post with: the kept one if fresh describes the
+// same hub, CA and certificate, and fresh otherwise.
+func (r *returnClient) use(fresh *transport.Client) *transport.Client {
+	if r.cur != nil && sameHubClient(r.cur, fresh) {
+		return r.cur
+	}
+	r.close()
+	r.cur = fresh
+	return fresh
+}
+
+func (r *returnClient) close() {
+	if r.cur != nil {
+		r.cur.CloseIdleConnections()
+	}
+}
+
+// sameHubClient is whether a and b would open the same connection: the
+// same address, the same name checked in the hub's certificate, the same
+// CA, and the same certificate presented. The certificate stands for its
+// key, which it binds.
+func sameHubClient(a, b *transport.Client) bool {
+	if a.HubURL != b.HubURL || a.ServerName != b.ServerName {
+		return false
+	}
+	if (a.CA == nil) != (b.CA == nil) || (a.CA != nil && !bytes.Equal(a.CA.Raw, b.CA.Raw)) {
+		return false
+	}
+	if (a.Cert == nil) != (b.Cert == nil) {
+		return false
+	}
+	if a.Cert == nil {
+		return true
+	}
+	if len(a.Cert.Certificate) != len(b.Cert.Certificate) {
+		return false
+	}
+	for i := range a.Cert.Certificate {
+		if !bytes.Equal(a.Cert.Certificate[i], b.Cert.Certificate[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// returnPoster is the one method of transport.Client that sendReturn
+// uses, so that a test can put the hub's own check behind it.
+type returnPoster = nodelink.Poster
+
+// sendReturn posts one return, retrying what may succeed on a retry. The
+// retry is nodelink's, shared with simfleet so that the load a simulated
+// fleet puts on a hub near saturation is a real fleet's.
+func (n *node) sendReturn(ctx context.Context, client returnPoster, ret *job.Return) {
+	ret = n.fitReturn(ret)
+	err := nodelink.PostReturn(ctx, client, ret, func(err error) {
+		n.log.Warn("could not post a return", "jid", string(ret.JID), "error", err.Error())
+	})
+	switch {
+	case err == nil, ctx.Err() != nil:
+	case errors.Is(err, nodelink.ErrGaveUp):
+		n.log.Error("giving up on a return", "jid", string(ret.JID))
+	default:
+		// The hub understood and said no. Retrying a refusal is how a
+		// node spends its evening arguing with a hub that has already
+		// answered.
+		n.log.Warn("the hub refused a return",
+			"jid", string(ret.JID), "error", err.Error())
+	}
+}
+
+// fitReturn is ret, or the stand-in job.Return.Oversized for it when
+// the hub would refuse it for its size.
+//
+// Measured here, before the post, because after it there is nothing to
+// do: the hub's refusal is a 400 that names no job (it stops reading
+// at the limit, before it knows whose return it was), it is permanent,
+// and the node used to log one line and drop the return. The job had
+// run, and the operator's `halite-hub run` waited on an answer that
+// never came. Seen in FreeBSD jails on 2026-11-08: a 60 MB state
+// return from a node that had just replaced its own binary.
+//
+// The measure is transport.EncodeBody, which is the body post sends,
+// and the limit is the one the hub's handler reads with; the test holds
+// the boundary against transport.ReadJSON itself, so that the node and
+// the hub cannot disagree about a return within a byte of it.
+func (n *node) fitReturn(ret *job.Return) *job.Return {
+	body, err := transport.EncodeBody(ret)
+	size := len(body)
+	if err != nil || size <= transport.MaxReturnBody {
+		// An encoding error is post's to report, with its own words;
+		// the stand-in would hide what is wrong with the return.
+		return ret
+	}
+	n.log.Warn("a return is too large for the hub; sending a failure that says so instead",
+		"jid", string(ret.JID), "fun", ret.Fun, "bytes", size, "limit", transport.MaxReturnBody,
+		"job_success", ret.Success)
+	return ret.Oversized(size, transport.MaxReturnBody)
 }
 
 // errRevoked ends the connect loop rather than restarting it.

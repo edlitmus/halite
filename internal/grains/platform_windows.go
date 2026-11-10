@@ -174,16 +174,18 @@ var processorFeatures_ = []struct {
 	feature uint32
 	name    string
 }{
-	{6, "sse"},   // PF_XMMI_INSTRUCTIONS_AVAILABLE
-	{10, "sse2"}, // PF_XMMI64_INSTRUCTIONS_AVAILABLE
-	{13, "sse3"}, // PF_SSE3_INSTRUCTIONS_AVAILABLE
-	{36, "sse4_1"},
-	{37, "sse4_2"},
-	{39, "avx"},
-	{40, "avx2"},
-	{12, "nx"},  // PF_NX_ENABLED
-	{17, "vmx"}, // PF_VIRT_FIRMWARE_ENABLED
-	{25, "aes"}, // PF_ARM_V8_CRYPTO... on x86 this is unset, which is correct
+	{windows.PF_XMMI_INSTRUCTIONS_AVAILABLE, "sse"},
+	{windows.PF_XMMI64_INSTRUCTIONS_AVAILABLE, "sse2"},
+	{windows.PF_SSE3_INSTRUCTIONS_AVAILABLE, "sse3"},
+	{windows.PF_SSE4_1_INSTRUCTIONS_AVAILABLE, "sse4_1"},
+	{windows.PF_SSE4_2_INSTRUCTIONS_AVAILABLE, "sse4_2"},
+	{windows.PF_AVX_INSTRUCTIONS_AVAILABLE, "avx"},
+	{windows.PF_AVX2_INSTRUCTIONS_AVAILABLE, "avx2"},
+	{windows.PF_NX_ENABLED, "nx"},
+	{windows.PF_VIRT_FIRMWARE_ENABLED, "vmx"},
+	// There is no x86 AES-NI entry in winnt.h for
+	// IsProcessorFeaturePresent to ask about, so "aes" is not answered
+	// here rather than answered from the wrong number.
 }
 
 func processorFeatures() []any {

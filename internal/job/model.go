@@ -371,3 +371,58 @@ func SigningPayload(j *Job) jobsign.Payload {
 		Expires:    j.Expires,
 	}
 }
+
+// Oversized is the return a node sends in place of one too large for
+// the hub to take (SPEC 6.5, DIVERGENCE 5.629).
+//
+// The hub refuses a return past its bound before it has read enough to
+// know whose it is, and the node used to treat that refusal like any
+// other: log one warning and drop the return. The job had run -- in
+// the case that found it, a node had replaced its own binary -- and the
+// operator's `halite-hub run` waited for an answer that was never
+// coming, which is the one outcome worse than a failure, because
+// nothing says what happened.
+//
+// So the node sends this instead: the same job, node and function, a
+// failure, and a body that says how big the result was, what the limit
+// is, and what the job itself reported. It is a failure because the
+// result is lost -- whoever reads it must not take it for the result --
+// but `job_success` and `job_retcode` say whether the work underneath
+// succeeded, because "it ran and worked, and you cannot see the output"
+// and "it failed" call for different things at three in the morning.
+//
+// SPEC 6.5's "then the node paginates by chunk" is not built: this is
+// what the node does instead, and a chunked return is still refused.
+func (r *Return) Oversized(size, limit int) *Return {
+	body, _ := json.Marshal(map[string]any{
+		"oversized": fmt.Sprintf("the return was %d bytes and the hub takes at most %d; "+
+			"it was not sent, and this stands in for it", size, limit),
+		"bytes":       size,
+		"limit":       limit,
+		"job_success": r.Success,
+		"job_retcode": r.RetCode,
+	})
+	return &Return{
+		JID:         r.JID,
+		NodeID:      r.NodeID,
+		Fun:         r.Fun,
+		FunArgs:     r.FunArgs,
+		Success:     false,
+		RetCode:     retcodeOversized(r.RetCode),
+		Return:      body,
+		StartTime:   r.StartTime,
+		DurationMS:  r.DurationMS,
+		NodeVersion: r.NodeVersion,
+		Schema:      r.Schema,
+	}
+}
+
+// retcodeOversized keeps a job's own non-zero code, and makes a zero
+// one non-zero: a stand-in for a lost result is not a success, and a
+// script reading the exit code alone must not be told it was.
+func retcodeOversized(code int) int {
+	if code != 0 {
+		return code
+	}
+	return 1
+}

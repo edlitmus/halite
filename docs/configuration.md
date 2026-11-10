@@ -179,6 +179,14 @@ Listen address.
 
 The address the hub or the API binds. Bind to a specific address rather than every interface when the machine has a management network; there is no plaintext mode to fall back to, so this is the whole of the exposure.
 
+### `max_node_connections`
+
+*`halite-hub` · `25000` · SPEC section 6.5*
+
+Node subscribe streams the hub holds at once; one more is refused with 503 until a node leaves.
+
+Read by the hub. How many node subscribe streams -- the long-lived connection each node holds -- the hub keeps at once. A node over it is answered 503 with the code `hub_full` before its request body is read, keeps running from what it last received, as it would through an outage, and reconnects on its own backoff; it is counted as `halite_hub_node_connect_refused_total`, and the hub logs a warning at most once a minute. A node that already holds a stream is never refused, because its new stream replaces the old one. A relay counts as one, whatever is behind it. A node's other requests -- returns, pillar, files -- are not counted or refused, so a full hub does not lose a job's result. Each stream holds a file descriptor and a node's other requests hold more, so the hub's descriptor limit (`LimitNOFILE` in the shipped unit, 65,536) must be well above this; raise both together. Below one, the default of 25,000 is used.
+
 ### `node_event_burst`
 
 *`halite-hub` · `8388608` · SPEC section 17.1*
@@ -2203,6 +2211,7 @@ Every setting, and which programs read it.
 | `log_level_file` | all three programs | — | Logging and diagnostics |
 | `max_body` | `halite-api` | `64MiB` | The API service |
 | `max_causality_depth` | `halite-hub` | `5` | Reactors |
+| `max_node_connections` | `halite-hub` | `25000` | Identity and connection |
 | `metrics` | all three programs | `true` | Logging and diagnostics |
 | `metrics_client_ca` | `halite-node` | — | Logging and diagnostics |
 | `metrics_listen` | `halite-node` | — | Logging and diagnostics |

@@ -187,10 +187,21 @@ func TestLiveRpmVersionCmpAgreesWithRpm(t *testing.T) {
 		evrPairs := [][2]string{
 			// The two a real 4.16.1.3 answered in 5.172: -1 and 0.
 			{"1.0", "1.0-1"}, {"0:1.0", "1.0"},
-			// Not yet asked of any rpm when this was written.
+			// Not yet asked of any rpm when this was written. They have
+			// been since: rpm 4.16.1.3 on Rocky 9 answered all of them in
+			// the `rpm (rocky9)` leg, which is why the comment on
+			// `TestRPMAbsentReleaseSortsBeforeAnyRelease` no longer says
+			// the source is all there is.
 			{"1:1.0", "2.0"}, {"1:1.0", "1.0-5"}, {"1.0-1", "1.0-2"}, {"1.0-", "1.0"},
 			{"1.0~rc1-1", "1.0"}, {"1.0^git1", "1.0-1"}, {"2:1.0-1", "1:2.0-1"},
 			{"0:1.0-1", "1.0-1"}, {"2.34-60.el9", "2.34-60.el9_2.7"},
+			// The three pairs of `TestRPMAbsentReleaseSortsBeforeAnyRelease`
+			// that the list above did not reach, added so that every pair
+			// read out of rpmver.c is also put to an rpm. A missing release
+			// sorting before any release is the rule they exist for, and
+			// `1.0` against `1.1-5` checks that the version segment still
+			// decides first (5.633).
+			{"1.0", "1.0-5"}, {"1.0", "1.1-5"}, {"1.1", "1.0-5"},
 		}
 		for _, p := range evrPairs {
 			out := rpmTool(t, "--eval", "%{lua: print(rpm.vercmp(\""+p[0]+"\", \""+p[1]+"\"))}")

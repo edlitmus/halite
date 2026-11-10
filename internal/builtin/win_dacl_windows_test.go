@@ -2,9 +2,12 @@ package builtin
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -90,6 +93,64 @@ func TestWinDACLPresentTightensAnEntryThatIsTooWide(t *testing.T) {
 	}
 	if got := entryFor(t, path, "Everyone"); got == nil || got.Permission != "read" {
 		t.Errorf("the entry is %+v", got)
+	}
+}
+
+// win_dacl.present's default scope used to be
+// this_folder_subfolders_files regardless of what name it was given,
+// which asks NTFS to carry an entry's inheritance onto subfolders a
+// plain file does not have. NTFS answers by storing the entry with
+// both inherit flags cleared -- confirmed directly on this host with
+// ACLFromEntries and a read-back -- so the comparison against the
+// declared default never matched and the state never converged on a
+// plain file (issue 608 item 5, lead L14).
+func TestWinDACLPresentWithTheDefaultScopeConvergesOnAFile(t *testing.T) {
+	r := New()
+	path := filepath.Join(t.TempDir(), "app.conf")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := value.MapOf("name", path, "trustee", "Everyone", "permission", "read")
+
+	first, err := r.States.Call(newCtx(false), "win_dacl.present", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Changes.Len() == 0 {
+		t.Fatal("the grant with no applies_to reported no change")
+	}
+
+	second, err := r.States.Call(newCtx(false), "win_dacl.present", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Changes.Len() != 0 {
+		t.Errorf("the second run with the default scope reported changes: %+v", second.Changes)
+	}
+}
+
+// A declaration's permission is compared the way winsec reads one back:
+// lowercase, named rather than typed. "Read" and "read" are one
+// permission level, and a state that reported a change between them
+// would never converge (issue 608 item 5, lead L14's other half).
+func TestWinDACLPresentPermissionIsCaseInsensitive(t *testing.T) {
+	r := New()
+	path := filepath.Join(t.TempDir(), "app.conf")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := winsec.Grant(path, "Everyone", "read", "this_folder_only", false); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := r.States.Call(newCtx(false), "win_dacl.present",
+		value.MapOf("name", path, "trustee", "Everyone",
+			"permission", "Read", "applies_to", "this_folder_only"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changes.Len() != 0 {
+		t.Errorf("`Read` against an existing `read` entry reported a change: %+v", res.Changes)
 	}
 }
 
@@ -205,6 +266,24 @@ func TestAccountNamesAreComparedTheWayWindowsDoes(t *testing.T) {
 	}
 }
 
+// A trustee that does not resolve -- a deleted account, or one from a
+// domain this machine cannot reach -- is rendered as its SID's own
+// string form (winsec's `describe`). The bare-name comparison alone
+// never recognises that as the same account its name resolves to,
+// because the SID side has no backslash to split a bare name out of:
+// `bareAccount` on a SID returns the whole SID, which an EqualFold
+// against a bare account name never matches (issue 608 item 5, lead
+// L15's "a SID never equals a name" half).
+func TestASIDStringAndTheNameItResolvesToAreOneAccount(t *testing.T) {
+	me, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameAccount(me.Uid, me.Username) {
+		t.Errorf("%q (a SID) and %q (the name it resolves to) should be one account", me.Uid, me.Username)
+	}
+}
+
 // has_permission answers "at least" by default, because that is the
 // question an onlyif asks, and exactly on request, because that is the
 // question a comparison asks.
@@ -243,6 +322,101 @@ func TestHasPermissionAnswersAtLeastAndExactly(t *testing.T) {
 	}
 	if denied {
 		t.Error("an account with a deny entry was reported as having the access")
+	}
+}
+
+// winsec.Grant replaces whatever entry a trustee already has, so the
+// test above never puts two entries for the same trustee on a file at
+// once. A real ACL can: a deny ACE and an allow ACE for the same
+// account, from two different tools or two different states, and
+// Windows' own canonical order puts the deny first regardless of which
+// was written last. has_permission's own doc comment says a deny entry
+// disqualifies "whatever its mask", but the function's loop only skips
+// a deny entry rather than checking for one before trusting a matching
+// allow -- so an account denied read, with an unrelated allow entry
+// that happens to cover read too (full_control, say), was reported as
+// having it (issue 608 item 5, lead L13).
+func setAllowAndDenyForTheSameTrustee(t *testing.T, path, trustee string, allow, deny uint32) {
+	t.Helper()
+	sid, _, _, err := windows.LookupSID("", trustee)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusteeOf := windows.TRUSTEE{TrusteeForm: windows.TRUSTEE_IS_SID, TrusteeValue: windows.TrusteeValueFromSID(sid)}
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{
+		{AccessPermissions: windows.ACCESS_MASK(deny), AccessMode: windows.DENY_ACCESS, Trustee: trusteeOf},
+		{AccessPermissions: windows.ACCESS_MASK(allow), AccessMode: windows.GRANT_ACCESS, Trustee: trusteeOf},
+	}, dacl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, acl, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// has_permission's own comment: a deny entry disqualifies "whatever its
+// mask", because Windows evaluates deny first. This is the case the
+// comment describes and the loop did not check for: a trustee with both
+// an allow entry wide enough to cover the permission asked about, and a
+// separate deny entry -- not necessarily on the same mask -- which
+// Windows' canonical ACL order always places first.
+func TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "p2.conf")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fullControl, err := winsec.PermissionMask("full_control")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Everyone is denied write (not read) and separately allowed
+	// full_control (which covers read). Windows would still refuse
+	// Everyone's write, not its read, but a trustee with any deny entry
+	// present is the case has_permission's own comment says never counts.
+	writeMask, err := winsec.PermissionMask("write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setAllowAndDenyForTheSameTrustee(t, path, "Everyone", fullControl, writeMask)
+
+	got, err := winDACLHasPermission(path, "Everyone", "read", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got {
+		t.Error("an account with a deny entry was reported as having a permission its separate allow entry covers")
+	}
+
+	// A precondition on the fixture itself: Entries sees both.
+	entries, err := winsec.Entries(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawAllow, sawDeny bool
+	for _, e := range entries {
+		if !sameAccount(e.Trustee, "Everyone") {
+			continue
+		}
+		if e.Kind == "allow" && e.Mask == fullControl {
+			sawAllow = true
+		}
+		if e.Kind == "deny" {
+			sawDeny = true
+		}
+	}
+	if !sawAllow || !sawDeny {
+		t.Fatalf("the fixture does not have both entries: allow=%v deny=%v, entries=%+v", sawAllow, sawDeny, entries)
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -177,6 +179,44 @@ func TestProductNameIsCorrectedForTheBuild(t *testing.T) {
 			t.Errorf("correctProductName(%q, %d, %d) = %q, want %q",
 				c.product, c.major, c.build, got, c.want)
 		}
+	}
+}
+
+// processorFeatures_ hand-picks a Win32 feature number per flag name.
+// Four were wrong: two were off by one against another SSE generation,
+// one named XSAVE "vmx", and one used an ARM-only number for "aes",
+// which winnt.h gives no x86 feature for at all. This checks the table
+// against the numbers golang.org/x/sys/windows carries from the real
+// header, so a future entry that is off by one fails here rather than
+// silently reporting the wrong instruction set as present.
+func TestProcessorFeatureNumbersMatchTheWindowsHeader(t *testing.T) {
+	want := map[string]uint32{
+		"sse":    windows.PF_XMMI_INSTRUCTIONS_AVAILABLE,
+		"sse2":   windows.PF_XMMI64_INSTRUCTIONS_AVAILABLE,
+		"sse3":   windows.PF_SSE3_INSTRUCTIONS_AVAILABLE,
+		"sse4_1": windows.PF_SSE4_1_INSTRUCTIONS_AVAILABLE,
+		"sse4_2": windows.PF_SSE4_2_INSTRUCTIONS_AVAILABLE,
+		"avx":    windows.PF_AVX_INSTRUCTIONS_AVAILABLE,
+		"avx2":   windows.PF_AVX2_INSTRUCTIONS_AVAILABLE,
+		"nx":     windows.PF_NX_ENABLED,
+		"vmx":    windows.PF_VIRT_FIRMWARE_ENABLED,
+	}
+	got := map[string]uint32{}
+	for _, f := range processorFeatures_ {
+		got[f.name] = f.feature
+	}
+	for name, number := range want {
+		if got[name] != number {
+			t.Errorf("%s uses feature number %d, want %d (the real winnt.h number)", name, got[name], number)
+		}
+	}
+	// winnt.h defines no x86 feature for AES-NI that
+	// IsProcessorFeaturePresent can answer; 25 is
+	// PF_ARM_64BIT_LOADSTORE_ATOMIC, which is unrelated and happens to
+	// read false on x86 hardware. A flag this build cannot answer
+	// honestly should not be listed at all.
+	if _, ok := got["aes"]; ok {
+		t.Errorf("cpu_flags claims to answer \"aes\" with feature number %d, which is an ARM flag unrelated to AES-NI", got["aes"])
 	}
 }
 

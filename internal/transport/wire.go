@@ -13,11 +13,12 @@ import (
 // the whole point of having them: Salt's absence of these is why one
 // malformed return can exhaust a master. // lexicon:allow
 //
-// Only the limits something enforces are here. SPEC 6.5 names four more
-// -- the return payload, the concurrent stream count, the connection
-// count, and the decompression ratio -- and they arrive with the
-// endpoints that need them. A constant that names a limit nothing
-// applies reads like an assurance and is not one.
+// Only the limits something enforces are here. SPEC 6.5 names one more,
+// the decompression ratio, and it arrives with the endpoint that needs
+// it. A constant that names a limit nothing applies reads like an
+// assurance and is not one. The connection count is not a constant: it
+// is configured, `max_node_connections`, and the hub holds its default
+// (hub.DefaultMaxNodeConnections).
 const (
 	MaxRequestBody   = 64 << 20
 	MaxSubscribeLine = 1 << 20
@@ -35,10 +36,21 @@ const (
 	MaxEnrollBody = 64 << 10
 	// MaxReturnBody is SPEC 6.5's maximum single return payload, which
 	// the hub enforces on /v1/return. SPEC's "then the node paginates
-	// by chunk" is not built; a chunked return is refused.
-	MaxReturnBody     = 16 << 20
-	HandshakeTimeout  = 10 * time.Second
-	IdleStreamTimeout = 90 * time.Second
+	// by chunk" is not built; a chunked return is refused. A node with
+	// a larger return sends job.Return.Oversized in its place, measured
+	// by EncodeBody (DIVERGENCE 5.629).
+	MaxReturnBody = 16 << 20
+	// MaxConcurrentStreams is SPEC 6.5's maximum concurrent HTTP/2
+	// streams per node connection, which the hub advertises in its
+	// SETTINGS frame. Without it the hub advertised net/http's own
+	// default, 250. A Go client at the limit does not fail the next
+	// request: it dials a second connection, and MaxConnsPerHost does
+	// not stop it once the first is HTTP/2 (measured, DIVERGENCE 5.639)
+	// -- so this bounds what one connection may hold, not what one node
+	// may ask for.
+	MaxConcurrentStreams = 64
+	HandshakeTimeout     = 10 * time.Second
+	IdleStreamTimeout    = 90 * time.Second
 )
 
 // The endpoints of SPEC 6.2. Named so that the hub's routes and the
@@ -583,6 +595,11 @@ const (
 	// CodeRateLimited is a request refused because its sender is over
 	// its rate. Nothing was recorded; a later request may succeed.
 	CodeRateLimited = "rate_limited"
+	// CodeHubFull is a subscribe refused because the hub already holds
+	// `max_node_connections` streams (SPEC 6.5). It comes with a 503:
+	// nothing about the node or its request was wrong, and the same
+	// request succeeds once another node leaves.
+	CodeHubFull = "hub_full"
 )
 
 // WriteJSON sends a value with the canonical settings of SPEC 6.4:

@@ -207,6 +207,23 @@ func (t tracePropagating) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.next.RoundTrip(req)
 }
 
+// CloseIdleConnections closes the connections this client opened and is
+// not using. One in use -- a subscribe stream, a request in flight -- is
+// left to finish.
+//
+// For a caller that replaces one Client with another and is done with
+// the first: without it the old client's connections stay open, idle,
+// until IdleStreamTimeout, and the hub holds every one of them. The
+// node's return poster does this when what it reads from disk changes.
+func (c *Client) CloseIdleConnections() {
+	c.mu.Lock()
+	h := c.http
+	c.mu.Unlock()
+	if h != nil {
+		h.CloseIdleConnections()
+	}
+}
+
 // Reset drops the cached HTTP client, so that a certificate collected
 // or renewed takes effect on the next request.
 func (c *Client) Reset() {
@@ -269,6 +286,17 @@ func (c *Client) post(ctx context.Context, path string, body, out any) (status i
 	}
 	return res.StatusCode, nil
 }
+
+// EncodeBody is the request body post sends for v, byte for byte,
+// because it is marshal's own output.
+//
+// It exists so that a node can ask whether a return fits under
+// MaxReturnBody before the hub has to refuse it. Measuring with
+// json.Marshal instead would be a second encoder that agrees with this
+// one only by coincidence -- it escapes `<`, `>` and `&`, which this
+// one does not, and omits the trailing newline -- and a return within a
+// few bytes of the limit would be measured as fitting and refused.
+func EncodeBody(v any) ([]byte, error) { return marshal(v) }
 
 func marshal(v any) ([]byte, error) {
 	var buf bytes.Buffer

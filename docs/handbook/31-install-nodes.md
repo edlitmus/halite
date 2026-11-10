@@ -26,9 +26,17 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > (`changed=3`, then nothing), exited `0` then `2` locally, and after both
 > hosts were rebooted with nothing touched but the tunnel, the node retried
 > and came back `up`. **Token enrolment** was run there too, with its refusals
-> (below). **Not run:** a node on any other distribution, a token with a
-> hyphen first (the recorded bug), and enrolment over a real network between
-> the hosts.
+> (below). **Later runs** (DIVERGENCE 5.626): a FreeBSD 15.1 node in a bastille
+> jail enrolled by token against a FreeBSD 14.5 hub in another jail on the same
+> machine, over the jail network (no tunnel). A Linux node, `host-b` (Ubuntu
+> 24.04.5, arm64), enrolled by token against the hub on `host-a` over the VPC
+> on port <port> (no tunnel). Both hosts were shared and not fresh. Enrolment
+> over a real network between two hosts is therefore run on Linux. On FreeBSD
+> the two jails shared one machine and a loopback interface, so the network
+> path was not a wire. **Not run:** a node on any other distribution, a token
+> with a hyphen first (the recorded bug), enrolment over a wire between two
+> FreeBSD hosts, and `cloud-init` or `nuageinit` themselves (see the user-data
+> section).
 
 ## Before you start
 
@@ -64,7 +72,10 @@ halite-node version
 ```
 
 (FreeBSD: `/usr/local/etc/halite` and `/var/db/halite` instead.) A node runs
-as root, so these are root-owned.
+as root, so these are root-owned. On a FreeBSD host with no packages,
+`/usr/local/bin` does not exist, and the first `install` fails with
+`install: /usr/local/bin: No such file or directory`. Run
+`sudo install -d -m 0755 /usr/local/bin` first.
 
 **2. Write `node.yaml`.** The fingerprint goes here so the agent and the
 service files need nothing else:
@@ -257,7 +268,8 @@ halite-hub keys token revoke 1eedeb8e0623
 ```
 
 A cloud-init or provisioning-tool user-data script is the natural place to run
-steps 2 (on the hub, called by your orchestration) and 3. The shape:
+steps 2 (on the hub, called by your orchestration) and 3. On Linux the shape
+is this:
 
 ```sh
 #!/bin/sh
@@ -271,9 +283,55 @@ EOF
 halite-node enroll --token="$TOKEN" && systemctl enable --now halite-node
 ```
 
-> **Pattern, not a tested script.** The pieces (token enrolment, the
-> fingerprint requirement, the unit) were each run. This composition was not
-> run on a booting cloud instance.
+On FreeBSD the script is different in two ways. The shape is this:
+
+```sh
+#!/bin/sh
+# on the new instance; $TOKEN delivered by your provisioning system
+install -d -m 0755 /usr/local/bin && install -m 0755 /opt/halite/halite-node /usr/local/bin/
+mkdir -p /usr/local/etc/halite/pki && chmod 0700 /usr/local/etc/halite/pki
+cat > /usr/local/etc/halite/node.yaml <<EOF
+hub: hub.example.com
+hub_fingerprint: '$HUB_FINGERPRINT'
+EOF
+/usr/local/bin/halite-node enroll --token="$TOKEN" && sysrc halite_node_enable=YES && service halite_node start
+```
+
+The two differences:
+
+- **rc(8) sets its own `PATH`**: `/sbin:/bin:/usr/sbin:/usr/bin`. It does not
+  hold `/usr/local/bin`. A bare `halite-node` failed with `halite-node: not
+  found` and exit status 127. Write the full path. On Linux, systemd's `PATH`
+  holds `/usr/local/bin`, so the bare name worked.
+- **A FreeBSD host with no packages has no `/usr/local/bin`.** Without
+  `install -d`, the `install` failed with `install: /usr/local/bin: No such
+  file or directory`.
+
+The rc script for `halite_node` must already be in `/usr/local/etc/rc.d`. In
+the run, the "image" put it there, with `install -d` for the directory. The
+script ends with `sysrc` and `service`. The rc script then prints `this node
+already holds a certificate`, because `enroll` ran first. This is harmless.
+
+`enroll` prints this line: `note: --token is visible to every account on this
+node in the process table while this runs; --token-file keeps it out of it`.
+Prefer `--token-file` (see step 3 above) when the token is on the instance
+for more than a moment. The scripts above use `--token` because that is what
+was run.
+
+> **What was run.** **Linux:** the script above, verbatim except `hub:
+> <host-a-ip>` and `hub_port: <port>`, on `host-b`. It ran in a transient
+> systemd unit (`systemd-run --wait --pipe`), which gives the script the kind
+> of environment that `cloud-final.service` gives user-data. The "image" was
+> `/opt/halite/halite-node` and the shipped `halite-node.service`. The node
+> enrolled (`enrolled: /etc/halite/pki/node.crt`), the script exited 0, and
+> the hub showed the token as spent and the node as `up`, answering
+> `test.ping`. **FreeBSD:** the script above, in a fresh 15.1 jail, from
+> `/etc/rc.local` at jail start, with `node_id: node1.lab.example.com` added
+> and `hub.example.com` in `/etc/hosts`. It failed twice, for the two reasons
+> above, and ran correctly the third time. The hub showed the token as spent
+> and the node as `up`. **Not run:** `cloud-init` itself (no new instance was
+> made), FreeBSD `nuageinit` (a jail has no config drive), and a node ID taken
+> from anything but the default on Linux.
 
 ### Images
 

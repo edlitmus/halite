@@ -30,10 +30,13 @@ import (
 // private here as 0600. See fileperm.Private.
 //
 // The rest of a mode — the difference between 0644 and 0755, an execute
-// bit, a setgid bit — has no counterpart. SPEC 15.3 puts it in
-// `win_dacl`, which this build does not have. It is not applied, it is
-// not reported as a change, and the state says so once rather than
-// reporting a change forever.
+// bit, a setgid bit — has no counterpart, in win_dacl or anywhere else:
+// an access control list grants named accounts named permissions, and
+// none of those three bits is expressible as one. It is not applied, it
+// is not reported as a change, and the state says so once rather than
+// reporting a change forever. `win_dacl.present` is where a named
+// account's own access is actually declared, once a mode has done the
+// one thing it can.
 
 // plannedMode reports whether a file's permissions already satisfy the
 // requested mode, and what to record when they do not.
@@ -42,7 +45,7 @@ func plannedMode(path string, info os.FileInfo, want os.FileMode) (differs bool,
 		return false, nil, fmt.Sprintf(
 			"the mode %s is not applied to %s: Windows has no POSIX mode, and the "+
 				"permissions this build can set here are `private` or inherited. "+
-				"SPEC 15.3 puts the rest in win_dacl, which this build does not have",
+				"use win_dacl.present to grant a named account its own access",
 			formatMode(want), path)
 	}
 	others, err := fileperm.Others(path)

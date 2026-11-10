@@ -30,9 +30,20 @@ from a directory you control, one working operator, and a green
 > says, and afterwards it installed the programs, the service files and the
 > manual pages, and a second `make install`, after the account existed, gave
 > the directories to `halite`; a hub and a node then started and enrolled.
-> **Not run:** hosts older
-> than those named, SELinux or AppArmor profiles, and the hub on FreeBSD 14.5
-> (only the node was).
+> **Later runs** (DIVERGENCE 5.626) used the archive and binaries from
+> `main`. The hub ran on FreeBSD 14.5-RELEASE in a bastille jail on `beastie`
+> (host kernel 15.1-RELEASE-p6, amd64), as root, from the `freebsd-amd64`
+> archive built locally with `bmake dist`. The Linux hub ran as root on
+> `host-a` (Ubuntu 22.04.5 LTS, arm64), with binaries built from `main`. That
+> host is shared and was not fresh: it also runs `salt-minion`, `postfix` and <!-- lexicon:allow -->
+> `sssd`. These runs found three defects, all in the steps below: step 3
+> (DIVERGENCE 5.625), step 4 (DIVERGENCE 5.624) and step 6 (DIVERGENCE 5.625).
+> **A jail cannot show** kernel modules, many sysctls, a real boot (no
+> loader, kernel or `devd`), a firewall, or a network card. The hosts talked
+> over a loopback interface on one machine. A local build has no attestation
+> and no signature, so the `gh attestation` and `openssl` checks of step 1 were
+> not run on that archive. **Not run:** hosts older than those named, SELinux
+> or AppArmor profiles, and a hub on FreeBSD hardware.
 
 ## Before you start
 
@@ -129,13 +140,26 @@ archive, the equivalent is:
 
 ```sh
 # paths: Linux /etc/halite, /var/lib/halite; FreeBSD /usr/local/etc/halite, /var/db/halite
+sudo install -d -m 0755 /usr/local/bin        # FreeBSD with no packages: the directory does not exist
 sudo install -m 0755 bin/halite-hub bin/halite-node bin/halite-api /usr/local/bin/
 sudo install -d -o halite -m 0755 /etc/halite
 sudo install -d -o halite -m 0700 /etc/halite/pki /var/lib/halite /var/cache/halite
 sudo install -d -o halite -m 0750 /var/log/halite
-sudo install -d -m 0755 /usr/local/share/man/man8
+sudo install -d -m 0755 /usr/local/share/man/man5 /usr/local/share/man/man7 /usr/local/share/man/man8
+sudo install -m 0644 man/man5/*.5 /usr/local/share/man/man5/
+sudo install -m 0644 man/man7/*.7 /usr/local/share/man/man7/
 sudo install -m 0644 man/man8/*.8 /usr/local/share/man/man8/
 ```
+
+The archive holds `man/man5`, `man/man7` and `man/man8`. An earlier version of
+this step installed only `man8`. The `man5` and `man7` lines were not run by
+hand; `make install` installed the same pages in the 14.5 jail.
+
+On a FreeBSD host with no packages, `/usr/local` is empty. It has no `bin` and
+no `etc/rc.d`. The first `install` then fails. The 14.5 jail had
+`/usr/local/bin` only because `pkg` had installed `sudo` and `jq`. The 15.1
+jail, with no packages, did not have it. `make install` had the same defect
+(DIVERGENCE 5.625).
 
 Binaries go to `/usr/local/bin` on every platform, because that is the path
 written into the service files. The directories are created **owned by the
@@ -166,6 +190,15 @@ job_cache_retention: 720h
 event_retention: 720h
 metrics: true
 ```
+
+**Linux: delete the `pki_dir`, `state_dir` and `policy` lines from the copy.**
+In the archives built up to and including those before DIVERGENCE 5.624,
+`examples/hub.yaml` sets these three keys to FreeBSD paths. This is also true
+of the Linux archive. If you keep them on Linux, the hub stops at once. On
+`host-a` the log said `halite: creating /usr/local/etc/halite/pki: mkdir
+/usr/local/etc/halite: read-only file system`, and systemd reported
+`status=78/CONFIG`. After the three lines were deleted, the hub started and
+made its CA in `/etc/halite/pki`. On FreeBSD the paths are correct. Keep them.
 
 (`pki_dir`, `state_dir`, `cache_dir` and `policy` have correct platform
 defaults, the last being `policy.yaml` beside `hub.yaml`: do not set them
@@ -250,10 +283,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now halite-hub
 
 # FreeBSD
+sudo install -d -m 0755 /usr/local/etc/rc.d
 sudo install -m 0555 service/rc.d/halite_hub /usr/local/etc/rc.d/
 sudo sysrc halite_hub_enable=YES
 sudo service halite_hub start
 ```
+
+On FreeBSD, the `install` of the rc script fails on a host with no packages:
+`install: /usr/local/etc/rc.d: No such file or directory`. The `install -d`
+line makes the directory. `make install` makes it too (DIVERGENCE 5.625).
 
 The unit runs the hub as `halite` with the standard sandboxing. It writes
 only `/etc/halite/pki` and the three `halite` directories. On first start
@@ -377,8 +415,17 @@ hub no node has joined is untested.
 | `halite-hub run` says the certificate is not accepted | The operator certificate expired, or was issued by a different CA | `keys operator create` again as the hub's account |
 | A node cannot connect: certificate error naming a host | The node dialled a name not on the hub's certificate | Add the name with `--names`, remove `pki_dir/hub.crt`, restart (step 5); a restart alone keeps the old certificate |
 | FreeBSD: `service halite_hub start` prints `daemon: unrecognized option` | `halite_hub_flags` is set and the script is from v0.1.1 or earlier | Use the corrected `contrib/rc.d/halite_hub` (step 5) |
+| FreeBSD: `install: /usr/local/etc/rc.d: No such file or directory` | The host has no packages, so `/usr/local/etc/rc.d` does not exist | `sudo install -d -m 0755 /usr/local/etc/rc.d`, then install the script again (step 6) |
+| Linux: the hub stops at once with `mkdir /usr/local/etc/halite: read-only file system`, and systemd shows `status=78/CONFIG` | The example `hub.yaml` sets `pki_dir`, `state_dir` and `policy` to FreeBSD paths | Delete those three lines from `hub.yaml` (step 4), then start the hub |
+| FreeBSD: `service halite_hub restart` waits at `Waiting for PIDS: <pid>` and does not return | The cause is not known. It happened twice in a jail. The hub had already logged `the hub stopped`, and the process did not exist. A new `pwait <pid>` returned at once. | Stop the waiting `pwait` process. The restart then finishes and starts the hub. Ten more restarts in a row took about one second each. |
+| Linux, with a specific `listen:` address: `halite-hub runner manage.status` says `dial tcp 127.0.0.1:4510: connect: connection refused` | The command dials `localhost`, and the hub listens on the one address only | Add `--hub ADDRESS:PORT` after the subcommand, for example `--hub 10.0.0.10:4510` |
 | Nothing listens on 4510 | Firewall, or another service has the port | `listen:` in `hub.yaml`, or free the port |
 | `doctor` warns about the pillar | A pillar file does not compile | Run `halite-node pillar items --local --pillar-root …` against it |
+
+Do not wrap `service` or other rc commands in FreeBSD `timeout(1)`. It waits
+for every descendant process, including the hub that `daemon(8)` detached.
+`timeout 30 service halite_hub restart` always reaches its time limit. Then it
+kills the hub.
 
 To **start over** on a hub with no nodes: stop it, remove everything under
 `pki_dir` and `state_dir`, and start again. This makes a new CA and a new

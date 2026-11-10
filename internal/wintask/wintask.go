@@ -158,7 +158,7 @@ func decodeUTF16(raw []byte) string {
 	if len(raw) >= 2 && raw[0] != 0 && raw[1] == 0 {
 		return decodeUTF16LE(raw)
 	}
-	return string(raw)
+	return decodeSingleByte(raw)
 }
 
 func decodeUTF16LE(raw []byte) string {
@@ -195,6 +195,22 @@ func stripEncoding(text string) string {
 		return text
 	}
 	return text[:start] + `<?xml version="1.0"?>` + text[end:]
+}
+
+// stripURI removes a `<URI>` element from RegistrationInfo, which the
+// scheduler writes into every registered task's read-back whether or
+// not the declaration that created it named one. See SameXML.
+func stripURI(text string) string {
+	start := strings.Index(text, "<URI>")
+	if start < 0 {
+		return text
+	}
+	end := strings.Index(text[start:], "</URI>")
+	if end < 0 {
+		return text
+	}
+	end += start + len("</URI>")
+	return text[:start] + text[end:]
 }
 
 // toTask flattens a parsed definition into the fields a state declares.
@@ -314,11 +330,19 @@ func encodeUTF16LE(text string) []byte {
 
 // SameXML reports whether two definitions are the same document.
 //
-// Compared after normalising whitespace and the encoding declaration,
-// because the scheduler rewrites both: a definition handed to it comes
-// back reindented, with `\r\r\n` line endings, and with its own
-// declaration. Comparing the bytes would make a state that declares XML
-// report a change on every run.
+// Compared after normalising whitespace, the encoding declaration and
+// the registration URI, because the scheduler rewrites all three: a
+// definition handed to it comes back reindented, with `\r\r\n` line
+// endings, its own declaration, and a `<URI>` element inside
+// RegistrationInfo giving the task's own registered path -- confirmed
+// against a real, already-registered task on this host
+// (`\Microsoft\Windows\Time Synchronization\SynchronizeTime`), which
+// carries one though nothing says its own shipped definition ever did. A
+// declaration naming no URI, which is the ordinary case, then never
+// matched the read-back and `win_task.present` given raw XML tried to
+// recreate the task on every run (issue 608 item 5, lead L8). Comparing
+// the bytes as given would make a state that declares XML report a
+// change on every run for the reindenting and line endings alone.
 //
 // Not a semantic comparison. Two documents that differ only in element
 // order are the same task to the scheduler and different here, which is
@@ -329,7 +353,7 @@ func SameXML(a, b string) bool {
 }
 
 func normalizeXML(s string) string {
-	text := stripEncoding(s)
+	text := stripURI(stripEncoding(s))
 	var b strings.Builder
 	space := false
 	for _, r := range text {

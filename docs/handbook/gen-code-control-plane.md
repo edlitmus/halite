@@ -6,7 +6,7 @@
 
 The second half is distributed systems. These packages carry jobs from an
 operator to nodes and results back, decide who may do what, keep the records, and
-hold the CA. `transport` is the mutual-TLS substrate; `hub` is the server built on
+hold the CA. `transport` is the mutual-TLS substrate, and `nodelink` how a node paces its use of it; `hub` is the server built on
 it; `pki` and `keystore` are identity; `policy` is authorization; `eventbus`,
 `job` and `returner` are the durable records; `beacon` and `schedule` run on
 nodes; `api` and its login packages are the HTTP face.
@@ -35,6 +35,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `CodeOf` (func): CodeOf answers with the stable code the hub attached to a failure, or an empty string when it attached none.
 - `Delegation` (type): Delegation is who a caller says it is acting for: the operator it authenticated, and the roles that operator's token was issued with.
 - `Denylist` (type): Denylist holds revoked certificate serials.
+- `EncodeBody` (func): EncodeBody is the request body post sends for v, byte for byte, because it is marshal's own output.
 - `EnrollConfig` (func): EnrollConfig is the configuration a node uses before it has a certificate: it verifies the hub and presents nothing.
 - `EnrollRequest` (type): EnrollRequest is the body of a POST to /v1/enroll.
 - `EnrollResponse` (type): EnrollResponse is the answer.
@@ -78,6 +79,23 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `WriteError` (func): WriteError sends a failure in the one shape.
 - `WriteJSON` (func): WriteJSON sends a value with the canonical settings of SPEC 6.4: HTML escaping off, because this is not a browser and a `&` in a command line should survive.
 
+## `internal/nodelink`
+
+Import path `github.com/edlitmus/halite/internal/nodelink`.
+
+Package nodelink is how a node holds its link to the hub: the pace of its reconnects, and how it retries a return the hub did not take.
+
+It is shared by halite-node and simfleet, which simulates thousands of nodes against one hub to measure SPEC 30's rows. The two used to have their own copies: simfleet reconnected every second where a node backs off to a minute with jitter, and gave up on a return at its first failure where a node tries five times. So a reconnect storm from simfleet was harsher and more synchronised than a fleet's, and near saturation a fleet adds load that simfleet took away (DIVERGENCE 5.643, limits L3 and L4 of docs/simfleet-aws-plan.md). One copy means a change to the node's behaviour is a change to what simfleet measures.
+
+**Files:** `reconnect.go`, `returns.go`; with tests.
+
+**Exports.**
+
+- `NewReconnect` (func): NewReconnect is a pacer that gives up after tries failures in a row; zero is never.
+- `PostReturn` (func): PostReturn posts one return, retrying a failure that may succeed on a retry: a return lost because the connection blinked is a job that looks unanswered for ever.
+- `Poster` (type): Poster is the one method of transport.Client that PostReturn uses, so that a test can put anything behind it.
+- `Reconnect` (type): Reconnect is the pace of an agent's attempts to hold its stream to the hub, and the point at which `hub_tries` says to stop.
+
 ## `internal/hub`
 
 Import path `github.com/edlitmus/halite/internal/hub`.
@@ -86,7 +104,7 @@ Package hub is the control plane of SPEC section 6: the endpoints a node talks t
 
 The rule the whole package follows is that a node's identity comes from the certificate the TLS layer verified and never from the request body. A body says what a node wants; the certificate says who is asking.
 
-**Files:** `anchors.go`, `batch.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `returnscrub.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
+**Files:** `anchors.go`, `batch.go`, `connlimit.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `returnscrub.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
 
 **Exports.**
 
@@ -168,13 +186,14 @@ Package job is the job identity, the replay defences, and the return schema of S
 
 The hub and the node both depend on this, and they have to agree exactly: a jid the hub assigns is the key the node records to refuse a replay, the key the job cache files a return under, and the string an operator types into \`jobs show\`.
 
-**Files:** `cache.go`, `guard.go`, `job.go`, `model.go`, `signedreplay.go`; with tests.
+**Files:** `cache.go`, `guard.go`, `job.go`, `model.go`, `returnindex.go`, `signedreplay.go`; with tests.
 
 **Exports.**
 
 - `Batch` (type): Batch is the batching policy of SPEC 9.3.
 - `Cache` (type): Cache is the job cache of SPEC 9.4: a local store under the state directory, segmented by day, holding each job and the returns filed against it.
 - `Clock` (type): Clock assigns identifiers that do not collide.
+- `Filing` (type): Filing is what filing one return learned about the job it belongs to.
 - `ForeignRecordError` (type): ForeignRecordError says which record and which schema.
 - `Guard` (type): Guard is the node's bounded replay cache of SPEC 6.3.
 - `ID` (type): ID is a job identifier.
@@ -442,7 +461,7 @@ Package keystore is the hub's record of who has asked to join and who has been l
 
 One JSON file per node, named for the node, written atomically. A directory rather than a database because the thing an operator does at three in the morning is read it, and because a key store that cannot be recovered with \`cat\` is a key store that gets recovered by guessing.
 
-**Files:** `authority.go`, `crl.go`, `deleted.go`, `keystore.go`, `lock_fcntl.go`, `lock_flock.go`, `lock_other.go`, `lock_windows.go`, `owner_other.go`, `owner_unix.go`, `token.go`; with tests.
+**Files:** `authority.go`, `crl.go`, `deleted.go`, `keystore.go`, `lock_fcntl.go`, `lock_flock.go`, `lock_other.go`, `lock_windows.go`, `owner_other.go`, `owner_unix.go`, `pending.go`, `token.go`; with tests.
 
 **Exports.**
 
