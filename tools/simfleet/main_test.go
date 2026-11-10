@@ -251,13 +251,13 @@ func startHub(t *testing.T, n int) (sf, root, addr string) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
 	for _, pkg := range []string{"cmd/halite-hub", "tools/simfleet"} {
-		out, err := exec.Command("go", "build", "-o", filepath.Join(bin, filepath.Base(pkg)),
+		out, err := exec.Command("go", "build", "-o", filepath.Join(bin, filepath.Base(pkg)+exe),
 			"github.com/edlitmus/halite/"+pkg).CombinedOutput()
 		if err != nil {
 			t.Fatalf("building %s: %v\n%s", pkg, err, out)
 		}
 	}
-	sf = filepath.Join(bin, "simfleet")
+	sf = filepath.Join(bin, "simfleet"+exe)
 	root = filepath.Join(dir, "fleet")
 	if out, err := exec.Command(sf, "setup", "-root", root, "-n", strconv.Itoa(n)).CombinedOutput(); err != nil {
 		t.Fatalf("setup: %v\n%s", err, out)
@@ -269,7 +269,7 @@ func startHub(t *testing.T, n int) (sf, root, addr string) {
 	addr = l.Addr().String()
 	l.Close()
 	var hubLog bytes.Buffer
-	hub := exec.Command(filepath.Join(bin, "halite-hub"), "serve", "--root", root, "--config", filepath.Join(root, "hub.yaml"),
+	hub := exec.Command(filepath.Join(bin, "halite-hub"+exe), "serve", "--root", root, "--config", filepath.Join(root, "hub.yaml"),
 		"--listen", addr, "--names", "127.0.0.1,localhost")
 	hub.Stdout, hub.Stderr = &hubLog, &hubLog
 	if err := hub.Start(); err != nil {
@@ -291,6 +291,16 @@ func startHub(t *testing.T, n int) (sf, root, addr string) {
 	})
 	return sf, root, addr
 }
+
+// exe is what Windows needs on the end of a program's name for exec to
+// find it by path: `go build -o bin/simfleet` writes that name exactly,
+// and on Windows a file without .exe is not something exec will run.
+var exe = func() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
+}()
 
 func oneResult(t *testing.T, path string) result {
 	t.Helper()
