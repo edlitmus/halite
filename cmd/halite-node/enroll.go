@@ -24,6 +24,7 @@ import (
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/job"
 	hlog "github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/nodelink"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/renewal"
 	"github.com/edlitmus/halite/internal/transport"
@@ -532,10 +533,10 @@ func runConnect(args *cli.Args) int {
 	n.startSchedule(ctx)
 	n.startMine(ctx)
 
-	pace := newReconnect(n.cfg.Int("hub_tries", 0))
+	pace := nodelink.NewReconnect(n.cfg.Int("hub_tries", 0))
 
 	for ctx.Err() == nil {
-		pace.attempting()
+		pace.Attempting()
 		// Rebuilt on every reconnect so that a renewal that happened while
 		// this process was running takes effect: the certificate is
 		// read from disk here, not once at startup.
@@ -556,7 +557,7 @@ func runConnect(args *cli.Args) int {
 		}, func() {
 			// The hub has accepted the stream: the failures before it are
 			// over, for `hub_tries` and for the backoff.
-			pace.opened()
+			pace.Opened()
 			n.requestAnchor()
 		}, func(msg transport.Message) error {
 			return n.handle(msg)
@@ -579,9 +580,9 @@ func runConnect(args *cli.Args) int {
 			// next attempt is not backed off.
 			n.log.Info("the hub closed the stream")
 		}
-		wait, giveUp := pace.ended(err == nil)
+		wait, giveUp := pace.Ended(err == nil)
 		if giveUp {
-			n.log.Error("giving up", "attempts", pace.attempt)
+			n.log.Error("giving up", "attempts", pace.Attempts())
 			return 1
 		}
 		select {
@@ -1168,37 +1169,27 @@ func sameHubClient(a, b *transport.Client) bool {
 
 // returnPoster is the one method of transport.Client that sendReturn
 // uses, so that a test can put the hub's own check behind it.
-type returnPoster interface {
-	Return(ctx context.Context, ret any) error
-}
+type returnPoster = nodelink.Poster
 
-// sendReturn posts one return, retrying what may succeed on a retry.
+// sendReturn posts one return, retrying what may succeed on a retry. The
+// retry is nodelink's, shared with simfleet so that the load a simulated
+// fleet puts on a hub near saturation is a real fleet's.
 func (n *node) sendReturn(ctx context.Context, client returnPoster, ret *job.Return) {
 	ret = n.fitReturn(ret)
-	for attempt := 0; attempt < 5; attempt++ {
-		err := client.Return(ctx, ret)
-		if err == nil {
-			return
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if transport.Permanent(err) {
-			// The hub understood and said no. Retrying a refusal
-			// is how a node spends its evening arguing with a hub
-			// that has already answered.
-			n.log.Warn("the hub refused a return",
-				"jid", string(ret.JID), "error", err.Error())
-			return
-		}
+	err := nodelink.PostReturn(ctx, client, ret, func(err error) {
 		n.log.Warn("could not post a return", "jid", string(ret.JID), "error", err.Error())
-		select {
-		case <-time.After(time.Duration(attempt+1) * time.Second):
-		case <-ctx.Done():
-			return
-		}
+	})
+	switch {
+	case err == nil, ctx.Err() != nil:
+	case errors.Is(err, nodelink.ErrGaveUp):
+		n.log.Error("giving up on a return", "jid", string(ret.JID))
+	default:
+		// The hub understood and said no. Retrying a refusal is how a
+		// node spends its evening arguing with a hub that has already
+		// answered.
+		n.log.Warn("the hub refused a return",
+			"jid", string(ret.JID), "error", err.Error())
 	}
-	n.log.Error("giving up on a return", "jid", string(ret.JID))
 }
 
 // fitReturn is ret, or the stand-in job.Return.Oversized for it when

@@ -29,6 +29,11 @@
 // never closes it, which is what a node built before DIVERGENCE 5.641
 // does, to measure a fleet that has not been upgraded.
 //
+// A simulated node reconnects at the node's pace and retries a return as
+// the node does, through the same code (internal/nodelink), so that a
+// reconnect storm or a hub near saturation sees what a fleet would give
+// it.
+//
 //	simfleet setup -root DIR -n 20000
 //	halite-hub serve --root DIR --config DIR/hub.yaml --listen 127.0.0.1:4510 --names localhost,127.0.0.1
 //	simfleet run -root DIR -hub 127.0.0.1:4510 -n 20000 -hub-pid <pid> -ping -apply
@@ -77,6 +82,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
+	"github.com/edlitmus/halite/internal/nodelink"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -437,10 +443,16 @@ func (f *fleet) connect(ctx context.Context, s *sim) {
 		returns = stream
 	}
 	grains, _ := json.Marshal(map[string]any{"id": s.id, "os": "Simulated", "kernel": "simfleet"})
+	// The node's own pacer, with `hub_tries` at its default of 0: a
+	// simulated node never gives up. It used to wait a fixed second after
+	// every end, so a fleet that lost the hub together came back together,
+	// once a second, which is a harsher storm than a fleet's.
+	pace := nodelink.NewReconnect(0)
 	for ctx.Err() == nil {
 		opened := false
-		_ = stream.SubscribeOpened(ctx, transport.SubscribeRequest{NodeID: s.id, Grains: grains, Version: "simfleet"},
-			func() { opened = true; f.connected.Add(1) },
+		pace.Attempting()
+		err := stream.SubscribeOpened(ctx, transport.SubscribeRequest{NodeID: s.id, Grains: grains, Version: "simfleet"},
+			func() { opened = true; pace.Opened(); f.connected.Add(1) },
 			func(msg transport.Message) error {
 				if msg.T == transport.MsgJob {
 					if f.perReturn {
@@ -453,16 +465,17 @@ func (f *fleet) connect(ctx context.Context, s *sim) {
 		if opened {
 			f.connected.Add(-1)
 		}
+		wait, _ := pace.Ended(err == nil)
 		select {
 		case <-ctx.Done():
-		case <-time.After(time.Second):
+		case <-time.After(wait):
 		}
 	}
 }
 
 // answer files the return a node would, with nothing behind it, and
 // records both times under the job's own jid.
-func (f *fleet) answer(ctx context.Context, c *transport.Client, s *sim, msg transport.Message) {
+func (f *fleet) answer(ctx context.Context, c nodelink.Poster, s *sim, msg transport.Message) {
 	rec := f.jobs.get(string(msg.JID), msg.Fun)
 	rec.received[s.idx].Store(time.Now().UnixNano())
 	body := json.RawMessage(`{}`)
@@ -472,7 +485,10 @@ func (f *fleet) answer(ctx context.Context, c *transport.Client, s *sim, msg tra
 	ret := &job.Return{JID: job.ID(msg.JID), NodeID: s.id, Fun: msg.Fun, Success: true,
 		Return: body, StartTime: time.Now().UTC().Format(time.RFC3339Nano), Schema: job.ReturnSchema,
 		NodeVersion: "simfleet"}
-	if err := c.Return(ctx, ret); err != nil {
+	// Retried as the node retries, so that a hub near saturation gets the
+	// extra load a fleet would give it. A return error is one the node
+	// would have given up on, or one the hub refused.
+	if err := nodelink.PostReturn(ctx, c, ret, nil); err != nil {
 		rec.returnErrs.Add(1)
 		return
 	}

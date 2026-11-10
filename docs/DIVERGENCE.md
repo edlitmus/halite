@@ -42627,6 +42627,76 @@ listing — are swept in by the catch-all filter and are claimed by nothing:
 this entry closes the debian leg's own claim, not the general case of a
 test that passes on a leg whose list does not mention it.
 
+### 5.643 simfleet reconnected and retried returns in its own way, not the node's
+
+Limits L3 and L4 of the simfleet plan (`docs/simfleet-aws-plan.md`, H2
+and H3). The harness is meant to give a hub the load a fleet of real
+nodes would, and in two ways it did not:
+
+- **Reconnects (L3).** A simulated node waited a fixed second after its
+  stream ended, every time. `halite-node` backs off from 1 s to a minute,
+  doubling, with up to a fifth of jitter either way, and starts again
+  from a second once a stream opens (#597, whose ledger section was
+  cited by number and never written). So 20,000 simulated nodes
+  that lost the hub together came back together, once a second, for as
+  long as the hub was down: a harsher and more synchronised storm than a
+  fleet's, and a NOT MET from it could have been the harness.
+- **Returns (L4).** A simulated node counted a failed return as lost at
+  the first failure. The node tries five times, waiting 1, 2, 3, 4 and
+  5 s, and stops early only for a refusal or its own shutdown. Near
+  saturation a fleet adds that load, and simfleet took it away.
+
+**Fixed** by having one copy of each. `internal/nodelink` is new and
+holds both: `Reconnect`, the node's pacer, moved from
+`cmd/halite-node/reconnect.go` with its tests and its
+`hub_tries` accounting unchanged; and `PostReturn`, the retry loop from
+the node's `sendReturn`. The node's log lines stay in the node, which
+now calls `PostReturn` and logs by its answer. simfleet's stream loop
+and its `answer` now use the same two, so a change to the node's
+behaviour is a change to what simfleet measures.
+
+`PostReturn` keeps one thing from the node that looks like a defect: it
+waits after the fifth failure as after the others, before giving up, so
+the node's return queue stalls 5 s longer than it needs to on a return
+it is abandoning. This change moves the behaviour and does not change
+it; that is left for a change of its own.
+
+**Demonstrated** on darwin/arm64, go1.27.3, by tests only:
+
+- `TestASimulatedNodeBacksOffAsANodeDoes` runs simfleet's `connect`
+  against a listener that accepts and closes, for 4.5 s, and counts
+  attempts: 2 or 3 with the node's pacer, where a fixed second gives 5.
+- `TestASimulatedNodeRetriesAReturn` runs simfleet's `answer` against a
+  poster that fails once: 2 posts, no return error, and a return time.
+- `internal/nodelink`'s tests hold the retry: posted on the third try
+  after two failures, a refusal not retried, given up after five, the
+  waits 1 to 5 s, and a stopped context ending the wait. The pacer's
+  three tests moved with it unchanged.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| simfleet waits a fixed second again | `TestASimulatedNodeBacksOffAsANodeDoes`: 5 attempts |
+| simfleet posts a return once, as before | `TestASimulatedNodeRetriesAReturn`: 1 post, 1 error |
+| a refusal retried | `TestARefusedReturnIsNotRetried` |
+| four tries instead of five | `TestAReturnIsGivenUpAfterFiveFailures`, once it was written against 5 rather than the constant, which it first compared with and so could not fail |
+| the pacer without jitter | `TestTheReconnectWaitResetsWhenTheStreamOpensAndIsJittered` |
+
+**Not covered:**
+
+- No run on AWS or against a hub under load. What a reconnect storm or
+  a saturated hub looks like with the node's pacing and retries is what
+  steps 2 and 3 measure, and has not been measured.
+- The node's own `sendReturn` has no test that it retries; its
+  behaviour rests on `PostReturn`'s tests and on reading the call.
+- simfleet still answers each job in its own goroutine, where the node
+  posts its returns one at a time from one queue. Under a burst of jobs
+  a simulated node can have several returns in flight and a real one
+  cannot. That is a third difference and is not fixed here.
+- simfleet counts a return error but not a retry, so a run cannot say
+  how much of its load was retries.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
