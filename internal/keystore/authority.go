@@ -388,10 +388,15 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 }
 
 // roomForPending refuses a new pending record once there are
-// maxPending. It reads every record, which is the store's size and is
-// paid only for a name not seen before.
+// maxPending. It is asked for every name not seen before, which is what
+// an enrolment storm and a growing fleet are made of, so it must not
+// cost the store's size: it counts the pending index, reading at most
+// maxPending names, and reads records only when the count reaches the
+// limit, and then only the pending ones. It used to read every record
+// in the store, and said the cost was "paid only for a name not seen
+// before" as though that made it rare (DIVERGENCE 5.635).
 func (a *Authority) roomForPending() error {
-	n, err := a.Store.countPending()
+	n, err := a.Store.countPending(a.maxPending())
 	if err != nil {
 		return err
 	}

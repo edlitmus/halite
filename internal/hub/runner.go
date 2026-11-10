@@ -516,12 +516,14 @@ func (s *Server) recordRunnerReturn(out *RunnerOutcome, started time.Time) {
 		Schema:     job.ReturnSchema,
 	}
 	s.scrubReturn(cached)
-	added, err := s.Jobs.AddReturn(cached)
+	filed, err := s.Jobs.File(cached)
 	if err != nil {
 		s.warn("could not record a runner return", "jid", string(out.JID), "error", err.Error())
 		return
 	}
-	if added {
+	// The same rule as a node's return (see returned): asked once, when
+	// nobody is outstanding.
+	if filed.Fresh && filed.Remaining == 0 {
 		s.completeIfDone(out.JID)
 	}
 }

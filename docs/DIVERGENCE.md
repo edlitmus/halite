@@ -1888,31 +1888,38 @@ section 4.1. What is still uncovered is what needs a hub.
 ### 5.2 The fourteen test layers
 
 Every layer SPEC 31 requires beyond the unit layer of 5.1, and where each
-stands. Seven are present, one of them stronger than specified, five are
+stands. Nine are present, one of them stronger than specified, three are
 partial, and one is absent. Nothing is unverified any more: the
-reproducibility layer was, and it is now partial with the limit stated
-rather than the question left open.
+reproducibility layer was, and two builders have now agreed on both
+published tags, with the limits stated rather than the question left
+open.
 
-Four rows moved after this table was first written and each said
-"blocked on phase 2" long after phase 2 landed: chaos and upgrade are
-built, scale is partial, and integration is the one that is still
-absent.
+Six rows have moved since this table was first written, and only two of
+the six moved because something was built. Four said "blocked on phase 2"
+long after phase 2 landed: chaos and upgrade are built, scale is partial,
+and integration is the one that is still absent. The fifth is
+reproducibility, which went on saying a second builder had never been
+tried for a month after two of them agreed on a published release
+(5.632). The sixth is the version-comparison differential, which named a
+host it needed and already had (5.633). The pattern is the argument for
+reading this table against the build rather than maintaining it beside
+one.
 
 | Layer | Status |
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 40 disagree by design, 31 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 164 of 198 agree, 25 are outside the subset, 9 are gaps — see 5.5 and 5.68. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
-| Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
-| Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
+| Differential, version comparison | **present** for all three orderings. `pkg.version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's, since libpkg is its own specification. FreeBSD: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. RPM: `TestLiveRpmVersionCmpAgreesWithRpm` drives rpm's own comparison through its embedded Lua, and the `fleetcheck-rocky9` and `fleetcheck-alma8` legs fail if it skips — the `evr` subtest ran on rpm 4.16.1.3 on Rocky 9. Debian: `TestLiveDpkgVersionCmpAgreesWithDpkg` drives `dpkg --compare-versions` in the `fleetcheck` leg, and `TestDebianOrderingMatchesACapturedDpkg` holds the ordering to dpkg 1.22.22's captured answers on every machine. This row said both halves "need a Debian or RHEL host"; the lab and the container legs had been that host for some time (5.633). |
+| Conformance, state modules | **present** and stronger than specified — see 1.4. **150 of the build's 152 state functions have a conformance case**, 97 of them only on a live machine, 2 excused by name and 6 covered only because the harness can express a state that changes nothing. This row said "6 of the 46 state functions", which was stale and also the wrong denominator: 46 is SPEC 15.5's count of core state *modules*. The numbers here are logged by the accounting subtest of `TestFileStatesConformToTestMode`, which fails if a function has neither a case nor an entry in `unconformed` (5.633). |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
-| Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder, all of which belong to phases that have not started. |
+| Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. An eighth function, `FuzzCodec` over the render sandbox's value codec, is in the suite but not in `make fuzz`. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder. This row said those four "belong to phases that have not started". All four of those subsystems ship now, so the gap is a gap rather than a schedule (5.632). |
 | Integration | **absent.** No containerised hub-plus-nodes harness across the tier 1 matrix. The repository has two containers and a virtual machine — the Salt differential image, the Debian container of 5.35, and the ZFS machine of 6.1 — and each is a correctness harness for one subsystem rather than a matrix. This is the last layer with nothing behind it. |
 | Scale | **partial.** `internal/perf` carries all thirteen rows of SPEC 30 with what measures each, held to SPEC's own table in both directions. The two rows SPEC measures with a benchmark are measured: the highstate compile of 500 states over 50 SLS files, and the cold pillar compile of 200 pillar SLS. `make perf` runs them and fails if either is over its target; `make perf-bench` is the raw measurement. The eleven rows that need the simulated node harness, a soak, or the integration matrix are still unmeasured, and so is the *cached* half of the pillar row, because no pillar cache exists to measure. See 5.57. |
-| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other, because there has never been a second version. See 4.13. |
+| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other. This row said that was because "there has never been a second version"; there have been two since `v0.1.1` on 2026-10-12, and nothing recorded here has run one against the other (5.632). See 4.13. |
 | Chaos | **present.** All eight of SPEC's scenarios are registered in `internal/chaos` with a defined behaviour and a stated limit, each with a test that names it, and a ninth is registered that SPEC does not name: the concurrent-writer shape that three defects in a fortnight all had. `make chaos` runs the layer with `-v`, which is the point of it. Its first run found a reader resuming from a pruned event-bus offset being silently skipped forward. See 5.29. |
-| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. Clean against the database of 2026-08-21. No static analysis beyond `go vet`. No external review. |
-| Reproducibility | **partial.** `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine — not the two independent builders SPEC 31 asks for — but it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. A second builder has still never been tried. |
+| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. `ci.yml` runs it on every push and pull request at the version `make vuln` pins, and it was clean on 2026-11-08. The external review SPEC 31 asks for before 1.0 **has happened**: issue 321, filed by an outside contributor on 2026-10-14 against `a0d5344`, closed with every High, Medium and section 5 finding fixed, decided or filed as an issue of its own (`docs/audits/2026-10-issue-321-triage.md`). It reached the enrollment flow, the RBAC evaluator and the extension sandbox by name, and the hub port's pre-authentication surface through the enrollment work; whether `internal/transport` itself was read is recorded neither way. What it does not establish is coverage, and it said so itself: it listed the files it never read, a second pass over part of that list found four more defects, and the list is still long (`docs/audits/2026-10-issue-321-second-pass.md`). No static analysis beyond `go vet`. See 5.632. |
+| Reproducibility | **present**, with its limits named. `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine, and it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. The property SPEC 4.3 and SPEC 31 actually ask for is `release.yml`'s, and it has it: every tag is built on `ubuntu-24.04` and on `ubuntu-22.04`, each manifest must list at least 80 artifacts so that two short ones cannot compare equal, and a difference fails the release before anything is signed or published. The two builders have agreed on both published tags, on 90 artifacts each (5.632). What is still untried is a builder outside this project's CI: both are GitHub-hosted x86_64 Linux images, so every non-Linux artifact is cross-compiled on Linux, no second architecture has built a release, and nobody outside the project has reproduced a published digest. |
 
 ### 5.3 What fuzzing found
 
@@ -12489,7 +12496,7 @@ macOS 26.7:
 
 ```
 _lpadmin\t\tGroupMembership = (
-    "ed.silva"
+    "someuser"
 )
 ```
 
@@ -23484,6 +23491,202 @@ was a day old).
 
 `plan.md` 3.1a has the steps for a suitable host.
 
+#### Run at 1,000 and 5,000 nodes on AWS (2026-11-08): the hub does not survive a ping to 5,000
+
+Step 0 of `docs/simfleet-aws-plan.md`, on two existing hosts in AWS
+us-east-1, run over SSM as root. **The hub** was host-c, a
+c8g.2xlarge (8 Graviton vCPU, 15.7 GiB, Ubuntu 24.04, kernel
+`6.8.0-1067-aws-fips`). That host also runs the estate's configuration
+agent and a security agent of about 500 MB. **The fleet** was host-b, a
+c7g.2xlarge of the same OS and kernel. Both are arm64. The binaries were
+built on host-b from `1bd9a6c8` with Go 1.27.3 and the vendored flags.
+The hub listened on `<host-c-ip>:<port>`, because the security group opens
+nothing else between the two, under a transient unit with
+`LimitNOFILE=262144`. Hub memory came from `/proc/<pid>/status`, sampled
+on the hub host every 5 s. `-hub-pid` cannot reach another host.
+
+**The re-run fix holds, and was broken on purpose.** With the skip
+replaced by `if false`, growing 200 identities to 300 was refused:
+`sim-00002.simfleet is already known by a different key`. The real
+binary grew the same copy to 300, and `sim-00001`'s certificate was
+byte-identical before and after.
+
+**1,000 nodes: both rows met, at this size.** All 1,000 connected in
+1.6 s. `test.ping` was received by all of them with p95 248 ms, and
+returned by all of them with p95 4.07 s. `state.apply` reached the last
+node at 217 ms. There were no return errors. Hub resident memory was
+118 MB idle and peaked at 928 MB during the ping. 1,000 nodes is a tenth
+of either SPEC row.
+
+**5,000 nodes: not met, and the host went down with it.** All 5,000
+connected in 6.8 s, and the ping reached every node by 361 ms. Then:
+
+| Seconds after the streams opened | Hub RSS | FDs | Threads |
+|---|---|---|---|
+| 5 | 2.2 GB | 10,869 | 889 |
+| 15 | 6.8 GB | 12,098 | 889 |
+| 25 | 10.5 GB | 12,942 | 889 |
+| 60 | 14.2 GB | 12,483 | 889 |
+| at the end | 15.3 GB | 4,290 | 3,730 |
+
+The hub used about seven of the eight cores. Only 1,508 of 5,000 returns
+were accepted (p50 47 s) and 3,492 failed. The hub logged 1,585 failed
+TLS handshakes (EOF, broken pipe) from returns that gave up. The
+`state.apply` that followed waited 25.5 s in `Submit` before it was
+accepted, and 662 of its 5,000 returns arrived. The harness printed MET
+for that dispatch at 26.05 s, because its clock starts before `Submit`
+returns. That MET is the clock, not the hub. The host then thrashed. It
+had no swap and almost no free memory. EBS reads ran at about
+210,000 a minute, the root volume's queue held at 3, and SSM stopped
+answering. It was rebooted with `RebootInstances` 16 minutes later. No
+OOM kill was logged. **SPEC 30 asks for under 4 GiB at 20,000 nodes. At
+5,000 nodes the hub passed 14 GiB during one ping.**
+
+**The likely cause, read from the code and not yet shown by a profile or
+a fix.** For each new return, `completeIfDone` calls `Cache.Missing`,
+which calls `Cache.Returns`. That reads and parses every return already
+filed for the job (`internal/hub/jobs.go`, `internal/job/cache.go`). So
+the k-th return of a job reads k files, and one job to 5,000 nodes is
+about 12.5 million reads and parses. Thousands of handlers do this at
+once, each with its own parsed copy. That fits the memory, the CPU and
+the read storm once the page cache was gone. At 1,000 nodes it is
+500,000 reads, which fits the 928 MB peak. Until a fix is measured, this
+is a hypothesis.
+
+**A second cost, on enrolment.** `simfleet setup` issued 5,000 identities
+at 20, 39, 56, 75 and 93 s per thousand, on one core. The cost per
+identity rises with the size of the store. `roomForPending` calls
+`countPending`, which reads every record in the store for each name it
+has not seen before (`internal/keystore`). Its comment says the cost "is
+paid only for a name not seen before", and an enrolment storm is made of
+exactly those names. Not profiled.
+
+**What the run showed about the plan itself.** The hub refuses a TLS
+client that does not offer the `halite/1` ALPN. That refusal is
+deliberate (`transport.requireProtocol`). So neither curl nor a stock
+Prometheus can scrape `/v1/metrics`. `halite-hub metrics` with `--hub`,
+`--cert` and `--key` is the route, and it was not run. The driver used
+about 1.0 GB for 5,000 streams, and 1.3 GB with returns in flight, so
+the plan's estimate of 5,000 sims on a 4-vCPU, 8 GiB driver stands.
+
+**Not covered:** `-reuse-client` (the run started after the hub host had
+failed, and was stopped). Anything on a 16-core host. Anything on
+FreeBSD. A profile of the hub. A run with the cause fixed. The 1,000-node
+numbers on a host without the other two agents.
+
+#### Re-run at 5,000 after both fixes (2026-11-08): both rows met at 5,000, hub peak 1.6 GB
+
+The same two hosts, the same harness, the same order of runs, about four
+hours later. The only change was the build: `main` at `dbbf053d`, which
+has the two fixes the run above pointed at. They are #689, *every return
+re-read every return before it*, and #688, *every new name read every
+record in the key store*. It does not have the connection-cap work. The
+hub unit gained `MemoryMax=12G` and `MemorySwapMax=0`, so that a repeat
+of the run above would kill the hub rather than the host. It never came
+near the limit. The run above, on `1bd9a6c8`, is the before half of this
+comparison: the same hosts and the same commands, without the two fixes.
+
+**Setup is now linear.** 5,000 identities took 73.4 s, at 13.6, 14.8,
+14.9, 15.1 and 15.0 s per thousand. Before, it took 283 s, at 20 to 93 s
+per thousand and rising.
+
+| Run | Ping returned | Ping p95 | Apply submit | Apply last received | Hub peak RSS |
+|---|---|---|---|---|---|
+| 1,000 nodes | 1,000 of 1,000 | 465 ms (was 4.07 s) | 321 ms | 290 ms | 353 MB (was 928 MB) |
+| 5,000 nodes | 5,000 of 5,000 (was 1,508) | 1.87 s (was 59.5 s) | 803 ms (was 25.5 s) | 842 ms | 1.61 GB (was 15.3 GB) |
+| 5,000, `-reuse-client` | 5,000 of 5,000 | 1.43 s | 273 ms | 287 ms | 0.99 GB |
+
+None of the three runs had a return error. Every 5,000-node run connected
+in 6.6 to 6.7 s. After the 5,000-node run the hub fell back to about
+265 MB, and after the last run it settled at 474 MB. The cgroup's peak,
+page cache included, was 1.88 GB. The hub used 69.6 s of CPU across all
+three runs. This boot's journal has no TLS handshake error at all, where
+the run above logged about 1,585. It has only the two expected warnings
+about the 4,000 nodes absent from each 1,000-node job. The ENA
+`conntrack_allowance_exceeded` and `pps_allowance_exceeded` counters
+stayed at 0 on the hub. The driver peaked at 1.27 GB and 15,006 file
+descriptors, and used 8.2 s of CPU.
+
+**The scrape works by the route the run above named.** `halite-hub
+metrics --hub --server-name --pki-dir --cert --key`, run from the driver,
+answered every time (181 lines before the first run, 244 after). After
+the last run it read `halite_job_returns_total{result="succeeded"} 22000`.
+That is exactly 2 × 1,000 + 4 × 5,000, so the hub's own count agrees with
+the harness. `halite_jobs_expired_total` read 0.
+
+**What this does and does not show.** It shows that, on these hosts,
+both SPEC 30 rows are met at 5,000 nodes, and that the hub's memory at
+5,000 is about a tenth of what it was. It does not show either row at
+the SPEC's own sizes, 10,000 and 20,000. It does not show the 4 GiB row
+at 20,000: 1.6 GB at 5,000 does not extrapolate to anything safely
+without a run. **Not covered:** a 16-core hub, FreeBSD, a profile, the
+connection cap (not merged when this ran), and any size above 5,000.
+
+#### Step 1 on a dedicated 16-core hub (2026-11-09): both rows met at 5,000, no disconnects in 10 minutes
+
+Step 1 of `docs/simfleet-aws-plan.md`, the first run on hosts raised for
+it by `contrib/tofu/aws-simfleet`, in us-east-1, one availability zone,
+driven over SSM as root. **The hub** was a c7g.4xlarge (16 Graviton
+vCPU, 30 GiB, stock Canonical Ubuntu 24.04, kernel `7.0.0-1014-aws`),
+running nothing but the hub. **The driver** was a c7g.xlarge (4 vCPU,
+8 GiB, same image). The module's user data had set the sysctls, chrony
+against Amazon Time Sync (offsets about 2 µs on both) and the four-hour
+halt, all checked on the hosts before the run. Both binaries were built
+on an existing arm64 test host from `main` at `0026d9fa`, with Go 1.27.3
+(sha256 checked against go.dev's list) and the vendored flags, and their
+sha256 sums matched on arrival. The hub ran under a transient unit with
+`LimitNOFILE=262144` and a `MemoryMax=24G` guard it never approached,
+listening on the one port the security group opens between hosts.
+`setup` ran on the hub host and its directory was copied to the driver.
+
+**Setup:** 5,000 identities in 73.6 s, the same as the re-run above.
+
+| | Result |
+|---|---|
+| Connect | 5,000 of 5,000 in 7.7 s |
+| `test.ping` | received p95 303 ms; returned 5,000 of 5,000, p50 1.46 s, **p95 1.88 s**, last 1.96 s; 0 return errors: **MET** |
+| `state.apply` | submit 300 ms; **last received 300 ms**; returned 5,000 of 5,000, p95 1.75 s; 0 return errors: **MET** |
+| Hold, 10 min | `halite_hub_nodes_connected` 5,000 at each of ten one-minute scrapes; no `halite_hub_node_disconnect_total` until the driver exited, then 5,000 `client_gone` |
+| Hub CPU while idle | 36.2 s over the 486 s after the return connections closed: 7.5% of one core, 0.47% of the 16 |
+| Hub RSS | 582 MB as the connections finished; **1.50 GB peak**, about 95 s after them; 900 MB holding 5,000 streams; 228 MB after the driver left. cgroup peak 1.75 GB |
+| Driver | peak 1.42 GB RSS, 15,006 descriptors |
+
+The hub's own count agrees with the harness:
+`halite_job_returns_total{result="succeeded"}` read 10,000 and
+`halite_jobs_missing_returns` 0. Its journal at priority `warning` was
+empty, with no TLS handshake error, and the unit never restarted. The
+ENA `conntrack_allowance_exceeded`, `pps_allowance_exceeded` and
+bandwidth counters stayed at 0; `conntrack_allowance_available` read
+about 1.23 million on the hub, which puts a number on the plan's open
+question about the c7g.4xlarge's tracked-connection allowance.
+
+**The peak is the idle return connections, not the jobs.** It came with
+15,002 established sockets: the 5,000 streams plus one connection per
+return, 10,000 of them, held open until the client's 90 s idle timeout
+(limit L10 of the plan). When they closed, the hub fell to 900 MB and
+2,492 threads, and stayed there. That 900 MB for 5,000 idle streams is
+about 180 KB a stream. Four times it is about 3.6 GB at 20,000 before a
+job runs, against SPEC 30's 4 GiB. That is arithmetic from one size, not
+a measurement, and memory per stream need not be linear; it is the
+number step 3 has to test, and the reason L10 (H9) is worth settling
+before it.
+
+**The harness printed "last -8ms after the hub accepted the job"** for
+the ping. A node had the job 8 ms before `Submit` returned to the
+submitter, because the hub dispatches before it answers. The reading is
+true, and the field is only there to expose a slow accept (L11); a
+negative value means there was none.
+
+**Teardown, checked** with read-only calls after `tofu destroy`: both
+instances `terminated`; no volume, placement group or network interface
+left with `Project=halite-simfleet` in us-east-1, and no instance in
+us-east-2. The build directory was removed from the build host.
+
+**Not covered:** either row at its own size (10,000 and 20,000), the
+4 GiB row, more than one driver (so `simfleet merge` across hosts has
+still not run), FreeBSD, a profile of the idle CPU (7.5% of a core for
+5,000 idle streams is not explained here), and `-reuse-client`.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
@@ -23689,12 +23892,11 @@ branch; this is documentation.
 were already in kernel FIPS mode on Ubuntu Pro `fips-updates`. Neither was
 rebooted or moved into or out of FIPS mode for this run.
 
-- `ami-test-1`: i-06bb649fb9f76b3f6, c8g.2xlarge (Graviton), AMI
-  ami-06a7244b703c98422, **arm64**, Ubuntu 24.04.5 LTS, kernel
+- `host-c`: c8g.2xlarge (Graviton), **arm64**, Ubuntu 24.04.5 LTS, kernel
   6.8.0-1067-aws-fips, `/proc/sys/crypto/fips_enabled` 1, `fips=1` on the
   kernel command line. OpenSSL 3.0.13 with the provider "Ubuntu 24.04
   OpenSSL Cryptographic Module" 3.0.13-0ubuntu3.15+Fips2 active.
-- `noop2-1`: i-0cc603ffb64dfbeea, c6a.2xlarge, AMI ami-09db3cf260e84b5d2,
+- `host-b`: c6a.2xlarge,
   **amd64**, Ubuntu 22.04.5 LTS, kernel 5.15.0-1117-aws-fips,
   `fips_enabled` 1, `fips=1`. OpenSSL 3.0.2.
 
@@ -23704,7 +23906,7 @@ under `/root`. Both also run Salt's agent; it was still active afterwards and
 
 **The archives.** The published v0.1.1 archives were fetched on each host
 from the GitHub release: `halite-0.1.1-linux-arm64-fips.tar.gz` on
-`ami-test-1`, `halite-0.1.1-linux-amd64-fips.tar.gz` on `noop2-1`, and the
+`host-c`, `halite-0.1.1-linux-amd64-fips.tar.gz` on `host-b`, and the
 ordinary `halite-0.1.1-linux-<arch>.tar.gz` on each. `sha256sum -c` against
 the release's SHA256SUMS said OK on both. The build identity printed was
 `0.1.1+f4a60b7a93a4 (fips v1.0.0)`. This is the first time the *published*
@@ -23740,20 +23942,20 @@ otherwise in two places (see below).
 - The ordinary `halite-node doctor`: `warn FIPS mode consistency  the
   kernel is in FIPS mode and this is not a FIPS build`.
 
-On `ami-test-1` only, `GODEBUG=fips140=off halite-node-fips doctor`: `warn
+On `host-c` only, `GODEBUG=fips140=off halite-node-fips doctor`: `warn
 ... the kernel is in FIPS mode and this FIPS build (module v1.0.0) is not
 running in FIPS mode`. This is the third branch, and the Rocky run did not
-reach it. With the services up: `halite-hub-fips doctor` on `noop2-1` gave
-7 pass, 1 skip, FIPS row pass. `halite-node-fips doctor` on `ami-test-1`,
+reach it. With the services up: `halite-hub-fips doctor` on `host-b` gave
+7 pass, 1 skip, FIPS row pass. `halite-node-fips doctor` on `host-c`,
 enrolled and connected, gave 10 pass, 1 skip; the connectivity row read
-`172.26.28.44 answered in 2ms: halite-hub 0.1.1+f4a60b7a93a4 (fips v1.0.0)
+`<host-b-ip> answered in 2ms: halite-hub 0.1.1+f4a60b7a93a4 (fips v1.0.0)
 ok` and the FIPS row passed. `halite-api-fips doctor` gave 3 pass, 1 warn;
 the warn is the 2-day self-signed serving certificate made for the test.
 The FIPS row passed.
 
 **Hub, node and API as services, across two hosts.** The hub ran on
-`noop2-1` (amd64) and the node on `ami-test-1` (arm64). Only TCP 22 and
-8301 were open between them, so the hub had `listen: 172.26.28.44:8301`.
+`host-b` (amd64) and the node on `host-c` (arm64). Only TCP 22 and
+<port> were open between them, so the hub had `listen: <host-b-ip>:<port>`.
 The units and drop-ins came from the archive's `service/systemd/` and
 `service/systemd/fips/`. Only the `-fips` binaries were installed, with no
 `/usr/local/bin/halite-hub` and so on, so a unit could start only if the
@@ -23765,21 +23967,21 @@ and the `-fips` `ExecStart`. Each of `halite-hub`, `halite-node` and
 `err` had 0 lines for all three.
 
 - Hub, first start: it created the enrollment CA (ecdsa-p256) and a
-  serving certificate for `localhost,127.0.0.1,::1,noop2-1,noop2-1.ref…,
-  172.26.28.44`. Then `keys operator create ed --admin` and a restart.
-- Node: a `node.yaml` with the hub at 172.26.28.44, `hub_port` 8301 and the
+  serving certificate for `localhost,127.0.0.1,::1,host-b,host-b.<domain>…,
+  <host-b-ip>`. Then `keys operator create ed --admin` and a restart.
+- Node: a `node.yaml` with the hub at <host-b-ip>, `hub_port` <port> and the
   pinned fingerprint. `enroll` returned rc 2 (pending). On the hub, `keys
   list` showed the fingerprint the node had printed (42:c2:95:…). After
   `keys accept`, `enroll` printed `enrolled`, the unit started, and
-  `manage.status` showed `up: [ami-test-1-h306]`.
-- API: `halite-api-fips` on `noop2-1` as a service under its drop-in,
-  `listen` 127.0.0.1:4511, hub 172.26.28.44:8301, its own operator
+  `manage.status` showed `up: [host-c-h306]`.
+- API: `halite-api-fips` on `host-b` as a service under its drop-in,
+  `listen` 127.0.0.1:4511, hub <host-b-ip>:<port>, its own operator
   certificate `api` and a self-signed P-256 serving certificate. `halite-api-fips
   account hash` gave `pbkdf2-sha512$…`. With curl (the host's OpenSSL, in
   FIPS mode): `/v1/readyz` answered ready; `/v1/login` returned a token; a
   wrong password got 401; `/v1/run` of `test.ping` returned true from the
   arm64 node; `grains.item` of `fips_build` returned true; `cmd.run` got 403
-  `no rule in [webops] permits cmd.run against "ami-test-1-h306"`. curl
+  `no rule in [webops] permits cmd.run against "host-c-h306"`. curl
   negotiated TLSv1.3 and TLS_AES_128_GCM_SHA256.
 
 **Jobs.** From the hub: `test.ping` returned True. `grains.item` for
@@ -23790,7 +23992,7 @@ and the `-fips` `ExecStart`. Each of `halite-hub`, `halite-node` and
 reported the file already in the requested state. On the node the file had
 the contents, mode 600, owner root.
 
-**TLS.** From `ami-test-1`'s OpenSSL (the FIPS provider) to the hub, with
+**TLS.** From `host-c`'s OpenSSL (the FIPS provider) to the hub, with
 `-alpn halite/1,h2`: TLSv1.3, TLS_AES_128_GCM_SHA256, server temporary key
 ECDH prime256v1, an ECDSA signature, and the SANs above. Without ALPN the
 hub refused (alert 80) and logged `does not speak halite/1`. That is
@@ -23815,7 +24017,7 @@ binary's". The table above shows both are wrong: the ordinary build on a
 FIPS kernel reads `fips_mode: True`. The grain is the kernel's state;
 `fips_build`, `fips_enabled` and `fips_module` describe the binary.
 
-**A defect: `grains.item` took one name.** `halite-hub run ami-test-1-h306
+**A defect: `grains.item` took one name.** `halite-hub run host-c-h306
 grains.item fips_mode fips_build fips_enabled fips_module cpuarch
 kernelrelease` returned `grains.item: takes at most 1 positional
 arguments, got 6`. `docs/operations.md` gives `halite-hub run '*'
@@ -23826,9 +24028,9 @@ default argument parsing, returned a single grain literally named
 `[fips_mode,fips_build]` with value null. Cause and fix are in 5.587.
 
 **Seen, not fixed.** The operator CLI dials `localhost:<port of listen>`
-unless `--hub` is given. With `listen: 172.26.28.44:8301`, `halite-hub
-runner manage.status` failed: `dial tcp 127.0.0.1:8301: connect:
-connection refused`. `--hub 172.26.28.44` after the subcommand worked. The
+unless `--hub` is given. With `listen: <host-b-ip>:<port>`, `halite-hub
+runner manage.status` failed: `dial tcp 127.0.0.1:4510: connect:
+connection refused`. `--hub <host-b-ip>` after the subcommand worked. The
 code is `operatorClient` in `cmd/halite-hub/run.go`.
 
 **Not covered.**
@@ -23867,15 +24069,14 @@ It was recreated as root:root 0755 on both.
 hosts are not the same as in the run of 2026-11-05. Neither of the FIPS
 hosts was rebooted or moved into or out of FIPS mode.
 
-- `noop2-1`: i-006f246cd18577514, c7g.2xlarge, **arm64**, Ubuntu 24.04.5
+- `host-b`: c7g.2xlarge, **arm64**, Ubuntu 24.04.5
   LTS, kernel 6.8.0-1067-aws-fips, `fips_enabled` 1, `fips=1`, Ubuntu Pro
-  `fips-updates`, 15.6 GB RAM, IP 172.26.28.12. This is a different
-  instance from the `noop2-1` of the first run (i-0cc603ffb64dfbeea,
-  amd64). That instance is gone.
-- `ami-test-1`: the same instance as before. i-06bb649fb9f76b3f6,
-  c8g.2xlarge, arm64, Ubuntu 24.04.5, kernel 6.8.0-1067-aws-fips,
-  `fips_enabled` 1, `fips-updates`, IP 172.26.28.27.
-- `noop-1`: i-03fbc6a267417b38f, c7g.2xlarge, arm64, Ubuntu 22.04.5,
+  `fips-updates`, 15.6 GB RAM, IP <host-b-ip>. This is a different
+  instance from the `host-b` of the first run (amd64). That instance is gone.
+- `host-c`: the same instance as before. c8g.2xlarge, arm64, Ubuntu
+  24.04.5, kernel 6.8.0-1067-aws-fips,
+  `fips_enabled` 1, `fips-updates`, IP <host-c-ip>.
+- `host-a`: c7g.2xlarge, arm64, Ubuntu 22.04.5,
   kernel 6.8.0-1066-aws, **not a FIPS kernel**. The file
   `/proc/sys/crypto/fips_enabled` does not exist. Ubuntu Pro `fips` and
   `fips-updates` are disabled. RAM is 15.6 GB.
@@ -23884,8 +24085,8 @@ No amd64 FIPS host remained, so main was not run on amd64. All three hosts
 run Salt's agent. It was active after every step and `dmesg | grep -i oom`
 gave 0 lines on all three.
 
-**The build.** Main was built from source on `noop2-1` and, separately, on
-`ami-test-1`. Each host got Go 1.27.3 linux-arm64 from go.dev. The sha256
+**The build.** Main was built from source on `host-b` and, separately, on
+`host-c`. Each host got Go 1.27.3 linux-arm64 from go.dev. The sha256
 (a06e9930…5f49) matched the one in go.dev's published JSON. Each host
 cloned `https://github.com/edlitmus/halite` and checked out 5d314a40, which
 was main at that time. The environment was the one that the Makefile's
@@ -23897,9 +24098,9 @@ the Makefile is BSD make, so `make` was not used. The identity printed was
 `0.1.1-329-g5d314a40a398+5d314a40a398 (fips v1.0.0)`. The builds of the two
 hosts are byte-identical: hub-fips 5f55f433…0656, api-fips d8cace6f…5f49,
 node-fips 064fb902…7c6c7b, node 66b7ff3d…6643. amd64 binaries were also
-cross-built on `noop2-1`. They were never run.
+cross-built on `host-b`. They were never run.
 
-**Local checks on `noop2-1`.** `version` of the three `-fips` binaries with
+**Local checks on `host-b`.** `version` of the three `-fips` binaries with
 `fips140=on` printed `fips mode on, module v1.0.0, self-tests passed`. With
 `fips140=off` it printed only the identity line. The grains table is the
 same as in the first run: `fips_mode` True, True, True and `fips_build`
@@ -23907,11 +24108,11 @@ True, True, False for the `-fips`, `-fips` with `fips140=off` and ordinary
 builds. The `doctor` FIPS row passed for `-fips`, and warned for
 `fips140=off` and for the ordinary build, with the texts of the first run.
 
-**A host that is not in FIPS mode.** `noop-1` ran the main `node-fips` and
-`node`. Both were fetched over TCP 8301 from a `python3 -m http.server`
-that ran for at most 900 seconds as a transient systemd unit on `noop2-1`.
-The unit was stopped afterwards. The sha256 matched on `noop-1`. Nothing was
-compiled on `noop-1`.
+**A host that is not in FIPS mode.** `host-a` ran the main `node-fips` and
+`node`. Both were fetched over TCP <port> from a `python3 -m http.server`
+that ran for at most 900 seconds as a transient systemd unit on `host-b`.
+The unit was stopped afterwards. The sha256 matched on `host-a`. Nothing was
+compiled on `host-a`.
 
 - `fips_mode` was **False** for both builds. `fips_build` was True and
   False, `fips_enabled` True and False, and `fips_module` `v1.0.0` and
@@ -23924,8 +24125,8 @@ compiled on `noop-1`.
 
 All four branches of the FIPS row have now been seen on Ubuntu arm64.
 
-**Hub, API and node as services.** The hub and the API ran on `noop2-1` and
-the node on `ami-test-1`. Both hosts are arm64 with a FIPS kernel. Only the
+**Hub, API and node as services.** The hub and the API ran on `host-b` and
+the node on `host-c`. Both hosts are arm64 with a FIPS kernel. Only the
 `-fips` binaries were installed in `/usr/local/bin`. The units came from
 `contrib/systemd/` and the drop-ins from `contrib/systemd/fips/` in the
 checkout. The archive's `service/systemd/` is built from these files. For
@@ -23933,7 +24134,7 @@ the hub, the node and the API: the unit was active, `/proc/<pid>/exe` was
 the `-fips` file, `environ` held `GODEBUG=fips140=on`, and the journal at
 priority `err` had 0 lines.
 
-**Token enrolment.** `hub.yaml` had `listen: 172.26.28.12:8301` and
+**Token enrolment.** `hub.yaml` had `listen: <host-b-ip>:<port>` and
 `enrollment_mode: token`. At first start the hub made an enrollment CA
 (ecdsa-p256, fingerprint 5c:8a:c2:…:a6:01). `keys operator create ed
 --admin` and `keys operator create api` made two operators. The policy got
@@ -23944,17 +24145,17 @@ runners `manage.status`, `manage.up`, `manage.down`, `jobs.list_jobs`,
 to `api-service`. Then the hub restarted.
 
 The token was made with `keys token create --ttl 1h --nodes
-'ami-test-1-h306' --cidr 172.26.28.27/32` (id 8edf73ca6875, 1 use). On
-`ami-test-1` the `node.yaml` held the hub address, `hub_port` 8301, the CA
-fingerprint and the node id `ami-test-1-h306`. `halite-node-fips enroll
+'host-c-h306' --cidr <host-c-ip>/32` (id 8edf73ca6875, 1 use). On
+`host-c` the `node.yaml` held the hub address, `hub_port` <port>, the CA
+fingerprint and the node id `host-c-h306`. `halite-node-fips enroll
 --token=…` printed `enrolled` the first time, rc 0, with no `keys accept`.
 It also printed a note that `--token` is visible in the process table and
 that `--token-file` avoids this. Afterwards `keys token list` on the hub
-showed `spent (1 of 1 uses)`, the scope `ami-test-1-h306
-172.26.28.27/32` and `admitted ami-test-1-h306`.
+showed `spent (1 of 1 uses)`, the scope `host-c-h306
+<host-c-ip>/32` and `admitted host-c-h306`.
 
-**Jobs.** From the hub, with `--hub 172.26.28.12 --as ed`: `manage.status`
-showed `up: [ami-test-1-h306]` and `test.ping` returned True.
+**Jobs.** From the hub, with `--hub <host-b-ip> --as ed`: `manage.status`
+showed `up: [host-c-h306]` and `test.ping` returned True.
 `grains.item fips_mode fips_build fips_enabled fips_module cpuarch
 kernelrelease` (six names) **returned all six**: True, True, True,
 `v1.0.0`, `aarch64` and `6.8.0-1067-aws-fips`. This is the fix of 5.587 run
@@ -23966,7 +24167,7 @@ were right and the file was mode 600, owner root.
 
 **doctor.** `halite-hub-fips doctor`: 7 pass, 1 skip, FIPS row pass.
 `halite-node-fips doctor`, connected: 10 pass, 1 skip. The connectivity
-row read `172.26.28.12 answered in 2ms: halite-hub
+row read `<host-b-ip> answered in 2ms: halite-hub
 0.1.1-329-g5d314a40a398+5d314a40a398 (fips v1.0.0) ok`. `halite-api-fips
 doctor`: 3 pass, 1 warn, and the connectivity row to the hub was ok. The
 warn is the 2-day self-signed serving certificate (`expires in 47h`). The
@@ -23975,18 +24176,18 @@ FIPS row passed in all three.
 **API.** With curl (the host's OpenSSL, in FIPS mode): `/v1/readyz`
 answered ready. A login as `alice` returned a token. A wrong password got
 401. `{"client":"local","tgt":"*","fun":"test.ping"}` returned 200 and true
-from `ami-test-1-h306`. `grains.item` with `"arg":["fips_mode","fips_build"]`
+from `host-c-h306`. `grains.item` with `"arg":["fips_mode","fips_build"]`
 returned 200 and true for both, so two names went through the API. `cmd.run`
 got 403 `no rule in [webops] permits cmd.run against "*"`. curl negotiated
 TLSv1.3, TLS_AES_128_GCM_SHA256, prime256v1 and ALPN h2.
 
 **Seen again, not fixed.** The operator CLI without `--hub` failed with
-`dial tcp 127.0.0.1:8301: connect: connection refused`. This is the same
+`dial tcp 127.0.0.1:4510: connect: connection refused`. This is the same
 as in the first run, and it is still on main.
 
 **An observation on Ed25519.** The first run left a question open. The
 hub's CertificateRequest was read again with `openssl s_client -alpn
-'halite/1,h2' -trace` from `ami-test-1`. It listed `ecdsa_secp256r1_sha256`,
+'halite/1,h2' -trace` from `host-c`. It listed `ecdsa_secp256r1_sha256`,
 `ecdsa_secp384r1_sha384`, `ecdsa_secp521r1_sha512`, `ed25519` (0x0807) and
 `rsa_pss_rsae_sha256`, `_sha384` and `_sha512`. The OpenSSL FIPS provider on
 the host shared all of them except `ed25519`. In Go 1.27.3,
@@ -24022,7 +24223,7 @@ settle whether SPEC 27.4 ("Ed25519 is unavailable") must change.
 `/srv/halite`, `/root/h306` (the Go toolchain, the checkout and the build
 cache), `/root/h306-managed.txt` and the `halite` user were removed. Then
 `daemon-reload` ran, and the HTTP server unit was stopped. Afterwards each
-host had 0 halite files, 0 processes, nothing on port 8301 and no user. The
+host had 0 halite files, 0 processes, nothing on port <port> and no user. The
 directory `/srv` was left in place. Salt's agent was active and there was no
 OOM kill.
 
@@ -27386,8 +27587,8 @@ passed.
 **Run on Linux.** At `cf90bbce`, on three AWS EC2 instances, with
 go1.27.3 from go.dev checked against its published SHA-256, as `nobody`
 through `setpriv`, 2026-11-03: ref-salt1 (Ubuntu 22.04.5 LTS, kernel
-5.15.0-1119-aws-fips with FIPS enabled, linux/arm64), noop2-1 (Ubuntu
-22.04.5, 5.15.0-1117-aws-fips, FIPS enabled, linux/amd64) and ami-test-1
+5.15.0-1119-aws-fips with FIPS enabled, linux/arm64), host-b (Ubuntu
+22.04.5, 5.15.0-1117-aws-fips, FIPS enabled, linux/amd64) and host-c
 (Ubuntu 24.04.5, 7.0.0-1014-aws, linux/arm64). The same nine packages
 passed on each, and with the measure disabled the counts were the same
 on each as on darwin (44 and 9 in the parent; 44 deep, 42 by overflow,
@@ -36933,7 +37134,19 @@ Issue 321, the second pass, round six (`internal/config`, `internal/doctor`, `cm
 
 **Not changed.** The hub's event returner reads `id` for the node identity it stamps, and nothing sets it; whether a hub has such an identity is a decision, and the audit names it as the one exception. Not run: `nodeExtensionCheck` on a node holding an unsigned extension, which needs a runtime with a bundle.
 
+### 5.546 `hub_tries` counted every attempt the node had ever made, and the reconnect wait never came back down
 
+Issue 321, the second pass, round six (`cmd/halite-node/enroll.go`, `cmd/halite-node/reconnect.go`).
+
+**The defect.** `hub_tries` is documented as "reconnect attempts before giving up", and the connect loop counted every attempt the process had made and never reset the count. A node set to give up after five that held its stream for a month and then lost it five times over the following year stopped, with a healthy hub, having never failed to connect. The same loop doubled its backoff (1 s to a ceiling of 60 s) on every end of the stream and put it back to 1 s only on a clean one, so a node that had been refused a few times once waited a minute after every later drop however long the stream had stood. There was no jitter: every node of a fleet that lost the hub together waited the same time and came back together.
+
+**Shown.** At the time of the fix, by reading the old loop, which was not run; the new tests pin the new behaviour and do not run the old. Afterwards, on 2026-11-03, against a real hub and a real node in a FreeBSD 15.1 jail on beastie, over loopback, with `hub_tries: 3` and five restarts of the hub: the tree of `7dfe5541`, before this change, exited at the second restart, "giving up" after 3 attempts; `main` after #611 was alive after all five, with 11 connection attempts and no "giving up" (`docs/audits/2026-10-issue-321-second-pass.md`, "Validated afterwards").
+
+**The change.** The pace is its own type, `reconnect`. The hub accepting the stream resets both the count and the wait, so `hub_tries` counts attempts since a stream last opened and zero still retries for ever. A clean end still puts the wait back to 1 s. The wait is the backoff times a factor from 0.8 to 1.2, read from `crypto/rand` because SPEC 25.3 admits no other source (the first form used `math/rand` and `TestNoMathRand` failed it on every leg); if the system source fails, the factor is 1. The `runConnect` comment that said a job arriving was refused, untrue for a long time, is replaced. The tests: three failures in a row give up after ten streams that opened and closed did not; the waits run 1, 2, 4, 8, 16, 32, 60, 60 seconds and are 1 s again after a stream opens and after a clean end; the jitter spans 800 ms to 1.2 s; the source stays in [0, 1).
+
+**Late.** #597 cited this number from the code, its tests and the audit, and added two blank lines here and two in `CHANGELOG.md` where the entries should have been; both of its commits did the same, so the text was not lost in a restack, it was never written. The ledger audit checks citations inside this file only, so nothing failed. This section was written afterwards from the commit, its tests and the audit document.
+
+**Not verified.** Whether the jitter spreads a real fleet's return: the jail run had one node, and nothing has measured many nodes reconnecting to a hub that came back (the simfleet plan's L3 notes its sims do not pace as the node does). The 60 s ceiling and a hub gone for minutes on a real node; the loop on Linux, macOS or Windows against a real hub; `make check` at the time of #597, which its commits say was not run beyond the buildpolicy and policy packages.
 
 ### 5.547 A failed write or a failed seal cost the evidence log more than the record that failed
 
@@ -37303,11 +37516,11 @@ Issue 321, the close-out review of 2026-11-03, item A2 (`internal/builtin/entrya
 
 **The defect.** 5.300 and M-29 made the changes a state applies under a directory another account can write go through an `os.Root` and `Lchown`, and M-29's reasoning ended "the worst a swap can do is redirect a change to another path in the tree being managed". That is true of a symbolic link and false of a hard link, which is not followed because it is not a pointer: it is a second name for the same file. An account that owns a directory a state manages can replace a name in it with a hard link to a root-owned file on the same filesystem, and the next run applies the change to that file, as root. Three forms were shown on de26c91b: `archive.extracted` with `group:` (it re-applies ownership to every name in the archive on every run); `file.directory` with `recurse:` (the outside file went to 0644); and `file.managed` with `replace: False` and `mode:` or `group:`. Every other path-based caller of `applyMode`, `applyOwnership` and `keepOwnership` had the same shape, and so did the temporary file the `ssh_auth` and `ssh_known_hosts` account writer renames into `~/.ssh` (chmod and chown by name, after the close), `~/.ssh` itself, and the temporary bundle `openssl_cert.pkcs12_create` chmods beside its target.
 
-**Is it reachable on the estate.** On FreeBSD, yes by default: `security.bsd.hardlink_check_uid` and `hardlink_check_gid` are 0, so an unprivileged account may link a file it does not own. Read on beastie (FreeBSD 15.1-RELEASE-p6) with `sysctl` on 2026-11-03, with nothing setting them in `/etc/sysctl.conf`. On Linux, `fs.protected_hardlinks=1` (systemd's default, and Ubuntu's) refuses the link to a file the account does not own. Seen in a Debian 12 container on Docker Desktop's Linux kernel (arm64): `ln` as the account failed with "Operation not permitted". Also read on four Ubuntu hosts of the eds-test lab with `sysctl`, through SSM, on 2026-11-03; all had it set to 1:
+**Is it reachable on the estate.** On FreeBSD, yes by default: `security.bsd.hardlink_check_uid` and `hardlink_check_gid` are 0, so an unprivileged account may link a file it does not own. Read on beastie (FreeBSD 15.1-RELEASE-p6) with `sysctl` on 2026-11-03, with nothing setting them in `/etc/sysctl.conf`. On Linux, `fs.protected_hardlinks=1` (systemd's default, and Ubuntu's) refuses the link to a file the account does not own. Seen in a Debian 12 container on Docker Desktop's Linux kernel (arm64): `ln` as the account failed with "Operation not permitted". Also read on four Ubuntu hosts of an AWS test lab with `sysctl`, through SSM, on 2026-11-03; all had it set to 1:
 - ref-salt1: 22.04.5, 5.15.0-1119-aws-fips, arm64;
-- noop-1: 22.04.5, 5.15.0-1119-aws-fips, arm64;
-- noop2-1: 22.04.5, 5.15.0-1117-aws-fips, x86_64;
-- ami-test-1: 24.04.5, 7.0.0-1014-aws, arm64.
+- host-a: 22.04.5, 5.15.0-1119-aws-fips, arm64;
+- host-b: 22.04.5, 5.15.0-1117-aws-fips, x86_64;
+- host-c: 24.04.5, 7.0.0-1014-aws, arm64.
 
 On all three it is set by `/usr/lib/sysctl.d/99-protect-links.conf`, and on the three 22.04 hosts by `50-default.conf` as well. So on the Ubuntu estate an account cannot plant the link to a root file, and the defect is FreeBSD's by default. A Linux host with the setting turned off would be exposed again, and the change does not depend on it.
 
@@ -37336,9 +37549,9 @@ All ten pass unprivileged on macOS 26 (arm64) and on beastie, FreeBSD 15.1 (amd6
 - With the change, all three refuse, naming the hard link. All ten unit tests also run there as root, with no skips, and pass.
 - The fresh extraction gives the archive's nested symbolic link to the account with no warning. With the deepest-first sort taken out, the link stays root's and the run warns: the case only a root run can see.
 
-**Shown on real Ubuntu hosts, as root.** The same test, the ten unit tests and `TestLiveSSHFilesForAnotherAccount` ran from a clone of 256ee889, with Go 1.27.3 from go.dev (sha256 checked), through SSM on 2026-11-03. Two hosts of the eds-test lab:
-- noop2-1: Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64, FIPS enabled;
-- ami-test-1: Ubuntu 24.04.5, 7.0.0-1014-aws, arm64.
+**Shown on real Ubuntu hosts, as root.** The same test, the ten unit tests and `TestLiveSSHFilesForAnotherAccount` ran from a clone of 256ee889, with Go 1.27.3 from go.dev (sha256 checked), through SSM on 2026-11-03. Two hosts of an AWS test lab:
+- host-b: Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64, FIPS enabled;
+- host-c: Ubuntu 24.04.5, 7.0.0-1014-aws, arm64.
 
 On both, everything passes with the change. On both, de26c91b with the same tests copied in fails every refusal case and hands the root's file to the throwaway account (`1004:0 0644`, and `0600` for `archive.extracted`). The ssh account writer works on both builds. The kernel refused the account's own `ln` on both, as on the Docker run. The hosts mount `/tmp` `noexec`, so the toolchain and the build ran from `/root`. The test data was still made in `/tmp`, on the same filesystem as the planted link. Nothing was left on either host afterwards: no files under `/root/a2` or `/tmp`, and no test account or group.
 
@@ -37533,7 +37746,7 @@ Issue 321, the close-out review of 2026-11-03, item A2's "Found, not changed" (`
 
 The reading side had the same shape. The replaced file was read by name with `listxattr` and `getxattr`, which follow a symbolic link, after an `lstat` in `WritePrepared` that only moved the window.
 
-**Is it reachable on the estate.** The symbolic-link form needs nothing but the directory. `fs.protected_symlinks` restricts following a link only in a sticky world-writable directory, which a home directory is not. The live test below followed the account's link as root with `fs.protected_symlinks=1` (Docker Desktop's 7.0.14-linuxkit kernel). It was not tried on an estate host. The hard-link form needs a link to a file the account does not own, which `fs.protected_hardlinks=1` refuses. The A2 entry (PR 629) read that setting as 1 on four Ubuntu hosts of the eds-test lab, so on the Ubuntu estate the hard-link form reaches only files the account already owns.
+**Is it reachable on the estate.** The symbolic-link form needs nothing but the directory. `fs.protected_symlinks` restricts following a link only in a sticky world-writable directory, which a home directory is not. The live test below followed the account's link as root with `fs.protected_symlinks=1` (Docker Desktop's 7.0.14-linuxkit kernel). It was not tried on an estate host. The hard-link form needs a link to a file the account does not own, which `fs.protected_hardlinks=1` refuses. The A2 entry (PR 629) read that setting as 1 on four Ubuntu hosts of an AWS test lab, so on the Ubuntu estate the hard-link form reaches only files the account already owns.
 
 **The change.**
 - The attributes are copied onto the open temporary file, before the close, with `fsetxattr`, and the mode is re-applied with `fchmod` (`f.Chmod`). `syscall` exports `Setxattr` and not the f-calls, and the vendored module that has them is not allowed (`internal/buildpolicy`), so `fsetxattr`, `fgetxattr` and `flistxattr` are made with `syscall.Syscall6` and the `SYS_*` numbers `syscall` already has for every Linux architecture.
@@ -37637,7 +37850,7 @@ was **chowned to the account** and had the managed key appended:
 
 - beastie, in a throwaway thin Bastille jail, FreeBSD 15.1-RELEASE-p6:
   "the target's file was given to uid 1001";
-- noop2-1, Ubuntu 22.04.5 LTS (5.15.0-1117-aws-fips): "given to uid
+- host-b, Ubuntu 22.04.5 LTS (5.15.0-1117-aws-fips): "given to uid
   1004";
 - mini-me, macOS 27.2 (26B123) on arm64: "given to uid 502". There the
   home was `/tmp/halsc<pid>`, and /tmp is itself a link to /private/tmp,
@@ -38021,17 +38234,17 @@ in them has a boot-time name.
   behind. With `hostname=halite-hn` set first, everything passed,
   including the running-versus-boot test, which skips without one. The
   jail was destroyed afterwards.
-- **Linux**: noop2-1 (Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64,
+- **Linux**: host-b (Ubuntu 22.04.5, 5.15.0-1117-aws-fips, x86_64,
   systemd-hostnamed running), through SSM, built there from the branch.
   With `/etc/hostname` present, everything passed and the file was
   byte-identical afterwards. With the file removed, everything passed
   and it was still absent afterwards. With the clearing step disabled,
-  the conformance case failed with "/etc/hostname holds "noop2-1" and
+  the conformance case failed with "/etc/hostname holds "host-b" and
   held "" before this test", and the file was left behind. The original
-  file was put back byte for byte. The same three runs on noop-1
+  file was put back byte for byte. The same three runs on host-a
   (Ubuntu 22.04.5, 5.15.0-1119-aws-fips, arm64) gave the same results,
-  with "/etc/hostname holds "noop-1"" in the broken run. Those binaries
-  were cross-built on noop2-1 and checked by sha256 on noop-1.
+  with "/etc/hostname holds "host-a"" in the broken run. Those binaries
+  were cross-built on host-b and checked by sha256 on host-a.
 
 **Not verified.**
 
@@ -38874,7 +39087,7 @@ Each part was broken on purpose and watched to fail:
 ### 5.587 `grains.item` took one grain name, and the documented FIPS check failed
 
 Found on 2026-11-05 during the issue 306 run on Ubuntu Pro's FIPS kernels
-(5.282). `halite-hub run ami-test-1-h306 grains.item fips_mode fips_build
+(5.282). `halite-hub run host-c-h306 grains.item fips_mode fips_build
 fips_enabled fips_module cpuarch kernelrelease` returned `grains.item: takes
 at most 1 positional arguments, got 6`. `docs/operations.md` gives
 `halite-hub run '*' grains.item fips_mode fips_build fips_module` as the way
@@ -38909,7 +39122,7 @@ the change.
 
 #### Run on a host
 
-On 2026-11-06, main at 5d314a40 ran on `noop2-1` (hub) and `ami-test-1`
+On 2026-11-06, main at 5d314a40 ran on `host-b` (hub) and `host-c`
 (node). Both are arm64 and use Ubuntu Pro FIPS kernels. `halite-hub run
 '*' grains.item fips_mode fips_build fips_enabled fips_module cpuarch
 kernelrelease` returned all six values. The API passed two names in
@@ -40802,7 +41015,7 @@ platform code.
 ### 5.624 The example hub.yaml in the Linux archive set FreeBSD's paths
 
 **Found** on 2026-11-08 while running chapter 30 on Linux for issue 308, as
-root on the shared AWS test host noop-1 (Ubuntu 22.04.5 LTS, kernel
+root on the shared AWS test host host-a (Ubuntu 22.04.5 LTS, kernel
 6.8.0-1066-aws, arm64), from `main` at `07a37840`. Step 4 says to start from
 `examples/hub.yaml`, and adds that `pki_dir`, `state_dir` and `policy` "have
 correct platform defaults: do not set them". The example set all three, to
@@ -40893,13 +41106,13 @@ not run were run on 2026-11-07 and 2026-11-08.
 was made for each run and destroyed afterwards. The jails shared the loopback
 interface `bastille0` and had no outbound network. The build was `bmake dist`
 from `main` at `5d314a40`. `sha256sum -c` passed, but there was no attestation
-or signature to check. Linux: the shared AWS test hosts `noop-1` (hub, Ubuntu
-22.04.5, kernel 6.8.0-1066-aws, arm64) and `noop2-1` (node, Ubuntu 24.04.5,
+or signature to check. Linux: the shared AWS test hosts `host-a` (hub, Ubuntu
+22.04.5, kernel 6.8.0-1066-aws, arm64) and `host-b` (node, Ubuntu 24.04.5,
 kernel 6.8.0-1067-aws-fips, arm64), as root through SSM. They are not fresh:
 both run salt-minion, postfix and sssd. Everything halite was removed from both   <!-- lexicon:allow -->
 afterwards, and salt-minion was still active. The binaries were built on   <!-- lexicon:allow -->
-`noop2-1` from `main` at `07a37840` with go1.27.3. Only TCP 22 and 8301 are open
-between the hosts, so the hub listened on 8301.
+`host-b` from `main` at `07a37840` with go1.27.3. Only TCP 22 and <port> are open
+between the hosts, so the hub listened on <port>.
 
 **A jail cannot show** kernel modules, most `sysctl`s, a real boot (the jail's
 `/etc/rc` runs when the jail starts, but there is no loader, kernel or `devd`, and
@@ -41243,6 +41456,1470 @@ reporting success for nothing.
 **Not verified.** We did not run WSL's bash, only Git's. We did not run a
 shell named by a path this host does not have (zsh, dash, ksh); `shellFlag`
 treats any name it does not recognise as POSIX-style, read rather than run.
+
+### 5.631 win_task's comparisons disagreed with the scheduler's own reading of what it was given
+
+Issue 608 item 5, leads L4, L6, L7 and L8 (`internal/wintask`). Found by
+reading, in the issue 321 second-pass audit. Checked and run on this Windows
+11 host, including three real round trips through `schtasks.exe` under this
+account (no administrator rights were available or needed for any of them).
+
+**L4, the defect.** `startBoundary` zero-pads an hour before writing it into
+a generated trigger's `StartBoundary`, so `daily at 3:00` is registered as
+`03:00`. The scheduler always reads a `StartBoundary` back the same way --
+padded -- but `normalizeTrigger`, which `sameTriggers` uses to compare a
+declaration against a reading, left the declared side exactly as written.
+`daily at 3:00` and the scheduler's own `daily at 03:00` never compared
+equal, so `win_task.present` replaced the task on every run for any hour
+written as one digit.
+
+**L4, shown.** `TestADailyTriggerWithAnUnpaddedHourConverges`
+(`internal/wintask/schtasks_windows_test.go`) creates a real task with
+`Triggers: []string{"daily at 3:30"}`, reads it back -- which already
+confirms the scheduler's own reading is padded, `"daily at 03:30"` -- and
+checks `SameDefinition` against the original unpadded declaration. On the
+unchanged `normalizeTrigger` it failed, reporting every field matched except
+`Triggers: ["daily at 3:30"] != ["daily at 03:30"]`.
+
+**L6, the defect and shown.** `SameDefinition` did not compare `Description`
+at all -- not missing a guard, simply absent from the function. A
+`description` change made through `win_task.present` was accepted, written
+by `Create`, and then never checked again: the next run saw whatever
+`Description` the host had as a match regardless. `TestDescriptionIsComparedWhenDeclared`
+failed on the unchanged code with "a different description compared equal".
+
+**L7, the defect.** `decodeUTF16`'s fallback, for output that is neither
+UTF-16 nor has a UTF-16 byte-order mark, returned the raw bytes as a Go
+string. schtasks' own declaration claims UTF-16 and lies (DIVERGENCE 4.6
+already established that much), but what it writes when redirected is not
+UTF-8 either: a console application writing text with the CRT's narrow
+functions once its output is not a console writes it in the OEM code page.
+Confirmed on this host (OEM code page 437, from `chcp`): `cmd /c echo café`,
+redirected through `exec.Command`, wrote 'é' as the single byte 0x82, which
+is cp437's 'é' and is not valid UTF-8 on its own. Fed straight to
+`encoding/xml`, as the unchanged code did, that byte alone reproduces "XML
+syntax error on line 1: invalid UTF-8" -- confirmed directly, not inferred.
+So a task whose Description, Author or path held a non-ASCII character could
+not be read back by `Info` at all, and `win_task.present` tried to recreate
+it on every run.
+
+**L7, shown.** `TestANonASCIIDescriptionSurvivesTheOEMCodePage` feeds
+`parseXML` a document with `caf\x82` (cp437 for "café") as a Description. On
+the unchanged fallback it failed with exactly the XML error reproduced
+above; after the fix it reads back "café".
+
+**L7, the change.** `decodeSingleByte` (`internal/wintask/schtasks_windows.go`)
+calls `MultiByteToWideChar` with `CP_OEMCP` -- 1, not among the vendored
+`windows.CP_*` constants, so declared locally -- when the bytes are not
+already valid UTF-8, and passes valid UTF-8 through untouched. A
+Windows-only correction; `internal/wintask/decodeoem_other.go` is a no-op
+stub for every other platform, where nothing here ever drives a real
+scheduler.
+
+**L8, the defect.** The scheduler adds a `<URI>` element, naming the task's
+own registered path, to every task's `RegistrationInfo` on registration --
+confirmed against a real, already-shipped task on this host
+(`\Microsoft\Windows\Time Synchronization\SynchronizeTime`), whose read-back
+carries one though nothing says the original shipped definition ever did.
+`SameXML` normalized whitespace and the encoding declaration before
+comparing, both of which the scheduler also rewrites, but not this, so a
+task declared as raw XML with no `<URI>` -- the ordinary case, since nothing
+in the schema requires one and nothing a state author writes would think to
+add one -- never matched the read-back and `win_task.present` given XML
+tried to recreate the task on every run.
+
+**L8, shown.** `TestSameXMLIgnoresAnAddedURI` compares two synthetic
+documents differing only by a `<URI>` element. It failed on the unchanged
+`normalizeXML` with "a document with no URI never matched one with an added
+URI and nothing else different", and a second case in the same test holds
+that a real difference elsewhere is still caught.
+
+A real `Create`/`Info` round trip through XML (also tried, and not kept as a
+test) differs from the declaration in more than the URI -- element order, an
+added `LogonType`, a default `Enabled` left out -- which `SameXML` is
+already documented to treat as a real change, correctly by its own stated
+rule ("reports a change that is not one rather than missing one that is").
+That is why the test above compares two synthetic documents rather than a
+live round trip: the live one does not converge even after this fix, for
+reasons this fix does not touch.
+
+**The change, together.** `padClock`, shared between `startBoundary` and the
+new padding branch of `normalizeTrigger`, is the one place a clock time is
+validated and zero-padded (L4). `SameDefinition` gained a `Description`
+comparison, guarded the same way every other optional field here is -- only
+checked when the state declared one -- so an omitted `description` still
+reports no change on its own, consistent with
+`TestOnlyWhatWasDeclaredIsCompared` (L6). `decodeUTF16`'s single-byte
+fallback goes through the new `decodeSingleByte` (L7). `normalizeXML` strips
+a `<URI>` element from both sides before comparing, the same way it already
+stripped the encoding declaration (L8).
+
+With the change, `go test ./internal/wintask/... ./internal/builtin/...
+-count=1` is green on this host, including the three tests above and the
+pre-existing suite -- `TestATaskIsCreatedReadBackAndDeleted`,
+`TestWinTaskPresentRegistersAndThenConverges` and
+`TestOnlyWhatWasDeclaredIsCompared` among them, each a real task created
+under this account and deleted after.
+
+**Lead L5, not fixed, and not the same shape as the four above.**
+`GenerateXML` defaults an omitted `RunAs`, `RunLevel` and `Triggers` to
+SYSTEM, `LeastPrivilege` and no trigger when it creates a task, and
+`SameDefinition` does not check either against that default when the
+declaration omits it -- the same asymmetry L4/L6 had, on its face. It is not
+fixed here, because `TestOnlyWhatWasDeclaredIsCompared` already asserts, by
+name, that an omitted field reports no change regardless of what the host
+has -- "a partial declaration reported a change it did not ask about" -- and
+that assertion is not a gap in the rule the comment above `SameDefinition`
+states, it is that rule, applied to exactly this case, on purpose. Making
+`RunAs` and `Triggers` the exception would change what `win_task.present`
+with no `run_as` or no trigger promises today, for every estate already
+relying on the current answer, and that is the owner's call to make, not a
+parsing defect to close. `SameDefinition`'s comment now says so, and the
+case stays open rather than being decided by whoever read it next.
+
+**Not verified.** A domain-joined host, where `canonicalAccount`'s SID
+lookup behaves differently. A host whose OEM code page is not 437 -- this
+fix's byte, `0x82` for 'é', is specific to it. Administrator rights, for a
+task registered to run as SYSTEM or another account, which nothing here
+needed: all three real round trips ran as this account.
+
+### 5.632 Four rows of 5.2 described a build that had moved on
+
+The commonest defect here is a pair of things that must say the same
+thing and do not. This is that pair with prose as the wrong half, twice
+in one table, and it was found by reading 5.2 beside the workflows and
+the tracker rather than by any test.
+
+**The reproducibility row said "a second builder has still never been
+tried."** `.github/workflows/release.yml` opens with the line *"SPEC
+4.3's two-builder reproducibility check, on every tag"*, and its own
+comment makes the row's argument for it: `make repro` builds twice on one
+machine, that is not the property SPEC asks for, and the only way to have
+the property is to use two builders. The workflow was written to close
+the gap the row still described. Chapter 6.2 of this ledger already said
+so — *"`release.yml` builds a tag on two runner images and compares the
+digests, which is SPEC 4.3's two-builder check"* — and then ended with
+*"Reproducible builds: see 5.2"*, pointing at the sentence that denied
+it.
+
+**Shown.** `release.yml` has completed successfully six times: three
+`workflow_dispatch` runs (2026-09-25 twice, 2026-10-12) and both tags,
+`v0.1.0` on 2026-10-10 and `v0.1.1` on 2026-10-12. Each run builds the
+same commit on `ubuntu-24.04` and on `ubuntu-22.04` and then diffs the
+two `SHA256SUMS`. On the `v0.1.1` run (38294541095) each builder produced
+a 90-artifact manifest of 8571 bytes, and the compare job printed *"two
+builders produced identical binaries"*. That job refuses a manifest
+shorter than 80 lines first, so two truncated manifests cannot pass by
+comparing equal to each other, and `.github/toolchain-check.sh` asserts
+each runner's Go is the pinned toolchain, because two runner images are
+two chances to drift and a build that changed with the compiler would be
+a different build rather than a reproducibility failure.
+
+**What it still does not establish.** Both builders are GitHub-hosted
+x86_64 Linux images from one provider. Every non-Linux artifact is
+cross-compiled on Linux, no second architecture has built a release, and
+nobody outside this project has reproduced a published digest. The row
+now says that instead of denying the whole layer.
+
+**The security row said "No external review."** Issue 321 is one: filed
+on 2026-10-14 by an outside contributor against `a0d5344`, 20 High, 55
+Medium, 60 section 5 bullets and a design note, and now closed with every
+one of them fixed, decided or filed as its own issue. Its triage and its
+second pass are `docs/audits/2026-10-issue-321-triage.md` and
+`docs/audits/2026-10-issue-321-second-pass.md`, and the ledger sections
+it produced run from 5.284 to 5.622. **The owner ruled on 2026-11-08 that
+it satisfies SPEC 31's external review and the phase 6 line item.**
+
+The row says what the review was and what it was not. It reached the
+enrollment flow, the RBAC evaluator and the extension sandbox by name;
+whether `internal/transport` itself was read is recorded neither way, and
+the audit's own section 8 listed the files it never opened. Four of
+321's follow-ups are still open — #608 (Windows leads), #613 (needs a
+real AWS account), #616 and #643 (the operator-visible changes, for the
+release notes) — so SPEC 32's "review findings closed" is close rather
+than reached.
+
+**Two more rows, found by reading the rest of the table rather than by
+being asked about it.** Neither changes a verdict; both gave a reason
+that had expired. The **fuzz** row said the four absent targets "belong
+to phases that have not started". The wire protocol, the cron parser, the
+roster and the bridge all ship now, so those four are a gap and not a
+schedule. It also said `make
+fuzz` "runs all seven functions" without saying that an eighth exists —
+`FuzzCodec`, over the render sandbox's value codec — which `make fuzz`
+does not run. The **upgrade** row said two halite versions had never run
+against each other "because there has never been a second version";
+there have been two since `v0.1.1`, and the thing that is actually
+missing is the run.
+
+**Two rows were read and left alone, and each is a lead rather than a
+correction.** The version-comparison row says the Debian and RPM halves
+of the differential need a Debian or RHEL host, which `vercmp_test.go`
+still says too — but `fleetcheck`'s Debian container, the EL and SUSE
+containers and the Vultr lab all now exist, so the blocker is soft and
+worth reprobing. The state-module conformance row quotes "6 of the 46
+state functions"; that count was not re-derived here, and a grep over
+the harness's call sites suggests it is low by a lot.
+
+**Why none of them was caught.** Nothing holds 5.2's table to anything.
+The module tables of chapter 2 are audited against the registries in
+both directions; this table is a judgement about what has been run, and
+no test reads the tracker or the workflow history.
+`TestNoProseDeniesADeliveredPhase` exists for exactly this failure and
+could not see any of them: it matches a denial in the same sentence as a
+**phase** number, and these rows denied a mechanism, a tool and a
+release. It did fire on this entry's first draft, which quoted the fuzz
+row's expired sentence beside the number of the phase that had landed.
+The guard cannot tell a quotation from a claim, so the draft was
+rewritten rather than the guard loosened.
+
+**What was added.** `TestLedgerLayerTallyMatchesTheRows` holds 5.2's
+preamble to its own rows: the counts of present, partial and absent, and
+the "fourteen" in the heading against the thirteen rows plus the unit
+layer of 5.1. That is the half of this that can be mechanical, and it is
+worth having because the preamble has now drifted three times — twice
+with rows that said "blocked on phase 2" after phase 2 landed, and once
+here, where moving reproducibility to present changed two of the three
+counts.
+
+**Not covered.** No test can establish that a row describing what has
+been run is current; that stays a reading. Of the thirteen rows, four
+were corrected here, two were read and left as leads, two — scale and
+integration — were confirmed current while answering a different question
+on the same day, and **five were not re-checked at all**: both
+conformance rows, the Salt differential, property and chaos. So this is
+four rows corrected, not a clean table. The figures in the conformance
+rows are the ones least likely to have drifted, because each sits beside
+a deviation table its own suite enforces in both directions; that is the
+rows' own claim and it was not re-derived here either.
+
+### 5.633 Two rows named a blocker they no longer had
+
+5.632 left two rows of 5.2 as leads rather than corrections. Both turned
+out to be wrong in the same way, and neither needed anything built: the
+version-comparison row named a host it already had, and the
+state-conformance row quoted a count that was stale and measured in the
+wrong unit.
+
+**The version-comparison row said the Debian and RPM halves "need a
+Debian or RHEL host".** The RPM half had had one for weeks:
+`TestLiveRpmVersionCmpAgreesWithRpm` runs in the `fleetcheck-rocky9` and
+`fleetcheck-alma8` legs, `contrib/docker/fleet-rpm/run.sh` fails the run
+if it skips, and on 2026-11-08 the Rocky leg logged `rpm 4.16.1.3` and
+passed both it and its `evr` subtest. The Debian half had a host too, in
+two senses: `make fleetcheck` runs `-run TestLive` against a real Debian
+with a real dpkg, so a live dpkg differential written any time in the
+last two months would have run in CI on the day it was written — and
+this estate has Debian-family machines on it.
+
+**What a real dpkg answered.** All 25 vectors of `debianVectors` were put
+to dpkg 1.22.22 on Debian 13 (trixie), x86_64, on 2026-11-08, by asking
+`lt`, `eq` and `gt` for each pair and recording which held. Every answer
+matched the table. dpkg warned about none of them, because every version
+in the table begins with a digit and so is inside Debian policy — worth
+knowing, since dpkg warns and compares anyway, and a vector that relies
+on that would have been invisible.
+
+The answers are captured in
+`internal/builtin/testdata/dpkg-1.22.22-trixie.tsv` rather than left as a
+run somebody remembers. Three things now hold the ordering:
+
+- `TestDebianOrderingMatchesACapturedDpkg` checks `CompareDebian` and
+  `pkg.version_cmp` against those captured answers, on every machine and
+  every platform, with no dpkg needed.
+- `TestLiveDpkgVersionCmpAgreesWithDpkg` is the differential proper, for
+  the `fleetcheck` leg: it asks the dpkg that is there, logs its version,
+  and reports any pair dpkg warns about.
+- Both read **one** vector table, and the fixture check fails in both
+  directions — a vector with no captured answer is one no dpkg has ever
+  been asked, and a captured answer for a vector that has gone is a line
+  nothing reads.
+
+**The dispatch, not just the algorithm.** `scheme: auto` reads
+`os_family` from the node's grains and falls back to the RPM ordering for
+a family it does not recognise, silently. So a Debian node whose grain
+failed to say "Debian" would compare Debian versions by rpm's rules, and
+the two disagree — `1.0` against `1_0` is equal to rpm and not to dpkg.
+The live test now asserts that on a machine with dpkg, the real grains
+resolve to the Debian ordering.
+
+**The trigger paths were part of the fault.** The `debian` leg of
+`fleet.yml` listed `internal/builtin/pkg*.go`, which catches
+`pkg_vercmp.go` — the dispatch — and missed `vercmp.go`, which is the
+algorithm. The Debian and RPM orderings could have been rewritten without
+the one leg that has a real dpkg or rpm ever running. `vercmp*.go`,
+`live_dpkg*.go` and the fixture are in the paths now.
+
+**Breaks run.** Inverting the tilde rule in `debianOrder` — one
+character, `return -1` to `return 1` — produced 12 disagreements against
+the captured answers, `1.0~rc1` against `1.0` among them, which is the
+case the rule exists for: getting it backwards installs a release
+candidate over a release. Adding a vector with no captured answer failed
+the fixture's other direction. The first attempt at that first break
+edited the wrong line and the test passed; the pass was the finding, not
+the evidence, and it was redone.
+
+**The eight RPM pairs read from rpmver.c.**
+`TestRPMAbsentReleaseSortsBeforeAnyRelease`'s comment said "no real rpm
+has been asked them". Five of the eight were already in the `evr`
+subtest's list and rpm 4.16.1.3 answered them on Rocky 9. The three it
+did not reach — `1.0` against `1.0-5` and against `1.1-5`, and `1.1`
+against `1.0-5` — are in that list now, so the next run of the leg asks
+the whole table.
+
+**The state-conformance row said "6 of the 46 state functions".** The
+accounting subtest of `TestFileStatesConformToTestMode` logs the real
+figures and has all along: **150 of 152** state functions have a
+conformance case, 97 of them only on a live machine, 2 excused by name in
+`unconformed`, and 6 with a case only because the harness can express a
+state that changes nothing. The row was stale by a factor of twenty-five
+and its denominator was the wrong quantity — 46 is SPEC 15.5's count of
+core state *modules*, and the row counted functions. The row now cites
+the test that logs it, so the next reader has a command rather than a
+number.
+
+**The run.** The paragraph here said the live test had never executed and
+that the push carrying this entry was what would first run it. It ran, in
+the same run that pushed it (Fleet 42518184078, the `debian` job):
+
+- **dpkg 1.21.23 on amd64**, in the bookworm container — *not* the
+  1.22.22 the fixture was captured from. All 25 vectors agreed there too,
+  and 0 were outside Debian policy. Two dpkg versions, from two Debian
+  releases, now answer this table the same way, which is worth more than
+  the one the capture gave: a fixture cannot notice dpkg changing its
+  mind, and the second version is the first evidence that it has not.
+- The dispatch subtest logged `os_family "Debian" resolves to the
+  "debian" ordering`, so the silent fall-back to rpm's rules is not what
+  a real Debian machine gets.
+- The three RPM pairs were answered by **rpm 4.16.1.3 on Rocky 9** in the
+  same run, `TestLiveRpmVersionCmpAgreesWithRpm/evr` passing with the
+  extended list. On AlmaLinux 8.10 that subtest skipped, saying `rpm
+  4.14.3: rpm.vercmp is raw rpmvercmp before 4.16, not an EVR
+  comparison` — the documented allowed skip, not a silent one.
+
+**Not covered.** Two dpkg versions, both x86_64: nothing has asked an
+arm64 dpkg, and no dpkg older than 1.21 has been asked anything. The
+`fleetcheck` leg has no equivalent of `run.sh`'s skip check, so a future
+change that made `requireDpkg` skip there would pass quietly; the rpm
+legs would not. And the vectors are still the vectors — 25 pairs chosen
+because dpkg's own suite and the policy manual call them hard, which is
+not the same as a sweep.
+
+One methodological note, because it changes what the capture is worth:
+the test binary could not be copied to the Debian host from this session,
+so dpkg was asked over ssh with a read-only script and the comparison was
+made here. That is the same oracle and the same 25 answers, but it is not
+the test running there. The distinction mattered for as long as the leg
+had not run, and the leg has now run against a second dpkg, which is the
+stronger evidence anyway.
+
+### 5.634 Every return re-read every return before it, so a job to n nodes cost n²
+
+Found by the scale harness of 5.279, at the first size past the one it
+had been run at. One `test.ping` to 5,000 simfleet nodes, on an 8-vCPU,
+16 GiB hub on AWS on 2026-11-08, took the hub's resident memory from
+2.2 GB to 14.2 GB in 60 seconds. The host thrashed, and the hub accepted
+1,508 of the 5,000 returns. At 1,000 nodes the peak was 928 MB. (The run
+is written up on the branch of edlitmus/halite#680, as a subsection of
+5.279 that main does not have yet.)
+
+**The defect.** The return handler (`returned`, `internal/hub/jobs.go`)
+called `completeIfDone` after every fresh return. `completeIfDone` called
+`job.Cache.Missing`, which read the job's record and then called
+`Returns`, which opened, read and decoded every return file already filed
+for the job. So the k-th return of a job did k file reads, and a job to n
+nodes did about n²/2. The handler also read the job's record, with its
+whole node list, three more times per return: once in `AddReturn` for the
+target check, and twice for the function and the correlation chain.
+
+**Shown, before the fix.** `BenchmarkReturnsForOneJob`
+(`internal/hub/return_scale_test.go`) files one return per node for one
+job through `returned` itself, from eight goroutines. On an Apple M4 Pro,
+macOS, GOMAXPROCS=2, on 2026-11-08:
+
+| nodes | time | allocated |
+|---:|---:|---:|
+| 250 | 3.5 s | 104 MB |
+| 500 | 7.5 s | 406 MB |
+| 1,000 | 23.4 s | 1.58 GB |
+| 2,000 | 82.0 s | 6.80 GB |
+
+The allocation grows by four for each doubling. A CPU profile at 1,000
+nodes put 90% of the time in `completeIfDone` → `Missing` → `Returns`,
+most of it in `open(2)` on the return files. The allocation profile put
+64% of all bytes under `completeIfDone`, and 47% under `Cache.Get`
+(decoding the record's node list), which `Missing`, `AddReturn` and the
+handler all called. So the cause was the one the code suggested, and the
+record reads were a second quadratic term behind it.
+
+**The fix.** `job.Cache.File` files a return and returns a `job.Filing`:
+whether the return was fresh, how many targets are still owed, and the
+record's function and correlation. Behind it is a per-job `returnIndex`
+in memory: the job's targets, the nodes that have answered, and a count.
+It is built once per job, from the record and a listing of the returns
+directory (names only, no decoding), and `File` keeps it current. The
+handler now calls `completeIfDone` only on the return that takes the count
+to zero, and reads the record no more. `completeIfDone` still asks
+`Missing` and still goes through `Update`. So the count decides *when* the
+question is asked, and the answer comes from disk as before. A complete or
+aborted job is still not completed again (5.515), and the race with the
+spool-clearing goroutine that `Update` exists for (4.11) is not changed.
+`AddReturn` is now a wrapper over `File`. The runner's return
+(`internal/hub/runner.go`) is gated in the same way.
+
+Two rules make the count trustworthy, and each has a test that fails
+without it:
+
+- **The count goes down only after the file is on disk.** If it went down
+  first, the return that reached zero could call `Missing` while another
+  node's file was still being written. `Missing` would report that node,
+  and nothing would be completed. The other return had seen a count above
+  zero, so it would not ask. The job would stay dispatched until it
+  expired.
+- **A retry that arrives while the first copy is being written waits for
+  it.** Before, the existence check (`os.Stat`) and the write were two
+  steps. Two copies of one return that arrived together were both written
+  and both counted as fresh, which gave two events and two metric counts.
+  The count cannot tolerate that, so this is fixed here and not in a
+  separate change.
+
+An index is never dropped while somebody is filing through it. It is
+dropped when its job is complete, when `Prune` removes the job, and, for
+idle indexes, when more than 256 jobs are indexed. A dropped index is
+rebuilt from disk the next time it is needed. A refused jid leaves no
+index.
+
+**Shown, after the fix.** The same benchmark, same machine:
+
+| nodes | time | allocated |
+|---:|---:|---:|
+| 250 | 2.5 s | 3.5 MB |
+| 500 | 4.6 s | 6.9 MB |
+| 1,000 | 9.2 s | 13.7 MB |
+| 2,000 | 18.6 s | 27.6 MB |
+
+Every column doubles when n doubles. At 1,000 nodes the CPU profile had
+1.05 s of samples in a 10.2 s run. The rest is the time spent waiting for
+each return's durable write (`atomicfile.Write`), which is per return and
+intended, and is slow on this laptop's disk.
+
+`TestAReturnCostsTheSameWhateverTheSizeOfTheJob` files every return of a
+job to 40 nodes and of a job to 320, and fails if the bytes allocated per
+return grow by more than 2.5 times. On the original code it measured 96 KB
+and 584 KB per return (6.1 times) and failed. With only the
+`Remaining == 0` gate removed, it measured 5.4 times and failed. With the
+fix it measured 15.7 KB and 14.0 KB (0.9 times). In `internal/job`,
+`TestConcurrentReturnsReachZeroOnceWithNothingMissing` files 200 nodes'
+returns at once, each one twice. With the count moved before the write, it
+failed on 3 runs of 3 (3, 18 and 142 nodes missing at zero). With the
+retry wait removed, nodes were fresh twice. With the rebuild ignoring
+files already on disk, `TestARestartedCacheCountsTheReturnsAlreadyFiled`
+and `TestAFinishedJobsIndexIsDroppedAndRebuilt` failed.
+
+**Not verified.** Simfleet has not been run again at 1,000 or 5,000 nodes
+on AWS. That is the next step in the plan, and it needs approval. So
+nothing here says the hub now survives 5,000 nodes, only that this cost is
+gone. The benchmark ran only on macOS, not on FreeBSD or Linux. Other
+places still read every return of a job, but once per poll, not once per
+return: the batch wait (`awaitBatch`, every 200 ms), `GET /v1/jobs/<jid>`
+(which also reads them all a second time through `Missing`), and an
+orchestration step's `awaitReturns`. An operator who polls a 5,000-node
+job pays for 5,000 reads on each poll. That was not measured. Delivering
+a spooled job to a node that reconnects reads and writes the whole record
+(`internal/hub/queue.go`). For a job that is spooled to thousands of nodes
+that all reconnect at once, that is also n² in total, and it was not
+measured either.
+
+### 5.635 Every new name read every record in the key store
+
+Found by `simfleet setup` in the AWS run recorded under 5.279 (PR 680, open
+as this is written): it issued 5,000 identities at 20, 39, 56, 75 and 93
+seconds per thousand, on one core, in-process through `keystore.Authority`,
+and the cost per identity rose in a straight line with the store's size. It
+was not profiled there. Measured and fixed on this Mac (Apple M4 Pro,
+macOS, APFS).
+
+**The defect.** `Authority.Enroll` asks `roomForPending`
+(`internal/keystore/authority.go`) before it writes a pending record for a
+name it has not seen, which is issue 321's M-06 bound of
+`DefaultMaxPending`, 1,024. `roomForPending` called `Store.countPending`,
+which opened and parsed every record in the store, under the store's lock,
+to count the pending ones. Its comment said the cost "is paid only for a
+name not seen before", as though that made it rare. An enrolment storm, and
+a fleet growing past 20,000, are made of exactly those names: identity
+issue for 20,000 nodes at the AWS rate would take about an hour, and while
+it ran the lock was held against every accept, renewal and revocation, from
+the hub and from `halite-hub keys` alike.
+
+**Measured.** `BenchmarkIssueIntoAStoreOf`
+(`internal/keystore/pending_bench_test.go`) does what `simfleet setup` does
+per identity -- enrol, accept, enrol to collect -- into a store already
+holding 500, 2,000 or 8,000 accepted records, `GOMAXPROCS=2`, 200
+identities each:
+
+| store | before | after (three runs of 100) |
+|---|---|---|
+| 500 | 131 ms | 34, 34, 35 ms |
+| 2,000 | 417 ms | 39, 37, 33 ms |
+| 8,000 | 936 ms | 45, 41, 47 ms |
+
+A CPU profile of the 8,000 case before the change: 59.0 s of 67.8 s
+sampled were under `countPending`, 87% of the whole and nearly all of the
+timed loop (the rest is filling the store), and 51 s of those were in
+`open(2)` from `os.ReadFile`. Parsing was not the cost; opening 8,000 files
+was. After the change, in a run that also built the index inside the
+timing, reading the index is 0.05 s of 8.35 s sampled and the one-time build
+0.68 s; `put` -- the record writes and their fsyncs -- is most of what
+remains. The table's "after" column builds the index before the timer.
+
+`simfleet setup -n 3000` itself, after the change, `GOMAXPROCS=1` on the
+same Mac: about 40, 46 and 45 seconds per thousand identities (2m11.6s in
+all), flat where the AWS run rose in a straight line, and
+`keys/pending-index` empty at the end, every request having been accepted.
+The before-change setup was not run here, so the Mac's absolute numbers
+cannot be compared with the AWS host's.
+
+The 8,000 row still costs about 10 ms more than the 500 row. The profile
+does not put it on the count, and it was not chased further; a filesystem
+with 8,000 entries in one directory making the create, rename and sync of
+each write slower is the obvious guess, and is a guess.
+
+**The change.** A pending index: `keys/pending-index/`, one empty file per
+pending record, named for the node (`internal/keystore/pending.go`).
+Counting reads names, stops at the limit, and parses nothing, so it costs
+at most `MaxPending` directory entries whatever the store's size. The
+record stays the authority on a node's state, and the index keeps one rule
+that holds through a crash at any point: **every pending record has a
+marker.** `put` writes the marker before a record becomes pending and
+removes it after a record stops being pending; `delete` removes it after
+the record. A crash between the two steps can only leave a marker too many.
+An overcount is trusted only below the limit, where it refuses nothing; at
+the limit every marker is checked against its record, stale ones are
+removed, and the refusal is made on the exact number. So the answer is the
+one the full scan gave, `DefaultMaxPending` means what it meant, and the
+lock discipline is unchanged: everything runs inside `locked`, as the scan
+did.
+
+A store from before the index is indexed by its first count, once, by
+reading every record into `pending-index.building` and renaming it into
+place, so an interrupted build is never mistaken for an index. A failure to
+remove a marker is not reported, because the record is already written and
+the marker is an overcount.
+
+**Shown.** `internal/keystore/pending_test.go`, each broken on purpose:
+
+- `TestANewNameDoesNotReadTheOtherRecords` fills a store with 50 accepted
+  records, enrols once, overwrites all 50 with text that is not JSON, and
+  enrols again. With `countPending` put back to a scan of the store it fails
+  with `the record for old000000.example ... is not readable`. Timing would
+  have been a flaky test; a record the count has no reason to open is not.
+  It then fills the bound and checks the refusal is the bound's, not that
+  parse error: the check at the limit reads only pending records.
+- `TestAStaleMarkerDoesNotRefuseANewName` leaves markers for an accepted
+  record and a deleted one. With the check at the limit removed -- the
+  markers trusted as the count -- it fails: `3 enrollment requests are
+  already pending` at a limit of 2 with one pending.
+- `TestDecidingARequestRemovesItsMarker`: with `delete`'s unmark removed it
+  fails, `the index holds [delete.example stays.example]`.
+- `TestAStoreWithoutAnIndexIsIndexedFromItsRecords`: with the build reading
+  no records it fails -- two pending records written before the index, at a
+  limit of two, and a third was let in.
+
+One break did **not** fail, and it is recorded because it would be easy to
+read the test as claiming it: reusing an interrupted build directory instead
+of clearing it passes. That is correct behaviour rather than a gap: a
+rebuild writes a marker for every pending record anyway, and a leftover
+marker is an overcount. What is load-bearing in the build is that it is
+renamed into place only when complete, and showing that needs a crash
+mid-build, which nothing here makes.
+
+**What an operator sees.** A directory `pending-index` in the key store,
+created by the first enrolment after upgrading; that enrolment reads every
+record once. Enrolment of new names no longer slows as the estate grows.
+`keys list`, `keys accept --all` and every other reader still read the
+records, not the index.
+
+**Not verified.**
+
+- Any platform but this Mac. Not run on FreeBSD, Linux or Windows; the
+  directory rename and the remove of a marker on Windows in particular.
+- `simfleet setup` on AWS, or at 20,000, after the change. It was run at
+  3,000 on this Mac only.
+- A crash at any of the steps the ordering is for. The rule is argued, and
+  each step's absence is tested, but nothing kills the process between a
+  marker and a record.
+- Records that reach the store without `put`: a record file copied in by
+  hand, or a pending record written by a halite older than the index after
+  the index was built (a downgrade, then an upgrade). Those are not counted
+  until decided, which loosens the bound by that many. The bound is against
+  an unauthenticated caller filling the disk, and neither is one.
+- A caller hammering a store that is genuinely at the limit pays the check
+  at the limit on each request: up to `MaxPending` record reads under the
+  lock, where the scan read the whole store. Bounded, and smaller than
+  before, but not O(1).
+
+### 5.636 A failed config read answered Enabled's question with no as though it knew
+
+Issue 608 item 5, lead L22 (`internal/winsvc/winsvc_windows.go`,
+`internal/builtin/service_windows.go`, `internal/builtin/win_service_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked and run on
+this Windows 11 host.
+
+**The defect.** `statusOf` reads a service's status, then its configuration;
+when the configuration read failed it returned `(out, nil)` with every
+configuration field -- `StartType`, `Account`, `BinaryPath`, `DisplayName`,
+`Description` -- left at the zero value and no error at all. The comment
+reasoned correctly about the common question, `service.status`: "the status
+is the answer... and a configuration this process may not read is not a
+reason to fail the whole query." But `Enabled` and the `Disabled` PR #679
+added both decide a boolean from `StartType` alone, and an empty string is
+not `"auto"` or `"auto_delayed"` -- it reads exactly like `"manual"`, with
+no error to say the reading was never made. `win_service.get_start_type`
+had the milder version of the same gap: an empty string compared against
+any real start type as a mismatch, which at least pushes a state toward
+calling `SetStartType` rather than silently agreeing, but is still not the
+value anybody asked `GetValue` for.
+
+A healthy service and a normal account cannot make the real
+`QueryServiceConfig` fail on demand -- confirmed by trying it on EventLog,
+where it always succeeds here -- so this was never exercised by running
+anything, including the live legs that drove `Enabled`'s own fix in
+PR #679.
+
+**Shown.** `queryConfig` is now a `var` holding the real implementation, so
+`TestAFailedConfigReadIsAnErrorNotASilentNo`
+(`internal/winsvc/winsvc_windows_test.go`) can replace it with one that
+always fails, the same seam `internal/exec`'s confinement-warning test
+(5.620) used for `createJobObject`. On the unchanged `Enabled`:
+
+```
+Enabled with no config read returned (false, nil); want an error
+```
+
+**The change.** `Status` gained a `ConfigErr error` field, set when
+`queryConfig` fails; `Query` and `service.status`'s callers are unaffected,
+since `State` and `PID` are still real and the overall call still succeeds.
+`Enabled`, `builtin`'s `windowsProvider.Disabled`, and
+`winServiceStartType` each now check it first and return it as their own
+error rather than reading the zero-valued `StartType` as a fact.
+
+With the change, `go test ./internal/winsvc/... ./internal/builtin/...
+-count=1` is green on this host, including the test above.
+
+**Lead L21, checked, did not fully reproduce.** The same read named
+`internal/exec/shell_windows.go`'s clean environment as missing
+`ProgramFiles`, `SystemDrive`, `USERPROFILE`, `APPDATA`, `ProgramData`,
+`PSModulePath` and `COMPUTERNAME`. Run for real: PowerShell started under
+exactly this build's clean environment (confirmed with `exec.Command` and
+that exact variable list) resolved `$env:PSModulePath` to a sensible
+default on its own -- `C:\Users\ed\Documents\WindowsPowerShell\Modules;...`
+-- without `PSModulePath` or `USERPROFILE` set at all, and
+`Get-Module -ListAvailable` found 98 modules. PowerShell resolves its
+module and profile paths through the user's token rather than reading
+those two names back out of the environment it was given, at least for
+this build and this host. The other five names were not independently
+checked, and a program that reads `%APPDATA%` or `%ProgramFiles%`
+literally -- most command-line tools that are not themselves .NET, since
+.NET's own callers tend toward the token-based path PowerShell took here --
+plausibly still gets nothing for them. Not changed without a demonstrated
+failure to point at, per CLAUDE.md's own rule for this repository.
+
+**Not verified.** A service whose configuration genuinely cannot be read by
+this account rather than by an injected failure -- the injected one proves
+the plumbing, not that such a service exists. `win_service.info`, which
+still reports the zero-valued fields with no error for a caller who reads
+them as diagnostic prose rather than deciding something from them; left
+alone on purpose; see the comment in `statusOf`.
+
+### 5.637 An account's SID and its name were never the same account, and a resource descriptor read back empty
+
+Issue 608 item 5, leads L15 and L16 (`internal/builtin/win_dacl.go`,
+`internal/winreg/winreg_windows.go`). Found by reading, in the issue 321
+second-pass audit. Checked and run on this Windows 11 host.
+
+**L15, the defect.** `sameAccount` compared two account strings
+case-insensitively, falling back to comparing everything after the last
+backslash. Two gaps:
+
+- A SID never equalled the name it resolves to. `winsec.describe`
+  (`internal/winsec/winsec_windows.go`) renders a trustee that does not
+  resolve -- a deleted account, or one from an unreachable domain -- as
+  the SID's own string form, which has no backslash, so `bareAccount`
+  returns it whole. Compared against the name the same SID resolves to
+  elsewhere, the two never matched.
+- Two accounts that merely share a short name -- `CORP\ed` and `HOST\ed`
+  -- compared equal, because the comparison never asked whether they were
+  actually the same SID, only whether their text after the last backslash
+  agreed.
+
+**L15, shown.** `TestASIDStringAndTheNameItResolvesToAreOneAccount`
+(`internal/builtin/win_dacl_windows_test.go`) compares this host's own
+account by its real SID (`S-1-5-21-1772322385-3744737199-1319263849-1001`,
+from `os/user`) against its name (`ED-PC\ed`). It failed on the unchanged
+comparison -- confirming the first gap for real, not by description.
+
+**L15, the change.** `sameAccount` now tries `sameAccountBySID` first:
+resolve both sides to a SID and compare those, falling back to the old
+bare-name comparison only when a side does not resolve. Resolution tries
+`windows.StringToSid` before `windows.LookupSID`, because the SID string
+form is not a name `LookupSID` accepts -- confirmed on this host, where
+`windows.LookupSID("", "S-1-5-21-...")` returned "No mapping between
+account names and security IDs was done" for exactly the string
+`winsec.describe` can hand back. The function this calls,
+`sameAccountBySID`, lives in a new Windows-only file (`win_dacl_windows.go`
+already, next to the rest of this module's Windows half) because
+`win_dacl.go` itself has no build tag and compiles on every platform;
+`win_dacl_other.go` carries a no-op stub.
+
+**L15, the second gap -- not demonstrated.** `CORP\ed` and `HOST\ed` both
+failing to resolve here (this host is not domain-joined and has neither
+account) means the fallback this fix keeps is exercised the same way it
+always was, which is where leads L15 named the collision as still
+possible: two different domains that each fail to resolve independently
+still compare by bare name. True by construction of the fallback, not
+shown with two real, resolvable, colliding accounts -- that needs a second
+machine or a domain controller, neither available here.
+
+**L16, the defect.** `readFrom`'s default branch -- every registry value
+type this build has no named case for -- read with `GetBinaryValue`, which
+Go's own `x/sys/windows/registry` refuses for anything but `REG_BINARY`
+(checked against the vendored source: `if typ != BINARY { return nil, typ,
+ErrUnexpectedType }`). Every other type fell into the same `if err != nil`
+branch the code used for a genuinely empty `REG_NONE`, so `REG_LINK`,
+`REG_DWORD_BIG_ENDIAN`, `REG_RESOURCE_LIST`,
+`REG_FULL_RESOURCE_DESCRIPTOR` and `REG_RESOURCE_REQUIREMENTS_LIST` all
+read back as present and empty, with the real error thrown away.
+
+**L16, shown.** `HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`'s
+`Configuration Data` is a real, machine-shipped
+`REG_FULL_RESOURCE_DESCRIPTOR` holding sixteen non-zero bytes --
+`FFFFFFFFFFFFFFFF0000000000000000`, checked with `reg query`. Called
+directly, `GetBinaryValue` on it returned "unexpected key value type".
+`TestAResourceDescriptorValueIsReadNotEmptied`
+(`internal/winreg/winreg_windows_test.go`) reads this real value through
+`ReadValue` and failed on the unchanged code: "Configuration Data read
+back empty; it has real bytes".
+
+**L16, the change.** The default branch no longer calls `GetBinaryValue`
+at all. `GetValue`, which `readFrom` already calls once to learn the
+type and the size, has no type check -- it reads a value by its size
+alone -- so the branch now allocates a buffer of that size and calls
+`GetValue` again to fill it. A genuinely empty value (`size == 0`, which
+is what a `REG_NONE` with no data actually looks like) still reports
+present and empty with no error; anything else that still fails is now a
+real returned error naming the registry type.
+
+With the change, `go test ./internal/winreg/... ./internal/builtin/...
+-count=1` is green on this host, including both tests above.
+
+**Who sees it.** `win_dacl.has_permission`, `win_dacl.present` and anything
+else that compares accounts by name (L15): two differently-domained
+accounts sharing a short name no longer compare equal when both resolve.
+`win_registry.read_value` and `win_registry.value_exists`, which calls it
+(L16): a value of a type this build does not name by one of its five
+words now reads its real bytes, or a real error, instead of silently
+reading empty. `win_registry` ships no state module at all -- SPEC 15.5
+does not name one (DIVERGENCE 4.6) -- so there is no `value_present` to
+affect.
+
+**Not verified.** A domain-joined host, for either lead: L15's SID
+resolution across a real domain controller, and L16's registry values on
+a domain-joined machine's own hardware tree, which was not compared
+against this one.
+
+### 5.638 win_dacl.has_permission trusted a matching allow without checking for a deny
+
+Issue 608 item 5, lead L13 (`internal/builtin/win_dacl_windows.go`). Found by
+reading, in the issue 321 second-pass audit, which called it out as a
+contradiction of the function's own comment. Checked and run on this
+Windows 11 host.
+
+**The defect.** `winDACLHasPermission`'s own doc comment: "A deny entry
+never counts as having a permission, whatever its mask: Windows evaluates
+deny first, so an account with a deny entry does not have the access the
+mask names." The loop it describes only *skipped* a deny entry
+(`e.Kind != "allow"`) rather than checking whether the trustee had one
+before trusting a matching allow. A trustee with both an allow entry wide
+enough to cover the permission asked about and a separate deny entry --
+not necessarily on the same mask, and not necessarily sorted after the
+allow in `Entries`' order -- was reported as having the access, exactly the
+case the comment says never to report.
+
+The existing test, `TestHasPermissionAnswersAtLeastAndExactly`, did not
+catch this: it uses `winsec.Grant` for both the allow and the deny it
+checks, and `Grant` replaces whatever entry a trustee already has
+(`dacl_windows.go`'s `kept` filter drops any existing entry for the same
+SID before adding the new one), so the account it tested never actually
+held two entries at once. The deny case there passed for the plain reason
+that no allow entry was left to find, not because the deny was checked.
+
+**Shown.** `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+(`internal/builtin/win_dacl_windows_test.go`) writes a real ACL with
+`windows.ACLFromEntries` carrying two explicit entries for `Everyone` --
+denied `write`, separately allowed `full_control` -- bypassing `Grant`'s
+one-entry-per-trustee replacement so both land on the file at once, in
+Windows' own canonical order (deny before allow). On the unchanged loop it
+failed: "an account with a deny entry was reported as having a permission
+its separate allow entry covers".
+
+**The change.** `winDACLHasPermission` now makes a first pass over
+`Entries` for any deny entry naming the trustee and returns false
+immediately if it finds one, before the existing allow-matching loop runs
+at all.
+
+With the change, `TestHasPermissionDeniesWhenAnAllowAndADenyBothNameTheTrustee`
+and the rest of `internal/builtin`'s suite pass
+(`go test ./internal/builtin/... -count=1`, this host).
+
+**Who sees it.** `win_dacl.has_permission`, and anything that reads it --
+an `onlyif` condition, or a state comparing a declared permission against
+what a trustee has. A trustee denied something and separately allowed
+something wider was reported as having the narrower access; it no longer
+is.
+
+**Not verified.** A domain account. A deny entry inherited from a parent
+rather than explicit (`Entries` carries both kinds, and this fix does not
+distinguish them, by design: an inherited deny still disqualifies). An
+unrelated pre-existing failure was seen running `internal/winsec`'s own
+suite on this host, `TestEnablePrivilegeSaysNoForAPrivilegeTheTokenLacks`
+(`whoami /priv: exit status 1`) -- this shell's `PATH` resolves `whoami` to
+Git's `/usr/bin/whoami`, which has no `/priv`, ahead of the real
+`System32\whoami.exe`. Not caused by this change, and not fixed here:
+`internal/winsec` was not touched.
+
+### 5.639 SPEC 6.5's connection cap and stream limit were written down and not enforced
+
+Found while planning the simfleet scale run (`docs/simfleet-aws-plan.md`
+§1.2, PR edlitmus/halite#680), whose step 4 tests the cap and had to expect
+it to fail. A document and the code disagreed, in both directions:
+
+- SPEC 6.5 lists "Maximum node connections per hub | 25,000, configured"
+  and "Maximum concurrent HTTP/2 streams per node connection | 64", under
+  "every limit is configured, has a default, and is enforced before
+  allocation".
+- `docs/handbook/38-scaling.md` said "default max 25,000 per hub".
+- `internal/transport/wire.go` said, correctly, that the connection count
+  and the stream count were among the limits that "arrive with the
+  endpoints that need them". Nothing in `internal/hub` or
+  `internal/transport` counted connections, there was no configuration key,
+  and the hub's `http.Server` advertised net/http's own HTTP/2 default of
+  250 concurrent streams.
+
+**The change.** A hub key, `max_node_connections` (default 25,000; below one
+uses the default), bounds the subscribe streams the hub holds. A subscribe
+over it is answered `503` with the new code `hub_full`, naming the setting,
+and is counted as `halite_hub_node_connect_refused_total`; the hub logs a
+warning at most once a minute, with how many refusals it did not log. The
+hub's server sets `HTTP2.MaxConcurrentStreams` to
+`transport.MaxConcurrentStreams`, 64.
+
+**What is counted, and why that is a reading of SPEC rather than its
+words.** SPEC says "node connections". What is counted is subscribe streams,
+one per node (a reconnect replaces the old one), and a relay is one. Three
+alternatives were rejected:
+
+- *Every TCP connection with a node certificate.* A node opens other
+  requests beside its stream -- a return, a pillar, a file -- so this counts
+  a node twice while it posts a return, and at the cap it refuses the
+  return. A return refused because the hub is full is a job result lost to
+  protect a resource the return never held.
+- *Every TCP connection.* The hub serves nodes, operators and enrollment on
+  one port, so a full hub would lock its operators out of the one tool that
+  would let them see why.
+- *Refusing at the TLS handshake*, which is where a cap counted at accept
+  has to refuse. Go's server answers a failed `VerifyConnection` with a
+  `bad certificate` alert and nothing else, and `transport.Rejected` reads
+  that alert as this node's revocation: `forgetPillarIfRefused` deletes the
+  node's cached pillar. A hub that was merely full would have told every
+  node over the cap that it had been thrown out.
+
+A 503 is what a node treats as an outage (`transport.Unreachable`): it runs
+on from what it last received and reconnects on its own backoff. It is not a
+`RefusedError`, so it does not clear the pillar.
+
+The check is made twice: once before the request body is read, so a node
+over the cap is not first allowed to send up to `MaxGrainsPayload` of
+grains, and once under the fleet's lock in `Fleet.attachLimited`, which is
+what decides when two nodes arrive for the last slot.
+
+**Shown.** In `internal/hub/connlimit_test.go`, run on this Mac (darwin/arm64,
+go1.27.3), `GOMAXPROCS=2 go test -count=1 -p 2`:
+
+- `TestTheHubRefusesANodeOverItsConnectionCap`: a lab hub capped at two,
+  three enrolled nodes over real mutual TLS. The third is refused with 503
+  and `hub_full`; `Unreachable` is true and `Rejected` false; a node already
+  connected reconnects at the cap; the third gets in once the second leaves;
+  the counter reads 1.
+- `TestTheCapHoldsWhenNodesArriveTogether`: fifty goroutines attaching to a
+  fleet capped at ten get exactly ten.
+- `TestTheHubAllowsSPECsConcurrentStreamsPerConnection`: eighty requests held
+  open against the hub's own server settings; no connection carried more
+  than 64 at once.
+
+Each was broken on purpose and watched failing:
+
+- With the `HTTP2` setting removed, the stream test failed: `one connection
+  carried 80 streams at once, want SPEC 6.5's 64`.
+- With both checks disabled, the cap test failed with `a third node
+  subscribed to a hub capped at two`, and the concurrency test with `50 of
+  50 nodes attached to a fleet capped at 10`.
+- With only the pre-check in place (the attach unchecked), the concurrency
+  test still failed the same way. That is the race the second check exists
+  for.
+- With the exemption for a node that already holds a stream removed, the
+  cap test failed: `a connected node could not reconnect to a full hub`.
+
+One thing the stream test turned up. The test first held its client to one
+connection with `MaxConnsPerHost: 1`, and the client opened a second one
+anyway: Go's client does not count an HTTP/2 connection against
+`MaxConnsPerHost` once it has been handed to HTTP/2. So a Go client at the
+hub's stream limit dials another connection. It does not wait. The limit
+bounds what one connection holds, not what one node may ask for at once.
+The test counts per connection for that reason.
+
+**Not verified.**
+
+- The cap at its real size. Nothing here has held 25,000 streams. That is
+  simfleet step 4's job, and it now has something to test.
+- The `halite-node` binary's behavior against a full hub. The tests drive
+  `transport.Client`, the code the node uses. They do not drive the node's
+  reconnect loop (`cmd/halite-node/enroll.go`).
+- File descriptors. `contrib/systemd/halite-hub.service` still sets
+  `LimitNOFILE=65536`. The simfleet AWS run saw over 18,000 hub descriptors
+  at 5,000 nodes (PR edlitmus/halite#680). At that rate, 25,000 nodes need
+  more than 65,536, so the default cap can be unreachable on the shipped
+  unit. That descriptor count is not on `main` yet, so this change leaves the
+  unit alone. The handbook and the key's documentation say to raise both
+  together.
+
+### 5.640 The scale harness could only measure what one machine could hold
+
+Found while planning the simfleet scale run (`docs/simfleet-aws-plan.md`
+§1.1). Every SPEC 30 row the harness exists for is above what one driver
+host holds: 10,000 nodes for the two dispatch rows, 20,000 for nodes per
+hub and hub memory. Step 0 measured that a driver needs about 200 KiB per
+simulated node and opens three connections per node during a job, so a
+driver is sized at 5,000. And `simfleet run` could not be split:
+
+- **One process submitted and measured its own nodes (L1).** Four
+  drivers gave four separate jobs of 5,000, each timed against its own
+  quarter. That is not "a `test.ping` to 10,000 nodes", and adding the
+  four answers together would have been a claim about a job that never
+  existed.
+- **Only one measured job could be in flight (L2).** The harness timed
+  whatever job arrived while it was measuring, because a node can answer
+  before `Submit` has told the harness the jid. A second job in that
+  window would have been counted as the first.
+- **The connect wait was a fixed five minutes (L8).** It was too short
+  for 20,000 nodes at a slow ramp, and could not be changed.
+- **The output was prose only (L9).** Nothing could be archived or
+  merged across drivers.
+- **The dispatch time hid a blocked submit (L11).** On step 0's first
+  run at 5,000, `Submit` took 25.5 s and the dispatch still read MET at
+  26.05 s. That reading is true from the operator's side, because the
+  clock starts when the job is sent, but nothing in the line said 25 s of
+  it was the hub refusing to answer.
+
+**Fixed.** Arrival and return times are now kept per job, by jid, for
+every simulated node. That removes L2: two jobs are two records, and a
+node that answers before `Submit` returns is filed under the right one.
+On top of that:
+
+- `run -first F -n N -no-submit -out FILE` is one driver of several. It
+  submits nothing, answers what arrives, and rewrites FILE atomically
+  every 5 s and on exit, so a driver killed outright leaves its last
+  complete picture.
+- `simfleet submit -fun F -out FILE` sends one job to the whole fleet
+  and records when it was sent, when the hub accepted it, and what the
+  hub matched.
+- `simfleet merge -submit FILE DRIVER.json...` times that one job across
+  every driver. It refuses two drivers that ran the same node. It counts
+  every node a driver ran, including a driver whose file never mentions
+  the job: those nodes never received it, and leaving them out would
+  report 10 of 10 for a 20-node fleet.
+- `-connect-timeout` replaces the fixed five minutes.
+- `-json FILE` appends each result as one JSON line, from `run` and from
+  `merge` alike.
+- Each result now prints the last arrival measured from when the hub
+  accepted the job, beside the one measured from when it was sent. The
+  verdict is still taken from the send.
+
+A single-process run and a merged one go through the same `summarize`
+and the same `print`, so they cannot report the same data two ways.
+
+**Demonstrated.** `TestTwoDriversOneJob` builds `halite-hub` and
+`simfleet` and runs them over a real socket: `setup` for 20 nodes, a hub,
+two drivers on ranges 1-10 and 11-20, one `submit`, then `merge`, which
+must report 20 of 20 from two drivers, MET. It then runs the
+single-process path with `-ping -apply -json`, and checks that each JSON
+line names the same jid as the printed output. Three unit tests hold
+`merge`'s accounting and the two clocks.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| `merge` expects only the nodes a driver reported | `TestMergeCountsADriverThatNeverSawTheJob` |
+| `merge` drops its duplicate check | `TestMergeRefusesTheSameNodeInTwoDrivers` |
+| the after-accept time measured from the send | `TestDispatchVerdictCountsTheSubmit`, and the merge test |
+| the verdict measured from the accept | `TestDispatchVerdictCountsTheSubmit` |
+| every job filed under one fixed key, as before | `TestTwoDriversOneJob`: the drivers never record the job's returns |
+
+**Not covered:** more than one host. Every process in the test ran on one
+Mac, so `merge`'s comparison of one host's clock with another's is
+untested. The run kit is meant to record each host's chrony offset, and
+it does not exist yet. Windows does not run the end-to-end test, because
+the test stops its drivers with an interrupt. No AWS run has used any of
+this yet.
+
+### 5.641 A node left a connection open on the hub for every return it filed
+
+Found while settling limit L10 of the simfleet plan
+(`docs/simfleet-aws-plan.md`, H9). simfleet's own comment said a real
+node opens a new client for every return, and the plan had not checked
+it. It was true. `postReturns` called `hubClient` for each return, and
+each call builds a new `transport.Client`, which builds a new
+`http.Transport` on its first request: a new TCP connection and a new
+TLS handshake. Nothing closed it, so it stayed open and idle on the hub
+for `IdleStreamTimeout`, 90 s.
+
+So the cost the harness measured was the node's, not the harness's. On
+step 1 of the scale run (5.279, 2026-11-09), two jobs to 5,000
+simulated nodes left 10,000 idle return connections beside the 5,000
+streams: 15,002 established at the hub. Resident memory peaked at
+1.50 GB, against about 900 MB holding the streams alone. A real fleet
+of 5,000 nodes would have done the same. By arithmetic, not
+measurement, a job every 30 s to 20,000 nodes would hold 60,000 return
+connections, with `LimitNOFILE` at 65,536 in the shipped unit.
+
+**Fixed.** `postReturns` keeps one client, `returnClient`, from one
+return to the next. It still calls `hubClient` for every return and
+compares what that read with what the kept client was built from: the
+hub's address, the server name, the CA and the certificate. While they
+are the same, the kept client is used, on its open connection. When one
+changes (a renewal, a CA rotation, a new `hub`), the new client is used
+and the old one's idle connections are closed, so the first return after
+a renewal still presents the new certificate, as before.
+`transport.Client.CloseIdleConnections` is new, for that.
+
+Two alternatives were not taken. `transport.Client.CertFiles` follows
+the certificate but not the CA or the address, which `hubClient` reads
+again each time. Posting returns on the subscribe stream's own client
+would need no second connection at all, but a stream that has stopped
+answering without closing would hold the returns until it reconnects.
+
+simfleet now does what the node does: one returns client per simulated
+node, kept, separate from its stream. `-reuse-client` still files
+returns on the stream's connection. `-client-per-return` is the old
+behaviour, for measuring a fleet of nodes built before this change.
+
+**Demonstrated** on darwin/arm64, go1.27.3, by tests only:
+
+- `TestReturnsShareOneConnectionUntilTheCertificateChanges` runs
+  `postReturns` against a real `hub.Server` behind a listener that
+  counts the connections it accepts. 20 returns open 1 connection. A
+  certificate reissued in the node's PKI directory makes the next
+  return open a second.
+- `TestCloseIdleConnectionsClosesTheConnection` watches the server see
+  the client's connection close after `CloseIdleConnections`.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| a new client per return, as before | the node test: 20 returns opened 19 connections at the moment of counting (the 20th still in flight) |
+| the kept client used whatever changed | the node test: 1 connection after the renewal, want 2 |
+| `CloseIdleConnections` does nothing | the transport test: the server still held the connection after 5 s |
+
+**Not covered:**
+
+- No test sees the node close the old client's connection when its
+  certificate changes. The node test counts connections opened, not
+  closed. The transport test covers the method, not the call to it.
+- No run on AWS, or on any fleet. How much of step 1's 1.50 GB peak this
+  removes has not been measured; step 3 at 20,000 is where it shows.
+- No real `halite-node` binary against a real hub: the test drives the
+  node's `postReturns` function in process.
+- Not run on FreeBSD or Linux; the change has no platform-specific code.
+- The anchor reporter (`startAnchoring`) and the grains refresh
+  (`refreshGrains`) still build a new client each time, and so leave a
+  connection idle for 90 s each time too. They run far less often than
+  returns, and are left as they are.
+
+### 5.642 The debian leg drove the whole live suite and nothing checked that any of it ran
+
+5.633 named this and left it open: "the `fleetcheck` leg has no equivalent
+of `run.sh`'s skip check, so a future change that made `requireDpkg` skip
+there would pass quietly; the rpm legs would not." A named gap is still a
+gap, and this is the one shape a live leg fails in.
+
+**What the leg was.** `make fleetcheck` started the Debian image with a
+`go test -count=1 -v -run TestLive ./internal/builtin/` written into the
+recipe, and `contrib/docker/fleet/run.sh` set three environment variables,
+asserted its fixtures and its lack of a network, and ended in
+`exec "$@"`. The run happened. Nothing read the result beyond `go test`'s
+own exit status.
+
+That is not enough here, because `-run TestLive` selects every live test
+in the package and most of them are *supposed* to skip: on the debian leg
+of Fleet run 42518184078, 25 tests passed and **175 skipped** — not a
+FreeBSD, not a macOS, not a RHEL, no systemd, no `HALITE_SYSTEM_LIVE`. A
+leg whose normal output is 175 skips cannot notice a 176th. Only 13 of
+those 25 are tests this container is the only place for: the twelve gated
+on `HALITE_FLEET_LIVE`, which `run.sh` alone sets, and the dpkg
+differential, which needs no root but needs a dpkg — and `fleet.yml`'s
+`linux` leg does not select the `TestLiveDpkg*` family, so the container is
+the only place in CI it executes at all (5.633). Had all thirteen started
+skipping, the leg would have printed 188 skips, exited 0, and gone green.
+
+The rpm legs have had the check since 5.178, where it is the stated reason
+that script exists: "a leg that is green because everything skipped is the
+failure this is built against." The `linux` leg has a narrow version of it
+— it fails if a `TestLiveSnap*` test skips, which is what 5.147 cost. The
+debian leg, the oldest of the three, had none.
+
+**The fix, in three parts, because one of them can be defeated by each of
+the others going stale.**
+
+*The run and its claim now sit together.* `run.sh` drives the suite
+itself and then requires a `--- PASS` line for each of fourteen names: the
+thirteen tests above and the dispatch subtest, which is the one asserting
+that a Debian machine's grains pick the Debian ordering rather than
+falling back to rpm's rules. The Makefile passes no command, and the
+script *refuses* an argument instead of obeying it, so the recipe cannot
+drift back into being a second way to start the same job. Skips are not
+listed — 175 of them is noise — except for a test on the list, whose
+reason is printed beside the error.
+
+*The claim is held to the tree.* A fourteenth test gated on
+`HALITE_FLEET_LIVE` would run in that container, could skip for any
+reason, and the leg would stay green because nothing named it. So
+`internal/buildpolicy/fleetproof_test.go` reads the `expect` list and
+requires that every live test gated on `live(t)` or `requireDpkg(t)`
+appears in it, that every name in it resolves to a test that exists, and
+that the recipe runs no `go test` of its own. It reads the *gate* rather
+than the file name, because a file name is a convention and the gate is
+what decides where a test can run. It fails in `make check`, a day before
+the nightly log would.
+
+*The test refuses to skip where there is no honest reason to.*
+`requireDpkg` now fails instead of skipping when `HALITE_FLEET_LIVE` is
+set, the way `live()` already did for a missing `dpkg-query`. The image
+exists to have a dpkg in it.
+
+**Demonstrated.** The audit was broken three ways and failed each time
+with the right finding: a test dropped from `expect`; a name in `expect`
+renamed to one that does not exist (which failed twice, once from each
+direction); and `go test` put back into the recipe. The script's proof was
+replayed offline against the debian leg's own captured output from run
+42518184078 — all fourteen names found — and then against the same log
+with the differential's PASS replaced by the SKIP `requireDpkg` would have
+printed, where it reported both the test and its subtest and printed
+dpkg's reason. The new refusal was run on beastie: `HALITE_FLEET_LIVE=1
+go test -run TestLiveDpkgVersionCmp` now fails with "HALITE_FLEET_LIVE is
+set and this is freebsd".
+
+**Not verified.** `make fleetcheck` has not run on this host: beastie has
+no Docker, the same limit 5.179 records, so the script's new tail has been
+exercised only against captured output and in the leg itself. The
+`LookPath` half of `requireDpkg`'s refusal needs a Linux host without
+dpkg, which nothing here is. And the twelve other tests that pass in that
+container — `TestLivePS*`, the proc beacon, the `reboot` reads, the tmpfs
+listing — are swept in by the catch-all filter and are claimed by nothing:
+this entry closes the debian leg's own claim, not the general case of a
+test that passes on a leg whose list does not mention it.
+
+### 5.643 simfleet reconnected and retried returns in its own way, not the node's
+
+Limits L3 and L4 of the simfleet plan (`docs/simfleet-aws-plan.md`, H2
+and H3). The harness is meant to give a hub the load a fleet of real
+nodes would, and in two ways it did not:
+
+- **Reconnects (L3).** A simulated node waited a fixed second after its
+  stream ended, every time. `halite-node` backs off from 1 s to a minute,
+  doubling, with up to a fifth of jitter either way, and starts again
+  from a second once a stream opens (#597, whose ledger section was
+  cited by number and never written). So 20,000 simulated nodes
+  that lost the hub together came back together, once a second, for as
+  long as the hub was down: a harsher and more synchronised storm than a
+  fleet's, and a NOT MET from it could have been the harness.
+- **Returns (L4).** A simulated node counted a failed return as lost at
+  the first failure. The node tries five times, waiting 1, 2, 3, 4 and
+  5 s, and stops early only for a refusal or its own shutdown. Near
+  saturation a fleet adds that load, and simfleet took it away.
+
+**Fixed** by having one copy of each. `internal/nodelink` is new and
+holds both: `Reconnect`, the node's pacer, moved from
+`cmd/halite-node/reconnect.go` with its tests and its
+`hub_tries` accounting unchanged; and `PostReturn`, the retry loop from
+the node's `sendReturn`. The node's log lines stay in the node, which
+now calls `PostReturn` and logs by its answer. simfleet's stream loop
+and its `answer` now use the same two, so a change to the node's
+behaviour is a change to what simfleet measures.
+
+`PostReturn` keeps one thing from the node that looks like a defect: it
+waits after the fifth failure as after the others, before giving up, so
+the node's return queue stalls 5 s longer than it needs to on a return
+it is abandoning. This change moves the behaviour and does not change
+it; that is left for a change of its own.
+
+**Demonstrated** on darwin/arm64, go1.27.3, by tests only:
+
+- `TestASimulatedNodeBacksOffAsANodeDoes` runs simfleet's `connect`
+  against a listener that accepts and closes, for 4.5 s, and counts
+  attempts: 2 or 3 with the node's pacer, where a fixed second gives 5.
+- `TestASimulatedNodeRetriesAReturn` runs simfleet's `answer` against a
+  poster that fails once: 2 posts, no return error, and a return time.
+- `internal/nodelink`'s tests hold the retry: posted on the third try
+  after two failures, a refusal not retried, given up after five, the
+  waits 1 to 5 s, and a stopped context ending the wait. The pacer's
+  three tests moved with it unchanged.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| simfleet waits a fixed second again | `TestASimulatedNodeBacksOffAsANodeDoes`: 5 attempts |
+| simfleet posts a return once, as before | `TestASimulatedNodeRetriesAReturn`: 1 post, 1 error |
+| a refusal retried | `TestARefusedReturnIsNotRetried` |
+| four tries instead of five | `TestAReturnIsGivenUpAfterFiveFailures`, once it was written against 5 rather than the constant, which it first compared with and so could not fail |
+| the pacer without jitter | `TestTheReconnectWaitResetsWhenTheStreamOpensAndIsJittered` |
+
+**Not covered:**
+
+- No run on AWS or against a hub under load. What a reconnect storm or
+  a saturated hub looks like with the node's pacing and retries is what
+  steps 2 and 3 measure, and has not been measured.
+- The node's own `sendReturn` has no test that it retries; its
+  behaviour rests on `PostReturn`'s tests and on reading the call.
+- simfleet still answers each job in its own goroutine, where the node
+  posts its returns one at a time from one queue. Under a burst of jobs
+  a simulated node can have several returns in flight and a real one
+  cannot. That is a third difference and is not fixed here.
+- simfleet counts a return error but not a retry, so a run cannot say
+  how much of its load was retries.
+
+### 5.644 win_dacl.present's default scope could not converge on a file, and its comparison was case-sensitive where winsec's reading never is
+
+Issue 608 item 5, lead L14 (`internal/builtin/win_dacl.go`,
+`win_dacl_windows.go`, `win_dacl_other.go`). Found by reading, in the issue
+321 second-pass audit. Checked and run on this Windows 11 host.
+
+**The first half, the defect.** `win_dacl.present`'s `applies_to` defaulted
+to `this_folder_subfolders_files` regardless of whether the path was a
+file, and the signature's own parameter default did too, so a declaration
+with no `applies_to` at all never saw the function-level fallback this
+change adds -- the signature layer had already filled it in. Asking NTFS to
+carry an entry's inheritance onto subfolders a plain file cannot have does
+not fail; it answers by clearing both inherit flags on the entry it
+actually stores. Confirmed directly on this host with `windows.ACLFromEntries`
+and a read-back: `CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE` asked for, `0`
+stored, on a plain file. `winDACLEntryFor`'s rendering of that stored entry
+-- `this_folder_only` -- then never matched the declaration's
+`this_folder_subfolders_files`, so `win_dacl.present` with no `applies_to`
+on a file reported a change every run, called `Grant` every run, and NTFS
+normalised the result back to the same thing every run.
+
+**The second half, the defect.** `winDACLPresent` built its comparison
+string from the declaration's own spelling of `permission` and `applies_to`
+-- `fmt.Sprintf("%s %s (%s)", kind, permission, scope)` -- while
+`winDACLEntryFor`'s side is winsec's canonical rendering: always lowercase,
+always a name where one exists. A declaration spelled `Read` compared
+against a stored `read` entry differed by nothing but case, forever.
+
+**Shown.** `TestWinDACLPresentWithTheDefaultScopeConvergesOnAFile`
+(`internal/builtin/win_dacl_windows_test.go`) grants `Everyone` `read` on a
+real file with no `applies_to` named, then runs the state again. On the
+unchanged code the second run reported a change (the comment on the first
+run says so directly: "now has allow read (this_folder_subfolders_files)"
+on a plain file). `TestWinDACLPresentPermissionIsCaseInsensitive` grants
+`read` directly through `winsec.Grant`, then declares `Read` through the
+state; it failed on the unchanged comparison with a reported change.
+
+**The change.** `applies_to`'s signature default is now empty rather than
+`this_folder_subfolders_files`, so a declaration that names nothing reaches
+`winDACLPresent`'s own `defaultScope`, which answers `this_folder_only` for
+a file (`os.Stat` and `IsDir`) and keeps the old default for a directory or
+a path that does not exist yet. The comparison string is now built from
+`canonicalPermissionAndScope`'s rendering -- `winsec.PermissionMask` then
+`PermissionName`, `ScopeFlags` then `ScopeName` -- which is a Windows-only
+function in `win_dacl_windows.go` (`win_dacl.go` itself has no build tag
+and compiles on every platform; `win_dacl_other.go` carries a pass-through
+stub, unreachable in practice because `winDACLEntryFor` already refuses
+there first).
+
+With the change, both tests above and the rest of `internal/builtin`'s
+suite pass (`go test ./internal/builtin/... -count=1`, this host), and
+`docs/modules.md`'s entry for `win_dacl.present` was regenerated for the
+parameter's new default and doc string.
+
+**What an operator sees.** `win_dacl.present` with no `applies_to` now
+converges on a file instead of reporting a change on every run. A
+declaration's `permission` or `applies_to` spelled in another case, or as
+a raw mask, now compares the way `win_dacl.get_permissions` already reads
+one back.
+
+**Not verified.** A directory whose default scope changed behavior as a
+side effect of this fix -- it did not; the directory branch is the
+original default, unchanged. `win_dacl.grant`, the one-shot execution
+module with the identically-worded old default, which has no comparison to
+converge and was left alone on purpose.
+
+### 5.645 A wintask fixture replaced with a capture, and two leads that stayed leads
+
+Issue 608 item 5, leads L17, L18 and L29. Found by reading, in the issue
+321 second-pass audit. Checked on this Windows 11 host.
+
+**L17, fixed.** `TestTheParserSurvivesWhatSchtasksActuallyPrints`
+(`internal/wintask/schtasks_windows_test.go`) built its document by hand:
+a guess, matching CLAUDE.md's own rule, at what schtasks prints rather
+than a capture of it. A real one was taken on this host --
+`Create(c, Task{Command: "cmd.exe", Enabled: false, RunAs: me.Username})`,
+then `Info`, with the account's own SID swapped for `S-1-5-18` so the
+fixture does not carry this host's identity -- and the test's document is
+now that capture, shortened to the elements the test and `toTask` read.
+The doubled `\r\r\n` and the lying `encoding="UTF-16"` declaration the old
+fixture assumed both held in the capture, so the test's own assertions did
+not need to change; only the document they are made of did.
+
+**L18, not verified.** `List`'s folder-heading handling -- the lead's
+concern was a localised `INFO:` line from a folder this account cannot
+read, interleaved with the CSV `List` parses, that a non-admin might see
+and misread as a task name. `schtasks /query /fo csv /nh` was run
+directly and checked line by line on this host, as this account: all 289
+lines were proper quoted CSV, none the shape the lead was concerned
+about. This account is in the local Administrators group, which is enough
+to read every folder's tasks even without an elevated token, so the
+restricted-account case the lead needs was not available to try.
+
+**L29, read again, still latent rather than live.** `entryattrs_other.go`
+is `!unix`, so it compiles for Windows too, and its own comment already
+says a mode there is `win_dacl`'s and an owner is nobody's uid and gid --
+then `changeEntryIn` and `changeEntryPath` call `os.Chmod` and `Lchown`
+anyway, which is the gap the lead names. Traced every real caller:
+`ssh_account.go`'s refuses before reaching it
+(`sshAccountFileFor` returns nil outright when `runtime.GOOS ==
+"windows"`), and `openssl_cert.go`'s is behind `pkcs12_create`'s own
+`Platforms: unixOnly`. Both unreachable on Windows today, which is what
+the lead's own words already said ("Latent while its callers run on unix
+only"). Still true, not changed; the day a Windows-reachable caller is
+added is the day this stops being latent.
+
+### 5.646 Two leads about winreg that were not bugs, and a mistake of this ledger's own
+
+Issue 608 item 5, leads L25 and L26 (`internal/winreg/winreg_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked on this
+Windows 11 host; not run.
+
+**L25, not verified.** `DeleteKey` opens a key's parent in the view asked
+for and deletes the named child from that handle, which the lead questioned
+because `RegDeleteKey` (what it calls) takes no WOW64 flag of its own --
+only `RegDeleteKeyEx` does, in its `samDesired` parameter. Whether the
+parent handle's own view carries through to a child deleted by name from
+it needed a real split hive to answer. `HKCU\Software`, which this
+project's winreg tests use because it needs no administrator rights, does
+not split by WOW64 at all: `reg query ... /reg:32` and `/reg:64` against
+the same `HKCU\Software` key returned the same data on this host, checked
+directly. The split that exists, under `HKLM\SOFTWARE`, refused a write
+with "Access is denied" to this account, also checked directly. Left as
+the lead found it.
+
+**L26, checked, did not reproduce as described.** `SameData` does have a
+`case` for each of the five types this build can write, so the claim that
+it "ignores the value type" does not hold: reading it answers the
+question, which is the same way several other leads in this issue have
+turned out not to need running anything (L12 in PR #683's TPM section,
+not yet merged, "read and not a defect"; 5.636's "did not fully
+reproduce"). What the lead got right: "nothing calls it" -- confirmed, a
+`grep` for `SameData(` outside its own test finds only its definition.
+`win_registry` ships no state module at all, which is DIVERGENCE 4.6's own
+decision, not a gap: SPEC 15.5 does not name one, and Salt's `reg.present`
+is "a decision for a person rather than a quiet addition." `SameData` is
+that decision's unused preparation, not a defect; left alone.
+
+**A mistake of this ledger's own, found while checking L26.** DIVERGENCE
+5.637 (PR #686, this issue's L15/L16 entry) said the fix reached
+"`win_registry.read_value` and `win_registry.value_present`'s comparison."
+`value_present` does not exist, for the reason the paragraph above gives,
+and the CHANGELOG entry for the same change repeated the error. The
+CHANGELOG entry now names `win_registry.read_value` only. `value_exists`
+also reaches the changed code (`winreg.ValueExists` calls `ReadValue`),
+but by reading the code it answered true for such a value before the fix
+and answers true after it, so nothing an operator sees changed there;
+that was not run. A claim nobody demonstrated is a defect whoever wrote it,
+including this ledger about its own prior entry.
+
+### 5.647 `once at HH:MM` generated a trigger the scheduler accepted and never ran
+
+Issue 608 item 5, lead L9 (`internal/wintask/schtasks_windows.go`,
+`internal/builtin/win_task.go`). Found by reading, in the issue 321
+second-pass audit, and left open after items 1 through 4 rather than
+decided, because it changes what a declared trigger promises. Checked and
+run on this Windows 11 host; no longer open.
+
+**The defect, confirmed.** `generateTrigger`'s `once at HH:MM` case wrote
+`startBoundary(clock)` into a `TimeTrigger`, the same helper `daily at
+HH:MM` uses for a `CalendarTrigger`. For `daily at`, the fixed placeholder
+date, 1970, is correct: a `CalendarTrigger` only reads the clock out of its
+`StartBoundary`, and a date would need to be today's to look sensible,
+which would make the generated XML differ from what is stored on every
+run and never converge -- exactly the reason 1970 was chosen there. A
+`TimeTrigger` is not a calendar trigger: its `StartBoundary` is not "what
+time of day", it is the one moment the trigger fires, ever, and 1970 is a
+moment already fifty-odd years gone.
+
+**Shown.** `TestARealTimeTriggerDatedNineteenSeventyNeverRuns`
+(`internal/wintask/schtasks_windows_test.go`) registers a real task, as
+this account, with a `TimeTrigger` whose `StartBoundary` is
+`1970-01-01T03:30:00` -- exactly what the unchanged `generateTrigger`
+wrote for `once at 03:30`. `schtasks /query /tn ... /v /fo list` on it
+reports:
+
+```
+Next Run Time:                        N/A
+```
+
+The scheduler accepted the task and will never run it. No error, no
+warning; `win_task.present` with `trigger: "once at 03:30"` reported
+success and the task sat there, permanently dormant, unless
+`win_task.run` triggered it by hand.
+
+**Why this was not a one-line fix.** Writing today's or tomorrow's date
+instead would make the trigger real, but not idempotent: the `StartBoundary`
+`generateTrigger` would write today differs from the one it would write
+tomorrow, so a state re-applying the same declaration on two different
+days would see two different generated documents and -- depending on how
+the comparison is built -- either recreate the task forever or compare
+against a boundary that has already passed, which is the same failure in
+a different shape. `daily at HH:MM`'s fixed date avoids exactly this by
+never needing a real date at all. A one-time trigger cannot avoid needing
+one.
+
+**The change.** `once at HH:MM` is refused, with a message naming why
+(no date, a task created without one is accepted and never runs) and what
+to do instead (`win_task.present` with the scheduler's own XML, which
+takes a real `StartBoundary`, or `win_task.run` to fire the task once by
+hand). This matches `generateTrigger`'s existing shape: it already refuses
+a trigger this build cannot correctly express rather than approximating
+one, for more than one trigger and for a schedule it does not name at all.
+The `trigger` doc strings of `win_task.present` and `win_task.create` no
+longer offer `once at HH:MM` as something this vocabulary can express.
+
+With the change, `go test ./internal/wintask/... ./internal/builtin/...
+-count=1` is green on this host, including both tests above, and
+`docs/modules.md` was regenerated for the two doc strings.
+
+**What an operator sees.** `win_task.present` and `win_task.create` with
+`trigger: "once at HH:MM"` now refuse, naming why, instead of silently
+registering a task that never runs. Any tree already using that form was
+relying on behavior that never worked in the first place -- the task it
+declared never ran on its own either -- so this closes a gap rather than
+changing one that worked.
+
+**Not verified.** Whether a future build should accept an explicit date
+(`once at 2027-03-01 03:30`, say) is a decision for later, not answered
+here: it needs its own vocabulary and its own convergence rule, which
+this change does not attempt.
 
 ### 5.631 Two stale sentences and a stub signature `go vet` already knew was wrong
 

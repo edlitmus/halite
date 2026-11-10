@@ -17,6 +17,16 @@ import (
 // subscribe is the long-lived stream of SPEC 6.2: the hub writes NDJSON
 // to the node until one of them goes away.
 func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string) {
+	// SPEC 6.5's connection cap, asked before the body is read so that a
+	// node the hub will not hold is not first allowed to hand it a
+	// megabyte of grains. Asked again, and decided, where the stream is
+	// attached; see Fleet.full.
+	max := s.maxNodeConnections()
+	if s.fleet().full(nodeID, max) {
+		s.refuseOverCap(w, nodeID, max)
+		return
+	}
+
 	var req transport.SubscribeRequest
 	if err := transport.ReadJSON(w, r, transport.MaxGrainsPayload, &req); err != nil {
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
@@ -78,7 +88,17 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 		}
 	}
 
-	st := s.fleet().attach(nodeID, now)
+	st, ok := s.fleet().attachLimited(nodeID, now, max)
+	if !ok {
+		// Lost the last slot to a node that passed the check above at
+		// the same moment. Its grains are recorded, which is harmless:
+		// they are what it reported, and it is enrolled. A relay's
+		// routes are not applied without a stream (Fleet.Relay holds
+		// them as pending, for relayAnnounceGrace), so a relay refused
+		// here routes nothing.
+		s.refuseOverCap(w, nodeID, max)
+		return
+	}
 
 	s.m().nodeConnects.Inc()
 	// Why a stream ended is the useful half: a node that went away and

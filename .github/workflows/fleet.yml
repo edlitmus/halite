@@ -40,6 +40,15 @@ on:
       - "internal/builtin/netplan*.go"
       - "internal/builtin/service*.go"
       - "internal/builtin/pkg*.go"
+      # The version orderings and the differential that holds them to the
+      # real tools. `pkg*.go` above already catches `pkg_vercmp.go`, the
+      # dispatch, and missed `vercmp.go`, the algorithm -- so the Debian
+      # and RPM orderings could be rewritten without the one leg that has
+      # a real dpkg or rpm ever running. The fixture is here too: a
+      # captured oracle that changes is a reason to ask the tool again.
+      - "internal/builtin/vercmp*.go"
+      - "internal/builtin/live_dpkg*.go"
+      - "internal/builtin/testdata/dpkg-*.tsv"
       # `quota` and `lvm` are here and `pam` and `openssl_cert` are not,
       # and the difference is what each needs to be driven. The latter
       # two change nothing outside a directory the test owns, so they run
@@ -183,6 +192,12 @@ jobs:
       # the recipe rather than a copy of it is what stops the two
       # diverging. The image is already built above, so this step only
       # re-tags nothing and runs.
+      #
+      # The image's run.sh drives the suite and fails the leg when a test
+      # it claims skipped or stopped existing, the way the rpm legs have
+      # since 5.178. Until 5.642 this leg had no such check and most of
+      # what `-run TestLive` selects skips here on purpose, so a green run
+      # with nothing Debian in it was possible.
       - name: drive the modules
         run: make fleetcheck
 

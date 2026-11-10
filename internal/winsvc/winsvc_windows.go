@@ -46,6 +46,14 @@ type Status struct {
 	Account string
 	// Description is the prose the console shows.
 	Description string
+	// ConfigErr is set when the status above was read but the
+	// configuration -- StartType, Account, BinaryPath, DisplayName,
+	// Description -- could not be. State and PID are still real; the
+	// rest of this struct is the zero value, not a fact, and a caller
+	// reading one of those fields should check this first rather than
+	// trust an empty string or a false boolean (issue 608 item 5, lead
+	// L22).
+	ConfigErr error
 }
 
 // manager is an open handle to the service control manager.
@@ -198,7 +206,12 @@ func statusOf(name string, h windows.Handle) (Status, error) {
 	if err != nil {
 		// The status is the answer to the common question and is
 		// already in hand; a configuration this process may not read is
-		// not a reason to fail the whole query.
+		// not a reason to fail the whole query. It is, however, a reason
+		// a caller that reads StartType, Account or the rest below has
+		// to be told rather than silently given the zero value: Enabled
+		// and Disabled both decide a boolean from StartType alone, and
+		// an empty string reads as a confident "no" that this is not.
+		out.ConfigErr = err
 		return out, nil
 	}
 	out.DisplayName = windows.UTF16PtrToString(config.DisplayName)
@@ -215,7 +228,11 @@ func statusOf(name string, h windows.Handle) (Status, error) {
 // QUERY_SERVICE_CONFIG is a header followed by the strings it points at,
 // so the call has to be made twice: once to be told how much room the
 // whole thing needs, and once to read it.
-func queryConfig(h windows.Handle) (*windows.QUERY_SERVICE_CONFIG, error) {
+//
+// A var, not a plain func, so a test can replace it to exercise
+// statusOf's ConfigErr path: a healthy service and a normal account
+// cannot make the real QueryServiceConfig fail on demand.
+var queryConfig = func(h windows.Handle) (*windows.QUERY_SERVICE_CONFIG, error) {
 	var needed uint32
 	err := windows.QueryServiceConfig(h, nil, 0, &needed)
 	if err != nil && err != windows.ERROR_INSUFFICIENT_BUFFER {
@@ -290,6 +307,9 @@ func Enabled(name string) (bool, error) {
 	s, err := Query(name)
 	if err != nil {
 		return false, err
+	}
+	if s.ConfigErr != nil {
+		return false, fmt.Errorf("reading %q's start type: %w", name, s.ConfigErr)
 	}
 	return s.StartType == "auto" || s.StartType == "auto_delayed", nil
 }

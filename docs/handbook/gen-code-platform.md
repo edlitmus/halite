@@ -412,7 +412,7 @@ The service control manager was reached through its API because sc.exe writes a 
 
 The alternative was the scheduler's COM API, which needs hand-rolled vtable dispatch across six interfaces and BSTR marshalling for a result the XML already gives exactly. The one thing the XML does not carry is whether a task is running right now, and schtasks reports that only as a localised word — so this package does not report it rather than parsing prose and getting it wrong on a German host.
 
-**Files:** `doc.go`, `schtasks_windows.go`, `wintask.go`; with tests.
+**Files:** `decodeoem_other.go`, `doc.go`, `schtasks_windows.go`, `wintask.go`; with tests.
 
 **Exports.**
 

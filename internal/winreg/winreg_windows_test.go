@@ -3,6 +3,7 @@
 package winreg
 
 import (
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -364,5 +365,34 @@ func TestBinaryIsHexAndToleratesSpacing(t *testing.T) {
 	}
 	if err := SetValue("HKCU", path, "bad", "binary", "not-hex", Native); err == nil {
 		t.Error("a binary value that is not hex was accepted")
+	}
+}
+
+// GetBinaryValue, which the default branch of readFrom used
+// exclusively, refuses every type but REG_BINARY itself, so any other
+// type that is not one of the named cases -- REG_NONE with real data,
+// REG_LINK, REG_DWORD_BIG_ENDIAN, REG_RESOURCE_LIST,
+// REG_FULL_RESOURCE_DESCRIPTOR -- read as present and empty, with the
+// real error thrown away (issue 608 item 5, lead L16).
+//
+// `Configuration Data` under a CPU's own key is a real,
+// machine-shipped REG_FULL_RESOURCE_DESCRIPTOR with non-zero bytes:
+// confirmed on this host with `reg query`, which shows
+// `FFFFFFFFFFFFFFFF0000000000000000`.
+func TestAResourceDescriptorValueIsReadNotEmptied(t *testing.T) {
+	const path = `HARDWARE\DESCRIPTION\System\CentralProcessor\0`
+	got, err := ReadValue("HKLM", path, "Configuration Data", Native)
+	if err != nil {
+		t.Fatalf("reading a real REG_FULL_RESOURCE_DESCRIPTOR value: %v", err)
+	}
+	if got.Data == "" {
+		t.Fatal("Configuration Data read back empty; it has real bytes")
+	}
+	raw, err := hex.DecodeString(got.Data.(string))
+	if err != nil {
+		t.Fatalf("Data is not hex: %q: %v", got.Data, err)
+	}
+	if len(raw) == 0 {
+		t.Fatal("decoded to zero bytes")
 	}
 }

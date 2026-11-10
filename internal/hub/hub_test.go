@@ -74,6 +74,14 @@ func (l *lab) stop(t *testing.T) {
 
 func newLab(t *testing.T) *lab {
 	t.Helper()
+	return newLabWith(t, nil)
+}
+
+// newLabWith is newLab with a chance to set the server's fields before
+// it serves, which is the only moment a field the handlers read may be
+// written without a race.
+func newLabWith(t *testing.T, configure func(*Server)) *lab {
+	t.Helper()
 	dir := t.TempDir()
 	files := pki.Files{Dir: dir}
 	ca, err := files.CreateCA(pki.ECDSAP256, "halite test CA", 365*24*time.Hour)
@@ -127,6 +135,9 @@ func newLab(t *testing.T) *lab {
 			Lifetime: keystore.DefaultLifetime,
 		},
 		PingInterval: 20 * time.Millisecond,
+	}
+	if configure != nil {
+		configure(srv)
 	}
 
 	ln, err := Listen("127.0.0.1:0", NewServingCert(pair), ca.Cert, denied)

@@ -52,6 +52,12 @@ type Server struct {
 	eventBucketsMu sync.Mutex
 	eventBuckets   map[string]*ratelimit.Bucket
 
+	// MaxNodeConnections is `max_node_connections`: how many subscribe
+	// streams the hub holds at once; zero is the default. See
+	// DefaultMaxNodeConnections.
+	MaxNodeConnections int
+	connLimitLog       connLimitLog
+
 	// RelaySubordinates is `relay_subordinates`: for each relay's node
 	// id, the globs of the node ids it may claim. A relay with no entry
 	// claims none. See relayMayNotClaim.
