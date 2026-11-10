@@ -42763,6 +42763,46 @@ original default, unchanged. `win_dacl.grant`, the one-shot execution
 module with the identically-worded old default, which has no comparison to
 converge and was left alone on purpose.
 
+### 5.645 A wintask fixture replaced with a capture, and two leads that stayed leads
+
+Issue 608 item 5, leads L17, L18 and L29. Found by reading, in the issue
+321 second-pass audit. Checked on this Windows 11 host.
+
+**L17, fixed.** `TestTheParserSurvivesWhatSchtasksActuallyPrints`
+(`internal/wintask/schtasks_windows_test.go`) built its document by hand:
+a guess, matching CLAUDE.md's own rule, at what schtasks prints rather
+than a capture of it. A real one was taken on this host --
+`Create(c, Task{Command: "cmd.exe", Enabled: false, RunAs: me.Username})`,
+then `Info`, with the account's own SID swapped for `S-1-5-18` so the
+fixture does not carry this host's identity -- and the test's document is
+now that capture, shortened to the elements the test and `toTask` read.
+The doubled `\r\r\n` and the lying `encoding="UTF-16"` declaration the old
+fixture assumed both held in the capture, so the test's own assertions did
+not need to change; only the document they are made of did.
+
+**L18, not verified.** `List`'s folder-heading handling -- the lead's
+concern was a localised `INFO:` line from a folder this account cannot
+read, interleaved with the CSV `List` parses, that a non-admin might see
+and misread as a task name. `schtasks /query /fo csv /nh` was run
+directly and checked line by line on this host, as this account: all 289
+lines were proper quoted CSV, none the shape the lead was concerned
+about. This account is in the local Administrators group, which is enough
+to read every folder's tasks even without an elevated token, so the
+restricted-account case the lead needs was not available to try.
+
+**L29, read again, still latent rather than live.** `entryattrs_other.go`
+is `!unix`, so it compiles for Windows too, and its own comment already
+says a mode there is `win_dacl`'s and an owner is nobody's uid and gid --
+then `changeEntryIn` and `changeEntryPath` call `os.Chmod` and `Lchown`
+anyway, which is the gap the lead names. Traced every real caller:
+`ssh_account.go`'s refuses before reaching it
+(`sshAccountFileFor` returns nil outright when `runtime.GOOS ==
+"windows"`), and `openssl_cert.go`'s is behind `pkcs12_create`'s own
+`Platforms: unixOnly`. Both unreachable on Windows today, which is what
+the lead's own words already said ("Latent while its callers run on unix
+only"). Still true, not changed; the day a Windows-reachable caller is
+added is the day this stops being latent.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
