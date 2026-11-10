@@ -85,7 +85,7 @@ Import path `github.com/edlitmus/halite/internal/nodelink`.
 
 Package nodelink is how a node holds its link to the hub: the pace of its reconnects, and how it retries a return the hub did not take.
 
-It is shared by halite-node and simfleet, which simulates thousands of nodes against one hub to measure SPEC 30's rows. The two used to have their own copies: simfleet reconnected every second where a node backs off to a minute with jitter, and gave up on a return at its first failure where a node tries five times. So a reconnect storm from simfleet was harsher and more synchronised than a fleet's, and near saturation a fleet adds load that simfleet took away (DIVERGENCE 5.642, limits L3 and L4 of docs/simfleet-aws-plan.md). One copy means a change to the node's behaviour is a change to what simfleet measures.
+It is shared by halite-node and simfleet, which simulates thousands of nodes against one hub to measure SPEC 30's rows. The two used to have their own copies: simfleet reconnected every second where a node backs off to a minute with jitter, and gave up on a return at its first failure where a node tries five times. So a reconnect storm from simfleet was harsher and more synchronised than a fleet's, and near saturation a fleet adds load that simfleet took away (DIVERGENCE 5.643, limits L3 and L4 of docs/simfleet-aws-plan.md). One copy means a change to the node's behaviour is a change to what simfleet measures.
 
 **Files:** `reconnect.go`, `returns.go`; with tests.
 

@@ -42627,7 +42627,7 @@ listing — are swept in by the catch-all filter and are claimed by nothing:
 this entry closes the debian leg's own claim, not the general case of a
 test that passes on a leg whose list does not mention it.
 
-### 5.642 simfleet reconnected and retried returns in its own way, not the node's
+### 5.643 simfleet reconnected and retried returns in its own way, not the node's
 
 Limits L3 and L4 of the simfleet plan (`docs/simfleet-aws-plan.md`, H2
 and H3). The harness is meant to give a hub the load a fleet of real

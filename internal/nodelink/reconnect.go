@@ -8,7 +8,7 @@
 // failure where a node tries five times. So a reconnect storm from
 // simfleet was harsher and more synchronised than a fleet's, and near
 // saturation a fleet adds load that simfleet took away (DIVERGENCE
-// 5.642, limits L3 and L4 of docs/simfleet-aws-plan.md). One copy means a
+// 5.643, limits L3 and L4 of docs/simfleet-aws-plan.md). One copy means a
 // change to the node's behaviour is a change to what simfleet measures.
 package nodelink
 
