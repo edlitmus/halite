@@ -9737,7 +9737,7 @@ win_task.create(name: string, command: string = , arguments: string = , working_
 | `run_level` | string | `limited` | Whether it runs elevated. |
 | `enabled` | bool | `true` | Whether the scheduler will run it. |
 | `description` | string | `` | What the console shows. |
-| `trigger` | string | `` | When it runs: `boot`, `logon`, `daily at HH:MM` or `once at HH:MM`. Empty registers a task that runs only when something asks it to. |
+| `trigger` | string | `` | When it runs: `boot`, `logon` or `daily at HH:MM`. Empty registers a task that runs only when something asks it to. A one-time trigger needs `xml`: this vocabulary has no date, and a one-time trigger given only a clock time is accepted and then never runs. |
 | `xml` | string | `` | The scheduler's own definition, for a task this vocabulary cannot express. Everything else is ignored when this is given. |
 
 *changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.3*
@@ -12849,7 +12849,7 @@ win_task.present(name: string, command: string = , arguments: string = , working
 | `run_level` | string | `limited` | Whether it runs elevated. |
 | `enabled` | bool | `true` | Whether the scheduler will run it. |
 | `description` | string | `` | What the console shows. |
-| `trigger` | string | `` | When it runs: `boot`, `logon`, `daily at HH:MM` or `once at HH:MM`. |
+| `trigger` | string | `` | When it runs: `boot`, `logon` or `daily at HH:MM`. A one-time trigger needs `xml`: this vocabulary has no date, and a one-time trigger given only a clock time is accepted and then never runs. |
 | `xml` | string | `` | The scheduler's own definition, for a task this vocabulary cannot express. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
