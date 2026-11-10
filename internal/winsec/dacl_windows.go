@@ -329,10 +329,24 @@ func readEntries(path string, inheritedToo bool) ([]entry, error) {
 		case windows.ACCESS_DENIED_ACE_TYPE:
 			mode = windows.DENY_ACCESS
 		default:
-			// An audit or an object entry. This module does not write
-			// them and cannot faithfully rewrite them, so carrying one
-			// through a replace would corrupt it.
-			continue
+			// A conditional or an object entry (issue 608 item 5, the
+			// readEntries follow-up found while fixing lead L13's
+			// winsec access-list checks, DIVERGENCE 5.621). This
+			// module does not write them and cannot faithfully rewrite
+			// them, so Grant, Revoke and SetInheritance -- the three
+			// callers that rebuild the whole list from what this
+			// returns -- used to carry on without it, which is how a
+			// conditional or object entry from any trustee, not only
+			// the one being changed, silently vanished the next time
+			// any of the three touched the file. Refusing is the safe
+			// direction: a caller told why nothing happened can decide
+			// what to do; one told nothing happened, when the list
+			// just lost an entry it never asked to change, cannot.
+			return nil, fmt.Errorf(
+				"%s has an access control entry of a kind this build cannot rewrite "+
+					"(a conditional or an object entry, ACE type %d); "+
+					"changing it here risks dropping that entry silently, so nothing was changed",
+				path, ace.Header.AceType)
 		}
 		// The SIDs in a descriptor point into its own memory, which is
 		// freed when it goes out of scope. A list built from them and
