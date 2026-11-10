@@ -21,7 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
-- **`simfleet run` and `simfleet submit` can now send a batched job.** They take `-batch`, `-batch-wait` and `-batch-timeout`, spelt and checked as `halite-hub run` does. A batched result has no SPEC 30 verdict. It reports the slice size the hub chose, the most nodes that had the job at once, which is at most one slice if the hub batched as it should, and the time from one slice's last return to the next slice's first arrival. DIVERGENCE 5.648.
+- **`simfleet run` and `simfleet submit` can now send a batched job.** They take `-batch`, `-batch-wait` and `-batch-timeout`, spelt and checked as `halite-hub run` does. A batched result has no SPEC 30 verdict. It reports the slice size the hub chose, the most nodes that had the job at once, which is at most one slice if the hub batched as it should, and the time from one slice's last return to the next slice's first arrival. DIVERGENCE 5.650.
 
 - **On Windows, `win_dacl.grant`, `win_dacl.revoke`, `win_dacl.present` and `win_dacl.set_inheritance` now refuse to rewrite a file's access list when it holds a conditional or an object access control entry, instead of silently dropping it.** Before, granting or revoking access for one trustee could make a conditional or an object entry belonging to an entirely different trustee vanish, with no error. DIVERGENCE 5.649.
 
