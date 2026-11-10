@@ -43079,6 +43079,83 @@ shared `summarize` and not by a run of its own; across drivers the
 in-flight count and the gaps are on several clocks, and are worth only
 what the hosts' recorded offsets say.
 
+### 5.651 A TPM's presence was read from a key every Windows has, not from the TPM
+
+Issue 608 item 5, leads L10, L11 and L12 (`internal/grains/platform_windows.go`).
+Found by reading, in the issue 321 second-pass audit. Checked and run on
+this Windows 11 host, an AMD desktop with a real TPM 2.0.
+
+**L11, the defect.** `tpm` answered from `hasKey` on
+`SYSTEM\CurrentControlSet\Services\TPM` -- whether the driver's service key
+exists, not whether a TPM is attached. A driver's service registration is
+not evidence of its hardware: `vmbus`, the Hyper-V bus driver, has
+`Start=0` (boot-start) in this registry though this machine is a physical
+desktop and not a VM (checked with `reg query`), so the same mechanism that
+makes `tpm` answer from a key would make a `vmbus` grain say "virtualized"
+on hardware. This host could not show the negative case directly -- it has
+a real TPM 2.0 (`Get-PnpDevice -Class SecurityDevices`: "Trusted Platform
+Module 2.0", status OK). A GitHub-hosted windows-2022 runner did show it
+(see "L11, shown").
+
+**L11, the change.** `tpm` now answers `winsvc.Running("TPM")`: whether the
+driver is in the running state, which a PnP driver reaches only once its
+matching device enumerates. Querying a service's status needs no privilege,
+same as reading the key did. `hasKey`, now unused, is removed.
+
+**L11, shown.** The first test asserted `tpm == true`, because this host
+has a TPM. It failed on both Windows CI legs (run 42511768917): a
+windows-2022 runner has no TPM. So the assertion was a fact about one
+machine, not about Windows.
+
+A probe on the runner (run 42879528505, PR 707, a throwaway PR closed
+without merge) recorded these facts, as the standard account `halite-ci`:
+
+- `Win32_ComputerSystem` is Microsoft Corporation, `Virtual Machine`;
+  the OS is Windows Server 2022 Datacenter, 10.0.20348.
+- No Plug and Play device is bound to the `TPM` driver, and there is no
+  `SecurityDevices` class at all.
+- The `TPM` service key exists. `sc qc TPM` shows `tpm.sys`, demand
+  start. `sc query TPM` shows `STOPPED`, exit code 1077 (the driver was
+  never started).
+- So the old code answered `tpm: true` on a machine with no TPM. The new
+  code answers `false`.
+- `Get-Tpm` and the `Win32_Tpm` class need an administrator, so the CI
+  account cannot use them.
+
+`TestTPMGrainAgreesWithThePlugAndPlayDeviceList`
+(`internal/grains/tpm_windows_test.go`) replaces the first test. It asks
+CIM how many working `Win32_PnPEntity` devices are bound to the `TPM`
+driver, which needs no privilege, and holds the grain to that answer on
+the host where it runs. With the change, it passes on the runner. With
+the old key-based code put back (PR 707, second push), it fails on the runner (run 42882044036):
+`tpm = true, but Plug and Play lists 0 working device(s) bound to the TPM
+driver, so want false`.
+
+**L10, did not reproduce.** The lead said `EnclosureType` is probably not a
+registry value, so `chassis` always falls through to `SystemFamily`. On this
+host, `HKLM\HARDWARE\DESCRIPTION\System\BIOS\EnclosureType` is `REG_DWORD`,
+value 3 (checked with `reg query`), and the `chassis` grain reads `"Desktop"`
+-- which is what this machine is. `chassisType` took the `EnclosureType`
+branch, not the `SystemFamily` fallback the lead was concerned about.
+Nothing changed for this lead.
+
+**L12, read and not a defect.** The lead noted that `uuid` is `MachineGuid`,
+which a cloned VM image carries into every clone, and is not the SMBIOS
+UUID Salt reports. True, and already said by the code: `collectHardware`'s
+comment names the SMBIOS UUID as the alternative, explains why it is not
+used (`GetSystemFirmwareTable` and a full table parse, for a value that is
+not what this build chose to optimise for), and states the reasoning for
+`MachineGuid` instead -- stability across a reinstall of the same image,
+which an estate inventory cares about more than matching Salt's choice.
+SPEC 15.1 names `uuid` among the Hardware grains without specifying which
+source a platform uses. Nothing here contradicts a stated requirement; the
+lead's caveat was already the comment's own caveat.
+
+**Not verified.** A machine with a TPM whose driver failed to start,
+where the grain says false and Plug and Play may still list the device.
+A machine where `EnclosureType` really is absent or not a
+`REG_DWORD`, which would be the case the lead's L10 concern described.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
