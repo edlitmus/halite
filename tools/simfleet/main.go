@@ -61,6 +61,14 @@
 // at once and the time from one slice's last return to the next slice's
 // first arrival.
 //
+// `simfleet enroll-storm` is the one command that enrols over the wire:
+// many machines asking for an identity at once, against the hub's
+// per-source limiter and its bound on pending requests.
+//
+//	simfleet enroll-storm -root DIR -hub H -n 2000
+//	simfleet setup -root DIR -enrollment token -token-uses 2000   (then restart the hub)
+//	simfleet enroll-storm -root DIR -hub H -n 2000 -token-file DIR/bootstrap.token
+//
 // -json appends each result as one JSON line, for a run's archive.
 package main
 
@@ -109,6 +117,8 @@ func main() {
 		err = submitCmd(os.Args[2:])
 	case "merge":
 		err = mergeCmd(os.Args[2:])
+	case "enroll-storm":
+		err = stormCmd(os.Args[2:])
 	default:
 		usage()
 	}
@@ -124,7 +134,8 @@ func usage() {
 		"  simfleet run   -root DIR -hub ADDR -n N [flags] connect N simulated nodes and measure\n"+
 		"  simfleet run   -root DIR -hub ADDR -first F -n N -no-submit -out FILE   one driver of several\n"+
 		"  simfleet submit -root DIR -hub ADDR -fun F -out FILE   send one job to the whole fleet\n"+
-		"  simfleet merge -submit FILE DRIVER.json...   time that job across every driver\n")
+		"  simfleet merge -submit FILE DRIVER.json...   time that job across every driver\n"+
+		"  simfleet enroll-storm -root DIR -hub ADDR -n N [-token-file F]   N enrolment requests over the wire\n")
 	os.Exit(2)
 }
 
@@ -138,9 +149,16 @@ func setupCmd(args []string) error {
 	n := fs.Int("n", 1000, "how many node identities to issue")
 	prefix := fs.String("prefix", "sim", "the node id prefix")
 	workers := fs.Int("workers", 8, "identities issued in parallel")
+	enrollment := fs.String("enrollment", "manual", "the hub's enrollment_mode: manual, or token to also mint a bootstrap token for enroll-storm")
+	tokenUses := fs.Int("token-uses", 2000, "with -enrollment token, how many names the token admits")
+	tokenPrefix := fs.String("token-prefix", "storm", "with -enrollment token, the prefix of the names it admits (enroll-storm's -prefix)")
 	_ = fs.Parse(args)
 	if *root == "" {
 		return errors.New("-root is required")
+	}
+	mode, err := keystore.ParseMode(*enrollment)
+	if err != nil {
+		return err
 	}
 	abs, err := filepath.Abs(*root)
 	if err != nil {
@@ -151,8 +169,8 @@ func setupCmd(args []string) error {
 			return err
 		}
 	}
-	hubYAML := fmt.Sprintf("state_dir: %s\npki_dir: %s\ncache_dir: %s\nlog_format: json\nlog_level: warn\n",
-		filepath.Join(abs, "state"), filepath.Join(abs, "pki"), filepath.Join(abs, "cache"))
+	hubYAML := fmt.Sprintf("state_dir: %s\npki_dir: %s\ncache_dir: %s\nlog_format: json\nlog_level: warn\nenrollment_mode: %s\n",
+		filepath.Join(abs, "state"), filepath.Join(abs, "pki"), filepath.Join(abs, "cache"), mode)
 	if err := os.WriteFile(filepath.Join(abs, "hub.yaml"), []byte(hubYAML), 0o644); err != nil {
 		return err
 	}
@@ -174,6 +192,13 @@ func setupCmd(args []string) error {
 		return err
 	}
 	auth := &keystore.Authority{Store: store, CA: ca, Mode: keystore.ModeManual, Lifetime: keystore.DefaultLifetime}
+	if mode == keystore.ModeToken {
+		path, err := mintStormToken(store, abs, *tokenPrefix, *tokenUses)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("enrollment_mode is token; a token for %d names %s-* is in %s\n", *tokenUses, *tokenPrefix, path)
+	}
 
 	// The harness's own operator certificate, which the policy above
 	// binds: it submits the jobs the measurements time.

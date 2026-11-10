@@ -287,7 +287,13 @@ A fleet larger than one machine can hold is several drivers, each running its ow
 
 \-batch, -batch-wait and -batch-timeout, on run or submit, send the job a slice at a time as \`halite-hub run --batch\` does. A batched result has no SPEC 30 verdict, and reports instead the most nodes that had the job at once and the time from one slice's last return to the next slice's first arrival.
 
+\`simfleet enroll-storm\` is the one command that enrols over the wire: many machines asking for an identity at once, against the hub's per-source limiter and its bound on pending requests.
+
+	simfleet enroll-storm -root DIR -hub H -n 2000
+	simfleet setup -root DIR -enrollment token -token-uses 2000   (then restart the hub)
+	simfleet enroll-storm -root DIR -hub H -n 2000 -token-file DIR/bootstrap.token
+
 \-json appends each result as one JSON line, for a run's archive.
 
-**Files:** `batch.go`, `main.go`, `multi.go`, `record.go`; with tests.
+**Files:** `batch.go`, `main.go`, `multi.go`, `record.go`, `storm.go`; with tests.
 

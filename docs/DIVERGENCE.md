@@ -43156,6 +43156,64 @@ where the grain says false and Plug and Play may still list the device.
 A machine where `EnclosureType` really is absent or not a
 `REG_DWORD`, which would be the case the lead's L10 concern described.
 
+### 5.652 simfleet never made an enrolment request over the wire
+
+Limit L6 of the simfleet plan (`docs/simfleet-aws-plan.md`, H5).
+`simfleet setup` issues its node identities in process, through
+`keystore.Authority`, which is right for the steps that measure a
+connected fleet and meant that nothing in the harness ever reached
+`POST /v1/enroll`: the one route that reads the input of a caller with
+no certificate, with the per-source limiter (5.398) and the bound of
+1,024 pending records in front of it. The plan's enrolment-storm step
+had nothing to run.
+
+**Fixed.** `simfleet enroll-storm` makes `-n` enrolment requests,
+`-concurrency` at a time, each for a new name under `-prefix` ("storm",
+so that it does not collide with `setup`'s identities). Each is what
+one machine's first `halite-node enroll` is: a new P-256 key, a
+connection of its own with no client certificate, one call to
+`transport.Client.Enroll`, and the connection closed. It asks once and
+does not wait or retry, as `halite-node enroll` without `--wait`, so
+what it counts is what the hub answered. It counts the answers under
+the names `halite_hub_enrollments_total` uses (`issued`, `pending`,
+`rate_limited`, `refused`, `failed`), plus `error` for an answer that
+never came, with the time each took, and prints the first few failures.
+`setup -enrollment token` writes `enrollment_mode: token` and mints a
+token for `-token-uses` names under `-token-prefix`, valid for a day,
+SPEC 7.3's ceiling; `enroll-storm -token-file` presents it.
+
+**Demonstrated** on darwin/arm64, go1.27.3, against a real
+`halite-hub serve` on loopback:
+
+- Manual mode, 40 requests 8 at a time from one address
+  (`TestAnEnrollStormInManualMode`): 32 pending, answered in about
+  160 ms each, and 8 rate-limited, answered in about 2 ms. That is
+  `enroll_source_burst` and nothing more, as the limiter says.
+- Token mode, a token for 10 names and 12 requests 4 at a time
+  (`TestAnEnrollStormInTokenMode`): 10 issued and 2 refused, the token
+  spent; an issue is refunded, so the limiter played no part.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| the token not sent | `TestAnEnrollStormInTokenMode` |
+| `setup` writing no `enrollment_mode` | `TestAnEnrollStormInTokenMode` |
+| a refusal counted as a failure | `TestAnEnrollStormInTokenMode`, `TestEnrollOutcomeNamesWhatTheHubCounts` |
+| the token minted single-use | `TestAnEnrollStormInTokenMode` |
+| the default prefix `setup`'s, so the first name is already held | `TestAnEnrollStormInManualMode` |
+| a 429 not recognised | `TestAnEnrollStormInManualMode`, `TestEnrollOutcomeNamesWhatTheHubCounts` |
+
+**Not covered:** no run on AWS, and no storm larger than 40. Nothing
+tests that each request has a connection of its own; a shared client
+would put every request on one HTTP/2 connection and pass every test
+here, and that rests on reading `enrollOnce`. From one driver address
+manual mode can only show the limiter, since it admits 32; a storm that
+reaches the 1,024 pending records needs 32 or more source addresses,
+which the plan's drivers do not have. The 160 ms a pending answer took
+on loopback was not looked into: it is one machine, eight at a time,
+and is reported here as what was seen, not as a cost.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
