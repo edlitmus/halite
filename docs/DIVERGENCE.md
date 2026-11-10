@@ -42805,7 +42805,7 @@ the lead's own words already said ("Latent while its callers run on unix
 only"). Still true, not changed; the day a Windows-reachable caller is
 added is the day this stops being latent.
 
-### 5.645 Two leads about winreg that were not bugs, and a mistake of this ledger's own
+### 5.646 Two leads about winreg that were not bugs, and a mistake of this ledger's own
 
 Issue 608 item 5, leads L25 and L26 (`internal/winreg/winreg_windows.go`).
 Found by reading, in the issue 321 second-pass audit. Checked on this
