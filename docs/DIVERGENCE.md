@@ -42924,7 +42924,7 @@ this change does not attempt.
 ### 5.648 Grant and Revoke dropped a conditional or an object entry instead of refusing
 
 Issue 608 item 5, the `readEntries` follow-up (`internal/winsec/dacl_windows.go`).
-Found while fixing lead L13 (DIVERGENCE 5.621), recorded there as "found
+Found while fixing issue 608 item 3 (DIVERGENCE 5.621), recorded there as "found
 here, not fixed" and carried into issue 608's "still open" list. Checked
 and run on this Windows 11 host.
 
@@ -42960,7 +42960,7 @@ without that larger piece of work.
 With the change, `go test ./internal/winsec/... ./internal/builtin/...
 -count=1` is green on this host, including the test above; the rest of
 `internal/winsec`'s suite is unaffected except for one unrelated,
-pre-existing failure already recorded in DIVERGENCE 5.626's PR (`whoami`
+pre-existing failure already recorded in DIVERGENCE 5.638 (`whoami`
 resolving to Git's own copy on this host's `PATH` rather than
 `System32\whoami.exe`).
 
