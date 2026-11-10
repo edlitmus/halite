@@ -1,0 +1,43 @@
+#!/bin/bash
+# simfleet ${role}: first-boot settings for a throwaway scale-run host.
+# Rendered by contrib/tofu/aws-simfleet; the instance halts itself after
+# ${ttl_minutes} minutes, and halting terminates it.
+set -u
+exec > /var/log/simfleet-user-data.log 2>&1
+
+# The dead man's switch, first, so that nothing below failing can leave
+# an instance with no end. instance_initiated_shutdown_behavior is
+# "terminate", so a halt is a termination.
+shutdown -h +${ttl_minutes} "simfleet: ttl of ${ttl_minutes} minutes reached"
+
+echo "${role}" > /etc/simfleet-role
+
+# Every connection from a driver goes from one address to one hub
+# ip:port, so each needs its own ephemeral port, and a node opens one per
+# return. The default range (32768-60999) leaves about two jobs a minute
+# at 5,000 nodes per driver (plan §3.2); widen it. The descriptor limits
+# are for the hub's streams and the drivers' clients alike.
+cat > /etc/sysctl.d/90-simfleet.conf <<'SYSCTL'
+net.ipv4.ip_local_port_range = 1024 65535
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+fs.file-max = 2097152
+fs.nr_open = 2097152
+SYSCTL
+sysctl --system
+
+# merge compares one host's clock with another's. Amazon Time Sync is on
+# the link-local address in every region; prefer it, so that every host
+# of a run is disciplined by the same source. The run kit records
+# `chronyc tracking` before and after each run, which is what says how
+# far a merged result can be trusted.
+if ! command -v chronyc >/dev/null; then
+  apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -yq chrony
+fi
+if [ -d /etc/chrony/sources.d ]; then
+  echo "server 169.254.169.123 prefer iburst minpoll 4 maxpoll 4" > /etc/chrony/sources.d/amazon-time-sync.sources
+  systemctl restart chrony || systemctl restart chronyd || true
+fi
+
+mkdir -p /root/simfleet/bin /root/simfleet/runs
+echo "simfleet ${role}: ready at $(date -u +%FT%TZ)"

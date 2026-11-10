@@ -28,9 +28,9 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > and came back `up`. **Token enrolment** was run there too, with its refusals
 > (below). **Later runs** (DIVERGENCE 5.626): a FreeBSD 15.1 node in a bastille
 > jail enrolled by token against a FreeBSD 14.5 hub in another jail on the same
-> machine, over the jail network (no tunnel). A Linux node, `noop2-1` (Ubuntu
-> 24.04.5, arm64), enrolled by token against the hub on `noop-1` over the VPC
-> on port 8301 (no tunnel). Both hosts were shared and not fresh. Enrolment
+> machine, over the jail network (no tunnel). A Linux node, `host-b` (Ubuntu
+> 24.04.5, arm64), enrolled by token against the hub on `host-a` over the VPC
+> on port <port> (no tunnel). Both hosts were shared and not fresh. Enrolment
 > over a real network between two hosts is therefore run on Linux. On FreeBSD
 > the two jails shared one machine and a loopback interface, so the network
 > path was not a wire. **Not run:** a node on any other distribution, a token
@@ -319,7 +319,7 @@ for more than a moment. The scripts above use `--token` because that is what
 was run.
 
 > **What was run.** **Linux:** the script above, verbatim except `hub:
-> 172.26.28.10` and `hub_port: 8301`, on `noop2-1`. It ran in a transient
+> <host-a-ip>` and `hub_port: <port>`, on `host-b`. It ran in a transient
 > systemd unit (`systemd-run --wait --pipe`), which gives the script the kind
 > of environment that `cloud-final.service` gives user-data. The "image" was
 > `/opt/halite/halite-node` and the shipped `halite-node.service`. The node

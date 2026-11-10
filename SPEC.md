@@ -2,8 +2,8 @@
 
 - Status: Draft v1
 - Date: 2026-08-19
-- Owner: ed.silva
-- Applies to: a replacement for SaltStack (Salt) in Everbridge estates
+- Owner: edlitmus
+- Applies to: a replacement for SaltStack (Salt) in existing Salt estates
 - Language: Go 1.26 or later, standard library only, with a closed dependency allowlist
 
 ## 1. Purpose

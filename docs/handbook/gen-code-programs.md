@@ -268,7 +268,7 @@ What is real and what is simulated:
   - Each holds its own mutual-TLS stream to the hub, through transport.Client, as a node does.
   - What is simulated is the work: a node answers \`test.ping\` with \`true\` and any other function with an empty, successful result, at once. The rows measured here are the hub's, not a node's.
 
-A real node opens a new client, and so a new TLS connection, for every return it files (\`postReturns\` in halite-node builds one per return). The simulated nodes do the same by default, so the hub sees the load a fleet of real nodes would give it; -reuse-client files returns on one connection per node instead, to measure what that costs.
+A real node posts its returns on one client of its own, kept from one return to the next and separate from its stream, so that the hub holds two connections per node at most (\`returnClient\` in halite-node). The simulated nodes do the same by default. -reuse-client files returns on the stream's own connection instead, to measure what the second one costs; -client-per-return opens a new connection for every return and never closes it, which is what a node built before DIVERGENCE 5.641 does, to measure a fleet that has not been upgraded.
 
 	simfleet setup -root DIR -n 20000
 	halite-hub serve --root DIR --config DIR/hub.yaml --listen 127.0.0.1:4510 --names localhost,127.0.0.1
@@ -276,5 +276,14 @@ A real node opens a new client, and so a new TLS connection, for every return it
 
 A number from one machine running both the hub and the fleet is indicative, not SPEC 30's verdict: the table names "one 16-core hub", and a fleet on the same machine takes CPU from it. -hub and -root make the fleet runnable from another machine than the hub, given a copy of DIR.
 
-**Files:** `main.go`.
+A fleet larger than one machine can hold is several drivers, each running its own range of nodes with -first and -n and submitting nothing; one \`simfleet submit\` sends a single job to all of them; and \`simfleet merge\` times that job across every driver's file, against the same SPEC 30 row a single-process run reports:
+
+	simfleet run -root DIR -hub H -first 1 -n 5000 -no-submit -out a.json
+	simfleet run -root DIR -hub H -first 5001 -n 5000 -no-submit -out b.json
+	simfleet submit -root DIR -hub H -fun test.ping -out ping.json
+	simfleet merge -submit ping.json a.json b.json
+
+\-json appends each result as one JSON line, for a run's archive.
+
+**Files:** `main.go`, `multi.go`, `record.go`; with tests.
 
