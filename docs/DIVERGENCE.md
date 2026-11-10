@@ -42849,7 +42849,7 @@ and answers true after it, so nothing an operator sees changed there;
 that was not run. A claim nobody demonstrated is a defect whoever wrote it,
 including this ledger about its own prior entry.
 
-### 5.640 `once at HH:MM` generated a trigger the scheduler accepted and never ran
+### 5.647 `once at HH:MM` generated a trigger the scheduler accepted and never ran
 
 Issue 608 item 5, lead L9 (`internal/wintask/schtasks_windows.go`,
 `internal/builtin/win_task.go`). Found by reading, in the issue 321
