@@ -142,6 +142,17 @@ func TestAnOversizedReturnIsLoggedAndItsStandInSettlesTheJob(t *testing.T) {
 func TestAReturnOfExactlyTheLimitIsTaken(t *testing.T) {
 	l := newLab(t).withJobs(t)
 	web1 := l.enrolled(t, "web1.example")
+	// The deadline a real node has, not the lab's. The lab gives its
+	// clients 5 s, which is ample for the short requests it was chosen
+	// for; this is the one test that sends the largest body the hub
+	// takes and waits for the hub to read and store all of it. halite-node
+	// sets no Timeout on its hub client, so its returns get the 30 s
+	// default of transport.Client. Under -race on a shared ubuntu-24.04
+	// runner the first post here ran past 5 s (PR 701's race job,
+	// 2026-11-09: "context deadline exceeded", 9 s for the test), which
+	// failed a test about size on a question of speed. Set before
+	// connectSilent, whose stream goroutine reads the client.
+	web1.Timeout = 0
 	defer l.connectSilent(t, web1, "web1.example", `{}`)()
 	op := l.operator(t, "ed")
 	sized := func(extra int) *job.Return {

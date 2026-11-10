@@ -272,6 +272,75 @@ func TestATriggerThatCannotBeGeneratedIsRefused(t *testing.T) {
 	}
 }
 
+// A one-time trigger generated from only a clock time has no date, so
+// GenerateXML wrote the scheduler's one fixed placeholder date, 1970 --
+// right for `daily at`, where only the clock matters, and wrong here,
+// where the StartBoundary is the one moment the trigger ever fires.
+// Confirmed directly on this host: a task registered with
+// `<StartBoundary>1970-01-01T03:30:00</StartBoundary>` on a TimeTrigger
+// reported "Next Run Time: N/A" to `schtasks /query /v` and was never
+// scheduled. `once at HH:MM` is refused rather than generating that
+// (issue 608 item 5, lead L9).
+func TestOnceAtIsRefusedRatherThanGeneratingATriggerThatNeverFires(t *testing.T) {
+	_, err := GenerateXML(Task{Path: `\x`, Command: "cmd.exe",
+		Triggers: []string{"once at 03:30"}})
+	if err == nil {
+		t.Fatal("a one-time trigger with no date was accepted")
+	}
+	for _, want := range []string{"date", "never runs", "xml"} {
+		if !strings.Contains(strings.ToLower(err.Error()), want) {
+			t.Errorf("the refusal does not mention %q: %v", want, err)
+		}
+	}
+}
+
+// The real evidence behind the refusal above: a TimeTrigger whose
+// StartBoundary is the fixed placeholder date "daily at" uses is
+// accepted by the scheduler and then never runs. This creates a real
+// task under this account (no administrator rights needed) to show
+// the scheduler's own answer, not a prediction of it.
+func TestARealTimeTriggerDatedNineteenSeventyNeverRuns(t *testing.T) {
+	c := ctx(t)
+	const path = `\halite-test\dated-1970`
+	t.Cleanup(func() { _ = Delete(c, path) })
+
+	me, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := `<?xml version="1.0" encoding="UTF-16"?>` +
+		`<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">` +
+		`<Triggers><TimeTrigger><StartBoundary>1970-01-01T03:30:00</StartBoundary>` +
+		`<Enabled>true</Enabled></TimeTrigger></Triggers>` +
+		`<Principals><Principal id="Author"><UserId>` + me.Username + `</UserId>` +
+		`<LogonType>InteractiveToken</LogonType></Principal></Principals>` +
+		`<Settings><Enabled>true</Enabled></Settings>` +
+		`<Actions Context="Author"><Exec><Command>cmd.exe</Command>` +
+		`<Arguments>/c exit 0</Arguments></Exec></Actions></Task>`
+	if err := Create(c, Task{Path: path, XML: xml}); err != nil {
+		if strings.Contains(err.Error(), "denied") || strings.Contains(err.Error(), "Access") {
+			t.Skip("creating a scheduled task needs administrator rights, and this process does not have them")
+		}
+		t.Fatalf("creating: %v", err)
+	}
+	raw, err := run(c, "/query", "/tn", path, "/v", "/fo", "list")
+	if err != nil {
+		t.Fatalf("querying: %v", err)
+	}
+	if !strings.Contains(raw, "Next Run Time:") {
+		t.Fatalf("the verbose listing does not have a Next Run Time line:\n%s", raw)
+	}
+	nextRun := ""
+	for _, line := range strings.Split(raw, "\n") {
+		if name, value, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(name) == "Next Run Time" {
+			nextRun = strings.TrimSpace(value)
+		}
+	}
+	if nextRun != "N/A" {
+		t.Errorf("Next Run Time = %q, want N/A: the scheduler now runs a trigger dated 1970", nextRun)
+	}
+}
+
 // A task name means the same thing with or without its leading
 // backslash, so a state that declares one and reads the other has to
 // converge.
@@ -301,15 +370,48 @@ func TestWellKnownAccountsCompareEqualByEitherName(t *testing.T) {
 	}
 }
 
-// The parser has to survive the document schtasks actually prints:
-// an encoding declaration it does not honour, and doubled carriage
+// The parser has to survive the document schtasks actually prints: an
+// encoding declaration it does not honour, and doubled carriage
 // returns.
+//
+// This is schtasks' own output, captured on this host (issue 608 item
+// 5, lead L17, which found the fixture here built by hand instead):
+// `Create` with `Task{Command: "cmd.exe", Enabled: false, RunAs:
+// "S-1-5-18"}`, then `/query /tn ... /xml ONE`, redirected the same way
+// `run` redirects it. Shortened to the elements this test and
+// `toTask` read; the rest is the shape of a real document, not a
+// guess at one.
 func TestTheParserSurvivesWhatSchtasksActuallyPrints(t *testing.T) {
 	raw := "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\r\n" +
 		"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\r\n" +
-		"  <Settings><Enabled>false</Enabled></Settings>\r\r\n" +
-		"  <Actions><Exec><Command>cmd.exe</Command></Exec></Actions>\r\r\n" +
-		"</Task>\r\r\n"
+		"  <RegistrationInfo>\r\r\n" +
+		"    <Author>halite</Author>\r\r\n" +
+		"    <URI>\\halite-capture-test</URI>\r\r\n" +
+		"  </RegistrationInfo>\r\r\n" +
+		"  <Principals>\r\r\n" +
+		"    <Principal id=\"Author\">\r\r\n" +
+		"      <UserId>S-1-5-18</UserId>\r\r\n" +
+		"      <LogonType>InteractiveToken</LogonType>\r\r\n" +
+		"    </Principal>\r\r\n" +
+		"  </Principals>\r\r\n" +
+		"  <Settings>\r\r\n" +
+		"    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\r\n" +
+		"    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\r\n" +
+		"    <Enabled>false</Enabled>\r\r\n" +
+		"    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\r\n" +
+		"    <StartWhenAvailable>true</StartWhenAvailable>\r\r\n" +
+		"    <IdleSettings>\r\r\n" +
+		"      <StopOnIdleEnd>true</StopOnIdleEnd>\r\r\n" +
+		"      <RestartOnIdle>false</RestartOnIdle>\r\r\n" +
+		"    </IdleSettings>\r\r\n" +
+		"  </Settings>\r\r\n" +
+		"  <Triggers />\r\r\n" +
+		"  <Actions Context=\"Author\">\r\r\n" +
+		"    <Exec>\r\r\n" +
+		"      <Command>cmd.exe</Command>\r\r\n" +
+		"    </Exec>\r\r\n" +
+		"  </Actions>\r\r\n" +
+		"</Task>"
 	parsed, err := parseXML([]byte(raw))
 	if err != nil {
 		t.Fatalf("the document schtasks prints could not be read: %v", err)

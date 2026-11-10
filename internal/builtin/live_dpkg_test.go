@@ -30,13 +30,31 @@ import (
 // it drives a real tool and must appear in the live log beside the tests
 // that do need a machine.
 
-// requireDpkg skips, with the reason, anywhere dpkg cannot be asked.
+// requireDpkg skips, with the reason, anywhere dpkg cannot be asked --
+// except in the one place where there is no honest reason to skip.
+//
+// `HALITE_FLEET_LIVE=1` means this is the Debian image, which exists to
+// have a real dpkg in it. A skip there would be the leg claiming a
+// differential it did not run, so the gate fails instead, the way
+// `live()` already does for a missing dpkg-query. `run.sh` would catch
+// it too, from the other side, by not finding this test's PASS line; both
+// exist because this was the hole 5.633 named and did not close.
 func requireDpkg(t *testing.T) {
 	t.Helper()
+	inTheImage := os.Getenv("HALITE_FLEET_LIVE") == "1"
 	if runtime.GOOS != "linux" {
+		if inTheImage {
+			t.Fatalf("HALITE_FLEET_LIVE is set and this is %s; the fleet image is Linux",
+				runtime.GOOS)
+		}
 		t.Skipf("dpkg is a Debian-family tool; this is %s", runtime.GOOS)
 	}
 	if _, err := osexec.LookPath("dpkg"); err != nil {
+		if inTheImage {
+			t.Fatal("HALITE_FLEET_LIVE is set and there is no dpkg on PATH; this is " +
+				"not the image, or the image has stopped shipping the tool this " +
+				"differential is against")
+		}
 		t.Skip("this host has no dpkg; the Debian ordering needs a Debian-family system")
 	}
 }

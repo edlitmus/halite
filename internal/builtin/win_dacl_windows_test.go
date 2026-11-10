@@ -96,6 +96,64 @@ func TestWinDACLPresentTightensAnEntryThatIsTooWide(t *testing.T) {
 	}
 }
 
+// win_dacl.present's default scope used to be
+// this_folder_subfolders_files regardless of what name it was given,
+// which asks NTFS to carry an entry's inheritance onto subfolders a
+// plain file does not have. NTFS answers by storing the entry with
+// both inherit flags cleared -- confirmed directly on this host with
+// ACLFromEntries and a read-back -- so the comparison against the
+// declared default never matched and the state never converged on a
+// plain file (issue 608 item 5, lead L14).
+func TestWinDACLPresentWithTheDefaultScopeConvergesOnAFile(t *testing.T) {
+	r := New()
+	path := filepath.Join(t.TempDir(), "app.conf")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := value.MapOf("name", path, "trustee", "Everyone", "permission", "read")
+
+	first, err := r.States.Call(newCtx(false), "win_dacl.present", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Changes.Len() == 0 {
+		t.Fatal("the grant with no applies_to reported no change")
+	}
+
+	second, err := r.States.Call(newCtx(false), "win_dacl.present", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Changes.Len() != 0 {
+		t.Errorf("the second run with the default scope reported changes: %+v", second.Changes)
+	}
+}
+
+// A declaration's permission is compared the way winsec reads one back:
+// lowercase, named rather than typed. "Read" and "read" are one
+// permission level, and a state that reported a change between them
+// would never converge (issue 608 item 5, lead L14's other half).
+func TestWinDACLPresentPermissionIsCaseInsensitive(t *testing.T) {
+	r := New()
+	path := filepath.Join(t.TempDir(), "app.conf")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := winsec.Grant(path, "Everyone", "read", "this_folder_only", false); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := r.States.Call(newCtx(false), "win_dacl.present",
+		value.MapOf("name", path, "trustee", "Everyone",
+			"permission", "Read", "applies_to", "this_folder_only"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changes.Len() != 0 {
+		t.Errorf("`Read` against an existing `read` entry reported a change: %+v", res.Changes)
+	}
+}
+
 func TestWinDACLAbsentRemovesAnEntryAndThenConverges(t *testing.T) {
 	r := New()
 	path := filepath.Join(t.TempDir(), "app.conf")

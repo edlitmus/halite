@@ -22,10 +22,19 @@ import (
 // its binary.
 //
 // A task's schedule is declared in a small vocabulary — `boot`,
-// `logon`, `daily at HH:MM`, `once at HH:MM` — and anything the
-// scheduler can express but that vocabulary cannot is declared by
-// handing the state the XML itself. That is the seam: the common case
-// is short, and the uncommon one is possible rather than approximated.
+// `logon`, `daily at HH:MM` — and anything the scheduler can express
+// but that vocabulary cannot is declared by handing the state the XML
+// itself. That is the seam: the common case is short, and the uncommon
+// one is possible rather than approximated.
+//
+// `once at HH:MM` was in that vocabulary and is refused now: a
+// one-time trigger needs a date as well as a clock time, which that
+// form never gave it, and the fixed one it got instead (the same 1970
+// "daily at" uses, where only the clock time matters) is a moment the
+// scheduler accepts and then never reaches. Confirmed directly:
+// `schtasks /query /v` on a task declared that way reports "Next Run
+// Time: N/A" and the scheduler never runs it (issue 608 item 5, lead
+// L9). The XML form takes a real `StartBoundary`.
 
 func registerWinTask(r *Registries) {
 	taskName := req("name", signature.String,
@@ -89,8 +98,11 @@ func registerWinTask(r *Registries) {
 					opt("enabled", signature.Bool, true, "Whether the scheduler will run it."),
 					opt("description", signature.String, "", "What the console shows."),
 					opt("trigger", signature.String, "",
-						"When it runs: `boot`, `logon`, `daily at HH:MM` or `once at HH:MM`. "+
-							"Empty registers a task that runs only when something asks it to."),
+						"When it runs: `boot`, `logon` or `daily at HH:MM`. "+
+							"Empty registers a task that runs only when something asks it to. "+
+							"A one-time trigger needs `xml`: this vocabulary has no date, and "+
+							"a one-time trigger given only a clock time is accepted and then "+
+							"never runs."),
 					opt("xml", signature.String, "",
 						"The scheduler's own definition, for a task this vocabulary cannot "+
 							"express. Everything else is ignored when this is given."),
@@ -223,7 +235,10 @@ func registerWinTask(r *Registries) {
 					opt("enabled", signature.Bool, true, "Whether the scheduler will run it."),
 					opt("description", signature.String, "", "What the console shows."),
 					opt("trigger", signature.String, "",
-						"When it runs: `boot`, `logon`, `daily at HH:MM` or `once at HH:MM`."),
+						"When it runs: `boot`, `logon` or `daily at HH:MM`. "+
+							"A one-time trigger needs `xml`: this vocabulary has no date, and "+
+							"a one-time trigger given only a clock time is accepted and then "+
+							"never runs."),
 					opt("xml", signature.String, "",
 						"The scheduler's own definition, for a task this vocabulary cannot express."),
 				},

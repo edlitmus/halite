@@ -21,10 +21,10 @@ measured only some of them:
 | Highstate compile, 500 states over 50 SLS files, heavy Jinja: under 2 s | **Measured.** `make perf` on a development workstation: **26 ms** |
 | Pillar compile, 200 pillar SLS: under 500 ms cold | **Measured: 45 ms** |
 | Pillar compile, cached: under 5 ms | Not measured: the hub has no pillar cache; it compiles on each request |
-| 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Not measured.** A simulated-node harness exists (`tools/simfleet`, `make simfleet`) and has been run once, at 200 nodes |
-| `test.ping` to 10,000 nodes: 95% of returns in 10 s | Not measured |
-| Dispatch of `state.apply` to 10,000 nodes in 30 s | Not measured |
-| Hub memory at 20,000 nodes: under 4 GiB | Not measured |
+| 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Not measured.** A simulated-node harness exists (`tools/simfleet`, `make simfleet`). It has been run at 200 nodes on a workstation, and at up to 5,000 on AWS (ledger 5.279) |
+| `test.ping` to 10,000 nodes: 95% of returns in 10 s | Not measured at 10,000. At 5,000, after the return-path fix: 5,000 of 5,000 returned, p95 1.87 s on an 8-core hub and 1.88 s on a 16-core one. Before that fix it failed, with 1,508 of 5,000 (ledger 5.279) |
+| Dispatch of `state.apply` to 10,000 nodes in 30 s | Not measured at 10,000. At 5,000: every node had it within 842 ms on an 8-core hub and 300 ms on a 16-core one (ledger 5.279) |
+| Hub memory at 20,000 nodes: under 4 GiB | Not measured at 20,000. At 5,000, after the return-path fix: peak 1.61 GB during a `test.ping`; on a 16-core hub, 1.50 GB at peak, with an idle connection left per return (since removed, ledger 5.641), and about 900 MB holding 5,000 idle streams. Before that fix it passed 14 GiB (ledger 5.279) |
 | Reactor throughput: 5,000 events/s sustained | Not measured |
 | Node idle memory (under 40 MiB with 10 beacons) and CPU (under 0.5% of a core) | Not measured: it needs a soak |
 | File server saturating 10 Gb | Not measured |
@@ -100,7 +100,7 @@ A starting point, to be replaced by your measurements:
 | Fleet | Hub | Notes |
 |---|---|---|
 | up to ~500 nodes | 2 cores, 2 GiB, any disk | Comfortable; the lab-style hub with a few nodes is far under this |
-| ~500 to ~5,000 | 4 to 8 cores, 4 to 8 GiB, SSD for `state_dir` | Watch `halite_hub_requests_total` and pillar duration |
+| ~500 to ~5,000 | 4 to 8 cores, 4 to 8 GiB, SSD for `state_dir` | Watch `halite_hub_requests_total` and pillar duration. On an 8-core, 16 GiB hub, a `test.ping` to 5,000 simulated nodes peaked at 1.61 GB with every return in under 2 s (ledger 5.279). Builds before the return-path fix (#689) re-read every earlier return on each return, and the same job took that hub past 14 GiB and the host down. Do not run a fleet-wide job on those builds at this size. |
 | beyond | measure; add relays | The design target is 20,000 on 16 cores and 4 GiB, **not yet demonstrated** |
 
 Disk: the **job cache** and **event log** are bounded by retention and size
