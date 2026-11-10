@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -228,8 +229,10 @@ func registerWinDACL(r *Registries) {
 					pathParam,
 					req("trustee", signature.String, "The account."),
 					opt("permission", signature.String, "read", "The level it should have."),
-					opt("applies_to", signature.String, "this_folder_subfolders_files",
-						"What the entry covers, for a directory."),
+					opt("applies_to", signature.String, "",
+						"What the entry covers. Empty takes the property sheet's own default for a "+
+							"directory, this_folder_subfolders_files, and this_folder_only for a file, "+
+							"which cannot carry an entry's inheritance onto subfolders it does not have."),
 					opt("deny", signature.Bool, false, "Write a deny entry rather than an allow."),
 				},
 				Mutates:    true,
@@ -303,10 +306,25 @@ func winDACLPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	path := states.Str(args, "name", "")
 	trustee := states.Str(args, "trustee", "")
 	permission := states.Str(args, "permission", "read")
-	scope := states.Str(args, "applies_to", "this_folder_subfolders_files")
+	scope := states.Str(args, "applies_to", "")
 	deny := states.Bool(args, "deny", false)
 	if path == "" || trustee == "" {
 		return states.False("win_dacl.present needs a path and a trustee."), nil
+	}
+	if scope == "" {
+		// this_folder_subfolders_files was the default regardless of
+		// what name, which asked NTFS to carry an entry's inheritance
+		// onto subfolders a plain file cannot have. NTFS answers by
+		// dropping both inherit flags from the entry it actually
+		// stores, so a file given that default compared its rendering
+		// -- "this_folder_only" -- against the declaration's
+		// "this_folder_subfolders_files" forever: every run read as a
+		// change, Grant ran, and the stored entry came back exactly
+		// the same (issue 608 item 5, lead L14). The default now
+		// follows the path: a scope that only a container can carry
+		// out is not the right default for one that is not a
+		// container.
+		scope = defaultScope(path)
 	}
 	kind := "allow"
 	if deny {
@@ -317,7 +335,17 @@ func winDACLPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("The permissions of %s could not be read: %v", path, err)), nil
 	}
-	want := fmt.Sprintf("%s %s (%s)", kind, permission, scope)
+	// Rendered the same way winsec reads one back -- lowercase, named
+	// rather than typed -- so a declaration spelled `Read` or
+	// `0x120089` compares equal to winDACLEntryFor's canonical
+	// rendering instead of differing by nothing but spelling (the other
+	// half of lead L14). canonicalPermissionAndScope is a no-op where
+	// win_dacl is not built at all.
+	wantPermission, wantScope, err := canonicalPermissionAndScope(permission, scope)
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
+	want := fmt.Sprintf("%s %s (%s)", kind, wantPermission, wantScope)
 	if current == want {
 		return states.True(fmt.Sprintf("%s already has %s on %s.", trustee, want, path)), nil
 	}
@@ -332,6 +360,26 @@ func winDACLPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 			trustee, want, path, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s now has %s on %s.", trustee, want, path), changes), nil
+}
+
+// defaultScope is the applies_to a declaration gets when it does not
+// name one. this_folder_subfolders_files for a directory, which is the
+// property sheet's own default; this_folder_only for a file, which
+// cannot have subfolders for the other default to mean anything, and
+// which NTFS confirms by storing an entry's inheritance flags as
+// cleared rather than as asked -- confirmed directly on this host with
+// ACLFromEntries and a read-back: CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE
+// asked for, 0 (this_folder_only) stored, on a plain file.
+//
+// A path that does not exist yet keeps the directory default, which is
+// what every version of this function has done; whether the file this
+// creates can carry out the declaration is a question for the next run,
+// which now at least has a chance to converge once the path exists.
+func defaultScope(path string) string {
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return "this_folder_only"
+	}
+	return "this_folder_subfolders_files"
 }
 
 // winDACLAbsent ensures a trustee has no entry of its own.

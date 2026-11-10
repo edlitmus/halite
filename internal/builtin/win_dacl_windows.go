@@ -184,3 +184,22 @@ func accountSID(s string) (*windows.SID, bool) {
 	sid, _, _, err := windows.LookupSID("", trimmed)
 	return sid, err == nil
 }
+
+// canonicalPermissionAndScope renders a permission and a scope the way
+// winDACLEntryFor's comparison reads one back, so win_dacl.present
+// compares like with like: a declaration spelled `Read`, `FULL_CONTROL`
+// or a raw mask such as `0x120089` all render to the one name
+// PermissionName gives winsec.Entries' own reading, `read`, instead of
+// comparing their own spelling against it and differing by nothing but
+// case (issue 608 item 5, lead L14).
+func canonicalPermissionAndScope(permission, scope string) (string, string, error) {
+	mask, err := winsec.PermissionMask(permission)
+	if err != nil {
+		return "", "", err
+	}
+	flags, err := winsec.ScopeFlags(scope)
+	if err != nil {
+		return "", "", err
+	}
+	return winsec.PermissionName(mask), winsec.ScopeName(flags), nil
+}

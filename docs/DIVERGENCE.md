@@ -42697,6 +42697,72 @@ it; that is left for a change of its own.
 - simfleet counts a return error but not a retry, so a run cannot say
   how much of its load was retries.
 
+### 5.644 win_dacl.present's default scope could not converge on a file, and its comparison was case-sensitive where winsec's reading never is
+
+Issue 608 item 5, lead L14 (`internal/builtin/win_dacl.go`,
+`win_dacl_windows.go`, `win_dacl_other.go`). Found by reading, in the issue
+321 second-pass audit. Checked and run on this Windows 11 host.
+
+**The first half, the defect.** `win_dacl.present`'s `applies_to` defaulted
+to `this_folder_subfolders_files` regardless of whether the path was a
+file, and the signature's own parameter default did too, so a declaration
+with no `applies_to` at all never saw the function-level fallback this
+change adds -- the signature layer had already filled it in. Asking NTFS to
+carry an entry's inheritance onto subfolders a plain file cannot have does
+not fail; it answers by clearing both inherit flags on the entry it
+actually stores. Confirmed directly on this host with `windows.ACLFromEntries`
+and a read-back: `CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE` asked for, `0`
+stored, on a plain file. `winDACLEntryFor`'s rendering of that stored entry
+-- `this_folder_only` -- then never matched the declaration's
+`this_folder_subfolders_files`, so `win_dacl.present` with no `applies_to`
+on a file reported a change every run, called `Grant` every run, and NTFS
+normalised the result back to the same thing every run.
+
+**The second half, the defect.** `winDACLPresent` built its comparison
+string from the declaration's own spelling of `permission` and `applies_to`
+-- `fmt.Sprintf("%s %s (%s)", kind, permission, scope)` -- while
+`winDACLEntryFor`'s side is winsec's canonical rendering: always lowercase,
+always a name where one exists. A declaration spelled `Read` compared
+against a stored `read` entry differed by nothing but case, forever.
+
+**Shown.** `TestWinDACLPresentWithTheDefaultScopeConvergesOnAFile`
+(`internal/builtin/win_dacl_windows_test.go`) grants `Everyone` `read` on a
+real file with no `applies_to` named, then runs the state again. On the
+unchanged code the second run reported a change (the comment on the first
+run says so directly: "now has allow read (this_folder_subfolders_files)"
+on a plain file). `TestWinDACLPresentPermissionIsCaseInsensitive` grants
+`read` directly through `winsec.Grant`, then declares `Read` through the
+state; it failed on the unchanged comparison with a reported change.
+
+**The change.** `applies_to`'s signature default is now empty rather than
+`this_folder_subfolders_files`, so a declaration that names nothing reaches
+`winDACLPresent`'s own `defaultScope`, which answers `this_folder_only` for
+a file (`os.Stat` and `IsDir`) and keeps the old default for a directory or
+a path that does not exist yet. The comparison string is now built from
+`canonicalPermissionAndScope`'s rendering -- `winsec.PermissionMask` then
+`PermissionName`, `ScopeFlags` then `ScopeName` -- which is a Windows-only
+function in `win_dacl_windows.go` (`win_dacl.go` itself has no build tag
+and compiles on every platform; `win_dacl_other.go` carries a pass-through
+stub, unreachable in practice because `winDACLEntryFor` already refuses
+there first).
+
+With the change, both tests above and the rest of `internal/builtin`'s
+suite pass (`go test ./internal/builtin/... -count=1`, this host), and
+`docs/modules.md`'s entry for `win_dacl.present` was regenerated for the
+parameter's new default and doc string.
+
+**What an operator sees.** `win_dacl.present` with no `applies_to` now
+converges on a file instead of reporting a change on every run. A
+declaration's `permission` or `applies_to` spelled in another case, or as
+a raw mask, now compares the way `win_dacl.get_permissions` already reads
+one back.
+
+**Not verified.** A directory whose default scope changed behavior as a
+side effect of this fix -- it did not; the directory branch is the
+original default, unchanged. `win_dacl.grant`, the one-shot execution
+module with the identically-worded old default, which has no comparison to
+converge and was left alone on purpose.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
