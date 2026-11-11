@@ -12,8 +12,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/config"
 )
 
 // GeneratedNotice is the line every generated chapter carries near the top.
@@ -452,9 +455,68 @@ func CLIChapter(root string) (string, error) {
 		if err := cmd.Run(); err != nil {
 			return "", fmt.Errorf("%s help: %v\n%s", bin, err, stderr.String())
 		}
-		fmt.Fprintf(&b, "## %s\n\n```\n%s```\n\n", bin, stdout.String())
+		fmt.Fprintf(&b, "## %s\n\n```\n%s```\n\n", bin, LinuxPaths(stdout.String(), runtime.GOOS))
 	}
 	return b.String(), nil
+}
+
+// LinuxPaths rewrites the default paths a program's help printed on goos
+// into the Linux ones, which are what the committed chapter states.
+//
+// `help` prints the running platform's defaults -- config.DefaultRoot and
+// the paths built from it -- because that is the truth for the operator
+// who types it. But `go run` builds for the host, so the chapter used to
+// carry the defaults of whichever machine last ran `handbook gen`: run on
+// Windows it said C:\ProgramData\Halite everywhere, and on FreeBSD
+// /usr/local/etc/halite (issue 678). The test that compares the chapter
+// with the code could only be run on Linux for the same reason, so the
+// commit that broke it passed on the machine that made it and failed on
+// someone else's later.
+//
+// Building the help for linux instead is not an option: `go run` cannot
+// execute a binary for another platform. Pinning literals in the help
+// text would make it lie on the platforms that differ. So the paths are
+// put back here, from the same functions that produced them, longest
+// first so that <root>/pki is rewritten before <root> is. On linux it
+// changes nothing.
+func LinuxPaths(s, goos string) string {
+	if goos == "linux" {
+		return s
+	}
+	// join puts the platform's own separator back between a root and a
+	// name, as filepath.Join did when the binary built the path.
+	join := func(goos, dir, name string) string {
+		if goos == "windows" {
+			return dir + `\` + name
+		}
+		return dir + "/" + name
+	}
+	type pair struct{ from, to string }
+	var pairs []pair
+	add := func(from, to string) {
+		if from != to {
+			pairs = append(pairs, pair{from, to})
+		}
+	}
+	root, linuxRoot := config.RootFor(goos), config.RootFor("linux")
+	for _, name := range []string{"pki", "policy.yaml", "node.yaml", "hub.yaml", "api.yaml"} {
+		add(join(goos, root, name), join("linux", linuxRoot, name))
+	}
+	add(root, linuxRoot)
+	for _, kind := range []string{"cache", "lib", "log"} {
+		add(config.VarPathFor(goos, kind), config.VarPathFor("linux", kind))
+	}
+	add(config.RunPathFor(goos), config.RunPathFor("linux"))
+	// One pass, not a ReplaceAll per pair: a path rewritten once must not
+	// be matched again by a shorter pair. NewReplacer tries the old
+	// strings in argument order at each position, so longest first means
+	// <root>/pki wins over <root>.
+	sort.SliceStable(pairs, func(i, j int) bool { return len(pairs[i].from) > len(pairs[j].from) })
+	args := make([]string, 0, 2*len(pairs))
+	for _, p := range pairs {
+		args = append(args, p.from, p.to)
+	}
+	return strings.NewReplacer(args...).Replace(s)
 }
 
 // Contents renders docs/handbook/README.md: the table of contents, for
