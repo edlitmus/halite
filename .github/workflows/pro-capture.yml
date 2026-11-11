@@ -1,0 +1,68 @@
+# THROWAWAY, not for merge: captures what `pro status --format json`
+# does on the ubuntu-24.04 runner image, for the TestLiveProReadsTheRealClient
+# failure that began 2026-11-11.
+name: pro-capture
+on:
+  push:
+    branches: [fix/pro-status-runner]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: image and client versions
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          cat /etc/os-release
+          uname -a
+          id
+          command -v pro; ls -l "$(command -v pro)"
+          dpkg-query -W -f='${Package} ${Version} ${Status}\n' 'ubuntu-pro-client*' 'ubuntu-advantage-tools*' 'ubuntu-pro*' || true
+          zgrep -h -i -E 'ubuntu-pro|ubuntu-advantage' /var/log/dpkg.log* /var/log/apt/history.log* 2>/dev/null | tail -40 || true
+          ls -la /etc/ubuntu-advantage /var/lib/ubuntu-advantage 2>&1 || true
+          cat /etc/ubuntu-advantage/uaclient.conf 2>&1 || true
+      - name: pro --version
+        run: |
+          set +e
+          pro --version; echo "exit=$?"
+      - name: pro status --format json (unprivileged)
+        run: |
+          set +e
+          start=$(date +%s.%N)
+          pro status --format json >out.json 2>err.txt
+          code=$?
+          end=$(date +%s.%N)
+          echo "exit=$code elapsed=$(echo "$end - $start" | bc)"
+          echo "--- stdout ($(wc -c <out.json) bytes) ---"; cat out.json; echo
+          echo "--- stderr ($(wc -c <err.txt) bytes) ---"; cat err.txt; echo
+          echo "--- stdout hexdump head ---"; head -c 400 out.json | od -c | head -20
+      - name: pro status (plain, unprivileged)
+        run: |
+          set +e
+          pro status >plain.txt 2>plainerr.txt; echo "exit=$?"
+          echo "--- stdout ---"; cat plain.txt; echo "--- stderr ---"; cat plainerr.txt
+      - name: pro status --format json --all, yaml
+        run: |
+          set +e
+          pro status --format json --all >all.json 2>allerr.txt; echo "exit=$?"
+          cat all.json; echo; echo "--- stderr ---"; cat allerr.txt
+          pro status --format yaml >y.txt 2>yerr.txt; echo "yaml exit=$?"
+          cat y.txt; echo "--- stderr ---"; cat yerr.txt
+      - name: pro api is_attached
+        run: |
+          set +e
+          pro api u.pro.status.is_attached.v1 >a.json 2>aerr.txt; echo "exit=$?"
+          cat a.json; echo; echo "--- stderr ---"; cat aerr.txt
+      - name: pro status --format json (root)
+        run: |
+          set +e
+          sudo pro status --format json >r.json 2>rerr.txt; echo "exit=$?"
+          cat r.json; echo; echo "--- stderr ---"; cat rerr.txt
+      - name: client log and network
+        run: |
+          set +e
+          sudo tail -n 80 /var/log/ubuntu-advantage.log
+          ls -la ~/.cache/ubuntu-pro 2>&1; tail -n 80 ~/.cache/ubuntu-pro/ubuntu-pro.log 2>&1
+          curl -sS -o /dev/null -w 'contracts.canonical.com http=%{http_code} t=%{time_total}\n' --max-time 20 https://contracts.canonical.com/ 2>&1
+          getent hosts contracts.canonical.com
