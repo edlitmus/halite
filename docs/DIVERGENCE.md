@@ -43811,6 +43811,13 @@ real `halite-hub serve` on loopback:
 - `TestAnEnrollStormInTokenMode` now sends 72 requests 40 at a time,
   above the burst, on a 64-use token: 64 issued, 8 refused, three runs
   of three.
+- `cmd/halite-node`'s `TestEnrollWaitRetriesWhenTheHubLimitsIt` drove
+  the limit with a node holding a live token, and failed in CI on every
+  platform at "exit 0" once that node was no longer charged: the change
+  working, not the node. It now drives the limit in manual mode, the
+  node a shared address actually holds up, and accepts the request once
+  `--wait` has made it. Making the node treat a 429 as final under
+  `--wait` fails it ("ended without waiting out the limit").
 
 **Broken on purpose,** each with the test that caught it:
 
