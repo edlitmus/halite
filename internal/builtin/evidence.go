@@ -1070,7 +1070,13 @@ var moduleEvidence = map[string]exec.Evidence{
 	"pro": {Level: exec.Hardware, Note: "`version`, `status` and `is_attached` were run for real " +
 		"against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- " +
 		"`TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way " +
-		"`modprobe`/`udev`'s reads do. `enable` and `disable` were then driven by hand on the same " +
+		"`modprobe`/`udev`'s reads do -- but since 2026-11-11 it skips on GitHub's ubuntu-24.04 " +
+		"runners, which cannot resolve contracts.canonical.com, and an unattached client cannot " +
+		"answer `pro status` without it, so CI no longer re-runs the shape check. The failure " +
+		"path is captured instead: that runner's real `pro status --format json` (client " +
+		"38ubuntu0~24.04, exit 1, the reason on stdout and nothing on stderr) is a fixture, and " +
+		"`status` now quotes the client's own reason where it used to end at a colon " +
+		"(DIVERGENCE 5.653). The 38 client has not been run attached. `enable` and `disable` were then driven by hand on the same " +
 		"host, toggling `usg` (Ubuntu Security Guide, entitled on every Pro tier and an audit tool " +
 		"rather than a security control) off and back on and off again, confirmed against a real " +
 		"`pro status --format json` after each step -- `TestLiveProEnableAndDisable`, gated on root " +

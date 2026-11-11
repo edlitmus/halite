@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"testing"
@@ -46,6 +47,20 @@ func TestLiveProReadsTheRealClient(t *testing.T) {
 	}
 
 	raw, err := r.Exec.Call(c, "pro.status", value.NewMap(0))
+	// An unattached client asks contracts.canonical.com for its service
+	// list on every `pro status`, so a host that cannot reach it cannot
+	// answer at all. That is a fact about the host's network, not about
+	// the module, and GitHub's ubuntu-24.04 runners were in exactly that
+	// state from 2026-11-11 (DIVERGENCE 5.653). It skips on the client's
+	// own `message_code` and nothing broader: reaching this line means
+	// the module has already read the client's envelope off stdout, which
+	// is the half of the fix that a skip must not hide, so a regression
+	// to "exited 1:" still fails here rather than skipping.
+	var pe *proClientError
+	if errors.As(err, &pe) && pe.HasCode("connectivity-error") && !isAttached {
+		t.Skipf("this host cannot reach Canonical's contract server, so an unattached `pro status` "+
+			"cannot answer; the module read the client's refusal correctly: %v", err)
+	}
 	if err != nil {
 		t.Fatalf("pro.status: %v", err)
 	}
