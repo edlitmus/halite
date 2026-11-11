@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"testing"
@@ -46,6 +47,24 @@ func TestLiveProReadsTheRealClient(t *testing.T) {
 	}
 
 	raw, err := r.Exec.Call(c, "pro.status", value.NewMap(0))
+	// An unattached client asks contracts.canonical.com for its service
+	// list on every `pro status`, so a host that cannot get an answer
+	// from it cannot answer at all. That is a fact about the host's
+	// network or Canonical's service, not about the module, and GitHub's
+	// ubuntu-24.04 runners saw both on 2026-11-11 (DIVERGENCE 5.654):
+	// first the name would not resolve (`connectivity-error`), then the
+	// server answered 503 (`external-api-error`). It skips on those two
+	// of the client's own `message_code`s and nothing broader: reaching
+	// this line means the module has already read the client's envelope
+	// off stdout, which is the half of the fix that a skip must not
+	// hide, so a regression to "exited 1:" still fails here rather than
+	// skipping.
+	var pe *proClientError
+	if errors.As(err, &pe) && !isAttached &&
+		(pe.HasCode("connectivity-error") || pe.HasCode("external-api-error")) {
+		t.Skipf("Canonical's contract server gave this host no answer, so an unattached `pro status` "+
+			"cannot answer either; the module read the client's refusal correctly: %v", err)
+	}
 	if err != nil {
 		t.Fatalf("pro.status: %v", err)
 	}
