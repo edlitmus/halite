@@ -21,10 +21,10 @@ measured only some of them:
 | Highstate compile, 500 states over 50 SLS files, heavy Jinja: under 2 s | **Measured.** `make perf` on a development workstation: **26 ms** |
 | Pillar compile, 200 pillar SLS: under 500 ms cold | **Measured: 45 ms** |
 | Pillar compile, cached: under 5 ms | Not measured: the hub has no pillar cache; it compiles on each request |
-| 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Not met.** 20,000 simulated nodes (`tools/simfleet`) stayed connected for 30 minutes on a 16-core hub, but **the hub died** of Go's thread limit when a `test.ping` went to all 20,000, and again when it restarted with 20,000 reconnecting at once (ledger 5.279). 100,000 with relays has not been run |
-| `test.ping` to 10,000 nodes: 95% of returns in 10 s | **Measured: met.** 10,000 of 10,000 returned, p95 3.86 s, on a 16-core hub with simulated nodes (ledger 5.279). At 20,000 the hub dies |
-| Dispatch of `state.apply` to 10,000 nodes in 30 s | **Measured: met.** Every one of 10,000 simulated nodes had it within 769 ms on a 16-core hub (ledger 5.279) |
-| Hub memory at 20,000 nodes: under 4 GiB | **Measured: not met.** 3.13 GiB holding 20,000 idle streams, and a peak of 4.36 GiB during a batched `state.apply` (ledger 5.279) |
+| 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Measured at 20,000 on Linux.** 20,000 simulated nodes (`tools/simfleet`) connected to a 16-core hub, answered twelve 20,000-node jobs, and came back within 27 s of a clean restart (ledger 5.279). Its memory is over the 4 GiB row below. The 25,000 limit and 100,000 with relays have not been run, and nothing has run on a FreeBSD hub |
+| `test.ping` to 10,000 nodes: 95% of returns in 10 s | **Measured: met.** 10,000 of 10,000 returned, p95 3.86 s, on a 16-core Linux hub with simulated nodes; at 20,000, p95 7.85 s (ledger 5.279) |
+| Dispatch of `state.apply` to 10,000 nodes in 30 s | **Measured: met.** Every one of 10,000 simulated nodes had it within 769 ms on a 16-core Linux hub, and every one of 20,000 within 783 ms (ledger 5.279) |
+| Hub memory at 20,000 nodes: under 4 GiB | **Measured: not met.** 2.87 GiB holding 20,000 idle streams, but 4.26 to 4.51 GiB during each job sent to all 20,000 (ledger 5.279) |
 | Reactor throughput: 5,000 events/s sustained | Not measured |
 | Node idle memory (under 40 MiB with 10 beacons) and CPU (under 0.5% of a core) | Not measured: it needs a soak |
 | File server saturating 10 Gb | Not measured |

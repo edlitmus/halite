@@ -23806,6 +23806,88 @@ hub cannot survive them), return volume, `-reuse-client` and
 reconnect storm on a hub that survives one, FreeBSD, and a placement
 group.
 
+#### Step 3 again, with 5.657 and 5.658 (2026-11-11): both rows met at 20,000; hub memory still over 4 GiB
+
+The same layout as above, raised again by `contrib/tofu/aws-simfleet`
+(c7g.4xlarge hub, kernel `7.0.0-1014-aws`; five c7g.xlarge drivers, the
+fifth the observer; one availability zone, no placement group), driven
+over SSM as root. User data checked on all six first: the halt
+scheduled, the sysctls set, every clock within 5.2 µs of Amazon Time
+Sync. Both binaries were built on the existing arm64 test host from
+`main` at `f321afee`, which has 5.657's bound on concurrent disk writes
+and 5.658's token limiter, with Go 1.27.4 checked against go.dev's
+published sha256, `-mod=vendor`, `CGO_ENABLED=0`, `-trimpath`; their
+sha256 sums matched on every host. The hub ran as before
+(`LimitNOFILE=262144`, `MemoryMax=28G`). Tracked in issue 718.
+
+**Setup:** 20,000 identities in 306 s, the same as before.
+
+| | Result |
+|---|---|
+| Connect, four drivers at once | 5,000 each in 32.9-33.7 s; 20,000 connected, `halite_hub_node_connect_refused_total` 0 |
+| Idle, 20,000 streams, before any job | **2.87 GiB** RSS, 86 threads, 20,007 descriptors |
+| `test.ping` to 20,000 | received p95 806 ms; returned 20,000 of 20,000, p50 4.34 s, **p95 7.85 s**, last 8.53 s; 0 return errors: **MET**, and the hub lived |
+| `state.apply` to 20,000 | submit 681 ms; **last received 783 ms**; returned 20,000 of 20,000, p95 7.69 s: **MET** |
+| Return volume, 10 pings 120 s apart | each 20,000 of 20,000, p95 7.70-7.89 s, 0 errors; descriptors back to 20,007 between pings every time: no growth |
+| Hub threads | **88 at most, in every sample of the run**, against 9,352 at 10,000 and 10,000 (fatal) at 20,000 before 5.657 |
+| Hub RSS during a job | **4.26-4.51 GiB** peak per job, over the 12 sent to all at once; 3.35-3.9 GiB between them: **fails SPEC 30's < 4 GiB** |
+| `state.apply -batch 10%` | 10 slices of 2,000, at most 2,000 in flight; gaps p50 347 ms, max 429 ms; 20,000 returned in 10.9 s; RSS peak 4.06 GiB (4.36 GiB before) |
+| Hold | 20,000 connected from 20:17:43 to 20:44:17 UTC, `halite_hub_node_connect_total` 20,000 throughout and no disconnect counted: **26.5 minutes**, not the plan's 30, because the restart below ended it |
+| Clean restart (`systemctl stop`, then start) | stop took 3.6 s; 19,918 back 14 s after the start, **20,000 by 27 s**; 88 threads, 3.06 GiB, nothing at `warning` in the journal: **passes**, where before it died within 18 s |
+| Enrolment storm, token mode, 2,000 at 64 at once | **2,000 of 2,000 issued** in 38.3 s, 52 a second, p95 2.07 s; `halite_hub_enrollments_total{result="issued"}` 2,000. Before 5.658: 90 issued, 1,910 rate-limited |
+
+The hub's own count agrees with the harness:
+`halite_job_returns_total{result="succeeded"}` read 260,000 before the
+restart, thirteen jobs of 20,000, and `halite_jobs_missing_returns` 0.
+
+**Why memory is over the row, as far as the samples show.** Every job
+peak came with about 40,050 descriptors: the 20,000 streams plus the
+one returns connection each node keeps since 5.641. Those close when
+idle, and the hub fell to 20,007 descriptors and about 3.4 GiB between
+pings. So the extra 1.1-1.6 GiB is held while 20,000 return connections
+are open at once. That is a reading of the descriptor and RSS columns
+together, not a profile; how much is TLS state, how much is HTTP/2
+buffers and how much is Go's heap not yet returned has not been
+measured. `-reuse-client`, which files returns on the stream's own
+connection, was not run here and would answer part of it.
+
+**What the gate costs.** A return spent **2.69 s** inside the hub on
+average at 20,000 (698,172 s over 260,000), against 1.86 s at 10,000
+before 5.657, and 22% finished inside a second. The returns now queue
+for the gate rather than each holding a thread; the p95 of 7.85 s is
+inside SPEC 30's 10 s, with 2.2 s to spare. Where the 2.69 s goes has
+not been profiled, so whether the gate's width or the fsync is the limit
+is not known.
+
+**AWS limits.** The hub's ENA `pps_allowance_exceeded` rose with every
+20,000-node job, from 0 to 4,862 over the run; the connection-tracking
+and bandwidth counters stayed at 0. That is the instance's limit,
+recorded as such.
+
+**Drivers:** 1.66-1.69 GB RSS and 10,005 descriptors each for 5,000
+simulated nodes, so a c7g.xlarge has room.
+
+**Two things to know about this record.** The `state.apply` went 101 s
+after the first ping, not the plan's 120 s; the descriptors had not yet
+come down from the ping (40,007). And the token storm ran after a second
+restart, into the token-mode configuration `setup -enrollment token`
+wrote; the hub was stopped for well under a second for that, and the
+fleet was back before the storm.
+
+**Teardown, checked** with read-only calls after `tofu destroy`: all six
+instances `terminated`; no volume, placement group or network interface
+with `Project=halite-simfleet` in us-east-1 or us-east-2. About 41
+minutes of instance time, about $1. On the build host the toolchain,
+source, setup directory and file server were removed, salt-minion is
+active and `dmesg` shows no OOM; the run's samples, merges, metrics and
+journals are kept there.
+
+**Not covered:** hub memory under 4 GiB (it is not), a 30-minute hold
+in this run, `-reuse-client` and `-client-per-return`, a profile of the
+return path or of the memory, an unclean (`kill -9`) restart, the manual
+enrolment storm (5.658 does not touch it), FreeBSD, and a placement
+group.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
@@ -43740,6 +43822,23 @@ its node record is the number step 3 will give. Blocking system calls
 outside writes — reads on a cold cache after a restart, a log line to a
 stalled journald — are still unbounded, and were not seen to matter.
 
+#### Since: run at 20,000 on AWS (2026-11-11)
+
+Step 3 was run again on `main` at `f321afee`, which has this fix (5.279,
+"Step 3 again"). The hub's thread count never went past **88** in any
+sample: through twelve jobs sent to all 20,000 nodes at once, a 10% batch of a thirteenth, a clean
+restart with 20,000 back in 27 s, and a second restart. Before the fix
+the same ping and the same restart each ran it to 10,000 and killed it.
+So the bound holds at the size that found the defect, on a Linux hub.
+
+The latency the bound costs is now a number: a return spent 2.69 s
+inside the hub on average at 20,000, against 1.86 s at 10,000 before,
+and the ping's p95 was 7.85 s, inside SPEC 30's 10 s. Where that time
+goes has not been profiled.
+
+Still not covered: FreeBSD and Windows, an unclean restart, and the
+other blocking system calls listed above.
+
 ### 5.658 A token-mode bootstrap was metered whenever it arrived faster than it was answered
 
 `internal/hub/enrolllimit.go` said from the start (5.398) that "a
@@ -43836,6 +43935,16 @@ hub's memory, so two hubs over one key store would each hold up to a
 token's remaining uses, and SPEC does not run two. The extra cost an
 over-budget source now imposes (a body read) was reasoned from the
 bounds, not measured under a flood.
+
+#### Since: re-run on AWS (2026-11-11)
+
+Run again in step 3 on `main` at `f321afee` (5.279, "Step 3 again"):
+`simfleet enroll-storm -n 2000 -concurrency 64` with a 2,000-use token
+from one address, against a hub holding 20,000 connected nodes, issued
+**2,000 of 2,000** in 38.3 s, 52 a second, with p95 2.07 s per request.
+`halite_hub_enrollments_total{result="issued"}` read 2,000. The same
+storm before the fix issued 90. The manual-mode storm was not run again;
+this change does not touch it. One hub, Linux only.
 
 ## 6. Everything else not started
 

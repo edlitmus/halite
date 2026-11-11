@@ -1,17 +1,19 @@
 # Plan: driving simfleet at scale on AWS
 
-**Status: step 0 has run twice (2026-11-08).** The first run, on
-`1bd9a6c8`, stopped the plan: at 5,000 nodes the hub did not survive one
-`test.ping`. The two defects it found were fixed (#689, #688). The
-re-run on `dbbf053d` met both SPEC 30 rows at 5,000, and the hub peaked
-at 1.6 GB (§11.1). §10 has the order of work from here. The next steps
-that bill, 1 to 3, still need approval.
+**Status: steps 0 to 3 have run (2026-11-08 to 2026-11-11).** Step 3,
+re-run on `f321afee` with the thread-exhaustion fix, met both dispatch
+rows at 20,000 and survived a clean restart, but the hub peaked at
+4.26-4.51 GiB during each 20,000-node job, over SPEC 30's 4 GiB (§11.4).
+Steps 4, 3F and 5 have not run, and each needs approval (§10). Issue
+718 tracks the rows.
 
 The region (us-east-1), the use of two existing test hosts (host B and
 host C, §2), and a `DryRun` launch were approved on 2026-11-08. No AWS
-resource has been created. The launches were dry runs only. Host C was
-rebooted once to recover it, after the first run (§11). The AWS facts
-come from read-only calls made on 2026-11-08 in a test account. The
+resource was created before step 1; steps 1 to 3 raised their hosts with
+`contrib/tofu/aws-simfleet` and destroyed them in the same session. Host
+C was rebooted once to recover it, after the first run (§11). The AWS
+facts in §2 and §3 come from read-only calls made on 2026-11-08 in a
+test account. The
 claims about halite come from the code at `bde5719b` and `1bd9a6c8`.
 Where this page states what a run *will* show, it is a hypothesis, and
 it is marked as one.
@@ -440,9 +442,10 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
    2 to add, nothing else. Nothing applied.
 8. ~~Step 1~~ done 2026-11-09 (§11.2), applied and torn down in one
    session. ~~Steps 2-3~~ run 2026-11-11 (§11.3): step 2 passed, step 3
-   did not. **Step 3 waits on the thread-exhaustion fix**, and then its
-   two dispatch rows, return volume and a clean-restart storm are run
-   again. *(ask first; it bills)*
+   did not. ~~**Step 3 waits on the thread-exhaustion fix**~~ fixed
+   (#715, 5.657) and re-run 2026-11-11 (§11.4): both dispatch rows met
+   at 20,000, return volume and a clean restart pass, **hub memory does
+   not**.
 9. Step 4. Step 3F. Step 5 only if 4 passed and the relay work is done.
    *(each asked for separately)*
 10. Each result goes into DIVERGENCE 5.279 as a subsection, into
@@ -583,3 +586,37 @@ fifth as observer; no placement group, see 5.279), built from `main` at
 
 **Not covered:** both dispatch rows at 20,000, return volume, a profile
 of the return path, FreeBSD, and a placement group.
+
+### 11.4 Step 3 again, with the thread fix (2026-11-11)
+
+The same layout as §11.3, built from `main` at `f321afee` (#715 and
+#717). The full numbers are in DIVERGENCE 5.279.
+
+| 20,000 nodes | Result |
+|---|---|
+| Connect, four drivers at once | 20,000 in about 34 s |
+| `test.ping` | 20,000 of 20,000, p95 7.85 s: **MET**, and the hub lived |
+| `state.apply` dispatch | last received 783 ms: **MET** |
+| Return volume, 10 pings 120 s apart | p95 7.70-7.89 s each, 0 errors, no descriptor growth: passes |
+| Hub threads | 88 at most, all run |
+| Hub RSS | 2.87 GiB idle; **4.26-4.51 GiB peak** in each job: **fails** < 4 GiB |
+| Batch 10% | one slice in flight, gaps p50 347 ms, RSS peak 4.06 GiB |
+| Hold | 26.5 min without a disconnect, then the restart below |
+| Clean restart | 20,000 back in 27 s, 88 threads: passes |
+| Token enrolment storm, 64 at once | 2,000 of 2,000 issued: #717 holds |
+
+- The memory peak comes with about 40,000 descriptors: the streams plus
+  one kept returns connection per node (5.641). Between jobs, with those
+  closed, the hub sat at about 3.4 GiB. This is a reading of the
+  samples, not a profile.
+- A return spent 2.69 s inside the hub on average, against 1.86 s at
+  10,000 before the fix. The returns now wait for the write bound
+  instead of holding a thread each.
+- The ENA's packets-per-second counter reached 4,862 over the run.
+- Teardown was checked with read-only calls: all six instances
+  `terminated`, nothing left with the project tag. About 41 minutes of
+  instance time, about $1.
+
+**Not covered:** hub memory under 4 GiB, a full 30-minute hold in this
+run, `-reuse-client`, a profile, an unclean restart, FreeBSD, and a
+placement group.
