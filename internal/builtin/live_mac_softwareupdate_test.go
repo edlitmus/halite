@@ -168,6 +168,9 @@ func TestLiveMacSoftwareUpdateDownloadsWithoutInstalling(t *testing.T) {
 // printed on the runner reads ("macOS 27.2-26B123"); a non-OS update
 // mistaken for one only costs the preference, not the test.
 func macSoftwareUpdatePickDownload(available []softwareUpdateEntry) softwareUpdateEntry {
+	if true { // WIP: break on purpose -- the old first-label selection, to capture the prompt
+		return available[0]
+	}
 	for _, u := range available {
 		if !strings.HasPrefix(u.Label, "macOS") && !strings.HasPrefix(u.Title, "macOS") {
 			return u
