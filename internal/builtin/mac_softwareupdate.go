@@ -279,7 +279,7 @@ func macSoftwareUpdateDownloadModule(fn string, verb []string, recommended signa
 // here is given as standard input, and exits non-zero. The same label
 // on the same image downloaded cleanly on a re-run minutes later, so
 // whether it asks is not a property of the label; what decides it was
-// not found (DIVERGENCE 5.653). The download went through `macRun`,
+// not found (DIVERGENCE 5.656). The download went through `macRun`,
 // whose error is the *first line* of stderr then stdout, and that
 // line was `Password: Software Update Tool`: the prompt, which has no
 // newline, run into the banner every invocation prints first. Whatever

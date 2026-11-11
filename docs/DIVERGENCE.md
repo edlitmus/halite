@@ -43435,7 +43435,7 @@ which now compare the page, are the first end-to-end check. Any other
 platform difference in help beyond these paths would also show up there
 as a failure, and none is known.
 
-### 5.653 A password prompt from `softwareupdate --download` reached the operator as the tool's banner
+### 5.656 A password prompt from `softwareupdate --download` reached the operator as the tool's banner
 
 `TestLiveMacSoftwareUpdateDownloadsWithoutInstalling` failed on the
 `macos` leg of `fleet.yml` twice on 2026-11-08 (`macos` jobs

@@ -186,7 +186,7 @@ func TestMacSoftwareUpdateIsRegisteredAndRestricted(t *testing.T) {
 // firstLine of stderr followed by stdout. That is all that survived --
 // the rest was what firstLine threw away -- and four downloads of the
 // major upgrade on 2026-11-11 never asked again, so there was nothing
-// more to capture (DIVERGENCE 5.653). How those bytes divide between
+// more to capture (DIVERGENCE 5.656). How those bytes divide between
 // the two streams is not known, so both divisions are held; the lines
 // after the banner are not known at all, and none is invented here.
 func TestMacSoftwareUpdateDownloadNamesAPasswordPrompt(t *testing.T) {

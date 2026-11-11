@@ -95,7 +95,7 @@ func TestLiveMacSoftwareUpdateReadsThisMac(t *testing.T) {
 // Downloading that sometimes stops to ask for a volume owner's
 // password, which nothing here has, and the same label on the same
 // image went through on a re-run: two PR merges were blocked one
-// evening on a coin toss (DIVERGENCE 5.653). So the test now ranks
+// evening on a coin toss (DIVERGENCE 5.656). So the test now ranks
 // what is on offer -- a non-OS update first (Safari's was the label the
 // module was first demonstrated on), then an OS update within this
 // Mac's major version, and a major upgrade only when that is all there
