@@ -43333,6 +43333,311 @@ which the plan's drivers do not have. The 160 ms a pending answer took
 on loopback was not looked into: it is one machine, eight at a time,
 and is reported here as what was seen, not as a cost.
 
+### 5.653 A net/http advisory failed every PR's govulncheck, again
+
+The same shape as 5.424, a month later. From 2026-11-11 the `govulncheck`
+job (v1.9.0, pinned by 5.358) failed on every branch with GO-2026-6859,
+"HTTP/1 server crash due to MaxBytesReader header race in net/http",
+found in `net/http@go1.27.3` and fixed in `net/http@go1.27.4`. Seen on
+#711's run 43048808936; main's last green CI was 2026-11-10 21:58. The
+pin was go1.27.3.
+
+This one is an exposure and not only a red job. The hub and the API are
+HTTP/1 servers, and `http.MaxBytesReader` bounds request bodies in
+`internal/api/server.go`, `internal/api/hook.go` and
+`internal/transport/wire.go`, which is the shape the advisory names.
+govulncheck's own traces start at `hub.Server.Serve`
+(`internal/hub/listen.go:47`) and the hub's handlers. Whether a request
+can actually crash a halite server through it was not tried: the
+advisory says so of net/http, and the fix is to stop building with the
+version that has it, whatever the answer.
+
+**The change.** `toolchain go1.27.4`, and everything 5.403, 5.424 and
+the toolchain tests hold to it: the workflows' `go-version`, the FreeBSD
+legs' `want_version` and `want_sha256`, contrib/tofu's `go_version`,
+`go_sha256` and `go_sha256_freebsd`, and the three fleet images'
+`golang:1.27.4-bookworm`. The tarball digests are go.dev's
+(`https://go.dev/dl/?mode=json&include=all`, fetched 2026-11-11); the
+same listing gave the go1.27.3 digests the repository already had, so it
+was read correctly. The image digest is Docker Hub's index for
+`library/golang:1.27.4-bookworm` on 2026-11-11, an OCI index listing
+linux/amd64 and linux/arm64 among others. Measurements recorded as made
+with go1.27.3, in comments and in this ledger, keep saying so.
+
+One thing seen in passing: Docker Hub's index for `1.27.3-bookworm` is
+now `dc0963f3…`, not the `05237276…` the images pinned. Official images
+are rebuilt under an unchanged tag, which is the reason 321's build
+section pinned by digest; it is not a sign the old pin was wrong.
+
+`golang.org/x/sys` needs nothing: v0.47.0 asks for go 1.25.0, below
+go.mod's `go 1.26.0` floor, and the toolchain line does not touch the
+vendor tree.
+
+**Demonstrated** on darwin/arm64, 2026-11-11. `make vuln` with go.mod
+put back to go1.27.3: GO-2026-6859, exit 2. At go1.27.4 (downloaded by
+`GOTOOLCHAIN`): "No vulnerabilities found.", exit 0. That pair is the
+break-it-again for this change. `internal/buildpolicy`,
+`internal/specaudit` and `internal/docsaudit` pass with `-count=1`, the
+first of which holds the workflows, the images, the lab and the FreeBSD
+digests to the new pin, and `make check` passes. `bmake repro` under
+go1.27.4 built `halite-node`, `halite-hub` and `halite-api` twice, from
+two paths, and each pair was identical.
+
+**Not verified.** The FreeBSD digest, the images and the Windows and
+FreeBSD CI legs are first exercised by this PR's CI. The release
+workflow's two-builder comparison was not run; `make repro` (one
+builder, two paths) was the local check. The lab was not raised. What
+else changed between 1.27.3 and 1.27.4 was not read.
+
+### 5.654 pro.status lost the client's reason, and a runner without Canonical's DNS failed the suite
+
+From 2026-11-11, `TestLiveProReadsTheRealClient` failed on every
+ubuntu-24.04 leg of `ci.yml` (test, race, fips-test) with
+
+    pro.status: `pro status` could not be run on this node: pro status --format json exited 1:
+
+and nothing after the colon. Main had been green on 2026-11-10 at
+21:58, on the same runner image (`20261101.360.1`): the image had not
+changed underneath, so the cause was outside it.
+
+**What the client actually does,** captured by a throwaway workflow on
+the fix branch (`ubuntu-24.04`, image `20261101.360.1`, kernel
+`7.0.0-1017-azure`, `ubuntu-pro-client 38ubuntu0~24.04`;
+`ubuntu-advantage-tools` is not installed on that image, only the
+renamed package; the host is unattached):
+
+- `pro status --format json` took 26 s, exited 1, wrote **0 bytes to
+  stderr** and 367 bytes to stdout: the ordinary JSON envelope with
+  `result: "failure"`, `services: []` and one error,
+  `message_code: connectivity-error`, "Failed to connect to
+  https://contracts.canonical.com/v1/resources?… [Errno -3] Temporary
+  failure in name resolution". `--all`, `--format yaml` and the same
+  call under `sudo` all failed the same way.
+- The plain `pro status` exited 1 with the same reason on stderr.
+- `pro api u.pro.status.is_attached.v1` exited 0 with
+  `is_attached: false`: it does not need the network.
+- `curl https://contracts.canonical.com/` failed with "Resolving timed
+  out after 20002 milliseconds", and `getent hosts` printed nothing.
+  The client's own log shows the same `GET /v1/resources` on every
+  call, followed by the resolution failure.
+
+An unattached client asks Canonical's contract server for its service
+list on every `pro status`, so a host that cannot resolve that name
+cannot answer at all. That is two findings, and only one of them is
+about this project.
+
+**The module discarded the client's answer.** `proStatus` let the
+runner fail the command on its exit code, and the runner's error
+carries the first line of stderr, which here is empty. The client had
+said exactly what was wrong, one stream over. This is the "first line
+hides the cause" shape again, in a different form: the cause was not
+on a later line but on the other stream. The unit tests could not see
+it, because `RecordingRunner` never fails on a non-zero exit code, so
+a test built on one sails past the path that dropped the message.
+
+**Fixed.** `pro status --format json` is run with `IgnoreExitCode`, and
+its stdout is read first. A non-zero exit or a `result` other than
+`success` is returned as a `proClientError` carrying the client's
+`errors` list, each message with its `message_code` and all of its
+lines folded into one. The error is now
+
+    `pro status --format json` exited 1: connectivity-error: Failed to connect to https://contracts.canonical.com/v1/resources?architecture=amd64&kernel=7.0.0-1017-azure&series=noble&virt=microsoft [Errno -3] Temporary failure in name resolution
+
+If stdout is ever empty on a failure, which no real client has been
+seen to do, all of stderr is quoted, not its first line.
+
+**The live test skips a host that cannot reach Canonical,** narrowly:
+only when the error is a `proClientError` with
+`message_code: connectivity-error` and `pro.is_attached` (which works
+offline) says the host is unattached. Reaching that check means the
+module already read the client's envelope off stdout, so a regression
+to "exited 1:" still fails the test instead of skipping it. The skip
+message quotes the client's reason. So on the runners today this test
+**skips**. It does not run the shape assertions below the skip, and
+they will not run again on CI until the runners can resolve
+`contracts.canonical.com`.
+
+**Demonstrated:** the fixture `proStatusConnectivityFailure` is the
+captured stdout, compared byte for byte (`cmp`) against the run log.
+`TestProStatusSaysWhatTheClientSaidOnFailure` runs it through the real
+`OSRunner`, with a stand-in `pro` script that prints it and exits 1,
+because the defect lived in that runner's exit-code path.
+
+**Broken on purpose,** each restored afterwards:
+
+| Break | Caught by |
+|---|---|
+| `IgnoreExitCode` removed, as before the fix | `TestProStatusSaysWhatTheClientSaidOnFailure`, which then printed CI's own message, "exited 1: " with nothing after it |
+| only the first line of the client's message kept | the same test: the cause, "Temporary failure in name resolution", is on the second line |
+
+**Not covered.** Why the runners cannot resolve
+`contracts.canonical.com` was not found. The capture did not resolve
+any other name for comparison, and a check from a development Mac got
+SERVFAIL from public resolvers, but that Mac egresses through a proxy,
+so it does not show whether this is Canonical's DNS or the runners'.
+`pro.is_attached` and the mutating functions' `proRun` were not
+changed. Their failure paths have not been captured: `proRun` already
+reads stdout whatever the exit code, but it still quotes only the
+first line of stderr when stdout is empty, and whether
+`pro api u.pro.status.is_attached.v1` fails the same way (exit 1, its
+reason on stdout) is not known. Nothing here was run on an attached
+host. The fixed `pro.status` has not been run against a client that
+succeeds, except through the existing captured success fixture.
+
+#### 5.654.1 The same afternoon: a 503, and Ubuntu's mirror unresolvable too
+
+The first CI run of the fix, at `c5c29d14`, passed `test
+(ubuntu-24.04)` and `fips-test`; `make test` runs without `-v`, so
+whether the live test skipped there or ran in full is not in the log.
+The next, at `ba51db4a` (main merged in, nothing in `pro` changed), failed
+both legs on a different client answer, which the fix now carried
+through instead of hiding:
+
+    `pro status --format json` exited 1: external-api-error: Error connecting to /v1/resources: 503 <html><body><h1>503 Service Unavailable</h1> No server is available to handle this request. </body></html>
+
+The name resolved by then, and Canonical's server answered, with
+a 503. That is still not a fact about the module, so the live test now
+skips on `external-api-error` as well as `connectivity-error`, still
+only on an unattached host and still only on a `proClientError`. This
+second code was taken from that run's log, not from a captured stdout,
+so there is no fixture for it. Reading it goes through the same path
+the `connectivity-error` fixture already drives.
+
+The Fleet `linux` leg of the same PR failed earlier, in `apt-get`,
+on "Temporary failure resolving 'azure.archive.ubuntu.com'", while
+`packages.microsoft.com` resolved on the same runner. main's scheduled
+Fleet run that morning (43012403125) failed too, downloading `snapd`
+from api.snapcraft.io with "connection reset by peer". So that day the
+runners' trouble reached Canonical's hosts in general, not only the
+contract server. Whose DNS was at fault is still not known.
+
+### 5.655 The CLI reference carried the paths of whichever machine generated it
+
+Issue 678, found while working issue 608 on a Windows 11 host (#677).
+`docs/handbook/gen-cli.md` is each program's `help`, which `handbook gen`
+gets by `go run ./cmd/<program> help`. Help prints the default paths of
+the platform it runs on, from `config.DefaultRoot` and the paths built on
+it, and `go run` builds for the host. So the chapter said `/etc/halite`
+when generated on Linux or macOS, `/usr/local/etc/halite` on FreeBSD and
+`C:\ProgramData\Halite` on Windows. The run on Windows rewrote every
+`--root` and `--pki-dir` default; the session that saw it reverted the
+page by hand rather than commit it.
+
+The test that compares the chapter with the code could not catch this.
+It skipped `gen-cli.md` everywhere but Linux, because elsewhere the page
+came out different -- which is the same defect seen from the other side.
+A regeneration on Windows or FreeBSD therefore passed on the machine that
+made it and failed on the next Linux run, someone else's.
+
+**Fixed.** `handbook.LinuxPaths` rewrites the host's default paths in the
+captured help to the Linux ones the committed page states: the
+configuration root and the files and `pki` directory under it, the
+`/var` cache, state and log directories, and the socket directory. It
+takes them from the same `config.RootFor`, `VarPathFor` and `RunPathFor`
+the programs use, longest first and in one pass, so `<root>\pki` is not
+half-rewritten through `<root>`. On Linux it changes nothing. The
+docsaudit skip is gone, so the page is compared on every CI platform.
+Help itself still prints the running platform's defaults, which is what
+an operator typing it needs; only the generated page is normalised.
+
+**Shown.** `TestLinuxPathsMakesEveryPlatformsHelpTheLinuxOne` builds a
+help line for linux, darwin, freebsd, openbsd and windows from the config
+functions and requires each to come out as the Linux line. It fails with
+`LinuxPaths` made to return its input (freebsd, openbsd and windows all
+differ), and fails with the pairs sorted shortest first (windows gives
+`/etc/halite\pki`). Both were run on macOS and put back.
+
+**Not verified here.** `handbook gen` itself has not been run on Windows
+or FreeBSD with this change; macOS uses the Linux paths, so a run here
+proves nothing about them. The CI legs on Windows, FreeBSD and macOS,
+which now compare the page, are the first end-to-end check. Any other
+platform difference in help beyond these paths would also show up there
+as a failure, and none is known.
+
+### 5.656 A password prompt from `softwareupdate --download` reached the operator as the tool's banner
+
+`TestLiveMacSoftwareUpdateDownloadsWithoutInstalling` failed on the
+`macos` leg of `fleet.yml` twice on 2026-11-08 (`macos` jobs
+128869630662 and 128874798936, the first attempts of Fleet runs
+42526000064 and 42527676751), blocking two merges, and each passed on a
+re-run. Both runs were on GitHub's macos-15 arm64 image 20261104.0514,
+macOS 15.8.2 (24H232). The test took the first label on offer, which
+had become "macOS 27.2-26B123", a major upgrade, and the error was:
+
+	download "macOS 27.2-26B123": softwareupdate --download macOS 27.2-26B123: Password: Software Update Tool
+
+Two defects, a pair of the usual kind: what the tool said and what the
+module reported it as saying.
+
+**The module threw the reason away.** `download` ran through `macRun`,
+whose error is the first line of stderr followed by stdout. The tool's
+password prompt has no newline, and every invocation prints the banner
+`Software Update Tool` first, so the first line was the prompt run into
+the banner. Whatever `softwareupdate` said after that, which is where
+any reason would be, was dropped, and the line that survived reads as
+if halite had asked for a password. It did not hang: a command here is
+given the null device as standard input (`TestACommandThatPromptsIsAnsweredWithEndOfFile`),
+so the prompt read end of file and the tool exited non-zero.
+
+**Fixed.** A failed `download` or `download_all` now carries all of the
+tool's output, blank lines dropped and the rest joined, bounded at a
+thousand characters. One that printed `Password:` is
+`errMacSoftwareUpdateNeedsOwner`, which says that the tool wanted a
+volume owner's password to download, that halite neither holds nor
+passes one (`--user`/`--stdinpass`), and that such an update has to come
+through an MDM configuration profile or a person. Passing one is not on
+offer, for the reasons in 5.117: it is the install path's authority,
+and a macOS password in pillar is worth more than the download.
+
+**The test chose the update most likely to ask.** It now ranks what is
+on offer: an update that is not macOS itself; then an OS update within
+the major version the Mac runs; then a major upgrade. When the download
+asks for a password anyway, the test checks that the error is the named
+one and that `sw_vers` still reports the starting version, and then
+skips, saying so. Every other failure still fails.
+
+**What was not found: why it asks only sometimes.** On 2026-11-11 the
+same image (macOS 15.8.2) offered "macOS Sequoia 15.8.3-24H241" and
+"macOS 27.2.1-26B131", and nothing that was not an OS update, so "not
+macOS" alone would not have avoided it. The first run downloaded the
+minor update without a prompt. Four more were made to take the major
+upgrade on purpose, by a commit that was never meant to merge (Fleet
+run 43044376505 and three re-runs of its `macos` job), to capture the
+prompt in full. None asked; each exited 0 in about 20 seconds with the
+version unchanged. That is quick for a full major upgrade, and whether
+a payload actually reached `/Library/Updates` was not checked. So the
+major upgrade asked on two of four attempts on 2026-11-08 (both first
+attempts; both re-runs passed) and on none of four on 2026-11-11, on
+the same image, and the label is not what decides it. Whether the 2026-11-08 list also offered a minor update is unknown,
+because the test logged only the label it took. It logs the whole list
+now.
+
+**Captured, and not.** The unit test's fixture is the one real line
+above. How its bytes divided between stderr and stdout is unknown, so
+both divisions are held. The lines after the banner were never seen and
+are not invented. A future failure prints them, because the error now
+keeps them, and that output should replace this fixture.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| the prompt not looked for | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the prompt looked for in stdout only | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the error the first line again | `TestMacSoftwareUpdateDownloadFailureKeepsTheReason` |
+| the ranking inverted on major version | `TestMacSoftwareUpdatePickDownloadRanks` |
+
+The live test's skip was never reached, so that path is held by reading
+it and by the unit tests of the error it tests for, not by a run.
+
+**Not covered: a terminal.** Commands run in their own process group
+(`confineTree` sets `Setpgid`) but keep halite's controlling terminal.
+A prompt that opens `/dev/tty` instead of reading standard input, from
+a process group that is not in the foreground, is stopped by `SIGTTIN`
+rather than given end of file. So `halite call mac_softwareupdate.download`
+run by hand from a terminal may stop there. Nobody has tried it: it
+needs root on a Mac with a terminal, and none of the runs here had one.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
