@@ -1,6 +1,10 @@
 package builtin
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -345,5 +349,67 @@ func TestProRunChecksTheCommonEnvelope(t *testing.T) {
 	c = proTestContext(map[string]exec.Result{key: {Stdout: "", Code: 1}})
 	if _, err := proRun(c, argv); err == nil {
 		t.Error("empty output with a non-zero exit was not refused")
+	}
+}
+
+// proStatusConnectivityFailure is a real `pro status --format json`,
+// byte for byte, captured on a GitHub ubuntu-24.04 runner (image
+// 20261101.360.1, client 38ubuntu0~24.04, unattached) on 2026-11-11,
+// when the runner could not resolve contracts.canonical.com. The client
+// exited 1 after 26 seconds, wrote these 367 bytes (with the trailing
+// newline) to stdout and nothing at all to stderr. DIVERGENCE 5.654.
+const proStatusConnectivityFailure = `{"environment_vars": [], "errors": [{"message": "Failed to connect to https://contracts.canonical.com/v1/resources?architecture=amd64&kernel=7.0.0-1017-azure&series=noble&virt=microsoft\n[Errno -3] Temporary failure in name resolution\n", "message_code": "connectivity-error", "service": null, "type": "system"}], "result": "failure", "services": [], "warnings": []}` + "\n"
+
+// TestProStatusSaysWhatTheClientSaidOnFailure runs the captured failure
+// through the real OSRunner rather than a RecordingRunner, because the
+// defect lived in the real runner's exit-code path: a RecordingRunner
+// never fails on a non-zero code, so a test built on one passed while
+// CI printed "exited 1:" with nothing after the colon.
+func TestProStatusSaysWhatTheClientSaidOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in client is a shell script")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "stdout.json"), []byte(proStatusConnectivityFailure), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\ncat '" + filepath.Join(dir, "stdout.json") + "'\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "pro"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	c := &exec.Context{Runner: &exec.OSRunner{}}
+
+	_, err := proStatusFn(c, value.NewMap(0))
+	if err == nil {
+		t.Fatal("pro.status succeeded on a client that exited 1 with result: failure")
+	}
+	var pe *proClientError
+	if !errors.As(err, &pe) {
+		t.Fatalf("err = %v (%T), want a *proClientError carrying the client's envelope", err, err)
+	}
+	if !pe.HasCode("connectivity-error") || pe.Code != 1 {
+		t.Errorf("err = %#v, want exit 1 and message_code connectivity-error", pe)
+	}
+	// Both lines of the client's message: the URL it could not reach and
+	// the cause, which is the second line and the one that was being lost.
+	for _, want := range []string{"connectivity-error", "contracts.canonical.com", "Temporary failure in name resolution"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %q, want it to contain %q", err, want)
+		}
+	}
+}
+
+// TestProStatusExitZeroButFailureIsRefused pins the other half of the
+// condition: a `result` other than success is a failure whatever the
+// exit code. Not observed from a real client -- every failure captured
+// exited 1 -- so this is the module's rule, not the client's behaviour.
+func TestProStatusExitZeroButFailureIsRefused(t *testing.T) {
+	key := (exec.Command{Argv: []string{"pro", "status", "--format", "json"}}).String()
+	c := proTestContext(map[string]exec.Result{key: {Stdout: proStatusConnectivityFailure}})
+	_, err := proStatusFn(c, value.NewMap(0))
+	var pe *proClientError
+	if !errors.As(err, &pe) || !pe.HasCode("connectivity-error") {
+		t.Fatalf("err = %v, want the client's connectivity-error", err)
 	}
 }

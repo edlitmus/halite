@@ -78,21 +78,21 @@ variable "distros" {
 variable "go_version" {
   description = "Go toolchain installed on each instance. Keep this equal to the toolchain line in go.mod."
   type        = string
-  default     = "1.27.3"
+  default     = "1.27.4"
 }
 
 # The checksum of the tarball that version resolves to, so a machine that
 # was handed something else stops rather than testing it.
 #
 # From https://go.dev/dl/?mode=json&include=all for
-# go1.27.3.linux-amd64.tar.gz. It has to move whenever go_version does,
+# go1.27.4.linux-amd64.tar.gz. It has to move whenever go_version does,
 # and the bootstrap fails loudly when the two disagree -- an unverified
 # toolchain quietly installed is how a lab starts reporting on a
 # compiler nobody chose.
 variable "go_sha256" {
   description = "SHA-256 of go<go_version>.linux-amd64.tar.gz."
   type        = string
-  default     = "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
+  default     = "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"
 }
 
 # The FreeBSD rows download a different tarball, so they check a
@@ -101,11 +101,11 @@ variable "go_sha256" {
 # visibly.
 #
 # From https://go.dev/dl/?mode=json&include=all for
-# go1.27.3.freebsd-amd64.tar.gz.
+# go1.27.4.freebsd-amd64.tar.gz.
 variable "go_sha256_freebsd" {
   description = "SHA-256 of go<go_version>.freebsd-amd64.tar.gz."
   type        = string
-  default     = "c15c88d07d6b2d2db5df7b65d9b9c73d631ac4e787da04e2bef2a5b6952c2cbb"
+  default     = "063e079bf195da4bc2a1f424be26f20a57d64e0b7cc951cab943e6341a4ec0d3"
 }
 
 variable "label_prefix" {
