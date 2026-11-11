@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"net/http"
@@ -189,5 +190,120 @@ func TestTheEnrollSourceTableIsBounded(t *testing.T) {
 	}
 	if l.admit("attacker", now, 0.001, 3) == 0 {
 		t.Error("a flood of new sources evicted the one at its limit")
+	}
+}
+
+// slowAuthority makes every enrollment take d inside Authority.Enroll,
+// which is where the charge taken on entry is held: on AWS on
+// 2026-11-11 an issue took about 345 ms, and that is what turned a
+// token-mode bootstrap into 1,910 refusals out of 2,000.
+func slowAuthority(l *lab, d time.Duration) {
+	l.server.Authority.Now = func() time.Time {
+		time.Sleep(d)
+		return time.Now()
+	}
+}
+
+// tokenStorm sends n token enrollments at once from the lab's one
+// address, a distinct name each, and counts what came back.
+func tokenStorm(t *testing.T, l *lab, n int, tok string) (issued, limited, refused int) {
+	t.Helper()
+	type asker struct {
+		client *transport.Client
+		key    crypto.Signer
+	}
+	askers := make([]asker, n)
+	for i := range askers {
+		askers[i].client, askers[i].key = l.node(t)
+	}
+	results := make(chan error, n)
+	for i, a := range askers {
+		go func() {
+			_, err := a.client.Enroll(context.Background(), a.key, fmt.Sprintf("s%d.example", i), tok)
+			results <- err
+		}()
+	}
+	for range n {
+		err := <-results
+		var r *transport.RefusedError
+		switch _, held := transport.RateLimited(err); {
+		case err == nil:
+			issued++
+		case held:
+			limited++
+		case errors.As(err, &r):
+			refused++
+		default:
+			t.Errorf("unexpected: %v", err)
+		}
+	}
+	return issued, limited, refused
+}
+
+// **A token-mode bootstrap is not metered when it arrives all at once**,
+// which is what the comment on enrollLimit always said and what was
+// only true one at a time. DIVERGENCE 5.279 measured 90 issued and
+// 1,910 refused with 429 out of 2,000 from one address on a 2,000-use
+// token: every request was charged on entry and refunded only once it
+// was issued, so more of them in flight than the burst filled the
+// budget with charges not yet given back. Here sixteen at once against
+// a burst of four, each held 100 ms inside the key store.
+func TestConcurrentTokenEnrollmentsAreNotCharged(t *testing.T) {
+	l := newLab(t)
+	l.server.Authority.Mode = keystore.ModeToken
+	l.server.EnrollSourceBurst = 4
+	l.server.EnrollSourceRate = 0.001
+	slowAuthority(l, 100*time.Millisecond)
+	_, tok, err := l.server.Authority.Store.MintToken(keystore.TokenOptions{TTL: time.Hour, MaxUses: 16}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, limited, refused := tokenStorm(t, l, 16, tok)
+	if issued != 16 || limited != 0 || refused != 0 {
+		t.Errorf("%d issued, %d held, %d refused; want all 16 issued", issued, limited, refused)
+	}
+	// And the budget is untouched: four requests with no token still fit.
+	for i := range 4 {
+		if err := l.ask(t, fmt.Sprintf("after%d.example", i)); !errors.Is(err, transport.ErrPending) {
+			t.Fatalf("request %d after the storm: %v", i, err)
+		}
+	}
+}
+
+// **A live token admits no more uncharged requests than it has uses.**
+// The obvious fix for the test above -- check that a request's token
+// would spend, and if so do not charge it -- opens the hole the limiter
+// exists to close: a token with one use left, sent by sixteen requests
+// at once, passes the check sixteen times, spends once, and the fifteen
+// that lose the race each leave a pending record (a token that does not
+// spend still records the request for an operator), none of them
+// charged. Here a two-use token sixteen times at once against a burst
+// of four: two issue, and no more than the burst's four are left pending.
+func TestAContendedTokenCannotFillPendingUncharged(t *testing.T) {
+	l := newLab(t)
+	l.server.Authority.Mode = keystore.ModeToken
+	l.server.EnrollSourceBurst = 4
+	l.server.EnrollSourceRate = 0.001
+	slowAuthority(l, 100*time.Millisecond)
+	_, tok, err := l.server.Authority.Store.MintToken(keystore.TokenOptions{TTL: time.Hour, MaxUses: 2}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, _, _ := tokenStorm(t, l, 16, tok)
+	if issued != 2 {
+		t.Errorf("%d issued on a two-use token", issued)
+	}
+	recs, err := l.server.Authority.Store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := 0
+	for _, rec := range recs {
+		if rec.State == keystore.Pending {
+			pending++
+		}
+	}
+	if pending > 4 {
+		t.Errorf("%d pending records from one address, and its burst is 4", pending)
 	}
 }

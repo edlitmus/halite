@@ -421,47 +421,84 @@ func (s *Server) operator(next func(http.ResponseWriter, *http.Request, string))
 // sends headers and then trickles a body is cut off rather than held
 // (issue 321, M-06).
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
-	// Before the body is read: a source over its budget costs the hub
-	// a TLS handshake and nothing else. Counted rather than logged, as
-	// the event limit is, because a line per refusal would move the
-	// flood into the hub's log.
 	s.enrollLimitOnce.Do(func() { s.enrollLimit = newEnrollLimit() })
 	source := enrollSource(r)
 	rate := s.enrollSourceRate()
-	if wait := s.enrollLimit.admit(source, s.now(), rate, s.enrollSourceBurst()); wait > 0 {
+	// Counted rather than logged, as the event limit is, because a line
+	// per refusal would move the flood into the hub's log.
+	limited := func() bool {
+		wait := s.enrollLimit.admit(source, s.now(), rate, s.enrollSourceBurst())
+		if wait == 0 {
+			return false
+		}
 		s.countEnrollment("rate_limited")
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)))
 		transport.WriteError(w, http.StatusTooManyRequests, transport.CodeRateLimited,
 			fmt.Errorf("this address has made more enrollment requests than enroll_source_rate allows "+
 				"(%d at once, then one every %s); try again in %s", s.enrollSourceBurst(),
 				time.Duration(float64(time.Second)/rate).Round(time.Second), wait))
-		return
+		return true
 	}
-	// The two outcomes an honest fleet repeats are given back; see
-	// enrollLimit.
-	refund := func() { s.enrollLimit.refund(source, s.now(), rate) }
 
 	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(s.enrollReadTimeout())); err != nil {
 		// Said rather than dropped: this is how the bound was first found
 		// doing nothing, because the metrics wrapper hid the connection.
 		s.warn("enrollment has no read deadline", "error", err.Error())
 	}
+	// The body is read before the budget is asked, because whether this
+	// request is charged at all depends on the token inside it; see
+	// enrollLimit. A source over its budget used to cost the hub a TLS
+	// handshake and nothing else, and now costs a body of at most
+	// MaxEnrollBody, read within enrollReadTimeout -- the bounds 5.338
+	// put on any one request -- plus, for a request carrying a token, a
+	// hash and one file opened. It is the price of a token-mode bootstrap
+	// not being refused for arriving all at once (DIVERGENCE 5.658).
 	var req transport.EnrollRequest
 	if err := transport.ReadJSON(w, r, transport.MaxEnrollBody, &req); err != nil {
-		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
+		// Charged, as a malformed request always was, and a source over
+		// its budget is told that rather than what was wrong with it.
+		if !limited() {
+			transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
+		}
 		return
 	}
-	res, err := s.Authority.Enroll(keystore.Request{
+	kreq := keystore.Request{
 		CSR:        []byte(req.CSR),
 		Token:      req.Token,
 		RemoteAddr: r.RemoteAddr,
-	})
+	}
+
+	// A request whose token would spend, with a use of it free to hold,
+	// is let through uncharged; every other request is charged on entry,
+	// before the key store sees it, so that a burst from one address
+	// cannot all pass the check before any of it is counted.
+	exempt := false
+	if tokenID, left, ok := s.Authority.TokenAdmits(kreq); ok && s.enrollLimit.hold(tokenID, left) {
+		exempt = true
+		defer s.enrollLimit.unhold(tokenID)
+	}
+	if !exempt && limited() {
+		return
+	}
+
+	res, err := s.Authority.Enroll(kreq)
+
+	// The two outcomes an honest fleet repeats are not metered: a
+	// certificate issued, and a pending answer for a record that was
+	// already there. A charged request is given its charge back for
+	// those; an exempt one is charged for anything else -- a token that
+	// lost the race for its last use, a name held by another key -- once
+	// it is known. See enrollLimit.
+	free := err == nil || (errors.Is(err, keystore.ErrPending) && res != nil && !res.Recorded)
+	switch {
+	case free && !exempt:
+		s.enrollLimit.refund(source, s.now(), rate)
+	case !free && exempt:
+		s.enrollLimit.charge(source, s.now(), rate)
+	}
 
 	switch {
 	case errors.Is(err, keystore.ErrPending):
-		if !res.Recorded {
-			refund()
-		}
 		s.countEnrollment("pending")
 		s.info("enrollment request is pending",
 			"node_id", res.NodeID, "fingerprint", res.Fingerprint, "from", r.RemoteAddr)
@@ -503,7 +540,6 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal,
 			errors.New("the hub could not complete this enrollment request; its log says why"))
 	default:
-		refund()
 		s.countEnrollment("issued")
 		if res.Superseded != "" {
 			s.warn("a token's enrollment replaced a pending request by another key",

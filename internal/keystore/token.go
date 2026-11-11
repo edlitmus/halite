@@ -307,20 +307,8 @@ func (s *Store) spendToken(secret, nodeID, remoteAddr string, now time.Time) (*T
 	if found == nil {
 		return nil, ErrNoToken
 	}
-	if why := found.Why(now); why != "" {
-		return nil, fmt.Errorf("bootstrap token %s is %s", found.ID, why)
-	}
-	if found.NodeGlob != "" && !target.MatchGlob(found.NodeGlob, nodeID) {
-		return nil, fmt.Errorf("bootstrap token %s admits %s, and this node is %s", found.ID, found.NodeGlob, nodeID)
-	}
-	if found.CIDR != "" {
-		ok, err := addrInCIDR(remoteAddr, found.CIDR)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("bootstrap token %s admits %s, and this request came from %s", found.ID, found.CIDR, remoteAddr)
-		}
+	if err := found.refuses(nodeID, remoteAddr, now); err != nil {
+		return nil, err
 	}
 
 	s.inWindow("spend", found.ID)
@@ -330,6 +318,54 @@ func (s *Store) spendToken(secret, nodeID, remoteAddr string, now time.Time) (*T
 		return nil, err
 	}
 	return found, nil
+}
+
+// refuses says why t would not admit nodeID from remoteAddr at now, or
+// nil if it would. It is the one statement of a token's scope, asked by
+// spendToken and by Authority.TokenAdmits, because those two disagreeing is
+// how the hub's enrollment limit would exempt a request whose token
+// then does not spend.
+func (t *Token) refuses(nodeID, remoteAddr string, now time.Time) error {
+	if why := t.Why(now); why != "" {
+		return fmt.Errorf("bootstrap token %s is %s", t.ID, why)
+	}
+	if t.NodeGlob != "" && !target.MatchGlob(t.NodeGlob, nodeID) {
+		return fmt.Errorf("bootstrap token %s admits %s, and this node is %s", t.ID, t.NodeGlob, nodeID)
+	}
+	if t.CIDR != "" {
+		ok, err := addrInCIDR(remoteAddr, t.CIDR)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("bootstrap token %s admits %s, and this request came from %s", t.ID, t.CIDR, remoteAddr)
+		}
+	}
+	return nil
+}
+
+// presented is the token a secret names, found the cheap way, or nil.
+// It is for the hub's enrollment limit, which asks before charging a
+// request, so it is asked of callers nobody has authenticated and must
+// be cheap for a made-up secret: it reads the one file a real token's
+// digest names rather than listing the store, and a secret that names
+// no file costs a hash and a failed open.
+//
+// The lookup differs from spendToken's, which lists every token and
+// compares each. The two can disagree in one direction only: a token
+// whose file is not at its digest's name (MintToken never writes one)
+// is found by the spend and not here, and that request is charged when
+// it need not have been. Never the other way, because the file read
+// here is one the listing reads.
+func (s *Store) presented(secret string) *Token {
+	digest := digestOf(secret)
+	s.mu.Lock()
+	tok, err := s.getToken(digest[:tokenIDLen])
+	s.mu.Unlock()
+	if err != nil || subtle.ConstantTimeCompare([]byte(tok.Digest), []byte(digest)) != 1 {
+		return nil
+	}
+	return tok
 }
 
 // addrInCIDR reports whether a remote address -- which arrives with a

@@ -37,23 +37,34 @@ func TestAnEnrollStormInManualMode(t *testing.T) {
 	}
 }
 
-// Token mode: a token for 10 names admits 10 and refuses the 11th and
-// 12th, which is the token spent, not the limiter: an issue is refunded.
+// Token mode: a token for 64 names admits 64 and refuses the 8 after
+// them, which is the token spent, not the limiter. Forty at a time, above
+// enroll_source_burst (32): this test used to send four at a time, which
+// is how it passed while the AWS run of 2026-11-11 had 2,000 sent 64 at a
+// time come back 90 issued and 1,910 rate_limited (DIVERGENCE 5.279,
+// 5.658). One at a time, or four, a charge is refunded before the next
+// arrives; forty in flight fill the budget with charges not yet given
+// back, unless a request whose token would spend is not charged at all.
+// On a laptop an issue is quick, and with the old limiter this storm came
+// back 64 issued with 4 to 8 of the last eight rate_limited rather than
+// refused, three runs of three; internal/hub's
+// TestConcurrentTokenEnrollmentsAreNotCharged slows the key store and is
+// the deterministic one.
 func TestAnEnrollStormInTokenMode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs a hub and the harness")
 	}
-	sf, root, addr := stormHub(t, "token", "-token-uses", "10")
+	sf, root, addr := stormHub(t, "token", "-token-uses", "64")
 	jsonl := filepath.Join(t.TempDir(), "storm.jsonl")
 	out, err := exec.Command(sf, "enroll-storm", "-root", root, "-hub", addr, "-server-name", "127.0.0.1",
-		"-n", "12", "-concurrency", "4", "-token-file", filepath.Join(root, "bootstrap.token"), "-json", jsonl).CombinedOutput()
+		"-n", "72", "-concurrency", "40", "-token-file", filepath.Join(root, "bootstrap.token"), "-json", jsonl).CombinedOutput()
 	if err != nil {
 		t.Fatalf("enroll-storm: %v\n%s", err, out)
 	}
 	t.Logf("enroll-storm printed:\n%s", out)
 	r := oneStorm(t, jsonl)
-	if r.Outcomes["issued"] != 10 || r.Outcomes["refused"] != 2 || r.Mode != "token" {
-		t.Fatalf("outcomes %v in %s mode; want 10 issued and 2 refused, in token mode\n%s", r.Outcomes, r.Mode, out)
+	if r.Outcomes["issued"] != 64 || r.Outcomes["refused"] != 8 || r.Mode != "token" {
+		t.Fatalf("outcomes %v in %s mode; want 64 issued and 8 refused, in token mode\n%s", r.Outcomes, r.Mode, out)
 	}
 	if !strings.Contains(string(out), "certificates issued a second") {
 		t.Fatalf("printed:\n%s", out)

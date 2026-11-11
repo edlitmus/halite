@@ -270,6 +270,42 @@ func (a *Authority) Enroll(req Request) (*Result, error) {
 	return res, err
 }
 
+// TokenAdmits reports whether req, in token mode, carries a token that
+// would spend for the node its CSR names, from req.RemoteAddr, at this
+// moment, and if so the token's identifier and how many uses it has
+// left. It spends nothing and writes nothing.
+//
+// It is the hub's enrollment limit asking, before it charges a request,
+// whether this one is the operator's decision made in advance
+// (DIVERGENCE 5.658). It is only an answer for this moment: another
+// request may spend the last use before this one reaches Enroll, which
+// is why the hub holds a use for each request it lets through on the
+// strength of this, and does not take "would spend" as "will".
+//
+// The token is looked up before the CSR is parsed, so a request with a
+// made-up token costs a hash and a failed open, not a signature check.
+func (a *Authority) TokenAdmits(req Request) (tokenID string, left int, ok bool) {
+	if a.Mode != ModeToken || req.Token == "" || checkCSRSize(req.CSR) != nil {
+		return "", 0, false
+	}
+	// The token before the CSR, so that only a secret naming a live
+	// token costs a parse and a signature check.
+	now := a.now()
+	tok := a.Store.presented(req.Token)
+	if tok == nil || !tok.Live(now) {
+		return "", 0, false
+	}
+	csr, err := pki.DecodeCSR(req.CSR)
+	if err != nil {
+		return "", 0, false
+	}
+	nodeID, err := pki.NodeIDFromCSR(csr)
+	if err != nil || tok.refuses(nodeID, req.RemoteAddr, now) != nil {
+		return "", 0, false
+	}
+	return tok.ID, tok.MaxUses - tok.Uses, true
+}
+
 // enroll is Enroll's decision, run under the store's lock.
 func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequest, req Request, now time.Time) (*Result, error) {
 	rec, err := a.Store.get(nodeID)

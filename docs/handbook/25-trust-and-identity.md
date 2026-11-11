@@ -152,8 +152,10 @@ each address (each /64, for IPv6) to a budget: 32 requests at once, then
 one every ten seconds (`enroll_source_burst`, `enroll_source_rate`). Only
 requests that create a new pending request, are refused, or are malformed
 count. A certificate being issued does not, and neither does a node asking
-again about its own pending request. So a token-mode rollout is never held,
-and neither are nodes waiting under `--wait`. An address over its budget
+again about its own pending request, and a request whose token would spend
+is not charged even while it is being answered, for as many requests at once
+as the token has uses left. So a token-mode rollout is never held, however
+many nodes ask together, and neither are nodes waiting under `--wait`. An address over its budget
 gets this, and the command exits with status `2`, as for a pending request:
 
 ```
