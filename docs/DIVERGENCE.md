@@ -43638,7 +43638,7 @@ rather than given end of file. So `halite call mac_softwareupdate.download`
 run by hand from a terminal may stop there. Nobody has tried it: it
 needs root on a Mac with a terminal, and none of the runs here had one.
 
-### 5.653 Disk writes in request handlers held a thread each, and 20,000 nodes ran the hub out
+### 5.657 Disk writes in request handlers held a thread each, and 20,000 nodes ran the hub out
 
 The cause of both crashes in 5.279's steps 2 and 3 (2026-11-11): at
 20,000 simulated nodes a 16-core hub at `main` `23e12c1a` died with

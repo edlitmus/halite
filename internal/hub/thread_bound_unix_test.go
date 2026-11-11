@@ -29,7 +29,7 @@ const anchorThreadsEnv = "HALITE_HUB_ANCHOR_THREADS_CHILD"
 // blocks in read(2) on a pipe nobody writes to yet, which holds a thread
 // as an fsync does. 400 reports under a 150-thread limit is 400 threads
 // unbounded and `fatal error: thread exhaustion`; bounded, it is
-// atomicfile.MaxConcurrentWrites of them. DIVERGENCE 5.653.
+// atomicfile.MaxConcurrentWrites of them. DIVERGENCE 5.657.
 func TestAnchorReportsHoldingThreadsAreBounded(t *testing.T) {
 	if os.Getenv(anchorThreadsEnv) != "" {
 		anchorReportsHoldingThreads(t)

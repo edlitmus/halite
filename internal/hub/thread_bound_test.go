@@ -50,7 +50,7 @@ const stormNodes = 300
 // after a `test.ping` reached them all, and again 18 s into a clean restart
 // with every node reconnecting at once. The second crash's stack was
 // NodeCache.Put's atomic write, from subscribe. DIVERGENCE 5.279, and the
-// fix is 5.653.
+// fix is 5.657.
 //
 // This is that, at a size a unit test can drive: the child caps itself at
 // stormThreadLimit threads and then connects stormNodes nodes, each of which

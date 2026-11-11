@@ -21,7 +21,7 @@ const threadsChildEnv = "HALITE_ATOMICFILE_THREADS_CHILD"
 // Writes that are stuck in the kernel cannot take a process past its
 // thread limit.
 //
-// What killed the hub on 2026-11-11 (DIVERGENCE 5.279, 5.653) was a
+// What killed the hub on 2026-11-11 (DIVERGENCE 5.279, 5.657) was a
 // goroutine per write sitting in fsync, each holding an operating-system
 // thread, with nothing bounding how many. Reproducing that with real
 // fsyncs depends on the disk being slow, which a laptop's is and a tmpfs

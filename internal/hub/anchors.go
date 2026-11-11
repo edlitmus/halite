@@ -289,7 +289,7 @@ func (a *AnchorStore) Record(nodeID string, seq uint64, hash string, now time.Ti
 	// each holding an operating-system thread, and a node reports when its
 	// stream opens: a restart under 20,000 nodes is that many at once, and
 	// Go stops a process at 10,000 threads. atomicfile.Bounded is the bound
-	// every atomic write in the process shares. DIVERGENCE 5.653.
+	// every atomic write in the process shares. DIVERGENCE 5.657.
 	if err := atomicfile.Bounded(func() error { return appendAnchor(path, line) }); err != nil {
 		return nil, err
 	}

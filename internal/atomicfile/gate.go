@@ -16,7 +16,7 @@ package atomicfile
 // return filed and one per stream opened, from request handlers, with
 // nothing counting them. On 2026-11-11 that killed a hub twice at 20,000
 // simulated nodes: once 1.2 s after a `test.ping` reached them all, once 18
-// s into a clean restart. DIVERGENCE 5.279, and 5.653 for this.
+// s into a clean restart. DIVERGENCE 5.279, and 5.657 for this.
 //
 // Why 64. The writes are bound by the device, not the CPU, so GOMAXPROCS
 // is the wrong thing to scale by: a 2-core hub on a fast disk can usefully
