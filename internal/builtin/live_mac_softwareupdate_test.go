@@ -184,11 +184,6 @@ func macSoftwareUpdatePickDownload(available []softwareUpdateEntry, running stri
 	isOS := func(u softwareUpdateEntry) bool {
 		return strings.HasPrefix(u.Label, "macOS") || strings.HasPrefix(u.Title, "macOS")
 	}
-	for _, u := range available { // WIP: break on purpose -- force the major upgrade, to capture the prompt
-		if major(u.Version) != major(running) {
-			return u
-		}
-	}
 	for _, u := range available {
 		if !isOS(u) {
 			return u

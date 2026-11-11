@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -170,5 +171,74 @@ func TestMacSoftwareUpdateIsRegisteredAndRestricted(t *testing.T) {
 		if len(sig.Platforms) != 1 || sig.Platforms[0] != "darwin" {
 			t.Errorf("%s platforms = %v, want [darwin]", name, sig.Platforms)
 		}
+	}
+}
+
+// A `--download` that stopped to ask for a password is named for what
+// it was, and keeps everything the tool said.
+//
+// # What is captured and what is not
+//
+// The one piece of real output this rests on is the error line two
+// Fleet runs printed on 2026-11-08 (`macos` jobs 128869630662 and
+// 128874798936, GitHub's macos-15 arm64 image, macOS 15.8.2, label
+// "macOS 27.2-26B123"): `Password: Software Update Tool`, which is
+// firstLine of stderr followed by stdout. That is all that survived --
+// the rest was what firstLine threw away -- and four downloads of the
+// major upgrade on 2026-11-11 never asked again, so there was nothing
+// more to capture (DIVERGENCE 5.653). How those bytes divide between
+// the two streams is not known, so both divisions are held; the lines
+// after the banner are not known at all, and none is invented here.
+func TestMacSoftwareUpdateDownloadNamesAPasswordPrompt(t *testing.T) {
+	argv := []string{"softwareupdate", "--download", "macOS 27.2-26B123"}
+	for _, res := range []exec.Result{
+		{Code: 1, Stderr: "Password:", Stdout: " Software Update Tool\n"},
+		{Code: 1, Stdout: "Password: Software Update Tool\n"},
+	} {
+		// The captured line, reproduced the way it was produced.
+		if got := firstLine(res.Stderr + res.Stdout); got != "Password: Software Update Tool" {
+			t.Fatalf("fixture does not reproduce the captured line: %q", got)
+		}
+		err := macSoftwareUpdateDownloadFailed(argv, res)
+		if !errors.Is(err, errMacSoftwareUpdateNeedsOwner) {
+			t.Errorf("a password prompt (stderr %q, stdout %q) was not named: %v", res.Stderr, res.Stdout, err)
+		}
+		if !strings.Contains(err.Error(), "Software Update Tool") || !strings.Contains(err.Error(), "exit 1") {
+			t.Errorf("the refusal dropped what the tool said: %v", err)
+		}
+	}
+}
+
+// Any other failed download keeps every line, not the banner alone.
+// The output is a shape (banner first, reason after), not a capture:
+// it holds only that lines after the first survive.
+func TestMacSoftwareUpdateDownloadFailureKeepsTheReason(t *testing.T) {
+	err := macSoftwareUpdateDownloadFailed(
+		[]string{"softwareupdate", "--download", "X"},
+		exec.Result{Code: 1, Stdout: "Software Update Tool\n\nsecond line\n"})
+	if errors.Is(err, errMacSoftwareUpdateNeedsOwner) {
+		t.Errorf("a failure with no prompt was called a password refusal: %v", err)
+	}
+	if !strings.Contains(err.Error(), "second line") {
+		t.Errorf("the line after the banner was dropped: %v", err)
+	}
+}
+
+// The live test's ranking, on the list the macos-15 runner offered on
+// 2026-11-11 (logged by that test, `macos` job 130599961261) and with a
+// non-OS entry added in front of it.
+func TestMacSoftwareUpdatePickDownloadRanks(t *testing.T) {
+	minor := softwareUpdateEntry{Label: "macOS Sequoia 15.8.3-24H241", Title: "macOS Sequoia 15.8.3", Version: "15.8.3"}
+	upgrade := softwareUpdateEntry{Label: "macOS 27.2.1-26B131", Title: "macOS 27.2.1", Version: "27.2.1"}
+	safari := softwareUpdateEntry{Label: "Safari27.0SequoiaAuto-27.0", Title: "Safari", Version: "27.0"}
+
+	if got := macSoftwareUpdatePickDownload([]softwareUpdateEntry{upgrade, minor}, "15.8.2"); got.Label != minor.Label {
+		t.Errorf("picked %q over the update within this major version", got.Label)
+	}
+	if got := macSoftwareUpdatePickDownload([]softwareUpdateEntry{upgrade, minor, safari}, "15.8.2"); got.Label != safari.Label {
+		t.Errorf("picked %q over the non-OS update", got.Label)
+	}
+	if got := macSoftwareUpdatePickDownload([]softwareUpdateEntry{upgrade}, "15.8.2"); got.Label != upgrade.Label {
+		t.Errorf("with only a major upgrade on offer, picked %q", got.Label)
 	}
 }

@@ -1017,7 +1017,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"the same version afterwards -- which is the claim the module is built around, a " +
 		"download not being an install. The reads were demonstrated with it: the real " +
 		"schedule state and the /Library/Updates index. What is *not* demonstrated is an " +
-		"install, deliberately and permanently; nothing here drives one. `ignore`, " +
+		"install, deliberately and permanently; nothing here drives one. On 2026-11-11, on " +
+		"macOS 15.8.2 (24H232) on the same leg, `download` fetched the minor update " +
+		"`macOS Sequoia 15.8.3-24H241` once and the major upgrade `macOS 27.2.1-26B131` " +
+		"four times with the version unchanged, each exiting 0 in about 20 seconds; whether " +
+		"the upgrade's whole payload reached /Library/Updates was not checked. On 2026-11-08 " +
+		"the major upgrade asked for a password on two of four attempts, which the module " +
+		"now reports as a named refusal (DIVERGENCE 5.653); that refusal has been held only " +
+		"by a unit test on the one line of output captured, never watched on a run. `ignore`, " +
 		"`list_ignored` and `reset_ignored` describe a `softwareupdate` option macOS removed " +
 		"and refuse by name"},
 
