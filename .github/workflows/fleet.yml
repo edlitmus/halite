@@ -329,7 +329,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
 
       # Before any install, because none of the six below can succeed
       # against a stale index.
@@ -752,8 +752,8 @@ jobs:
           # Pinned and checked, as ci.yml's FreeBSD leg says why
           # (DIVERGENCE 5.403); internal/buildpolicy holds these two
           # values to go.mod and to contrib/tofu's go_sha256_freebsd.
-          want_version=go1.27.3
-          want_sha256=c15c88d07d6b2d2db5df7b65d9b9c73d631ac4e787da04e2bef2a5b6952c2cbb
+          want_version=go1.27.4
+          want_sha256=063e079bf195da4bc2a1f424be26f20a57d64e0b7cc951cab943e6341a4ec0d3
           if [ "$version" != "$want_version" ]; then
             echo "go.mod pins $version and this step has the digest of $want_version; move both" >&2
             exit 1
@@ -886,7 +886,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See ci.yml's first setup-go step.
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       # What this machine is, before anything writes to it. The row's
@@ -1022,7 +1022,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # The pin, not go.mod's floor. See ci.yml's first setup-go step.
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       # What this machine is, before anything writes to it, for the reason

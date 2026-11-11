@@ -210,23 +210,110 @@ func proStatusFn(c *exec.Context, args *value.Map) (any, error) {
 // document and its raw bytes, so a caller that only wants one field (the
 // enable/disable diff below) does not pay for the whole value-model
 // conversion.
+//
+// # A failure is on stdout, not stderr
+//
+// When `pro status --format json` fails it exits 1, writes nothing at
+// all to stderr, and puts its reason on stdout as the same JSON envelope
+// a success uses, with `result: "failure"` and an `errors` list. This was
+// captured on a GitHub ubuntu-24.04 runner (client 38ubuntu0~24.04) on
+// 2026-11-11, when the runner could not resolve contracts.canonical.com
+// and an unattached client asks that server for its service list on
+// every call: 367 bytes on stdout, 0 on stderr, exit 1 (DIVERGENCE 5.654).
+//
+// This used to let the runner fail the command on its exit code, and the
+// runner's error carries the first line of stderr -- which here is
+// empty. The operator got "exited 1:" and nothing after the colon, while
+// the client had said exactly what was wrong one stream over. So the
+// exit code is not allowed to end the read: stdout is read first, and
+// the client's own envelope is what the error says.
 func proStatus(c *exec.Context) (map[string]any, string, error) {
 	if err := proToolPresent(c); err != nil {
 		return nil, "", err
 	}
-	res, err := c.Run(exec.Command{Argv: []string{"pro", "status", "--format", "json"}})
+	argv := []string{"pro", "status", "--format", "json"}
+	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
 		return nil, "", fmt.Errorf("`pro status` could not be run on this node: %w", err)
 	}
 	out := strings.TrimSpace(res.Stdout)
 	if out == "" {
+		// Not seen from a real client. If it ever happens, stderr is
+		// all there is, so all of it is said rather than its first line.
+		if res.Code != 0 {
+			return nil, "", fmt.Errorf("`pro status --format json` exited %d with no output: %s",
+				res.Code, strings.TrimSpace(res.Stderr))
+		}
 		return nil, "", fmt.Errorf("`pro status --format json` produced no output; expected JSON")
 	}
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(out), &doc); err != nil {
-		return nil, "", fmt.Errorf("`pro status --format json`'s output did not parse: %w", err)
+		return nil, "", fmt.Errorf("`pro status --format json` exited %d and its output did not parse: %w",
+			res.Code, err)
+	}
+	if result, _ := doc["result"].(string); res.Code != 0 || result != "success" {
+		return nil, "", proFailure(argv, res.Code, doc)
 	}
 	return doc, out, nil
+}
+
+// proClientError is the `pro` client's own refusal, read from the
+// `errors` list of its JSON envelope. It is a type rather than a string
+// so a caller can tell one refusal from another by the client's own
+// `message_code` -- the live test does, to tell a runner that cannot
+// reach Canonical (`connectivity-error`) from a module that misread a
+// working client -- without matching on English.
+type proClientError struct {
+	Command string
+	Code    int
+	Errors  []proClientMessage
+}
+
+// proClientMessage is one entry of the envelope's `errors` list, with
+// the field names the client uses.
+type proClientMessage struct {
+	Message     string
+	MessageCode string
+}
+
+func (e *proClientError) Error() string {
+	var parts []string
+	for _, m := range e.Errors {
+		// The client's message spans lines ("Failed to connect to …\n
+		// [Errno -3] …"), and the second line is the cause; folded
+		// rather than cut, which is the mistake this type exists to undo.
+		msg := strings.Join(strings.Fields(strings.ReplaceAll(m.Message, "\n", " ")), " ")
+		if m.MessageCode != "" {
+			msg = m.MessageCode + ": " + msg
+		}
+		parts = append(parts, msg)
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "the client reported failure and gave no reason")
+	}
+	return fmt.Sprintf("`%s` exited %d: %s", e.Command, e.Code, strings.Join(parts, "; "))
+}
+
+// HasCode reports whether the client gave this `message_code`.
+func (e *proClientError) HasCode(code string) bool {
+	for _, m := range e.Errors {
+		if m.MessageCode == code {
+			return true
+		}
+	}
+	return false
+}
+
+func proFailure(argv []string, code int, doc map[string]any) *proClientError {
+	e := &proClientError{Command: exec.Command{Argv: argv}.String(), Code: code}
+	list, _ := doc["errors"].([]any)
+	for _, item := range list {
+		m, _ := item.(map[string]any)
+		msg, _ := m["message"].(string)
+		mc, _ := m["message_code"].(string)
+		e.Errors = append(e.Errors, proClientMessage{Message: msg, MessageCode: mc})
+	}
+	return e
 }
 
 // proIsAttachedFn asks the client's own API rather than re-deriving the

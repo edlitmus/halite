@@ -87,6 +87,7 @@ It is deliberately not CommonMark. It converts the subset the handbook is writte
 - `Known` (type): Known is a set of identifiers of one kind that the index recognises when it sees one in a code span: every command, every setting, every module function, every event tag.
 - `KnownIdentifiers` (func): KnownIdentifiers collects, from the build itself, the identifiers the index recognises when a chapter puts one in a code span.
 - `Link` (type): Link is one link target, as written.
+- `LinuxPaths` (func): LinuxPaths rewrites the default paths a program's help printed on goos into the Linux ones, which are what the committed chapter states.
 - `Options` (type): Options controls rendering.
 - `PackageChapter` (func): PackageChapter renders one group.
 - `Part` (type): Part is a run of chapters under one title.

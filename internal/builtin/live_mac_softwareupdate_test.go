@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"strings"
@@ -18,9 +19,13 @@ import (
 // /Library/Updates index plist read and change nothing. `--list` is
 // left out on purpose: it contacts Apple's update service, takes tens of
 // seconds, and fails with no network — none of which belongs in the
-// default suite. The install and download paths need root, reboot the
-// machine, and no CI leg is a Mac, so they are not exercised;
-// `evidence.go` records the module `assumed`.
+// default suite. The download path needs root and the network, so it
+// is the gated test below, run as root on the `macos` leg of
+// `fleet.yml`. The install path is a registered refusal and nothing
+// drives it. (This paragraph said once that no CI leg was a Mac and
+// that `evidence.go` recorded the module `assumed`; both stopped being
+// true when the `macos` leg demonstrated the download, and the table
+// in `evidence.go` is the authority for the level, not this comment.)
 //
 // # What it establishes
 //
@@ -82,6 +87,26 @@ func TestLiveMacSoftwareUpdateReadsThisMac(t *testing.T) {
 // mistaken for a green run that proved something -- and `list_available`
 // is the module's own reader, so a skip here is still a real answer
 // from the code under test.
+//
+// # Why it prefers an update that is not macOS itself
+//
+// It took the first label on offer, and in November 2026 that became
+// "macOS 27.2-26B123", the major upgrade, on GitHub's macos-15 runner.
+// Downloading that sometimes stops to ask for a volume owner's
+// password, which nothing here has, and the same label on the same
+// image went through on a re-run: two PR merges were blocked one
+// evening on a coin toss (DIVERGENCE 5.656). So the test now ranks
+// what is on offer -- a non-OS update first (Safari's was the label the
+// module was first demonstrated on), then an OS update within this
+// Mac's major version, and a major upgrade only when that is all there
+// is; macSoftwareUpdatePickDownload says why in that order.
+//
+// When the download does ask, that is the module's
+// errMacSoftwareUpdateNeedsOwner, and the test skips naming it, after
+// checking two things a skip must not hide: that the refusal is the
+// clear error rather than whatever the tool printed first, and that the
+// machine is still on the version it started on. Any other failure
+// still fails.
 func TestLiveMacSoftwareUpdateDownloadsWithoutInstalling(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skipf("mac_softwareupdate is macOS's, and this is %s", runtime.GOOS)
@@ -109,12 +134,25 @@ func TestLiveMacSoftwareUpdateDownloadsWithoutInstalling(t *testing.T) {
 			"the download path stays undemonstrated on this machine")
 	}
 
+	for _, u := range available {
+		t.Logf("on offer: label %q, title %q, version %q, recommended %v, action %q",
+			u.Label, u.Title, u.Version, u.Recommended, u.Action)
+	}
+
 	before := macProductVersion(t, c)
 
-	target := available[0]
+	target := macSoftwareUpdatePickDownload(available, before)
 	t.Logf("downloading %q from Apple", target.Label)
 	r := New()
 	out, err := r.Exec.Call(c, "mac_softwareupdate.download", value.MapOf("name", target.Label))
+	if errors.Is(err, errMacSoftwareUpdateNeedsOwner) {
+		if after := macProductVersion(t, c); after != before {
+			t.Fatalf("the machine moved from %s to %s on a refused download", before, after)
+		}
+		t.Skipf("softwareupdate asked for an owner's password to download %q, the best update on "+
+			"offer here by this test's ranking, and the module refused it clearly (%v); the payload "+
+			"was not fetched, so the download path is undemonstrated on this run", target.Label, err)
+	}
 	if err != nil {
 		t.Fatalf("download %q: %v", target.Label, err)
 	}
@@ -126,6 +164,37 @@ func TestLiveMacSoftwareUpdateDownloadsWithoutInstalling(t *testing.T) {
 	if after := macProductVersion(t, c); after != before {
 		t.Errorf("the machine moved from %s to %s; `--download` installed something", before, after)
 	}
+}
+
+// macSoftwareUpdatePickDownload is the update the live test fetches, in
+// order of preference: one that is not macOS itself; then an OS update
+// within the major version this Mac runs; and only then a major
+// upgrade, the kind that has been seen to ask for a password.
+//
+// The ranking is what was on offer, not a theory of it. On the macos-15
+// runner the failing pick was "macOS 27.2-26B123", a major upgrade from
+// 15.8.2; on 2026-11-11 the same image offered "macOS Sequoia
+// 15.8.3-24H241" and "macOS 27.2.1-26B131", and nothing that was not an
+// OS update, so "not macOS" alone would have chosen nothing better. The
+// minor update downloaded with no prompt that day. An OS update is told
+// by its label or title starting "macOS"; its major version is the part
+// of `Version` before the first dot, compared with `sw_vers`'s.
+func macSoftwareUpdatePickDownload(available []softwareUpdateEntry, running string) softwareUpdateEntry {
+	major := func(v string) string { m, _, _ := strings.Cut(v, "."); return m }
+	isOS := func(u softwareUpdateEntry) bool {
+		return strings.HasPrefix(u.Label, "macOS") || strings.HasPrefix(u.Title, "macOS")
+	}
+	for _, u := range available {
+		if !isOS(u) {
+			return u
+		}
+	}
+	for _, u := range available {
+		if major(u.Version) == major(running) {
+			return u
+		}
+	}
+	return available[0]
 }
 
 // macProductVersion is what `sw_vers` says this Mac is running, so the

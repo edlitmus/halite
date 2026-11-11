@@ -1017,7 +1017,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"the same version afterwards -- which is the claim the module is built around, a " +
 		"download not being an install. The reads were demonstrated with it: the real " +
 		"schedule state and the /Library/Updates index. What is *not* demonstrated is an " +
-		"install, deliberately and permanently; nothing here drives one. `ignore`, " +
+		"install, deliberately and permanently; nothing here drives one. On 2026-11-11, on " +
+		"macOS 15.8.2 (24H232) on the same leg, `download` fetched the minor update " +
+		"`macOS Sequoia 15.8.3-24H241` once and the major upgrade `macOS 27.2.1-26B131` " +
+		"four times with the version unchanged, each exiting 0 in about 20 seconds; whether " +
+		"the upgrade's whole payload reached /Library/Updates was not checked. On 2026-11-08 " +
+		"the major upgrade asked for a password on two of four attempts, which the module " +
+		"now reports as a named refusal (DIVERGENCE 5.656); that refusal has been held only " +
+		"by a unit test on the one line of output captured, never watched on a run. `ignore`, " +
 		"`list_ignored` and `reset_ignored` describe a `softwareupdate` option macOS removed " +
 		"and refuse by name"},
 
@@ -1070,7 +1077,13 @@ var moduleEvidence = map[string]exec.Evidence{
 	"pro": {Level: exec.Hardware, Note: "`version`, `status` and `is_attached` were run for real " +
 		"against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- " +
 		"`TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way " +
-		"`modprobe`/`udev`'s reads do. `enable` and `disable` were then driven by hand on the same " +
+		"`modprobe`/`udev`'s reads do -- but since 2026-11-11 it skips on GitHub's ubuntu-24.04 " +
+		"runners, which cannot resolve contracts.canonical.com, and an unattached client cannot " +
+		"answer `pro status` without it, so CI no longer re-runs the shape check. The failure " +
+		"path is captured instead: that runner's real `pro status --format json` (client " +
+		"38ubuntu0~24.04, exit 1, the reason on stdout and nothing on stderr) is a fixture, and " +
+		"`status` now quotes the client's own reason where it used to end at a colon " +
+		"(DIVERGENCE 5.654). The 38 client has not been run attached. `enable` and `disable` were then driven by hand on the same " +
 		"host, toggling `usg` (Ubuntu Security Guide, entitled on every Pro tier and an audit tool " +
 		"rather than a security control) off and back on and off again, confirmed against a real " +
 		"`pro status --format json` after each step -- `TestLiveProEnableAndDisable`, gated on root " +

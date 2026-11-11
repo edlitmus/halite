@@ -49,8 +49,10 @@ type method string
 const (
 	// byBenchmark is the method this package implements.
 	byBenchmark method = "benchmark"
-	// byHarness needs the simulated node harness of SPEC 30, which does
-	// not exist.
+	// byHarness needs the simulated node harness of SPEC 30,
+	// tools/simfleet, which runs on hosts raised for it (contrib/tofu/
+	// aws-simfleet), not under `make perf`. What it has measured is in
+	// DIVERGENCE 5.279, and each row below says where it stands.
 	byHarness method = "harness"
 	// bySoak needs a node left running and watched.
 	bySoak method = "soak"
@@ -96,15 +98,15 @@ var targets = []target{
 		Waiting: "the cached half: no pillar cache exists, so only the cold number is measured"},
 
 	{Metric: "Nodes per hub", Method: byHarness,
-		Waiting: "the simulated node harness"},
+		Waiting: "a hub that survives 20,000 at once: it held 20,000 for 30 minutes on AWS, and died of Go's thread limit on a ping to all of them and on a restart (ledger 5.279)"},
 	{Metric: "Nodes per estate with relays", Method: byHarness,
 		Waiting: "the simulated node harness, with two relay tiers"},
 	{Metric: "`test.ping` to 10,000 nodes", Method: byHarness,
-		Waiting: "the simulated node harness"},
+		Waiting: "nothing at 10,000: met on AWS, p95 3.86 s (ledger 5.279); not a benchmark, so `make perf` cannot repeat it"},
 	{Metric: "`state.apply` dispatch to 10,000 nodes", Method: byHarness,
-		Waiting: "the simulated node harness"},
+		Waiting: "nothing at 10,000: met on AWS, every node had it in 769 ms (ledger 5.279); not a benchmark, so `make perf` cannot repeat it"},
 	{Metric: "Hub memory at 20,000 nodes", Method: byHarness,
-		Waiting: "the simulated node harness"},
+		Waiting: "a fix: on AWS it held 20,000 idle in 3.13 GiB and peaked at 4.36 GiB in a batch, over the row (ledger 5.279)"},
 	{Metric: "Reactor throughput", Method: byHarness,
 		Waiting: "the simulated node harness, driving the event bus"},
 	{Metric: "File server throughput", Method: byHarness,
