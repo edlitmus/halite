@@ -43214,6 +43214,62 @@ which the plan's drivers do not have. The 160 ms a pending answer took
 on loopback was not looked into: it is one machine, eight at a time,
 and is reported here as what was seen, not as a cost.
 
+### 5.653 A net/http advisory failed every PR's govulncheck, again
+
+The same shape as 5.424, a month later. From 2026-11-11 the `govulncheck`
+job (v1.9.0, pinned by 5.358) failed on every branch with GO-2026-6859,
+"HTTP/1 server crash due to MaxBytesReader header race in net/http",
+found in `net/http@go1.27.3` and fixed in `net/http@go1.27.4`. Seen on
+#711's run 43048808936; main's last green CI was 2026-11-10 21:58. The
+pin was go1.27.3.
+
+This one is an exposure and not only a red job. The hub and the API are
+HTTP/1 servers, and `http.MaxBytesReader` bounds request bodies in
+`internal/api/server.go`, `internal/api/hook.go` and
+`internal/transport/wire.go`, which is the shape the advisory names.
+govulncheck's own traces start at `hub.Server.Serve`
+(`internal/hub/listen.go:47`) and the hub's handlers. Whether a request
+can actually crash a halite server through it was not tried: the
+advisory says so of net/http, and the fix is to stop building with the
+version that has it, whatever the answer.
+
+**The change.** `toolchain go1.27.4`, and everything 5.403, 5.424 and
+the toolchain tests hold to it: the workflows' `go-version`, the FreeBSD
+legs' `want_version` and `want_sha256`, contrib/tofu's `go_version`,
+`go_sha256` and `go_sha256_freebsd`, and the three fleet images'
+`golang:1.27.4-bookworm`. The tarball digests are go.dev's
+(`https://go.dev/dl/?mode=json&include=all`, fetched 2026-11-11); the
+same listing gave the go1.27.3 digests the repository already had, so it
+was read correctly. The image digest is Docker Hub's index for
+`library/golang:1.27.4-bookworm` on 2026-11-11, an OCI index listing
+linux/amd64 and linux/arm64 among others. Measurements recorded as made
+with go1.27.3, in comments and in this ledger, keep saying so.
+
+One thing seen in passing: Docker Hub's index for `1.27.3-bookworm` is
+now `dc0963f3…`, not the `05237276…` the images pinned. Official images
+are rebuilt under an unchanged tag, which is the reason 321's build
+section pinned by digest; it is not a sign the old pin was wrong.
+
+`golang.org/x/sys` needs nothing: v0.47.0 asks for go 1.25.0, below
+go.mod's `go 1.26.0` floor, and the toolchain line does not touch the
+vendor tree.
+
+**Demonstrated** on darwin/arm64, 2026-11-11. `make vuln` with go.mod
+put back to go1.27.3: GO-2026-6859, exit 2. At go1.27.4 (downloaded by
+`GOTOOLCHAIN`): "No vulnerabilities found.", exit 0. That pair is the
+break-it-again for this change. `internal/buildpolicy`,
+`internal/specaudit` and `internal/docsaudit` pass with `-count=1`, the
+first of which holds the workflows, the images, the lab and the FreeBSD
+digests to the new pin, and `make check` passes. `bmake repro` under
+go1.27.4 built `halite-node`, `halite-hub` and `halite-api` twice, from
+two paths, and each pair was identical.
+
+**Not verified.** The FreeBSD digest, the images and the Windows and
+FreeBSD CI legs are first exercised by this PR's CI. The release
+workflow's two-builder comparison was not run; `make repro` (one
+builder, two paths) was the local check. The lab was not raised. What
+else changed between 1.27.3 and 1.27.4 was not read.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
