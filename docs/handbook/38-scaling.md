@@ -21,10 +21,10 @@ measured only some of them:
 | Highstate compile, 500 states over 50 SLS files, heavy Jinja: under 2 s | **Measured.** `make perf` on a development workstation: **26 ms** |
 | Pillar compile, 200 pillar SLS: under 500 ms cold | **Measured: 45 ms** |
 | Pillar compile, cached: under 5 ms | Not measured: the hub has no pillar cache; it compiles on each request |
-| 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Not measured.** A simulated-node harness exists (`tools/simfleet`, `make simfleet`). It has been run at 200 nodes on a workstation, and at up to 5,000 on AWS (ledger 5.279) |
-| `test.ping` to 10,000 nodes: 95% of returns in 10 s | Not measured at 10,000. At 5,000, after the return-path fix: 5,000 of 5,000 returned, p95 1.87 s on an 8-core hub and 1.88 s on a 16-core one. Before that fix it failed, with 1,508 of 5,000 (ledger 5.279) |
-| Dispatch of `state.apply` to 10,000 nodes in 30 s | Not measured at 10,000. At 5,000: every node had it within 842 ms on an 8-core hub and 300 ms on a 16-core one (ledger 5.279) |
-| Hub memory at 20,000 nodes: under 4 GiB | Not measured at 20,000. At 5,000, after the return-path fix: peak 1.61 GB during a `test.ping`; on a 16-core hub, 1.50 GB at peak, with an idle connection left per return (since removed, ledger 5.641), and about 900 MB holding 5,000 idle streams. Before that fix it passed 14 GiB (ledger 5.279) |
+| 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Not met.** 20,000 simulated nodes (`tools/simfleet`) stayed connected for 30 minutes on a 16-core hub, but **the hub died** of Go's thread limit when a `test.ping` went to all 20,000, and again when it restarted with 20,000 reconnecting at once (ledger 5.279). 100,000 with relays has not been run |
+| `test.ping` to 10,000 nodes: 95% of returns in 10 s | **Measured: met.** 10,000 of 10,000 returned, p95 3.86 s, on a 16-core hub with simulated nodes (ledger 5.279). At 20,000 the hub dies |
+| Dispatch of `state.apply` to 10,000 nodes in 30 s | **Measured: met.** Every one of 10,000 simulated nodes had it within 769 ms on a 16-core hub (ledger 5.279) |
+| Hub memory at 20,000 nodes: under 4 GiB | **Measured: not met.** 3.13 GiB holding 20,000 idle streams, and a peak of 4.36 GiB during a batched `state.apply` (ledger 5.279) |
 | Reactor throughput: 5,000 events/s sustained | Not measured |
 | Node idle memory (under 40 MiB with 10 beacons) and CPU (under 0.5% of a core) | Not measured: it needs a soak |
 | File server saturating 10 Gb | Not measured |

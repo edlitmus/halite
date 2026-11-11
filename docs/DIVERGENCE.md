@@ -23687,6 +23687,125 @@ us-east-2. The build directory was removed from the build host.
 still not run), FreeBSD, a profile of the idle CPU (7.5% of a core for
 5,000 idle streams is not explained here), and `-reuse-client`.
 
+#### Steps 2 and 3 (2026-11-11): both rows met at 10,000; at 20,000 the hub died twice, of thread exhaustion
+
+Steps 2 and 3 of `docs/simfleet-aws-plan.md`, in one session on hosts
+raised by `contrib/tofu/aws-simfleet`: the same c7g.4xlarge hub (kernel
+`7.0.0-1014-aws`, nothing else running), five c7g.xlarge drivers, one
+availability zone, no placement group (see below), driven over SSM as
+root. User data was checked on all six first: the halt scheduled, the
+sysctls set, every clock within 14 µs of Amazon Time Sync. Both binaries
+were built on an existing arm64 test host from `main` at `23e12c1a`
+(which has 5.641's one return connection, 5.643's pacing, H4 and H5),
+with Go 1.27.3 checked against go.dev's list, and their sha256 sums
+matched on every host. The hub ran as before (`LimitNOFILE=262144`,
+`MemoryMax=28G`, never approached). Drivers 1 to 4 ran 5,000 simulated
+nodes each with `run -no-submit`; the fifth was the observer, which
+submitted, scraped `/v1/metrics` every 30 s and merged.
+
+**Setup:** 20,000 identities in **305 s**, on the build host, four
+workers, niced. The re-run above took 283 s for 5,000, before #688; the
+cost per thousand is now flat rather than rising, so the plan's
+extrapolation of an hour for 20,000 no longer holds.
+
+**Step 2, 10,000 nodes on two drivers:**
+
+| | Result |
+|---|---|
+| Connect | 5,000 in 8.2 s and 5,000 in 7.5 s, at once |
+| `test.ping` | received p95 715 ms; returned 10,000 of 10,000, p50 3.52 s, **p95 3.86 s**; 0 return errors: **MET** |
+| `state.apply` | submit 627 ms; **last received 769 ms**; returned 10,000 of 10,000, p95 3.87 s: **MET** |
+| Hub | 20,000 `/v1/return` answered 204, no 5xx; RSS peak 2.6 GB, 1.96 GB after; **9,352 threads** |
+
+The target, `sim-*`, matched all 20,000 identities in the key store, so
+each job also listed 10,000 absent nodes, and
+`halite_jobs_missing_returns` read 20,000 (those, two jobs) until expiry.
+Every connected node returned. A return spent **1.86 s** on average
+inside the hub (37,134 s over 20,000), which is most of the gap between
+arrival (p95 0.7 s) and return (p95 3.9 s).
+
+**Step 3, 20,000 nodes on four drivers:**
+
+| | Result |
+|---|---|
+| Connect | drivers 3 and 4 took 28 s each to add 10,000 to a hub already holding 10,000 |
+| Idle, 20,000 streams | 3.13 GiB RSS before any job; 3.2 GiB at the end of the hold |
+| `test.ping` to 20,000 | every node received it in 804 ms; **1.2 s later the hub died**, `fatal error: thread exhaustion`; 1,182 returns had been accepted |
+| Reconnect after that crash (nodes' own backoff) | 2,794 at 13 s, 17,172 at 34 s, **20,000 at 52 s**, each exactly once; RSS peak 2.94 GB, 353 threads: passes the plan's 5 minutes |
+| Hold, 30 min (15:15 to 15:48 UTC) | `halite_hub_nodes_connected` 20,000 and `halite_hub_node_connect_total` 20,000 throughout: **no disconnects**. Hub CPU over the last 5 minutes 34% of one core (2.1% of 16) |
+| `state.apply -batch 10%` | 10 slices of 2,000, at most 2,000 in flight; gaps p50 447 ms; 20,000 returned in 11.6 s; **1,873 threads**; **RSS peak 4.36 GiB** |
+| `state.apply -batch 500` | 40 slices, at most 500 in flight; gaps p50 270 ms, max 489 ms; 20,000 returned in 18.6 s; `halite_jobs_missing_returns` back to 0 |
+| Enrolment storm, manual, 2,000 from one address | 32 pending, 1,968 rate-limited, as the hub's own counter says: the limiter's burst |
+| Clean restart (`systemctl stop`, then start) | **the hub died again** within 18 s, threads at 10,000, before one node was counted connected |
+| Enrolment storm, token mode, 2,000 at 64 at once | **90 issued, 1,910 rate-limited** (below) |
+| Return volume, 10 pings | not run: a ping to 20,000 is the first crash |
+
+**The crashes are one defect.** Go aborts a program that holds 10,000
+OS threads, and a goroutine blocked in a system call holds one. The hub
+does disk writes with an fsync inside request handlers, with nothing
+bounding how many run at once: each return is filed in the job cache,
+and each stream that opens has its node record written
+(`subscribe.go`'s `NodeCache.Put`, through `atomicfile.Write`). So the
+thread count follows the number of those requests in flight, and the
+samples show it: 353 for reconnects spread by backoff, 1,873 for a slice
+of 2,000 returns, 9,352 for 10,000 returns, and the limit for 20,000
+returns or 20,000 reconnects at once. The second crash's trace names
+`hub.writeAtomic` under `atomicfile.Write`, blocked in `unlink` and the
+sync; the first's was cut short by journald (1.5 million lines
+suppressed), so for returns this rests on the thread counts, not on a
+stack. A clean restart is the worse case, because a node waits about a
+second after a clean end, with a fifth of jitter either way (5.546), so
+the whole fleet comes back inside half a second. A production hub with
+20,000 nodes would very probably die of its own restart. Not fixed here.
+
+**The token-mode limiter meters a bootstrap after all.** The comment on
+`enrollLimit` says a token-mode bootstrap "must not be metered", and the
+limiter refunds an issued certificate. It refunds after the issue, and
+charges on entry; an issue took about 345 ms, so at 64 requests in
+flight the 32-request budget was full of charges not yet refunded, and
+1,910 of 2,000 were refused. One request at a time, it is never
+metered, and that is all 5.652's tests ran (4 at a time). Not fixed
+here.
+
+**Hub memory is over SPEC 30's 4 GiB.** 3.13 GiB idle at 20,000 is under
+it; the highest sample, 4.36 GiB during the 10% batch, is not. Step 1's
+arithmetic (180 KB a stream, 3.6 GB at 20,000) was close for idle and
+says nothing about load.
+
+**AWS limits.** The hub's ENA counted 6,895 packets over its
+packets-per-second allowance during the first 20,000 ping, and none
+before or after; the connection-tracking and bandwidth counters stayed
+at 0. That is the instance's limit, recorded as such.
+
+**Drivers:** about 1.2 GB RSS and 10,005 descriptors each for 5,000
+simulated nodes.
+
+**The placement group was dropped, for a reason that turned out not to
+be about it.** Two applies of a saved plan from the operator's shell
+failed with `Provider produced inconsistent final plan`, the provider
+re-deriving each resource's region as us-east-2 although the saved plan
+said us-east-1. The cause was `TF_VAR_region=us-east-2` left in that
+shell: the saved plan carried us-east-1 for `var.region`, and the
+provider still read us-east-2 at apply. So a saved plan does not protect
+against a `TF_VAR_` in the applying shell; the README's "plan, then
+apply the plan" is not enough by itself. Nothing was created. The first
+failure was on the placement group, so it was dropped before the cause
+was known; the plan calls it optional at 10,000, and step 3 ran without
+it. The apply that worked passed `-var region=us-east-1`, and the
+variable has since been unset.
+
+**Teardown, checked** with read-only calls after `tofu destroy`: all six
+instances `terminated`; no volume, placement group or network interface
+with `Project=halite-simfleet` in us-east-1 or us-east-2. The build
+host's working files were removed; the run's samples, merges, metrics
+and the heads of both crash journals are kept there.
+
+**Not covered:** the `test.ping` and `state.apply` rows at 20,000 (the
+hub cannot survive them), return volume, `-reuse-client` and
+`-client-per-return`, a profile of where a return's 1.86 s goes, a
+reconnect storm on a hub that survives one, FreeBSD, and a placement
+group.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
