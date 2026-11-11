@@ -43365,6 +43365,33 @@ reason on stdout) is not known. Nothing here was run on an attached
 host. The fixed `pro.status` has not been run against a client that
 succeeds, except through the existing captured success fixture.
 
+#### 5.654.1 The same afternoon: a 503, and Ubuntu's mirror unresolvable too
+
+The first CI run of the fix, at `c5c29d14`, passed `test
+(ubuntu-24.04)` and `fips-test`; `make test` runs without `-v`, so
+whether the live test skipped there or ran in full is not in the log.
+The next, at `ba51db4a` (main merged in, nothing in `pro` changed), failed
+both legs on a different client answer, which the fix now carried
+through instead of hiding:
+
+    `pro status --format json` exited 1: external-api-error: Error connecting to /v1/resources: 503 <html><body><h1>503 Service Unavailable</h1> No server is available to handle this request. </body></html>
+
+The name resolved by then, and Canonical's server answered, with
+a 503. That is still not a fact about the module, so the live test now
+skips on `external-api-error` as well as `connectivity-error`, still
+only on an unattached host and still only on a `proClientError`. This
+second code was taken from that run's log, not from a captured stdout,
+so there is no fixture for it. Reading it goes through the same path
+the `connectivity-error` fixture already drives.
+
+The Fleet `linux` leg of the same PR failed earlier, in `apt-get`,
+on "Temporary failure resolving 'azure.archive.ubuntu.com'", while
+`packages.microsoft.com` resolved on the same runner. main's scheduled
+Fleet run that morning (43012403125) failed too, downloading `snapd`
+from api.snapcraft.io with "connection reset by peer". So that day the
+runners' trouble reached Canonical's hosts in general, not only the
+contract server. Whose DNS was at fault is still not known.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
