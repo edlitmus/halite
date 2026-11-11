@@ -43214,6 +43214,49 @@ which the plan's drivers do not have. The 160 ms a pending answer took
 on loopback was not looked into: it is one machine, eight at a time,
 and is reported here as what was seen, not as a cost.
 
+### 5.653 The CLI reference carried the paths of whichever machine generated it
+
+Issue 678, found while working issue 608 on a Windows 11 host (#677).
+`docs/handbook/gen-cli.md` is each program's `help`, which `handbook gen`
+gets by `go run ./cmd/<program> help`. Help prints the default paths of
+the platform it runs on, from `config.DefaultRoot` and the paths built on
+it, and `go run` builds for the host. So the chapter said `/etc/halite`
+when generated on Linux or macOS, `/usr/local/etc/halite` on FreeBSD and
+`C:\ProgramData\Halite` on Windows. The run on Windows rewrote every
+`--root` and `--pki-dir` default; the session that saw it reverted the
+page by hand rather than commit it.
+
+The test that compares the chapter with the code could not catch this.
+It skipped `gen-cli.md` everywhere but Linux, because elsewhere the page
+came out different -- which is the same defect seen from the other side.
+A regeneration on Windows or FreeBSD therefore passed on the machine that
+made it and failed on the next Linux run, someone else's.
+
+**Fixed.** `handbook.LinuxPaths` rewrites the host's default paths in the
+captured help to the Linux ones the committed page states: the
+configuration root and the files and `pki` directory under it, the
+`/var` cache, state and log directories, and the socket directory. It
+takes them from the same `config.RootFor`, `VarPathFor` and `RunPathFor`
+the programs use, longest first and in one pass, so `<root>\pki` is not
+half-rewritten through `<root>`. On Linux it changes nothing. The
+docsaudit skip is gone, so the page is compared on every CI platform.
+Help itself still prints the running platform's defaults, which is what
+an operator typing it needs; only the generated page is normalised.
+
+**Shown.** `TestLinuxPathsMakesEveryPlatformsHelpTheLinuxOne` builds a
+help line for linux, darwin, freebsd, openbsd and windows from the config
+functions and requires each to come out as the Linux line. It fails with
+`LinuxPaths` made to return its input (freebsd, openbsd and windows all
+differ), and fails with the pairs sorted shortest first (windows gives
+`/etc/halite\pki`). Both were run on macOS and put back.
+
+**Not verified here.** `handbook gen` itself has not been run on Windows
+or FreeBSD with this change; macOS uses the Linux paths, so a run here
+proves nothing about them. The CI legs on Windows, FreeBSD and macOS,
+which now compare the page, are the first end-to-end check. Any other
+platform difference in help beyond these paths would also show up there
+as a failure, and none is known.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
