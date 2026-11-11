@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/nodeevidence"
 	"github.com/edlitmus/halite/internal/pki"
@@ -226,7 +227,9 @@ func (a *AnchorStore) Record(nodeID string, seq uint64, hash string, now time.Ti
 		}
 	}
 	if !n.loaded {
-		if err := a.repairTail(nodeID, path); err != nil {
+		// Bounded, as the append below is: it may cut and fsync the
+		// file, and a restart is every node's first report at once.
+		if err := atomicfile.Bounded(func() error { return a.repairTail(nodeID, path) }); err != nil {
 			return nil, err
 		}
 		anchors, err := readAnchorFile(path)
@@ -280,7 +283,14 @@ func (a *AnchorStore) Record(nodeID string, seq uint64, hash string, now time.Ti
 		line.Receipt = receipt
 	}
 
-	if err := appendAnchor(path, line); err != nil {
+	// The per-node lock above serialises one node's reports, and nothing
+	// serialises different nodes', deliberately (see nodeAnchors). So
+	// nothing bounded how many of these fsyncs were in the kernel at once,
+	// each holding an operating-system thread, and a node reports when its
+	// stream opens: a restart under 20,000 nodes is that many at once, and
+	// Go stops a process at 10,000 threads. atomicfile.Bounded is the bound
+	// every atomic write in the process shares. DIVERGENCE 5.653.
+	if err := atomicfile.Bounded(func() error { return appendAnchor(path, line) }); err != nil {
 		return nil, err
 	}
 	if line.Result == nodeevidence.AnchorAccepted {
