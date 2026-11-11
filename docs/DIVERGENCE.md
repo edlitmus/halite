@@ -43618,6 +43618,26 @@ both divisions are held. The lines after the banner were never seen and
 are not invented. A future failure prints them, because the error now
 keeps them, and that output should replace this fixture.
 
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| the prompt not looked for | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the prompt looked for in stdout only | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the error the first line again | `TestMacSoftwareUpdateDownloadFailureKeepsTheReason` |
+| the ranking inverted on major version | `TestMacSoftwareUpdatePickDownloadRanks` |
+
+The live test's skip was never reached, so that path is held by reading
+it and by the unit tests of the error it tests for, not by a run.
+
+**Not covered: a terminal.** Commands run in their own process group
+(`confineTree` sets `Setpgid`) but keep halite's controlling terminal.
+A prompt that opens `/dev/tty` instead of reading standard input, from
+a process group that is not in the foreground, is stopped by `SIGTTIN`
+rather than given end of file. So `halite call mac_softwareupdate.download`
+run by hand from a terminal may stop there. Nobody has tried it: it
+needs root on a Mac with a terminal, and none of the runs here had one.
+
 ### 5.657 Disk writes in request handlers held a thread each, and 20,000 nodes ran the hub out
 
 The cause of both crashes in 5.279's steps 2 and 3 (2026-11-11): at
@@ -43720,20 +43740,6 @@ its node record is the number step 3 will give. Blocking system calls
 outside writes — reads on a cold cache after a restart, a log line to a
 stalled journald — are still unbounded, and were not seen to matter.
 
-| no request exempt (the old behaviour) | `TestConcurrentTokenEnrollmentsAreNotCharged` (4 issued, 12 held); `TestAnEnrollStormInTokenMode`, three runs of three (64 issued, and 4 to 8 of the last eight `rate_limited` rather than refused) |
-| exempt without the hold | `TestAContendedTokenCannotFillPendingUncharged` (14 pending from one address) |
-| `TokenAdmits` without the scope check | `TestTokenAdmitsAgreesWithEnroll` (out of node scope, out of source scope) |
-
-**Not covered.** Not re-run on AWS: whether 2,000 at 64 at a time now
-come back 2,000 issued is expected and not measured. On a laptop an
-issue is quick, so the simfleet storm catches the old limiter only in
-its last few requests; the hub test, which slows the key store, is the
-deterministic one. Only one hub process was tested; the hold is in the
-hub's memory, so two hubs over one key store would each hold up to a
-token's remaining uses, and SPEC does not run two. The extra cost an
-over-budget source now imposes (a body read) was reasoned from the
-bounds, not measured under a flood.
-
 ### 5.658 A token-mode bootstrap was metered whenever it arrived faster than it was answered
 
 `internal/hub/enrolllimit.go` said from the start (5.398) that "a
@@ -43810,21 +43816,19 @@ real `halite-hub serve` on loopback:
 
 | Break | Caught by |
 |---|---|
-| the prompt not looked for | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
-| the prompt looked for in stdout only | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
-| the error the first line again | `TestMacSoftwareUpdateDownloadFailureKeepsTheReason` |
-| the ranking inverted on major version | `TestMacSoftwareUpdatePickDownloadRanks` |
+| no request exempt (the old behaviour) | `TestConcurrentTokenEnrollmentsAreNotCharged` (4 issued, 12 held); `TestAnEnrollStormInTokenMode`, three runs of three (64 issued, and 4 to 8 of the last eight `rate_limited` rather than refused) |
+| exempt without the hold | `TestAContendedTokenCannotFillPendingUncharged` (14 pending from one address) |
+| `TokenAdmits` without the scope check | `TestTokenAdmitsAgreesWithEnroll` (out of node scope, out of source scope) |
 
-The live test's skip was never reached, so that path is held by reading
-it and by the unit tests of the error it tests for, not by a run.
-
-**Not covered: a terminal.** Commands run in their own process group
-(`confineTree` sets `Setpgid`) but keep halite's controlling terminal.
-A prompt that opens `/dev/tty` instead of reading standard input, from
-a process group that is not in the foreground, is stopped by `SIGTTIN`
-rather than given end of file. So `halite call mac_softwareupdate.download`
-run by hand from a terminal may stop there. Nobody has tried it: it
-needs root on a Mac with a terminal, and none of the runs here had one.
+**Not covered.** Not re-run on AWS: whether 2,000 at 64 at a time now
+come back 2,000 issued is expected and not measured. On a laptop an
+issue is quick, so the simfleet storm catches the old limiter only in
+its last few requests; the hub test, which slows the key store, is the
+deterministic one. Only one hub process was tested; the hold is in the
+hub's memory, so two hubs over one key store would each hold up to a
+token's remaining uses, and SPEC does not run two. The extra cost an
+over-budget source now imposes (a body read) was reasoned from the
+bounds, not measured under a flood.
 
 ## 6. Everything else not started
 
