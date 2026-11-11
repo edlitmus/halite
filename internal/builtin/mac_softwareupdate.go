@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -254,10 +255,92 @@ func macSoftwareUpdateDownloadModule(fn string, verb []string, recommended signa
 				}
 				argv = append(argv, name)
 			}
-			err := macRun(c, argv, strings.Join(argv, " "))
-			return err == nil, err
+			res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+			if err != nil {
+				return nil, err
+			}
+			if res.Code != 0 {
+				return false, macSoftwareUpdateDownloadFailed(argv, res)
+			}
+			return true, nil
 		},
 	}
+}
+
+// errMacSoftwareUpdateNeedsOwner is a download `softwareupdate` would
+// only make with a password, which this module never has.
+//
+// # What it looked like before there was a name for it
+//
+// On the `macos` leg of `fleet.yml` (GitHub's macos-15 arm64 image,
+// macOS 15.8.2), `softwareupdate --download "macOS 27.2-26B123"` --
+// the major upgrade Apple offers that runner -- sometimes stops to ask
+// for a password, reads end of file from the null device every command
+// here is given as standard input, and exits non-zero. The same label
+// on the same image downloaded cleanly on a re-run minutes later, so
+// whether it asks is not a property of the label; what decides it was
+// not found (DIVERGENCE 5.656). The download went through `macRun`,
+// whose error is the *first line* of stderr then stdout, and that
+// line was `Password: Software Update Tool`: the prompt, which has no
+// newline, run into the banner every invocation prints first. Whatever
+// `softwareupdate` said about why was on the lines after it and was
+// thrown away. An operator handed that line has a prompt and the
+// tool's own name to go on, and the nearest reading of it -- that
+// halite asked for a password -- is the wrong one.
+//
+// # Why it is refused rather than answered
+//
+// `softwareupdate` takes a volume owner's credentials through `--user`
+// and `--stdinpass` for exactly this. Supplying them would mean a node
+// holding a person's macOS password in pillar to download an OS
+// upgrade -- a credential worth far more than the download -- and it
+// is the install path's authority, which this module declines for the
+// reasons `macSoftwareUpdateInstallRefusedModule` gives. So the answer
+// is an error that says what happened and where the download has to
+// come from instead, and keeps everything the tool said.
+var errMacSoftwareUpdateNeedsOwner = errors.New("softwareupdate asked for a password to download this " +
+	"update and was given none. A macOS upgrade on Apple Silicon can need a volume owner's " +
+	"credentials even to download, and halite neither holds nor passes one (--user/--stdinpass); " +
+	"download it through an MDM configuration profile or by hand")
+
+// macSoftwareUpdateDownloadFailed is the error for a `--download` that
+// exited non-zero. It carries all of the tool's output rather than its
+// first line, because the first line is always `softwareupdate`'s own
+// banner, or a prompt run into it, and never the reason.
+func macSoftwareUpdateDownloadFailed(argv []string, res exec.Result) error {
+	said := oneLineOutput(res.Stderr + "\n" + res.Stdout)
+	if macSoftwareUpdateAskedForPassword(res) {
+		return fmt.Errorf("%s: %w (exit %d; softwareupdate said: %s)",
+			strings.Join(argv, " "), errMacSoftwareUpdateNeedsOwner, res.Code, said)
+	}
+	return fmt.Errorf("%s: exit %d: %s", strings.Join(argv, " "), res.Code, said)
+}
+
+// macSoftwareUpdateAskedForPassword is whether the tool printed its
+// password prompt. The prompt is `Password:` with no newline after it,
+// so it is looked for anywhere in the output rather than as a line.
+func macSoftwareUpdateAskedForPassword(res exec.Result) bool {
+	return strings.Contains(res.Stderr, "Password:") || strings.Contains(res.Stdout, "Password:")
+}
+
+// oneLineOutput is a tool's output with its blank lines dropped and the
+// rest joined, bounded so a chatty failure does not become a page.
+func oneLineOutput(s string) string {
+	var parts []string
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			parts = append(parts, l)
+		}
+	}
+	out := strings.Join(parts, " / ")
+	const limit = 1000
+	if len(out) > limit {
+		out = out[:limit] + " ..."
+	}
+	if out == "" {
+		return "(no output)"
+	}
+	return out
 }
 
 // macSoftwareUpdateInstallRefusedModule is an install function this

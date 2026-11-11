@@ -43435,6 +43435,90 @@ which now compare the page, are the first end-to-end check. Any other
 platform difference in help beyond these paths would also show up there
 as a failure, and none is known.
 
+### 5.656 A password prompt from `softwareupdate --download` reached the operator as the tool's banner
+
+`TestLiveMacSoftwareUpdateDownloadsWithoutInstalling` failed on the
+`macos` leg of `fleet.yml` twice on 2026-11-08 (`macos` jobs
+128869630662 and 128874798936, the first attempts of Fleet runs
+42526000064 and 42527676751), blocking two merges, and each passed on a
+re-run. Both runs were on GitHub's macos-15 arm64 image 20261104.0514,
+macOS 15.8.2 (24H232). The test took the first label on offer, which
+had become "macOS 27.2-26B123", a major upgrade, and the error was:
+
+	download "macOS 27.2-26B123": softwareupdate --download macOS 27.2-26B123: Password: Software Update Tool
+
+Two defects, a pair of the usual kind: what the tool said and what the
+module reported it as saying.
+
+**The module threw the reason away.** `download` ran through `macRun`,
+whose error is the first line of stderr followed by stdout. The tool's
+password prompt has no newline, and every invocation prints the banner
+`Software Update Tool` first, so the first line was the prompt run into
+the banner. Whatever `softwareupdate` said after that, which is where
+any reason would be, was dropped, and the line that survived reads as
+if halite had asked for a password. It did not hang: a command here is
+given the null device as standard input (`TestACommandThatPromptsIsAnsweredWithEndOfFile`),
+so the prompt read end of file and the tool exited non-zero.
+
+**Fixed.** A failed `download` or `download_all` now carries all of the
+tool's output, blank lines dropped and the rest joined, bounded at a
+thousand characters. One that printed `Password:` is
+`errMacSoftwareUpdateNeedsOwner`, which says that the tool wanted a
+volume owner's password to download, that halite neither holds nor
+passes one (`--user`/`--stdinpass`), and that such an update has to come
+through an MDM configuration profile or a person. Passing one is not on
+offer, for the reasons in 5.117: it is the install path's authority,
+and a macOS password in pillar is worth more than the download.
+
+**The test chose the update most likely to ask.** It now ranks what is
+on offer: an update that is not macOS itself; then an OS update within
+the major version the Mac runs; then a major upgrade. When the download
+asks for a password anyway, the test checks that the error is the named
+one and that `sw_vers` still reports the starting version, and then
+skips, saying so. Every other failure still fails.
+
+**What was not found: why it asks only sometimes.** On 2026-11-11 the
+same image (macOS 15.8.2) offered "macOS Sequoia 15.8.3-24H241" and
+"macOS 27.2.1-26B131", and nothing that was not an OS update, so "not
+macOS" alone would not have avoided it. The first run downloaded the
+minor update without a prompt. Four more were made to take the major
+upgrade on purpose, by a commit that was never meant to merge (Fleet
+run 43044376505 and three re-runs of its `macos` job), to capture the
+prompt in full. None asked; each exited 0 in about 20 seconds with the
+version unchanged. That is quick for a full major upgrade, and whether
+a payload actually reached `/Library/Updates` was not checked. So the
+major upgrade asked on two of four attempts on 2026-11-08 (both first
+attempts; both re-runs passed) and on none of four on 2026-11-11, on
+the same image, and the label is not what decides it. Whether the 2026-11-08 list also offered a minor update is unknown,
+because the test logged only the label it took. It logs the whole list
+now.
+
+**Captured, and not.** The unit test's fixture is the one real line
+above. How its bytes divided between stderr and stdout is unknown, so
+both divisions are held. The lines after the banner were never seen and
+are not invented. A future failure prints them, because the error now
+keeps them, and that output should replace this fixture.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| the prompt not looked for | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the prompt looked for in stdout only | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the error the first line again | `TestMacSoftwareUpdateDownloadFailureKeepsTheReason` |
+| the ranking inverted on major version | `TestMacSoftwareUpdatePickDownloadRanks` |
+
+The live test's skip was never reached, so that path is held by reading
+it and by the unit tests of the error it tests for, not by a run.
+
+**Not covered: a terminal.** Commands run in their own process group
+(`confineTree` sets `Setpgid`) but keep halite's controlling terminal.
+A prompt that opens `/dev/tty` instead of reading standard input, from
+a process group that is not in the foreground, is stopped by `SIGTTIN`
+rather than given end of file. So `halite call mac_softwareupdate.download`
+run by hand from a terminal may stop there. Nobody has tried it: it
+needs root on a Mac with a terminal, and none of the runs here had one.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
