@@ -43392,7 +43392,7 @@ from api.snapcraft.io with "connection reset by peer". So that day the
 runners' trouble reached Canonical's hosts in general, not only the
 contract server. Whose DNS was at fault is still not known.
 
-### 5.653 The CLI reference carried the paths of whichever machine generated it
+### 5.655 The CLI reference carried the paths of whichever machine generated it
 
 Issue 678, found while working issue 608 on a Windows 11 host (#677).
 `docs/handbook/gen-cli.md` is each program's `help`, which `handbook gen`
