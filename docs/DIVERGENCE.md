@@ -23687,6 +23687,125 @@ us-east-2. The build directory was removed from the build host.
 still not run), FreeBSD, a profile of the idle CPU (7.5% of a core for
 5,000 idle streams is not explained here), and `-reuse-client`.
 
+#### Steps 2 and 3 (2026-11-11): both rows met at 10,000; at 20,000 the hub died twice, of thread exhaustion
+
+Steps 2 and 3 of `docs/simfleet-aws-plan.md`, in one session on hosts
+raised by `contrib/tofu/aws-simfleet`: the same c7g.4xlarge hub (kernel
+`7.0.0-1014-aws`, nothing else running), five c7g.xlarge drivers, one
+availability zone, no placement group (see below), driven over SSM as
+root. User data was checked on all six first: the halt scheduled, the
+sysctls set, every clock within 14 µs of Amazon Time Sync. Both binaries
+were built on an existing arm64 test host from `main` at `23e12c1a`
+(which has 5.641's one return connection, 5.643's pacing, H4 and H5),
+with Go 1.27.3 checked against go.dev's list, and their sha256 sums
+matched on every host. The hub ran as before (`LimitNOFILE=262144`,
+`MemoryMax=28G`, never approached). Drivers 1 to 4 ran 5,000 simulated
+nodes each with `run -no-submit`; the fifth was the observer, which
+submitted, scraped `/v1/metrics` every 30 s and merged.
+
+**Setup:** 20,000 identities in **305 s**, on the build host, four
+workers, niced. The re-run above took 283 s for 5,000, before #688; the
+cost per thousand is now flat rather than rising, so the plan's
+extrapolation of an hour for 20,000 no longer holds.
+
+**Step 2, 10,000 nodes on two drivers:**
+
+| | Result |
+|---|---|
+| Connect | 5,000 in 8.2 s and 5,000 in 7.5 s, at once |
+| `test.ping` | received p95 715 ms; returned 10,000 of 10,000, p50 3.52 s, **p95 3.86 s**; 0 return errors: **MET** |
+| `state.apply` | submit 627 ms; **last received 769 ms**; returned 10,000 of 10,000, p95 3.87 s: **MET** |
+| Hub | 20,000 `/v1/return` answered 204, no 5xx; RSS peak 2.6 GB, 1.96 GB after; **9,352 threads** |
+
+The target, `sim-*`, matched all 20,000 identities in the key store, so
+each job also listed 10,000 absent nodes, and
+`halite_jobs_missing_returns` read 20,000 (those, two jobs) until expiry.
+Every connected node returned. A return spent **1.86 s** on average
+inside the hub (37,134 s over 20,000), which is most of the gap between
+arrival (p95 0.7 s) and return (p95 3.9 s).
+
+**Step 3, 20,000 nodes on four drivers:**
+
+| | Result |
+|---|---|
+| Connect | drivers 3 and 4 took 28 s each to add 10,000 to a hub already holding 10,000 |
+| Idle, 20,000 streams | 3.13 GiB RSS before any job; 3.2 GiB at the end of the hold |
+| `test.ping` to 20,000 | every node received it in 804 ms; **1.2 s later the hub died**, `fatal error: thread exhaustion`; 1,182 returns had been accepted |
+| Reconnect after that crash (nodes' own backoff) | 2,794 at 13 s, 17,172 at 34 s, **20,000 at 52 s**, each exactly once; RSS peak 2.94 GB, 353 threads: passes the plan's 5 minutes |
+| Hold, 30 min (15:15 to 15:48 UTC) | `halite_hub_nodes_connected` 20,000 and `halite_hub_node_connect_total` 20,000 throughout: **no disconnects**. Hub CPU over the last 5 minutes 34% of one core (2.1% of 16) |
+| `state.apply -batch 10%` | 10 slices of 2,000, at most 2,000 in flight; gaps p50 447 ms; 20,000 returned in 11.6 s; **1,873 threads**; **RSS peak 4.36 GiB** |
+| `state.apply -batch 500` | 40 slices, at most 500 in flight; gaps p50 270 ms, max 489 ms; 20,000 returned in 18.6 s; `halite_jobs_missing_returns` back to 0 |
+| Enrolment storm, manual, 2,000 from one address | 32 pending, 1,968 rate-limited, as the hub's own counter says: the limiter's burst |
+| Clean restart (`systemctl stop`, then start) | **the hub died again** within 18 s, threads at 10,000, before one node was counted connected |
+| Enrolment storm, token mode, 2,000 at 64 at once | **90 issued, 1,910 rate-limited** (below) |
+| Return volume, 10 pings | not run: a ping to 20,000 is the first crash |
+
+**The crashes are one defect.** Go aborts a program that holds 10,000
+OS threads, and a goroutine blocked in a system call holds one. The hub
+does disk writes with an fsync inside request handlers, with nothing
+bounding how many run at once: each return is filed in the job cache,
+and each stream that opens has its node record written
+(`subscribe.go`'s `NodeCache.Put`, through `atomicfile.Write`). So the
+thread count follows the number of those requests in flight, and the
+samples show it: 353 for reconnects spread by backoff, 1,873 for a slice
+of 2,000 returns, 9,352 for 10,000 returns, and the limit for 20,000
+returns or 20,000 reconnects at once. The second crash's trace names
+`hub.writeAtomic` under `atomicfile.Write`, blocked in `unlink` and the
+sync; the first's was cut short by journald (1.5 million lines
+suppressed), so for returns this rests on the thread counts, not on a
+stack. A clean restart is the worse case, because a node waits about a
+second after a clean end, with a fifth of jitter either way (5.546), so
+the whole fleet comes back inside half a second. A production hub with
+20,000 nodes would very probably die of its own restart. Not fixed here.
+
+**The token-mode limiter meters a bootstrap after all.** The comment on
+`enrollLimit` says a token-mode bootstrap "must not be metered", and the
+limiter refunds an issued certificate. It refunds after the issue, and
+charges on entry; an issue took about 345 ms, so at 64 requests in
+flight the 32-request budget was full of charges not yet refunded, and
+1,910 of 2,000 were refused. One request at a time, it is never
+metered, and that is all 5.652's tests ran (4 at a time). Not fixed
+here.
+
+**Hub memory is over SPEC 30's 4 GiB.** 3.13 GiB idle at 20,000 is under
+it; the highest sample, 4.36 GiB during the 10% batch, is not. Step 1's
+arithmetic (180 KB a stream, 3.6 GB at 20,000) was close for idle and
+says nothing about load.
+
+**AWS limits.** The hub's ENA counted 6,895 packets over its
+packets-per-second allowance during the first 20,000 ping, and none
+before or after; the connection-tracking and bandwidth counters stayed
+at 0. That is the instance's limit, recorded as such.
+
+**Drivers:** about 1.2 GB RSS and 10,005 descriptors each for 5,000
+simulated nodes.
+
+**The placement group was dropped, for a reason that turned out not to
+be about it.** Two applies of a saved plan from the operator's shell
+failed with `Provider produced inconsistent final plan`, the provider
+re-deriving each resource's region as us-east-2 although the saved plan
+said us-east-1. The cause was `TF_VAR_region=us-east-2` left in that
+shell: the saved plan carried us-east-1 for `var.region`, and the
+provider still read us-east-2 at apply. So a saved plan does not protect
+against a `TF_VAR_` in the applying shell; the README's "plan, then
+apply the plan" is not enough by itself. Nothing was created. The first
+failure was on the placement group, so it was dropped before the cause
+was known; the plan calls it optional at 10,000, and step 3 ran without
+it. The apply that worked passed `-var region=us-east-1`, and the
+variable has since been unset.
+
+**Teardown, checked** with read-only calls after `tofu destroy`: all six
+instances `terminated`; no volume, placement group or network interface
+with `Project=halite-simfleet` in us-east-1 or us-east-2. The build
+host's working files were removed; the run's samples, merges, metrics
+and the heads of both crash journals are kept there.
+
+**Not covered:** the `test.ping` and `state.apply` rows at 20,000 (the
+hub cannot survive them), return volume, `-reuse-client` and
+`-client-per-return`, a profile of where a return's 1.86 s goes, a
+reconnect storm on a hub that survives one, FreeBSD, and a placement
+group.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
@@ -43435,6 +43554,70 @@ which now compare the page, are the first end-to-end check. Any other
 platform difference in help beyond these paths would also show up there
 as a failure, and none is known.
 
+### 5.656 A password prompt from `softwareupdate --download` reached the operator as the tool's banner
+
+`TestLiveMacSoftwareUpdateDownloadsWithoutInstalling` failed on the
+`macos` leg of `fleet.yml` twice on 2026-11-08 (`macos` jobs
+128869630662 and 128874798936, the first attempts of Fleet runs
+42526000064 and 42527676751), blocking two merges, and each passed on a
+re-run. Both runs were on GitHub's macos-15 arm64 image 20261104.0514,
+macOS 15.8.2 (24H232). The test took the first label on offer, which
+had become "macOS 27.2-26B123", a major upgrade, and the error was:
+
+	download "macOS 27.2-26B123": softwareupdate --download macOS 27.2-26B123: Password: Software Update Tool
+
+Two defects, a pair of the usual kind: what the tool said and what the
+module reported it as saying.
+
+**The module threw the reason away.** `download` ran through `macRun`,
+whose error is the first line of stderr followed by stdout. The tool's
+password prompt has no newline, and every invocation prints the banner
+`Software Update Tool` first, so the first line was the prompt run into
+the banner. Whatever `softwareupdate` said after that, which is where
+any reason would be, was dropped, and the line that survived reads as
+if halite had asked for a password. It did not hang: a command here is
+given the null device as standard input (`TestACommandThatPromptsIsAnsweredWithEndOfFile`),
+so the prompt read end of file and the tool exited non-zero.
+
+**Fixed.** A failed `download` or `download_all` now carries all of the
+tool's output, blank lines dropped and the rest joined, bounded at a
+thousand characters. One that printed `Password:` is
+`errMacSoftwareUpdateNeedsOwner`, which says that the tool wanted a
+volume owner's password to download, that halite neither holds nor
+passes one (`--user`/`--stdinpass`), and that such an update has to come
+through an MDM configuration profile or a person. Passing one is not on
+offer, for the reasons in 5.117: it is the install path's authority,
+and a macOS password in pillar is worth more than the download.
+
+**The test chose the update most likely to ask.** It now ranks what is
+on offer: an update that is not macOS itself; then an OS update within
+the major version the Mac runs; then a major upgrade. When the download
+asks for a password anyway, the test checks that the error is the named
+one and that `sw_vers` still reports the starting version, and then
+skips, saying so. Every other failure still fails.
+
+**What was not found: why it asks only sometimes.** On 2026-11-11 the
+same image (macOS 15.8.2) offered "macOS Sequoia 15.8.3-24H241" and
+"macOS 27.2.1-26B131", and nothing that was not an OS update, so "not
+macOS" alone would not have avoided it. The first run downloaded the
+minor update without a prompt. Four more were made to take the major
+upgrade on purpose, by a commit that was never meant to merge (Fleet
+run 43044376505 and three re-runs of its `macos` job), to capture the
+prompt in full. None asked; each exited 0 in about 20 seconds with the
+version unchanged. That is quick for a full major upgrade, and whether
+a payload actually reached `/Library/Updates` was not checked. So the
+major upgrade asked on two of four attempts on 2026-11-08 (both first
+attempts; both re-runs passed) and on none of four on 2026-11-11, on
+the same image, and the label is not what decides it. Whether the 2026-11-08 list also offered a minor update is unknown,
+because the test logged only the label it took. It logs the whole list
+now.
+
+**Captured, and not.** The unit test's fixture is the one real line
+above. How its bytes divided between stderr and stdout is unknown, so
+both divisions are held. The lines after the banner were never seen and
+are not invented. A future failure prints them, because the error now
+keeps them, and that output should replace this fixture.
+
 ### 5.656 A token-mode bootstrap was metered whenever it arrived faster than it was answered
 
 `internal/hub/enrolllimit.go` said from the start (5.398) that "a
@@ -43511,6 +43694,124 @@ real `halite-hub serve` on loopback:
 
 | Break | Caught by |
 |---|---|
+| the prompt not looked for | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the prompt looked for in stdout only | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the error the first line again | `TestMacSoftwareUpdateDownloadFailureKeepsTheReason` |
+| the ranking inverted on major version | `TestMacSoftwareUpdatePickDownloadRanks` |
+
+The live test's skip was never reached, so that path is held by reading
+it and by the unit tests of the error it tests for, not by a run.
+
+**Not covered: a terminal.** Commands run in their own process group
+(`confineTree` sets `Setpgid`) but keep halite's controlling terminal.
+A prompt that opens `/dev/tty` instead of reading standard input, from
+a process group that is not in the foreground, is stopped by `SIGTTIN`
+rather than given end of file. So `halite call mac_softwareupdate.download`
+run by hand from a terminal may stop there. Nobody has tried it: it
+needs root on a Mac with a terminal, and none of the runs here had one.
+
+### 5.657 Disk writes in request handlers held a thread each, and 20,000 nodes ran the hub out
+
+The cause of both crashes in 5.279's steps 2 and 3 (2026-11-11): at
+20,000 simulated nodes a 16-core hub at `main` `23e12c1a` died with
+`fatal error: thread exhaustion` 1.2 s after a `test.ping` reached every
+node, and again within 18 s of a clean restart with every node
+reconnecting at once.
+
+Go parks a goroutine that waits on the network without an
+operating-system thread. A goroutine in fsync, rename or unlink is in the
+kernel and keeps its thread, and the scheduler starts another for
+everything else. `atomicfile.Write` makes several such calls, two of them
+fsyncs, and the hub calls it from request handlers with nothing bounding
+how many are in progress: once per return filed (`job.Cache.File`), once
+per stream opened (`subscribe`'s `NodeCache.Put`), once per queued
+delivery and job completion (`job.Cache.Update`). So the thread count
+followed the requests in flight, as the samples there say (353, 1,873,
+9,352, then 10,000, which is `debug.SetMaxThreads`' default and where Go
+stops the process). The evidence anchor store's `appendAnchor` was a
+third path: fsynced, serialised per node and deliberately not across
+nodes, and reported by a node when its stream opens.
+
+**Reproduced locally** on an M4 Pro, macOS, GOMAXPROCS=2, at `23e12c1a`:
+a child process capped at 200 threads, 500 subscribes and 500 returns
+through the hub's own handlers at once
+(`TestHubThreadsAreBoundedUnderAStorm`), died in under a second with
+`runtime: program exceeds 200-thread limit`. Its stacks, counted: 108
+goroutines in a system call under `subscribe` → `NodeCache.Put`, 87
+under `returned` → `job.Cache.File`, all inside
+`atomicfile.WritePrepared`. That is the crash on AWS, both halves of it,
+and it puts the first crash's cause — whose trace journald cut short —
+on a stack rather than only on the thread counts.
+
+**Fixed.** `atomicfile.WritePrepared`, which `Write` calls, now runs
+inside a process-wide bound of `atomicfile.MaxConcurrentWrites` (64);
+writes past it wait as parked goroutines, which hold no thread.
+`atomicfile.Bounded` is the same bound for an fsync outside the
+package, and the anchor store's append and tail repair use it. The
+reasons are in `internal/atomicfile/gate.go`, in short:
+
+- **In the package, not in the handlers,** because a bound held by a
+  handler is held across what the handler waits on, and the handlers
+  wait on each other (a retried return waits for the first copy's
+  write; job records are edited under a per-job lock). With every slot
+  held by a waiter, the writer they wait for never gets one. Inside the
+  package a slot is held only across system calls on a file the call
+  created, so it cannot be part of a cycle. It also covers the writes
+  nobody listed: the job record, the mine, orchestration state, the key
+  store.
+- **Not asynchronous for the node record,** though its last-seen time
+  needs no fsync: the grains in it are what targeting reads, and they
+  are written before the stream opens so a job dispatched in the same
+  second does not miss the node (SPEC 8.3). And it would leave returns, which
+  must be on disk before they are acknowledged, where they were.
+  Durability is unchanged everywhere: a write is still synced before it
+  returns, so a return is still on disk before its 204.
+- **64, not GOMAXPROCS and not 1.** The work is bound by the device, not
+  the CPU; 64 keeps an NVMe or EBS queue busy and lets a journalling
+  filesystem fold concurrent fsyncs into one commit. One at a time would
+  give that up and make 20,000 reconnects wait for 20,000 commits in a
+  row.
+
+Not bounded, and why: reads (served from the page cache, they do not
+accumulate); the event bus and the signed-submission replay file, whose
+fsyncs are already one at a time under a lock; `WriteIn` and
+`WriteInFrom`, archive extraction on a node, where a slot held across a
+slow download would stall every other write.
+
+**Demonstrated** on the same Mac, GOMAXPROCS=2, each broken on purpose
+and seen to fail, then restored and seen to pass:
+
+| Test | Without the bound | With it |
+|---|---|---|
+| `TestHubThreadsAreBoundedUnderAStorm` (hub; 300 subscribes and 300 returns at once, 200-thread limit, real fsyncs) | thread exhaustion in 4 runs of 5 (7 of 8 at 500 nodes) | 5 of 5 pass, about 5 s each |
+| `TestWritesHoldingThreadsAreBounded` (atomicfile; 400 writes held in `read(2)` on a pipe, 150-thread limit) | thread exhaustion | passes |
+| `TestConcurrentWritesAreBounded` (atomicfile; how many writers are inside at once) | 192 of 192 | exactly 64 |
+| `TestAnchorReportsHoldingThreadsAreBounded` (hub; 400 anchor appends held in `read(2)`, 150-thread limit) | thread exhaustion | passes |
+
+The two `read(2)` tests exist because the storm depends on the disk:
+it reproduces where fsync is slow, as macOS's F_FULLFSYNC is, not every
+time even there, and may pass unbounded on a tmpfs. They hold a thread in a system call by
+construction, and failed every time they were broken. Two tests passed
+with a bound removed before they were changed. A first
+`TestConcurrentWritesAreBounded` slept in the hook and saw 41 of 192
+writers at once with no bound; it now holds every writer until the bound
+is full. And real anchor reports added to the storm made it pass with
+every bound removed, at 300 and 500 nodes: they did not pile up on this
+Mac, each being its own file, and they spread out the writes that do. So
+the storm is subscribes and returns only, and the anchor test is
+separate.
+
+**Not covered:** **not run at 20,000 on AWS.** Step 3 of
+`docs/simfleet-aws-plan.md` is the test of this, a restart under 20,000
+nodes and a ping to them, and needs approval because it bills. Not run on
+Linux, FreeBSD or Windows; the `read(2)` tests are unix-only, and the
+atomicfile one is the only test that runs on Windows. The cost in latency
+of 64 at once against unbounded was not measured, because unbounded at
+that size is a crash; how long the last of 20,000 reconnects waits for
+its node record is the number step 3 will give. Blocking system calls
+outside writes — reads on a cold cache after a restart, a log line to a
+stalled journald — are still unbounded, and were not seen to matter.
+
 | no request exempt (the old behaviour) | `TestConcurrentTokenEnrollmentsAreNotCharged` (4 issued, 12 held); `TestAnEnrollStormInTokenMode`, three runs of three (64 issued, and 4 to 8 of the last eight `rate_limited` rather than refused) |
 | exempt without the hold | `TestAContendedTokenCannotFillPendingUncharged` (14 pending from one address) |
 | `TokenAdmits` without the scope check | `TestTokenAdmitsAgreesWithEnroll` (out of node scope, out of source scope) |

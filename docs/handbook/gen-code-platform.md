@@ -249,10 +249,11 @@ Six packages had their own copy of the same write-a-temp-file-and- rename helper
 
 which are the two sides of one race. MoveFileEx has to open the destination for delete with no sharing; a reader holding it open makes that fail, and while it holds it a reader's open fails instead. Neither error mentions the other party, and neither is recoverable by the caller, so both are handled here rather than at eighteen call sites.
 
-**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `perm.go`, `root.go`, `xattr_linux.go`, `xattr_other.go`; with tests.
+**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `gate.go`, `perm.go`, `root.go`, `xattr_linux.go`, `xattr_other.go`; with tests.
 
 **Exports.**
 
+- `Bounded` (func): Bounded runs fn holding one of the MaxConcurrentWrites slots, for a caller outside this package that makes a write with an fsync and has nothing else bounding how many of them run at once.
 - `Read` (func): Read is os.ReadFile.
 - `Rename` (func): Rename is rename(2), which is atomic and does not care who has the destination open.
 - `Write` (func): Write replaces path with data, atomically as far as any reader is concerned: a reader sees either the old contents or the new, never a partial write and never an empty file.
