@@ -402,10 +402,8 @@ In this order, in the same session that raised the instances:
 - ~~Whether the hub's TLS handshake rate or its per-return work is the
   first limit.~~ The per-return work, by a wide margin, on the evidence
   of §11. That is not yet proven by a profile.
-- How long `simfleet setup` takes at 20,000. 5,000 took 283 s, and the
-  cost per thousand rose in a straight line (§11). Extrapolating that
-  line gives about an hour for 20,000. That is arithmetic, not a
-  measurement.
+- ~~How long `simfleet setup` takes at 20,000.~~ 305 s, after #688
+  (§11.3). The straight line §11 drew no longer holds.
 - ~~Whether `halite-node` also leaves one idle connection per return
   (L10, H9).~~ It did, and no longer does (5.641).
 - Whether relays can be fed by simfleet without changes (step 5).
@@ -441,8 +439,10 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
    `tofu test`; `tofu plan` against the test account ran on 2026-11-09:
    2 to add, nothing else. Nothing applied.
 8. ~~Step 1~~ done 2026-11-09 (§11.2), applied and torn down in one
-   session. Steps 2-3 next, one session, `tofu apply`, then teardown.
-   *(ask first; it bills)*
+   session. ~~Steps 2-3~~ run 2026-11-11 (§11.3): step 2 passed, step 3
+   did not. **Step 3 waits on the thread-exhaustion fix**, and then its
+   two dispatch rows, return volume and a clean-restart storm are run
+   again. *(ask first; it bills)*
 9. Step 4. Step 3F. Step 5 only if 4 passed and the relay work is done.
    *(each asked for separately)*
 10. Each result goes into DIVERGENCE 5.279 as a subsection, into
@@ -546,3 +546,40 @@ full numbers are in DIVERGENCE 5.279.
 
 **Not covered:** 10,000 and 20,000, more than one driver, FreeBSD, and a
 profile of the idle CPU.
+
+### 11.3 Steps 2 and 3, a dedicated hub and four drivers (2026-11-11)
+
+Raised with this module (c7g.4xlarge hub, five c7g.xlarge drivers, the
+fifth as observer; no placement group, see 5.279), built from `main` at
+`23e12c1a`. The full numbers are in DIVERGENCE 5.279.
+
+| | Result |
+|---|---|
+| `setup`, 20,000 identities | 305 s |
+| **Step 2:** `test.ping` to 10,000 | 10,000 of 10,000, p95 3.86 s: **MET** |
+| **Step 2:** `state.apply` dispatch to 10,000 | last received 769 ms: **MET** |
+| Connected and held 30 min at 20,000 | no disconnects: passes |
+| Hub RSS at 20,000 | 3.13 GiB idle; **4.36 GiB peak** during a batch: **fails** step 3's < 4 GiB |
+| `test.ping` to 20,000 | **the hub died**, `fatal error: thread exhaustion` |
+| Reconnect storm (after that crash) | 20,000 back in 52 s, RSS 2.94 GB: passes |
+| Reconnect after a clean restart | **the hub died** again, the same way |
+| Batch, 10% and 500 | one slice in flight at a time; gaps 270-450 ms: passes |
+| Enrolment storm, manual | 32 pending, 1,968 rate-limited: as designed |
+| Enrolment storm, token, 64 at once | 90 issued, 1,910 rate-limited: **the limiter meters a bootstrap** |
+
+- **One defect behind both crashes:** the hub writes and fsyncs inside
+  request handlers with no bound on how many at once, each holds an OS
+  thread, and Go aborts at 10,000. 10,000 concurrent returns made 9,352
+  threads. A clean restart brings a fleet back inside half a second, so
+  it is the worse case.
+- Returns spent 1.86 s each inside the hub at 10,000 on average; arrival
+  p95 was 0.7 s and return p95 3.9 s.
+- The ENA counted 6,895 packets over the hub's packets-per-second
+  allowance during the 20,000 ping, the first nonzero AWS counter in any
+  step.
+- Teardown was checked with read-only calls: all six instances
+  `terminated`, nothing left with the project tag. About an hour of
+  instance time, under $1.50.
+
+**Not covered:** both dispatch rows at 20,000, return volume, a profile
+of the return path, FreeBSD, and a placement group.

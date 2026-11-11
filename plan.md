@@ -837,6 +837,14 @@ then held 5,000 streams in about 900 MB. That is about 180 KB a stream,
 or roughly 3.6 GB at 20,000 by arithmetic, which is close enough to the
 4 GiB row that only step 3 can say.
 
+**Steps 2 and 3 (2026-11-11, DIVERGENCE 5.279).** Built from `23e12c1a`,
+on the same hub size with four drivers. At 10,000 both rows are met: ping
+p95 3.86 s, and every node had the apply within 769 ms. At 20,000 the
+hub held every stream for 30 minutes without a disconnect, at 3.13 GiB,
+but peaked at 4.36 GiB in a batch, and **died of Go's 10,000-thread
+limit** twice: on a ping to all 20,000, and on a clean restart with
+20,000 reconnecting at once. The 20,000 rows wait on that fix.
+
 The list below is what the 200-node run left unverified, kept as written.
 What the AWS run answered is in 5.279.
 
