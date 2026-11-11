@@ -54,7 +54,15 @@ func Write(path string, data []byte, mode os.FileMode) error {
 //
 // `prepare` receives the temporary file's path and may be nil.
 // DIVERGENCE 5.144.
+//
+// At most MaxConcurrentWrites of these run at once in a process, and
+// the rest wait; see gate.go for why. `prepare` runs inside that bound,
+// so it must not write through this package itself.
 func WritePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpPath string) error) error {
+	return Bounded(func() error { return writePrepared(path, data, mode, prepare) })
+}
+
+func writePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpPath string) error) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)

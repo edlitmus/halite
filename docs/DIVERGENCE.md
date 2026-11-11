@@ -43638,6 +43638,108 @@ rather than given end of file. So `halite call mac_softwareupdate.download`
 run by hand from a terminal may stop there. Nobody has tried it: it
 needs root on a Mac with a terminal, and none of the runs here had one.
 
+### 5.657 Disk writes in request handlers held a thread each, and 20,000 nodes ran the hub out
+
+The cause of both crashes in 5.279's steps 2 and 3 (2026-11-11): at
+20,000 simulated nodes a 16-core hub at `main` `23e12c1a` died with
+`fatal error: thread exhaustion` 1.2 s after a `test.ping` reached every
+node, and again within 18 s of a clean restart with every node
+reconnecting at once.
+
+Go parks a goroutine that waits on the network without an
+operating-system thread. A goroutine in fsync, rename or unlink is in the
+kernel and keeps its thread, and the scheduler starts another for
+everything else. `atomicfile.Write` makes several such calls, two of them
+fsyncs, and the hub calls it from request handlers with nothing bounding
+how many are in progress: once per return filed (`job.Cache.File`), once
+per stream opened (`subscribe`'s `NodeCache.Put`), once per queued
+delivery and job completion (`job.Cache.Update`). So the thread count
+followed the requests in flight, as the samples there say (353, 1,873,
+9,352, then 10,000, which is `debug.SetMaxThreads`' default and where Go
+stops the process). The evidence anchor store's `appendAnchor` was a
+third path: fsynced, serialised per node and deliberately not across
+nodes, and reported by a node when its stream opens.
+
+**Reproduced locally** on an M4 Pro, macOS, GOMAXPROCS=2, at `23e12c1a`:
+a child process capped at 200 threads, 500 subscribes and 500 returns
+through the hub's own handlers at once
+(`TestHubThreadsAreBoundedUnderAStorm`), died in under a second with
+`runtime: program exceeds 200-thread limit`. Its stacks, counted: 108
+goroutines in a system call under `subscribe` → `NodeCache.Put`, 87
+under `returned` → `job.Cache.File`, all inside
+`atomicfile.WritePrepared`. That is the crash on AWS, both halves of it,
+and it puts the first crash's cause — whose trace journald cut short —
+on a stack rather than only on the thread counts.
+
+**Fixed.** `atomicfile.WritePrepared`, which `Write` calls, now runs
+inside a process-wide bound of `atomicfile.MaxConcurrentWrites` (64);
+writes past it wait as parked goroutines, which hold no thread.
+`atomicfile.Bounded` is the same bound for an fsync outside the
+package, and the anchor store's append and tail repair use it. The
+reasons are in `internal/atomicfile/gate.go`, in short:
+
+- **In the package, not in the handlers,** because a bound held by a
+  handler is held across what the handler waits on, and the handlers
+  wait on each other (a retried return waits for the first copy's
+  write; job records are edited under a per-job lock). With every slot
+  held by a waiter, the writer they wait for never gets one. Inside the
+  package a slot is held only across system calls on a file the call
+  created, so it cannot be part of a cycle. It also covers the writes
+  nobody listed: the job record, the mine, orchestration state, the key
+  store.
+- **Not asynchronous for the node record,** though its last-seen time
+  needs no fsync: the grains in it are what targeting reads, and they
+  are written before the stream opens so a job dispatched in the same
+  second does not miss the node (SPEC 8.3). And it would leave returns, which
+  must be on disk before they are acknowledged, where they were.
+  Durability is unchanged everywhere: a write is still synced before it
+  returns, so a return is still on disk before its 204.
+- **64, not GOMAXPROCS and not 1.** The work is bound by the device, not
+  the CPU; 64 keeps an NVMe or EBS queue busy and lets a journalling
+  filesystem fold concurrent fsyncs into one commit. One at a time would
+  give that up and make 20,000 reconnects wait for 20,000 commits in a
+  row.
+
+Not bounded, and why: reads (served from the page cache, they do not
+accumulate); the event bus and the signed-submission replay file, whose
+fsyncs are already one at a time under a lock; `WriteIn` and
+`WriteInFrom`, archive extraction on a node, where a slot held across a
+slow download would stall every other write.
+
+**Demonstrated** on the same Mac, GOMAXPROCS=2, each broken on purpose
+and seen to fail, then restored and seen to pass:
+
+| Test | Without the bound | With it |
+|---|---|---|
+| `TestHubThreadsAreBoundedUnderAStorm` (hub; 300 subscribes and 300 returns at once, 200-thread limit, real fsyncs) | thread exhaustion in 4 runs of 5 (7 of 8 at 500 nodes) | 5 of 5 pass, about 5 s each |
+| `TestWritesHoldingThreadsAreBounded` (atomicfile; 400 writes held in `read(2)` on a pipe, 150-thread limit) | thread exhaustion | passes |
+| `TestConcurrentWritesAreBounded` (atomicfile; how many writers are inside at once) | 192 of 192 | exactly 64 |
+| `TestAnchorReportsHoldingThreadsAreBounded` (hub; 400 anchor appends held in `read(2)`, 150-thread limit) | thread exhaustion | passes |
+
+The two `read(2)` tests exist because the storm depends on the disk:
+it reproduces where fsync is slow, as macOS's F_FULLFSYNC is, not every
+time even there, and may pass unbounded on a tmpfs. They hold a thread in a system call by
+construction, and failed every time they were broken. Two tests passed
+with a bound removed before they were changed. A first
+`TestConcurrentWritesAreBounded` slept in the hook and saw 41 of 192
+writers at once with no bound; it now holds every writer until the bound
+is full. And real anchor reports added to the storm made it pass with
+every bound removed, at 300 and 500 nodes: they did not pile up on this
+Mac, each being its own file, and they spread out the writes that do. So
+the storm is subscribes and returns only, and the anchor test is
+separate.
+
+**Not covered:** **not run at 20,000 on AWS.** Step 3 of
+`docs/simfleet-aws-plan.md` is the test of this, a restart under 20,000
+nodes and a ping to them, and needs approval because it bills. Not run on
+Linux, FreeBSD or Windows; the `read(2)` tests are unix-only, and the
+atomicfile one is the only test that runs on Windows. The cost in latency
+of 64 at once against unbounded was not measured, because unbounded at
+that size is a crash; how long the last of 20,000 reconnects waits for
+its node record is the number step 3 will give. Blocking system calls
+outside writes — reads on a cold cache after a restart, a log line to a
+stalled journald — are still unbounded, and were not seen to matter.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
