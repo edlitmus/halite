@@ -1076,7 +1076,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"path is captured instead: that runner's real `pro status --format json` (client " +
 		"38ubuntu0~24.04, exit 1, the reason on stdout and nothing on stderr) is a fixture, and " +
 		"`status` now quotes the client's own reason where it used to end at a colon " +
-		"(DIVERGENCE 5.653). The 38 client has not been run attached. `enable` and `disable` were then driven by hand on the same " +
+		"(DIVERGENCE 5.654). The 38 client has not been run attached. `enable` and `disable` were then driven by hand on the same " +
 		"host, toggling `usg` (Ubuntu Security Guide, entitled on every Pro tier and an audit tool " +
 		"rather than a security control) off and back on and off again, confirmed against a real " +
 		"`pro status --format json` after each step -- `TestLiveProEnableAndDisable`, gated on root " +

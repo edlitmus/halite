@@ -43270,7 +43270,7 @@ workflow's two-builder comparison was not run; `make repro` (one
 builder, two paths) was the local check. The lab was not raised. What
 else changed between 1.27.3 and 1.27.4 was not read.
 
-### 5.653 pro.status lost the client's reason, and a runner without Canonical's DNS failed the suite
+### 5.654 pro.status lost the client's reason, and a runner without Canonical's DNS failed the suite
 
 From 2026-11-11, `TestLiveProReadsTheRealClient` failed on every
 ubuntu-24.04 leg of `ci.yml` (test, race, fips-test) with

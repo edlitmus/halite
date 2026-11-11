@@ -357,7 +357,7 @@ func TestProRunChecksTheCommonEnvelope(t *testing.T) {
 // 20261101.360.1, client 38ubuntu0~24.04, unattached) on 2026-11-11,
 // when the runner could not resolve contracts.canonical.com. The client
 // exited 1 after 26 seconds, wrote these 367 bytes (with the trailing
-// newline) to stdout and nothing at all to stderr. DIVERGENCE 5.653.
+// newline) to stdout and nothing at all to stderr. DIVERGENCE 5.654.
 const proStatusConnectivityFailure = `{"environment_vars": [], "errors": [{"message": "Failed to connect to https://contracts.canonical.com/v1/resources?architecture=amd64&kernel=7.0.0-1017-azure&series=noble&virt=microsoft\n[Errno -3] Temporary failure in name resolution\n", "message_code": "connectivity-error", "service": null, "type": "system"}], "result": "failure", "services": [], "warnings": []}` + "\n"
 
 // TestProStatusSaysWhatTheClientSaidOnFailure runs the captured failure

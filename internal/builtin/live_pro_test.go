@@ -51,7 +51,7 @@ func TestLiveProReadsTheRealClient(t *testing.T) {
 	// list on every `pro status`, so a host that cannot reach it cannot
 	// answer at all. That is a fact about the host's network, not about
 	// the module, and GitHub's ubuntu-24.04 runners were in exactly that
-	// state from 2026-11-11 (DIVERGENCE 5.653). It skips on the client's
+	// state from 2026-11-11 (DIVERGENCE 5.654). It skips on the client's
 	// own `message_code` and nothing broader: reaching this line means
 	// the module has already read the client's envelope off stdout, which
 	// is the half of the fix that a skip must not hide, so a regression

@@ -219,7 +219,7 @@ func proStatusFn(c *exec.Context, args *value.Map) (any, error) {
 // captured on a GitHub ubuntu-24.04 runner (client 38ubuntu0~24.04) on
 // 2026-11-11, when the runner could not resolve contracts.canonical.com
 // and an unattached client asks that server for its service list on
-// every call: 367 bytes on stdout, 0 on stderr, exit 1 (DIVERGENCE 5.653).
+// every call: 367 bytes on stdout, 0 on stderr, exit 1 (DIVERGENCE 5.654).
 //
 // This used to let the runner fail the command on its exit code, and the
 // runner's error carries the first line of stderr -- which here is
