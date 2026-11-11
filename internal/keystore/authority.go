@@ -277,7 +277,7 @@ func (a *Authority) Enroll(req Request) (*Result, error) {
 //
 // It is the hub's enrollment limit asking, before it charges a request,
 // whether this one is the operator's decision made in advance
-// (DIVERGENCE 5.656). It is only an answer for this moment: another
+// (DIVERGENCE 5.658). It is only an answer for this moment: another
 // request may spend the last use before this one reaches Enroll, which
 // is why the hub holds a use for each request it lets through on the
 // strength of this, and does not take "would spend" as "will".

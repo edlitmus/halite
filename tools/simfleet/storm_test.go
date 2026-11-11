@@ -42,7 +42,7 @@ func TestAnEnrollStormInManualMode(t *testing.T) {
 // enroll_source_burst (32): this test used to send four at a time, which
 // is how it passed while the AWS run of 2026-11-11 had 2,000 sent 64 at a
 // time come back 90 issued and 1,910 rate_limited (DIVERGENCE 5.279,
-// 5.656). One at a time, or four, a charge is refunded before the next
+// 5.658). One at a time, or four, a charge is refunded before the next
 // arrives; forty in flight fill the budget with charges not yet given
 // back, unless a request whose token would spend is not charged at all.
 // On a laptop an issue is quick, and with the old limiter this storm came

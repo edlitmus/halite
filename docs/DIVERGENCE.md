@@ -43618,98 +43618,6 @@ both divisions are held. The lines after the banner were never seen and
 are not invented. A future failure prints them, because the error now
 keeps them, and that output should replace this fixture.
 
-### 5.656 A token-mode bootstrap was metered whenever it arrived faster than it was answered
-
-`internal/hub/enrolllimit.go` said from the start (5.398) that "a
-token-mode bootstrap of a thousand nodes behind one NAT address must not
-be metered", and 5.652 said its token storm showed "an issue is
-refunded, so the limiter played no part". Both were true one request at
-a time, and 5.652's storm sent four. The limiter charged every request
-on entry and refunded an issued certificate afterwards, so a charge was
-held for as long as the request was in the key store. On AWS on
-2026-11-11 (5.279, steps 2 and 3) an issue took about 345 ms, and
-`simfleet enroll-storm -n 2000 -concurrency 64` on a 2,000-use token
-from one address filled the 32-request budget with charges not yet
-refunded: 90 issued, 1,910 `rate_limited`.
-
-**Fixed.** A request whose bootstrap token would spend is not charged
-on entry at all. The hub reads the body first, asks
-`keystore.Authority.TokenAdmits` whether the token would spend for the
-node the CSR names from this address now -- the same scope check
-`spendToken` makes, now one function, `Token.refuses`, that both call --
-and if so, and a use of the token is free to hold, lets the request in
-uncharged. One that then does not issue (it lost the race for the last
-use, or its name is held by another key) is charged once that is known.
-Every other request is charged on entry exactly as before, so a burst
-without a live token still cannot all pass the check before any of it
-is counted.
-
-The hold is the part that is not obvious. Exempting every request whose
-token would spend opens 5.398's hole again for anybody with a nearly
-spent token: sixteen requests at once on a two-use token all pass the
-check, two spend, and fourteen leave pending records (a token that does
-not spend still records the request for an operator), none of them
-charged. The hub therefore counts, per token, the requests in flight let
-through on it, and lets no more through than the token has uses left;
-the rest are charged on entry. The requests let through uncharged are
-bounded by what the operator minted.
-
-Exempting any request that merely carries a token was the other obvious
-fix, and is the same hole without needing a token at all: a made-up
-token for a new name records a pending request.
-
-**What it costs.** The body is read before the budget is asked, because
-whether to charge depends on the token in it. A source over its budget
-used to cost the hub a TLS handshake; it now costs a body of at most
-`MaxEnrollBody` read within the enrollment read timeout (5.338's bounds
-on one request), and for a request carrying a token, a SHA-256 and one
-file opened: `TokenAdmits` reads the one token file the secret's digest
-names, before parsing the CSR, rather than listing the store as the
-spend does. The two lookups can disagree only in the safe direction (a
-token file not at its digest's name, which `MintToken` never writes, is
-found by the spend and not by the check, and the request is charged).
-`enroll_source_burst`'s documentation said the 429 came "before reading
-the request"; it now says before the request reaches the key store.
-
-**Demonstrated** on darwin/arm64, go1.27.3, in process and against a
-real `halite-hub serve` on loopback:
-
-- `TestConcurrentTokenEnrollmentsAreNotCharged`: sixteen token
-  enrolments at once from one address, burst 4, each held 100 ms inside
-  `Authority.Enroll`. Before the fix: 4 issued, 12 `rate_limited`.
-  After: 16 issued, and the budget untouched (four requests without a
-  token are then admitted).
-- `TestAContendedTokenCannotFillPendingUncharged`: sixteen at once on a
-  two-use token, burst 4. Two issue, and no more than four pending
-  records are left.
-- `TestTokenAdmitsAgreesWithEnroll`: for a token in scope, out of node
-  scope, out of source scope, made up, absent, in manual mode, revoked,
-  spent and expired, `TokenAdmits` says yes exactly when `Enroll` then
-  issues.
-- `TestAnEnrollStormInTokenMode` now sends 72 requests 40 at a time,
-  above the burst, on a 64-use token: 64 issued, 8 refused, three runs
-  of three.
-
-**Broken on purpose,** each with the test that caught it:
-
-| Break | Caught by |
-|---|---|
-| the prompt not looked for | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
-| the prompt looked for in stdout only | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
-| the error the first line again | `TestMacSoftwareUpdateDownloadFailureKeepsTheReason` |
-| the ranking inverted on major version | `TestMacSoftwareUpdatePickDownloadRanks` |
-
-The live test's skip was never reached, so that path is held by reading
-it and by the unit tests of the error it tests for, not by a run.
-
-**Not covered: a terminal.** Commands run in their own process group
-(`confineTree` sets `Setpgid`) but keep halite's controlling terminal.
-A prompt that opens `/dev/tty` instead of reading standard input, from
-a process group that is not in the foreground, is stopped by `SIGTTIN`
-rather than given end of file. So `halite call mac_softwareupdate.download`
-run by hand from a terminal may stop there. Nobody has tried it: it
-needs root on a Mac with a terminal, and none of the runs here had one.
-
 ### 5.657 Disk writes in request handlers held a thread each, and 20,000 nodes ran the hub out
 
 The cause of both crashes in 5.279's steps 2 and 3 (2026-11-11): at
@@ -43825,6 +43733,98 @@ hub's memory, so two hubs over one key store would each hold up to a
 token's remaining uses, and SPEC does not run two. The extra cost an
 over-budget source now imposes (a body read) was reasoned from the
 bounds, not measured under a flood.
+
+### 5.658 A token-mode bootstrap was metered whenever it arrived faster than it was answered
+
+`internal/hub/enrolllimit.go` said from the start (5.398) that "a
+token-mode bootstrap of a thousand nodes behind one NAT address must not
+be metered", and 5.652 said its token storm showed "an issue is
+refunded, so the limiter played no part". Both were true one request at
+a time, and 5.652's storm sent four. The limiter charged every request
+on entry and refunded an issued certificate afterwards, so a charge was
+held for as long as the request was in the key store. On AWS on
+2026-11-11 (5.279, steps 2 and 3) an issue took about 345 ms, and
+`simfleet enroll-storm -n 2000 -concurrency 64` on a 2,000-use token
+from one address filled the 32-request budget with charges not yet
+refunded: 90 issued, 1,910 `rate_limited`.
+
+**Fixed.** A request whose bootstrap token would spend is not charged
+on entry at all. The hub reads the body first, asks
+`keystore.Authority.TokenAdmits` whether the token would spend for the
+node the CSR names from this address now -- the same scope check
+`spendToken` makes, now one function, `Token.refuses`, that both call --
+and if so, and a use of the token is free to hold, lets the request in
+uncharged. One that then does not issue (it lost the race for the last
+use, or its name is held by another key) is charged once that is known.
+Every other request is charged on entry exactly as before, so a burst
+without a live token still cannot all pass the check before any of it
+is counted.
+
+The hold is the part that is not obvious. Exempting every request whose
+token would spend opens 5.398's hole again for anybody with a nearly
+spent token: sixteen requests at once on a two-use token all pass the
+check, two spend, and fourteen leave pending records (a token that does
+not spend still records the request for an operator), none of them
+charged. The hub therefore counts, per token, the requests in flight let
+through on it, and lets no more through than the token has uses left;
+the rest are charged on entry. The requests let through uncharged are
+bounded by what the operator minted.
+
+Exempting any request that merely carries a token was the other obvious
+fix, and is the same hole without needing a token at all: a made-up
+token for a new name records a pending request.
+
+**What it costs.** The body is read before the budget is asked, because
+whether to charge depends on the token in it. A source over its budget
+used to cost the hub a TLS handshake; it now costs a body of at most
+`MaxEnrollBody` read within the enrollment read timeout (5.338's bounds
+on one request), and for a request carrying a token, a SHA-256 and one
+file opened: `TokenAdmits` reads the one token file the secret's digest
+names, before parsing the CSR, rather than listing the store as the
+spend does. The two lookups can disagree only in the safe direction (a
+token file not at its digest's name, which `MintToken` never writes, is
+found by the spend and not by the check, and the request is charged).
+`enroll_source_burst`'s documentation said the 429 came "before reading
+the request"; it now says before the request reaches the key store.
+
+**Demonstrated** on darwin/arm64, go1.27.3, in process and against a
+real `halite-hub serve` on loopback:
+
+- `TestConcurrentTokenEnrollmentsAreNotCharged`: sixteen token
+  enrolments at once from one address, burst 4, each held 100 ms inside
+  `Authority.Enroll`. Before the fix: 4 issued, 12 `rate_limited`.
+  After: 16 issued, and the budget untouched (four requests without a
+  token are then admitted).
+- `TestAContendedTokenCannotFillPendingUncharged`: sixteen at once on a
+  two-use token, burst 4. Two issue, and no more than four pending
+  records are left.
+- `TestTokenAdmitsAgreesWithEnroll`: for a token in scope, out of node
+  scope, out of source scope, made up, absent, in manual mode, revoked,
+  spent and expired, `TokenAdmits` says yes exactly when `Enroll` then
+  issues.
+- `TestAnEnrollStormInTokenMode` now sends 72 requests 40 at a time,
+  above the burst, on a 64-use token: 64 issued, 8 refused, three runs
+  of three.
+
+**Broken on purpose,** each with the test that caught it:
+
+| Break | Caught by |
+|---|---|
+| the prompt not looked for | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the prompt looked for in stdout only | `TestMacSoftwareUpdateDownloadNamesAPasswordPrompt` |
+| the error the first line again | `TestMacSoftwareUpdateDownloadFailureKeepsTheReason` |
+| the ranking inverted on major version | `TestMacSoftwareUpdatePickDownloadRanks` |
+
+The live test's skip was never reached, so that path is held by reading
+it and by the unit tests of the error it tests for, not by a run.
+
+**Not covered: a terminal.** Commands run in their own process group
+(`confineTree` sets `Setpgid`) but keep halite's controlling terminal.
+A prompt that opens `/dev/tty` instead of reading standard input, from
+a process group that is not in the foreground, is stopped by `SIGTTIN`
+rather than given end of file. So `halite call mac_softwareupdate.download`
+run by hand from a terminal may stop there. Nobody has tried it: it
+needs root on a Mac with a terminal, and none of the runs here had one.
 
 ## 6. Everything else not started
 

@@ -452,7 +452,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	// MaxEnrollBody, read within enrollReadTimeout -- the bounds 5.338
 	// put on any one request -- plus, for a request carrying a token, a
 	// hash and one file opened. It is the price of a token-mode bootstrap
-	// not being refused for arriving all at once (DIVERGENCE 5.656).
+	// not being refused for arriving all at once (DIVERGENCE 5.658).
 	var req transport.EnrollRequest
 	if err := transport.ReadJSON(w, r, transport.MaxEnrollBody, &req); err != nil {
 		// Charged, as a malformed request always was, and a source over

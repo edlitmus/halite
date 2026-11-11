@@ -8,7 +8,7 @@ import (
 
 // **TokenAdmits and Enroll say the same thing.** The hub lets a request
 // past its enrollment limit uncharged when TokenAdmits says its token
-// would spend (DIVERGENCE 5.656), so a case where TokenAdmits says yes
+// would spend (DIVERGENCE 5.658), so a case where TokenAdmits says yes
 // and Enroll then does not issue is a request that filled a pending
 // record for free. Each case asks TokenAdmits, then Enroll, and holds the
 // two to one answer: every way a token is refused, and the one way it

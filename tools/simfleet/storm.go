@@ -44,7 +44,7 @@ import (
 // limiter admits enroll_source_burst (32) and then one every 10 s. In
 // token mode (`simfleet setup -enrollment token`) an answer is a
 // certificate, and a token-mode bootstrap is not metered at all. That
-// was said here before it was true: until DIVERGENCE 5.656 the hub
+// was said here before it was true: until DIVERGENCE 5.658 the hub
 // charged each token request on entry and refunded it once issued, so
 // with more in flight than the burst it refused most of them (5.279,
 // 90 issued of 2,000 at 64 at a time), and this harness's own test sent

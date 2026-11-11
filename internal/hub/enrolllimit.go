@@ -51,7 +51,7 @@ import (
 // passing the check before any of them is counted.
 //
 // **A token request is not charged and then refunded, because that
-// meters it after all** (DIVERGENCE 5.656). The comment above said so
+// meters it after all** (DIVERGENCE 5.658). The comment above said so
 // from the start and was true only one request at a time: a charge is
 // held for as long as the request is in the keystore, an issue on AWS
 // took about 345 ms, and 2,000 token enrolments from one address 64 at a
@@ -119,7 +119,7 @@ const (
 	// records, where it took thirty seconds. Both are a judgement, not a
 	// measurement of any estate, and a token-mode bootstrap is not
 	// metered at all, however many of its requests are in flight, so
-	// long as the token has a use left for each (5.656).
+	// long as the token has a use left for each (5.658).
 	DefaultEnrollSourceRate  = 0.1
 	DefaultEnrollSourceBurst = 32
 
