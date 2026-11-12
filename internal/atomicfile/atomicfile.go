@@ -68,7 +68,24 @@ func writePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	// The temporary name is removed only when the rename has not taken
+	// it. It used to be removed unconditionally, by a defer that also ran
+	// after a successful rename, when the name no longer exists: unlink
+	// fails with ENOENT and Go's os.Remove then tries rmdir too, so every
+	// successful write paid two lookups of its directory for nothing.
+	//
+	// That is cheap alone and expensive where it was measured: a hub files
+	// every return of a job into one directory, and on FreeBSD a lookup
+	// takes the directory vnode's lock shared, so those two lookups queued
+	// behind every create and rename of 20,000 returns (`procstat -kk`
+	// showed threads in `rmdir` waiting in `lockmgr_slock_hard`).
+	// DIVERGENCE 5.659.
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = removeTemp(name)
+		}
+	}()
 	if err := chmodTemp(tmp, mode); err != nil {
 		tmp.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
@@ -112,6 +129,7 @@ func writePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 	if err := Rename(name, path); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
+	renamed = true
 	// The directory entry is synced too, so that the rename survives a
 	// power loss rather than leaving a file with no name. Best effort:
 	// a directory cannot be opened for reading on Windows, and a
@@ -123,6 +141,14 @@ func writePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpP
 	}
 	return nil
 }
+
+// removeTemp and removeTempIn remove a temporary file that was not renamed
+// into place. Variables so that a test can count the calls: a removal
+// after a successful write is the cost this package must not pay.
+var (
+	removeTemp   = os.Remove
+	removeTempIn = func(root *os.Root, name string) error { return root.Remove(name) }
+)
 
 // beforeAttributes, when a test sets it, runs with the temporary file's
 // name after its contents are written and before the replaced file's

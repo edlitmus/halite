@@ -66,7 +66,13 @@ func WriteInFrom(root *os.Root, name string, r io.Reader, mode os.FileMode) erro
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", name, err)
 	}
-	defer root.Remove(tmpName)
+	// Removed only if the rename has not taken the name; see writePrepared.
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = removeTempIn(root, tmpName)
+		}
+	}()
 	if err := chmodTemp(tmp, mode); err != nil {
 		tmp.Close()
 		return fmt.Errorf("writing %s: %w", name, err)
@@ -85,6 +91,7 @@ func WriteInFrom(root *os.Root, name string, r io.Reader, mode os.FileMode) erro
 	if err := renameIn(root, tmpName, name); err != nil {
 		return fmt.Errorf("writing %s: %w", name, err)
 	}
+	renamed = true
 	if d, err := root.Open(dir); err == nil {
 		_ = d.Sync()
 		d.Close()
