@@ -23878,7 +23878,7 @@ fleet was back before the storm.
 instances `terminated`; no volume, placement group or network interface
 with `Project=halite-simfleet` in us-east-1 or us-east-2. About 41
 minutes of instance time, about $1. On the build host the toolchain,
-source, setup directory and file server were removed, salt-minion is
+source, setup directory and file server were removed, its Salt agent is
 active and `dmesg` shows no OOM; the run's samples, merges, metrics and
 journals are kept there.
 
