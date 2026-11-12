@@ -43837,6 +43837,85 @@ token's remaining uses, and SPEC does not run two. The extra cost an
 over-budget source now imposes (a body read) was reasoned from the
 bounds, not measured under a flood.
 
+### 5.659 Every atomic write removed its temporary file after the rename had already taken it
+
+`internal/atomicfile.writePrepared` and `WriteInFrom` cleaned up their
+temporary file with a `defer` that ran on every return, including after
+a successful rename. By then the name no longer exists: `unlink` fails
+with ENOENT, and Go's `os.Remove` then tries `rmdir` as well, so every
+successful write in the hub paid two lookups of its destination's
+directory for nothing.
+
+Alone that is cheap, and the code read as correct, since the call fails
+harmlessly. It was found by measurement, not by reading. A FreeBSD hub
+on ZFS at 20,000 nodes (5.279, step 3F, 2026-11-12) missed SPEC 30's
+`test.ping` row at a p95 of 12–19 s with its disk and CPU mostly idle.
+A profile showed why. Each return is written into its job's one
+`returns/` directory, through the 64-slot write gate (5.657). 11 s into
+a ping, 3,507 handlers waited for a slot, and the threads holding the
+slots were in the kernel waiting for that directory's vnode lock:
+`procstat -kk` gave `namei → cache_lookup → vget_finish → _vn_lock →
+lockmgr_slock_hard`, from `rename`, `openat` (`CreateTemp`), `fstatat`,
+`close` and `rmdir`. The `rmdir` stacks were this defer. On FreeBSD a
+name lookup takes the directory vnode's lock shared, so each wasted
+lookup queued behind every create and rename in the same directory.
+
+**Fixed.** The temporary name is removed only when the rename has not
+happened. A failed write still removes it, at whatever step it failed.
+The removals go through two package variables so that a test can count
+them.
+
+**Demonstrated:**
+
+- `TestASuccessfulWriteRemovesNothing`: a `Write` and a `WriteIn` that
+  succeed ask for 0 removals. **Broken on purpose:** with the two
+  `renamed = true` lines removed, it fails with "two successful writes
+  asked for 2 removals, want 0".
+- `TestAWriteThatFailsBeforeTheRenameRemovesItsTemporaryFile`: a
+  `WritePrepared` whose prepare step fails and a `WriteInFrom` whose
+  reader fails ask for 2 removals between them, and leave nothing in the
+  directory.
+- **At scale, on AWS, 2026-11-12.** One FreeBSD 15.1-RELEASE-p6 arm64 ZFS
+  hub (c7g.4xlarge, gp3, the image's ZFS defaults), 20,000 simulated
+  nodes on four drivers, and two hub binaries swapped in place by
+  restart: `f321afee` and the same plus this change. Both were built with
+  a pprof listener on loopback for the profile; that listener is not in
+  this change. The order was base, fix, base, fix, base. Each phase
+  waited for all 20,000 to reconnect and discarded its first ping (the
+  first job after a start is always slower). `test.ping` p95 over the
+  measured pings:
+
+  | build | pings | median | mean |
+  |---|---|---|---|
+  | `f321afee` | 10.82, 10.44, 9.87, 11.70, 10.52, 10.50, 10.46, 9.77 s | 10.48 s | 10.51 s |
+  | with this change | 9.46, 9.78, 9.11, 9.39, 9.09, 10.26 s | 9.43 s | 9.51 s |
+
+  The fixed build is lower in 45 of the 48 pairs (Mann-Whitney, exact
+  one-sided p = 0.0023). The baseline went back to about 10.5 s each
+  time it was swapped back in, which is the fix reverted at scale. 11 s
+  into a measured ping, 1,000–1,200 returns still waited for a slot with
+  the change, against 2,300–4,200 without. Simulated nodes retried 0
+  times in every phase.
+
+**What this does not do.** It removes waste; it does not remove the
+contention. Five of the six fixed pings were under 10 s, by 0.2–0.9 s,
+which is not a margin on which to call SPEC 30's row met on FreeBSD.
+Every return of a job still creates, renames and commits twice to the
+ZIL in one directory. Sharding `returns/` or syncing the directory once
+per batch is the change that would give room, and neither has been
+tried. Linux was not re-measured with this change. The reasoning that
+Linux suffers less (its path lookup takes no lock on the directory) is
+an inference from the FreeBSD stacks, not a Linux profile.
+
+**Not covered.** `make check` passed on darwin/arm64 with go1.27.4
+(`GOMAXPROCS=2`); the live and fleet legs were not run. Windows has its
+own `Rename` with retries, which this change does not alter; the new
+tests carry no build constraint, so CI's Windows job runs them, but
+they were not run on Windows by hand. Nothing on UFS was re-measured: there each return also
+waits for a synchronous directory write (step 3F on UFS), which this
+change does not touch. Issue 718 has the profile, the A/B and the raw
+outputs.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
