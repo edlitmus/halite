@@ -843,7 +843,18 @@ p95 3.86 s, and every node had the apply within 769 ms. At 20,000 the
 hub held every stream for 30 minutes without a disconnect, at 3.13 GiB,
 but peaked at 4.36 GiB in a batch, and **died of Go's 10,000-thread
 limit** twice: on a ping to all 20,000, and on a clean restart with
-20,000 reconnecting at once. The 20,000 rows wait on that fix.
+20,000 reconnecting at once. ~~The 20,000 rows wait on that fix.~~
+
+**Step 3 again, with the fix (2026-11-11, DIVERGENCE 5.279).** Built from
+`f321afee`, which bounds the hub's concurrent disk writes (5.657) and
+stops metering a token bootstrap (5.658). At 20,000 both rows are met:
+ping p95 7.85 s, every node had the apply within 783 ms, and ten more
+pings 120 s apart did the same with no descriptor growth. The hub never
+went past 88 threads, survived a clean restart with 20,000 back in 27 s,
+and issued 2,000 of 2,000 token enrolments at 64 at once. **Hub memory
+is still over the row:** 2.87 GiB idle, but 4.26-4.51 GiB during every
+20,000-node job, while each node's kept returns connection is open
+alongside its stream. Issue 718 tracks what is left.
 
 The list below is what the 200-node run left unverified, kept as written.
 What the AWS run answered is in 5.279.
