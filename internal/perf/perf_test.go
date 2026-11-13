@@ -106,7 +106,7 @@ var targets = []target{
 	{Metric: "`state.apply` dispatch to 10,000 nodes", Method: byHarness,
 		Waiting: "a benchmark `make perf` can repeat: met on AWS at 20,000, every node had it in 783 ms on Linux, 685 ms on FreeBSD with UFS and 882 ms with ZFS, and in 769 ms at 10,000 on Linux (ledger 5.279)"},
 	{Metric: "Hub memory at 20,000 nodes", Method: byHarness,
-		Waiting: "a fix: on AWS it held 20,000 idle in 2.87 GiB and peaked at 4.26 to 4.51 GiB during each job to all of them on Linux, and 3.03 to 3.05 GiB idle and 4.74 to 4.89 GiB at peak on FreeBSD, over the row (ledger 5.279)"},
+		Waiting: "a FreeBSD hub: met on a Linux hub on AWS once each node's queue held pointers, 2.02 GiB idle and 3.80 GiB at peak over five jobs to all 20,000 (ledger 5.661); before that, 4.26 to 4.51 GiB at peak on Linux and 4.74 to 4.89 GiB on FreeBSD (ledger 5.279)"},
 	{Metric: "Reactor throughput", Method: byHarness,
 		Waiting: "the simulated node harness, driving the event bus"},
 	{Metric: "File server throughput", Method: byHarness,
