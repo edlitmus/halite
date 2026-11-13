@@ -6,7 +6,7 @@ rows at 20,000 and survived a clean restart, but the hub peaked at
 4.26-4.51 GiB during each 20,000-node job, over SPEC 30's 4 GiB (§11.4).
 Step 3F, a FreeBSD hub, ran 2026-11-12 on UFS and ZFS and led to two
 fixes (§11.5). Since 5.661 a hub is under 4 GiB at 20,000, on Linux and
-on FreeBSD with ZFS (§11.6). Steps 4 and 5 have not run, and each needs
+on FreeBSD with ZFS and UFS (§11.6). Steps 4 and 5 have not run, and each needs
 approval (§10). Issue 718 tracks the rows.
 
 The region (us-east-1), the use of two existing test hosts (host B and
@@ -637,7 +637,8 @@ At 20,000 on `f321afee`, all nodes connected and dispatch was met on UFS
 (685 ms) and on ZFS (882 ms). `test.ping` p95 was 1 m 55 s on UFS and
 14-17 s on ZFS. A profile put the cause on the job's one `returns/`
 directory lock. After 5.659 and 5.660, a ZFS hub answered at p95 2.34 s
-against 10.03 s for the same hub without 5.660. UFS was not re-run.
+against 10.03 s for the same hub without 5.660. UFS, re-run on
+2026-11-13, took p95 about 37 s (§11.6).
 Memory peaked at 4.74-4.89 GiB. Five AWS runs, each torn down and
 checked, cost about $3.30 in all. DIVERGENCE 5.279 has the tables, the
 profile and what was not covered.
@@ -649,6 +650,8 @@ holding pointers (DIVERGENCE 5.661), a hub at 20,000 on the step 3
 instance type peaked over five jobs to all of them at 3,799 MiB
 (3.71 GiB) on Linux and 3,808 MiB (3.72 GiB) on FreeBSD 15.1 with ZFS,
 against 4,460 MiB and at least 4,567 MiB without it. Idle was 2,022 and
-1,997 MiB. Two AWS runs, each torn down and checked, cost about $1.40
-in all. UFS was not re-measured. DIVERGENCE 5.661 and 5.661.1 have the
+1,997 MiB. On UFS it peaked at 3,896 MiB (3.80 GiB) against 4,914, and
+`test.ping` p95 was about 37 s at 20,000, still over the 10 s row
+(DIVERGENCE 5.660.1). Three AWS runs, each torn down and checked, cost
+about $1.85 in all. DIVERGENCE 5.661, 5.661.1 and 5.661.2 have the
 tables and what was not covered.

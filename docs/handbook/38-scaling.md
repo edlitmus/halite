@@ -22,9 +22,9 @@ measured only some of them:
 | Pillar compile, 200 pillar SLS: under 500 ms cold | **Measured: 45 ms** |
 | Pillar compile, cached: under 5 ms | Not measured: the hub has no pillar cache; it compiles on each request |
 | 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Measured at 20,000 on Linux.** 20,000 simulated nodes (`tools/simfleet`) connected to a 16-core hub, answered twelve 20,000-node jobs, and came back within 27 s of a clean restart (ledger 5.279). Its memory is the 4 GiB row below. On FreeBSD 15.1 the same 20,000 connected and answered every job, on UFS and on ZFS, and came back within 46 s of a restart on ZFS (134 s on UFS). The 25,000 limit and 100,000 with relays have not been run |
-| `test.ping` to 10,000 nodes: 95% of returns in 10 s | **Measured: met on Linux and on FreeBSD with ZFS.** 10,000 of 10,000 returned, p95 3.86 s, on a 16-core Linux hub with simulated nodes; at 20,000, p95 7.85 s. On a 16-core FreeBSD hub with ZFS, p95 2.34 s at 20,000 once a job's returns were spread over subdirectories (ledger 5.660). **Not met on FreeBSD with UFS:** p95 1 m 55 s at 20,000 before either fix, because each return waits for synchronous writes to one directory. Keep a FreeBSD hub's `state/` on ZFS (ledger 5.279) |
+| `test.ping` to 10,000 nodes: 95% of returns in 10 s | **Measured: met on Linux and on FreeBSD with ZFS.** 10,000 of 10,000 returned, p95 3.86 s, on a 16-core Linux hub with simulated nodes; at 20,000, p95 7.85 s. On a 16-core FreeBSD hub with ZFS, p95 2.34 s at 20,000 once a job's returns were spread over subdirectories (ledger 5.660). **Not met on FreeBSD with UFS:** p95 1 m 55 s at 20,000 before either fix, and about 37 s after them, because each return waits for a synchronous directory write. Keep a FreeBSD hub's `state/` on ZFS (ledger 5.279, 5.660.1) |
 | Dispatch of `state.apply` to 10,000 nodes in 30 s | **Measured: met.** Every one of 10,000 simulated nodes had it within 769 ms on a 16-core Linux hub, and every one of 20,000 within 783 ms; on a 16-core FreeBSD hub, within 685 ms on UFS and 882 ms on ZFS (ledger 5.279) |
-| Hub memory at 20,000 nodes: under 4 GiB | **Measured: met on Linux and on FreeBSD with ZFS, not re-measured on FreeBSD with UFS.** Since each node's outbound queue holds pointers (ledger 5.661), a Linux hub held 20,000 idle in 1.97 GiB and peaked at 3.71 GiB over five jobs to all of them, and a FreeBSD 15.1 hub on ZFS held them in 1.95 GiB and peaked at 3.72 GiB. That is about 290 MiB under the row on each, which is not much: plan on more than 4 GiB if anything else runs on the hub. Before that it held them in 2.87 GiB and peaked at 4.26 to 4.51 GiB on Linux, and at 4.74 to 4.89 GiB on FreeBSD (ledger 5.279) |
+| Hub memory at 20,000 nodes: under 4 GiB | **Measured: met on Linux and on FreeBSD with ZFS and with UFS.** Since each node's outbound queue holds pointers (ledger 5.661), a Linux hub held 20,000 idle in 1.97 GiB and peaked at 3.71 GiB over five jobs to all of them; a FreeBSD 15.1 hub peaked at 3.72 GiB on ZFS and 3.80 GiB on UFS. That is 200 to 300 MiB under the row, which is not much: plan on more than 4 GiB if anything else runs on the hub. Before that it held them in 2.87 GiB and peaked at 4.26 to 4.51 GiB on Linux, and at 4.74 to 4.89 GiB on FreeBSD (ledger 5.279) |
 | Reactor throughput: 5,000 events/s sustained | Not measured |
 | Node idle memory (under 40 MiB with 10 beacons) and CPU (under 0.5% of a core) | Not measured: it needs a soak |
 | File server saturating 10 Gb | Not measured |
@@ -101,7 +101,7 @@ A starting point, to be replaced by your measurements:
 |---|---|---|
 | up to ~500 nodes | 2 cores, 2 GiB, any disk | Comfortable; the lab-style hub with a few nodes is far under this |
 | ~500 to ~5,000 | 4 to 8 cores, 4 to 8 GiB, SSD for `state_dir` | Watch `halite_hub_requests_total` and pillar duration. On an 8-core, 16 GiB hub, a `test.ping` to 5,000 simulated nodes peaked at 1.61 GB with every return in under 2 s (ledger 5.279). Builds before the return-path fix (#689) re-read every earlier return on each return, and the same job took that hub past 14 GiB and the host down. Do not run a fleet-wide job on those builds at this size. |
-| beyond | measure; add relays | The design target is 20,000 on 16 cores and 4 GiB. 20,000 simulated nodes on 16 cores has been run on Linux and on FreeBSD with ZFS, and the job rows were met. The hub peaked at 4.3 to 4.9 GiB before ledger 5.661, and at 3.7 GiB after it on Linux and on FreeBSD with ZFS, so plan on at least 4 GiB, and more on FreeBSD with UFS until it is measured again (ledger 5.279, 5.661) |
+| beyond | measure; add relays | The design target is 20,000 on 16 cores and 4 GiB. 20,000 simulated nodes on 16 cores has been run on Linux and on FreeBSD with ZFS, and the job rows were met. The hub peaked at 4.3 to 4.9 GiB before ledger 5.661, and at 3.7 to 3.8 GiB after it on Linux and on FreeBSD with ZFS or UFS, so plan on at least 4 GiB (ledger 5.279, 5.661) |
 
 Disk: the **job cache** and **event log** are bounded by retention and size
 (defaults 720 h and 10 GiB / 4 GiB); size `state_dir` above their sum, put it
@@ -111,7 +111,9 @@ out of it.
 On FreeBSD, put `state_dir` on **ZFS**. Every return is written and synced
 into the job's directory, and on UFS those writes go one at a time: at
 20,000 nodes a `test.ping` took nearly two minutes to come back on UFS, and
-2.3 s on ZFS (ledger 5.279, 5.660). Check the clock too:
+2.3 s on ZFS. Spreading a job's returns over subdirectories brought UFS to
+about 37 s, which is still more than three times the 10 s target (ledger
+5.279, 5.660, 5.660.1). Check the clock too:
 `sysctl kern.timecounter.hardware` should not name `i8254`. With it, every
 clock read the hub makes is a system call (92 µs each, measured, against
 tens of nanoseconds with `TSC-low`), and a test hub used a whole core
