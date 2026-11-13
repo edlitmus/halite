@@ -4,8 +4,9 @@
 re-run on `f321afee` with the thread-exhaustion fix, met both dispatch
 rows at 20,000 and survived a clean restart, but the hub peaked at
 4.26-4.51 GiB during each 20,000-node job, over SPEC 30's 4 GiB (§11.4).
-Steps 4, 3F and 5 have not run, and each needs approval (§10). Issue
-718 tracks the rows.
+Step 3F, a FreeBSD hub, ran 2026-11-12 on UFS and ZFS and led to two
+fixes (§11.5). Steps 4 and 5 have not run, and each needs approval (§10).
+Issue 718 tracks the rows.
 
 The region (us-east-1), the use of two existing test hosts (host B and
 host C, §2), and a `DryRun` launch were approved on 2026-11-08. No AWS
@@ -229,7 +230,7 @@ through `tail`), the Prometheus data directory, and the hub-host samplers.
 | **3. Nodes per hub, hub memory** | 20,000 | Hub + 4 drivers (+1 spare) | 20,000 connected and held for 30 min. Hub RSS < 4 GiB. Both dispatch rows again at 20k (beyond SPEC, as information). Reconnect storm. Batch. Return volume. |
 | **4. The hard limit** | 25,000, then 26,000 | Hub + 6 drivers | SPEC 6.5's 25,000 cap. **Expected to fail today**, because nothing enforces it (§1.2). The test records what happens instead: whether the 25,001st node connects, and at what FD and memory cost. |
 | **5. 50,000 through relays** (optional) | 50,000 | Hub + 2 relays (c7g.4xlarge) + 10 drivers | SPEC 30's "100,000 per estate with relays" at half scale, two relays of 25,000 each. One hub cannot take 50,000 inside SPEC, so a 50,000 run against one hub only finds where it breaks. That is a different question, and it is worth asking only after step 4. Needs `setup` against each relay's key store. Relay identity handling has **not** been checked against simfleet. |
-| **3F. FreeBSD hub** | 20,000 | Step 3 with a FreeBSD 14 arm64 hub | FreeBSD is SPEC 27.1 tier 1 and about 80% of production. **No SPEC 30 row should be called met for this estate on a Linux hub alone.** Whether this account can launch the official FreeBSD AMIs has **not** been checked. FreeBSD tuning differs (`kern.maxfiles`, `kern.ipc.somaxconn`, `net.inet.ip.portrange.*`). |
+| **3F. FreeBSD hub** | 20,000 | Step 3 with a FreeBSD 14 arm64 hub | FreeBSD is SPEC 27.1 tier 1 and about 80% of production. **No SPEC 30 row should be called met for this estate on a Linux hub alone.** ~~Whether this account can launch the official FreeBSD AMIs has **not** been checked.~~ It can; the step ran 2026-11-12 on FreeBSD 15.1, not 14 (§11.5). FreeBSD tuning differs (`kern.maxfiles`, `kern.ipc.somaxconn`, `net.inet.ip.portrange.*`). |
 
 ### 4.1 The scenarios inside a step
 
@@ -397,7 +398,8 @@ In this order, in the same session that raised the instances:
   with these tags, and create a placement group.~~ It can. All three
   passed `DryRun` (§3.1). The `DryRun` also covered the tag policy for
   these tags.
-- Whether the official FreeBSD AMIs can be launched in this account.
+- ~~Whether the official FreeBSD AMIs can be launched in this account.~~
+  They can, and they register with SSM unaided (§11.5).
 - ~~Per-sim memory and CPU on a driver.~~ About 200 KiB per sim with
   returns in flight (1.0 GB for 5,000 streams, 1.3 GB at peak), and
   little CPU (§11).
@@ -446,7 +448,7 @@ Revised after step 0. Items 1, 3 and 5 of the first order are done.
    (#715, 5.657) and re-run 2026-11-11 (§11.4): both dispatch rows met
    at 20,000, return volume and a clean restart pass, **hub memory does
    not**.
-9. Step 4. Step 3F. Step 5 only if 4 passed and the relay work is done.
+9. Step 4. ~~Step 3F~~ ran 2026-11-12 (§11.5). Step 5 only if 4 passed and the relay work is done.
    *(each asked for separately)*
 10. Each result goes into DIVERGENCE 5.279 as a subsection, into
     `internal/perf`'s rows, into `plan.md` 3.1a, and into handbook
@@ -620,3 +622,21 @@ The same layout as §11.3, built from `main` at `f321afee` (#715 and
 **Not covered:** hub memory under 4 GiB, a full 30-minute hold in this
 run, `-reuse-client`, a profile, an unclean restart, FreeBSD, and a
 placement group.
+
+### 11.5 Step 3F, a FreeBSD hub (2026-11-12)
+
+The hub was FreeBSD 15.1-RELEASE-p6 arm64 from the official images, on
+the step 3 instance type. It was launched by `RunInstances` with the lab
+module's settings, because the module has one image for every role. The
+drivers came from the module. The account can launch the official
+FreeBSD images, and they register with SSM unaided. Both were open
+questions in §9.
+
+At 20,000 on `f321afee`, all nodes connected and dispatch was met on UFS
+(685 ms) and on ZFS (882 ms). `test.ping` p95 was 1 m 55 s on UFS and
+14-17 s on ZFS. A profile put the cause on the job's one `returns/`
+directory lock. After 5.659 and 5.660, a ZFS hub answered at p95 2.34 s
+against 10.03 s for the same hub without 5.660. UFS was not re-run.
+Memory peaked at 4.74-4.89 GiB. Five AWS runs, each torn down and
+checked, cost about $3.30 in all. DIVERGENCE 5.279 has the tables, the
+profile and what was not covered.

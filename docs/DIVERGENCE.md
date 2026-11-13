@@ -23888,6 +23888,106 @@ return path or of the memory, an unclean (`kill -9`) restart, the manual
 enrolment storm (5.658 does not touch it), FreeBSD, and a placement
 group.
 
+#### Step 3F, a FreeBSD hub (2026-11-11 to 2026-11-13): on ZFS with 5.660 the 20,000-node rows are met but memory; on UFS returns miss by ten times
+
+Plan §4 said no SPEC 30 row should be called met for this estate on a
+Linux hub alone. This is the FreeBSD hub, run in a jail on a FreeBSD 15.1
+development host and then on AWS. It found two hub defects, each fixed
+and measured in its own entry (5.659, 5.660). Issue 718 has each run's
+raw numbers.
+
+**On a development host first, and why that measured nothing.** A thin
+15.1-RELEASE jail, one driver of 5,000 nodes on loopback, binaries
+cross-built from `f321afee`. The host set
+`kern.timecounter.hardware=i8254` in `/etc/sysctl.conf` although its TSC
+is invariant. Go's fast clock on FreeBSD needs TSC or HPET, so every
+clock read was a system call: `time.Now()` took **91.8 µs**. The hub used
+a full core with no nodes connected and about 208% at 5,000 idle, logged
+633 TLS handshake timeouts, and the driver never connected all 5,000.
+With the host switched to `TSC-low` (by its owner; now permanent),
+`time.Now()` took 146 ns, 5,000 connected in 18.8 s with no handshake
+errors, and dispatch met its row (last receipt 4.67 s). `test.ping` p95
+was 16.4–18.0 s, because the jail's pool is two 7,200 rpm disks (about
+300 returns a second); with the hub's root on tmpfs and nothing else
+changed it was 0.97–3.27 s. **A FreeBSD host running halite with the
+i8254 (or ACPI) timecounter pays a system call for every clock read.**
+Whether production FreeBSD hosts carry that setting has not been
+checked.
+
+**On AWS.** The official FreeBSD 15.1-RELEASE-p6 arm64 images, on a
+c7g.4xlarge with a 50 GB gp3 root, in the lab's subnet and security
+group. The account can launch them, and the images register with SSM
+unaided. The hub was launched by `RunInstances` with the lab module's
+settings (no public address, IMDSv2, terminate on shutdown, a 240-minute
+self-halt, the same tags) and a first-boot script written for the run,
+because `contrib/tofu/aws-simfleet` has one image for every role. Neither
+that script nor the FreeBSD sampler used (`ps`, `procstat`, `netstat`) is
+in the repository. The drivers were the module's, with
+`-target=aws_instance.driver`. Binaries were built at `f321afee` with Go
+1.27.4, vendored, and every host checked their sha256. `time.Now()` on
+the hub took 24 ns (the ARM generic timer). The ENA
+`pps_allowance_exceeded` counter has no sysctl on this driver and was not
+recorded.
+
+| Row, 20,000 nodes, `f321afee` | UFS | ZFS | Linux ext4 (above) |
+|---|---|---|---|
+| connect, per driver of 5,000 | 1 m 47 s – 1 m 55 s | ~32 s | ~34 s |
+| `test.ping` returns, p95 | **1 m 55 s, not met** | **14.1–16.6 s, not met** | 7.85 s |
+| `state.apply` received, last | 685 ms, met | 882 ms, met | 783 ms |
+| reconnect after a clean restart | ~134 s | at most 46 s | 27 s |
+| hub RSS idle / peak in a job | 3.05 / **4.89 GiB** | 3.03 / **4.74 GiB** | 2.87 / 4.26–4.51 GiB |
+| threads / descriptors, peak | 91 / 40,031 | 87 / 40,028 | 88 / — |
+
+Every return arrived, with 0 return errors, no TLS errors, and nothing in
+the hub log but warnings that a metrics scrape was cut off (by the
+run's own scrape timeout).
+
+**Why UFS missed by ten times.** During returns the disk was 97–98% busy
+at about 1,280 writes a second, about 1 ms each, with a queue of about
+1, and the CPUs were about 90% idle. The hub's threads waited in the
+`ufs` wait channel, and gp3's limits were not reached: the writes were
+serialized, not bandwidth-bound. With the hub's root moved to tmpfs and
+nothing else changed, p95 was 1.03–1.80 s and 19,915 nodes reconnected
+within 8 s.
+
+**Why ZFS still missed, profiled.** An experiment-only build (pprof on
+loopback, not in the repository) and a simfleet that logged every return
+retry. Retries: 0. 11 s into a ping, 3,507 return handlers waited for one
+of the 64 write slots (5.657). The slot holders were in the kernel waiting
+for the job's `returns/` directory vnode lock:
+`namei → cache_lookup → vget_finish → _vn_lock → lockmgr_slock_hard`, from
+`rename`, `openat`, `fstatat`, `close` and `rmdir`, with the disk idle.
+The CPU was not the limit (2.8 of 16 cores).
+
+**Fixed, and measured on the same kind of hub:**
+
+- 5.659 removed a post-rename `os.Remove` that cost two lookups of that
+  directory per return: p95 mean 10.51 s to 9.51 s, 45 of 48 pairs lower.
+  Real, but no margin.
+- 5.660 spread a job's returns over 256 directories: p95 median
+  **10.03 s to 2.34 s**, every sharded ping faster than every baseline
+  ping. On `main` from `62ae567a`, a FreeBSD ZFS hub returns
+  `test.ping` from 20,000 nodes faster than the Linux hub did in step 3.
+
+**What this leaves for FreeBSD:** at 20,000 on a ZFS hub, 20,000 stay
+connected and dispatch is met (both on `f321afee`), and `test.ping` is met
+with 5.660, measured before 5.660's rollback marking was added. The
+25,000 limit has not run. A UFS hub
+was not run again after either fix, and each of its returns also waits
+for a synchronous directory write that neither fix touches, so **a
+FreeBSD hub should keep `state/` on ZFS**. Hub memory is over 4 GiB on
+FreeBSD as on Linux.
+
+**Teardown, every run:** the hub terminated, the drivers destroyed by
+`tofu destroy`, and read-only calls in us-east-1 and us-east-2 found no
+instance or volume tagged `Project=halite-simfleet`. About $3.30 across
+the five AWS runs.
+
+**Not covered:** the 25,000 limit (step 4); FreeBSD 14; UFS with 5.659
+and 5.660; the ten-ping return-volume series, the 10% batch, the
+30-minute hold and the enrolment storm on FreeBSD; a FreeBSD hub raised
+by the lab module; and Linux re-measured with 5.660.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
