@@ -856,6 +856,19 @@ is still over the row:** 2.87 GiB idle, but 4.26-4.51 GiB during every
 20,000-node job, while each node's kept returns connection is open
 alongside its stream. Issue 718 tracks what is left.
 
+**Step 3F, a FreeBSD hub (2026-11-11 to 2026-11-13, DIVERGENCE 5.279).**
+FreeBSD 15.1 arm64 on the same 16-core instance type, at 20,000. 20,000
+connected and dispatch was met on UFS and on ZFS. `test.ping` was not:
+p95 1 m 55 s on UFS and 14-17 s on ZFS. A profile showed every return
+queued on its job's one `returns/` directory lock, which FreeBSD takes
+even for a lookup. Two fixes followed, each measured on a ZFS hub:
+5.659 (p95 10.5 s to 9.5 s) and 5.660, which spreads a job's returns
+over 256 directories (p95 10.0 s to 2.3 s). A FreeBSD hub should keep
+`state/` on ZFS; UFS was not re-run after the fixes. Memory is over the
+row on FreeBSD too (4.74-4.89 GiB). A development host's `i8254`
+timecounter made every clock read a system call and invalidated the
+first, jailed attempt.
+
 The list below is what the 200-node run left unverified, kept as written.
 What the AWS run answered is in 5.279.
 
