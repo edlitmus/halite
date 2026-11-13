@@ -173,7 +173,7 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 			reason = "hub_closed"
 			return
 		case msg := <-st.out:
-			if err := write(msg); err != nil {
+			if err := write(*msg); err != nil {
 				reason = "write_failed"
 				return
 			}

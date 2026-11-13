@@ -45,7 +45,19 @@ const relayAnnounceGrace = 30 * time.Second
 // stream is one node's outbound queue.
 type stream struct {
 	nodeID string
-	out    chan transport.Message
+	// out holds pointers, not messages. A buffered channel allocates its
+	// whole buffer when it is made, and transport.Message is 312 bytes,
+	// so a queue of queueDepth messages cost every connected node 19 KiB
+	// whether anything was ever queued or not: 381 MiB held by a hub at
+	// 20,000 nodes, 44% of its idle heap in a profile. Of pointers it is
+	// 512 bytes. The message a pointer names is allocated per send, which
+	// is garbage the size of one message per node per job.
+	//
+	// It also shrank the subscribe goroutine's stack: with values, each
+	// receive and write copied 312 bytes, and stacks at 20,000 nodes fell
+	// from 841 to 564 MiB with the same 60,010 goroutines. That part is
+	// inferred from the totals, not profiled. DIVERGENCE 5.661.
+	out chan *transport.Message
 	// done is closed when the stream is replaced or shut down, so a
 	// handler blocked on a write wakes up.
 	done chan struct{}
@@ -104,7 +116,7 @@ func (f *Fleet) attachLimited(nodeID string, now time.Time, max int) (*stream, b
 	}
 	st := &stream{
 		nodeID: nodeID,
-		out:    make(chan transport.Message, queueDepth),
+		out:    make(chan *transport.Message, queueDepth),
 		done:   make(chan struct{}),
 		since:  now,
 	}
@@ -229,7 +241,7 @@ func (f *Fleet) Send(nodeID string, msg transport.Message) bool {
 		return false
 	}
 	select {
-	case st.out <- msg:
+	case st.out <- &msg:
 		return true
 	case <-st.done:
 		return false
@@ -281,7 +293,7 @@ func (f *Fleet) end(nodeID string, msg transport.Message) bool {
 	// Best effort: a node that is not reading gets closed on anyway,
 	// and if it was revoked its next handshake is refused regardless.
 	select {
-	case st.out <- msg:
+	case st.out <- &msg:
 		// Give the writer a moment to put the line on the wire before
 		// the stream is torn down under it.
 		time.Sleep(10 * time.Millisecond)

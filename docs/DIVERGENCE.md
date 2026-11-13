@@ -44237,6 +44237,90 @@ completion, on both refusals above.
   directory write, was not re-measured.
 - A rollback with a running older hub filing returns was not run.
 
+### 5.661 Every connected node's outbound queue held 19 KiB, and a hub at 20,000 was over 4 GiB
+
+SPEC 30 asks a hub to hold 20,000 nodes in under 4 GiB. Step 3 (5.279)
+measured 2.87 GiB idle and 4.26–4.51 GiB during each job sent to all
+20,000, on Linux, and 4.74–4.89 GiB on FreeBSD.
+
+Each node's outbound queue was `make(chan transport.Message, 64)`. A
+buffered channel allocates its whole buffer when it is made, and
+`transport.Message` is 312 bytes, so every connected node cost 19 KiB
+before anything was queued: **381 MiB at 20,000**. No test could see
+it, because the hub behaved the same either way. It was the largest
+single item in a running hub's heap: `hub.(*Fleet).attachLimited`, 415 MB
+in pprof's decimal units, 44% of the sampled idle heap.
+
+**Fixed.** The queue holds `*transport.Message`: 512 bytes per node. The
+message a pointer names is allocated per send, which is one message's
+worth of garbage per node per job.
+
+**Where the rest of the memory goes**, measured on a Linux hub at 20,000
+with the Go runtime's own accounting (`MemStats`) and a heap profile.
+The hub was an experiment-only build with pprof on loopback, which is
+not in this change.
+- **Goroutine stacks.** 841 MiB idle, at 3 goroutines per node of about
+  14 KiB each. **1.4 GiB during a job**, at 5 per node, because a node
+  posts returns on a second TLS/HTTP/2 connection it keeps (5.641), and
+  a job doubles the hub's connections from 20,000 to 40,000.
+- **Freed heap Go has not returned to the OS**, 0.7–1.3 GiB, held until
+  the scavenger releases it. 120 s after the last job the returns
+  connections had timed out (`IdleTimeout` 90 s), 1.29 GiB had been
+  released, and RSS was 3,248 MiB. The peak is transient, but jobs that
+  keep coming keep it.
+- **Per-connection buffers**, all growing with connections: HTTP/2 write
+  buffers (154 MB at peak), TLS record buffers (136 MB), AES-GCM state
+  (71 MB), parsed client certificates (70–101 MB) and HPACK tables
+  (52 MB).
+
+**Demonstrated:**
+
+- `TestAnIdleStreamCostsLittle` attaches 2,000 streams to a fleet and
+  holds the heap each costs at or under 4 KiB. With this change:
+  813 bytes. **Broken on purpose:** with `main`'s value queue it fails at
+  20,781 bytes.
+- **At scale, on AWS, 2026-11-13.** One Linux hub (c7g.4xlarge, Ubuntu
+  24.04, the lab module), 20,000 simulated nodes on four drivers, built
+  at `d8cc6e49` with and without this change, swapped in place by
+  restart. Pings were sent 44 s apart, so the returns connections
+  stayed open between jobs, which is the worst case. Node retries were 0.
+
+  | 20,000 nodes | idle RSS | peak RSS (high-water mark) | `test.ping` p95 |
+  |---|---|---|---|
+  | `d8cc6e49` | 2,927 MiB | 4,460 MiB over 2 pings (4,532 later) | 8.68, 8.32 s |
+  | this change | 2,022 MiB | **3,799 MiB** over 5 pings | 7.87–9.44 s |
+  | this change, `GOMEMLIMIT=3GiB` | 2,073 MiB | 2,983 MiB over 3 pings | 8.34–9.34 s |
+  | this change, nodes posting returns on their stream's connection (`simfleet -reuse-client`) | 1,988 MiB | 2,283 MiB over 3 pings | 8.17–8.36 s |
+
+  Saved: 905 MiB idle and about 660 MiB at peak, more than the queues'
+  381 MiB. Goroutine stacks fell from 841 to 564 MiB with the same
+  60,010 goroutines, and the connect burst left less freed heap behind
+  (about 175 MiB against about 699 MiB). The stack change is inferred:
+  the subscribe goroutine no longer copies 312-byte values through
+  `select` and `write`, so its stack stays at its 8 KiB start. That was
+  not profiled.
+
+**What the other two rows say, and why neither is in this change:**
+- `GOMEMLIMIT=3GiB` held the peak under 3 GiB, but the collector ran
+  about 8 times per ping instead of 1–2. Its CPU was not measured, and
+  stacks plus live heap come close to 3 GiB during a job. It is a
+  deployment setting, not a fix.
+- Posting returns on the subscribe stream's connection is worth about
+  1.5 GiB at peak. It would change `halite-node` and `internal/nodelink`,
+  and undo 5.641's separate kept client, whose reasons would need
+  revisiting first.
+
+**What it leaves:** SPEC 30's 4 GiB row is met on this Linux hub, with
+about 300 MiB of margin.
+
+`make check` passed on darwin/arm64 with go1.27.4 (`GOMAXPROCS=2`).
+
+**Not covered:** FreeBSD; `state.apply` or larger returns; more than
+five jobs; anything run with this exact binary rather than the pprof
+build (the only difference is a loopback listener that is idle unless
+asked); Windows by hand. The raw snapshots are on issue 718, and on the
+build host under `/root/simfleet-build/archive/hub-memory-2026-11-13`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
