@@ -44321,6 +44321,51 @@ build (the only difference is a loopback listener that is idle unless
 asked); Windows by hand. The raw snapshots are on issue 718, and on the
 build host under `/root/simfleet-build/archive/hub-memory-2026-11-13`.
 
+#### 5.661.1 On a FreeBSD hub (2026-11-13)
+
+The same measurement with the hub on FreeBSD 15.1-RELEASE-p6 arm64,
+from the official ZFS image, on the same c7g.4xlarge. The hub was
+launched by `RunInstances` with step 3F's first-boot script; the four
+drivers and the observer came from `contrib/tofu/aws-simfleet`. Both
+hubs were built for freebsd/arm64 with go1.27.4 and the same
+loopback-only pprof listener: **main** at `8803ff2a`, with this change,
+and **base** at `d8cc6e49`, the commit before it. Each ran with all
+20,000 connected, an idle snapshot after 60 s, then `test.ping` to all
+of them about 50 s apart with snapshots 4, 10 and 40 s after each.
+Every ping was returned by 20,000 of 20,000 with no return errors.
+
+| 20,000 nodes, FreeBSD hub on ZFS | idle RSS | peak RSS | `test.ping` p95 |
+|---|---|---|---|
+| base | 3,158 MiB | **4,567 MiB** after 3 pings, still rising | 8.25, 2.44, 3.11 s |
+| main | 1,997 MiB | **3,808 MiB** over 5 pings | 4.86, 1.88, 2.05, 2.10, 2.66 s |
+
+- **The change does on FreeBSD what it did on Linux**: idle is 1,161
+  MiB lower, and the peak at least 759 MiB lower (base had not stopped
+  rising). With it, the peak was reached at the second ping and stayed
+  within 5 MiB of 3,808 MiB for three more. That is 288 MiB under the
+  4 GiB row; on Linux it was 297.
+- **The GiB figures written for this section elsewhere were divided by
+  1,000.** Handbook 38, `plan.md`, `internal/perf` and `CHANGELOG.md`
+  said a Linux hub held 20,000 in 2.02 GiB and peaked at 3.80 GiB, and
+  the changelog put base at 2.93 and 4.46 GiB; 2,022, 3,799, 2,927 and
+  4,460 MiB are 1.97, 3.71, 2.86 and 4.36 GiB. They now say so. The MiB in the table above
+  were right, and the earlier step 3 figures (2.87, 4.26–4.51 GiB) agree
+  with 1,024 to a GiB.
+
+FreeBSD's peak is not measured the way Linux's is. `procstat -r`
+reports `ru_maxrss`, which the kernel samples at clock ticks, not a
+high-water mark like `VmHWM`. It agreed with the largest RSS seen in a
+snapshot to within 2 MiB, and the table gives the larger.
+
+**Not covered:** UFS; FreeBSD 14; a second run, or the variants in the
+other order (main ran first on a fresh hub, base after a restart);
+goroutine stacks, which the snapshots did not record, for a reason not
+found; what FreeBSD gives back once the returns connections time out;
+`GOMEMLIMIT` or one connection per node on FreeBSD. The snapshots are
+on issue 718 (comment 6863448860), and on the build host under
+`/root/simfleet-build/archive/hub-memory-freebsd-2026-11-13`. Torn
+down and checked; about 21 minutes, roughly $0.45.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
