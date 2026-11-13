@@ -2,7 +2,7 @@
 
 <!-- abstract: Moving a hub, an API and a fleet of nodes to a new release: verify, read, back up, canary, roll, confirm, and how to go back. -->
 <!-- kind: runbook -->
-<!-- index: upgrade; downgrade; rollback; version skew; manage.versions; release verification; SHA256SUMS; attestation; CHANGELOG; canary upgrade; halite-node version; foreign schema; halite.job/1; ALPN; restart; zero downtime -->
+<!-- index: upgrade; downgrade; rollback; version skew; manage.versions; release verification; SHA256SUMS; attestation; CHANGELOG; canary upgrade; halite-node version; foreign schema; halite.job/1; backwards compatibility; before 1.0; ALPN; restart; zero downtime -->
 
 **Use this runbook to** move the estate to a new release without taking the
 fleet out of service, and to go back if the new release misbehaves.
@@ -13,6 +13,17 @@ a record of what changed, and a rehearsed way back.
 
 ## Before you start
 
+- **Expect no backwards compatibility before 1.0.** Until halite reaches
+  version 1.0, a release does not promise to read what an earlier release
+  wrote, or to be readable by one. The job cache, event log, key store and
+  other files under `state/`, the configuration, and the protocol between
+  hub, API and nodes can all change. A release says in `CHANGELOG.md` what
+  it breaks; it does not keep the old form working. So plan every upgrade
+  as one you can undo only by restoring the backup you take below, and
+  finish moving the hub, the API and every node to the new release rather
+  than leave the estate mixed for long. The skew rules below say how the
+  current releases behave when versions are mixed, not what the next
+  release will keep.
 - **Read what changed.** The release's section of `CHANGELOG.md` (operator-visible
   changes), the [divergence ledger](../DIVERGENCE.md) entries it cites, and
   `EVIDENCE.md` in the archive (what has and has not been demonstrated for each
@@ -215,7 +226,10 @@ sudo systemctl restart halite-hub
 ```
 
 Order for a full rollback: nodes you already moved, then the API, then the
-hub. What carries across, and what to expect:
+hub. Before 1.0, nothing below is a promise (see *Before you start*): read
+the changelog of every release you are going back across, and if any of
+them changed a format, restore `state/` from the backup. What carries
+across when no format changed, and what to expect:
 
 - The **job cache**, event log and key store written by the newer hub are
   **readable** by the older one; any record stamped with a schema the older hub
