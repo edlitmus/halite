@@ -851,10 +851,13 @@ stops metering a token bootstrap (5.658). At 20,000 both rows are met:
 ping p95 7.85 s, every node had the apply within 783 ms, and ten more
 pings 120 s apart did the same with no descriptor growth. The hub never
 went past 88 threads, survived a clean restart with 20,000 back in 27 s,
-and issued 2,000 of 2,000 token enrolments at 64 at once. **Hub memory
-is still over the row:** 2.87 GiB idle, but 4.26-4.51 GiB during every
+and issued 2,000 of 2,000 token enrolments at 64 at once. Hub memory
+was over the row: 2.87 GiB idle, but 4.26-4.51 GiB during every
 20,000-node job, while each node's kept returns connection is open
-alongside its stream. Issue 718 tracks what is left.
+alongside its stream. **Since 5.661 it is under it**: each node's
+outbound queue holds pointers, and a hub peaked at 3.71 GiB on Linux
+and 3.72 GiB on FreeBSD with ZFS over five jobs. Issue 718 tracks what
+is left.
 
 **Step 3F, a FreeBSD hub (2026-11-11 to 2026-11-13, DIVERGENCE 5.279).**
 FreeBSD 15.1 arm64 on the same 16-core instance type, at 20,000. 20,000
@@ -864,8 +867,9 @@ queued on its job's one `returns/` directory lock, which FreeBSD takes
 even for a lookup. Two fixes followed, each measured on a ZFS hub:
 5.659 (p95 10.5 s to 9.5 s) and 5.660, which spreads a job's returns
 over 256 directories (p95 10.0 s to 2.3 s). A FreeBSD hub should keep
-`state/` on ZFS; UFS was not re-run after the fixes. Memory is over the
-row on FreeBSD too (4.74-4.89 GiB). A development host's `i8254`
+`state/` on ZFS; UFS was not re-run after the fixes. Memory was over the
+row on FreeBSD too (4.74-4.89 GiB), and is under it on ZFS since 5.661
+(3.72 GiB). A development host's `i8254`
 timecounter made every clock read a system call and invalidated the
 first, jailed attempt.
 
