@@ -38,9 +38,28 @@ const JobSchema = "halite.job/1"
 // describes the record, not who wrote it.
 const SignedJobSchema = "halite.job/2"
 
+// ShardedJobSchema is the shape of a record whose returns are filed in
+// shard subdirectories (Job.ReturnsSharded), signed or not.
+//
+// A third version for the same reason as the second: what a build must
+// understand to handle the record. A build from before the shards reads
+// returns/ and nothing under it, so it would show such a job as having
+// no returns and count every node as missing; written back by it, the
+// record would also lose ReturnsSharded. Every build that knows only
+// halite.job/1 and /2 refuses to write a record stamped /3, which is the
+// part of a rollback that can be made loud from here. The reading side
+// is made loud by the marker in returns/ (shardMarker).
+//
+// Per record, like /2: a job none of whose returns were filed in shards
+// keeps /1 or /2, and an older build can still update it.
+const ShardedJobSchema = "halite.job/3"
+
 // SchemaFor is the lowest schema that can represent this record.
 func SchemaFor(j *Job) string {
-	if j != nil && j.Signature != "" {
+	switch {
+	case j != nil && j.ReturnsSharded:
+		return ShardedJobSchema
+	case j != nil && j.Signature != "":
 		return SignedJobSchema
 	}
 	return JobSchema
@@ -176,6 +195,17 @@ type Job struct {
 	// it cannot tell a valid signature from a forged one, and does not
 	// try. The node decides.
 	Signature string `json:"signature,omitempty"`
+
+	// ReturnsSharded says this job's returns are filed in shard
+	// subdirectories of returns/ (returnShard), not directly in it.
+	//
+	// Set, and the record written, before the first sharded return is,
+	// so a return in a shard never exists for a record that does not
+	// say so. A hub older than the shards lists only returns/ itself and
+	// would show such a job as having no returns, so a record with this
+	// set carries ShardedJobSchema, which every older build refuses to
+	// write. DIVERGENCE 5.660.
+	ReturnsSharded bool `json:"returns_sharded,omitempty"`
 
 	// Schema is the version of this record's shape.
 	//

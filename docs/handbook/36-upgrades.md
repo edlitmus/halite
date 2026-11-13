@@ -220,7 +220,16 @@ hub. What carries across, and what to expect:
 - The **job cache**, event log and key store written by the newer hub are
   **readable** by the older one; any record stamped with a schema the older hub
   does not know is refused for **writing** (so a job record is never silently
-  truncated) and reported by name. Looking at history keeps working.
+  truncated) and reported by name. Looking at history keeps working, with
+  one exception: a hub with sharded returns (DIVERGENCE 5.660) files a
+  job's returns in subdirectories of its `returns/`, which an older hub
+  cannot read. For such a job, the older hub's `jobs show` and
+  `jobs missing` fail with `the return at
+  returns-are-in-shards-read-by-a-newer-halite.json is not readable`
+  rather than report no returns, and it refuses to update the job
+  (schema `halite.job/3`). `jobs list` still lists it. Jobs created
+  after the rollback are unaffected, and the cache expires with
+  `job_cache_retention`.
 - **Configuration** that the newer release accepted and the older does not
   read is reported as an unrecognised key at start. Restore the previous
   `hub.yaml` if you changed it for the new release.
