@@ -856,7 +856,7 @@ was over the row: 2.87 GiB idle, but 4.26-4.51 GiB during every
 20,000-node job, while each node's kept returns connection is open
 alongside its stream. **Since 5.661 it is under it**: each node's
 outbound queue holds pointers, and a hub peaked at 3.71 GiB on Linux
-and 3.72 GiB on FreeBSD with ZFS over five jobs. Issue 718 tracks what
+and 3.72 GiB on FreeBSD with ZFS and 3.80 GiB with UFS. Issue 718 tracks what
 is left.
 
 **Step 3F, a FreeBSD hub (2026-11-11 to 2026-11-13, DIVERGENCE 5.279).**
@@ -867,9 +867,9 @@ queued on its job's one `returns/` directory lock, which FreeBSD takes
 even for a lookup. Two fixes followed, each measured on a ZFS hub:
 5.659 (p95 10.5 s to 9.5 s) and 5.660, which spreads a job's returns
 over 256 directories (p95 10.0 s to 2.3 s). A FreeBSD hub should keep
-`state/` on ZFS; UFS was not re-run after the fixes. Memory was over the
-row on FreeBSD too (4.74-4.89 GiB), and is under it on ZFS since 5.661
-(3.72 GiB). A development host's `i8254`
+`state/` on ZFS: re-run after the fixes, UFS still took p95 about 37 s
+(5.660.1). Memory was over the row on FreeBSD too (4.74-4.89 GiB), and
+is under it since 5.661 (3.72 GiB on ZFS, 3.80 GiB on UFS). A development host's `i8254`
 timecounter made every clock read a system call and invalidated the
 first, jailed attempt.
 

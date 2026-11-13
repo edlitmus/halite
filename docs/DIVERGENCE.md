@@ -44237,6 +44237,27 @@ completion, on both refusals above.
   directory write, was not re-measured.
 - A rollback with a running older hub filing returns was not run.
 
+#### 5.660.1 On a UFS hub (2026-11-13)
+
+UFS was re-measured with 5.659 and this change, at 20,000 on the same
+c7g.4xlarge with FreeBSD 15.1-RELEASE-p6 from the official UFS image
+(`/dev/gpt/rootfs`, soft updates), during the memory run in 5.661.2.
+`test.ping` to all 20,000: **p95 36.1–39.9 s** over the seven jobs that
+were not the first after a restart (main's 2nd to 6th, base's 2nd and
+3rd), each returned by 20,000 of 20,000. Main's 2nd and 3rd started
+before the previous job's returns had all arrived, at 36.8 and 36.5 s;
+the five that did not overlap were 36.1–39.9 s. Before either fix it was
+1 m 55 s, and on ZFS it is about 2 s. So both fixes help UFS too, and **UFS still
+misses the row's 10 s**, by more than three times. The first job after
+each hub restart was slower: 55.9 s, and 1 m 24 s on the build without
+5.661.
+
+Not covered: 10,000 nodes on UFS, which is the row's own size; a
+profile of where a UFS return now waits. 5.659 found each return
+waiting for a synchronous directory write, and spreading returns over
+256 directories does not remove that write; this is the likely cause,
+and it is an inference.
+
 ### 5.661 Every connected node's outbound queue held 19 KiB, and a hub at 20,000 was over 4 GiB
 
 SPEC 30 asks a hub to hold 20,000 nodes in under 4 GiB. Step 3 (5.279)
@@ -44364,6 +44385,42 @@ found; what FreeBSD gives back once the returns connections time out;
 `GOMEMLIMIT` or one connection per node on FreeBSD. The snapshots are
 on issue 718 (comment 6863448860), and on the build host under
 `/root/simfleet-build/archive/hub-memory-freebsd-2026-11-13`. Torn
+down and checked; about 21 minutes, roughly $0.45.
+
+#### 5.661.2 On a FreeBSD UFS hub (2026-11-13)
+
+The same as 5.661.1 with the hub on the official UFS image
+(`ami-08febddb96bc5eaf6`), with the same binaries and identities. UFS
+returns take about 40 s, so main's first three jobs, about 55 s apart,
+overlapped the previous one's returns; from the fourth, and for every
+job of base, the merge waited 75 s and a snapshot was added at 70 s, so
+each job finished before the next. The snapshots now record goroutine
+stacks: Go writes that line as `# Stack =`, and 5.661.1's pattern looked
+for `StackInuse`.
+
+| 20,000 nodes, FreeBSD hub on UFS | idle RSS | peak RSS | stacks idle / in a job |
+|---|---|---|---|
+| base | 2,480 MiB | **4,914 MiB**, flat over the 2nd and 3rd jobs | 747 / ~1,400 MiB |
+| main | 2,013 MiB | **3,896 MiB** over 6 jobs, flat over the last 3 | 552 / ~1,150 MiB |
+
+- **The row is met on UFS, by the least of the three hubs**: 200 MiB
+  under 4 GiB, against 288 on ZFS and 297 on Linux. It rose over three
+  jobs and stayed between 3,855 and 3,896 MiB for three more.
+- **The change is worth about 1 GiB at peak here** (1,018 MiB), and 467
+  MiB idle.
+- **The smaller stacks inferred in 5.661 are real on FreeBSD.** Stacks
+  are 195 MiB smaller idle with the same 60,010 goroutines, and about
+  250 MiB smaller during a job.
+- `test.ping` on UFS is in 5.660.1.
+- Base's first job was briefly missing 38 of 40,000 connections, and
+  19,962 returns were counted; on its second all 40,000 were back. Not
+  looked into.
+
+**Not covered:** a second run, or the other order (main first, base
+after a restart); FreeBSD 14; what is released after the returns
+connections time out. The snapshots are on issue 718 (comment
+6864790313), and on the build host under
+`/root/simfleet-build/archive/hub-memory-freebsd-ufs-2026-11-13`. Torn
 down and checked; about 21 minutes, roughly $0.45.
 
 ## 6. Everything else not started
