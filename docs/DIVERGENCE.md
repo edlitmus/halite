@@ -44025,6 +44025,118 @@ waits for a synchronous directory write (step 3F on UFS), which this
 change does not touch. Issue 718 has the profile, the A/B and the raw
 outputs.
 
+### 5.660 A job's returns shared one directory, and on FreeBSD 20,000 of them queued on its lock
+
+Every return of a job was filed in its one `returns/` directory. A hub
+at 20,000 nodes therefore made 20,000 creates and renames, and about
+twice as many lookups, in one directory per job. On FreeBSD a name
+lookup takes the directory vnode's lock shared and a create or rename
+takes it exclusive. 5.659 profiled the result on ZFS: the 64-slot write
+gate (5.657) full, thousands of handlers queued behind it, and the slot
+holders in `lockmgr_slock_hard` on that one directory with the disk
+idle. 5.659 removed two wasted lookups per write; the queue remained, and
+`test.ping` p95 at 20,000 stayed near 10 s.
+
+**Fixed.** A return is filed at `returns/<shard>/<node>.json`. The shard
+is two hex digits of FNV-1a of the node's identity: 256 shards, about 80
+returns each at 20,000 nodes. A shard directory is created when the
+first return for it is filed, once per job index, under a per-job mutex,
+and `returns/` is synced after it, so a shard's name is durable before
+any return in it is acknowledged. A job to a few nodes makes a few
+shards, not 256. `Returns` and the index rebuild read both layouts, so a
+job filed before an upgrade still reads and still counts as answered.
+
+**Rollback, made loud.** A hub from before this lists only files directly
+in `returns/`. Rolled back, it would have shown a sharded job as having
+no returns and every node as missing, and nothing would have said why.
+Two things now make it refuse instead:
+
+- A job is marked before its first shard exists:
+  `Job.ReturnsSharded` is set and the record is written, which stamps
+  it `halite.job/3` (`ShardedJobSchema`). Every earlier build refuses
+  to write a schema it does not know (4.13), so an older hub refuses to
+  update or complete such a job. Per record, like `/2`: a job none of
+  whose returns went into a shard keeps `/1` or `/2`, and an older
+  build can still update it. That is the same rule
+  `TestOnlyASignedRecordCarriesTheSignedSchema` states, and the reason a
+  whole-build bump was not used.
+- A marker, `returns/returns-are-in-shards-read-by-a-newer-halite.json`,
+  is written at the same moment. Its content is a JSON string, which no
+  build decodes as a return. Every released build reads each `*.json` in
+  `returns/` as a return and fails on one it cannot decode, naming the
+  file. This build skips the marker.
+
+What cannot be refused from here is an older hub *filing* a return for a
+sharded job still in flight: released code checks no schema on that
+path. Such a return is written flat, and the job then fails at
+completion, on both refusals above.
+
+**Demonstrated:**
+
+- Tests in `internal/job/returnshard_test.go`:
+  - the node-to-shard mapping is pinned, because a changed hash would
+    orphan returns already on disk;
+  - a return is filed in its shard, with the marker, and the record says
+    `ReturnsSharded` and `halite.job/3`;
+  - a job with no sharded return is not stamped and has no marker;
+  - a job filed before the upgrade is marked at its first sharded return;
+  - old-layout returns are read and not re-filed after a restart;
+  - the read loop every released build runs fails on a sharded job,
+    naming the marker.
+- **Broken on purpose:**
+  - without the old-layout reader, the legacy test fails;
+  - without the shard in the path, the shard test fails;
+  - without the marker, the shard test and the older-reader test fail;
+  - without the `/3` stamp, the shard test and the upgraded-job test fail.
+- **Against the released binaries**, on darwin/arm64, 2026-11-13. A job
+  with two of three returns was filed by this build, then read with
+  `halite-hub jobs` built from v0.1.1, from `main` at `574a0ae9`, and
+  from this change:
+
+  | build | `jobs show` | `jobs missing` | `jobs list` |
+  |---|---|---|---|
+  | v0.1.1 | exit 1: `the return at returns-are-in-shards-read-by-a-newer-halite.json is not readable: json: cannot unmarshal string into Go value of type job.Return` | the same | lists the job |
+  | `574a0ae9` | the same | the same | lists the job |
+  | this change | both returns, `missing web3.example` | `web3.example` | lists it, `1 outstanding` |
+
+  The refusal to write `/3` was read from v0.1.1's `checkSchema`
+  (`case "", JobSchema, SignedJobSchema`). It was not driven by a running
+  older hub.
+- **At scale, on AWS, 2026-11-12** (issue 718). One FreeBSD
+  15.1-RELEASE-p6 arm64 ZFS hub (c7g.4xlarge, gp3, the image's ZFS
+  defaults), 20,000 simulated nodes on four drivers, and two binaries
+  swapped in place by restart: `main` at `574a0ae9` (which has 5.659) and
+  the sharding without the rollback marking. The order was base, shard,
+  base, shard. Each phase waited for all 20,000 to reconnect and
+  discarded a warm-up ping. Node retries were 0.
+
+  | build | `test.ping` p95, 8 measured pings | median |
+  |---|---|---|
+  | `574a0ae9` | 8.78, 10.83, 10.48, 9.57, 19.50, 9.44, 12.18, 8.70 s | 10.03 s |
+  | sharded | 3.49, 2.79, 2.33, 2.13, 2.41, 2.30, 2.35, 2.14 s | 2.34 s |
+
+  Every sharded ping beat every baseline ping (Mann-Whitney U = 64/64,
+  exact one-sided p = 0.00008). The 19.5 s baseline ping is unexplained
+  and kept in the table; without it the base median is 9.6 s. A job
+  directory held 256 shards, with about 90 returns in the one checked.
+
+`make check` passed on darwin/arm64 with go1.27.4 (`GOMAXPROCS=2`).
+
+**Not covered.**
+- The rollback marking (one record write and one file write, once per
+  job) was added after the AWS run and has not been measured at scale.
+  It holds the per-job shard mutex while it writes, so a job's first
+  returns wait a few milliseconds.
+- Linux was not re-measured with sharding. The expectation that it
+  matters less there (path lookup takes no directory lock) is the same
+  inference 5.659 made.
+- Windows: `fileperm.MkdirAll` and the best-effort directory sync are
+  the Windows-sensitive parts. The tests carry no build constraint, so
+  CI's Windows job runs them; they were not run on Windows by hand.
+- UFS, where 5.659 found each return also waiting for a synchronous
+  directory write, was not re-measured.
+- A rollback with a running older hub filing returns was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

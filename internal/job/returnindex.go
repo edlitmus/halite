@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // Filing is what filing one return learned about the job it belongs to.
@@ -74,7 +76,17 @@ type returnIndex struct {
 	// pending is a return being written: a second return from the same
 	// node waits for the first to finish rather than writing too. See
 	// File.
-	pending     map[string]chan struct{}
+	pending map[string]chan struct{}
+	// shards is which of the job's return shards this index has made
+	// sure exist. Guarded by shardMu, which is held across the mkdir and
+	// the sync of the returns directory, so that a return filed into a
+	// shard is never acknowledged before the shard's own name is durable.
+	shards  map[string]bool
+	shardMu sync.Mutex
+	// marked is whether the job's record says its returns are sharded
+	// (Job.ReturnsSharded). Taken from the record when the index is
+	// built; guarded by shardMu after that.
+	marked      bool
 	remaining   int
 	fun         string
 	correlation string
@@ -142,7 +154,10 @@ func (c *Cache) File(r *Return) (Filing, error) {
 	e.pending[r.NodeID] = done
 	e.mu.Unlock()
 
-	err = c.writeReturn(r, name)
+	err = c.ensureShard(r.JID, e, returnShard(r.NodeID))
+	if err == nil {
+		err = c.writeReturn(r, name)
+	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -170,7 +185,149 @@ func (c *Cache) writeReturn(r *Return, name string) error {
 	if err != nil {
 		return fmt.Errorf("encoding the return from %s: %w", r.NodeID, err)
 	}
-	return writeAtomic(filepath.Join(dir, "returns", name), append(raw, '\n'), 0o600)
+	return writeAtomic(filepath.Join(dir, "returns", returnShard(r.NodeID), name), append(raw, '\n'), 0o600)
+}
+
+// returnShards is how many subdirectories a job's returns are spread
+// over.
+//
+// They used to share one directory, and every return is a create, a
+// rename and two directory lookups there, each behind that directory's
+// lock. On FreeBSD a lookup takes the vnode lock shared and a create or
+// rename takes it exclusive, so 20,000 returns queued on one lock: a ZFS
+// hub at 20,000 nodes had its 64 write slots all waiting in
+// lockmgr_slock_hard with the disk idle (DIVERGENCE 5.659). 256 spreads
+// 20,000 returns to about 80 a directory and a job to a handful of nodes
+// still makes only a handful.
+const returnShards = 256
+
+// returnShard is the subdirectory of returns/ that a node's return goes
+// in: two hex digits of FNV-1a of the node's identity. Stable across
+// builds and platforms, because a hub reads back what an earlier run of
+// it filed.
+func returnShard(nodeID string) string {
+	h := uint32(2166136261)
+	for i := 0; i < len(nodeID); i++ {
+		h ^= uint32(nodeID[i])
+		h *= 16777619
+	}
+	return fmt.Sprintf("%02x", h%returnShards)
+}
+
+// isShard says whether name is one of returnShard's directory names.
+func isShard(name string) bool {
+	if len(name) != 2 {
+		return false
+	}
+	for i := 0; i < 2; i++ {
+		c := name[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// ensureShard makes the shard directory a return is about to be written
+// into, once per job index, and syncs returns/ so that the shard's name
+// survives a power loss before any return in it is acknowledged.
+func (c *Cache) ensureShard(id ID, e *returnIndex, shard string) error {
+	e.shardMu.Lock()
+	defer e.shardMu.Unlock()
+	if e.shards[shard] {
+		return nil
+	}
+	dir, err := c.jobDir(id)
+	if err != nil {
+		return err
+	}
+	returns := filepath.Join(dir, "returns")
+	// The job is marked before its first shard exists, so a sharded
+	// return never exists for a record that does not say so.
+	if !e.marked {
+		if err := c.markSharded(id, returns); err != nil {
+			return err
+		}
+		e.marked = true
+	}
+	if err := fileperm.MkdirAll(filepath.Join(returns, shard), 0o700); err != nil {
+		return fmt.Errorf("creating a returns shard for %s: %w", id, err)
+	}
+	// Best effort, as atomicfile's own directory sync is: a directory
+	// cannot be opened for reading on Windows.
+	if d, err := os.Open(returns); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	if e.shards == nil {
+		e.shards = map[string]bool{}
+	}
+	e.shards[shard] = true
+	return nil
+}
+
+// shardMarker is a file written into returns/ when a job's returns
+// start going into shards. It is there for a hub older than the shards,
+// after a rollback: such a hub reads every *.json directly in returns/
+// as a return and fails, naming the file, on one it cannot decode. So
+// the marker's content is a JSON string, which no build decodes as a
+// return, and its name says why. Without it a rolled-back hub reported
+// the job as having no returns and every node as missing, and nothing
+// said the returns were there.
+//
+// A build that knows the shards skips it (returnFiles).
+const shardMarker = "returns-are-in-shards-read-by-a-newer-halite.json"
+
+// shardMarkerBody is the marker's content, for whoever opens it.
+const shardMarkerBody = `"This job's returns are in the two-character subdirectories ` +
+	`of this directory, where a halite hub from DIVERGENCE 5.660 on files them. ` +
+	`An older hub cannot read them: run a newer one."` + "\n"
+
+// markSharded records, durably and before any shard exists, that a
+// job's returns are sharded: ReturnsSharded in the record, which stamps
+// it ShardedJobSchema so that an older build refuses to write it, and
+// the marker an older build fails to read.
+func (c *Cache) markSharded(id ID, returns string) error {
+	if _, err := c.Update(id, func(j *Job) error {
+		j.ReturnsSharded = true
+		return nil
+	}); err != nil {
+		return fmt.Errorf("marking the returns of %s as sharded: %w", id, err)
+	}
+	if err := writeAtomic(filepath.Join(returns, shardMarker), []byte(shardMarkerBody), 0o600); err != nil {
+		return fmt.Errorf("marking the returns of %s as sharded: %w", id, err)
+	}
+	return nil
+}
+
+// returnFiles lists a job's return files as paths relative to returns/,
+// from both layouts: shard subdirectories, and files directly in
+// returns/, which is where a hub before DIVERGENCE 5.660 put them and
+// where a job it filed still has them.
+func returnFiles(returns string) ([]string, error) {
+	entries, err := os.ReadDir(returns)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, ent := range entries {
+		switch {
+		case ent.IsDir() && isShard(ent.Name()):
+			inner, err := os.ReadDir(filepath.Join(returns, ent.Name()))
+			if err != nil {
+				return nil, err
+			}
+			for _, f := range inner {
+				if !f.IsDir() && filepath.Ext(f.Name()) == ".json" {
+					out = append(out, filepath.Join(ent.Name(), f.Name()))
+				}
+			}
+		case ent.Name() == shardMarker:
+		case !ent.IsDir() && filepath.Ext(ent.Name()) == ".json":
+			out = append(out, ent.Name())
+		}
+	}
+	return out, nil
 }
 
 // index returns a job's return index, built and with its mutex held,
@@ -236,16 +393,17 @@ func (c *Cache) build(id ID, e *returnIndex) error {
 	if err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(filepath.Join(dir, "returns"))
+	files, err := returnFiles(filepath.Join(dir, "returns"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("reading the returns for %s: %w", id, err)
 	}
-	e.answered = make(map[string]struct{}, len(entries))
+	e.answered = make(map[string]struct{}, len(files))
 	e.pending = map[string]chan struct{}{}
 	e.setRecord(j)
-	for _, ent := range entries {
-		node, ok := strings.CutSuffix(ent.Name(), ".json")
-		if !ok || ent.IsDir() {
+	e.marked = j.ReturnsSharded
+	for _, f := range files {
+		node, ok := strings.CutSuffix(filepath.Base(f), ".json")
+		if !ok {
 			continue
 		}
 		// The file is named for the node that filed it (returnFile), so

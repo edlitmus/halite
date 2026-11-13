@@ -143,7 +143,7 @@ func (e *ForeignRecordError) Is(target error) bool { return target == ErrForeign
 // is not this build's is refused.
 func checkSchema(j *Job) error {
 	switch j.Schema {
-	case "", JobSchema, SignedJobSchema:
+	case "", JobSchema, SignedJobSchema, ShardedJobSchema:
 		return nil
 	default:
 		return &ForeignRecordError{JID: j.JID, Schema: j.Schema, Known: SchemaFor(j)}
@@ -336,7 +336,7 @@ func (c *Cache) Returns(id ID) ([]*Return, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(dir, "returns"))
+	files, err := returnFiles(filepath.Join(dir, "returns"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -344,17 +344,14 @@ func (c *Cache) Returns(id ID) ([]*Return, error) {
 		return nil, fmt.Errorf("reading the returns for %s: %w", id, err)
 	}
 	var out []*Return
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		raw, err := atomicfile.Read(filepath.Join(dir, "returns", e.Name()))
+	for _, name := range files {
+		raw, err := atomicfile.Read(filepath.Join(dir, "returns", name))
 		if err != nil {
 			return nil, fmt.Errorf("reading the returns for %s: %w", id, err)
 		}
 		var r Return
 		if err := json.Unmarshal(raw, &r); err != nil {
-			return nil, fmt.Errorf("the return at %s is not readable: %w", e.Name(), err)
+			return nil, fmt.Errorf("the return at %s is not readable: %w", name, err)
 		}
 		out = append(out, &r)
 	}

@@ -79,7 +79,7 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 	// signature. The stand-in for the future has to be a version nobody
 	// has taken.
 	setFields(t, path, map[string]any{
-		"schema":        "halite.job/3",
+		"schema":        "halite.job/99",
 		"policy_digest": "sha256:deadbeef",
 		"future_thing":  []any{"a", "b"},
 	})
@@ -90,7 +90,7 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a newer record could not be read: %v", err)
 	}
-	if got.Schema != "halite.job/3" {
+	if got.Schema != "halite.job/99" {
 		t.Errorf("the schema read as %q", got.Schema)
 	}
 	if got.Fun != "test.ping" {
@@ -119,7 +119,7 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 			t.Errorf("%s was dropped anyway; the refusal did not protect the record", field)
 		}
 	}
-	if s := rawField(t, path, "schema"); s != "halite.job/3" {
+	if s := rawField(t, path, "schema"); s != "halite.job/99" {
 		t.Errorf("the schema was overwritten with %v", s)
 	}
 }
@@ -131,7 +131,7 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 func TestTheForeignRecordRefusalNamesEverythingNeeded(t *testing.T) {
 	c := newCache(t)
 	j := dispatched(t, c, time.Now())
-	setFields(t, recordPath(t, c, j.JID), map[string]any{"schema": "halite.job/3"})
+	setFields(t, recordPath(t, c, j.JID), map[string]any{"schema": "halite.job/99"})
 
 	_, err := c.Update(j.JID, func(*Job) error { return nil })
 	if err == nil {
@@ -141,10 +141,10 @@ func TestTheForeignRecordRefusalNamesEverythingNeeded(t *testing.T) {
 	if !errors.As(err, &foreign) {
 		t.Fatalf("the error carries no detail: %v", err)
 	}
-	if foreign.JID != j.JID || foreign.Schema != "halite.job/3" || foreign.Known != JobSchema {
+	if foreign.JID != j.JID || foreign.Schema != "halite.job/99" || foreign.Known != JobSchema {
 		t.Errorf("the error is missing something: %+v", foreign)
 	}
-	for _, want := range []string{string(j.JID), "halite.job/3", JobSchema, "read"} {
+	for _, want := range []string{string(j.JID), "halite.job/99", JobSchema, "read"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the message does not mention %q: %v", want, err)
 		}
