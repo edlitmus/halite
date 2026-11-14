@@ -2686,7 +2686,8 @@ unbuilt for every tier 1 platform**, FreeBSD included; section 27.2 describes wh
 carry. The release workflow verifies reproducibility and attests provenance for the binaries its two
 builders agreed on, and keeps them and the per-platform archives briefly as a workflow artifact. On a
 `v*` tag it publishes a GitHub release of the archives and their checksum manifest; a manual run
-publishes nothing, and no tag has been cut.
+publishes nothing. Two tags have been cut, both published as pre-releases: `v0.1.0` on 2026-10-10 and
+`v0.1.1` on 2026-10-12.
 
 ### 27.2 Artifacts
 

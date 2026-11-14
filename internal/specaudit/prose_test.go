@@ -140,3 +140,72 @@ func TestNoWaiverCitesADeliveredPhase(t *testing.T) {
 	}
 	t.Logf("checked %d waivers", len(waivers))
 }
+
+// releaseDenials are the ways a document says this project has never
+// cut a tag or published a release. Each is a claim CHANGELOG.md can
+// settle, because a released section is written there in the same change
+// that cuts the tag.
+var releaseDenials = regexp.MustCompile(`(?i)\b(` +
+	`no tag has been cut|no tags have been cut|no tag was ever cut|` +
+	`has not been tagged|no release has been cut|` +
+	`no release has been published|nothing has been released|` +
+	`never been released` +
+	`)\b`)
+
+// releasedVersion matches CHANGELOG.md's heading for a version that
+// shipped. `## Unreleased` deliberately does not match.
+var releasedVersion = regexp.MustCompile(`(?m)^## ([0-9]+\.[0-9]+\.[0-9]+) — [0-9]{4}-[0-9]{2}-[0-9]{2}\s*$`)
+
+// TestSpecDoesNotDenyAReleaseTheChangelogRecords holds SPEC's sentences
+// about release history to CHANGELOG's released sections.
+//
+// SPEC 27.1 said "no tag has been cut" for a month after `v0.1.0` and
+// `v0.1.1` were both published (DIVERGENCE 5.662). Neither specaudit nor
+// docsaudit could see it: they hold SPEC's module lists, totals and
+// worked examples to the registry, and a claim about this repository's
+// release history is held to neither.
+//
+// The tags themselves are the wrong authority to check against. They
+// are not in the build, so a test that asked `git` would pass in a clone
+// with no tags and fail in CI, or the reverse — exactly the asymmetry
+// 5.155 recorded about the version stamp. CHANGELOG is in the build, and
+// its released heading is written in the change that cuts the tag, so
+// the two are already supposed to agree.
+//
+// Only denial is checked, for the reason the sibling audit above gives:
+// SPEC must stay free to say a release has not happened while none has.
+// Before the first release this test skips, and says so.
+//
+// plan.md is not checked. It is a dated journal whose answered items are
+// records of the day they were decided — "origin has no tags now" was
+// true on 2026-09-25 — and holding a struck entry to today's facts would
+// make it unwritable. It carries a dated note instead.
+func TestSpecDoesNotDenyAReleaseTheChangelogRecords(t *testing.T) {
+	root := filepath.Join("..", "..")
+
+	changelog, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		t.Fatalf("reading CHANGELOG.md: %v", err)
+	}
+	released := releasedVersion.FindAllStringSubmatch(string(changelog), -1)
+	if len(released) == 0 {
+		t.Skip("CHANGELOG.md records no released version, so a denial is not yet expired")
+	}
+
+	spec, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if err != nil {
+		t.Fatalf("reading SPEC.md: %v", err)
+	}
+
+	newest := released[0][1]
+	for number, line := range strings.Split(string(spec), "\n") {
+		found := releaseDenials.FindString(line)
+		if found == "" {
+			continue
+		}
+		t.Errorf("SPEC.md:%d says %q, but CHANGELOG.md records %d released version(s), the newest %s: %q",
+			number+1, found, len(released), newest, strings.TrimSpace(line))
+	}
+	t.Logf("checked SPEC.md against %d released version(s) in CHANGELOG.md, newest %s",
+		len(released), newest)
+}
