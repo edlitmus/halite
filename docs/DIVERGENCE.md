@@ -44476,6 +44476,84 @@ grepped for in `SPEC.md`, `plan.md`, `README.md`, `CHANGELOG.md` and
 has been signed through SSO or an assumed role"* — still true, and
 tracked as issue 311. That grep reaches a phrasing, not the class.
 
+### 5.663 A watch that restarted the agent's own service left a FreeBSD node dead
+
+Found while bringing the estate's own halite configuration under salt
+management. `service.running` with a `watch` on the agent's `node.yaml`
+is the obvious way to automate the procedure the handbook itself
+documents — `docs/handbook/33-configuration.md` §3 is *edit, check,
+restart, verify, roll*, and it even suggests keeping the file in version
+control. On `r720` it left the node dead: the job **never returned**, no
+`halite-node` process was left on the host, `manage.status` listed the
+node `down`, and it stayed down until it was started by hand over ssh.
+The new `node.yaml` was on disk. Only the start never happened.
+
+The cause is not subtle once seen. `service halite_node restart` is a
+shell script running as a child of the agent, so the stop takes the
+script with it before it reaches the start. That is rc.subr signalling a
+process group, and `contrib/rc.d/halite_node` is where the pidfile that
+group is found from is set.
+
+**Linux survives it, which is what makes this a defect rather than a
+hazard of restarting anything.** The same state on `system76-pc`
+restarts cleanly, because `systemctl restart` is a request to pid 1
+rather than work done by the caller. So a state that is green on the one
+Ubuntu host kills the FreeBSD ones — on the platform that is SPEC 27.1
+tier 1 and carries about 80% of production. It is the trap 4.x keeps
+recording from the other direction: a leg that *feels* covered because
+the machine in front of somebody behaved.
+
+**Nothing warns, and nothing was holding it.** `serviceModWatch` in
+`internal/builtin/service.go` calls the provider's restart for whatever
+name it is given; there is no notion of "this service is the one I am
+running under", and no guard anywhere in the tree. The handbook
+documents the by-hand procedure and never says what happens if you
+automate it with halite. This is the first time it has been written
+down.
+
+**The agent could tell, on both platforms, and that is measured rather
+than supposed.** On Linux `/proc/self/cgroup` reads
+`0::/system.slice/halite-node.service` (pid 164296 on `system76-pc`). On
+FreeBSD the shipped pidfile holds the *program's* pid rather than
+daemon(8)'s — which the rc script's own comment states, and which checks
+out: `/var/run/halite/halite_node.pid` contained `266` while `service
+halite_node status` reported pid 266 on `r720`. So a refusal naming the
+safe recipe is implementable. Tracked as issue 728, which argues for
+refusing rather than detaching behind the operator's back: a restart
+that reports success before it has happened is the undemonstrated claim
+this repository exists to reject.
+
+**Not fixed here.** The estate's state works around it with an
+`onchanges` command that is detached *and* delayed —
+`daemon -f /bin/sh -c "sleep 10; service halite_node restart"` on
+FreeBSD, a transient `systemd-run --collect --on-active=10` unit on
+Linux — and leaves the node's `service.running` watchless, so that the
+next highstate starts an agent that failed to come back. Measured on
+both: `r720` 86086 -> 16275 and 84396 -> 266, `system76-pc` 156325 ->
+162116 and 163874 -> 164296, each healthy afterwards with `doctor`
+naming an evidence record written about eleven seconds after the config,
+which is the delay. One defect of that workaround was found the same
+way: `systemd-run --unit=` fails when the named unit exists, so two
+applies inside the ten seconds exited 1 and reported `Failed: 1` for a
+restart that had in fact happened against the right file.
+
+The hub and API need none of it. They are not the process running the
+state, so an ordinary `watch` works, and was measured working —
+`halite_api` 7601 -> 43308 and `halite_hub` 44992 -> 45935. The
+objection that restarting the hub drops every node's stream was measured
+rather than feared: a 20-second hub-dispatched job with the hub
+restarted three seconds in still delivered its output to the operator
+and was recorded `complete` by the new process, which the old one cannot
+have written, having died at second three.
+
+**Not verified.** Whether `service.restart` called directly, rather than
+reached through `watch`, fails the same way: it is the same provider
+call, but `watch` is what was run. Nor the same shape for a hub or API
+restarting *itself* from a state — here the applying agent is a separate
+process on the same host, so it does not arise. What Salt does about
+this was not checked, because Salt is not importable on the development
+host, and no comparison is claimed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
