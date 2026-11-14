@@ -1440,6 +1440,15 @@ unblocks rather than by how hard it is.
   of a repository with no tags — stamps the commit. DIVERGENCE 5.155 has
   the measurement; `git tag -d` the six, or expect it.
 
+  **Both halves of that paragraph are dated 2026-09-25 and no longer
+  describe today.** `origin` carries `v0.1.0` and `v0.1.1`, so a fresh
+  clone is no longer a repository with no tags and CI no longer stamps a
+  bare hash: `git describe` answers `v0.1.1-387-g94de7ce82af6` on `main`
+  at `94de7ce8`, which the Makefile strips to `0.1.1-387-g…`. That is the
+  stamp working as intended, not a defect. The deleted proof of concept's
+  tags are still the trap for a clone that predates their deletion.
+  DIVERGENCE 5.662.
+
 - ~~**The pre-1.0 numbering scheme.**~~ **Answered 2026-09-25: the first
   tag is `v0.1.0`.** Not a resumption of the proof of concept's numbering,
   which reached 0.12.0 — that line is deleted and its tags are gone, so

@@ -44423,6 +44423,59 @@ connections time out. The snapshots are on issue 718 (comment
 `/root/simfleet-build/archive/hub-memory-freebsd-ufs-2026-11-13`. Torn
 down and checked; about 21 minutes, roughly $0.45.
 
+### 5.662 SPEC said no tag had been cut, two releases after the first one was
+
+SPEC 27.1's qualifications end on what the release workflow does, and
+the last clause said *"a manual run publishes nothing, and no tag has
+been cut"*. Both tags had been cut by then: `git ls-remote --tags
+origin` lists `v0.1.0` and `v0.1.1`, and `gh release list` shows both
+as published pre-releases, dated 2026-10-10 and 2026-10-12. The
+sentence was written before either and nobody went back to it.
+
+**Nothing was holding it.** `internal/specaudit` holds SPEC's module
+lists, totals and worked examples to the registry, and
+`internal/docsaudit` holds the generated pages and the counts quoted in
+prose to the code. A claim about this repository's release history was
+held to neither, and `TestNoProseDeniesADeliveredPhase` — which exists
+for exactly this, an expired denial in prose — reads only
+`docs/DIVERGENCE.md` and `README.md`, and matches denials of a *phase*.
+
+**It is held now, and the authority is CHANGELOG rather than git.**
+`TestSpecDoesNotDenyAReleaseTheChangelogRecords` fails if SPEC says no
+tag has been cut while `CHANGELOG.md` carries a released heading. The
+tags are the wrong thing to check against: they are not in the build, so
+a test that asked `git` would pass in a clone with no tags and fail in
+CI, or the reverse — the same asymmetry 5.155 recorded about the version
+stamp. CHANGELOG is in the build and its released heading is written in
+the change that cuts the tag, so the two already have to agree. Putting
+the sentence back fails the test, which is how the test was checked.
+
+**The shape is the one this project has recorded twice before, both
+times in the same direction — the work was done and the prose still
+said it never happened.** 5.83 and 5.84: `plan.md` said Linux arm64
+*"has still never run it"* after the suite, a hub and a node had all run
+natively on `ref-salt1`. 5.142: three pages said the macOS code *"has
+been run on neither"* while seven `mac_*` modules were already
+`hardware`. This is the third, and the first about a release rather
+than a platform.
+
+**Fixed.** The sentence now names both tags and their dates. `plan.md`'s
+answered item on the deleted proof of concept's tags carries the same
+assumption — *"**origin** has no tags now"*, true on 2026-09-25 when it
+was written — and has a dated note rather than a rewrite, because the
+entry is a record of that day's decision. Its reasoning about the
+version stamp has moved with it: a fresh clone is no longer a
+repository with no tags, so CI stamps `0.1.1-387-g…` rather than a bare
+hash. That is the Makefile's `sed` doing what it was written for (see
+the comment above `GIT_VERSION`), not a defect.
+
+**Not verified.** Whether other prose in the tree asserts that
+something has not happened which since has. The claim family was
+grepped for in `SPEC.md`, `plan.md`, `README.md`, `CHANGELOG.md` and
+`docs/`, which found these two and `docs/releasing.md`'s *"no release
+has been signed through SSO or an assumed role"* — still true, and
+tracked as issue 311. That grep reaches a phrasing, not the class.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
