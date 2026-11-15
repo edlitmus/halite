@@ -6,6 +6,12 @@
 # it finishes first. The restart command is per platform. Both were run inside
 # a real job on Ubuntu 26.04 and FreeBSD 15.1 (DIVERGENCE 5.482), though not
 # from this file; on Linux read the 30 as 30 to 90 seconds.
+#
+# This shape is not a preference. A `watch` on the agent's own service --
+# the obvious way to write it -- is refused by halite, because it reports a
+# restart that has not happened and leaves the node down (5.663, 5.663.1).
+# So `halite node agent` below stays watchless, which is also what gets an
+# agent back that failed to come up after the detached restart.
 {%- from "halite/map.jinja" import halite with context %}
 {%- set node = pillar['halite']['node'] %}
 {%- set cfg = node['config'] %}

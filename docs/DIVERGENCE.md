@@ -44554,6 +44554,413 @@ process on the same host, so it does not arise. What Salt does about
 this was not checked, because Salt is not importable on the development
 host, and no comparison is claimed.
 
+#### 5.663.1 The fix: halite refuses it, and names the recipe (2026-11-15)
+
+Issue 728 asked for the refusal rather than an automatic detach, and that
+is what landed. A provider that can tell whether a named service is the
+one running this process now does so, and `service.restart`,
+`service.reload`, `service.force_reload` and the `watch` reaction on
+`service.running` fail with a comment naming the detached form instead of
+stopping the agent in the middle of its own job:
+
+> The service halite_node is the one running this process, so restarting
+> it from here would stop this process before it could finish: this job
+> would never return and the service would stay down, because the restart
+> runs as a child of this process and is killed with it. Restart it from
+> outside this process instead -- `cmd.run: daemon -f /bin/sh -c 'sleep
+> 30; service halite_node restart'` with an `onchanges` on whatever
+> changed -- and leave the `service.running` state without a `watch`, so
+> the next run starts a service that did not come back. See
+> docs/handbook/33-configuration.md section 6.
+
+The consequence clause is the provider's, not one sentence for both, and
+that is the second thing 5.663 got wrong -- see below. systemd's reads
+*"this job would never return, so nothing would report whether the change
+took, even though systemd starts the service again"*.
+
+The check is `serviceSelfIdentifier`, an optional interface beside
+`serviceDisableChecker` in `internal/builtin/service_self.go`, and it asks
+one question: *would stopping that service stop me?* On systemd it is
+every `.service` and `.scope` element on `/proc/self/cgroup`'s path, not
+only the leaf, because stopping a unit kills its whole subtree. On FreeBSD
+it is the pids `service <name> status` reports against the set holding
+this process and every process above it. The ancestry matters as much as
+the pid: a `cmd.run` that shells out to `halite-node call service.restart
+halite_node` is a grandchild of the agent, and the stop kills the agent
+above it. A provider that cannot answer — openrc, sysvinit, launchd,
+Windows — does not implement the interface and the guard stays silent,
+because a guard that guessed would refuse restarts that are safe. A
+reading that *fails* also stays silent, and says so in the log.
+
+`service.dead` and `service.stop` are deliberately not guarded. They do
+what they say: the operator asked for the service to stop and it stops.
+The job's return is lost either way, but a restart that reports success
+and leaves the host with no agent is a different claim from a stop that
+stops.
+
+**5.663's stated cause was wrong, and the real one is worse.** It said
+rc.subr signals a process group. It does not: `_run_rc_killcmd` builds
+`kill -$sig $rc_pid` (`/etc/rc.subr:1831` on FreeBSD 15.1-RELEASE-p6), one
+signal to the pids in the pidfile. What kills the restart script is
+**halite's own command confinement**. `confineTree`
+(`internal/exec/proc_unix.go`) sets `Setpgid` on every foreground child
+and installs a `Cancel` that sends `SIGKILL` to `-pgid`, and
+`exec.CommandContext` fires it when the job's context is cancelled — which
+is what the agent shutting down does. So the agent asks for the restart,
+is killed by its own stop, and kills the restart on its way out.
+
+That was isolated rather than inferred. `cmd.run_bg` takes
+`startAndRelease`, which is reached *before* `confineTree` and so sets
+neither flag. On beastie, with a guard-free build, the same
+`service halite_node728 onerestart` run that way survived the agent's
+death and completed the start (252 -> 902), while the ordinary confined
+one did not. Two paths that must agree, again: the timeout machinery and
+the restart.
+
+**Measured on beastie (FreeBSD 15.1-RELEASE-p6, amd64), 2026-11-15.** An
+isolated hub on `127.0.0.1:48728` with its own pki, state, cache and
+tree, and a node `lab728.selftest` enrolled to it and run under its own
+rc.d script `halite_node728` — a copy of `contrib/rc.d/halite_node`, with
+the shipped script's `enroll` prestart kept, pointed at scratch paths.
+Nothing of the live estate was touched: the host's own `halite_node`,
+`halite_hub` and `halite_api` kept running throughout.
+
+A jail was the intent and was not available: `jail_attach` returns EPERM
+for this session's root, including under `bastille create`, so the lab was
+raised directly on the host instead and isolated by paths and service
+names.
+
+| Run | Hub-dispatched | Result |
+|---|---|---|
+| `service.restart halite_node728`, guarded | returns, exit 1 | the refusal; agent keeps pid 95852 |
+| `state.apply` with a `watch`, guarded | returns in 83 ms, `Failed: 1` | the refusal; `file.managed` still `True`; agent keeps pid 1235 |
+| the same with `test=True` | returns | the refusal, so `--test` finds it |
+| `state.apply` with a `watch`, guard removed | **never returned** (killed at 120 s) | no `halite-node` process, `service` says not running, `manage.status` says `down`, `watched.conf` written. 5.663 on this host. |
+| a `watch` on an unrelated service, guarded | returns | `halite_other728` restarted 96787 -> 97041, agent untouched |
+| the recipe the refusal names | returns at once | agent restarted 1235 -> 1749 eleven seconds later and reconnected |
+
+The guard-free run was watched with a 0.2 s `ps` poller: the agent
+(98805) and `/bin/sh /usr/sbin/service halite_node728 onerestart` (99037)
+were both gone inside the same sample, and the node's log ends with a
+clean `stopped` — the script never reached its start.
+
+**Which closes 5.663's "not verified" on `service.restart` called
+directly.** It is the same provider call and it does fail the same way;
+it is now refused too, and `TestTheServiceFunctionsThatStopThisProcessAreRefused`
+walks `restart`, `reload` and `force_reload` for the refusal and `start`,
+`stop`, `enable` and `disable` for its absence.
+
+**Tests.** `internal/builtin/service_self_test.go` holds the captured
+lines — `sshd is running as pid 10335.` off beastie, and the
+`check_process` branch's plural, which no base service on the host
+produced and which was made on purpose from a throwaway script with no
+pidfile and three matching processes: `haliteprobemulti is running as pid
+3886 3887 3888.` An unparseable line is an error rather than an empty
+list, because an empty list reads as "nothing to stop" and would turn a
+broken parser into an absent guard. Four deliberate breaks were watched
+failing: the guard removed from the watch reaction, the ancestry walk
+reduced to this process, the parser's error turned into `nil, nil`, and
+the cgroup walk reduced to the leaf element.
+
+`internal/builtin/live_freebsd_service_self_test.go` drives the detector
+against the real `service(8)`, rc.subr and `ps`, and passed as root on
+beastie. It writes a throwaway rc.d script naming the *test binary* as
+`procname` with the test's own pid in the pidfile, so rc.subr reports the
+test as the service — and a second one naming a `sleep` the test started,
+which is a child and never an ancestor, as the control that catches a
+walk going the wrong way. Both breaks above were re-run against this leg
+too.
+
+**`ps -ax -o pid= -o ppid=`, not `-o pid=,ppid=`.** FreeBSD's `ps` takes
+everything after an `=` as that column's header, so the comma form asks
+for one `pid` column headed `,ppid=` — which is what it printed. Checked
+against the tool before the line was written down.
+
+#### 5.663.2 The systemd half, and 5.663's "Linux survives it" (2026-11-15)
+
+5.663.1 shipped with the Linux half of the guard held by captured cgroup
+lines and nothing else. `system76-pc` runs `halite-node` as a unit, so it
+was run there the same afternoon: Ubuntu 24.04, systemd 255
+(255.4-1ubuntu8.18), kernel 6.18.7, an isolated hub on `127.0.0.1:48728`
+and a node under a transient unit `halite-node728.service` in
+`/run/systemd/system`. The host's own `halite-node.service` was not
+touched -- pid 164296, `NRestarts: 0`, before and after.
+
+| Run | Hub-dispatched | Result |
+|---|---|---|
+| `service.restart halite-node728`, guarded | returns, exit 1 | the refusal; unit keeps pid 257259 |
+| `state.apply` with a `watch`, guarded | returns in under a second, `Failed: 1` | the refusal; `file.managed` still `True`; unit keeps pid 260056 |
+| the same with `test=True` | returns | the refusal |
+| a `watch` on an unrelated unit, guarded | returns | `halite-other728` restarted 257260 -> 257517; agent untouched |
+| `state.apply` with a `watch`, guard removed | **no answer at all** until killed at 100 s | the unit went 258282 -> 258314, stayed `active`, `NRestarts: 0`; `watched.conf` written |
+| the recipe the refusal prints, verbatim | returns at once, all three states `True` | the agent restarted 260056 -> 260290 **31 s** later |
+
+**And it corrects 5.663 a second time.** 5.663 said *"Linux survives it,
+which is what makes this a defect rather than a hazard"* and *"restarts
+cleanly"*. The node survives; the **job does not**. The guard-free run
+above returned nothing whatever -- not a failure, not a partial result --
+and the operator is left unable to say whether the configuration took. The
+same thing is visible in 5.482, which recorded the direct form leaving
+"the hub's `run` unanswered until a 100 s timeout" on both platforms; 5.663
+read its Linux half as clean because it was watching the node rather than
+the return.
+
+So the refusal is right on both platforms, and the *reason* differs. The
+message had one sentence for both and said the service "would stay down",
+which is false under systemd. `SelfActionConsequence` is now a provider
+method, each half measured, and `TestEachProviderStatesItsOwnConsequence`
+fails if the two are ever the same sentence or if systemd's claims the
+service stays down. Finding this is the whole value of having run it on the
+second platform: the guard was right and its explanation was not, and
+nothing that compares code with code can see that.
+
+**`live_systemd_service_self_test.go` re-execs itself to get inside a
+unit.** The FreeBSD leg can write an rc.d script that *names* the test
+process, because rc.subr is told where to look; systemd is not -- a unit's
+processes are the ones in its cgroup. So the outer run starts the same test
+binary again under `systemd-run --collect --wait --pipe --unit=...` and the
+inner run does the asserting. `--pipe` is what makes a failure readable:
+without it the inner output goes to the journal and the outer test can
+report only an exit status. Inside, `/proc/self/cgroup` read
+`0::/system.slice/haliteprobeself-259278.service`, which is the shape the
+unit tests capture, and the live `halite-node.service` -- a real unit on
+that host, and not this process's -- read as somebody else's, which is the
+control that matters: the guard is about *this process*, not about a name.
+
+The break is self-demonstrating here in a way it is not on FreeBSD. With
+the guard removed, `service.restart` on the inner run's own unit restarts
+the unit, systemd kills the inner run and starts it again, and it does so
+five times before the outer test reports exit 1. A test that restarts
+itself is not what an agent does -- an agent restarts once and loses its
+return -- but it is an unusually loud way for the guard's absence to show.
+
+**Still not verified.** The hub or API restarting *itself* from a state
+applied by a co-located node: on both hosts the applying agent is a
+separate process, so it does not arise, and it was not constructed.
+Neither lab ran more than one node against one hub on one machine, so
+nothing is claimed about the refusal under load or with a relay in the
+path. And no `openrc`, `sysvinit`, `launchd` or Windows host has been
+asked: those providers do not implement the interface, so the guard is
+silent there by construction rather than by measurement.
+
+#### 5.663.3 What Salt does: detaches on systemd, nothing on FreeBSD (2026-11-15)
+
+5.663 said Salt's behaviour *"was not checked, because Salt is not
+importable on the development host"*, and 5.663.1 and 5.663.2 repeated it.
+**Nobody had measured that.** `pkg info` and all three interpreters on
+`beastie` say Salt is not *installed*, which is a far weaker claim, and the
+differential gate's own skip text already says what to do about it
+(`pip install salt` into a virtualenv). Doing exactly that put salt-call
+3008.5 (Argon) on the host in one command — a native FreeBSD build, reading
+`os: FreeBSD`, `osfinger: FreeBSD-15` from its own grains, against an
+isolated `root_dir` so it could not see the estate's `/srv/salt`. The
+excuse was not true, and it had been inherited twice before anybody tried.
+
+**On systemd, Salt detaches.** `salt/modules/systemd_service.py` names the
+case outright:
+
+```python
+SALT_MINION_SERVICE = "salt-minion.service" <!-- lexicon:allow -->
+
+def _no_block_default(name, no_block):
+    if no_block is None:
+        return True if _salt_minion_service(name) else False <!-- lexicon:allow -->
+    return no_block
+```
+
+`restart` and `stop` pass that through `_systemctl_cmd(..., systemd_scope=True,
+no_block=no_block)`, which appends `--no-block` and, when `systemd.scope` is
+on, runs the whole thing under `systemd-run --scope` — out of the minion's <!-- lexicon:allow -->
+own cgroup, so the restart survives the minion dying. Two mechanisms, and <!-- lexicon:allow -->
+both of them are **option 2**: the one issue 728 considered and rejected.
+`--no-block` means `systemctl` returns when the job is *enqueued*, so the
+return value says the command exited, not that the service came back. The
+state reports success for a restart that has not happened yet and cannot
+report the failure of one — which is precisely the undemonstrated claim
+this project will not write into a job return, and why 5.663.1 refuses
+instead. Salt's choice is defensible for Salt; it is not available to a
+project whose first rule is that a claim nobody demonstrated is a defect.
+
+**On FreeBSD, Salt does nothing, because in 3008.5 it does not manage
+FreeBSD services at all.** Asked on this host:
+
+```
+$ salt-call --local sys.list_functions service
+local: []
+```
+
+and the call fails naming every provider's own reason — `debian_service`
+*"unsupported OS family"*, `rh_service` *"OS not in {...}"*, `systemd`
+*"only available on Linux systems which have been booted with systemd"*,
+and so on through `mac_service`, `smf`, `upstart` and `win_service`. Not
+one of them is FreeBSD. `salt/modules/` holds no `freebsdservice.py`: it
+has moved out to the `saltext.freebsd` extension, a separate install, and
+`pkg` still loads from core (33 functions) so this is about that one
+module and not about FreeBSD support in general.
+
+Read out of `saltext.freebsd` 1.0.0, its `restart` is the whole of its
+handling:
+
+```python
+def restart(name, jail=None):
+    cmd = f"{_cmd(jail)} {name} onerestart"
+    return not __salt__["cmd.retcode"](cmd, python_shell=False)
+```
+
+No self-check, no detach, no refusal — and `onerestart`, which is the same
+`one*` verb halite uses to get past `rcvar` gating, so the two agree about
+that much. So on the platform carrying 80% of this estate, Salt as shipped
+today has the shape 5.663 recorded, with nothing standing in its way; the
+guard of 5.663.1 is a divergence in halite's favour rather than a
+compatibility break. That is the first thing to say in SPEC's terms: a
+`watch` on the minion's own service is not a behaviour there is a Salt <!-- lexicon:allow -->
+semantic to match.
+
+**And the live test ran on no leg, which Fleet run 43760738370 showed
+rather than anybody noticing.** `TestLiveSystemdSelfRestartIsRefused` was
+selected by the `freebsd` leg's bare `-run TestLive` and skipped there
+(*"systemd is Linux's, and this is freebsd"*), selected by the `debian`
+leg's catch-all and skipped there too, and **not selected at all** by the
+`linux` leg -- the only leg where it can execute -- because that leg's
+alternation lists `TestLiveService*` and the name does not contain it. Two
+skips and an absence read as a green run. This is 5.147's shape exactly,
+and `TestTheLinuxLegsFilterNamesFamiliesNotTests` cannot catch it: it
+checks that each pattern is a family prefix rather than a complete test
+name, and says in its own comment why it does not try to decide which
+tests should run. `TestLiveSystemdSelf*` is now in the `linux` leg's
+filter, as a prefix so a sibling added later is picked up -- and run
+43761946179 then ran it there, on an Ubuntu runner, as root:
+
+```
+the inner run, under haliteprobeself-6139.service:
+    /proc/self/cgroup inside haliteprobeself-6139.service: "0::/system.slice/haliteprobeself-6139.service\n"
+    the units on this process's cgroup path: ["haliteprobeself-6139.service"]
+    service.restart was refused and this process is still alive
+--- PASS: TestLiveSystemdSelfRestartIsRefused
+```
+
+The nesting is visible in the leg's own output -- two `=== RUN` lines, the
+inner one indented -- which is the re-exec working: the guard is now
+demonstrated under a real unit on a machine nobody here owns, every Fleet
+run, rather than once on `system76-pc`. The three
+FreeBSD tests did run as root on the real `freebsd` leg in that run and
+passed, which is the contrast that makes the gap visible.
+
+**The migration question was measured, and it is answered properly.** A
+Salt user's habit is to write `no_block: True`, and a state engine that
+accepted and ignored it would turn Salt's promise into silence. halite
+refuses it where it is written:
+
+```
+$ halite-node state apply noblock --file-root <dir> --pillar-root <dir> --test
+halite: state compilation failed with 1 error(s):
+  .../noblock.sls:2:3 [a salt user's habit]: service.running: argument
+  "no_block": is not a parameter of this function
+```
+
+File, line, column, state id, function and argument, at compile time and
+before anything ran — which is the `signature` package's generic answer and
+not something written for this case. (The first attempt at that measurement
+read the estate's own `/usr/local/etc/salt/srv/pillar` and failed on six
+GPG-encrypted keys, because `--file-root` alone leaves the pillar root at
+the platform default. It named the paths it read, which is 5.143's point
+exactly: an answer that reaches for production and says so is not silent,
+and that is why it gets read past.)
+
+**Not verified here.** Nothing was *run* against Salt: the systemd
+behaviour and the FreeBSD module are read out of source, because reproducing
+either needs a minion running as a service and no host here has one. The <!-- lexicon:allow -->
+`saltext.freebsd` wheel was read rather than installed — its code never
+executed — so what Salt would do in practice on FreeBSD 15 with that
+extension present is inferred from its source and unmeasured. Older Salt
+releases, which did carry `freebsdservice` in core, were not examined, so
+nothing is said about when it moved or whether it ever had a guard.
+
+### 5.664 rc.subr's status line can name several pids, and nothing on this host printed one
+
+The self-restart guard of 5.663.1 reads a service's pids out of the line
+`service <name> status` prints, so the shape of that line is load-bearing.
+`/etc/rc.subr` on FreeBSD 15.1-RELEASE-p6 builds it at line 1468:
+
+```sh
+echo "${name} is running as pid $rc_pid."
+```
+
+`$rc_pid` is **unquoted**, and where it comes from for a pidfile-less
+service is `check_process` (line 446), which calls `_find_processes` (476)
+— whose own comment says it *"Prints the PIDs of any matching processes,
+space separated"* (459). So a service without a pidfile, whose `procname`
+matches more than one process, prints several numbers before the full
+stop, and a parser that took one integer and stopped would read the first
+pid of several — which is the worst possible failure for this guard,
+because missing the agent's own pid turns the refusal off exactly where it
+is needed.
+
+Captured on `beastie`, for the one-pid case:
+
+```
+sshd is running as pid 10335.
+```
+
+Reading the next case out of rc.subr rather than capturing it is exactly
+what this project does not do (`getfacl -s`, `snap list`, `ps`), so it was
+produced on purpose: a throwaway rc.d script with no `pidfile`, a
+`procname` of a copied `sleep` binary, and three of them running —
+
+```
+haliteprobemulti is running as pid 3886 3887 3888.
+```
+
+The copy matters: wrapping with `exec /bin/sleep` made argv[0]
+`/bin/sleep`, which `procname` never matched, and the first attempt
+captured a one-pid line while believing it had three.
+
+**And the constructed fixture was not necessary, which is its own
+finding.** This entry first said that no base service on the host could
+produce a multi-pid line, because everything with an rc.d script writes a
+pidfile and `check_pidfile` passes `-p $_pid` to `ps`, matching at most
+one. That was asserted, not measured, and it is false twice over: 138 of
+the 171 scripts in `/etc/rc.d` contain no `pidfile=` at all, and a survey
+of every pidfile-less script on the host — base and ports, `onestatus`,
+read-only — found one printing two pids while this was being written:
+
+```
+nfsd is running as pid 10303 10304.
+```
+
+They are a parent and its child, `nfsd: master (nfsd)` at 10303 and <!-- lexicon:allow -->
+`nfsd: server (nfsd)` at 10304, and both match because `_find_processes`
+compares the first word of the command against `basename` **plus a
+colon** among its variations (rc.subr line 464). So the multi-pid line is
+not exotic: it is NFS, in base, and it is a chain of exactly the shape the
+guard walks. It is now a captured fixture beside the constructed one.
+
+The five others the survey found print one pid each — `blocklistd`,
+`lockd`, `powerd`, `rpcbind`, `statd` — so the one-pid line is not
+peculiar to pidfile-writing services either.
+
+The parser therefore takes **every** field and makes an unparseable one an
+error rather than an empty list, because "no pids" is read upstream as
+"nothing to stop, so nothing can stop me" — a broken parser would present
+as a guard that is silently absent.
+
+**Also: these two citations had no section.** `service_self.go` and
+`service_self_test.go` cited `DIVERGENCE 5.664` for this finding while
+5.664 was still the next free number, and every audit passed. The ledger
+audit reads prose; nothing reads a `DIVERGENCE N.M` in a Go comment, so a
+citation into thin air is invisible there. That is the pair-that-must-agree
+shape again, with one half of the pair in a language nobody is checking.
+
+**Not verified.** No line with more than two pids was found in the wild;
+three was constructed. What `status` prints for a service whose `procname`
+matches an *interpreter* — `_find_processes` has a separate path for that,
+rc.subr line 459 onward — which this parser would read the same way, but
+nothing has produced one. And the survey covered the 68 port scripts
+installed on this host only, which is not the ports tree; it ran
+unprivileged, which is sound for these because `check_process` reads
+`ps -ax` rather than a pidfile, but it means a script with a privileged
+`precmd` could have failed without being counted.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

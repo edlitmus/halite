@@ -183,6 +183,24 @@ for the two cases a restart cannot fix. Keep the previous file (`cp
 node.yaml node.yaml.prev`, or version control) so that the way back is a copy
 and a restart.
 
+> **Warning:** do not automate step 3 with a `watch` on the agent's own
+> service. `service.running` with `watch` restarts the service from inside
+> the job, and when the service **is** the agent, the stop kills the process
+> running the job. **On both platforms the job never returns**, so nothing
+> reports whether the change took. What happens to the node then differs,
+> and both were measured:
+>
+> | | The job | The node |
+> |---|---|---|
+> | FreeBSD | never returns | **stays down** — the restart runs as a child of the agent and is killed with it |
+> | systemd | never returns | comes back — the restart is a job for pid 1, not work done by the caller |
+>
+> halite now refuses it, naming the recipe below, rather than reporting a
+> restart that has not happened. A tree written before that refusal existed
+> takes FreeBSD nodes down and leaves Linux ones silent. Step 6 has the form
+> that works. The hub and the API need none of this: they are not the
+> process running the state and take an ordinary `watch`.
+
 ### 5. File modes and ownership
 
 halite never takes a mode from the umask. Keep it that way:
@@ -221,6 +239,41 @@ halite_node_config:
     - serializer: yaml
     - mode: '0640'
 ```
+
+The restart is the part that cannot be written the obvious way. `watch` is
+refused on the agent's own service, so the shipped tree detaches it and
+delays it, and leaves the `service.running` **watchless** so that the next
+highstate starts an agent that failed to come back:
+
+```yaml
+# Rendered for FreeBSD; the shipped tree templates the service name and
+# branches on grains['kernel'].
+halite node restart when its configuration changes:
+  cmd.run:
+    # FreeBSD. On Linux:
+    #   systemd-run --on-active=30 --unit=halite-node-restart systemctl restart halite-node
+    - name: daemon -f /bin/sh -c 'sleep 30; service halite_node restart'
+    - onchanges:
+      - file: halite node configuration
+
+halite node agent:
+  service.running:
+    - name: halite_node
+    - enable: true
+```
+
+The delay lets the agent finish the job and send its return before it dies;
+the detach puts the restart outside the process group the agent's own command
+confinement kills when it shuts down. Both lines above were run verbatim
+inside a real hub-dispatched job: the job returned at once and the agent
+came back 11 s later on FreeBSD and 31 s later on Linux.
+
+On Linux a transient timer's `AccuracySec` is one minute — `systemctl show
+-p AccuracyUSec` on the timer says `1min` — so read the 30 as 30 to 90
+seconds. And a `systemd-run --unit=` whose unit already exists fails, so a
+second apply inside the window reports a failure for a restart that in fact
+happened; put `systemctl stop <unit>.timer <unit>.service` first, or add
+`--collect`, if that matters to you.
 
 The bootstrapping order matters, because nothing can configure a hub that does
 not exist or enrol a node that has not been accepted: install the programs,
@@ -273,5 +326,9 @@ the API, restart the service.
 - Secrets live in files named by `*_file` settings, never in the YAML.
 - Keep configuration in the tree and let halite write it; the example
   `halite.*` states are the tested start.
+- **An agent cannot restart itself from inside a job**, so a `watch` on its
+  own service is refused: the job never returns on either platform, and on
+  FreeBSD the node stays down. Detach the restart, delay it, and leave the
+  `service.running` watchless.
 
 Next: [monitoring and alerting](34-monitoring.md).
