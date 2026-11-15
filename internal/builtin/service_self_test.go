@@ -187,6 +187,15 @@ func TestProcessAncestryWalksToTheTopAndStopsThere(t *testing.T) {
 // freebsdSelfCtx is a context that looks like a FreeBSD host where
 // `service <name> status` names servicePID and the process table is the
 // captured one, with this process at pid.
+//
+// It skips where the rc provider is not the one the module would pick,
+// which is Windows: the service control manager's `Available` is
+// unconditionally true and it comes first, so no faked `Lookup` can put
+// the rc provider in front of it -- and it is an API rather than a
+// binary, so a request would go to the real one. The skip is a check and
+// not a guess: the provider is *asked*, so a selection change on Linux
+// or macOS turns these tests off loudly rather than quietly passing
+// against the wrong provider.
 func freebsdSelfCtx(t *testing.T, test bool, servicePID string, pid int) (*exec.Context, *exec.RecordingRunner) {
 	t.Helper()
 	c := newCtx(test)
@@ -207,6 +216,13 @@ func freebsdSelfCtx(t *testing.T, test bool, servicePID string, pid int) (*exec.
 			return "/usr/sbin/" + name
 		}
 		return ""
+	}
+	p, err := pickServiceProvider(c)
+	if err != nil {
+		t.Fatalf("no service provider was available for a context that looks like FreeBSD: %v", err)
+	}
+	if p.Name() != "freebsd_service" {
+		t.Skipf("the module picks the %s provider here, and this test is about the rc one", p.Name())
 	}
 	restore := selfPID
 	selfPID = func() int { return pid }
