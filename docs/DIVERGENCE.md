@@ -44816,6 +44816,22 @@ compatibility break. That is the first thing to say in SPEC's terms: a
 `watch` on the minion's own service is not a behaviour there is a Salt <!-- lexicon:allow -->
 semantic to match.
 
+**And the live test ran on no leg, which Fleet run 43760738370 showed
+rather than anybody noticing.** `TestLiveSystemdSelfRestartIsRefused` was
+selected by the `freebsd` leg's bare `-run TestLive` and skipped there
+(*"systemd is Linux's, and this is freebsd"*), selected by the `debian`
+leg's catch-all and skipped there too, and **not selected at all** by the
+`linux` leg -- the only leg where it can execute -- because that leg's
+alternation lists `TestLiveService*` and the name does not contain it. Two
+skips and an absence read as a green run. This is 5.147's shape exactly,
+and `TestTheLinuxLegsFilterNamesFamiliesNotTests` cannot catch it: it
+checks that each pattern is a family prefix rather than a complete test
+name, and says in its own comment why it does not try to decide which
+tests should run. `TestLiveSystemdSelf*` is now in the `linux` leg's
+filter, as a prefix so a sibling added later is picked up. The three
+FreeBSD tests did run as root on the real `freebsd` leg in that run and
+passed, which is the contrast that makes the gap visible.
+
 **The migration question was measured, and it is answered properly.** A
 Salt user's habit is to write `no_block: True`, and a state engine that
 accepted and ignored it would turn Salt's promise into silence. halite
