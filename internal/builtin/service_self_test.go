@@ -248,6 +248,10 @@ func TestAWatchOnTheServiceRunningThisProcessIsRefused(t *testing.T) {
 			}
 			for _, want := range []string{
 				"is the one running this process",
+				// The consequence is the rc provider's, not systemd's:
+				// the two differ and the message must not borrow the
+				// worse one.
+				"the service would stay down, because the restart runs as a child of this process",
 				"daemon -f /bin/sh -c 'sleep 30; service halite_node restart'",
 				"without a `watch`",
 			} {
@@ -345,4 +349,32 @@ func containsCommand(ran []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// Each provider says what its own init system does, and they must not be
+// the same sentence: 5.663 called Linux "clean" because the service comes
+// back there, and a refusal that claimed otherwise on systemd would be
+// making the claim this guard exists to refuse. Both halves were
+// measured -- DIVERGENCE 5.663.1.
+func TestEachProviderStatesItsOwnConsequence(t *testing.T) {
+	sd := systemdProvider{}.SelfActionConsequence()
+	rc := freebsdRCProvider{}.SelfActionConsequence()
+	if sd == rc {
+		t.Fatalf("both providers give the same consequence: %q", sd)
+	}
+	if !strings.Contains(sd, "systemd starts the service again") {
+		t.Errorf("the systemd consequence does not say the service comes back: %q", sd)
+	}
+	if strings.Contains(sd, "stay down") {
+		t.Errorf("the systemd consequence claims the service stays down, and it does not: %q", sd)
+	}
+	if !strings.Contains(rc, "stay down") {
+		t.Errorf("the rc consequence does not say the service stays down: %q", rc)
+	}
+	// The half that is true on both, and the half that makes it matter.
+	for name, consequence := range map[string]string{"systemd": sd, "freebsd rc": rc} {
+		if !strings.Contains(consequence, "never return") {
+			t.Errorf("the %s consequence does not say the job never returns: %q", name, consequence)
+		}
+	}
 }

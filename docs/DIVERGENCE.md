@@ -44564,13 +44564,19 @@ one running this process now does so, and `service.restart`,
 stopping the agent in the middle of its own job:
 
 > The service halite_node is the one running this process, so restarting
-> it from here would stop this process before the start happened: the job
-> would not return and the service would stay down. Restart it from
+> it from here would stop this process before it could finish: this job
+> would never return and the service would stay down, because the restart
+> runs as a child of this process and is killed with it. Restart it from
 > outside this process instead -- `cmd.run: daemon -f /bin/sh -c 'sleep
 > 30; service halite_node restart'` with an `onchanges` on whatever
 > changed -- and leave the `service.running` state without a `watch`, so
 > the next run starts a service that did not come back. See
 > docs/handbook/33-configuration.md section 6.
+
+The consequence clause is the provider's, not one sentence for both, and
+that is the second thing 5.663 got wrong -- see below. systemd's reads
+*"this job would never return, so nothing would report whether the change
+took, even though systemd starts the service again"*.
 
 The check is `serviceSelfIdentifier`, an optional interface beside
 `serviceDisableChecker` in `internal/builtin/service_self.go`, and it asks
@@ -44670,14 +44676,79 @@ everything after an `=` as that column's header, so the comma form asks
 for one `pid` column headed `,ppid=` — which is what it printed. Checked
 against the tool before the line was written down.
 
-**Not verified.** The Linux leg of the fix: the cgroup reader is held
-only by the captured lines in the unit tests and by 5.663's own
-measurement on `system76-pc`, and nothing has run the refusal under a
-real systemd unit. The hub or API restarting *itself* from a state
-applied by a co-located node still does not arise and was not
-constructed. What Salt does about this is still unchecked. And the lab
-here ran one node against one hub on one host: nothing was measured about
-the refusal under load or with a relay in the path.
+#### 5.663.2 The systemd half, and 5.663's "Linux survives it" (2026-11-15)
+
+5.663.1 shipped with the Linux half of the guard held by captured cgroup
+lines and nothing else. `system76-pc` runs `halite-node` as a unit, so it
+was run there the same afternoon: Ubuntu 24.04, systemd 255
+(255.4-1ubuntu8.18), kernel 6.18.7, an isolated hub on `127.0.0.1:48728`
+and a node under a transient unit `halite-node728.service` in
+`/run/systemd/system`. The host's own `halite-node.service` was not
+touched -- pid 164296, `NRestarts: 0`, before and after.
+
+| Run | Hub-dispatched | Result |
+|---|---|---|
+| `service.restart halite-node728`, guarded | returns, exit 1 | the refusal; unit keeps pid 257259 |
+| `state.apply` with a `watch`, guarded | returns in under a second, `Failed: 1` | the refusal; `file.managed` still `True`; unit keeps pid 260056 |
+| the same with `test=True` | returns | the refusal |
+| a `watch` on an unrelated unit, guarded | returns | `halite-other728` restarted 257260 -> 257517; agent untouched |
+| `state.apply` with a `watch`, guard removed | **no answer at all** until killed at 100 s | the unit went 258282 -> 258314, stayed `active`, `NRestarts: 0`; `watched.conf` written |
+| the recipe the refusal prints, verbatim | returns at once, all three states `True` | the agent restarted 260056 -> 260290 **31 s** later |
+
+**And it corrects 5.663 a second time.** 5.663 said *"Linux survives it,
+which is what makes this a defect rather than a hazard"* and *"restarts
+cleanly"*. The node survives; the **job does not**. The guard-free run
+above returned nothing whatever -- not a failure, not a partial result --
+and the operator is left unable to say whether the configuration took. The
+same thing is visible in 5.482, which recorded the direct form leaving
+"the hub's `run` unanswered until a 100 s timeout" on both platforms; 5.663
+read its Linux half as clean because it was watching the node rather than
+the return.
+
+So the refusal is right on both platforms, and the *reason* differs. The
+message had one sentence for both and said the service "would stay down",
+which is false under systemd. `SelfActionConsequence` is now a provider
+method, each half measured, and `TestEachProviderStatesItsOwnConsequence`
+fails if the two are ever the same sentence or if systemd's claims the
+service stays down. Finding this is the whole value of having run it on the
+second platform: the guard was right and its explanation was not, and
+nothing that compares code with code can see that.
+
+**`live_systemd_service_self_test.go` re-execs itself to get inside a
+unit.** The FreeBSD leg can write an rc.d script that *names* the test
+process, because rc.subr is told where to look; systemd is not -- a unit's
+processes are the ones in its cgroup. So the outer run starts the same test
+binary again under `systemd-run --collect --wait --pipe --unit=...` and the
+inner run does the asserting. `--pipe` is what makes a failure readable:
+without it the inner output goes to the journal and the outer test can
+report only an exit status. Inside, `/proc/self/cgroup` read
+`0::/system.slice/haliteprobeself-259278.service`, which is the shape the
+unit tests capture, and the live `halite-node.service` -- a real unit on
+that host, and not this process's -- read as somebody else's, which is the
+control that matters: the guard is about *this process*, not about a name.
+
+The break is self-demonstrating here in a way it is not on FreeBSD. With
+the guard removed, `service.restart` on the inner run's own unit restarts
+the unit, systemd kills the inner run and starts it again, and it does so
+five times before the outer test reports exit 1. A test that restarts
+itself is not what an agent does -- an agent restarts once and loses its
+return -- but it is an unusually loud way for the guard's absence to show.
+
+**Still not verified.** The hub or API restarting *itself* from a state
+applied by a co-located node: on both hosts the applying agent is a
+separate process, so it does not arise, and it was not constructed. What
+Salt does about this is still unchecked, and 5.663's reason for that --
+*"Salt is not importable on the development host"* -- is withdrawn: it was
+inherited rather than measured, and `pkg info` and all three interpreters
+on `beastie` say only that Salt is **not installed**, which is a different
+claim and a much weaker one. The differential gate's own skip text says
+how to fix it (`pip install salt` into a virtualenv), so nothing here is
+blocked; nobody has done it for this question. Neither lab ran more than
+one node against one hub on one
+machine, so nothing is claimed about the refusal under load or with a relay
+in the path. And no `openrc`, `sysvinit`, `launchd` or Windows host has
+been asked: those providers do not implement the interface, so the guard is
+silent there by construction rather than by measurement.
 
 ## 6. Everything else not started
 

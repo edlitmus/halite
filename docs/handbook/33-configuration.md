@@ -186,14 +186,20 @@ and a restart.
 > **Warning:** do not automate step 3 with a `watch` on the agent's own
 > service. `service.running` with `watch` restarts the service from inside
 > the job, and when the service **is** the agent, the stop kills the process
-> running the job: the restart never reaches its start, the job never
-> returns, and the node stays down until somebody starts it by hand. On
-> FreeBSD it has been measured doing exactly that. halite now refuses it,
-> naming the recipe below, rather than reporting a restart that has not
-> happened — but a tree written before that refusal existed is a tree that
-> takes nodes down. Step 6 has the form that works. The hub and the API need
-> none of this: they are not the process running the state and take an
-> ordinary `watch`.
+> running the job. **On both platforms the job never returns**, so nothing
+> reports whether the change took. What happens to the node then differs,
+> and both were measured:
+>
+> | | The job | The node |
+> |---|---|---|
+> | FreeBSD | never returns | **stays down** — the restart runs as a child of the agent and is killed with it |
+> | systemd | never returns | comes back — the restart is a job for pid 1, not work done by the caller |
+>
+> halite now refuses it, naming the recipe below, rather than reporting a
+> restart that has not happened. A tree written before that refusal existed
+> takes FreeBSD nodes down and leaves Linux ones silent. Step 6 has the form
+> that works. The hub and the API need none of this: they are not the
+> process running the state and take an ordinary `watch`.
 
 ### 5. File modes and ownership
 
@@ -258,12 +264,16 @@ halite node agent:
 
 The delay lets the agent finish the job and send its return before it dies;
 the detach puts the restart outside the process group the agent's own command
-confinement kills when it shuts down. On Linux a transient timer's
-`AccuracySec` is one minute, so read the 30 as 30 to 90 seconds; and a
-`systemd-run --unit=` whose unit already exists fails, so a second apply
-inside the window reports a failure for a restart that in fact happened —
-`systemctl stop <unit>.timer <unit>.service` first, or `--collect`, if that
-matters to you.
+confinement kills when it shuts down. Both lines above were run verbatim
+inside a real hub-dispatched job: the job returned at once and the agent
+came back 11 s later on FreeBSD and 31 s later on Linux.
+
+On Linux a transient timer's `AccuracySec` is one minute — `systemctl show
+-p AccuracyUSec` on the timer says `1min` — so read the 30 as 30 to 90
+seconds. And a `systemd-run --unit=` whose unit already exists fails, so a
+second apply inside the window reports a failure for a restart that in fact
+happened; put `systemctl stop <unit>.timer <unit>.service` first, or add
+`--collect`, if that matters to you.
 
 The bootstrapping order matters, because nothing can configure a hub that does
 not exist or enrol a node that has not been accepted: install the programs,
@@ -317,7 +327,8 @@ the API, restart the service.
 - Keep configuration in the tree and let halite write it; the example
   `halite.*` states are the tested start.
 - **An agent cannot restart itself from inside a job**, so a `watch` on its
-  own service is refused. Detach the restart, delay it, and leave the
+  own service is refused: the job never returns on either platform, and on
+  FreeBSD the node stays down. Detach the restart, delay it, and leave the
   `service.running` watchless.
 
 Next: [monitoring and alerting](34-monitoring.md).

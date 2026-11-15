@@ -36,6 +36,18 @@ type serviceSelfIdentifier interface {
 	// recipe `contrib/examples/tree/states/halite/node.sls` ships, which
 	// was measured end to end in DIVERGENCE 5.482.
 	DetachedRestart(name string) string
+
+	// SelfActionConsequence says what this init system does when the
+	// service running this process is restarted from inside it.
+	//
+	// **The two platforms differ, and a message that said the worse one
+	// everywhere would be the kind of claim this guard exists to
+	// prevent.** On FreeBSD the service stays down. On systemd it comes
+	// back, because the restart is a job for pid 1 rather than work done
+	// by the caller -- which is why 5.663 called Linux "clean". It is not
+	// clean: the job still never returns, so nothing reports whether the
+	// change took. Both measured, DIVERGENCE 5.663.1.
+	SelfActionConsequence() string
 }
 
 // serviceSelfActionRefusal is the comment a restart or reload of the
@@ -74,11 +86,11 @@ func serviceSelfActionRefusal(p serviceProvider, c *exec.Context, name, gerund s
 		return ""
 	}
 	return fmt.Sprintf(
-		"The service %s is the one running this process, so %s it from here would stop this process before the start happened: "+
-			"the job would not return and the service would stay down. Restart it from outside this process instead -- "+
-			"`cmd.run: %s` with an `onchanges` on whatever changed -- and leave the `service.running` state without a `watch`, "+
-			"so the next run starts a service that did not come back. See docs/handbook/33-configuration.md section 6.",
-		name, gerund, id.DetachedRestart(name))
+		"The service %s is the one running this process, so %s it from here would stop this process before it could finish: %s. "+
+			"Restart it from outside this process instead -- `cmd.run: %s` with an `onchanges` on whatever changed -- and leave "+
+			"the `service.running` state without a `watch`, so the next run starts a service that did not come back. "+
+			"See docs/handbook/33-configuration.md section 6.",
+		name, gerund, id.SelfActionConsequence(), id.DetachedRestart(name))
 }
 
 // ---- systemd ----
@@ -100,6 +112,17 @@ func (systemdProvider) RunsThisProcess(c *exec.Context, name string) (bool, erro
 		}
 	}
 	return false, nil
+}
+
+// Measured on system76-pc (Ubuntu 24.04, systemd 255, kernel 6.18.7) on
+// 2026-11-15: a hub-dispatched `watch` against a guard-free build left
+// `halite-hub run` with no answer at all until it was killed at 100 s,
+// while the unit went from pid 258282 to 258314, stayed `active`, and
+// recorded `NRestarts: 0` -- the start was part of the restart job, not a
+// recovery from failure.
+func (systemdProvider) SelfActionConsequence() string {
+	return "this job would never return, so nothing would report whether the change took, " +
+		"even though systemd starts the service again"
 }
 
 func (systemdProvider) DetachedRestart(name string) string {
@@ -174,6 +197,15 @@ func (freebsdRCProvider) RunsThisProcess(c *exec.Context, name string) (bool, er
 		}
 	}
 	return false, nil
+}
+
+// Measured on beastie (FreeBSD 15.1-RELEASE-p6) on 2026-11-15, and on
+// r720 before that (5.663): the restart script is a child of this
+// process, so halite's own command confinement kills it when the agent
+// shuts down, and the start never happens.
+func (freebsdRCProvider) SelfActionConsequence() string {
+	return "this job would never return and the service would stay down, because the restart " +
+		"runs as a child of this process and is killed with it"
 }
 
 func (freebsdRCProvider) DetachedRestart(name string) string {

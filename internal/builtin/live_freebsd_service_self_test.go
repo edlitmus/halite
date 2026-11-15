@@ -149,6 +149,7 @@ func TestLiveFreeBSDServiceSelfRestartIsRefused(t *testing.T) {
 	refusal := serviceSelfActionRefusal(freebsdRCProvider{}, c, liveSelfRCName, "restarting")
 	for _, phrase := range []string{
 		"is the one running this process",
+		freebsdRCProvider{}.SelfActionConsequence(),
 		"daemon -f /bin/sh -c 'sleep 30; service " + liveSelfRCName + " restart'",
 	} {
 		if !strings.Contains(refusal, phrase) {

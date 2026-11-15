@@ -434,9 +434,19 @@ var moduleEvidence = map[string]exec.Evidence{
 		"pid, a `watch` on another service still restarted it, the recipe the refusal names " +
 		"restarted the agent eleven seconds after the job returned, and a build with the guard " +
 		"removed reproduced the dead node (DIVERGENCE 5.663.1). The detector itself is driven " +
-		"against real rc.subr and `ps` by `TestLiveFreeBSDServiceSelfRestartIsRefused`. Not " +
-		"covered: the systemd half of that guard, which reads `/proc/self/cgroup` and has been " +
-		"run against captured lines only -- nothing has refused a restart under a real unit"},
+		"against real rc.subr and `ps` by `TestLiveFreeBSDServiceSelfRestartIsRefused`. The " +
+		"systemd half was driven on system76-pc (Ubuntu 24.04, systemd 255, kernel 6.18.7) the " +
+		"same day, against an isolated hub and a node under a transient unit: the restart, the " +
+		"`watch` and `--test` all refused with the unit keeping its pid, a watch on another unit " +
+		"still restarted it, the printed recipe restarted the agent 31s later, and a guard-free " +
+		"build left `halite-hub run` with no answer at all until it was killed at 100s while the " +
+		"unit came back by itself -- which is how 5.663's \"Linux survives it\" was found to be " +
+		"about the node rather than the job, and why the refusal's consequence clause is now per " +
+		"provider (DIVERGENCE 5.663.2). `TestLiveSystemdSelfRestartIsRefused` re-execs itself " +
+		"under `systemd-run` to assert from inside a real unit. Not covered: a hub or API " +
+		"restarting itself from a state applied by a co-located node, which does not arise on " +
+		"either host; and openrc, sysvinit, launchd and Windows, where the guard is silent by " +
+		"construction because those providers do not implement the interface"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a
