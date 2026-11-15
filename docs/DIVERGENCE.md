@@ -44961,6 +44961,133 @@ unprivileged, which is sound for these because `check_process` reads
 `ps -ax` rather than a pidfile, but it means a script with a privileged
 `precmd` could have failed without being counted.
 
+### 5.665 The stream test asserted something net/http does not guarantee
+
+`TestTheHubAllowsSPECsConcurrentStreamsPerConnection` failed in `make
+check` with
+
+```
+only 79 of 80 requests reached the hub
+stream error: stream ID 143; PROTOCOL_ERROR; received from peer
+```
+
+and then passed when run on its own. Measured rather than re-run: **5
+failures in 1200 runs**, always exactly 79 of 80, always a stream error on
+a stream past the 64th (IDs 133, 157, 135, 141, 155 -- the 67th to 79th
+stream on their connection). The 10-second duration is the test's own
+deadline being spent after one request dies, not slowness; standalone it
+takes 0.06s. Treating it as a flake and re-running was the one thing
+not to do, which both 5.125 -- a flake that was a real limit -- and 5.319,
+where earlier merging work *"had treated it as a known flake and re-run
+it"*, already record.
+
+**It is not this project's defect.** A ~100-line program using nothing but
+`net/http` -- `HTTP2Config{MaxConcurrentStreams: 64}`, 80 requests held
+open in the handler, no halite code, no certificates -- reproduces it at
+the same rate: 5 failures in about 1450 rounds, same 79 of 80, same error,
+same stream-ID range. `internal/hub` and `internal/transport` are
+byte-identical to `main` on the branch where it was first seen, so the
+branch could not have caused it either.
+
+The first comparison was 0 failures in 300 rounds, and that was **not**
+read as a negative result: at 0.4% it distinguishes nothing. Ten times the
+rounds reproduced it. The probe was checked before the diagnosis, too --
+`GODEBUG=http2debug=2` confirmed the standalone server really does
+advertise `MAX_CONCURRENT_STREAMS=64`, because a repro that cannot fail
+proves nothing.
+
+**The frame log says what happens, in order.** Caught by running one round
+per process until one failed, so that the failing round's frames stand
+alone:
+
+| | frame |
+|---|---|
+| 627 | server writes `SETTINGS … MAX_CONCURRENT_STREAMS=64` |
+| 634, 643 | client reads it, writes `SETTINGS flags=ACK` |
+| 1493, 1504 | over-limit `HEADERS` 129, 131 → `RST_STREAM REFUSED_STREAM` |
+| 1506 | **server reads the client's `SETTINGS ACK`** |
+| 1532 | over-limit `HEADERS` 133 → `RST_STREAM PROTOCOL_ERROR` |
+
+So the client keeps opening streams past a limit it has already
+acknowledged. Which code it gets back depends only on whether its
+acknowledgement has arrived yet, and Go's server says so in its own words
+at `net/http/internal/http2/server.go:1916`:
+
+```go
+if sc.curClientStreams+1 > sc.advMaxStreams {
+	if sc.unackedSettings == 0 {
+		// They should know better.
+		return sc.countError("over_max_streams", streamError(id, ErrCodeProtocol))
+	}
+	// Assume it's a network race …
+	return sc.countError("over_max_streams_race", streamError(id, ErrCodeRefusedStream))
+}
+```
+
+`REFUSED_STREAM` the client retries by itself, invisibly; `PROTOCOL_ERROR`
+it does not, so that request dies. The resets before the acknowledgement
+cost nothing and the first one after it is fatal. Upstream this is
+golang/go#13774 and #16582 -- the connection-reuse check does not account
+for streams already in flight -- with #39389 and #47635 adjacent, and
+#42777 is the change that makes the Transport stop reusing a connection
+after a stream protocol error.
+
+**The fix retries, and deliberately does not weaken the test.** The claim
+the test exists for is the server's: no connection carries more than SPEC
+6.5's 64 at once, asserted on the peak and untouched. The arrival count is
+a *separate* guard -- it is what would catch a hub refusing the second
+connection, where the peak would still be a blameless 64 -- so relaxing it
+to "79 will do" would have given up a real check to accommodate a borrowed
+one. Instead the request is sent again, which is what a client that wanted
+an answer would do, up to three attempts; the retry count is logged so no
+reader is told there was no trouble.
+
+Retrying on **any** error rather than on those two codes is also
+deliberate. The codes are only available as text through `net/http`, and a
+retry keyed on that text would stop silently if Go reworded it -- the flake
+would return at 0.4% with nothing to show why. Anything genuinely broken
+fails all three attempts and still fails the test.
+
+**3000 runs of the fixed test, no failures**, against 5 in 1200 before:
+at the measured rate, no failure in 3000 has a probability of about four
+in a million, so the flake is gone rather than quiet. That number alone
+could not tell a working fix from a race that did not happen, so the retry
+count was measured too: **2000 runs with `-v`, all 2000 passing, 6 of them
+logging `1 of 80 requests were sent again after the server reset the
+stream`.** Six in 2000 is 0.3%, which is the old failure rate of 5 in 1200
+within the precision either number has -- so the retry fires exactly as
+often as the test used to fail, and each time it turns one lost request
+into a complete run. The mechanism is doing the work, not the weather.
+
+Both deliberate breaks were watched:
+
+- The advertised limit removed from `newHTTPServer`: *"one connection
+  carried 80 streams at once, want SPEC 6.5's 64 (connections: 77)"*.
+- A client given a CA it was not issued by, so every attempt fails:
+  *"after 3 attempts: … x509: certificate signed by unknown authority"*.
+  This is the one that matters for the fix -- it is the proof that the
+  retry absorbs a reset stream without hiding a persistent fault.
+
+**Not fixed: the same thing can cost a real client a request.** A node or
+API client that bursts past 64 concurrent requests on one connection can
+lose one outright the same way, and per #42777 the Transport then stops
+reusing that connection. Bounding a client's per-connection concurrency to
+SPEC 6.5's 64, or treating this reset as retryable in
+`internal/transport`, are both changes to documented behaviour around a
+SPEC number, and neither was made here. Nothing has measured how often a
+real hub sees a burst that wide, either: the API's own concurrency limits
+may already keep it below 64, which would make this theoretical, and that
+was not checked.
+
+**Not verified.** The rate was measured on `beastie` only. The three most
+recent failed CI runs were read and none of them names this test, which is
+far too small a sample to say it does not happen there -- at 0.4% per run
+it would be invisible in three.
+Whether the over-commit is bounded -- whether the client can exceed the
+limit by more than the 16 extra requests this test makes -- was not
+explored. And no newer Go was tried: `go1.27.4` is what the toolchain pins
+and what every number here came from.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

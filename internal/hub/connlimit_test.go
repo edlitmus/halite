@@ -190,6 +190,70 @@ func TestTheConnectionCapDefaultsToSPECs(t *testing.T) {
 // connection with MaxConnsPerHost set to 1. So the requests over the
 // limit land on a second connection, and what is checked is that no
 // connection carried more than 64 at once.
+// streamResetAttempts is how many times a request is sent before the
+// test gives up on it. Three, because the thing being absorbed costs one
+// retry: a reset stream is retried onto a connection that has room, and
+// needing a third attempt means something other than the stream limit is
+// wrong.
+//
+// It bounds attempts rather than time on purpose. A duration here would
+// be a guess about a machine's speed; a count is a statement about the
+// mechanism.
+const streamResetAttempts = 3
+
+// getRetryingAResetStream sends a request again when the server reset the
+// stream, which is what a client that wanted an answer would do, and
+// counts how often it had to.
+//
+// # Why this is needed, measured rather than assumed
+//
+// **Go's HTTP/2 client over-commits streams past a limit it has already
+// acknowledged, and Go's server then kills one of them outright.** The
+// failure was `only 79 of 80 requests reached the hub`, about 5 times in
+// 1200 runs of this test, always preceded by a stream error on a stream
+// past the 64th. It is nothing to do with this project: a ~100-line
+// program using only `net/http`, with `HTTP2Config{MaxConcurrentStreams:
+// 64}` and 80 requests held open, reproduces it at the same rate.
+//
+// The frame log says exactly what happens. The server sends
+// `MAX_CONCURRENT_STREAMS=64`; the client reads it and acknowledges it;
+// the client then opens more than 64 anyway. The ones arriving before the
+// server reads that acknowledgement come back `REFUSED_STREAM`, which the
+// client retries by itself, invisibly and harmlessly. The first one
+// arriving *after* it comes back `PROTOCOL_ERROR` — the branch Go's own
+// server comments "They should know better" — and `PROTOCOL_ERROR` is not
+// retried, so that request simply dies. Known upstream as golang/go#13774
+// and #16582, with #39389 and #47635 adjacent.
+//
+// # Why retrying, rather than asking for less
+//
+// The claim this test exists for is the server's: no connection carries
+// more than SPEC 6.5's 64 streams at once, and the assertion on the peak
+// is untouched by this. The arrival count is a separate guard — it is what
+// would catch a hub that refused the second connection, where the peak
+// would still be a blameless 64 — so weakening it to "79 will do" would
+// have cost a real check to avoid a borrowed defect.
+//
+// Retrying on **any** error, rather than on the two codes above, is
+// deliberate. Matching the error's text would make the retry stop
+// silently if Go reworded it, and the flake would come back at 0.4% with
+// nothing to show why. Anything that is actually broken — a refused
+// connection, a bad certificate, a GOAWAY — fails every attempt and still
+// fails the test, while the retry count is logged so that a reader is
+// never told there was no trouble. DIVERGENCE 5.665.
+func getRetryingAResetStream(client *http.Client, url string, retried *atomic.Int64) (*http.Response, error) {
+	var err error
+	for attempt := 1; attempt <= streamResetAttempts; attempt++ {
+		var res *http.Response
+		res, err = client.Get(url)
+		if err == nil {
+			return res, nil
+		}
+		retried.Add(1)
+	}
+	return nil, fmt.Errorf("after %d attempts: %w", streamResetAttempts, err)
+}
+
 func TestTheHubAllowsSPECsConcurrentStreamsPerConnection(t *testing.T) {
 	l := newLab(t)
 
@@ -240,12 +304,13 @@ func TestTheHubAllowsSPECsConcurrentStreamsPerConnection(t *testing.T) {
 	}}
 	url := "https://" + ln.Addr().String() + "/"
 	const tries = transport.MaxConcurrentStreams + 16
+	var retried atomic.Int64
 	var wg sync.WaitGroup
 	for range tries {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := client.Get(url)
+			res, err := getRetryingAResetStream(client, url, &retried)
 			if err != nil {
 				t.Error(err)
 				return
@@ -263,6 +328,9 @@ func TestTheHubAllowsSPECsConcurrentStreamsPerConnection(t *testing.T) {
 	got := arrived.Load()
 	close(release)
 	wg.Wait()
+	if n := retried.Load(); n > 0 {
+		t.Logf("%d of %d requests were sent again after the server reset the stream", n, tries)
+	}
 	if got != tries {
 		t.Fatalf("only %d of %d requests reached the hub", got, tries)
 	}
