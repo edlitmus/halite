@@ -105,7 +105,7 @@ func TestFreebsdRCServicePIDsReadsTheStatusLineRCSubrPrints(t *testing.T) {
 		{name: "one pid", stdout: "sshd is running as pid 10335.\n", want: []int{10335}},
 		// Captured on beastie: `service nfsd status` on a host serving
 		// NFS. This is the multi-pid line occurring in base, with no
-		// contrivance -- `nfsd: master (nfsd)` at 10303 and its child
+		// contrivance -- `nfsd: master (nfsd)` at 10303 and its child // lexicon:allow
 		// `nfsd: server (nfsd)` at 10304, both matched because
 		// _find_processes compares the first word of the command against
 		// `basename procname` plus a colon. It is also exactly the shape

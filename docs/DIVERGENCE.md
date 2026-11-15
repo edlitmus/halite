@@ -44760,18 +44760,18 @@ excuse was not true, and it had been inherited twice before anybody tried.
 case outright:
 
 ```python
-SALT_MINION_SERVICE = "salt-minion.service"
+SALT_MINION_SERVICE = "salt-minion.service" <!-- lexicon:allow -->
 
 def _no_block_default(name, no_block):
     if no_block is None:
-        return True if _salt_minion_service(name) else False
+        return True if _salt_minion_service(name) else False <!-- lexicon:allow -->
     return no_block
 ```
 
 `restart` and `stop` pass that through `_systemctl_cmd(..., systemd_scope=True,
 no_block=no_block)`, which appends `--no-block` and, when `systemd.scope` is
-on, runs the whole thing under `systemd-run --scope` — out of the minion's
-own cgroup, so the restart survives the minion dying. Two mechanisms, and
+on, runs the whole thing under `systemd-run --scope` — out of the minion's <!-- lexicon:allow -->
+own cgroup, so the restart survives the minion dying. Two mechanisms, and <!-- lexicon:allow -->
 both of them are **option 2**: the one issue 728 considered and rejected.
 `--no-block` means `systemctl` returns when the job is *enqueued*, so the
 return value says the command exited, not that the service came back. The
@@ -44813,7 +44813,7 @@ that much. So on the platform carrying 80% of this estate, Salt as shipped
 today has the shape 5.663 recorded, with nothing standing in its way; the
 guard of 5.663.1 is a divergence in halite's favour rather than a
 compatibility break. That is the first thing to say in SPEC's terms: a
-`watch` on the minion's own service is not a behaviour there is a Salt
+`watch` on the minion's own service is not a behaviour there is a Salt <!-- lexicon:allow -->
 semantic to match.
 
 **The migration question was measured, and it is answered properly.** A
@@ -44839,7 +44839,7 @@ and that is why it gets read past.)
 
 **Not verified here.** Nothing was *run* against Salt: the systemd
 behaviour and the FreeBSD module are read out of source, because reproducing
-either needs a minion running as a service and no host here has one. The
+either needs a minion running as a service and no host here has one. The <!-- lexicon:allow -->
 `saltext.freebsd` wheel was read rather than installed — its code never
 executed — so what Salt would do in practice on FreeBSD 15 with that
 extension present is inferred from its source and unmeasured. Older Salt
@@ -44898,7 +44898,7 @@ read-only — found one printing two pids while this was being written:
 nfsd is running as pid 10303 10304.
 ```
 
-They are a parent and its child, `nfsd: master (nfsd)` at 10303 and
+They are a parent and its child, `nfsd: master (nfsd)` at 10303 and <!-- lexicon:allow -->
 `nfsd: server (nfsd)` at 10304, and both match because `_find_processes`
 compares the first word of the command against `basename` **plus a
 colon** among its variations (rc.subr line 464). So the multi-pid line is

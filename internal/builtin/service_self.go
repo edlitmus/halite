@@ -224,7 +224,7 @@ func (freebsdRCProvider) DetachedRestart(name string) string {
 // `$rc_pid` is unquoted there and check_process prints a space-separated
 // list, so a service with no pidfile whose procname matches several
 // processes prints several numbers before the full stop. That is not a
-// corner case: `nfsd` in base does it, on this host, because its master
+// corner case: `nfsd` in base does it, on this host, because its master // lexicon:allow
 // and server processes both match.
 //
 //	nfsd is running as pid 10303 10304.
