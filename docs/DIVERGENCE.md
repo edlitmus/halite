@@ -44926,7 +44926,10 @@ three was constructed. What `status` prints for a service whose `procname`
 matches an *interpreter* — `_find_processes` has a separate path for that,
 rc.subr line 459 onward — which this parser would read the same way, but
 nothing has produced one. And the survey covered the 68 port scripts
-installed on this host only, which is not the ports tree.
+installed on this host only, which is not the ports tree; it ran
+unprivileged, which is sound for these because `check_process` reads
+`ps -ax` rather than a pidfile, but it means a script with a privileged
+`precmd` could have failed without being counted.
 
 ## 6. Everything else not started
 
