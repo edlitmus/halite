@@ -427,7 +427,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"loaded in the console user's `gui/` domain was started, restarted, stopped through " +
 		"`service.dead`, disabled and enabled on a macOS 15.7.9 runner, each checked against " +
 		"`launchctl print` on the gui target; before that the provider read it as not running " +
-		"while it ran (DIVERGENCE 5.150)"},
+		"while it ran (DIVERGENCE 5.150). The self-restart guard of issue 728 was driven on " +
+		"beastie (FreeBSD 15.1-RELEASE-p6) on 2026-11-15, against an isolated hub and a node " +
+		"run under its own rc.d script: a hub-dispatched `service.restart` and a `watch` on the " +
+		"agent's own service were both refused with the job returning and the agent keeping its " +
+		"pid, a `watch` on another service still restarted it, the recipe the refusal names " +
+		"restarted the agent eleven seconds after the job returned, and a build with the guard " +
+		"removed reproduced the dead node (DIVERGENCE 5.663.1). The detector itself is driven " +
+		"against real rc.subr and `ps` by `TestLiveFreeBSDServiceSelfRestartIsRefused`. Not " +
+		"covered: the systemd half of that guard, which reads `/proc/self/cgroup` and has been " +
+		"run against captured lines only -- nothing has refused a restart under a real unit"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a

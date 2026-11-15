@@ -178,7 +178,11 @@ func serviceNameValid(name string) error {
 func registerService(r *Registries) {
 	nameOnly := []signature.Param{req("name", signature.String, "The service.")}
 
-	simple := func(function, doc string, run func(serviceProvider, *exec.Context, string) error) exec.Module {
+	// selfGuard names the gerund for the two verbs that must refuse the
+	// service running this process, and is empty for the rest. `stop`
+	// and `start` are deliberately absent -- see
+	// serviceSelfActionRefusal.
+	simple := func(function, doc, selfGuard string, run func(serviceProvider, *exec.Context, string) error) exec.Module {
 		return exec.Module{
 			Sig: signature.Signature{
 				Module: "service", Function: function, Doc: doc, Params: nameOnly,
@@ -193,6 +197,14 @@ func registerService(r *Registries) {
 				p, err := pickServiceProvider(c)
 				if err != nil {
 					return nil, err
+				}
+				// Before the Test branch, so that `--test` reports the
+				// refusal. Finding out from a dry run is the whole
+				// difference between a warning and an outage.
+				if selfGuard != "" {
+					if refusal := serviceSelfActionRefusal(p, c, name, selfGuard); refusal != "" {
+						return nil, fmt.Errorf("%s", refusal)
+					}
 				}
 				if c.Test {
 					return true, nil
@@ -242,12 +254,12 @@ func registerService(r *Registries) {
 				return p.Enabled(c, name)
 			},
 		},
-		simple("start", "Start a service.", serviceProvider.Start),
-		simple("stop", "Stop a service.", serviceProvider.Stop),
-		simple("restart", "Restart a service.", serviceProvider.Restart),
-		simple("reload", "Reload a service's configuration.", serviceProvider.Reload),
-		simple("enable", "Make a service start at boot.", serviceProvider.Enable),
-		simple("disable", "Stop a service starting at boot.", serviceProvider.Disable),
+		simple("start", "Start a service.", "", serviceProvider.Start),
+		simple("stop", "Stop a service.", "", serviceProvider.Stop),
+		simple("restart", "Restart a service.", "restarting", serviceProvider.Restart),
+		simple("reload", "Reload a service's configuration.", "reloading", serviceProvider.Reload),
+		simple("enable", "Make a service start at boot.", "", serviceProvider.Enable),
+		simple("disable", "Stop a service starting at boot.", "", serviceProvider.Disable),
 	)
 
 	runningParams := []signature.Param{
@@ -466,10 +478,17 @@ func serviceModWatch(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("No service provider is available: %v", err)), nil
 	}
-	verb := "restarted"
+	verb, gerund := "restarted", "restarting"
 	action := p.Restart
 	if states.Bool(args, "reload", false) {
-		verb, action = "reloaded", p.Reload
+		verb, gerund, action = "reloaded", "reloading", p.Reload
+	}
+
+	// Before the Test branch: a `watch` on the agent's own configuration
+	// is the obvious automation of the handbook's by-hand procedure, and
+	// a `--test` run is where the operator should learn it cannot work.
+	if refusal := serviceSelfActionRefusal(p, c, name, gerund); refusal != "" {
+		return states.False(refusal), nil
 	}
 
 	changes := value.MapOf(name, states.Change("running", verb))

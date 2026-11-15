@@ -44554,6 +44554,131 @@ process on the same host, so it does not arise. What Salt does about
 this was not checked, because Salt is not importable on the development
 host, and no comparison is claimed.
 
+#### 5.663.1 The fix: halite refuses it, and names the recipe (2026-11-15)
+
+Issue 728 asked for the refusal rather than an automatic detach, and that
+is what landed. A provider that can tell whether a named service is the
+one running this process now does so, and `service.restart`,
+`service.reload`, `service.force_reload` and the `watch` reaction on
+`service.running` fail with a comment naming the detached form instead of
+stopping the agent in the middle of its own job:
+
+> The service halite_node is the one running this process, so restarting
+> it from here would stop this process before the start happened: the job
+> would not return and the service would stay down. Restart it from
+> outside this process instead -- `cmd.run: daemon -f /bin/sh -c 'sleep
+> 30; service halite_node restart'` with an `onchanges` on whatever
+> changed -- and leave the `service.running` state without a `watch`, so
+> the next run starts a service that did not come back. See
+> docs/handbook/33-configuration.md section 6.
+
+The check is `serviceSelfIdentifier`, an optional interface beside
+`serviceDisableChecker` in `internal/builtin/service_self.go`, and it asks
+one question: *would stopping that service stop me?* On systemd it is
+every `.service` and `.scope` element on `/proc/self/cgroup`'s path, not
+only the leaf, because stopping a unit kills its whole subtree. On FreeBSD
+it is the pids `service <name> status` reports against the set holding
+this process and every process above it. The ancestry matters as much as
+the pid: a `cmd.run` that shells out to `halite-node call service.restart
+halite_node` is a grandchild of the agent, and the stop kills the agent
+above it. A provider that cannot answer — openrc, sysvinit, launchd,
+Windows — does not implement the interface and the guard stays silent,
+because a guard that guessed would refuse restarts that are safe. A
+reading that *fails* also stays silent, and says so in the log.
+
+`service.dead` and `service.stop` are deliberately not guarded. They do
+what they say: the operator asked for the service to stop and it stops.
+The job's return is lost either way, but a restart that reports success
+and leaves the host with no agent is a different claim from a stop that
+stops.
+
+**5.663's stated cause was wrong, and the real one is worse.** It said
+rc.subr signals a process group. It does not: `_run_rc_killcmd` builds
+`kill -$sig $rc_pid` (`/etc/rc.subr:1831` on FreeBSD 15.1-RELEASE-p6), one
+signal to the pids in the pidfile. What kills the restart script is
+**halite's own command confinement**. `confineTree`
+(`internal/exec/proc_unix.go`) sets `Setpgid` on every foreground child
+and installs a `Cancel` that sends `SIGKILL` to `-pgid`, and
+`exec.CommandContext` fires it when the job's context is cancelled — which
+is what the agent shutting down does. So the agent asks for the restart,
+is killed by its own stop, and kills the restart on its way out.
+
+That was isolated rather than inferred. `cmd.run_bg` takes
+`startAndRelease`, which is reached *before* `confineTree` and so sets
+neither flag. On beastie, with a guard-free build, the same
+`service halite_node728 onerestart` run that way survived the agent's
+death and completed the start (252 -> 902), while the ordinary confined
+one did not. Two paths that must agree, again: the timeout machinery and
+the restart.
+
+**Measured on beastie (FreeBSD 15.1-RELEASE-p6, amd64), 2026-11-15.** An
+isolated hub on `127.0.0.1:48728` with its own pki, state, cache and
+tree, and a node `lab728.selftest` enrolled to it and run under its own
+rc.d script `halite_node728` — a copy of `contrib/rc.d/halite_node`, with
+the shipped script's `enroll` prestart kept, pointed at scratch paths.
+Nothing of the live estate was touched: the host's own `halite_node`,
+`halite_hub` and `halite_api` kept running throughout.
+
+A jail was the intent and was not available: `jail_attach` returns EPERM
+for this session's root, including under `bastille create`, so the lab was
+raised directly on the host instead and isolated by paths and service
+names.
+
+| Run | Hub-dispatched | Result |
+|---|---|---|
+| `service.restart halite_node728`, guarded | returns, exit 1 | the refusal; agent keeps pid 95852 |
+| `state.apply` with a `watch`, guarded | returns in 83 ms, `Failed: 1` | the refusal; `file.managed` still `True`; agent keeps pid 1235 |
+| the same with `test=True` | returns | the refusal, so `--test` finds it |
+| `state.apply` with a `watch`, guard removed | **never returned** (killed at 120 s) | no `halite-node` process, `service` says not running, `manage.status` says `down`, `watched.conf` written. 5.663 on this host. |
+| a `watch` on an unrelated service, guarded | returns | `halite_other728` restarted 96787 -> 97041, agent untouched |
+| the recipe the refusal names | returns at once | agent restarted 1235 -> 1749 eleven seconds later and reconnected |
+
+The guard-free run was watched with a 0.2 s `ps` poller: the agent
+(98805) and `/bin/sh /usr/sbin/service halite_node728 onerestart` (99037)
+were both gone inside the same sample, and the node's log ends with a
+clean `stopped` — the script never reached its start.
+
+**Which closes 5.663's "not verified" on `service.restart` called
+directly.** It is the same provider call and it does fail the same way;
+it is now refused too, and `TestTheServiceFunctionsThatStopThisProcessAreRefused`
+walks `restart`, `reload` and `force_reload` for the refusal and `start`,
+`stop`, `enable` and `disable` for its absence.
+
+**Tests.** `internal/builtin/service_self_test.go` holds the captured
+lines — `sshd is running as pid 10335.` off beastie, and the
+`check_process` branch's plural, which no base service on the host
+produced and which was made on purpose from a throwaway script with no
+pidfile and three matching processes: `haliteprobemulti is running as pid
+3886 3887 3888.` An unparseable line is an error rather than an empty
+list, because an empty list reads as "nothing to stop" and would turn a
+broken parser into an absent guard. Four deliberate breaks were watched
+failing: the guard removed from the watch reaction, the ancestry walk
+reduced to this process, the parser's error turned into `nil, nil`, and
+the cgroup walk reduced to the leaf element.
+
+`internal/builtin/live_freebsd_service_self_test.go` drives the detector
+against the real `service(8)`, rc.subr and `ps`, and passed as root on
+beastie. It writes a throwaway rc.d script naming the *test binary* as
+`procname` with the test's own pid in the pidfile, so rc.subr reports the
+test as the service — and a second one naming a `sleep` the test started,
+which is a child and never an ancestor, as the control that catches a
+walk going the wrong way. Both breaks above were re-run against this leg
+too.
+
+**`ps -ax -o pid= -o ppid=`, not `-o pid=,ppid=`.** FreeBSD's `ps` takes
+everything after an `=` as that column's header, so the comma form asks
+for one `pid` column headed `,ppid=` — which is what it printed. Checked
+against the tool before the line was written down.
+
+**Not verified.** The Linux leg of the fix: the cgroup reader is held
+only by the captured lines in the unit tests and by 5.663's own
+measurement on `system76-pc`, and nothing has run the refusal under a
+real systemd unit. The hub or API restarting *itself* from a state
+applied by a co-located node still does not arise and was not
+constructed. What Salt does about this is still unchecked. And the lab
+here ran one node against one hub on one host: nothing was measured about
+the refusal under load or with a relay in the path.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

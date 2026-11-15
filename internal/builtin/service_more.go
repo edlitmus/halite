@@ -156,6 +156,12 @@ func registerServiceMore(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
+				// Both branches below stop this process when the service
+				// is the one running it -- the reload signal as surely as
+				// the restart, since nothing here handles SIGHUP.
+				if refusal := serviceSelfActionRefusal(p, c, name, "reloading"); refusal != "" {
+					return nil, fmt.Errorf("%s", refusal)
+				}
 				if c.Test {
 					// Which of the two it would do cannot be known
 					// without trying the reload, and trying it is the
