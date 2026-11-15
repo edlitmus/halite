@@ -103,10 +103,18 @@ func TestFreebsdRCServicePIDsReadsTheStatusLineRCSubrPrints(t *testing.T) {
 	}{
 		// Captured on beastie: `service sshd status`.
 		{name: "one pid", stdout: "sshd is running as pid 10335.\n", want: []int{10335}},
+		// Captured on beastie: `service nfsd status` on a host serving
+		// NFS. This is the multi-pid line occurring in base, with no
+		// contrivance -- `nfsd: master (nfsd)` at 10303 and its child
+		// `nfsd: server (nfsd)` at 10304, both matched because
+		// _find_processes compares the first word of the command against
+		// `basename procname` plus a colon. It is also exactly the shape
+		// the guard cares about, a parent and a child.
+		{name: "two pids, nfsd in base", stdout: "nfsd is running as pid 10303 10304.\n", want: []int{10303, 10304}},
 		// Captured on beastie from a throwaway rc.d script with no
-		// pidfile whose procname matched three processes, which is the
-		// check_process branch: "haliteprobemulti is running as pid 3886
-		// 3887 3888."
+		// pidfile whose procname matched three processes. Kept after nfsd
+		// turned up, because nothing in the wild on this host printed
+		// more than two and the parser takes an unbounded list.
 		{name: "several pids", stdout: "haliteprobemulti is running as pid 3886 3887 3888.\n", want: []int{3886, 3887, 3888}},
 		// rc.subr's other line, from the same script before they started.
 		{name: "not running", stdout: "haliteprobemulti is not running.\n", want: nil},

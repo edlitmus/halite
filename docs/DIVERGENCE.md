@@ -44750,6 +44750,88 @@ in the path. And no `openrc`, `sysvinit`, `launchd` or Windows host has
 been asked: those providers do not implement the interface, so the guard is
 silent there by construction rather than by measurement.
 
+### 5.664 rc.subr's status line can name several pids, and nothing on this host printed one
+
+The self-restart guard of 5.663.1 reads a service's pids out of the line
+`service <name> status` prints, so the shape of that line is load-bearing.
+`/etc/rc.subr` on FreeBSD 15.1-RELEASE-p6 builds it at line 1468:
+
+```sh
+echo "${name} is running as pid $rc_pid."
+```
+
+`$rc_pid` is **unquoted**, and where it comes from for a pidfile-less
+service is `check_process` (line 446), which calls `_find_processes` (476)
+— whose own comment says it *"Prints the PIDs of any matching processes,
+space separated"* (459). So a service without a pidfile, whose `procname`
+matches more than one process, prints several numbers before the full
+stop, and a parser that took one integer and stopped would read the first
+pid of several — which is the worst possible failure for this guard,
+because missing the agent's own pid turns the refusal off exactly where it
+is needed.
+
+Captured on `beastie`, for the one-pid case:
+
+```
+sshd is running as pid 10335.
+```
+
+Reading the next case out of rc.subr rather than capturing it is exactly
+what this project does not do (`getfacl -s`, `snap list`, `ps`), so it was
+produced on purpose: a throwaway rc.d script with no `pidfile`, a
+`procname` of a copied `sleep` binary, and three of them running —
+
+```
+haliteprobemulti is running as pid 3886 3887 3888.
+```
+
+The copy matters: wrapping with `exec /bin/sleep` made argv[0]
+`/bin/sleep`, which `procname` never matched, and the first attempt
+captured a one-pid line while believing it had three.
+
+**And the constructed fixture was not necessary, which is its own
+finding.** This entry first said that no base service on the host could
+produce a multi-pid line, because everything with an rc.d script writes a
+pidfile and `check_pidfile` passes `-p $_pid` to `ps`, matching at most
+one. That was asserted, not measured, and it is false twice over: 138 of
+the 171 scripts in `/etc/rc.d` contain no `pidfile=` at all, and a survey
+of every pidfile-less script on the host — base and ports, `onestatus`,
+read-only — found one printing two pids while this was being written:
+
+```
+nfsd is running as pid 10303 10304.
+```
+
+They are a parent and its child, `nfsd: master (nfsd)` at 10303 and
+`nfsd: server (nfsd)` at 10304, and both match because `_find_processes`
+compares the first word of the command against `basename` **plus a
+colon** among its variations (rc.subr line 464). So the multi-pid line is
+not exotic: it is NFS, in base, and it is a chain of exactly the shape the
+guard walks. It is now a captured fixture beside the constructed one.
+
+The five others the survey found print one pid each — `blocklistd`,
+`lockd`, `powerd`, `rpcbind`, `statd` — so the one-pid line is not
+peculiar to pidfile-writing services either.
+
+The parser therefore takes **every** field and makes an unparseable one an
+error rather than an empty list, because "no pids" is read upstream as
+"nothing to stop, so nothing can stop me" — a broken parser would present
+as a guard that is silently absent.
+
+**Also: these two citations had no section.** `service_self.go` and
+`service_self_test.go` cited `DIVERGENCE 5.664` for this finding while
+5.664 was still the next free number, and every audit passed. The ledger
+audit reads prose; nothing reads a `DIVERGENCE N.M` in a Go comment, so a
+citation into thin air is invisible there. That is the pair-that-must-agree
+shape again, with one half of the pair in a language nobody is checking.
+
+**Not verified.** No line with more than two pids was found in the wild;
+three was constructed. What `status` prints for a service whose `procname`
+matches an *interpreter* — `_find_processes` has a separate path for that,
+rc.subr line 459 onward — which this parser would read the same way, but
+nothing has produced one. And the survey covered the 68 port scripts
+installed on this host only, which is not the ports tree.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

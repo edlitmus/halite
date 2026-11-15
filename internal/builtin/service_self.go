@@ -223,12 +223,15 @@ func (freebsdRCProvider) DetachedRestart(name string) string {
 //
 // `$rc_pid` is unquoted there and check_process prints a space-separated
 // list, so a service with no pidfile whose procname matches several
-// processes prints several numbers before the full stop. No base service
-// on the dev host produced one, so it was produced on purpose -- a
-// throwaway script with no pidfile and three matching processes:
+// processes prints several numbers before the full stop. That is not a
+// corner case: `nfsd` in base does it, on this host, because its master
+// and server processes both match.
 //
-//	haliteprobemulti is running as pid 3886 3887 3888.
+//	nfsd is running as pid 10303 10304.
 //
+// A parser that read one integer and stopped would take the first of
+// several, which is the worst available failure here -- missing the
+// agent's own pid turns the guard off exactly where it is needed.
 // DIVERGENCE 5.664.
 const freebsdRCStatusRunning = " is running as pid "
 
