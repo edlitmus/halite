@@ -44736,19 +44736,115 @@ return -- but it is an unusually loud way for the guard's absence to show.
 
 **Still not verified.** The hub or API restarting *itself* from a state
 applied by a co-located node: on both hosts the applying agent is a
-separate process, so it does not arise, and it was not constructed. What
-Salt does about this is still unchecked, and 5.663's reason for that --
-*"Salt is not importable on the development host"* -- is withdrawn: it was
-inherited rather than measured, and `pkg info` and all three interpreters
-on `beastie` say only that Salt is **not installed**, which is a different
-claim and a much weaker one. The differential gate's own skip text says
-how to fix it (`pip install salt` into a virtualenv), so nothing here is
-blocked; nobody has done it for this question. Neither lab ran more than
-one node against one hub on one
-machine, so nothing is claimed about the refusal under load or with a relay
-in the path. And no `openrc`, `sysvinit`, `launchd` or Windows host has
-been asked: those providers do not implement the interface, so the guard is
+separate process, so it does not arise, and it was not constructed.
+Neither lab ran more than one node against one hub on one machine, so
+nothing is claimed about the refusal under load or with a relay in the
+path. And no `openrc`, `sysvinit`, `launchd` or Windows host has been
+asked: those providers do not implement the interface, so the guard is
 silent there by construction rather than by measurement.
+
+#### 5.663.3 What Salt does: detaches on systemd, nothing on FreeBSD (2026-11-15)
+
+5.663 said Salt's behaviour *"was not checked, because Salt is not
+importable on the development host"*, and 5.663.1 and 5.663.2 repeated it.
+**Nobody had measured that.** `pkg info` and all three interpreters on
+`beastie` say Salt is not *installed*, which is a far weaker claim, and the
+differential gate's own skip text already says what to do about it
+(`pip install salt` into a virtualenv). Doing exactly that put salt-call
+3008.5 (Argon) on the host in one command — a native FreeBSD build, reading
+`os: FreeBSD`, `osfinger: FreeBSD-15` from its own grains, against an
+isolated `root_dir` so it could not see the estate's `/srv/salt`. The
+excuse was not true, and it had been inherited twice before anybody tried.
+
+**On systemd, Salt detaches.** `salt/modules/systemd_service.py` names the
+case outright:
+
+```python
+SALT_MINION_SERVICE = "salt-minion.service"
+
+def _no_block_default(name, no_block):
+    if no_block is None:
+        return True if _salt_minion_service(name) else False
+    return no_block
+```
+
+`restart` and `stop` pass that through `_systemctl_cmd(..., systemd_scope=True,
+no_block=no_block)`, which appends `--no-block` and, when `systemd.scope` is
+on, runs the whole thing under `systemd-run --scope` — out of the minion's
+own cgroup, so the restart survives the minion dying. Two mechanisms, and
+both of them are **option 2**: the one issue 728 considered and rejected.
+`--no-block` means `systemctl` returns when the job is *enqueued*, so the
+return value says the command exited, not that the service came back. The
+state reports success for a restart that has not happened yet and cannot
+report the failure of one — which is precisely the undemonstrated claim
+this project will not write into a job return, and why 5.663.1 refuses
+instead. Salt's choice is defensible for Salt; it is not available to a
+project whose first rule is that a claim nobody demonstrated is a defect.
+
+**On FreeBSD, Salt does nothing, because in 3008.5 it does not manage
+FreeBSD services at all.** Asked on this host:
+
+```
+$ salt-call --local sys.list_functions service
+local: []
+```
+
+and the call fails naming every provider's own reason — `debian_service`
+*"unsupported OS family"*, `rh_service` *"OS not in {...}"*, `systemd`
+*"only available on Linux systems which have been booted with systemd"*,
+and so on through `mac_service`, `smf`, `upstart` and `win_service`. Not
+one of them is FreeBSD. `salt/modules/` holds no `freebsdservice.py`: it
+has moved out to the `saltext.freebsd` extension, a separate install, and
+`pkg` still loads from core (33 functions) so this is about that one
+module and not about FreeBSD support in general.
+
+Read out of `saltext.freebsd` 1.0.0, its `restart` is the whole of its
+handling:
+
+```python
+def restart(name, jail=None):
+    cmd = f"{_cmd(jail)} {name} onerestart"
+    return not __salt__["cmd.retcode"](cmd, python_shell=False)
+```
+
+No self-check, no detach, no refusal — and `onerestart`, which is the same
+`one*` verb halite uses to get past `rcvar` gating, so the two agree about
+that much. So on the platform carrying 80% of this estate, Salt as shipped
+today has the shape 5.663 recorded, with nothing standing in its way; the
+guard of 5.663.1 is a divergence in halite's favour rather than a
+compatibility break. That is the first thing to say in SPEC's terms: a
+`watch` on the minion's own service is not a behaviour there is a Salt
+semantic to match.
+
+**The migration question was measured, and it is answered properly.** A
+Salt user's habit is to write `no_block: True`, and a state engine that
+accepted and ignored it would turn Salt's promise into silence. halite
+refuses it where it is written:
+
+```
+$ halite-node state apply noblock --file-root <dir> --pillar-root <dir> --test
+halite: state compilation failed with 1 error(s):
+  .../noblock.sls:2:3 [a salt user's habit]: service.running: argument
+  "no_block": is not a parameter of this function
+```
+
+File, line, column, state id, function and argument, at compile time and
+before anything ran — which is the `signature` package's generic answer and
+not something written for this case. (The first attempt at that measurement
+read the estate's own `/usr/local/etc/salt/srv/pillar` and failed on six
+GPG-encrypted keys, because `--file-root` alone leaves the pillar root at
+the platform default. It named the paths it read, which is 5.143's point
+exactly: an answer that reaches for production and says so is not silent,
+and that is why it gets read past.)
+
+**Not verified here.** Nothing was *run* against Salt: the systemd
+behaviour and the FreeBSD module are read out of source, because reproducing
+either needs a minion running as a service and no host here has one. The
+`saltext.freebsd` wheel was read rather than installed — its code never
+executed — so what Salt would do in practice on FreeBSD 15 with that
+extension present is inferred from its source and unmeasured. Older Salt
+releases, which did carry `freebsdservice` in core, were not examined, so
+nothing is said about when it moved or whether it ever had a guard.
 
 ### 5.664 rc.subr's status line can name several pids, and nothing on this host printed one
 
