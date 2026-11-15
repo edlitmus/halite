@@ -44828,7 +44828,21 @@ and `TestTheLinuxLegsFilterNamesFamiliesNotTests` cannot catch it: it
 checks that each pattern is a family prefix rather than a complete test
 name, and says in its own comment why it does not try to decide which
 tests should run. `TestLiveSystemdSelf*` is now in the `linux` leg's
-filter, as a prefix so a sibling added later is picked up. The three
+filter, as a prefix so a sibling added later is picked up -- and run
+43761946179 then ran it there, on an Ubuntu runner, as root:
+
+```
+the inner run, under haliteprobeself-6139.service:
+    /proc/self/cgroup inside haliteprobeself-6139.service: "0::/system.slice/haliteprobeself-6139.service\n"
+    the units on this process's cgroup path: ["haliteprobeself-6139.service"]
+    service.restart was refused and this process is still alive
+--- PASS: TestLiveSystemdSelfRestartIsRefused
+```
+
+The nesting is visible in the leg's own output -- two `=== RUN` lines, the
+inner one indented -- which is the re-exec working: the guard is now
+demonstrated under a real unit on a machine nobody here owns, every Fleet
+run, rather than once on `system76-pc`. The three
 FreeBSD tests did run as root on the real `freebsd` leg in that run and
 passed, which is the contrast that makes the gap visible.
 

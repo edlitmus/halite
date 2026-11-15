@@ -443,7 +443,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"unit came back by itself -- which is how 5.663's \"Linux survives it\" was found to be " +
 		"about the node rather than the job, and why the refusal's consequence clause is now per " +
 		"provider (DIVERGENCE 5.663.2). `TestLiveSystemdSelfRestartIsRefused` re-execs itself " +
-		"under `systemd-run` to assert from inside a real unit. Not covered: a hub or API " +
+		"under `systemd-run` to assert from inside a real unit, and the fleet `linux` leg has run " +
+		"it as root on an Ubuntu runner since the `-run` entry it needed was added (run " +
+		"43761946179), so it is held continuously rather than once. Not covered: a hub or API " +
 		"restarting itself from a state applied by a co-located node, which does not arise on " +
 		"either host; and openrc, sysvinit, launchd and Windows, where the guard is silent by " +
 		"construction because those providers do not implement the interface"},
