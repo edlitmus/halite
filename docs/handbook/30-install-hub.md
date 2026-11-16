@@ -52,7 +52,11 @@ You need:
 - **A host**: Linux (amd64 or arm64) or FreeBSD (14 or 15). The hub needs no
   root privilege at run time, and little capacity: a hub for hundreds of
   nodes is comfortable on two cores and a couple of gigabytes
-  ([chapter 38](38-scaling.md) has the sizing).
+  ([chapter 38](38-scaling.md) has the sizing). **On FreeBSD, put
+  `/var/db/halite` on ZFS** if the fleet may grow large: UFS is not
+  recommended for a large installation, because a job's returns wait on
+  synchronous directory writes (`test.ping` to 20,000 nodes: p95 about
+  37 s on UFS, about 2 s on ZFS).
 - **A stable name** nodes will use: `hub.example.com`, in DNS. Nodes verify
   the hub's certificate against the name they dialled, so it must be the same
   name you put on the certificate in step 5.

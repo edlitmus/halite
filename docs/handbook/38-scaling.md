@@ -101,19 +101,27 @@ A starting point, to be replaced by your measurements:
 |---|---|---|
 | up to ~500 nodes | 2 cores, 2 GiB, any disk | Comfortable; the lab-style hub with a few nodes is far under this |
 | ~500 to ~5,000 | 4 to 8 cores, 4 to 8 GiB, SSD for `state_dir` | Watch `halite_hub_requests_total` and pillar duration. On an 8-core, 16 GiB hub, a `test.ping` to 5,000 simulated nodes peaked at 1.61 GB with every return in under 2 s (ledger 5.279). Builds before the return-path fix (#689) re-read every earlier return on each return, and the same job took that hub past 14 GiB and the host down. Do not run a fleet-wide job on those builds at this size. |
-| beyond | measure; add relays | The design target is 20,000 on 16 cores and 4 GiB. 20,000 simulated nodes on 16 cores has been run on Linux and on FreeBSD with ZFS, and the job rows were met. The hub peaked at 4.3 to 4.9 GiB before ledger 5.661, and at 3.7 to 3.8 GiB after it on Linux and on FreeBSD with ZFS or UFS, so plan on at least 4 GiB (ledger 5.279, 5.661) |
+| beyond | measure; add relays | The design target is 20,000 on 16 cores and 4 GiB. 20,000 simulated nodes on 16 cores has been run on Linux and on FreeBSD with ZFS, and the job rows were met. The hub peaked at 4.3 to 4.9 GiB before ledger 5.661, and at 3.7 to 3.8 GiB after it on Linux and on FreeBSD with ZFS or UFS, so plan on at least 4 GiB. On FreeBSD, put `state_dir` on ZFS, not UFS (below) (ledger 5.279, 5.661) |
 
 Disk: the **job cache** and **event log** are bounded by retention and size
 (defaults 720 h and 10 GiB / 4 GiB); size `state_dir` above their sum, put it
 on storage that does not share a spindle with the tree, and keep the **tree**
 out of it.
 
-On FreeBSD, put `state_dir` on **ZFS**. Every return is written and synced
-into the job's directory, and on UFS those writes go one at a time: at
+On FreeBSD, put `state_dir` on **ZFS**. **UFS is not recommended for a large
+installation.** It is the only hub setup measured that misses a SPEC 30 row,
+and two fixes aimed at the return path did not bring it close. Every return
+is written and synced into the job's directory, and on UFS those writes go
+one at a time: at
 20,000 nodes a `test.ping` took nearly two minutes to come back on UFS, and
 2.3 s on ZFS. Spreading a job's returns over subdirectories brought UFS to
 about 37 s, which is still more than three times the 10 s target (ledger
-5.279, 5.660, 5.660.1). Check the clock too:
+5.279, 5.660, 5.660.1). Memory is not the reason: a UFS hub stayed under
+4 GiB at 20,000 (ledger 5.661.2). The size at which UFS starts to miss the
+row has not been measured; UFS was only run at 20,000, and the 5,000-node
+run was on Linux. So this is advice, not a measured threshold: if a fleet
+may grow past the first row of the table above (about 500 nodes, "any
+disk"), start the hub on ZFS rather than move `state_dir` later. Check the clock too:
 `sysctl kern.timecounter.hardware` should not name `i8254`. With it, every
 clock read the hub makes is a system call (92 µs each, measured, against
 tens of nanoseconds with `TSC-low`), and a test hub used a whole core
