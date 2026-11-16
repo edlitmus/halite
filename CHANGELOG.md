@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A hub dispatches a job without reading every node's key record first.** Each dispatch resolved its target against the key store, which read and parsed every enrolled node's record from disk, holding the store's lock. So a job cost one file read per node, and only one job at a time could pay it. With 8,000 nodes, a reaction that dispatched a job took one to five seconds, and the reactor managed about eight a second. The store now keeps what it read until its directory changes, which includes `halite-hub keys` changes made from another process. DIVERGENCE 5.669.
+
 - **`simfleet events` drives the reactor, for SPEC 30's reactor row.** Simulated nodes post events at a fixed total rate through `POST /v1/event`, and the run reports what the hub accepted and, from the hub's own counters, how many events it reacted to, dropped from a full queue, failed to dispatch, or refused under `node_event_rate`. `simfleet setup` now writes two reactions and the policy binding they run under: `noop`, which renders and dispatches nothing, and `ping`, which sends `test.ping` to the posting node. It also takes `-reactor-workers` and `-reactor-queue-depth`. Run only at test rates so far. DIVERGENCE 5.668.
 
 - **A FreeBSD node configured with `halite_node_token` now enrols when the token begins with a hyphen.** The rc script passed the token after a space, and `halite-node enroll` read one token in 64 as a flag, refused it with exit 64, and the node did not start. The script now writes `--token=`, as the handbook already told operators to. A token that was replaced for this reason needs no further action. DIVERGENCE 5.666.

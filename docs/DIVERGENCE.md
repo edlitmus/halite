@@ -45206,6 +45206,58 @@ drivers posting at once; the CPU the reactor costs. The run that can
 say something is the AWS lab at 5,000 a second and beyond, which needs
 the owner's approval.
 
+### 5.669 Every dispatch read every node's key record, one dispatch at a time
+
+Found by the reactor measurement of 5.668 on the AWS lab (issue 718,
+2026-11-16): a c7g.4xlarge Linux hub, 8,000 simulated nodes, `main` at
+`83499b09`. The `noop` reaction, which dispatches nothing, met SPEC 30's
+5,000 events a second. The `ping` reaction, which dispatches one
+`test.ping` per event, managed about eight a second at an offered
+1,000: 1,259 reacted to, 19,764 dropped from a full queue, not drained
+two minutes later. The reactor's duration histogram put every `ping`
+reaction between one and five seconds; every `noop` one finished under
+5 ms.
+
+A goroutine dump at the end of the run caught all 32 reactor workers in
+`react`: 30 waiting on `keystore.(*Store).List`'s mutex, one holding it
+in `os.ReadFile`. A dispatch resolves its target through
+`targetableNodes` (`internal/hub/relay.go`), which calls `Store.List`,
+and `List` read the directory and then read and parsed every record
+file, holding the store's mutex. So each dispatched job read one file
+per enrolled node, and only one could do so at a time. A fleet-wide job
+from an operator pays that once, which is why no earlier scale run saw
+it; a reaction, a schedule or an orchestration step pays it per job.
+
+**Fixed.** `Store.List` keeps the records it read, and the directory's
+mtime with them, and answers from them while the mtime is unchanged.
+Every change to a record changes the directory: `put` writes a new file
+beside the record and renames it over, `delete` removes it, and
+`halite-hub keys` does both from another process while the hub serves.
+A snapshot is kept only when it was read at least `listCacheMargin`
+(2 s) after the mtime it saw, because a file timestamp is coarse (a
+few milliseconds on Linux, whole seconds on some filesystems): a write
+in the same tick as the mtime List saw would otherwise leave the mtime
+unchanged and be hidden. Records are handed out as copies.
+
+**Shown** in `internal/keystore/list_cache_test.go`, on darwin/arm64:
+a second List reads no record files; a record accepted, revoked or
+deleted through a second Store over the same directory, straight after
+a List that kept its snapshot, is seen by the next List; a List straight
+after a write keeps nothing; and a caller that changes a record it was
+given does not change the next List. Each test failed with its part of
+the change taken out (no snapshot; the mtime not compared; no margin;
+the kept records handed out uncopied). A throwaway measurement over
+8,000 records on the same machine, with the hub's suite running beside
+it at `GOMAXPROCS=2`: the first List 13.4 s, the next two 1.4 ms and
+0.3 ms. `internal/keystore`, `internal/hub` and `cmd/halite-hub` pass.
+
+**Not covered:** the reactor's `ping` rate with this change, which needs
+the lab again; a record edited in place by hand, which leaves the mtime
+alone and would not be seen until the next change; a system clock
+stepped backwards by exactly the amount to repeat an mtime; Windows,
+where the directory's last-write time is assumed to change on a rename
+as it does elsewhere, and is checked only by the test's CI leg.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
