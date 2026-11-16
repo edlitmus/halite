@@ -34,7 +34,8 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > over a real network between two hosts is therefore run on Linux. On FreeBSD
 > the two jails shared one machine and a loopback interface, so the network
 > path was not a wire. **Not run:** a node on any other distribution, a token
-> with a hyphen first (the recorded bug), enrolment over a wire between two
+> with a hyphen first on a FreeBSD host (the rc script's half is fixed and
+> tested under `sh`, ledger 5.666), enrolment over a wire between two
 > FreeBSD hosts, and `cloud-init` or `nuageinit` themselves (see the user-data
 > section).
 
@@ -247,9 +248,9 @@ right.
 **Write the token as `--token=SECRET`**: a token is random
 base64 and can begin with `-`, and `--token -abc…` is then taken for a flag
 (this was seen: `--BLy… is not a flag of halite-node enroll`). The FreeBSD rc
-script passes the token with a space, so if you use `halite_node_token`
-regenerate any token that begins with a hyphen. Both are recorded in the
-ledger.
+script writes `--token=` for `halite_node_token`; before ledger 5.666 it wrote
+a space, and a node whose token began with a hyphen did not enrol and did not
+start. Both are recorded in the ledger.
 
 **Prefer `--token-file PATH`.** A token given as `--token` is on the command
 line for as long as `enroll` runs, which with `--wait` is until an operator
