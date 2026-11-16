@@ -152,7 +152,9 @@ halite_node_enrol()
 
 	_flags="--config ${halite_node_config}"
 	[ -n "${halite_node_ca_file}" ] && _flags="${_flags} --ca-file ${halite_node_ca_file}"
-	[ -n "${halite_node_token}" ] && _flags="${_flags} --token ${halite_node_token}"
+	# `=`, not a space: a token is random base64 and begins with `-` about
+	# one time in 64, and after a space the CLI reads it as a flag.
+	[ -n "${halite_node_token}" ] && _flags="${_flags} --token=${halite_node_token}"
 	[ -n "${halite_node_token_file}" ] && _flags="${_flags} --token-file ${halite_node_token_file}"
 
 	if [ "${halite_node_user}" = "root" ]; then

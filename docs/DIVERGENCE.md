@@ -45088,6 +45088,42 @@ limit by more than the 16 extra requests this test makes -- was not
 explored. And no newer Go was tried: `go1.27.4` is what the toolchain pins
 and what every number here came from.
 
+### 5.666 The FreeBSD rc script passed a token after a space, and a token that began with `-` stopped the node
+
+Issue 733, item 10, from issue 308's open list: "a token with a hyphen
+first (the recorded bug)".
+
+A minted token is random base64 and begins with `-` about one time in
+64 (5.429). The CLI reads a value that begins with `-` after a space as
+a flag and refuses it, with exit 64, and that is deliberate: 5.429 left
+the CLI alone and chapters 25 and 31 say to write `--token=SECRET`. The
+rc script did not. `halite_node_enrol` built
+`--token ${halite_node_token}`, so on a FreeBSD node configured with
+`halite_node_token`, one token in 64 made `enroll` refuse, the script
+say `could not enrol (exit 64); not starting`, and the node stay down.
+Chapter 31 told the operator to mint another token, which is the
+script's defect handed to the reader.
+
+**Fixed.** The script writes `--token=${halite_node_token}`. The
+`su -m` path puts the same string inside `sh -c '…'`, and base64 has no
+quote characters, so it is unchanged.
+
+**Shown.** `TestTheRCScriptPassesATokenThatBeginsWithAHyphen` takes
+`halite_node_enrol` from `contrib/rc.d/halite_node` and runs it under
+`/bin/sh` with rc.subr's `checkyesno` and `warn` stubbed, and with a
+stand-in binary that prints its arguments. Before the change it failed
+with `enroll --config … --token -zO2Bl1eE…`; with it, the stand-in
+receives `--token=-zO2Bl1eE…` as one argument. The real CLI, built from
+this tree on darwin/arm64, given the two forms: `--token -zO2Bl1eE`
+exited 64 with `is not a flag of halite-node enroll`, and
+`--token=-zO2Bl1eE` passed flag parsing and stopped at the next check
+(no hub configured).
+
+**Not covered:** the script was not run by rc(8) on a FreeBSD host or
+jail, and no node enrolled with a hyphen-first token through it. The
+`su -m` path (a `halite_node_user` other than root) was not run. The
+test is skipped on Windows, which has no `sh`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
