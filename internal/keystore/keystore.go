@@ -149,7 +149,36 @@ type Store struct {
 	// `halite-hub keys` are -- into exactly that window, instead of
 	// hoping a loop finds it. Nil in production.
 	between func(op, id string)
+
+	// listed is the last List's records, kept while the directory has
+	// not changed since. See List.
+	listed *listSnapshot
+	// listReads counts record files List has read, for the tests that
+	// show it does not read them again. Guarded by mu.
+	listReads int
+	// listMargin is how long after the directory's mtime a List must
+	// have looked for its snapshot to be kept. listCacheMargin, except
+	// in the tests that turn it off to show what it is for.
+	listMargin time.Duration
 }
+
+// listSnapshot is what List read, and the directory mtime it read it
+// under.
+type listSnapshot struct {
+	mtime   time.Time
+	records []*Record
+}
+
+// listCacheMargin is how far behind the clock the directory's mtime must
+// be for a List to keep what it read. A file's timestamp is not
+// precise: Linux takes it from a clock that moves every few
+// milliseconds, and a filesystem may keep whole seconds. A write that
+// lands in the same tick as the one List saw leaves the mtime as it
+// was, and a snapshot kept then would hide that write until the next
+// one. Read at least this long after the mtime, any later write
+// carries a later mtime. Git's index has the same problem and the same
+// answer.
+const listCacheMargin = 2 * time.Second
 
 func (s *Store) inWindow(op, id string) {
 	if s.between != nil {
@@ -420,10 +449,62 @@ func (s *Store) delete(nodeID string, now time.Time) ([]DeletedCert, error) {
 }
 
 // List returns every record, in node ID order.
+//
+// It keeps what it read while the store's directory is unchanged,
+// because the hub calls it for every job it dispatches: targetableNodes
+// resolves a target against it. Reading and parsing every record each
+// time, holding mu, made each dispatch cost one file read per enrolled
+// node and let only one dispatch at a time pay it. On a hub with 8,000
+// nodes a reaction that dispatched a job took one to five seconds, and
+// the reactor managed about eight a second (DIVERGENCE 5.669).
+//
+// The directory's mtime is the signal, because every change to a record
+// is visible there: put writes a new file beside the record and renames
+// it over, delete removes it, and so does `halite-hub keys`, which
+// writes this directory from another process while the hub serves. A
+// record rewritten in place by hand would not be seen; nothing in this
+// project writes one that way. A snapshot is kept only when it was read
+// listCacheMargin after the mtime it saw, so that a coarse timestamp
+// cannot hide a write (see listCacheMargin).
+//
+// The records are copies, so a caller that changes one does not change
+// what the next caller is given.
 func (s *Store) List() ([]*Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.list()
+	info, err := os.Stat(s.dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading the key store at %s: %w", s.dir, err)
+	}
+	mtime := info.ModTime()
+	if s.listed != nil && s.listed.mtime.Equal(mtime) {
+		return copyRecords(s.listed.records), nil
+	}
+	looked := time.Now()
+	records, err := s.list()
+	if err != nil {
+		s.listed = nil
+		return nil, err
+	}
+	margin := s.listMargin
+	if margin == 0 {
+		margin = listCacheMargin
+	}
+	s.listed = nil
+	if margin > 0 && looked.Sub(mtime) >= margin {
+		s.listed = &listSnapshot{mtime: mtime, records: records}
+	}
+	return copyRecords(records), nil
+}
+
+func copyRecords(in []*Record) []*Record {
+	out := make([]*Record, len(in))
+	for i, r := range in {
+		c := *r
+		c.Superseded = append([]SupersededCert(nil), r.Superseded...)
+		out[i] = &c
+	}
+	return out
 }
 
 // list is List for a caller that holds the lock.
@@ -438,6 +519,7 @@ func (s *Store) list() ([]*Record, error) {
 			continue
 		}
 		nodeID := e.Name()[:len(e.Name())-len(".json")]
+		s.listReads++
 		rec, err := s.get(nodeID)
 		if err != nil {
 			return nil, err
