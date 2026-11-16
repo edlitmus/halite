@@ -140,7 +140,7 @@ func TestListHandsOutCopies(t *testing.T) {
 	}
 	putAccepted(t, s, "a.example")
 	time.Sleep(listCacheMargin + 200*time.Millisecond)
-	listIDs(t, s) // reads the records and keeps them
+	listIDs(t, s)         // reads the records and keeps them
 	recs, err := s.List() // answered from what was kept
 	if err != nil {
 		t.Fatal(err)
