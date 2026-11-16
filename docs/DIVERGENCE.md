@@ -45155,6 +45155,57 @@ the same sequence failed at the provider's schema.
 lock. The provider was not upgraded; v2.32.0 is still the pinned
 version.
 
+### 5.668 The reactor row had no harness
+
+SPEC 30 sets the reactor at "5,000 events per second sustained, with
+bounded queue behaviour beyond it", by harness. `simfleet` connected
+nodes and timed jobs; nothing in it posted an event, so the row's
+`Waiting` named the harness itself.
+
+**Built.** `simfleet events` posts events at a fixed total rate, open
+loop, from many simulated nodes through `POST /v1/event`, each node on
+its own kept client. It counts what it offered, what the hub accepted,
+what `node_event_rate` refused (429), and what failed. It reads the
+hub's own counters with the operator certificate before and after:
+reactions finished (`halite_reactor_duration_seconds_count`), dropped
+from a full queue (`halite_reactor_dropped_total`), failed to dispatch
+(`halite_reactor_failures_total`), and events refused at the door
+(`halite_events_dropped_total`). It samples `halite_reactor_queue_depth`
+each second, and waits for the queue to drain before the last reading.
+`simfleet setup` writes two reactions, because "an event a second"
+means two loads: `noop` renders against the event's data and declares
+nothing, so it measures the reactor; `ping` dispatches `test.ping` to
+the posting node, so it measures the reactor and the dispatch behind it.
+Both run as `reactor:simfleet`, which setup binds in the policy.
+
+**Shown**, with a real hub and the harness as processes on darwin/arm64
+(`GOMAXPROCS=2`), at rates chosen not to load the machine:
+
+- `noop`, 4 nodes, 40 a second for 2 s: 80 offered, 80 accepted, 80
+  reacted to, none dropped, the queue drained in 6 ms.
+- One reactor worker and a queue of two, 200 a second for 1 s: 200
+  accepted, 175 reacted to and 25 dropped, so every accepted event is
+  accounted for and the queue held to its bound. The hub published 225
+  events: its own `halite/reactor` overflow reports are on the bus too.
+- `ping`, with the 4 nodes connected by a `run -no-submit` driver, 20 a
+  second for 1 s: 20 reacted to, none failed to dispatch.
+- Broken on purpose: without setup's binding for `reactor:simfleet`,
+  all 20 `ping` reactions failed to dispatch and the test failed; with
+  the reactor glob misspelt, nothing was reacted to, the queue never
+  drained, and the test failed.
+
+**A trap in the harness's own first version:** it counted accepted
+events into seconds by when each answer came. A run that kept up
+exactly then showed one second a few short (39 at 40 a second), which
+at 5,000 would have read as NOT MET. Events are counted against the
+second they were due in.
+
+**Not covered:** any rate above 200 a second, and so any SPEC 30
+verdict; a hub that is not on the same machine as the harness; several
+drivers posting at once; the CPU the reactor costs. The run that can
+say something is the AWS lab at 5,000 a second and beyond, which needs
+the owner's approval.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

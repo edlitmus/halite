@@ -293,7 +293,11 @@ A fleet larger than one machine can hold is several drivers, each running its ow
 	simfleet setup -root DIR -enrollment token -token-uses 2000   (then restart the hub)
 	simfleet enroll-storm -root DIR -hub H -n 2000 -token-file DIR/bootstrap.token
 
+\`simfleet events\` is the reactor row: simulated nodes post events at a fixed total rate through \`POST /v1/event\`, and the hub's own counters say how many it reacted to, dropped, or refused. setup writes two reactions for it; events.go says what each one measures.
+
+	simfleet events -root DIR -hub H -n 2000 -rate 5000 -duration 60s -reaction noop
+
 \-json appends each result as one JSON line, for a run's archive.
 
-**Files:** `batch.go`, `main.go`, `multi.go`, `record.go`, `storm.go`; with tests.
+**Files:** `batch.go`, `events.go`, `main.go`, `multi.go`, `record.go`, `storm.go`; with tests.
 

@@ -69,6 +69,13 @@
 //	simfleet setup -root DIR -enrollment token -token-uses 2000   (then restart the hub)
 //	simfleet enroll-storm -root DIR -hub H -n 2000 -token-file DIR/bootstrap.token
 //
+// `simfleet events` is the reactor row: simulated nodes post events at a
+// fixed total rate through `POST /v1/event`, and the hub's own counters
+// say how many it reacted to, dropped, or refused. setup writes two
+// reactions for it; events.go says what each one measures.
+//
+//	simfleet events -root DIR -hub H -n 2000 -rate 5000 -duration 60s -reaction noop
+//
 // -json appends each result as one JSON line, for a run's archive.
 package main
 
@@ -119,6 +126,8 @@ func main() {
 		err = mergeCmd(os.Args[2:])
 	case "enroll-storm":
 		err = stormCmd(os.Args[2:])
+	case "events":
+		err = eventsCmd(os.Args[2:])
 	default:
 		usage()
 	}
@@ -135,7 +144,8 @@ func usage() {
 		"  simfleet run   -root DIR -hub ADDR -first F -n N -no-submit -out FILE   one driver of several\n"+
 		"  simfleet submit -root DIR -hub ADDR -fun F -out FILE   send one job to the whole fleet\n"+
 		"  simfleet merge -submit FILE DRIVER.json...   time that job across every driver\n"+
-		"  simfleet enroll-storm -root DIR -hub ADDR -n N [-token-file F]   N enrolment requests over the wire\n")
+		"  simfleet enroll-storm -root DIR -hub ADDR -n N [-token-file F]   N enrolment requests over the wire\n"+
+		"  simfleet events -root DIR -hub ADDR -n N -rate R -duration D [-reaction noop|ping]   events through the reactor\n")
 	os.Exit(2)
 }
 
@@ -152,6 +162,8 @@ func setupCmd(args []string) error {
 	enrollment := fs.String("enrollment", "manual", "the hub's enrollment_mode: manual, or token to also mint a bootstrap token for enroll-storm")
 	tokenUses := fs.Int("token-uses", 2000, "with -enrollment token, how many names the token admits")
 	tokenPrefix := fs.String("token-prefix", "storm", "with -enrollment token, the prefix of the names it admits (enroll-storm's -prefix)")
+	reactorWorkers := fs.Int("reactor-workers", 0, "the hub's reactor_workers (0: the hub's default, 2 x NumCPU)")
+	reactorQueue := fs.Int("reactor-queue-depth", 0, "the hub's reactor_queue_depth (0: the hub's default, 10000)")
 	_ = fs.Parse(args)
 	if *root == "" {
 		return errors.New("-root is required")
@@ -164,18 +176,30 @@ func setupCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, d := range []string{"pki", "state", "cache", "fleet"} {
+	for _, d := range []string{"pki", "state", "cache", "fleet", "reactor"} {
 		if err := fileperm.MkdirAll(filepath.Join(abs, d), 0o700); err != nil {
 			return err
 		}
 	}
 	hubYAML := fmt.Sprintf("state_dir: %s\npki_dir: %s\ncache_dir: %s\nlog_format: json\nlog_level: warn\nenrollment_mode: %s\n",
 		filepath.Join(abs, "state"), filepath.Join(abs, "pki"), filepath.Join(abs, "cache"), mode)
+	reactor, err := writeReactions(filepath.Join(abs, "reactor"))
+	if err != nil {
+		return err
+	}
+	hubYAML += reactor
+	if *reactorWorkers > 0 {
+		hubYAML += fmt.Sprintf("reactor_workers: %d\n", *reactorWorkers)
+	}
+	if *reactorQueue > 0 {
+		hubYAML += fmt.Sprintf("reactor_queue_depth: %d\n", *reactorQueue)
+	}
 	if err := os.WriteFile(filepath.Join(abs, "hub.yaml"), []byte(hubYAML), 0o644); err != nil {
 		return err
 	}
 	policy := "roles:\n  harness:\n    - target: '*'\n      functions: ['*']\n      runners: ['*']\n" +
-		"bindings:\n  - principal: 'cert:CN=" + operatorName + "'\n    roles: ['harness']\n"
+		"bindings:\n  - principal: 'cert:CN=" + operatorName + "'\n    roles: ['harness']\n" +
+		"  - principal: '" + reactorPrincipal + "'\n    roles: ['harness']\n"
 	if err := os.WriteFile(filepath.Join(abs, "policy.yaml"), []byte(policy), 0o644); err != nil {
 		return err
 	}
