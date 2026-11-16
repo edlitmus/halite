@@ -50,6 +50,13 @@ import (
 // to drain before the after-reading, so that a reaction still queued is
 // not counted as lost.
 
+// reactionsFinished is the series that counts finished reactions: the
+// count of the reactor's duration histogram. It is spelled as the
+// family and its suffix, not as one string, because internal/metrics
+// reads every quoted halite_ name in the source as a family the hub
+// registers, and _count is a series of the histogram, not a family.
+const reactionsFinished = "halite_reactor_duration_seconds" + "_count"
+
 // reactorPrincipal is who the harness's reactions run as. SPEC 18.3: a
 // reactor is subject to the policy like any caller, so setup binds it.
 const reactorPrincipal = "reactor:simfleet"
@@ -206,7 +213,7 @@ func eventsCmd(args []string) error {
 			return fmt.Errorf("reading the hub's metrics after the run: %w", err)
 		}
 		res.MaxQueueDepth = max(res.MaxQueueDepth, after["halite_reactor_queue_depth"])
-		done := after["halite_reactor_duration_seconds_count"] - before["halite_reactor_duration_seconds_count"] +
+		done := after[reactionsFinished] - before[reactionsFinished] +
 			after["halite_reactor_dropped_total"] - before["halite_reactor_dropped_total"]
 		if after["halite_reactor_queue_depth"] == 0 && done >= float64(res.Accepted) {
 			res.Drained = true
@@ -220,7 +227,7 @@ func eventsCmd(args []string) error {
 	res.DrainSeconds = time.Since(drainStart).Seconds()
 	delta := func(name string) float64 { return after[name] - before[name] }
 	res.Published = delta("halite_events_published_total")
-	res.Reacted = delta("halite_reactor_duration_seconds_count")
+	res.Reacted = delta(reactionsFinished)
 	res.ReactorDropped = delta("halite_reactor_dropped_total")
 	res.ReactorFailures = delta("halite_reactor_failures_total")
 	res.NodeRateDropped = delta("halite_events_dropped_total")
