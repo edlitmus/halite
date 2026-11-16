@@ -5,7 +5,21 @@ provider "registry.opentofu.org/vultr/vultr" {
   version     = "2.32.0"
   constraints = "~> 2.23"
   hashes = [
+    "h1:29428rojp9gIYgdhlr11x4pYyfLHn2JhKVAB3L4T4ro=",
+    "h1:6XaZbXGHbuN7+ctmzDBE2/IizFNIsgiSqfF1tZC4ooE=",
+    "h1:BrusuNPM9m1HpmmKFyrwnQpUHgpDTePd4R3pJx/tEzI=",
+    "h1:MDrGyTjsAA9FiWv0r/Np9q46Pruy2Aa0NPnIS1YqUzQ=",
+    "h1:Mb2sttUoyMLdxttvln4V9Pcj1LEDqvo8awOcCWDmXSk=",
+    "h1:OmtjFhGJIyH52Lj6sCK6zANXwz+xQALzvMYlMfZKoqo=",
+    "h1:Q7QPDdkbjzsIg8lcw7uMZCW64300j6/fkpB8iyPdOqI=",
+    "h1:QScGZSne0eBg3FECJgqpQuFNJp1p6swH4++p0diEO1k=",
+    "h1:XA/T6w218eWB5GxnIwVRgBOIJEi/T7gu9le4g0LTHS4=",
     "h1:aabKnrg8b4VAQlgvd1AwUekd4Zh6RAkUHzNvcSXxPfM=",
+    "h1:gzipwUJq5kJl9WCVF3PyayrqE9WJUPQ4psAR85BmytM=",
+    "h1:hZQ8acgM9l6ZX/Vu0cHMg3lN0tGauFmwueOan5D4nkc=",
+    "h1:mmqBynlaxrgPECVlisEbNCCCF7U/Zl5NamqcD4YbKBM=",
+    "h1:nYTyXF6cGpQipNBxqa67dZj/dKbo8FU2/ndTjhGGb+0=",
+    "h1:tq/33RkkD9lygvjyts2wFRiGInAuoVp/GybOUQ1n+ao=",
     "zh:01b2398fc3f1146d9d2fee686e7fd201981f7eb729fc5a2b91df7966f1d22edf",
     "zh:271124260912677e724149fb773dd90dc047d3efaa08806df226ffdbd5fc03de",
     "zh:3ca25fa755be00f76017a2d00e438fcd345a3a3ea58c325418d3dc3e5699c896",
