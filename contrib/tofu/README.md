@@ -161,7 +161,14 @@ make lab-distros                                  # the row names
 make lab-plan                                     # a plan, changing nothing
 make lab-hosts                                    # the instances in the state, and whether each is ready
 make lab-cidr                                     # the address SSH will be opened to
+make lab-up   LAB_OPEN_HUB_PORT=true              # also the hub port, between the instances
 ```
+
+`LAB_OPEN_HUB_PORT=true` is for a run with a hub on one row and nodes on
+others. Without it the instances can reach each other only by SSH, and the
+install runbooks were run that way, through SSH tunnels (issue 733, item
+9). With it, each instance's own address may reach TCP 4510 (`hub_port`)
+on the others. It opens nothing to any other address.
 
 `make lab-down` takes `LAB_DISTROS` too, but a subset destroy is not
 supported: `tofu destroy` destroys everything in the state, whichever rows
@@ -183,8 +190,11 @@ exist to be handed this source tree and told to run its live tests as
 root — tests that make filesystems, load kernel modules and reconfigure
 packet filters.
 
-- SSH is the only port open, and only to the address `make lab-up`
-  detected, or the one `LAB_SSH_CIDR` names. `variables.tf` refuses
+- SSH is the only port open to the outside, and only to the address
+  `make lab-up` detected, or the one `LAB_SSH_CIDR` names. With
+  `LAB_OPEN_HUB_PORT=true` the hub port is also open, but only between
+  this run's instances, each by its own /32; `tests/lab.tftest.hcl` holds
+  that against a mocked provider. `variables.tf` refuses
   any entry wider than /8 (IPv4) or /32 (IPv6), or not a CIDR at all, which
   covers `0.0.0.0/0`, `::/0` and `0.0.0.0/1` plus `128.0.0.0/1`, and has no default, because a default here would
   eventually be the default somebody ran with.
