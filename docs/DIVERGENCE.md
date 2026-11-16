@@ -45124,6 +45124,37 @@ jail, and no node enrolled with a hyphen-first token through it. The
 `su -m` path (a `halite_node_user` other than root) was not run. The
 test is skipped on Windows, which has no `sh`.
 
+### 5.667 The lab's provider lock verified on one platform only
+
+`contrib/tofu/.terraform.lock.hcl` has been tracked since #190 so that
+it pins the Vultr provider the way `go.sum` pins this project's one
+dependency. It held fifteen `zh:` hashes, one per release zip, and a
+single `h1:` hash, for whichever platform last ran `tofu init` against
+it. OpenTofu checks an installed provider against `h1:`. On darwin/arm64
+on 2026-11-16, `tofu init -lockfile=readonly` installed v2.32.0, and
+`tofu validate` and `tofu test` then refused it, twice from a fresh
+`.terraform`: `the cached package … does not match any of the checksums
+recorded in the dependency lock file`. A plain `tofu init` instead
+succeeds by writing a new hash into the tracked file, and `make lab-up`
+runs a plain `init`, so a lab raised from any other platform would leave
+the lock file modified in the worktree. That second part is inferred
+from how `init` behaves; the run kept the lock read-only.
+
+**Fixed.** `tofu providers lock` for freebsd_amd64, freebsd_arm64,
+darwin_arm64, darwin_amd64, linux_amd64 and linux_arm64 added fourteen
+`h1:` hashes and changed nothing else: the existing `h1:` and all
+fifteen `zh:` lines are as they were, so each new download was checked
+against the checksums already recorded.
+
+**Shown** on darwin/arm64, from a deleted `.terraform`: `tofu init
+-lockfile=readonly` succeeds, `tofu validate` passes, and
+`tests/lab.tftest.hcl` passes all three runs, where before the change
+the same sequence failed at the provider's schema.
+
+**Not covered:** `init` on FreeBSD, Linux or darwin/amd64 against the new
+lock. The provider was not upgraded; v2.32.0 is still the pinned
+version.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
