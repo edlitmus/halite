@@ -326,8 +326,12 @@ func (s *Server) resolve(matcher *target.Matcher, env string) ([]string, error) 
 	}
 	var matched, skipped, undecided []string
 	var why, undecidedWhy error
+	// One view of the node cache for every candidate, so that what was
+	// read for the last dispatch is used again. DIVERGENCE 5.670.
+	view := s.nodes().View()
+	defer view.Close()
 	for _, id := range ids {
-		node, err := s.nodes().Matchable(id)
+		node, err := view.Matchable(id)
 		if err != nil {
 			// A node whose cached data will not read must not take the
 			// whole job down with it, and must not be silently dropped
