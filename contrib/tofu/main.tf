@@ -21,7 +21,7 @@ resource "vultr_ssh_key" "operator" {
 # window but not the consequence, so the rule is an allow-list rather
 # than a rate limit or a fail2ban.
 resource "vultr_firewall_group" "lab" {
-  description = "${var.label_prefix}: SSH from the operator only"
+  description = var.open_hub_port ? "${var.label_prefix}: SSH from the operator, the hub port between instances" : "${var.label_prefix}: SSH from the operator only"
 }
 
 resource "vultr_firewall_rule" "ssh" {
@@ -34,6 +34,28 @@ resource "vultr_firewall_rule" "ssh" {
   subnet_size       = tonumber(split("/", each.value)[1])
   port              = "22"
   notes             = "operator SSH"
+}
+
+# The hub port, between the lab's own instances and from nowhere else.
+#
+# Off by default. A run that puts a hub on one row and nodes on others
+# otherwise has only SSH between them, and every lab run of the install
+# runbooks so far reached the hub through SSH tunnels: TLS, pinning and
+# enrolment were end to end, the network path was not (issue 733, item
+# 9). Turned on, each instance's own address may reach the port on every
+# instance in the group, and nothing else may. The address is the
+# instance's `main_ip` as a /32, so the rule names exactly the machines
+# this run raised; a wider subnet would be the region's other tenants.
+resource "vultr_firewall_rule" "hub" {
+  for_each = var.open_hub_port ? local.selected : {}
+
+  firewall_group_id = vultr_firewall_group.lab.id
+  protocol          = "tcp"
+  ip_type           = "v4"
+  subnet            = vultr_instance.node[each.key].main_ip
+  subnet_size       = 32
+  port              = tostring(var.hub_port)
+  notes             = "hub port from ${each.key}"
 }
 
 # One instance per selected row of the matrix.
@@ -110,7 +132,7 @@ locals {
         packages     = d.packages
         closes       = d.closes
         convert_init = d.convert_init
-        go_version = var.go_version
+        go_version   = var.go_version
         # Same toolchain, different tarball, so a different checksum.
         # Pinning one and downloading the other is how a lab silently
         # stops verifying anything.

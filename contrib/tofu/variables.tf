@@ -113,3 +113,22 @@ variable "label_prefix" {
   type        = string
   default     = "halite-lab"
 }
+
+# Whether instances may reach each other's hub port. See the rule in
+# main.tf for why it is off by default and what it opens when on.
+variable "open_hub_port" {
+  description = "Allow TCP hub_port between the instances this run raises, and from nowhere else. Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "hub_port" {
+  description = "The port opened by open_hub_port: the hub's listener, 4510 unless the hub is configured otherwise."
+  type        = number
+  default     = 4510
+
+  validation {
+    condition     = var.hub_port >= 1 && var.hub_port <= 65535 && floor(var.hub_port) == var.hub_port && var.hub_port != 22
+    error_message = "hub_port must be a whole number from 1 to 65535, and not 22: SSH is already open, to the operator only, and opening it between instances is not what this variable is for."
+  }
+}

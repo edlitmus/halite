@@ -1213,6 +1213,17 @@ LAB_SSH_CIDR ?=
 #	make lab-up LAB_DISTROS='["rocky9","alpine"]'
 LAB_DISTROS ?= []
 
+# Whether the instances may reach each other's hub port (4510), for a run
+# with a hub on one row and nodes on others. Off, the only thing open is
+# SSH from LAB_SSH_CIDR; on, the hub port is open between this run's own
+# instances as well, and still to nothing else (contrib/tofu/main.tf):
+#
+#	make lab-up LAB_OPEN_HUB_PORT=true LAB_DISTROS='["freebsd15","ubuntu2604"]'
+#
+# Give it to lab-repair as well, as LAB_DISTROS: a repair applies the
+# configuration again, and one without it closes the port.
+LAB_OPEN_HUB_PORT ?= false
+
 lab-distros:
 	@echo "rows of the matrix in $(TOFU_DIR)/distros.tf:"
 	@grep -oE '^    [a-z0-9]+ = \{' $(TOFU_DIR)/distros.tf | sed 's/ *= *{//;s/^ */  /'
@@ -1227,7 +1238,8 @@ lab-plan:
 	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
 	$(TOFU) -chdir=$(TOFU_DIR) plan -input=false \
 		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
-		-var 'distros=$(LAB_DISTROS)'
+		-var 'distros=$(LAB_DISTROS)' \
+		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)'
 
 lab-up:
 	@set -e; \
@@ -1237,7 +1249,8 @@ lab-up:
 	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
 	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
 		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
-		-var 'distros=$(LAB_DISTROS)'
+		-var 'distros=$(LAB_DISTROS)' \
+		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)'
 	@echo
 	@echo "instances are booting; 'make lab-wait' blocks until they have provisioned."
 	@echo "REMEMBER: 'make lab-down' when you are finished, or they bill until you do."
@@ -1306,7 +1319,8 @@ lab-repair:
 	echo "converging with SSH open to $$cidr"; \
 	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
 		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
-		-var 'distros=$(LAB_DISTROS)'
+		-var 'distros=$(LAB_DISTROS)' \
+		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)'
 
 lab-hosts:
 	@$(LAB) hosts $(DISTRO)
