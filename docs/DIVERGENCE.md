@@ -45258,6 +45258,75 @@ stepped backwards by exactly the amount to repeat an mtime; Windows,
 where the directory's last-write time is assumed to change on a rename
 as it does elsewhere, and is checked only by the test's CI leg.
 
+### 5.670 Every dispatch read and decoded every node's cached grains
+
+Found by measuring 5.669's fix on the AWS lab (issue 718, 2026-11-16):
+the same Linux hub and 8,000 simulated nodes, at `main` `7c334b6d`. The
+`ping` reaction at an offered 1,000 a second reacted to 12,554 events
+in the run and its drain, against 1,259 before 5.669, and each reaction
+took 0.1 to 0.5 seconds, against one to five: about ninety a second,
+still filling the queue. A goroutine dump mid-run found all 32 reactor
+workers running and none waiting: 21 in `NodeCache.Get` reading a
+node's file, 3 decoding grains in `NodeCache.Matchable`.
+
+`Server.resolve` evaluates a target against every targetable node, and
+built each one's `target.Node` through `Matchable`, which read the
+node's cache file, parsed it, and decoded its grains. A target that
+names one node by its ID needs none of that, and paid it for every
+node, for every job.
+
+Reading only what the target needs, as `LoadPillar` does for pillar,
+was not the fix: `resolve` skips and reports a node whose cached data
+will not decode, and refuses a dispatch that skipped every node with
+the reason (`TestATargetThatSkippedEveryNodeSaysSoRatherThanMatchingNothing`,
+for a `*` glob). Reading lazily would match that node instead, on an
+ID target, and lose the report.
+
+**Fixed.** The node cache keeps what `Matchable` read, and `resolve`
+reads through one `NodeView` per dispatch:
+
+- when the cache directory's mtime is the one a dispatch last checked
+  every entry against, a node's entry is used without looking at its
+  file;
+- otherwise each node's file is looked at (a stat), and read and
+  decoded again only when its mtime or size is not what the entry was
+  read at. The node cache changes whenever a node connects or pushes
+  grains, so a busy estate is mostly in this case, and pays one stat
+  per node rather than a read and a decode.
+
+An entry is trusted only when its file was read at least 2 s after its
+mtime, and the directory is skipped only when it was looked at that
+long after its mtime, for the coarse timestamps 5.669 describes. An
+entry read by a dispatch that began before another finished checking
+every entry is not kept, and neither is one read at an older mtime
+than an entry already held, so a dispatch racing a write cannot leave
+the older content behind. A file that will not decode is kept as such
+and skipped and reported every time; one that cannot be read at all is
+not kept. The decoded grains are shared between dispatches; nothing
+that matches a target writes to a `value.Map`.
+
+**Shown** in `internal/hub/nodes_memo_test.go`, on darwin/arm64, through
+`resolve`: a second dispatch reads no node files; after one node's
+grains change, the next dispatch matches on the new grains and reads
+that one file only, and a forgotten node matches on its ID alone; a
+dispatch straight after a write trusts nothing; an undecodable node is
+skipped on every dispatch; and dispatches running while nodes write
+agree once the writes stop, under `-race`. Each failed with its part
+taken out: nothing kept; an entry reused without comparing its mtime and
+size; no margin; an undecodable entry answered as a node with no
+grains; the directory skipped without comparing its mtime. A throwaway
+measurement over 8,000 nodes on the same machine, an ID target, with
+the hub's suite running beside it at `GOMAXPROCS=2`: 32.6 s for the
+first dispatch (with 5.669's key store read uncached too), then 6.6 ms
+and 7.6 ms. `internal/hub`, `cmd/halite-hub` and `internal/target`
+pass.
+
+**Not covered:** the reactor's `ping` rate with this change, which needs
+the lab again; `mine.go`'s loops, which still call `Matchable` a node at
+a time and so pay a stat each rather than a read; a node file rewritten
+in place by hand, which a dispatch in a fast view would not notice until
+the next change to the directory.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

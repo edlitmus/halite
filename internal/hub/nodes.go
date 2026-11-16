@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
@@ -66,6 +68,58 @@ type NodeCache struct {
 	// before a match on them is annotated.
 	StaleAfter time.Duration
 	Now        func() time.Time
+
+	// memo is what Matchable has read, so that a dispatch does not read
+	// and decode every node's file again. See NodeView.
+	memo nodeMemo
+	// reads counts node files Matchable has read, for the tests that
+	// show it does not read them again.
+	reads atomic.Int64
+	// margin is how long after a file's mtime it must have been read
+	// for what was read to be trusted again. nodeMemoMargin, except in
+	// the tests that change it to show what it is for.
+	margin time.Duration
+}
+
+// nodeMemoMargin is how far behind the clock a file's mtime must be for
+// what was read from it to be used again, and the directory's mtime for
+// a whole dispatch to skip looking at the files. A timestamp is coarse:
+// a few milliseconds on Linux, whole seconds on some filesystems. A
+// write in the same tick as the mtime a read saw leaves that mtime as it
+// was, and trusting the read would hide the write. The key store has
+// the same margin for the same reason (keystore.listCacheMargin,
+// DIVERGENCE 5.669).
+const nodeMemoMargin = 2 * time.Second
+
+// nodeMemo is what has been read from the node cache.
+type nodeMemo struct {
+	mu      sync.Mutex
+	entries map[string]*nodeEntry
+	// dirMtime and dirOK: when the directory's mtime is still dirMtime
+	// and dirOK is set, every entry was checked against its file since
+	// the directory last changed, and none needs looking at again.
+	dirMtime time.Time
+	dirOK    bool
+	// gen counts the times a dispatch made dirOK true. An entry from a
+	// view that began before the last of them was read against an
+	// older directory, and is not stored. See NodeView.Close.
+	gen uint64
+}
+
+// nodeEntry is one node's file as it was read.
+type nodeEntry struct {
+	mtime time.Time
+	size  int64
+	// solid is that the file was read nodeMemoMargin or more after its
+	// mtime, so a later write would carry a later one. An entry that is
+	// not solid is read again rather than trusted.
+	solid    bool
+	grains   *value.Map
+	lastSeen time.Time
+	// err is that the file would not decode: an unreadable entry, which
+	// resolve skips and reports. It is kept so as not to decode it again,
+	// and is never mistaken for good data.
+	err error
 }
 
 // OpenNodeCache prepares the store.
@@ -142,10 +196,18 @@ func (c *NodeCache) Get(nodeID string) (*NodeData, error) {
 	}
 	var data NodeData
 	if err := json.Unmarshal(raw, &data); err != nil {
-		return nil, fmt.Errorf("the node data for %s is not readable: %w", nodeID, err)
+		return nil, &nodeDecodeError{fmt.Errorf("the node data for %s is not readable: %w", nodeID, err)}
 	}
 	return &data, nil
 }
+
+// nodeDecodeError is a node's file that was read and would not decode,
+// as against one that could not be read. NodeView keeps the first and
+// not the second.
+type nodeDecodeError struct{ err error }
+
+func (e *nodeDecodeError) Error() string { return e.err.Error() }
+func (e *nodeDecodeError) Unwrap() error { return e.err }
 
 // Delete forgets a node, for one that has been removed from the estate.
 func (c *NodeCache) Delete(nodeID string) error {
@@ -171,32 +233,205 @@ func (c *NodeCache) Delete(nodeID string) error {
 // to honour `-I` or `-J` installs a loader, as Server.resolve does
 // through targetPillar; one that does not gets a pillar target that
 // matches nothing and a `not I@...` that matches everything.
+//
+// It goes through a NodeView of its own. A caller that asks for many
+// nodes at once, as resolve does for every dispatch, should open one
+// view for all of them, which is what saves the reading.
 func (c *NodeCache) Matchable(nodeID string) (target.Node, error) {
+	return c.View().Matchable(nodeID)
+}
+
+// NodeView is one look at the node cache, for one dispatch.
+//
+// resolve evaluates a target against every targetable node, and every
+// node's file used to be read and decoded for every job: a few thousand
+// reads per dispatch, even for a target that names one node by its ID.
+// A reaction that dispatched a job took 0.1 to 0.5 seconds on a hub of
+// 8,000 nodes, nearly all of it here (DIVERGENCE 5.670).
+//
+// A view keeps what it reads in the cache's memo and uses it again:
+//
+//   - When the directory's mtime has not changed since a view checked
+//     every entry (dirOK), a node's entry is used without looking at its
+//     file at all. Every write to the cache changes the directory: Put
+//     writes a new file beside the old one and renames it over, and
+//     Delete removes it.
+//   - When it has changed, each node's file is looked at (a stat), and
+//     read and decoded again only when its mtime or size is not the one
+//     the entry was read at. A busy estate, whose nodes connect and push
+//     grains all the time, changes the directory constantly; this is
+//     what it pays.
+//
+// An entry is trusted only when its file was read nodeMemoMargin after
+// its mtime (solid), and the directory skipped only when it was looked
+// at that long after its mtime, so that a write in the same timestamp
+// tick is not hidden. A file that would not decode is kept as such and
+// skipped by resolve exactly as before; one that could not be read at
+// all is not kept, and is tried again next time.
+type NodeView struct {
+	c        *NodeCache
+	fast     bool
+	ok       bool
+	dirMtime time.Time
+	started  time.Time
+	gen      uint64
+	seen     map[string]bool
+}
+
+// View opens a view. Close it when the dispatch has looked at every
+// node, so that the next can skip the files.
+func (c *NodeCache) View() *NodeView {
+	v := &NodeView{c: c, started: time.Now(), seen: map[string]bool{}}
+	if c.dir == "" {
+		return v
+	}
+	info, err := os.Stat(c.dir)
+	if err != nil {
+		return v
+	}
+	v.ok, v.dirMtime = true, info.ModTime()
+	c.memo.mu.Lock()
+	v.gen = c.memo.gen
+	v.fast = c.memo.dirOK && c.memo.dirMtime.Equal(v.dirMtime)
+	c.memo.mu.Unlock()
+	return v
+}
+
+func (c *NodeCache) memoMargin() time.Duration {
+	if c.margin != 0 {
+		return c.margin
+	}
+	return nodeMemoMargin
+}
+
+// Matchable is NodeCache.Matchable, through this view.
+func (v *NodeView) Matchable(nodeID string) (target.Node, error) {
+	c := v.c
 	n := target.Node{ID: nodeID, Grains: value.NewMap(0), Pillar: value.NewMap(0)}
-	data, err := c.Get(nodeID)
+	path, err := c.path(nodeID)
 	// A node the hub holds nothing about still matches on its own ID,
 	// and so does every node when the hub has no cache at all. Both are
 	// "no grains to match on" rather than a failure: SPEC 8.2's ID
 	// matching does not depend on a node having connected.
-	if errors.Is(err, errNoNodeCache) || errors.Is(err, ErrUnknownNode) {
+	if errors.Is(err, errNoNodeCache) {
 		return n, nil
 	}
 	if err != nil {
 		return n, err
 	}
-	if len(data.Grains) > 0 {
-		decoded, err := value.DecodeJSON(data.Grains)
-		if err != nil {
-			return n, fmt.Errorf("the cached grains for %s are not readable: %w", nodeID, err)
-		}
-		if m, ok := decoded.(*value.Map); ok {
-			n.Grains = m
+	v.seen[nodeID] = true
+
+	c.memo.mu.Lock()
+	e := c.memo.entries[nodeID]
+	c.memo.mu.Unlock()
+	if v.fast && e != nil && e.solid {
+		return v.from(n, nodeID, e)
+	}
+	info, statErr := os.Stat(path)
+	if errors.Is(statErr, fs.ErrNotExist) {
+		c.memo.mu.Lock()
+		delete(c.memo.entries, nodeID)
+		c.memo.mu.Unlock()
+		return n, nil
+	}
+	if statErr == nil && e != nil && e.solid && e.mtime.Equal(info.ModTime()) && e.size == info.Size() {
+		return v.from(n, nodeID, e)
+	}
+
+	readAt := time.Now()
+	c.reads.Add(1)
+	data, err := c.Get(nodeID)
+	if errors.Is(err, ErrUnknownNode) {
+		return n, nil
+	}
+	var decodeErr *nodeDecodeError
+	if err != nil && !errors.As(err, &decodeErr) {
+		// Not read at all: permissions, say. Not kept, so that putting
+		// it right is seen at once rather than at the next write.
+		return n, err
+	}
+	fresh := &nodeEntry{err: err}
+	if statErr == nil {
+		fresh.mtime, fresh.size = info.ModTime(), info.Size()
+		fresh.solid = readAt.Sub(info.ModTime()) >= c.memoMargin()
+	}
+	if err == nil {
+		fresh.lastSeen = data.LastSeen
+		fresh.grains = value.NewMap(0)
+		if len(data.Grains) > 0 {
+			decoded, derr := value.DecodeJSON(data.Grains)
+			if derr != nil {
+				fresh.err = fmt.Errorf("the cached grains for %s are not readable: %w", nodeID, derr)
+			} else if m, ok := decoded.(*value.Map); ok {
+				fresh.grains = m
+			}
 		}
 	}
-	if c.StaleAfter > 0 && !data.LastSeen.IsZero() && c.now().Sub(data.LastSeen) > c.StaleAfter {
+	if statErr == nil {
+		v.store(nodeID, fresh)
+	}
+	return v.from(n, nodeID, fresh)
+}
+
+// store keeps an entry, unless the memo already holds one read at a
+// later mtime, or another view has made the directory trusted since
+// this one began: either way this entry may describe a file that has
+// since been replaced, and in a fast view it would not be looked at
+// again.
+func (v *NodeView) store(nodeID string, e *nodeEntry) {
+	m := &v.c.memo
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.gen != v.gen {
+		return
+	}
+	if old := m.entries[nodeID]; old != nil && old.mtime.After(e.mtime) {
+		return
+	}
+	if m.entries == nil {
+		m.entries = map[string]*nodeEntry{}
+	}
+	m.entries[nodeID] = e
+}
+
+// from answers with an entry. The grains are shared between views and
+// dispatches; nothing that matches a target writes to them.
+func (v *NodeView) from(n target.Node, nodeID string, e *nodeEntry) (target.Node, error) {
+	if e.err != nil {
+		return n, e.err
+	}
+	n.Grains = e.grains
+	c := v.c
+	if c.StaleAfter > 0 && !e.lastSeen.IsZero() && c.now().Sub(e.lastSeen) > c.StaleAfter {
 		n.GrainsStale = true
 	}
 	return n, nil
+}
+
+// Close ends a view that looked at every node a dispatch could match.
+// When the directory had changed, every entry this view did not look at
+// is dropped, since nothing checked it against its file, and the
+// directory is marked trusted at the mtime this view saw -- if the view
+// began nodeMemoMargin after it, and no other view did the same in the
+// meantime.
+func (v *NodeView) Close() {
+	if !v.ok || v.fast {
+		return
+	}
+	m := &v.c.memo
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.gen != v.gen {
+		return
+	}
+	for id := range m.entries {
+		if !v.seen[id] {
+			delete(m.entries, id)
+		}
+	}
+	m.dirMtime = v.dirMtime
+	m.dirOK = v.started.Sub(v.dirMtime) >= v.c.memoMargin()
+	m.gen++
 }
 
 // Known lists every node the hub has data for, in ID order.

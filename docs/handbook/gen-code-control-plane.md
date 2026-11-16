@@ -123,6 +123,7 @@ The rule the whole package follows is that a node's identity comes from the cert
 - `NewServingCert` (func): NewServingCert serves pair until Store replaces it.
 - `NodeCache` (type): NodeCache is the store of node data.
 - `NodeData` (type): NodeData is what the hub remembers about a node between connections: the grains it reported and when.
+- `NodeView` (type): NodeView is one look at the node cache, for one dispatch.
 - `OpenAnchorStore` (func): OpenAnchorStore prepares the store's directory.
 - `OpenMineStore` (func): OpenMineStore prepares the store.
 - `OpenNodeCache` (func): OpenNodeCache prepares the store.
