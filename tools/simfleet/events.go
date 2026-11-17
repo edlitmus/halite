@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"sort"
@@ -131,6 +132,11 @@ type eventsResult struct {
 	ReactorFailures float64 `json:"reactor_failures"`
 	NodeRateDropped float64 `json:"node_rate_dropped"`
 	MaxQueueDepth   float64 `json:"max_queue_depth"`
+	// WarmSeconds is how long connecting every node took, before the
+	// schedule started; Handshakes is how many TLS handshakes posts
+	// started during it, which warming should make none. See warm.
+	WarmSeconds float64 `json:"warm_seconds"`
+	Handshakes  int64   `json:"handshakes_during_run"`
 	// DrainSeconds is how long after the last post the queue took to
 	// empty; Drained is false when it had not within -drain-timeout.
 	DrainSeconds float64  `json:"drain_seconds"`
@@ -185,12 +191,18 @@ func eventsCmd(args []string) error {
 		return err
 	}
 	ctx := context.Background()
+	warmStart := time.Now()
+	if err := warm(ctx, clients, *concurrency); err != nil {
+		return err
+	}
+	warmed := time.Since(warmStart)
 	before, err := scrape(ctx, op)
 	if err != nil {
 		return fmt.Errorf("reading the hub's metrics before the run: %w", err)
 	}
 
-	res := eventsResult{Reaction: *reaction, Nodes: *n, Rate: *rate, Seconds: duration.Seconds(), Concurrency: *concurrency}
+	res := eventsResult{Reaction: *reaction, Nodes: *n, Rate: *rate, Seconds: duration.Seconds(), Concurrency: *concurrency,
+		WarmSeconds: warmed.Seconds()}
 	r := postEvents(ctx, clients, tag, *rate, *duration, *concurrency, func() (float64, error) {
 		m, err := scrape(ctx, op)
 		return m["halite_reactor_queue_depth"], err
@@ -201,6 +213,7 @@ func eventsCmd(args []string) error {
 	res.AcceptedPerSecond = float64(res.Accepted) / duration.Seconds()
 	res.SlowestSecond = r.slowestSecond()
 	res.MaxQueueDepth = r.maxQueue
+	res.Handshakes = r.handshakes.Load()
 	res.Errors = r.errs
 
 	// Wait for the reactor to finish what it was given: every accepted
@@ -240,6 +253,7 @@ func eventsCmd(args []string) error {
 type posting struct {
 	offered, notOffered           int64
 	accepted, rateLimited, failed atomic.Int64
+	handshakes                    atomic.Int64
 	mu                            sync.Mutex
 	lat                           []time.Duration
 	perSecond                     []atomic.Int64
@@ -268,6 +282,51 @@ func (p *posting) slowestSecond() int64 {
 	return least
 }
 
+// warm connects every node to the hub before the schedule starts, with
+// one health request each through the node's own client, so that the
+// connection, TLS handshake and all, is open and idle in that client's
+// pool when the first event is due. The client speaks HTTP/2, so that one
+// connection carries all of the node's posts, and the hub keeps an idle
+// one for transport.IdleStreamTimeout.
+//
+// Without it, each node's first post paid its handshake inside the
+// schedule. On an emulated FreeBSD CI runner four of those took about
+// 0.8 s, every poster was busy meanwhile, and a quarter of a 40 a second
+// run's events were not offered (DIVERGENCE 5.673); on AWS, 256 posters
+// opening 8,000 connections fell behind the same way (5.668.1). A real
+// node posting an event is already connected, so a handshake in the
+// schedule was measuring the harness starting, not the hub.
+func warm(ctx context.Context, clients []*transport.Client, concurrency int) error {
+	work := make(chan *transport.Client)
+	errs := make(chan error, concurrency)
+	var wg sync.WaitGroup
+	for range concurrency {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for c := range work {
+				if _, err := c.Health(ctx); err != nil {
+					select {
+					case errs <- err:
+					default:
+					}
+				}
+			}
+		}()
+	}
+	for _, c := range clients {
+		work <- c
+	}
+	close(work)
+	wg.Wait()
+	select {
+	case err := <-errs:
+		return fmt.Errorf("connecting the nodes before the run: %w", err)
+	default:
+		return nil
+	}
+}
+
 // postEvents offers rate events a second for d, open loop: the schedule
 // does not wait for the hub. Each tick hands the events due to a pool of
 // posters; an event due while every poster is busy is counted as not
@@ -283,6 +342,11 @@ func postEvents(ctx context.Context, clients []*transport.Client, tag string, ra
 		seq  int64
 	}
 	work := make(chan ev, concurrency)
+	// Every TLS handshake a post starts is counted, so that a run says
+	// whether warm did its job rather than leaving it to be assumed.
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		TLSHandshakeStart: func() { p.handshakes.Add(1) },
+	})
 	start := time.Now()
 	var wg sync.WaitGroup
 	for range concurrency {
@@ -467,6 +531,7 @@ func (r eventsResult) print(w io.Writer) {
 	fmt.Fprintf(w, "  accepted %d, %.0f a second, slowest whole second %d; rate limited %d; failed %d\n",
 		r.Accepted, r.AcceptedPerSecond, r.SlowestSecond, r.RateLimited, r.Failed)
 	fmt.Fprintf(w, "  post latency p50 %s, p95 %s, last %s\n", secs(r.Latency.P50), secs(r.Latency.P95), secs(r.Latency.Last))
+	fmt.Fprintf(w, "  nodes connected in %s before the schedule; TLS handshakes during it %d\n", secs(r.WarmSeconds), r.Handshakes)
 	fmt.Fprintf(w, "  hub: published %.0f, reacted %.0f, dropped from the queue %.0f, reactions failed %.0f, refused by node_event_rate %.0f\n",
 		r.Published, r.Reacted, r.ReactorDropped, r.ReactorFailures, r.NodeRateDropped)
 	drained := fmt.Sprintf("drained %s after the last post", secs(r.DrainSeconds))
