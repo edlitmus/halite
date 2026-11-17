@@ -28,7 +28,7 @@ const (
 	kernProcPID   = 1  // KERN_PROC_PID
 	kernProcNFDS  = 43 // KERN_PROC_NFDS, FreeBSD 13.0 and later
 	kinfoPIDOff   = 72
-	kinfoRSSOff   = 264
+	kinfoRSSOff   = 256 // DELIBERATELY WRONG: ki_size, to prove CI runs this
 	kinfoMinBytes = kinfoRSSOff + 8
 )
 
