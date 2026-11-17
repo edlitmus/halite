@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"fmt"
 	"math"
 	"net"
 	"net/http"
@@ -60,9 +61,13 @@ import (
 // through keystore.Authority.TokenAdmits, whether the request's token
 // would spend for the node its CSR names, from this address, now; and
 // if it would, and a use of it is free to hold (hold), the request goes
-// in uncharged. If it then does not issue -- it lost the race for the
-// token's last use, or its name is held by another key -- it is charged
-// once that is known (charge).
+// in uncharged. If its token then does not spend after all -- another
+// request took the last use in the meantime -- it is charged inside the
+// key store, before it can write a pending record, and is answered 429
+// and writes nothing if the source is over its budget
+// (keystore.Request.Admit; DIVERGENCE 5.672). If it is refused without
+// a record -- its name is held by another key -- it is charged once
+// that is known (charge).
 //
 // The alternatives, and why each is wrong:
 //
@@ -75,13 +80,21 @@ import (
 //   - a larger burst, or a refund that comes sooner: either moves the
 //     concurrency at which a bootstrap is refused without removing it,
 //     and a larger burst is room for a flood too.
-//   - exempt a request whose token would spend, without hold: a token
-//     with one use left, sent by a thousand requests at once, passes the
-//     check a thousand times and spends once, and the rest each leave a
-//     pending record nobody charged for. hold bounds the requests let
-//     through uncharged on one token by the uses it has left, which the
-//     operator chose; the rest are charged on entry like any other.
-//     TestAContendedTokenCannotFillPendingUncharged is that case.
+//   - exempt a request whose token would spend, and charge the ones
+//     that lose only once Enroll has returned: a token with one use
+//     left, sent by a thousand requests at once, passes the check a
+//     thousand times and spends once, and the rest each write a pending
+//     record before anything is charged for it. 5.658 answered that with
+//     hold alone, which bounds the requests let through uncharged on one
+//     token by the uses it has left. It narrowed the window and did not
+//     close it: the uses left are read before hold is asked and may be
+//     stale by then, and a charged request carrying the same token can
+//     spend a use a holder counted on. Either way a holder reached the
+//     key store with a spent token, and one Windows CI run left five
+//     pending against a burst of four (5.672). So the charge is taken
+//     inside the key store, in the same critical section as the record.
+//     TestAContendedTokenCannotFillPendingUncharged is the storm and
+//     TestALostTokenIsChargedBeforeItRecords each window, forced.
 //
 // Deciding whether a token would spend needs the body, so the body is
 // now read before the budget is asked. A source over its budget used to
@@ -222,15 +235,21 @@ func (l *enrollLimit) charge(source string, now time.Time, rate float64) {
 // once Enroll has returned, by which time a use that was spent is in
 // the token's own count.
 //
-// This is what makes the exemption safe. Without it, a token with one
-// use left sent by a thousand requests at once passes TokenAdmits a
-// thousand times, spends once, and the rest -- a token that does not
-// spend still records the request for an operator -- each leave a
-// pending record nobody charged for, which is the flood DIVERGENCE 5.398
-// closed, reopened for anybody holding a nearly spent token. With it,
-// the requests let through uncharged on one token never outnumber its
-// uses, which the operator chose when minting it; the rest are charged
-// on entry like any other.
+// It bounds how much work a nearly spent token can bring in uncharged:
+// without it, a token with one use left sent by a thousand requests at
+// once passes TokenAdmits a thousand times and all thousand reach the
+// key store before any is charged. With it, the requests let through on
+// one token at once do not outnumber the uses TokenAdmits last read,
+// and the rest are charged on entry like any other.
+//
+// It is not what keeps the pending records within the limit, and 5.658
+// said it was. left is read before hold is asked, so it can be stale by
+// then, and a request charged on entry that carries the same token
+// spends a use like any other, including one a holder was counting on.
+// Either way a holder reaches the key store with a spent token. What
+// stops it writing a record nobody charged for is the charge taken in
+// the key store before the record (keystore.Request.Admit; DIVERGENCE
+// 5.672).
 func (l *enrollLimit) hold(tokenID string, left int) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -239,6 +258,16 @@ func (l *enrollLimit) hold(tokenID string, left int) bool {
 	}
 	l.held[tokenID]++
 	return true
+}
+
+// enrollWait is what keystore.Request.Admit returns for an exempt
+// request that would write a pending record from a source over its
+// budget: the key store hands it back from Enroll unwritten, and the
+// hub answers 429 with wait as Retry-After.
+type enrollWait struct{ wait time.Duration }
+
+func (e *enrollWait) Error() string {
+	return fmt.Sprintf("this address is over its enrollment budget; try again in %s", e.wait)
 }
 
 func (l *enrollLimit) unhold(tokenID string) {

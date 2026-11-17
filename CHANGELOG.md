@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A burst of enrolment requests on a nearly spent bootstrap token can no longer leave more pending records than `enroll_source_burst` allows.** A request let in uncharged because its token would spend, which then lost the token's last use to another request, was charged only after it had written its pending record, so one address could leave one more record per such request than its burst. It is now charged before the record is written, and a source over its budget is answered 429 and leaves nothing. A token-mode bootstrap is still not metered. DIVERGENCE 5.672.
+
 - **A hub no longer copies every node's key record to dispatch a job.** Finding the nodes a job could match copied each enrolled node's record to read whether it was accepted. With 8,000 nodes that was 2.1 MB and 8,000 allocations for every job. The key store now gives the hub the accepted node IDs directly, at about a tenth of the cost. Which nodes a job can match is unchanged. DIVERGENCE 5.671.
 
 - **`simfleet events` no longer prints NOT MET for a run that met the reactor row at a higher rate.** Above 5,000 events a second, the verdict failed any run in which the harness could not offer every event, so runs at 10,000 and 20,000 a second that met the row were reported as not meeting it. It now judges the slowest second against 5,000, and a NOT MET names each condition that failed. DIVERGENCE 5.668.2.

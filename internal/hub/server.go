@@ -44,6 +44,15 @@ type Server struct {
 	EnrollSourceBurst int
 	enrollLimitOnce   sync.Once
 	enrollLimit       *enrollLimit
+	// enrollStep, when set, runs at two points in an enrollment whose
+	// token TokenAdmits passed: "admitted", after TokenAdmits has said
+	// how many uses are left and before hold is asked, and "held", after
+	// hold and before the key store sees the request. They are the two
+	// windows DIVERGENCE 5.672 is about, and this lets a test stop one
+	// request in either while others go past it, rather than hoping a
+	// storm finds them -- as Store.between does for 5.323. Nil in
+	// production.
+	enrollStep func(step string)
 
 	// NodeEventRate and NodeEventBurst bound the event data one node may
 	// post, in bytes a second and bytes at once; zero is the default.
@@ -409,6 +418,13 @@ func (s *Server) operator(next func(http.ResponseWriter, *http.Request, string))
 	}
 }
 
+// atEnrollStep runs the test hook enrollStep, if one is set.
+func (s *Server) atEnrollStep(step string) {
+	if s.enrollStep != nil {
+		s.enrollStep(step)
+	}
+}
+
 // enroll is SPEC 7.3. The request arrives without a client certificate,
 // because the whole purpose of it is to get one.
 //
@@ -426,17 +442,20 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	rate := s.enrollSourceRate()
 	// Counted rather than logged, as the event limit is, because a line
 	// per refusal would move the flood into the hub's log.
-	limited := func() bool {
-		wait := s.enrollLimit.admit(source, s.now(), rate, s.enrollSourceBurst())
-		if wait == 0 {
-			return false
-		}
+	refuse := func(wait time.Duration) {
 		s.countEnrollment("rate_limited")
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)))
 		transport.WriteError(w, http.StatusTooManyRequests, transport.CodeRateLimited,
 			fmt.Errorf("this address has made more enrollment requests than enroll_source_rate allows "+
 				"(%d at once, then one every %s); try again in %s", s.enrollSourceBurst(),
 				time.Duration(float64(time.Second)/rate).Round(time.Second), wait))
+	}
+	limited := func() bool {
+		wait := s.enrollLimit.admit(source, s.now(), rate, s.enrollSourceBurst())
+		if wait == 0 {
+			return false
+		}
+		refuse(wait)
 		return true
 	}
 
@@ -473,27 +492,56 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	// before the key store sees it, so that a burst from one address
 	// cannot all pass the check before any of it is counted.
 	exempt := false
-	if tokenID, left, ok := s.Authority.TokenAdmits(kreq); ok && s.enrollLimit.hold(tokenID, left) {
-		exempt = true
-		defer s.enrollLimit.unhold(tokenID)
+	if tokenID, left, ok := s.Authority.TokenAdmits(kreq); ok {
+		s.atEnrollStep("admitted")
+		if s.enrollLimit.hold(tokenID, left) {
+			exempt = true
+			defer s.enrollLimit.unhold(tokenID)
+			s.atEnrollStep("held")
+		}
 	}
 	if !exempt && limited() {
 		return
 	}
+	// An exempt request that is about to write a pending record has not
+	// spent its token after all, and is charged before the record is
+	// written, under the key store's lock, or told to wait and writes
+	// nothing. hold does not make this unnecessary: it reads a count of
+	// uses left that may be stale by the time it is asked, and a charged
+	// request carrying the same token can spend a use a holder was
+	// counting on. Charging once Enroll had returned left the record
+	// written first, and a burst of these left more pending than the
+	// limit allows (DIVERGENCE 5.672).
+	charged := false
+	var notAdmitted *enrollWait
+	if exempt {
+		kreq.Admit = func() error {
+			if wait := s.enrollLimit.admit(source, s.now(), rate, s.enrollSourceBurst()); wait > 0 {
+				notAdmitted = &enrollWait{wait}
+				return notAdmitted
+			}
+			charged = true
+			return nil
+		}
+	}
 
 	res, err := s.Authority.Enroll(kreq)
+	if notAdmitted != nil && errors.Is(err, notAdmitted) {
+		refuse(notAdmitted.wait)
+		return
+	}
 
 	// The two outcomes an honest fleet repeats are not metered: a
 	// certificate issued, and a pending answer for a record that was
 	// already there. A charged request is given its charge back for
-	// those; an exempt one is charged for anything else -- a token that
-	// lost the race for its last use, a name held by another key -- once
-	// it is known. See enrollLimit.
+	// those; an exempt one is charged for anything else -- a name held
+	// by another key, say -- once it is known, unless Admit charged it
+	// already, before the pending record it wrote. See enrollLimit.
 	free := err == nil || (errors.Is(err, keystore.ErrPending) && res != nil && !res.Recorded)
 	switch {
 	case free && !exempt:
 		s.enrollLimit.refund(source, s.now(), rate)
-	case !free && exempt:
+	case !free && exempt && !charged:
 		s.enrollLimit.charge(source, s.now(), rate)
 	}
 

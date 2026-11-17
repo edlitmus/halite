@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -305,5 +306,110 @@ func TestAContendedTokenCannotFillPendingUncharged(t *testing.T) {
 	}
 	if pending > 4 {
 		t.Errorf("%d pending records from one address, and its burst is 4", pending)
+	}
+}
+
+// pendingCount is how many pending records the lab's key store holds.
+func pendingCount(t *testing.T, l *lab) int {
+	t.Helper()
+	recs, err := l.server.Authority.Store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := 0
+	for _, rec := range recs {
+		if rec.State == keystore.Pending {
+			pending++
+		}
+	}
+	return pending
+}
+
+// **A request let through uncharged on its token, that then loses the
+// token, is charged before it can leave a pending record** (DIVERGENCE
+// 5.672). The test above sends sixteen at once and counts what is left,
+// which finds the windows only when the scheduler happens to open them:
+// it passed forty times on a Mac and failed once on Windows CI, with
+// five pending against a burst of four. Here one request is stopped in
+// each window in turn while others go past it.
+//
+//   - "admitted": the request has read the token's uses left (two) and
+//     not yet asked hold. Two others spend both uses and leave. hold
+//     counts requests in flight, not uses spent, so it then lets the
+//     first through against the two it read.
+//   - "held": the request holds one of two uses. A second takes the
+//     other; a third, refused a hold, is charged on entry -- and spends
+//     the use the first was holding, because a charged request carrying
+//     the token spends it like any other.
+//
+// Either way the first request reaches the key store uncharged with a
+// spent token, and a token that does not spend still records the
+// request for an operator. Before the fix it was charged only once that
+// record was written, so four requests with no token, which the burst
+// of four allows, plus this one made five pending. It must instead be
+// told to wait, and write nothing.
+func TestALostTokenIsChargedBeforeItRecords(t *testing.T) {
+	for _, step := range []string{"admitted", "held"} {
+		t.Run(step, func(t *testing.T) {
+			arrived, release := make(chan struct{}), make(chan struct{})
+			var first, released sync.Once
+			l := newLabWith(t, func(s *Server) {
+				s.Authority.Mode = keystore.ModeToken
+				s.EnrollSourceBurst = 4
+				s.EnrollSourceRate = 0.001
+				s.enrollStep = func(got string) {
+					if got != step {
+						return
+					}
+					stop := false
+					first.Do(func() { stop = true })
+					if stop {
+						close(arrived)
+						<-release
+					}
+				}
+			})
+			// Let the stopped request go however the test ends, so the
+			// lab's server can shut down.
+			defer released.Do(func() { close(release) })
+			_, tok, err := l.server.Authority.Store.MintToken(keystore.TokenOptions{TTL: time.Hour, MaxUses: 2}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			client, key := l.node(t)
+			stopped := make(chan error, 1)
+			go func() {
+				_, err := client.Enroll(context.Background(), key, "stopped.example", tok)
+				stopped <- err
+			}()
+			<-arrived
+
+			// Two others spend the token's two uses, one after the other.
+			for _, name := range []string{"b.example", "c.example"} {
+				c, k := l.node(t)
+				if _, err := c.Enroll(context.Background(), k, name, tok); err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+			}
+			// Four with no token, which the burst allows.
+			for i := range 4 {
+				if err := l.ask(t, fmt.Sprintf("manual%d.example", i)); !errors.Is(err, transport.ErrPending) {
+					t.Fatalf("request %d with no token: %v", i, err)
+				}
+			}
+
+			released.Do(func() { close(release) })
+			err = <-stopped
+			if _, held := transport.RateLimited(err); !held {
+				t.Errorf("the request whose token was spent while it waited: %v; want 429", err)
+			}
+			if n := pendingCount(t, l); n != 4 {
+				t.Errorf("%d pending records from one address, and its burst is 4", n)
+			}
+			if _, err := l.server.Authority.Store.Get("stopped.example"); !errors.Is(err, keystore.ErrNotFound) {
+				t.Errorf("the request told to wait left a record: %v", err)
+			}
+		})
 	}
 }
