@@ -61,7 +61,7 @@ worked around before the step that depends on it.
 | L4 | **Fixed (5.643):** both use `nodelink.PostReturn`. **Return retry does not match the node.** A sim counts a failed return and gives up. `postReturns` in `halite-node` tries 5 times with a growing delay. Under overload, a real fleet adds load and simfleet removes it. | `answer` | Every step near saturation |
 | L5 | **Fixed (5.650):** `-batch`, `-batch-wait`, `-batch-timeout`. **No batch.** `run` sends no `Batch` field, although `transport.SubmitRequest` has `Batch`, `BatchWaitSeconds`, `BatchSafeLimit` and `BatchTimeoutSecs`. | `measure` | Batch step |
 | L6 | **Fixed (5.652):** `simfleet enroll-storm`. **No enrolment over the wire.** `setup` bypasses `/v1/enroll`. That path is what an enrolment storm stresses, with its per-source limit (32 at once, then one every 10 s) and `DefaultMaxPending` = 1,024 (`internal/keystore/authority.go`). | `setupCmd` | Enrolment storm |
-| L7 | **Hub memory only on the same host.** `-hub-pid` reads `ps -o rss=` locally. The hub registers no process or Go runtime metrics (no resident memory, goroutines or file descriptors in `/v1/metrics`), so a hub on another host must be sampled there. | `rss`, `internal/hub/metrics.go` | Every step |
+| L7 | **Hub memory only on the same host.** `-hub-pid` reads `ps -o rss=` locally. The hub registered no process or Go runtime metrics (no resident memory, goroutines or file descriptors in `/v1/metrics`), so a hub on another host had to be sampled there. **Since DIVERGENCE 5.675 it does** (`process_resident_memory_bytes`, `process_open_fds`, `go_threads` and others, on Linux and FreeBSD), but no scale run has used them yet, so H6 stays. | `rss`, `internal/hub/metrics.go` | Every step |
 | L8 | **Fixed (5.640):** `-connect-timeout`. **Connect wait is fixed at 5 minutes.** Below 1,000/s per driver it is too short for large fleets. | `runCmd` | Steps ≥ 20k |
 | L9 | **Fixed (5.640):** `-json`, and the drivers' files. **Output is prose only.** No machine-readable result to archive or merge across drivers. | `measure` | Every step |
 | L10 | **Fixed (5.641):** `halite-node` did the same, so the defect was the node's; both now keep one returns client per node. **One client per job, never closed.** Each job makes a new `transport.Client` (unless `-reuse-client`). The old one's idle connection stays open until `IdleConnTimeout` (90 s). Whether `halite-node`'s `hubClient` does the same has **not** been checked. That is a pair that must agree. | `connect` | Return volume, FDs |
@@ -291,7 +291,8 @@ Also worth doing, but not this plan: process and Go runtime metrics on
 the hub (`process_resident_memory_bytes`, `go_goroutines`,
 `process_open_fds`). They would make L7 and H6 unnecessary, and any
 operator would want them. They are a new metric family, and that is a
-SPEC 26.2 conversation.
+SPEC 26.2 conversation. **Done in DIVERGENCE 5.675**, as SPEC 26.2's
+Process family; H6 stays until a run has read them against it.
 
 ## 5. What to measure, and where
 
@@ -299,7 +300,7 @@ SPEC 26.2 conversation.
 |---|---|---|
 | **simfleet** | Connected count and time; received and returned p50, p95 and last; return errors; SPEC 30 MET or NOT MET | stdout written with `tee` to `/root/simfleet/runs/<step>/<host>.txt`, and `-json` once H8 exists. Copied back over `<port>` or SSM. |
 | **Hub `/v1/metrics`** | `halite_hub_nodes_connected`, `halite_hub_node_connect_total`, `halite_hub_node_disconnect_total{reason}`, `halite_jobs_dispatched_total`, `halite_job_returns_total`, `halite_jobs_missing_returns`, `halite_hub_request_duration_seconds{route}`, `halite_hub_requests_total{route,code}`, `halite_hub_enrollments_total{result}`, `halite_events_dropped_total`, `halite_event_subscriber_lag_seconds` | ~~Prometheus scrapes it directly.~~ **It cannot.** The hub refuses any TLS client that does not offer the `halite/1` ALPN (`transport.requireProtocol`), and step 0's curl was refused that way. Use `halite-hub metrics --hub <ip>:<port> --cert operator.crt --key operator.key --server-name <ip>` in a loop on the observer, writing exposition files. A Prometheus that needs live data would need a small ALPN-speaking proxy. That loop has **not** been run. |
-| **Grafana** | The panels in `contrib/examples/grafana-dashboard.json`: nodes connected, connects and disconnects, missing returns, dispatched, returns, enrolments, request duration by route | Only if the scrape above feeds a Prometheus. The dashboard has **no** hub-process panel, because the hub exports no such metric (L7). |
+| **Grafana** | The panels in `contrib/examples/grafana-dashboard.json`: nodes connected, connects and disconnects, missing returns, dispatched, returns, enrolments, request duration by route | Only if the scrape above feeds a Prometheus. The dashboard has **no** hub-process panel. The hub did not export such a metric until 5.675, and no panel has been added since. |
 | **Hub host** | RSS, FDs, threads, sockets, ENA allowance counters | H6 sampler, to `/root/simfleet/runs/<step>/hub-samples.tsv` |
 | **CloudWatch** | `CPUUtilization`, `NetworkIn`, `NetworkOut`, `NetworkPacketsIn` for the hub and drivers | Basic monitoring (5-minute, free) as an independent check of CPU and of the network. Detailed monitoring (1-minute) costs a few cents a run, and is worth turning on for step 3. Memory needs the CloudWatch agent. The plan does not install it, and gets memory from H6 instead. |
 | **Drivers** | CPU, RSS of simfleet, ephemeral ports used, `ss -s` | The H6 script, pointed at the simfleet PID |

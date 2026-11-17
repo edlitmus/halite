@@ -2633,9 +2633,15 @@ and generating it needs no client library; that is roughly 100 lines against `fm
 | Authorization | `halite_authz_decisions_total{result}`, `halite_auth_attempts_total{method,result}` |
 | Extensions | `halite_ext_invocations_total{name,result}`, `halite_ext_duration_seconds{name}`, `halite_ext_timeouts_total{name}` |
 | Build | `halite_build_info{version,commit,go_version,fips}` |
+| Process | `process_resident_memory_bytes{component}`, `process_open_fds{component}`, `process_max_fds{component}`, `go_goroutines{component}`, `go_threads{component}`, `go_memstats_sys_bytes{component}`, `go_memstats_heap_inuse_bytes{component}`, `go_memstats_heap_released_bytes{component}` |
 
 Every bounded queue and every drop path in this specification has a corresponding counter. That is
 the rule that makes the backpressure design auditable rather than aspirational.
+
+The Process family keeps the names Prometheus client libraries use, so that existing dashboards and
+alerts for Go services read it, with a `component` label because halite-api merges the hub's
+exposition into its own. A process family is exported only on a platform where it can be read; one
+that cannot be read is absent, not zero.
 
 ### 26.3 Tracing
 

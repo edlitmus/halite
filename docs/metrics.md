@@ -717,7 +717,9 @@ the highstate rc.d script — has no process for a scraper to reach.
 
 ## What is exposed
 
-All families are prefixed `halite_`. Which process records one decides
+Every family is prefixed `halite_` except the process and Go runtime
+ones under [Every process](#every-process), which keep the names every
+Prometheus client library gives them. Which process records one decides
 where you read it: the hub's and the API's arrive in the scrape of
 `halite-api`, and the node's arrive in a scrape of the nodes
 themselves, under whatever you call that job.
@@ -862,6 +864,38 @@ whether that is good news. `halite-hub metrics --filter` keeps the
 `# HELP` lines, which is how to tell a family that is quiet from one
 this build never registers.
 
+### Every process
+
+The hub, the API and a node with `metrics_listen` each expose these. The
+names are the standard ones, so a dashboard or alert written for any Go
+service reads them, with one difference: each series carries
+`component` (`hub`, `api` or `node`). halite-api merges the hub's
+exposition into its own, and without the label the two processes'
+series would collide and a scraper would reject the whole body.
+
+| Family | Type | Labels | What it says |
+|---|---|---|---|
+| `process_resident_memory_bytes` | gauge | `component` | Resident set size, the figure `ps -o rss=` prints (in KiB). SPEC 30's hub memory row is this number. Linux and FreeBSD (amd64, arm64) only. |
+| `process_open_fds` | gauge | `component` | Open file descriptors. A hub holds at least one per connected node; the 20,000-node scale run (issue 718) had 40,000 sockets open on the hub while each node's return connection was kept open. Linux, FreeBSD and macOS. |
+| `process_max_fds` | gauge | `component` | The soft `RLIMIT_NOFILE` the process runs with. The Go runtime changes its own limit at start, so this can differ from `ulimit -n` in the shell that started it: on macOS it was clamped from 1,048,576 to `kern.maxfilesperproc`, 184,320. Linux, FreeBSD and macOS. |
+| `go_goroutines` | gauge | `component` | Goroutines that exist now. Every platform. |
+| `go_threads` | gauge | `component` | OS threads the Go runtime has created. The runtime destroys a thread only when a goroutine exits locked to it, and nothing in halite locks one, so this is also the number alive. #715 was a hub that ran out of these. Every platform. |
+| `go_memstats_sys_bytes` | gauge | `component` | Memory the Go runtime has obtained from the OS, including what it has since given back. Every platform. |
+| `go_memstats_heap_inuse_bytes` | gauge | `component` | Heap in spans that hold objects. Every platform. |
+| `go_memstats_heap_released_bytes` | gauge | `component` | Heap returned to the OS: counted in `go_memstats_sys_bytes`, not resident. Every platform. |
+
+A platform with no reader for a `process_` family does not register it,
+rather than exporting 0: a hub at zero bytes on a graph is an
+observation nobody made. Windows exports only the `go_` families. Where
+a reader that worked once fails later, the series reads `NaN` for that
+scrape, which Prometheus stores as a gap.
+
+Resident memory against the Go figures says where memory went.
+`go_memstats_sys_bytes` less `go_memstats_heap_released_bytes` is about
+what the runtime holds; a resident set well above it is memory the Go
+runtime does not account for, and one well below it is memory obtained
+but not yet touched.
+
 ### Families that appear only when the feature runs
 
 Registered by the subsystem that owns them, because a gauge reading a
@@ -886,7 +920,7 @@ any hub with metrics on; they simply never move on one whose
 
 ### What SPEC 26.2 names and this build does not have
 
-One of the specification's thirty-two families is not registered, so an
+One of the specification's thirty-two `halite_` families is not registered, so an
 alert written from its table rather than from this one sits silent:
 `halite_pillar_cache_hits_total`. [DIVERGENCE 5.23](DIVERGENCE.md)
 records why: there is no pillar cache to count hits in. It waits on a

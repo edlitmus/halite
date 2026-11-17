@@ -107,6 +107,7 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 	r := metrics.NewRegistry()
 	m.registry = r
 	r.BuildInfo("node")
+	r.Process("node")
 
 	m.jobs = r.Counter("halite_node_jobs_total",
 		"Jobs this node ran, by function and outcome.", "fun", "result")

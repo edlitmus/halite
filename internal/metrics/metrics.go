@@ -88,7 +88,8 @@ type family struct {
 	read func() float64
 	// readEach is the same for a counter with one label whose values are
 	// a closed set, fixed when it is declared: each of fixed is a series,
-	// read by readEach at exposition time. See CounterFunc.
+	// read by readEach at exposition time. See CounterFunc, and
+	// GaugeFuncLabel, which is a gauge with one such series.
 	readEach func(value string) float64
 	fixed    []string
 }
@@ -243,6 +244,21 @@ func (r *Registry) GaugeFunc(name, help string, read func() float64) {
 	}
 	f.mu.Lock()
 	f.read = read
+	f.mu.Unlock()
+}
+
+// GaugeFuncLabel declares a gauge with one series, under one label with
+// one fixed value, read at exposition time. It is GaugeFunc for a value
+// that has to say whose it is: see Registry.Process, whose families are
+// merged with another component's by halite-api.
+func (r *Registry) GaugeFuncLabel(name, help, label, value string, read func() float64) {
+	f := r.register(name, help, gaugeKind, []string{label}, nil)
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	f.readEach = func(string) float64 { return read() }
+	f.fixed = []string{value}
 	f.mu.Unlock()
 }
 

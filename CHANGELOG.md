@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **The hub, the API and a node's metrics now include the process's memory, descriptors and threads.** New families: `process_resident_memory_bytes`, `process_open_fds`, `process_max_fds`, `go_goroutines`, `go_threads`, and three `go_memstats_*` memory gauges. They use the standard Prometheus names, with a `component` label. The resident set is exported on Linux and FreeBSD, and descriptors on Linux, FreeBSD and macOS. A platform that cannot read a family does not export it. Windows has only the `go_` families. DIVERGENCE 5.675.
+
 - **A bootstrap token no longer begins with a hyphen.** `halite-hub keys token create` printed bare base64, and about one token in 64 began with `-`, which `halite-node enroll --token SECRET` reads as a flag and refuses. Tokens now begin with `hbt_`, followed by the same 256 random bits, so they work after a space as well as after `=` or in a file. Tokens minted before this change still enrol. DIVERGENCE 5.674.
 
 - **A burst of enrolment requests on a nearly spent bootstrap token can no longer leave more pending records than `enroll_source_burst` allows.** A request let in uncharged because its token would spend, which then lost the token's last use to another request, was charged only after it had written its pending record, so one address could leave one more record per such request than its burst. It is now charged before the record is written, and a source over its budget is answered 429 and leaves nothing. A token-mode bootstrap is still not metered. DIVERGENCE 5.672.

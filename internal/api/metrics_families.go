@@ -50,6 +50,7 @@ func (s *Server) setupMetrics() {
 		return
 	}
 	r.BuildInfo("api")
+	r.Process("api")
 	s.metrics = &apiMetrics{
 		// SPEC 26.2 names `method` and `result`. The method is how the
 		// operator authenticated, so an estate moving off local

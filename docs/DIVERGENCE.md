@@ -45615,6 +45615,126 @@ The parser test exercises the argument path, and the keystore tests
 exercise enrolment, but not both in one run. Item 10's FreeBSD-host run
 of the rc script (chapter 31's "Not run") is still not done.
 
+### 5.675 The hub's memory, descriptors and threads could be read only from outside it (2026-11-17)
+
+Issue 718, item 5. SPEC 30's hub memory row is a resident-set figure,
+and #715 was a hub that ran out of threads. Neither could be read from
+`/v1/metrics`. The scale runs sampled the hub with a shell script on its
+host (`ps -o rss=`, `/proc/PID/fd`; plan H6 and L7), and an operator had
+nothing at all.
+
+**The change.** SPEC 26.2 gains a Process family. The hub, the API and a
+node with `metrics_listen` export:
+
+- `process_resident_memory_bytes`, `process_open_fds` and
+  `process_max_fds`;
+- `go_goroutines` and `go_threads`;
+- `go_memstats_sys_bytes`, `go_memstats_heap_inuse_bytes` and
+  `go_memstats_heap_released_bytes`.
+
+These are the Prometheus client libraries' names, so a dashboard written
+for any Go service reads them. Each series has a `component` label,
+because halite-api merges the hub's exposition into its own (`Merge`).
+Two unlabelled series of one name would be one series written twice,
+and a scraper rejects the whole body for that. No dependency was added.
+The Go figures come from `runtime/metrics`, not `ReadMemStats`, which
+stops the world.
+
+**How each platform reads them**, in `internal/metrics/process_*.go`:
+
+- **Linux:** `/proc/self/statm` and `/proc/self/fd`.
+- **FreeBSD (amd64, arm64):**
+  - The resident set is `sysctl kern.proc.pid` through `syscall`. The
+    vendored `golang.org/x/sys` has no `kinfo_proc` for FreeBSD.
+    `ki_rssize` is at offset 264 of `struct kinfo_proc` on LP64, from
+    `sys/sys/user.h` at releng/14.3. A wrong offset would not fail; it
+    would export another field. So each read checks `ki_structsize`
+    against the returned length and `ki_pid` against `getpid`, and
+    treats a mismatch as unreadable.
+  - Descriptors are `kern.proc.nfds` (`KERN_PROC_NFDS`, 43, in FreeBSD
+    13.0 and later). `/dev/fd` lists only 0 to 2 without fdescfs.
+- **macOS:** descriptors from `/dev/fd`. There is no resident set: it
+  needs `task_info` or `proc_pidinfo`, which this build cannot call
+  without cgo.
+- **Windows and the tier-3 systems:** the `go_` families only.
+
+A family a platform cannot read is not registered. Exporting it at 0
+would put a node at zero bytes on a graph, which nobody observed.
+
+**Two wrong assumptions, found by the tests:**
+
+- **Counting `/dev/fd` less one.** Listing a descriptor directory opens
+  descriptors, and the plan was to subtract the one that reads it. On
+  macOS 26 (arm64, Go 1.27.4) Go's directory read `dup()`s that
+  descriptor for `fdopendir`. A trace showed 0 to 2 open before, 0 to 4
+  while listing, and 0 to 2 after `Close`. So "less one" read 5 where
+  `fcntl(F_GETFD)` over 0 to 4095 found 4. The count now closes the
+  listing first, then keeps each listed number that still answers
+  `F_GETFD`. That is exact whatever Go's reader opens.
+- **`process_max_fds` is not what a child sees.** The first test
+  compared it with `sh -c 'ulimit -n'` and failed: 184,320 against
+  1,048,576. The Go runtime changes its own soft limit at start and
+  gives a child the original back. On this Mac it clamped 1,048,576 to
+  `kern.maxfilesperproc`. The help text had said "raised", and it now
+  says what the runtime did. The test compares with this process's own
+  limit: `/proc/self/limits` on Linux, `procstat -l` on FreeBSD. macOS
+  has no tool that reads another process's limit, so there it checks
+  presence only.
+
+**Demonstrated on this Mac (macOS 26, arm64):**
+
+- `TestOpenDescriptorsAgreeWithAProbe` passes. With the still-open
+  filter removed, it fails 6 against 4.
+- `TestOpenDescriptorsCountWhatIsOpened` sees exactly 16 more with 16
+  files open, and the same count after they close.
+- With both components labelled `hub`,
+  `TestProcessFamiliesMergeWithoutDuplicateSeries` fails on a duplicate
+  `go_goroutines{component="hub"}`.
+- `TestProcessFamiliesAreDocumented` reads the families out of the
+  exposition and requires each in `docs/metrics.md` and SPEC 26.2. With
+  one dropped from SPEC, it fails. The existing audits read only
+  `halite_` names, so without this test nothing would.
+- The resident-set test skips on macOS, and asserts the family is
+  absent.
+
+**Demonstrated in CI (PR 746).** CI's Linux and FreeBSD 15.1 (amd64)
+legs are the first to run the readers. There the tests compare:
+
+- the resident set with `ps -o rss=`, to within 10% after touching
+  64 MiB;
+- the descriptor count with the probe;
+- the limit with `/proc/self/limits` or `procstat -l`.
+
+A commit that made both resident-set readers report virtual size
+failed `TestResidentMemoryIsWhatPSReports` in exactly the four jobs
+that run a reader. It failed nowhere else, and no other test in those
+jobs failed:
+
+| Job | Broken reading | `ps -o rss=` |
+|---|---|---|
+| test (ubuntu-24.04) | 1,362,239,488 | 79,466,496 |
+| race (ubuntu-24.04) | 2,451,619,840 | 246,640,640 |
+| fips-test | 1,328,726,016 | 77,975,552 |
+| test (freebsd) | 5,576,662,712,320 | 79,409,152 |
+
+The FreeBSD figure is `ki_size`, in bytes, multiplied by the page size.
+`ki_size` is the field just before `ki_rssize`, where `sys/user.h`
+places it, so the offsets read the struct the kernel returned.
+
+CI runs without `-v`. So a pass cannot tell a run from a skip for the
+descriptor-probe and `procstat -l` tests, whose skips on those
+platforms are only "nothing to judge". The `procstat -l` parse was
+written without a captured sample, and it fails, not passes, if the
+format differs.
+
+**Not run here:**
+- beastie, for a native FreeBSD run: ssh failed with the ssh-agent
+  signing error recorded on 2026-11-06.
+- FreeBSD arm64, and any hub at scale.
+- No panel in `contrib/examples/grafana-dashboard.json`.
+- No scale run has read these. Plan H6's sampler stays until one has
+  checked the two against each other.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
