@@ -45407,6 +45407,89 @@ a time and so pay a stat each rather than a read; a node file rewritten
 in place by hand, which a dispatch in a fast view would not notice until
 the next change to the directory.
 
+### 5.672 A request exempt on its token was charged only after the pending record it left
+
+5.658 let a request whose bootstrap token would spend into the key
+store uncharged, and said that `hold` was what made that safe: the
+requests let through uncharged on one token "never outnumber its uses",
+so the ones that lose the race for the last use cannot fill the pending
+records 5.398 bounded. That was true of the requests in flight at any
+one moment, and the claim it was meant to support was about records.
+`TestAContendedTokenCannotFillPendingUncharged` failed on Windows CI on
+a PR that did not touch this path (run 44123240505): "5 pending records
+from one address, and its burst is 4". It had passed forty of forty
+times on a Mac.
+
+There were two windows, both read out of the code and then forced:
+
+- **The uses left were stale.** `TokenAdmits` reads `MaxUses - Uses`
+  without any lock, before `hold` is asked. A request reads two left;
+  two others hold, issue and let go; `hold` then sees none in flight and
+  lets the first through against the two it read.
+- **A charged request spends a held use.** A request refused a hold is
+  charged on entry, but it carries the same token and spends it like
+  any other, including the use a holder was counting on.
+
+Either way a holder reaches the key store with a spent token, and a
+token that does not spend still records the request for an operator.
+It was charged for that once `Enroll` had returned, which is after the
+record was written: four requests with no token, which a burst of four
+allows, plus that one made five.
+
+**Fixed** by charging it before the record rather than after.
+`keystore.Request` has an `Admit` callback, which `enroll` asks under
+the store's lock immediately before a token request whose token did not
+spend writes a pending record for a new name. The hub sets it only on a
+request it let in uncharged: it charges the source there, or, if the
+source is over its budget, returns an error that `Enroll` hands back
+with nothing written, and the hub answers 429 with a `Retry-After`, as
+it does for a request refused on entry. The charge and the record are
+now one decision, so no record is ever written that the limit did not
+admit, whatever `hold` read. A request let in on its token that is
+refused without a record (a name held by another key) is still charged
+once that is known, as before.
+
+`hold` stays, for a smaller job than 5.658 gave it: it bounds how many
+requests one nearly spent token brings into the key store uncharged at
+once. Its comment and `enrollLimit`'s no longer say it keeps the
+records within the limit.
+
+The alternative was to make `hold` exact: reserve uses so that holders
+plus uses spent never exceed `MaxUses`, read fresh under one lock. That
+closes the first window and not the second, because a request charged
+on entry is not a holder and spends anyway. Closing that too means the
+key store refusing to spend a use reserved for somebody else, which
+moves the hub's bookkeeping into the token store.
+
+**Shown** on darwin/arm64, go1.27.4, in process, by
+`TestALostTokenIsChargedBeforeItRecords` in
+`internal/hub/enroll_limit_test.go`. A test-only hook on the hub,
+`enrollStep`, stops one request in a named window -- after
+`TokenAdmits`, or after `hold` -- while others go past it, as
+`Store.between` does for 5.323, so the windows are opened every run
+rather than when a scheduler happens to. On a two-use token with a
+burst of four: stop one request, let two others spend both uses, send
+four with no token, release it. Before the fix, in both windows, the
+released request was refused and left a record, and five were pending
+-- the count the Windows run saw. After it, the request is answered 429
+and writes nothing, and four are pending. `internal/hub` and
+`internal/keystore` pass, and the enrolment tests pass under `-race`,
+including `TestConcurrentTokenEnrollmentsAreNotCharged`: sixteen token
+enrolments at once against a burst of four all issue, and the budget is
+untouched, so the bootstrap 5.658 is for is still not metered.
+
+**Broken on purpose,** each failing both subtests with five pending:
+the hub not setting `Admit`; the key store not asking it.
+
+**Not covered:** Windows, where the storm test failed, has not run the
+new test; it does not depend on the scheduler, which is the point of
+it. Not run against a real `halite-hub serve` or the lab. The work an
+exempt request does before it is refused -- a CSR parsed and the store
+locked -- is the same as before; a refusal without a record from a
+request let in on its token is still charged only afterwards, and so
+is not refused at the door however far over its budget the source is,
+which fills nothing but the hub's log.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -212,6 +212,21 @@ type Request struct {
 	Token string
 	// RemoteAddr is the peer address, for a token's source scope.
 	RemoteAddr string
+	// Admit, when set, is asked under the store's lock immediately
+	// before a token request whose token did not spend writes a pending
+	// record for a name not seen before. An error from it is returned
+	// from Enroll as it is, and nothing is written. It is not asked for
+	// a request with no token: the hub sets it only on a request it let
+	// in on the strength of one.
+	//
+	// It is how the hub charges a request it let in uncharged because
+	// its token would spend (DIVERGENCE 5.658), and that then did not
+	// spend: the token's last use went to another request between
+	// TokenAdmits and here. Charging it after Enroll returned left the
+	// record already written, so a burst of such requests left more
+	// pending records than the hub's per-source limit allows (5.672).
+	// Asked here, the charge and the record are one decision.
+	Admit func() error
 }
 
 // Result is what the hub answers with.
@@ -409,6 +424,11 @@ func (a *Authority) enroll(nodeID, fingerprint string, csr *x509.CertificateRequ
 		if isNew {
 			if err := a.roomForPending(); err != nil {
 				return nil, fmt.Errorf("%w; and %v", err, spendErr)
+			}
+			if req.Admit != nil {
+				if err := req.Admit(); err != nil {
+					return nil, err
+				}
 			}
 		}
 		if err := a.Store.put(rec); err != nil {
