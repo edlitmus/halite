@@ -95,7 +95,7 @@ SPEC 26.2 says the format is documented and stable and that generating it needs 
 
 A nil \*Registry is usable. Every constructor answers with a nil metric and every method on a nil metric does nothing, so a subsystem can be instrumented unconditionally and a program that exposes nothing pays for nothing.
 
-**Files:** `expose.go`, `merge.go`, `metrics.go`; with tests.
+**Files:** `expose.go`, `merge.go`, `metrics.go`, `process.go`, `process_countdir.go`, `process_darwin.go`, `process_freebsd.go`, `process_linux.go`, `process_other.go`; with tests.
 
 **Exports.**
 

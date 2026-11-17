@@ -95,6 +95,7 @@ func (s *Server) setupMetrics() {
 		return
 	}
 	r.BuildInfo("hub")
+	r.Process("hub")
 	m := &hubMetrics{
 		nodeConnects: r.Counter("halite_hub_node_connect_total",
 			"Node subscribe streams opened."),
