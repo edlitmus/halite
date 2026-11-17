@@ -45262,6 +45262,30 @@ not decided.
 same ceiling; more than one posting driver; the residual per-dispatch
 cost of 5.669's copy of every key record.
 
+#### 5.668.2 The verdict judged the offered rate, not the row (2026-11-17)
+
+5.668.1 found `simfleet events` printing NOT MET for the 10,000 and
+20,000 a second runs, which met the row. The verdict failed any run with
+an event not offered, and above 5,000 a second a single posting driver
+always leaves some: the harness falling behind, not the hub.
+
+The row is 5,000 a second sustained, so the verdict now judges the
+slowest whole second of accepted events against 5,000, whatever `-rate`
+was. Events not offered still fail a run at 5,000, where they mean the
+measurement was not made. A NOT MET now says why, one reason for each
+condition that failed.
+
+Checked against the four `noop` records of 5.668.1, copied into
+`tools/simfleet/events_verdict_test.go` as the run wrote them. The
+10,000 and 20,000 runs had slowest seconds of 5,682 and 7,305, and now
+print MET. The 256-poster run at 5,000 prints NOT MET, naming its 1,675
+events not offered and its slowest second of 4,112. With the old rule
+put back, the tests fail on the two faster runs.
+
+**Not covered:** the verdict has not been printed by a new run on the
+lab. The tests run `print` on the recorded results, which is the code
+the run calls.
+
 ### 5.669 Every dispatch read every node's key record, one dispatch at a time
 
 Found by the reactor measurement of 5.668 on the AWS lab (issue 718,
