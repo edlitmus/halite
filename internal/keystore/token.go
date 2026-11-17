@@ -28,6 +28,29 @@ const MaxTokenTTL = 24 * time.Hour
 // tokenBytes is 256 bits, per SPEC 7.3.
 const tokenBytes = 32
 
+// tokenPrefix begins every secret MintToken returns.
+//
+// It exists so that a secret never begins with a hyphen. The random part
+// is unpadded base64url, whose alphabet includes `-`, so one token in 64
+// began with one, and `halite-node enroll --token SECRET` -- the form an
+// operator, a cloud-init script and the rc script before 5.666 all write
+// -- then read the secret as a flag and refused it (DIVERGENCE 5.429,
+// 5.666, 5.674). The CLI is right to: a value after a space that begins
+// with `-` is ambiguous in every parser, and guessing would turn a
+// mistyped flag into a token.
+//
+// A prefix rather than drawing again until the first character is not
+// `-`: redrawing leaves 63/64 of the space, a token of about 255.98
+// bits, and SPEC 7.3 says 256. The prefix adds no secrecy and takes
+// none; all 256 random bits follow it. It also makes a leaked token
+// recognisable to a secret scanner, which an unadorned base64 string is
+// not.
+//
+// Verification hashes whatever string the node presents (digestOf), so
+// a token minted before the prefix existed still enrols; nothing parses
+// the prefix, and nothing should.
+const tokenPrefix = "hbt_"
+
 // Token is a bootstrap token's record on the hub.
 //
 // The secret is not here and is not anywhere: only its digest is
@@ -140,7 +163,7 @@ func (s *Store) MintToken(opts TokenOptions, now time.Time) (*Token, string, err
 	if _, err := rand.Read(raw); err != nil {
 		return nil, "", fmt.Errorf("generating a bootstrap token: %w", err)
 	}
-	secret := base64.RawURLEncoding.EncodeToString(raw)
+	secret := tokenPrefix + base64.RawURLEncoding.EncodeToString(raw)
 	digest := digestOf(secret)
 
 	tok := &Token{

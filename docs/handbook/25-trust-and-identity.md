@@ -181,9 +181,9 @@ halite-hub keys token create --ttl 1h --nodes '*.lab'
 ```
 
 ```
-token   vh9exVfcVbIBGlTzLZKNPdVqqlMqYkvW613SUZjaQCE
-id      1eedeb8e0623
-expires 2026-10-11T19:51:52Z
+token   hbt_TMAADLkJqndoQFNpExOZetRvNcikwKnHuARPqPfRGWQ
+id      a0f899333fdf
+expires 2026-11-17T20:08:56Z
 uses    1
 nodes   *.lab
 
@@ -192,7 +192,7 @@ The hub stores only a digest: this is the only time the token is shown.
 
 ```sh
 # on the node
-halite-node enroll --hub-fingerprint 'ab:cd:…' --token='vh9exVfc…'
+halite-node enroll --hub-fingerprint 'ab:cd:…' --token='hbt_TMAADLkJ…'
 ```
 
 ```
@@ -218,10 +218,12 @@ Properties of a token, all deliberate:
 > `enrollment_mode: token` is set in `hub.yaml`; in the default `manual`
 > mode a node that presents one is simply held pending, with no message
 > saying that its token was ignored. Second, write the token as
-> `--token=SECRET` with an equals sign. A token is random base64 and can
-> begin with a hyphen, and `--token -abc…` is then read as a flag
+> `--token=SECRET` with an equals sign. A token minted by a hub before
+> ledger 5.674 is bare base64 and can begin with a hyphen, and
+> `--token -abc…` is then read as a flag
 > (`--BLy… is not a flag of halite-node enroll`); `--token=-abc…` is read
-> correctly. Both are in the ledger.
+> correctly. A hub from 5.674 on mints tokens that begin with `hbt_`,
+> which are read either way. Both are in the ledger.
 
 Prefer `keys token revoke <id>` to `keys token delete <id>`: a revoked token
 admits nothing and keeps the record of what it already admitted, which

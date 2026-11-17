@@ -45560,6 +45560,61 @@ new time before the schedule: `warm_seconds` will say how much. The
 handshakes in their first seconds; the 2,048-poster run at 5,000 a
 second still offered every event.
 
+### 5.674 The hub minted tokens that `enroll --token SECRET` refuses (2026-11-17)
+
+The other half of 5.666, and of issue 733's item 10. 5.429 and 5.666
+fixed two callers: a test, and the FreeBSD rc script, which now pass
+`--token=`. The source was not changed. `MintToken` returned bare
+unpadded base64url, whose alphabet includes `-`, so one token in 64
+still began with one. An operator who followed a habit rather than
+chapter 31, or a cloud-init script that writes `--token $TOKEN`, got
+`… is not a flag of halite-node enroll` and exit 64. This is the pair
+the bug lived in: what the hub mints and what the node's parser takes.
+
+**The change.** A secret is `hbt_` followed by the same 32 random bytes,
+encoded as before. Two other fixes were not taken:
+
+- **Draw again until the first character is not `-`.** That keeps 63/64
+  of the space, about 255.98 bits, and SPEC 7.3 and 23.6 say 256.
+- **Make the CLI take a `-` value after `--token`.** A value after a
+  space that begins with `-` is ambiguous in any parser. Guessing for
+  one flag would turn a mistyped flag after `--token` into a token.
+
+The prefix adds no secrecy and removes none. It also lets a secret
+scanner recognise a leaked token. Verification hashes whatever string
+the node presents, and nothing parses the prefix. So a token minted
+before this change, including one that begins with `-`, still enrols
+by `--token=` or from a file.
+
+**Demonstrated.**
+
+- `TestAMintedTokenNeverBeginsWithAHyphen` mints 64 tokens. Each must
+  carry the prefix, and the rest must decode to exactly 32 bytes.
+- `TestAMintedTokenIsTakenAfterASpace`, in `cmd/halite-node`, mints 64
+  tokens through the keystore. It parses each one as `--token SECRET`
+  with the node's own parser, and also parses the worst case the prefix
+  leaves, `hbt_-…`.
+- `TestATokenWithoutThePrefixStillEnrols` enrols a node with a stored
+  legacy token that begins with `-`.
+
+With the prefix removed, both minting tests fail. The keystore test
+fails on the prefix. The node test, in that run, drew a real minted
+token beginning with `-`: `--token -IKumVD-…` gave the token `"true"`,
+which is the flag being read as a boolean.
+
+**Docs.** The `keys token create` examples in chapters 25
+and 31 are recaptured from this branch's `halite-hub` (macOS arm64, a scratch state
+directory, a CA made by one `serve`). The old chapter 31 capture was
+made with `--cidr 10.0.0.0/8` but had no `from` line, which the
+command prints. The new capture has it. Both chapters say that
+`--token=` is right for every token, and that a token minted before
+this change can still begin with `-`.
+
+**Not covered.** No node enrolled over a network with a prefixed token.
+The parser test exercises the argument path, and the keystore tests
+exercise enrolment, but not both in one run. Item 10's FreeBSD-host run
+of the rc script (chapter 31's "Not run") is still not done.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
