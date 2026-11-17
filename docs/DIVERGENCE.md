@@ -45206,6 +45206,62 @@ drivers posting at once; the CPU the reactor costs. The run that can
 say something is the AWS lab at 5,000 a second and beyond, which needs
 the owner's approval.
 
+#### 5.668.1 The reactor row on AWS (2026-11-16)
+
+The lab of `contrib/tofu/aws-simfleet`: a c7g.4xlarge Ubuntu hub (16
+CPUs, so 32 reactor workers and the default queue of 10,000) and five
+c7g.xlarge drivers. 8,000 simulated nodes from one `simfleet setup`;
+four drivers held 2,000 connected each, which `ping` needs, and one
+posted with `simfleet events` as all 8,000. Hub CPU and RSS from the
+lab's sampler. Issue 718 has each run's output.
+
+**The reactor meets the row** with the `noop` reaction, at `main`
+`83499b09`:
+
+| offered | posters | offered / not offered | reacted | dropped | queue at most | hub CPU |
+|---|---|---|---|---|---|---|
+| 5,000/s, 60 s | 256 | 298,325 / 1,675 | 298,325 | 0 | 17 | |
+| **5,000/s, 60 s** | **2,048** | **300,000 / 0** | **300,000** | **0** | **4** | **about 2.8 of 16 cores** |
+| 10,000/s, 30 s | 2,048 | 292,901 / 7,099 | 292,901 | 0 | 112 | about 4 |
+| 20,000/s, 30 s | 2,048 | 573,707 / 26,293 | 573,707 | 0 | 256 | about 6.4 |
+
+At 5,000 a second with 2,048 posters every whole second had its 5,000,
+post latency was 1 ms at p50 and 2 ms at p95, and the queue drained
+0.6 s after the last post: `events` printed MET. With 256 posters the
+harness, not the hub, fell behind, opening 8,000 TLS connections in the
+first seconds, and the verdict refused the run. At 10,000 and 20,000 the
+hub reacted to everything it accepted, up to 19,124 a second; the single
+posting driver could not offer the whole schedule. `events` prints NOT
+MET for those two runs because any event not offered fails the verdict,
+which is right at the target rate and misleading above it: a harness
+wording to fix. The hub's RSS stayed between 1.1 and 1.8 GiB.
+
+**A reaction that dispatches a job is bounded by the dispatch.** The
+`ping` reaction, offered 1,000 a second for 30 s, through the two fixes
+it found:
+
+| build | reacted | dropped | drained after | one reaction | roughly |
+|---|---|---|---|---|---|
+| `83499b09` | 1,259 | 19,764 | not in 128 s | 1–5 s | 8/s |
+| `7c334b6d`, with 5.669 | 12,554 | 17,446 | 114 s | 0.1–0.5 s | 90/s |
+| `081a7faf`, with 5.670 | 18,514 | 11,486 | 37 s | 0.025–0.5 s | 280/s |
+
+In every run the queue filled to its bound and the hub dropped the
+oldest and counted them: the bounded queue behaviour SPEC 30 asks for
+beyond the rate. In the last two, reacted plus dropped is exactly the
+30,000 accepted. With both fixes, a goroutine dump mid-run had 25 of
+the 32 reactor workers writing a job record (`job.(*Cache).Put` through
+`atomicfile.Write`: a temporary file, an fsync, a rename, a directory
+fsync) and 3 resolving targets, on a 50 GB gp3 root volume, with about
+8 cores busy. Each dispatched job is written durably on its own; what
+would raise the ceiling (batching those writes, more reactor workers, a
+different job record) trades durability or design for throughput and is
+not decided.
+
+**Not covered:** FreeBSD; `ping` at 5,000 a second, which would show the
+same ceiling; more than one posting driver; the residual per-dispatch
+cost of 5.669's copy of every key record.
+
 ### 5.669 Every dispatch read every node's key record, one dispatch at a time
 
 Found by the reactor measurement of 5.668 on the AWS lab (issue 718,

@@ -25,7 +25,7 @@ measured only some of them:
 | `test.ping` to 10,000 nodes: 95% of returns in 10 s | **Measured: met on Linux and on FreeBSD with ZFS.** 10,000 of 10,000 returned, p95 3.86 s, on a 16-core Linux hub with simulated nodes; at 20,000, p95 7.85 s. On a 16-core FreeBSD hub with ZFS, p95 2.34 s at 20,000 once a job's returns were spread over subdirectories (ledger 5.660). **Not met on FreeBSD with UFS:** p95 1 m 55 s at 20,000 before either fix, and about 37 s after them, because each return waits for a synchronous directory write. Keep a FreeBSD hub's `state/` on ZFS (ledger 5.279, 5.660.1) |
 | Dispatch of `state.apply` to 10,000 nodes in 30 s | **Measured: met.** Every one of 10,000 simulated nodes had it within 769 ms on a 16-core Linux hub, and every one of 20,000 within 783 ms; on a 16-core FreeBSD hub, within 685 ms on UFS and 882 ms on ZFS (ledger 5.279) |
 | Hub memory at 20,000 nodes: under 4 GiB | **Measured: met on Linux and on FreeBSD with ZFS and with UFS.** Since each node's outbound queue holds pointers (ledger 5.661), a Linux hub held 20,000 idle in 1.97 GiB and peaked at 3.71 GiB over five jobs to all of them; a FreeBSD 15.1 hub peaked at 3.72 GiB on ZFS and 3.80 GiB on UFS. That is 200 to 300 MiB under the row, which is not much: plan on more than 4 GiB if anything else runs on the hub. Before that it held them in 2.87 GiB and peaked at 4.26 to 4.51 GiB on Linux, and at 4.74 to 4.89 GiB on FreeBSD (ledger 5.279) |
-| Reactor throughput: 5,000 events/s sustained | **Not measured.** The harness for it exists (`simfleet events`, ledger 5.668) and has run only at test rates on one machine: at 200 events a second into one worker and a queue of two, every accepted event was either reacted to or counted as dropped |
+| Reactor throughput: 5,000 events/s sustained | **Measured: met on Linux, with a reaction that dispatches nothing.** A 16-core Linux hub with 8,000 nodes reacted to 300,000 of 300,000 events offered at 5,000 a second, every second in full, with at most 4 queued and about 3 of its cores busy; offered more, it reacted to all of the 19,124 a second the harness could post. A reaction that dispatches a job for each event is bounded by the dispatch: about 280 a second on that hub, nearly all of it the durable write of each job's record. Beyond its rate the queue fills, and the oldest events are dropped and counted (ledger 5.668.1, 5.669, 5.670). FreeBSD not measured |
 | Node idle memory (under 40 MiB with 10 beacons) and CPU (under 0.5% of a core) | Not measured: it needs a soak |
 | File server saturating 10 Gb | Not measured |
 | Cold start to first highstate in 15 s including enrolment | Not measured |
@@ -51,7 +51,7 @@ measured in tens of seconds. The targets are set to be a clear improvement.
 | **File server** | Each node fetches a manifest then only changed files | nodes × tree churn |
 | **Events** | Job and return events, beacon events, node events | activity |
 | **Job cache and event log** | Written for every job, return and event | activity × retention |
-| **Reactor** | Events matching reactor entries | event rate × entries |
+| **Reactor** | Events matching reactor entries; a reaction that dispatches a job also writes that job's record durably, which on a 16-core hub held it to about 280 a second (ledger 5.668.1) | event rate × entries |
 
 The node does the heavy work (it **compiles its own states**), which is why a
 hub's cost is mostly pillar compilation, file serving, and bookkeeping for

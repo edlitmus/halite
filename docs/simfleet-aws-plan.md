@@ -6,7 +6,8 @@ rows at 20,000 and survived a clean restart, but the hub peaked at
 4.26-4.51 GiB during each 20,000-node job, over SPEC 30's 4 GiB (§11.4).
 Step 3F, a FreeBSD hub, ran 2026-11-12 on UFS and ZFS and led to two
 fixes (§11.5). Since 5.661 a hub is under 4 GiB at 20,000, on Linux and
-on FreeBSD with ZFS and UFS (§11.6). Steps 4 and 5 have not run, and each needs
+on FreeBSD with ZFS and UFS (§11.6). The reactor row is met on Linux
+(§11.7). Steps 4 and 5 have not run, and each needs
 approval (§10). Issue 718 tracks the rows.
 
 The region (us-east-1), the use of two existing test hosts (host B and
@@ -655,3 +656,15 @@ against 4,460 MiB and at least 4,567 MiB without it. Idle was 2,022 and
 (DIVERGENCE 5.660.1). Three AWS runs, each torn down and checked, cost
 about $1.85 in all. DIVERGENCE 5.661, 5.661.1 and 5.661.2 have the
 tables and what was not covered.
+
+### 11.7 The reactor, on Linux (2026-11-16)
+
+`simfleet events` (DIVERGENCE 5.668) posted events from one driver as
+8,000 simulated nodes to the step 3 hub. With a reaction that
+dispatches nothing, 300,000 of 300,000 events at 5,000 a second were
+reacted to, with at most 4 queued: the row is met. A reaction that
+dispatches a job for each event managed about 8 a second at first; two
+fixes found by these runs (DIVERGENCE 5.669, 5.670) took it to about
+280, where the durable write of each job's record is the limit. Three
+AWS runs, each torn down and checked, cost about $0.80 in all.
+DIVERGENCE 5.668.1 has the tables and what was not covered.

@@ -108,7 +108,7 @@ var targets = []target{
 	{Metric: "Hub memory at 20,000 nodes", Method: byHarness,
 		Waiting: "a benchmark `make perf` can repeat: met on AWS once each node's queue held pointers, at peak over five or six jobs to all 20,000 3.71 GiB on Linux, 3.72 GiB on FreeBSD with ZFS and 3.80 GiB with UFS (ledger 5.661); before that, 4.26 to 4.51 GiB at peak on Linux and 4.74 to 4.89 GiB on FreeBSD (ledger 5.279)"},
 	{Metric: "Reactor throughput", Method: byHarness,
-		Waiting: "a run at 5,000 events a second on the AWS lab: `simfleet events` drives the event bus and reads the reactor's own counters, and has run only at test rates on one machine (ledger 5.668)"},
+		Waiting: "a FreeBSD hub, and a benchmark `make perf` can repeat: met on a 16-core Linux hub on AWS with a reaction that dispatches nothing, 300,000 of 300,000 events at 5,000 a second with at most 4 queued; a reaction that dispatches a job for each event reached about 280 a second, bounded by each job record's durable write (ledger 5.668.1, 5.670)"},
 	{Metric: "File server throughput", Method: byHarness,
 		Waiting: "a 10 Gb link and a client that can saturate it"},
 	{Metric: "Node memory, idle with 10 beacons", Method: bySoak,
