@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A hub no longer copies every node's key record to dispatch a job.** Finding the nodes a job could match copied each enrolled node's record to read whether it was accepted. With 8,000 nodes that was 2.1 MB and 8,000 allocations for every job. The key store now gives the hub the accepted node IDs directly, at about a tenth of the cost. Which nodes a job can match is unchanged. DIVERGENCE 5.671.
+
 - **`simfleet events` no longer prints NOT MET for a run that met the reactor row at a higher rate.** Above 5,000 events a second, the verdict failed any run in which the harness could not offer every event, so runs at 10,000 and 20,000 a second that met the row were reported as not meeting it. It now judges the slowest second against 5,000, and a NOT MET names each condition that failed. DIVERGENCE 5.668.2.
 
 - **A hub no longer reads every node's cached grains to dispatch a job.** Resolving a target read and decoded every enrolled node's cache file for every job, even for a target that names one node by its ID. With 8,000 nodes, a reaction that dispatched a job took 0.1 to 0.5 seconds after 5.669, and the reactor managed about 90 a second. The hub now keeps what it read: it uses the cache without touching the files while the cache directory is unchanged, and otherwise re-reads only the files that changed. A node whose cached data won't decode is still skipped and reported, as before. DIVERGENCE 5.670.

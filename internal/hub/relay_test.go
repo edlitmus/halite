@@ -261,6 +261,40 @@ func TestARelayedNodeIsTargetableWithoutAKeyOnThisHub(t *testing.T) {
 	}
 }
 
+// A job may match only a node whose key is accepted now. A record still
+// marked accepted whose certificate has expired is not, and neither is
+// one pending, rejected or revoked: the hub cannot reach the first, and
+// must not send to the rest. Before this test, making the key store
+// ignore expiry when it listed the targetable nodes broke no hub test
+// (DIVERGENCE 5.671).
+func TestOnlyANodeAcceptedNowIsTargetable(t *testing.T) {
+	store, err := keystore.Open(t.TempDir() + "/keys")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for _, r := range []*keystore.Record{
+		{NodeID: "live.example", State: keystore.Accepted, NotAfter: now.Add(time.Hour)},
+		{NodeID: "expired.example", State: keystore.Accepted, NotAfter: now.Add(-time.Minute)},
+		{NodeID: "pending.example", State: keystore.Pending},
+		{NodeID: "rejected.example", State: keystore.Rejected},
+		{NodeID: "revoked.example", State: keystore.Revoked, NotAfter: now.Add(time.Hour)},
+	} {
+		r.Fingerprint = "aa"
+		if err := store.Put(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{Authority: &keystore.Authority{Store: store}}
+	ids, err := s.targetableNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != "live.example" {
+		t.Fatalf("targetable %q; want only live.example", ids)
+	}
+}
+
 // A return is attributed to the node that ran the job, not to the
 // certificate it arrived on.
 //
