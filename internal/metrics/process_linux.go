@@ -18,7 +18,7 @@ func residentBytes() (float64, bool) {
 	if len(fields) < 2 {
 		return 0, false
 	}
-	pages, err := strconv.ParseUint(fields[0], 10, 64) // DELIBERATELY WRONG: VmSize, to prove CI runs this
+	pages, err := strconv.ParseUint(fields[1], 10, 64)
 	if err != nil {
 		return 0, false
 	}
