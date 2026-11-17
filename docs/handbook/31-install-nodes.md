@@ -173,11 +173,12 @@ node simply waits for a human.)
 sudo -u halite halite-hub keys token create --ttl 1h --nodes 'web*.prod.example.com' --cidr 10.0.0.0/8
 ```
 ```
-token   vh9exVfcVbIBGlTzLZKNPdVqqlMqYkvW613SUZjaQCE
-id      1eedeb8e0623
-expires 2026-10-11T19:51:52Z
+token   hbt_hGEdAZlZwXYk8NfwdA2fN4MehdMd_CRfRyrOhIVwiRQ
+id      76a2a42b6f08
+expires 2026-11-17T20:08:56Z
 uses    1
 nodes   web*.prod.example.com
+from    10.0.0.0/8
 
 The hub stores only a digest: this is the only time the token is shown.
 ```
@@ -210,7 +211,7 @@ decision anyone has to remember.
 required:
 
 ```sh
-sudo halite-node enroll --token='vh9exVfcVbIBGlTzLZKNPdVqqlMqYkvW613SUZjaQCE'
+sudo halite-node enroll --token='hbt_hGEdAZlZwXYk8NfwdA2fN4MehdMd_CRfRyrOhIVwiRQ'
 ```
 ```
 node        web2.lab
@@ -245,12 +246,14 @@ its log says why`. That is not a refusal: `enroll --force` keeps its new key as
 `node.key.pending`, and a plain `enroll` continues with it once the hub is put
 right.
 
-**Write the token as `--token=SECRET`**: a token is random
-base64 and can begin with `-`, and `--token -abc…` is then taken for a flag
+**Write the token as `--token=SECRET`**, which is right for every token.
+A hub from ledger 5.674 on mints tokens that begin with `hbt_`, and those are
+also read correctly after a space. A token minted by an older hub is bare
+base64, can begin with `-`, and `--token -abc…` is then taken for a flag
 (this was seen: `--BLy… is not a flag of halite-node enroll`). The FreeBSD rc
 script writes `--token=` for `halite_node_token`; before ledger 5.666 it wrote
 a space, and a node whose token began with a hyphen did not enrol and did not
-start. Both are recorded in the ledger.
+start. All three are recorded in the ledger.
 
 **Prefer `--token-file PATH`.** A token given as `--token` is on the command
 line for as long as `enroll` runs, which with `--wait` is until an operator
@@ -265,7 +268,7 @@ has the same exposure in `rc.conf`, which is world-readable by default.
 admitted. Revoke rather than delete a token you suspect:
 
 ```sh
-halite-hub keys token revoke 1eedeb8e0623
+halite-hub keys token revoke 76a2a42b6f08
 ```
 
 A cloud-init or provisioning-tool user-data script is the natural place to run

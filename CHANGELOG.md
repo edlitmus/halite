@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A bootstrap token no longer begins with a hyphen.** `halite-hub keys token create` printed bare base64, and about one token in 64 began with `-`, which `halite-node enroll --token SECRET` reads as a flag and refuses. Tokens now begin with `hbt_`, followed by the same 256 random bits, so they work after a space as well as after `=` or in a file. Tokens minted before this change still enrol. DIVERGENCE 5.674.
+
 - **A burst of enrolment requests on a nearly spent bootstrap token can no longer leave more pending records than `enroll_source_burst` allows.** A request let in uncharged because its token would spend, which then lost the token's last use to another request, was charged only after it had written its pending record, so one address could leave one more record per such request than its burst. It is now charged before the record is written, and a source over its budget is answered 429 and leaves nothing. A token-mode bootstrap is still not metered. DIVERGENCE 5.672.
 
 - **A hub no longer copies every node's key record to dispatch a job.** Finding the nodes a job could match copied each enrolled node's record to read whether it was accepted. With 8,000 nodes that was 2.1 MB and 8,000 allocations for every job. The key store now gives the hub the accepted node IDs directly, at about a tenth of the cost. Which nodes a job can match is unchanged. DIVERGENCE 5.671.
