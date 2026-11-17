@@ -45697,15 +45697,37 @@ would put a node at zero bytes on a graph, which nobody observed.
 - The resident-set test skips on macOS, and asserts the family is
   absent.
 
-**Not run here:**
+**Demonstrated in CI (PR 746).** CI's Linux and FreeBSD 15.1 (amd64)
+legs are the first to run the readers. There the tests compare:
 
-- The Linux and FreeBSD readers. CI's Linux and FreeBSD 15.1 (amd64)
-  legs are the first to run them. There the tests compare the resident
-  set with `ps -o rss=` to within 10% after touching 64 MiB, the
-  descriptor count with the probe, and the limit with
-  `/proc/self/limits` or `procstat -l`. The `procstat -l` parse was
-  written without a captured sample, so it fails, not passes, if the
-  format differs.
+- the resident set with `ps -o rss=`, to within 10% after touching
+  64 MiB;
+- the descriptor count with the probe;
+- the limit with `/proc/self/limits` or `procstat -l`.
+
+A commit that made both resident-set readers report virtual size
+failed `TestResidentMemoryIsWhatPSReports` in exactly the four jobs
+that run a reader. It failed nowhere else, and no other test in those
+jobs failed:
+
+| Job | Broken reading | `ps -o rss=` |
+|---|---|---|
+| test (ubuntu-24.04) | 1,362,239,488 | 79,466,496 |
+| race (ubuntu-24.04) | 2,451,619,840 | 246,640,640 |
+| fips-test | 1,328,726,016 | 77,975,552 |
+| test (freebsd) | 5,576,662,712,320 | 79,409,152 |
+
+The FreeBSD figure is `ki_size`, in bytes, multiplied by the page size.
+`ki_size` is the field just before `ki_rssize`, where `sys/user.h`
+places it, so the offsets read the struct the kernel returned.
+
+CI runs without `-v`. So a pass cannot tell a run from a skip for the
+descriptor-probe and `procstat -l` tests, whose skips on those
+platforms are only "nothing to judge". The `procstat -l` parse was
+written without a captured sample, and it fails, not passes, if the
+format differs.
+
+**Not run here:**
 - beastie, for a native FreeBSD run: ssh failed with the ssh-agent
   signing error recorded on 2026-11-06.
 - FreeBSD arm64, and any hub at scale.
