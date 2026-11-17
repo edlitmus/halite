@@ -416,6 +416,50 @@ func parseExposition(r io.Reader) (map[string]float64, error) {
 // spec30ReactorRate is the row's number.
 const spec30ReactorRate = 5000
 
+// reactorRowFailures is why a run does not meet the reactor row, or
+// nothing when it does. The run must have been offered at least the
+// row's rate; the caller does not judge one that was not.
+//
+// The row is 5,000 events a second sustained, so what is judged is the
+// slowest whole second of accepted events against 5,000, not against
+// -rate. At -rate 5,000 the two are the same thing, and any event not
+// offered leaves its second short. Above it they are not: a run offered
+// 20,000 a second whose one posting driver managed 7,305 in its slowest
+// second has shown the row, and an event the harness could not offer
+// says something about the harness, not the hub. Failing that run on
+// not_offered, as this did when 5.668.1 found it, printed NOT MET for the two
+// runs that went furthest past the row. Not offered still fails a run
+// at the row's own rate, where it is the harness failing to make the
+// measurement and the slowest second may not show it: a -duration with
+// a fraction of a second has events due outside any whole second.
+//
+// Everything the hub accepted must also have been reacted to, with
+// nothing dropped from the queue, no reaction failing, and the queue
+// drained after the last post: a hub that accepts 5,000 a second and
+// falls behind reacting to them has not sustained the rate.
+func (r eventsResult) reactorRowFailures() []string {
+	var why []string
+	if r.Rate <= spec30ReactorRate && r.NotOffered > 0 {
+		why = append(why, fmt.Sprintf("%d events not offered at the row's own rate", r.NotOffered))
+	}
+	if r.SlowestSecond < spec30ReactorRate {
+		why = append(why, fmt.Sprintf("slowest second %d accepted, under %d", r.SlowestSecond, spec30ReactorRate))
+	}
+	if r.Reacted < float64(r.Accepted) {
+		why = append(why, fmt.Sprintf("reacted to %.0f of %d accepted", r.Reacted, r.Accepted))
+	}
+	if r.ReactorDropped > 0 {
+		why = append(why, fmt.Sprintf("%.0f dropped from the queue", r.ReactorDropped))
+	}
+	if r.ReactorFailures > 0 {
+		why = append(why, fmt.Sprintf("%.0f reactions failed", r.ReactorFailures))
+	}
+	if !r.Drained {
+		why = append(why, "the queue did not drain")
+	}
+	return why
+}
+
 func (r eventsResult) print(w io.Writer) {
 	fmt.Fprintf(w, "\nevents (%s reaction): %d nodes, %.0f a second for %s, %d posters\n",
 		r.Reaction, r.Nodes, r.Rate, secs(r.Seconds), r.Concurrency)
@@ -437,11 +481,10 @@ func (r eventsResult) print(w io.Writer) {
 		fmt.Fprintf(w, "  SPEC 30 reactor row: not judged, because -rate is under %d\n", spec30ReactorRate)
 		return
 	}
-	met := r.NotOffered == 0 && r.SlowestSecond >= spec30ReactorRate && r.Drained &&
-		r.ReactorDropped == 0 && r.ReactorFailures == 0 && r.Reacted >= float64(r.Accepted)
-	verdict := "NOT MET"
-	if met {
-		verdict = "MET"
+	reasons := r.reactorRowFailures()
+	verdict := "MET"
+	if len(reasons) > 0 {
+		verdict = "NOT MET: " + strings.Join(reasons, "; ")
 	}
 	fmt.Fprintf(w, "  SPEC 30 reactor row (%d events a second sustained, %s reaction): %s\n", spec30ReactorRate, r.Reaction, verdict)
 }

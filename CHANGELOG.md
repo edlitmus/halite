@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`simfleet events` no longer prints NOT MET for a run that met the reactor row at a higher rate.** Above 5,000 events a second, the verdict failed any run in which the harness could not offer every event, so runs at 10,000 and 20,000 a second that met the row were reported as not meeting it. It now judges the slowest second against 5,000, and a NOT MET names each condition that failed. DIVERGENCE 5.668.2.
+
 - **A hub no longer reads every node's cached grains to dispatch a job.** Resolving a target read and decoded every enrolled node's cache file for every job, even for a target that names one node by its ID. With 8,000 nodes, a reaction that dispatched a job took 0.1 to 0.5 seconds after 5.669, and the reactor managed about 90 a second. The hub now keeps what it read: it uses the cache without touching the files while the cache directory is unchanged, and otherwise re-reads only the files that changed. A node whose cached data won't decode is still skipped and reported, as before. DIVERGENCE 5.670.
 
 - **A hub dispatches a job without reading every node's key record first.** Each dispatch resolved its target against the key store, which read and parsed every enrolled node's record from disk, holding the store's lock. So a job cost one file read per node, and only one job at a time could pay it. With 8,000 nodes, a reaction that dispatched a job took one to five seconds, and the reactor managed about eight a second. The store now keeps what it read until its directory changes, which includes `halite-hub keys` changes made from another process. DIVERGENCE 5.669.
