@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
@@ -225,19 +224,17 @@ func (s *Server) relayMayReturn(relayID, nodeID string) bool {
 // Connected cheerfully reported it as up, so a job aimed at one matched
 // nothing and said so as if the node were absent.
 func (s *Server) targetableNodes() ([]string, error) {
-	records, err := s.Authority.Store.List()
+	// Accepted, not List: this runs for every job dispatched, and List
+	// copies every node's record to be read for its ID (DIVERGENCE
+	// 5.671).
+	accepted, err := s.Authority.Store.Accepted(s.now())
 	if err != nil {
 		return nil, err
 	}
-	now := s.now()
-	seen := make(map[string]bool, len(records))
-	var out []string
-	for _, rec := range records {
-		if rec.Status(now) != keystore.Accepted || seen[rec.NodeID] {
-			continue
-		}
-		seen[rec.NodeID] = true
-		out = append(out, rec.NodeID)
+	seen := make(map[string]bool, len(accepted))
+	out := accepted
+	for _, id := range accepted {
+		seen[id] = true
 	}
 	for node := range s.fleet().Relayed() {
 		if seen[node] {

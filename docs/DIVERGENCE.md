@@ -45407,6 +45407,45 @@ a time and so pay a stat each rather than a read; a node file rewritten
 in place by hand, which a dispatch in a fast view would not notice until
 the next change to the directory.
 
+### 5.671 Every dispatch copied every node's key record (2026-11-17)
+
+After 5.669 the key store kept what `List` read, but `List` still
+handed out a copy of every record so that no caller could change what
+the next one saw. The hub's dispatch path, `targetableNodes`, called it
+for every job to read one field of each record: whether it is accepted
+now. A goroutine dump from 5.668.1's last `ping` run, at 8,000 nodes,
+had a reactor worker in `keystore.copyRecords`.
+
+`Store.Accepted(now)` now answers that from the kept snapshot. It
+returns the IDs of the nodes `Record.Status` calls accepted, in order.
+A string cannot be changed through the slice, so nothing is copied and
+a caller still cannot alter the snapshot. `targetableNodes` uses it;
+`List` is unchanged for the callers that need whole records.
+
+On an Apple M4 Pro, Go 1.27.4, `GOMAXPROCS=2`, with 8,000 accepted records
+already kept, getting the accepted IDs:
+
+| | per call | allocated | allocations |
+|---|---|---|---|
+| through `List` | 428 µs | 2.1 MB | 8,004 |
+| `Accepted` | 44 µs | 131 KB | 3 |
+
+At the 280 dispatches a second 5.668.1 measured, that is about 0.12
+of a core and 590 MB a second allocated through `List`, against about
+0.012 of a core and 37 MB through `Accepted`: arithmetic from the Mac's
+figures, not measured on the lab's hub.
+
+Breaking it on purpose: `Accepted` reading `State` rather than `Status`,
+so a node whose certificate had expired was still listed, failed the
+new key store test and **no hub test**. A hub test now checks that only
+a node accepted now is targetable, and it fails on that break.
+`Accepted` reading the records afresh instead of the snapshot fails the
+test that it shares `List`'s snapshot.
+
+**Not covered:** a lab run. The dispatch ceiling 5.668.1 found is the
+job record's durable write, which this does not change, so a `ping` run
+would not show it. FreeBSD and Linux were not benchmarked.
+
 ### 5.672 A request exempt on its token was charged only after the pending record it left
 
 5.658 let a request whose bootstrap token would spend into the key
