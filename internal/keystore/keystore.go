@@ -472,13 +472,54 @@ func (s *Store) delete(nodeID string, now time.Time) ([]DeletedCert, error) {
 func (s *Store) List() ([]*Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	records, err := s.snapshot()
+	if err != nil {
+		return nil, err
+	}
+	return copyRecords(records), nil
+}
+
+// Accepted is the IDs of the nodes whose records are accepted at now,
+// in node ID order: a record accepted whose certificate has expired is
+// not, as Record.Status says.
+//
+// It is List for a caller that needs only that, and it exists because
+// the hub is one. Every job it dispatches resolves its target against
+// the nodes it could send to, and through List that copied every
+// node's record to read one field of each: 8,000 records a dispatch on
+// the AWS lab, where a goroutine dump found reactor workers in
+// copyRecords after 5.669 (DIVERGENCE 5.668.1). A string cannot be
+// changed through the slice, so this hands out the IDs from the kept
+// snapshot without copying the records, and a caller cannot alter what
+// the next one sees.
+func (s *Store) Accepted(now time.Time) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records, err := s.snapshot()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(records))
+	for _, r := range records {
+		if r.Status(now) == Accepted {
+			out = append(out, r.NodeID)
+		}
+	}
+	return out, nil
+}
+
+// snapshot is every record, from the kept snapshot while the directory
+// is unchanged and read afresh otherwise; the records are the
+// snapshot's own, so a caller must not change them or hand them out.
+// The caller holds mu.
+func (s *Store) snapshot() ([]*Record, error) {
 	info, err := os.Stat(s.dir)
 	if err != nil {
 		return nil, fmt.Errorf("reading the key store at %s: %w", s.dir, err)
 	}
 	mtime := info.ModTime()
 	if s.listed != nil && s.listed.mtime.Equal(mtime) {
-		return copyRecords(s.listed.records), nil
+		return s.listed.records, nil
 	}
 	looked := time.Now()
 	records, err := s.list()
@@ -494,7 +535,7 @@ func (s *Store) List() ([]*Record, error) {
 	if margin > 0 && looked.Sub(mtime) >= margin {
 		s.listed = &listSnapshot{mtime: mtime, records: records}
 	}
-	return copyRecords(records), nil
+	return records, nil
 }
 
 func copyRecords(in []*Record) []*Record {
