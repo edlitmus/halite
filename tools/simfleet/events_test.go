@@ -24,6 +24,11 @@ func TestEventsReachTheReactorAndAreCounted(t *testing.T) {
 		t.Fatalf("the hub reacted to %.0f, dropped %.0f, failed %.0f, drained %v; want 80 reacted and nothing else",
 			r.Reacted, r.ReactorDropped, r.ReactorFailures, r.Drained)
 	}
+	// Each node was connected before the schedule (warm), so no post paid
+	// a TLS handshake: on a slow runner that stall left events unoffered.
+	if r.Handshakes != 0 {
+		t.Fatalf("posts started %d TLS handshakes during the schedule; want none, every node connected before it", r.Handshakes)
+	}
 	if r.Published < 80 {
 		t.Fatalf("the hub published %.0f events; want at least the 80 accepted", r.Published)
 	}

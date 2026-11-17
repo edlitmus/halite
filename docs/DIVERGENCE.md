@@ -45529,6 +45529,37 @@ request let in on its token is still charged only afterwards, and so
 is not refused at the door however far over its budget the source is,
 which fills nothing but the hub's log.
 
+### 5.673 `simfleet events` timed each node's TLS handshake as a post (2026-11-17)
+
+`TestEventsReachTheReactorAndAreCounted` failed on the FreeBSD CI leg
+of PR 742 (an emulated VM): 60 of 80 events offered, 20 not offered
+because every poster was busy. Post latency was 2 ms at p50 and 813 ms
+at p95, and the slowest second had 22 of its 40. Each of the four
+nodes' first post opened its connection and did its TLS handshake inside
+the schedule, and on that runner those took about 0.8 s. 5.668.1's
+256-poster AWS run fell behind the same way, opening 8,000 connections.
+A real node that posts an event is already connected, so this measured
+the harness starting up, not the hub.
+
+`simfleet events` now connects every node before the schedule, with one
+health request through each node's own client. The client speaks
+HTTP/2, so that one connection carries the node's posts, and the hub
+keeps it idle for 90 s. The run also counts the TLS handshakes posts
+start during the schedule, with an `httptrace` hook, and prints them
+with how long connecting took. The result JSON has them as
+`warm_seconds` and `handshakes_during_run`. The test now requires none.
+
+On this Mac, with the warm-up: 4 nodes connected in 4 ms, 0 handshakes
+during the schedule, 80 of 80 offered. With the warm-up removed: 4
+handshakes, and the test fails on them.
+
+**Not covered:** the FreeBSD CI leg has not run it yet, and that is the
+runner that failed. Nor has the AWS lab, where warming 8,000 nodes is
+new time before the schedule: `warm_seconds` will say how much. The
+5.668.1 figures were taken without it, so those runs included the
+handshakes in their first seconds; the 2,048-poster run at 5,000 a
+second still offered every event.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
