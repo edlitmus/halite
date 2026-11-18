@@ -281,3 +281,96 @@ func TestAPercentageIsNotACitation(t *testing.T) {
 		t.Errorf("a real citation of 9.9 reported %v", got)
 	}
 }
+
+// The acknowledgement gate. Its tests are the reason the logic is in Go and
+// the hook is four lines of shell.
+func TestABranchWithNoReferenceIsNotAsked(t *testing.T) {
+	// The common push. Asking about an empty list would be the fastest way
+	// to teach everybody to use --no-verify.
+	if err := requireAck(&strings.Builder{}, nil, "", nil); err != nil {
+		t.Errorf("an empty list was refused: %v", err)
+	}
+}
+
+func TestAnUnresolvedReferenceCannotBeAcknowledged(t *testing.T) {
+	// It is not a judgement call: the number names no section. Offering to
+	// accept a keystroke for it would be accepting a keystroke for a fact.
+	refs := []reference{
+		{file: "a.go", line: 7, label: "9.664", overlap: -1, marked: true},
+	}
+	err := requireAck(&strings.Builder{}, refs, "9.664", strings.NewReader("9.664\n"))
+	if err == nil {
+		t.Fatal("a dangling reference was acknowledged")
+	}
+	if !strings.Contains(err.Error(), "a.go:7") || !strings.Contains(err.Error(), "9.664") {
+		t.Errorf("the refusal does not name where or what: %v", err)
+	}
+}
+
+func TestTheFirstLabelIsWhatConfirms(t *testing.T) {
+	refs := []reference{
+		{file: "a.go", line: 1, label: "9.327", heading: "First", overlap: 0},
+		{file: "b.go", line: 2, label: "9.336", heading: "Second", overlap: 5},
+	}
+	if err := requireAck(&strings.Builder{}, refs, "", strings.NewReader("9.327\n")); err != nil {
+		t.Errorf("the right label was refused: %v", err)
+	}
+	// A second label from further down the list does not confirm: the
+	// point is the lowest-scoring one, which is the likeliest mistake.
+	if err := requireAck(&strings.Builder{}, refs, "", strings.NewReader("9.336\n")); err == nil {
+		t.Error("a label from further down the list was accepted")
+	}
+	for _, reply := range []string{"y\n", "yes\n", "\n", "9.32\n"} {
+		if err := requireAck(&strings.Builder{}, refs, "", strings.NewReader(reply)); err == nil {
+			t.Errorf("%q was accepted as an acknowledgement", reply)
+		}
+	}
+}
+
+func TestWhitespaceAroundTheLabelIsForgiven(t *testing.T) {
+	// A pasted label carries spaces, and refusing that would teach nothing
+	// except that the gate is fussy.
+	refs := []reference{{file: "a.go", line: 1, label: "9.327", heading: "First", overlap: 0}}
+	if err := requireAck(&strings.Builder{}, refs, "", strings.NewReader("  9.327  \n")); err != nil {
+		t.Errorf("a padded label was refused: %v", err)
+	}
+}
+
+func TestWithNoTerminalTheEnvironmentCarriesIt(t *testing.T) {
+	// A scripted push, CI, or an agent. stdin is not available to ask on --
+	// git has the refs being pushed on it -- so there has to be another way
+	// in that is not "skip the check when nobody is watching".
+	refs := []reference{{file: "a.go", line: 1, label: "9.327", heading: "First", overlap: 0}}
+	if err := requireAck(&strings.Builder{}, refs, "9.327", nil); err != nil {
+		t.Errorf("the right label in %s was refused: %v", ackEnv, err)
+	}
+	err := requireAck(&strings.Builder{}, refs, "", nil)
+	if err == nil {
+		t.Fatal("a non-interactive push with no acknowledgement was allowed")
+	}
+	if !strings.Contains(err.Error(), ackEnv) {
+		t.Errorf("the refusal does not say how to acknowledge: %v", err)
+	}
+	// And a wrong value says so differently from an absent one, because
+	// the two mistakes have different fixes.
+	err = requireAck(&strings.Builder{}, refs, "9.999", nil)
+	if err == nil || !strings.Contains(err.Error(), "9.999") {
+		t.Errorf("a wrong %s was not reported as wrong: %v", ackEnv, err)
+	}
+}
+
+func TestThePromptSaysHowManyThereAre(t *testing.T) {
+	// So that a long list is not mistaken for a short one, and so the
+	// number in the prompt matches what was printed above it.
+	refs := []reference{
+		{file: "a.go", line: 1, label: "9.327", heading: "First", overlap: 0},
+		{file: "b.go", line: 2, label: "9.336", heading: "Second", overlap: 5},
+	}
+	var out strings.Builder
+	if err := requireAck(&out, refs, "", strings.NewReader("9.327\n")); err != nil {
+		t.Fatalf("requireAck: %v", err)
+	}
+	if !strings.Contains(out.String(), "2 in all") {
+		t.Errorf("the prompt does not say how many: %q", out.String())
+	}
+}

@@ -46010,9 +46010,10 @@ paths it names stay at production defaults -- which is the point being claimed.
 not, and it is why the tool prints *"a low score is a prompt, not a verdict"*
 and fails nothing.
 
-**Not verified.** Nothing runs `cites`; it is a tool, and a tool nobody runs is
-a tool nobody runs, which is how this fault survived 5.164 naming it. Whether a
-pre-push hook or a CI step should require it is open in issue 750. The list is
+**Not verified.** Nothing ran `cites` when this was written; it is a tool, and
+a tool nobody runs is a tool nobody runs, which is how this fault survived 5.164
+naming it. A pre-push hook now requires it -- 5.677.1 -- and whether CI should
+too is still open in issue 750. The list is
 also noisy where a branch's diff is mostly illustrations rather than claims --
 the same limitation `CLAUDE.md` already records for `renumber`, that an
 illustration cannot be told from a citation by reading the text. Measured on
@@ -46031,6 +46032,67 @@ this tool for ever. That trick is `lexiconAllowMarker` in
 lexicon's own code does not match its own escape hatch. And no sweep has asked whether any of the ~1,400 citations
 standing in the tree today is wrong; two of the twelve likeliest were read, and
 the other ten were not.
+
+#### 5.677.1 A pre-push hook, and what it can honestly require
+
+`make hooks` points `core.hooksPath` at the committed `.githooks`, whose
+`pre-push` runs `ledger cites --require`. Git does not version `.git/hooks`, so
+the install is one command per clone and the hook itself is in the tree where
+it can be read and tested.
+
+**What "require" can mean.** Nothing can verify that a person read a list. A
+*"did you read it? [y/N]"* prompt was the obvious design and is worse than
+nothing, for the reason `make release-gate` already gives in its own failure
+text: it converts an unknown into a claim. A keystroke that becomes reflex
+after three pushes would leave every citation carrying an assertion that
+somebody checked it, which is 5.677's defect one level up.
+
+So the acknowledgement is **the label of the first reference printed** -- the
+lowest-scoring one, which is the likeliest mistake. Typing it means the list
+was on screen and was looked at. Where there is no terminal to ask at, which
+is a scripted push, CI, or an agent's shell, `LEDGER_CITES_ACK` carries the
+same label; stdin cannot be used for the prompt because git has the refs being
+pushed on it.
+
+**What it refuses outright.** A reference that names no section is not a
+judgement call, so it is not acknowledgeable: the push stops and names the file,
+line and number. CI catches those too, for the marked forms, but at push time
+it costs a second instead of a round trip.
+
+**It defends against inattention and not against determination.** Somebody who
+wants to push without reading can parse the label out of the output, or pass
+`--no-verify`, which is git's own escape and is left working on purpose: a hook
+that cannot be bypassed gets deleted, and then nothing runs at all. A bypass
+leaves no trace, which is why `make hooks` says so as it installs.
+
+**The hook is driven by git in its tests, not called in parts.** Everything
+interesting about a hook is what git hands it and what git does with its exit
+status, so `prepush_test.go` builds the tool, points `core.hooksPath` at the
+committed hook and pushes for real between two local repositories: an
+unacknowledged push is refused and the refusal names the file, line and number;
+an acknowledged one succeeds; `--no-verify` is let through, because a documented
+escape that turned out not to work would be found at the worst possible moment.
+
+Its fixture is numbered in chapter 9, which the ledger does not have, for the
+reason 5.677 already gives about the other test file -- and the hook is what
+found it needed to be. Refusing its own branch's push, it printed four
+references to **5.1 `Branch coverage`**, a section these tests have nothing to
+do with, at the top of the list. The gate's first catch was its own test data.
+
+That test found a design defect immediately. Run by hand, `cites` prints *"this
+branch adds no ledger reference"* when there is nothing, because silence there
+reads as a broken tool. In the hook that line would print on every push that
+touches no citation, which is most of them -- and a hook that chatters is a hook
+people learn to skip. `--require` is silent on an empty list; by hand it is not.
+
+**Not verified.** Whether anybody runs `make hooks` is exactly the question this
+subsection does not answer, one step removed: the hook is in the tree and the
+install is not enforced, so a clone without it is a clone without the gate. CI
+requiring `cites` would close that and is still open in issue 750; the argument
+against is that CI cannot read a list either, so it could only check the
+mechanical half it already checks. The interactive path was exercised by hand on
+`beastie` only, and the non-interactive path is what the tests and this branch's
+own push use.
 
 ## 6. Everything else not started
 

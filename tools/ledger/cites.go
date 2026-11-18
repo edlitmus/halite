@@ -217,18 +217,133 @@ func paragraphAround(lines []string, i int) string {
 	return strings.Join(lines[lo:hi+1], "\n")
 }
 
-// cmdCites is the mode itself.
-func cmdCites(p *plan) error {
-	return p.cites(os.Stdout)
-}
+// ackEnv carries the acknowledgement where there is no terminal to ask at:
+// a scripted push, or an agent's shell.
+const ackEnv = "LEDGER_CITES_ACK"
 
-func (p *plan) cites(w io.Writer) error {
+func cmdCites(p *plan) error    { return p.cites(os.Stdout, false) }
+func cmdCitesAck(p *plan) error { return p.cites(os.Stdout, true) }
+
+func (p *plan) cites(w io.Writer, require bool) error {
 	refs, err := p.collectRefs()
 	if err != nil {
 		return err
 	}
+	// The gate says nothing when there is nothing to say. Run by hand the
+	// tool reports an empty list, because silence there reads as a broken
+	// tool -- but in the hook that line would print on every push that
+	// touches no citation, which is most of them, and a hook that chatters
+	// is a hook people learn to skip. Found by the test that drives a real
+	// `git push` with no references in the diff.
+	if require && len(refs) == 0 {
+		return nil
+	}
+	// renderCites sorts in place, so refs[0] afterwards is the entry
+	// printed first -- the one the acknowledgement asks for.
 	renderCites(w, refs, baseRef())
+	if !require {
+		return nil
+	}
+	tty, closeTTY := openTTY()
+	defer closeTTY()
+	return requireAck(w, refs, os.Getenv(ackEnv), tty)
+}
+
+// requireAck is the pre-push gate.
+//
+// # What it can and cannot check
+//
+// Nothing can verify that a person read a list. What this does instead is
+// require *contact with the content*: the acknowledgement is the label of the
+// first reference printed, which is the lowest-scoring one and therefore the
+// likeliest mistake. Typing it means the list was on screen and looked at.
+//
+// A "did you read it? [y/N]" prompt was the obvious alternative and is worse
+// than nothing, for the reason the release gate already gives in its own
+// failure text: it converts an unknown into a claim. A keystroke that becomes
+// reflex after three pushes would leave the ledger carrying an assertion that
+// each citation had been checked, which is exactly the defect 5.677 exists
+// about, one level up.
+//
+// It defends against inattention and not against determination. Somebody who
+// wants to push without reading can parse the label out of the output above,
+// or pass `--no-verify`, which is git's own documented escape and is left
+// working on purpose: a hook that cannot be bypassed gets deleted, and then
+// nothing runs at all.
+func requireAck(w io.Writer, refs []reference, env string, tty io.Reader) error {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	// An unresolved reference is not a judgement call, so it is not
+	// acknowledgeable: the number names no section and the push stops.
+	var dangling []string
+	for _, r := range refs {
+		if r.overlap < 0 {
+			dangling = append(dangling, fmt.Sprintf("%s:%d cites %s", r.file, r.line, r.label))
+		}
+	}
+	if len(dangling) > 0 {
+		return fmt.Errorf("these references name no section in %s:\n  %s",
+			ledgerPath, strings.Join(dangling, "\n  "))
+	}
+
+	want := refs[0].label
+	if tty == nil {
+		if env == want {
+			return nil
+		}
+		if env != "" {
+			return fmt.Errorf("%s is %q, which is not the first reference listed above; "+
+				"read the list and set it to that label", ackEnv, env)
+		}
+		return fmt.Errorf("no terminal to ask at, so set %s to the label of the first "+
+			"reference listed above, or push with --no-verify and say in the PR that "+
+			"the list was not read", ackEnv)
+	}
+
+	fmt.Fprintf(w, "Read the list. To confirm, type the label of the first reference (%d in all): ", len(refs))
+	line, err := readLine(tty)
+	if err != nil {
+		return fmt.Errorf("reading the acknowledgement: %v", err)
+	}
+	if strings.TrimSpace(line) != want {
+		return fmt.Errorf("%q is not the first reference listed above", strings.TrimSpace(line))
+	}
 	return nil
+}
+
+// readLine reads one line without pulling in bufio's buffering, which would
+// swallow whatever the terminal sends next.
+func readLine(r io.Reader) (string, error) {
+	var out []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				return string(out), nil
+			}
+			out = append(out, buf[0])
+		}
+		if err != nil {
+			if len(out) > 0 || err == io.EOF {
+				return string(out), nil
+			}
+			return "", err
+		}
+	}
+}
+
+// openTTY returns the terminal, or nil where there is none -- a scripted
+// push, CI, or an agent. stdin cannot be used: git has the refs being pushed
+// on it.
+func openTTY() (io.Reader, func()) {
+	f, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
+		return nil, func() {}
+	}
+	return f, func() { _ = f.Close() }
 }
 
 // collectRefs is everything that reads git and the disk.

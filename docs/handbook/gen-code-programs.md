@@ -176,6 +176,8 @@ This computes that list instead. Git already knows which lines a branch added; a
 	ledger renumber    renumber this branch's sections and their citations
 	ledger cites       every ledger reference this branch added, beside the
 	                   heading it names, for a person to read
+	ledger cites --require   the same, and refuse unless the list is
+	                   acknowledged; what the pre-push hook runs
 
 A section is "this branch's" when its title is absent from origin/main's copy of the ledger. Titles are matched rather than numbers because the number is the thing in flux.
 
