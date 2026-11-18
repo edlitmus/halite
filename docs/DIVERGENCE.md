@@ -16215,9 +16215,11 @@ owns it was found — and where the two tests that caught the widening come from
 
 `internal/specaudit`'s ledger audit passed the whole time, because it checks that
 a cited number **exists** and not that the section says what the citation claims.
-That gap is recorded as plan.md's own note and was met again here within an hour
-of being read. Nothing mechanical catches it; the only thing that does is opening
-the section, which takes one command.
+That gap is recorded in `CLAUDE.md`, beside the reason `tools/ledger renumber`
+exists, and it was met again here within an hour of being read. Nothing
+mechanical catches it; the only thing that does is opening the section, which
+takes one command. Issue 750 carries closing it, and 5.164.1 says why the
+sentence this paragraph used to end with was wrong.
 
 #### The audit, and the half of it that is not a finding
 
@@ -16245,6 +16247,38 @@ Six breaks, all of which fail: one site back on `os.MkdirAll`; the audit made to
 stop recognising the helpers; each of the three helpers' restriction removed; and
 the restriction made unconditional again, which fails this package's own test and
 both of the tests that found it.
+
+#### 5.164.1 And this entry's own claim about where that was written down
+
+The paragraph above said *"that gap is recorded as plan.md's own note"*. It was
+not, and it never had been.
+
+Found while opening issue 750, by grepping `plan.md` for it and finding nothing.
+`git log -S` over `plan.md` for four phrasings of the claim returns no commit,
+and `plan.md` as it stood at 32b6228c -- the commit that wrote the sentence --
+has no such note either. The nearest line in that revision was *"a context
+reader written from documentation is the mistake DIVERGENCE 5.31 keeps being
+cited for"*, which is about writing a module from documentation, not about a
+citation naming the wrong section. The gap was recorded, in `CLAUDE.md`'s
+explanation of why `tools/ledger renumber` exists: *"they check a cited number
+exists, not that it is the one meant"*. Just not there.
+
+**The entry recording a wrong citation ended with a wrong claim about a
+record.** Both halves are the same defect: a reference nobody opened. It is
+`CLAUDE.md`'s *two paths that must agree* -- here a document and another
+document it describes -- with the half nothing checks on the prose side, because
+no audit reads a sentence about what a different file says.
+
+The sentence is corrected rather than annotated, because a reader of 5.164 who
+stops there would otherwise go looking in `plan.md` for something that is not
+in it. What is appended, here, is the record of its having been wrong.
+
+**Not restored, deliberately.** The obvious alternative -- add the note to
+`plan.md` so the sentence becomes true -- was rejected. `plan.md` says of itself
+*"Nothing enforces it"*, and the gap now has an issue, which is a stronger
+record than a line in an unenforced document. Retrofitting the file to match
+the claim would also be the wrong direction of fix: the claim was untrue when
+it was made, and that is the thing worth writing down.
 
 ### 5.165 Eight renames, and a judgement that turned out to be one judgement
 
