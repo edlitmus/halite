@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -151,7 +152,16 @@ func newLedgerRepo(t *testing.T) *ledgerRepo {
 	}
 
 	tmp := t.TempDir()
+	// `.exe`, or `go build -o` writes one and exec.Command cannot find
+	// what it was handed. The hook tests did not need this and so did not
+	// show it: git runs the hook under bash, which resolves `ledger` to
+	// `ledger.exe` by itself, where exec.Command with an absolute path
+	// does not. Found by the Windows leg, on a branch whose own entry
+	// said Windows had not been tested (5.678).
 	bin := filepath.Join(tmp, "ledger")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = filepath.Join(repoRoot(t), "tools", "ledger")
 	if out, err := build.CombinedOutput(); err != nil {

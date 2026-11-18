@@ -46173,8 +46173,40 @@ asked rather than in what was done with the answer: a unit test around
 and it would be invisible if it had: the result is a citation pointing at a
 plausible wrong section, which is indistinguishable from the fault 5.677 is
 about. The interaction with `git add -N` (an intent-to-add entry, which the diff
-does show) was not explored, and nothing was tested on Windows, where
-`core.hooksPath` and these paths behave differently.
+does show) was not explored.
+
+**And Windows was named here as untested, then tested, and found something**
+within the hour: the CI leg failed all four of the new tests with
+
+```
+exec: ".../001/ledger": executable file not found in %PATH%
+```
+
+because `go build -o` writes `ledger.exe` there and `exec.Command` with an
+absolute path does not add the suffix. The hook tests of 5.677.1 build a binary
+the same way and passed, which is why nothing had shown it: git runs the hook
+under bash, and bash resolves `ledger` to `ledger.exe` by itself. It took a test
+that executes the tool directly, and the first one written did.
+
+That is a defect in the harness and not in the fix. The tool's behaviour on
+Windows is still unexercised beyond compiling, because what these tests check is
+what git is *asked*, which is the same question on every platform. The narrower
+thing the leg demonstrated is worth having anyway: a sentence saying a platform
+was not covered stops being true the moment CI runs. That is the shape
+`CLAUDE.md` records twice -- `plan.md` still saying Linux arm64 *"has still
+never run it"* after the runs of 5.83 and 5.84, and three pages saying the
+macOS code had been run on neither while seven `mac_*` modules were already
+`hardware`, which is one of (5.142)'s six false claims.
+
+**And the gate caught two wrong citations in that very sentence.** The first
+draft of it cited 5.83, 5.84 and 5.142 together as instances of prose going
+stale. 5.142 is that; 5.83 is a FIPS arm64 *run*, and 5.84 is a relative
+include resolving one level too high. `cites` ranked all three near the top of
+this branch's list, which is what sent them to be opened, and the sentence was
+rewritten to cite the runs as runs. It is the first time the gate has caught
+the thing it was built for -- a wrong citation in prose, rather than noisy
+fixture data -- and it caught it from the author of the gate, on the branch
+fixing the gate's sibling.
 
 ## 6. Everything else not started
 
