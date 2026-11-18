@@ -2071,6 +2071,189 @@ for tier 3.**~~ ~~**Run the suite on macOS and FreeBSD.**~~ All done.
 §7.1 keeps the reasoning from the ones whose argument still earns its
 place.
 
+**What is left, 2026-11-17.** Every block below this one is done,
+demoted, or waiting on something it names, so this block is the ranked
+order as it stands. The others stay for the reason §7.1 gives, and the
+numbers run on rather than being reused, for the ledger's reason: a
+number somebody has already cited should not come back meaning
+something else.
+
+Two things changed since the re-rank, and they change the ranking
+rather than its premise. The first is that October and November's work
+landed through **issues** rather than through this list — nine are
+open, each holding its own measurements, its own "not verified"
+paragraph and, in two cases, a checklist against the real estate. Each
+row below names the issue that tracks it; the issue is the authority
+for the numbers, and this list is only the order. The second is that
+the fleet has now been **scaled on real hardware**, so the SPEC 30
+rows that used to say "needs a harness" say which number was measured
+on which hub, and what is left of that section is named row by row,
+down to the machine or the link each one still wants.
+
+24. **The two upgrade checklists, read against the real configuration**
+    (#616, #643). First because it is the only row where work that is
+    *already merged* can stop a production hub: this fleet installs
+    from source, so the next `make install` carries all of it, and
+    several of the issue 321 fixes **refuse a configuration that used
+    to start**. **47 of #643's 89 boxes are unticked, and 4 of #616's
+    14**, with a refresh adding 22 more to #643 that nobody has
+    checked. What has been ticked was read against the Terraform
+    templates and the Salt states that *write* the configuration — not
+    against a deployed `hub.yaml`, `node.yaml`, `policy.yaml` or
+    `api.yaml` from a running host, and **not against any FreeBSD
+    host's configuration at all**, which is four of the five hosts and
+    the platform this document keeps rediscovering it has not checked.
+    Four bite as read: the Salt-managed systemd units have neither the
+    exit-78 handling nor the node unit's `ProtectKernelModules`, the
+    starting policy's API role has no `act_for`, the only extension
+    bundle in the state tree is the old arm64-only 1.0.0, and
+    `pillar_cache_disk` defaults to on for nodes whose pillar holds
+    secrets. The two policy-wide items need the real `policy.yaml`,
+    which nobody has read.
+
+25. **SPEC 30's remaining rows** (#718, DIVERGENCE 5.279). Five of the
+    seven harness rows have results now, got by running the thing:
+    20,000 nodes connected to a Linux hub and to a FreeBSD hub on both
+    UFS and ZFS; `test.ping` p95 7.85 s at 20,000 on Linux and 2.34 s
+    on FreeBSD with ZFS; `state.apply` dispatched to all 20,000 in
+    783 ms; hub memory 3.71 to 3.80 GiB at peak once each node's queue
+    held pointers (5.661); and the reactor row met on a 16-core Linux
+    hub at 5,000 events a second (5.668.1). §3.1's heading still says two
+    of thirteen are *measured*, and that is still right — none of those
+    five is a benchmark `make perf` can repeat, which is what each
+    row's own `Waiting` line in `internal/perf` says it waits on.
+
+    What is left, in the issue's order: the **25,000 connection cap**,
+    which #691 built and nothing has run at scale; the **reactor row on
+    FreeBSD**; **relays** (100,000 per estate through two tiers) and the
+    **file server** (10 Gb saturated), neither started, because
+    `tools/simfleet` has no file-server client and has never been
+    pointed at a relay's identity handling; and three rows the harness
+    cannot reach at all — node idle memory and node idle CPU want a
+    soak, and cold start to first highstate wants SPEC 31's integration
+    matrix, which does not exist. One row is a measured **miss**: a
+    FreeBSD hub with `state_dir` on UFS took p95 36 to 40 s against the
+    10 s target even after both fixes (5.660.1), and the handbook says
+    UFS is not recommended for a large FreeBSD hub rather than claiming
+    the row.
+
+    These runs **bill**. Raise the lab and tear it down in the same
+    session; the issue marks which steps cost money.
+
+26. **The install runbook runs** (#733). Eight of ten open, and the two
+    that have had code written for them are not closed by it: the
+    hyphen-first bootstrap token — the rc script passes `--token=`
+    (5.666) and the hub no longer mints a secret beginning with `-`
+    (#745) — has still not been through a real enrolment by rc(8) on a
+    FreeBSD host, and the lab's hub-port variable (#735) has only been
+    applied against a mocked provider. The rest are the legs that
+    *feel* covered because their opposite number ran: **cloud-init and
+    FreeBSD's nuageinit**, never run on a new instance; `make install`
+    from a source checkout **on Linux**, run only in a FreeBSD jail; a
+    **Linux** upgrade by a state, and a whole-fleet upgrade, run on
+    FreeBSD only; the agentless bootstrap to a **Linux** target;
+    FreeBSD **over a wire** rather than through tunnels, and a FreeBSD
+    node surviving a reboot; mail off the machine for chapter 24's
+    drift report; and LDAP, OIDC and TOTP with a role map for a
+    directory group.
+
+27. **Nothing bounds a client to SPEC 6.5's 64 streams per connection**
+    (#748, DIVERGENCE 5.665.1). The hub's half is enforced — #691 caps
+    node connections and advertises 64 where the hub had been
+    advertising `net/http`'s 250 — and the client half is not bounded
+    anywhere: a client that opens a 65th stream has it reset, and which
+    code comes back is a race, `REFUSED_STREAM` before its `SETTINGS
+    ACK` arrives (which `net/http` retries invisibly) and
+    `PROTOCOL_ERROR` after it, which it does not. **The measurement
+    comes first and may close the issue**: nothing has shown that a
+    real client ever bursts past 64 on one connection, and the obvious
+    source does not exist, because `internal/state` runs states
+    serially and `parallel: True` is accepted with a warning and not
+    acted on. Implementing that is what turns this live, which is the
+    reason to settle the policy before then rather than after.
+
+28. **Windows: the two leads an elevated session is needed for** (#608,
+    L23 and L24). The rest of that issue closed between 2026-11-07 and
+    11-10 on a native Windows 11 host, each fix with a test that failed
+    on the unchanged code — and the account was in Administrators
+    *without* an elevated token, which is exactly what the two
+    remaining leads need: `winsvc`'s write path asks for
+    `SC_MANAGER_ALL_ACCESS` on the manager rather than scoping to the
+    one service a delegated ACL might grant rights on, and
+    `Start`/`Stop` race a service's own state transitions. Both need a
+    service somebody can construct with administrator rights.
+
+29. **`awsauth`'s three, which need real AWS** (#613). EKS Pod Identity
+    cannot be reached through the container-credentials path at all,
+    because nothing reads `AWS_CONTAINER_AUTHORIZATION_TOKEN`; an IMDS
+    `401` on a read is not retried with a new token; and
+    `canonicalQuery` sorts by the raw parameter name where SigV4 sorts
+    by the encoded one, which no caller in this build triggers. All
+    three were run against a local HTTP server standing in for the
+    endpoint, which is the shape this project does not close on. They
+    need an EKS pod with Pod Identity, an EC2 instance whose metadata
+    service is bounced mid-run, and a published vector with a key that
+    sorts differently encoded.
+
+30. **FIPS: what the arm64 runs left, and the questions they opened**
+    (#306, DIVERGENCE 5.282 and 5.587). The `-fips` binaries have run
+    on Ubuntu FIPS kernels — a hub, an API and a node, enrolled by
+    token, under the shipped systemd drop-ins, on arm64 with `main`.
+    What is left wants machines: amd64 `main` (no amd64 FIPS host is
+    left), Ubuntu Pro's certified `fips` kernel, a reboot and a start at
+    boot, TOTP, an upgrade, and a release archive built from `main`.
+    Three of the questions those runs opened want a person instead, and
+    each is the shape CLAUDE.md warns about — two things that must
+    agree and do not: the hub accepts Ed25519 client signatures under
+    `fips140=on` while SPEC 27.4 says Ed25519 is unavailable; the
+    operator CLI dials `localhost` when `listen` names a specific
+    address; and SPEC 14.1 says `fips_mode` reads Ubuntu Pro state,
+    which the code does not.
+
+31. **Release signing through SSO or an assumed role, and who may
+    publish** (#311, DIVERGENCE 5.618). v0.1.1 was signed with static
+    credentials in the environment, so the SSO and assumed-role path
+    `docs/releasing.md` describes has never been exercised; that waits
+    for the next real release. The other half is a decision:
+    `verify-release.yml`'s `signatures` job checks *what* was signed
+    after a publish — and has not yet run on GitHub at all, since it
+    first runs on the next publish — while anybody with write access
+    can publish a draft from the UI, which no gate sees. Detecting a
+    bad publish is not preventing one.
+
+32. **The module inventory's remainder**, which items 11 to 14 rank and
+    §2.2, §2.3 and §2.5 count: `blockdev` and `nfs` of SPEC 15.2's
+    execution modules and `pro` and `win_wua` of SPEC 15.5's states, as
+    §2.2 counted them on 2026-09-12; **17 of SPEC 15.3's 65 platform
+    modules**, which `TestPendingPlatformModulesMatchTheSpec` still
+    logged as 17 on 2026-11-17; and phase 5's own tail — the agentless
+    reverse tunnel, the `scan`, `cloud` and `terraform` rosters,
+    `minionfs`, and the `postgres` and `sqs` reference bridges SPEC
+    20.3 promises as worked examples. Every one of them refuses by name
+    rather than reading as a typo, which is why none of it is urgent on
+    a fleet that runs without them, and every one is a row somebody
+    else's estate would need.
+
+**Still open from the blocks below, unchanged.** Item 9's remainder is a
+**PIV or YubiKey signer** behind the bridge `internal/extsigner`
+already provides — the AWS KMS one is built and demonstrated — and the
+**design question orchestration signing waits on**: a live call per
+step out of `orchRunner.dispatchAndWait`, or a pre-approved plan, which
+is a decision before it is a test. Item 14's remainder is
+`subscription_manager`, which wants a RHEL subscription rather than a
+host. Item 19b's is launchd's `user/` domain, and agents whose plist is
+on disk but not loaded. Items 10 to 13 stay demoted, for the reasons
+they give.
+
+**Two accepted gaps, written down so they stay decisions rather than
+drift.** `internal/extconform` keeps the first twenty lines of an
+extension's stderr and no tail (19d) — the right end for a fatal and
+the wrong one for an extension that logs its way to a quiet death. And
+`ledger cites --require` is a condition of pushing only in a clone
+where somebody ran `make hooks`: nothing makes anyone run it, CI does
+not require the list, and `--no-verify` leaves no trace (5.677.1).
+Neither is expensive to close, and neither is closed.
+
 **Now — the fleet this actually runs on**
 
 1. ~~**`pf`**~~ — **done**, the same day the re-rank put it first, and
