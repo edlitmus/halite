@@ -108,6 +108,13 @@ reading greps.
 Run it **just before pushing for merge**, and again if `main` moves while
 the PR waits: the number is only sound against the `main` you last saw.
 
+**`make hooks` makes `cites` a condition of pushing.** It points
+`core.hooksPath` at `.githooks`, whose `pre-push` runs `ledger cites
+--require`: the list, and then the label of its first entry typed back, or
+`LEDGER_CITES_ACK` set to it where there is no terminal. It is silent on a
+branch that cites nothing, and `--no-verify` skips it and leaves no trace, so
+say so in the PR if you use that. Run it once per clone (5.677.1).
+
 **And run `cites` before pushing too.** It prints every `N.M` your branch
 added beside the heading of the section it names, least shared vocabulary
 first, because the audits check that a number *exists* and nothing checks

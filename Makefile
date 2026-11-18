@@ -111,7 +111,8 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
 	fleetcheck fleetcheck-image fleetcheck-rocky9 fleetcheck-alma8 fleetcheck-leap16 dist \
 	release-sign release-verify release-verify-archives release-pubkey release-publish \
-	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
+	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair \
+	hooks hooks-off
 
 all: build
 
@@ -945,6 +946,27 @@ install-fips: make-supports-bang
 
 clean:
 	rm -rf bin dist build cover.out
+
+# ---- git hooks ----
+#
+# Git does not version .git/hooks, so the hooks live in .githooks and this
+# points git at them. Run it once per clone.
+#
+# There is one: pre-push runs `ledger cites --require`, which prints every
+# ledger reference the branch adds beside the heading it names and refuses the
+# push until the list is acknowledged (DIVERGENCE 5.677.1). It is a no-op on a
+# branch that adds none.
+#
+# `--unset` rather than pointing back at .git/hooks, because that is the
+# default and writing it down would freeze it.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "core.hooksPath -> .githooks; pre-push now runs 'ledger cites --require'"
+	@echo "a push can still skip it with --no-verify, which leaves no trace"
+
+hooks-off:
+	git config --unset core.hooksPath
+	@echo "core.hooksPath unset; git is back to .git/hooks" 
 
 # ---- SPEC section 31's differential gate ----
 #

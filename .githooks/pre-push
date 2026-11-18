@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# Refuse a push until the ledger references this branch adds have been put in
+# front of somebody. See DIVERGENCE 5.677 and 5.677.1 for why this exists: the
+# audits check that a cited number exists, nothing checks that the section says
+# what the citing sentence claims, and that has cost five wrong citations --
+# one of them inside the entry recording the previous one.
+#
+# Install with `make hooks`, which sets core.hooksPath. Git does not version
+# .git/hooks, so a hook nobody installs is a hook nobody runs.
+#
+# The work is in `ledger cites --require`, which is Go and has tests. This
+# script is the shim: decide whether to run at all, and get out of the way.
+#
+# `--no-verify` skips it. That is deliberate (a hook that cannot be bypassed
+# gets deleted), and a bypass is invisible, so say so in the PR when you use it.
+
+set -e
+
+# LEDGER_CMD lets the tests point at a prebuilt binary, and lets anybody with
+# `ledger` installed skip the compile.
+: "${LEDGER_CMD:=go run ./tools/ledger}"
+
+# git sends one line per ref: <local ref> <local sha> <remote ref> <remote sha>.
+# A deletion has an all-zero local sha and adds no references, so it is not
+# worth a compile. Nothing else about stdin is read, and stdin is why the
+# acknowledgement has to come from /dev/tty rather than from here.
+pushing_something=0
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+	case "$local_sha" in
+	"" | 0000000000000000000000000000000000000000) ;;
+	*) pushing_something=1 ;;
+	esac
+done
+
+if [ "$pushing_something" -eq 0 ]; then
+	exit 0
+fi
+
+# The tool prints nothing and exits 0 when the branch adds no reference, so
+# the common push costs one run and no output.
+# shellcheck disable=SC2086
+exec $LEDGER_CMD cites --require

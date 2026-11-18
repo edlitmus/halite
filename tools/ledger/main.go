@@ -30,6 +30,8 @@
 //	ledger renumber    renumber this branch's sections and their citations
 //	ledger cites       every ledger reference this branch added, beside the
 //	                   heading it names, for a person to read
+//	ledger cites --require   the same, and refuse unless the list is
+//	                   acknowledged; what the pre-push hook runs
 //
 // A section is "this branch's" when its title is absent from
 // origin/main's copy of the ledger. Titles are matched rather than
@@ -76,7 +78,15 @@ func main() {
 			return p.apply()
 		})
 	case "cites":
-		run(cmdCites)
+		switch {
+		case len(os.Args) == 2:
+			run(cmdCites)
+		case len(os.Args) == 3 && os.Args[2] == "--require":
+			run(cmdCitesAck)
+		default:
+			fmt.Fprintf(os.Stderr, "ledger: usage: ledger cites [--require]\n")
+			os.Exit(2)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "ledger: unknown mode %q\n\nusage: ledger [next|plan|renumber|cites]\n", mode)
 		os.Exit(2)
