@@ -45735,6 +45735,52 @@ format differs.
 - No scale run has read these. Plan H6's sampler stays until one has
   checked the two against each other.
 
+### 5.676 5.675's families had no panel, and no audit could notice (2026-11-17)
+
+5.675 added eight families to `/v1/metrics` and listed "no panel in
+`contrib/examples/grafana-dashboard.json`" as not done. The project's
+rule is that metrics work updates the dashboard in the same change, and
+`TestEveryRegisteredFamilyIsOnTheDashboard` exists to make that a
+failing test. It did not fail. It reads `halite_` names out of the
+source, and these families keep the Prometheus client libraries'
+names. 5.675 noticed the same gap in the documentation audits and
+closed it for `docs/metrics.md` and SPEC 26.2, but not for the
+dashboard.
+
+**The change.**
+
+- `TestProcessFamiliesAreOnTheDashboard` reads the families out of what
+  `Process` exposes and requires each to be queried under `job="$job"`
+  and under `job="$node_job"`. A node with `metrics_listen` exports
+  them on its own scrape. It also names the three `process_` families
+  outright, because a platform without a reader, such as macOS, does
+  not register them and the dashboard still has to show them. Before
+  any panel was added it failed for every family under both jobs.
+- The dashboard, now version 9, gains a "Process: hub and API" row under
+  the API row and the same four panels at the foot of the collapsed
+  node row:
+  - resident memory beside what the Go runtime holds;
+  - descriptors as a share of the limit, with lines at 0.8 and 0.9;
+  - goroutines and threads;
+  - the Go heap.
+- A comparison of the parsed JSON before and after shows that nothing
+  else changed. Every existing panel is identical, except that the four
+  top-level panels below the new row (the node, relay and build rows,
+  and the build-identity table) moved down by its 17 units of height.
+- `docs/metrics.md` gains `HaliteDescriptorsNearLimit`:
+  `process_open_fds / process_max_fds > 0.8` for 10 minutes. Both sides
+  carry `instance` and `component`, so the division matches one to one.
+
+**Not run.**
+
+- The dashboard has not been imported into a Grafana, and no panel has
+  drawn real data. The shape tests (identifiers, overlap, descriptions,
+  variables) pass, but they read JSON, not a rendering.
+- The rule has not been through `promtool check rules`: the machine it
+  was written on has none, and nothing in this repository runs it. The
+  page's sentence that the block is accepted by `promtool` now names
+  this rule as the exception. The rule has not fired against live data.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

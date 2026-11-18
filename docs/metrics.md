@@ -1007,6 +1007,7 @@ every estate — which is checked by a test.
 The rows: fleet health, certificates and enrollment, jobs, states and
 orchestration, pillar, events and reactions, the file server,
 authentication and policy, evidence anchors, the hub's own service metrics, the API's,
+the hub's and the API's process metrics (memory, descriptors, threads),
 two collapsed rows for the node agents and for relays, and the build
 row. Every panel
 carries a description saying what a reading means — hover the title.
@@ -1045,9 +1046,11 @@ starting point.
 ## Alerting
 
 Every metric in the rules below exists in this build, which is checked
-by a test, and the block is accepted by `promtool check rules`. They
-have not been evaluated against live data, so the thresholds are a
-starting point rather than tuned figures.
+by a test, and the block is accepted by `promtool check rules`.
+`HaliteDescriptorsNearLimit` is the exception: it was added
+(DIVERGENCE 5.676) on a machine without `promtool`, and has not been
+through it. None of the rules has been evaluated against live data, so
+the thresholds are a starting point rather than tuned figures.
 
 ```yaml
 groups:
@@ -1124,6 +1127,20 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "{{ $value }} enrolled nodes are not connected (aggregate; HaliteNodeDisconnected and HaliteNodeScrapeDown name them)"
+
+      # A process near its descriptor limit. A hub holds at least one
+      # descriptor per connected node, so this follows the fleet; at the
+      # limit every new connection and every file the process opens
+      # fails. Linux, FreeBSD and macOS export both sides; Windows
+      # neither, so the rule cannot fire there. Both sides carry the
+      # same labels (instance, component), so the division matches them
+      # one to one.
+      - alert: HaliteDescriptorsNearLimit
+        expr: process_open_fds{job="halite"} / process_max_fds{job="halite"} > 0.8
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }} ({{ $labels.component }}) has {{ $value | humanizePercentage }} of its file descriptors open"
 
       # A rate rather than a total: a rise is either a role somebody
       # got wrong or somebody trying.

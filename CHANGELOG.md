@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **The example Grafana dashboard shows process memory, descriptors and threads.** A new "Process: hub and API" row, and the same four panels in the node row, draw the families 5.675 added: resident memory beside what the Go runtime holds, descriptors as a share of the limit, goroutines and threads, and the Go heap. `docs/metrics.md` gains a `HaliteDescriptorsNearLimit` rule, which fires above 80% for 10 minutes. Import the dashboard again (version 9) to get the panels. DIVERGENCE 5.676.
+
 - **The hub, the API and a node's metrics now include the process's memory, descriptors and threads.** New families: `process_resident_memory_bytes`, `process_open_fds`, `process_max_fds`, `go_goroutines`, `go_threads`, and three `go_memstats_*` memory gauges. They use the standard Prometheus names, with a `component` label. The resident set is exported on Linux and FreeBSD, and descriptors on Linux, FreeBSD and macOS. A platform that cannot read a family does not export it. Windows has only the `go_` families. DIVERGENCE 5.675.
 
 - **A bootstrap token no longer begins with a hyphen.** `halite-hub keys token create` printed bare base64, and about one token in 64 began with `-`, which `halite-node enroll --token SECRET` reads as a flag and refuses. Tokens now begin with `hbt_`, followed by the same 256 random bits, so they work after a space as well as after `=` or in a file. Tokens minted before this change still enrol. DIVERGENCE 5.674.

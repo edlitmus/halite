@@ -278,3 +278,58 @@ func TestProcessFamiliesAreDocumented(t *testing.T) {
 		t.Fatalf("Process exposed %d families; this check has stopped checking", n)
 	}
 }
+
+// **Every process family has a panel, the hub's and API's under their
+// scrape job and the node's under the nodes' own.**
+// TestEveryRegisteredFamilyIsOnTheDashboard reads `halite_` names out of
+// the source and cannot see these, so 5.675 shipped them with no panel
+// at all. This reads the families out of what Process exposes and
+// requires each to be queried once under `job="$job"` and once under
+// `job="$node_job"`, because a node with metrics_listen exports them
+// too, on its own scrape.
+func TestProcessFamiliesAreOnTheDashboard(t *testing.T) {
+	r := NewRegistry()
+	r.Process("t")
+	var b strings.Builder
+	if err := r.Write(&b); err != nil {
+		t.Fatal(err)
+	}
+	var queries []string
+	for _, p := range allPanels(readDashboard(t).Panels) {
+		for _, target := range p.Targets {
+			queries = append(queries, target.Expr)
+		}
+	}
+	queried := func(name, job string) bool {
+		for _, q := range queries {
+			if strings.Contains(q, name+"{") && strings.Contains(q, `job="`+job+`"`) {
+				return true
+			}
+		}
+		return false
+	}
+	// The process_ families are named as well as read from the
+	// exposition: a platform without a reader for one (macOS has no
+	// resident set) does not register it, and the dashboard still has
+	// to show it for the hosts that do.
+	names := map[string]bool{
+		"process_resident_memory_bytes": true, "process_open_fds": true, "process_max_fds": true,
+	}
+	for _, line := range strings.Split(b.String(), "\n") {
+		if name, ok := strings.CutPrefix(line, "# TYPE "); ok {
+			names[strings.Fields(name)[0]] = true
+		}
+	}
+	n := 0
+	for name := range names {
+		n++
+		for _, job := range []string{"$job", "$node_job"} {
+			if !queried(name, job) {
+				t.Errorf("no panel on the example dashboard queries %s under job=%q", name, job)
+			}
+		}
+	}
+	if n < 5 {
+		t.Fatalf("Process exposed %d families; this check has stopped checking", n)
+	}
+}
