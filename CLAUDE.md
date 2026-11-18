@@ -100,8 +100,11 @@ careful". Renumbering 5.149 to 5.151 means rewriting every citation of
 5.149, and main may cite 5.149 meaning *its own* section — which must not
 move. Nothing in the audits would catch that: they check a cited number
 exists, not that it is the one meant. The tool rewrites a citation only
-on a line your branch added, which `git diff` already knows, so the
-distinction is made by construction rather than by judgement. Doing it by
+on a line your branch added -- which `git diff` knows, plus `git ls-files
+--others` for the files git has not been told about yet, because the
+first version asked only the former and so left an uncommitted
+citation pointing at somebody else's section (5.678). The distinction is
+made by construction rather than by judgement. Doing it by
 hand meant a list of twenty-six file-and-line pairs, written out by
 reading greps.
 

@@ -46094,6 +46094,120 @@ mechanical half it already checks. The interactive path was exercised by hand on
 `beastie` only, and the non-interactive path is what the tests and this branch's
 own push use.
 
+### 5.678 `renumber` could not see a citation in a file git had not been told about
+
+Issue 752, found while building `cites` (5.677) and fixed here.
+
+`touchedLines` asked `git diff -U0 <base> --`, which lists what is committed and
+what is in the working tree and **not** what is untracked. `plan` and
+`renumber` iterate only what it returns, so a citation in a file the branch had
+written but not `git add`ed was invisible to both -- and `renumber` left it
+pointing at the old number, which after renumbering belongs to somebody else's
+section.
+
+That is the exact failure the tool exists to prevent. `CLAUDE.md`, on why it is
+a tool and not a note saying be careful: *"main may cite 5.149 meaning its own
+section -- which must not move … The tool rewrites a citation only on a line
+your branch added, which `git diff` already knows, so the distinction is made by
+construction rather than by judgement."* The construction held for tracked
+files and quietly excluded new ones.
+
+**Demonstrated before it was fixed**, in a throwaway repository: a base with
+`### 9.1 A base section`, a branch adding a colliding `### 9.1 My new section`,
+cited from a committed file and from an untracked one.
+
+```
+citations to rewrite, on lines this branch added:
+  docs/DIVERGENCE.md:4  9.1 -> 9.2
+  tracked.go:3  9.1 -> 9.2
+```
+
+`untracked.go:3` is absent, and after `renumber` its `9.1` reads as the base's
+*A base section*.
+
+**How it was found is the part worth keeping.** `cites` was written with its own
+union of `git diff` and `git ls-files --others`, because running it on the
+branch that introduced it reported *"this branch adds no ledger reference"*
+while its own doc comment cited nine sections -- the file was not committed yet.
+The fix went into the tool that reads and not the tool that writes, which left
+two definitions of "this branch's lines" with the weaker one in the tool that
+edits files. Writing that down in 5.677 as a known gap was the right thing to
+do and was not a fix.
+
+#### The fix, and the three things it must not do
+
+`touchedLines` is now the one definition for `plan`, `renumber` and `cites`:
+the diff, plus every line of every untracked file. `cites` no longer has a
+union of its own.
+
+Widening what a rewriting tool touches needs its guards stated, and each has a
+test that was watched failing:
+
+- **A file the branch did not touch is still left alone.** This is the property
+  the whole design rests on -- the base may cite 9.1 meaning its own 9.1 -- and
+  it is the one that widening the scope could have broken. Asserted by
+  committing a citation onto the base and checking it still says 9.1
+  afterwards.
+- **An ignored file is not rewritten.** `--exclude-standard` is what keeps
+  build output and scratch notes out; without it, widening the scope would hand
+  a rewriting tool every uncommitted file in the tree. Removing the flag
+  rewrites the fixture under `scratch/`, which is how that is known rather than
+  assumed.
+- **A binary is not read or rewritten.** Detected by a NUL in the first 8 KiB,
+  which is git's own test. Disabling the check **does** rewrite the fixture's
+  bytes, so this guard is load-bearing and not decorative. Size is deliberately
+  not a test: `docs/DIVERGENCE.md` is 2.6 MB of text that has to be read.
+
+**And `cites` stopped reading only `.go` and `.md`.** It had an extension filter
+and `renumber` does not, so the reading gate had a blind spot the rewriting tool
+did not -- a citation in a workflow, a shell script or a manual page would have
+been rewritten without ever being shown to anybody. Two paths that must agree,
+with the paths being a tool and its sibling.
+
+**The tests drive git.** Four of them build the tool, make two repositories and
+run `plan` and `renumber` for real, because the defect was in what git was
+asked rather than in what was done with the answer: a unit test around
+`touchedLines` would have been written against the same wrong assumption.
+
+**Not verified.** Whether this ever cost a real citation. No sweep was made,
+and it would be invisible if it had: the result is a citation pointing at a
+plausible wrong section, which is indistinguishable from the fault 5.677 is
+about. The interaction with `git add -N` (an intent-to-add entry, which the diff
+does show) was not explored.
+
+**And Windows was named here as untested, then tested, and found something**
+within the hour: the CI leg failed all four of the new tests with
+
+```
+exec: ".../001/ledger": executable file not found in %PATH%
+```
+
+because `go build -o` writes `ledger.exe` there and `exec.Command` with an
+absolute path does not add the suffix. The hook tests of 5.677.1 build a binary
+the same way and passed, which is why nothing had shown it: git runs the hook
+under bash, and bash resolves `ledger` to `ledger.exe` by itself. It took a test
+that executes the tool directly, and the first one written did.
+
+That is a defect in the harness and not in the fix. The tool's behaviour on
+Windows is still unexercised beyond compiling, because what these tests check is
+what git is *asked*, which is the same question on every platform. The narrower
+thing the leg demonstrated is worth having anyway: a sentence saying a platform
+was not covered stops being true the moment CI runs. That is the shape
+`CLAUDE.md` records twice -- `plan.md` still saying Linux arm64 *"has still
+never run it"* after the runs of 5.83 and 5.84, and three pages saying the
+macOS code had been run on neither while seven `mac_*` modules were already
+`hardware`, which is one of (5.142)'s six false claims.
+
+**And the gate caught two wrong citations in that very sentence.** The first
+draft of it cited 5.83, 5.84 and 5.142 together as instances of prose going
+stale. 5.142 is that; 5.83 is a FIPS arm64 *run*, and 5.84 is a relative
+include resolving one level too high. `cites` ranked all three near the top of
+this branch's list, which is what sent them to be opened, and the sentence was
+rewritten to cite the runs as runs. It is the first time the gate has caught
+the thing it was built for -- a wrong citation in prose, rather than noisy
+fixture data -- and it caught it from the author of the gate, on the branch
+fixing the gate's sibling.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

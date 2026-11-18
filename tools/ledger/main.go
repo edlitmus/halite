@@ -597,8 +597,24 @@ func gitShow(ref string) (string, error) {
 }
 
 // touchedLines reports, per file, the 1-based lines this branch added or
-// changed against the base -- working tree included, because the entry
-// being renumbered is usually not committed yet.
+// changed against the base. It is the one definition of "this branch's lines"
+// that `plan`, `renumber` and `cites` all work from.
+//
+// Three sources, because a line can be this branch's in three ways:
+//
+//   - committed on the branch, and in `git diff` against the base;
+//   - uncommitted in the working tree, which `git diff` also shows, because
+//     the entry being renumbered is usually not committed yet;
+//   - in a file git does not track at all, which `git diff` does **not** show.
+//
+// The third was missing, and it was a defect in `renumber` rather than a
+// nicety. A new test or a new module is exactly where a fresh citation lands,
+// and a citation `renumber` could not see stayed at the old number -- which
+// after renumbering belongs to somebody else's section. That is the precise
+// failure this tool exists to prevent, and it was demonstrated rather than
+// argued: a throwaway repository, a colliding section cited from a tracked and
+// an untracked file, and `plan` listing only the tracked one. Issue 752,
+// DIVERGENCE 5.678.
 //
 // Read from `git diff -U0`'s hunk headers rather than by comparing
 // content: two identical lines are indistinguishable by content and only
@@ -634,5 +650,67 @@ func touchedLines() (map[string][]int, error) {
 			touched[file] = append(touched[file], start+i)
 		}
 	}
+
+	fresh, err := untrackedLines()
+	if err != nil {
+		return nil, err
+	}
+	for file, lines := range fresh {
+		// A file git shows as untracked cannot also be in the diff, but
+		// the diff is the authority if it somehow is: its line numbers
+		// are the ones that describe what changed.
+		if _, already := touched[file]; !already {
+			touched[file] = lines
+		}
+	}
 	return touched, nil
+}
+
+// untrackedLines lists every line of every file git does not track yet.
+//
+// All of them, because there is no "before" to diff against: the whole file is
+// this branch's. `--exclude-standard` means .gitignore is honoured, so build
+// output and scratch files are not rewritten.
+func untrackedLines() (map[string][]int, error) {
+	files, err := untrackedFiles()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]int{}
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			continue // vanished between the listing and here
+		}
+		// A binary file has no lines worth offering a line-rewriting tool,
+		// and `renumber` would be reading and rewriting it. Detected by a
+		// NUL, which is what git itself uses. Size is deliberately not a
+		// test: docs/DIVERGENCE.md is 2.6 MB of text that must be read.
+		if head := body; bytes.IndexByte(head[:min(len(head), 8192)], 0) >= 0 {
+			continue
+		}
+		lines := make([]int, 0, 64)
+		for i := range strings.Split(string(body), "\n") {
+			lines = append(lines, i+1)
+		}
+		out[file] = lines
+	}
+	return out, nil
+}
+
+// untrackedFiles lists files git does not track yet, honouring .gitignore.
+func untrackedFiles() ([]string, error) {
+	cmd := exec.Command("git", "ls-files", "--others", "--exclude-standard")
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("git ls-files --others: %v: %s", err, strings.TrimSpace(errb.String()))
+	}
+	var files []string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
 }
