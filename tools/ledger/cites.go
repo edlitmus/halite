@@ -43,11 +43,9 @@ package main
 // lines. What is mechanical is putting those two lines in front of them.
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -353,54 +351,32 @@ func (p *plan) collectRefs() ([]reference, error) {
 		return nil, fmt.Errorf("no numbered sections found in %s; this tool has stopped working", ledgerPath)
 	}
 
-	// A file this branch has not committed yet is not in `git diff`'s
-	// output, and a new test or a new module is exactly where a fresh
-	// citation lands -- so an untracked file counts entirely as added.
-	// Found by running this tool on the branch that introduced it and
-	// being told, wrongly, that the branch adds no reference: its own
-	// doc comment cites nine sections. `plan` and `renumber` share the
-	// same blind spot and it is not fixed here; see 5.677.
-	scope := map[string][]int{}
-	for f, ns := range p.touched {
-		scope[f] = ns
-	}
-	fresh, err := untrackedFiles()
-	if err != nil {
-		return nil, err
-	}
-	for _, f := range fresh {
-		if _, already := scope[f]; already {
-			continue
-		}
-		body, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		var all []int
-		for i := range strings.Split(string(body), "\n") {
-			all = append(all, i+1)
-		}
-		scope[f] = all
-	}
-
-	files := make([]string, 0, len(scope))
-	for f := range scope {
+	// Every file this branch touched, in one definition shared with `plan`
+	// and `renumber`: see touchedLines. The first version of this tool had
+	// its own union here, because touchedLines missed untracked files; that
+	// is fixed where it belongs now (5.678), so there is one answer to
+	// "which lines are this branch's" rather than two that can drift.
+	files := make([]string, 0, len(p.touched))
+	for f := range p.touched {
 		files = append(files, f)
 	}
 	sort.Strings(files)
 
 	var refs []reference
 	for _, file := range files {
-		if !strings.HasSuffix(file, ".go") && !strings.HasSuffix(file, ".md") {
-			continue
-		}
+		// Every file, not just .go and .md. `renumber` rewrites a
+		// citation wherever it is -- a workflow, a shell script, a
+		// manual page -- so a reading gate that looked at two
+		// extensions would have a blind spot the rewriting tool does
+		// not: the two-paths-that-must-agree shape, with the paths
+		// being this tool and its sibling.
 		body, err := os.ReadFile(file)
 		if err != nil {
 			continue // deleted on this branch
 		}
 		lines := strings.Split(string(body), "\n")
 		seen := map[int]bool{}
-		for _, n := range scope[file] {
+		for _, n := range p.touched[file] {
 			if n-1 < 0 || n-1 >= len(lines) || seen[n] {
 				continue
 			}
@@ -501,21 +477,4 @@ func ledgerHeadings(lines []string) (titles, bodies map[string]string) {
 		bodies[mk.label] = mk.title + "\n" + strings.Join(lines[mk.at:end], "\n")
 	}
 	return titles, bodies
-}
-
-// untrackedFiles lists files git does not track yet, honouring .gitignore.
-func untrackedFiles() ([]string, error) {
-	cmd := exec.Command("git", "ls-files", "--others", "--exclude-standard")
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("git ls-files --others: %v: %s", err, strings.TrimSpace(errb.String()))
-	}
-	var files []string
-	for _, line := range strings.Split(out.String(), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
 }
