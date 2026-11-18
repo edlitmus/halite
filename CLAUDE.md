@@ -87,6 +87,7 @@ do it by hand:
 go run ./tools/ledger next        # the next free number in each chapter
 go run ./tools/ledger plan        # what renumbering would change
 go run ./tools/ledger renumber    # do it
+go run ./tools/ledger cites       # every reference you added, and what it names
 ```
 
 It works out which sections are yours by title, because the number is
@@ -106,6 +107,15 @@ reading greps.
 
 Run it **just before pushing for merge**, and again if `main` moves while
 the PR waits: the number is only sound against the `main` you last saw.
+
+**And run `cites` before pushing too.** It prints every `N.M` your branch
+added beside the heading of the section it names, least shared vocabulary
+first, because the audits check that a number *exists* and nothing checks
+that the section says what your sentence claims. That gap has cost five
+wrong citations that anybody would have spotted by reading the pair, and
+one of them was in the entry recording the previous one (5.164.1, 5.677).
+Reading a short list is the whole method; the tool exists so the list is
+in front of you rather than assembled by grep.
 
 One thing it cannot know: a number on a line you added that is an
 *illustration* rather than a citation gets rewritten too. There is no way

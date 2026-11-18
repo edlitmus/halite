@@ -174,10 +174,12 @@ This computes that list instead. Git already knows which lines a branch added; a
 	ledger next        the next free number in each chapter
 	ledger plan        what renumber would change, and nothing else
 	ledger renumber    renumber this branch's sections and their citations
+	ledger cites       every ledger reference this branch added, beside the
+	                   heading it names, for a person to read
 
 A section is "this branch's" when its title is absent from origin/main's copy of the ledger. Titles are matched rather than numbers because the number is the thing in flux.
 
-**Files:** `main.go`; with tests.
+**Files:** `cites.go`, `main.go`; with tests.
 
 ## `tools/disttar`
 

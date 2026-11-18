@@ -189,8 +189,10 @@ func registeredMetricFamilies(t *testing.T) map[string]bool {
 func TestLedgerDivergenceCitationsResolve(t *testing.T) {
 	ledger := repoFile(t, ledgerFile)
 
-	// The headings that exist: "### 5.74 ..." and "#### 5.74 ...".
-	heading := regexp.MustCompile(`(?m)^#{2,4} (\d+\.\d+[a-z]?) `)
+	// The headings that exist: "### 5.74 ..." and "#### 5.74 ...", plus the
+	// "#### 5.665.1 ..." subsections, which the first version of this
+	// pattern could not see at all.
+	heading := regexp.MustCompile(`(?m)^#{2,4} (\d+\.\d+(?:\.\d+)?[a-z]?) `)
 	defined := map[string]bool{}
 	for _, m := range heading.FindAllStringSubmatch(ledger, -1) {
 		defined[m[1]] = true
@@ -199,17 +201,44 @@ func TestLedgerDivergenceCitationsResolve(t *testing.T) {
 		t.Fatal("no section headings were found; this check has stopped checking")
 	}
 
-	// A citation is a bare number in parentheses: "(5.74)", "(see 5.31)",
-	// "(DIVERGENCE 4.5)". Prose like "(3.2 GB)" is excluded by requiring
-	// the whole parenthesised run to be citation-shaped.
-	cited := regexp.MustCompile(`\((?:see |DIVERGENCE )?(\d+\.\d+[a-z]?)\)`)
+	// A citation takes one of three forms, matched left to right so that a
+	// parenthesised one is consumed whole and not counted twice:
+	//
+	//	(5.74), (see 5.31), (DIVERGENCE 4.5)   a two-part number in brackets
+	//	(see 5.665.1), (DIVERGENCE 5.164.1)    three parts, marker required
+	//	DIVERGENCE 5.664                       marked, brackets or not
+	//
+	// The third form was unchecked until a marked reference to a number no
+	// section uses was planted in the ledger's prose and passed this whole
+	// package: the marker makes the intent unambiguous, so there was never a
+	// reason to catch it only inside brackets. The planted number is not
+	// written out here, because spelled out it is a citation by this very
+	// rule -- which is how the first draft of this comment failed.
+	//
+	// The second form requires the marker because a bare three-part number
+	// in brackets is almost always a version -- widening it without that
+	// condition flagged `Copilot CLI cask (1.0.90)` and `aws-secrets
+	// (1.1.0)` on the first run. "(3.2 GB)" is excluded from the first form
+	// for the same reason, by requiring the bracket to close straight after.
+	//
+	// What is deliberately still not checked is a *bare* unparenthesised
+	// number -- `5.327 is the nearest shape`, the form that cost 5.665.1 a
+	// wrong citation. It cannot be told from a version string: this file
+	// holds 1,204 bare ledger-shaped numbers that name no section, nearly
+	// all of them releases like 24.04 and 3008.3. `tools/ledger cites`
+	// reads a branch's own added lines instead, where a person can judge.
+	cited := regexp.MustCompile(
+		`\((?:see |DIVERGENCE )?(\d+\.\d+[a-z]?)\)` +
+			`|\((?:see |DIVERGENCE )(\d+\.\d+\.\d+[a-z]?)\)` +
+			`|DIVERGENCE (\d+\.\d+(?:\.\d+)?[a-z]?)`)
 	checked := 0
 	for i, line := range strings.Split(ledger, "\n") {
 		for _, m := range cited.FindAllStringSubmatch(line, -1) {
+			label := m[1] + m[2] + m[3] // exactly one group matched
 			checked++
-			if !defined[m[1]] {
+			if !defined[label] {
 				t.Errorf("%s:%d cites %s, which is not a section in this file",
-					ledgerFile, i+1, m[1])
+					ledgerFile, i+1, label)
 			}
 		}
 	}

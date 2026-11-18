@@ -45864,6 +45864,174 @@ dashboard.
   page's sentence that the block is accepted by `promtool` now names
   this rule as the exception. The rule has not fired against live data.
 
+### 5.677 Nothing read the section a citation named, so a tool now prints it
+
+Issue 750. The audits check that a cited `DIVERGENCE N.M` **exists**. Nothing
+checks that the section says what the citing sentence claims, and `CLAUDE.md`
+has said so for months: *"they check a cited number exists, not that it is the
+one meant"*.
+
+That gap has now cost five wrong citations, every one of which a reader would
+have caught by opening the section:
+
+| Where | Cited | Says | Meant |
+|---|---|---|---|
+| 5.127-5.129 | five sections from memory | nil pointers, a dry run, `mac_power`, `file.managed`, the FreeBSD leg | something else each time |
+| 5.164 | (5.101) for *"exists is not usable"* | the `yaml` filter | (5.20) |
+| 5.164's own last line | a `plan.md` note recording the gap | `plan.md` never held one | `CLAUDE.md` (5.164.1) |
+| 5.665.1's draft | 5.336 and 5.432 for a starvation hazard | `mount` on the BSDs; an event stream's wait ordering | (5.327) |
+| the 5.665 session | 5.619 for the pillar-root trap | atomicfile retries | (5.143) |
+
+The pattern is not ignorance. Each number *felt* right, which is why the
+interval between instances is minutes: the fourth was written inside the entry
+recording the second, and while writing **this** entry's tool the same reflex
+produced a backticked shape name that exists in no file in this repository.
+
+#### Two mechanical fixes were measured first, and both were rejected
+
+Neither is proposed again, so the numbers are here.
+
+**Ranking by shared vocabulary cannot decide a citation.** Scoring the
+distinctive words a citing paragraph shares with the section it names: the four
+known-wrong citations score **0, 2, 2 and 1**; the correct sections for those
+same sentences score **3, 6 and 4**. A gate at "two or fewer" catches all four
+and also flags **82 of the tree's 1,383** Go-comment citations, 5.9%. And the
+12 zero-overlap citations in the tree are mostly artefacts of the scorer's own
+five-letter word filter -- two were read (`evidence.go:697` naming (5.32),
+`migrate.go:215` naming (5.78)) and both are right; the shared word in the
+first is `jail`.
+
+**Widening the prose audit to bare `N.M` numbers is not viable.** The ledger
+holds **1,204** bare ledger-shaped numbers that name no section, 396 distinct,
+nearly all releases: `24.04` 74 times, `15.1` 48, `3008.3` 22. A bare number
+cannot be told from a version string, which is why
+`TestLedgerDivergenceCitationsResolve` only ever matched a parenthesised one --
+and why an unparenthesised bare citation is unverifiable by construction. The
+convention is therefore to mark a citation; the tool below shows you the ones
+you wrote either way.
+
+#### `ledger cites`
+
+```
+go run ./tools/ledger cites
+```
+
+prints every ledger reference on a line this branch added, beside the heading
+of the section it names, least shared vocabulary first. It is the one command
+5.164 said this takes, scoped to the diff, on the model of `ledger plan`:
+print the list and let somebody read it. Run against the branch that wrote it,
+with 5.665.1's wrong citation replanted in `internal/transport/client.go`:
+
+```
+  overlap 1    internal/transport/client.go:167
+               5.336  mount spoke Linux on the BSDs: `defaults` and `-o remount`
+               said: // operate without. 5.336 and 5.432 are the same shape: a diagnostic or
+```
+
+Two lines, and the mismatch between *"a diagnostic or lifeline path"* and
+*"mount spoke Linux on the BSDs"* is the whole of the check.
+
+The rules, each with a test and each broken on purpose:
+
+- A number marked `DIVERGENCE` is reported whether or not it resolves.
+- An unmarked number is reported **only** when it names a real section. That is
+  what keeps `FreeBSD 15.1`, `Ubuntu 24.04.5` and `go1.27.4` out without
+  enumerating the words a version can follow.
+- A number after `SPEC`, `section`, `chapter`, `item`, `issue` or `§` is
+  somebody else's numbering. SPEC's chapters overlap the ledger's: SPEC 2.3 is
+  the lexicon and the ledger's (2.3) is platform modules.
+- A section's own heading is not a citation of itself, or every entry a branch
+  adds reports as a reference to itself.
+- The overlap score orders the list and decides nothing, for the reason
+  measured above.
+
+#### Three defects in the tool, found by its own tests
+
+- **A full stop ended a citation.** The first boundary rule rejected a dot on
+  either side of the number, to stop 5.14 matching inside 5.149. It also
+  dropped every citation at the end of a sentence: `DIVERGENCE 5.664.` reported
+  nothing. A dot only continues a number when a digit follows it.
+- **Subsections were invisible.** `parseSections` parses a label into a major
+  and a minor integer, because that is what allocating and renumbering need, so
+  `#### 5.665.1` is not a section to it. Using it here silently dropped every
+  citation of a subsection -- the two written this week included. The tool has
+  a second, simpler parse rather than a change to the first.
+- **A percentage was a citation.** Reported by the tool on the branch that
+  introduces it: `5.9%` -- the false-positive rate of the gate rejected above --
+  was listed as naming (5.9), *What a real Salt tree found*. A number followed
+  by a per-cent sign is a measurement. Its test carries a 5.9 in the fixture on
+  purpose, because without one the unresolved-number rule excludes the line
+  anyway and the new rule would pass while doing nothing.
+- **An untracked file is not in `git diff`.** Run on the branch that introduced
+  it, the tool reported *"this branch adds no ledger reference"* while its own
+  doc comment cited nine sections, because `cites.go` was not committed yet. It
+  now unions `git ls-files --others`. **`plan` and `renumber` share that blind
+  spot and it is not fixed here:** demonstrated in a throwaway repository, with
+  a colliding section cited from a tracked and an untracked file, `plan` lists
+  only the tracked one -- so `renumber` would leave the untracked citation
+  pointing at the base's section of that number, which is the exact failure the
+  tool was built to prevent. Issue 752.
+
+#### And the prose audit had a hole of the same shape
+
+Demonstrated by planting, which is the only way to find a check that is absent
+rather than wrong: a marked, unparenthesised reference in the ledger's prose to
+a number no section uses -- `see DIVERGENCE 5.N` for an unused N -- passed the
+whole of `internal/specaudit`. So did the same thing in brackets with a
+three-part number. The marker makes the intent unambiguous, so there was never a
+reason to catch it only inside brackets, and the three-part form was simply
+unmatched.
+
+The planted numbers are written here as `5.N` on purpose. Spelled out, they are
+citations by the rule this very change added, and the first draft of this entry
+quoted them verbatim: `cites` listed both as **unresolved** at the top of its
+output, and then the extended audit failed on them. An illustration cannot be
+told from a citation by reading the text -- `CLAUDE.md` records that limit for
+`renumber` -- so the first thing the new check caught was this entry describing
+it.
+
+`TestLedgerDivergenceCitationsResolve` now matches three forms -- a two-part
+number in brackets, three parts with the marker required, and a marked number
+anywhere -- and checks **293** citations against **719** sections, against 269
+and 708 before. Both directions were watched: the three planted danglers all
+fail, and `the cask shipped (1.0.90) and the extension (1.1.0)` stays ignored.
+Requiring the marker on the three-part form is why: widening the bracketed
+pattern without it flagged exactly those two version strings on the first run.
+
+#### What it found on its first real use, which was this entry
+
+Beyond the three defects above, the list it printed for its own branch was read
+the way it is meant to be. Of 94 references, the lowest-scoring real citation
+was (5.143), cited in 5.664 for *"an answer that reaches for production and says
+so"*. The score said look, so it was opened: 5.143 is `--root` moving the
+configuration file and nothing it describes -- a root flag accepted while the
+paths it names stay at production defaults -- which is the point being claimed.
+**The citation held.** That is the intended outcome of a low score as often as
+not, and it is why the tool prints *"a low score is a prompt, not a verdict"*
+and fails nothing.
+
+**Not verified.** Nothing runs `cites`; it is a tool, and a tool nobody runs is
+a tool nobody runs, which is how this fault survived 5.164 naming it. Whether a
+pre-push hook or a CI step should require it is open in issue 750. The list is
+also noisy where a branch's diff is mostly illustrations rather than claims --
+the same limitation `CLAUDE.md` already records for `renumber`, that an
+illustration cannot be told from a citation by reading the text. Measured on
+this branch, with 5.665.1's wrong citation replanted: **74 references, the two
+that matter ranked 7th and 14th.**
+
+Two things were done about that rather than noted. The tool's own test fixtures
+were moved into chapter 9, which the ledger does not have, so they resolve to
+nothing and stay out of the list: that alone took it from 104 references to 73,
+and it makes the fixture visibly synthetic as well. And the one test that must
+contain a marked citation of an unused number -- the test that the unresolved
+case is reported -- assembles the marker at runtime instead of spelling it,
+`"DIVERGENCE"+" 9.664"`, because written out it would head every future run of
+this tool for ever. That trick is `lexiconAllowMarker` in
+`internal/buildpolicy/lexicon.go`, which is `"lexicon" + ":allow"` so the
+lexicon's own code does not match its own escape hatch. And no sweep has asked whether any of the ~1,400 citations
+standing in the tree today is wrong; two of the twelve likeliest were read, and
+the other ten were not.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
