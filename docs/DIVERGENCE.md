@@ -45074,10 +45074,11 @@ lose one outright the same way, and per #42777 the Transport then stops
 reusing that connection. Bounding a client's per-connection concurrency to
 SPEC 6.5's 64, or treating this reset as retryable in
 `internal/transport`, are both changes to documented behaviour around a
-SPEC number, and neither was made here. Nothing has measured how often a
-real hub sees a burst that wide, either: the API's own concurrency limits
-may already keep it below 64, which would make this theoretical, and that
-was not checked.
+SPEC number, and neither was made here; **issue 748** carries that
+decision, and 5.665.1 records what reading the client's side of it found.
+Nothing has measured how often a real hub sees a burst that wide, either:
+the API's own concurrency limits may already keep it below 64, which would
+make this theoretical, and that was not checked.
 
 **Not verified.** The rate was measured on `beastie` only. The three most
 recent failed CI runs were read and none of them names this test, which is
@@ -45087,6 +45088,54 @@ Whether the over-commit is bounded -- whether the client can exceed the
 limit by more than the 16 extra requests this test makes -- was not
 explored. And no newer Go was tried: `go1.27.4` is what the toolchain pins
 and what every number here came from.
+
+#### 5.665.1 The obvious client-side fix does not cover a cold connection
+
+Written while opening issue 748 for the paragraph above. Nothing was built
+and nothing was measured here -- this is a reading of Go's source, recorded
+because it changes which of that paragraph's two options is worth trying
+first.
+
+`http.HTTP2Config.StrictMaxConcurrentRequests`, which applies to
+Transports, is the one-line candidate: with it, a request over a
+connection's concurrency limit blocks until one completes instead of
+opening a second connection. It looks like exactly the knob SPEC 6.5 wants.
+
+A **cold** connection does not know the limit yet. Go starts one at
+`initialMaxConcurrentStreams = 100`, at
+`net/http/internal/http2/transport.go:57`, whose own comment is *"Use a
+smaller value until we have received server settings"*:
+
+```go
+maxConcurrentStreams:        initialMaxConcurrentStreams, // "infinite", per spec. Use a smaller value until we have received server settings.
+strictMaxConcurrentStreams:  conf.StrictMaxConcurrentRequests,
+```
+
+So a burst of 65 to 100 that begins before the hub's `SETTINGS` lands is
+over-committed whatever that flag says -- which is the shape 5.665 measured
+with 80, on a connection one request old. The flag constrains a client that
+has been told the limit, and the failure happens to a client that has not
+been told it yet. **This is reasoning, not a measurement**, and the honest
+next step is the one the issue names: re-point 5.665's standalone
+reproduction at a client with the flag set and see whether 0.4% becomes
+zero. A flag believed to fix this without that run would be the same
+undemonstrated claim this ledger exists to catch.
+
+**A bound of 64 must not count the subscribe stream.** The second option --
+halite bounding its own in-flight requests -- has a trap worth writing down
+before somebody builds it. The subscribe stream is long-lived by design and
+holds one stream for the connection's whole life, which is why there is no
+response header timeout on that client (`internal/transport/client.go`). A
+semaphore of 64 that counted it would let a burst of 64 short requests
+starve the one stream a node cannot operate without, turning a throughput
+limit into a node that has gone quiet. 5.327 is the nearest recorded shape:
+a shared allowance taken by traffic that did not matter, so the traffic
+that did was refused.
+
+Bounding per *client* rather than per *connection* is also stricter than
+SPEC 6.5, which says 64 per connection; it gives up the second connection
+5.639 measured a Go client dialling at the limit. That is a defensible
+trade and it is a trade, not a free fix.
 
 ### 5.666 The FreeBSD rc script passed a token after a space, and a token that began with `-` stopped the node
 
