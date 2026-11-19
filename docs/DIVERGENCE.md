@@ -45171,6 +45171,146 @@ SPEC 6.5, which says 64 per connection; it gives up the second connection
 5.639 measured a Go client dialling at the limit. That is a defensible
 trade and it is a trade, not a free fix.
 
+#### 5.665.2 The flag does not cover it, the frame log hides it, and the over-commit reaches 99
+
+Issue 748 asked for the measurement before the build, and 5.665.1 named the
+run: re-point 5.665's standalone reproduction at a client with
+`StrictMaxConcurrentRequests` set and see whether 0.4% becomes zero. Done, on
+`beastie`, Go 1.27.4 freebsd/amd64, against `756103b5`. The flag is not the
+fix, the ceiling is far higher than anyone had assumed, and the tool that
+diagnosed 5.665 turns out to be unusable for measuring it.
+
+The harness is ~170 lines of nothing but `net/http` -- no halite code, no
+certificates, unencrypted HTTP/2 on loopback,
+`HTTP2Config{MaxConcurrentStreams: 64}` on the server, the burst held open in
+the handler. Each round raises a **fresh server and a fresh Transport**, so
+every burst lands on a cold connection, which is the state the defect needs.
+At burst 80: **20 failures in 1000 rounds, 2.0%**, with 5.665's signature
+exactly -- `PROTOCOL_ERROR`, always a stream past the 64th. That is five times
+the 0.4% 5.665 measured through the halite test, and the difference is the
+cold connection rather than a warm one, so this is the cheaper probe to keep.
+
+**Option A is worse than doing nothing.** Both arms, identical parameters, 250
+rounds, a 15 s per-request deadline so a blocked request is counted rather
+than hanging the run:
+
+| Arm | Failures / 250 | Breakdown |
+|---|---|---|
+| baseline | 5 (2.0%) | 5 x `PROTOCOL_ERROR` |
+| `StrictMaxConcurrentRequests: true` | 32 (12.8%) | 5 x `PROTOCOL_ERROR` + 27 x `context deadline exceeded` |
+
+The `PROTOCOL_ERROR` count does not move: 5 in 250 either way, because a cold
+connection has not been told the limit and the flag therefore has nothing to
+enforce. 5.665.1 reasoned that this would happen; it now has a number. What
+the flag adds is a second failure six times larger -- 27 requests blocked past
+15 s. Unbounded it does not end: the first attempt at this arm had no deadline
+and sat for **4h52m on 1.14 seconds of CPU**, one goroutine parked in
+`net/http/internal/http2.(*ClientConn).awaitOpenSlotForStreamLocked` on a
+`sync.Cond.Wait` for 292 minutes with `main` in `wg.Wait` behind it. That is
+the flag's own "block until an existing request completes" path, blocking and
+never waking. Trading a 2% lost request for a 2% lost request plus a 10.8%
+blocked one is not a fix, so A is closed.
+
+**The over-commit reaches 99 streams, not 64 plus whatever the caller asked
+for.** Issue 748 asked whether the excess was bounded at all, and nobody had
+looked. Client streams are odd-numbered, so stream ID `n` is the `(n+1)/2`-th
+on its connection. At burst 200, 150 rounds, **11 failures (7.3%)**, with IDs
+reaching 197 -- the **99th** stream -- and 189, 183, 179 twice, 171 and 165
+behind it. So a cold connection is over-committed up to `net/http`'s
+`initialMaxConcurrentStreams = 100`, which the issue suspected and which the
+80 of 5.665's test was too narrow to show. Widening the burst also raises the
+rate, 7.3% against 2.0%, which makes the estate's real fan-in width the
+number that now matters most -- and nothing here measures that.
+
+The server's half held at every width: peak **64** streams alive at once on
+any one connection, in every run above, with 2 connections used at burst 80
+and 4 at burst 200. The hub enforces what it advertises; the over-commit is
+entirely in streams the client *opens*, which the server rejects before a
+handler sees them. The first version of this harness counted in-flight
+requests globally and reported a peak of 80, which reads as the hub breaking
+SPEC 6.5 when the hub had done nothing wrong, so a measurement here has to be
+per connection or it is measuring the client.
+
+**5.665 measured *"always exactly 79 of 80"*, and that does not hold at a
+wider burst.** It held across 1250 rounds at burst 80 here. At burst 200, 11
+failing rounds produced 12 errors: one round lost two requests, IDs 165 and
+189 on the same connection. A small correction, but a loss of exactly one is
+load-bearing for anyone sizing a retry budget, which is what option C is.
+
+**`GODEBUG=http2debug=2` suppresses the race it exists to observe.** The
+ceiling above was first measured with frame logging on, and came back **0
+failures in 100 rounds at burst 200 with no `RST_STREAM` at all** -- which
+reads as a clean ceiling of 64, with a frame log as its evidence. The control
+is what caught it:
+
+| Arm | Result |
+|---|---|
+| burst 80, frames on, 150 rounds | 0 failures |
+| burst 80, frames off, 1000 rounds | 20 failures (2.0%) |
+| burst 200, frames on, 100 rounds | 0 failures |
+| burst 200, frames off, 150 rounds | 11 failures (7.3%) |
+
+The logging slows the client enough that the server's `SETTINGS` always lands
+before the burst gets going, so the over-commit never happens. The numbers
+above therefore come from the client's error text, which the log does not
+perturb. This does **not** impeach 5.665's own frame table: that was caught by
+*"running one round per process until one failed"*, which survives the
+suppression and only needs more processes. Measuring a rate under the log does
+not. 5.665 checked its probe before its diagnosis for the opposite reason -- a
+repro that cannot fail proves nothing -- and this is the same hazard from the
+other side: a probe that cannot fail *because it is being watched*. 5.125 is
+the nearest shape, a flake that was a real limit.
+
+**5.665's exculpatory sentence was wrong.** It wrote that *"the API's own
+concurrency limits may already keep it below 64, which would make this
+theoretical, and that was not checked"*. Checked now, by reading, and there are
+no such limits: `internal/api/server.go:483` sets three timeouts and no
+connection or concurrency cap; `internal/api/events.go:66` and
+`internal/api/wsevents.go:76` call `FollowEvents` on the **shared** `s.Hub`
+(`internal/api/server.go:47`), which `internal/transport/client.go:842` shows
+takes the same cached client with no deadline, so a subscriber holds one hub
+stream for as long as it subscribes; `internal/hub/jobs.go:155` forwards every
+relay return through `goBackground` (`internal/hub/server.go:233`), a bare `go`
+under a `WaitGroup` that counts and does not cap, onto the one shared
+`Upstream` (`internal/relay/relay.go:318`); and
+`internal/transport/client.go:151` has no `HTTP2Config`, no `MaxConnsPerHost`
+and no in-flight counter. The issue's other premise does hold:
+`internal/state/compile.go:640` still warns and ignores `parallel: True`, and
+there are no goroutines in `internal/state`, `internal/runner` or
+`internal/fileserver` outside tests.
+
+**But fan-out alone is not the trigger, and the measurement is why.** The
+tempting next sentence -- 65 subscribers exceed 64, so the API loses a request
+-- does not follow. A client that already knows the limit dials a second
+connection for the overflow, which 5.639 measured and which every run above
+watched happen. Subscribers arriving one at a time never over-commit; they
+spread. The loss needs both halves: fan-out past 64 **and** a connection that
+has not yet been told the limit. The realistic trigger is therefore a burst
+onto a cold connection -- an API restart or hub reconnect with many
+SSE/WebSocket subscribers re-subscribing at once, or a relay reconnecting with
+a backlog of returns to forward. Both are reconnection storms, which is
+exactly when a fresh connection is in play. That is a narrower claim than "the
+API is over 64 all day" and it is the one the evidence carries.
+
+Which leaves B and C. B is the only one of the three that covers a cold
+connection, because the 65th request is never issued, and the hazard 5.665.1
+named is real and asymmetric: `relay.Return` (`internal/relay/relay.go:316`)
+and `post` both carry context deadlines, so a blocked short request surfaces
+as an error, while `Subscribe` and `FollowEvents` carry none by design
+(`internal/transport/client.go:156-158`). A bound that can block must reserve
+the subscribe stream outside it, or the 27 blocked requests above become a node
+that has gone quiet -- 5.327's shape, a shared allowance taken by traffic that
+did not matter. C is untouched by all of this except that a retry budget of one
+would not have covered the round that lost two.
+
+**Not verified.** Every number here is `beastie` only, as 5.665's was. No live
+hub, node or API was driven: the rates come from a standalone `net/http`
+reproduction, and the fan-out findings two paragraphs up are read from the code
+rather than observed on a running fleet, so what a real reconnection storm's
+burst width actually is remains unmeasured. Nothing was changed in
+`internal/transport` or `internal/api` here; 748 still carries the decision
+between B and C.
+
 ### 5.666 The FreeBSD rc script passed a token after a space, and a token that began with `-` stopped the node
 
 Issue 733, item 10, from issue 308's open list: "a token with a hyphen
