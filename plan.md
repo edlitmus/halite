@@ -2098,18 +2098,30 @@ down to the machine or the link each one still wants.
     to start**. **47 of #643's 89 boxes are unticked, and 4 of #616's
     14**, with a refresh adding 22 more to #643 that nobody has
     checked. What has been ticked was read against the Terraform
-    templates and the Salt states that *write* the configuration — not
-    against a deployed `hub.yaml`, `node.yaml`, `policy.yaml` or
-    `api.yaml` from a running host, and **not against any FreeBSD
-    host's configuration at all**, which is four of the five hosts and
+    templates and the Salt states that *write* the configuration,
+    rather than against a deployed `hub.yaml`, `node.yaml`,
+    `policy.yaml` or `api.yaml` from a running host. **#616 has now
+    been read against one** — a FreeBSD hub, API and node, with the
+    live Prometheus beside them (DIVERGENCE 5.679). Its four unticked
+    boxes are still four: the `fun`-label one closed on the alert rules
+    and stays open on the Grafana dashboards, and `--timeout`, `--thin`
+    and `verify-evidence` stay open on root's crontab and operators'
+    practice, neither of which is readable from an unprivileged
+    account. Two of its *struck* boxes were struck on a premise the
+    deployed files contradict. **#643 has still been read against no
+    FreeBSD host's configuration**, which is four of the five hosts and
     the platform this document keeps rediscovering it has not checked.
     Four bite as read: the Salt-managed systemd units have neither the
     exit-78 handling nor the node unit's `ProtectKernelModules`, the
     starting policy's API role has no `act_for`, the only extension
     bundle in the state tree is the old arm64-only 1.0.0, and
     `pillar_cache_disk` defaults to on for nodes whose pillar holds
-    secrets. The two policy-wide items need the real `policy.yaml`,
-    which nobody has read.
+    secrets. The first of those **does not bite on the host now read**:
+    its policy already grants the API's own certificate `act_for`,
+    scoped to the local accounts and kept out of the scraper role, and
+    the hub has served 5550 authorisation decisions with none denied.
+    So the real `policy.yaml` has been read on one host, and the other
+    policy-wide item, and every other host, still want it.
 
 25. **SPEC 30's remaining rows** (#718, DIVERGENCE 5.279). Five of the
     seven harness rows have results now, got by running the thing:
