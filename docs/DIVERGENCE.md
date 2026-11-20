@@ -46810,6 +46810,35 @@ spools until `url` is corrected; and the other clients built with the
 default policy (`awskms`, `s3fs`, `awsauth`, the Secrets Manager extension),
 whose peers are AWS endpoints, some carrying secrets in the body, and which
 were not looked at.
+### 5.687 A failed `pro.attach` put the contract token in its error
+
+Reported privately as GHSA-cgg8-h9pj-fq34 (2026-11-20), from a reading of
+`internal/builtin/pro.go`, and reproduced before it was fixed. `proRun`
+printed the command line in each of its four live failure messages: the
+client could not be started, it printed nothing, its output was not JSON, or
+it reported failure. For `pro attach` the command line ends in the Ubuntu Pro
+contract token. The dry run already showed the command through `proRedact`,
+because a dry run's answer is printed and logged; the failures, which go to
+the same places, did not. An error is the job's return, so it reaches the job
+cache, the event bus, the hub's log and every returner.
+
+**Fixed.** Every message `proRun` writes names the command through
+`proRedact`, and the parts of a message that came from the client (its
+standard error, its `errors` list, a launch error) have each redacted
+argument replaced too. The second half is a precaution rather than a
+finding: no capture here shows what `pro attach` says about a token it
+refuses, and a client that echoed it would otherwise put it straight back.
+
+**Shown.** `TestAFailedAttachNeverCarriesTheToken` drives all four paths
+with a dummy token, planted in the command and in what the faked client
+said, and wants an error that names `pro attach` and `<token>` and never
+the token. On the old `proRun` it fails on all four.
+
+**Not covered:** what a real `pro attach` prints for a refused token; the
+token as a job argument, which reaches the job record and every event
+watcher by the gap chapter 27 records, and is not changed here; and whether
+the hub's return scrub (`internal/hub/returnscrub.go`) already hid a token
+taken from an encrypted pillar, which was not run.
 
 
 

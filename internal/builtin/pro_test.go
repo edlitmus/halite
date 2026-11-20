@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -411,5 +412,47 @@ func TestProStatusExitZeroButFailureIsRefused(t *testing.T) {
 	var pe *proClientError
 	if !errors.As(err, &pe) || !pe.HasCode("connectivity-error") {
 		t.Fatalf("err = %v, want the client's connectivity-error", err)
+	}
+}
+
+// A failed attach never carries the contract token, on any of proRun's
+// paths. The dry run always redacted it; the four live failure paths put
+// the whole command line, token included, into an error that reaches the
+// job's return, the job cache, the bus and every returner
+// (GHSA-cgg8-h9pj-fq34, DIVERGENCE 5.687). The token here is a dummy.
+func TestAFailedAttachNeverCarriesTheToken(t *testing.T) {
+	const token = "C1dummyContractTokenForTests"
+	args := value.NewMap(1)
+	args.Set("token", token)
+	argv := proAttachArgv(args)
+	key := (exec.Command{Argv: argv}).String()
+	if !strings.Contains(key, token) {
+		t.Fatalf("the command %q does not carry the token, so this test tests nothing", key)
+	}
+
+	cases := map[string]*exec.RecordingRunner{
+		"the client could not be started": {Errors: map[string]error{
+			key: fmt.Errorf("fork/exec /usr/bin/pro attach %s: resource temporarily unavailable", token)}},
+		"no output": {Responses: map[string]exec.Result{
+			key: {Stderr: "attach failed for " + token, Code: 1}}},
+		"output that is not JSON": {Responses: map[string]exec.Result{
+			key: {Stdout: "Traceback: " + token, Code: 1}}},
+		"the client reported failure": {Responses: map[string]exec.Result{
+			key: {Stdout: `{"result": "failure", "errors": [{"message": "Invalid token: ` + token +
+				`", "message_code": "attach-invalid-token"}]}`, Code: 1}}},
+	}
+	for name, runner := range cases {
+		c := &exec.Context{Runner: runner, Lookup: func(n string) string { return "/usr/bin/" + n }}
+		_, err := proRun(c, argv)
+		if err == nil {
+			t.Errorf("%s: no error", name)
+			continue
+		}
+		if strings.Contains(err.Error(), token) {
+			t.Errorf("%s: the error carries the token: %v", name, err)
+		}
+		if !strings.Contains(err.Error(), "pro attach") || !strings.Contains(err.Error(), "<token>") {
+			t.Errorf("%s: the error no longer says which command failed: %v", name, err)
+		}
 	}
 }

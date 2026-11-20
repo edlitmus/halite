@@ -438,28 +438,51 @@ func proRun(c *exec.Context, argv []string) (any, error) {
 	if err := proToolPresent(c); err != nil {
 		return nil, err
 	}
+	// Every message below names the command, and an error travels: into
+	// the job's return, the job cache, the event bus and any returner.
+	// So the command is shown redacted on every path, not only the dry
+	// run's, and the client's own words are scrubbed of the token too,
+	// since nothing here has seen what `pro attach` prints about a token
+	// it refuses (GHSA-cgg8-h9pj-fq34, DIVERGENCE 5.687).
+	shown := exec.Command{Argv: proRedact(argv)}.String()
+	scrub := proScrubber(argv)
 	if c.Test {
 		return fmt.Sprintf("`%s` would be run; what it would change is the client's to decide, "+
-			"so nothing was run and no change is predicted", exec.Command{Argv: proRedact(argv)}.String()), nil
+			"so nothing was run and no change is predicted", shown), nil
 	}
 	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
-		return nil, fmt.Errorf("`%s` could not be run on this node: %w",
-			exec.Command{Argv: argv}.String(), err)
+		return nil, fmt.Errorf("`%s` could not be run on this node: %s", shown, scrub(err.Error()))
 	}
 	out := strings.TrimSpace(res.Stdout)
 	if out == "" {
 		return nil, fmt.Errorf("`%s` exited %d with no output: %s",
-			exec.Command{Argv: argv}.String(), res.Code, strings.TrimSpace(firstLine(res.Stderr)))
+			shown, res.Code, scrub(strings.TrimSpace(firstLine(res.Stderr))))
 	}
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(out), &doc); err != nil {
-		return nil, fmt.Errorf("`%s`'s output did not parse: %w", exec.Command{Argv: argv}.String(), err)
+		return nil, fmt.Errorf("`%s`'s output did not parse: %s", shown, scrub(err.Error()))
 	}
 	if result, _ := doc["result"].(string); result != "success" {
-		return nil, fmt.Errorf("`%s` did not succeed: %v", exec.Command{Argv: argv}.String(), doc["errors"])
+		return nil, fmt.Errorf("`%s` did not succeed: %s", shown, scrub(fmt.Sprint(doc["errors"])))
 	}
 	return value.FromJSON(doc), nil
+}
+
+// proScrubber replaces, in text the client produced, each argument that
+// proRedact hides. A command with nothing hidden is passed through.
+func proScrubber(argv []string) func(string) string {
+	redacted := proRedact(argv)
+	var pairs []string
+	for i := range argv {
+		if redacted[i] != argv[i] && argv[i] != "" {
+			pairs = append(pairs, argv[i], redacted[i])
+		}
+	}
+	if len(pairs) == 0 {
+		return func(s string) string { return s }
+	}
+	return strings.NewReplacer(pairs...).Replace
 }
 
 // proRedact hides `pro attach`'s contract token, which is the one
