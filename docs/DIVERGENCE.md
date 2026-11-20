@@ -46563,6 +46563,133 @@ of them; the log could say which. Left for its own change.
 **Not covered:** TOTP as root under the rc.d script; Linux; a code from an
 authenticator app; the clock skew of a real phone; LDAP, OIDC and a directory
 group's role map, the rest of item 5.
+### 5.681 An idle connection ended in an RST, and making the timeouts differ would not have stopped it
+
+Issue 757 (`internal/transport/client.go`, `internal/transport/closedrain.go`).
+
+**The defect.** Every idle node-to-hub connection was reaped with a reset. The
+issue captured it on loopback: the node's `close_notify`, the hub's 192 µs
+later, then the node's RST, and a `Spurious RST` line in the hub's kernel log
+for each one. Nothing is lost, because no request was in flight and both ends
+had already decided to discard the connection. But no connection ended
+cleanly, and the hub never saw a TLS shutdown.
+
+The issue's diagnosis was **two paths that must not agree, and do**: the
+node's `IdleConnTimeout` and the hub's `IdleTimeout` are both
+`IdleStreamTimeout`, so both fire at once. Its fix was to make the node's
+timer shorter so that the node always closes first and closes cleanly.
+
+**That fix was measured before it was built, and it does not work.** In a
+harness built on `net/http` only, with a server-side observer and 30 rounds
+run one at a time:
+
+| Node idle | Hub idle | RST of 30 |
+|---|---|---|
+| 2 s | 2 s | 20 |
+| 1 s | 3 s | 24 |
+
+When the node closes first, the hub closes 1.03 s in, immediately after it
+does, not on its own timer. A Go server answers a `close_notify` with its own
+within a round trip. `tls.Conn.Close` writes its `close_notify` and closes
+the descriptor without reading the reply. So the end that closes first is the
+end that resets, whichever end that is. Timers that agree are not the cause.
+They only make the race happen every time.
+
+What the capture showed is also not what it seemed to show. When the hub's
+timer fires, an HTTP/2 server sends `GOAWAY` and waits. A client with no
+stream open closes as soon as it gets it. So it is the *node* that closes
+even when the hub reaps, and that is why the capture shows the node's
+`close_notify` first with equal timers. This was demonstrated: with a plain
+client and the hub's idle timeout set shorter, an observer at the server saw
+10 of 10 ends reset by the client.
+
+**On FreeBSD the RST is not where Linux puts it.** The first control used the
+Linux rule, a close with unread bytes. It reported FIN. FreeBSD's
+`tcp_disconnect` flushes unread data and sends a FIN. The RST is its answer
+to a segment that arrives *after* the descriptor is closed, and that matches
+the issue's counter, `packets received after close +1`.
+
+So the RST follows the node's FIN. An observer that stopped at its first EOF
+reported FIN for most resets. The first harness did exactly that: it counted
+the end it read first, and so it undercounted. Undercounting cannot invent a
+reset, so the table above still refutes the shorter timer. But the harness's
+**90 of 90 FIN for the fix was not evidence**, and it is not used here.
+
+The observer used now keeps watching past the FIN for 100 ms, and reports RST
+if a reset arrives at any point. `TestTheEndObserverSeesAReset` checks it
+against FreeBSD's real trigger: the client closes, then the server writes.
+
+**The change.** The node's transport dials through `dialDraining`. The
+connection's `Close` sends a FIN, discards what the peer still sends, and
+closes the descriptor once the peer's FIN arrives, or after
+`HandshakeTimeout`. `Close` itself returns at once, so the idle reaper is not
+held up by the peer. The bound is `HandshakeTimeout` because it is the
+longest this transport already waits for a round trip, and the reply is one
+round trip away. A peer that never answers ends the old way, which is no
+worse. Every client of the hub goes through this one `http.Transport`: the
+node, the API, the hub's own `run`, relays and `simfleet`.
+
+**Shown.** Both orderings were run through the real `Client`, 10 connections
+per run:
+
+| Test | Drain in | Drain unwired |
+|---|---|---|
+| `TestAnAbandonedConnectionEndsInAFinNotAReset` (the node closes; `CloseIdleConnections` takes the idle reaper's `Close`) | 10 FIN | 10 RST |
+| `TestAConnectionTheHubReapsEndsInAFinNotAReset` (the hub's idle timeout fires first) | 10 FIN | 10 RST |
+
+An independent count came from the kernel, over 5 runs of the first test:
+`packets received after close` rose by 0 with the drain and by 36 without it.
+The counter is per segment, not per connection, so 36 is not expected to
+equal 50.
+
+**What was not built, and why.** `IdleStreamTimeout` stays one constant on
+both ends. The order in which the timers fire does not decide the outcome, so
+making them differ would add a pair of numbers that must stay apart and buy
+nothing.
+
+A matching drain on the hub's listener was written and then removed. Its test
+passed with the drain taken out, because the hub is never the end that closes
+an idle connection, and a test that passes without the fix is not evidence
+for it.
+
+**The observer was blind off FreeBSD, and CI is what showed it.** The first CI
+run passed both FIN tests on Linux, macOS and Windows and failed the
+observer's control on all three: bytes sent after the client closed were seen
+as FIN (on Windows, as neither), want RST. The observer counted a reset only as
+ECONNRESET, which is how FreeBSD's read reports it, so elsewhere the FIN tests
+had passed on a probe that could not fail them. It took three runs:
+
+| Observer counts a reset as | Control on Linux | macOS | Windows |
+|---|---|---|---|
+| ECONNRESET from a read | FIN | FIN | neither |
+| any failed read but EOF and the deadline | FIN | FIN | **RST** |
+| that, or `SO_ERROR` pending before close | **RST** | FIN | **RST** |
+
+On Linux no read failed: the reset left the socket done and every read
+answered EOF, with the error held for `SO_ERROR`. That was a guess from the
+kernel's source, made without a Linux machine, and the control's pass is what
+confirms it. On macOS neither method saw a reset, so the three observer tests
+skip there and say why; the drain still runs in every macOS test that dials
+through `Client`. With the third observer, the FIN tests pass on FreeBSD,
+Linux and Windows, and on FreeBSD they fail with the drain unwired, with
+`RST (connection reset by peer, errno 54)` ten times each. They were not
+watched failing on Linux or Windows.
+
+**Not verified.**
+
+- The real 90 s reap between a running `halite-node` and `halite-hub`.
+  Capturing it needs `tcpdump` as root, which this run did not have. The tests
+  drive the same `Close` over loopback, with the real TLS configurations.
+- The remote node over ZeroTier, and the local API's connection, which the
+  issue saw with the same signature.
+- Linux and Windows beyond CI's loopback runs: the FIN tests pass there with
+  an observer whose control sees a reset, but nobody has run them with the
+  drain unwired on those platforms, or a real hub and node.
+- macOS at all, where the observer cannot see a reset.
+- Whether a hub's graceful `Shutdown` takes the same path, and a connection
+  that falls back from HTTP/2, which sends no `GOAWAY`.
+
+
 
 ## 6. Everything else not started
 
