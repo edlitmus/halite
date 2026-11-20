@@ -419,9 +419,9 @@ func TestProStatusExitZeroButFailureIsRefused(t *testing.T) {
 // paths. The dry run always redacted it; the four live failure paths put
 // the whole command line, token included, into an error that reaches the
 // job's return, the job cache, the bus and every returner
-// (GHSA-cgg8-h9pj-fq34, DIVERGENCE 5.687). The token here is a dummy.
+// (GHSA-cgg8-h9pj-fq34, DIVERGENCE 5.687). The token here is a placeholder.
 func TestAFailedAttachNeverCarriesTheToken(t *testing.T) {
-	const token = "C1dummyContractTokenForTests"
+	const token = "C1placeholderContractTokenForTests"
 	args := value.NewMap(1)
 	args.Set("token", token)
 	argv := proAttachArgv(args)
