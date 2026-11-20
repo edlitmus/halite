@@ -46348,6 +46348,165 @@ the thing it was built for -- a wrong citation in prose, rather than noisy
 fixture data -- and it caught it from the author of the gate, on the branch
 fixing the gate's sibling.
 
+### 5.679 The template was taken for the configuration, and a textfile dump for a process
+
+Issue 616, read against a deployed FreeBSD host (`cmd/halite-hub/serve.go`,
+`internal/beacon`, `internal/builtin/beacons.go`).
+
+#616's fourteen boxes were ticked or struck against the Terraform templates and
+the Salt states that *write* the estate's configuration. Its own footer said
+**"Not verified: all of it against the real estate. Nothing here has run on
+production,"** and `plan.md` §7 item 24 said the same more sharply: the ticks
+were read **"not against a deployed `hub.yaml`, `node.yaml`, `policy.yaml` or
+`api.yaml` from a running host, and not against any FreeBSD host's
+configuration at all."** This is that read -- a running hub, API and node, with
+the live Prometheus beside them.
+
+Five of #616's boxes hold exactly as written once the deployed files are the
+ones being read. Two do not, and neither does one of #643's four verdicts of
+*bites* -- which is the same mistake pointing the other way. How they fail is
+the part worth keeping.
+
+#### The template is not the configuration
+
+The beacon box (5.552) was struck because there is *"no `beacons:` or
+`schedule:` key in `hub.yaml` or `node.yaml` as rendered; the templates' only
+mentions are comments"*, resting on the states writing those files with
+`create: False, replace: False` -- so, the issue reasoned, *"the template
+output is the configuration; Salt does not edit it afterwards."*
+
+The deployed node configuration sets **both**. It is owned by `root` where
+every other file beside it is owned by the service account, so it was
+hand-edited after the template wrote it: one beacon at a 60-second interval,
+and a nightly `state.apply`.
+
+Salt does not edit it afterwards, which was the half that was checked and is
+true. Somebody else did. *"The template output is the configuration"* holds
+only while nobody logs in, and that assumption is load-bearing for every box
+struck on a key the template does not set -- here, and for the 47 unticked and
+22 unchecked boxes of #643.
+
+The `hub_tries` box (5.546) is the same shape with the conclusion left intact.
+It is struck because *"every node sets `hub_tries: 0`"*; this node does not set
+it at all. The default is 0 (`internal/config/keys.go`), so no node exits on a
+count and the box is right -- but the sentence a reader would rely on is not
+what makes it true, and the next person to change that default would not be
+warned by it.
+
+**And it cuts the other way.** #643's estate check names four items that
+*bite* as read, the first being that *"the starting policy's API role has no
+`act_for`"*: after the hub is upgraded, every runner call the API makes for a
+logged-in operator is refused 403. The hub and the API on this host are already
+on a post-upgrade build, so that is not a prediction about the next release but
+something that would be happening now. It is not happening. The deployed policy
+carries a role holding `act_for` alone, bound to the API's own certificate,
+scoped to the local accounts rather than the `['*']` the issue offers as an
+example, and kept out of the scraper role deliberately so that the Prometheus
+account cannot claim to act for anybody; its comments cite this ledger for why.
+Somebody edited that file too, in the safe direction and more tightly than
+asked. Live on the hub: 5550 authorisation decisions, every one of them
+allowed, `result="denied"` absent entirely.
+
+So both directions of the assumption are wrong, and neither error is the
+conservative one. A box struck because the template omits a key, and a verdict
+of *bites* because the template omits a grant, were read from a file that is
+not the file in force.
+
+#### A metric that described a process which was not running
+
+`halite_build_info{component="node"}` returned six series. Four are nodes. Two
+are `node_exporter`'s textfile collector re-exporting a dump file last written
+2026-09-04: 61 `halite_*` series frozen for two and a half months, among them
+`halite_node_connected 0`.
+
+Both read as live. Scraped at that instant, the same metric name, the same
+`component="node"` label, and a plausible version string -- 913 commits behind
+`HEAD`, on an older Go toolchain and an older tag lineage. The finding was
+written before it was checked: *two production nodes on a September build,
+predating all eleven of the changes this checklist is about*, which is a far
+more alarming result than the real one and would have been published.
+
+What separated them is that `node_textfile_scrape_error` exists for exactly
+those two instances and for no node, and that the four nodes answer a different
+scrape job on a different port. **The freshness of a sample is the freshness of
+the scrape, not of the fact.** A textfile collector makes a file on disk
+indistinguishable from a process by timestamp, because it is the collector that
+is live.
+
+It bites nothing today, and that was measured rather than assumed. Of the 34
+loaded alert expressions, two name a family the dump also provides: one pins its
+scrape job, and the other is an `increase()` over a counter frozen at 0, which
+is 0 for as long as the file sits there. But 29 of the 34 carry no job pin, so
+any later rule that sums or counts over `halite_*` folds the dump in.
+
+#### What the read closed, and whose sentence each was
+
+- **#616's box for 5.540** ticked it on the templates and recorded what that
+  could not see: *"Not seen: a running hub's `/srv` (an operator-made symlink
+  there would not show in the template)."* That is this host -- both
+  `file_roots` and `pillar_roots` are symlinks, resolving into a tree that is
+  none of the hub's own -- and `checkRootsAreNotTheHubsOwn` accepts both
+  against the real configuration, so the next `make install` does not stop this
+  hub. 5.540's *own* unverified items are Windows junctions and a link whose
+  target is created after the check; this read touches neither.
+- **5.549** listed *"Prometheus reading it"* first among its unverified items.
+  It is scraped: 43 series on `halite_node_jobs_total`, 341 on the duration
+  histogram's buckets,
+  and ten `fun` values in retention, every one of them a real function name.
+  `{fun=~"other|__overflow__"}` is empty -- the new label has not been applied
+  once here, because no job for a function a node lacks has run inside the
+  window. No loaded rule names either family, and the one rule that keys on
+  `fun` watches a family spilling past `metrics.MaxSeries` into
+  `metrics.OverflowLabel` -- which 5.549 removes a cause of, as 5.532 did for
+  the same label on the hub side -- rather than a label it reads.
+- **5.552** listed *"whether any beacon reads pillar at all, which was not
+  checked and bears on how much this saves in practice"*. The only beacon
+  deployed here is `diskusage`, and no beacon in `internal/beacon` or
+  `internal/builtin/beacons.go` references pillar at all -- so the compilation
+  this removed was pure waste, not a cache of something wanted. The hub's
+  `halite_pillar_compile_duration_seconds_count` rises at 0.373/min, against
+  the 1/min that one 60-second beacon alone would have driven before the cache,
+  and the measured figure also carries the nightly run and everything else.
+
+#### The probe was validated before its answer was believed
+
+`checkRootsAreNotTheHubsOwn`, called from a hub opened for its configuration
+alone, **passes everything**: `files.Dir` is empty in that hub, and the
+key-material comparison is skipped on an empty path. The scratch test sets it
+the way `serve.go:126` does, and refuses the hub's own `state_dir` first --
+
+```
+file_roots for "base" serves <state_dir>, which holds the key store
+(<state_dir>/keys): every enrolled node could read it. Move one of the two.
+```
+
+-- so the two acceptances that follow are acceptances. Without that one line
+the run is green, fast, and means nothing, and it looks the same either way.
+This is the second time in one pass that a result had to be disbelieved until
+the instrument was shown to be able to say no.
+
+#### The checklist was already behind the estate
+
+The hub, the API and all four nodes report commits dated 2026-11-13 and
+2026-11-17. Every change in rounds five to twelve merged 2026-11-02. #616 is
+written as a check to run *before* the next release is installed; on this part
+of the estate it is a post-hoc one. That is weaker evidence than a pre-upgrade
+review -- it cannot show what a refusal would have stopped -- but it is not
+none, because the processes are up on builds that contain all eleven.
+
+**Not verified.** One host: the hub, the API and one of the four nodes. The
+other three nodes' configurations are on their own machines and were not read,
+so every "not set" above means "not set here". The Grafana dashboards were not
+read (the store is mode 750 and owned by the Grafana account, and no
+provisioned JSON is readable), which leaves the dashboard half of 5.549's box
+open. Root's crontab was not read either, which is where a `--timeout`, `--thin`
+or `verify-evidence` caller would most plausibly live; nothing in the readable
+service layer runs any of them, since all four rc scripts start with empty flag
+variables and no world-readable cron location mentions halite, so those three
+boxes stay open on operator practice alone. `doctor` was not run as the service
+account. No deployed file was changed, and the only thing executed against the
+live configuration was a read-only check in a scratch test, since deleted.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
