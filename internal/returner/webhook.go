@@ -52,7 +52,7 @@ func init() {
 		if err := fileperm.MkdirAll(opts.SpoolDir, 0o700); err != nil {
 			return nil, err
 		}
-		client := &http.Client{Timeout: opts.Timeout}
+		client := &http.Client{Timeout: opts.Timeout, CheckRedirect: refuseRedirects}
 		if opts.CAFile != "" {
 			// An estate whose receiver holds a certificate from its own
 			// CA needs a way to say so. Without one the only options
@@ -193,11 +193,28 @@ func (r *webhookReturner) postOnce(ctx context.Context, kind string, body []byte
 	if res.StatusCode >= 200 && res.StatusCode < 300 {
 		return false, nil
 	}
+	if res.StatusCode >= 300 && res.StatusCode < 400 {
+		// Not retried: the receiver will say the same thing again, and the
+		// return goes to the spool with this reason in the log.
+		return false, fmt.Errorf("%s answered %d, a redirect, which the webhook returner "+
+			"does not follow: set url to where the receiver actually is", r.opts.URL, res.StatusCode)
+	}
 	worthRetrying := res.StatusCode >= 500 ||
 		res.StatusCode == http.StatusRequestTimeout ||
 		res.StatusCode == http.StatusTooManyRequests
 	return worthRetrying, fmt.Errorf("%s answered %d", r.opts.URL, res.StatusCode)
 }
+
+// refuseRedirects keeps every delivery at the configured URL.
+//
+// net/http's default follows up to ten redirects. A 307 or 308 resends the
+// POST, body and signature headers included, to wherever Location says:
+// another origin, or plain http, past the https the constructor insists
+// on. A 301, 302 or 303 turns it into a GET with no body, and a 2xx to
+// that counted as delivered, so the return was lost and nothing said so
+// (GHSA-3h7q-c9jf-rw88, DIVERGENCE 5.686). ErrUseLastResponse hands the
+// redirect back to postOnce as an answer, and nothing is sent to Location.
+func refuseRedirects(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 // Sign is the HMAC-SHA-256 over the timestamp and the body.
 //

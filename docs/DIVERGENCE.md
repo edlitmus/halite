@@ -46775,6 +46775,43 @@ taken out of the policy, which a stream's token still carries until it is
 revoked, as every other request's does; and the cost of the recheck with
 many streams open, which reads one small file per stream every five seconds
 and was not measured.
+### 5.686 The webhook returner followed a redirect, with the body or without it
+
+Reported privately as GHSA-3h7q-c9jf-rw88 (2026-11-20) and reproduced before
+it was fixed. The returner's client had net/http's default redirect policy,
+which follows up to ten. The constructor refuses a `url` that is not https,
+and a redirect went round that:
+
+| The receiver answered | Before |
+|---|---|
+| 307 or 308 to a plain-http server on another origin | the signed POST went there, body and signature headers included, and counted as delivered |
+| 301, 302 or 303 there | a GET with no body went there, and its 2xx counted as delivered |
+
+The second row is not in the report: the return was lost and nothing said
+so. Go drops `Authorization` and cookies on a cross-domain redirect, but the
+signature and timestamp are headers of this package's own, and travel.
+
+**Fixed.** The client's `CheckRedirect` answers `http.ErrUseLastResponse`, so
+a 3xx comes back to `postOnce` as an answer and nothing is sent to
+`Location`. A 3xx is a failure that is not retried, which sends the return to
+the spool with a warning saying the receiver redirected and to set `url` to
+where it is.
+
+**Shown.** `TestARedirectSendsNothingElsewhereAndKeepsTheReturn`, for each of
+301, 302, 303, 307 and 308: the redirect's target receives nothing, the
+error names the redirect, and the return is spooled. The returner is built
+by `New` with a CA file, as a configuration builds it, because the tests'
+`webhookTo` replaces the client and would not carry the policy under test.
+With the policy taken out of the constructor, every assertion fails for
+every code.
+
+**Not covered:** a receiver that relied on being redirected, which now
+spools until `url` is corrected; and the other clients built with the
+default policy (`awskms`, `s3fs`, `awsauth`, the Secrets Manager extension),
+whose peers are AWS endpoints, some carrying secrets in the body, and which
+were not looked at.
+
+
 
 ## 6. Everything else not started
 
