@@ -189,6 +189,11 @@ func (c *observedConn) Close() error {
 					break
 				}
 			}
+			// A reset a read never reported may still be waiting on the
+			// socket; see pendingSocketError.
+			if err := pendingSocketError(c.TCPConn); err != nil {
+				c.note(err)
+			}
 			_ = c.TCPConn.Close()
 			c.mu.Lock()
 			defer c.mu.Unlock()
