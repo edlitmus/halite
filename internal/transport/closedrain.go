@@ -22,7 +22,7 @@ import (
 //
 // Making the node's idle timeout shorter than the hub's, so that the node
 // closes first, does not help, and that was measured rather than assumed
-// (DIVERGENCE 5.680): the hub's close_notify is a reply to the node's, not
+// (DIVERGENCE 5.681): the hub's close_notify is a reply to the node's, not
 // its own timer, so the node that closes first is the one that resets. What
 // helps is keeping the descriptor until the reply has come.
 func dialDraining(ctx context.Context, network, addr string) (net.Conn, error) {

@@ -29,7 +29,7 @@ import (
 // CloseIdleConnections takes the same Close the idle reaper does.
 //
 // Ten connections, because one is a race. Without the drain every one of ten
-// reset, in each of five runs on FreeBSD (DIVERGENCE 5.680), so ten FINs are
+// reset, in each of five runs on FreeBSD (DIVERGENCE 5.681), so ten FINs are
 // not luck.
 func TestAnAbandonedConnectionEndsInAFinNotAReset(t *testing.T) {
 	skipWhereTheObserverIsBlind(t)
@@ -103,7 +103,7 @@ func TestTheEndObserverSeesAReset(t *testing.T) {
 // shown to see a reset, so a FIN there would prove nothing. In CI on the PR
 // for issue 757, the control saw a FIN on macOS when it counted an aborted
 // read, and again with SO_ERROR read before close; both made it pass on
-// Linux and Windows (DIVERGENCE 5.680). The drain still runs on macOS in
+// Linux and Windows (DIVERGENCE 5.681). The drain still runs on macOS in
 // every test that dials through Client; only its FIN is not checked there.
 func skipWhereTheObserverIsBlind(t *testing.T) {
 	t.Helper()
@@ -170,7 +170,7 @@ func (c *observedConn) note(err error) {
 		// Any other failure of a read is the connection aborted under it,
 		// and the platforms do not agree on the word. ECONNRESET was all this
 		// matched at first, and CI showed the control seeing no reset on
-		// Linux, macOS or Windows (DIVERGENCE 5.680): a reset arriving after
+		// Linux, macOS or Windows (DIVERGENCE 5.681): a reset arriving after
 		// this end's own FIN is reported differently there. Counting only
 		// one errno made the observer blind to the very thing it watches
 		// for, and the FIN tests pass on a blind observer.
@@ -234,7 +234,7 @@ func (c *observedConn) Close() error {
 // a GOAWAY and waits, and a client with no stream open closes on receiving it.
 // So the client's drain covers this case too, and nothing is needed on the
 // hub -- which a server-side drain was tried for, and could not be shown to
-// change: its test passed with it removed (DIVERGENCE 5.680).
+// change: its test passed with it removed (DIVERGENCE 5.681).
 func TestAConnectionTheHubReapsEndsInAFinNotAReset(t *testing.T) {
 	skipWhereTheObserverIsBlind(t)
 	f := newFixture(t, nil) // for its CA and a node certificate only

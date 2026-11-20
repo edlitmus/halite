@@ -46563,8 +46563,7 @@ of them; the log could say which. Left for its own change.
 **Not covered:** TOTP as root under the rc.d script; Linux; a code from an
 authenticator app; the clock skew of a real phone; LDAP, OIDC and a directory
 group's role map, the rest of item 5.
-
-### 5.680 An idle connection ended in an RST, and making the timeouts differ would not have stopped it
+### 5.681 An idle connection ended in an RST, and making the timeouts differ would not have stopped it
 
 Issue 757 (`internal/transport/client.go`, `internal/transport/closedrain.go`).
 
@@ -46653,6 +46652,29 @@ passed with the drain taken out, because the hub is never the end that closes
 an idle connection, and a test that passes without the fix is not evidence
 for it.
 
+**The observer was blind off FreeBSD, and CI is what showed it.** The first CI
+run passed both FIN tests on Linux, macOS and Windows and failed the
+observer's control on all three: bytes sent after the client closed were seen
+as FIN (on Windows, as neither), want RST. The observer counted a reset only as
+ECONNRESET, which is how FreeBSD's read reports it, so elsewhere the FIN tests
+had passed on a probe that could not fail them. It took three runs:
+
+| Observer counts a reset as | Control on Linux | macOS | Windows |
+|---|---|---|---|
+| ECONNRESET from a read | FIN | FIN | neither |
+| any failed read but EOF and the deadline | FIN | FIN | **RST** |
+| that, or `SO_ERROR` pending before close | **RST** | FIN | **RST** |
+
+On Linux no read failed: the reset left the socket done and every read
+answered EOF, with the error held for `SO_ERROR`. That was a guess from the
+kernel's source, made without a Linux machine, and the control's pass is what
+confirms it. On macOS neither method saw a reset, so the three observer tests
+skip there and say why; the drain still runs in every macOS test that dials
+through `Client`. With the third observer, the FIN tests pass on FreeBSD,
+Linux and Windows, and on FreeBSD they fail with the drain unwired, with
+`RST (connection reset by peer, errno 54)` ten times each. They were not
+watched failing on Linux or Windows.
+
 **Not verified.**
 
 - The real 90 s reap between a running `halite-node` and `halite-hub`.
@@ -46660,11 +46682,14 @@ for it.
   drive the same `Close` over loopback, with the real TLS configurations.
 - The remote node over ZeroTier, and the local API's connection, which the
   issue saw with the same signature.
-- Linux, where the trigger is a close with unread bytes. The drain reads
-  before it closes, so it should cover that case too. That is a prediction,
-  and nothing was run there.
+- Linux and Windows beyond CI's loopback runs: the FIN tests pass there with
+  an observer whose control sees a reset, but nobody has run them with the
+  drain unwired on those platforms, or a real hub and node.
+- macOS at all, where the observer cannot see a reset.
 - Whether a hub's graceful `Shutdown` takes the same path, and a connection
   that falls back from HTTP/2, which sends no `GOAWAY`.
+
+
 
 ## 6. Everything else not started
 

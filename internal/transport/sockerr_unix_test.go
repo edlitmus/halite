@@ -14,7 +14,7 @@ import (
 // In CI on the PR for issue 757, Linux answered every read with EOF when the
 // reset arrived after the peer's FIN, and this reported it; FreeBSD's reads
 // failed with ECONNRESET. On macOS neither reported one, so the tests skip
-// there (skipWhereTheObserverIsBlind, DIVERGENCE 5.680).
+// there (skipWhereTheObserverIsBlind, DIVERGENCE 5.681).
 func pendingSocketError(c *net.TCPConn) error {
 	raw, err := c.SyscallConn()
 	if err != nil {
