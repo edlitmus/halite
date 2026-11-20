@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -85,7 +88,7 @@ func TestTheEndObserverSeesAReset(t *testing.T) {
 	close(clientClosed)
 	select {
 	case end := <-ol.ends:
-		if end != "RST" {
+		if !strings.HasPrefix(end, "RST") {
 			t.Fatalf("bytes sent after the client closed were seen as %s, want RST", end)
 		}
 	case <-time.After(5 * time.Second):
@@ -127,6 +130,9 @@ type observedConn struct {
 	mu   sync.Mutex
 	fin  bool
 	rst  bool
+	// why is what the read that saw the reset returned, so a failure names
+	// the platform's own word for it.
+	why string
 }
 
 func (c *observedConn) Read(p []byte) (int, error) {
@@ -139,11 +145,32 @@ func (c *observedConn) note(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {
+	case err == nil, errors.Is(err, os.ErrDeadlineExceeded), errors.Is(err, net.ErrClosed):
 	case errors.Is(err, io.EOF):
 		c.fin = true
-	case errors.Is(err, syscall.ECONNRESET):
+	default:
+		// Any other failure of a read is the connection aborted under it,
+		// and the platforms do not agree on the word. ECONNRESET was all this
+		// matched at first, and CI showed the control seeing no reset on
+		// Linux, macOS or Windows (DIVERGENCE 5.680): a reset arriving after
+		// this end's own FIN is reported differently there. Counting only
+		// one errno made the observer blind to the very thing it watches
+		// for, and the FIN tests pass on a blind observer.
 		c.rst = true
+		if c.why == "" {
+			c.why = abortReason(err)
+		}
 	}
+}
+
+// abortReason is the errno a read failed with, or its error when there is
+// none, without the addresses that would make every connection's differ.
+func abortReason(err error) string {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return fmt.Sprintf("%v, errno %d", errno, uintptr(errno))
+	}
+	return fmt.Sprintf("%T", err)
 }
 
 func (c *observedConn) Close() error {
@@ -167,7 +194,7 @@ func (c *observedConn) Close() error {
 			defer c.mu.Unlock()
 			switch {
 			case c.rst:
-				c.ends <- "RST"
+				c.ends <- "RST (" + c.why + ")"
 			case c.fin:
 				c.ends <- "FIN"
 			default:
