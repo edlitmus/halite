@@ -319,12 +319,19 @@ The refusals, all of which were run:
 
 | Case | Response |
 |---|---|
-| Same nonce again | `401 {"error":"this delivery has already been accepted"}` |
+| The same signed delivery again (the key is the signature; `X-Halite-Nonce` is not checked) | `401 {"error":"this delivery has already been accepted"}` |
 | Wrong signature | `401 {"error":"the signature did not verify"}` |
 | A timestamp outside `replay_window` | `401 {"error":"the delivery is outside this hook's replay window of 5m0s"}` |
 | A content type the hook does not accept | `415 {"error":"this hook accepts application/json"}` |
 | A hook path that is not configured | `404 {"error":"no such hook"}` |
 | A body larger than the limit | `413` |
+
+A delivery is remembered until its own timestamp leaves its hook's
+`replay_window`, which for a timestamp ahead of the API's clock is longer than
+the window. **The record is kept in memory, so a restart forgets it:** a
+signed delivery accepted before `halite-api` restarts is accepted once more
+after it, if its timestamp is still inside the window. A receiver of these
+events that must not act twice should key on something in the body.
 
 `auth: token` is the other mode. `auth: mtls` is refused when the API
 loads its configuration: the API does not ask clients for certificates, so

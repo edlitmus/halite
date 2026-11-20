@@ -46691,6 +46691,49 @@ watched failing on Linux or Windows.
 
 
 
+### 5.684 A hook's replay record was pruned while its signature still verified
+
+Reported privately as GHSA-5g95-mq9j-vphm (2026-11-20) and reproduced before
+it was fixed. The replay cache of `/v1/hook` kept each accepted signature
+with the time it was delivered, and every delivery pruned the whole cache
+with the window of the hook it was for. A signature verifies while its own
+timestamp is within its own hook's `replay_window`, in either direction. The
+two disagreed twice:
+
+- **Across hooks.** With `slow` at an hour and `fast` at a minute, a delivery
+  to `fast` two minutes after one to `slow` pruned `slow`'s record, and the
+  same signed delivery to `slow` was accepted again.
+- **Ahead of the clock.** A delivery stamped 59 s ahead on a one-minute hook
+  was pruned a minute after it arrived, and replayed 90 s after it, when its
+  stamp was 31 s old, it verified and was accepted.
+
+A replay is a second event on the bus, so a reaction to it runs again.
+
+**Fixed.** Each record carries the instant its signature stops verifying,
+its timestamp plus its own hook's window, and is pruned after that and not
+before. The cache stays bounded by the same thing as before, the windows.
+
+**Shown.** `TestAShortWindowedHookDoesNotForgetAnotherHooksDeliveries` and
+`TestASignatureStampedAheadIsRememberedWhileItVerifies`, on a fixed clock;
+both fail on the old `hook.go` with the replay answered `202`.
+`TestARecordGoesOnceItsSignatureCannotVerify` holds the bound: it passes on
+the old code too, and fails with the new pruning disabled.
+
+**Found, not fixed: a restart forgets every record.** The cache is in memory,
+so a signed delivery accepted before `halite-api` restarts is accepted again
+after it while its stamp is in the window. The report did not name this. It
+was reproduced with a fresh cache standing in for a restart. Two ways to close
+it, neither taken here because each costs something: refuse a timestamp older
+than the process, which turns a third-party sender's retry across a restart,
+carrying its original stamp, into a permanent `401` (halite's own returner
+stamps every attempt afresh, so it is unaffected); or keep the cache on disk,
+which is a durable write per delivery. It is now said in the code and in
+chapter 27, which also no longer calls the key a nonce: it is the signature,
+and `X-Halite-Nonce` is neither signed nor checked.
+
+**Not covered:** two copies racing across the boundary of a record's expiry,
+and a hook whose `replay_window` changes across a restart.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

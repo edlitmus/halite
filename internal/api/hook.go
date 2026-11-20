@@ -70,7 +70,12 @@ type Hooks struct {
 
 	mu sync.Mutex
 	// seen is the nonce cache: a signature already accepted inside the
-	// replay window is a replay, not a delivery.
+	// replay window is a replay, not a delivery. Each record holds the
+	// instant its own signature stops verifying (deliveryNonce.expires).
+	//
+	// It is kept in memory, so a restart forgets it: a signed delivery
+	// accepted before a restart can be accepted once more after it, for as
+	// long as its timestamp is inside the window. DIVERGENCE 5.684.
 	seen map[string]time.Time
 	// inFlight holds the signatures being delivered right now. A
 	// signature is reserved here, under mu, in the same step that checks
@@ -298,7 +303,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	// check and the record used to sit either side of the call to the
 	// hub, so two copies of one signed delivery arriving together both
 	// passed the check and both reached the bus.
-	release, err := s.hooks().reserve(nonce, s.now(), cfg.ReplayWindow)
+	release, err := s.hooks().reserve(nonce, s.now())
 	if err != nil {
 		status, result := http.StatusUnauthorized, "replayed"
 		if errors.Is(err, errDeliveryInFlight) {
@@ -381,7 +386,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	// failure a webhook exists to avoid. The reservation above keeps
 	// that property -- it is released when the delivery fails -- while
 	// closing the window in which two copies were both unrecorded.
-	s.hooks().landed(nonce, s.now())
+	s.hooks().landed(nonce)
 	landed = true
 	s.m().hookDeliveries.With(path, "delivered").Inc()
 	s.info("hook delivered", "hook", path, "principal", cfg.Principal, "tag", tag)
@@ -404,44 +409,44 @@ func (s *Server) refuseHook(w http.ResponseWriter, r *http.Request, cfg *Hook, r
 
 // authenticateHook applies the method the path declared, returning the
 // nonce to record once the delivery has landed.
-func (s *Server) authenticateHook(cfg *Hook, r *http.Request, body []byte) (string, error) {
+func (s *Server) authenticateHook(cfg *Hook, r *http.Request, body []byte) (deliveryNonce, error) {
 	switch cfg.Auth {
 	case "token":
 		presented, ok := bearer(r)
 		if !ok {
-			return "", fmt.Errorf("this hook needs a bearer token")
+			return deliveryNonce{}, fmt.Errorf("this hook needs a bearer token")
 		}
 		if subtle.ConstantTimeCompare([]byte(presented), []byte(cfg.Secret)) != 1 {
-			return "", fmt.Errorf("that token was not accepted")
+			return deliveryNonce{}, fmt.Errorf("that token was not accepted")
 		}
-		return "", nil
+		return deliveryNonce{}, nil
 
 	case "hmac":
 		return s.verifySignature(cfg, r, body)
 	}
-	return "", fmt.Errorf("this hook declares no authentication method")
+	return deliveryNonce{}, fmt.Errorf("this hook declares no authentication method")
 }
 
 // verifySignature checks the HMAC over the raw body, with the replay
 // window and the nonce cache of SPEC 22.2.
-func (s *Server) verifySignature(cfg *Hook, r *http.Request, body []byte) (string, error) {
+func (s *Server) verifySignature(cfg *Hook, r *http.Request, body []byte) (deliveryNonce, error) {
 	presented := r.Header.Get(cfg.SignatureHeader)
 	if presented == "" {
-		return "", fmt.Errorf("this hook needs a %s header", cfg.SignatureHeader)
+		return deliveryNonce{}, fmt.Errorf("this hook needs a %s header", cfg.SignatureHeader)
 	}
 	presented = strings.TrimPrefix(presented, "sha256=")
 
 	stamp := r.Header.Get(cfg.TimestampHeader)
 	if stamp == "" {
-		return "", fmt.Errorf("this hook needs a %s header", cfg.TimestampHeader)
+		return deliveryNonce{}, fmt.Errorf("this hook needs a %s header", cfg.TimestampHeader)
 	}
 	when, err := time.Parse(time.RFC3339, stamp)
 	if err != nil {
-		return "", fmt.Errorf("the %s header is not an RFC 3339 timestamp", cfg.TimestampHeader)
+		return deliveryNonce{}, fmt.Errorf("the %s header is not an RFC 3339 timestamp", cfg.TimestampHeader)
 	}
 	now := s.now()
 	if drift := now.Sub(when); drift > cfg.ReplayWindow || drift < -cfg.ReplayWindow {
-		return "", fmt.Errorf("the delivery is outside this hook's replay window of %s", cfg.ReplayWindow)
+		return deliveryNonce{}, fmt.Errorf("the delivery is outside this hook's replay window of %s", cfg.ReplayWindow)
 	}
 
 	// The timestamp is signed with the body, or a captured signature
@@ -453,11 +458,18 @@ func (s *Server) verifySignature(cfg *Hook, r *http.Request, body []byte) (strin
 	want := hex.EncodeToString(mac.Sum(nil))
 
 	if subtle.ConstantTimeCompare([]byte(presented), []byte(want)) != 1 {
-		return "", fmt.Errorf("the signature did not verify")
+		return deliveryNonce{}, fmt.Errorf("the signature did not verify")
 	}
 	// Whether it has been delivered already is the caller's question,
 	// asked in the same step as reserving it. See reserve.
-	return cfg.Path + "\x00" + presented, nil
+	// The record lasts as long as this signature could be accepted: until
+	// its own timestamp leaves this hook's own window. Kept from the
+	// moment of delivery for the window of whichever hook was being called,
+	// it was pruned early two ways -- by a shorter-windowed hook's delivery,
+	// and, for a timestamp ahead of the clock, by its own window running
+	// out while the signature still verified (GHSA-5g95-mq9j-vphm,
+	// DIVERGENCE 5.684).
+	return deliveryNonce{key: cfg.Path + "\x00" + presented, expires: when.Add(cfg.ReplayWindow)}, nil
 }
 
 // checkContentType applies the allowlist.
@@ -475,6 +487,14 @@ func checkContentType(cfg *Hook, header string) error {
 	return fmt.Errorf("this hook accepts %s", strings.Join(allowed, ", "))
 }
 
+// deliveryNonce is what makes a signed delivery a replay: its key, and the
+// instant after which its signature no longer verifies and the record of
+// it can go. A token hook's is the zero value and reserves nothing.
+type deliveryNonce struct {
+	key     string
+	expires time.Time
+}
+
 // errDeliveryInFlight is a second copy of a delivery that is being
 // delivered right now.
 var errDeliveryInFlight = errors.New("this delivery is already being accepted")
@@ -487,14 +507,15 @@ var errDeliveryInFlight = errors.New("this delivery is already being accepted")
 // The returned release gives the claim back, for a delivery that did
 // not land; landed replaces it with the record of one that did. A key
 // of "" -- a token hook, which has no nonce -- reserves nothing.
-func (h *Hooks) reserve(key string, now time.Time, window time.Duration) (func(), error) {
+func (h *Hooks) reserve(n deliveryNonce, now time.Time) (func(), error) {
+	key := n.key
 	if key == "" {
 		return func() {}, nil
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for k, at := range h.seen {
-		if now.Sub(at) > window {
+	for k, expires := range h.seen {
+		if now.After(expires) {
 			delete(h.seen, k)
 		}
 	}
@@ -516,14 +537,14 @@ func (h *Hooks) reserve(key string, now time.Time, window time.Duration) (func()
 
 // landed records a delivery that reached the bus, so the next one
 // carrying the same signature is a replay, and ends its reservation.
-func (h *Hooks) landed(key string, now time.Time) {
-	if key == "" {
+func (h *Hooks) landed(n deliveryNonce) {
+	if n.key == "" {
 		return
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.seen[key] = now
-	delete(h.inFlight, key)
+	h.seen[n.key] = n.expires
+	delete(h.inFlight, n.key)
 }
 
 // allow is the per-path token bucket for deliveries that authenticated.
