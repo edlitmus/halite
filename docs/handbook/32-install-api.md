@@ -24,7 +24,18 @@ authority is bounded.
 > `status.uptime`, and `403` with `no rule in [readonly] permits cmd.run against
 > "web*"` for `cmd.run` and for `test.ping`, and a wrong password got `401 those
 > credentials were not accepted`; after a reboot `readyz` answered `ready`.
-> **Not run:** LDAP, OIDC and TOTP, and a role map for a directory group.
+> **TOTP** was run on FreeBSD 15.1-RELEASE-p7, unprivileged, from a source
+> build at `9be16c0c`, against a lab hub and API on loopback, with codes from
+> an RFC 6238 client written for the run (Python's standard library, checked
+> against the RFC's Appendix B vectors) rather than from halite. The current
+> code and the next step's logged in; no code, a wrong one, one two steps old or two ahead,
+> a reused one, one older than a code already used, and a right code with a
+> wrong password each got the `401`. A secret written in lower case with spaces
+> worked the same. A code used just before a restart logged in once more after
+> it, as step 5 says. A FIPS build named the account at start and refused every
+> login to it, while an account without `totp` still logged in.
+> **Not run:** LDAP, OIDC, and a role map for a directory group; TOTP as root
+> under the rc.d script, on Linux, and with a code from an authenticator app.
 
 ## Before you start
 
@@ -169,7 +180,38 @@ accounts:
 and give `webops` a narrow role in `policy.yaml`
 ([chapter 26](26-authorization.md)). A role named here that does not exist
 in the policy grants nothing, silently, so check with `halite-hub policy
-show`. TOTP can be added per account.
+show`.
+
+**A second factor** (TOTP, RFC 6238) is a `totp` line on the account: a base32
+secret, made fresh for each person. halite has no command that makes one, or a
+QR code, so make it with anything that gives random bytes and type it into the
+authenticator app:
+
+```sh
+python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'
+```
+
+```yaml
+  alice:
+    hash: 'pbkdf2-sha512$600000$NA8t…'
+    totp: 'JBSW…'
+    roles:
+      - webops
+```
+
+`halite-api account list` then shows `second_factor: True` for the account. The
+code goes in the login body as `code`:
+
+```json
+{"username":"alice","password":"…","code":"123456","eauth":"local"}
+```
+
+A code logs in once. The same code again gets the same `401` as a wrong
+password, and so does a code more than one 30-second step from the API's clock.
+The record of used codes is kept in memory, so a code used in the ninety
+seconds before the API restarts works once more after it. A FIPS build refuses
+every login to an account with `totp`, and names those accounts when it starts
+([chapter 28](28-hardening.md)).
 
 **6. Install the service and start it.** The unit runs as the `halite`
 account, with its token store under `StateDirectory`:

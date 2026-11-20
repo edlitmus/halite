@@ -46507,6 +46507,63 @@ boxes stay open on operator practice alone. `doctor` was not run as the service
 account. No deployed file was changed, and the only thing executed against the
 live configuration was a read-only check in a scratch test, since deleted.
 
+### 5.680 A second factor nobody had logged in with, and no page said how to send
+
+Found running issue 733's item 5 (chapter 32's "Not run" list) on a FreeBSD
+15.1-RELEASE-p7 host, 2026-11-20: a source build at `9be16c0c`, run
+unprivileged, a lab hub and API on loopback with their own roots and ports,
+and two local accounts, one with `totp`. The codes came from an RFC 6238
+client written for the run in Python's standard library from the RFC, not
+from halite's code, and checked against the RFC's Appendix B vectors (six of
+six) before it was trusted.
+
+**What the code did** matched what it claims, case for case:
+
+| Login to the account with `totp` | Answer |
+|---|---|
+| no code; a wrong code; a code two steps old; two steps ahead | `401` |
+| the right code with a wrong password | `401`, and the code was still good afterwards |
+| the current code | `200` |
+| the same code again | `401` |
+| the next step's code | `200` |
+| the current code, after the next step's was used | `401` |
+| an account without `totp`, password only | `200` |
+| the secret stored in lower case with spaces, the same cases | the same answers |
+| the current code, again after an API restart | `200` |
+| a FIPS build: every case above | `401`, and the account named at start |
+
+The restart row is the limit the `TOTPSteps` comment states: the used steps
+are kept in memory. The FIPS row is the example file's claim, that a FIPS
+build refuses rather than accepting the password alone. Neither password nor
+secret appeared in the API's log.
+
+**What was missing was the documentation.** No page said the code goes in the
+login body as `code`: not chapter 32, whose step 5 said only "TOTP can be
+added per account", not chapter 27's login section, not SPEC 23.2, not the
+example `accounts.yaml`. The field name is in `internal/api/auth.go` and
+nowhere an operator reads. Nor did any page say how to make a secret, and
+halite has no command that makes one. So the feature worked, and an operator
+following the handbook could not have used it.
+
+**Changed.** Chapter 32's step 5 now shows a `totp` line, a command that
+makes a base32 secret, `account list`'s `second_factor`, the `code` field,
+what a reused code gets, the restart limit and the FIPS refusal; its run note
+records this run. Chapter 27's login section names the field. The `curl` in
+the new text was run against the lab API: `200` with the code, then `401`
+when the same body was sent again.
+
+**Found, not fixed.** The comment above the refusal in `auth.go` says which
+of the failures it was "is in the log and not in the answer". The log line
+carries `exists`, so it tells an unknown name from a known one, and nothing
+else: a wrong password, a wrong code and a reused code write the same line.
+An operator chasing a clock that has drifted cannot tell from the log that
+the password was right. The answer to the client must stay the same for all
+of them; the log could say which. Left for its own change.
+
+**Not covered:** TOTP as root under the rc.d script; Linux; a code from an
+authenticator app; the clock skew of a real phone; LDAP, OIDC and a directory
+group's role map, the rest of item 5.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

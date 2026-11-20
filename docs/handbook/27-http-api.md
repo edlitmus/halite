@@ -96,6 +96,9 @@ curl -s --cacert api.crt -X POST https://localhost:4511/v1/login \
  "expires":"2026-10-12T07:18:58Z"}
 ```
 
+An account with a second factor sends its current TOTP code too, as
+`"code":"123456"` ([chapter 32](32-install-api.md)).
+
 `eauth` chooses the method: `local`, `ldap`, or (for OIDC, which is a
 redirect flow) `POST /v1/login/oidc` and `/v1/login/oidc/callback`. A failed
 login returns one message however it failed:
