@@ -153,6 +153,7 @@ func (c *Client) client() (*http.Client, error) {
 			TLSClientConfig:     cfg,
 			ForceAttemptHTTP2:   true,
 			TLSHandshakeTimeout: HandshakeTimeout,
+			DialContext:         dialDraining,
 			// The subscribe stream is long-lived by design, so there
 			// is no response header timeout here; the per-request
 			// deadline comes from the context instead.

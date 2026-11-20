@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **An idle connection between a node and the hub now ends with a FIN instead of a reset.** When an idle connection was closed, the closing end shut its socket before the other end's TLS `close_notify` arrived, so the kernel answered that reply with an RST. On a FreeBSD hub with `net.inet.tcp.log_debug=1`, that put a `Spurious RST` line in `/var/log/messages` for every connection reaped. The node, the API and a relay now keep the socket open until the hub has answered, for at most 10 s. Making the node's idle timeout shorter than the hub's would not have fixed it, because the hub's reply follows the node's close. Nothing was ever lost. DIVERGENCE 5.680.
+
 - **The example Grafana dashboard shows process memory, descriptors and threads.** A new "Process: hub and API" row, and the same four panels in the node row, draw the families 5.675 added: resident memory beside what the Go runtime holds, descriptors as a share of the limit, goroutines and threads, and the Go heap. `docs/metrics.md` gains a `HaliteDescriptorsNearLimit` rule, which fires above 80% for 10 minutes. Import the dashboard again (version 9) to get the panels. DIVERGENCE 5.676.
 
 - **The hub, the API and a node's metrics now include the process's memory, descriptors and threads.** New families: `process_resident_memory_bytes`, `process_open_fds`, `process_max_fds`, `go_goroutines`, `go_threads`, and three `go_memstats_*` memory gauges. They use the standard Prometheus names, with a `component` label. The resident set is exported on Linux and FreeBSD, and descriptors on Linux, FreeBSD and macOS. A platform that cannot read a family does not export it. Windows has only the `go_` families. DIVERGENCE 5.675.

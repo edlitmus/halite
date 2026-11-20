@@ -27,6 +27,14 @@ type fixture struct {
 // handshake proves nothing about a handshake.
 func newFixture(t *testing.T, handler http.Handler) *fixture {
 	t.Helper()
+	return newFixtureOn(t, handler, nil)
+}
+
+// newFixtureOn is newFixture with the TCP listener under the TLS one handed
+// to wrap first, for a test that has to see what happens below TLS: how a
+// connection ends is a TCP property, and tls.Listen hides it.
+func newFixtureOn(t *testing.T, handler http.Handler, wrap func(net.Listener) net.Listener) *fixture {
+	t.Helper()
 	ca, err := pki.NewCA(pki.ECDSAP256, "test CA", time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -45,10 +53,14 @@ func newFixture(t *testing.T, handler http.Handler) *fixture {
 	// A real net/http server over a real TLS listener, rather than
 	// httptest: httptest rewrites NextProtos to suit itself, so an ALPN
 	// test through it tests the harness.
-	ln, err := tls.Listen("tcp", "127.0.0.1:0", ServerConfig(cert, ca.Cert, denied))
+	tcp, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if wrap != nil {
+		tcp = wrap(tcp)
+	}
+	ln := tls.NewListener(tcp, ServerConfig(cert, ca.Cert, denied))
 	closed := make(chan struct{}, 64)
 	srv := &http.Server{Handler: handler, ConnState: func(_ net.Conn, state http.ConnState) {
 		if state == http.StateClosed {
