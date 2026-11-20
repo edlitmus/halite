@@ -62,6 +62,9 @@ type Server struct {
 	Log *log.Logger
 	// Now is the clock, for the tests.
 	Now func() time.Time
+	// tokenRecheck is how often an open event stream rechecks its token;
+	// zero is defaultTokenRecheck. A field for the tests.
+	tokenRecheck time.Duration
 
 	// MaxBody bounds a request before it is parsed. Zero takes the
 	// transport's limit.

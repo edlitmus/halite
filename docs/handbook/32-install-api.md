@@ -282,7 +282,8 @@ You should see `ready` and a JSON token. Run the one command alice is allowed
 
 To **disable a person immediately**: remove the account or role, then
 `halite-api token revoke --principal alice` (a removed account does not
-invalidate tokens already issued). To see who holds tokens: `halite-api token
+invalidate tokens already issued). An event stream she has open ends within
+five seconds of the revocation. To see who holds tokens: `halite-api token
 list`.
 
 ## Key ideas

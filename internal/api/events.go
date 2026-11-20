@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/apitoken"
@@ -58,12 +60,15 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, token *apit
 		from = "latest"
 	}
 
+	ctx, tokenEnded, stopWatching := s.whileTokenHolds(r.Context(), token)
+	defer stopWatching()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	err := s.Hub.FollowEvents(r.Context(), tags, from, true, 0, func(raw json.RawMessage) error {
+	err := s.Hub.FollowEvents(ctx, tags, from, true, 0, func(raw json.RawMessage) error {
 		var e eventbus.Event
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return nil
@@ -81,9 +86,87 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, token *apit
 		s.m().streamEvents.With("sse").Inc()
 		return nil
 	})
+	if why := tokenEnded(); why != "" {
+		// A comment, which every SSE client ignores, so the reason reaches
+		// anyone reading the raw stream; a client that reconnects is told
+		// again, as a 401, by the token check.
+		fmt.Fprintf(w, ": %s; this stream has ended\n\n", why)
+		flusher.Flush()
+		s.info("an event stream was ended: its token can no longer be used",
+			"principal", token.Principal, "token_id", token.ID, "reason", why)
+		return
+	}
 	if err != nil && r.Context().Err() == nil {
 		s.warn("the event stream ended", "principal", token.Principal, "error", err.Error())
 	}
+}
+
+// defaultTokenRecheck is how often an open event stream asks the token
+// store whether its token can still be used.
+const defaultTokenRecheck = 5 * time.Second
+
+// whileTokenHolds derives a context that ends when the token a stream was
+// opened with can no longer be used, and reports why it ended.
+//
+// A request's token is redeemed once, as it arrives, and an event stream
+// is one request that lasts until somebody closes it. So a stream outlived
+// a logout, a `halite-api token revoke` and the token's own expiry, and
+// kept delivering the fleet's events to whoever held it (GHSA-cg5g-h9vh-8h3x,
+// DIVERGENCE 5.685). The store is read rather than told, because a
+// revocation is as often made by `halite-api token revoke`, another
+// process, as by this one.
+//
+// The idle limit is not applied while the stream is open: an open stream
+// is the token in use. Revocation, the absolute expiry and a record that is
+// gone end it, and so does a store that cannot be read, because the
+// alternative is a stream nobody can end.
+func (s *Server) whileTokenHolds(parent context.Context, token *apitoken.Token) (context.Context, func() string, func()) {
+	ctx, cancel := context.WithCancel(parent)
+	var mu sync.Mutex
+	var why string
+	every := s.tokenRecheck
+	if every <= 0 {
+		every = defaultTokenRecheck
+	}
+	go func() {
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if reason := s.streamTokenUnusable(token); reason != "" {
+					mu.Lock()
+					why = reason
+					mu.Unlock()
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	reason := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return why
+	}
+	return ctx, reason, cancel
+}
+
+// streamTokenUnusable says why a stream's token can no longer be used, or
+// "" while it can.
+func (s *Server) streamTokenUnusable(token *apitoken.Token) string {
+	current, err := s.Tokens.Get(token.ID)
+	if errors.Is(err, apitoken.ErrNotFound) {
+		return "this token no longer exists"
+	}
+	if err != nil {
+		return "this token could not be checked: " + err.Error()
+	}
+	held := *current
+	held.LastUsed = time.Time{} // in use for as long as the stream is open
+	return held.Why(s.now())
 }
 
 // tagFilter reads the tag globs a caller asked for.
@@ -103,9 +186,3 @@ func tagFilter(r *http.Request) []string {
 // sent, so that an intermediary does not close a connection it thinks
 // is dead.
 const heartbeat = 30 * time.Second
-
-// contextFrom derives a cancellable context from a request, so a
-// stream can end itself when the peer goes away.
-func contextFrom(r *http.Request) (ctx context.Context, cancel context.CancelFunc) {
-	return context.WithCancel(r.Context())
-}

@@ -46734,6 +46734,48 @@ and `X-Halite-Nonce` is neither signed nor checked.
 **Not covered:** two copies racing across the boundary of a record's expiry,
 and a hook whose `replay_window` changes across a restart.
 
+### 5.685 An event stream outlived its token's revocation and expiry
+
+Reported privately as GHSA-cg5g-h9vh-8h3x (2026-11-20) and reproduced before
+it was fixed, against a lab hub and API on a FreeBSD 15.1 host: a stream
+opened with `GET /v1/events` received an event, `halite-api token revoke`
+revoked its token, a new request with that token got `401 this token was
+revoked`, and the open stream received the next event. A token is redeemed
+once, as a request arrives, and an event stream is one request that lasts
+until somebody closes it, so a stream outlived a logout, a revocation and the
+token's own expiry, over SSE and over WebSocket alike. Chapter 32 calls
+`token revoke` the way to disable a person immediately; for the events, it
+was not.
+
+**Fixed.** An open stream reads its token's record from the store every five
+seconds and ends when the token has been revoked, has expired or is gone, and
+when the store cannot be read, since the alternative is a stream nobody can
+end. It reads the store rather than being told, because a revocation is as
+often made by `halite-api token revoke` in another process. The idle limit is
+not applied while a stream is open: an open stream is the token in use. An
+SSE stream ends with a comment giving the reason; a WebSocket closes with
+1008 and the reason, cut to fit a close frame. Each end is logged with the
+token's ID.
+
+**Shown.** In `internal/api/stream_token_test.go`, with the recheck at 50 ms
+and the stub hub holding its stream open: a token revoked through a second
+`Store` on the same directory ends the SSE stream, which says why; a
+one-second token's stream ends when it expires; a stream outlives its token's
+200 ms idle limit and still ends when revoked; and a revoked token's
+WebSocket closes with 1008 naming the revocation. With the recheck unable to
+end a stream, all four fail; with the idle limit applied, the third fails.
+Then on the same lab as the reproduction, with the fixed `halite-api`: the
+stream ended about five seconds after the revocation with `: this token was
+revoked; this stream has ended`, and an event sent six seconds after the
+revocation did not arrive.
+
+**Not covered:** the up-to-five-seconds after a revocation in which a stream
+still delivers, which is the cost of asking rather than being told; a role
+taken out of the policy, which a stream's token still carries until it is
+revoked, as every other request's does; and the cost of the recheck with
+many streams open, which reads one small file per stream every five seconds
+and was not measured.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

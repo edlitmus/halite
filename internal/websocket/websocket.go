@@ -45,6 +45,7 @@ const (
 	CloseGoingAway     = 1001
 	CloseProtocolError = 1002
 	CloseUnsupported   = 1003
+	ClosePolicy        = 1008
 	CloseTooLarge      = 1009
 	CloseInternal      = 1011
 )

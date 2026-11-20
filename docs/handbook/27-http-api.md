@@ -254,6 +254,14 @@ Watching the bus needs `event.listen` in a role's `runners:` list, and a
 WebSocket is pinged every thirty seconds so an intermediary does not close a
 quiet stream.
 
+A stream lasts only as long as its token. Every five seconds it asks the
+token store, and once the token has been revoked (by `POST /v1/logout` or
+`halite-api token revoke`), has expired or is gone, the stream ends: an SSE
+stream with a last comment, `: this token was revoked; this stream has ended`,
+and a WebSocket with close code 1008 and the same reason. A client that
+reconnects gets the `401`. The token's idle limit does not end an open stream,
+which is the token in use.
+
 Events are filtered by policy: **a tag that names a node reaches only a caller
 whose policy targets that node**, an event about no node in particular reaches
 any caller granted something, and a principal bound to nothing sees nothing.

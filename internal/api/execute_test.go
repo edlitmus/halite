@@ -35,6 +35,9 @@ type stubHub struct {
 	runnerDeclines string
 	// eventLines is what the hub's event stream answers with.
 	eventLines []string
+	// eventsHold keeps the event stream open after eventLines, until the
+	// request is cancelled, the way the hub's follow does.
+	eventsHold bool
 	// metricsBody is the hub's exposition; metricsFails makes the hub
 	// refuse the scrape instead.
 	metricsBody  string
@@ -79,6 +82,12 @@ func newStubHub(t *testing.T) *stubHub {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			for _, line := range h.eventLines {
 				fmt.Fprintln(w, line)
+			}
+			if h.eventsHold {
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				<-r.Context().Done()
 			}
 		case transport.PathRunners:
 			if h.runnerBreaks != "" {
