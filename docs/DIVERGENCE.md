@@ -46830,7 +46830,7 @@ finding: no capture here shows what `pro attach` says about a token it
 refuses, and a client that echoed it would otherwise put it straight back.
 
 **Shown.** `TestAFailedAttachNeverCarriesTheToken` drives all four paths
-with a dummy token, planted in the command and in what the faked client
+with a placeholder token, planted in the command and in what the faked client
 said, and wants an error that names `pro attach` and `<token>` and never
 the token. On the old `proRun` it fails on all four.
 
