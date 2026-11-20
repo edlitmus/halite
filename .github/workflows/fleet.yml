@@ -324,7 +324,7 @@ jobs:
   linux:
     name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm, modprobe, udev, snap, pro, acl, sudo)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -572,6 +572,10 @@ jobs:
       # "the machine was put back" below asserts nothing was left pending,
       # because the conformance harness cannot: its Cleanup takes no
       # *testing.T, so a cancel that failed there would be silent.
+      # 40m, and the job 50m: on 2026-11-20 internal/builtin reached the old
+      # 25m when TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest spent
+      # 1,320 s on apt fetching kernels from a slow mirror. The package
+      # usually takes about five minutes. More time, not a fix (5.688).
       - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
           set -e
@@ -590,7 +594,7 @@ jobs:
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks' ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ 2>&1 && status=0 || status=$?
+              go test -count=1 -v -timeout 40m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks' ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ 2>&1 && status=0 || status=$?
             echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
           test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"

@@ -67,8 +67,21 @@ rocky | almalinux)
 		TestLiveDnfModuleReadersAgree
 		TestLiveDnfModuleEnableSwitchDisableReset
 		TestLiveDnfModuleInstallAndRemove
-		TestLiveKernelpkgReadsAgreeWithRPM
-		TestLiveKernelpkgRPMInstallsAndRemovesKernels'
+		TestLiveKernelpkgReadsAgreeWithRPM'
+	# The install-and-remove test needs a kernel older than the newest
+	# that the repositories offer. Since 2026-11-17 Rocky 9's BaseOS has
+	# offered one kernel-core, 5.14.0-741.22.1.el9_9, so there is none to
+	# install and the test skips: the distribution's state, not halite's
+	# (DIVERGENCE 5.688). Allowed on Rocky only, and required to skip, so
+	# the first run after Rocky ships a second kernel fails here and says
+	# to put the test back in expect. AlmaLinux 8 offers older kernels and
+	# still must pass it.
+	if [ "$ID" = rocky ]; then
+		allowed_skips="$allowed_skips TestLiveKernelpkgRPMInstallsAndRemovesKernels"
+	else
+		expect="$expect
+		TestLiveKernelpkgRPMInstallsAndRemovesKernels"
+	fi
 	;;
 opensuse-leap)
 	modules='TestLiveZypper|TestLiveRpmReadsTheRealDatabase|TestLiveRpmVersionCmp|TestLiveChattr'
