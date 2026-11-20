@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,6 +32,7 @@ import (
 // reset, in each of five runs on FreeBSD (DIVERGENCE 5.680), so ten FINs are
 // not luck.
 func TestAnAbandonedConnectionEndsInAFinNotAReset(t *testing.T) {
+	skipWhereTheObserverIsBlind(t)
 	ol := &endObserver{ends: make(chan string, 16)}
 	f := newFixtureOn(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
@@ -63,6 +65,7 @@ func TestAnAbandonedConnectionEndsInAFinNotAReset(t *testing.T) {
 // received after close" in netstat -s. So the client closes first and the
 // server writes afterwards.
 func TestTheEndObserverSeesAReset(t *testing.T) {
+	skipWhereTheObserverIsBlind(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -93,6 +96,21 @@ func TestTheEndObserverSeesAReset(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the observer saw no end at all")
+	}
+}
+
+// skipWhereTheObserverIsBlind skips on macOS, where the observer has not been
+// shown to see a reset, so a FIN there would prove nothing. In CI on the PR
+// for issue 757, the control saw a FIN on macOS when it counted an aborted
+// read, and again with SO_ERROR read before close; both made it pass on
+// Linux and Windows (DIVERGENCE 5.680). The drain still runs on macOS in
+// every test that dials through Client; only its FIN is not checked there.
+func skipWhereTheObserverIsBlind(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "darwin" {
+		t.Skip("on darwin the end observer has not been shown to see a reset " +
+			"(neither an aborted read nor SO_ERROR reported one in CI), " +
+			"so a FIN here would prove nothing")
 	}
 }
 
@@ -218,6 +236,7 @@ func (c *observedConn) Close() error {
 // hub -- which a server-side drain was tried for, and could not be shown to
 // change: its test passed with it removed (DIVERGENCE 5.680).
 func TestAConnectionTheHubReapsEndsInAFinNotAReset(t *testing.T) {
+	skipWhereTheObserverIsBlind(t)
 	f := newFixture(t, nil) // for its CA and a node certificate only
 	pair, _ := f.enrolledPair(t, "web1.example")
 	hubKey, _ := pki.GenerateKey(pki.ECDSAP256)

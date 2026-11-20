@@ -11,9 +11,10 @@ import (
 // not yet reported to a read: SO_ERROR, which reading clears.
 //
 // The observer needs it because a read is not guaranteed to report a reset.
-// Linux and macOS answered every read with EOF when the reset arrived after
-// the peer's FIN, in CI on the PR for issue 757, while FreeBSD's reads failed
-// with ECONNRESET (DIVERGENCE 5.680).
+// In CI on the PR for issue 757, Linux answered every read with EOF when the
+// reset arrived after the peer's FIN, and this reported it; FreeBSD's reads
+// failed with ECONNRESET. On macOS neither reported one, so the tests skip
+// there (skipWhereTheObserverIsBlind, DIVERGENCE 5.680).
 func pendingSocketError(c *net.TCPConn) error {
 	raw, err := c.SyscallConn()
 	if err != nil {
