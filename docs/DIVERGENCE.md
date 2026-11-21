@@ -47459,6 +47459,45 @@ key, so this changes nothing for its migration.
 
 
 
+### 5.695 A scheduled job ran alongside a dispatched one (2026-11-21)
+
+Issue 781, which 5.694 found by reading the code. SPEC 9.6 and the
+handbook say a node runs one job at a time by default, and for jobs from
+the hub that was true: `executor.Offer`, a bounded queue, one worker. The
+schedule did not use it. `schedule.Engine` calls `runScheduled` from a
+goroutine of its own, and `runScheduled` called `executeJob` directly, so
+a scheduled highstate could run while a dispatched `state.apply` or
+`pkg.install` was running. Preventing exactly that is why the serial
+default exists.
+
+**Shown before the fix.** `TestAScheduledJobDoesNotRunAlongsideADispatchedOne`
+dispatches a one-second `test.sleep` and then runs a scheduled one. One
+at a time, the scheduled run ends about two seconds after the first
+began. With `runLocal` calling `executeJob` directly, which is the old
+path, it ended after 1.02 s.
+
+**The change.** Scheduled jobs go through the executor's queue
+(`runLocal`), and the schedule waits for the return, which is what its
+`maxrunning` counts. A full queue refuses a scheduled job as it refuses
+one from the hub: logged, and counted in
+`halite_node_jobs_refused_total`. A scheduled job still writes no
+evidence records, as before. It has no acceptance record, so a result
+record would be paired with nothing.
+
+The queue is a slice under a mutex now, not a channel, and each job runs
+on a goroutine of its own, so that `parallel_jobs` can let more than one run.
+`Cancel` needed it anyway. To take one job out of a channel it drained
+the channel and refilled it while `Run` read the same channel, and a
+refill that found the channel full again dropped a job silently. That
+comes from reading the old code; it was not reproduced. Under the mutex
+there is no window. `TestCancellingAQueuedJobRemovesOnlyThatJob` and
+`TestARunningJobIsNotCancelled` are the first tests of `Cancel` at all.
+Breaking it to drop the tail of the queue fails the first.
+
+`TestAScheduledHighstateSurvivesAHubOutage` runs real binaries with a
+one-second schedule, and it passes with the schedule going through the
+queue. The node package passes under `-race`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

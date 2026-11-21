@@ -129,7 +129,7 @@ func (n *node) scheduleLocation() (*time.Location, error) {
 //
 // It goes through the same path a job from the hub takes, so a
 // scheduled `state.apply` and a driven one are the same run: the same
-// pillar, the same modules, the same return schema.
+// pillar, the same modules, the same return schema, and the same queue.
 func (n *node) runScheduled(ctx context.Context, r schedule.Run) error {
 	kwargs := map[string]any{}
 	if r.Job.Kwargs != nil {
@@ -168,7 +168,18 @@ func (n *node) runScheduled(ctx context.Context, r schedule.Run) error {
 		"due", r.Fire.Format(time.RFC3339))
 	n.metrics.countScheduleRun(r.Job.Name)
 
-	ret := n.executeJob(j)
+	// Through the executor, so that a scheduled job waits for a job from
+	// the hub and the other way round, as SPEC 9.6 says a node's jobs do.
+	// It used to call executeJob here, from the schedule's own goroutine,
+	// and a scheduled highstate ran alongside a dispatched one (issue
+	// 781). A full queue refuses it as it refuses one from the hub.
+	ret, err := n.runLocal(ctx, j)
+	if err != nil {
+		n.log.Warn("not running a scheduled job",
+			"job", r.Job.Name, "fun", r.Job.Function, "jid", string(j.JID), "reason", err.Error())
+		n.metrics.countRefusal(err)
+		return err
+	}
 	if r.Job.ReturnJob {
 		// Wherever `returner:` says. The default is `local`, which is
 		// append-only NDJSON on the node -- not the hub's job cache,
