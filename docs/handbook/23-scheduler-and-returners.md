@@ -260,6 +260,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 server = http.server.HTTPServer(("127.0.0.1", 14599), Handler)
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.minimum_version = ssl.TLSVersion.TLSv1_2
 context.load_cert_chain(sys.argv[2], sys.argv[3])
 server.socket = context.wrap_socket(server.socket, server_side=True)
 server.serve_forever()
