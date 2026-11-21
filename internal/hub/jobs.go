@@ -303,6 +303,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		Kwarg:      req.Kwarg,
 		Env:        req.Env,
 		Test:       req.Test,
+		Parallel:   req.Parallel,
 		Offline:    offline,
 		TTL:        time.Duration(req.TTLSeconds) * time.Second,
 		Submitter:  principal,

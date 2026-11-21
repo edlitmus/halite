@@ -107,7 +107,14 @@ the setting is the node's own configuration: edit it and restart the
 node.
 
 A node runs jobs **one at a time** by default, so two package-manager
-runs cannot collide. Its own schedule waits in the same queue. The reader of the stream and the executor are
+runs cannot collide. Its own schedule waits in the same queue.
+`halite-hub run --parallel` lets one job run beside others, and
+`parallel_jobs: true` in a node's configuration does that for every job.
+A job running beside others still takes turns with jobs of its own
+module family, so two `pkg` jobs never overlap. A state run always runs
+alone and waits for the node to be empty, and nothing that arrives after
+it starts first. On a signed job, `--parallel` is ignored, because the
+signature does not cover it. The reader of the stream and the executor are
 separate, so a long job does not stop pings or new jobs arriving into the
 bounded queue (`job_queue_depth`, default 16).
 

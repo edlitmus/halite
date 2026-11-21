@@ -375,6 +375,11 @@ type executor struct {
 	mu      sync.Mutex
 	waiting []*pending
 	running int
+	// exclusive is true while a job that holds the whole node runs.
+	exclusive bool
+	// families are the module families a parallel job holds, SPEC 9.6's
+	// named locks: one `pkg` job at a time, beside one `service` job.
+	families map[string]bool
 	// wake tells Run to look at the queue again: a job arrived, or one
 	// finished. Buffered by one, so a signal is never lost and never
 	// blocks the sender.
@@ -391,6 +396,10 @@ type pending struct {
 	// record in the evidence chain, so it gets no result record either:
 	// a result paired with nothing would read as a job the chain lost.
 	local bool
+	// exclusive and family are how the job may share the node, settled
+	// when it is queued. See schedulingOf.
+	exclusive bool
+	family    string
 }
 
 func newExecutor(n *node, depth int, returns func(*job.Return)) *executor {
@@ -398,12 +407,13 @@ func newExecutor(n *node, depth int, returns func(*job.Return)) *executor {
 		depth = 16
 	}
 	return &executor{
-		node:    n,
-		guard:   job.NewGuard(job.DefaultGuardSize),
-		signed:  job.NewSignedReplay(n.signedReplayPath()),
-		returns: returns,
-		depth:   depth,
-		wake:    make(chan struct{}, 1),
+		node:     n,
+		guard:    job.NewGuard(job.DefaultGuardSize),
+		signed:   job.NewSignedReplay(n.signedReplayPath()),
+		returns:  returns,
+		depth:    depth,
+		wake:     make(chan struct{}, 1),
+		families: map[string]bool{},
 	}
 }
 

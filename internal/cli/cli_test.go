@@ -113,6 +113,19 @@ func TestBooleanFlagsDoNotSwallowTheNextArgument(t *testing.T) {
 	}
 }
 
+// `run --parallel 'web*' test.ping` is the target after the flag, not
+// its value: read as a value, the job would go to no node and the flag
+// would be "web*". SPEC 9.6.
+func TestTheParallelFlagDoesNotSwallowTheTarget(t *testing.T) {
+	a := parse(t, "--parallel", "web*", "test.ping")
+	if !a.Bool("parallel", false) {
+		t.Error("--parallel did not set")
+	}
+	if len(a.Positional) != 2 || a.Positional[0] != "web*" {
+		t.Errorf("positional = %v, want the target and the function", a.Positional)
+	}
+}
+
 func TestValueFlagsTakeBothSpellings(t *testing.T) {
 	for _, argv := range [][]string{
 		{"--out", "json", "apply"},

@@ -732,11 +732,16 @@ silence.
 
 ### 9.6 Concurrency on the node
 
-A node executes jobs serially by default, which matches Salt and avoids two `apt` runs colliding.
+A node executes jobs serially by default, which avoids two `apt` runs colliding. This is stricter
+than Salt, whose agent runs every job at once and keeps only state runs apart.
 
 - A named lock per module family (`pkg`, `service`, `file`) allows safe parallelism between
   families while serializing within one.
-- `--parallel` marks a job as safe to run alongside others.
+- `--parallel` marks a job as safe to run alongside others, and `parallel_jobs` makes that every
+  job's default. A signed job's `--parallel` is ignored, because the signature does not cover it.
+- A state run always runs alone: it reaches every family at once. It waits for running jobs, and
+  no job that arrives after it starts before it.
+- The node's own schedule shares the queue with jobs from the hub.
 - A long-running job does not block the subscribe stream; the stream reader and the executor are
   separate goroutines with a bounded queue between them.
 - `halite-node` refuses a job when its queue is full and says so, rather than growing memory. Salt's
