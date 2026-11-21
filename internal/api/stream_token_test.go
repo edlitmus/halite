@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -135,21 +136,33 @@ func TestAnExpiredTokensEventStreamEnds(t *testing.T) {
 
 // An open stream is the token in use, so the idle limit does not end it;
 // a revocation still does.
+//
+// The idle limit is passed on a clock the test moves, not by waiting. It
+// used to be 200 ms of real time from Issue, which the request opening the
+// stream also had to land inside: on the FIPS CI leg it did not, and the
+// stream was refused 401 before the idle limit could be tested at all
+// (DIVERGENCE 5.685.1).
 func TestAnOpenStreamIsNotEndedByTheIdleLimit(t *testing.T) {
 	l, _ := streamLab(t)
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC).UnixNano())
+	now := func() time.Time { return time.Unix(0, clock.Load()) }
+	l.server.Now, l.server.Tokens.Now = now, now
+
 	token, secret, err := l.server.Tokens.Issue(apitoken.Options{
 		Principal: "local:ed", Roles: []string{"operator"},
-		Lifetime: time.Hour, IdleFor: 200 * time.Millisecond,
+		Lifetime: time.Hour, IdleFor: time.Minute,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines, ended := openSSE(t, l, secret)
 	awaitLine(t, lines, "event: halite/job/")
+	clock.Add(int64(10 * time.Minute))
 	select {
 	case <-ended:
 		t.Fatal("the idle limit ended a stream that was open")
-	case <-time.After(1 * time.Second):
+	case <-time.After(1 * time.Second): // twenty rechecks at streamLab's 50 ms
 	}
 	if _, err := l.server.Tokens.Revoke(token.ID); err != nil {
 		t.Fatal(err)

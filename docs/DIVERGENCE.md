@@ -46775,6 +46775,30 @@ taken out of the policy, which a stream's token still carries until it is
 revoked, as every other request's does; and the cost of the recheck with
 many streams open, which reads one small file per stream every five seconds
 and was not measured.
+
+#### 5.685.1 The idle-limit test raced its own idle limit (2026-11-21)
+
+`TestAnOpenStreamIsNotEndedByTheIdleLimit` failed on the FIPS CI leg of
+PR 777 with `the stream answered 401`, 0.44 s in. The token was issued
+with a 200 ms idle limit, counted from `Issue`, and the request that
+opens the stream is a use like any other: when it arrived more than
+200 ms later the token had already gone idle, and the test failed before
+reaching what it tests. A 300 ms sleep before the stream opens fails it
+every time.
+
+The test now runs the API server and the token store on one clock it
+moves: the token is issued and the stream opened at a fixed instant,
+then the clock goes ten minutes past a one-minute idle limit, and the
+stream must survive a second of 50 ms rechecks before the revocation
+ends it. With the 300 ms sleep it passes. With the recheck applying the
+idle limit it fails; with that break and the clock not moved it passes,
+which is what shows the moved clock is what makes it bite. Passed under
+`-race` and under `GODEBUG=fips140=on` on beastie.
+
+**Not covered:** the other three tests here wait in real time for real
+expiry or revocation, with margins of seconds rather than 200 ms, and
+were left as they are.
+
 ### 5.686 The webhook returner followed a redirect, with the body or without it
 
 Reported privately as GHSA-3h7q-c9jf-rw88 (2026-11-20) and reproduced before
