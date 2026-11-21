@@ -142,6 +142,18 @@ type eventsResult struct {
 	ReactorFailures float64 `json:"reactor_failures"`
 	NodeRateDropped float64 `json:"node_rate_dropped"`
 	MaxQueueDepth   float64 `json:"max_queue_depth"`
+	// The hub's own time answering POST /v1/event over the run, from
+	// halite_hub_request_duration_seconds: how many requests, their total
+	// seconds, and how many took over 100 ms and over 500 ms. The hub's
+	// clock starts when its handler does, so a post that waited before
+	// the hub read it, the hub or its machine not running, shows in post
+	// latency and not here; a slow handler shows in both. That is the
+	// split a CI stall needs and post latency alone cannot give
+	// (DIVERGENCE 5.692).
+	HubEventRequests  float64 `json:"hub_event_requests"`
+	HubEventSeconds   float64 `json:"hub_event_seconds_total"`
+	HubEventOver100ms float64 `json:"hub_event_over_100ms"`
+	HubEventOver500ms float64 `json:"hub_event_over_500ms"`
 	// WarmSeconds is how long connecting every node took, before the
 	// schedule started; Handshakes is how many TLS handshakes posts
 	// started during it, which warming should make none. See warm.
@@ -255,6 +267,9 @@ func eventsCmd(args []string) error {
 	res.ReactorDropped = delta("halite_reactor_dropped_total")
 	res.ReactorFailures = delta("halite_reactor_failures_total")
 	res.NodeRateDropped = delta("halite_events_dropped_total")
+	if err := res.hubEventTime(before, after); err != nil {
+		return err
+	}
 
 	res.print(os.Stdout)
 	return writeJSONLine(*jsonOut, res)
@@ -513,11 +528,13 @@ func parseExposition(r io.Reader) (map[string]float64, error) {
 		if i := strings.IndexAny(line, "{ "); i >= 0 {
 			name, rest = line[:i], line[i:]
 		}
+		series := ""
 		if strings.HasPrefix(rest, "{") {
 			end := strings.LastIndex(rest, "}")
 			if end < 0 {
 				return nil, fmt.Errorf("metrics: an unclosed label set: %q", line)
 			}
+			series = name + rest[:end+1]
 			rest = rest[end+1:]
 		}
 		fields := strings.Fields(rest)
@@ -529,8 +546,44 @@ func parseExposition(r io.Reader) (map[string]float64, error) {
 			return nil, fmt.Errorf("metrics: %q: %w", line, err)
 		}
 		out[name] += v
+		if series != "" {
+			out[series] = v
+		}
 	}
 	return out, sc.Err()
+}
+
+// hubEventSeries is one series of the hub's request-duration histogram
+// for POST /v1/event, as the hub writes it: le is a bucket's bound, or
+// "" for the family's _sum and _count, which carry no le.
+func hubEventSeries(suffix, le string) string {
+	labels := `route="` + transport.PathEvent + `"`
+	if le != "" {
+		labels += `,le="` + le + `"`
+	}
+	return "halite_hub_request_duration_seconds" + suffix + "{" + labels + "}"
+}
+
+// hubEventTime fills in the hub's own time for the run's posts, after
+// minus before. A series missing after a run that had posts accepted is
+// an error rather than a zero: the hub then answered nothing the harness
+// can read, and zero would print as a hub that was never slow.
+func (r *eventsResult) hubEventTime(before, after map[string]float64) error {
+	count, sum := hubEventSeries("_count", ""), hubEventSeries("_sum", "")
+	le100, le500 := hubEventSeries("_bucket", "0.1"), hubEventSeries("_bucket", "0.5")
+	if r.Accepted > 0 {
+		for _, name := range []string{count, sum, le100, le500} {
+			if _, ok := after[name]; !ok {
+				return fmt.Errorf("the hub's metrics after the run have no %s", name)
+			}
+		}
+	}
+	delta := func(name string) float64 { return after[name] - before[name] }
+	r.HubEventRequests = delta(count)
+	r.HubEventSeconds = delta(sum)
+	r.HubEventOver100ms = r.HubEventRequests - delta(le100)
+	r.HubEventOver500ms = r.HubEventRequests - delta(le500)
+	return nil
 }
 
 // spec30ReactorRate is the row's number.
@@ -600,6 +653,13 @@ func (r eventsResult) print(w io.Writer) {
 		drained = fmt.Sprintf("NOT drained %s after the last post", secs(r.DrainSeconds))
 	}
 	fmt.Fprintf(w, "  queue depth at most %.0f; %s\n", r.MaxQueueDepth, drained)
+	mean := 0.0
+	if r.HubEventRequests > 0 {
+		mean = r.HubEventSeconds / r.HubEventRequests
+	}
+	fmt.Fprintf(w, "  hub's own time in POST %s: %.0f requests, mean %s, %.0f over 100 ms, %.0f over 500 ms (from when its handler started)\n",
+		transport.PathEvent, r.HubEventRequests, time.Duration(mean*float64(time.Second)).Round(time.Microsecond),
+		r.HubEventOver100ms, r.HubEventOver500ms)
 	for _, e := range r.Errors {
 		fmt.Fprintf(w, "  error: %s\n", e)
 	}

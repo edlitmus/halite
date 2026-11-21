@@ -29,6 +29,11 @@ func TestEventsReachTheReactorAndAreCounted(t *testing.T) {
 	if r.Handshakes != 0 {
 		t.Fatalf("posts started %d TLS handshakes during the schedule; want none, every node connected before it", r.Handshakes)
 	}
+	// The hub's own count of the route agrees with the harness's, which
+	// is what shows the series read is the one the hub writes.
+	if r.HubEventRequests != float64(r.Accepted) {
+		t.Fatalf("the hub timed %.0f POST /v1/event requests; the harness had %d accepted", r.HubEventRequests, r.Accepted)
+	}
 	if r.Published < 80 {
 		t.Fatalf("the hub published %.0f events; want at least the 80 accepted", r.Published)
 	}

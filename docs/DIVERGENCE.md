@@ -47022,6 +47022,44 @@ the bus segment are guesses nobody has measured. A late tick and busy
 posters at once count as late, because which of the two kept a given
 event out cannot be told. Windows has not run the new code.
 
+### 5.692 `simfleet events` reports the hub's own time for each post (2026-11-21)
+
+5.691 leaves the two CI failures of `TestEventsReachTheReactorAndAreCounted`
+with posts that took hundreds of milliseconds and no way to say where.
+Two guesses were on the table, an emulated VM pausing and Windows
+scanning the bus segment as the hub appends to it, and they differ in
+exactly one place: the second is time inside the hub's handler, the
+first is time when nothing in the hub ran at all.
+
+The hub already measures the first. `halite_hub_request_duration_seconds`
+is observed per route by the wrapper around the whole mux, from when
+the handler starts to when it returns. `simfleet events` scraped the
+hub's metrics before and after every run already, but its parser summed
+each name across its labels, so one route's histogram could not be read.
+
+**The change.** The parser also keeps each labelled series under its
+own name, and the run reports, for `POST /v1/event` and after minus
+before: how many requests, their total seconds, and how many took over
+100 ms and over 500 ms (`hub_event_requests`, `hub_event_seconds_total`,
+`hub_event_over_100ms`, `hub_event_over_500ms`). A run that had posts
+accepted and finds none of those series is an error rather than a hub
+that was never slow. The test now also requires the hub's request count
+for the route to equal the harness's accepted count, which is what shows
+the series read is the one the hub writes; naming `/v1/events` instead
+fails it with the missing series.
+
+**Measured** on beastie, stopping only the hub for 0.6 s during the
+schedule: post p95 517 ms, and the hub's own time a mean of 451 µs,
+none over 100 ms. A post that waits while the hub is stopped waits
+before its handler starts, so this number does not move: when a CI run
+shows slow posts and a fast hub, the hub or its machine was not running;
+slow posts and a slow hub mean the handler was.
+
+**Not covered:** a slow handler has not been shown to register, only
+the arithmetic from a histogram by a unit test and the count against a
+real hub; nothing here made the handler slow. The run reads two of the
+hub's default bucket bounds, 100 ms and 500 ms, and nothing between them.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
