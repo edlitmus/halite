@@ -21,6 +21,63 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+## 0.2.0 — 2026-11-20
+
+A pre-release, like every `v0.*`. **Until 1.0 halite promises no backwards
+compatibility** (handbook chapter 36): this release changes the policy
+language and the signed-job and extension formats. Read the
+breaking changes below and take a backup you can restore before upgrading.
+
+### Security advisories fixed in this release
+
+All four affect 0.1.1 and earlier, were reported privately, and are published
+with this release. Each has its own entry below.
+
+- [GHSA-cg5g-h9vh-8h3x](https://github.com/edlitmus/halite/security/advisories/GHSA-cg5g-h9vh-8h3x)
+  (medium): an API event stream, over SSE or WebSocket, kept delivering
+  events after its token was revoked or expired. DIVERGENCE 5.685.
+- [GHSA-3h7q-c9jf-rw88](https://github.com/edlitmus/halite/security/advisories/GHSA-3h7q-c9jf-rw88)
+  (medium): the webhook returner followed a receiver's redirect, sending
+  signed returns to another origin or over plain http, or losing them.
+  DIVERGENCE 5.686.
+- [GHSA-5g95-mq9j-vphm](https://github.com/edlitmus/halite/security/advisories/GHSA-5g95-mq9j-vphm)
+  (medium): a signed `/v1/hook` delivery could be accepted twice while
+  its signature was still valid. DIVERGENCE 5.684.
+- [GHSA-cgg8-h9pj-fq34](https://github.com/edlitmus/halite/security/advisories/GHSA-cgg8-h9pj-fq34)
+  (medium): a failed `pro.attach` put the Ubuntu Pro contract token in
+  its error, and so in the job's return. Rotate a token that may have been
+  exposed. DIVERGENCE 5.687.
+
+### Before you upgrade: what breaks
+
+Each item is an entry below, with what to change.
+
+- **Policy.** A misspelt key in a rule refuses to load (5.602). A wildcard no
+  longer grants twelve more functions, and a node that requires a signature
+  for `arbitrary_code` refuses eleven of them unsigned (5.600). An argument
+  rule holds every function that takes the same names (5.586).
+  `state.orch_resume` is held to `allow_mods` and `deny_sls` (5.599). A runner
+  reaches only the nodes its rule's target covers (5.391).
+- **Signed jobs and extensions.** Signed jobs use a new format and old
+  signatures are refused (5.330). An extension's signature now covers its
+  manifest: re-sign every bundle (5.333).
+- **States and pillar.** Requisite forms behave as Salt's captured runs do
+  (5.478). A state that is its own requisite fails to compile (5.461).
+  `__replace__`, `__overwrite__` and `__aggregate__` are ordinary pillar keys
+  (5.468). A foreign-architecture Debian package is listed as `name:arch`
+  (5.464). `cmd.run` has an output limit, and LDAP role mapping is
+  case-exact (5.450).
+- **Windows.** A mode with no bits for other accounts, such as 0640, makes a
+  file or directory private (5.622).
+- **Operations.** A batch with `--batch-safe-limit` stops when nodes go quiet
+  (5.496). The hub limits enrollment requests from one address (5.398).
+  `halite-hub ssh` refuses a host, user or jump host that is not a name
+  (5.396). The webhook returner no longer follows a redirect: if a receiver
+  redirects, set `url` to where it is, or returns collect in the spool
+  (5.686).
+
+### Everything else
+
 - **Security: a signed hook delivery can no longer be replayed while its signature still verifies** (GHSA-5g95-mq9j-vphm). `/v1/hook`'s replay cache was pruned with the window of whichever hook was being called, so a hook with a short `replay_window` made the API forget another hook's deliveries, and a delivery stamped ahead of the API's clock was forgotten before its signature expired. Either let the same delivery in twice, and a reactor act on it twice. Each record now lasts until its own signature can no longer verify. A restart still forgets them, as chapter 27 now says. DIVERGENCE 5.684.
 
 - **Security: an event stream now ends when its token is revoked or expires** (GHSA-cg5g-h9vh-8h3x). `GET /v1/events` and `GET /v1/ws/events` checked the token once, when the stream opened, so a stream kept delivering the fleet's events after a logout, a `halite-api token revoke` or the token's expiry. A stream now rechecks every five seconds and ends with the reason: a last SSE comment, or WebSocket close code 1008. The idle limit does not end an open stream. DIVERGENCE 5.685.
