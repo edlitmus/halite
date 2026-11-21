@@ -245,9 +245,9 @@ a Mac `make` must be `bmake` or `gmake`.
 
 **4. Sign, check, upload** to the draft, naming its tag. Credentials come from the environment, from whatever identity
 the key's policy lets sign (an SSO login, an assumed role). The key
-policy must grant `kms:Sign` to that identity. No release has yet been
-signed through SSO or a role (see "What is and is not covered"). With
-the AWS CLI:
+policy must grant `kms:Sign` to that identity. v0.2.0 was signed through
+an assumed role, and no release yet through SSO (see "What is and is not
+covered"). With the AWS CLI:
 
 ```sh
 eval "$(aws configure export-credentials --format env)"
@@ -337,9 +337,8 @@ the public key.
 This detects. It does not prevent. A failed run does not unpublish the
 release. The job does not start for a release that a workflow publishes
 with its `GITHUB_TOKEN`. GitHub does not send the event for such a
-release. The job has not yet run on GitHub. It checks out the default
-branch, so the first run is after the merge. That run is the next
-publish, or a dispatch.
+release. Its first run on GitHub was v0.2.0's publish, on 2026-11-21 (run
+44848061166): it and the archives job beside it both passed.
 
 To run the check by hand:
 
@@ -431,26 +430,59 @@ OS markers for those, ELF x86-64 and aarch64, ppc64le, riscv64 and s390x
 v0.1.0 exits non-zero on all 16 of its archives, on layout alone, which is
 right: they predate the handbook and service files.
 
-**Not covered:** no release has been signed through SSO or an assumed
-role. v0.1.1 is the only signing with the current key. It used the static
-key and secret of an IAM user, in the environment. The key is in an AWS
-account that the workstation used for this work cannot reach. The
-owner decided on 2026-11-06 that the next real release is where this is
-done, and not a local `dist/` made for the purpose. What was shown is
-narrower. `go run ./tools/relsign pubkey` uses the KMS client of halite
-(`internal/awskms`). It ran with temporary credentials from `aws
-configure export-credentials --format env`, so the environment held a
-session token. The request asked the real KMS service for the key of an
-alias that does not exist, in us-east-2. KMS answered `NotFoundException`.
-That answer shows that KMS accepted the authentication, with the token.
-With the token removed, and with one middle character of the token
-changed, KMS answered `UnrecognizedClientException`. With the secret
-changed, it answered `InvalidSignatureException`. A `Sign` call with the
-release key under an SSO or role principal was not made. The key policy
-was not read, so whether it grants `kms:Sign` to such a principal is not
-known.
+v0.2.0 (2026-11-20/21) went the same way as v0.1.1.
+- **Before the tag.** The changelog rename was merged first, and the
+  gate's changelog check passed with `GITHUB_REF_NAME=v0.2.0`. `make check`
+  passed on that commit, `13efcb54`, and a manual run of the workflow there
+  passed every job and published nothing.
+- **The tag** was pushed by name. `release.yml` (run 44845177973) made a
+  pre-release draft of 37 assets.
+- **What it built.** The first builder's `dist/` was 91 files: 90 manifest
+  entries and the manifest. Its `SHA256SUMS` was byte-identical to the
+  draft's, all 90 entries matched, and the draft's assets were exactly the
+  manifest's archives, SBOMs and `SHA256SUMS`. `gh attestation verify`,
+  pinned to `release.yml` at `refs/tags/v0.2.0`, passed on the
+  linux-amd64, linux-arm64-fips, freebsd-amd64 and windows-amd64 archives.
+- **Signing.** The owner then signed, uploaded and ran `make
+  release-publish`. The first `release-sign` failed before signing
+  anything, with `UnrecognizedClientException`: credentials in the
+  environment that KMS did not accept. The signing that succeeded used
+  temporary credentials for an assumed signing role. That makes v0.2.0 the
+  first release signed through a role. v0.1.1 used an IAM user's static
+  keys.
+- **Afterwards.** `sh tools/verify-signatures.sh v0.2.0` passed for
+  `SHA256SUMS` and the 36 archives and SBOMs. From the public URLs with no
+  authentication, `openssl` verified `SHA256SUMS.sig` and the
+  freebsd-amd64 archive's signature, and the archive matched its line.
+  `verify-release.yml` ran on the publish and passed both its jobs.
 
-The next release must do these steps in order:
+**Signing through a role** was done for the first time at v0.2.0. v0.1.1,
+the first signing with the current key, used the static key and secret of
+an IAM user, in the environment. The owner decided on 2026-11-06 that the
+next real release would use SSO or a role, and not a local `dist/` made for
+the purpose, and v0.2.0 used a role. So the role's `Sign` calls succeeded,
+which shows the key policy grants it `kms:Sign`, and `release-verify` and
+the published checks above passed on what it signed. The key is in an AWS
+account that the workstation used for this work cannot reach.
+
+Before that, less had been shown. `go run ./tools/relsign pubkey` uses the
+KMS client of halite (`internal/awskms`). It ran with temporary credentials
+from `aws configure export-credentials --format env`, so the environment
+held a session token. The request asked the real KMS service for the key of
+an alias that does not exist, in us-east-2. KMS answered
+`NotFoundException`, which shows that KMS accepted the authentication, with
+the token. With the token removed, and with one middle character of the
+token changed, KMS answered `UnrecognizedClientException`. With the secret
+changed, it answered `InvalidSignatureException`. v0.2.0's first attempt
+got the same `UnrecognizedClientException`. What was wrong with the
+credentials in that environment was not recorded.
+
+**Not covered:** an IAM Identity Center (SSO) permission set has not signed
+a release. The role that signed v0.2.0 is not named in this document. Step
+5 below asks for it, and CloudTrail's `Sign` records hold it.
+
+Signing through a role or SSO takes these steps. v0.2.0 did them with a
+role:
 
 1. In the account of the key, make a role or an Identity Center
    permission set, if there is none. The key policy must grant it
