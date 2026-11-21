@@ -21,6 +21,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **A template slice with a step near the integer limit now gives Python's answer instead of failing the render.** `{{ [1,2,3][1::9223372036854775807] }}` stopped with "internal error rendering the template"; it now gives `[2]`, as Python does. DIVERGENCE 5.689.
+
 ## 0.2.0 — 2026-11-20
 
 A pre-release, like every `v0.*`. **Until 1.0 halite promises no backwards

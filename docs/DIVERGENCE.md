@@ -46907,6 +46907,31 @@ is time and not a fix: a mirror slower still will reach it.
 Fleet run; whether any other live test runs a binary from `/run`; and
 whether the vault would serve Rocky's install test.
 
+### 5.689 A slice step at the int limit panicked a render
+
+Found beside code scanning alert 20 (go/incorrect-integer-conversion,
+`internal/template/eval.go`) while that alert was triaged, 2026-11-20. It
+was not the alert: CodeQL flagged the conversion, and the defect was the
+loop after it. A slice walked its indexes with `i += step`, so a step near
+the int limit wrapped the index on its second pass:
+`{{ [1,2,3][1::9223372036854775807] }}` failed the render with "internal
+error rendering the template (a halite defect, please report it): runtime
+error: index out of range [-9223372036854775808]". `recoverInto` caught it,
+so one render failed and nothing else did. Python answers `[2]`.
+
+**Fixed.** The loop stops when the next index would overflow, which is
+past the end of anything and so the same as Python's answer.
+
+**Shown.** Five cases in `TestOutputAndLiterals`, with the answers
+python3 3.12 gave for each: `[1::max]` gives `[2]`, `[::max]` gives `[1]`,
+`'abc'[1::max]` gives `b`, `[max::max]` gives `[]`, and `[::-max]` gives
+`[3]`. On the old `eval.go` the first fails with the panic.
+
+**Not covered:** a negative step cannot overflow here. The loop's index
+stays at or above -1 while it runs, and the largest negative step is
+covered by the last case. A step whose magnitude needs more than 64 bits is
+refused when it is parsed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
