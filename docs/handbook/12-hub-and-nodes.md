@@ -107,7 +107,7 @@ the setting is the node's own configuration: edit it and restart the
 node.
 
 A node runs jobs **one at a time** by default, so two package-manager
-runs cannot collide. The reader of the stream and the executor are
+runs cannot collide. Its own schedule waits in the same queue. The reader of the stream and the executor are
 separate, so a long job does not stop pings or new jobs arriving into the
 bounded queue (`job_queue_depth`, default 16).
 
