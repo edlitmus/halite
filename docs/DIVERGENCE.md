@@ -46974,6 +46974,54 @@ architecture.
 a negative value, or with a float `Config.Int` converts out of range. That
 is a question of bounds on configuration, and not of the bit width.
 
+### 5.691 `simfleet events` blamed its own pauses on busy posters (2026-11-21)
+
+`TestEventsReachTheReactorAndAreCounted` failed twice more after 5.673:
+on main's FreeBSD leg after PR 770 (61 of 80 offered, post p95 778 ms),
+and on PR 775's Windows race leg (75 of 80, p95 330 ms). Both runs
+started no TLS handshake during the schedule, so 5.673's warm-up did
+its job and this is something else. Both printed "every poster was
+busy" for the events not offered.
+
+That phrase was a guess at the cause written in as the only cause. The
+schedule is an open loop: each 10 ms tick works out from the clock how
+many events are due and hands each to a poster without waiting, so an
+event is not offered when the work channel and every poster are full.
+There are two ways to get there, and they say different things about
+the hub. The posters are busy because the hub is slow to answer; or
+the harness did not run for a while, and its next tick finds every
+event due in the meantime at once, more than the slots hold, however
+idle the posters are.
+
+Both were reproduced on beastie by stopping one process with `SIGSTOP`
+for 0.6 s during the 2 s schedule. Stopping only the harness: 9 not
+offered, post p95 4 ms, the hub idle throughout, and the line still
+said every poster was busy. Stopping only the hub: 8 not offered, p95
+515 ms. Loading the CPU did not reproduce either: 24 busy loops on 12
+cores, and the test pinned with `cpuset -l 0` beside four more, both
+left post p95 at 2-3 ms.
+
+**The change.** `not_offered` is still the total, and the verdict
+still fails a run at the row's rate on any. Its new
+`not_offered_harness_late` is the part that came due at a tick arriving
+more than five periods (50 ms) after the one before, with
+`schedule_longest_gap_seconds` for how late; the rest came due on time
+with every poster busy. The clock is read when the loop gets to a tick,
+not taken from the tick, whose value is when the timer fired. With
+the same two stops: the harness, 8 late, 0 busy, longest gap 605 ms;
+the hub, 9 busy, 0 late, longest gap 11 ms. The tick arithmetic moved
+into `schedule`, so a test hands it times; making every tick on time
+fails the stopped case, and counting exactly five periods as late
+fails the boundary one.
+
+**Not covered:** why CI stalled. Both CI failures had post latencies of
+hundreds of milliseconds, which a harness stopped alone does not
+produce, so the hub, or the whole machine, was not answering. Which
+one, and why, is not known: an emulated VM pausing and Windows scanning
+the bus segment are guesses nobody has measured. A late tick and busy
+posters at once count as late, because which of the two kept a given
+event out cannot be told. Windows has not run the new code.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
