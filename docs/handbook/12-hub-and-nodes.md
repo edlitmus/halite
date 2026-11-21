@@ -88,12 +88,23 @@ checks, and refuses with a structured reply if any check fails:
 | Has this nonce been seen? | Refused, as a replay. |
 | Is the expiry in the past? | Refused, as expired. |
 | (If `require_job_signature`) is there a valid signature from a trusted signer? | Refused, as unsigned. |
+| (If `quiesce`) is the function on `quiesce_allowlist`? | Refused, as quiesced. |
 | Is the queue full? | Refused, out loud, rather than held in memory. |
 
 So a job captured by someone on the network, or replayed by a
 compromised hub operator, does nothing a second time. The default
 lifetime of a job is 15 minutes (`--ttl`), and a job queued for a node
 that was off lasts one hour.
+
+To take a machine out of automation without taking it off the network,
+set `quiesce: true` in its configuration and list what may still run in
+`quiesce_allowlist`, by exact function name. Salt calls this blackout.
+Everything else is refused, whether the hub sends it live, queued it
+while the node was away, or the node's own schedule fires it. The node
+says it is quiesced when it starts. Keep `test.ping` on the list, or a
+quiesced node looks like a dead one. No job can lift quiesce, because
+the setting is the node's own configuration: edit it and restart the
+node.
 
 A node runs jobs **one at a time** by default, so two package-manager
 runs cannot collide. The reader of the stream and the executor are

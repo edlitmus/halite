@@ -29,6 +29,9 @@ const (
 	ReasonReplayed = "replayed"
 	ReasonExpired  = "expired"
 	ReasonMalforme = "malformed"
+	// ReasonQuiesced is a job refused because the node is quiesced and
+	// the function is not on its allowlist: SPEC 2.1, Salt's blackout.
+	ReasonQuiesced = "quiesced"
 )
 
 // ErrRefused matches any refusal, for a caller that only wants to know

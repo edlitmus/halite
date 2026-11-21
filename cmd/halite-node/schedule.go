@@ -149,6 +149,20 @@ func (n *node) runScheduled(ctx context.Context, r schedule.Run) error {
 		Submitter: "schedule:" + r.Job.Name,
 	}
 
+	// Salt refuses a scheduled job in blackout as well as a dispatched one
+	// (utils/schedule.py, v3006.9), and a machine taken out of automation
+	// that still runs its own highstate every hour has not been. Refused
+	// here, before it is counted as a run, and recorded as the hub's
+	// refusals are; no return is sent, because the hub never dispatched
+	// it and refuses a return for a job it does not know.
+	if err := n.quiesceRefusal(j.Fun); err != nil {
+		n.log.Warn("not running a scheduled job",
+			"job", r.Job.Name, "fun", r.Job.Function, "jid", string(j.JID), "reason", err.Error())
+		n.metrics.countRefusal(err)
+		n.recordJobRefused(j, err)
+		return err
+	}
+
 	n.log.Info("running a scheduled job",
 		"job", r.Job.Name, "fun", r.Job.Function, "jid", string(j.JID),
 		"due", r.Fire.Format(time.RFC3339))

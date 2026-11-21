@@ -942,11 +942,11 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"quiesce": {
 		Group:  "Node execution controls",
-		Detail: "Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout.",
+		Detail: "Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout. It covers a job sent live, one queued while the node was away, and the node's own schedule; each is refused with the reason `quiesced`, recorded in the evidence chain and counted in `halite_node_jobs_refused_total`. No job can lift it, because it is this node's own configuration: edit it and restart the node.",
 	},
 	"quiesce_allowlist": {
 		Group:  "Node execution controls",
-		Detail: "What is still permitted while quiesced. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one.",
+		Detail: "What is still permitted while quiesced, as a list of exact function names. `grains.*` is not a pattern here, as it is not in Salt's `minion_blackout_whitelist`. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one. Empty, a quiesced node refuses everything. <!-- lexicon:allow -->",
 	},
 	"parallel_jobs": {
 		Group:  "Node execution controls",
