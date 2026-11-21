@@ -66,6 +66,7 @@ func TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir(t *testing.T) {
 		unit    = "halite-live-apiunit"
 		account = "halitelive-api"
 		work    = "/run/halite-live-apiunit"
+		libexec = "/usr/local/libexec/halite-live-apiunit"
 	)
 	unitPath := "/run/systemd/system/" + unit + ".service"
 	sh := func(name string, args ...string) (string, error) {
@@ -82,7 +83,7 @@ func TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir(t *testing.T) {
 		_ = os.Remove(unitPath)
 		_, _ = sh("systemctl", "daemon-reload")
 		_, _ = sh("systemctl", "reset-failed", unit)
-		for _, p := range []string{"/var/lib/halite", "/var/lib/halite-api", "/var/log/halite", work} {
+		for _, p := range []string{"/var/lib/halite", "/var/lib/halite-api", "/var/log/halite", work, libexec} {
 			if err := os.RemoveAll(p); err != nil {
 				t.Errorf("removing %s: %v", p, err)
 			}
@@ -92,12 +93,22 @@ func TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir(t *testing.T) {
 		}
 	})
 
-	// Outside /tmp: the unit's PrivateTmp=yes gives it a /tmp of its own,
-	// in which a binary under the test's TempDir does not exist.
+	// The configuration is outside /tmp, because the unit's PrivateTmp=yes
+	// gives it a /tmp of its own, in which the test's TempDir does not exist.
+	//
+	// The binary is outside /run as well. It was in work, and GitHub's
+	// ubuntu-24.04 runners hosted on AWS mount /run noexec, where those on
+	// Azure do not: systemd could not execute it there, status=203/EXEC,
+	// on every AWS run and no Azure one (eight of eight, Fleet, 2026-11-15
+	// to 11-20; DIVERGENCE 5.688). /usr/local/libexec is on the root
+	// filesystem, and ProtectSystem=strict leaves it readable and executable.
 	if err := os.MkdirAll(filepath.Join(work, "etc"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	bin := filepath.Join(work, "halite-api")
+	if err := os.MkdirAll(libexec, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(libexec, "halite-api")
 	copyExecutable(t, os.Args[0], bin)
 
 	shipped, err := os.ReadFile(filepath.Join("..", "..", "contrib", "systemd", "halite-api.service"))
@@ -159,6 +170,9 @@ func TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir(t *testing.T) {
 		journal, err := sh("journalctl", args...)
 		if err != nil {
 			t.Logf("reading the journal: %v", err)
+		}
+		if startErr != nil {
+			journal += "\n" + startFailureDetail(sh, unit, bin, cursor)
 		}
 		return journal, startErr
 	}
@@ -242,4 +256,49 @@ func copyExecutable(t *testing.T, from, to string) {
 	if err := dst.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// startFailureDetail is what a failed start says about itself beyond the
+// unit's own journal lines.
+//
+// The unit's excerpt was all the test printed, and on a run that failed
+// with status=203/EXEC it carried four lines and not the reason: the line
+// systemd writes when it cannot execute a binary was not among them, and
+// four days of failures, on GitHub's AWS-hosted runners only, went
+// unexplained until the mount below was printed: /run was noexec there
+// (DIVERGENCE 5.688). So a failure now also prints
+// how systemd saw the exec, the binary and its directory as the kernel
+// has them, the mount it is on, and every journal line since the cursor
+// that names the unit or the binary, whoever wrote it.
+func startFailureDetail(sh func(string, ...string) (string, error), unit, bin, cursor string) string {
+	var b strings.Builder
+	step := func(label, name string, args ...string) {
+		out, err := sh(name, args...)
+		if err != nil {
+			out += fmt.Sprintf(" (%v)", err)
+		}
+		fmt.Fprintf(&b, "-- %s:\n%s\n", label, out)
+	}
+	step("systemctl show", "systemctl", "show", unit, "-p",
+		"Result,ExecMainCode,ExecMainStatus,ExecMainPID,ActiveState,SubState")
+	step("the binary and its directory", "ls", "-ld", filepath.Dir(bin), bin)
+	step("the mount it is on", "findmnt", "-T", bin, "-o", "TARGET,FSTYPE,OPTIONS")
+	args := []string{"--no-pager", "-o", "short-precise"}
+	if cursor != "" {
+		args = append(args, "--after-cursor="+cursor)
+	}
+	out, err := sh("journalctl", args...)
+	if err != nil {
+		out += fmt.Sprintf(" (%v)", err)
+	}
+	var lines []string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, unit) || strings.Contains(line, bin) ||
+			strings.Contains(line, "Failed to execute") || strings.Contains(line, "executor") {
+			lines = append(lines, line)
+		}
+	}
+	fmt.Fprintf(&b, "-- the journal since the start, naming the unit, the binary or an exec failure:\n%s\n",
+		strings.Join(lines, "\n"))
+	return b.String()
 }

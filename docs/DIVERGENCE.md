@@ -46842,6 +46842,71 @@ taken from an encrypted pillar, which was not run.
 
 
 
+### 5.688 Three ways the Fleet workflow was red: a distribution, a runner and a mirror
+
+Fleet failed on every scheduled run from 2026-11-17 to 11-20, and on the
+pushes that day. Looked into before tagging 0.2.0, which was not to be cut
+on a red leg nobody had explained. There were three separate faults.
+
+**Rocky 9: a test with nothing to test.** `TestLiveKernelpkgRPMInstallsAndRemovesKernels`
+installs a kernel older than the newest offered, upgrades, and removes it.
+From 11-17 Rocky 9's BaseOS offered one `kernel-core`,
+`5.14.0-741.22.1.el9_9`, which dnf's own listing in the skip message shows,
+so there was no older kernel and the test skipped. The image is pinned by
+digest. Its repositories are not. The leg fails any skip it has not
+declared, which is right, so it failed. The test is now an allowed skip on
+Rocky only, and the script requires it to skip. The first run after Rocky
+offers a second kernel therefore fails and says to put it back. AlmaLinux 8
+offers older kernels and still has to pass it. Not tried: Rocky's vault of
+the previous point release, which would give an older kernel at the cost of
+another mirror, and which nobody has checked installs cleanly o**Linux: half of GitHub's runners mount `/run` noexec.**
+`TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir` failed with
+`status=203/EXEC` on both of its starts on four of seven runs from 11-17.
+203 is systemd failing to execute `ExecStart`, and the test had copied its
+binary into `/run/halite-live-apiunit`. The runs split by where GitHub
+hosted the runner, which the job log's "Runner Image Provisioner" header
+names:
+
+| Region | Runner image | The test |
+|---|---|---|
+| us-west-2, us-east-1 (AWS) | 20261111.127.1, 20261116.133.1 | failed, 4 of 4 |
+| westus, centralus, westus2 (Azure) | 20261111.370.1, 20261116.376.1 | passed, 4 of 4 |
+
+On an AWS one `/run` is `rw,nosuid,nodev,noexec`; on an Azure one it is
+`rw,nosuid,nodev`. Both say `ubuntu-24.04`.
+
+Two wrong turns on the way, both recorded because both were believed for a
+while:
+- `noexec` was ruled out from the `findmnt` of one run, which was on Azure.
+  One machine was taken for every machine with that label.
+- The runner image was compared by the provisioner's version,
+  `20261103.629`, which every run shared, and not by the image's own.
+
+Those left the failure looking random, so a neighbour in the suite was
+suspected. The test passed eight times alone on an Azure runner, and was
+moved to a step of its own. It failed there on the next AWS runner, which is
+when the new diagnostics printed the mount. The step was put back.
+
+**Fixed:** the binary is now copied to `/usr/local/libexec/halite-live-apiunit`,
+which is on the root filesystem and which `ProtectSystem=strict` leaves
+readable and executable. The configuration stays under `/run`, which needs
+only reading. A failed start still prints the unit's exec status, the
+binary, its mount and the journal, because the 203 had been unexplained for
+four days on output that never named the cause.
+
+proof.
+
+**Linux: the suite outran its timeout.** On the experiment's run,
+`internal/builtin` hit `-timeout 25m` with
+`TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest` at 1,320 s: apt
+downloading kernels from a slow mirror. The package normally takes about
+five minutes. The suite's timeout is now 40 minutes and the job's 50, which
+is time and not a fix: a mirror slower still will reach it.
+
+**Not covered:** the libexec path on an AWS runner, until this change's own
+Fleet run; whether any other live test runs a binary from `/run`; and
+whether the vault would serve Rocky's install test.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
