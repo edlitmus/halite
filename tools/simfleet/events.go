@@ -109,11 +109,21 @@ type eventsResult struct {
 	Seconds     float64 `json:"seconds"`
 	Concurrency int     `json:"concurrency"`
 	// Offered is how many events the harness put on the wire. NotOffered
-	// is how many its schedule called for while every poster was busy:
-	// the harness, not the hub, fell behind, and a run with any is a run
-	// whose offered rate was not the one asked for.
-	Offered    int64 `json:"offered"`
-	NotOffered int64 `json:"not_offered"`
+	// is how many its schedule called for and could not hand to a poster:
+	// a run with any is a run whose offered rate was not the one asked for.
+	//
+	// NotOfferedLate is the part of NotOffered that came due at a tick
+	// arriving more than lateTicks periods late, so while the harness
+	// itself was not running; the rest came due on time with every poster
+	// busy. Before the two were told apart, both printed as "every poster
+	// was busy", and a harness stopped for 0.6 s with the hub idle (post
+	// p95 4 ms) said so of 9 events it had never had a chance to offer
+	// (DIVERGENCE 5.691). ScheduleLongestGap is the longest the schedule
+	// went between ticks, which says how late.
+	Offered            int64   `json:"offered"`
+	NotOffered         int64   `json:"not_offered"`
+	NotOfferedLate     int64   `json:"not_offered_harness_late"`
+	ScheduleLongestGap float64 `json:"schedule_longest_gap_seconds"`
 	// What the hub answered.
 	Accepted    int64   `json:"accepted"`
 	RateLimited int64   `json:"rate_limited"`
@@ -207,7 +217,8 @@ func eventsCmd(args []string) error {
 		m, err := scrape(ctx, op)
 		return m["halite_reactor_queue_depth"], err
 	})
-	res.Offered, res.NotOffered = r.offered, r.notOffered
+	res.Offered, res.NotOffered = r.offered, r.busy+r.late
+	res.NotOfferedLate, res.ScheduleLongestGap = r.late, r.longestGap.Seconds()
 	res.Accepted, res.RateLimited, res.Failed = r.accepted.Load(), r.rateLimited.Load(), r.failed.Load()
 	res.Latency = dist(r.latencies())
 	res.AcceptedPerSecond = float64(res.Accepted) / duration.Seconds()
@@ -251,7 +262,7 @@ func eventsCmd(args []string) error {
 
 // posting is what postEvents counted.
 type posting struct {
-	offered, notOffered           int64
+	schedule
 	accepted, rateLimited, failed atomic.Int64
 	handshakes                    atomic.Int64
 	mu                            sync.Mutex
@@ -405,24 +416,22 @@ func postEvents(ctx context.Context, clients []*transport.Client, tag string, ra
 		}
 	}()
 
-	tick := time.NewTicker(10 * time.Millisecond)
+	p.schedule = schedule{start: start, last: start, period: schedulePeriod, rate: rate, d: d}
+	tick := time.NewTicker(schedulePeriod)
 	defer tick.Stop()
-	var seq int64
-	for now := range tick.C {
-		elapsed := now.Sub(start)
-		if elapsed > d {
-			elapsed = d
+	offer := func(seq int64) bool {
+		select {
+		case work <- ev{node: int(seq % int64(len(clients))), seq: seq}:
+			return true
+		default:
+			return false
 		}
-		due := int64(rate * elapsed.Seconds())
-		for ; seq < due; seq++ {
-			select {
-			case work <- ev{node: int(seq % int64(len(clients))), seq: seq}:
-				p.offered++
-			default:
-				p.notOffered++
-			}
-		}
-		if elapsed >= d {
+	}
+	// The clock is read here rather than taken from the tick: the value a
+	// ticker sends is when its timer fired, and how late the loop got to
+	// it is the thing being measured.
+	for range tick.C {
+		if p.schedule.tick(time.Now(), offer) {
 			break
 		}
 	}
@@ -431,6 +440,53 @@ func postEvents(ctx context.Context, clients []*transport.Client, tag string, ra
 	close(stopSampling)
 	<-sampled
 	return p
+}
+
+// schedulePeriod is how often the schedule hands out what is due.
+const schedulePeriod = 10 * time.Millisecond
+
+// lateTicks is how many periods a tick may arrive after the one before
+// it and still be on time. A loaded machine delays a ticker by a few
+// milliseconds; five periods is 50 ms, and a tick later than that means
+// the harness process was not running, whatever the hub was doing.
+const lateTicks = 5
+
+// schedule is the open loop's arithmetic, apart from its clock and its
+// posters so that a test can hand it times: which events are due at a
+// tick, and, for each one no poster took, whether the tick that found it
+// was on time.
+type schedule struct {
+	start, last         time.Time
+	period, d           time.Duration
+	rate                float64
+	seq                 int64
+	offered, busy, late int64
+	longestGap          time.Duration
+}
+
+// tick offers every event due by now, and reports whether the schedule
+// is over. An event no poster takes is counted late when the tick came
+// more than lateTicks periods after the last one: it was due while the
+// harness was not running, and whether the posters were also busy cannot
+// be told. Otherwise it is counted busy.
+func (s *schedule) tick(now time.Time, offer func(seq int64) bool) bool {
+	gap := now.Sub(s.last)
+	s.last = now
+	s.longestGap = max(s.longestGap, gap)
+	late := gap > lateTicks*s.period
+	elapsed := min(now.Sub(s.start), s.d)
+	due := int64(s.rate * elapsed.Seconds())
+	for ; s.seq < due; s.seq++ {
+		switch {
+		case offer(s.seq):
+			s.offered++
+		case late:
+			s.late++
+		default:
+			s.busy++
+		}
+	}
+	return elapsed >= s.d
 }
 
 // scrape reads the hub's metrics and sums each series by name, across
@@ -504,7 +560,11 @@ const spec30ReactorRate = 5000
 func (r eventsResult) reactorRowFailures() []string {
 	var why []string
 	if r.Rate <= spec30ReactorRate && r.NotOffered > 0 {
-		why = append(why, fmt.Sprintf("%d events not offered at the row's own rate", r.NotOffered))
+		reason := fmt.Sprintf("%d events not offered at the row's own rate", r.NotOffered)
+		if r.NotOfferedLate > 0 {
+			reason += fmt.Sprintf(" (%d while the harness itself was late)", r.NotOfferedLate)
+		}
+		why = append(why, reason)
 	}
 	if r.SlowestSecond < spec30ReactorRate {
 		why = append(why, fmt.Sprintf("slowest second %d accepted, under %d", r.SlowestSecond, spec30ReactorRate))
@@ -527,7 +587,8 @@ func (r eventsResult) reactorRowFailures() []string {
 func (r eventsResult) print(w io.Writer) {
 	fmt.Fprintf(w, "\nevents (%s reaction): %d nodes, %.0f a second for %s, %d posters\n",
 		r.Reaction, r.Nodes, r.Rate, secs(r.Seconds), r.Concurrency)
-	fmt.Fprintf(w, "  offered %d (%d not offered: every poster was busy)\n", r.Offered, r.NotOffered)
+	fmt.Fprintf(w, "  offered %d (%d not offered: %d while every poster was busy, %d while the harness itself was late; longest gap between ticks %s)\n",
+		r.Offered, r.NotOffered, r.NotOffered-r.NotOfferedLate, r.NotOfferedLate, secs(r.ScheduleLongestGap))
 	fmt.Fprintf(w, "  accepted %d, %.0f a second, slowest whole second %d; rate limited %d; failed %d\n",
 		r.Accepted, r.AcceptedPerSecond, r.SlowestSecond, r.RateLimited, r.Failed)
 	fmt.Fprintf(w, "  post latency p50 %s, p95 %s, last %s\n", secs(r.Latency.P50), secs(r.Latency.P95), secs(r.Latency.Last))

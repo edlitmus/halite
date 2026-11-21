@@ -21,6 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`simfleet events` says when an event was not offered because the harness itself was late.** It printed "every poster was busy" for every event it could not offer, including ones that came due while the harness process was not running and the hub was idle. The run now splits the two, reports the longest gap between its ticks, and writes both to its JSON as `not_offered_harness_late` and `schedule_longest_gap_seconds`. `not_offered` is still the total. DIVERGENCE 5.691.
 - **A template slice with a step near the integer limit now gives Python's answer instead of failing the render.** `{{ [1,2,3][1::9223372036854775807] }}` stopped with "internal error rendering the template"; it now gives `[2]`, as Python does. DIVERGENCE 5.689.
 
 ## 0.2.0 — 2026-11-20
