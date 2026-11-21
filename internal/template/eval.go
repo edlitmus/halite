@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 
@@ -1329,16 +1330,29 @@ func (r *renderer) evalSlice(t *SliceExpr) (any, error) {
 
 	if isStr {
 		var b strings.Builder
-		for i := start; (step > 0 && i < stop) || (step < 0 && i > stop); i += step {
+		for i, ok := start, true; ok && ((step > 0 && i < stop) || (step < 0 && i > stop)); i, ok = sliceNext(i, step) {
 			b.WriteRune(runes[i])
 		}
 		return b.String(), nil
 	}
 	out := []any{}
-	for i := start; (step > 0 && i < stop) || (step < 0 && i > stop); i += step {
+	for i, ok := start, true; ok && ((step > 0 && i < stop) || (step < 0 && i > stop)); i, ok = sliceNext(i, step) {
 		out = append(out, items[i])
 	}
 	return out, nil
+}
+
+// sliceNext is the index after i, or false when adding step would overflow.
+//
+// A step near the int limit used to wrap: `[1,2,3][1::9223372036854775807]`
+// went from index 1 to a negative one and panicked out of range, where
+// Python answers [2]. An index past the limit is past the end of anything,
+// so stopping there is the same as Python's answer.
+func sliceNext(i, step int) (int, bool) {
+	if (step > 0 && i > math.MaxInt-step) || (step < 0 && i < math.MinInt-step) {
+		return i, false
+	}
+	return i + step, true
 }
 
 func (r *renderer) evalCall(t *CallExpr) (any, error) {

@@ -86,6 +86,13 @@ func TestOutputAndLiterals(t *testing.T) {
 		{`{{ [1,2,3,4,5][::2] }}`, "[1, 3, 5]"},
 		{`{{ 'abcdef'[1:4] }}`, "bcd"},
 		{`{{ 'abc'[::-1] }}`, "cba"},
+		// A step at the int limit: Python's answers, from python3 3.12.
+		// The index used to wrap past the limit and panic out of range.
+		{`{{ [1,2,3][1::9223372036854775807] }}`, "[2]"},
+		{`{{ [1,2,3][::9223372036854775807] }}`, "[1]"},
+		{`{{ 'abc'[1::9223372036854775807] }}`, "b"},
+		{`{{ [1,2,3][9223372036854775807::9223372036854775807] }}`, "[]"},
+		{`{{ [1,2,3][::-9223372036854775807] }}`, "[3]"},
 	}
 	for _, c := range cases {
 		if got := render(t, c.src, nil); got != c.want {
