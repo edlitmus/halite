@@ -29,14 +29,14 @@ func loadNode(t *testing.T, body string) *Config {
 // as agreement. The waiver that excused them named a phase that had
 // already shipped.
 func TestAnInertSettingIsReported(t *testing.T) {
-	cfg := loadNode(t, "job_cache: redis\nquiesce: true\nhub: h.example\n")
+	cfg := loadNode(t, "job_cache: redis\nsocket_dir: /run/halite\nhub: h.example\n")
 
 	warnings := cfg.InertWarnings()
 	if len(warnings) != 2 {
 		t.Fatalf("expected two inert settings, got %d: %+v", len(warnings), warnings)
 	}
 	// Sorted, so the report does not depend on map order.
-	if warnings[0].Setting != "job_cache" || warnings[1].Setting != "quiesce" {
+	if warnings[0].Setting != "job_cache" || warnings[1].Setting != "socket_dir" {
 		t.Errorf("warnings are not in order: %+v", warnings)
 	}
 	for _, w := range warnings {

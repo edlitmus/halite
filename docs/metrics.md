@@ -802,7 +802,7 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_hub_request_duration_seconds` | histogram | `route` | How long the hub took to answer one. |
 | `halite_node_jobs_total` | counter | `fun` `result` | Jobs this node ran. A function this node does not have is counted as `other`. |
 | `halite_node_job_duration_seconds` | histogram | `fun` | How long it spent on one. `other` for a function this node does not have. |
-| `halite_node_jobs_refused_total` | counter | `reason` | Jobs it would not run: `replayed`, `expired`, `malformed`, `other`. `other` is a full job queue, or a job without the signature `require_job_signature` asks for. |
+| `halite_node_jobs_refused_total` | counter | `reason` | Jobs it would not run: `replayed`, `expired`, `malformed`, `quiesced`, `other`. `quiesced` is a job or scheduled job off `quiesce_allowlist` while `quiesce` is set. `other` is a full job queue, or a job without the signature `require_job_signature` asks for. |
 | `halite_node_job_queue_depth` | gauge | — | Jobs waiting for the executor. |
 | `halite_node_return_queue_depth` | gauge | — | Returns waiting to be posted. |
 | `halite_node_returns_dropped_total` | counter | — | Returns discarded because that queue was full. |

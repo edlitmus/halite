@@ -468,6 +468,18 @@ func (e *executor) Offer(j *job.Job) error {
 		e.node.metrics.countRefusal(err)
 		return err
 	}
+	// Quiesce, in the same place and for the same reason as the test
+	// flag: after the replay records, so a refused jid is spent and a hub
+	// cannot hold a job until the node is lifted and then deliver it as
+	// though it were new, and before the acceptance record, so a quiesced
+	// node's chain says refused rather than accepted. Every job off the
+	// stream comes through here -- dispatched live, queued for a node that
+	// was away, or resent after a reconnect -- so this is the one check
+	// for all three. A schedule does not, and checks for itself.
+	if err := e.node.quiesceRefusal(j.Fun); err != nil {
+		e.node.metrics.countRefusal(err)
+		return err
+	}
 	e.node.metrics.countAccepted()
 	e.node.recordJobAccepted(j, signer)
 	select {

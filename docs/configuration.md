@@ -1972,7 +1972,7 @@ Lets jobs run alongside one another by default. Off by default, because two stat
 
 Refuse jobs other than the allowlist. Salt calls this blackout.
 
-Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout.
+Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout. It covers a job sent live, one queued while the node was away, and the node's own schedule; each is refused with the reason `quiesced`, recorded in the evidence chain and counted in `halite_node_jobs_refused_total`. No job can lift it, because it is this node's own configuration: edit it and restart the node.
 
 ### `quiesce_allowlist`
 
@@ -1980,7 +1980,7 @@ Refuses every job but the allowlist, so a machine can be taken out of automation
 
 Functions still permitted while quiesced.
 
-What is still permitted while quiesced. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one.
+What is still permitted while quiesced, as a list of exact function names. `grains.*` is not a pattern here, as it is not in Salt's `minion_blackout_whitelist`. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one. Empty, a quiesced node refuses everything. <!-- lexicon:allow -->
 
 ### `require_job_signature`
 

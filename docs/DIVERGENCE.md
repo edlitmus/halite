@@ -47124,6 +47124,99 @@ the test's log, and only not failed on.
 **Not covered:** why the CI runners stalled (5.691, 5.692). A runner
 that stalls for longer than 1600 ms fails this test as before.
 
+### 5.694 `quiesce` was accepted and did nothing (2026-11-21)
+
+Issue 763. `quiesce` and `quiesce_allowlist` were declared, documented
+as Salt's blackout, converted from Salt's names by the shim, and listed
+in `InertKeys`, so a node that set them warned at startup that they did
+nothing and then ran whatever it was sent. An operator who took a
+machine out of automation this way had not.
+
+**The change.** A quiesced node refuses every job whose function is not
+on `quiesce_allowlist`, with the structured refusal of SPEC 6.3 and the
+reason `quiesced`. It is checked in `executor.Offer`, which every job
+off the stream passes through: dispatched live, queued by the hub for a
+node that was away, or resent after a reconnect. The node's own schedule
+does not go through `Offer`, so `runScheduled` checks too. Both keys are
+gone from `InertKeys`, and the node says it is quiesced when it starts.
+
+**A value that is neither true nor false quiesces.** `config.Bool`
+returns its default for a value it cannot read, and nothing in the
+loader checks booleans, so `quiesce: maybe` and `quiesce: 1` (an integer
+to YAML) loaded without a word and left the node running everything.
+That was run against the real binary before this change: `yes` and
+`"true"` quiesced, and `maybe` and `1` did not. For this key the default
+is the dangerous side, so an unreadable value is now taken as quiesced
+and the node says so at startup. Every other boolean is as before
+(issue 783).
+
+Three choices, each taken from Salt 3006.9's source (`minion.py` around <!-- lexicon:allow -->
+line 1880, `utils/schedule.py` around line 780) rather than its
+documentation:
+
+- **The allowlist is matched exactly**, as Salt's `func not in
+  whitelist` is. The shim converts one list into the other, so a glob <!-- lexicon:allow -->
+  here would widen a converted list without anybody asking.
+- **A scheduled job is refused too.** Salt refuses one in blackout, and
+  a machine that still applies its own highstate every hour has not been
+  taken out of automation.
+- **`saltutil.refresh_pillar` is not always let through, which Salt
+  does.** Salt lets it through because its blackout lives in pillar, and
+  refreshing pillar is how blackout is lifted. Here the setting is the
+  node's own configuration, which no job can change, so lifting it is an
+  edit and a restart.
+
+**Where the check sits** is beside the `test` flag's, and for its
+reason: after the replay records, so the refused jid is spent, and
+before the acceptance record, so the evidence chain says `job.refused`
+rather than accepted. Before the replay records, a hub could hold a
+refused job until the node was lifted and then deliver it as new.
+
+**Shown.** `cmd/halite-node/quiesce_test.go` drives `acceptJob` and
+`runScheduled`. Deleting the check fails all six original refusal cases, and the
+allowlisted cases still pass. Moving it to the top of `Offer`, before
+the replay cache, fails
+`TestAJobRefusedWhileQuiescedIsNotRunOnceLifted` with the redelivered
+job queued.
+
+Real binaries, on beastie: a hub, and a node with `quiesce: true`,
+`quiesce_allowlist: [test.ping]` and a two-second scheduled
+`state.apply` that writes a file.
+
+| Delivery | Function | Result |
+|---|---|---|
+| live | `test.ping` | `True` |
+| live | `state.apply` | `refused: quiesced: ...` |
+| `--offline queue` while the node was stopped, read back after it reconnected | `state.apply` | `FAILED (retcode 1)`, `refused: quiesced: ...` |
+| live, after the reconnect | `test.ping` | `True` |
+| the schedule, every 2 s | `state.apply` | logged as not run, three times; the file was never written |
+
+The same script with `quiesce: false` ran the state live and from the
+schedule, and wrote the file. The queued job also succeeded, with
+retcode 2, because by then there was nothing left to change. So the missing file in
+the quiesced run is the refusals, not a tree that could not apply.
+
+**Not fixed:**
+
+- **The shim converts blackout from the wrong place.** Salt reads
+  the blackout key from pillar and from grains, never from its agent's
+  configuration file, and pillar is where its own code looks first. The
+  shim converts the key from that file only. An estate that
+  blacks machines out through pillar loses the blackout on migration,
+  and nothing says so. Issue 780.
+- **There is no way to quiesce a node from the hub.** SPEC 6.2 lists a
+  `quiesce` message on the subscribe stream. The node logs the
+  message's type and does nothing else with it, as before. Issue 782.
+- **`parallel_jobs` is still inert**, and the rest of issue 763 waits on
+  it. One thing found here belongs to it: `runScheduled` calls
+  `executeJob` from the schedule's own goroutine, so a scheduled job
+  already runs alongside a dispatched one. SPEC 9.6 and the handbook say
+  a node runs one job at a time. Read from the code and not yet shown
+  by a run; issue 781.
+- `halite-node`'s local, agentless commands do not check quiesce. That
+  is deliberate, because they are how someone at the machine works on
+  it. Salt's `salt-call` was not checked.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

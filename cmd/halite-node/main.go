@@ -439,6 +439,17 @@ func setup(args *cli.Args) *node {
 		n.log.Warn("this setting is accepted and does nothing",
 			"setting", w.Setting, "effect", w.Effect, "section", w.Section)
 	}
+	// Said at startup, because a quiesced node and a broken one return the
+	// same refusals and only one of them was meant.
+	on, unreadable := quiesceSetting(cfg)
+	if unreadable != "" {
+		n.log.Warn("the quiesce setting is neither true nor false, so this node is treating it as quiesced",
+			"quiesce", unreadable)
+	}
+	if on {
+		n.log.Warn("this node is quiesced: it refuses every job and scheduled job but its allowlist",
+			"quiesce_allowlist", strings.Join(cfg.StringSlice("quiesce_allowlist"), ", "))
+	}
 
 	g, warnings := grains.Collect(grainOptions(cfg, n.nodeID, root))
 	for _, w := range warnings {

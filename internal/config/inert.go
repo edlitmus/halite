@@ -16,15 +16,13 @@ import "sort"
 // asked for. The SPEC section is not repeated here: the key table
 // already carries one, and two of them would drift.
 var InertKeys = map[string]string{
-	"legacy_acl":        "the preserved Salt ACL is kept for you to read and is never consulted; convert it into `policy`",
-	"parallel_jobs":     "a node runs the jobs it is given without limiting how many at once",
-	"socket_dir":        "this build opens no unix sockets",
-	"quiesce":           "a node accepts jobs whatever this says",
-	"quiesce_allowlist": "a node accepts jobs whatever this says",
-	"startup_states":    "a node applies nothing of its own at startup",
-	"job_cache":         "the job cache backend is not selectable; the hub keeps returns on disk",
-	"node_data_cache":   "the node data cache backend is not selectable; the hub keeps it on disk",
-	"hub_type":          "the first hub in the list is used, and no other is tried",
+	"legacy_acl":      "the preserved Salt ACL is kept for you to read and is never consulted; convert it into `policy`",
+	"parallel_jobs":   "a node runs the jobs it is given without limiting how many at once",
+	"socket_dir":      "this build opens no unix sockets",
+	"startup_states":  "a node applies nothing of its own at startup",
+	"job_cache":       "the job cache backend is not selectable; the hub keeps returns on disk",
+	"node_data_cache": "the node data cache backend is not selectable; the hub keeps it on disk",
+	"hub_type":        "the first hub in the list is used, and no other is tried",
 }
 
 // InertWarning is one setting that was asked for and will not happen.
