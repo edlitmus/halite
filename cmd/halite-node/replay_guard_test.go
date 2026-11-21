@@ -66,9 +66,9 @@ func wantReplayRefusal(t *testing.T, n *node, what string) {
 }
 
 func drainQueue(n *node) {
-	for n.executor.Depth() > 0 {
-		<-n.executor.queue
-	}
+	n.executor.mu.Lock()
+	n.executor.waiting = nil
+	n.executor.mu.Unlock()
 }
 
 // A replay of a signed job with a fresh nonce is refused.
