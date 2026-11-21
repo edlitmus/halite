@@ -47084,6 +47084,46 @@ the arithmetic from a histogram by a unit test and the count against a
 real hub; nothing here made the handler slow. The run reads two of the
 hub's default bucket bounds, 100 ms and 500 ms, and nothing between them.
 
+### 5.693 The events accounting test failed a runner that paused, not the hub (2026-11-21)
+
+`TestEventsReachTheReactorAndAreCounted` says, in its own comment, that
+every event offered is accepted and reacted to and counted. In both CI
+failures after 5.673 (5.691) that was true of every event the harness
+sent. It failed on `not_offered`, which at 40 a second with 8 posters
+and a work channel of 8 means the hub, or the machine, stopped answering
+for more than 0.4 s. Two of about sixty CI runs since 5.673 did that,
+and both times nothing the test exists to check was wrong.
+
+**The change.** The test runs 32 posters, so 64 places, 1600 ms at its
+rate. Every assertion is as strict as it was, and the test also checks
+it got the 32 it asked for, since `runEvents` passes its own
+`-concurrency` first and the later flag is the one that has to win.
+
+Stopping only the hub with `SIGSTOP`, on beastie:
+
+| stopped | 8 posters (before) | 32 posters |
+|---|---|---|
+| 0.6 s, mid-schedule | 8 not offered, fails | passes |
+| the harness, 0.6 s | 9 not offered, fails | passes |
+| 1200 ms from 0.1 s in | | passes, post p95 1.09 s |
+| 3.0 s from 0.1 s in, the whole schedule | | 67 offered, 13 not, fails |
+
+The last row is the bound shown: 64 places and the few events answered
+before the stop, about 1700 ms at 40 a second. Two runs stopped for 2 s
+and 3 s from 0.5 s in passed, because the schedule had started late
+enough that only about 62 of its events fell inside the stop; that was
+the bound being met, not exceeded.
+
+**What this gives up.** The test no longer fails a hub that pauses for
+under about 1600 ms at this rate. Nothing else in the suite holds the hub
+to latency at 40 a second either; SPEC 30's reactor row is judged by
+`simfleet events` at 5,000, outside CI. 5.692's hub-side time is printed
+on every run, so a stall that fits inside the room is still visible in
+the test's log, and only not failed on.
+
+**Not covered:** why the CI runners stalled (5.691, 5.692). A runner
+that stalls for longer than 1600 ms fails this test as before.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
