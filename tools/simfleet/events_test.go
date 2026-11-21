@@ -10,12 +10,23 @@ import (
 // The noop reaction, at a rate a laptop does not notice: every event
 // offered is accepted, and the hub's own counters say every one was
 // reacted to, none dropped, and the queue emptied.
+//
+// It runs 32 posters rather than runEvents' 8. With 8, the 16 places an
+// event can wait at 40 a second are 0.4 s, and a CI runner that stopped
+// answering for longer failed the test twice with every event the
+// harness sent accounted for (DIVERGENCE 5.693). 32 posters give 64
+// places, 1600 ms. This test is about the accounting, not latency: it no
+// longer fails a hub that pauses for under 1600 ms at this rate, and
+// nothing else here holds the hub to latency either.
 func TestEventsReachTheReactorAndAreCounted(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs a hub and the harness")
 	}
 	sf, root, addr := stormHub(t, "manual", "-n", "4")
-	r := runEvents(t, sf, root, addr, "-n", "4", "-rate", "40", "-duration", "2s", "-reaction", "noop")
+	r := runEvents(t, sf, root, addr, "-n", "4", "-rate", "40", "-duration", "2s", "-reaction", "noop", "-concurrency", "32")
+	if r.Concurrency != 32 {
+		t.Fatalf("the run had %d posters; want the 32 this test asked for", r.Concurrency)
+	}
 	if r.Offered != 80 || r.NotOffered != 0 || r.Accepted != 80 || r.Failed != 0 || r.RateLimited != 0 {
 		t.Fatalf("offered %d (not offered %d), accepted %d, failed %d, rate limited %d; want 80 offered and accepted, nothing else\n%v",
 			r.Offered, r.NotOffered, r.Accepted, r.Failed, r.RateLimited, r.Errors)
