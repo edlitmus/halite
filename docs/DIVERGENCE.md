@@ -46932,6 +46932,48 @@ stays at or above -1 while it runs, and the largest negative step is
 covered by the last case. A step whose magnitude needs more than 64 bits is
 refused when it is parsed.
 
+### 5.690 Twenty-three int conversions that are exact only on a 64-bit build
+
+Code scanning reported 23 go/incorrect-integer-conversion alerts on
+2026-11-20.
+
+**Where they come from.** Each is an int64 converted to int with no bound.
+- Seventeen take `Config.Int`, which parses with `ParseInt(s, 10, 64)`, at
+  `int(cfg.Int(...))` call sites in the three commands.
+- Five are in the template evaluator, which carries every integer a
+  template writes as an int64 from the lexer.
+- One, `internal/yaml/scalars.go`'s `\xNN` escape, parses exactly two hex
+  digits, so its value is at most 255 on any architecture.
+
+**Why none is a defect today.** Where int is 64 bits, int64 to int is exact,
+and every release target is 64-bit: TARGETS and FIPS_TARGETS are amd64,
+arm64, riscv64, ppc64le and s390x. On GOARCH=386 the template ones would
+truncate silently. `[1,2,3][4294967297]` read element 1 instead of being
+undefined, measured by the triage on a 386 build. No panic, only a wrong
+value.
+
+**Changed, so that "no target is 32-bit" is enforced rather than
+remembered.**
+- `TestEveryReleaseTargetHasA64BitInt` (internal/buildpolicy) fails when
+  TARGETS or FIPS_TARGETS names an architecture it does not know to be
+  64-bit.
+- `internal/config` and `internal/template` refuse to compile on a 32-bit
+  architecture: `const _ uint = strconv.IntSize - 64` is negative there.
+
+Adding a 32-bit platform means taking both away and bounding the
+conversions first. The alerts are dismissed citing these.
+
+**Shown.** The test passes, and with amd64 taken out of its list of 64-bit
+architectures it fails on all seven amd64 targets. GOARCH=386 `go vet
+./internal/config` and GOARCH=arm `go build ./internal/template` both stop
+with "cannot use strconv.IntSize - 64 (untyped int constant -32) as uint
+value". Nothing in the Makefile or the workflows builds a 32-bit
+architecture.
+
+**Not covered:** whether each of the seventeen config consumers copes with
+a negative value, or with a float `Config.Int` converts out of range. That
+is a question of bounds on configuration, and not of the bit width.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
