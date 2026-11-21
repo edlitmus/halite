@@ -3,14 +3,49 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/edlitmus/halite/internal/job"
 )
+
+// schedulingOf says how a job may share the node: alone, or beside other
+// jobs while holding the lock of its module family (SPEC 9.6).
+//
+// A state run is always alone. It is the one function that reaches every
+// family at once -- a highstate installs packages, writes files and
+// restarts services -- so no family lock can describe it, and two state
+// runs converging one machine at once is how a machine ends up in
+// neither state. Salt keeps state runs apart too, by refusing a second
+// one (modules/state.py, `_check_queue`); here the second one waits.
+//
+// Anything else runs beside others when this node sets `parallel_jobs`,
+// or when the operator asked with `--parallel`. The flag is not covered
+// by SPEC 25.6's signature, so on a signed job it is ignored and only
+// this node's own setting counts: a hub may make a signed job wait, never
+// make one run alongside another that its signer did not ask for.
+//
+// `parallel_jobs` is read with config.Bool, so a value that is neither
+// true nor false is false, and the job runs alone -- the safe direction
+// for this setting, unlike quiesce's.
+func (n *node) schedulingOf(j *job.Job) (exclusive bool, family string) {
+	family, _, _ = strings.Cut(j.Fun, ".")
+	if family == "state" {
+		return true, family
+	}
+	if n.cfg != nil && n.cfg.Bool("parallel_jobs", false) {
+		return false, family
+	}
+	if j.Parallel && j.Signature == "" {
+		return false, family
+	}
+	return true, family
+}
 
 // enqueue puts a job at the back of the queue, or refuses it when the
 // queue is full. It does no checking of the job itself; Offer and the
 // schedule have each done theirs.
 func (e *executor) enqueue(p *pending) error {
+	p.exclusive, p.family = e.node.schedulingOf(p.job)
 	e.mu.Lock()
 	if len(e.waiting) >= e.depth {
 		e.mu.Unlock()
@@ -57,29 +92,70 @@ func (e *executor) Run(done <-chan struct{}) {
 	}
 }
 
-// startable takes from the front of the queue every job that may start
-// now, and counts them as running.
+// startable takes from the queue every job that may start now, in the
+// order they arrived, and counts them as running.
+//
+// A parallel job may pass one that is waiting for its family's lock, but
+// nothing passes a job waiting to hold the whole node. Without that, a
+// steady stream of parallel jobs would keep a highstate waiting for ever,
+// because the node would never be empty.
 func (e *executor) startable() []*pending {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var out []*pending
-	for len(e.waiting) > 0 && e.running == 0 {
-		p := e.waiting[0]
-		e.waiting = e.waiting[1:]
-		e.running++
-		out = append(out, p)
+	kept := make([]*pending, 0, len(e.waiting))
+	blocked := false
+	for _, p := range e.waiting {
+		if !blocked && e.canStart(p) {
+			e.hold(p)
+			out = append(out, p)
+			continue
+		}
+		kept = append(kept, p)
+		if p.exclusive {
+			blocked = true
+		}
 	}
+	e.waiting = kept
 	return out
+}
+
+// canStart says whether p's locks are free. The caller holds e.mu.
+func (e *executor) canStart(p *pending) bool {
+	if p.exclusive {
+		return e.running == 0
+	}
+	return !e.exclusive && !e.families[p.family]
+}
+
+// hold takes p's locks. The caller holds e.mu.
+func (e *executor) hold(p *pending) {
+	e.running++
+	if p.exclusive {
+		e.exclusive = true
+		return
+	}
+	e.families[p.family] = true
+}
+
+// release gives p's locks back. The caller holds e.mu.
+func (e *executor) release(p *pending) {
+	e.running--
+	if p.exclusive {
+		e.exclusive = false
+		return
+	}
+	delete(e.families, p.family)
 }
 
 // run executes one job and hands its return on, then frees its place.
 //
-// The return is handed on before the place is freed, as it was when the
-// queue had one worker: the next job does not start until this one's
-// return is on its way.
+// The return is handed on before the locks are freed, as it was when the
+// queue had one worker: a job waiting for this one does not start until
+// this one's return is on its way.
 func (e *executor) run(p *pending) {
 	j := p.job
-	e.node.log.Info("running a job", "jid", string(j.JID), "fun", j.Fun)
+	e.node.log.Info("running a job", "jid", string(j.JID), "fun", j.Fun, "alone", p.exclusive)
 	ret := e.node.executeJob(j)
 	e.node.log.Info("job finished",
 		"jid", string(j.JID), "fun", j.Fun,
@@ -92,7 +168,7 @@ func (e *executor) run(p *pending) {
 	p.finish(ret)
 
 	e.mu.Lock()
-	e.running--
+	e.release(p)
 	e.mu.Unlock()
 	e.signal()
 }

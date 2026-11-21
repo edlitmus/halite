@@ -157,6 +157,12 @@ type Job struct {
 	Offline Offline  `json:"offline,omitempty"`
 	State   State    `json:"state,omitempty"`
 	Test    bool     `json:"test,omitempty"`
+	// Parallel is SPEC 9.6's `--parallel`, kept on the record so that a
+	// job delivered from it later -- queued for an absent node, or a
+	// resumed batch -- is delivered as it was asked for. A build older
+	// than the field drops it, and the job runs serially, which is the
+	// safe way for that to go wrong.
+	Parallel bool `json:"parallel,omitempty"`
 
 	// Batch is the batching of SPEC 9.3, and it is a property of the
 	// job rather than of the client.
