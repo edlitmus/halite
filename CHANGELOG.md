@@ -21,6 +21,7 @@ is a pre-release in `release.yml`, so it is marked as one.
 
 ## Unreleased
 
+- **`simfleet events` reports the hub's own time answering each post.** From the hub's `halite_hub_request_duration_seconds` for `POST /v1/event`, it prints and writes to its JSON how many requests the hub timed, their total seconds, and how many took over 100 ms and over 500 ms. Slow posts with a fast hub mean the hub or its machine was not running; slow posts with a slow hub mean its handler was. DIVERGENCE 5.692.
 - **`simfleet events` says when an event was not offered because the harness itself was late.** It printed "every poster was busy" for every event it could not offer, including ones that came due while the harness process was not running and the hub was idle. The run now splits the two, reports the longest gap between its ticks, and writes both to its JSON as `not_offered_harness_late` and `schedule_longest_gap_seconds`. `not_offered` is still the total. DIVERGENCE 5.691.
 - **A template slice with a step near the integer limit now gives Python's answer instead of failing the render.** `{{ [1,2,3][1::9223372036854775807] }}` stopped with "internal error rendering the template"; it now gives `[2]`, as Python does. DIVERGENCE 5.689.
 
