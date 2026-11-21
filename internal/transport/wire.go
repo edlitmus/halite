@@ -168,6 +168,11 @@ type Message struct {
 	// job, base64 of ASN.1 DER. Empty on an unsigned job, which is every
 	// job until an estate sets up a signer.
 	Signature string `json:"signature,omitempty"`
+	// Parallel is SPEC 9.6's `--parallel`: the operator says this job
+	// may run alongside others. Outside the signature, so a node ignores
+	// it on a signed job rather than let a hub loosen how one is run.
+	// Absent from a hub older than the field, which is a serial job.
+	Parallel bool `json:"parallel,omitempty"`
 	// Event.
 	Tag  string         `json:"tag,omitempty"`
 	Data map[string]any `json:"data,omitempty"`
@@ -264,6 +269,8 @@ type SubmitRequest struct {
 	Env        string         `json:"env,omitempty"`
 	Test       bool           `json:"test,omitempty"`
 	Offline    string         `json:"offline,omitempty"`
+	// Parallel is `halite-hub run --parallel`. SPEC 9.6.
+	Parallel bool `json:"parallel,omitempty"`
 	// OnBehalfOf is who asked the submitter to submit this, for the
 	// audit record. The API fills it in with the operator it
 	// authenticated.

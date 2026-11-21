@@ -215,6 +215,7 @@ func runRun(args *cli.Args) int {
 		Kwarg:            kwargs,
 		Env:              args.Flag("env", ""),
 		Test:             args.Bool("test", false),
+		Parallel:         args.Bool("parallel", false),
 		Offline:          args.Flag("offline", ""),
 		TTLSeconds:       ttl,
 		Batch:            args.Flag("batch", ""),

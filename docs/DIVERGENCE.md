@@ -47498,6 +47498,116 @@ Breaking it to drop the tail of the queue fails the first.
 one-second schedule, and it passes with the schedule going through the
 queue. The node package passes under `-race`.
 
+### 5.696 `parallel_jobs` was accepted and did nothing, and `--parallel` did not exist (2026-11-21)
+
+The rest of issue 763. SPEC 9.6 promised a named lock per module family
+and a `--parallel` flag, and `parallel_jobs` was declared to make
+parallel the default. None of it existed: the setting was in
+`InertKeys`, no job carried a parallel flag, and `halite-hub run` had no
+`--parallel`.
+
+**What a job may share now.** Each job is settled once, when it is
+queued (`schedulingOf`):
+
+- **A state run always runs alone**, with `parallel_jobs` or
+  `--parallel` or neither. A highstate reaches every family at once, so
+  no family lock describes it.
+- **Any other job may run beside others** when the node sets
+  `parallel_jobs: true`, or when the operator passed `--parallel`. It
+  then holds the lock of its module family, the part of the function
+  name before the dot, so two `pkg` jobs take turns and a `pkg` job and a
+  `service` job do not.
+- **Otherwise it runs alone**, as before.
+
+The queue admits jobs in arrival order. A parallel job may pass one that
+is waiting for its family's lock, but nothing passes a job waiting to
+run alone. Without that rule, a steady stream of parallel jobs would keep
+the node from ever being empty, and a highstate would wait for ever.
+
+**Salt is the other way round**, and SPEC 9.6 said otherwise. Its first
+sentence said serial-by-default "matches Salt". Salt's agent runs every
+job at once: `multiprocessing: True` and `process_count_max: -1` are the
+defaults (`salt/config/__init__.py` at the tip of Salt's development branch, and the same in 3006.9). It
+keeps only state runs apart, and it does that by checking
+`saltutil.is_running("state.*")` and refusing the second one. With
+`queue=True` the second one waits instead. Salt has no family lock: a
+collision between two `apt` runs is left to dpkg's own lock, which
+`aptpkg` retries up to ten times. The SPEC sentence now says halite is
+stricter than Salt. Here the second state run waits, held by the queue,
+not refused after a check.
+
+**The flag is not covered by a signature.** On a signed job (SPEC 25.6)
+`--parallel` is ignored, and only the node's own `parallel_jobs` counts.
+Adding it to the signed payload would have meant `halite-job-v3`, and
+every signer and node upgrading together. Ignoring it means a hub can
+make a signed job wait, but cannot make it run alongside another job its
+signer did not ask for. Decided with the maintainer, as was the
+state-run rule.
+
+**The flag on the wire.** `--parallel` travels through
+`SubmitRequest.Parallel`, `Submission`, the job record, `messageFor` and
+`Message.Parallel`. It is on the record so that a job delivered later
+from the record, queued for an absent node or a resumed batch, keeps it.
+A build older than the field drops it, and the job runs alone, which is
+the safe direction. It is a boolean CLI flag, so `run --parallel 'web*'
+test.ping` keeps `web*` as the target.
+
+`parallel_jobs` is read with `config.Bool`, so a value that is neither
+true nor false is off, and the job runs alone. That is the safe
+direction for this setting, unlike quiesce's (5.694, issue 783).
+
+**Shown.** Unit tests:
+
+- **`TestAJobsSchedulingFollowsTheFunctionTheSettingAndTheFlag`**, eight
+  cases.
+- **The queue's rules, by driving `startable` and `release` directly:**
+  `TestParallelJobsShareTheNodeButNotAFamily`,
+  `TestAStateRunIsNotStarvedByParallelJobs` and
+  `TestJobsRunOneAtATimeByDefault`.
+- **`TestParallelJobsOverlapOnTheNodeAndSerialJobsDoNot`**, through
+  `acceptJob`, with two one-second modules of different families. It
+  checks both directions.
+- **`TestTheParallelFlagReachesTheNode`**, in `internal/hub`, live and
+  from the queue.
+- **`TestTheParallelFlagDoesNotSwallowTheTarget`**, in `internal/cli`.
+
+Each rule was broken on purpose, and the test meant to catch it failed:
+
+- the starvation guard removed
+- the state-run rule removed
+- the signed-job check removed
+- the family lock ignored
+- the flag dropped from `messageFor`
+- the flag dropped from the job record
+- `parallel` taken out of `BoolFlags`
+
+Real binaries, on the dev host: a hub, and a node with `parallel_jobs`
+on, then off. Two jobs were sent at once with `halite-hub run`. The state
+run is a `cmd.run` of `sleep 2`.
+
+| | `parallel_jobs: true` | `parallel_jobs: false` |
+|---|---|---|
+| `cmd.run 'sleep 2'` and `test.sleep 2` | 2.08 s | 4.19 s |
+| both with `--parallel` | 2.09 s | 2.08 s |
+| two `--parallel test.sleep 2`, one family | 4.40 s | 4.19 s |
+| a state run, then `--parallel test.sleep 2` 0.3 s later | 4.25 s | 4.18 s |
+
+The node's log shows the state run starting `alone=true`, and the sleep
+starting two seconds later.
+
+**Not covered:**
+
+- **A signed job with `--parallel`** was checked only by the unit
+  case, not with real binaries and a signer.
+- **The API cannot ask for `--parallel`** (issue 785). `internal/api/execute.go`
+  builds its own `SubmitRequest`, whose request shape follows Salt's,
+  and nothing in it maps to this.
+- **There is no bound on how many jobs run at once** beyond one per
+  module family. Salt's equivalent, `process_count_max`, is unlimited
+  by default. No new setting was added.
+- **Orchestration steps** and the reactor dispatch without the flag, so
+  their jobs run alone unless the node sets `parallel_jobs`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

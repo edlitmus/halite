@@ -1964,7 +1964,7 @@ Restores Salt's YAML coercion of command line arguments, where `1.10` becomes a 
 
 Allow jobs to run alongside one another by default.
 
-Lets jobs run alongside one another by default. Off by default, because two state runs converging the same machine at once is how a machine ends up in neither state.
+Lets jobs run alongside one another by default, as `halite-hub run --parallel` does for one job. A job running beside others holds the lock of its module family, so two `pkg` jobs still take turns while a `pkg` job and a `service` job do not. A state run always runs alone, whatever this says, because a highstate reaches every family at once. Off by default, because two runs converging the same machine at once is how a machine ends up in neither state. A value that is neither true nor false is off.
 
 ### `quiesce`
 
