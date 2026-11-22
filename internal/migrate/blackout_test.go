@@ -19,10 +19,11 @@ func blackoutFindings(rep *Report) []string {
 	return out
 }
 
-// Salt reads blackout from pillar and grains only, and halite reads
-// quiesce from neither, so an estate that blacks machines out through
-// pillar or a grain loses it on migration. The audit has to say so for
-// each place Salt would have read it (issue 780).
+// Salt reads blackout from pillar and grains only. halite reads it from
+// pillar too (DIVERGENCE 5.703) and not from grains, so a grain's
+// blackout is lost on migration and a pillar's is kept. The audit names
+// each place Salt would have read it, and says which is which (issue
+// 780).
 func TestABlackoutSetWhereSaltReadsItIsReported(t *testing.T) {
 	root := t.TempDir()
 	mkdirAll(t, filepath.Join(root, "state"))
@@ -56,8 +57,19 @@ func TestABlackoutSetWhereSaltReadsItIsReported(t *testing.T) {
 		t.Errorf("blackout findings:\n%s\nwant:\n%s", got, want)
 	}
 	for _, f := range rep.Findings {
-		if strings.Contains(f.Action, "issue 780") && f.Severity != Review {
-			t.Errorf("%s:%d is %s; it changes nothing that runs, so it is review", f.File, f.Line, f.Severity)
+		if !strings.Contains(f.Action, "issue 780") {
+			continue
+		}
+		pillar := f.File == "maintenance.sls"
+		switch {
+		case pillar && f.Severity != Note:
+			t.Errorf("%s:%d is %s; the node honours pillar, so it is a note", f.File, f.Line, f.Severity)
+		case pillar && !strings.Contains(f.Action, "Nothing to do"):
+			t.Errorf("%s:%d tells the operator to act on a key the node honours: %q", f.File, f.Line, f.Action)
+		case !pillar && f.Severity != Review:
+			t.Errorf("%s:%d is %s; a grain's blackout is lost, so it is review", f.File, f.Line, f.Severity)
+		case !pillar && !strings.Contains(f.Action, "does not read this from grains"):
+			t.Errorf("%s:%d does not say grains are not read: %q", f.File, f.Line, f.Action)
 		}
 	}
 }

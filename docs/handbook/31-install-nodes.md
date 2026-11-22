@@ -380,7 +380,7 @@ On the node:
 sudo halite-node doctor
 ```
 
-and read it top to bottom; a node's doctor runs eleven checks including
+and read it top to bottom; a node's doctor runs thirteen checks including
 connectivity, certificate expiry, clock skew against the hub, and that its
 pillar compiles. Then **rehearse its highstate** from the hub and read the
 diff before you let anything change:

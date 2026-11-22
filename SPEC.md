@@ -400,11 +400,10 @@ Message types on the subscribe stream: `job`, `ping`, `event`, `revoke`, `reload
 to `ping` on `/v1/return` with a `pong`; a missed ping budget triggers a reconnect from the node
 side.
 
-There is no `quiesce` or `drain` message. A node is quiesced by its own `quiesce` setting. Quiescing
-a node from the hub is to go through that node's pillar (issue 780), not through a stream message,
-which would need an RBAC grant and an answer to `require_job_signature` (25.6) of its own and would
-be lifted by any reconnect; until that lands, the hub cannot quiesce a node. Earlier drafts of this
-section listed both names, so a node that receives either logs at warn, by name, that it does not
+There is no `quiesce` or `drain` message. A node is quiesced by its own `quiesce` setting or by its
+pillar, and the hub quiesces a node through that node's pillar (9.6, DIVERGENCE 5.703), not through
+a stream message, which would need an RBAC grant and an answer to `require_job_signature` (25.6) of
+its own and would be lifted by any reconnect. Earlier drafts of this section listed both names, so a node that receives either logs at warn, by name, that it does not
 act on it, and a relay passes them down unchanged so that the node meant is the one that says so.
 
 ### 6.3 Replay and job authenticity
@@ -754,6 +753,14 @@ than Salt, whose agent runs every job at once and keeps only state runs apart.
   separate goroutines with a bounded queue between them.
 - `halite-node` refuses a job when its queue is full and says so, rather than growing memory. Salt's
   minion under a reactor storm does the latter.
+- A quiesced node refuses every job and scheduled job whose function is not on its allowlist, matched
+  exactly; Salt calls this blackout. The node's configuration sets `quiesce` and
+  `quiesce_allowlist`, and so may its pillar, by those keys or by Salt's `minion_blackout` and
+  `minion_blackout_whitelist`. <!-- lexicon:allow --> **A pillar may set quiesce and never lift one
+  the configuration sets**: the node is quiesced if either says so, and when both do, only a function
+  on every allowlist runs. Grains are not read. The agent reads its pillar again with every job, and
+  before refusing a job for a pillar's quiesce, so a pillar lifts its own at the next job. A read
+  that fails changes nothing: the last pillar's answer stands, and is kept on disk across restarts.
 
 ## 10. Renderers
 
@@ -2681,7 +2688,7 @@ and needs no OpenTelemetry SDK. Tracing is off by default and sampled when on.
 `halite-node doctor`, `halite-hub doctor` and `halite-api doctor` check configuration validity,
 clock skew against the
 hub, certificate validity and expiry, connectivity, file server reachability, pillar compilation,
-disk space, queue depths, extension signatures, module verification, evidence chain, FIPS mode consistency, and render isolation,
+quiesce, disk space, queue depths, extension signatures, module verification, evidence chain, FIPS mode consistency, and render isolation,
 and print a pass or fail per check with a remediation line.
 Each command runs the subset that applies to it: a check that does not apply to the role is not run
 at all rather than skipped. `halite-api` holds three certificates — the one it presents to callers,

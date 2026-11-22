@@ -194,8 +194,8 @@ const (
 	MsgReload = "reload"
 	// MsgQuiesce and MsgDrain are not part of the protocol. No hub in
 	// this tree has ever sent either, and SPEC 6.2 says there are none
-	// (issue 782, DIVERGENCE 5.699.1); a hub's quiesce is to go through
-	// pillar (issue 780). They are named because earlier drafts of SPEC
+	// (issue 782, DIVERGENCE 5.699.1); a hub quiesces a node through its
+	// pillar (issue 780, DIVERGENCE 5.703). They are named because earlier drafts of SPEC
 	// 6.2 listed both, so a peer built to one of those may send them, and a
 	// fleet is upgraded one machine at a time: a node that receives one
 	// says at warn and by name that it did nothing, and a relay passes

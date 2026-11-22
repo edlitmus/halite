@@ -106,9 +106,22 @@ quiesced node looks like a dead one. No job can lift quiesce, because
 the setting is the node's own configuration: edit it and restart the
 node.
 
-The hub cannot quiesce a node either. There is no hub message that does
-it; doing it from the hub is planned through the node's pillar (#780).
-A node that is sent a `quiesce` or `drain` message, which earlier drafts
+A node's pillar can quiesce it too, with the same two keys at the top of
+the pillar, or with Salt's `minion_blackout` and <!-- lexicon:allow -->
+`minion_blackout_whitelist`, so a Salt pillar tree that blacks machines <!-- lexicon:allow -->
+out keeps doing so. **A pillar can set quiesce but never lift one the
+configuration sets.** When both quiesce the node, only a function on
+both allowlists runs. The node reads its pillar again with every job,
+so removing the key from the pillar lifts the pillar's quiesce at the
+next job, and the node logs each change at warn. If the pillar cannot
+be read, the node stays as the last pillar it read left it, across a
+restart too: it keeps that answer in `pillar-quiesce.json` under
+`state_dir`. `halite-node doctor` shows what quiesces a node and what it
+still runs. Grains do not quiesce a node, though Salt reads blackout
+from grains as well: set `quiesce` in the configuration instead.
+
+There is no hub message that quiesces a node: the hub does it through
+the node's pillar, as above. A node that is sent a `quiesce` or `drain` message, which earlier drafts
 of the protocol named, logs at warn that it did nothing and how to
 quiesce it instead.
 
@@ -236,13 +249,14 @@ halite-node doctor — web1.lab
   pass  clock skew against the hub       within 1m of the hub (299ms ahead of)
   pass  file server reachability         the hub's file server: 1 root(s)
   pass  pillar compilation               compiles, 0 top-level key(s)
+  pass  quiesce                          not quiesced, by its configuration or by the last pillar the agent read
   pass  disk space                       … 135.4 GiB free
   skip  extension signatures             no extensions are installed
   pass  module verification              every module that changes this machine as root has been run against its tool; 24 unprivileged ones have not
   pass  evidence chain                   31 records in 1 segment(s) …
   pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
 
-  10 pass, 1 skip
+  11 pass, 1 skip
 ```
 
 and `halite-hub doctor` and `halite-api doctor` check theirs: configuration,

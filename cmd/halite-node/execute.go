@@ -250,6 +250,9 @@ func (n *node) runFunction(j *job.Job) (outcome, error) {
 			"jid", string(j.JID), "fun", j.Fun, "error", pillarErr.Error())
 		p = value.NewMap(0)
 	}
+	if err := n.quiesceAfterPillar(j); err != nil {
+		return outcome{}, err
+	}
 	positional := make([]any, len(j.Arg))
 	for i, a := range j.Arg {
 		positional[i] = a
@@ -273,6 +276,26 @@ func (n *node) runFunction(j *job.Job) (outcome, error) {
 	return outcome{value: out, success: true, retcode: 0}, nil
 }
 
+// quiesceAfterPillar refuses a job whose own pillar has just quiesced the
+// node.
+//
+// A job is admitted against the last pillar the agent read, and the
+// pillar it then compiles is newer. Without this the first job after an
+// operator quiesced a node in pillar -- most likely the highstate the
+// quiesce was meant to stop -- would run, because it was admitted before
+// anybody had read the pillar that said so. The job has its acceptance
+// record by now, so it fails with the refusal rather than being refused;
+// the chain is append-only and cannot be told otherwise.
+//
+// Only in the agent: agentless mode does not check quiesce at all
+// (DIVERGENCE 5.694), and pillarQuiesce is nil there.
+func (n *node) quiesceAfterPillar(j *job.Job) error {
+	if n.pillarQuiesce == nil {
+		return nil
+	}
+	return n.quiesceHeld(j.Fun)
+}
+
 // stateFunction reports whether a name is one the state compiler
 // handles, and what to call it. The list is internal/state's, because
 // the hub's policy catalog reads it too (DIVERGENCE 5.564).
@@ -290,6 +313,9 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 
 	p, err := n.compilePillarOrErr()
 	if err != nil {
+		return outcome{}, err
+	}
+	if err := n.quiesceAfterPillar(j); err != nil {
 		return outcome{}, err
 	}
 	compiler := n.stateCompiler(p, string(j.JID))

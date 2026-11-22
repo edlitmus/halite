@@ -25,7 +25,7 @@ func TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName(t *testing.T) {
 			}
 
 			line := logged.String()
-			for _, want := range []string{`"level":"warn"`, `"type":"` + kind + `"`, "does not act on", "maintenance window", "set quiesce in this node's configuration"} {
+			for _, want := range []string{`"level":"warn"`, `"type":"` + kind + `"`, "does not act on", "maintenance window", "set quiesce in this node's pillar", "in its configuration and restart it"} {
 				if !strings.Contains(line, want) {
 					t.Errorf("the log does not say %q:\n%s", want, line)
 				}

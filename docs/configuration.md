@@ -1988,7 +1988,7 @@ Lets jobs run alongside one another by default, as `halite-hub run --parallel` d
 
 Refuse jobs other than the allowlist. Salt calls this blackout.
 
-Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout. It covers a job sent live, one queued while the node was away, and the node's own schedule; each is refused with the reason `quiesced`, recorded in the evidence chain and counted in `halite_node_jobs_refused_total`. No job can lift it, because it is this node's own configuration: edit it and restart the node.
+Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout. It covers a job sent live, one queued while the node was away, and the node's own schedule; each is refused with the reason `quiesced`, recorded in the evidence chain and counted in `halite_node_jobs_refused_total`. No job can lift it, because it is this node's own configuration: edit it and restart the node. The node's pillar can quiesce it as well, by this key or Salt's `minion_blackout`, and can never lift a quiesce set here; when both quiesce the node, only a function on both allowlists runs (SPEC 9.6). <!-- lexicon:allow -->
 
 ### `quiesce_allowlist`
 
@@ -1996,7 +1996,7 @@ Refuses every job but the allowlist, so a machine can be taken out of automation
 
 Functions still permitted while quiesced.
 
-What is still permitted while quiesced, as a list of exact function names. `grains.*` is not a pattern here, as it is not in Salt's `minion_blackout_whitelist`. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one. Empty, a quiesced node refuses everything. <!-- lexicon:allow -->
+What is still permitted while quiesced, as a list of exact function names. `grains.*` is not a pattern here, as it is not in Salt's `minion_blackout_whitelist`. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one. Empty, a quiesced node refuses everything. A pillar's own `quiesce_allowlist` can narrow this list and never widen it. <!-- lexicon:allow -->
 
 ### `require_job_signature`
 

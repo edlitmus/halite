@@ -41,6 +41,7 @@ func runDoctor(args *cli.Args) int {
 		nodeClockCheck(args, n),
 		nodeFileServerCheck(n),
 		nodePillarCheck(n),
+		nodeQuiesceCheck(n),
 		nodeDiskCheck(n),
 		nodeExtensionCheck(n),
 		doctor.ModuleVerification(builtin.New().Trust()),
@@ -225,6 +226,25 @@ func nodePillarCheck(n *node) doctor.Check {
 		keys = p.Len()
 	}
 	return doctor.PillarCompiles(err, keys)
+}
+
+// nodeQuiesceCheck reads the configuration and the agent's record of
+// its last pillar, and compiles nothing: see doctor.Quiesce. It loads the
+// record into a holder of its own and never attaches it to n, so the
+// pillar check above, which compiles this node's local pillar, cannot
+// overwrite what the agent recorded from the hub's.
+func nodeQuiesceCheck(n *node) doctor.Check {
+	held, _, recordErr := loadPillarQuiesce(pillarQuiescePath(n.cfg))
+	var sources []quiesceSource
+	if local, ok := localQuiesce(n.cfg); ok {
+		sources = append(sources, local)
+	}
+	sources = append(sources, held.current()...)
+	state := doctor.QuiesceState{Allowlist: effectiveAllowlist(sources), RecordErr: recordErr}
+	for _, s := range sources {
+		state.By = append(state.By, s.Name)
+	}
+	return doctor.Quiesce(state)
 }
 
 func nodeDiskCheck(n *node) doctor.Check {
