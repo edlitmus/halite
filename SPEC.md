@@ -392,14 +392,20 @@ a truncated stream is unambiguous.
 ```json
 {"t":"job","jid":"20260819T142211123456","fun":"state.apply","arg":["webserver"],"kwarg":{"test":true},"env":"base","ret":"","expires":"2026-08-19T14:37:11Z","nonce":"..."}
 {"t":"ping","seq":4412}
-{"t":"event","tag":"halite/hub/quiesce/start","data":{}}
+{"t":"event","tag":"halite/presence/change","data":{}}
 {"t":"revoke","reason":"enrollment revoked","final":true}
 ```
 
-Message types on the subscribe stream: `job`, `ping`, `event`, `revoke`, `reload`, `quiesce`,
-`drain`. Nodes reply to `ping` on `/v1/return` with a `pong`; a missed ping budget triggers a
-reconnect from the node side. No hub sends `quiesce` or `drain` yet, and a node that receives one
-does not act on it and logs that at warn; a node is quiesced by its own configuration (9.6).
+Message types on the subscribe stream: `job`, `ping`, `event`, `revoke`, `reload`. Nodes reply
+to `ping` on `/v1/return` with a `pong`; a missed ping budget triggers a reconnect from the node
+side.
+
+There is no `quiesce` or `drain` message. A node is quiesced by its own `quiesce` setting. Quiescing
+a node from the hub is to go through that node's pillar (issue 780), not through a stream message,
+which would need an RBAC grant and an answer to `require_job_signature` (25.6) of its own and would
+be lifted by any reconnect; until that lands, the hub cannot quiesce a node. Earlier drafts of this
+section listed both names, so a node that receives either logs at warn, by name, that it does not
+act on it, and a relay passes them down unchanged so that the node meant is the one that says so.
 
 ### 6.3 Replay and job authenticity
 

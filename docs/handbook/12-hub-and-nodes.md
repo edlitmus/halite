@@ -106,6 +106,12 @@ quiesced node looks like a dead one. No job can lift quiesce, because
 the setting is the node's own configuration: edit it and restart the
 node.
 
+The hub cannot quiesce a node either. There is no hub message that does
+it; doing it from the hub is planned through the node's pillar (#780).
+A node that is sent a `quiesce` or `drain` message, which earlier drafts
+of the protocol named, logs at warn that it did nothing and how to
+quiesce it instead.
+
 A node runs jobs **one at a time** by default, so two package-manager
 runs cannot collide. Its own schedule waits in the same queue.
 `halite-hub run --parallel` lets one job run beside others, and

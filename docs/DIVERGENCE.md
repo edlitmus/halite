@@ -47807,6 +47807,58 @@ vetted, not run. No seccomp filter exists, which SPEC 25.4 also asks for.
 
 
 
+#### 5.699.1 There is no hub `quiesce` or `drain` message (2026-11-22)
+
+Issue 782, decided by the maintainer: neither message is part of the
+protocol. A hub-driven quiesce is to go through the node's pillar, which
+issue 780 is to make able to set it; that is not built here, and until it
+is the hub cannot quiesce a node at all.
+
+**What was there.** `grep` for `MsgQuiesce` and `MsgDrain` over the tree,
+and `git log -S` over its history, find no producer anywhere: no hub, no
+relay and no test has ever built a message of either type. The consumers
+are the relay, which passed both down with `event`, `revoke`, `reload` and
+`kill`; the node, which since 5.699 warns that it does not act on them;
+and that section's test. SPEC 6.2 listed both, and its example stream
+carried an event tagged `halite/hub/quiesce/start`. `halite-hub event
+tags` does not list that tag and nothing in the tree emits it, so it was
+an illustration of the undecided feature rather than an event anybody
+could react to.
+
+**The change.** SPEC 6.2 lists `job`, `ping`, `event`, `revoke` and
+`reload`, says there is no `quiesce` or `drain`, and says why a stream
+message was the wrong shape: it would need its own RBAC grant and its own
+answer to `require_job_signature` (SPEC 25.6), and a reconnect would lift
+it. The example event is now `halite/presence/change`, which the hub
+does fire. Handbook chapter 12 says the hub cannot quiesce a node.
+
+**The constants stay, and so does the relay's forwarding.** Deleting
+`transport.MsgQuiesce` and `MsgDrain` would put both back under the
+node's default case, which is the info line naming a type that 5.699
+replaced. A fleet is upgraded one machine at a time (handbook chapter
+36), and SPEC told any peer built to it that the names exist, so a node
+should go on saying by name that it did nothing. The relay goes on
+passing both down for the same reason: it acts on neither, and a relay
+that swallowed them would leave the node behind it silent, with the
+operator who asked for a quiesce looking at that node for a reason it
+never logs. The relay's choice is now `passesDown`, which
+`TestARelayPassesDownTheMessagesItsNodesWarnAbout` holds; with quiesce
+and drain removed from it, the test fails on both.
+`TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName` is unchanged.
+
+**A citation found on the way.** The sentence 5.699 added to SPEC 6.2
+ended by citing SPEC 9.6 for how a node is quiesced. SPEC 9.6 is
+*Concurrency on the node* and does not mention quiesce; no SPEC section
+does, beyond the glossary row. The rewritten paragraph names the setting
+instead. The comment at the head of `internal/migrate/blackout.go` cited
+SPEC 9.6 for the same thing, and now cites 5.694.
+
+**Not verified.** The relay test checks which types the relay chooses to
+pass down, not delivery: a subordinate's stream cannot be attached from
+outside package `hub`, and the path down is `forwardDown`, which the
+other passed types share. No peer has sent either message to a running
+node or relay. The pillar route to quiesce does not exist yet.
+
 
 
 
