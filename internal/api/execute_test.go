@@ -597,3 +597,32 @@ bindings:
 		})
 	}
 }
+
+// `parallel` on the request body reaches the hub as --parallel would, and
+// leaving it out leaves the job serial (issue 785).
+func TestTheParallelFieldReachesTheHub(t *testing.T) {
+	l, hub := executeLab(t, operatorPolicy)
+	out := l.login(t, "ed", "hunter2")
+	for _, c := range []struct {
+		path   string
+		status int
+		body   string
+		want   bool
+	}{
+		{"/v1/run", http.StatusOK, `{"tgt":"web1.example","fun":"test.ping","parallel":true}`, true},
+		{"/v1/run", http.StatusOK, `{"tgt":"web1.example","fun":"test.ping"}`, false},
+		{"/v1/jobs", http.StatusAccepted, `{"tgt":"web1.example","fun":"test.ping","parallel":true}`, true},
+		{"/v1/jobs", http.StatusAccepted, `{"tgt":"web1.example","fun":"test.ping"}`, false},
+	} {
+		// The stub decodes each submission over the last one, so a field
+		// left out would read as whatever the previous request sent.
+		hub.submitted = transport.SubmitRequest{}
+		res, body := l.post(t, c.path, c.body, out.Token)
+		if res.StatusCode != c.status {
+			t.Fatalf("%s %s answered %d: %s", c.path, c.body, res.StatusCode, body)
+		}
+		if hub.submitted.Parallel != c.want {
+			t.Errorf("%s %s reached the hub with parallel=%v", c.path, c.body, hub.submitted.Parallel)
+		}
+	}
+}

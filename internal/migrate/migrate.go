@@ -471,6 +471,7 @@ func auditSLS(rep *Report, opts Options, rel string, src []byte, isPillar bool, 
 
 	auditTemplate(rep, opts, rel, body)
 	auditYAMLText(rep, rel, body)
+	auditBlackout(rep, rel, src, isPillar)
 	// A top file's keys are target expressions, not state IDs.
 	if !isPillar && !strings.HasSuffix(rel, "top.sls") {
 		auditDeclarations(rep, opts, rel, body)
@@ -1016,6 +1017,12 @@ func auditConfig(rep *Report, path string) {
 		sev := Note
 		action := fmt.Sprintf("halite calls it %q. The compatibility shim is removed in %s.", r.Halite, config.ShimRemovalVersion)
 		cat := CatConfig
+		if note := blackoutTranslationNote(r.Salt); note != "" {
+			// Review rather than note: the conversion is a rename, but
+			// it turns on something Salt never did with this file, and
+			// a node that ran everything starts refusing jobs.
+			sev, action = Review, action+note
+		}
 		if r.Halite == "policy" {
 			// This line used to say the key was "Translated into a draft
 			// RBAC rule; review it before it is applied." Nothing drafts
@@ -1060,6 +1067,7 @@ func auditConfig(rep *Report, path string) {
 			Action: "Confirm it is obsolete, or open an issue if halite should honour it.",
 		})
 	}
+	auditConfigBlackout(rep, path, cfg)
 }
 
 // walkExprs visits every expression in a template body.
