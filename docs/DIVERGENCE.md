@@ -47037,7 +47037,9 @@ Rocky only, and the script requires it to skip. The first run after Rocky
 offers a second kernel therefore fails and says to put it back. AlmaLinux 8
 offers older kernels and still has to pass it. Not tried: Rocky's vault of
 the previous point release, which would give an older kernel at the cost of
-another mirror, and which nobody has checked installs cleanly o**Linux: half of GitHub's runners mount `/run` noexec.**
+another mirror, and which nobody has checked installs cleanly.
+
+**Linux: half of GitHub's runners mount `/run` noexec.**
 `TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir` failed with
 `status=203/EXEC` on both of its starts on four of seven runs from 11-17.
 203 is systemd failing to execute `ExecStart`, and the test had copied its
@@ -47084,6 +47086,27 @@ is time and not a fix: a mirror slower still will reach it.
 **Not covered:** the libexec path on an AWS runner, until this change's own
 Fleet run; whether any other live test runs a binary from `/run`; and
 whether the vault would serve Rocky's install test.
+
+### 5.688.1 Rocky shipped a second kernel, and the install test is expected again (2026-11-22)
+
+The required skip above did its job. On 2026-11-22 Rocky 9.8's BaseOS
+offered `kernel-core` `5.14.0-741.24.1.el9_9` beside `741.22.1`, the rocky9
+leg failed with *"was expected to skip ... and did not"* on an unrelated PR
+(issue 762's), and in the same run the test passed: it installed 741.22.1,
+upgraded to 741.24.1 and removed the older, in 82 seconds. The test is back
+in the leg's expected list on Rocky as on AlmaLinux, and is no longer an
+allowed skip anywhere.
+
+It also failed `main`'s scheduled Fleet run the same way, so every PR that
+triggers the rpm leg was red on it until this change.
+
+The line above that ran into the next paragraph (*"installs cleanly
+o\*\*Linux"*) arrived that way in the change that wrote it; whatever it
+went on to say is lost, so the sentence now ends where its claim does.
+
+**Not verified:** this change's own Fleet run is the check that the test is
+expected and passes; nothing here pins Rocky's repositories, so a Rocky that
+offers one kernel again fails the leg on the skip.
 
 ### 5.689 A slice step at the int limit panicked a render
 
@@ -47649,6 +47672,37 @@ starting two seconds later.
   by default. No new setting was added.
 - **Orchestration steps** and the reactor dispatch without the flag, so
   their jobs run alone unless the node sets `parallel_jobs`.
+### 5.699 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
+
+Issue 782, found while building quiesce for issue 763 (5.694).
+
+SPEC 6.2 lists `quiesce` and `drain` among the subscribe stream's message
+types, `transport.MsgQuiesce` and `transport.MsgDrain` exist, and the relay
+forwards both. The node's message switch handled neither, so each fell to the
+default case and was logged at info as `message type=quiesce`. Nothing in
+this tree sends either today, so nothing was lost; but a hub that grows the
+ability, or an operator who reads SPEC 6.2 and expects it, would see a node
+keep taking jobs with no sign anywhere of why.
+
+**The change is only the sign.** The node now logs both at warn: *"the hub
+sent a message this node does not act on, so nothing changed"*, with the
+type, the hub's reason, and `instead: set quiesce in this node's
+configuration and restart it`. SPEC 6.2 now says no hub sends them and what
+a node does if one arrives. `TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName`
+holds both types; with the new case removed it fails eight assertions.
+
+**Not decided, and not built:** what a hub's quiesce means -- until the hub
+lifts it, until the node restarts, or the hub announcing its own quiesce,
+which SPEC's example tag `halite/hub/quiesce/start` hints at; who may send
+it, which would need its own RBAC grant and, on a node with
+`require_job_signature`, should not be obeyed from a hub alone (SPEC 25.6);
+and whether it survives a reconnect, without which a hub restart lifts a
+quiesce silently. Issue 782 stays open for those.
+
+**Not verified.** No hub or relay sent either message to a running node; the
+test calls the node's handler directly.
+
+
 
 
 

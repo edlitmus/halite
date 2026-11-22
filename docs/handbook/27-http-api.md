@@ -144,7 +144,9 @@ curl -s --cacert api.crt -H "$H" -H 'Content-Type: application/json' \
 
 The body fields are the same ideas as the command line: `client`, `tgt`,
 `tgt_type` (for the non-glob targets of [chapter 13](13-targeting.md)),
-`fun`, `arg`, `kwarg`. The client types are the predecessor's, kept:
+`fun`, `arg`, `kwarg`. `"parallel": true` lets the job run beside others
+on a node instead of waiting its turn, as `halite-hub run --parallel` does; it
+is not Salt's `concurrent`. The client types are the predecessor's, kept:
 
 | `client` | Does |
 |---|---|
