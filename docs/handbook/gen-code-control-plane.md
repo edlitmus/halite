@@ -816,7 +816,7 @@ The compatibility shim of SPEC sections 2.3 and 28.3 lives here. It is a table, 
 
 One key is refused rather than translated. \`auto\_accept: True\` has no equivalent and no configuration key produces it, because silently reproducing it would undo the enrollment rules of SPEC section 7.3.
 
-**Files:** `config.go`, `inert.go`, `int64.go`, `keydoc.go`, `keys.go`, `paths.go`, `shim.go`; with tests.
+**Files:** `booleans.go`, `config.go`, `inert.go`, `int64.go`, `keydoc.go`, `keys.go`, `paths.go`, `shim.go`; with tests.
 
 **Exports.**
 

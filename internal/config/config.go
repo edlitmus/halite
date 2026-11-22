@@ -149,7 +149,7 @@ func Load(role Role, opts LoadOptions) (*Config, error) {
 	shimmed, res := ApplyShim(merged, func(k string) bool { return IsKnownKey(role, k) })
 	cfg.Values = shimmed
 	cfg.Shim = res
-	cfg.Warnings = res.Warnings()
+	cfg.Warnings = append(res.Warnings(), unreadableBooleans(role, shimmed)...)
 	if err := res.Err(); err != nil {
 		return cfg, err
 	}
@@ -285,13 +285,8 @@ func (c *Config) Bool(path string, def bool) bool {
 	if !ok || v == nil {
 		return def
 	}
-	switch t := v.(type) {
-	case bool:
-		return t
-	case string:
-		if b, err := strconv.ParseBool(t); err == nil {
-			return b
-		}
+	if b, ok := readBool(v); ok {
+		return b
 	}
 	return def
 }

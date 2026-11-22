@@ -116,13 +116,13 @@ func TestACountedListHasThatManyItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(data)
-	const lead = "Six things bite in practice."
+	const lead = "Seven things bite in practice."
 	if !strings.Contains(body, lead) {
 		t.Errorf("docs/from-salt.md no longer contains %q; this audit is checking nothing "+
 			"about that list", lead)
 	} else {
 		items := regexp.MustCompile(`(?m)^\d+\. \*\*`).FindAllString(body[strings.Index(body, lead):], -1)
-		if len(items) != 6 {
+		if len(items) != 7 {
 			t.Errorf("docs/from-salt.md says %q and %d numbered item(s) follow",
 				lead, len(items))
 		}

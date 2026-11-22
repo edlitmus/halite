@@ -47325,6 +47325,140 @@ the quiesced run is the refusals, not a tree that could not apply.
   is deliberate, because they are how someone at the machine works on
   it. Salt's `salt-call` was not checked.
 
+### 5.695 A boolean setting the loader could not read became its default without a word (2026-11-21)
+
+**The defect.** `config.Bool` returns its default for a value it cannot
+read: a string `strconv.ParseBool` rejects, or an integer, which YAML
+makes of `1`. Nothing else looked at boolean settings, so `metrics:
+maybe` or `failhard: 1` loaded with no warning and quietly became the
+default. 5.694 found it on `quiesce`, where the default is the
+dangerous side, and fixed that one key by treating an unreadable value
+as quiesced. Every other boolean was left as it was (issue 783).
+
+**The change.** The loader now warns, once at start and among the
+configuration warnings every program already logs, about each boolean
+setting whose value it cannot read. The warning names the key, the
+value, and the value that applies instead:
+
+```
+configuration key "failhard" is set to 1, which is neither true nor false, so it is ignored and false applies
+```
+
+A key counts as boolean when its table default is the word `true` or
+`false`. `Bool` and the check share one reading of a value, so the two
+cannot disagree about what is readable.
+
+**A warning, not a refusal.** A node that will not start over a typo is
+a node nobody can reach to fix it, because the fix arrives through the
+node. The issue said the same. The warning says what the process will
+really do, which is the answer to "why does this setting not do what I
+wrote".
+
+**`quiesce` keeps failing closed, and the loader says so.** Its reader
+takes an unreadable value as true, so the loader's warning for it says
+`true applies`. The node's own startup warning for this case, added in
+5.694, is gone, because it would say the same thing a second time. The
+two halves are in different packages, and a test loads `quiesce: maybe`,
+`1` and `[on]` and checks that the warning and the node's reading agree.
+
+**What holds the check to every boolean.** The defaults audit already
+compares each `cfg.Bool` read with its key's declared default, but it
+uses `strconv.ParseBool`, which accepts `1` and `0`. So a boolean read
+of a key whose default was written `0` would pass that audit and escape
+this check. A new test finds every `cfg.Bool` read in the source and
+requires its key's default to be the word `true` or `false`. It also
+fails if it finds fewer than 30 reads, so that a pattern that stops
+matching cannot make it pass on nothing.
+
+Each part was broken on purpose and its test failed: the loader not
+adding the warnings, `quiesce` taken off the fail-closed list (both the
+config test and the node test failed), and `failhard`'s default changed
+to `0`. Run against the real `halite-node doctor` with `metrics: maybe`,
+`failhard: 1` and `quiesce: maybe`: three warnings, each naming the
+value that applies.
+
+**Not changed, and not verified:**
+
+- **An integer is still not a boolean.** `ParseBool` takes the string
+  `"1"`, and `Bool` has never taken the integer `1`. Salt, being Python,
+  would take `1` as true. Reading it now would change what an existing
+  file means without anybody deciding it should, so it is warned about
+  instead.
+- The hub and API binaries load configuration the same way and log the
+  same warnings. Only the node binary was run.
+- Settings given another way, such as a command-line flag, are not
+  checked here.
+### 5.696 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
+
+**The defect.** Salt reads `minion_blackout` and <!-- lexicon:allow -->
+`minion_blackout_whitelist` from the agent's pillar and then its grains, <!-- lexicon:allow -->
+in both places it checks: the job handler and the scheduler. It never
+reads them from its configuration file. This was read from Salt 3006.9
+for issue 780, and again from the tip of Salt's development branch,
+where the code is the same.
+
+halite reads `quiesce` from the node's configuration only (5.694). The
+compatibility shim converts the Salt key from that file, which is the
+one place Salt never read it. So:
+
+- **A node blacked out through pillar or a grain** goes back into
+  automation after migration, and nothing said so.
+- **A configuration file that sets the key at the top level** did
+  nothing in Salt. Here the shim turns it into `quiesce`, and the node
+  starts refusing jobs. The audit reported this as a `note` saying only
+  "halite calls it quiesce".
+
+**The change.** This is option A of issue 780: the audit reports, and
+converts nothing. Each finding is in the `semantics` category at
+`review` severity, and tells the operator to set `quiesce` in each
+affected node's configuration.
+
+- **Pillar and state files:** each line that names one of the two keys
+  as a whole word. In a state file that is almost always a grain being
+  set, through `grains.present` or `grains.setval`. Comment lines are
+  skipped. Line numbers are counted from the file as written, including
+  its renderer line.
+- **A Salt configuration file given with `--salt-config`:** a key under
+  its `grains:` mapping, which Salt reads as a static grain.
+- **The converted top-level key** is now `review`, not `note`. Its
+  action says that Salt never read it there, and that here it does
+  quiesce the node.
+
+`docs/from-salt.md` has a seventh item under "What will be different".
+
+**Why it reports and does not convert.** Option B of the issue would
+have the node honour `quiesce` from its pillar or grains, as Salt does.
+That would let a hub quiesce a node, and lift quiesce, through pillar,
+which today only a local edit can do. That changes what quiesce
+guarantees, and it is a decision for the maintainer, so it is left open
+in the issue.
+
+Each part was broken on purpose and its test failed:
+
+- the state and pillar audit not called;
+- the `grains:` audit not called;
+- the note on the converted key dropped;
+- the key's severity left at `note`;
+- the pattern without its closing word boundary, which then matched a
+  `minion_blackout_reason` key; <!-- lexicon:allow -->
+- comment lines not skipped.
+
+The real `halite-hub migrate` was run on a lab tree that sets the key in
+pillar, as a grain in a state file, and both ways in a configuration
+file, and it gave the four findings. The maintainer's own estate tree never mentions the
+key, so this changes nothing for its migration.
+
+**Not covered:**
+
+- **A grains file**, such as Salt's `/etc/salt/grains`, is not read.
+  The audit takes a tree and configuration files, and has no option for
+  one.
+- **A blackout key built by a template**, for example from a Jinja
+  variable, is not found. The audit reads the text.
+- **No real Salt estate that uses blackout has been migrated.**
+
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
