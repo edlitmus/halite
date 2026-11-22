@@ -145,6 +145,8 @@ run flags:
   --async              print the jid and return at once
   --timeout <dur>      how long to gather returns, default 5m
   --test               run every state in test mode, changing nothing
+  --parallel           let the job run alongside others on each node; a
+                       state run still runs alone (SPEC section 9.6)
   --env <name>         the environment the job names
   --ttl <dur>          how long the job may be run, default 15m
   --offline <policy>   skip (default), queue, or require

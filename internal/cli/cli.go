@@ -76,6 +76,8 @@ var BoolFlags = map[string]bool{
 	// then said lint needed a path; `pillar --reveal get key` would take
 	// `get` the same way. DIVERGENCE 5.261.
 	"rendered": true, "reveal": true,
+	// `run --parallel '*' test.ping` would take the target as its value.
+	"parallel": true,
 }
 
 // Parse splits an argument vector.

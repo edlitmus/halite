@@ -1021,6 +1021,7 @@ func (n *node) acceptJob(msg transport.Message) {
 		Target:     msg.Target,
 		TargetKind: msg.TargetKind,
 		Signature:  msg.Signature,
+		Parallel:   msg.Parallel,
 	}
 	if msg.Expires != "" {
 		expires, err := time.Parse(time.RFC3339Nano, msg.Expires)
