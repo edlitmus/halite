@@ -48205,6 +48205,29 @@ log line so that silence is not taken for refusal. Broken on purpose, it failed 
   migrated.
 
 
+### 5.704 SPEC 25.1 listed a check the hub runs as a control against the hub (2026-11-22)
+
+Found writing the proposal for issue 764 (PR 801), and corrected on the
+maintainer's decision to do it at once rather than with that feature.
+
+SPEC 25.1's threat table gave *"signed gitfs refs"* among the controls
+against a compromised hub, and the hardening chapter's table said *"signed
+git refs"* on its row for the hub. Ref signatures are verified in
+`internal/gitfs` (`Options.verify`, SPEC 13.3's `gitfs_verify_signatures`),
+and the only program that imports that package is `halite-hub`. A hub that
+has been taken over is the process doing the checking, so it can skip the
+check, serve an unsigned tree, or serve any bytes it likes after a check
+that passed. Nothing on a node looks at a ref or a signature.
+
+The control is real against the adversary on the next row, somebody who can
+push to the state tree but does not hold the hub, and it stays there. Both
+tables now leave it off the hub's row and say why, and point at issue 764,
+which is the node-side check the row needs and does not have yet.
+
+The same table's state-tree row still lists *"optional signed state trees"*,
+which describes issue 764 as a design and is not built; it is left as SPEC's
+statement of intent.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
