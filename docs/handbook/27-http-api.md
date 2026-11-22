@@ -343,9 +343,27 @@ signed delivery accepted before `halite-api` restarts is accepted once more
 after it, if its timestamp is still inside the window. A receiver of these
 events that must not act twice should key on something in the body.
 
-`auth: token` is the other mode. `auth: mtls` is refused when the API
-loads its configuration: the API does not ask clients for certificates, so
-no delivery to such a hook could ever authenticate. The nonce is
+`auth: token` is the other mode, and `auth: mtls` the third. An mtls hook
+names the sender in `client`, which must be the common name, or one of the
+DNS or URI names, of a certificate issued by `hook_client_ca`:
+
+```yaml
+hook_client_ca: /usr/local/etc/halite/hook-senders.pem
+hooks:
+  deploy:
+    auth: mtls
+    client: ci.example
+```
+
+With `hook_client_ca` set the API asks every client for a certificate and
+verifies one that is offered, and lets through a client that offers none,
+so operators logging in with tokens are not affected. A certificate from
+another CA is refused at the handshake; one from the CA naming somebody else,
+or none, is refused with `401`. The API will not start with an mtls hook and
+no `hook_client_ca`. The bundle is read at startup: to rotate it, add the new
+CA beside the old one, restart, reissue the senders, then remove the old one
+and restart again. A proxy that ends TLS in front of the API does not pass the
+sender's certificate on, so mtls hooks need the API to end TLS itself. The nonce is
 recorded after the delivery lands on the bus, not when the signature verifies,
 so a delivery that failed downstream and is retried with the same signature
 is not refused as a replay. A second copy that arrives while the first is

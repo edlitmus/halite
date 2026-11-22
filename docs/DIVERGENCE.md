@@ -29770,6 +29770,52 @@ Each was broken on purpose and watched to fail:
   cache before; a copy that reaches each is delivered twice. Unchanged
   by this, and not new.
 
+#### 5.327.1 `auth: mtls` built: a CA to verify against and a name to match (2026-11-21)
+
+Issue 767. 5.327 refused `auth: mtls` because it was dead or open: the
+listener asked nobody for a certificate, and the check was only that one was
+presented. Both halves are now there.
+
+**The CA.** `hook_client_ca` names a PEM bundle, and with it set the API's
+listener uses `VerifyClientCertIfGiven`: every client is asked for a
+certificate, one that is offered is verified against the bundle at the
+handshake, and a client that offers none is let through. The last is what lets
+the change touch nothing else -- operators authenticate with tokens, and the
+handshake is over before the path that would say which kind of caller this is
+has been read -- and it is safe because a certificate admits nobody to
+anything except an mtls hook. The API refuses to start with an mtls hook and
+no CA, rather than loading a hook no delivery could reach.
+
+**The name.** An mtls hook needs `client`, matched exactly against the
+verified leaf's common name or one of its DNS or URI names. Without it, every
+holder of a certificate from the CA could deliver to every mtls hook, which is
+the open half of 5.327 again. It reads `VerifiedChains`, not
+`PeerCertificates`, so the name is never taken from a certificate the
+handshake did not verify, and a listener started without a CA admits no mtls
+delivery at all. A `secret` on an mtls hook is refused: it would read as a
+second factor that nothing checks.
+
+**Tests**, through the API's own `Listen` rather than `httptest`, which
+stands up its own TLS: the named sender is accepted (`202`); a certificate
+from the same CA naming somebody else is `401` *"does not name ci.example"*;
+one from a CA nobody configured is refused at the handshake, *"remote error:
+tls: unknown certificate authority"*; none at all is `401` asking for one; and
+a client with no certificate still reaches `/v1/healthz`. Broken on purpose
+and each seen to fail: any name matching, a certificate required of everyone,
+and certificates requested and not verified.
+
+**A trap in the test, recorded because it would hide the untrusted case.**
+Go's client sends a certificate only if its issuer is among the CAs the
+server's request lists, so the first version of the untrusted-CA case sent
+none, and passed as "no certificate" for a reason that had nothing to do
+with verification. The test offers the certificate whatever the request says,
+as curl does.
+
+**Not verified.** No real webhook sender -- a CI system, a forge -- was
+pointed at it, and nothing behind a TLS-terminating proxy was tried (the
+handbook says it cannot work there). The CA bundle is read at startup and not
+reloaded; rotation is a restart, and was not exercised.
+
 ### 5.328 A hub could replay a signed job: after a restart, after a flood, or with a new nonce
 
 **Found by** a security review (M-02), and reproduced before anything was
