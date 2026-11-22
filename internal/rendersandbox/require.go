@@ -150,7 +150,7 @@ func identityUnmet(cfg Config, o Observed) string {
 	if err != nil {
 		return "identity is required, and " + err.Error()
 	}
-	if o.UID != int(uid) {
+	if int64(o.UID) != int64(uid) {
 		reason := fmt.Sprintf("identity is required, and the child runs as uid %d rather than as %s (uid %d)", o.UID, cfg.User, uid)
 		if !canDropPrivilege() {
 			reason += ", because this process cannot drop privilege here"
