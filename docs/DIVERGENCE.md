@@ -47456,10 +47456,7 @@ key, so this changes nothing for its migration.
 - **A blackout key built by a template**, for example from a Jinja
   variable, is not found. The audit reads the text.
 - **No real Salt estate that uses blackout has been migrated.**
-
-
-
-### 5.695 A scheduled job ran alongside a dispatched one (2026-11-21)
+### 5.697 A scheduled job ran alongside a dispatched one (2026-11-21)
 
 Issue 781, which 5.694 found by reading the code. SPEC 9.6 and the
 handbook say a node runs one job at a time by default, and for jobs from
@@ -47497,8 +47494,7 @@ Breaking it to drop the tail of the queue fails the first.
 `TestAScheduledHighstateSurvivesAHubOutage` runs real binaries with a
 one-second schedule, and it passes with the schedule going through the
 queue. The node package passes under `-race`.
-
-### 5.696 `parallel_jobs` was accepted and did nothing, and `--parallel` did not exist (2026-11-21)
+### 5.698 `parallel_jobs` was accepted and did nothing, and `--parallel` did not exist (2026-11-21)
 
 The rest of issue 763. SPEC 9.6 promised a named lock per module family
 and a `--parallel` flag, and `parallel_jobs` was declared to make
@@ -47607,6 +47603,12 @@ starting two seconds later.
   by default. No new setting was added.
 - **Orchestration steps** and the reactor dispatch without the flag, so
   their jobs run alone unless the node sets `parallel_jobs`.
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
