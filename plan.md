@@ -1479,14 +1479,15 @@ framing §0 already gives it.
 
 ## 4. Settings that are accepted and do nothing
 
-Seven keys are **inert**: they warn at startup naming what the operator
+Six keys are **inert**: they warn at startup naming what the operator
 gets instead, which is the honest half, and they still do nothing.
-`job_cache`, `startup_states`, `parallel_jobs`, `socket_dir`,
-`node_data_cache`, `hub_type`, `legacy_acl`. Counted 2026-11-21 from
-`InertKeys` in `internal/config/inert.go`; `ext_pillar_fail` and
-`tracing` left it when external pillar and tracing were built,
-`pillar_cache_disk` when the last known good pillar was (DIVERGENCE
-5.577), and `quiesce` and `quiesce_allowlist` when quiesce was (5.694).
+`job_cache`, `startup_states`, `socket_dir`, `node_data_cache`,
+`hub_type`, `legacy_acl`. Counted 2026-11-21 from `InertKeys` in
+`internal/config/inert.go`; `ext_pillar_fail` and `tracing` left it when
+external pillar and tracing were built, `pillar_cache_disk` when the
+last known good pillar was (DIVERGENCE 5.577), `quiesce` and
+`quiesce_allowlist` when quiesce was (5.694), and `parallel_jobs` when
+it was (5.698).
 
 Three more are unread with a reason (`UnreadKeys`): `log_level_file`,
 `regex_engine` and `node_id_source` are settings with one value.
@@ -2169,7 +2170,10 @@ down to the machine or the link each one still wants.
     drift report; and LDAP, OIDC and TOTP with a role map for a
     directory group.
 
-27. **Nothing bounds a client to SPEC 6.5's 64 streams per connection**
+27. ~~**Nothing bounds a client to SPEC 6.5's 64 streams per connection**~~
+    (done: each client holds its short requests to 63, DIVERGENCE
+    5.665.3; what is left is a reconnection storm of event watchers,
+    which the bound deliberately does not count). Kept as it was found:
     (#748, DIVERGENCE 5.665.1). The hub's half is enforced — #691 caps
     node connections and advertises 64 where the hub had been
     advertising `net/http`'s 250 — and the client half is not bounded

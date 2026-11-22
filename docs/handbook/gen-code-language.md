@@ -549,7 +549,7 @@ It produces a report, not a rewritten tree, because a tool that silently rewrite
 
 The report is meant to run in CI against the existing tree from day one of the project, so the compatibility target is measured continuously rather than guessed.
 
-**Files:** `context.go`, `declarations.go`, `migrate.go`, `pyfunc.go`, `report.go`, `skeleton.go`, `undefined.go`; with tests.
+**Files:** `blackout.go`, `context.go`, `declarations.go`, `migrate.go`, `pyfunc.go`, `report.go`, `skeleton.go`, `undefined.go`; with tests.
 
 **Exports.**
 
