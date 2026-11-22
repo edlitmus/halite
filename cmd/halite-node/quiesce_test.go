@@ -162,6 +162,11 @@ func TestAQuiescedNodeDoesNotRunItsSchedule(t *testing.T) {
 // function on it still runs.
 func TestAQuiescedNodeRunsAnAllowlistedScheduledJob(t *testing.T) {
 	n := quiescedNode(t, "quiesce: true\nquiesce_allowlist: [test.ping]\n")
+	// A scheduled job runs through the executor, so this one has to be
+	// working; quiescedNode's is left idle on purpose.
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	go n.executor.Run(stop)
 	run := schedule.Run{Job: &schedule.Job{Name: "ping", Function: "test.ping"}, Fire: time.Now()}
 
 	if err := n.runScheduled(context.Background(), run); err != nil {

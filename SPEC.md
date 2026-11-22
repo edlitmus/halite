@@ -398,7 +398,8 @@ a truncated stream is unambiguous.
 
 Message types on the subscribe stream: `job`, `ping`, `event`, `revoke`, `reload`, `quiesce`,
 `drain`. Nodes reply to `ping` on `/v1/return` with a `pong`; a missed ping budget triggers a
-reconnect from the node side.
+reconnect from the node side. No hub sends `quiesce` or `drain` yet, and a node that receives one
+does not act on it and logs that at warn; a node is quiesced by its own configuration (9.6).
 
 ### 6.3 Replay and job authenticity
 
@@ -456,7 +457,7 @@ these is why a single malformed return can exhaust a master.
 | Enrollment requests from one source address that create a pending request or are refused | 32 at once, then one every 10 s, configured; an IPv6 source is its /64 |
 | Maximum single return payload | 16 MiB, then the node paginates by chunk |
 | Maximum NDJSON line on the subscribe and event streams | 1 MiB; a longer job is refused at submission, and a longer event is streamed as a stand-in naming it |
-| Maximum concurrent HTTP/2 streams per node connection | 64 |
+| Maximum concurrent HTTP/2 streams per node connection | 64, advertised by the hub; each client holds its short requests to 63, so its subscribe stream always has the 64th |
 | Maximum node connections per hub | 25,000, configured |
 | Maximum decompressed size ratio | 100:1, then the transfer is aborted |
 | Handshake timeout | 10 s |
@@ -732,11 +733,16 @@ silence.
 
 ### 9.6 Concurrency on the node
 
-A node executes jobs serially by default, which matches Salt and avoids two `apt` runs colliding.
+A node executes jobs serially by default, which avoids two `apt` runs colliding. This is stricter
+than Salt, whose agent runs every job at once and keeps only state runs apart.
 
 - A named lock per module family (`pkg`, `service`, `file`) allows safe parallelism between
   families while serializing within one.
-- `--parallel` marks a job as safe to run alongside others.
+- `--parallel` marks a job as safe to run alongside others, and `parallel_jobs` makes that every
+  job's default. A signed job's `--parallel` is ignored, because the signature does not cover it.
+- A state run always runs alone: it reaches every family at once. It waits for running jobs, and
+  no job that arrives after it starts before it.
+- The node's own schedule shares the queue with jobs from the hub.
 - A long-running job does not block the subscribe stream; the stream reader and the executor are
   separate goroutines with a bounded queue between them.
 - `halite-node` refuses a job when its queue is full and says so, rather than growing memory. Salt's

@@ -45311,6 +45311,114 @@ burst width actually is remains unmeasured. Nothing was changed in
 `internal/transport` or `internal/api` here; 748 still carries the decision
 between B and C.
 
+#### 5.665.3 Each client now holds its short requests to 63, and the subscribe stream is outside the count
+
+Option B of issue 748, chosen by the maintainer on the numbers below.
+`internal/transport` now keeps at most `ShortRequestLimit` -- 63, which is
+SPEC 6.5's 64 less one -- short requests from one `Client` in flight at once.
+The 64th waits in the client, and gives up when its own context does with an
+error that says it waited there (*"waiting for one of this client's 63
+request slots"*), because a timeout that never reached the hub, reported as
+the hub's, sends somebody to look at the wrong machine. A slot is held from
+before the request is issued until its response body ends or is closed, which
+is when the HTTP/2 stream is finished, and it belongs to the `Client`, not to
+the transport under it: a certificate reload or a `Reset` builds a new
+transport while requests on the old one still hold theirs.
+
+**The measurements that chose it**, on `beastie`, Go 1.27.4 freebsd/amd64,
+over **TLS** this time (5.665.2 used unencrypted HTTP/2), a fresh server and
+Transport per round so every burst is on a cold connection, the handler
+holding each request 20 ms, 5000 rounds per row:
+
+| Client | Burst | Rounds that failed | Requests lost |
+|---|---|---|---|
+| default `net/http` | 80 | 9 (0.18%) | 9, all `PROTOCOL_ERROR`, stream IDs 129-157 |
+| default `net/http` | 100 | 18 (0.36%) | 18, all `PROTOCOL_ERROR` |
+| `StrictMaxConcurrentRequests` | 80 | 67 (1.3%) | 4161: 4152 timed out, 9 `PROTOCOL_ERROR` |
+| `StrictMaxConcurrentRequests` | 100 | 157 (3.1%) | 11594: 11580 timed out, 15 `PROTOCOL_ERROR` |
+| cap of 64 in flight, in the caller | 100 | **0** | **0**; one connection, peak 64 |
+
+Over TLS the loss rate at burst 80 is about a tenth of 5.665.2's 2.0% over
+h2c. The handshake giving the hub's `SETTINGS` a head start would explain
+that, and is a guess nobody tested; what matters is that it does not reach
+zero.
+The `StrictMaxConcurrentRequests` rows repeat 5.665.2's finding at twenty
+times the sample, and say what its blocked requests are: of 27 failing
+rounds read one by one at burst 80, 26 were a single connection on which
+between 1 and 19 requests completed in about 60 ms and the other 61 to 79
+then waited out the whole 10 s deadline. The flag stalls most of a burst, not
+a straggler.
+
+**Then the real thing, end to end**: the built `transport.Client`, each
+round a new one, `Health` fired 100 times at once against a TLS server
+advertising `MaxConcurrentStreams: 64`, 5000 rounds per arm, the limiter
+disabled in one binary by making every request skip it:
+
+| `Client` | Rounds that failed | Requests lost |
+|---|---|---|
+| limiter disabled | 31 (0.62%) | 31, all `PROTOCOL_ERROR`, stream IDs 131-197 |
+| limiter on | **0** | **0** |
+
+The disabled arm also left the server logging 374 TLS handshakes that ended
+in `EOF` -- connections the client dialled for the overflow and abandoned --
+and the limited arm logged none, which is the second connection 5.639
+measured, given up as the cost section below says. Zero in 5000 against 31
+in 5000 is not chance: at 0.62% the chance of no failure in 5000 rounds is
+about one in 10^13.
+
+**Why 63 and not 64.** A node's subscribe stream is on the same connection
+as its returns and file fetches, so 64 short requests beside it would be 65
+streams on a connection that may not yet know the limit. One stream is left
+for it, and the subscribe itself takes no slot, so a burst can never make it
+wait: that is the hazard 5.665.1 wrote down before anything was built, and
+`TestTheSubscribeStreamOpensWhileEveryShortSlotIsTaken` holds all 63 slots
+and opens one.
+
+**A following event stream takes no slot either**, for a reason 5.665.2
+found by reading: the API opens one through its single shared `s.Hub` for
+every operator watching `/v1/events` or `/v1/ws/events`, with no cap of its
+own. Counted, 63 watchers would have stopped every other request the API
+makes, indefinitely, because a watcher's stream has no deadline. A
+non-following read of the log is short and is counted.
+
+**What it costs.** The bound is per client where SPEC 6.5 says per
+connection, so a client at 63 queues rather than taking the second
+connection 5.639 measured Go dialling. The API and a relay forward many
+callers through one `Client`, so under load they now wait for a slot, each
+request within its own deadline, rather than spreading across connections.
+SPEC 6.5's row says which side enforces what.
+
+**Not fixed: a reconnection storm of event watchers.** 5.665.2 named the
+realistic trigger as a burst onto a cold connection, and gave two: a relay
+reconnecting with a backlog of returns, which this covers, and an API
+restart with many watchers re-subscribing at once, which it deliberately
+does not -- those streams are the ones left out of the count. More than 64
+of them arriving inside the first round trip of a new connection can still
+lose one with `PROTOCOL_ERROR`. What that costs is one watcher's stream
+failing to open, which an `EventSource` reopens by itself and a WebSocket
+client may not; what bounding them would cost is a watcher that waits for
+another to leave. Nobody has measured how many watchers a real API has.
+
+**Tests**, in `internal/transport/streams_test.go`, against a real TLS
+server: a burst of 100 reaches the hub as exactly 63 at once and all 100
+then succeed; the subscribe opens with every slot taken; 64 followed event
+streams leave a short request free to reach the hub; a request that cannot
+get a slot gives up with its context and never reaches the hub; and 126
+requests the hub refuses, and 126 that never connect, each give their slot
+back. Each was broken on purpose and failed: no limiter at all ("the hub
+held 100 requests at once; the client's limit is 63"), the subscribe
+counted, the follow counted, a failed round trip keeping its slot, and a
+finished body keeping its slot.
+
+**Not verified.** `beastie` only, and Go 1.27.4 only. No live hub, node,
+relay or API was driven through the new client under a burst; the end-to-end
+figure above is the real `Client` against a stand-in server. How wide a real
+estate's bursts are is still unmeasured, so whether any client ever waits
+for a slot in practice is unknown -- the bound is correct either way, and
+cheap when it is never reached, but "it fixed a loss in production" is not a
+claim this section can make. `parallel_jobs` (#786) is the change most
+likely to make a node reach it.
+
 ### 5.666 The FreeBSD rc script passed a token after a space, and a token that began with `-` stopped the node
 
 Issue 733, item 10, from issue 308's open list: "a token with a hyphen
@@ -46883,7 +46991,9 @@ Rocky only, and the script requires it to skip. The first run after Rocky
 offers a second kernel therefore fails and says to put it back. AlmaLinux 8
 offers older kernels and still has to pass it. Not tried: Rocky's vault of
 the previous point release, which would give an older kernel at the cost of
-another mirror, and which nobody has checked installs cleanly o**Linux: half of GitHub's runners mount `/run` noexec.**
+another mirror, and which nobody has checked installs cleanly.
+
+**Linux: half of GitHub's runners mount `/run` noexec.**
 `TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir` failed with
 `status=203/EXEC` on both of its starts on four of seven runs from 11-17.
 203 is systemd failing to execute `ExecStart`, and the test had copied its
@@ -46930,6 +47040,27 @@ is time and not a fix: a mirror slower still will reach it.
 **Not covered:** the libexec path on an AWS runner, until this change's own
 Fleet run; whether any other live test runs a binary from `/run`; and
 whether the vault would serve Rocky's install test.
+
+### 5.688.1 Rocky shipped a second kernel, and the install test is expected again (2026-11-22)
+
+The required skip above did its job. On 2026-11-22 Rocky 9.8's BaseOS
+offered `kernel-core` `5.14.0-741.24.1.el9_9` beside `741.22.1`, the rocky9
+leg failed with *"was expected to skip ... and did not"* on an unrelated PR
+(issue 762's), and in the same run the test passed: it installed 741.22.1,
+upgraded to 741.24.1 and removed the older, in 82 seconds. The test is back
+in the leg's expected list on Rocky as on AlmaLinux, and is no longer an
+allowed skip anywhere.
+
+It also failed `main`'s scheduled Fleet run the same way, so every PR that
+triggers the rpm leg was red on it until this change.
+
+The line above that ran into the next paragraph (*"installs cleanly
+o\*\*Linux"*) arrived that way in the change that wrote it; whatever it
+went on to say is lost, so the sentence now ends where its claim does.
+
+**Not verified:** this change's own Fleet run is the check that the test is
+expected and passes; nothing here pins Rocky's repositories, so a Rocky that
+offers one kernel again fails the leg on the skip.
 
 ### 5.689 A slice step at the int limit panicked a render
 
@@ -47280,6 +47411,258 @@ value that applies.
   same warnings. Only the node binary was run.
 - Settings given another way, such as a command-line flag, are not
   checked here.
+### 5.696 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
+
+**The defect.** Salt reads `minion_blackout` and <!-- lexicon:allow -->
+`minion_blackout_whitelist` from the agent's pillar and then its grains, <!-- lexicon:allow -->
+in both places it checks: the job handler and the scheduler. It never
+reads them from its configuration file. This was read from Salt 3006.9
+for issue 780, and again from the tip of Salt's development branch,
+where the code is the same.
+
+halite reads `quiesce` from the node's configuration only (5.694). The
+compatibility shim converts the Salt key from that file, which is the
+one place Salt never read it. So:
+
+- **A node blacked out through pillar or a grain** goes back into
+  automation after migration, and nothing said so.
+- **A configuration file that sets the key at the top level** did
+  nothing in Salt. Here the shim turns it into `quiesce`, and the node
+  starts refusing jobs. The audit reported this as a `note` saying only
+  "halite calls it quiesce".
+
+**The change.** This is option A of issue 780: the audit reports, and
+converts nothing. Each finding is in the `semantics` category at
+`review` severity, and tells the operator to set `quiesce` in each
+affected node's configuration.
+
+- **Pillar and state files:** each line that names one of the two keys
+  as a whole word. In a state file that is almost always a grain being
+  set, through `grains.present` or `grains.setval`. Comment lines are
+  skipped. Line numbers are counted from the file as written, including
+  its renderer line.
+- **A Salt configuration file given with `--salt-config`:** a key under
+  its `grains:` mapping, which Salt reads as a static grain.
+- **The converted top-level key** is now `review`, not `note`. Its
+  action says that Salt never read it there, and that here it does
+  quiesce the node.
+
+`docs/from-salt.md` has a seventh item under "What will be different".
+
+**Why it reports and does not convert.** Option B of the issue would
+have the node honour `quiesce` from its pillar or grains, as Salt does.
+That would let a hub quiesce a node, and lift quiesce, through pillar,
+which today only a local edit can do. That changes what quiesce
+guarantees, and it is a decision for the maintainer, so it is left open
+in the issue.
+
+Each part was broken on purpose and its test failed:
+
+- the state and pillar audit not called;
+- the `grains:` audit not called;
+- the note on the converted key dropped;
+- the key's severity left at `note`;
+- the pattern without its closing word boundary, which then matched a
+  `minion_blackout_reason` key; <!-- lexicon:allow -->
+- comment lines not skipped.
+
+The real `halite-hub migrate` was run on a lab tree that sets the key in
+pillar, as a grain in a state file, and both ways in a configuration
+file, and it gave the four findings. The maintainer's own estate tree never mentions the
+key, so this changes nothing for its migration.
+
+**Not covered:**
+
+- **A grains file**, such as Salt's `/etc/salt/grains`, is not read.
+  The audit takes a tree and configuration files, and has no option for
+  one.
+- **A blackout key built by a template**, for example from a Jinja
+  variable, is not found. The audit reads the text.
+- **No real Salt estate that uses blackout has been migrated.**
+### 5.697 A scheduled job ran alongside a dispatched one (2026-11-21)
+
+Issue 781, which 5.694 found by reading the code. SPEC 9.6 and the
+handbook say a node runs one job at a time by default, and for jobs from
+the hub that was true: `executor.Offer`, a bounded queue, one worker. The
+schedule did not use it. `schedule.Engine` calls `runScheduled` from a
+goroutine of its own, and `runScheduled` called `executeJob` directly, so
+a scheduled highstate could run while a dispatched `state.apply` or
+`pkg.install` was running. Preventing exactly that is why the serial
+default exists.
+
+**Shown before the fix.** `TestAScheduledJobDoesNotRunAlongsideADispatchedOne`
+dispatches a one-second `test.sleep` and then runs a scheduled one. One
+at a time, the scheduled run ends about two seconds after the first
+began. With `runLocal` calling `executeJob` directly, which is the old
+path, it ended after 1.02 s.
+
+**The change.** Scheduled jobs go through the executor's queue
+(`runLocal`), and the schedule waits for the return, which is what its
+`maxrunning` counts. A full queue refuses a scheduled job as it refuses
+one from the hub: logged, and counted in
+`halite_node_jobs_refused_total`. A scheduled job still writes no
+evidence records, as before. It has no acceptance record, so a result
+record would be paired with nothing.
+
+The queue is a slice under a mutex now, not a channel, and each job runs
+on a goroutine of its own, so that `parallel_jobs` can let more than one run.
+`Cancel` needed it anyway. To take one job out of a channel it drained
+the channel and refilled it while `Run` read the same channel, and a
+refill that found the channel full again dropped a job silently. That
+comes from reading the old code; it was not reproduced. Under the mutex
+there is no window. `TestCancellingAQueuedJobRemovesOnlyThatJob` and
+`TestARunningJobIsNotCancelled` are the first tests of `Cancel` at all.
+Breaking it to drop the tail of the queue fails the first.
+
+`TestAScheduledHighstateSurvivesAHubOutage` runs real binaries with a
+one-second schedule, and it passes with the schedule going through the
+queue. The node package passes under `-race`.
+### 5.698 `parallel_jobs` was accepted and did nothing, and `--parallel` did not exist (2026-11-21)
+
+The rest of issue 763. SPEC 9.6 promised a named lock per module family
+and a `--parallel` flag, and `parallel_jobs` was declared to make
+parallel the default. None of it existed: the setting was in
+`InertKeys`, no job carried a parallel flag, and `halite-hub run` had no
+`--parallel`.
+
+**What a job may share now.** Each job is settled once, when it is
+queued (`schedulingOf`):
+
+- **A state run always runs alone**, with `parallel_jobs` or
+  `--parallel` or neither. A highstate reaches every family at once, so
+  no family lock describes it.
+- **Any other job may run beside others** when the node sets
+  `parallel_jobs: true`, or when the operator passed `--parallel`. It
+  then holds the lock of its module family, the part of the function
+  name before the dot, so two `pkg` jobs take turns and a `pkg` job and a
+  `service` job do not.
+- **Otherwise it runs alone**, as before.
+
+The queue admits jobs in arrival order. A parallel job may pass one that
+is waiting for its family's lock, but nothing passes a job waiting to
+run alone. Without that rule, a steady stream of parallel jobs would keep
+the node from ever being empty, and a highstate would wait for ever.
+
+**Salt is the other way round**, and SPEC 9.6 said otherwise. Its first
+sentence said serial-by-default "matches Salt". Salt's agent runs every
+job at once: `multiprocessing: True` and `process_count_max: -1` are the
+defaults (`salt/config/__init__.py` at the tip of Salt's development branch, and the same in 3006.9). It
+keeps only state runs apart, and it does that by checking
+`saltutil.is_running("state.*")` and refusing the second one. With
+`queue=True` the second one waits instead. Salt has no family lock: a
+collision between two `apt` runs is left to dpkg's own lock, which
+`aptpkg` retries up to ten times. The SPEC sentence now says halite is
+stricter than Salt. Here the second state run waits, held by the queue,
+not refused after a check.
+
+**The flag is not covered by a signature.** On a signed job (SPEC 25.6)
+`--parallel` is ignored, and only the node's own `parallel_jobs` counts.
+Adding it to the signed payload would have meant `halite-job-v3`, and
+every signer and node upgrading together. Ignoring it means a hub can
+make a signed job wait, but cannot make it run alongside another job its
+signer did not ask for. Decided with the maintainer, as was the
+state-run rule.
+
+**The flag on the wire.** `--parallel` travels through
+`SubmitRequest.Parallel`, `Submission`, the job record, `messageFor` and
+`Message.Parallel`. It is on the record so that a job delivered later
+from the record, queued for an absent node or a resumed batch, keeps it.
+A build older than the field drops it, and the job runs alone, which is
+the safe direction. It is a boolean CLI flag, so `run --parallel 'web*'
+test.ping` keeps `web*` as the target.
+
+`parallel_jobs` is read with `config.Bool`, so a value that is neither
+true nor false is off, and the job runs alone. That is the safe
+direction for this setting, unlike quiesce's (5.694, issue 783).
+
+**Shown.** Unit tests:
+
+- **`TestAJobsSchedulingFollowsTheFunctionTheSettingAndTheFlag`**, eight
+  cases.
+- **The queue's rules, by driving `startable` and `release` directly:**
+  `TestParallelJobsShareTheNodeButNotAFamily`,
+  `TestAStateRunIsNotStarvedByParallelJobs` and
+  `TestJobsRunOneAtATimeByDefault`.
+- **`TestParallelJobsOverlapOnTheNodeAndSerialJobsDoNot`**, through
+  `acceptJob`, with two one-second modules of different families. It
+  checks both directions.
+- **`TestTheParallelFlagReachesTheNode`**, in `internal/hub`, live and
+  from the queue.
+- **`TestTheParallelFlagDoesNotSwallowTheTarget`**, in `internal/cli`.
+
+Each rule was broken on purpose, and the test meant to catch it failed:
+
+- the starvation guard removed
+- the state-run rule removed
+- the signed-job check removed
+- the family lock ignored
+- the flag dropped from `messageFor`
+- the flag dropped from the job record
+- `parallel` taken out of `BoolFlags`
+
+Real binaries, on the dev host: a hub, and a node with `parallel_jobs`
+on, then off. Two jobs were sent at once with `halite-hub run`. The state
+run is a `cmd.run` of `sleep 2`.
+
+| | `parallel_jobs: true` | `parallel_jobs: false` |
+|---|---|---|
+| `cmd.run 'sleep 2'` and `test.sleep 2` | 2.08 s | 4.19 s |
+| both with `--parallel` | 2.09 s | 2.08 s |
+| two `--parallel test.sleep 2`, one family | 4.40 s | 4.19 s |
+| a state run, then `--parallel test.sleep 2` 0.3 s later | 4.25 s | 4.18 s |
+
+The node's log shows the state run starting `alone=true`, and the sleep
+starting two seconds later.
+
+**Not covered:**
+
+- **A signed job with `--parallel`** was checked only by the unit
+  case, not with real binaries and a signer.
+- **The API cannot ask for `--parallel`** (issue 785). `internal/api/execute.go`
+  builds its own `SubmitRequest`, whose request shape follows Salt's,
+  and nothing in it maps to this.
+- **There is no bound on how many jobs run at once** beyond one per
+  module family. Salt's equivalent, `process_count_max`, is unlimited
+  by default. No new setting was added.
+- **Orchestration steps** and the reactor dispatch without the flag, so
+  their jobs run alone unless the node sets `parallel_jobs`.
+### 5.699 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
+
+Issue 782, found while building quiesce for issue 763 (5.694).
+
+SPEC 6.2 lists `quiesce` and `drain` among the subscribe stream's message
+types, `transport.MsgQuiesce` and `transport.MsgDrain` exist, and the relay
+forwards both. The node's message switch handled neither, so each fell to the
+default case and was logged at info as `message type=quiesce`. Nothing in
+this tree sends either today, so nothing was lost; but a hub that grows the
+ability, or an operator who reads SPEC 6.2 and expects it, would see a node
+keep taking jobs with no sign anywhere of why.
+
+**The change is only the sign.** The node now logs both at warn: *"the hub
+sent a message this node does not act on, so nothing changed"*, with the
+type, the hub's reason, and `instead: set quiesce in this node's
+configuration and restart it`. SPEC 6.2 now says no hub sends them and what
+a node does if one arrives. `TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName`
+holds both types; with the new case removed it fails eight assertions.
+
+**Not decided, and not built:** what a hub's quiesce means -- until the hub
+lifts it, until the node restarts, or the hub announcing its own quiesce,
+which SPEC's example tag `halite/hub/quiesce/start` hints at; who may send
+it, which would need its own RBAC grant and, on a node with
+`require_job_signature`, should not be obeyed from a hub alone (SPEC 25.6);
+and whether it survives a reconnect, without which a hub restart lifts a
+quiesce silently. Issue 782 stays open for those.
+
+**Not verified.** No hub or relay sent either message to a running node; the
+test calls the node's handler directly.
+
+
+
+
+
+
+
+
 
 ### 5.696 The render sandbox described its confinement and nothing could require it (2026-11-21)
 

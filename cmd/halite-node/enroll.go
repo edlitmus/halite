@@ -1022,6 +1022,7 @@ func (n *node) acceptJob(msg transport.Message) {
 		Target:     msg.Target,
 		TargetKind: msg.TargetKind,
 		Signature:  msg.Signature,
+		Parallel:   msg.Parallel,
 	}
 	if msg.Expires != "" {
 		expires, err := time.Parse(time.RFC3339Nano, msg.Expires)
@@ -1255,6 +1256,18 @@ func (n *node) handle(msg transport.Message) error {
 		}
 	case transport.MsgJob:
 		n.acceptJob(msg)
+	case transport.MsgQuiesce, transport.MsgDrain:
+		// SPEC 6.2 names both and the relay forwards both, and this
+		// node does not act on either: what a hub's quiesce should
+		// mean, who may send it and whether it outlives a restart are
+		// undecided (issue 782). Said at warn and by name, because an
+		// operator who asked the hub to quiesce a node and saw nothing
+		// change has to be able to find out why here; under the
+		// default case it was one info line naming a type. A node is
+		// quiesced by its own `quiesce` setting (DIVERGENCE 5.694).
+		n.log.Warn("the hub sent a message this node does not act on, so nothing changed",
+			"type", msg.T, "reason", msg.Reason,
+			"instead", "set quiesce in this node's configuration and restart it")
 	default:
 		n.log.Info("message", "type", msg.T)
 	}

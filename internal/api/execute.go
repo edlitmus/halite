@@ -39,6 +39,12 @@ type RunRequest struct {
 	// Timeout bounds how long a synchronous run gathers returns.
 	Timeout string `json:"timeout,omitempty"`
 	Offline string `json:"offline,omitempty"`
+	// Parallel is `halite-hub run --parallel`: the job may run beside
+	// others on a node rather than wait its turn (SPEC 9.6). Not Salt's
+	// `concurrent`, which is a keyword argument to state functions and
+	// means something else here, where state runs always run alone
+	// (issue 785).
+	Parallel bool `json:"parallel,omitempty"`
 }
 
 // targetKind reads whichever of the two names the client sent.
@@ -135,6 +141,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, token *apitoken
 		Batch:          req.Batch,
 		BatchSafeLimit: req.BatchSafeLimit,
 		Subset:         req.Subset,
+		Parallel:       req.Parallel,
 		// Recorded so the job cache can say who really asked, without
 		// the hub trusting it: the hub authorizes this service's
 		// certificate and nothing in the body.

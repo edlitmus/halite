@@ -17,7 +17,6 @@ import "sort"
 // already carries one, and two of them would drift.
 var InertKeys = map[string]string{
 	"legacy_acl":      "the preserved Salt ACL is kept for you to read and is never consulted; convert it into `policy`",
-	"parallel_jobs":   "a node runs the jobs it is given without limiting how many at once",
 	"socket_dir":      "this build opens no unix sockets",
 	"startup_states":  "a node applies nothing of its own at startup",
 	"job_cache":       "the job cache backend is not selectable; the hub keeps returns on disk",
