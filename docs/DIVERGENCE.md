@@ -47280,8 +47280,7 @@ value that applies.
   same warnings. Only the node binary was run.
 - Settings given another way, such as a command-line flag, are not
   checked here.
-
-### 5.695 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
+### 5.696 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
 
 **The defect.** Salt reads `minion_blackout` and <!-- lexicon:allow -->
 `minion_blackout_whitelist` from the agent's pillar and then its grains, <!-- lexicon:allow -->
@@ -47349,6 +47348,8 @@ key, so this changes nothing for its migration.
 - **A blackout key built by a template**, for example from a Jinja
   variable, is not found. The audit reads the text.
 - **No real Salt estate that uses blackout has been migrated.**
+
+
 
 ## 6. Everything else not started
 
