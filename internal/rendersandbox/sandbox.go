@@ -89,6 +89,11 @@ type Config struct {
 	User  string
 	Group string
 
+	// Require names the controls a render must be under, from
+	// ParseRequirements. A child that is not under all of them is not
+	// rendered in; see refuseUnmet.
+	Require []string
+
 	// Timeout bounds one render. Zero takes DefaultTimeout.
 	Timeout time.Duration
 
@@ -232,6 +237,11 @@ func (s *Sandbox) renderInChild(body string, stages []string, opts render.Option
 		}
 		s.child = c
 	}
+	if err := refuseUnmet(s.cfg, s.child, opts.File); err != nil {
+		_ = s.child.close()
+		s.child = nil
+		return render.Result{}, err
+	}
 
 	res, err := s.child.render(body, stages, opts, s.cfg.Timeout)
 	if err != nil && !errors.Is(err, errRender) {
@@ -274,6 +284,8 @@ type childProcess struct {
 	stdout io.ReadCloser
 	pid    int
 	once   sync.Once
+	// observed is what the child's hello said about it.
+	observed Observed
 }
 
 // live counts the children this process has started and not yet waited
@@ -375,6 +387,11 @@ func start(cfg Config) (*childProcess, error) {
 			"the two are the same binary in every supported arrangement, so this means one of them is not",
 			hello.Version, codecVersion)
 	}
+	if hello.Observed == nil {
+		_ = c.close()
+		return nil, fmt.Errorf("the render sandbox child sent no account of itself in its hello")
+	}
+	c.observed = *hello.Observed
 	return c, nil
 }
 

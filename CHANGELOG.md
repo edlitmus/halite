@@ -22,6 +22,8 @@ is a pre-release in `release.yml`, so it is marked as one.
 ## Unreleased
 
 - **A node no longer stops converging after its certificate is renewed.** After a renewal -- the agent's own, at half the certificate's life, or `halite-node renew --force` -- the running agent went on fetching pillar and files with the old certificate, which the renewal had revoked, so every highstate failed with "this node's enrollment is revoked: superseded by a renewal" until the agent was restarted, and it deleted the node's last known good pillar on the way. The node looked connected throughout. Restart any agent that has renewed since it started. Found running the 0.1.1 and 0.2.0 releases through a rolling upgrade. DIVERGENCE 5.702, issue 792.
+- **`render_sandbox_require` makes the render sandbox's isolation a condition of rendering.** List `identity`, `network` or both, and a node renders only in a child seen to be under them: the child reports its own uid and the network interfaces it can see, and that is what is checked, not the settings. When a requirement does not hold, every render is refused with the reason, and the node says so at startup and in `halite-node doctor`'s new **render isolation** check; it still starts and takes jobs. Set with `render_sandbox` off, it refuses every render rather than rendering in the node's own process. The handbook's hardening chapter no longer says the sandbox runs unprivileged with no network by default: it is off by default, network denial is Linux only, and nothing narrows the filesystem. DIVERGENCE 5.701, issue 762.
+- **Webhooks can authenticate senders by certificate.** `auth: mtls` was refused at load, because the API asked nobody for a certificate. Now a hook names its sender in `client`, `hook_client_ca` names the CA bundle senders are issued from, and a delivery is accepted only from a certificate that chains to it and carries that name. The API asks every client for a certificate and requires none, so token logins are unchanged. The API will not start with an mtls hook and no `hook_client_ca`. DIVERGENCE 5.327.1, issue 767.
 - **A node now warns when the hub sends it `quiesce` or `drain`, which it does not act on.** It logged one line at info naming the message type, so an operator who expected a node to stop taking jobs had nothing to find. The warning names the message, the hub's reason, and the way that does work: `quiesce` in the node's own configuration, and a restart. DIVERGENCE 5.699, issue 782.
 - **A node, the API or a relay no longer loses a request when it sends the hub more than 64 at once.** On a new connection a client has not yet heard that the hub allows 64 streams, and Go assumes 100; the hub reset the extra streams, and now and then one came back as an error that was not retried, so the request failed. Each client now keeps at most 63 short requests in flight and the rest wait their turn, within their own timeout; one that runs out while waiting says it waited in the client, not at the hub. The subscribe stream and a followed event stream are not counted, so a burst can never hold up a node's subscribe and many people watching events through the API cannot stop its other requests. The cost is that a client at the limit queues rather than opening a second connection. DIVERGENCE 5.665.3, issue 748.
 - **The API takes `parallel`.** `"parallel": true` on a `/v1/run` or `POST /v1/jobs` body asks for what `halite-hub run --parallel` does: the job may run beside others on a node. Orchestration steps and reactions still cannot ask for it. Issue 785.
@@ -350,7 +352,7 @@ Each item is an entry below, with what to change.
 
 - **Six settings the programs read are now declared, so they are no longer reported as ignored.** `hub_timeout`, `beacon_tick`, `output`, `gitfs_timeout` and `s3_timeout` were honoured and warned about; they are in the reference now. `halite-node doctor` read a setting that does not exist (`require_signed_extensions`) for whether extensions must be signed and so reported, on a default node, that unsigned ones would load; it reads `extension_require_signature`, which defaults to true. Its remedies named settings that are not settings. DIVERGENCE 5.545.
 
-The configuration reference explains each of the 239 settings in the
+The configuration reference explains each of the 241 settings in the
 
 - **The D-Bus client no longer panics, loops or over-allocates on a malformed message.** An empty or bare-bracket signature, an array of empty structs, deeply nested variants and an oversized length were each a panic, a hang, or an allocation as large as the peer said. They are now errors. `x` and `d` decode to `int64` and `float64`. DIVERGENCE 5.544.
 
@@ -7527,7 +7529,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 239 settings in the
+The configuration reference explains each of the 241 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

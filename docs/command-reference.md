@@ -1630,8 +1630,9 @@ The signature is HMAC-SHA-256 over the timestamp and the raw bytes
 together, sent as `X-Halite-Signature` with `X-Halite-Timestamp`. A
 delivery outside the replay window is refused, and one whose nonce has
 already been accepted is refused, as is a second copy while the first is
-still being delivered. `auth: token` is the other mode; `auth: mtls` is
-refused at load, because the API does not request client certificates.
+still being delivered. `auth: token` is another mode, and `auth: mtls` the
+third: the sender's certificate must chain to `hook_client_ca` and name the
+hook's `client`.
 The `rate_limit` counts authenticated deliveries only.
 
 A delivery becomes an event under `halite/hook/<path>`. Its `_principal` is

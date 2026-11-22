@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -28,9 +29,12 @@ import (
 type Hook struct {
 	// Path is the suffix under /v1/hook/.
 	Path string
-	// Auth is `hmac` or `token`. `mtls` is refused when the
-	// configuration loads; see ParseHooks.
+	// Auth is `hmac`, `token` or `mtls`.
 	Auth string
+	// Client is, for `mtls`, the name the sender's verified certificate
+	// must carry, as its subject common name or as one of its DNS or URI
+	// names, exactly.
+	Client string
 	// Secret is the shared secret for `hmac`, or the expected bearer
 	// value for `token`.
 	Secret string
@@ -181,6 +185,8 @@ func ParseHooks(v any) ([]*Hook, error) {
 				hook.RateLimit = n
 			case "principal":
 				hook.Principal = value.KeyString(f.Val)
+			case "client":
+				hook.Client = value.KeyString(f.Val)
 			default:
 				return nil, fmt.Errorf("hook %s: %q is not a hook setting", path, key)
 			}
@@ -194,25 +200,19 @@ func ParseHooks(v any) ([]*Hook, error) {
 				return nil, fmt.Errorf("hook %s: `%s` needs a `secret`", path, hook.Auth)
 			}
 		case "mtls":
-			// Refused rather than loaded, because it could never work and
-			// read as though it did.
-			//
-			// The API's listener does not ask for a client certificate --
-			// operators authenticate with tokens, and asking every
-			// connection for a certificate is not something a hook path
-			// can do on its own, because the handshake is over before the
-			// path is known. So no delivery to an `mtls` hook ever carried
-			// one and every delivery was refused. Asking for certificates
-			// would not have fixed it either: the check was only that one
-			// was presented, with no CA to verify it against and no
-			// identity to match, so any certificate at all would have
-			// passed. A setting that is either dead or open is worse than
-			// one that is refused, because somebody reading the
-			// configuration believes it. DIVERGENCE 5.327.
-			return nil, fmt.Errorf(
-				"hook %s: `auth: mtls` is not supported by this build: the API does not "+
-					"request or verify client certificates, so no delivery could authenticate. "+
-					"Use `hmac` or `token` (SPEC 22.2, DIVERGENCE 5.327)", path)
+			// It was refused outright until issue 767, because the
+			// listener asked nobody for a certificate and the check was
+			// only that one was presented, so it was either dead or open
+			// (DIVERGENCE 5.327). It loads now only with a name to
+			// match, and the API refuses to start one without
+			// `hook_client_ca` to verify against (cmd/halite-api).
+			if hook.Client == "" {
+				return nil, fmt.Errorf("hook %s: `auth: mtls` needs a `client`, the name the sender's certificate "+
+					"must carry; a certificate from the CA alone would admit every holder of one", path)
+			}
+			if hook.Secret != "" {
+				return nil, fmt.Errorf("hook %s: `auth: mtls` takes no `secret`; the certificate is the credential", path)
+			}
 		case "":
 			return nil, fmt.Errorf(
 				"hook %s names no `auth`; every hook declares one, and there is no "+
@@ -423,6 +423,9 @@ func (s *Server) authenticateHook(cfg *Hook, r *http.Request, body []byte) (deli
 
 	case "hmac":
 		return s.verifySignature(cfg, r, body)
+
+	case "mtls":
+		return deliveryNonce{}, verifiedClient(cfg, r)
 	}
 	return deliveryNonce{}, fmt.Errorf("this hook declares no authentication method")
 }
@@ -570,4 +573,44 @@ func (h *Hooks) take(buckets map[string]*ratelimit.Bucket, cfg *Hook, now time.T
 		buckets[cfg.Path] = b
 	}
 	return b.Take(now, cfg.RateLimit, cfg.RateBurst)
+}
+
+// verifiedClient admits a delivery whose certificate chained to
+// `hook_client_ca` at the handshake and names this hook's client.
+//
+// VerifiedChains rather than PeerCertificates: the second is whatever the
+// client sent, verified or not, and reading a name out of it would trust a
+// certificate anybody can mint. The chain exists only when the listener
+// verified it, so a listener started without a CA admits no mtls delivery
+// at all rather than every one.
+func verifiedClient(cfg *Hook, r *http.Request) error {
+	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.VerifiedChains[0]) == 0 {
+		return fmt.Errorf("this hook needs a client certificate issued by the API's hook_client_ca")
+	}
+	leaf := r.TLS.VerifiedChains[0][0]
+	if !certificateNames(leaf, cfg.Client) {
+		return fmt.Errorf("the client certificate does not name %s", cfg.Client)
+	}
+	return nil
+}
+
+// certificateNames reports whether name is the certificate's common name
+// or one of its DNS or URI names, exactly. Exactly: no wildcard and no
+// case folding, because the name is an identity being matched, not a host
+// being reached.
+func certificateNames(leaf *x509.Certificate, name string) bool {
+	if leaf.Subject.CommonName == name {
+		return true
+	}
+	for _, dns := range leaf.DNSNames {
+		if dns == name {
+			return true
+		}
+	}
+	for _, uri := range leaf.URIs {
+		if uri.String() == name {
+			return true
+		}
+	}
+	return false
 }

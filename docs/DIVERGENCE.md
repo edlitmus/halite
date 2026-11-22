@@ -29770,6 +29770,52 @@ Each was broken on purpose and watched to fail:
   cache before; a copy that reaches each is delivered twice. Unchanged
   by this, and not new.
 
+#### 5.327.1 `auth: mtls` built: a CA to verify against and a name to match (2026-11-21)
+
+Issue 767. 5.327 refused `auth: mtls` because it was dead or open: the
+listener asked nobody for a certificate, and the check was only that one was
+presented. Both halves are now there.
+
+**The CA.** `hook_client_ca` names a PEM bundle, and with it set the API's
+listener uses `VerifyClientCertIfGiven`: every client is asked for a
+certificate, one that is offered is verified against the bundle at the
+handshake, and a client that offers none is let through. The last is what lets
+the change touch nothing else -- operators authenticate with tokens, and the
+handshake is over before the path that would say which kind of caller this is
+has been read -- and it is safe because a certificate admits nobody to
+anything except an mtls hook. The API refuses to start with an mtls hook and
+no CA, rather than loading a hook no delivery could reach.
+
+**The name.** An mtls hook needs `client`, matched exactly against the
+verified leaf's common name or one of its DNS or URI names. Without it, every
+holder of a certificate from the CA could deliver to every mtls hook, which is
+the open half of 5.327 again. It reads `VerifiedChains`, not
+`PeerCertificates`, so the name is never taken from a certificate the
+handshake did not verify, and a listener started without a CA admits no mtls
+delivery at all. A `secret` on an mtls hook is refused: it would read as a
+second factor that nothing checks.
+
+**Tests**, through the API's own `Listen` rather than `httptest`, which
+stands up its own TLS: the named sender is accepted (`202`); a certificate
+from the same CA naming somebody else is `401` *"does not name ci.example"*;
+one from a CA nobody configured is refused at the handshake, *"remote error:
+tls: unknown certificate authority"*; none at all is `401` asking for one; and
+a client with no certificate still reaches `/v1/healthz`. Broken on purpose
+and each seen to fail: any name matching, a certificate required of everyone,
+and certificates requested and not verified.
+
+**A trap in the test, recorded because it would hide the untrusted case.**
+Go's client sends a certificate only if its issuer is among the CAs the
+server's request lists, so the first version of the untrusted-CA case sent
+none, and passed as "no certificate" for a reason that had nothing to do
+with verification. The test offers the certificate whatever the request says,
+as curl does.
+
+**Not verified.** No real webhook sender -- a CI system, a forge -- was
+pointed at it, and nothing behind a TLS-terminating proxy was tried (the
+handbook says it cannot work there). The CA bundle is read at startup and not
+reloaded; rotation is a restart, and was not exercised.
+
 ### 5.328 A hub could replay a signed job: after a restart, after a flood, or with a new nonce
 
 **Found by** a security review (M-02), and reproduced before anything was
@@ -47655,6 +47701,109 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
+### 5.700 A rolling upgrade, run with the release binaries (2026-11-21)
+
+Issue 766. Every upgrade test so far (`internal/hub/upgrade_test.go`) built
+both sides from one tree and varied the messages; nothing had run two
+separately built releases against each other. This did, on `beastie`, FreeBSD
+15.1 amd64 -- SPEC 27.1's tier 1 -- unprivileged, on lab paths and a lab port.
+
+**What ran.** The `freebsd-amd64` archives of 0.1.1 and 0.2.0 from their
+GitHub releases, checked against each release's `SHA256SUMS` (the signatures
+on `SHA256SUMS` were not checked), and `main` at `1973fe84` built with `make
+build`, which stamps it `0.2.0-11-g1973fe84dc8b`. A 0.2.0 hub with token
+enrolment; one node of each version, each enrolled with its own binary; a
+state that writes a file from a pillar value, so a highstate needs a pillar
+fetch and a file fetch.
+
+| Step | Result |
+|---|---|
+| 0.2.0 hub; nodes 0.1.1, 0.2.0, `main` | All enrolled; `test.version` answered 0.1.1, 0.2.0, 0.2.0-11; a highstate applied on all three with returns recorded |
+| Hub replaced by `main` on the same `state/` and `pki/` | All three reconnected; `jobs lookup` of the job 0.2.0 recorded returned it `complete` with three returns; a highstate with changed pillar applied on all three |
+| `renew --force` on each node while its agent ran | Each one cut off until restarted: issue 792, fixed separately |
+| Agents restarted | All three converged on their renewed certificates |
+| 0.1.1 and 0.2.0 nodes replaced by `main` on their own `state/` | Reconnected and converged |
+
+SPEC 31's row asks for a hub at N with nodes at N-1 and N+1: with N as 0.2.0
+that is the first row, and with N as `main` the second. It also asks for state
+and job-cache format migration, which the second and last rows are, and for
+certificate rotation across an upgrade, which is the row that found a defect.
+
+**Not run.** The API, Linux, a relay, more than three nodes, a rollback with
+these binaries, and certificate rotation of the CA, which halite does not
+have. The run was by hand, not a script, so repeating it means following the
+handbook's chapter 36 table and this entry.
+
+### 5.701 The render sandbox described its confinement and nothing could require it (2026-11-21)
+
+Issue 762, from an outside review at `9a8eae7e`, priority P1.
+
+**The defect.** SPEC 25.4 and the handbook's hardening chapter said YAML
+parsing and template rendering happen in a child *"running as an
+unprivileged account, with no network"*. As built the sandbox is off by
+default; the account is dropped to only when the node is root and
+`render_sandbox_user` is set; the network is denied only on Linux, and only
+as root; and nothing narrows the filesystem on any platform. `Describe`
+logged that honestly when a child was started, and `Unenforced` warned about
+an account that could not be applied -- but an operator who needed the
+isolation had no way to make it a condition, so a node moved to a machine
+where it ran unprivileged, or a FreeBSD host where it was assumed to have
+Linux's namespace, rendered anyway, with a log line saying less than the
+handbook did.
+
+**The change.** `render_sandbox_require` takes `identity`, `network` or
+both. The child now reports on itself in its hello -- protocol 3 -- with its
+uid and gid read by itself and the interfaces it can see up, and a
+requirement is checked against that, not against what the parent asked the
+kernel for. A child that does not meet it is closed and the render refused
+with what was seen (*"identity is required, and the child runs as uid 1001
+rather than as nobody (uid 65534), because this process cannot drop
+privilege here"*). Not cached: the next render starts a child and looks
+again. A misspelt name refuses every render, and so does a requirement with
+`render_sandbox` off, which would otherwise render in the node's own process
+unchecked. The node reports at startup, at error, whether the requirement
+holds, and `halite-node doctor` gains **render isolation**: the child's
+effective uid and gid, the interfaces it sees, and the filesystem as not
+restricted.
+
+**Refused per render, not at startup, on purpose.** A node that will not
+start cannot be reached from the hub to have this fixed, and the jobs that
+would fix it -- `file.managed` on its configuration, a `cmd.run` -- render no
+tree. A node that is up and refuses every highstate with the reason can be.
+
+**Filesystem is not a requirement name**, because it is built nowhere and a
+requirement that can only refuse is a setting nobody can use. It is reported
+as not restricted, and SPEC 25.4 and the handbook now say so, with a table of
+what each platform applies.
+
+**Tests.** `internal/rendersandbox`: the child reports the uid it runs as;
+an identity it cannot be dropped to, or none configured, refuses the render;
+an identity that holds -- the account the test already runs as -- renders, so
+the refusals above are not a gate that refuses everything; a network denial
+the child does not have refuses and names an interface it saw up. Those ran on
+`beastie` natively, FreeBSD 15.1 amd64, unprivileged, where the child shares
+the host's interfaces. `cmd/halite-node`: required with the sandbox off
+refuses and says so at startup; a misspelt name refuses; startup reports unmet
+and met; `doctor` reports the child's uid. `internal/doctor`: each verdict.
+Broken on purpose and seen to fail: the render gate removed, the hello
+carrying an empty observation, and the sandbox-off case rendering in-process.
+
+**The privileged run** is `TestLiveRenderSandboxConfinesTheChildAsRequired`,
+for the fleet's linux leg as root: `nobody`, both requirements, and two
+probes run by the child itself -- reading a root-only file, which must be
+refused, and dialling a listener on the host's loopback, which must fail --
+with a control child keeping root's identity to show the read probe can
+succeed. The leg now fails if it skips. Adding it found that
+`internal/buildpolicy`'s check that every filter pattern selects a live test
+read only `internal/builtin` and `cmd/`, so a live test anywhere else read as
+a pattern selecting nothing; it now reads the whole tree, and still fails a
+planted pattern that matches no test.
+
+**Not verified.** The privileged run has not executed: it was compiled for
+Linux here and not run, and this entry was written before the leg ran it. The
+FreeBSD half -- identity as root -- was not run as root anywhere. Windows was
+vetted, not run. No seccomp filter exists, which SPEC 25.4 also asks for.
+
 ### 5.702 A renewal cut the running agent off from its pillar and files (2026-11-21)
 
 Issue 792, found running issue 766's rolling upgrade with the 0.1.1 and 0.2.0
@@ -47707,6 +47856,7 @@ probe that silently does nothing looks exactly like a fix.
 **Not verified.** Only on FreeBSD; the code is not platform-specific. A relay's
 own upstream identity renews through `renewal.Loop` too, and was not checked
 for the same shape.
+
 
 
 

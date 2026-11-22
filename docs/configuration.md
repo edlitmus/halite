@@ -444,6 +444,14 @@ The group the render child drops to. Defaults to the account's own.
 
 The group for the render child. Empty takes the account's own primary group.
 
+### `render_sandbox_require`
+
+*`halite-node` · no default · SPEC section 25.4*
+
+Controls a render must be under: identity, network. Unmet, every render is refused.
+
+A list of the render sandbox controls this node requires: `identity`, the child running as `render_sandbox_user`, and `network`, the child seeing no network interface up. Each is checked against what the child reports about itself after it starts, not against what was asked for. A requirement that is not met refuses every render with the reason, and the node says so at startup and in `doctor`; it still starts and takes jobs, because a node that will not start cannot be reached to fix this. `identity` needs a node running as root with an account configured; `network` is available on Linux only. Setting this with `render_sandbox` off refuses every render, rather than rendering in this process unchecked.
+
 ### `render_sandbox_user`
 
 *`halite-node` · no default · SPEC section 25.4*
@@ -1557,6 +1565,14 @@ Which operator certificate this service presents to the hub.
 
 Which operator certificate the service presents to the hub. The API is a client of the hub, deliberately, so compromising it yields one certificate bounded by one policy rather than the control plane. Grant it less than the sum of its operators and it gets exactly that.
 
+### `hook_client_ca`
+
+*`halite-api` · no default · SPEC section 22.2*
+
+The CA bundle that issues the certificates `auth: mtls` hook senders present.
+
+A PEM bundle of the CAs that issue the certificates senders to `auth: mtls` hooks present. When it is set the API asks every client for a certificate and verifies one that is offered; a client that offers none is let through, because operators authenticate with tokens, so a certificate admits nobody to anything but an mtls hook whose `client` it names. An mtls hook without this set stops the service. Read at startup: to rotate, add the new CA beside the old, restart, reissue the senders, then remove the old one and restart. Not usable behind a proxy that ends TLS, which would not pass the certificate on.
+
 ### `hooks`
 
 *`halite-api` · no default · SPEC section 22.2*
@@ -2169,6 +2185,7 @@ Every setting, and which programs read it.
 | `grains` | `halite-node` | — | Grains and the mine |
 | `grains_refresh_interval` | `halite-node` | `30m` | Grains and the mine |
 | `hash_type` | all three programs | `sha256` | Filesystem layout |
+| `hook_client_ca` | `halite-api` | — | The API service |
 | `hooks` | `halite-api` | — | The API service |
 | `hub` | `halite-node`, `halite-api` | — | Identity and connection |
 | `hub_alive_interval` | `halite-node` | `30s` | Identity and connection |
@@ -2271,6 +2288,7 @@ Every setting, and which programs read it.
 | `relay_upstream_port` | `halite-hub` | `4510` | Relays |
 | `render_sandbox` | `halite-node` | `false` | The tree: states and pillar |
 | `render_sandbox_group` | `halite-node` | — | The tree: states and pillar |
+| `render_sandbox_require` | `halite-node` | — | The tree: states and pillar |
 | `render_sandbox_user` | `halite-node` | — | The tree: states and pillar |
 | `renderer` | `halite-node`, `halite-hub` | `jinja|yaml` | Rendering and templates |
 | `require_job_signature` | `halite-node` | `false` | Node execution controls |

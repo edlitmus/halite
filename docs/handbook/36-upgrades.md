@@ -44,6 +44,19 @@ a record of what changed, and a rehearsed way back.
   So **neither upgrade order is forced**, and a rolled-back hub does not
   silently lose fields from the job cache. The tolerance is a tested guarantee,
   but the *safe order* is still hub, then API, then nodes (below).
+- **What has been run with release binaries.** The table above is held by
+  tests that build one source tree. This is the run with separately built
+  releases, on FreeBSD 15.1 amd64, unprivileged, one machine:
+
+  | Step | Hub | Nodes | Result |
+  |---|---|---|---|
+  | Enrol and converge | 0.2.0 | 0.1.1, 0.2.0, `main` after 0.2.0 | All three enrolled by token, answered `test.version`, and applied a highstate reading pillar, returns recorded |
+  | Upgrade the hub | 0.2.0 to `main`, same `state/` and `pki/` | unchanged | The job 0.2.0 recorded was read back by the new hub with its three returns; the next highstate applied on all three |
+  | Renew certificates | `main` | each, by `renew --force` | **Every node was cut off until its agent was restarted** (below); after a restart all three converged on the new certificate |
+  | Upgrade the nodes | `main` | 0.1.1 and 0.2.0 to `main`, same `state/` | All three reconnected and converged |
+
+  Not run: the API across the upgrade, Linux, a relay, an estate of more than
+  three nodes, and a rollback with these binaries.
 - **A backup** of `pki/` and `state/` ([chapter 35](35-backup-and-recovery.md))
   from before you start. A rollback is a binary swap; a backup is for when the
   new version has altered the data.
@@ -272,6 +285,7 @@ You have upgraded when all of these hold:
 | `compile` errors that were not there before | A state function's arguments changed | The compile error names the file and line; the ledger names the change |
 | A node's evidence chain breaks after an upgrade | It should not; this is a serious finding | `halite-node verify-evidence`; keep the node, escalate ([chapter 40](40-incidents.md)) |
 | A restart killed a running job | The deferred restart was not deferred | Stagger; re-run the job (it is idempotent) |
+| Every highstate on a node fails with "superseded by a renewal", and it still shows as connected | 0.2.0 and earlier: a running agent goes on fetching pillar and files with its old certificate after a renewal, its own at half the certificate's life or `renew --force` | Restart that node's agent. Fixed after 0.2.0 (issue 792) |
 
 ## Key ideas
 

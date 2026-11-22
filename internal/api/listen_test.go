@@ -68,7 +68,7 @@ func TestTheAPIServesARenewedCertificateWithoutARestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, err := Listen("127.0.0.1:0", certs.GetCertificate)
+	ln, err := Listen("127.0.0.1:0", certs.GetCertificate, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

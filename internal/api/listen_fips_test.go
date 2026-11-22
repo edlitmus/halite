@@ -27,7 +27,7 @@ func TestTheAPIListenerRefusesAnUnapprovedCurveInFIPSMode(t *testing.T) {
 		t.Skip("not a FIPS build; run under `make fips-test` or GODEBUG=fips140=on")
 	}
 	cert := testCert(t)
-	ln, err := Listen("127.0.0.1:0", func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &cert, nil })
+	ln, err := Listen("127.0.0.1:0", func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &cert, nil }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

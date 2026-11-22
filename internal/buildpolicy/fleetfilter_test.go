@@ -1,6 +1,7 @@
 package buildpolicy
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -132,48 +133,44 @@ func linuxLegFilter(t *testing.T, root string) []string {
 	return out
 }
 
-// liveTestNames is every TestLive* function in internal/builtin and in
-// the command packages.
+// liveTestNames is every TestLive* function under internal/ and cmd/.
 //
-// The commands are included since the API's systemd unit test
-// (cmd/halite-api, DIVERGENCE 5.217) runs on the linux leg: before it every
-// live test was a module's, and this read internal/builtin alone, so a
-// filter pattern naming a command's live test read as one that selects
-// nothing.
+// It read internal/builtin and then the command packages, each added when
+// a leg first ran a live test from there (the API's systemd unit test,
+// DIVERGENCE 5.217). The render sandbox's (issue 762) is the next one
+// outside both, and a list of directories grown one leg at a time is a
+// list that reads the next package's test as a pattern selecting nothing.
+// The whole tree is what the filter can select from.
 func liveTestNames(t *testing.T, root string) map[string]bool {
 	t.Helper()
-	dirs := []string{filepath.Join(root, "internal", "builtin")}
-	commands, err := os.ReadDir(filepath.Join(root, "cmd"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range commands {
-		if c.IsDir() {
-			dirs = append(dirs, filepath.Join(root, "cmd", c.Name()))
-		}
-	}
 	decl := regexp.MustCompile(`(?m)^func (TestLive[A-Za-z0-9_]*)\(`)
 	out := map[string]bool{}
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("%s: %v", dir, err)
-		}
-		for _, e := range entries {
-			if !strings.HasSuffix(e.Name(), "_test.go") {
-				continue
-			}
-			body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+	for _, top := range []string{"internal", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(root, top), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				t.Fatal(err)
+				return err
+			}
+			if d.IsDir() && (d.Name() == "testdata" || d.Name() == "vendor") {
+				return filepath.SkipDir
+			}
+			if d.IsDir() || !strings.HasSuffix(d.Name(), "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
 			}
 			for _, m := range decl.FindAllSubmatch(body, -1) {
 				out[string(m[1])] = true
 			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	if len(out) == 0 {
-		t.Fatalf("no TestLive function was found under %v", dirs)
+		t.Fatalf("no TestLive function was found under internal/ or cmd/ of %s", root)
 	}
 	return out
 }

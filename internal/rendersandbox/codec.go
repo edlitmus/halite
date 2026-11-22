@@ -43,7 +43,12 @@ import (
 // (frame.Parse) rather than as text. A child of 1 paired with a parent
 // of 2 -- the binary replaced under a running node -- would have its
 // window printed unscrubbed, which is the defect 2 exists to remove.
-const codecVersion = 2
+//
+// 3: the hello carries the child's own measurement of itself
+// (frame.Observed), which `render_sandbox_require` is checked against. A
+// child of 2 sends none, and a requirement checked against an empty
+// observation would read uid 0 and no interfaces.
+const codecVersion = 3
 
 // wireNode is one encoded value.
 //

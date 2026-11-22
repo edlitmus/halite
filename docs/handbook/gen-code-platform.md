@@ -164,7 +164,7 @@ SPEC's argument for it is worth repeating because it is the design: "most operat
 
 A check that says "certificate expires in 3 days" and stops has moved the problem rather than solved it: the operator still has to know which command renews it. Every check that can report anything other than a pass carries what to do about it, and \`doctor\_test.go\` fails the build if one does not. That is the whole difference between this and reading the grains.
 
-**Files:** `checks.go`, `disk_openbsd.go`, `disk_other.go`, `disk_statfs.go`, `disk_windows.go`, `doctor.go`, `fips.go`; with tests.
+**Files:** `checks.go`, `disk_openbsd.go`, `disk_other.go`, `disk_statfs.go`, `disk_windows.go`, `doctor.go`, `fips.go`, `renderisolation.go`; with tests.
 
 **Exports.**
 
@@ -192,6 +192,8 @@ A check that says "certificate expires in 3 days" and stops has moved the proble
 - `PillarCompiles` (func): PillarCompiles reports whether this node's pillar compiles.
 - `QueueDepth` (type): QueueDepth is one queue's depth against its bound.
 - `QueueDepths` (func): QueueDepths reports what the hub has waiting.
+- `RenderIsolation` (func): RenderIsolation reports what the render child is actually under, measured by starting one, and fails when a required control is not.
+- `RenderIsolationState` (type): RenderIsolationState is what a node knows about its render sandbox, gathered by the node and judged here.
 - `Report` (type): Report is a run of the checks.
 - `Result` (type): Result is one check's answer.
 - `Run` (func): Run performs every check that applies to the role, in order.
