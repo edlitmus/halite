@@ -14,6 +14,7 @@ import (
 	"github.com/edlitmus/halite/internal/fips"
 	"github.com/edlitmus/halite/internal/nodeevidence"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/rendersandbox"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -45,6 +46,7 @@ func runDoctor(args *cli.Args) int {
 		doctor.ModuleVerification(builtin.New().Trust()),
 		nodeEvidenceCheck(n),
 		nodeFIPSCheck(n),
+		nodeRenderIsolationCheck(n),
 	})
 
 	// Scrubbed on the way out, both ways out.
@@ -307,4 +309,38 @@ func kernelHasFIPSMode() bool {
 	default:
 		return false
 	}
+}
+
+// nodeRenderIsolationCheck starts the render child this node would render
+// with and reports what it says about itself (issue 762).
+//
+// Starting a process is not a change in doctor's sense: nothing on the
+// machine is different afterwards, and the child is closed before the
+// report is printed. It is the only way to say what the child is under
+// rather than what it was asked to be.
+func nodeRenderIsolationCheck(n *node) doctor.Check {
+	state := doctor.RenderIsolationState{
+		Enabled:  n.cfg.Bool("render_sandbox", false),
+		Required: n.cfg.StringSlice("render_sandbox_require"),
+	}
+	if _, err := rendersandbox.ParseRequirements(state.Required); err != nil {
+		state.RequireError = err.Error()
+		return doctor.RenderIsolation(state)
+	}
+	sb, ok := n.renderEngine().(*rendersandbox.Sandbox)
+	if !ok {
+		return doctor.RenderIsolation(state)
+	}
+	defer n.closeRenderSandbox()
+	state.Started = true
+	observed, err := sb.Observe()
+	if err != nil {
+		state.StartError = err.Error()
+		return doctor.RenderIsolation(state)
+	}
+	state.UID, state.GID = observed.UID, observed.GID
+	state.UpInterfaces, state.NetworkError = observed.UpInterfaces, observed.NetworkError
+	state.Unmet, _ = sb.Unmet()
+	state.Unenforced = sb.Unenforced()
+	return doctor.RenderIsolation(state)
 }

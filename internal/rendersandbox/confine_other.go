@@ -2,6 +2,8 @@
 
 package rendersandbox
 
+import "fmt"
+
 import "os/exec"
 
 // applyConfinement does nothing here.
@@ -28,3 +30,9 @@ func platformNotes() []string {
 // canDropPrivilege is false here: the credential fields a unix
 // SysProcAttr carries have no counterpart this build uses on Windows.
 func canDropPrivilege() bool { return false }
+
+// renderAccount has nothing to resolve to here: there is no account the
+// child can be dropped to, so a required identity is unmet by saying so.
+func renderAccount(cfg Config) (uint32, uint32, error) {
+	return 0, 0, fmt.Errorf("this platform has no account the render child can be dropped to")
+}

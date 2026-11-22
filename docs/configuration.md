@@ -444,6 +444,14 @@ The group the render child drops to. Defaults to the account's own.
 
 The group for the render child. Empty takes the account's own primary group.
 
+### `render_sandbox_require`
+
+*`halite-node` · no default · SPEC section 25.4*
+
+Controls a render must be under: identity, network. Unmet, every render is refused.
+
+A list of the render sandbox controls this node requires: `identity`, the child running as `render_sandbox_user`, and `network`, the child seeing no network interface up. Each is checked against what the child reports about itself after it starts, not against what was asked for. A requirement that is not met refuses every render with the reason, and the node says so at startup and in `doctor`; it still starts and takes jobs, because a node that will not start cannot be reached to fix this. `identity` needs a node running as root with an account configured; `network` is available on Linux only. Setting this with `render_sandbox` off refuses every render, rather than rendering in this process unchecked.
+
 ### `render_sandbox_user`
 
 *`halite-node` · no default · SPEC section 25.4*
@@ -2271,6 +2279,7 @@ Every setting, and which programs read it.
 | `relay_upstream_port` | `halite-hub` | `4510` | Relays |
 | `render_sandbox` | `halite-node` | `false` | The tree: states and pillar |
 | `render_sandbox_group` | `halite-node` | — | The tree: states and pillar |
+| `render_sandbox_require` | `halite-node` | — | The tree: states and pillar |
 | `render_sandbox_user` | `halite-node` | — | The tree: states and pillar |
 | `renderer` | `halite-node`, `halite-hub` | `jinja|yaml` | Rendering and templates |
 | `require_job_signature` | `halite-node` | `false` | Node execution controls |

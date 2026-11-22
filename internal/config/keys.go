@@ -99,6 +99,7 @@ var Keys = []Key{
 	{"render_sandbox", nodeOnly, "false", "Render and parse the tree in an unprivileged child process.", "25.4"},
 	{"render_sandbox_user", nodeOnly, "", "The account the render child drops to. Requires a node running as root.", "25.4"},
 	{"render_sandbox_group", nodeOnly, "", "The group the render child drops to. Defaults to the account's own.", "25.4"},
+	{"render_sandbox_require", nodeOnly, "", "Controls a render must be under: identity, network. Unmet, every render is refused.", "25.4"},
 
 	// File server.
 	{"fileserver_backend", hubOnly, "roots", "Ordered list of file server backends.", "13.2"},

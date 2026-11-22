@@ -2524,6 +2524,11 @@ The node runs as root because package and service management require it. Inside 
   read access to the cached tree and nothing else. All YAML parsing and all template rendering happen
   there. This matters because the parser and the template engine are the largest and most
   attacker-adjacent code in the system, and they need no privilege at all.
+- As built, the sandbox is off unless `render_sandbox` is set, and what it applies depends on the
+  platform: the account on any unix when the node is root, the network on Linux only, and no
+  narrowing of the filesystem anywhere. `render_sandbox_require` lists the controls a render must be
+  under, checked against the child's own report of itself; when one does not hold, every render is
+  refused with the reason and `doctor` says so (DIVERGENCE 5.696).
 - Module execution happens in the privileged parent, but only after the compiled low state has been
   validated against module signatures. The sandbox returns data, never a callable and never a
   command to run without validation.
@@ -2654,7 +2659,7 @@ and needs no OpenTelemetry SDK. Tracing is off by default and sampled when on.
 `halite-node doctor`, `halite-hub doctor` and `halite-api doctor` check configuration validity,
 clock skew against the
 hub, certificate validity and expiry, connectivity, file server reachability, pillar compilation,
-disk space, queue depths, extension signatures, module verification, evidence chain, and FIPS mode consistency,
+disk space, queue depths, extension signatures, module verification, evidence chain, FIPS mode consistency, and render isolation,
 and print a pass or fail per check with a remediation line.
 Each command runs the subset that applies to it: a check that does not apply to the role is not run
 at all rather than skipped. `halite-api` holds three certificates — the one it presents to callers,

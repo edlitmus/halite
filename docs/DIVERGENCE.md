@@ -47281,6 +47281,76 @@ value that applies.
 - Settings given another way, such as a command-line flag, are not
   checked here.
 
+### 5.696 The render sandbox described its confinement and nothing could require it (2026-11-21)
+
+Issue 762, from an outside review at `9a8eae7e`, priority P1.
+
+**The defect.** SPEC 25.4 and the handbook's hardening chapter said YAML
+parsing and template rendering happen in a child *"running as an
+unprivileged account, with no network"*. As built the sandbox is off by
+default; the account is dropped to only when the node is root and
+`render_sandbox_user` is set; the network is denied only on Linux, and only
+as root; and nothing narrows the filesystem on any platform. `Describe`
+logged that honestly when a child was started, and `Unenforced` warned about
+an account that could not be applied -- but an operator who needed the
+isolation had no way to make it a condition, so a node moved to a machine
+where it ran unprivileged, or a FreeBSD host where it was assumed to have
+Linux's namespace, rendered anyway, with a log line saying less than the
+handbook did.
+
+**The change.** `render_sandbox_require` takes `identity`, `network` or
+both. The child now reports on itself in its hello -- protocol 3 -- with its
+uid and gid read by itself and the interfaces it can see up, and a
+requirement is checked against that, not against what the parent asked the
+kernel for. A child that does not meet it is closed and the render refused
+with what was seen (*"identity is required, and the child runs as uid 1001
+rather than as nobody (uid 65534), because this process cannot drop
+privilege here"*). Not cached: the next render starts a child and looks
+again. A misspelt name refuses every render, and so does a requirement with
+`render_sandbox` off, which would otherwise render in the node's own process
+unchecked. The node reports at startup, at error, whether the requirement
+holds, and `halite-node doctor` gains **render isolation**: the child's
+effective uid and gid, the interfaces it sees, and the filesystem as not
+restricted.
+
+**Refused per render, not at startup, on purpose.** A node that will not
+start cannot be reached from the hub to have this fixed, and the jobs that
+would fix it -- `file.managed` on its configuration, a `cmd.run` -- render no
+tree. A node that is up and refuses every highstate with the reason can be.
+
+**Filesystem is not a requirement name**, because it is built nowhere and a
+requirement that can only refuse is a setting nobody can use. It is reported
+as not restricted, and SPEC 25.4 and the handbook now say so, with a table of
+what each platform applies.
+
+**Tests.** `internal/rendersandbox`: the child reports the uid it runs as;
+an identity it cannot be dropped to, or none configured, refuses the render;
+an identity that holds -- the account the test already runs as -- renders, so
+the refusals above are not a gate that refuses everything; a network denial
+the child does not have refuses and names an interface it saw up. Those ran on
+`beastie` natively, FreeBSD 15.1 amd64, unprivileged, where the child shares
+the host's interfaces. `cmd/halite-node`: required with the sandbox off
+refuses and says so at startup; a misspelt name refuses; startup reports unmet
+and met; `doctor` reports the child's uid. `internal/doctor`: each verdict.
+Broken on purpose and seen to fail: the render gate removed, the hello
+carrying an empty observation, and the sandbox-off case rendering in-process.
+
+**The privileged run** is `TestLiveRenderSandboxConfinesTheChildAsRequired`,
+for the fleet's linux leg as root: `nobody`, both requirements, and two
+probes run by the child itself -- reading a root-only file, which must be
+refused, and dialling a listener on the host's loopback, which must fail --
+with a control child keeping root's identity to show the read probe can
+succeed. The leg now fails if it skips. Adding it found that
+`internal/buildpolicy`'s check that every filter pattern selects a live test
+read only `internal/builtin` and `cmd/`, so a live test anywhere else read as
+a pattern selecting nothing; it now reads the whole tree, and still fails a
+planted pattern that matches no test.
+
+**Not verified.** The privileged run has not executed: it was compiled for
+Linux here and not run, and this entry was written before the leg ran it. The
+FreeBSD half -- identity as root -- was not run as root anywhere. Windows was
+vetted, not run. No seccomp filter exists, which SPEC 25.4 also asks for.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

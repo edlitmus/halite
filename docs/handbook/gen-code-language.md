@@ -226,13 +226,15 @@ Stated here rather than left to be discovered. A template that calls an executio
 
 \`Describe\` reports what is actually applied on the machine in front of the operator, in the manner of the bridge sandbox of SPEC 24.3. A process boundary holds everywhere. Dropping to an unprivileged account needs a parent that is root and an account to drop to. Denying the network needs a mechanism that only Linux has here. None of it is silently skipped and none of it is claimed where it is not applied.
 
-**Files:** `child.go`, `codec.go`, `confine_linux.go`, `confine_other.go`, `confine_unix.go`, `frame.go`, `lookup_unix.go`, `sandbox.go`; with tests.
+**Files:** `child.go`, `codec.go`, `confine_linux.go`, `confine_other.go`, `confine_unix.go`, `frame.go`, `lookup_unix.go`, `require.go`, `sandbox.go`; with tests.
 
 **Exports.**
 
 - `Config` (type): Config is how a sandbox is set up.
 - `Live` (func): Live reports how many render sandbox children this process has started and not yet ended and reaped.
 - `New` (func): New returns a sandbox.
+- `Observed` (type): Observed is what the child reports about itself on its hello: measured in the child, after every control was applied, rather than inferred in the parent from what it meant to apply.
+- `ParseRequirements` (func): ParseRequirements checks a `render_sandbox_require` list, and returns it sorted with duplicates removed.
 - `Sandbox` (type): Sandbox is a render.Engine that renders in a child process.
 - `Serve` (func): Serve runs the child protocol until stdin closes.
 

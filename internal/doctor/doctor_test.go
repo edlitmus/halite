@@ -55,6 +55,7 @@ func all(t *testing.T) []Check {
 			Last:     &EvidenceRecord{Seq: 12, Kind: "job.accepted", TS: "2026-09-23T07:00:00.000000Z"},
 		}),
 		FIPSConsistency(FIPSState{Kernel: &kernel, Platform: "linux"}),
+		RenderIsolation(RenderIsolationState{}),
 	}
 }
 
