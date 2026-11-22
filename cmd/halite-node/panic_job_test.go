@@ -35,8 +35,14 @@ func TestAModuleThatPanicsIsAFailedReturnAndNotAStoppedNode(t *testing.T) {
 	stop := make(chan struct{})
 	defer close(stop)
 	go e.Run(stop)
-	e.queue <- &job.Job{JID: job.ID("20261102T2"), Fun: "scratch.boom"}
-	e.queue <- &job.Job{JID: job.ID("20261102T3"), Fun: "test.ping"}
+	for _, j := range []*job.Job{
+		{JID: job.ID("20261102T2"), Fun: "scratch.boom"},
+		{JID: job.ID("20261102T3"), Fun: "test.ping"},
+	} {
+		if err := e.enqueue(&pending{job: j, finish: e.returns}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var got []*job.Return
 	for len(got) < 2 {
 		select {

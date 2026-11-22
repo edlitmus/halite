@@ -562,9 +562,9 @@ happen on one machine.
 
 ## What will be different
 
-Six things bite in practice. Four of them — 1, 2, 4 and 5 — are in the
-Step 0 report; the other two are not, because item 3 is about the policy
-and item 6 is about the estate, and the audit reads only the tree.
+Seven things bite in practice. Five of them — 1, 2, 4, 5 and 7 — are in
+the Step 0 report; the other two are not, because item 3 is about the
+policy and item 6 is about the estate, and the audit reads only the tree.
 [migrating-from-salt.md](migrating-from-salt.md) covers them in
 full:
 
@@ -615,6 +615,22 @@ full:
    not name neither the directory nor the account. The Step 0 audit
    cannot see this one, for the same reason as item 3: it is about the
    estate rather than the tree, and the audit reads only the tree.
+7. **Blackout set in pillar or a grain does not carry over.** Salt reads
+   `minion_blackout` and `minion_blackout_whitelist` from pillar and <!-- lexicon:allow -->
+   grains, and never from its configuration file. halite reads `quiesce`
+   from the node's configuration only. So a node blacked out through
+   pillar or a grain goes back into automation after migration. Set
+   `quiesce: true` in that node's configuration instead.
+
+   The reverse also happens. A Salt configuration file that sets the key
+   at the top level did nothing in Salt, but the shim converts it to
+   `quiesce`, so that node starts refusing jobs.
+
+   **The Step 0 audit flags both**, at review severity: each pillar or
+   state file line that names the key, a `grains:` entry in a
+   configuration file given with `--salt-config`, and the converted
+   top-level key. It does not read a grains file such as
+   `/etc/salt/grains`.
 
 And two that are better rather than different:
 

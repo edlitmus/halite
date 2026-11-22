@@ -27,6 +27,7 @@ type Submission struct {
 	Kwarg      map[string]any
 	Env        string
 	Test       bool
+	Parallel   bool
 	Offline    job.Offline
 	TTL        time.Duration
 	// Batch and Subset are SPEC 9.3's controls, applied on the hub.
@@ -183,6 +184,7 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		Offline:     sub.Offline,
 		State:       job.Dispatched,
 		Test:        sub.Test,
+		Parallel:    sub.Parallel,
 		Batch:       batch,
 	}
 
@@ -548,6 +550,7 @@ func messageFor(j *job.Job) transport.Message {
 		Target:     j.Target,
 		TargetKind: j.TargetKind,
 		Signature:  j.Signature,
+		Parallel:   j.Parallel,
 	}
 }
 

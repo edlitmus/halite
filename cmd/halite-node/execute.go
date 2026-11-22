@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/config"
@@ -354,6 +355,13 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 // Bounded because the alternative is a node under a reactor storm
 // growing until it is killed, which is what Salt's does. A full queue
 // is refused and said out loud.
+//
+// Every job this node runs as an agent comes through it: the hub's, by
+// Offer, and the node's own schedule, by runLocal. The schedule used to
+// call executeJob from its own goroutine, so a scheduled highstate ran
+// alongside a dispatched one on a node that said it ran one job at a time
+// (issue 781). The queue is a slice under a mutex rather than a channel,
+// because Cancel has to take one job out of the middle of it.
 type executor struct {
 	node  *node
 	guard *job.Guard
@@ -361,8 +369,37 @@ type executor struct {
 	// accepted, which outlives the process and is never evicted by
 	// count. See job.SignedReplay.
 	signed  *job.SignedReplay
-	queue   chan *job.Job
 	returns func(*job.Return)
+
+	depth   int
+	mu      sync.Mutex
+	waiting []*pending
+	running int
+	// exclusive is true while a job that holds the whole node runs.
+	exclusive bool
+	// families are the module families a parallel job holds, SPEC 9.6's
+	// named locks: one `pkg` job at a time, beside one `service` job.
+	families map[string]bool
+	// wake tells Run to look at the queue again: a job arrived, or one
+	// finished. Buffered by one, so a signal is never lost and never
+	// blocks the sender.
+	wake chan struct{}
+}
+
+// pending is one job waiting for the executor, and where its return goes.
+type pending struct {
+	job *job.Job
+	// finish receives the return. For a job from the hub it is the queue
+	// to the hub; for a scheduled job it is the schedule, waiting for it.
+	finish func(*job.Return)
+	// local is a job this node raised itself. It has no acceptance
+	// record in the evidence chain, so it gets no result record either:
+	// a result paired with nothing would read as a job the chain lost.
+	local bool
+	// exclusive and family are how the job may share the node, settled
+	// when it is queued. See schedulingOf.
+	exclusive bool
+	family    string
 }
 
 func newExecutor(n *node, depth int, returns func(*job.Return)) *executor {
@@ -370,11 +407,13 @@ func newExecutor(n *node, depth int, returns func(*job.Return)) *executor {
 		depth = 16
 	}
 	return &executor{
-		node:    n,
-		guard:   job.NewGuard(job.DefaultGuardSize),
-		signed:  job.NewSignedReplay(n.signedReplayPath()),
-		queue:   make(chan *job.Job, depth),
-		returns: returns,
+		node:     n,
+		guard:    job.NewGuard(job.DefaultGuardSize),
+		signed:   job.NewSignedReplay(n.signedReplayPath()),
+		returns:  returns,
+		depth:    depth,
+		wake:     make(chan struct{}, 1),
+		families: map[string]bool{},
 	}
 }
 
@@ -482,40 +521,14 @@ func (e *executor) Offer(j *job.Job) error {
 	}
 	e.node.metrics.countAccepted()
 	e.node.recordJobAccepted(j, signer)
-	select {
-	case e.queue <- j:
-		return nil
-	default:
+	if err := e.enqueue(&pending{job: j, finish: e.returns}); err != nil {
 		// SPEC 26.2 asks for a counter behind every bounded queue's
 		// overflow. This is the node's, and it was a refusal with
 		// nothing counting it.
-		e.node.metrics.countRefusal(ErrQueueFull)
-		return ErrQueueFull
+		e.node.metrics.countRefusal(err)
+		return err
 	}
-}
-
-// Depth is how many jobs are waiting, for a gauge.
-func (e *executor) Depth() int { return len(e.queue) }
-
-// Run works the queue until the channel closes.
-func (e *executor) Run(done <-chan struct{}) {
-	for {
-		select {
-		case <-done:
-			return
-		case j := <-e.queue:
-			e.node.log.Info("running a job", "jid", string(j.JID), "fun", j.Fun)
-			ret := e.node.executeJob(j)
-			e.node.log.Info("job finished",
-				"jid", string(j.JID), "fun", j.Fun,
-				"success", ret.Success, "retcode", ret.RetCode, "duration_ms", ret.DurationMS)
-			// Before the return goes to the hub, so that the node's
-			// account of the outcome exists whether or not the hub ever
-			// receives one.
-			e.node.recordJobResult(ret)
-			e.returns(ret)
-		}
-	}
+	return nil
 }
 
 // refusal turns a structured refusal into the return SPEC 6.3 requires:
@@ -535,38 +548,4 @@ func refusalReturn(n *node, j *job.Job, err error) *job.Return {
 		NodeVersion: version.String(),
 		Schema:      job.ReturnSchema,
 	}
-}
-
-// Cancel drops a job from the queue if it has not started.
-//
-// One already running is left alone: a state run interrupted halfway
-// leaves a machine in neither the old state nor the new one, which is
-// worse than finishing something an operator changed their mind about.
-// The hub's `jobs kill` says so in its output.
-func (e *executor) Cancel(id job.ID) bool {
-	dropped := false
-	// Drained and refilled, because a channel has no other way to
-	// remove one item. The executor is the only reader, and a job that
-	// arrives during the swap goes to the back rather than being lost.
-	var kept []*job.Job
-	for {
-		select {
-		case j := <-e.queue:
-			if j.JID == id {
-				dropped = true
-				continue
-			}
-			kept = append(kept, j)
-			continue
-		default:
-		}
-		break
-	}
-	for _, j := range kept {
-		select {
-		case e.queue <- j:
-		default:
-		}
-	}
-	return dropped
 }
