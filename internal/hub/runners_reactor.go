@@ -110,6 +110,9 @@ func plannedReaction(c *RunnerContext, entry ReactorEntry, r Reaction, node stri
 		}
 		out.Set("kwarg", kw)
 	}
+	if r.RunParallel {
+		out.Set("run_parallel", true)
+	}
 	out.Set("authorized", c.Server.wouldAuthorize(entry, r, node))
 	return out
 }

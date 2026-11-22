@@ -10,6 +10,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/eventbus"
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
@@ -42,6 +43,12 @@ type Reaction struct {
 	TargetKind string
 	Arg        []string
 	Kwarg      map[string]any
+	// RunParallel is `run_parallel`, SPEC 9.6's `--parallel` for the job a
+	// local or caller reaction sends. RunParallelSet records that it was
+	// written at all, so that a runner or wheel reaction that carries it
+	// is refused even when it says false.
+	RunParallel    bool
+	RunParallelSet bool
 	// SLS is the file it came from, for a diagnostic that names it.
 	SLS string
 }
@@ -200,9 +207,38 @@ func parseReactions(doc *value.Map, sls string) ([]Reaction, error) {
 			return nil, fmt.Errorf("%s: %s: `tgt` and `tgt_type` apply to a local reaction; "+
 				"a %s reaction %s", sls, id, r.Kind, whereItRuns(r.Kind))
 		}
+		if err := checkRunParallel(r); err != nil {
+			return nil, fmt.Errorf("%s: %s: %w", sls, id, err)
+		}
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// checkRunParallel refuses a `run_parallel` that could not do what it says.
+//
+// A runner or wheel reaction runs on the hub and sends no job, so there is
+// nothing for the flag to reach; it is refused whatever its value, as `tgt`
+// is on those kinds, because its presence says the author thinks the
+// reaction is something it is not. A local or caller reaction that sends a
+// state run and asks for it to share the node is refused too: a state run
+// always runs alone (SPEC 9.6), so the job would wait whatever the
+// reaction says. `run_parallel: false` on one says what will happen anyway
+// and is allowed.
+func checkRunParallel(r Reaction) error {
+	if !r.RunParallelSet {
+		return nil
+	}
+	switch r.Kind {
+	case ReactRunner, ReactWheel:
+		return fmt.Errorf("`run_parallel` applies to a job sent to nodes; a %s reaction %s and sends none",
+			r.Kind, whereItRuns(r.Kind))
+	}
+	if r.RunParallel && job.AlwaysAlone(r.Fun) {
+		return fmt.Errorf("`run_parallel: true` is refused: %s is a state run, which always runs "+
+			"alone on a node (SPEC section 9.6); remove it, or set it to false", r.Fun)
+	}
+	return nil
 }
 
 // whereItRuns says where a reaction of a kind that takes no target runs, for
@@ -269,8 +305,19 @@ func applyReactionArgs(r *Reaction, v any) error {
 				return fmt.Errorf("`%s` is a mapping", name)
 			}
 			r.Kwarg = mapToKwargs(m)
+		case "run_parallel":
+			// A boolean and nothing else. A reaction has no signature to
+			// coerce against, and a string here is most likely a template
+			// that rendered something unexpected; reading "no" as true,
+			// which value.Truthy would, is the wrong way for that to fail.
+			b, ok := e.Val.(bool)
+			if !ok {
+				return fmt.Errorf("`run_parallel` is true or false, not %s", value.TypeName(e.Val))
+			}
+			r.RunParallel, r.RunParallelSet = b, true
 		default:
-			return fmt.Errorf("%q is not a reaction argument; there are tgt, tgt_type, arg, and kwarg", name)
+			return fmt.Errorf("%q is not a reaction argument; there are tgt, tgt_type, arg, kwarg, "+
+				"and run_parallel", name)
 		}
 	}
 	return nil
@@ -315,6 +362,7 @@ func (s *Server) runReactions(ctx context.Context, entry ReactorEntry, e *eventb
 				Fun:         r.Fun,
 				Arg:         r.Arg,
 				Kwarg:       r.Kwarg,
+				Parallel:    r.RunParallel,
 				Correlation: correlationOf(e),
 			})
 			if err != nil {
@@ -337,6 +385,7 @@ func (s *Server) runReactions(ctx context.Context, entry ReactorEntry, e *eventb
 				Fun:         r.Fun,
 				Arg:         r.Arg,
 				Kwarg:       r.Kwarg,
+				Parallel:    r.RunParallel,
 				Correlation: correlationOf(e),
 			})
 			if err != nil {

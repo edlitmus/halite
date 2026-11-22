@@ -47672,6 +47672,110 @@ starting two seconds later.
   by default. No new setting was added.
 - **Orchestration steps** and the reactor dispatch without the flag, so
   their jobs run alone unless the node sets `parallel_jobs`.
+
+#### 5.698.1 Orchestration steps and reactions ask with `run_parallel` (2026-11-22)
+
+The orchestration and reactor half of issue 785. The API half landed
+first, in PR 798: `"parallel": true` on the request body. Here the key is
+`run_parallel`, decided by the maintainer, because SPEC 19.1 already lists
+`parallel` per step. That is the per-state option of SPEC 11.7, which asks
+for steps to run at once, and this build does not do that (DIVERGENCE 4.4).
+One name for two meanings would make an author guess which one a step
+gets.
+
+**Where it is accepted.** Only on what sends a job to nodes, and only
+where the node can honour it:
+
+- **`salt.function`** takes it. `callFunction` sets `Submission.Parallel`
+  from it, and the job record, `messageFor` and `Message.Parallel` carry it
+  from there as they do for `--parallel` (5.698).
+- **`salt.state`, `salt.sls` and `salt.highstate`** declare it, so that
+  writing it there gets a reason, not "is not a parameter". With `true` the
+  orchestration does not compile: *"`run_parallel: true` is refused: the
+  step sends state.apply, and a state run always runs alone on a node"*.
+  The same applies to a `salt.function` step whose `name` is a `state.*`
+  function. The other choice was to accept it and send it, and that is the
+  accept-but-ignore defect. The author reads an orchestration that overlaps
+  a highstate with other work, and gets one that waits. `false` is
+  allowed, because it describes what will happen. So a value templated
+  across every step still compiles.
+- **A `local` or `caller` reaction** takes it, with the same refusal for a
+  state run. A **`runner` or `wheel` reaction** refuses it with any value,
+  as it refuses `tgt` (5.522): it runs on the hub and sends no job.
+
+**"Is this a state run" is one function now.** The node decided it inline
+in `schedulingOf`. The hub's refusals need the same answer, and a second
+copy of the rule could drift, so a refusal would then describe a rule the
+node no longer applies. `job.AlwaysAlone` is the rule, and `job.Family` is
+the family lock's key. The node calls both.
+
+**Misspelt or the wrong type is refused, not dropped.** An orchestration
+step is bound against its signature, so `run_paralel` is *"not a parameter
+of this function"* and `run_parallel: maybe` is not a boolean. Both are
+refused at compile time, and `orch lint` reports them, because it is the
+same compile. The value is read through the step's signature, so `"no"`
+means false, as it does for every other boolean step option. A reaction
+has no signature. It accepts a YAML boolean and nothing else, so `'no'` and
+`1` are refused, and a misspelt key falls into the existing "is not a
+reaction argument" refusal. `value.Truthy` would have read the string
+`"no"` as true.
+
+**Resume.** An orchestration record does not store step arguments. `orch
+resume` compiles the SLS again, so the flag on a resumed step is the one in
+the file. The step's job record keeps `parallel`, which is what a batch
+resumed after a hub restart is delivered from.
+
+**Salt has no such key.** In Salt's source at `~/saltstack` (Salt's development
+branch, 3008.x), `salt/states/saltmod.py` has no `run_parallel`. The
+nearest thing is `concurrent` on `salt.state`, which is passed to the state
+function and lets two state runs overlap on one node. That is the
+opposite of SPEC 9.6, where a state run always runs alone. Nothing in
+`internal/migrate` maps `concurrent`, and nothing maps to `run_parallel`,
+so there is nothing for `halite-hub migrate` to convert.
+
+**Shown**, in `internal/hub/run_parallel_test.go`:
+
+- `TestARunParallelStepSendsAParallelJobAndOthersDoNot` reads the flag as
+  the node receives it. It checks a step with `true`, a step without the
+  key, and a state step with `false`.
+- `TestRunParallelThatCannotBeHonouredIsRefusedAtCompile` has six cases,
+  and checks that nothing was dispatched.
+- `TestOrchLintRefusesRunParallelOnAStateStep` uses
+  `state.orchestrate_show_sls`.
+- `TestAResumedStepAfterARestartKeepsRunParallel` resumes from a record
+  store opened again from the same directory, and reads the resumed job's
+  record.
+- `TestARunParallelReactionDispatchesAParallelJob` covers `local` and
+  `caller`, with and without the key.
+- `TestRunParallelThatCannotBeHonouredIsRefusedInAReaction` has seven
+  refusals and two acceptances.
+
+Each of these was broken on purpose, and a test failed each time:
+
+- the flag dropped from `callFunction`: the live test and the resume test
+  failed
+- the flag forced to true: the step without the key arrived parallel
+- `refuseParallelStateRuns` not called: three compile cases and the lint
+  test failed
+- the flag dropped from the `local` path, and separately from the
+  `caller` path
+- `checkRunParallel` not called: four refusals were accepted
+- the reaction's value read with `value.Truthy`: the string and the
+  integer were accepted
+- `job.AlwaysAlone` answering false: the state-run refusals on both paths
+  failed, and so did the node's existing scheduling and starvation tests
+
+**Not verified:**
+
+- **No real node** has run an orchestration step or a reaction with
+  `run_parallel`. The tests use the hub and a subscriber in the test
+  process, and read the message, not the node's scheduling. The node half
+  is 5.698's, measured with `halite-hub run`.
+- **A signed orchestration or reaction job** was not tried. Neither path
+  signs a job today, so the node's rule that it ignores the flag on a
+  signed job is not reached from here.
+- **`salt.function` steps in `--test` mode** dispatch nothing, so the flag
+  goes nowhere then, as every other option does.
 ### 5.699 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
 
 Issue 782, found while building quiesce for issue 763 (5.694).

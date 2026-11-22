@@ -2,7 +2,7 @@
 
 <!-- abstract: Multi-step, multi-machine procedures that run on the hub: step types, ordering and rollback with requisites, batches, waiting for events, rehearsal, and resuming a failed run. -->
 <!-- kind: guide -->
-<!-- index: orchestration; orch run; orch lint; orch show; orch list; orch resume; salt.state; salt.function; salt.runner; salt.wheel; salt.wait_for_event; salt.parallel; onfail; rollback; rolling update; batch; tolerate_failures; fail_minions; approval gate; state.orchestrate -->
+<!-- index: orchestration; orch run; orch lint; orch show; orch list; orch resume; salt.state; salt.function; salt.runner; salt.wheel; salt.wait_for_event; salt.parallel; onfail; rollback; rolling update; batch; tolerate_failures; fail_minions; approval gate; state.orchestrate; run_parallel -->
 
 Configuration management brings each machine to a state *independently*.
 Some jobs are not independent. Taking a web server out of rotation, then
@@ -153,6 +153,13 @@ Options common to `salt.state`, `salt.sls`, `salt.highstate` and
 | `pillar`, `pillarenv` | Pillar overrides for this step (state steps). |
 | `timeout` | Seconds before the step is given up on (a state option available on every step). |
 | `queue` | Hold the step on the hub's durable queue. **Not built**; refused by name. |
+| `run_parallel` | `salt.function` only: the job may run beside other jobs on each node, as `halite-hub run --parallel` does ([chapter 12](12-hub-and-nodes.md)). Without it the job waits its turn. `true` on a state step, or on a `salt.function` step that names a `state.*` function, is refused when the orchestration compiles: a state run always runs alone on a node. |
+
+`run_parallel` is not the per-state option `parallel` (SPEC section 11.7).
+That one asks the hub to run steps at the same time; `run_parallel` asks how
+the job shares a node. `orch lint` catches a misspelt name, a value that is
+not a boolean, and `true` on a state step. A resumed run keeps
+`run_parallel`, because a resume compiles the orchestration file again.
 
 The batching options are the ones from
 [chapter 14](14-remote-execution.md), now inside a procedure: `apply_web`
@@ -391,6 +398,8 @@ as pillar on the command line, not by editing the file.
   `salt.wheel`, `salt.wait_for_event`. (`salt.parallel` and `queue` are not
   built.)
 - Batching, safe limits, subsets and `tolerate_failures` apply per step.
+- `run_parallel: true` on a `salt.function` step lets its job run beside
+  others on a node; on a state step it is refused.
 - `orch run --test` runs state steps in test mode and **does not dispatch**
   function steps; each step is authorized twice.
 - `orch resume --from <step>` continues a failed run without repeating the
