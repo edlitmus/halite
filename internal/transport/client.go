@@ -80,6 +80,10 @@ type Client struct {
 
 	mu   sync.Mutex
 	http *http.Client
+	// slots outlives http: a certificate reload or a Reset builds a
+	// new transport while requests on the old one still hold theirs,
+	// and ShortRequestLimit is per Client, not per transport.
+	slots chan struct{}
 }
 
 // clientRoute collapses the variable part of a path, so that timing a
@@ -148,8 +152,11 @@ func (c *Client) client() (*http.Client, error) {
 	} else {
 		cfg = EnrollConfig(c.CA, name)
 	}
+	if c.slots == nil {
+		c.slots = make(chan struct{}, ShortRequestLimit)
+	}
 	c.http = &http.Client{
-		Transport: tracePropagating{next: &http.Transport{
+		Transport: streamLimited{slots: c.slots, next: tracePropagating{next: &http.Transport{
 			TLSClientConfig:     cfg,
 			ForceAttemptHTTP2:   true,
 			TLSHandshakeTimeout: HandshakeTimeout,
@@ -158,7 +165,7 @@ func (c *Client) client() (*http.Client, error) {
 			// is no response header timeout here; the per-request
 			// deadline comes from the context instead.
 			IdleConnTimeout: IdleStreamTimeout,
-		}},
+		}}},
 	}
 	return c.http, nil
 }
@@ -586,7 +593,7 @@ func (c *Client) SubscribeOpened(ctx context.Context, req SubscribeRequest, open
 	if err != nil {
 		return err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(PathSubscribe), bytes.NewReader(raw))
+	httpReq, err := http.NewRequestWithContext(longLived(ctx), http.MethodPost, c.url(PathSubscribe), bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}
@@ -857,6 +864,9 @@ func (c *Client) FollowEvents(ctx context.Context, tags []string, from string, f
 	}
 	if limit > 0 {
 		query.Set("limit", strconv.Itoa(limit))
+	}
+	if follow {
+		ctx = longLived(ctx)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(PathEvents+"?"+query.Encode()), nil)
 	if err != nil {

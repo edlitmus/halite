@@ -45311,6 +45311,114 @@ burst width actually is remains unmeasured. Nothing was changed in
 `internal/transport` or `internal/api` here; 748 still carries the decision
 between B and C.
 
+#### 5.665.3 Each client now holds its short requests to 63, and the subscribe stream is outside the count
+
+Option B of issue 748, chosen by the maintainer on the numbers below.
+`internal/transport` now keeps at most `ShortRequestLimit` -- 63, which is
+SPEC 6.5's 64 less one -- short requests from one `Client` in flight at once.
+The 64th waits in the client, and gives up when its own context does with an
+error that says it waited there (*"waiting for one of this client's 63
+request slots"*), because a timeout that never reached the hub, reported as
+the hub's, sends somebody to look at the wrong machine. A slot is held from
+before the request is issued until its response body ends or is closed, which
+is when the HTTP/2 stream is finished, and it belongs to the `Client`, not to
+the transport under it: a certificate reload or a `Reset` builds a new
+transport while requests on the old one still hold theirs.
+
+**The measurements that chose it**, on `beastie`, Go 1.27.4 freebsd/amd64,
+over **TLS** this time (5.665.2 used unencrypted HTTP/2), a fresh server and
+Transport per round so every burst is on a cold connection, the handler
+holding each request 20 ms, 5000 rounds per row:
+
+| Client | Burst | Rounds that failed | Requests lost |
+|---|---|---|---|
+| default `net/http` | 80 | 9 (0.18%) | 9, all `PROTOCOL_ERROR`, stream IDs 129-157 |
+| default `net/http` | 100 | 18 (0.36%) | 18, all `PROTOCOL_ERROR` |
+| `StrictMaxConcurrentRequests` | 80 | 67 (1.3%) | 4161: 4152 timed out, 9 `PROTOCOL_ERROR` |
+| `StrictMaxConcurrentRequests` | 100 | 157 (3.1%) | 11594: 11580 timed out, 15 `PROTOCOL_ERROR` |
+| cap of 64 in flight, in the caller | 100 | **0** | **0**; one connection, peak 64 |
+
+Over TLS the loss rate at burst 80 is about a tenth of 5.665.2's 2.0% over
+h2c. The handshake giving the hub's `SETTINGS` a head start would explain
+that, and is a guess nobody tested; what matters is that it does not reach
+zero.
+The `StrictMaxConcurrentRequests` rows repeat 5.665.2's finding at twenty
+times the sample, and say what its blocked requests are: of 27 failing
+rounds read one by one at burst 80, 26 were a single connection on which
+between 1 and 19 requests completed in about 60 ms and the other 61 to 79
+then waited out the whole 10 s deadline. The flag stalls most of a burst, not
+a straggler.
+
+**Then the real thing, end to end**: the built `transport.Client`, each
+round a new one, `Health` fired 100 times at once against a TLS server
+advertising `MaxConcurrentStreams: 64`, 5000 rounds per arm, the limiter
+disabled in one binary by making every request skip it:
+
+| `Client` | Rounds that failed | Requests lost |
+|---|---|---|
+| limiter disabled | 31 (0.62%) | 31, all `PROTOCOL_ERROR`, stream IDs 131-197 |
+| limiter on | **0** | **0** |
+
+The disabled arm also left the server logging 374 TLS handshakes that ended
+in `EOF` -- connections the client dialled for the overflow and abandoned --
+and the limited arm logged none, which is the second connection 5.639
+measured, given up as the cost section below says. Zero in 5000 against 31
+in 5000 is not chance: at 0.62% the chance of no failure in 5000 rounds is
+about one in 10^13.
+
+**Why 63 and not 64.** A node's subscribe stream is on the same connection
+as its returns and file fetches, so 64 short requests beside it would be 65
+streams on a connection that may not yet know the limit. One stream is left
+for it, and the subscribe itself takes no slot, so a burst can never make it
+wait: that is the hazard 5.665.1 wrote down before anything was built, and
+`TestTheSubscribeStreamOpensWhileEveryShortSlotIsTaken` holds all 63 slots
+and opens one.
+
+**A following event stream takes no slot either**, for a reason 5.665.2
+found by reading: the API opens one through its single shared `s.Hub` for
+every operator watching `/v1/events` or `/v1/ws/events`, with no cap of its
+own. Counted, 63 watchers would have stopped every other request the API
+makes, indefinitely, because a watcher's stream has no deadline. A
+non-following read of the log is short and is counted.
+
+**What it costs.** The bound is per client where SPEC 6.5 says per
+connection, so a client at 63 queues rather than taking the second
+connection 5.639 measured Go dialling. The API and a relay forward many
+callers through one `Client`, so under load they now wait for a slot, each
+request within its own deadline, rather than spreading across connections.
+SPEC 6.5's row says which side enforces what.
+
+**Not fixed: a reconnection storm of event watchers.** 5.665.2 named the
+realistic trigger as a burst onto a cold connection, and gave two: a relay
+reconnecting with a backlog of returns, which this covers, and an API
+restart with many watchers re-subscribing at once, which it deliberately
+does not -- those streams are the ones left out of the count. More than 64
+of them arriving inside the first round trip of a new connection can still
+lose one with `PROTOCOL_ERROR`. What that costs is one watcher's stream
+failing to open, which an `EventSource` reopens by itself and a WebSocket
+client may not; what bounding them would cost is a watcher that waits for
+another to leave. Nobody has measured how many watchers a real API has.
+
+**Tests**, in `internal/transport/streams_test.go`, against a real TLS
+server: a burst of 100 reaches the hub as exactly 63 at once and all 100
+then succeed; the subscribe opens with every slot taken; 64 followed event
+streams leave a short request free to reach the hub; a request that cannot
+get a slot gives up with its context and never reaches the hub; and 126
+requests the hub refuses, and 126 that never connect, each give their slot
+back. Each was broken on purpose and failed: no limiter at all ("the hub
+held 100 requests at once; the client's limit is 63"), the subscribe
+counted, the follow counted, a failed round trip keeping its slot, and a
+finished body keeping its slot.
+
+**Not verified.** `beastie` only, and Go 1.27.4 only. No live hub, node,
+relay or API was driven through the new client under a burst; the end-to-end
+figure above is the real `Client` against a stand-in server. How wide a real
+estate's bursts are is still unmeasured, so whether any client ever waits
+for a slot in practice is unknown -- the bound is correct either way, and
+cheap when it is never reached, but "it fixed a loss in production" is not a
+claim this section can make. `parallel_jobs` (#786) is the change most
+likely to make a node reach it.
+
 ### 5.666 The FreeBSD rc script passed a token after a space, and a token that began with `-` stopped the node
 
 Issue 733, item 10, from issue 308's open list: "a token with a hyphen

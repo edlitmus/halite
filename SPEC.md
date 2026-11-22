@@ -456,7 +456,7 @@ these is why a single malformed return can exhaust a master.
 | Enrollment requests from one source address that create a pending request or are refused | 32 at once, then one every 10 s, configured; an IPv6 source is its /64 |
 | Maximum single return payload | 16 MiB, then the node paginates by chunk |
 | Maximum NDJSON line on the subscribe and event streams | 1 MiB; a longer job is refused at submission, and a longer event is streamed as a stand-in naming it |
-| Maximum concurrent HTTP/2 streams per node connection | 64 |
+| Maximum concurrent HTTP/2 streams per node connection | 64, advertised by the hub; each client holds its short requests to 63, so its subscribe stream always has the 64th |
 | Maximum node connections per hub | 25,000, configured |
 | Maximum decompressed size ratio | 100:1, then the transfer is aborted |
 | Handshake timeout | 10 s |

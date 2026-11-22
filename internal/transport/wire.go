@@ -47,7 +47,8 @@ const (
 	// request: it dials a second connection, and MaxConnsPerHost does
 	// not stop it once the first is HTTP/2 (measured, DIVERGENCE 5.639)
 	// -- so this bounds what one connection may hold, not what one node
-	// may ask for.
+	// may ask for. What a client may ask for is ShortRequestLimit, which
+	// is the client's half of the same number (DIVERGENCE 5.665.3).
 	MaxConcurrentStreams = 64
 	HandshakeTimeout     = 10 * time.Second
 	IdleStreamTimeout    = 90 * time.Second
