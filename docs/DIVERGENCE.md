@@ -47701,6 +47701,40 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
+### 5.700 A rolling upgrade, run with the release binaries (2026-11-21)
+
+Issue 766. Every upgrade test so far (`internal/hub/upgrade_test.go`) built
+both sides from one tree and varied the messages; nothing had run two
+separately built releases against each other. This did, on `beastie`, FreeBSD
+15.1 amd64 -- SPEC 27.1's tier 1 -- unprivileged, on lab paths and a lab port.
+
+**What ran.** The `freebsd-amd64` archives of 0.1.1 and 0.2.0 from their
+GitHub releases, checked against each release's `SHA256SUMS` (the signatures
+on `SHA256SUMS` were not checked), and `main` at `1973fe84` built with `make
+build`, which stamps it `0.2.0-11-g1973fe84dc8b`. A 0.2.0 hub with token
+enrolment; one node of each version, each enrolled with its own binary; a
+state that writes a file from a pillar value, so a highstate needs a pillar
+fetch and a file fetch.
+
+| Step | Result |
+|---|---|
+| 0.2.0 hub; nodes 0.1.1, 0.2.0, `main` | All enrolled; `test.version` answered 0.1.1, 0.2.0, 0.2.0-11; a highstate applied on all three with returns recorded |
+| Hub replaced by `main` on the same `state/` and `pki/` | All three reconnected; `jobs lookup` of the job 0.2.0 recorded returned it `complete` with three returns; a highstate with changed pillar applied on all three |
+| `renew --force` on each node while its agent ran | Each one cut off until restarted: issue 792, fixed separately |
+| Agents restarted | All three converged on their renewed certificates |
+| 0.1.1 and 0.2.0 nodes replaced by `main` on their own `state/` | Reconnected and converged |
+
+SPEC 31's row asks for a hub at N with nodes at N-1 and N+1: with N as 0.2.0
+that is the first row, and with N as `main` the second. It also asks for state
+and job-cache format migration, which the second and last rows are, and for
+certificate rotation across an upgrade, which is the row that found a defect.
+
+**Not run.** The API, Linux, a relay, more than three nodes, a rollback with
+these binaries, and certificate rotation of the CA, which halite does not
+have. The run was by hand, not a script, so repeating it means following the
+handbook's chapter 36 table and this entry.
+
+
 
 
 
