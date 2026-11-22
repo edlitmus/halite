@@ -398,7 +398,8 @@ a truncated stream is unambiguous.
 
 Message types on the subscribe stream: `job`, `ping`, `event`, `revoke`, `reload`, `quiesce`,
 `drain`. Nodes reply to `ping` on `/v1/return` with a `pong`; a missed ping budget triggers a
-reconnect from the node side.
+reconnect from the node side. No hub sends `quiesce` or `drain` yet, and a node that receives one
+does not act on it and logs that at warn; a node is quiesced by its own configuration (9.6).
 
 ### 6.3 Replay and job authenticity
 
