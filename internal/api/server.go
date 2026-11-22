@@ -11,6 +11,7 @@ package api
 import (
 	"bufio"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -459,7 +460,16 @@ func (s *Server) schema(w http.ResponseWriter, r *http.Request, token *apitoken.
 // The certificate is asked for on each handshake rather than fixed here,
 // so that one renewed on disk is served without a restart: halite-api
 // passes a certreload.Reloader (DIVERGENCE 5.250).
-func Listen(addr string, getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
+//
+// hookClients is the CA bundle `hook_client_ca` names, or nil. When it is
+// set the listener asks every client for a certificate and verifies one
+// that is offered against it, and a client that offers none is let
+// through: operators and their tools authenticate with tokens and have no
+// certificate to give, and the handshake is over before the path that
+// would say which kind of caller this is has been read. A certificate is
+// therefore never what admits anybody to anything but an `auth: mtls`
+// hook, which also matches the name in it (issue 767).
+func Listen(addr string, getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error), hookClients *x509.CertPool) (net.Listener, error) {
 	if addr == "" {
 		addr = ":4511"
 	}
@@ -475,11 +485,20 @@ func Listen(addr string, getCertificate func(*tls.ClientHelloInfo) (*tls.Certifi
 		// and nothing to gain by offering less.
 		MinVersion: tls.VersionTLS13,
 		NextProtos: []string{"h2", "http/1.1"},
+		ClientAuth: clientAuthFor(hookClients),
+		ClientCAs:  hookClients,
 	}))
 	if err != nil {
 		return nil, fmt.Errorf("listening on %s: %w", addr, err)
 	}
 	return ln, nil
+}
+
+func clientAuthFor(hookClients *x509.CertPool) tls.ClientAuthType {
+	if hookClients == nil {
+		return tls.NoClientCert
+	}
+	return tls.VerifyClientCertIfGiven
 }
 
 // Serve runs the API until the context ends.

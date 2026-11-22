@@ -804,6 +804,10 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "The API service",
 		Detail: "Which operator certificate the service presents to the hub. The API is a client of the hub, deliberately, so compromising it yields one certificate bounded by one policy rather than the control plane. Grant it less than the sum of its operators and it gets exactly that.",
 	},
+	"hook_client_ca": {
+		Group:  "The API service",
+		Detail: "A PEM bundle of the CAs that issue the certificates senders to `auth: mtls` hooks present. When it is set the API asks every client for a certificate and verifies one that is offered; a client that offers none is let through, because operators authenticate with tokens, so a certificate admits nobody to anything but an mtls hook whose `client` it names. An mtls hook without this set stops the service. Read at startup: to rotate, add the new CA beside the old, restart, reissue the senders, then remove the old one and restart. Not usable behind a proxy that ends TLS, which would not pass the certificate on.",
+	},
 	"hooks": {
 		Group:  "The API service",
 		Detail: "Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook, and a hook configuration that will not parse stops the service rather than serving some of them.",

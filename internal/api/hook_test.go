@@ -372,18 +372,22 @@ func TestAHubDeclinedDeliveryDoesNotReachTheSenderWithItsDetail(t *testing.T) {
 	}
 }
 
-// `auth: mtls` could never succeed -- the API asks no client for a
-// certificate -- and would have accepted any certificate if it had. It is
-// refused when the configuration loads, saying why. DIVERGENCE 5.327.
-func TestAnMTLSHookIsRefusedAtLoad(t *testing.T) {
-	_, err := parseHooksErr("hooks:\n  deploy:\n    auth: mtls\n")
-	if err == nil {
-		t.Fatal("an mtls hook loaded, and no delivery to it can ever authenticate")
-	}
-	for _, want := range []string{"hook deploy", "auth: mtls", "client certificates", "hmac", "token"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not say %q: %v", want, err)
+// `auth: mtls` loads only with a name to match: a certificate from the CA
+// alone would admit every holder of one, the "open" half of what
+// DIVERGENCE 5.327 refused mtls for. And it takes no secret, which would
+// read as though it were a second factor and is checked by nothing.
+func TestAnMTLSHookLoadsOnlyWithAClientToMatch(t *testing.T) {
+	for name, c := range map[string]struct{ src, says string }{
+		"no client": {"hooks:\n  deploy:\n    auth: mtls\n", "needs a `client`"},
+		"a secret":  {"hooks:\n  deploy:\n    auth: mtls\n    client: ci.example\n    secret: x\n", "takes no `secret`"},
+	} {
+		if _, err := parseHooksErr(c.src); err == nil || !strings.Contains(err.Error(), c.says) {
+			t.Errorf("%s: got %v, want a refusal saying %q", name, err, c.says)
 		}
+	}
+	hooks := parseHooks(t, "hooks:\n  deploy:\n    auth: mtls\n    client: ci.example\n")
+	if hooks[0].Auth != "mtls" || hooks[0].Client != "ci.example" {
+		t.Errorf("parsed as %+v", hooks[0])
 	}
 }
 
