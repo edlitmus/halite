@@ -47655,16 +47655,7 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
-
-
-
-
-
-
-
-
-
-### 5.696 A renewal cut the running agent off from its pillar and files (2026-11-21)
+### 5.702 A renewal cut the running agent off from its pillar and files (2026-11-21)
 
 Issue 792, found running issue 766's rolling upgrade with the 0.1.1 and 0.2.0
 release binaries on FreeBSD 15.1 (`beastie`), and then on `main`.
@@ -47716,6 +47707,16 @@ probe that silently does nothing looks exactly like a fix.
 **Not verified.** Only on FreeBSD; the code is not platform-specific. A relay's
 own upstream identity renews through `renewal.Loop` too, and was not checked
 for the same shape.
+
+
+
+
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
