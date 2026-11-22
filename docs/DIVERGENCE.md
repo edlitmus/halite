@@ -47655,16 +47655,7 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
-
-
-
-
-
-
-
-
-
-### 5.696 A rolling upgrade, run with the release binaries (2026-11-21)
+### 5.700 A rolling upgrade, run with the release binaries (2026-11-21)
 
 Issue 766. Every upgrade test so far (`internal/hub/upgrade_test.go`) built
 both sides from one tree and varied the messages; nothing had run two
@@ -47696,6 +47687,16 @@ certificate rotation across an upgrade, which is the row that found a defect.
 these binaries, and certificate rotation of the CA, which halite does not
 have. The run was by hand, not a script, so repeating it means following the
 handbook's chapter 36 table and this entry.
+
+
+
+
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
