@@ -206,13 +206,28 @@ func (r *Relay) handle(msg transport.Message) error {
 		return nil
 	case transport.MsgJob:
 		return r.dispatch(msg)
-	case transport.MsgEvent, transport.MsgRevoke, transport.MsgReload,
-		transport.MsgQuiesce, transport.MsgDrain, transport.MsgKill:
-		// Passed through to the named subordinate, or to all of them
-		// when the upstream named none.
+	}
+	if passesDown(msg.T) {
 		return r.forwardDown(msg)
 	}
 	return nil
+}
+
+// passesDown reports whether a message from the upstream goes on to the
+// named subordinate, or to all of them when the upstream named none.
+//
+// Quiesce and drain are not part of the protocol (DIVERGENCE 5.699.1),
+// and still pass. The relay does not act on them, and the node does:
+// it warns, by name, that it did nothing. Dropped here, a node behind a
+// relay would say nothing at all, and the operator who asked for a
+// quiesce would be looking at the wrong machine for the reason.
+func passesDown(kind string) bool {
+	switch kind {
+	case transport.MsgEvent, transport.MsgRevoke, transport.MsgReload,
+		transport.MsgQuiesce, transport.MsgDrain, transport.MsgKill:
+		return true
+	}
+	return false
 }
 
 // dispatch runs an upstream job against this relay's own fleet.

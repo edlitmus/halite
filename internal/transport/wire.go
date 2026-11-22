@@ -187,11 +187,21 @@ type Message struct {
 
 // The message types of SPEC 6.2.
 const (
-	MsgJob     = "job"
-	MsgPing    = "ping"
-	MsgEvent   = "event"
-	MsgRevoke  = "revoke"
-	MsgReload  = "reload"
+	MsgJob    = "job"
+	MsgPing   = "ping"
+	MsgEvent  = "event"
+	MsgRevoke = "revoke"
+	MsgReload = "reload"
+	// MsgQuiesce and MsgDrain are not part of the protocol. No hub in
+	// this tree has ever sent either, and SPEC 6.2 says there are none
+	// (issue 782, DIVERGENCE 5.699.1); a hub's quiesce is to go through
+	// pillar (issue 780). They are named because earlier drafts of SPEC
+	// 6.2 listed both, so a peer built to one of those may send them, and a
+	// fleet is upgraded one machine at a time: a node that receives one
+	// says at warn and by name that it did nothing, and a relay passes
+	// them down to that node rather than swallowing them. Deleting them
+	// would turn that warning back into the info line about an unknown
+	// type that 5.699 replaced, and leave a relayed node silent.
 	MsgQuiesce = "quiesce"
 	MsgDrain   = "drain"
 	// MsgKill cancels a job a node has been given but has not

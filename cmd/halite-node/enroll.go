@@ -1256,14 +1256,15 @@ func (n *node) handle(msg transport.Message) error {
 	case transport.MsgJob:
 		n.acceptJob(msg)
 	case transport.MsgQuiesce, transport.MsgDrain:
-		// SPEC 6.2 names both and the relay forwards both, and this
-		// node does not act on either: what a hub's quiesce should
-		// mean, who may send it and whether it outlives a restart are
-		// undecided (issue 782). Said at warn and by name, because an
-		// operator who asked the hub to quiesce a node and saw nothing
-		// change has to be able to find out why here; under the
-		// default case it was one info line naming a type. A node is
-		// quiesced by its own `quiesce` setting (DIVERGENCE 5.694).
+		// Neither is part of the protocol (SPEC 6.2, DIVERGENCE
+		// 5.699.1): no hub in this tree sends them, and a hub's
+		// quiesce is to go through pillar (issue 780). Earlier drafts
+		// of SPEC named both, so a peer of another version may, and the
+		// relay passes them down. Said at warn and by name, because an
+		// operator who asked for a quiesce and saw nothing change has
+		// to be able to find out why here; under the default case it
+		// was one info line naming a type (5.699). A node is quiesced
+		// by its own `quiesce` setting (DIVERGENCE 5.694).
 		n.log.Warn("the hub sent a message this node does not act on, so nothing changed",
 			"type", msg.T, "reason", msg.Reason,
 			"instead", "set quiesce in this node's configuration and restart it")
