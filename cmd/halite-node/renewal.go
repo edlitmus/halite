@@ -84,6 +84,11 @@ func (n *node) keepRenewed(ctx context.Context, args *cli.Args) {
 		if err == nil {
 			n.log.Info("renewed this node's certificate", "component", "pki",
 				"expires", fresh.NotAfter.UTC().Format(time.RFC3339), "previous_key", aside)
+			// At once, rather than at the reconnect the hub's revocation
+			// of the old serial causes: a highstate in that second would
+			// otherwise go out on a certificate that no longer works.
+			client, _ := n.hubClient(args)
+			n.link().set(client)
 		}
 		return fresh, err
 	})

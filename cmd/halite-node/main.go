@@ -236,6 +236,8 @@ type node struct {
 	// The holder is shared, so the agent and every job use one child and
 	// the agent closes it.
 	sandbox *sandboxHolder
+	// hub is the client pillar and file fetches go through; see hubLink.
+	hub *hubLink
 	// args and root are kept so that a job from a hub naming a
 	// different environment can have its roots rebuilt, rather than
 	// silently running against the environment this invocation happened
@@ -370,6 +372,7 @@ func setup(args *cli.Args) *node {
 		statesRunning: new(atomic.Int64),
 		evidence:      &evidenceState{},
 		sandbox:       &sandboxHolder{},
+		hub:           &hubLink{},
 		metrics:       newNodeMetrics(cfg),
 		cfg:           cfg,
 		log:           logger,
