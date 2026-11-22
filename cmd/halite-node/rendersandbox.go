@@ -60,7 +60,17 @@ type sandboxHolder struct {
 // each leaked one. The holder is a pointer the copies share, so there is
 // one child and runConnect closes it. DIVERGENCE 5.597.
 func (n *node) renderEngine() render.Engine {
+	required, err := rendersandbox.ParseRequirements(n.cfg.StringSlice("render_sandbox_require"))
+	if err != nil {
+		return refusingEngine{err: err}
+	}
 	if !n.cfg.Bool("render_sandbox", false) {
+		if len(required) > 0 {
+			// Rendering in this process under a setting that says the
+			// child must be confined would be the requirement reporting
+			// itself as met by not having a child to check.
+			return refusingEngine{err: errRequiredWithoutSandbox}
+		}
 		return nil
 	}
 	h := n.sandbox
@@ -77,9 +87,10 @@ func (n *node) renderEngine() render.Engine {
 	}
 
 	h.sb = rendersandbox.New(rendersandbox.Config{
-		Args:  []string{renderSandboxCommand},
-		User:  n.cfg.String("render_sandbox_user", ""),
-		Group: n.cfg.String("render_sandbox_group", ""),
+		Args:    []string{renderSandboxCommand},
+		User:    n.cfg.String("render_sandbox_user", ""),
+		Group:   n.cfg.String("render_sandbox_group", ""),
+		Require: required,
 		// The child's diagnostics are the node's: a render that failed
 		// inside the sandbox must not be silent because the message went
 		// to a pipe nobody read.
@@ -100,6 +111,60 @@ func (n *node) renderEngine() render.Engine {
 		n.log.Warn("render sandbox: "+line, "component", "render")
 	}
 	return h.sb
+}
+
+var errRequiredWithoutSandbox = fmt.Errorf("render_sandbox_require is set and render_sandbox is off, "+
+	"so there is no child to confine and nothing is rendered: %w", rendersandbox.ErrUnmet)
+
+// refusingEngine is what a node renders with when its isolation
+// requirement cannot be met by any child: a misspelt requirement, or one
+// set with the sandbox off. Every render fails with the reason.
+//
+// Refused per render rather than at startup, deliberately. A node that
+// will not start cannot be reached to have its configuration fixed, and
+// the jobs that would fix it -- `file.managed` on its own config, a
+// `cmd.run` -- do not render a tree. A node that is up and says on every
+// highstate why it rendered nothing can be fixed from the hub.
+type refusingEngine struct{ err error }
+
+func (e refusingEngine) Render([]byte, render.Options) (render.Result, error) {
+	return render.Result{}, e.err
+}
+
+func (e refusingEngine) Template([]byte, render.Options) (string, []render.Warning, error) {
+	return "", nil, e.err
+}
+
+func (e refusingEngine) Describe() []string {
+	return []string{"none: every render is refused, because " + e.err.Error()}
+}
+
+// reportRenderIsolation says at startup whether the required controls are
+// in force, starting the child to find out. An operator who required
+// isolation learns that it does not hold when the node starts, not from
+// the first highstate that renders nothing.
+func (n *node) reportRenderIsolation() {
+	if len(n.cfg.StringSlice("render_sandbox_require")) == 0 {
+		return
+	}
+	switch engine := n.renderEngine().(type) {
+	case refusingEngine:
+		n.log.Error("render sandbox: every render will be refused: "+engine.err.Error(), "component", "render")
+	case *rendersandbox.Sandbox:
+		reasons, err := engine.Unmet()
+		if err != nil {
+			n.log.Error("render sandbox: the child could not be started to check render_sandbox_require, "+
+				"so every render will be refused until it can: "+err.Error(), "component", "render")
+			return
+		}
+		for _, reason := range reasons {
+			n.log.Error("render sandbox: every render will be refused: "+reason, "component", "render")
+		}
+		if len(reasons) == 0 {
+			n.log.Info("render sandbox: the required controls are in force: "+
+				strings.Join(engine.Required(), ", "), "component", "render")
+		}
+	}
 }
 
 // childLog turns the child's standard error into the node's log, a line

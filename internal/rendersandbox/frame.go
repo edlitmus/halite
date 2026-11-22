@@ -62,6 +62,8 @@ type frame struct {
 	ID   string `json:"id,omitempty"`
 	// Version is the protocol the child speaks, on the hello frame.
 	Version int `json:"version,omitempty"`
+	// Observed is the child's measurement of itself, on the hello frame.
+	Observed *Observed `json:"observed,omitempty"`
 
 	// Files is this frame's position table. Every wirePos in the frame
 	// indexes it.

@@ -487,6 +487,7 @@ func runConnect(args *cli.Args) int {
 	// down. It is a no-op when no render ever started one.
 	// DIVERGENCE 5.144.
 	defer n.closeRenderSandbox()
+	n.reportRenderIsolation()
 
 	// The executor runs jobs; the loop below reads the stream. They are
 	// separate goroutines with a bounded queue between them, per SPEC

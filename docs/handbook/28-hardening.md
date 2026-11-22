@@ -116,13 +116,38 @@ Two limits to know:
 
 ## The render sandbox
 
-All the YAML parsing and template rendering on a node, the largest and most
-attacker-adjacent code in the system, happens in a **child process that
-runs as an unprivileged account** with no network. The node runs as root
-because package and service management need it; the code that reads
-untrusted text does not. The sandbox returns *data*, never a callable and
-never a command to run without validation: the compiled low state is checked
-against the module signatures before anything executes.
+All the YAML parsing and template rendering on a node is the largest and
+most attacker-adjacent code in the system, and none of it needs privilege.
+With `render_sandbox: true` it runs in a **child process**, which a node
+running as root drops to `render_sandbox_user`. The sandbox returns *data*,
+never a callable and never a command to run without validation: the compiled
+low state is checked against the module signatures before anything executes.
+Module dispatch, template loading and gpg decryption stay in the node.
+
+It is **off by default**, and what it can apply depends on the platform:
+
+| Control | Linux | FreeBSD, macOS, other unix | Windows |
+|---|---|---|---|
+| Process boundary | yes | yes | yes |
+| Unprivileged account (`identity`) | when the node is root and `render_sandbox_user` is set | when the node is root and `render_sandbox_user` is set | no |
+| No network (`network`) | when the node is root: a network namespace of its own, loopback down | no | no |
+| Filesystem restriction | no: the child reads what its account can read | no | no |
+
+To make it a requirement rather than a hope, list the controls in
+`render_sandbox_require`:
+
+```yaml
+render_sandbox: true
+render_sandbox_user: halite-render
+render_sandbox_require: [identity, network]   # on FreeBSD: [identity]
+```
+
+Each is checked against what the child reports about itself once it has
+started, not against the settings. A requirement that does not hold refuses
+**every render** with the reason; the node still starts and takes jobs, so
+it can be fixed from the hub. It says so at startup, at error, and
+`halite-node doctor` reports the child's effective uid, the interfaces it
+can see and the filesystem restriction under **render isolation**.
 
 Related limits are enforced on every render regardless of sandbox:
 output at most 64 MiB, ten million loop iterations, recursion depth 100,

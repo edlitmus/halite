@@ -25,6 +25,9 @@ import (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("HALITE_RENDER_SANDBOX") == "1" {
+		// The live confinement test's probes, run as the child and
+		// reported on stderr before it serves; see probeAsChild.
+		probeAsChild(os.Args[1:])
 		if err := Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
