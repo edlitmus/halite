@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/user"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -75,6 +76,14 @@ func TestStartupSaysWhetherTheRequiredControlsAreInForce(t *testing.T) {
 		}
 		n, logged := requiringNode(t, "render_sandbox: true\nrender_sandbox_user: "+me.Username+"\nrender_sandbox_require: [identity]\n")
 		n.reportRenderIsolation()
+		// Windows has no account to drop to, so naming the node's own
+		// account does not meet the requirement there, and startup says so.
+		if runtime.GOOS == "windows" {
+			if !strings.Contains(logged.String(), "every render will be refused") {
+				t.Errorf("on Windows identity cannot be met, and startup did not say every render will be refused:\n%s", logged)
+			}
+			return
+		}
 		if strings.Contains(logged.String(), `"level":"error"`) || !strings.Contains(logged.String(), "in force: identity") {
 			t.Errorf("the child runs as %s, as required, and startup did not say the control is in force:\n%s", me.Username, logged)
 		}

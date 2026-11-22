@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/user"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +71,11 @@ func TestARequiredIdentityThatIsNotInForceRefusesTheRender(t *testing.T) {
 		if !errors.Is(err, ErrUnmet) {
 			t.Fatalf("got %v, want the render refused as unmet", err)
 		}
-		if !strings.Contains(err.Error(), "rather than as nobody") || !strings.Contains(err.Error(), "cannot drop privilege") {
+		want := []string{"rather than as nobody", "cannot drop privilege"}
+		if runtime.GOOS == "windows" {
+			want = []string{windowsHasNoAccount}
+		}
+		if !containsAll(err.Error(), want) {
 			t.Errorf("the refusal does not say what was seen and why: %v", err)
 		}
 	})
@@ -86,12 +91,25 @@ func TestARequiredIdentityThatIsNotInForceRefusesTheRender(t *testing.T) {
 // already, so the child, measured, runs as it and the render goes ahead.
 // Without this the tests above would pass for a gate that refused
 // everything.
+//
+// Windows has no account the child can be dropped to (a restricted token
+// is the answer there, and is not built), so the requirement cannot be
+// met even by naming the account the node already is; there the test
+// holds the opposite, that it is refused for that reason rather than met
+// by coincidence.
 func TestARequiredIdentityThatIsInForceRenders(t *testing.T) {
 	me, err := user.Current()
 	if err != nil {
 		t.Skipf("this machine cannot name the account the test runs as: %v", err)
 	}
-	if err := renderOne(requiringSandbox(t, me.Username, RequireIdentity)); err != nil {
+	err = renderOne(requiringSandbox(t, me.Username, RequireIdentity))
+	if runtime.GOOS == "windows" {
+		if !errors.Is(err, ErrUnmet) || !strings.Contains(err.Error(), windowsHasNoAccount) {
+			t.Fatalf("got %v, want the render refused because this platform has no account to drop to", err)
+		}
+		return
+	}
+	if err != nil {
 		t.Fatalf("the child runs as %s, which is what was required, and the render was refused: %v", me.Username, err)
 	}
 }
@@ -115,4 +133,16 @@ func TestARequiredNetworkDenialThatIsNotInForceRefusesTheRender(t *testing.T) {
 	if o.NetworkError == "" && !strings.Contains(err.Error(), o.UpInterfaces[0]) {
 		t.Errorf("the refusal does not name the interface the child saw up (%v): %v", o.UpInterfaces, err)
 	}
+}
+
+// windowsHasNoAccount is the reason confine_other.go gives.
+const windowsHasNoAccount = "this platform has no account the render child can be dropped to"
+
+func containsAll(s string, parts []string) bool {
+	for _, part := range parts {
+		if !strings.Contains(s, part) {
+			return false
+		}
+	}
+	return true
 }
