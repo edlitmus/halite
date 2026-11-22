@@ -120,7 +120,9 @@ A job running beside others still takes turns with jobs of its own
 module family, so two `pkg` jobs never overlap. A state run always runs
 alone and waits for the node to be empty, and nothing that arrives after
 it starts first. On a signed job, `--parallel` is ignored, because the
-signature does not cover it. The reader of the stream and the executor are
+signature does not cover it. An orchestration step or a reaction asks
+for the same with `run_parallel: true` ([chapter 21](21-orchestration.md),
+[chapter 20](20-reactors.md)). The reader of the stream and the executor are
 separate, so a long job does not stop pings or new jobs arriving into the
 bounded queue (`job_queue_depth`, default 16).
 

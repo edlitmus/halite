@@ -746,6 +746,7 @@ than Salt, whose agent runs every job at once and keeps only state runs apart.
   families while serializing within one.
 - `--parallel` marks a job as safe to run alongside others, and `parallel_jobs` makes that every
   job's default. A signed job's `--parallel` is ignored, because the signature does not cover it.
+  An orchestration step or a reaction asks for it with `run_parallel` (sections 18.1 and 19.1).
 - A state run always runs alone: it reaches every family at once. It waits for running jobs, and
   no job that arrives after it starts before it.
 - The node's own schedule shares the queue with jobs from the hub.
@@ -1820,7 +1821,10 @@ record_it:
 
 Reaction types, matching Salt: `local` (a remote execution job), `runner` (a hub runner),
 `wheel` (a hub management function such as key acceptance), and `caller` (a local execution on the
-node that fired the event, used from a node's own reactor). The template context provides `data`,
+node that fired the event, used from a node's own reactor). A `local` or `caller` reaction may set
+`run_parallel: true`, which asks for section 9.6's `--parallel` on the job it sends. The value is a
+boolean or the reaction is refused, as it is on a `runner` or `wheel` reaction, which sends no job,
+and as `true` is on a state run, which always runs alone. The template context provides `data`,
 `tag`, `id`, `grains`, `pillar`, and `salt` with the hub-safe module set.
 
 ### 18.2 Execution model
@@ -1901,6 +1905,12 @@ Supported step types: `salt.state`, `salt.sls`, `salt.highstate`, `salt.function
 including `onfail`, which is what makes a rollback step expressible. `batch`, `subset`,
 `fail_minions` (renamed `tolerate_failures`, old name accepted), `queue`, `pillar`, `pillarenv`,
 `saltenv`, `timeout`, `retry`, and `parallel` are all supported per step.
+
+`run_parallel: true` on a `salt.function` step asks for section 9.6's `--parallel` on the job the
+step sends. It is named apart from `parallel`, which is about running steps at once rather than
+how a job shares a node. Salt has no such key. A state run always runs alone, so `true` on
+`salt.state`, `salt.sls`, `salt.highstate`, or a `salt.function` step that names a `state.*`
+function, is refused when the orchestration compiles.
 
 `salt.wait_for_event` is a step that blocks until a matching event arrives or a timeout expires,
 which turns orchestration into something that can coordinate with an external system rather than

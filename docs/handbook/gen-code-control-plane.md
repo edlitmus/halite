@@ -187,13 +187,15 @@ Package job is the job identity, the replay defences, and the return schema of S
 
 The hub and the node both depend on this, and they have to agree exactly: a jid the hub assigns is the key the node records to refuse a replay, the key the job cache files a return under, and the string an operator types into \`jobs show\`.
 
-**Files:** `cache.go`, `guard.go`, `job.go`, `model.go`, `returnindex.go`, `signedreplay.go`; with tests.
+**Files:** `cache.go`, `family.go`, `guard.go`, `job.go`, `model.go`, `returnindex.go`, `signedreplay.go`; with tests.
 
 **Exports.**
 
+- `AlwaysAlone` (func): AlwaysAlone reports whether a job running fun runs alone on a node whatever it asks for: a state run, which reaches every family at once (SPEC 9.6).
 - `Batch` (type): Batch is the batching policy of SPEC 9.3.
 - `Cache` (type): Cache is the job cache of SPEC 9.4: a local store under the state directory, segmented by day, holding each job and the returns filed against it.
 - `Clock` (type): Clock assigns identifiers that do not collide.
+- `Family` (func): Family is the module family a function belongs to: the part of its name before the first dot, so `pkg.install` is `pkg`.
 - `Filing` (type): Filing is what filing one return learned about the job it belongs to.
 - `ForeignRecordError` (type): ForeignRecordError says which record and which schema.
 - `Guard` (type): Guard is the node's bounded replay cache of SPEC 6.3.
