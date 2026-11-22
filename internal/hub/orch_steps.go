@@ -47,6 +47,22 @@ func orchStates(o *orchRunner) *states.Registry {
 		return append(base, extra...)
 	}
 
+	// `run_parallel` is SPEC 9.6's `--parallel` for the job a step sends,
+	// named apart from the per-state `parallel` option (SPEC 11.7, 19.1),
+	// which is about running steps at once on the hub and is a different
+	// question from how the job shares a node.
+	//
+	// The state steps declare it too, so that writing it on one is
+	// answered by name rather than by "is not a parameter", and the
+	// answer is a refusal at compile time (refuseParallelStateRuns): a
+	// state run always runs alone on the node, so a step that asks for it
+	// to share one has asked for something it will not get.
+	runParallel := signature.Param{Name: "run_parallel", Type: signature.Bool,
+		Doc: "Let the job run beside other jobs on each node, as `halite-hub run --parallel` " +
+			"does (SPEC section 9.6). Ignored by the node on a signed job."}
+	stateRunParallel := signature.Param{Name: "run_parallel", Type: signature.Bool,
+		Doc: "Refused when true: a state run always runs alone on a node (SPEC section 9.6)."}
+
 	r.Add(
 		states.Module{
 			Sig: signature.Signature{
@@ -61,6 +77,7 @@ func orchStates(o *orchRunner) *states.Registry {
 					signature.Param{Name: "highstate", Type: signature.Bool, Doc: "Apply the top file instead of named SLS."},
 					signature.Param{Name: "pillar", Type: signature.Map, Doc: "Pillar overrides for this run."},
 					signature.Param{Name: "pillarenv", Type: signature.String, Doc: "The pillar environment the job names."},
+					stateRunParallel,
 				),
 			},
 			Fn: o.applyState,
@@ -76,6 +93,7 @@ func orchStates(o *orchRunner) *states.Registry {
 					signature.Param{Name: "sls", Type: signature.List, Doc: "The SLS names to apply."},
 					signature.Param{Name: "pillar", Type: signature.Map, Doc: "Pillar overrides for this run."},
 					signature.Param{Name: "pillarenv", Type: signature.String, Doc: "The pillar environment the job names."},
+					stateRunParallel,
 				),
 			},
 			Fn: o.applyState,
@@ -90,6 +108,7 @@ func orchStates(o *orchRunner) *states.Registry {
 				Params: fleetParams(
 					signature.Param{Name: "pillar", Type: signature.Map, Doc: "Pillar overrides for this run."},
 					signature.Param{Name: "pillarenv", Type: signature.String, Doc: "The pillar environment the job names."},
+					stateRunParallel,
 				),
 			},
 			Fn: func(c *exec.Context, args *value.Map) (states.Result, error) {
@@ -112,6 +131,7 @@ func orchStates(o *orchRunner) *states.Registry {
 				Params: fleetParams(
 					signature.Param{Name: "arg", Type: signature.List, Doc: "Positional arguments."},
 					signature.Param{Name: "kwarg", Type: signature.Map, Doc: "Keyword arguments."},
+					runParallel,
 				),
 			},
 			Fn: o.callFunction,
@@ -224,6 +244,9 @@ func (o *orchRunner) callFunction(c *exec.Context, args *value.Map) (states.Resu
 	for _, a := range states.Strings(args, "arg") {
 		sub.Arg = append(sub.Arg, a)
 	}
+	// Read here, not in submission: only this step may set it, and
+	// submission is shared with the state steps, which run alone.
+	sub.Parallel = states.Bool(args, "run_parallel", false)
 	if kw := states.Mapping(args, "kwarg"); kw != nil && kw.Len() > 0 {
 		sub.Kwarg = map[string]any{}
 		for _, e := range kw.Entries() {

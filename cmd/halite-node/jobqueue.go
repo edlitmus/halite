@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/edlitmus/halite/internal/job"
 )
@@ -28,8 +27,8 @@ import (
 // true nor false is false, and the job runs alone -- the safe direction
 // for this setting, unlike quiesce's.
 func (n *node) schedulingOf(j *job.Job) (exclusive bool, family string) {
-	family, _, _ = strings.Cut(j.Fun, ".")
-	if family == "state" {
+	family = job.Family(j.Fun)
+	if job.AlwaysAlone(j.Fun) {
 		return true, family
 	}
 	if n.cfg != nil && n.cfg.Bool("parallel_jobs", false) {
