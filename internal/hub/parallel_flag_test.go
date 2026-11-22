@@ -74,11 +74,25 @@ func TestTheParallelFlagReachesTheNode(t *testing.T) {
 	}
 	wantParallel(t, jobs, true, "dispatched live")
 	stop()
+	// stop returns when the client has hung up, which is before the hub
+	// has noticed. A job submitted in between is "delivered" to the dying
+	// connection and never queued, and the reconnect then has nothing to
+	// receive: that failed on three CI runners at once and never here.
+	waitFor(t, 5*time.Second, "the hub to see web1.example go", func() bool {
+		_, up := l.server.fleet().Connected()["web1.example"]
+		return !up
+	})
 
-	if _, err := op.Submit(context.Background(), transport.SubmitRequest{
+	queued, err := op.Submit(context.Background(), transport.SubmitRequest{
 		Target: "web1.example", Fun: "test.ping", Parallel: true, Offline: "queue",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	// Said here rather than left to the timeout below, which would blame
+	// the flag for a job that was never spooled.
+	if len(queued.Absent) != 1 || queued.Absent[0] != "web1.example" {
+		t.Fatalf("the hub did not count web1.example away, so nothing was queued: absent=%v", queued.Absent)
 	}
 	jobs, stop = receiveJob(t, client, "web1.example")
 	defer stop()
