@@ -18,8 +18,8 @@ import (
 // configuration file, except that the file's own `grains:` mapping is
 // one way of setting a static grain.
 //
-// halite reads `quiesce` only from the node's configuration (SPEC 9.6,
-// DIVERGENCE 5.694), and the compatibility shim converts the Salt key
+// halite reads `quiesce` only from the node's configuration (DIVERGENCE
+// 5.694), and the compatibility shim converts the Salt key
 // from that file -- the one place Salt never read it. So an estate that
 // blacks machines out the way Salt's own code expects, through pillar
 // or a grain, loses the blackout when it migrates, and nothing said so.
