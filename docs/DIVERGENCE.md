@@ -47217,6 +47217,70 @@ the quiesced run is the refusals, not a tree that could not apply.
   is deliberate, because they are how someone at the machine works on
   it. Salt's `salt-call` was not checked.
 
+### 5.695 A boolean setting the loader could not read became its default without a word (2026-11-21)
+
+**The defect.** `config.Bool` returns its default for a value it cannot
+read: a string `strconv.ParseBool` rejects, or an integer, which YAML
+makes of `1`. Nothing else looked at boolean settings, so `metrics:
+maybe` or `failhard: 1` loaded with no warning and quietly became the
+default. 5.694 found it on `quiesce`, where the default is the
+dangerous side, and fixed that one key by treating an unreadable value
+as quiesced. Every other boolean was left as it was (issue 783).
+
+**The change.** The loader now warns, once at start and among the
+configuration warnings every program already logs, about each boolean
+setting whose value it cannot read. The warning names the key, the
+value, and the value that applies instead:
+
+```
+configuration key "failhard" is set to 1, which is neither true nor false, so it is ignored and false applies
+```
+
+A key counts as boolean when its table default is the word `true` or
+`false`. `Bool` and the check share one reading of a value, so the two
+cannot disagree about what is readable.
+
+**A warning, not a refusal.** A node that will not start over a typo is
+a node nobody can reach to fix it, because the fix arrives through the
+node. The issue said the same. The warning says what the process will
+really do, which is the answer to "why does this setting not do what I
+wrote".
+
+**`quiesce` keeps failing closed, and the loader says so.** Its reader
+takes an unreadable value as true, so the loader's warning for it says
+`true applies`. The node's own startup warning for this case, added in
+5.694, is gone, because it would say the same thing a second time. The
+two halves are in different packages, and a test loads `quiesce: maybe`,
+`1` and `[on]` and checks that the warning and the node's reading agree.
+
+**What holds the check to every boolean.** The defaults audit already
+compares each `cfg.Bool` read with its key's declared default, but it
+uses `strconv.ParseBool`, which accepts `1` and `0`. So a boolean read
+of a key whose default was written `0` would pass that audit and escape
+this check. A new test finds every `cfg.Bool` read in the source and
+requires its key's default to be the word `true` or `false`. It also
+fails if it finds fewer than 30 reads, so that a pattern that stops
+matching cannot make it pass on nothing.
+
+Each part was broken on purpose and its test failed: the loader not
+adding the warnings, `quiesce` taken off the fail-closed list (both the
+config test and the node test failed), and `failhard`'s default changed
+to `0`. Run against the real `halite-node doctor` with `metrics: maybe`,
+`failhard: 1` and `quiesce: maybe`: three warnings, each naming the
+value that applies.
+
+**Not changed, and not verified:**
+
+- **An integer is still not a boolean.** `ParseBool` takes the string
+  `"1"`, and `Bool` has never taken the integer `1`. Salt, being Python,
+  would take `1` as true. Reading it now would change what an existing
+  file means without anybody deciding it should, so it is warned about
+  instead.
+- The hub and API binaries load configuration the same way and log the
+  same warnings. Only the node binary was run.
+- Settings given another way, such as a command-line flag, are not
+  checked here.
+
 ### 5.695 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
 
 **The defect.** Salt reads `minion_blackout` and <!-- lexicon:allow -->
