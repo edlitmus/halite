@@ -10,7 +10,7 @@ import (
 )
 
 // The controls `render_sandbox_require` can name. Issue 762, DIVERGENCE
-// 5.696.
+// 5.701.
 //
 // A list rather than one switch, because what can be applied differs by
 // platform and an operator's honest requirement differs with it: a

@@ -2534,7 +2534,7 @@ The node runs as root because package and service management require it. Inside 
   platform: the account on any unix when the node is root, the network on Linux only, and no
   narrowing of the filesystem anywhere. `render_sandbox_require` lists the controls a render must be
   under, checked against the child's own report of itself; when one does not hold, every render is
-  refused with the reason and `doctor` says so (DIVERGENCE 5.696).
+  refused with the reason and `doctor` says so (DIVERGENCE 5.701).
 - Module execution happens in the privileged parent, but only after the compiled low state has been
   validated against module signatures. The sandbox returns data, never a callable and never a
   command to run without validation.

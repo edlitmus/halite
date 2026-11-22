@@ -7,7 +7,7 @@ import (
 )
 
 // RenderIsolationState is what a node knows about its render sandbox,
-// gathered by the node and judged here. Issue 762, DIVERGENCE 5.696.
+// gathered by the node and judged here. Issue 762, DIVERGENCE 5.701.
 type RenderIsolationState struct {
 	// Enabled is `render_sandbox`.
 	Enabled bool

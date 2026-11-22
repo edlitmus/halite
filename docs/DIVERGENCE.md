@@ -47655,16 +47655,7 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
-
-
-
-
-
-
-
-
-
-### 5.696 The render sandbox described its confinement and nothing could require it (2026-11-21)
+### 5.701 The render sandbox described its confinement and nothing could require it (2026-11-21)
 
 Issue 762, from an outside review at `9a8eae7e`, priority P1.
 
@@ -47733,6 +47724,16 @@ planted pattern that matches no test.
 Linux here and not run, and this entry was written before the leg ran it. The
 FreeBSD half -- identity as root -- was not run as root anywhere. Windows was
 vetted, not run. No seccomp filter exists, which SPEC 25.4 also asks for.
+
+
+
+
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
