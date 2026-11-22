@@ -221,6 +221,7 @@ var Keys = []Key{
 	{"tls_key", apiOnly, "", "Its key.", "22.3"},
 	{"api_operator", apiOnly, "api", "Which operator certificate this service presents to the hub.", "22"},
 	{"hooks", apiOnly, "", "Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook.", "22.2"},
+	{"hook_client_ca", apiOnly, "", "The CA bundle that issues the certificates `auth: mtls` hook senders present.", "22.2"},
 	{"legacy_acl", hubOnly, "", "Salt ACL keys the shim preserved for review rather than translating.", "28.3"},
 	{"quiesce", nodeOnly, "false", "Refuse jobs other than the allowlist. Salt calls this blackout.", "2.1"},
 	{"quiesce_allowlist", nodeOnly, "", "Functions still permitted while quiesced.", "2.1"},

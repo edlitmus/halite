@@ -109,10 +109,10 @@ func TestAPIServeExitsConfigForAFaultARestartCannotFix(t *testing.T) {
 		"no hub":                 {strip: "hub:", says: "this service has no hub"},
 		"a hooks block that does not parse": {
 			extra: "hooks:\n  deploy:\n    auth: rot13\n", says: "rot13"},
-		// An mtls hook could never authenticate a delivery, and is a
-		// configuration fault now rather than a dead hook. DIVERGENCE 5.327.
-		"an mtls hook": {
-			extra: "hooks:\n  deploy:\n    auth: mtls\n", says: "auth: mtls"},
+		// An mtls hook with no CA to verify its senders against could
+		// never authenticate a delivery (DIVERGENCE 5.327, issue 767).
+		"an mtls hook with no hook_client_ca": {
+			extra: "hooks:\n  deploy:\n    auth: mtls\n    client: ci.example\n", says: "hook_client_ca"},
 		"an issuer with no role map": {
 			extra: "oidc_issuer: https://idp.example\noidc_client_id: halite\n", says: "oidc_role_map"},
 		// A listen address with no port fails at the listener, as an

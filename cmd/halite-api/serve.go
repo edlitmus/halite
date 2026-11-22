@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
@@ -97,7 +98,7 @@ func runServe(args *cli.Args) int {
 	}
 	certs := servingCertificate(s, args)
 	addr := args.Flag("listen", s.cfg.String("listen", ":4511"))
-	ln, err := api.Listen(addr, certs.GetCertificate)
+	ln, err := api.Listen(addr, certs.GetCertificate, hookClientCA(s, hooks))
 	if err != nil {
 		if cli.ListenMayRecover(err) {
 			cli.Exitf(1, "%v", err)
@@ -395,4 +396,41 @@ func metricsRegistry(cfg *config.Config) *metrics.Registry {
 		return nil
 	}
 	return metrics.NewRegistry()
+}
+
+// hookClientCA loads `hook_client_ca`, the CA bundle the senders to
+// `auth: mtls` hooks are issued from, or returns nil when none is set.
+//
+// An mtls hook with no CA stops the service. It would load, and no
+// delivery could ever reach it, which is the dead-or-open setting
+// DIVERGENCE 5.327 refused mtls for in the first place.
+//
+// Read at startup. Rotating the CA is: add the new one to the bundle beside
+// the old, restart, reissue the senders, then remove the old one and
+// restart again. A sender's own certificate needs no change here when it
+// is renewed, because only the issuer and the name are checked.
+func hookClientCA(s *service, hooks []*api.Hook) *x509.CertPool {
+	path := s.cfg.String("hook_client_ca", "")
+	var mtls []string
+	for _, h := range hooks {
+		if h.Auth == "mtls" {
+			mtls = append(mtls, h.Path)
+		}
+	}
+	if path == "" {
+		if len(mtls) > 0 {
+			cli.Fatalf("hooks %v use `auth: mtls` and `hook_client_ca` is not set, so no delivery to them "+
+				"could be verified; set it to the CA bundle their senders are issued from", mtls)
+		}
+		return nil
+	}
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		cli.Fatalf("hook_client_ca: %v", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		cli.Fatalf("hook_client_ca: %s holds no PEM certificate", path)
+	}
+	return pool
 }
