@@ -47217,6 +47217,75 @@ the quiesced run is the refusals, not a tree that could not apply.
   is deliberate, because they are how someone at the machine works on
   it. Salt's `salt-call` was not checked.
 
+### 5.695 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
+
+**The defect.** Salt reads `minion_blackout` and <!-- lexicon:allow -->
+`minion_blackout_whitelist` from the agent's pillar and then its grains, <!-- lexicon:allow -->
+in both places it checks: the job handler and the scheduler. It never
+reads them from its configuration file. This was read from Salt 3006.9
+for issue 780, and again from the tip of Salt's development branch,
+where the code is the same.
+
+halite reads `quiesce` from the node's configuration only (5.694). The
+compatibility shim converts the Salt key from that file, which is the
+one place Salt never read it. So:
+
+- **A node blacked out through pillar or a grain** goes back into
+  automation after migration, and nothing said so.
+- **A configuration file that sets the key at the top level** did
+  nothing in Salt. Here the shim turns it into `quiesce`, and the node
+  starts refusing jobs. The audit reported this as a `note` saying only
+  "halite calls it quiesce".
+
+**The change.** This is option A of issue 780: the audit reports, and
+converts nothing. Each finding is in the `semantics` category at
+`review` severity, and tells the operator to set `quiesce` in each
+affected node's configuration.
+
+- **Pillar and state files:** each line that names one of the two keys
+  as a whole word. In a state file that is almost always a grain being
+  set, through `grains.present` or `grains.setval`. Comment lines are
+  skipped. Line numbers are counted from the file as written, including
+  its renderer line.
+- **A Salt configuration file given with `--salt-config`:** a key under
+  its `grains:` mapping, which Salt reads as a static grain.
+- **The converted top-level key** is now `review`, not `note`. Its
+  action says that Salt never read it there, and that here it does
+  quiesce the node.
+
+`docs/from-salt.md` has a seventh item under "What will be different".
+
+**Why it reports and does not convert.** Option B of the issue would
+have the node honour `quiesce` from its pillar or grains, as Salt does.
+That would let a hub quiesce a node, and lift quiesce, through pillar,
+which today only a local edit can do. That changes what quiesce
+guarantees, and it is a decision for the maintainer, so it is left open
+in the issue.
+
+Each part was broken on purpose and its test failed:
+
+- the state and pillar audit not called;
+- the `grains:` audit not called;
+- the note on the converted key dropped;
+- the key's severity left at `note`;
+- the pattern without its closing word boundary, which then matched a
+  `minion_blackout_reason` key; <!-- lexicon:allow -->
+- comment lines not skipped.
+
+The real `halite-hub migrate` was run on a lab tree that sets the key in
+pillar, as a grain in a state file, and both ways in a configuration
+file, and it gave the four findings. The maintainer's own estate tree never mentions the
+key, so this changes nothing for its migration.
+
+**Not covered:**
+
+- **A grains file**, such as Salt's `/etc/salt/grains`, is not read.
+  The audit takes a tree and configuration files, and has no option for
+  one.
+- **A blackout key built by a template**, for example from a Jinja
+  variable, is not found. The audit reads the text.
+- **No real Salt estate that uses blackout has been migrated.**
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
