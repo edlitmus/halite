@@ -615,21 +615,30 @@ full:
    not name neither the directory nor the account. The Step 0 audit
    cannot see this one, for the same reason as item 3: it is about the
    estate rather than the tree, and the audit reads only the tree.
-7. **Blackout set in pillar or a grain does not carry over.** Salt reads
-   `minion_blackout` and `minion_blackout_whitelist` from pillar and <!-- lexicon:allow -->
-   grains, and never from its configuration file. halite reads `quiesce`
-   from the node's configuration only. So a node blacked out through
-   pillar or a grain goes back into automation after migration. Set
-   `quiesce: true` in that node's configuration instead.
+7. **Blackout set in a grain does not carry over; blackout set in pillar
+   does.** Salt reads `minion_blackout` and `minion_blackout_whitelist` <!-- lexicon:allow -->
+   from pillar and grains, and never from its configuration file. A
+   halite node reads `quiesce` from its configuration and from its
+   pillar, and in pillar it reads Salt's two keys as well, so a pillar
+   tree that blacks a machine out keeps doing so after migration. It does
+   not read grains, so a node blacked out through a grain goes back into
+   automation. Set `quiesce: true` in that node's configuration instead.
+
+   Two smaller differences in pillar. A pillar can set quiesce and never
+   lift one the node's configuration sets. And Salt always lets
+   `saltutil.refresh_pillar` through so that a pillar can lift its own
+   blackout; halite needs no such exception, because the node reads its
+   pillar again before refusing a job for a pillar's quiesce.
 
    The reverse also happens. A Salt configuration file that sets the key
    at the top level did nothing in Salt, but the shim converts it to
    `quiesce`, so that node starts refusing jobs.
 
-   **The Step 0 audit flags both**, at review severity: each pillar or
-   state file line that names the key, a `grains:` entry in a
-   configuration file given with `--salt-config`, and the converted
-   top-level key. It does not read a grains file such as
+   **The Step 0 audit flags all three**: a `grains:` entry in a
+   configuration file given with `--salt-config`, each state file line
+   that names the key, and the converted top-level key, at review
+   severity; and each pillar line that names it, as a note, since the
+   node honours it. It does not read a grains file such as
    `/etc/salt/grains`.
 
 And two that are better rather than different:

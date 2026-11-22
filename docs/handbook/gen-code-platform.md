@@ -192,6 +192,8 @@ A check that says "certificate expires in 3 days" and stops has moved the proble
 - `PillarCompiles` (func): PillarCompiles reports whether this node's pillar compiles.
 - `QueueDepth` (type): QueueDepth is one queue's depth against its bound.
 - `QueueDepths` (func): QueueDepths reports what the hub has waiting.
+- `Quiesce` (func): Quiesce reports whether the node is quiesced, and by what.
+- `QuiesceState` (type): QuiesceState is what quiesces a node, as the node's own configuration and the agent's record of its last pillar say.
 - `RenderIsolation` (func): RenderIsolation reports what the render child is actually under, measured by starting one, and fails when a required control is not.
 - `RenderIsolationState` (type): RenderIsolationState is what a node knows about its render sandbox, gathered by the node and judged here.
 - `Report` (type): Report is a run of the checks.

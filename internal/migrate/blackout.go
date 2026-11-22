@@ -18,15 +18,16 @@ import (
 // configuration file, except that the file's own `grains:` mapping is
 // one way of setting a static grain.
 //
-// halite reads `quiesce` only from the node's configuration (DIVERGENCE
-// 5.694), and the compatibility shim converts the Salt key
-// from that file -- the one place Salt never read it. So an estate that
-// blacks machines out the way Salt's own code expects, through pillar
-// or a grain, loses the blackout when it migrates, and nothing said so.
-// These findings say so. They convert nothing, because whether a hub's
-// pillar should be able to quiesce or lift quiesce on a node changes
-// what quiesce guarantees, and that is not this audit's decision
-// (issue 780).
+// A halite node reads `quiesce` from its configuration and from its
+// pillar, and in pillar it reads Salt's two keys as well (SPEC 9.6,
+// DIVERGENCE 5.694 and 5.703, issue 780): a pillar tree is the one thing an estate
+// brings across unchanged, so a blackout set there carries over. Each
+// pillar line is still reported, as a note, because the node now behaves
+// as Salt's did and an operator reading the audit should see that it
+// was looked at. A grain does not quiesce a node, so a blackout set as a
+// grain is lost on migration and is reported for review. And the shim
+// converts the Salt key from the configuration file -- the one place
+// Salt never read it.
 
 // blackoutKeys are Salt's two names. Matched as whole words, so that a
 // key like `minion_blackout_reason` is not taken for either. // lexicon:allow
@@ -37,10 +38,17 @@ func isBlackoutKey(name string) bool {
 	return blackoutKeys.FindString(name) == name
 }
 
-// blackoutAction is what to do about any of these findings.
-const blackoutAction = "halite does not read this from pillar or grains, so these nodes will not be " +
+// blackoutAction is what to do about a blackout set as a grain.
+const blackoutAction = "halite does not read this from grains, so these nodes will not be " +
 	"quiesced after migration. Set `quiesce: true` (and `quiesce_allowlist`) in the configuration of " +
 	"each node this applies to; SPEC 9.6, DIVERGENCE 5.694 and issue 780."
+
+// pillarBlackoutAction is what to do about one set in pillar: nothing,
+// and the two ways it still differs from Salt.
+const pillarBlackoutAction = "Nothing to do: the node reads this from its pillar and is quiesced by it, as " +
+	"Salt's was. A pillar cannot lift a quiesce set in a node's configuration, and halite does not need " +
+	"Salt's always-allowed saltutil.refresh_pillar, because a node reads its pillar again before " +
+	"refusing a job for it; SPEC 9.6, DIVERGENCE 5.703 and issue 780."
 
 // auditBlackout reports each line of an SLS file that names one of
 // Salt's blackout keys. In a pillar file that is the key itself. In a
@@ -48,14 +56,16 @@ const blackoutAction = "halite does not read this from pillar or grains, so thes
 // `grains.present` or `grains.setval`, which is the other place Salt
 // reads it; it is reported in either case, because a mention that is
 // neither is cheap to dismiss and a real one is a node back in
-// automation without anybody deciding it should be.
+// automation without anybody deciding it should be. In pillar it is a
+// note, because the node honours it there.
 //
 // It reads the file as written rather than the body after the renderer
 // line, so the line numbers are the file's own.
 func auditBlackout(rep *Report, rel string, src []byte, isPillar bool) {
 	where := "a state file, which most likely sets it as a grain"
+	severity, action := Review, blackoutAction
 	if isPillar {
-		where = "pillar"
+		where, severity, action = "pillar", Note, pillarBlackoutAction
 	}
 	for i, line := range strings.Split(string(src), "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -69,9 +79,9 @@ func auditBlackout(rep *Report, rel string, src []byte, isPillar bool) {
 			}
 			seen[m[1]] = true
 			rep.Findings = append(rep.Findings, Finding{
-				Category: CatSemantics, Severity: Review, File: rel, Line: i + 1, Subject: m[1],
+				Category: CatSemantics, Severity: severity, File: rel, Line: i + 1, Subject: m[1],
 				Msg:    fmt.Sprintf("Salt reads %q from pillar and grains, and this is %s", m[1], where),
-				Action: blackoutAction,
+				Action: action,
 			})
 		}
 	}

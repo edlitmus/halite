@@ -438,6 +438,9 @@ func needsRenewal(cert *x509.Certificate) bool {
 // work, and a job arriving was refused. That stopped being true long ago.)
 func runConnect(args *cli.Args) int {
 	n := setup(args)
+	// Before the hub is attached, so that the first pillar read is
+	// compared with what the last one said.
+	n.startPillarQuiesce()
 	client, _ := n.hubClient(args)
 	if client.Cert == nil {
 		cli.Fatalf("this node is not enrolled; `halite-node enroll` is the first step")
@@ -1263,17 +1266,18 @@ func (n *node) handle(msg transport.Message) error {
 		n.acceptJob(msg)
 	case transport.MsgQuiesce, transport.MsgDrain:
 		// Neither is part of the protocol (SPEC 6.2, DIVERGENCE
-		// 5.699.1): no hub in this tree sends them, and a hub's
-		// quiesce is to go through pillar (issue 780). Earlier drafts
+		// 5.699.1): no hub in this tree sends them, and a hub
+		// quiesces a node through its pillar (DIVERGENCE 5.703). Earlier drafts
 		// of SPEC named both, so a peer of another version may, and the
 		// relay passes them down. Said at warn and by name, because an
 		// operator who asked for a quiesce and saw nothing change has
 		// to be able to find out why here; under the default case it
 		// was one info line naming a type (5.699). A node is quiesced
-		// by its own `quiesce` setting (DIVERGENCE 5.694).
+		// by its own `quiesce` setting (DIVERGENCE 5.694) or by its
+		// pillar's.
 		n.log.Warn("the hub sent a message this node does not act on, so nothing changed",
 			"type", msg.T, "reason", msg.Reason,
-			"instead", "set quiesce in this node's configuration and restart it")
+			"instead", "set quiesce in this node's pillar, or in its configuration and restart it")
 	default:
 		n.log.Info("message", "type", msg.T)
 	}

@@ -47912,12 +47912,193 @@ outside package `hub`, and the path down is `forwardDown`, which the
 other passed types share. No peer has sent either message to a running
 node or relay. The pillar route to quiesce does not exist yet.
 
+### 5.703 A node's pillar may quiesce it, and never lift a quiesce its configuration sets (2026-11-22)
 
+Issue 780, option B, as the maintainer decided it: **a pillar may set
+quiesce and never lift it.** 5.696 was option A. It made `migrate`
+report a blackout set in pillar or a grain, because halite read
+`quiesce` only from the node's configuration (5.694), and Salt reads
+its blackout only from pillar and grains. The Salt read for this entry
+is the tip of its development branch, `221495872f` of 2026-11-19, in
+`~/saltstack`. `salt/minion.py` at line 3586 and <!-- lexicon:allow -->
+`salt/utils/schedule.py` at line 834 are unchanged from what 5.696
+read at 3006.9.
 
+**The rule.** A node is quiesced when its configuration says so or
+its pillar says so. When both do, only a function on both allowlists
+runs. So a pillar can narrow what the configuration allows, and it can
+never widen it or switch it off. What a pillar set, a pillar can lift.
 
+Each choice, and why:
 
+- **Which keys.** `quiesce` and `quiesce_allowlist` at the top of the
+  pillar, and Salt's `minion_blackout` and `minion_blackout_whitelist` <!-- lexicon:allow -->
+  as well. A pillar tree is the one thing an estate brings across
+  unchanged. The hub compiles it as Salt would, and `migrate` converts
+  nothing in it. Reading only halite's name would leave every node a
+  Salt estate blacked out back in automation, which is the defect this
+  issue is about. Each pair is a source of its own: a pillar that sets
+  both is quiesced by both, and the stricter list applies.
+- **How the allowlists combine.** As an intersection: a function runs
+  only if every source that quiesces the node lists it. This is the
+  only answer under which a pillar can never lift any part of a local
+  quiesce. It is also what Salt does with its own two sources. In
+  `minion.py` the pillar check and the grains check each raise the <!-- lexicon:allow -->
+  violation on their own, so a function must pass both. Local-only was
+  the other safe answer. It would make a pillar's list mean nothing on
+  a node that is already quiesced, and nothing would say so.
+- **Grains are not read**, though Salt reads them. A grain here is a
+  fact the node measured, or a `grains:` entry in the node's own
+  configuration, which is where `quiesce` already lives and what
+  `migrate` points at. Or it is one written by `grains.setval` from
+  the hub, which is a second hub-driven road with its own questions
+  about lifting. One hub-driven road is enough. `migrate` still reports
+  a grain's blackout at review severity.
+- **Values** are read as the configuration's are, failing closed:
+  absent, null and false are off; a value that is neither true nor
+  false is on; an allowlist that is not a list or a name is empty.
 
+**When the node reads it.** Every pillar the agent reads successfully
+passes through `compilePillarOrErr`, and that is where the answer is
+recorded. That covers every job, since every job compiles its pillar,
+and the beacons and the signature check too. Two places use it:
 
+1. **Admission**, in `executor.Offer` and `runScheduled`, where 5.694
+   put the check. The job is held against the last pillar read. When a
+   pillar's quiesce is what refuses the job, the node reads its pillar
+   again first. So a pillar that has lifted its quiesce lets the job
+   through, and Salt's always-allowed `saltutil.refresh_pillar` is not
+   needed.
+2. **After the job compiles its pillar.** A job admitted before the
+   node read a quiescing pillar is refused by its own pillar, before
+   anything runs. Without this, the first job after an operator
+   quiesced a node in pillar would run. That job is usually the
+   highstate the quiesce was meant to stop. It has an acceptance
+   record by then, so it fails with the refusal instead of being
+   refused.
+
+**A failed read changes nothing.** This is the two-paths case. The
+pillar a job runs with and the quiesce it is admitted under must
+agree, and both come from the last pillar that was read. Only a read
+that succeeded is recorded. When the hub is down, the last known good
+pillar (5.577) is a success, and it says what it said when it was
+saved. A hub that refuses, a pillar that does not compile, and an
+outage with no cached pillar are all failures, and leave the answer as
+it was. A refusal names the failed re-read. The answer is kept on disk
+in `state_dir/pillar-quiesce.json`, which exists only while a pillar
+quiesces the node. So a restart with the hub away does not lift it
+either. It is kept even with `pillar_cache_disk: false`, because that
+setting is about secrets and this file holds none. A file that cannot
+be read is taken as quiesced with nothing allowed.
+
+**Only the agent records it.** `doctor` and the one-shot commands
+compile pillars of their own. `doctor` compiles the node's local roots,
+which on a node managed from a hub are not the pillar the agent runs
+with. If either recorded its answer, it would overwrite the agent's.
+Agentless mode still does not check quiesce (5.694).
+
+**What an operator sees.** At warn: `the pillar has quiesced this node`,
+`the pillar's quiesce has changed`, `the pillar no longer quiesces this
+node`, and `...; its configuration still does`. At startup, from the
+file: `this node's pillar quiesced it when it was last read, and it
+stays quiesced until a pillar says otherwise`. A refusal names what
+quiesced the node: `this node is quiesced by its configuration and by
+its pillar's quiesce and runs only test.ping, which state.apply is not`.
+`halite-node doctor` has a new check, `quiesce`, its thirteenth with render isolation (5.701). It warns when the
+node is quiesced, and says by what and what still runs. It reads the
+agent's file and compiles nothing. SPEC 26.4 now names the check. There
+is no other status surface: the hub does not know that a node is
+quiesced. The `doctor` example in handbook chapter 12 was captured on
+2026-11-05, before this check. Its new `quiesce` line comes from this
+branch's binary, run against a scratch configuration on beastie. It
+was not captured from the node in that example, and the example still
+has no render isolation line.
+
+**What this changes in 5.699.1.** That section, written before this
+one, says a hub-driven quiesce is to go through the pillar, that it is
+not built, and that the hub cannot quiesce a node at all. That was true
+when it was written and is not now. 5.699.1 is left as it is. SPEC 6.2
+and handbook chapter 12 now say the hub quiesces a node through the
+node's pillar, citing SPEC 9.6 and this section, and they keep 5.699.1's
+point: there is no `quiesce` or `drain` stream message.
+The node's warning for either message (5.699) said
+`instead: set quiesce in this node's configuration and restart it`. It
+now says `set quiesce in this node's pillar, or in its configuration and
+restart it`, and `TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName`
+checks both halves.
+
+`migrate` now reports a pillar's blackout key as a `note`, which says
+there is nothing to do. A state file's key, almost always a grain, is
+still `review`, and its action now says only that grains are not read.
+
+**Shown.** Unit tests in `cmd/halite-node/pillarquiesce_test.go`
+drive `acceptJob`, `runScheduled` and `executeJob` against a stub of
+the hub's pillar. Each rule was broken on purpose, and the tests named
+failed:
+
+| Break | Failed |
+|---|---|
+| the pillar not read | eight, from the either-name test to the value table |
+| Salt's key not read | its case of the either-name test, the schedule, the value table |
+| any source's list enough (a union) | cannot-lift-a-local-quiesce, the intersection |
+| no re-read before a pillar refusal | lifts-its-own, failed-fetch |
+| a failed read recorded as an empty pillar | failed-fetch, survives-a-restart, unreadable-record |
+| the file not written | survives-a-restart |
+| no check after the job's own pillar | the first job after a pillar quiesce |
+| a holder made for a node that is not the agent | only-the-agent-records |
+| an unreadable file taken as no file | unreadable-record |
+
+`internal/migrate` holds the new severities, and leaving the pillar
+finding at `review` fails it. `internal/doctor` holds the new check to
+SPEC 26.4 and to the remedy rules.
+
+**Real binaries.** `TestAPillarQuiesceHoldsThroughAHubOutageAndLiftsOnlyItsOwn`
+builds `halite-hub` and `halite-node` and runs them on loopback. The
+node has `pillar_cache_disk: false` and a one-second scheduled
+`state.apply` that writes a file holding the pillar's `quiesce`. The test walks through these steps:
+
+1. The state runs.
+2. The hub's pillar sets `quiesce`. The node logs it, writes the file,
+   and stops running the state. `doctor` prints
+   `warn  quiesce  quiesced by its pillar's quiesce; runs only test.ping`.
+3. The hub is killed. The node stays quiesced, and stays quiesced
+   after a restart while the hub is still away.
+4. The hub returns without the key. The same process runs the state
+   again and removes the file.
+5. Local `quiesce` with `[test.ping, state.apply]` runs the state. A
+   pillar `[test.ping]` stops it, and a pillar `quiesce: false` lets
+   it run again. Local `[test.ping]` with a pillar `quiesce: false` and
+   `[state.apply]` stays refused.
+
+Each quiet stretch is five ticks, and the test checks the schedule's
+log line so that silence is not taken for refusal. Broken on purpose, it failed four ways: a failed read recorded as an empty pillar (at the outage), the file not written (at the restart), any source's list enough (at step 5), and no re-read before a pillar refusal (at step 4, waiting for a lift that never came). Without the check after a job's own pillar it first passed: only the tick that first read the quiescing pillar is affected, and the test cleared the file after it. The state now writes what its pillar said, and the test fails if `quiesce=True` is ever written; with the check removed it then failed at step 2, and with it in place it passes.
+
+**Not verified:**
+
+- **FreeBSD and Linux.** The binary test ran on beastie under its
+  Linux layer, as an agent's shell does. CI's legs run it as part of
+  `go test ./...`. No FreeBSD host was driven by hand.
+- **A job from `halite-hub run`** was not sent in the binary test;
+  only the schedule was used. The dispatched path is the unit tests'
+  `acceptJob`, and it shares `quiesceRefusal` with the schedule.
+- **Open question: a job that names another pillar environment.** The
+  recorded answer is the last pillar read for any environment. A job
+  that names another environment compiles that environment's pillar
+  (`adoptJobEnvironment`). If that pillar does not quiesce the node,
+  the job replaces the recorded answer, and so it could lift a quiesce
+  that the node's own pillar set. The job runs only if the node lets
+  it through: a pillar refusal re-reads the node's own environment,
+  not the job's. But the next pillar read in the node's own
+  environment sets the quiesce again. This was found by reading the
+  code. It was not run, and no test holds it. Whether the record should
+  be kept per environment, or only for the node's own environment, is
+  undecided.
+- **The cost.** A node quiesced by its pillar asks the hub for its
+  pillar once for every job it refuses, and once on every schedule
+  tick, from the stream reader. That was not measured on a large
+  pillar.
+- **No real Salt estate** that blacks machines out in pillar has been
+  migrated.
 
 
 ## 6. Everything else not started
