@@ -1487,7 +1487,7 @@ gets instead, which is the honest half, and they still do nothing.
 external pillar and tracing were built, `pillar_cache_disk` when the
 last known good pillar was (DIVERGENCE 5.577), `quiesce` and
 `quiesce_allowlist` when quiesce was (5.694), and `parallel_jobs` when
-it was (5.696).
+it was (5.698).
 
 Three more are unread with a reason (`UnreadKeys`): `log_level_file`,
 `regex_engine` and `node_id_source` are settings with one value.
