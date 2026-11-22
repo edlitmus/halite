@@ -25,7 +25,7 @@ Everything here is crypto/tls and net/http. Section 6.1 records why at length, a
 
 There is no plaintext mode. Not for loopback, not for a test, not behind a flag — section 6.1 is explicit that such a setting is invariably found in production, and the way to be sure of that is for it not to exist.
 
-**Files:** `bootstrap.go`, `client.go`, `closedrain.go`, `tls.go`, `unreachable.go`, `wire.go`; with tests.
+**Files:** `bootstrap.go`, `client.go`, `closedrain.go`, `streams.go`, `tls.go`, `unreachable.go`, `wire.go`; with tests.
 
 **Exports.**
 

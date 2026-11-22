@@ -2169,7 +2169,10 @@ down to the machine or the link each one still wants.
     drift report; and LDAP, OIDC and TOTP with a role map for a
     directory group.
 
-27. **Nothing bounds a client to SPEC 6.5's 64 streams per connection**
+27. ~~**Nothing bounds a client to SPEC 6.5's 64 streams per connection**~~
+    (done: each client holds its short requests to 63, DIVERGENCE
+    5.665.3; what is left is a reconnection storm of event watchers,
+    which the bound deliberately does not count). Kept as it was found:
     (#748, DIVERGENCE 5.665.1). The hub's half is enforced — #691 caps
     node connections and advertises 64 where the hub had been
     advertising `net/http`'s 250 — and the client half is not bounded
