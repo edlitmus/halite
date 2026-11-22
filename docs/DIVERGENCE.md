@@ -47603,14 +47603,7 @@ starting two seconds later.
   by default. No new setting was added.
 - **Orchestration steps** and the reactor dispatch without the flag, so
   their jobs run alone unless the node sets `parallel_jobs`.
-
-
-
-
-
-
-
-### 5.696 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
+### 5.699 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
 
 Issue 782, found while building quiesce for issue 763 (5.694).
 
@@ -47639,6 +47632,14 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
+
+
+
+
+
+
+
+
 
 ## 6. Everything else not started
 
