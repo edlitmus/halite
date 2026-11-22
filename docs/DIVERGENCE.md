@@ -46991,7 +46991,9 @@ Rocky only, and the script requires it to skip. The first run after Rocky
 offers a second kernel therefore fails and says to put it back. AlmaLinux 8
 offers older kernels and still has to pass it. Not tried: Rocky's vault of
 the previous point release, which would give an older kernel at the cost of
-another mirror, and which nobody has checked installs cleanly o**Linux: half of GitHub's runners mount `/run` noexec.**
+another mirror, and which nobody has checked installs cleanly.
+
+**Linux: half of GitHub's runners mount `/run` noexec.**
 `TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir` failed with
 `status=203/EXEC` on both of its starts on four of seven runs from 11-17.
 203 is systemd failing to execute `ExecStart`, and the test had copied its
@@ -47038,6 +47040,27 @@ is time and not a fix: a mirror slower still will reach it.
 **Not covered:** the libexec path on an AWS runner, until this change's own
 Fleet run; whether any other live test runs a binary from `/run`; and
 whether the vault would serve Rocky's install test.
+
+### 5.688.1 Rocky shipped a second kernel, and the install test is expected again (2026-11-22)
+
+The required skip above did its job. On 2026-11-22 Rocky 9.8's BaseOS
+offered `kernel-core` `5.14.0-741.24.1.el9_9` beside `741.22.1`, the rocky9
+leg failed with *"was expected to skip ... and did not"* on an unrelated PR
+(issue 762's), and in the same run the test passed: it installed 741.22.1,
+upgraded to 741.24.1 and removed the older, in 82 seconds. The test is back
+in the leg's expected list on Rocky as on AlmaLinux, and is no longer an
+allowed skip anywhere.
+
+It also failed `main`'s scheduled Fleet run the same way, so every PR that
+triggers the rpm leg was red on it until this change.
+
+The line above that ran into the next paragraph (*"installs cleanly
+o\*\*Linux"*) arrived that way in the change that wrote it; whatever it
+went on to say is lost, so the sentence now ends where its claim does.
+
+**Not verified:** this change's own Fleet run is the check that the test is
+expected and passes; nothing here pins Rocky's repositories, so a Rocky that
+offers one kernel again fails the leg on the skip.
 
 ### 5.689 A slice step at the int limit panicked a render
 
