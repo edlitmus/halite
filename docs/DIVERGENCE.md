@@ -47281,6 +47281,59 @@ value that applies.
 - Settings given another way, such as a command-line flag, are not
   checked here.
 
+### 5.696 A renewal cut the running agent off from its pillar and files (2026-11-21)
+
+Issue 792, found running issue 766's rolling upgrade with the 0.1.1 and 0.2.0
+release binaries on FreeBSD 15.1 (`beastie`), and then on `main`.
+
+**The defect.** After a node's certificate was renewed, its running
+`halite-node connect` stopped converging. Every highstate failed with
+*"/v1/pillar: this node's enrollment is revoked: superseded by a renewal"*,
+and the refusal deleted the node's last known good pillar on the way, so a
+node that lost its hub afterwards had nothing to fall back on. The subscribe
+stream reconnected on the new certificate within a second, so the node looked
+connected; the hub logged *"a revoked node is still connected"* at every job.
+Only restarting the agent recovered it.
+
+Both ways a renewal happens did it. `halite-node renew --force` is the
+handbook's way to rotate a key that may have leaked. The agent's own renewal at
+half its certificate's life is what every node does on schedule -- every 45
+days at the default 90-day life -- which is why this is not an edge case: the
+whole estate stops converging once per certificate life, a node at a time.
+Restarts for upgrades have been hiding it.
+
+**The cause** is two paths that must agree. The connect loop rebuilt its
+client from disk on every reconnect, so the stream followed the identity, and
+returns re-read it per post (`returnClient`). The pillar fetcher and the file
+server's remote did not: `attachToHub` gave them the client of the first
+connection and kept them (`if n.hubPillar == nil`, `if !n.hubTree`), and a
+client carries the certificate it was built with.
+
+**The change.** Both fetch through a `hubLink`, one per node and shared by
+every job's copy, which `attachToHub` replaces on every connection and the
+agent's renewal replaces as soon as the new certificate is installed.
+
+**Measured.** In the lab, a v0.2.0 hub and then `main`'s, with nodes at 0.1.1,
+0.2.0 and `main`: an out-of-band `renew --force` cut each one off until
+restart, and on `main` so did the agent's own renewal of a ten-minute
+certificate. `TestAHighstateAfterARenewalUsesTheNewCertificate`, real hub and
+node binaries with a scheduled highstate, has a subtest for each way: both
+failed on unfixed `main` (the marker kept the pillar value from before the
+renewal) and both pass with the change. With the pillar fetch put back on the
+first client, and separately with the file server's, the by-hand subtest
+fails, so both halves are needed.
+
+**An odd result on the way, recorded because it nearly went into this entry.**
+The first `renew --force` on `main`'s node was piped through `head -1`, which
+closed the pipe after the first log line; the next write killed `renew` with
+SIGPIPE before it reached the hub, and the highstate after it passed, which
+read as `main` being fixed. The certificate on disk was the enrolment one. A
+probe that silently does nothing looks exactly like a fix.
+
+**Not verified.** Only on FreeBSD; the code is not platform-specific. A relay's
+own upstream identity renews through `renewal.Loop` too, and was not checked
+for the same shape.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

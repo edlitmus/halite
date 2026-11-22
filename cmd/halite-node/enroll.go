@@ -699,6 +699,7 @@ func (n *node) attachToHub(args *cli.Args, client *transport.Client) {
 	if args.Bool("local", false) {
 		return
 	}
+	n.link().set(client)
 	n.useHubEvents(client)
 	n.useHubMine(client)
 	if !n.hubTree {
@@ -720,8 +721,11 @@ func (n *node) attachToHub(args *cli.Args, client *transport.Client) {
 // file server is briefly unreachable is worse than one that applies the
 // tree it already has.
 func (n *node) useHubTree(client *transport.Client) {
+	// Set here as well as in attachToHub: a one-shot command reaches this
+	// directly, with no connection loop to set it.
+	n.link().set(client)
 	cacheDir := n.cfg.String("cache_dir", config.DefaultCacheDir)
-	remote := fileserver.NewRemote(client, cacheDir, nil)
+	remote := fileserver.NewRemote(n.link(), cacheDir, nil)
 	remote.HashType = n.cfg.String("hash_type", "sha256")
 	remote.Unreachable = transport.Unreachable
 	remote.Warn = n.log.Warn
@@ -889,6 +893,7 @@ func (n *node) pillarRequest(env string, all bool, grains json.RawMessage) trans
 // estate migrating one piece at a time should not lose its pillar the
 // moment it enrols.
 func (n *node) useHubPillar(client *transport.Client) {
+	n.link().set(client) // See useHubTree.
 	n.removePillarStoreIfDisabled()
 	grains, err := value.EncodeJSON(n.grainsNow(), 0)
 	if err != nil {
@@ -951,7 +956,7 @@ func (n *node) useHubPillar(client *transport.Client) {
 		// Asked again for every run rather than cached: pillar is
 		// where an operator changes a value expecting the next
 		// highstate to use it, and a cache would mean it does not.
-		res, err := client.Pillar(context.Background(), n.pillarRequest(env, all, grains))
+		res, err := n.link().client().Pillar(context.Background(), n.pillarRequest(env, all, grains))
 		if err != nil {
 			if transport.CodeOf(err) == transport.CodeNoPillar {
 				// The answer the probe would have acted on, arriving
