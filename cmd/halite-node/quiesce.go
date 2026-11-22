@@ -16,26 +16,28 @@ import (
 // `quiesce: maybe` or `quiesce: 1` used to load without a word and leave
 // the node running everything -- which is the one outcome an operator
 // reaching for this setting did not want. A value that is not plainly
-// true or false is taken as quiesced, and unreadable carries it so that
-// startup can say so. Nothing is lost by erring this way: lifting quiesce
-// is a local edit whichever way it was set.
-func quiesceSetting(cfg *config.Config) (on bool, unreadable string) {
+// true or false is taken as quiesced. The loader warns about it, and
+// says "true applies", because internal/config lists quiesce among its
+// fail-closed booleans; TestTheLoaderSaysWhatQuiesceDoesWithAnUnreadableValue
+// holds the two together. Nothing is lost by erring this way: lifting
+// quiesce is a local edit whichever way it was set.
+func quiesceSetting(cfg *config.Config) bool {
 	if cfg == nil {
-		return false, ""
+		return false
 	}
 	v, ok := cfg.Get("quiesce")
 	if !ok || v == nil {
-		return false, ""
+		return false
 	}
 	switch t := v.(type) {
 	case bool:
-		return t, ""
+		return t
 	case string:
 		if b, err := strconv.ParseBool(t); err == nil {
-			return b, ""
+			return b
 		}
 	}
-	return true, fmt.Sprint(v)
+	return true
 }
 
 // quiesceRefusal says whether a quiesced node will run fun, and why not.
@@ -54,7 +56,7 @@ func quiesceSetting(cfg *config.Config) (on bool, unreadable string) {
 // that a node built without one (a test, agentless mode) is never
 // quiesced by accident and the answer cannot drift from the file.
 func (n *node) quiesceRefusal(fun string) error {
-	if on, _ := quiesceSetting(n.cfg); !on {
+	if !quiesceSetting(n.cfg) {
 		return nil
 	}
 	allowed := n.cfg.StringSlice("quiesce_allowlist")
