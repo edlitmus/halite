@@ -24775,6 +24775,97 @@ host had 0 halite files, 0 halite processes, nothing on the port and no
 the Go toolchain and the build cache, and `bmake`. Salt's agent was active on
 all three hosts, and `dmesg` showed no OOM kill.
 
+#### Ubuntu Pro's certified `fips` kernel, and a move into FIPS mode with halite running (issue 306, 2026-11-23)
+
+**Only Ubuntu 20.04 and older have a certified kernel.** Pro has three FIPS
+pockets, and on 2026-11-23 their suite listings under
+`esm.ubuntu.com/<pocket>/ubuntu/dists/` were read. The certified, frozen
+pocket `fips` had `xenial`, `bionic` and `focal`. `fips-updates` had those
+three and also `jammy-updates` and `noble-updates`. `fips-preview` had
+`focal` and `jammy`. So 22.04 and 24.04 have no certified-track kernel, and
+"Ubuntu Pro's certified `fips` kernel" can only be tested on 20.04 or
+older. Pro also refuses `fips` on a host that has ever had `fips-updates`
+(the subsection above), so the host must start without it.
+
+**The host.** A new AWS instance, `host-e`, in us-west-2. It was t3.large,
+**amd64**, from Canonical's plain Ubuntu 20.04.6 image (not the Pro or
+Pro FIPS Marketplace image). It booted the stock kernel 5.15.0-1084-aws,
+which has no `/proc/sys/crypto/fips_enabled`. The instance read the
+estate's Pro token from Secrets Manager with its own role. It attached with
+`pro attach --attach-config <file> --no-auto-enable`, and the file was then
+removed. `pro enable fips` printed `FIPS enabled` and `A reboot is required
+to complete install`. It installed `linux-image-5.4.0-1021-aws-fips`
+(`5.4.0-1021.21+fips2`), `libssl1.1` `1.1.1f-1ubuntu2.fips.7.1`,
+`ubuntu-fips-userspace` 1.2.7, and a GRUB drop-in adding `fips=1`.
+
+**The build and install, before the reboot.** As the unprivileged `ubuntu`
+account, with Go 1.27.4 linux-amd64 from go.dev (sha256 checked), `main` was
+built at `0f61199d` with `bmake build fips`. It printed `fips artifacts
+report module v1.0.0 and passing self-tests`. As root, `bmake install
+install-fips` installed the programs and the base units, and the three
+drop-ins from `contrib/systemd/fips/` were installed. The hub, the node and
+the API ran on the same host (`enrollment_mode: token`). The node enrolled
+with `--token-file`. All three units were enabled and active on the `-fips`
+binary, with `GODEBUG=fips140=on`.
+
+The host was still on the stock kernel, so it was not in FIPS mode.
+`grains.item` gave `fips_mode` **False**, with `fips_build` True,
+`fips_enabled` True, `fips_module` `v1.0.0`, `x86_64`, `5.15.0-1084-aws` and
+`20.04`. A `state.apply` of a `file.managed` reported `changed=1`. The
+`doctor` of the hub, the node and the API each gave **warn**: `this is a FIPS
+build (module v1.0.0) and the kernel is not in FIPS mode`.
+
+**The move into FIPS mode, with halite running.** `systemctl reboot`, and
+the boot ID changed. Afterwards the kernel was 5.4.0-1021-aws-fips,
+`fips_enabled` was 1, `fips=1` was on the command line, Pro showed `fips`
+enabled and `fips-updates` disabled. With no action by anyone:
+
+- `halite-hub`, `halite-node` and `halite-api` were `enabled` and `active`,
+  each on its `-fips` executable with `GODEBUG=fips140=on`. The journal at
+  priority `err` had 0 lines for the `halite-*` units.
+- `manage.status` showed the node `up`. `grains.item` gave `fips_mode`
+  **True** and `kernelrelease` `5.4.0-1021-aws-fips`. The same `state.apply`
+  reported the file already in the requested state.
+- The `doctor` of the hub (8 pass, 1 skip), the node (12 pass, 2 skip) and
+  the API (3 pass, 1 warn for the 2-day self-signed certificate) each passed
+  its FIPS row: `the kernel is in FIPS mode and this is a FIPS build (module
+  v1.0.0, in FIPS mode)`. The ordinary `halite-node`, which `make install`
+  had installed beside it, gave `warn … the kernel is in FIPS mode and this
+  is not a FIPS build`.
+- The API answered `readyz` with `ready`. A local account logged in, and
+  `POST /v1/run` of `grains.item` with two names returned 200 with
+  `fips_mode` true. curl negotiated TLSv1.3, TLS_AES_128_GCM_SHA256 and
+  ALPN h2.
+
+So the grain and `doctor` followed the kernel across the move without a
+restart by an operator. The units started at boot on the certified kernel.
+
+**Seen, not changed: `ProtectProc=` on systemd 245.** Ubuntu 20.04 has
+systemd 245. It logged `Unknown key name 'ProtectProc' in section 'Service',
+ignoring.` for `halite-hub.service` and `halite-api.service`, which both set
+`ProtectProc=invisible`. The key arrived in systemd 247. The units ran, but
+without that one restriction. The node's unit does not set it. This applies
+to any host with systemd older than 247 (RHEL 8 and AlmaLinux 8 have 239).
+No unit was changed. Whether the hub and the API are supported on such a
+host is a question for SPEC, not for this run.
+
+**What this closes.** Ubuntu Pro's certified `fips` kernel, on 20.04 amd64.
+A host moving into FIPS mode with halite installed and running. `main` on
+amd64 on an Ubuntu FIPS kernel (the certified one; `fips-updates` on amd64
+has still run only v0.1.1, in the first subsection).
+
+**Still not run.** The certified kernel on arm64: Canonical publishes the
+20.04 Pro FIPS images for amd64 only, and the pocket was not checked for
+arm64 packages. A move *out of* FIPS mode. An upgrade by a state. A node on
+another host than the hub in this mode.
+
+**Teardown.** `pro detach` (`This machine is now detached`), then the
+instance was terminated. An earlier instance for the same run never reached
+SSM, because it was launched without a public IP in a subnet whose default
+route is an internet gateway. It was terminated too. Afterwards both were
+`terminated`, no volume with the run's tag remained, and no Elastic IP was
+associated.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
