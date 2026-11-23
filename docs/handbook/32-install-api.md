@@ -255,7 +255,8 @@ halite-api doctor — /etc/halite/api.yaml
 
   pass  configuration validity           …/api.yaml loads; not compared with what the service is running: the running API records nothing to compare it with
   warn  certificate validity and expiry  the certificate this service presents expires in 2 days
-                                         Renew before it lapses: …
+                                         Renew before it lapses.
+                                         The certificate this service presents: no halite command issues it. Renew it from the CA that issued it …
   pass  connectivity                     127.0.0.1:14510 answered in 5ms: halite-hub 0.1.0-… ok
   pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
 
