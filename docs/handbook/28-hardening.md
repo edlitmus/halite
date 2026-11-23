@@ -540,9 +540,21 @@ the wrong file. Ask the binary, not its name:
 > same code and binary with `GODEBUG=fips140=off` logged in. **Ubuntu Pro's
 > certified `fips` kernel could not be tried**, because Pro refuses `fips` on
 > any host that has ever had `fips-updates` (`fips-updates-invalidates-fips`).
-> **Not run:** the certified kernel (it needs a fresh instance), a host moving
-> into or out of FIPS mode while halite runs, main on amd64 on an Ubuntu FIPS
-> kernel, and an upgrade by a state. Both runs are in DIVERGENCE 5.282.
+> Both runs are in DIVERGENCE 5.282.
+>
+> **Ubuntu Pro's certified `fips` kernel exists only for Ubuntu 20.04 and
+> older.** On 2026-11-23 Pro's certified pocket listed `xenial`, `bionic` and
+> `focal`. 22.04 and 24.04 have FIPS only through `fips-updates`. A fresh
+> Ubuntu 20.04 amd64 host was attached with `pro enable fips`. main
+> (`0f61199d`) was built with `make fips`, installed with `make install
+> install-fips`, and run as a hub, a node and an API **before** the reboot
+> into FIPS mode. On the stock kernel `fips_mode` was False, and each `doctor`
+> warned. After the reboot into kernel 5.4.0-1021-aws-fips, every unit came
+> back on its `-fips` binary with no action. `fips_mode` read True, and each
+> `doctor` passed. Jobs and the API worked. On that host's systemd 245, the
+> hub's and the API's units logged that `ProtectProc=` is unknown and ignored
+> it. **Not run:** the certified kernel on arm64, a move out of FIPS mode,
+> and an upgrade by a state.
 
 ## Secrets: where they are and are not
 
