@@ -107,6 +107,7 @@ Usage:
   halite-hub ssh <target> <fun>  run on a machine with no agent
   halite-hub doctor              check this hub and say what to fix
   halite-hub extensions <sub>    the signed extensions this hub runs
+  halite-hub tree <sub> <dir>    sign a state tree for nodes that require it
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
