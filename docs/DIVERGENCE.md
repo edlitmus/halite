@@ -49527,13 +49527,15 @@ sharing errors. The test now identifies the step and job and reports
 errors from both the listing and individual records.
 
 The signed checkpoint test passed 100 times on Windows Server 2022 under
-the standard CI account. The old read path also passed that run, so the
-original failure did not recur there.
+the standard CI account. A separate run with the old read path also
+passed 100 times. The original failure did not recur.
+[Checkpoint runs](https://github.com/edlitmus/halite/actions/runs/45226961476)
 
 A separate test held a handle with delete access open while the store
 read the record. The old read path failed all ten reads with a sharing
-violation. The new read path passed all ten reads. The test used the
-same Windows runner and standard account as the integration test.
+violation. The new read path passed all ten reads. Each job used its own
+Windows Server 2022 runner and ran the test under the standard CI account.
+[File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
 
 
 
