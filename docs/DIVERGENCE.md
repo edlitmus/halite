@@ -49893,6 +49893,25 @@ Debian, and a systemd host were not probed. The FIPS artifact (SPEC 27.4)
 has no switch in either script, so on these hosts a `-fips` node needs the
 `command` or `HALITE_NODE_BINARY` changed by hand. That was not tried.
 
+### 5.713.1 The Linux service-path check could not fail
+
+`TestServiceFilesAgreeWithTheDefaultRoot` (`internal/config`) fails a line
+that names the other platform's configuration root without naming its
+own. On FreeBSD the wrong root, `/etc/halite`, is inside the right one,
+`/usr/local/etc/halite`, and the check allows for that. On Linux it is the
+other way round. Every line that names `/usr/local/etc/halite` also
+contains `/etc/halite`, so the Linux case never failed: a systemd unit, or
+now an OpenRC or sysvinit script, could read FreeBSD's configuration path
+and pass. Found by breaking 5.713's OpenRC script that way and watching
+the test pass.
+
+The check now removes the right root from the line before it looks for
+the wrong one, when the wrong one is the shorter, and asks for the wrong
+one directly when it is the longer. **Broken on purpose:**
+`/usr/local/etc/halite/node.yaml` in the OpenRC script, and in
+`halite-node.service`, now each fail the test. Before the change both
+passed.
+
 
 ### 5.714 The Windows checkpoint test hid errors from the orchestration store (2026-11-23)
 
