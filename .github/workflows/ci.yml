@@ -131,8 +131,12 @@ jobs:
           # Everything that is not a Markdown file is code, and so is a
           # deleted or renamed one. `.github/` is deliberately not
           # documentation even when it is a .md, because a workflow
-          # change must run the workflow.
-          if echo "$files" | grep -qvE '^[^/]*\.md$|^docs/[^/]*\.md$'; then
+          # change must run the workflow. Markdown at any depth under
+          # docs/ is documentation: the pattern once read only docs/*.md,
+          # so a change to the handbook or a proposal ran all twenty legs
+          # (DIVERGENCE 5.706). TestADocumentationChangeRunsOnlyTheDocLegs
+          # holds this line.
+          if echo "$files" | grep -qvE '^[^/]*\.md$|^docs/.*\.md$'; then
             code=true
           else
             code=false
