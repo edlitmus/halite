@@ -157,6 +157,15 @@ is not Salt's `concurrent`. The client types are the predecessor's, kept:
 | `wheel`, `wheel_async` | Run a hub management function (one namespace). |
 | `ssh` | **Not exposed by the API**; `halite-hub ssh` is built, the API has no route to it. |
 
+An orchestration can run for longer than any one request to the hub.
+`POST /v1/orch`, and `state.orchestrate`, `state.orch` or
+`state.orch_resume` through a `runner` client (`runner_async` too, which
+waits here as `runner` does), answer when the run ends, with its outcome,
+however long that takes. The wait lasts as long as your request stays
+open; close it and the run goes on, and `GET /v1/orch/{jid}` has it. Put
+`"async": true` in `kwarg` to get the started run, with its `jid`, at once
+instead.
+
 Every request is checked against the policy, twice
 ([chapter 26](26-authorization.md)). A denial is `403` with the reason:
 

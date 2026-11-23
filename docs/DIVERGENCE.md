@@ -49731,8 +49731,6 @@ calls through its own thirty-second hub client (`cmd/halite-api`), still
 wait on one request; either can pass `async` now, and neither does by
 itself. That is issue 822.
 
-
-
 ### 5.714 The Windows checkpoint test hid errors from the orchestration store (2026-11-23)
 
 Issue 827 began with a failure on the Windows Server 2022 standard-user
@@ -49754,6 +49752,266 @@ read the record. The old read path failed all ten reads with a sharing
 violation. The new read path passed all ten reads. Each job used its own
 Windows Server 2022 runner and ran the test under the standard CI account.
 [File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
+### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
+
+Issue 810, suspected while revising the issue 765 proposal and filed as
+not reproduced. `Settle` closes a job whose expiry has passed with a node
+still owing as `partial`, and counts it in `halite_jobs_expired_total`
+(`settleExpired`, `internal/hub/batch.go`). A node that was still running
+the job is not stopped by that -- the node checks the expiry when the job
+arrives, not while it runs (SPEC 6.3's `expires`) -- so it finishes and
+answers. The return was filed, which is right, and `completeIfDone` then
+moved the job to `complete`, which is the defect: the job read `partial`
+in `jobs list` and `GET /v1/jobs/<jid>`, then `complete`, about one run,
+and the expiry counter had counted a job that by then read as finished.
+The pair that disagreed was the two writers of the job's state, as in
+5.515: `completeIfDone` already left an aborted job alone and did not know
+partial was terminal too.
+
+**Shown.** `TestAJobSettledPartialStaysPartialWhenItsNodeAnswersLate`
+(`internal/hub/expiry_late_return_test.go`) submits to a connected node
+that does not answer, moves the hub's clock past the one-second window,
+settles, and files the node's return through the real return handler.
+On `main` at `5f5ae87c` the first draft of it read, through the API,
+`partial` with the node missing after settling and `complete` after the
+late return.
+
+**The change.** `completeIfDone` leaves a partial job as it is and logs
+`a return arrived after its job was settled; the job stays partial`. The
+return is still filed and announced (`halite/job/<jid>/ret/<node>`), so
+`jobs show` lists it and `missing` is empty; `partial` keeps the meaning
+the type gives it, "the gather window closed with returns outstanding"
+(`internal/job/model.go`), which is still true. This was chosen over
+keeping the flip with an event because SPEC says nothing about a settled
+state changing, and the flip contradicts what every reader had already
+been told; it is a decision for the project, not something SPEC settles.
+Salt has no job state to compare: its `local_cache` returner files any
+return whenever it arrives (`salt/returners/local_cache.py`, a 3008.x
+development checkout at `221495872f`).
+
+A return landing *inside* the settlement -- after `settleExpired` has
+read who is missing and before it writes -- completes the job first, and
+the settlement's write loses on the state guard it already had, so the
+job reads `complete` and is not counted as expired.
+`TestAReturnLandingDuringSettlementCompletesTheJobAndIsNotCountedExpired`
+holds that, using a test hook (`settleAfterMissing`) at that point.
+Whichever writer closes the job first decides its state.
+
+Broken on purpose, twice. Without the new partial case in `completeIfDone`
+the first test fails with `api "complete", record "complete"; want both
+"partial"`. Without `settleExpired`'s dispatched-or-batching guard the
+second fails: Settle closes the job, which reads `partial` with nothing
+missing, and the counter reads 1.
+
+**Not covered.** No real node binary ran a job past its expiry; the node
+is the test's silent connection and the return is filed as a node files
+one. What an orchestration step sees is unchanged and was read, not run:
+`awaitReturns` (`internal/hub/orch.go`) waits on returns until the step's
+own `timeout`, not on the job's state, so a step whose timeout outlasts
+its job's 15-minute default TTL still succeeds on a late return, while
+the job it sent reads `partial`. Whether a step's `timeout` should set its
+job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
+is the second question issue 810 asks and is not answered here.
+### 5.716 A state job's `pillarenv` was carried to the node and ignored (2026-11-23)
+
+Issue 826, the sibling of 5.712, which recorded it as not fixed there. A
+`salt.state`, `salt.sls` or `salt.highstate` orchestration step's
+`pillarenv:`, and `halite-hub run <target> state.apply pillarenv=<env>`,
+put the environment in the job as the keyword argument `pillarenv`.
+Nothing in `cmd/halite-node` read it. The node compiled its own pillar
+environment, rendered the state with that, and reported success.
+
+**Seen.** `TestAStateJobsPillarenvCompilesThatRunsPillarFromIt`, real
+binaries, a hub with five pillar environments and a node whose own
+`pillarenv` is `base`: with `pillarenv=other` the marker the state writes
+held `from-base none`, the same as a run without one.
+
+**What Salt does** (3008.x, `salt/modules/state.py`, `sls` and its
+siblings, and `salt/state.py`, `State._gather_pillar`; read, not run): the
+argument replaces the agent's `pillarenv` for that run, and the pillar is
+compiled again on the Salt server for that environment alone, with any
+`pillar=` override merged over it. That server does not limit which
+environment an agent may name.
+
+**The change.** The node asks the hub for the named environment's pillar
+for that run, with `AllEnvs` off. No protocol change: `/v1/pillar` has
+always carried an environment, and this is the same request a node with
+that `pillarenv` in its configuration makes. A node working from its own
+roots compiles that environment from them, on a copy, so its own
+environment is unchanged. A `pillar=` override is merged over the named
+environment's pillar, as in Salt. Only state functions: to an execution
+function `pillarenv` is an ordinary keyword argument.
+
+What it deliberately does not do:
+
+- **The named environment's pillar is not the node's for quiesce**
+  (5.703). The run compiles the node's own pillar first, through
+  `compilePillarOrErr`, the one place quiesce is recorded, and checks
+  `quiesceAfterPillar` against it; only then is the named environment's
+  pillar fetched, by a path that records nothing. So an environment whose
+  pillar says `quiesce: true` neither quiesces the node nor writes
+  `pillar-quiesce.json`, and one saying `quiesce: false` cannot lift a
+  quiesce the node's own pillar set. That costs a second pillar compile on
+  the hub for each such run, which is the price of not letting a job pick
+  the pillar that decides whether it may run.
+- **A job cannot name an environment the node may not use.** The hub
+  enforces nothing here: `pillarFor` checks that the certificate's identity
+  is the one asked about and compiles whatever environment the request
+  names, so any holder of a node's certificate could already ask for any
+  environment's pillar, as Salt's server allows. What a node is targeted
+  with in that environment's top file is still decided by the hub; a job
+  cannot get another node's pillar. The node's own control is
+  `env_allowlist` and `env_denylist` (SPEC 28.3, 5.551), which it applies
+  to its configured `pillarenv` at start and to a job's `saltenv`; it now
+  applies them to a job's `pillarenv` too, at admission and again in the
+  run. Without the check, a node denied `secret` in its configuration
+  would have read `secret`'s pillar for any job that asked. Under
+  `require_job_signature` the argument is one of the signed keyword
+  arguments, so a hub cannot add or change it (`internal/jobsign`; read,
+  not run with `pillarenv`).
+- **Anything but a string is refused** at admission, before the acceptance
+  record, as a non-string `pillar` override is. An empty string or null is
+  no `pillarenv`, and the run has the node's own pillar; in Salt an
+  explicit null would merge every environment, which is not copied.
+- **Agentless mode refuses it.** `halite-hub ssh` compiles one pillar
+  before the run (the hub's `pillarenv`, 5.288) and sends it with the job;
+  the node has no other to give, so a job naming a `pillarenv` fails
+  rather than running with that one. Unit test only.
+
+**A second gap on the same path.** A node whose first pillar probe failed
+for some reason other than "this hub compiles no pillar", and which later
+learns that the hub compiles none, compiles from its own roots inside the
+fetcher closure built at connect. That closure compiled the agent's own
+environment whatever it was asked for, so a job's `pillarenv`, and a job's
+`saltenv` (which moves the pillar environment, `adoptJobEnvironment`),
+were ignored on that path. It now compiles the environment asked for.
+Read, not run: `TestAStateJobsPillarenvReachesTheNodesOwnRootsOnAHubWithoutPillar`
+reaches the node's own roots through the probe, where `hubPillar` is never
+set, and breaking the closure back left it passing.
+
+**Demonstrated.** Both real-binary tests pass. Against the hub: the named
+environment's value and a key only it has appear and the node's own value
+does not; a `pillar=` override is merged over the named environment; the
+next plain run has the node's own pillar back; `pillarenv=loud` renders
+`quiesce=True` as data with no record written and no quiesce logged;
+`pillarenv=secret` on a node that denies it is refused with
+`excluded by env_denylist`; and `pillarenv=calm`, whose pillar says
+`quiesce: false`, on a node whose own pillar has just quiesced it, fails
+with the quiesce from `quiesceAfterPillar`. On a hub that compiles no
+pillar, the named environment comes from the node's own roots. Broken on
+purpose, each failed: the run's pillar taken from `compilePillarOrErr` (the
+defect, `from-base`); the named environment's pillar recorded for quiesce
+(`pillarenv=loud` left the record); the named environment compiled in
+place of the node's own before the quiesce check (`calm` ran on a
+quiesced node); `checkEnvPermitted` given `base` instead of the job's
+environment (`secret` was applied, and two unit cases admitted); the
+admission check removed (all four unit cases admitted); and the local
+compile left on the node's own environment (both no-hub-pillar tests).
+
+**Not covered.**
+
+- Run on the dev host only (FreeBSD, through its Linux compatibility
+  layer), with a hub and a node over loopback. No lab machine, no relay,
+  no signed job carrying `pillarenv`, no orchestration step (the step
+  sends the same keyword argument; read, not run), and no API-submitted
+  job.
+- A hub outage during such a run answers from the last known good pillar
+  for that environment, if the node keeps one and has fetched that
+  environment before; not run.
+- `pillar.refresh`, or anything else calling `RecompilePillar` during the
+  run, gets the node's own pillar, not the named environment's.
+- `halite-node state apply pillarenv=...` on the command line is unchanged;
+  `--pillarenv` is the flag there.
+- `pillarenv_from_saltenv` is not read, here or anywhere.
+### 5.717 `runner state.orchestrate` and the API still gave up on a run after thirty seconds (2026-11-23)
+
+Issue 822, the rest of 5.713. Two more callers made the call `orch run`
+had stopped making, and waited for the outcome on one request bounded at
+thirty seconds: `halite-hub runner state.orchestrate` (and `state.orch`,
+`state.orch_resume`) through the operator client, and halite-api, whose
+own hub client has `Timeout: 30 * time.Second` (`cmd/halite-api/serve.go`).
+The API reaches the orchestration runners from `POST /v1/orch` and from
+`/v1/run`'s `runner` client. A run longer than that was reported in the
+terminal as `context deadline exceeded`, exit 1, and to an API caller as
+`502 calling the runner failed at the hub`, while it went on on the hub.
+
+The pair here is the same as 5.713's, the client's bound on a request
+against the length of the work, and there was a second one behind it:
+three callers that each had to decide which runner calls to wait for. So
+the waiting is one function now, `transport.Client.AwaitRunnerReturn`,
+moved out of `cmd/halite-hub/orch.go` unchanged, with the list of runners
+that take `async` beside it (`transport.WaitsForRunner`). The hub's test
+`TestTheRunnersThatTakeAsyncAreTheOnesCallersWaitFor` holds that list to
+the runners whose signature declares `async`, both ways.
+
+**`halite-hub runner`: the orchestration runners only.** A runner without
+`async` cannot answer before its work is done, and the hub refuses an
+`async` it does not declare, because keyword arguments are bound strictly.
+Waiting for any runner would need a second mechanism on the hub, for work
+that is short today. A survey of the registry found one other runner that
+can outlast the client: `event.listen`, whose `timeout` the caller sets,
+with a default of thirty seconds, the client's own bound. That one is a
+wait the operator asked for and is left as it is; nothing here measured
+it. The command starts the run `async`, says the run's jid on stderr as
+`orch run` does, and polls the call's job. On success it prints the
+runner's answer as it always has, now the finished run; a failure prints
+`state.orchestrate: orchestration <jid> failed; ...` and exits 1; a wait
+that does not see the outcome exits 3, with `orch run`'s messages. An
+operator who names `async` gets that and no wait.
+
+**The API waits by polling, bounded by the caller's request.** Two
+choices were open: pass `async` and return the jid for the client to poll,
+or wait. Returning the jid would change the documented contract of
+`/v1/run` (SPEC 22.1: "Synchronous execution") and of `POST /v1/orch`,
+and every existing caller with it; waiting changes nothing a caller sees
+except that a long run now succeeds. The API's server has no write
+timeout (`Serve`, for the event stream), so the caller's own request is
+the only bound, and a caller that closes it stops the waiting, not the
+run. `callRunner` is used for every runner call the API makes, and does
+nothing for a runner not on the list. It polls as the API's own
+certificate, which started the call; the caller was authorized before
+the call was made. A failed run is `422` with its timeline, as before,
+and an error naming it, because the job keeps no sentence about why (as in
+5.713). A wait that does not see the outcome is `502` naming the run and
+`GET /v1/orch/<jid>`, where it was "failed at the hub". A caller that puts
+`"async": true` in `kwarg` gets the started run at once, as it already
+could. `runner_async` waits as `runner` does, as it already did.
+
+**Demonstrated.** `cmd/halite-hub/orch_wait_test.go` drives the real
+command against a real hub with the operator client cut to one second,
+as 5.713's tests do. On `main` at `5f5ae87c` with only the tests added,
+`runner state.orchestrate sls=gate` and `runner state.orch` both exited 1
+after 1.01s with `Post "https://localhost:…/v1/runners": context deadline
+exceeded`, and a run that fails at three seconds exited 1 the same way,
+naming no run. With the change they exit 0 after about 3s with
+`"state": "complete"`, and 1 naming the failed run; `async=true` answers at
+once with `"state": "running"`. `internal/hub/api_orch_wait_test.go`
+puts a real `api.Server` in front of this package's hub with the API's
+hub client cut to one second (its `Timeout` field, set by the test: the
+API builds its client from a struct, so no environment variable is
+needed). On `main` `POST /v1/orch` and `/v1/run` with `state.orchestrate`
+and `state.orch` answered 502 after 1.00s, and the failing run 502 where
+422 was wanted. With the change they answer 200 after about 3.02s with
+the finished run, and the failing run 422 with its timeline.
+
+Broken on purpose, twice. With `WaitsForRunner` answering false, every
+one of those tests failed again exactly as on `main`. With `state.orch`
+taken off the list, the agreement test failed naming it.
+
+**Not covered.** No API caller that closes its request mid-wait was
+tested: the run should go on and the API log a `502` nobody reads, and
+that is read, not run. Nor a hub restart or a hub that stops answering
+under the API, which is the same function as `orch run`'s and tested
+there, but not through the API. No run longer than a few seconds, and no
+real thirty-second client. Run on the FreeBSD development host only,
+through the agent's Linux shell. **An API or operator machine upgraded
+before its hub** sends `async` to a hub that refuses it, so every
+orchestration through the API, and `runner state.orchestrate`, fails
+before anything runs: upgrade the hub first, as for 5.713; read, not run
+against an old hub. The added `async` is not seen by the API's own policy
+check, which is made before it is added, so a role with `deny_kwargs:
+['async']` is not refused by the API for it; whether the hub's delegated
+check refuses it was not tried.
 
 ### 5.715 atomicfile replaced a file with MoveFileEx, which no reader can share (2026-11-23)
 

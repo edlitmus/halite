@@ -71,6 +71,9 @@ bindings:
 type apiLab struct {
 	*lab
 	api *httptest.Server
+	// hub is the API's own client of the hub, as cmd/halite-api builds
+	// it, so that a test can shorten its per-request timeout.
+	hub *transport.Client
 }
 
 func newAPILab(t *testing.T, files map[string]string) *apiLab {
@@ -101,6 +104,7 @@ func newAPILab(t *testing.T, files map[string]string) *apiLab {
 	if err != nil {
 		t.Fatal(err)
 	}
+	hubClient := l.operator(t, "api")
 	s := &api.Server{
 		Accounts: &account.File{Accounts: map[string]*account.Account{
 			"alice": {Name: "alice", Hash: hash},
@@ -108,14 +112,14 @@ func newAPILab(t *testing.T, files map[string]string) *apiLab {
 		}},
 		Tokens:        tokens,
 		Policy:        ap,
-		Hub:           l.operator(t, "api"),
+		Hub:           hubClient,
 		Metrics:       metrics.NewRegistry(),
 		TokenLifetime: time.Hour,
 		TokenIdle:     30 * time.Minute,
 	}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return &apiLab{lab: l, api: ts}
+	return &apiLab{lab: l, api: ts, hub: hubClient}
 }
 
 func (a *apiLab) login(t *testing.T, user string) string {

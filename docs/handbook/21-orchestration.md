@@ -152,7 +152,7 @@ Options common to `salt.state`, `salt.sls`, `salt.highstate` and
 | `test` | Run this step in test mode (state steps only). |
 | `saltenv` | The environment the job names. |
 | `pillar` | Pillar overrides for this step (state steps): a mapping each node merges over its own pillar for that run only, as Salt does, so a nested mapping is merged key by key under the node's `pillar_source_merging_strategy`. It is not the node's pillar for quiesce: it can neither quiesce a node nor lift a quiesce. A value that is not a mapping, or a `pillar_enc`, is refused by the node. |
-| `pillarenv` | The pillar environment the job names (state steps). **Not yet read by a node**, which compiles the pillar environment of the job's `saltenv`, or its own configuration's. |
+| `pillarenv` | The pillar environment the step's run compiles its pillar from (state steps): that environment alone, for that run only, as Salt does, with any `pillar` merged over it. It is not the node's pillar for quiesce: the node still reads quiesce from its own pillar, so the named environment can neither quiesce a node nor lift a quiesce. A node refuses an environment its `env_allowlist` or `env_denylist` excludes, a value that is not a string, and any `pillarenv` in agentless mode. |
 | `timeout` | Seconds before the step is given up on (a state option available on every step). |
 | `queue` | Hold the step on the hub's durable queue. **Not built**; refused by name. |
 | `run_parallel` | `salt.function` only: the job may run beside other jobs on each node, as `halite-hub run --parallel` does ([chapter 12](12-hub-and-nodes.md)). Without it the job waits its turn. `true` on a state step, or on a `salt.function` step that names a `state.*` function, is refused when the orchestration compiles: a state run always runs alone on a node. |
@@ -259,6 +259,14 @@ role that may run `state.orchestrate` and nothing else (the `deployer` of
 command waited on the one request that started the run, and an operator
 request has 30 seconds: a longer run failed in the terminal with `context
 deadline exceeded` while it carried on on the hub.
+
+`halite-hub runner state.orchestrate`, `state.orch` and `state.orch_resume`
+wait the same way, and exit the same way, `3` included. They print the
+runner's answer, not a timeline, as `runner` always has. Name `async=true`
+yourself and the command prints the started run, with its JID, and does
+not wait. The API waits too: `POST /v1/orch`, and these runners through
+`/v1/run`'s `runner` client, answer with the outcome when the run ends,
+for as long as your request stays open ([chapter 27](27-http-api.md)).
 
 ## Failure, rollback and resume
 
