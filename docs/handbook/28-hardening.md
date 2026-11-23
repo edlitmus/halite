@@ -553,8 +553,29 @@ the wrong file. Ask the binary, not its name:
 > back on its `-fips` binary with no action. `fips_mode` read True, and each
 > `doctor` passed. Jobs and the API worked. On that host's systemd 245, the
 > hub's and the API's units logged that `ProtectProc=` is unknown and ignored
-> it. **Not run:** the certified kernel on arm64, a move out of FIPS mode,
-> and an upgrade by a state.
+> it.
+>
+> **There is no certified kernel for arm64.** The certified pocket publishes
+> i386, amd64, s390x and (for 16.04) ppc64el. On arm64, FIPS comes only
+> through `fips-updates` or the uncertified `fips-preview`. A fresh Ubuntu
+> 22.04 arm64 host was therefore given `pro enable fips-updates`. main
+> (`17c55da3`) was built and installed the same way, and it ran on the stock
+> 6.8 kernel. Then the host was rebooted into 5.15.0-1121-aws-fips. The
+> results matched the amd64 host. The units came back with no action, and
+> `fips_mode` changed from False to True. Each `doctor` changed from warn to
+> pass.
+>
+> On a third arm64 host, already in FIPS mode, a node from the v0.2.0 archive
+> was **upgraded by a state** to main. The node was under a main hub. A
+> `file.managed` of `/usr/local/bin/halite-node-fips` from the hub's tree and
+> a `systemd-run --on-active=30` restart (as in [chapter 36](36-upgrades.md))
+> returned `changed=2` at once. The agent restarted on the new binary 69
+> seconds later, and `manage.versions` showed nothing mismatched. Then the
+> host was **moved out of FIPS mode** with halite running (`fips=0`, a
+> reboot). The units came back on their `-fips` binaries, which still report
+> their own FIPS mode. `fips_mode` changed from True to False, and each
+> `doctor` changed from pass to warn. `pro status` reported `fips-updates` as
+> disabled too. The questions these runs left for a person are issue 840.
 
 ## Secrets: where they are and are not
 

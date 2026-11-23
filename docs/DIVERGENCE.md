@@ -24866,6 +24866,158 @@ route is an internet gateway. It was terminated too. Afterwards both were
 `terminated`, no volume with the run's tag remained, and no Elastic IP was
 associated.
 
+#### arm64: no certified kernel exists, and a move into `fips-updates` with halite running (issue 306, 2026-11-23)
+
+**There is no arm64 certified kernel to test.** The `Release` files of Pro's
+certified pocket were read on 2026-11-23 from
+`esm.ubuntu.com/fips/ubuntu/dists/<suite>/Release`. Their `Architectures:`
+lines were `i386 amd64 s390x ppc64el` for `xenial`, and `i386 amd64 s390x`
+for `bionic` and `focal`. `dists/focal/main/` had no `binary-arm64`. On
+arm64, Ubuntu's FIPS kernels come only through `fips-updates` (whose
+`jammy-updates` lists `amd64 arm64 s390x`) or `fips-preview` (whose `jammy`
+lists the same and has no certificate yet). The item "the certified kernel on
+arm64" in the subsection above names something that does not exist, so it is
+removed from the list. The owner chose to run `fips-updates` on arm64
+instead, enabled from the start on a fresh host.
+
+**The host.** A new AWS instance, `host-f`, in us-west-2. It was t4g.large,
+**arm64**, from Canonical's plain Ubuntu 22.04.5 image. It booted the HWE
+kernel 6.8.0-1070-aws, which has no `/proc/sys/crypto/fips_enabled`, with
+systemd 249. Pro was attached as in the subsection above, and on this
+release Pro offered `fips-preview` and `fips-updates` but no `fips`.
+`pro enable fips-updates` printed `FIPS Updates enabled` and `A reboot is
+required to complete install`. It installed
+`linux-image-5.15.0-1121-aws-fips` (`5.15.0-1121.128+fips1`),
+`openssl-fips-module-3` `3.0.5-0ubuntu0.2+Fips1`, `ubuntu-fips-userspace`
+`1.3.9+update0`, a GRUB drop-in adding `fips=1`, and
+`GRUB_FLAVOUR_ORDER="aws-fips"`. So the reboot had to choose a 5.15 kernel
+over the newer 6.8 one.
+
+**Before the reboot.** `main` at `17c55da3` was built and installed exactly as
+on the amd64 host above (`bmake build fips` as `ubuntu`, Go 1.27.4
+linux-arm64 with a checked sha256, then `make install install-fips` and the
+drop-ins). The hub, the node and the API ran on one host, and the node
+enrolled by `--token-file`. All three units were enabled and active on the
+`-fips` binaries with `GODEBUG=fips140=on`. `grains.item` gave `fips_mode`
+**False**, `fips_build` True, `aarch64` and `6.8.0-1070-aws`. A `state.apply`
+reported `changed=1`, and all three `doctor`s gave **warn** (`this is a FIPS
+build … and the kernel is not in FIPS mode`). systemd 249 accepted the
+units without any `Unknown key name` line.
+
+**After the reboot.** The boot ID changed. The kernel was
+5.15.0-1121-aws-fips, so GRUB had taken the FIPS flavour over 6.8.
+`fips_enabled` was 1 and `fips=1` was on the command line. With no action
+by anyone, all three units were enabled and active on the `-fips`
+executables with `GODEBUG=fips140=on`. The journal at priority `err` had 0
+lines for them. The node was `up`. `grains.item` gave `fips_mode`
+**True** and `kernelrelease` `5.15.0-1121-aws-fips`. The `state.apply`
+reported no change. The FIPS row of every `doctor` **passed** (hub 8 pass and
+1 skip, node 12 pass and 2 skip, API 3 pass and 1 warn for its 2-day
+certificate). The ordinary `halite-node` warned `not a FIPS build`. The API
+answered `ready`, logged in a local account and returned `fips_mode` true
+through `POST /v1/run` over TLSv1.3 and h2.
+
+**What this closes.** A host moving into FIPS mode with halite running, on
+arm64 and on `fips-updates`. The amd64 run above did the same on the
+certified track.
+
+**Still not run.** A move *out of* FIPS mode. An upgrade by a state. A node
+on another host than the hub in either of these runs.
+
+**Teardown.** `pro detach` (`This machine is now detached`). Then the
+instance was terminated. Afterwards it was `terminated`, no volume with this
+run's tag remained, and no instance from these runs was left.
+
+#### An upgrade by a state in FIPS mode, and a move out of FIPS mode (issue 306, 2026-11-23)
+
+**The host.** A new AWS instance, `host-g`, in us-west-2. It was t4g.large,
+**arm64**, from Canonical's plain Ubuntu 22.04.5 image. Pro was attached as
+above, `pro enable fips-updates` was run, and the host was rebooted
+**before** halite was installed. Afterwards it was on 5.15.0-1121-aws-fips,
+with `fips_enabled` 1 and `fips=1`.
+
+**Mixed versions, in FIPS mode.** `main` at `17c55da3` was built with
+`bmake build fips` as `ubuntu`. Its three `-fips` binaries had the same
+sha256 as `host-f`'s build of the same commit, the subsection above:
+`ca1cc52a…` for the node, `01ba9742…` for the hub and `e98ef4bb…` for the
+API. They were installed with `make install install-fips` and the
+drop-ins. The node's `-fips` binary was then replaced with the one from the
+published **v0.2.0** `linux-arm64-fips` archive. The archive was checked
+with `sha256sum -c` and `openssl dgst -verify` (`Verified OK`, key digest
+`7d7ba7ce…`), and that binary reported `halite-node 0.2.0+13efcb548e20 (fips
+v1.0.0)`. The node unit and drop-in were `main`'s. The hub and the API ran
+`main`. The node enrolled by `--token-file`. `manage.versions` showed the hub
+on `0.2.0-58-g17c55da34526` and the node on `0.2.0+13efcb548e20`, under
+`mismatched`.
+
+**The upgrade by a state.** `main`'s `halite-node-fips` went into the hub's
+tree as `salt://halite/bin/halite-node-fips`. The state
+`halite.node-upgrade` had two parts. A `file.managed` of
+`/usr/local/bin/halite-node-fips` from that source, mode `0755`. And a
+`cmd.run` of `systemd-run --on-active=30 --unit=halite-node-restart
+systemctl restart halite-node`, with `onchanges` on the file. This is the
+deferred restart of chapter 36 and of `contrib/examples/tree`.
+
+- `--test` reported both states as `would be` changed (`Result: None`).
+- The apply returned at once (20:08:50 UTC). The binary was `updated: its
+  contents from salt://halite/bin/halite-node-fips`, in 71 ms. The restart
+  command `ran`. The result was `Succeeded: 2 (changed=2)`.
+- `halite-node-restart.service` ran at 20:09:59, 69 seconds later. The
+  agent's `ActiveEnterTimestamp` moved to 20:09:59, and its `MainPID`
+  changed. `/proc/<pid>/exe` was `/usr/local/bin/halite-node-fips`, whose
+  sha256 now began `ca1cc52a`, the build's. `GODEBUG=fips140=on` was still
+  set.
+- `manage.versions` gave `mismatched: []`, and `test.version` gave
+  `0.2.0-58-g17c55da34526`. A second apply reported the binary already in
+  the requested state, and the restart was skipped (`none of its onchanges
+  requisites reported changes`). `grains.item` still gave `fips_mode` True.
+  The journal at priority `err` had 0 lines for `halite-*`.
+
+So the binary a FIPS deployment runs was replaced, and the agent restarted
+on it, by halite's own state, with the job returning before the restart.
+
+**The move out of FIPS mode, with halite running.** Before it, the hub's,
+the node's and the API's `doctor` each passed the FIPS row. In
+`/etc/default/grub.d/99-fips.cfg`, `fips=1` was changed to `fips=0`, then
+`update-grub` was run (6 entries carried `fips=0`), then `systemctl
+reboot`. Afterwards the kernel was the same 5.15.0-1121-aws-fips, with
+`fips=0` on the command line and `fips_enabled` **0**. With no action by
+anyone:
+
+- All three units were enabled and active on their `-fips` executables, still
+  with `GODEBUG=fips140=on`. `version` still said `fips mode on, module
+  v1.0.0, self-tests passed`, because the Go module's mode is the process's
+  own and not the kernel's. The journal at priority `err` had 0 lines for
+  `halite-*`.
+- The node was `up`. `grains.item` gave `fips_mode` **False**, while
+  `fips_build` and `fips_enabled` stayed True.
+- Every `doctor` changed to **warn**: `this is a FIPS build (module v1.0.0)
+  and the kernel is not in FIPS mode`. The counts were hub 7 pass, 1 warn, 1
+  skip; node 11 pass, 1 warn, 2 skip; API 2 pass, 2 warn. The ordinary
+  `halite-node` changed to **pass** (`neither the kernel nor this build is in
+  FIPS mode`).
+- The API answered `ready`. A login and `POST /v1/run` returned 200 with
+  `fips_mode` false, over TLSv1.3 and h2.
+- **Pro followed the kernel too.** `pro status` reported `fips-updates` as
+  `disabled`, although the FIPS kernel, `openssl-fips-module-3` and
+  `ubuntu-fips-userspace` were still installed. This bears on SPEC 14.1's
+  statement that `fips_mode` also reads Pro's state (issue 840).
+
+So the grain and `doctor` followed the kernel in both directions, into FIPS
+mode (the two subsections above) and out of it. The running FIPS processes
+kept their own mode and said so.
+
+**What this closes.** The last two items on issue 306 that wanted machines:
+an upgrade by a state, and a move out of FIPS mode. A node on another host
+than the hub was run in the 2026-11-06 and 2026-11-23 `fips-updates` runs,
+though not in this mode change. The three questions the runs left for a
+person (Ed25519 under `fips140=on`, the operator CLI's `localhost` default,
+and SPEC 14.1's Pro clause) are issue 840.
+
+**Teardown.** `pro detach`, then the instance was terminated. Afterwards it
+was `terminated`. No volume with any of the day's run tags remained, and no
+instance from these runs was left.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
