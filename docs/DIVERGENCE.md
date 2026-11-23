@@ -49923,8 +49923,7 @@ compile left on the node's own environment (both no-hub-pillar tests).
 - `halite-node state apply pillarenv=...` on the command line is unchanged;
   `--pillarenv` is the flag there.
 - `pillarenv_from_saltenv` is not read, here or anywhere.
-
-### 5.715 `runner state.orchestrate` and the API still gave up on a run after thirty seconds (2026-11-23)
+### 5.717 `runner state.orchestrate` and the API still gave up on a run after thirty seconds (2026-11-23)
 
 Issue 822, the rest of 5.713. Two more callers made the call `orch run`
 had stopped making, and waited for the outcome on one request bounded at
@@ -50013,6 +50012,7 @@ against an old hub. The added `async` is not seen by the API's own policy
 check, which is made before it is added, so a role with `deny_kwargs:
 ['async']` is not refused by the API for it; whether the hub's delegated
 check refuses it was not tried.
+
 
 
 ## 6. Everything else not started
