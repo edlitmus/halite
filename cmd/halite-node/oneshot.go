@@ -300,6 +300,7 @@ func applyOneshotContent(n *node, req OneshotRequest) (*inlineTree, error) {
 		n.seedPillarSecrets(pillar, req.Secrets)
 	}
 	n.hubPillar = func(string, bool) (*value.Map, error) { return pillar, nil }
+	n.pillarPushed = true
 	if len(req.Grains) > 0 {
 		decoded, err := value.DecodeJSON(req.Grains)
 		if err != nil {
