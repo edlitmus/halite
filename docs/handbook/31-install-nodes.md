@@ -182,14 +182,17 @@ before you start the unit. Nor do the OpenRC and sysvinit scripts.
 install` from a source checkout picks the right one of the four for the host
 it runs on, by asking which init is there. The OpenRC script runs the agent
 under `supervise-daemon`, which restarts it when it dies, but gives up after
-six deaths in a minute, so a node whose enrollment was revoked does not loop.
+six deaths in a minute. That cap does not stop a node whose enrollment was
+revoked: it is restarted once, and the new agent keeps retrying the hub,
+which refuses it. Stop and disable the service on a node you revoke
+(`rc-service halite-node stop`, `rc-update del halite-node`).
 The sysvinit script has no supervisor: a node that crashes stays down until
 it is started again. Both log to `/var/log/halite/node.log`, and neither
 takes `reload`: change the configuration and restart. Settings go in
 `/etc/conf.d/halite-node` (OpenRC: `halite_node_config`, `halite_node_args`)
 or `/etc/default/halite-node` (sysvinit: `HALITE_NODE_CONFIG`,
-`HALITE_NODE_FLAGS`). **Not run:** neither script has been run on a real
-host yet (DIVERGENCE 5.716).
+`HALITE_NODE_FLAGS`). Both scripts were run on Alpine 3.24 with OpenRC 0.63
+and on a sysvinit Debian 13 (DIVERGENCE 5.716.3).
 
 ### Many nodes: token enrolment
 

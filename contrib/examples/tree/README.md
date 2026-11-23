@@ -95,7 +95,10 @@ service manager. **Not run by this project:**
   commands in `halite/node.sls`, the `setsid` one for OpenRC and sysvinit
   (picked when the `init` grain is not `systemd`) was run by hand on
   Alpine and a sysvinit Debian from a similar upgrade state (DIVERGENCE
-  5.708), and not from this file. The other two (`daemon(8)` on FreeBSD,
+  5.708), and then from this file, with a lab pillar rather than this
+  tree's, inside a job on Alpine 3.24 and a sysvinit Debian 13: the job
+  returned in two seconds, and one new agent replaced the old one about 30
+  seconds later (DIVERGENCE 5.716.3). The other two (`daemon(8)` on FreeBSD,
   `systemd-run --on-active` under systemd) were run, verbatim, from a small
   state of the same shape inside a real job on Ubuntu 26.04 and FreeBSD
   15.1: the job returned first and the node restarted after it and came back

@@ -34,8 +34,9 @@
 #
 # Everything below about supervise-daemon was taken from OpenRC's own
 # documentation (supervise-daemon-guide.md, openrc-run(8) and
-# supervise-daemon(8)). Until the lab has run this script on Alpine,
-# that is what it is: read, not run. DIVERGENCE 5.716.
+# supervise-daemon(8)), and then run on Alpine 3.24.4 with OpenRC 0.63.2:
+# start, status, respawn, the cap, restart, reboot, stop, and a restart
+# after an in-place upgrade (DIVERGENCE 5.716.3).
 
 description="halite node agent"
 
@@ -75,9 +76,17 @@ error_log="/var/log/halite/node.log"
 # node's enrollment was revoked, or hub_tries was reached. supervise-daemon
 # has no exception by exit status; it respawns on every exit. What it has
 # is a cap: more than respawn_max deaths inside respawn_period and it
-# stops. With a 5 s delay an exit-1 loop dies six times in about half a
-# minute and is given up on, while a crash once an hour is restarted
-# every time.
+# stops. With a 5 s delay a node that exits 1 at every start dies six
+# times in about half a minute and is given up on (the lab saw six exits
+# in 27 seconds), while a crash once an hour is restarted every time.
+#
+# A revoked node is not one of those. It exits 1 when the hub tells it,
+# is respawned once, and the new agent does not exit: the hub refuses its
+# certificate at the TLS handshake, and `connect` retries that as it
+# would an unreachable hub, for ever unless hub_tries is set. So the cap
+# does not stop it, and nothing here stands in for the unit's
+# RestartPreventExitStatus=1. Stop and disable the service on a node you
+# revoke (DIVERGENCE 5.716.3).
 respawn_delay=5
 respawn_max=5
 respawn_period=60
@@ -112,9 +121,9 @@ start_pre() {
 	if [ ! -d /var/log/halite ]; then
 		install -d -m 0750 /var/log/halite || return 1
 	fi
-	# The unit's LimitNOFILE. Set here on the reading that start_pre runs
-	# in the shell that then starts supervise-daemon, so the agent
-	# inherits it; the lab procedure reads /proc/<pid>/limits to check.
+	# The unit's LimitNOFILE. start_pre runs in the shell that then starts
+	# supervise-daemon, so the agent inherits it: on Alpine 3.24 its
+	# /proc/<pid>/limits read 65536 (DIVERGENCE 5.716.3).
 	# POSIX leaves `ulimit -n` undefined; busybox ash has it.
 	# shellcheck disable=SC3045
 	ulimit -n 65536 || ewarn "could not raise the open-file limit to 65536"

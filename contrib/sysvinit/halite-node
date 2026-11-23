@@ -45,9 +45,8 @@
 # PrivateTmp=no keeps (DIVERGENCE 5.709).
 #
 # The start-stop-daemon options are Debian's (dpkg 1.20.6 or later for
-# --output), read from its manual page. Until the lab has run this script
-# on a sysvinit Debian, that is what they are: read, not run. DIVERGENCE
-# 5.716.
+# --output), read from its manual page and then run on Debian 13.7 with
+# sysvinit-core 3.14 and start-stop-daemon 1.22.22 (DIVERGENCE 5.716.3).
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 NAME=halite-node
@@ -92,7 +91,8 @@ do_start() {
 		--exec "$HALITE_NODE_BINARY" >/dev/null || return 1
 	# --background because `connect` stays in the foreground, and
 	# --make-pidfile because it writes no pid file of its own. --output
-	# sends its standard output and error to the log; without it they go
+	# appends its standard output and error to the log (it does not
+	# truncate it at each start, DIVERGENCE 5.716.3); without it they go
 	# to /dev/null, and the reason a node will not start goes with them.
 	# HALITE_NODE_ARGS is split into words on purpose.
 	# shellcheck disable=SC2086
@@ -106,10 +106,11 @@ do_start() {
 #
 # --exec as well as --pidfile, so that a pid reused by another program is
 # not signalled. After an upgrade replaces the binary in place, the
-# running process's executable is the deleted old file. Whether
-# start-stop-daemon still matches it is the upgrade step of the lab
-# procedure, because a miss there would start a second agent beside the
-# first.
+# running process's executable is the deleted old file, and a miss there
+# would make `restart` start a second agent beside the first.
+# start-stop-daemon 1.22.22 still matches it: with /proc/<pid>/exe reading
+# "(deleted)", `--status --exec` exited 0 and `restart` left one agent
+# (DIVERGENCE 5.716.3).
 do_stop() {
 	start-stop-daemon --stop --quiet --retry=TERM/90/KILL/5 \
 		--pidfile "$PIDFILE" --exec "$HALITE_NODE_BINARY" --remove-pidfile

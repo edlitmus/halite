@@ -348,8 +348,8 @@ func TestRcScriptsKeepTheirFlagsAwayFromDaemon(t *testing.T) {
 // node runs as root, which is what leaving it unset gives, and setting it
 // to anything else is the unprivileged node the unit refuses to be.
 //
-// What it holds is read from OpenRC's documentation, not from running
-// openrc-run (DIVERGENCE 5.716); the lab is where that is checked.
+// What it holds was read from OpenRC's documentation, and then run under
+// OpenRC 0.63.2 on Alpine 3.24 (DIVERGENCE 5.716.3).
 func TestTheOpenRCScriptIsSupervisedAndAvoidsSupervisorTraps(t *testing.T) {
 	path := filepath.Join("..", "..", "contrib", "openrc", "halite-node")
 	body, err := os.ReadFile(path)
@@ -396,8 +396,9 @@ func TestTheOpenRCScriptIsSupervisedAndAvoidsSupervisorTraps(t *testing.T) {
 // and the ordering from the `Required-*` facilities, and `Provides` is the
 // name other scripts depend on, so it is this file's own name. LSB's
 // required actions are start, stop, restart, force-reload and status.
-// This is read from the LSB and Debian documentation; update-rc.d itself
-// has not read the header yet (DIVERGENCE 5.716).
+// This is read from the LSB and Debian documentation, and update-rc.d on
+// a sysvinit Debian 13 read it: S02 in rc2.d, K02 in rc0.d (DIVERGENCE
+// 5.716.3).
 func TestTheSysvinitScriptCarriesItsLSBHeader(t *testing.T) {
 	path := filepath.Join("..", "..", "contrib", "sysvinit", "halite-node")
 	body, err := os.ReadFile(path)

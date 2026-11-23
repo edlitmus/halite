@@ -49974,6 +49974,10 @@ Debian, and a systemd host were not probed. The FIPS artifact (SPEC 27.4)
 has no switch in either script, so on these hosts a `-fips` node needs the
 `command` or `HALITE_NODE_BINARY` changed by hand. That was not tried.
 
+**Since run.** 5.716.3 records the lab run. It answered the four
+questions above, and found the claim that the cap stops a revoked node
+wrong.
+
 ### 5.716.1 The Linux service-path check could not fail
 
 `TestServiceFilesAgreeWithTheDefaultRoot` (`internal/config`) fails a line
@@ -50013,6 +50017,124 @@ script, `extra_started_commands="reload"` in the OpenRC script, and
 `ExecReload=` in `halite-node.service` each fail the test now. Before the
 change all three passed, as skips. And removing SIGHUP from `oneshot`'s
 signals fails it, naming the stale entry.
+
+### 5.716.3 Both scripts run on a real Alpine and a sysvinit Debian, and the cap does not stop a revoked node
+
+Run on 2026-11-23 on three Vultr rows (`make lab-up`), all linux/amd64.
+The binaries were this branch at `d182fff9`, built vendored and stamped
+`v0.2.0-63-gd182fff9`:
+
+- `alpine`: Alpine 3.24.4, kernel 6.18.63-0-lts, OpenRC 0.63.2, BusyBox
+  1.37.0 as PID 1.
+- `debian13sysv`: Debian 13.7, kernel 6.12.117+deb13-amd64,
+  `sysvinit-core` 3.14-4, `start-stop-daemon` 1.22.22. `/sbin/init`
+  resolved to `/usr/sbin/init`, and `/run/systemd/system` was absent.
+- `ubuntu2604`: Ubuntu 26.04.1, kernel 7.0.0-43-generic, under systemd. It
+  ran the hub, and the probe was checked there.
+
+Each node row got the source tree with the binaries in `bin/`, and ran
+`make install` (GNU make 4.4.1) as root. Nothing was written into
+`/etc/init.d` by hand: the installed script was byte-identical to the one
+in `contrib/`. The node was enrolled with a scoped token (chapter 31), and
+then driven only through its init system.
+
+**The probe.** `make -n install-service` named
+`contrib/openrc/halite-node` on Alpine, `contrib/sysvinit/halite-node` on
+the sysvinit Debian, and the systemd units on Ubuntu. `make install` put
+the script at `/etc/init.d/halite-node` with mode 0755, and printed the
+`rc-update` or `update-rc.d` line to enable it. The `shadow` package had
+been added to the Alpine row before the install; the probe does not read
+it, and the hint printed was busybox's `adduser -S`.
+
+**OpenRC.** The four questions the entry left open, and the rest:
+
+- `rc-update add` and `rc-service halite-node start` started one agent,
+  as a child of `supervise-daemon`. Its command line was
+  `/usr/local/bin/halite-node connect --config /etc/halite/node.yaml`, so
+  `command_args` is passed under supervise-daemon. The supervisor's own
+  command line carried `--retry TERM/90/KILL/5 --chdir /`, the log as
+  `--stdout` and `--stderr`, and `--respawn-delay 5 --respawn-max 5
+  --respawn-period 60`.
+- The agent's `/proc/<pid>/limits` read 65536 open files, so the `ulimit
+  -n` in `start_pre` reaches it. Its working directory was `/`.
+- The `init` grain is `init`, because busybox is PID 1. `halite/node.sls`
+  takes the `setsid` branch.
+- After `kill -9`, supervise-daemon logged "terminated by signal 9" and
+  started a new agent 5 seconds later, under the same supervisor.
+- `rc-service halite-node restart` left one new agent. The log grew from
+  36 to 47 lines and kept its first line, so it is appended to.
+- After a reboot the service was `started`, `manage.up` listed the node,
+  and `test.ping` answered.
+- `rc-service halite-node stop` left neither the agent nor its
+  supervise-daemon. `status` said `stopped` and exited 3.
+
+**The cap works, but a revoked node never reaches it.** With `hub_tries:
+1` added to `node.yaml` on the revoked node, every start exited 1 at
+once. There were six exits between 20:02:44 and 20:03:11. Then
+supervise-daemon logged `respawned "/usr/local/bin/halite-node" too many
+times, exiting`, and `status` said `stopped`. `keys revoke` on a running
+node with the default configuration went differently. The agent got the
+revocation on its stream, logged it, and exited 1. supervise-daemon
+started it again 5 seconds later, and the new agent did not exit. The hub
+refused its certificate at the TLS handshake (`remote error: tls: bad
+certificate`). `connect` retries that as it would retry an unreachable
+hub, with backoff, and with no end while `hub_tries` is 0, the default.
+Two minutes later the agent was still running and retrying.
+
+So the entry above, the script's comment and chapter 31 were wrong to say
+that the cap stops a revoked node from looping. The node is respawned
+once, and then it is a live agent that retries for ever. Each of the
+three now says so, and tells the operator to stop and disable the service
+on a node they revoke. Under the unit, `RestartPreventExitStatus=1` leaves
+the node down after its first exit. But the retry is the agent's, not the
+init's: read from `cmd/halite-node/enroll.go`, a revoked node started by
+hand or by a reboot retries in the same way under systemd. That was not
+run. It is not fixed here, because the fix is in how the agent reads a
+refused certificate, and that is a change of its own.
+
+**sysvinit.**
+
+- `update-rc.d halite-node defaults` made `S02halite-node` in `rc2.d` and
+  `K02halite-node` in `rc0.d`.
+- `service halite-node start` started one agent, with PID 1 as its parent
+  and its pid in `/run/halite-node.pid`. `status` said it was running. Its
+  limits read 65536 open files, and its working directory was `/`.
+- `restart` left one new agent. The log grew from 18 to 29 lines and kept
+  its first line, so `--output` appends.
+- After a reboot the agent was running, `manage.up` listed the node, and
+  `test.ping` answered. The `init` grain is `init` here too.
+- **`--exec` after an in-place upgrade.** The binary was replaced by a
+  rename, and the running agent's `/proc/<pid>/exe` read
+  `/usr/local/bin/halite-node (deleted)`. `start-stop-daemon --status
+  --pidfile /run/halite-node.pid --exec /usr/local/bin/halite-node` still
+  exited 0. `service halite-node restart` stopped the old agent and left
+  one new one. The same was true after the upgrade state below: one agent,
+  on the new version.
+- `stop` left no agent and removed the pid file, and a second `stop`
+  exited 0. After `kill -9` nothing started the agent again, as the script
+  says: 15 seconds later there was no agent, and `status` exited 1 (dead,
+  with a pid file). `start` then started one over the stale pid file.
+
+**The deferred restart, from the tree's own file.** The hub served
+`halite/node.sls` and `map.jinja` copied unchanged from
+`contrib/examples/tree`, with a lab pillar that held `hub`,
+`hub_fingerprint`, `node_id` and `log_level`. It was not this tree's
+pillar. On both rows `state.show_lowstate halite.node` showed the
+`setsid` command. Applying it after the pillar changed gave `node.yaml
+was rewritten as yaml`, ran the `setsid` command, found `service.running`
+already in state, and ended `Succeeded: 3 (changed=2)`. The job returned
+in one or two seconds. The one agent was replaced by one new agent
+between 30 and 36 seconds later. An upgrade state of the same shape
+(`file.managed` of the binary, and the same `setsid` restart on
+`onchanges`) did the same on both rows, and `test.version` then answered
+`v0.2.0-63-gd182fff9-lab2`.
+
+**Not run.** A `-fips` binary under either script. The settings files
+`/etc/conf.d/halite-node` and `/etc/default/halite-node`: both scripts ran
+on their defaults. OpenRC on anything but Alpine. A sysvinit agent that
+crashes while a job is running. The probe on a systemd host with OpenRC
+installed, in a chroot, or in a container: those are still fake roots
+only. The revoked-node retry under systemd.
 
 
 

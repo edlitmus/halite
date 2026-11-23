@@ -432,8 +432,9 @@ func copyTree(t *testing.T, from, to string, names ...string) {
 //
 // What it cannot show is that a real Alpine or a real sysvinit Debian has
 // these files where the probe looks. That was read from the distributions'
-// packaging, not run here; the lab procedure DIVERGENCE 5.716 names is what
-// runs it.
+// packaging here. The probe was then run on Alpine 3.24, a sysvinit Debian
+// 13 and Ubuntu 26.04, and picked openrc, sysvinit and systemd (DIVERGENCE
+// 5.716.3).
 func TestInstallPicksTheServiceFilesByTheHostsInit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the probe is sh; there is no Windows install")

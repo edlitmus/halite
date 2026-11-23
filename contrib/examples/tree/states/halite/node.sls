@@ -7,8 +7,9 @@
 # FreeBSD, systemd-run where systemd is running, and setsid with the init
 # script elsewhere (OpenRC, sysvinit). The first two were run inside a real
 # job on Ubuntu 26.04 and FreeBSD 15.1 (DIVERGENCE 5.482), and the third on
-# Alpine and a sysvinit Debian (5.708), none of them from this file; under
-# systemd read the 30 as 30 to 90 seconds.
+# Alpine and a sysvinit Debian (5.708). The FreeBSD and setsid ones have
+# since run from this file (5.626, 5.716.3); under systemd read the 30 as
+# 30 to 90 seconds.
 #
 # This shape is not a preference. A `watch` on the agent's own service --
 # the obvious way to write it -- is refused by halite, because it reports a
@@ -47,8 +48,8 @@ halite node restart when its configuration changes:
     # `systemd` only when systemd is running. setsid gives the restart a
     # session of its own, outside the agent's process group, and with its
     # output closed and `&` the job returns at once instead of waiting on
-    # it. Run in the lab on Alpine and on a sysvinit Debian (DIVERGENCE
-    # 5.708), though not from this file.
+    # it. Run from this file, inside a job, on Alpine 3.24 and on a
+    # sysvinit Debian 13 (DIVERGENCE 5.716.3).
     - name: "setsid sh -c 'sleep 30; /etc/init.d/{{ halite.service.node }} restart' </dev/null >/dev/null 2>&1 &"
 {%- endif %}
     - onchanges:
