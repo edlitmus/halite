@@ -80,7 +80,7 @@ func orchStates(o *orchRunner) *states.Registry {
 					stateRunParallel,
 				),
 			},
-			Fn: o.applyState,
+			Fn: o.fleetStep("salt.state"),
 		},
 		states.Module{
 			Sig: signature.Signature{
@@ -96,7 +96,7 @@ func orchStates(o *orchRunner) *states.Registry {
 					stateRunParallel,
 				),
 			},
-			Fn: o.applyState,
+			Fn: o.fleetStep("salt.sls"),
 		},
 		states.Module{
 			Sig: signature.Signature{
@@ -111,10 +111,7 @@ func orchStates(o *orchRunner) *states.Registry {
 					stateRunParallel,
 				),
 			},
-			Fn: func(c *exec.Context, args *value.Map) (states.Result, error) {
-				args.Set("highstate", true)
-				return o.applyState(c, args)
-			},
+			Fn: o.fleetStep("salt.highstate"),
 		},
 		states.Module{
 			Sig: signature.Signature{
@@ -134,7 +131,7 @@ func orchStates(o *orchRunner) *states.Registry {
 					runParallel,
 				),
 			},
-			Fn: o.callFunction,
+			Fn: o.fleetStep("salt.function"),
 		},
 		states.Module{
 			Sig: signature.Signature{
@@ -204,69 +201,99 @@ func orchStates(o *orchRunner) *states.Registry {
 	return r
 }
 
-// applyState backs salt.state, salt.sls, and salt.highstate.
-func (o *orchRunner) applyState(c *exec.Context, args *value.Map) (states.Result, error) {
-	sub, res, stop := o.submission(c, args, "state.apply")
-	if stop {
-		return res, nil
+// fleetStep backs the four step functions that send a job: salt.state,
+// salt.sls, salt.highstate and salt.function.
+//
+// Everything about which job a step sends is in stepJob, and this only
+// dispatches it, because issue 765's plan tool and the hub's pre-flight of
+// a plan have to work out the same job without running anything. Two
+// copies of "what job does this step make" would be two things that must
+// agree, and a plan fails closed when they do not.
+func (o *orchRunner) fleetStep(step string) states.Func {
+	return func(c *exec.Context, args *value.Map) (states.Result, error) {
+		sub, honoursTest, refusal := stepJob(step, args, o.env, c.Test)
+		if refusal != "" {
+			return states.False(refusal), nil
+		}
+		return o.dispatchAndWait(c, args, sub, honoursTest)
 	}
+}
 
-	if !states.Bool(args, "highstate", false) {
-		sub.Arg = states.Strings(args, "sls")
-	}
-	// A state honours test mode by contract -- SPEC 11.6, enforced for
-	// every state module by the conformance harness -- so a test run
-	// dispatches the job with `test` set and reports what each node
-	// would do. That is the useful answer, and it is safe.
-	sub.Test = sub.Test || c.Test
-	if p := states.Mapping(args, "pillar"); p != nil && p.Len() > 0 {
-		sub.Kwarg = map[string]any{"pillar": p}
-	}
-	if env := states.Str(args, "pillarenv", ""); env != "" {
-		if sub.Kwarg == nil {
+// stepJob is the job a fleet step sends, from its bound arguments.
+//
+// honoursTest says whether that job can be trusted to change nothing
+// under test mode, which dispatchAndWait reads. A refusal is a reason the
+// step sends nothing at all.
+func stepJob(step string, args *value.Map, runEnv string, runTest bool) (sub Submission, honoursTest bool, refusal string) {
+	switch step {
+	case "salt.state", "salt.sls", "salt.highstate":
+		sub, refusal = baseSubmission(args, "state.apply", runEnv)
+		if refusal != "" {
+			return Submission{}, false, refusal
+		}
+		if step != "salt.highstate" && !states.Bool(args, "highstate", false) {
+			sub.Arg = states.Strings(args, "sls")
+		}
+		// A state honours test mode by contract -- SPEC 11.6, enforced for
+		// every state module by the conformance harness -- so a test run
+		// dispatches the job with `test` set and reports what each node
+		// would do. That is the useful answer, and it is safe.
+		sub.Test = sub.Test || runTest
+		if p := states.Mapping(args, "pillar"); p != nil && p.Len() > 0 {
+			sub.Kwarg = map[string]any{"pillar": p}
+		}
+		if env := states.Str(args, "pillarenv", ""); env != "" {
+			if sub.Kwarg == nil {
+				sub.Kwarg = map[string]any{}
+			}
+			sub.Kwarg["pillarenv"] = env
+		}
+		return sub, true, ""
+	case "salt.function":
+		fun := states.Str(args, "name", "")
+		if fun == "" {
+			return Submission{}, false, "A salt.function step needs `name`, the function to run."
+		}
+		sub, refusal = baseSubmission(args, fun, runEnv)
+		if refusal != "" {
+			return Submission{}, false, refusal
+		}
+		for _, a := range states.Strings(args, "arg") {
+			sub.Arg = append(sub.Arg, a)
+		}
+		// Read here, not in baseSubmission: only this step may set it, and
+		// the state steps run alone.
+		sub.Parallel = states.Bool(args, "run_parallel", false)
+		if kw := states.Mapping(args, "kwarg"); kw != nil && kw.Len() > 0 {
 			sub.Kwarg = map[string]any{}
+			for _, e := range kw.Entries() {
+				sub.Kwarg[value.KeyString(e.Key)] = e.Val
+			}
 		}
-		sub.Kwarg["pillarenv"] = env
+		return sub, false, ""
 	}
-	return o.dispatchAndWait(c, args, sub, true)
+	return Submission{}, false, fmt.Sprintf("%s is not a step that sends a job", step)
 }
 
-// callFunction backs salt.function.
-func (o *orchRunner) callFunction(c *exec.Context, args *value.Map) (states.Result, error) {
-	fun := states.Str(args, "name", "")
-	if fun == "" {
-		return states.False("A salt.function step needs `name`, the function to run."), nil
+// isFleetStep reports whether a step function sends a job to nodes.
+func isFleetStep(step string) bool {
+	switch step {
+	case "salt.state", "salt.sls", "salt.highstate", "salt.function":
+		return true
 	}
-	sub, res, stop := o.submission(c, args, fun)
-	if stop {
-		return res, nil
-	}
-	for _, a := range states.Strings(args, "arg") {
-		sub.Arg = append(sub.Arg, a)
-	}
-	// Read here, not in submission: only this step may set it, and
-	// submission is shared with the state steps, which run alone.
-	sub.Parallel = states.Bool(args, "run_parallel", false)
-	if kw := states.Mapping(args, "kwarg"); kw != nil && kw.Len() > 0 {
-		sub.Kwarg = map[string]any{}
-		for _, e := range kw.Entries() {
-			sub.Kwarg[value.KeyString(e.Key)] = e.Val
-		}
-	}
-	return o.dispatchAndWait(c, args, sub, false)
+	return false
 }
 
-// submission builds the common half of a fleet step, and reports the
+// baseSubmission builds the common half of a fleet step, and reports the
 // refusals that stop one before it is dispatched.
-func (o *orchRunner) submission(c *exec.Context, args *value.Map, fun string) (Submission, states.Result, bool) {
+func baseSubmission(args *value.Map, fun, runEnv string) (Submission, string) {
 	if raw, ok := args.Get("queue"); ok && raw != nil && value.Truthy(raw) {
-		return Submission{}, states.False(
-			"`queue` holds a step on the hub's durable queue, which is not built; " +
-				"it arrives with the queue runner (SPEC section 19.4)."), true
+		return Submission{}, "`queue` holds a step on the hub's durable queue, which is not built; " +
+			"it arrives with the queue runner (SPEC section 19.4)."
 	}
 	env := states.Str(args, "saltenv", "")
 	if env == "" {
-		env = o.env
+		env = runEnv
 	}
 	sub := Submission{
 		Target:     states.Str(args, "tgt", ""),
@@ -281,9 +308,9 @@ func (o *orchRunner) submission(c *exec.Context, args *value.Map, fun string) (S
 		},
 	}
 	if sub.Target == "" {
-		return Submission{}, states.False("A fleet step needs `tgt`, the nodes to run against."), true
+		return Submission{}, "A fleet step needs `tgt`, the nodes to run against."
 	}
-	return sub, states.Result{}, false
+	return sub, ""
 }
 
 // dispatchAndWait sends the job, waits for it, and turns the returns
