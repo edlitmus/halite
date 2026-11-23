@@ -13,7 +13,7 @@ import (
 )
 
 // A run's record is written as it goes, not only at its start and end
-// (issue 802, DIVERGENCE 5.705). The binary test in cmd/halite-node kills a
+// (issue 802, DIVERGENCE 5.707). The binary test in cmd/halite-node kills a
 // real hub mid-run; these hold the parts of it a unit can see exactly: what
 // the record says at the moment a step is out on the fleet, and what a
 // resume does with a step that was.

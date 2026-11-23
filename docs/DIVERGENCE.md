@@ -48447,10 +48447,7 @@ changed both sides. It now spells `halite-tree-v1\x00` out, and fails.
 - **The traced-job trap** of the proposal's 2.8 (a traced job naming
   another environment falling back to local roots) is still a reading,
   not a run. Verification does not depend on it: both branches verify.
-
-
-
-### 5.705 A resume after a hub crash ran the steps that had already run (2026-11-22)
+### 5.707 A resume after a hub crash ran the steps that had already run (2026-11-22)
 
 Found by reading while writing the proposal for issue 765 (PR 801), filed
 as issue 802 marked *not reproduced*, and fixed first, in its own change,
@@ -48613,6 +48610,10 @@ Each part was broken on purpose:
   seconds while the run continues. Seen in the first attempt at the
   reproduction, when the resumed run's step 1 was dispatched before the
   node had reconnected and waited for it.
+
+
+
+
 
 ## 6. Everything else not started
 

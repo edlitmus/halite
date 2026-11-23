@@ -22,7 +22,7 @@ import (
 // before the resume point "had not run" and ran again: `orch resume <jid>
 // --from step3` sent step1 and step2 to the node a second time. Harmless for a
 // state, and not for the `cmd.run` that initialises a database. Issue 802,
-// DIVERGENCE 5.705.
+// DIVERGENCE 5.707.
 //
 // Real binaries over a real socket, and the hub is killed rather than stopped:
 // a crash, an OOM kill and a power cut give the hub no chance to write

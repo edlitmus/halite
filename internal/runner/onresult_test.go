@@ -10,7 +10,7 @@ import (
 // OnResult hears every result, in order, as it is made: the one that ran,
 // the one seeded by a resume and the one a requisite skipped. An
 // orchestration's record is written from it while the run goes
-// (DIVERGENCE 5.705), and a record written partway through has to name
+// (DIVERGENCE 5.707), and a record written partway through has to name
 // the seeded and skipped steps before the one in flight, or a resume of
 // it runs them again.
 func TestOnResultHearsEveryResultAsItIsMade(t *testing.T) {

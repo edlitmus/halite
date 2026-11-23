@@ -115,7 +115,7 @@ type Runner struct {
 	// and before the next one starts.
 	//
 	// It is how an orchestration keeps its record current while it runs
-	// (DIVERGENCE 5.705): the record was written at the start and at the
+	// (DIVERGENCE 5.707): the record was written at the start and at the
 	// end, so a hub that died between the two left one naming no steps,
 	// and a resume of it ran every step before the resume point again.
 	// Every result rather than only the ones that ran, because a record
