@@ -2,11 +2,14 @@ package atomicfile
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/edlitmus/halite/internal/fileperm/permtest"
 )
@@ -108,5 +111,67 @@ func TestReplacingAFileSomebodyIsReadingWaitsForThem(t *testing.T) {
 	}
 	if string(body) != "new" {
 		t.Errorf("after the replace the file says %q", body)
+	}
+}
+
+// holdShared opens path the way Read does, sharing everything, and keeps
+// it open until the test ends.
+func holdShared(t *testing.T, path string) *os.File {
+	t.Helper()
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(name, windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := os.NewFile(uintptr(h), path)
+	t.Cleanup(func() { f.Close() })
+	return f
+}
+
+// Issue 799. A reader that shares delete, as Read does, is not in a
+// replace's way at all: the replace lands at once, the reader goes on
+// reading the file it opened, and the next open sees the new one. Under
+// MoveFileEx the replace was refused for as long as the reader held the
+// file, and this test's reader holds it throughout, so the old code failed
+// it after the whole retry window rather than racing.
+func TestAReplaceDoesNotWaitForAReaderThatSharesDelete(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "new")
+	to := filepath.Join(dir, "old")
+	if err := os.WriteFile(from, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(to, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reader := holdShared(t, to)
+
+	start := time.Now()
+	err := Rename(from, to)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("a replace was refused while a reader that shares delete held the file, after %v: %v", elapsed, err)
+	}
+	if elapsed >= fast {
+		t.Errorf("the replace took %v; it waited for a reader that was never in its way", elapsed)
+	}
+	held, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(held) != "old" {
+		t.Errorf("the reader's open file says %q after the replace, want the one it opened", held)
+	}
+	body, err := Read(to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "new" {
+		t.Errorf("after the replace the path says %q", body)
 	}
 }
