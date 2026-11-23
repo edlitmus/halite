@@ -110,6 +110,9 @@ type Server struct {
 	// HashType is the digest the file server publishes, sha256 by
 	// default.
 	HashType string
+	// reservedWarned is the last `_halite/` problem logged per
+	// environment, so a refusal is said once rather than per file.
+	reservedWarned sync.Map
 	// Pillar is what this hub needs to compile a node's pillar, or nil
 	// for a hub that compiles none.
 	Pillar *PillarOptions
