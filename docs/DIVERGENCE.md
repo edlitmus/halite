@@ -49515,6 +49515,28 @@ itself. That is issue 822.
 
 
 
+### 5.714 The Windows checkpoint test hid errors from the orchestration store (2026-11-23)
+
+Issue 827 began with a failure on the Windows Server 2022 standard-user
+runner. Both signed jobs returned successfully. The test saw only one
+pending step and discarded errors from the orchestration store.
+
+The hub reads orchestration records with `atomicfile.Read`. On Windows,
+this opens the record with delete sharing and retries transient file
+sharing errors. The test now identifies the step and job and reports
+errors from both the listing and individual records.
+
+The signed checkpoint test passed 100 times on Windows Server 2022 under
+the standard CI account. The old read path also passed that run, so the
+original failure did not recur there.
+
+A separate test held a handle with delete access open while the store
+read the record. The old read path failed all ten reads with a sharing
+violation. The new read path passed all ten reads. The test used the
+same Windows runner and standard account as the integration test.
+
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

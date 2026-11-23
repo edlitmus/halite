@@ -775,7 +775,7 @@ func TestASignedStepIsRecordedPendingAndSignedBeforeItsJobIsSent(t *testing.T) {
 	l := orchLab(t, map[string]string{"deploy.sls": planDeploy})
 	signer := newPlanSigner(t)
 	plan, digest := signer.plan(t, l.server.Files, PlanOptions{SLS: []string{"deploy"}, Pillar: versionPillar()})
-	var seen []*OrchStep
+	seen := make(map[string]bool)
 	var mu sync.Mutex
 	node := &signingNode{keys: signer.keys}
 	stop := node.connectWith(t, l, "web1.example", func(msg transport.Message) {
@@ -789,17 +789,37 @@ func TestASignedStepIsRecordedPendingAndSignedBeforeItsJobIsSent(t *testing.T) {
 				stepID = e.ID
 			}
 		}
-		runs, _, _ := l.server.Orch.List(1)
-		mu.Lock()
-		defer mu.Unlock()
-		for _, run := range runs {
-			for _, s := range run.Steps {
-				if s.ID == stepID {
-					copied := *s
-					seen = append(seen, &copied)
+		if stepID == "" {
+			t.Errorf("received job %s with no signed step in the plan", msg.JID)
+			return
+		}
+		runs, unreadable, err := l.server.Orch.List(1)
+		if err != nil {
+			t.Errorf("step %q job %s: listing orchestration records: %v", stepID, msg.JID, err)
+			return
+		}
+		for _, record := range unreadable {
+			t.Errorf("step %q job %s: reading orchestration %s: %v", stepID, msg.JID, record.JID, record.Err)
+		}
+		if len(unreadable) > 0 {
+			return
+		}
+		if len(runs) != 1 {
+			t.Errorf("step %q job %s: expected one orchestration record, found %d", stepID, msg.JID, len(runs))
+			return
+		}
+		for _, step := range runs[0].Steps {
+			if step.ID == stepID {
+				if !step.Pending || !step.Signed {
+					t.Errorf("step %q job %s: pending=%v signed=%v at delivery", stepID, msg.JID, step.Pending, step.Signed)
 				}
+				mu.Lock()
+				seen[stepID] = true
+				mu.Unlock()
+				return
 			}
 		}
+		t.Errorf("step %q job %s: missing from orchestration %s at delivery", stepID, msg.JID, runs[0].JID)
 	})
 	defer stop()
 
@@ -810,12 +830,9 @@ func TestASignedStepIsRecordedPendingAndSignedBeforeItsJobIsSent(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(seen) != 2 {
-		t.Fatalf("the record named %d of the two jobs as they reached the node: %+v", len(seen), seen)
-	}
-	for _, s := range seen {
-		if !s.Pending || !s.Signed {
-			t.Errorf("%s reached the node recorded pending=%v signed=%v", s.ID, s.Pending, s.Signed)
+	for _, step := range plan.Steps {
+		if !seen[step.ID] {
+			t.Errorf("step %q job %s: no checkpoint observed at delivery", step.ID, step.Job.JID)
 		}
 	}
 }
