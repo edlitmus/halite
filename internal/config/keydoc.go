@@ -190,7 +190,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"key_algorithm": {
 		Group:  "Enrollment and certificates",
-		Detail: "The algorithm of the keys the hub generates for its enrollment CA, its own certificate and operators. These are the only two: the hub's PKI issues ECDSA and nothing else, and any other value is refused at start. ECDSA P-256 is the default because one certificate profile then works everywhere, FIPS hosts included.",
+		Detail: "The algorithm of the keys the hub generates for its enrollment CA, its own certificate and operators. These are the only two: the hub's PKI issues ECDSA and nothing else, and any other value is refused at start. ECDSA P-384 is the default: it works everywhere P-256 does, FIPS hosts included, at the 192-bit security level. `ecdsa-p256` is still accepted. The setting chooses new keys only; a key that exists keeps its algorithm, renewal included.",
 	},
 	"file_roots": {
 		Group:  "The tree: states and pillar",

@@ -68,7 +68,7 @@ enroll and connect flags:
   --wait               keep asking until an operator accepts the request
   --pki-dir <dir>      key material, default ` + config.DefaultPKIDir + `
   --force              enrol again from a new key, moving the old one aside
-  --key-algorithm <a>  ecdsa-p256 (default) or ecdsa-p384
+  --key-algorithm <a>  ecdsa-p384 (default) or ecdsa-p256
   --server-name <name> the name to verify in the hub's certificate
   --correlation <id>   tie an event to the ones that caused it
 

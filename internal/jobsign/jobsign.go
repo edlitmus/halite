@@ -381,16 +381,17 @@ func FormatSignerKey(name string, pub *ecdsa.PublicKey) (string, error) {
 	return name + " " + base64.StdEncoding.EncodeToString(der), nil
 }
 
-// GenerateKey makes a signing key. `curve` is "ecdsa-p256" or
-// "ecdsa-p384", the same spellings `--key-algorithm` takes.
+// GenerateKey makes a signing key. `algorithm` is "ecdsa-p384" (the
+// default, 5.722) or "ecdsa-p256", the same spellings `--key-algorithm`
+// takes.
 func GenerateKey(algorithm string) (*ecdsa.PrivateKey, error) {
 	switch algorithm {
-	case "", "ecdsa-p256":
-		return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	case "ecdsa-p384":
+	case "", "ecdsa-p384":
 		return ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	case "ecdsa-p256":
+		return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	}
-	return nil, fmt.Errorf("%q is not a signing algorithm; use ecdsa-p256 or ecdsa-p384", algorithm)
+	return nil, fmt.Errorf("%q is not a signing algorithm; use ecdsa-p384 or ecdsa-p256", algorithm)
 }
 
 // EncodePrivateKey writes a PKCS#8 PEM block, which is what the rest of

@@ -3,6 +3,7 @@ package jobsign
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -385,5 +386,24 @@ func TestThisPackageVerifiesWhatOpenSSLSigns(t *testing.T) {
 	}
 	if name != "kms" {
 		t.Errorf("verified as %q", name)
+	}
+}
+
+// A signing key made with no algorithm named, as `keys signer create`
+// makes one by default, is P-384 (5.722), and it signs a job a node
+// verifies: the node's verifier accepted P-384 before this default
+// changed, and this is the test that would say if it stopped.
+func TestTheDefaultSigningKeyIsP384AndVerifies(t *testing.T) {
+	k, err := GenerateKey("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k.Curve != elliptic.P384() {
+		t.Fatalf("the default signing key is on %s; want P-384", k.Curve.Params().Name)
+	}
+	for _, name := range []string{"ecdsa-p384", "ecdsa-p256"} {
+		if _, err := GenerateKey(name); err != nil {
+			t.Errorf("GenerateKey(%q): %v", name, err)
+		}
 	}
 }

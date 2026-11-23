@@ -50858,6 +50858,73 @@ Whether it should offer Ed25519 is a separate decision. Issue 840's first
 question is answered here.
 
 
+### 5.722 P-384 is the default key algorithm
+
+The owner chose this on 2026-11-23, alongside allowing Ed25519 in FIPS mode
+(5.721). halite's own keys had defaulted to ECDSA P-256. They now default to
+P-384. P-256 is still accepted everywhere it was.
+
+**What changed.**
+- `pki.ParseKeyAlgorithm` reads an empty value, or `ecdsa` alone, as
+  `ecdsa-p384`. `pki.GenerateKey` makes P-384 for anything but
+  `ecdsa-p256`.
+- The hub's `key_algorithm` default is `ecdsa-p384`. That setting chooses
+  the enrollment CA, the hub's serving certificate and operator
+  certificates.
+- `halite-node enroll`'s `--key-algorithm` defaults to `ecdsa-p384`.
+- `halite-hub keys signer create` makes a P-384 job-signing key unless
+  told otherwise, and `jobsign.GenerateKey("")` is P-384.
+- SPEC 7.1's table, the key table and its description, both commands'
+  usage text and the generated references all say P-384 is the default.
+
+**What did not change, and why.**
+- **Existing keys.** The setting chooses new keys only. An enrollment CA
+  that exists keeps its key. A node's renewal keeps the algorithm of the
+  key the node holds (`renewal.Identity` with `alg ""` reads it with
+  `pki.AlgorithmOf`), so an estate enrolled on P-256 stays on P-256 until a
+  node is re-enrolled. A P-384 node under a P-256 CA, or the other way
+  round, is an ordinary pair. `ecdsa-p384` was already an accepted value,
+  and the renewal path was written for nodes enrolled on it.
+- **The x509 execution module.** `x509.create_private_key` with `algo: ec`
+  and no `keysize` still makes P-256. That module follows Salt's
+  `x509_v2`, and a tree written for Salt that leaves out `keysize` means
+  256. This change is about halite's own keys, not about what a state
+  asks for.
+- **The AWS KMS signer** (`internal/awskms`) still takes P-256 only,
+  because it signs SHA-256 digests and KMS pairs those with P-256.
+- **TLS key exchange.** It is still offered as P-256 then P-384. That is
+  the curve for the handshake's ephemeral key, which is separate from the
+  key a certificate holds.
+
+**Test.** `TestKeyAlgorithmNames` now expects `""` and `ecdsa` to parse to
+P-384. `TestTheDefaultKeyIsP384` (`internal/pki`) generates from the
+parsed default, from both named curves, and from an unset algorithm, and
+reads each key back with `AlgorithmOf`.
+`TestTheDefaultSigningKeyIsP384AndVerifies` (`internal/jobsign`) checks
+the curve of the default signing key. Each was broken on purpose:
+
+- The parser's default put back to P-256 failed both pki tests.
+- The signing default put back to P-256 failed the jobsign test.
+- `GenerateKey`'s branches swapped back to fall through to P-256 **passed
+  at first**. Both named algorithms still had their own case, so only an
+  unset `KeyAlgorithm` reached the fall-through, and no test passed one. No
+  production caller does either, because each one parses first. The test
+  now generates from `""` too, and the same break fails it with
+  `GenerateKey("") made a ecdsa-p256 key; want ecdsa-p384`.
+
+**Run.** A hub built from this change, started unprivileged on macOS on
+loopback with a fresh `pki_dir`, logged `created a new enrollment CA
+algorithm=ecdsa-p384`. Its `ca.crt` and `hub.crt` were on `secp384r1` and
+signed `ecdsa-with-SHA384`. Handbook 30 keeps its captured P-256 line and
+now says what a hub prints today.
+
+**Not run.** A node enrolling with the new default against a hub, on a real
+host. A P-384 job-signing key verified by a node over the wire; the
+verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
+build making the P-384 CA; `make fips-test` runs the unit tests above as a
+FIPS build.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -480,13 +480,16 @@ authoritative; the CN is for human readability.
 
 | `key_algorithm` | Key algorithm | Signature |
 |---|---|---|
-| `ecdsa-p256` (default) | ECDSA P-256 | ECDSA with SHA-256 |
-| `ecdsa-p384` | ECDSA P-384 | ECDSA with SHA-384 |
+| `ecdsa-p384` (default) | ECDSA P-384 | ECDSA with SHA-384 |
+| `ecdsa-p256` | ECDSA P-256 | ECDSA with SHA-256 |
 
 These are the only two, in every build, FIPS included. The hub's PKI does not issue RSA or Ed25519
 keys. An earlier version of this table listed RSA-3072 and RSA-4096, and said that Ed25519 was
 permitted by configuration, and none of those was ever built (DIVERGENCE 5.720). The default is
-ECDSA so that one certificate profile works everywhere.
+ECDSA so that one certificate profile works everywhere, and P-384 since DIVERGENCE 5.722; it was
+P-256. The default chooses new keys only. A node's key keeps its algorithm across renewal, and an
+existing enrollment CA keeps its own. A node enrols with P-384 unless `--key-algorithm` says
+otherwise, and job-signing keys from `keys signer create` default to P-384 too.
 
 The node's private key is generated on the node, never leaves it, and is stored at
 `/etc/halite/pki/node.key` with mode `0600`, or in the Windows certificate store for the machine,

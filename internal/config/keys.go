@@ -66,7 +66,7 @@ var Keys = []Key{
 	{"enroll_source_rate", hubOnly, "0.1", "Enrollment requests one address may make a second, sustained, counting only those that leave a new pending record or are refused; over it the hub answers 429.", "7.3"},
 	{"enroll_source_burst", hubOnly, "32", "Enrollment requests one address may make at once before enroll_source_rate applies.", "7.3"},
 	{"certificate_lifetime", hubOnly, "2160h", "Issued certificate lifetime; renewal happens at half of it.", "7.4"},
-	{"key_algorithm", hubOnly, "ecdsa-p256", "ecdsa-p256 or ecdsa-p384.", "7.1"},
+	{"key_algorithm", hubOnly, "ecdsa-p384", "ecdsa-p384 or ecdsa-p256.", "7.1"},
 
 	// State and pillar.
 	{"file_roots", nodeHub, "", "Environment to an ordered list of state directories.", "13.1"},
