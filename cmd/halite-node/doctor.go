@@ -149,14 +149,17 @@ func nodeCertificateCheck(args *cli.Args, n *node) doctor.Check {
 	// unlike the hub they share a window.
 	const notice = 14 * 24 * time.Hour
 	certs := map[string]doctor.Expected{}
-	for label, name := range map[string]string{
-		"this node's certificate": pki.NodeCertFile,
-		"the hub's CA":            pki.CACertFile,
+	for label, held := range map[string]struct {
+		file string
+		kind doctor.CertificateKind
+	}{
+		"this node's certificate": {pki.NodeCertFile, doctor.NodeCertificate},
+		"the hub's CA":            {pki.CACertFile, doctor.EnrollmentCA},
 	} {
-		if !files.Exists(name) {
+		if !files.Exists(held.file) {
 			continue
 		}
-		cert, err := files.ReadCert(name)
+		cert, err := files.ReadCert(held.file)
 		if err != nil {
 			// Reported as a failure rather than skipped: nothing will
 			// connect with it, and a check that stays quiet about a file
@@ -164,10 +167,10 @@ func nodeCertificateCheck(args *cli.Args, n *node) doctor.Check {
 			// unreadable, with the reason, and not as expired: an empty
 			// certificate stood in for it, and its zero NotAfter printed
 			// as "expired -9223372036854ms ago" (DIVERGENCE 5.594).
-			certs[label] = doctor.Expected{Unreadable: err, WarnWithin: notice}
+			certs[label] = doctor.Expected{Kind: held.kind, Unreadable: err, WarnWithin: notice}
 			continue
 		}
-		certs[label] = doctor.Expected{Cert: cert, WarnWithin: notice}
+		certs[label] = doctor.Expected{Kind: held.kind, Cert: cert, WarnWithin: notice}
 	}
 	return doctor.CertificateExpiry(certs, time.Now())
 }

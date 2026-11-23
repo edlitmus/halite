@@ -95,9 +95,125 @@ func ConfigValidity(path string, loadErr error, unknownKeys []string, running Ru
 	}
 }
 
+// CertificateKind is what a certificate is for, which decides who renews
+// it and so what the remedy for it says.
+//
+// The remedy used to be one sentence for every certificate -- `halite-node
+// renew` on a node, `keys operator create` for an operator -- and the
+// certificate a lab API warned about was its serving pair, which neither
+// command touches (issue 813, DIVERGENCE 5.711). The label cannot carry
+// this: it is prose for the reader, and three programs spell their labels
+// three ways.
+type CertificateKind int
+
+const (
+	// UnclassifiedCertificate is the zero value, so a caller that forgets
+	// to say what a certificate is gets a remedy that says so rather than
+	// one written for some other certificate.
+	UnclassifiedCertificate CertificateKind = iota
+	// NodeCertificate is node.crt, which the node renews itself.
+	NodeCertificate
+	// HubCertificate is hub.crt, which the hub renews itself.
+	HubCertificate
+	// OperatorCertificate is an operator-<name>.crt in the hub's key
+	// directory, which nothing renews.
+	OperatorCertificate
+	// APIOperatorCertificate is the operator certificate halite-api
+	// presents to the hub: an operator certificate, with the API's own
+	// behaviour on a reissue.
+	APIOperatorCertificate
+	// APIServingCertificate is halite-api's `tls_cert`, from the site's
+	// HTTPS PKI. No halite command issues it.
+	APIServingCertificate
+	// EnrollmentCA is ca.crt, wherever it is held, which has no rotation.
+	EnrollmentCA
+)
+
+// CertificateKinds is every kind, in the order their remedies are given.
+func CertificateKinds() []CertificateKind {
+	return []CertificateKind{
+		UnclassifiedCertificate, NodeCertificate, HubCertificate, OperatorCertificate,
+		APIOperatorCertificate, APIServingCertificate, EnrollmentCA,
+	}
+}
+
+// CertificateRemedy is what renews or replaces a certificate of this kind.
+//
+// Each sentence is held by two tests: one that it names the command that
+// does it (TestEachCertificateKindHasItsOwnRemedy), and one that every
+// command it names is in that program's dispatch
+// (internal/docsaudit TestEveryCommandACertificateRemedyNamesExists).
+// The claims beside the commands are the code's, and say where:
+//
+//   - a node renews at half its life while `connect` runs, presenting its
+//     current certificate (cmd/halite-node renewal.go), so one already
+//     expired is re-enrolled instead: handbook chapter 37's table;
+//   - the hub renews hub.crt at half its life while it runs and at start,
+//     and issues another at start when it has expired (keepServingRenewed
+//     and servingCertificate in cmd/halite-hub serve.go), and logs a
+//     failed renewal with the sentence quoted below;
+//   - the API reads its operator pair before each request to the hub
+//     (hubClient, 5.271) and its serving pair on a new connection, at
+//     most every few seconds (internal/certreload, 5.250), so neither
+//     needs a restart;
+//   - the CA has no rotation (handbook chapter 37, step 6).
+func CertificateRemedy(kind CertificateKind) string {
+	switch kind {
+	case NodeCertificate:
+		return "This node's certificate: a running `halite-node connect` renews it at half " +
+			"its life; on a node that does not run it, `halite-node renew`. Renewal presents " +
+			"the current certificate, so one that has expired is replaced instead: " +
+			"`halite-hub keys revoke` and `halite-hub keys delete` it on the hub, then " +
+			"`halite-node enroll --force`. A certificate that expires while the node is " +
+			"connected keeps that connection and is refused on the next one, so the symptom " +
+			"appears at a restart rather than at the expiry."
+	case HubCertificate:
+		return "This hub's certificate: `halite-hub serve` renews it once half its life has " +
+			"passed, while it runs and at start. One past half its life means renewal has been " +
+			"failing, and the hub's log says why (\"renewing the hub's certificate failed\"); " +
+			"one that is not yet there is renewed when it is. A restart past that point issues " +
+			"another from the enrollment CA under the same key, and no node changes."
+	case OperatorCertificate:
+		return "An operator certificate: nothing renews it. Reissue it in place with " +
+			"`halite-hub keys operator create <name>`, which keeps the same cert:CN=<name> " +
+			"the policy binds and does not revoke the previous one."
+	case APIOperatorCertificate:
+		return "The operator certificate this service presents to the hub: nothing renews " +
+			"it. Reissue it on the hub with `halite-hub keys operator create <name>`, into the " +
+			"files this service reads; it reads them again before each request to the hub, " +
+			"so it needs no restart."
+	case APIServingCertificate:
+		return "The certificate this service presents: no halite command issues it. Renew it " +
+			"from the CA that issued it (the site's HTTPS PKI, ACME, or a state) and replace " +
+			"`tls_cert` and `tls_key` in place; this service reads them again on a new " +
+			"connection, so it needs no restart."
+	case EnrollmentCA:
+		return "The enrollment CA: there is no rotation. Replacing it is the lost-CA " +
+			"procedure done on purpose -- a new CA, a new `hub_fingerprint` on every node, " +
+			"and every node enrolled again (handbook chapter 37, step 6)."
+	default:
+		return "This program does not say who renews this certificate, which is a defect " +
+			"in the program; handbook chapter 37 lists who renews each."
+	}
+}
+
+// certificateRemedies is the remedy for each kind present, once each, in
+// CertificateKinds order.
+func certificateRemedies(kinds map[CertificateKind]bool) []string {
+	var out []string
+	for _, kind := range CertificateKinds() {
+		if kinds[kind] {
+			out = append(out, CertificateRemedy(kind))
+		}
+	}
+	return out
+}
+
 // Expected is a certificate this process's configuration points at, and
 // how much notice its rotation needs.
 type Expected struct {
+	// Kind is what the certificate is for, which decides the remedy.
+	Kind CertificateKind
 	// Cert is the certificate. Nil means the configuration names it and
 	// the file is not there, which is reported rather than skipped:
 	// absent and expired are different problems with different remedies,
@@ -161,12 +277,16 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 			sort.Strings(names)
 
 			var absent, unissued, unreadable, expired, expiring, details []string
+			// The kinds behind each finding, so the remedy is the one for
+			// the certificates named rather than one for every certificate.
+			failedKinds, expiringKinds := map[CertificateKind]bool{}, map[CertificateKind]bool{}
 			for _, name := range names {
 				want := certs[name]
 				cert := want.Cert
 				if want.Unreadable != nil {
 					unreadable = append(unreadable, fmt.Sprintf("%s could not be read: %v",
 						name, want.Unreadable))
+					failedKinds[want.Kind] = true
 					continue
 				}
 				// Named by the configuration and not on disk. Reported,
@@ -181,6 +301,7 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 						unissued = append(unissued, detail)
 					} else {
 						absent = append(absent, detail)
+						failedKinds[want.Kind] = true
 					}
 					continue
 				}
@@ -189,11 +310,14 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 				case now.Before(cert.NotBefore):
 					expired = append(expired, fmt.Sprintf("%s is not valid until %s",
 						name, cert.NotBefore.UTC().Format(time.RFC3339)))
+					failedKinds[want.Kind] = true
 				case left <= 0:
 					expired = append(expired, fmt.Sprintf("%s expired %s ago",
 						name, roughly(-left)))
+					failedKinds[want.Kind] = true
 				case left <= want.WarnWithin:
 					expiring = append(expiring, fmt.Sprintf("%s expires in %s", name, roughly(left)))
+					expiringKinds[want.Kind] = true
 				default:
 					details = append(details, fmt.Sprintf("%s: %s left", name, roughly(left)))
 				}
@@ -203,10 +327,14 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 				res.Status = Fail
 				failed := append(append(append([]string(nil), unreadable...), expired...), absent...)
 				res.Detail = strings.Join(append(failed, expiring...), "; ")
-				res.Remedy = "Nothing will connect with an expired, missing or unreadable certificate.\n" +
-					"A node renews with `halite-node renew`; a hub's is reissued from its CA; " +
-					"an operator's with `halite-hub keys operator create <name>`, which keeps " +
-					"the same cert:CN=<name> the policy binds."
+				// The expiring ones are in the detail too, so their
+				// remedies are here as well.
+				for kind := range expiringKinds {
+					failedKinds[kind] = true
+				}
+				res.Remedy = strings.Join(append(
+					[]string{"Nothing will connect with an expired, missing or unreadable certificate."},
+					certificateRemedies(failedKinds)...), "\n")
 			case len(expiring) > 0 || len(unissued) > 0:
 				res.Status = Warn
 				res.Detail = strings.Join(append(append([]string(nil), expiring...), unissued...), "; ")
@@ -216,11 +344,8 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 				// for a file that is not there.
 				var remedy []string
 				if len(expiring) > 0 {
-					remedy = append(remedy, "Renew before it lapses: `halite-node renew` on a "+
-						"node, `halite-hub keys operator create <name>` for an operator. A "+
-						"certificate that expires while the node is connected keeps that "+
-						"connection and is refused on the next one, so the symptom appears at a\n"+
-						"restart rather than at the expiry.")
+					remedy = append(remedy, "Renew before it lapses.")
+					remedy = append(remedy, certificateRemedies(expiringKinds)...)
 				}
 				if len(unissued) > 0 {
 					remedy = append(remedy, "A binding with no certificate authorizes nobody: "+

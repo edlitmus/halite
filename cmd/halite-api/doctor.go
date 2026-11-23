@@ -126,10 +126,12 @@ func apiCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 		switch {
 		case err != nil:
 			certs[label] = doctor.Expected{
-				Unreadable: err, WarnWithin: servingNotice,
+				Kind: doctor.APIServingCertificate, Unreadable: err, WarnWithin: servingNotice,
 			}
 		default:
-			certs[label] = doctor.Expected{Cert: cert, WarnWithin: servingNotice}
+			certs[label] = doctor.Expected{
+				Kind: doctor.APIServingCertificate, Cert: cert, WarnWithin: servingNotice,
+			}
 		}
 	}
 
@@ -144,26 +146,31 @@ func apiCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	if p := args.Flag("cert", ""); p != "" {
 		cert, err := readCertFile(p)
 		if err == nil {
-			certs[operatorLabel] = doctor.Expected{Cert: cert, WarnWithin: operatorNotice}
+			certs[operatorLabel] = doctor.Expected{
+				Kind: doctor.APIOperatorCertificate, Cert: cert, WarnWithin: operatorNotice,
+			}
 		} else {
 			certs[operatorLabel] = doctor.Expected{
-				Unreadable: err, WarnWithin: operatorNotice,
+				Kind: doctor.APIOperatorCertificate, Unreadable: err, WarnWithin: operatorNotice,
 			}
 		}
 	} else if files.Exists(operatorFile) {
 		cert, err := files.ReadCert(operatorFile)
 		if err != nil {
 			certs[operatorLabel] = doctor.Expected{
-				Unreadable: err, WarnWithin: operatorNotice,
+				Kind: doctor.APIOperatorCertificate, Unreadable: err, WarnWithin: operatorNotice,
 			}
 		} else {
-			certs[operatorLabel] = doctor.Expected{Cert: cert, WarnWithin: operatorNotice}
+			certs[operatorLabel] = doctor.Expected{
+				Kind: doctor.APIOperatorCertificate, Cert: cert, WarnWithin: operatorNotice,
+			}
 		}
 	} else {
 		// Named by the configuration and not on disk. This service
 		// cannot reach the hub without it, so it fails rather than
 		// being skipped: `serve` would exit on the same file.
 		certs[operatorLabel] = doctor.Expected{
+			Kind:       doctor.APIOperatorCertificate,
 			Absence:    doctor.Fail,
 			WarnWithin: operatorNotice,
 			AbsentDetail: "there is no operator certificate for " + name + " at " +
@@ -174,10 +181,12 @@ func apiCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	// The CA this service verifies the hub with.
 	if files.Exists(pki.CACertFile) {
 		if cert, err := files.ReadCert(pki.CACertFile); err == nil {
-			certs["the hub's CA"] = doctor.Expected{Cert: cert, WarnWithin: servingNotice}
+			certs["the hub's CA"] = doctor.Expected{
+				Kind: doctor.EnrollmentCA, Cert: cert, WarnWithin: servingNotice,
+			}
 		} else {
 			certs["the hub's CA"] = doctor.Expected{
-				Unreadable: err, WarnWithin: servingNotice,
+				Kind: doctor.EnrollmentCA, Unreadable: err, WarnWithin: servingNotice,
 			}
 		}
 	}

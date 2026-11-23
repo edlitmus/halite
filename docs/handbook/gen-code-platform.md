@@ -169,6 +169,9 @@ A check that says "certificate expires in 3 days" and stops has moved the proble
 **Exports.**
 
 - `CertificateExpiry` (func): CertificateExpiry checks every certificate this process depends on.
+- `CertificateKind` (type): CertificateKind is what a certificate is for, which decides who renews it and so what the remedy for it says.
+- `CertificateKinds` (func): CertificateKinds is every kind, in the order their remedies are given.
+- `CertificateRemedy` (func): CertificateRemedy is what renews or replaces a certificate of this kind.
 - `Check` (type): A Check is one diagnostic.
 - `ClockSkew` (func): ClockSkew compares this host's clock with the hub's.
 - `ConfigValidity` (func): ConfigValidity reports whether the configuration this process is running with loaded cleanly.

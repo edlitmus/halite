@@ -49253,6 +49253,180 @@ refuses `--plan`, because a runner's keyword arguments are bound strictly
 (`signature.Bind`, "is not a parameter of this function"); read, not run
 against an old hub.
 
+### 5.711 doctor gave every certificate the same remedy, and the API's serving certificate the wrong one (2026-11-23)
+
+`CertificateExpiry` in `internal/doctor/checks.go` had one remedy for an
+expiring certificate, whatever the certificate was: "`halite-node renew` on
+a node, `halite-hub keys operator create <name>` for an operator". A lab
+`halite-api doctor` warned that its serving certificate (`tls_cert`) had 29
+days left and gave that sentence. Neither command renews it: chapter 32
+says it comes from the site's HTTPS PKI and that no halite command issues
+it. The failure branch had the same shape with a third clause for the hub.
+Issue 813.
+
+The label could not carry the difference, because it is prose and the
+three programs spell it three ways. So `doctor.Expected` now has a `Kind`,
+and the remedy is one sentence for each kind found, once each. A kind that
+is healthy gets none. The kinds, and what each says, read from the code:
+
+| Kind | Held by | Remedy | Read from |
+|---|---|---|---|
+| node certificate | node | a running `connect` renews it; otherwise `halite-node renew`; an expired one is revoked and deleted on the hub and enrolled again with `halite-node enroll --force` | `cmd/halite-node` renewal.go; chapter 37's table |
+| hub certificate | hub | `halite-hub serve` renews it past half its life, running and at start; past that, the log line "renewing the hub's certificate failed" says why; a restart issues another under the same key | `keepServingRenewed`, `servingCertificate` (5.259) |
+| operator certificate | hub | nothing renews it; `halite-hub keys operator create <name>` keeps the same principal | chapter 37 step 4 |
+| the API's operator certificate | API | the same command; the API reads the pair before each request to the hub, so no restart | `hubClient` (5.271) |
+| the API's serving certificate | API | renew it from the CA that issued it and replace `tls_cert` and `tls_key`; read again on a new connection, so no restart | `servingCertificate` in `cmd/halite-api/serve.go` builds a `certreload.Reloader`, whose `GetCertificate` is what `api.Listen` serves (5.250) |
+| the enrollment CA | all three | no rotation; the lost-CA procedure done on purpose | chapter 37 step 6 |
+
+**The reload claim was checked before it was written.** The issue asked
+for "the API reads it again on each new connection". It is true with one
+qualification: `certreload` looks at the files at most every five seconds
+(`Interval`), on a handshake, and keeps the previous pair when the new one
+does not load, so a certificate replaced without its key is not served.
+The remedy says "on a new connection" and "replace `tls_cert` and
+`tls_key`". `internal/api`'s
+`TestTheAPIServesARenewedCertificateWithoutARestart` and the
+`internal/certreload` tests hold it, and passed here; this change adds
+nothing to them.
+
+A zero `Kind` gets a sentence saying the program does not say who renews
+the certificate, rather than somebody else's remedy. The hub's
+"the hub's policy" row, which stands in for the operators an unreadable
+policy would have named, is an operator kind. Its remedy is the unissued
+one and is unchanged.
+
+**Tests.** `cmd/halite-api`'s
+`TestAnExpiringServingCertificateIsSentToItsOwnCA` runs `doctor` through
+the program's dispatch with a serving certificate 29 days from its end, as
+the issue saw, and reads only the certificate row. It failed on main
+(599f7b50): no "the CA that issued it", no "no restart", and both
+`halite-node renew` and `keys operator create` named. It passes with the
+fix. `internal/doctor`'s `TestEachCertificateKindHasItsOwnRemedy` holds
+each kind, expiring and expired, to its command and to the absence of the
+others'. `TestOnlyTheKindsFoundAreGivenRemedies` holds that two kinds
+expiring together get one remedy each and a healthy one gets none.
+`internal/docsaudit`'s `TestEveryCommandACertificateRemedyNamesExists`
+reads every backticked `halite-*` command out of every kind's remedy and
+holds the subcommand to that binary's dispatch switch and each further
+word and flag to the quoted words of its package, as the manual-page audit
+does. `TestEveryCheckedCertificateHasAKind` parses the three programs and
+fails on any `doctor.Expected` literal with no `Kind`; it found the
+policy row.
+
+Broken on purpose, one at a time, and a test failed each time: the API's
+serving certificate given the operator kind (the API test); every
+remedy given whatever the kinds (the doctor test, for every kind, and the
+API test); `halite-hub keys delete` spelled `key delete` and `--force`
+spelled `--forced` (the docsaudit test, naming both); and the node's
+`Kind` removed from one literal (the AST test, naming the line).
+
+**Not covered.**
+- A relay's upstream certificate (`relay_pki_dir`) is not checked by any
+  `doctor`, so it has no kind. Neither is a node's metrics serving
+  certificate (`metrics_tls_cert`). Both are gaps in coverage that this
+  change did not close.
+- The expired-node remedy (revoke, delete, `enroll --force`) is chapter
+  37's table and the reading that renewal presents the current
+  certificate; it was not run against an expired certificate here.
+- Nothing ran on a lab machine or on FreeBSD as FreeBSD (the dev host's
+  shell is a Linux compatibility layer). A renewed `tls_cert` being served
+  by a running `halite-api serve` was not watched here; the claim rests on
+  the code and the tests named above.
+
+### 5.712 A state job's pillar override was carried to the node and ignored (2026-11-23)
+
+Issue 820, found writing 5.710's real-binary test. A `salt.state`,
+`salt.sls` or `salt.highstate` orchestration step's `pillar:`, which
+chapter 21 of the handbook documents as "Pillar overrides for this step",
+and `halite-hub run <target> state.apply pillar='{...}'` both put the
+override in the job as the keyword argument `pillar`. Nothing in
+`cmd/halite-node` read it. `runStateJob` compiled the node's ordinary
+pillar, rendered the state with that, and reported success: a run asked
+for a different pillar got the ordinary one and said nothing.
+
+**Seen.** `TestAStateJobsPillarOverrideAppliesToThatRunOnly`, unsigned,
+real binaries: with `pillar={"app_version": "9.9", "nested": {"over":
+"job"}, "only_override": "yes-it-is"}` the marker the state writes held
+`from-pillar kept base none`, the same as a run with no override. The
+issue had seen it only on a signed job; the unsigned job and the command
+line have the same gap, because nothing on either path branches on the
+signature.
+
+**What Salt does** (3008.x, `salt/state.py`, `State.__init__` and
+`State._gather_pillar`): the override is merged over the compiled pillar
+with `salt.utils.dictupdate.merge`, under the agent's own
+`pillar_source_merging_strategy` and `pillar_merge_lists`, so by default
+a nested mapping is merged key by key and a list is replaced. An override
+that is not a dict is logged ("Pillar override was not passed as a
+dictionary") and dropped, and the state runs with the ordinary pillar.
+`pillar_enc: gpg` decrypts the override first.
+
+**The change.** The node merges a state job's `pillar` over its compiled
+pillar for that run, with `value.Merge` under the node's own two
+settings, the same call that merges one pillar file over another. The
+compiled pillar is not changed, so the next job sees the ordinary one.
+The node logs the override's top-level keys, not its values. It applies
+to every state function, the `show_*` forms included; only `state.apply`
+was run.
+
+Three things it deliberately does not do:
+
+- **An override is not the node's pillar for quiesce** (5.703). The merge
+  happens after `compilePillarOrErr`, the one place a pillar's quiesce is
+  recorded, and after `quiesceAfterPillar`. So an override saying
+  `quiesce: true` neither quiesces the node nor leaves
+  `pillar-quiesce.json` behind to keep it quiesced across a restart, and
+  one saying `quiesce: false` cannot lift a quiesce the compiled pillar
+  set. Salt checks blackout against the agent's own `opts["pillar"]`,
+  before the state module has merged anything (`salt/minion.py`, <!-- lexicon:allow -->
+  `_execute_job_function`; read, not run). The
+  override is a job's data and anybody who can send the job can write it;
+  the compiled pillar is the estate's.
+- **Anything but a mapping is refused**, where Salt drops it. Dropping it
+  is the defect this entry is about, with a log line added. Refused at
+  admission, before the acceptance record, as a non-boolean `test` is
+  (5.330), and again in `runStateJob` for the paths that do not come
+  through admission. Only for a state function: to an execution function
+  `pillar` is an ordinary keyword argument.
+- **`pillar_enc` is refused.** This node does not decrypt an override, and
+  merging the ciphertext as the value would write it wherever the state
+  put the value.
+
+**Demonstrated.** The real-binary test passes: the override's keys win,
+the nested key it does not name survives, a key only it has appears, the
+next plain run has the ordinary pillar back, `quiesce: true` in an
+override renders as data with no record written, a string is refused with
+`a pillar override must be a mapping`, and `quiesce: false` in the
+override of a job admitted before the node had read its newly quiescing
+pillar fails with the quiesce from `quiesceAfterPillar`. 5.710's signed
+test now writes the `app_version` the step's signed `pillar:` carries,
+and reads `1.4.2 app_version=1.4.2`. Broken on purpose, each failed:
+discarding the merged pillar (both binary tests, `MISSING` in the signed
+one, `from-pillar` in the unsigned one); recording the merged pillar's
+quiesce (the override's `quiesce: true` left the record); recording it
+before `quiesceAfterPillar` for `quiesce: false` only ("an override
+lifted the pillar's quiesce"); no type check ("succeeded"); and no
+admission check (`TestAStateJobWithAnUnusablePillarOverrideIsRefused`).
+
+**Not the same as Salt, and not covered.**
+
+- In Salt the pillar compile on the server sees the override too, so a pillar
+  file or an external pillar can read it. Here the hub compiles the
+  pillar without it and only the node merges it. A pillar template that
+  reads `pillar.get` of a key only the override sets sees nothing.
+- An override's values are not taught to the redactor. A secret passed
+  in an override is printed wherever the state prints it, as in Salt, and
+  it is in the hub's job cache as part of the job.
+- `pillar.refresh` or anything else that calls `RecompilePillar` during
+  the run gets the pillar without the override.
+- The command line's `halite-node state apply pillar=...` still refuses
+  `pillar=` by name; only jobs read it.
+- `pillarenv` has the same shape: a state step's `pillarenv:` is sent as a
+  keyword argument and no node reads it. Read, not run; not fixed here.
+- Run on the dev host only (FreeBSD, through its Linux compatibility
+  layer), on a hub and a node over loopback. No lab machine, no relay, no
+  API-submitted job (`/v1/run` sends the same keyword).
+
 ### 5.711 `orch run` gave up on a run after thirty seconds while the run went on (2026-11-23)
 
 Issue 815, seen once in the first attempt at 5.707's reproduction.
@@ -49339,6 +49513,7 @@ waited on. `halite-hub runner state.orchestrate`, and the API's runner
 calls through its own thirty-second hub client (`cmd/halite-api`), still
 wait on one request; either can pass `async` now, and neither does by
 itself. That is issue 822.
+
 
 ## 6. Everything else not started
 
