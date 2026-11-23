@@ -69,6 +69,35 @@ func TestTheNodeUnitsLeaveKernelModulesReachable(t *testing.T) {
 	}
 }
 
+// A unit that runs the node shares the host's temporary directories.
+//
+// `PrivateTmp=yes` gives the unit its own /tmp and /var/tmp, discarded
+// with the unit. A node manages the host, so a `file.managed` under either
+// wrote into the private pair: the job said the file was created, a shell
+// on the host could not see it, and after the agent's next restart it was
+// gone and the next rehearsal reported it missing again. Seen on AlmaLinux
+// 8.10 and openSUSE Leap 16.0 lab nodes, as false drift in chapter 24's
+// mailed report after every reboot and upgrade. DIVERGENCE 5.709. The hub
+// and API manage nothing on the host and keep the setting.
+func TestTheNodeUnitsShareTheHostsTemporaryDirectories(t *testing.T) {
+	checked := 0
+	private := regexp.MustCompile(`(?m)^\s*PrivateTmp\s*=\s*(?i:yes|true|on|1|disconnected)\s*$`)
+	for path, body := range readServiceFiles(t) {
+		if !strings.HasSuffix(path, ".service") || !strings.Contains(body, "/halite-node ") {
+			continue
+		}
+		checked++
+		if private.MatchString(body) {
+			t.Errorf("%s runs the node with a private /tmp and /var/tmp, so states "+
+				"that manage files there change a namespace the host never sees", path)
+		}
+	}
+	if checked < 2 {
+		t.Fatalf("found %d units running halite-node, want the node and highstate units; "+
+			"this check has stopped checking", checked)
+	}
+}
+
 // rc.subr reserves `${name}_program`: it assigns it over `command`.
 //
 // A FIPS switch was added as `halite_hub_program`, which silently
