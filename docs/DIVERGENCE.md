@@ -24648,6 +24648,133 @@ halite already running (FIPS was enabled before halite was installed); TOTP
 under FIPS on Linux; arm64 in this mode; the release archive's `-fips` binaries
 (these were built on the host).
 
+#### v0.2.0 and main on Ubuntu Pro FIPS kernels: an upgrade, a reboot, TOTP (issue 306, 2026-11-23)
+
+Three AWS hosts in us-west-2, reached through SSM as root. All three are
+arm64 Ubuntu 22.04.5 on kernel 5.15.0-1121-aws-fips, with
+`/proc/sys/crypto/fips_enabled` 1, `fips=1` on the kernel command line, and
+Ubuntu Pro `fips-updates` enabled. These are not the instances of the earlier
+runs. `host-b` (t4g.micro, 920 MB) ran the hub and the API. `host-c`
+(t4g.micro) ran the node. `host-d` (t4g.large, 7.8 GB) was used only to
+build. The two small hosts can reach each other on one TCP port only, so the
+hub listened on `<host-b-ip>:<port>`.
+
+**The published v0.2.0 archive.** On `host-b` and on `host-c`,
+`halite-0.2.0-linux-arm64-fips.tar.gz`, `SHA256SUMS` and `SHA256SUMS.sig` were
+fetched from the release. `contrib/keys/halite-release.pub` was fetched at the
+tag. `sha256sum --ignore-missing -c` said `OK`, and `openssl dgst -sha256
+-verify` said `Verified OK`. The key's DER digest was `7d7ba7ce…0a2b`, the
+fingerprint in `docs/releasing.md`. `gh attestation verify` was not run:
+there is no `gh` on the hosts. Only the archive's `-fips` binaries were
+installed, by the commands of chapter 30 step 3, with the archive's units and
+its `service/systemd/fips/` drop-ins. The hub had a second drop-in for
+`--names`, because the FIPS drop-in replaces `ExecStart`. Each binary
+reported `0.2.0+13efcb548e20 (fips v1.0.0)` and `fips mode on, module v1.0.0,
+self-tests passed`. Each running service had `/proc/<pid>/exe` on the
+`-fips` file and `GODEBUG=fips140=on` in its environment.
+
+- The hub (`enrollment_mode: token`) made its CA (ecdsa-p256). A token made
+  as `halite` with `--nodes` and a `/32` `--cidr` enrolled the node by
+  `--token-file`. `manage.status` showed it `up`. `test.ping` returned True.
+  `grains.item` with seven names returned all seven: `fips_mode` True,
+  `fips_build` True, `fips_enabled` True, `fips_module` `v1.0.0`, `aarch64`,
+  `5.15.0-1121-aws-fips` and `22.04`. A `state.apply` of a `file.managed`
+  reported `changed=1`. The file was on the node with mode 600, owner root.
+- `doctor`: on the hub, 7 pass and 1 skip; on the node, 10 pass and 1 skip;
+  on the API, 3 pass and 1 warn (the 2-day self-signed serving
+  certificate). Each FIPS row said `the kernel is in FIPS mode and this is a
+  FIPS build (module v1.0.0, in FIPS mode)`.
+- The API: `readyz` answered `ready`. A local account logged in. A wrong
+  password got 401. `grains.item` with two names in `"arg"` returned 200 with
+  both. `cmd.run` got 403 `no rule in [webops] permits cmd.run against "*"`.
+  curl negotiated TLSv1.3, TLS_AES_128_GCM_SHA256 and ALPN h2.
+
+**TOTP under FIPS on Linux.** `accounts.yaml` had two accounts: `alice`
+with no second factor, and `bob` with a fresh base32 `totp` secret. `account
+list` showed `second_factor: True` for `bob`. At start the API logged `these
+accounts require a second factor this build cannot check and cannot log in;
+TOTP is HMAC-SHA-1 and this process is in FIPS mode (SPEC 27.4)`, naming
+`bob`. `bob` sent the right password and a current code. The code came from
+an RFC 6238 computation in Python on the host. The login got `401 those
+credentials were not accepted`, and the log said `login refused`. A retry with
+no code at once got `429`, which is the login backoff. **The control:** the
+same binary, the same `accounts.yaml` and a code computed the same way, with
+`GODEBUG=fips140=off`, on a second loopback port as a transient unit. `bob`
+logged in, with 200 and a token. So the code was right, and the refusal was
+FIPS mode. The control's token went into the same token store, and the FIPS
+API's `token list` showed it `live`. Nobody tested whether the FIPS API
+honours a token for a TOTP account that a non-FIPS process issued. That needs
+two processes sharing one store, which a deployment does not normally do.
+
+**`make fips` on Ubuntu, and an upgrade.** On `host-d`, as the unprivileged
+`ubuntu` account, the following was done: Go 1.27.4 linux-arm64 from go.dev,
+whose sha256 matched go.dev's JSON; a clone of `main` at `5f5ae87c`; and
+`bmake build fips`, with `bmake` from Ubuntu's archive. The run printed
+`fips artifacts report module v1.0.0 and passing self-tests`. The
+binaries reported `0.2.0-55-g5f5ae87cbb1d+5f5ae87cbb1d (fips v1.0.0)`. The
+`-fips` binaries and `contrib/systemd` went to `host-c` and then to `host-b`
+as one tarball. Its sha256 (`b06213a9…de29`) was checked on both. On `host-c`,
+each binary's sha256 matched the one on the build host. Then chapter 36 was
+followed by hand, with the v0.2.0 services running:
+
+- Before: `manage.versions` showed the hub and the node on v0.2.0 and
+  `mismatched: []`.
+- The hub: `install` to `.new`, the old binary `mv`'d to a dated name, `mv`
+  into place, then `restart`. The hub unit was unchanged. `doctor` gave 8
+  pass and 1 skip (one row more than v0.2.0's), with the FIPS row passing.
+  `manage.status` showed the node `up`, and `manage.versions` showed the node
+  on 0.2.0 under `mismatched`.
+- The API: the same three commands. The unit was unchanged. A login as
+  `alice` and `POST /v1/run` of `test.ping` returned 200 through the upgraded
+  hub to the v0.2.0 node.
+- The node: the same three commands. The shipped `halite-node.service` had
+  changed (`PrivateTmp=no`, 5.709), so it was installed too, followed by
+  `daemon-reload` and a restart. `systemctl show -p PrivateTmp` gave `no`.
+  `doctor` gave 12 pass and 2 skip. `manage.versions` gave `mismatched: []`.
+  `test.version` gave `0.2.0-55-g5f5ae87cbb1d`. `state.apply h306 --test`
+  succeeded with no changes.
+
+**A reboot, and start at boot.** The units had been installed with `enable
+--now`. Both hosts were rebooted with `systemctl reboot`, and the boot IDs
+changed. Afterwards each host was on 5.15.0-1121-aws-fips with
+`fips_enabled` 1. `halite-hub`, `halite-api` and `halite-node` were each
+`enabled` and `active`, on the `-fips` executable, with
+`GODEBUG=fips140=on`. The journal at priority `err` had 0 lines for the
+`halite-*` units. The node started 12 seconds before the hub and was `up`
+without any action. After the reboot, `grains.item` gave `fips_mode` True,
+and the API ran `test.ping` through to the node.
+
+**Ubuntu Pro's certified `fips` kernel: refused by Pro.** On `host-c`, `pro
+status --all` showed `fips` as `n/a`. `--format json` gave the reason:
+`blocked_by` `fips-updates`, reason code `fips-updates-invalidates-fips`.
+The message was `FIPS cannot be enabled if FIPS Updates has ever been enabled
+because FIPS Updates installs security patches that aren't officially
+certified`. All three hosts have `fips-updates`, so none of them can be moved
+to the certified track. Nothing was forced. The certified kernel needs an
+instance that never had `fips-updates`, attached and given `pro enable fips`
+from the start.
+
+**What this closes from the earlier "Not covered" lists.** On Ubuntu Pro
+FIPS kernels: a reboot with start at boot; TOTP under FIPS on Linux; an
+upgrade, done by hand, from a release to `main`; `make fips` on Ubuntu; and
+the release archive's `-fips` binaries of a release after v0.1.1, as
+services on arm64.
+
+**Still not run.** Ubuntu Pro's certified `fips` kernel (see above). A
+host moving into or out of FIPS mode while halite runs. `main` on amd64 on
+an Ubuntu FIPS kernel (the amd64 run of `main` was the Rocky run above). An
+upgrade by a state rather than by hand. A second node. `gh attestation
+verify` on a FIPS host.
+
+**Cleanup.** On `host-b` and `host-c` the following were removed: the units,
+the drop-ins, the binaries, the transient units, `/etc/halite`,
+`/var/lib/halite`, `/var/cache/halite`, `/var/log/halite`, `/srv/halite`,
+`/root/h306`, the managed file and the `halite` user. After the cleanup each
+host had 0 halite files, 0 halite processes, nothing on the port and no
+`halite` user. On `host-d` the following were removed: the build directory,
+the Go toolchain and the build cache, and `bmake`. Salt's agent was active on
+all three hosts, and `dmesg` showed no OOM kill.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host

@@ -520,9 +520,29 @@ the wrong file. Ask the binary, not its name:
 > `fips_mode: False` for both builds. On that host `doctor` warned for the FIPS
 > build and passed for the ordinary build, so all four branches of its FIPS row
 > have been seen. The ledger entry is the same, DIVERGENCE 5.282.
-> **Not run:** main on amd64, Ubuntu Pro's certified `fips` kernel, a reboot or
-> a move of a host into or out of FIPS mode, start at boot, TOTP, an upgrade,
-> and a release archive of main.
+> **Not run then:** main on amd64, Ubuntu Pro's certified `fips` kernel, a
+> reboot or a move of a host into or out of FIPS mode, start at boot, TOTP, an
+> upgrade, and a release archive of main.
+>
+> On 2026-11-23 main (`33dc8e21`) ran on amd64 in RHEL's FIPS mode. The host
+> was Rocky Linux 9.8, built with `make build fips` and installed with `make
+> install-fips`. The hub, the node and the API all ran under the drop-ins, and
+> they started again after a reboot. On the same day, on three arm64 Ubuntu
+> 22.04.5 hosts on Ubuntu Pro `fips-updates` (kernel 5.15.0-1121-aws-fips),
+> the published **v0.2.0** `linux-arm64-fips` archive was checked against
+> SHA256SUMS and its signature. It then ran as a hub, an API and a
+> token-enrolled node on two hosts. Next, `make fips` built main (`5f5ae87c`)
+> on Ubuntu. The hub, the API and the node were **upgraded** to it by hand, in
+> the order of [chapter 36](36-upgrades.md), with the node's changed unit
+> file. Both hosts were then **rebooted**, and every unit came back on its
+> `-fips` binary with the node `up`. **TOTP under FIPS on Linux**: an account
+> with `totp` was named at the API's start, and a correct code got `401`. The
+> same code and binary with `GODEBUG=fips140=off` logged in. **Ubuntu Pro's
+> certified `fips` kernel could not be tried**, because Pro refuses `fips` on
+> any host that has ever had `fips-updates` (`fips-updates-invalidates-fips`).
+> **Not run:** the certified kernel (it needs a fresh instance), a host moving
+> into or out of FIPS mode while halite runs, main on amd64 on an Ubuntu FIPS
+> kernel, and an upgrade by a state. Both runs are in DIVERGENCE 5.282.
 
 ## Secrets: where they are and are not
 
