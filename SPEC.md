@@ -2688,7 +2688,7 @@ and needs no OpenTelemetry SDK. Tracing is off by default and sampled when on.
 `halite-node doctor`, `halite-hub doctor` and `halite-api doctor` check configuration validity,
 clock skew against the
 hub, certificate validity and expiry, connectivity, file server reachability, pillar compilation,
-quiesce, disk space, queue depths, extension signatures, module verification, evidence chain, FIPS mode consistency, and render isolation,
+quiesce, disk space, queue depths, extension signatures, state signatures, module verification, evidence chain, FIPS mode consistency, and render isolation,
 and print a pass or fail per check with a remediation line.
 Each command runs the subset that applies to it: a check that does not apply to the role is not run
 at all rather than skipped. `halite-api` holds three certificates — the one it presents to callers,
