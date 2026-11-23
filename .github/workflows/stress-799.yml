@@ -1,0 +1,53 @@
+# TEMPORARY, issue 799: a measurement on a DO NOT MERGE draft.
+name: stress-799
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stress:
+    name: stress-799 (${{ matrix.mode }})
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [plain, race]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - name: a FAT32 volume
+        shell: powershell
+        run: |
+          $vhd = Join-Path $env:RUNNER_TEMP 'fat799.vhd'
+          @"
+          create vdisk file="$vhd" maximum=256 type=expandable
+          select vdisk file="$vhd"
+          attach vdisk
+          create partition primary
+          format fs=fat32 quick label=FAT799
+          assign letter=R
+          "@ | Set-Content -Path (Join-Path $env:RUNNER_TEMP 'dp.txt') -Encoding ASCII
+          diskpart /s (Join-Path $env:RUNNER_TEMP 'dp.txt')
+          Get-Volume -DriveLetter R | Format-List DriveLetter,FileSystem,Size
+      - name: stress
+        shell: bash
+        env:
+          HALITE_ATOMICFILE_STRESS: "1"
+          HALITE_ATOMICFILE_FAT_DIR: 'R:\'
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.mode }}" = race ]; then
+            gcc --version | head -1
+            export CGO_ENABLED=1
+            flags=-race
+          else
+            export CGO_ENABLED=0
+            flags=
+          fi
+          go test -count=1 $flags -v -run 'TestStress799|TestAReplace|TestReplacing|TestReading|TestARename|TestAFallback' ./internal/atomicfile/ 2>&1 | tee stress.txt
+          echo '--- summary'
+          grep STRESS799 stress.txt || true
