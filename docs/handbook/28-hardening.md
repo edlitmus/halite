@@ -563,7 +563,19 @@ the wrong file. Ask the binary, not its name:
 > 6.8 kernel. Then the host was rebooted into 5.15.0-1121-aws-fips. The
 > results matched the amd64 host. The units came back with no action, and
 > `fips_mode` changed from False to True. Each `doctor` changed from warn to
-> pass. **Not run:** a move out of FIPS mode, and an upgrade by a state.
+> pass.
+>
+> On a third arm64 host, already in FIPS mode, a node from the v0.2.0 archive
+> was **upgraded by a state** to main. The node was under a main hub. A
+> `file.managed` of `/usr/local/bin/halite-node-fips` from the hub's tree and
+> a `systemd-run --on-active=30` restart (as in [chapter 36](36-upgrades.md))
+> returned `changed=2` at once. The agent restarted on the new binary 69
+> seconds later, and `manage.versions` showed nothing mismatched. Then the
+> host was **moved out of FIPS mode** with halite running (`fips=0`, a
+> reboot). The units came back on their `-fips` binaries, which still report
+> their own FIPS mode. `fips_mode` changed from True to False, and each
+> `doctor` changed from pass to warn. `pro status` reported `fips-updates` as
+> disabled too. The questions these runs left for a person are issue 840.
 
 ## Secrets: where they are and are not
 

@@ -2225,9 +2225,10 @@ down to the machine or the link each one still wants.
     already running, and the grain and `doctor` followed. The same move
     was then run on arm64 with `fips-updates`, because no arm64
     certified kernel exists: the certified pocket publishes no arm64.
-    What is left wants machines: a move out of FIPS mode, and an
-    upgrade by a state.
-    Three of the questions those runs opened want a person instead, and
+    The last two machine items, an upgrade by a state and a move out of
+    FIPS mode, were run on a third arm64 host the same day, so nothing
+    is left that wants a machine, and issue 306 is closed. Three
+    questions those runs opened want a person instead (issue 840), and
     each is the shape CLAUDE.md warns about — two things that must
     agree and do not: the hub accepts Ed25519 client signatures under
     `fips140=on` while SPEC 27.4 says Ed25519 is unavailable; the
