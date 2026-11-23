@@ -48450,6 +48450,170 @@ changed both sides. It now spells `halite-tree-v1\x00` out, and fails.
 
 
 
+### 5.705 A resume after a hub crash ran the steps that had already run (2026-11-22)
+
+Found by reading while writing the proposal for issue 765 (PR 801), filed
+as issue 802 marked *not reproduced*, and fixed first, in its own change,
+because the plan for 765 builds on it.
+
+**The defect.** `Orchestrate` wrote a run's record twice: when the run
+started, with no steps, and when it ended. A hub that stopped between the
+two -- killed, out of memory, power lost; the cases a resume exists for --
+left the first version. `resumeSeed` seeds only the steps the record
+names, and its comment says why: *"A step the earlier run never reached is
+not seeded: it runs now."* With no steps named, every step was one the
+earlier run "never reached", so `orch resume <jid> --from step3` sent
+step1 and step2 to the nodes again. For a state that is a second
+convergence. For a `salt.function` step such as `cmd.run` it is the command
+run twice -- the database initialised twice, the migration applied twice.
+
+**Reproduced first, on unfixed `main` (`33dc8e21`).**
+`TestAResumeAfterAHubCrashDoesNotRepeatFinishedSteps` in `cmd/halite-node`
+builds `halite-hub` and `halite-node` and runs them on loopback. The
+orchestration has four `salt.function cmd.run` steps, each appending its
+name to a file on the node. Step 3 appends `step3-started`, then waits for
+a file the test creates. The hub dispatches step 3 only once step 2's
+return is in, so when `step3-started` appears, steps 1 and 2 have returned.
+Then the test kills the hub (SIGKILL), releases step 3, which finishes on
+the node, restarts the hub, and waits for the node to answer it. Against
+unfixed code, `orch show` of the interrupted run printed only
+`20261123T022248283737  running`, with no steps, and the test failed:
+
+```
+a resume --from step3 ran the earlier steps again: step1 ran 2 time(s), step2 2, want 1 each
+  ok   step1   salt.function   job 20261123T022250586434 on 1 node(s)
+  ok   step2   salt.function   job 20261123T022250898601 on 1 node(s)
+a resume --from step4 ran earlier steps again: map[step1:3 step2:3 step3:3 step3-started:3 step4:2]
+```
+
+So the suspicion was right.
+
+**The fix.** The record is now written while the run goes, as well as at
+its start and end:
+
+- after each step that ran -- not one seeded, skipped by a requisite or
+  passed over by an abort, which changed nothing. A resume that does not
+  find such a step recomputes it and gets the same answer. Skipping those
+  writes also keeps a run that fails early from writing once per skipped
+  step;
+- when a fleet step is about to dispatch its job, with no jid yet;
+- when it has dispatched, with the jid and nodes, before it waits.
+
+The state runner has a new hook, `OnResult`, called with the results so
+far each time a chunk gets its result. It is called for every result, not
+only for chunks that ran, because a record written while step 5 of a
+resumed run is out must still name steps 1 to 4 that it carried forward.
+Otherwise a crash during a resume leaves the same defect one resume
+later. A step that has dispatched and has no outcome is recorded with
+`pending`. `orch show` marks it `wait`, and the JSON gives it
+`"result": null` and `"pending": true`. `OrchStep.Succeeded` is true of a
+nil result, and "ok" was what the first fixed run printed for it.
+
+**The step that was out.** The node does not know the hub stopped. It
+finishes the job and posts the return, retrying (`nodelink.PostReturn`:
+five tries, about ten seconds of waits between them) until a hub takes it
+or the node gives up. A hub back within that window gets the return; one
+away longer does not, and that job stays short of the node. So a resume past a
+pending step decides from the job record, `inFlightOutcome`, and does not
+guess. If every node has answered, the step is carried forward with the
+outcome `stepOutcome` makes from those returns, including the step's
+`tolerate_failures`. If a node has not answered, or the job is still
+batching, the resume is refused, naming the job, `jobs show`, and
+`--from <step>`. Resuming at that step runs it again, as it always did.
+If the record names the step with no jid (the hub stopped after deciding
+to dispatch and before learning the jid), the resume is refused: whether
+the job went out is not recorded. The jid cannot be obtained earlier,
+because the hub chooses it inside the dispatch, and only a signed job
+brings its own. A pending step is excluded from the check that refuses
+to carry a dry run's predicted changes into a real one
+(DIVERGENCE 5.197). That check reads a nil result as a predicted change,
+and a pending step also has a nil result.
+
+**Write cost.** Each write is the whole record, through `writeAtomic`,
+which syncs the file and its directory. A journal would make each write
+smaller, but `orch show`, `orch list` and resume all read one file, and a
+second format for a running run would be a second reader that has to
+agree with the first. A fleet step costs up to three writes: dispatching,
+dispatched, and its result. Measured on beastie with a throwaway test,
+three `Put`s per step on records whose steps each hold one 230-byte
+return per node:
+
+| Steps x nodes | Final record | Mean per write | All writes |
+|---|---|---|---|
+| 20 x 5 | 25 KiB | 3.7 ms | 220 ms |
+| 200 x 5 | 252 KiB | 8.8 ms | 5307 ms |
+| 200 x 50 | 2317 KiB | 24.6 ms | 14786 ms |
+| 1000 x 50 | 11585 KiB | 84.3 ms | 4 min 13 s |
+
+The total grows with the square of the step count, because each write
+carries the whole timeline. At a thousand steps against fifty nodes, the
+last steps spend about a quarter of a second each on writes, beside a
+dispatch to fifty nodes and the wait for them. That was judged acceptable
+for the orchestrations this estate runs, which have tens of steps. A
+record per step, or returns kept apart from the timeline, is where to go
+if a run of thousands of steps turns up. The measurement used a disk on
+beastie, not a hub's disk under load.
+
+**Tests and breaks.**
+
+- The binary test, above. After the fix, `orch show` of the interrupted run
+  lists `ok step1`, `ok step2` and `wait step3` with its job, and the test
+  asserts all three. `--from step3` runs step 3 again and step 4 once.
+  `--from step4` carries step 3 forward. Its comment says it was in flight
+  and that its job was answered by every node. Steps 1 and 2 run once
+  each, step 3 twice (the original and the resume from it), and step 4
+  once per resume.
+- `internal/hub/orch_record_test.go` reads the record at the moment the
+  node receives a step's job. It asserts four things: that the record
+  names the finished step and the pending one, with its jid; that a
+  resumed run's record already names its carried steps while its first
+  real step is out; that a resume past a step whose node has not answered
+  is refused and sends nothing, and is accepted, without resending, once
+  the late return arrives; and that a step caught dispatching, with no
+  jid, is refused past and run when resumed at.
+- `internal/runner/onresult_test.go` holds the hook to every result, in
+  order, including a seeded one and one skipped by a requisite.
+
+Each part was broken on purpose:
+
+| Break | Failed |
+|---|---|
+| no checkpoint at all (unfixed `main`'s behaviour) | the binary test, and all four hub tests |
+| a pending step resumed as "never ran" | the out-step and caught-dispatching tests |
+| pending not excluded from the dry-run check | the same two, refused as "a predicted change" |
+| results kept only for steps that ran | the resumed-run record test, which saw `[deploy_web]` |
+| `OnResult` not called after a chunk that ran | the runner test |
+
+**Not verified:**
+
+- **The pre-dispatch write is held by no test.** The window it covers is
+  inside `dispatchFor`, between choosing the jid and returning. No test
+  stops a hub there. The refusal for a record in that state is tested,
+  on a record made by clearing the jid. Taking the write out passes every
+  test.
+- **A graceful stop.** Only SIGKILL was run. On SIGTERM the step's wait
+  sees its context cancelled, and the step is recorded as failed "Waiting
+  for …: context canceled". The run then goes on, and steps after it see
+  a failure. That path was read, not run.
+- **A `salt.runner` or `salt.wheel` step running when the hub stops** is
+  not recorded as pending, and a resume runs it again. Neither is
+  `salt.wait_for_event`, which changes nothing.
+- **The interrupted run's `state` stays `running`.** Nothing marks it at
+  restart. A resume of a run that is really still going in the same hub
+  process is not refused, as before.
+- **Batched jobs, several nodes, `tolerate_failures` on a carried pending
+  step**: the code reads them through `stepOutcome`, but every test has
+  one node and no batch.
+- **FreeBSD proper.** The binary test ran on beastie under its Linux
+  layer. CI's legs run it as part of `go test ./...`.
+- **Found on the way, not fixed:** `halite-hub orch run` and `orch resume`
+  wait 30 seconds for the answer (`operatorClient`'s `Timeout`) and then
+  fail with `context deadline exceeded`. The run goes on on the hub, so a
+  CLI user with an hours-long orchestration sees an error after 30
+  seconds while the run continues. Seen in the first attempt at the
+  reproduction, when the resumed run's step 1 was dispatched before the
+  node had reconnected and waited for it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

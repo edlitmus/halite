@@ -227,6 +227,11 @@ func printStepLine(step *value.Map) {
 	if skipped, _ := step.Get("skipped"); skipped == true {
 		mark = "skip"
 	}
+	// Dispatched with no outcome yet: not a success, which "ok" would
+	// claim of a step whose result is still null.
+	if pending, _ := step.Get("pending"); pending == true {
+		mark = "wait"
+	}
 	id, _ := step.Get("id")
 	fun, _ := step.Get("fun")
 	fmt.Printf("  %s %-28v %-20v", mark, id, fun)

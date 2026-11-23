@@ -1932,6 +1932,14 @@ and per-step per-node results. `halite-hub orch show <jid>` prints the timeline,
 `halite-hub orch resume <jid> --from <step>` restarts a failed run from a named step, which Salt
 cannot do and which is what makes a long deployment orchestration usable in practice.
 
+The record is written as the run goes: when it starts, when each step that runs has its result,
+and when a fleet step is about to send its job and again once it has, so a hub that stops mid-run
+leaves a record of every step that finished and of the one that was out. A resume carries the
+finished steps forward. A step that was out is decided by its job's record: carried forward with
+the outcome its returns make when every node has answered, and refused, naming the job, while any
+has not, or when the hub stopped before the step had a job to name. Resuming at that step runs it
+again.
+
 ### 19.2 Runner inventory
 
 | Runner | Functions |
