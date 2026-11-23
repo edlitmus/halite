@@ -50588,6 +50588,91 @@ crashes while a job is running. The probe on a systemd host with OpenRC
 installed, in a chroot, or in a container: those are still fake roots
 only. The revoked-node retry under systemd.
 
+### 5.720 `renumber` moved a section and left its subsections behind (2026-11-23)
+
+Issue 833, `tools/ledger`. It went wrong twice on 2026-11-23, in two shapes.
+First, a branch's new section had two subsections and main had taken its
+number. `renumber` gave the parent the next free number and moved it to the
+end of chapter 5. The `.1` and `.2` stayed where they were, earlier in the
+chapter. Later, after a merge of main, the subsection headings had their new
+number but the parent was after them: three `N.M.k` headings, then `N.M`. Both
+were put right by hand.
+
+**The cause, in two parts that agreed by accident.**
+
+- `headingRe` wants a space after `N.M`, so `### 5.719.1` is not a section to
+  this tool. A section's extent runs to the next heading at its own depth or
+  shallower. Most subsections are written `####` and so fall inside it. Some
+  are written `###`, as 5.688.1 is, and one of those ended its parent's
+  extent. The move then lifted the parent alone.
+- The subsection headings still got a new number, because the citation pass
+  rewrote them. A heading is on a line the branch added, and `citationRe`
+  for `N.M` matched `N.M.1`, since "." is not a digit. So the subsection got
+  its new number in place and did not move.
+
+The citation pass had a second fault. `citationRe` for `N.M` matched every
+`N.M.k`, whether or not the moved section had a subsection k. A branch can add
+a subsection under a section of main's, and give its own colliding section the
+same `N.M`. Then the subsection under main's section was renumbered with the
+branch's section.
+
+**Demonstrated before it was fixed.** `tools/ledger/subsections_test.go` builds
+the tool and runs `plan` and `renumber` in a throwaway repository. Main holds
+9.1, 9.2 (with 9.2.1) and 9.3, and a chapter 10 follows. On main's code, the
+two cases from the issue came out exactly as they had in the real ledger:
+
+```
+case (a): branch 9.2 with 9.2.1 and 9.2.2, before main's 9.2
+  9.1, 9.4.1, 9.4.2, 9.2, 9.2.1, 9.3, 9.4
+case (b): branch 9.4 with 9.4.1 and 9.4.2, a free number, before main's 9.2
+  9.1, 9.4.1, 9.4.2, 9.2, 9.2.1, 9.3, 9.4
+```
+
+A third test adds a branch subsection 9.3.1 under main's 9.3, beside the
+branch's own colliding 9.3. On main's code that subsection became 9.4.1, under
+main's 9.3. A fourth gives the branch's 9.3 a 9.3.1 of its own as well, and
+fails on main's code in the same way.
+
+**The change.**
+
+- A numbered subsection whose `N.M` is its section's label is now part of the
+  section, at any depth. The match is by label, so an `N.M.k` that has been
+  left after the next section does not become part of that section. The move
+  lifts the parent with its
+  subsections and gives each subsection heading the parent's new number.
+- The number at the start of a ledger heading is no longer a citation. The
+  citation pass reads only the title. Only the move knows which section each
+  subsection is under, so only the move renumbers headings. A test with two
+  9.3.1 headings, one under main's 9.3 and one under the branch's, shows that
+  this is necessary: the two lines are identical up to the title.
+- `citationRe` now matches `N.M.k` only when the moved section has a
+  subsection k. A citation of 9.2.1 moves with the branch's 9.2 if that 9.2
+  has a 9.2.1. Otherwise the 9.2.1 is main's, and the citation stays.
+- `plan` lists each section's subsections under it, and gives the old and new
+  label of each subsection it renumbers.
+
+A branch that adds only a subsection, under a section of main's, adds no
+section. `plan` says there is nothing to renumber, and `renumber` does not
+change the ledger. A test holds this. It passed before the fix too, so it is a
+guard and not a reproduction.
+
+**Broken on purpose, one part at a time**, with the fix in place otherwise:
+
+| Part removed | Tests that failed |
+|---|---|
+| subsections in the extent | case (a), case (b), the extent unit test |
+| headings left out of the citation pass | the two-9.3.1 test |
+| `N.M.k` only for the section's own subsections | the main's-9.3.1 test, the `citationRe` unit test |
+| subsection headings renumbered by the move | case (a), the two-9.3.1 test |
+
+**Not verified.** `renumber` was not run against a real branch with
+subsections: every run here was in a throwaway repository. A line that cites
+two renumbered sections still takes only the first, as before. A citation of
+`N.M.k` on a branch line, where both the branch's and main's `N.M` have a
+subsection k, still moves with the branch's section. The text cannot say which
+was meant. A subsection that is already apart from its parent, as case (a)
+left one, is not found and moved back; the ordering audit still reports it.
+
 
 ## 6. Everything else not started
 
