@@ -456,8 +456,9 @@ chain check too.
 For estates under FIPS 140-3, a parallel set of artifacts, suffixed
 `-fips`, is built so that all cryptography routes through the Go
 Cryptographic Module, and runs with FIPS mode enforced. In that mode TLS is
-restricted to approved suites and P-256/P-384 key exchange, Ed25519 is
-unavailable, and the TOTP second factor (which needs SHA-1) is disabled.
+restricted to approved suites and P-256/P-384 key exchange, and the TOTP
+second factor (which needs SHA-1) is disabled. Ed25519 is available: FIPS
+186-5 approves it and the module certifies it (DIVERGENCE 5.721).
 `halite-node version` on a FIPS build reports the module and self-test
 status. The `fips_mode` grain is the host kernel's state alone;
 `fips_build`, `fips_enabled` and `fips_module` describe the binary. A mismatch

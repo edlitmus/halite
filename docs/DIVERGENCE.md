@@ -50788,6 +50788,76 @@ pattern now takes any lowercase word with a digit in it. With only
 Only the key table, and the reference generated from it, are.
 
 
+### 5.721 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
+
+SPEC 27.4 said that in FIPS mode "Ed25519 is unavailable". SPEC 7.1 said it
+"is not approved under FIPS 140-3". `fips.Restricted` was documented as "no
+Ed25519, no SHA-1, and so no TOTP". `x509.create_private_key` with `algo:
+ed25519` refused under `fips140=on` with `ed25519 is not approved under FIPS
+140-3 and this process is in FIPS mode`. README, handbook 28 and
+`docs/operations.md` repeated it.
+
+**That was true until February 2023, and has not been since.** Four sources
+were checked on 2026-11-23:
+
+- FIPS 186-5 (final, 3 February 2023, superseding 186-4) approves EdDSA,
+  Ed25519 included, for digital signatures, citing RFC 8032.
+- NIST's certificate page for the Go Cryptographic Module (CMVP #5247,
+  FIPS 140-3, Active; the Go documentation ties v1.0.0 to it and to CAVP
+  A6650) lists `EDDSA KeyGen`, `KeyVer`, `SigGen` and `SigVer` as approved
+  algorithms under A6650.
+- The certified snapshot that `GOFIPS140=v1.0.0` selects
+  (`lib/fips140/certified.txt`: `v1.0.0-c2097c7c`) holds `fips140/ed25519`
+  with its own self-tests: the CAST `Ed25519 sign and verify` and a
+  pairwise-consistency test.
+- Go's EdDSA is Ed25519 only, so the certificate's EdDSA entries are this
+  algorithm. Go's TLS stack lists Ed25519 among the signature algorithms it
+  allows in FIPS mode, which is why the hub offered `ed25519` in its
+  CertificateRequest (5.282, "An observation on Ed25519").
+
+The module's security policy (the PDF for #5247) was fetched but could not
+be rendered here, so its table rows were not read. The certificate page and
+the module source are the evidence. **X25519 is a different question.** No
+source read here approves it for key agreement, and halite still refuses it
+for TLS key exchange in FIPS mode (SPEC 25.3). This change does not touch
+that.
+
+The SPEC had the claim and the code obeyed it. The two agreed with each
+other, and both disagreed with the standard. Every check looked at whether
+the code followed the SPEC, and none looked at whether the SPEC was right.
+
+**Fix.**
+- `x509.create_private_key` generates Ed25519 in FIPS mode as in any other
+  mode. Its comment gives the standard and the certificate.
+- `fips.Restricted` now documents only what it restricts: TLS key exchange
+  and SHA-1, so TOTP. `transport` and `account` were already its only other
+  callers.
+- SPEC 27.4 says Ed25519 is available, gives both sources, and says X25519
+  is not approved for key exchange. README, handbook 28 and the FIPS table
+  in `docs/operations.md` drop the refusal. That table now has two rows.
+
+An older OpenSSL FIPS provider may still refuse an Ed25519 key. RHEL 9's
+and Ubuntu's `openssl-fips-module-3` 3.0.5 are examples: Rocky's sshd
+refused an Ed25519 login key after the FIPS reboot, and Ubuntu's FIPS
+OpenSSL did not share `ed25519` in a handshake (5.282). That is a limit
+of the peer, so the SPEC states it and does not enforce it.
+
+**Test.** `TestEveryAlgorithmRoundTrips` asserted the refusal under FIPS,
+and it now generates Ed25519 in every mode. A new test,
+`TestEd25519SignsAndVerifiesInEveryMode`, has an Ed25519 CA sign an
+Ed25519 leaf and checks that the leaf verifies against its CA and not
+against itself. It logs which FIPS mode it ran in. With `GOFIPS140=v1.0.0`
+(the environment `make fips-test` uses) it logged `FIPS mode: true` and
+passed. It was broken on purpose by putting a refusal back under
+`fips140.Enabled()`: both tests failed in the FIPS build with `ed25519 is
+not approved under FIPS 140-3`.
+
+**Not run.** An Ed25519 certificate from this module, presented to a FIPS
+peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.720).
+Whether it should offer Ed25519 is a separate decision. Issue 840's first
+question is answered here.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

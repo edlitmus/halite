@@ -228,7 +228,7 @@ The facts come from crypto/fips140 at runtime rather than from a link time -X fl
 - `KernelMode` (func): KernelMode reports the host kernel's FIPS state, and whether the platform has one at all.
 - `Module` (func): Module is the version of the Go Cryptographic Module in use, or an empty string when this process is not using a certified one — or when the toolchain that built it cannot say.
 - `Reportable` (func): Reportable tells whether this toolchain can name the module at all.
-- `Restricted` (func): Restricted reports whether halite applies its own FIPS restrictions: no Ed25519, no SHA-1, and so no TOTP.
+- `Restricted` (func): Restricted reports whether halite applies its own FIPS restrictions: TLS key exchange on P-256 and P-384 only, and no SHA-1, so no TOTP.
 - `Status` (func): Status is the one-line summary `<binary> version` prints.
 
 ## `internal/version`

@@ -2874,8 +2874,12 @@ estate.
 A parallel artifact set, suffixed `-fips`, built with `GOFIPS140=v1.0.0` so that all cryptography
 routes through the Go Cryptographic Module, and running with `GODEBUG=fips140=on` enforced by the
 service unit. In FIPS mode: TLS is restricted to approved cipher suites and P-256 or P-384 key
-exchange, Ed25519 is unavailable, SHA-1 is unavailable except in the TOTP path which is therefore
-disabled, and `halite-*-fips version` reports the module version and self-test status. The
+exchange (X25519 is not approved for key exchange), SHA-1 is unavailable except in the TOTP path
+which is therefore disabled, and `halite-*-fips version` reports the module version and self-test
+status. Ed25519 *is* available: FIPS 186-5 (2023) approves it for signatures, and the Go
+Cryptographic Module v1.0.0 (CMVP #5247) certifies EdDSA. An earlier version of this section said
+Ed25519 was unavailable, and the x509 module refused it on that word (DIVERGENCE 5.721). A FIPS peer
+built on an older OpenSSL FIPS provider may still not accept an Ed25519 key. The
 `fips_mode` grain reports both the host's kernel FIPS state and the binary's own mode, and a
 mismatch is a `doctor` warning.
 
