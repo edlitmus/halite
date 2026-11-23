@@ -224,6 +224,10 @@ type Server struct {
 	// submission; signedAfterIdentify runs between them, for tests.
 	signedMu            sync.Mutex
 	signedAfterIdentify func()
+	// settleAfterMissing runs in settleExpired between reading who is
+	// missing and writing the settled state, which is the window a late
+	// return can land in. Tests only; DIVERGENCE 5.715.
+	settleAfterMissing func()
 	// keyWatch is what the reconcile loop last saw of each key record.
 	keyWatch keyWatch
 }
