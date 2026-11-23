@@ -8,7 +8,7 @@
 # script elsewhere (OpenRC, sysvinit). The first two were run inside a real
 # job on Ubuntu 26.04 and FreeBSD 15.1 (DIVERGENCE 5.482), and the third on
 # Alpine and a sysvinit Debian (5.708). The FreeBSD and setsid ones have
-# since run from this file (5.626, 5.716.3); under systemd read the 30 as
+# since run from this file (5.626, 5.719.3); under systemd read the 30 as
 # 30 to 90 seconds.
 #
 # This shape is not a preference. A `watch` on the agent's own service --
@@ -49,7 +49,7 @@ halite node restart when its configuration changes:
     # session of its own, outside the agent's process group, and with its
     # output closed and `&` the job returns at once instead of waiting on
     # it. Run from this file, inside a job, on Alpine 3.24 and on a
-    # sysvinit Debian 13 (DIVERGENCE 5.716.3).
+    # sysvinit Debian 13 (DIVERGENCE 5.719.3).
     - name: "setsid sh -c 'sleep 30; /etc/init.d/{{ halite.service.node }} restart' </dev/null >/dev/null 2>&1 &"
 {%- endif %}
     - onchanges:

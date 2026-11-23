@@ -162,7 +162,7 @@ func checkWrittenConfig(t *testing.T, label, conf string, chunk map[string]any) 
 //
 // This compiles the state; it runs none of the commands. The setsid line
 // is the one the lab ran from a job on both rows (DIVERGENCE 5.708), and
-// then ran from this file on both (5.716.3).
+// then ran from this file on both (5.719.3).
 func TestTheExampleTreeRestartsTheNodeTheWayItsInitCan(t *testing.T) {
 	tree := filepath.Join("..", "..", "contrib", "examples", "tree")
 	states, pillar := filepath.Join(tree, "states"), filepath.Join(tree, "pillar")

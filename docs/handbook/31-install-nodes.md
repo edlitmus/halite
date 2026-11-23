@@ -42,7 +42,7 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > rows step 5 used an init script written for the run (issue 812). The OpenRC
 > and sysvinit scripts that now ship in `service/openrc` and
 > `service/sysvinit` were written after it and **have not been run** on
-> either (DIVERGENCE 5.716). A FreeBSD 14.5-RELEASE-p3 node enrolled
+> either (DIVERGENCE 5.719). A FreeBSD 14.5-RELEASE-p3 node enrolled
 > against a FreeBSD 15.1 hub over the wire, and came back `up` after a reboot,
 > started by the rc script. It was enrolled twice through the rc script with
 > tokens that began with `-`, minted by a hub from before ledger 5.674: once
@@ -192,7 +192,7 @@ takes `reload`: change the configuration and restart. Settings go in
 `/etc/conf.d/halite-node` (OpenRC: `halite_node_config`, `halite_node_args`)
 or `/etc/default/halite-node` (sysvinit: `HALITE_NODE_CONFIG`,
 `HALITE_NODE_FLAGS`). Both scripts were run on Alpine 3.24 with OpenRC 0.63
-and on a sysvinit Debian 13 (DIVERGENCE 5.716.3).
+and on a sysvinit Debian 13 (DIVERGENCE 5.719.3).
 
 ### Many nodes: token enrolment
 

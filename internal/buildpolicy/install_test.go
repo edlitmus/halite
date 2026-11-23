@@ -434,7 +434,7 @@ func copyTree(t *testing.T, from, to string, names ...string) {
 // these files where the probe looks. That was read from the distributions'
 // packaging here. The probe was then run on Alpine 3.24, a sysvinit Debian
 // 13 and Ubuntu 26.04, and picked openrc, sysvinit and systemd (DIVERGENCE
-// 5.716.3).
+// 5.719.3).
 func TestInstallPicksTheServiceFilesByTheHostsInit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the probe is sh; there is no Windows install")

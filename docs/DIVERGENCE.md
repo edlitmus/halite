@@ -50265,7 +50265,7 @@ administrator and not as the CI legs' standard account. The issue's
 `Write` against `Read` failure did not happen in any run, before or after,
 so this is no evidence that it cannot happen. No antivirus held the file.
 
-### 5.716 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
+### 5.719 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
 
 Issue 812, found by 5.708's lab run on the Alpine row (Alpine 3.24, OpenRC)
 and the sysvinit row (Debian 13 with `sysvinit-core`, `init` as PID 1).
@@ -50426,11 +50426,11 @@ Debian, and a systemd host were not probed. The FIPS artifact (SPEC 27.4)
 has no switch in either script, so on these hosts a `-fips` node needs the
 `command` or `HALITE_NODE_BINARY` changed by hand. That was not tried.
 
-**Since run.** 5.716.3 records the lab run. It answered the four
+**Since run.** 5.719.3 records the lab run. It answered the four
 questions above, and found the claim that the cap stops a revoked node
 wrong.
 
-### 5.716.1 The Linux service-path check could not fail
+### 5.719.1 The Linux service-path check could not fail
 
 `TestServiceFilesAgreeWithTheDefaultRoot` (`internal/config`) fails a line
 that names the other platform's configuration root without naming its
@@ -50439,7 +50439,7 @@ own. On FreeBSD the wrong root, `/etc/halite`, is inside the right one,
 other way round. Every line that names `/usr/local/etc/halite` also
 contains `/etc/halite`, so the Linux case never failed: a systemd unit, or
 now an OpenRC or sysvinit script, could read FreeBSD's configuration path
-and pass. Found by breaking 5.716's OpenRC script that way and watching
+and pass. Found by breaking 5.719's OpenRC script that way and watching
 the test pass.
 
 The check now removes the right root from the line before it looks for
@@ -50449,7 +50449,7 @@ one directly when it is the longer. **Broken on purpose:**
 `halite-node.service`, now each fail the test. Before the change both
 passed.
 
-### 5.716.2 The reload check had skipped itself since agentless runs caught SIGHUP
+### 5.719.2 The reload check had skipped itself since agentless runs caught SIGHUP
 
 `TestNoUnitOffersAReloadThatWouldKillTheService` (`internal/config`)
 skips when anything outside the tests registers a SIGHUP handler, on the
@@ -50457,7 +50457,7 @@ reasoning that a handler means a reload might now be real. `halite-node
 oneshot`, the agentless run, began catching SIGHUP on 2026-10-15 (issue
 358), to remove its inline tree before it exits with 128+n, as the default
 disposition would have. From then on the check skipped on every run, and
-`go test` reported the package `ok`. Found when 5.716's `reload` arms,
+`go test` reported the package `ok`. Found when 5.719's `reload` arms,
 added on purpose, passed.
 
 `oneshot` is not a service and does not reload. The check now lists the
@@ -50470,7 +50470,7 @@ script, `extra_started_commands="reload"` in the OpenRC script, and
 change all three passed, as skips. And removing SIGHUP from `oneshot`'s
 signals fails it, naming the stale entry.
 
-### 5.716.3 Both scripts run on a real Alpine and a sysvinit Debian, and the cap does not stop a revoked node
+### 5.719.3 Both scripts run on a real Alpine and a sysvinit Debian, and the cap does not stop a revoked node
 
 Run on 2026-11-23 on three Vultr rows (`make lab-up`), all linux/amd64.
 The binaries were this branch at `d182fff9`, built vendored and stamped

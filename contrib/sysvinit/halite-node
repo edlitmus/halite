@@ -46,7 +46,7 @@
 #
 # The start-stop-daemon options are Debian's (dpkg 1.20.6 or later for
 # --output), read from its manual page and then run on Debian 13.7 with
-# sysvinit-core 3.14 and start-stop-daemon 1.22.22 (DIVERGENCE 5.716.3).
+# sysvinit-core 3.14 and start-stop-daemon 1.22.22 (DIVERGENCE 5.719.3).
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 NAME=halite-node
@@ -92,7 +92,7 @@ do_start() {
 	# --background because `connect` stays in the foreground, and
 	# --make-pidfile because it writes no pid file of its own. --output
 	# appends its standard output and error to the log (it does not
-	# truncate it at each start, DIVERGENCE 5.716.3); without it they go
+	# truncate it at each start, DIVERGENCE 5.719.3); without it they go
 	# to /dev/null, and the reason a node will not start goes with them.
 	# HALITE_NODE_ARGS is split into words on purpose.
 	# shellcheck disable=SC2086
@@ -110,7 +110,7 @@ do_start() {
 # would make `restart` start a second agent beside the first.
 # start-stop-daemon 1.22.22 still matches it: with /proc/<pid>/exe reading
 # "(deleted)", `--status --exec` exited 0 and `restart` left one agent
-# (DIVERGENCE 5.716.3).
+# (DIVERGENCE 5.719.3).
 do_stop() {
 	start-stop-daemon --stop --quiet --retry=TERM/90/KILL/5 \
 		--pidfile "$PIDFILE" --exec "$HALITE_NODE_BINARY" --remove-pidfile

@@ -36,7 +36,7 @@
 # documentation (supervise-daemon-guide.md, openrc-run(8) and
 # supervise-daemon(8)), and then run on Alpine 3.24.4 with OpenRC 0.63.2:
 # start, status, respawn, the cap, restart, reboot, stop, and a restart
-# after an in-place upgrade (DIVERGENCE 5.716.3).
+# after an in-place upgrade (DIVERGENCE 5.719.3).
 
 description="halite node agent"
 
@@ -86,7 +86,7 @@ error_log="/var/log/halite/node.log"
 # would an unreachable hub, for ever unless hub_tries is set. So the cap
 # does not stop it, and nothing here stands in for the unit's
 # RestartPreventExitStatus=1. Stop and disable the service on a node you
-# revoke (DIVERGENCE 5.716.3).
+# revoke (DIVERGENCE 5.719.3).
 respawn_delay=5
 respawn_max=5
 respawn_period=60
@@ -123,7 +123,7 @@ start_pre() {
 	fi
 	# The unit's LimitNOFILE. start_pre runs in the shell that then starts
 	# supervise-daemon, so the agent inherits it: on Alpine 3.24 its
-	# /proc/<pid>/limits read 65536 (DIVERGENCE 5.716.3).
+	# /proc/<pid>/limits read 65536 (DIVERGENCE 5.719.3).
 	# POSIX leaves `ulimit -n` undefined; busybox ash has it.
 	# shellcheck disable=SC3045
 	ulimit -n 65536 || ewarn "could not raise the open-file limit to 65536"
