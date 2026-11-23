@@ -96,6 +96,12 @@ type OrchStep struct {
 	// Missing names the nodes that never answered, which is a different
 	// thing from a failure and calls for a different response.
 	Missing []string `json:"missing,omitempty"`
+	// Pending is a step that had dispatched its job, named by JID, and
+	// had no outcome when the record was written: the run is still
+	// waiting on it, or the hub stopped while it was. A resume past it
+	// reads the job record to find out which, rather than run it again
+	// or assume it ran. DIVERGENCE 5.707.
+	Pending bool `json:"pending,omitempty"`
 }
 
 // Succeeded reports the step's own verdict.

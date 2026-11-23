@@ -109,6 +109,20 @@ type Runner struct {
 	// must see steps one to three as they finished, or every requisite
 	// pointing back at them refuses and the resumed run does nothing.
 	Seed map[string]states.Result
+	// OnResult is called each time a chunk has its result -- run,
+	// seeded, skipped by a requisite or passed over by an abort -- with
+	// every result so far, in order, on the goroutine running the chunks
+	// and before the next one starts.
+	//
+	// It is how an orchestration keeps its record current while it runs
+	// (DIVERGENCE 5.707): the record was written at the start and at the
+	// end, so a hub that died between the two left one naming no steps,
+	// and a resume of it ran every step before the resume point again.
+	// Every result rather than only the ones that ran, because a record
+	// written while a later step is in flight has to name the seeded and
+	// skipped steps before it too; which of them are worth a write is the
+	// caller's to decide.
+	OnResult func(sofar []*StateResult)
 	// Tracer records SPEC 26.3's span per state. Nil is off, and a nil
 	// tracer hands out nil spans whose methods do nothing, so nothing
 	// below branches on whether tracing is configured.
@@ -149,6 +163,7 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 			sr.Result = states.False(fmt.Sprintf(
 				"This state was not attempted: the run was aborted by failhard on %s.", out.AbortedBy))
 			out.Results = append(out.Results, sr)
+			r.resulted(out)
 			continue
 		}
 
@@ -159,6 +174,7 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 			sr.Skipped = true
 			sr.Result = seeded
 			out.Results = append(out.Results, sr)
+			r.resulted(out)
 			continue
 		}
 
@@ -168,12 +184,14 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 			sr.Result = decision.result
 			sr.Duration = r.Now().Sub(sr.StartTime)
 			out.Results = append(out.Results, sr)
+			r.resulted(out)
 			continue
 		}
 
 		sr.Result, sr.Skipped = r.runChunk(ch, decision.reaction)
 		sr.Duration = r.Now().Sub(sr.StartTime)
 		out.Results = append(out.Results, sr)
+		r.resulted(out)
 		if sr.Skipped {
 			continue
 		}
@@ -187,6 +205,12 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 	r.runListeners(chunks, results, out)
 	out.Duration = r.Now().Sub(out.Started)
 	return out
+}
+
+func (r *Runner) resulted(out *RunResult) {
+	if r.OnResult != nil {
+		r.OnResult(out.Results)
+	}
 }
 
 // decision is what requisite evaluation concluded about one chunk.
@@ -648,6 +672,7 @@ func (r *Runner) runListeners(chunks []*state.Chunk, results []*StateResult, out
 		sr.Skipped = held
 		sr.Duration = r.Now().Sub(sr.StartTime)
 		out.Results = append(out.Results, sr)
+		r.resulted(out)
 		_ = i
 	}
 }

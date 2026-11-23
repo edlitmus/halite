@@ -394,7 +394,15 @@ func orchStepJSON(step *OrchStep) *value.Map {
 	out.Set("id", step.ID)
 	out.Set("fun", step.Fun)
 	out.Set("order", int64(step.Order))
-	out.Set("result", step.Succeeded())
+	if step.Pending {
+		// No result yet, and none claimed: Succeeded is true of a nil
+		// result, which is a predicted change, and a step still out on
+		// the fleet has not been predicted to do anything.
+		out.Set("result", nil)
+		out.Set("pending", true)
+	} else {
+		out.Set("result", step.Succeeded())
+	}
 	if step.Skipped {
 		out.Set("skipped", true)
 	}
