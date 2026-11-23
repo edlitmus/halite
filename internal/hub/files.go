@@ -47,11 +47,34 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request, nodeID string) {
 			fmt.Errorf("this hub serves no environment %q", env))
 		return
 	}
+	if err := s.Files.ReservedProblem(env); err != nil {
+		// The whole environment, listing and every file, and not only the
+		// stray file: an environment whose reserved directory holds
+		// something else is not one this hub can vouch for the shape of.
+		// A node requiring signed content would refuse it anyway; one that
+		// does not would otherwise apply it unchanged, and the rule would
+		// then be one only the careful kept.
+		s.warnReserved(env, err)
+		transport.WriteError(w, http.StatusConflict, transport.CodeRefused,
+			fmt.Errorf("this hub refuses to serve environment %q: %w", env, err))
+		return
+	}
 	if path == "" {
 		s.manifest(w, r, env)
 		return
 	}
 	s.file(w, r, nodeID, env, path)
+}
+
+// warnReserved logs a dirty `_halite/` once per environment and problem,
+// rather than once per file a highstate asks for, which would be a few
+// hundred identical lines a run.
+func (s *Server) warnReserved(env string, err error) {
+	if previous, seen := s.reservedWarned.Swap(env, err.Error()); seen && previous == err.Error() {
+		return
+	}
+	s.warn("refusing to serve an environment whose _halite/ holds something other than "+
+		"the signed manifest and its signature", "env", env, "error", err.Error())
 }
 
 func (s *Server) servesEnv(env string) bool {
