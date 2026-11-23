@@ -15,12 +15,11 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/job"
-	"github.com/edlitmus/halite/internal/render"
+	"github.com/edlitmus/halite/internal/orchplan"
 	"github.com/edlitmus/halite/internal/runner"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/states"
-	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -42,6 +41,12 @@ type OrchRequest struct {
 	// ResumeOf and ResumeFrom pick a previous run up at a named step.
 	ResumeOf   job.ID
 	ResumeFrom string
+	// Plan is issue 765's signed plan, when the run has one: every fleet
+	// step is sent as the plan's signed job, and the run is refused
+	// before any step if the plan and this hub's compile disagree.
+	// PlanDigest identifies the plan's bytes, for the record and the log.
+	Plan       *orchplan.Plan
+	PlanDigest string
 }
 
 // orchRunner carries what the step modules need, for one run.
@@ -57,9 +62,18 @@ type orchRunner struct {
 	onBehalfOf *transport.Delegation
 	env        string
 	jid        job.ID
+	// plan is the run's signed plan, or nil for an unsigned run.
+	plan *orchplan.Plan
 
 	mu      sync.Mutex
 	details map[string]*OrchStep
+
+	// run is the record being kept, and sofar and chunks what checkpoint
+	// builds its steps from. Nil run is a runner built for something
+	// other than a run (orchestrate_show_sls), which records nothing.
+	run    *OrchRun
+	sofar  []*runner.StateResult
+	chunks map[string]*state.Chunk
 }
 
 // detail returns the record a step writes its per-node outcome into.
@@ -108,9 +122,11 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		Test:       req.Test,
 		// What the run compiled with, for a resume to be held to.
 		PillarDigest: pillarDigest(req.Pillar),
+		PlanDigest:   req.PlanDigest,
 	}
 
-	orch := &orchRunner{server: s, principal: req.Principal, onBehalfOf: req.OnBehalfOf, env: env, jid: jid}
+	orch := &orchRunner{server: s, principal: req.Principal, onBehalfOf: req.OnBehalfOf, env: env, jid: jid,
+		plan: req.Plan}
 	registry := orchStates(orch)
 
 	compileStarted := s.now()
@@ -130,9 +146,29 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		return nil, err
 	}
 
-	seed, err := s.resumeSeed(req, compiled, run)
+	seed, err := s.resumeSeed(req, compiled, run, orch)
 	if err != nil {
 		return nil, err
+	}
+	if req.Plan != nil {
+		carried := make(map[string]bool, len(seed))
+		for id := range seed {
+			carried[id] = true
+		}
+		if err := s.checkPlan(req, env, compiled, carried); err != nil {
+			kv := []any{"component", "orchestration", "jid", string(jid), "plan_digest", req.PlanDigest,
+				"error", err.Error()}
+			var refusal *planRefusal
+			if errors.As(err, &refusal) {
+				kv = append(kv, "step", refusal.step, "field", refusal.field)
+			}
+			s.warn("orchestration refused before it started", kv...)
+			s.countOrchestration("plan_refused", compileTook)
+			return nil, fmt.Errorf("orchestration %s refused before it started: %w", jid, err)
+		}
+		s.info("orchestration plan accepted", "component", "orchestration", "jid", string(jid),
+			"plan_digest", req.PlanDigest, "signed_steps", len(req.Plan.Steps),
+			"expires_in", planExpiresIn(req.Plan, s.now()).String())
 	}
 
 	newOrch := map[string]any{
@@ -142,6 +178,11 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		newOrch["on_behalf_of"] = req.OnBehalfOf.Principal
 	}
 	s.emit(tagOrchNew(string(jid)), "", newOrch)
+	orch.run = run
+	orch.chunks = make(map[string]*state.Chunk, len(compiled.Low))
+	for _, ch := range compiled.Low {
+		orch.chunks[ch.ID] = ch
+	}
 	s.recordOrch(run)
 
 	result := (&runner.Runner{
@@ -155,9 +196,10 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		Ctx:      s.orchContext(req, env, jid),
 		FailHard: false,
 		Seed:     seed,
+		OnResult: orch.resulted,
 	}).Run(compiled.Low)
 
-	run.Steps = orch.timeline(compiled.Low, result)
+	run.Steps = orch.timeline(result.Results)
 	run.DurationMS = result.Duration.Milliseconds()
 	run.State = OrchComplete
 	// The verdict is over the steps this run actually ran. A carried
@@ -183,45 +225,30 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 }
 
 // compileOrchestration builds the low state for a run.
+//
+// A planned run compiles as the plan tool did (CompilePlanned): no hub
+// configuration, no nodegroups, and a fixed seed in place of the job id,
+// so that the only input that can differ between the two compiles is the
+// tree.
 func (s *Server) compileOrchestration(req OrchRequest, env string, jid job.ID, registry *states.Registry) *state.Compiled {
-	pillar := req.Pillar
-	if pillar == nil {
-		pillar = value.NewMap(0)
-	}
-	c := &state.Compiler{
-		Loader:   s.Files,
-		Registry: registry.Signatures(),
-		Config: state.Config{
-			Env:    env,
-			JobID:  string(jid),
-			NodeID: OrchNodeID,
-			// The hub has no grains of its own to expose here, and
-			// inventing a set would make an orchestration that reads
-			// `grains` look portable when it is not.
-			Grains:       value.NewMap(0),
-			Pillar:       pillar,
-			ConfigValues: s.configValues(),
-			// SPEC 25.5: the hub's dispatcher is restricted, and this
-			// build gives an orchestration template none at all rather
-			// than one that has not been audited against that list.
-			Salt:       nil,
-			Undefined:  template.Strict,
-			Nodegroups: s.nodegroups(),
-			Test:       req.Test,
-			GPG:        render.GPGOptions{},
-			// What each orchestration file rendered to, at debug level,
-			// as a node logs its states'. DIVERGENCE 5.261.
-			OnRendered: func(file, sls string, pipeline []string, text string) {
-				if s.Log != nil {
-					s.Log.Debug("rendered", "file", file, "sls", sls,
-						"pipeline", strings.Join(pipeline, "|"), "rendered", text)
-				}
-			},
+	in := orchCompileInputs{
+		loader:     s.Files,
+		config:     s.configValues(),
+		nodegroups: s.nodegroups(),
+		jobID:      string(jid),
+		// What each orchestration file rendered to, at debug level,
+		// as a node logs its states'. DIVERGENCE 5.261.
+		onRendered: func(file, sls string, pipeline []string, text string) {
+			if s.Log != nil {
+				s.Log.Debug("rendered", "file", file, "sls", sls,
+					"pipeline", strings.Join(pipeline, "|"), "rendered", text)
+			}
 		},
 	}
-	compiled := c.CompileSLS(req.SLS)
-	refuseParallelStateRuns(compiled, registry.Signatures())
-	return compiled
+	if req.Plan != nil {
+		in.config, in.configRefused, in.nodegroups, in.jobID = nil, plannedConfigRefusal, nil, plannedJobID
+	}
+	return compileOrch(in, req.SLS, env, req.Pillar, req.Test, registry.Signatures())
 }
 
 // refuseParallelStateRuns refuses, at compile time, a step that asks for
@@ -306,7 +333,7 @@ func (s *Server) orchContext(req OrchRequest, env string, jid job.ID) *exec.Cont
 }
 
 // resumeSeed builds the results a resumed run presents to requisites.
-func (s *Server) resumeSeed(req OrchRequest, compiled *state.Compiled, run *OrchRun) (map[string]states.Result, error) {
+func (s *Server) resumeSeed(req OrchRequest, compiled *state.Compiled, run *OrchRun, orch *orchRunner) (map[string]states.Result, error) {
 	if req.ResumeOf == "" {
 		return nil, nil
 	}
@@ -384,7 +411,7 @@ func (s *Server) resumeSeed(req OrchRequest, compiled *state.Compiled, run *Orch
 			if ch.ID == req.ResumeFrom {
 				break
 			}
-			if step, ran := byID[ch.ID]; ran && step.Result == nil && !step.Skipped {
+			if step, ran := byID[ch.ID]; ran && step.Result == nil && !step.Skipped && !step.Pending {
 				return nil, fmt.Errorf("%s recorded step %q as a predicted change, which only a test run records, "+
 					"so its steps did not happen; run it for real, or resume it with --test", req.ResumeOf, ch.ID)
 			}
@@ -403,6 +430,14 @@ func (s *Server) resumeSeed(req OrchRequest, compiled *state.Compiled, run *Orch
 			// already happened" cannot claim about a step that did not.
 			continue
 		}
+		if step.Pending {
+			result, err := s.inFlightOutcome(orch, req.ResumeOf, ch, step)
+			if err != nil {
+				return nil, err
+			}
+			seed[ch.ID] = result
+			continue
+		}
 		seed[ch.ID] = states.Result{
 			Result:  step.Result,
 			Comment: fmt.Sprintf("Carried forward from %s: %s", req.ResumeOf, step.Comment),
@@ -413,19 +448,185 @@ func (s *Server) resumeSeed(req OrchRequest, compiled *state.Compiled, run *Orch
 	return seed, nil
 }
 
+// inFlightOutcome is the result of a step the earlier run had dispatched
+// and had no outcome for when its record was last written: the hub stopped
+// while the step's job was out.
+//
+// The job may well have run. The node does not know the hub stopped; it
+// runs the job and retries the return for about ten seconds
+// (nodelink.PostReturn), so a hub back within that has it. So whether it
+// ran is read from the job record, which is the hub's own account of what
+// came back, and not guessed in either direction: guessing "no" runs a
+// `cmd.run` twice, and guessing "yes" tells the steps after it that a
+// database exists that nobody created. A job every node answered is
+// carried forward with the outcome those returns make, exactly as the
+// step would have made it; one that is still short of a node is refused,
+// naming the job, because nothing on the hub can say what that node did.
+func (s *Server) inFlightOutcome(orch *orchRunner, of job.ID, ch *state.Chunk, step *OrchStep) (states.Result, error) {
+	unknown := func(why string) error {
+		return fmt.Errorf("step %q of %s was in flight when its hub stopped, as job %s, and %s; "+
+			"`halite-hub jobs show %s` says what the nodes returned. Resume --from %s to run it again, "+
+			"or wait for the job and resume again", ch.ID, of, step.JID, why, step.JID, ch.ID)
+	}
+	if step.JID == "" {
+		// Stopped between writing that the step was dispatching and
+		// learning the jid: the job may have gone or not, and nothing
+		// links it to this step to look it up by.
+		return states.Result{}, fmt.Errorf("step %q of %s was being dispatched when its hub stopped, so "+
+			"whether its job reached a node is not recorded; `halite-hub jobs list` shows the jobs sent "+
+			"around %s. Resume --from %s to run it again", ch.ID, of,
+			step.Started.UTC().Format(time.RFC3339), ch.ID)
+	}
+	if s.Jobs == nil || !job.ID(step.JID).Valid() {
+		return states.Result{}, unknown("this hub has no record of that job")
+	}
+	id := job.ID(step.JID)
+	j, err := s.Jobs.Get(id)
+	if err != nil {
+		return states.Result{}, unknown(fmt.Sprintf("its record cannot be read (%v)", err))
+	}
+	missing, err := s.Jobs.Missing(id)
+	if err != nil {
+		return states.Result{}, unknown(fmt.Sprintf("its record cannot be read (%v)", err))
+	}
+	if j.State == job.Batching {
+		return states.Result{}, unknown("it is still sending its batches")
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return states.Result{}, unknown(fmt.Sprintf("%d of %d node(s) have not returned (%s)",
+			len(missing), len(j.Nodes), strings.Join(missing, ", ")))
+	}
+	returns, err := s.Jobs.Returns(id)
+	if err != nil {
+		return states.Result{}, unknown(fmt.Sprintf("its returns cannot be read (%v)", err))
+	}
+	res := stepOutcome(orch, ch.ID, j, returns, nil, tolerated(ch.Args))
+	res.Comment = fmt.Sprintf("Carried forward from %s, where it was in flight when the hub stopped; "+
+		"job %s has since been answered by every node: %s", of, step.JID, res.Comment)
+	return res, nil
+}
+
+// resulted is the runner's OnResult: it keeps what the run has so far, and
+// writes the record when a step has run.
+//
+// Only then, because a step seeded by a resume, skipped by a requisite or
+// passed over by an abort changed nothing, and a resume that does not find
+// it recorded evaluates it again and comes to the same answer. That keeps
+// the writes to one per step that did something -- plus one when a step
+// dispatches its job (dispatched) -- rather than one per step, which for a
+// run that fails early is the rest of the run skipped in a burst.
+func (o *orchRunner) resulted(sofar []*runner.StateResult) {
+	o.sofar = sofar
+	if last := sofar[len(sofar)-1]; !last.Skipped {
+		o.checkpoint()
+	}
+}
+
+// dispatching records that a step is about to send its job, before it
+// has a jid.
+//
+// The job is on its way to the nodes before dispatchFor returns -- a node
+// can be running it before the hub has written a word about it -- so a
+// record that named the step only once it had the jid would leave a gap
+// in which a hub that stopped had sent a job its record does not mention,
+// and a resume past it would send it again. Written first, the gap is the
+// other way round: the record names a step whose job may or may not have
+// gone, and a resume past it is refused (inFlightOutcome), which is a
+// question for the operator rather than a second `cmd.run`. The jid
+// cannot be had first: a hub chooses it inside the dispatch, and only a
+// signed job brings its own.
+func (o *orchRunner) dispatching(stepID string) {
+	d := o.detail(stepID)
+	o.mu.Lock()
+	d.JID = ""
+	d.Nodes = nil
+	d.Pending = true
+	d.Started = o.server.now()
+	o.mu.Unlock()
+	o.checkpoint()
+}
+
+// dispatched records that a step has sent its job and is waiting for it.
+//
+// Written before the wait, because the wait is where a long step spends
+// its time, and so where the hub is most likely to stop: a record that
+// learnt of the job only when it was answered would, for a hub killed
+// during a two-hour migration, say nothing about the migration at all.
+func (o *orchRunner) dispatched(stepID string, j *job.Job) {
+	d := o.detail(stepID)
+	o.mu.Lock()
+	d.JID = string(j.JID)
+	d.Nodes = j.Nodes
+	d.Pending = true
+	o.mu.Unlock()
+	o.checkpoint()
+}
+
+// checkpoint writes the run as it stands: every step that has a result,
+// and after them any step that has dispatched its job and has none yet.
+//
+// The whole record each time, as the start and the end always wrote it,
+// rather than a journal of steps: `orch show`, `orch list` and a resume
+// each read one file, and a second format for a run still going is a second
+// reader that has to agree with the first. The cost is a write of the
+// timeline so far per step, which against a step that waits on the fleet
+// is small, and is atomic (writeAtomic), so a hub killed mid-write leaves
+// the previous version rather than half of this one. Every call is on the
+// goroutine running the steps, so two checkpoints never race; the run
+// itself is copied rather than given Steps, so that the struct Orchestrate
+// returns is only ever assembled once, at the end.
+func (o *orchRunner) checkpoint() {
+	if o.run == nil {
+		return
+	}
+	snapshot := *o.run
+	snapshot.Steps = o.timeline(o.sofar)
+
+	have := make(map[string]bool, len(snapshot.Steps))
+	for _, step := range snapshot.Steps {
+		have[step.ID] = true
+	}
+	o.mu.Lock()
+	var waiting []*OrchStep
+	for id, d := range o.details {
+		if !d.Pending || have[id] {
+			continue
+		}
+		step := *d
+		if ch, ok := o.chunks[id]; ok {
+			step.Fun = ch.Func()
+			step.SLS = ch.SLS
+		}
+		step.Order = len(snapshot.Steps)
+		step.Comment = fmt.Sprintf("Dispatched as job %s; no outcome is recorded yet.", d.JID)
+		if d.JID == "" {
+			step.Comment = "Dispatching its job; no outcome is recorded yet."
+		}
+		waiting = append(waiting, &step)
+	}
+	o.mu.Unlock()
+	sort.Slice(waiting, func(i, k int) bool { return waiting[i].ID < waiting[k].ID })
+	snapshot.Steps = append(snapshot.Steps, waiting...)
+	o.server.recordOrch(&snapshot)
+}
+
 // timeline assembles the record from the run's results and the per-node
 // detail each step recorded.
-func (o *orchRunner) timeline(chunks []*state.Chunk, result *runner.RunResult) []*OrchStep {
+func (o *orchRunner) timeline(results []*runner.StateResult) []*OrchStep {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
-	out := make([]*OrchStep, 0, len(result.Results))
-	for _, sr := range result.Results {
+	out := make([]*OrchStep, 0, len(results))
+	for _, sr := range results {
 		step := &OrchStep{}
 		if d, ok := o.details[sr.Chunk.ID]; ok {
 			*step = *d
 		}
 		step.ID = sr.Chunk.ID
+		// It has a result, so it is not waiting any more, whatever the
+		// detail it dispatched with said.
+		step.Pending = false
 		step.Fun = sr.Chunk.Func()
 		step.SLS = sr.Chunk.SLS
 		step.Order = sr.RunNum

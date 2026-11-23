@@ -233,6 +233,7 @@ func (s *Server) setupMetrics() {
 		m.eventsDropped.With(reason)
 	}
 	m.orchRuns.With("compile_failed")
+	m.orchRuns.With("plan_refused")
 
 	// SPEC 26.2's counter for the tracer's two drop paths. Read from the
 	// tracer at scrape time rather than counted here: the tracer already

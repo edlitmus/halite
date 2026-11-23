@@ -48,6 +48,9 @@ type Config struct {
 	// ConfigValues is the effective configuration, redacted, bound to
 	// `opts` in a template.
 	ConfigValues *value.Map
+	// ConfigRefused is render.Options.ConfigRefused: a reason a template
+	// may not read the configuration at all.
+	ConfigRefused string
 
 	// Salt is the execution module dispatcher bound to `salt`.
 	Salt template.Dispatcher
@@ -309,6 +312,7 @@ func (c *Compiler) renderOptions(env, sls, filePath string) render.Options {
 		Grains:           c.Config.Grains,
 		Pillar:           c.Config.Pillar,
 		Config:           c.Config.ConfigValues,
+		ConfigRefused:    c.Config.ConfigRefused,
 		Salt:             c.Config.Salt,
 		Loader:           c.Loader.Templates(env),
 		Undefined:        c.Config.Undefined,

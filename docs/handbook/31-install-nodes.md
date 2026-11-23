@@ -33,11 +33,20 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > on port <port> (no tunnel). Both hosts were shared and not fresh. Enrolment
 > over a real network between two hosts is therefore run on Linux. On FreeBSD
 > the two jails shared one machine and a loopback interface, so the network
-> path was not a wire. **Not run:** a node on any other distribution, a token
-> with a hyphen first on a FreeBSD host (the rc script's half is fixed and
-> tested under `sh`, ledger 5.666), enrolment over a wire between two
-> FreeBSD hosts, and `cloud-init` or `nuageinit` themselves (see the user-data
-> section).
+> path was not a wire. **On fresh Vultr instances over a real network**
+> (DIVERGENCE 5.708, `main` at `33dc8e21`, no tunnels), token enrolment ran
+> against an Ubuntu 26.04 hub on AlmaLinux 8.10, Alpine 3.24, openSUSE Leap
+> 16.0, Debian 13 under sysvinit and Ubuntu 22.04.5, and on Rocky Linux 9.8
+> against its own FIPS hub. Each answered `test.ping`, applied the playground
+> state twice, and came back `up` after a reboot. **No init script ships for
+> Alpine's OpenRC or for sysvinit**, so on those two rows step 5 used one
+> written for the run (issue 812). A FreeBSD 14.5-RELEASE-p3 node enrolled
+> against a FreeBSD 15.1 hub over the wire, and came back `up` after a reboot,
+> started by the rc script. It was enrolled twice through the rc script with
+> tokens that began with `-`, minted by a hub from before ledger 5.674: once
+> by `halite_node_token`, once by `halite_node_token_file`. Both enrolled and
+> started. **Not run:** nuageinit (see the user-data section), arm64, and a
+> FreeBSD node on hardware.
 
 ## Before you start
 
@@ -333,9 +342,17 @@ was run.
 > `/etc/rc.local` at jail start, with `node_id: node1.lab.example.com` added
 > and `hub.example.com` in `/etc/hosts`. It failed twice, for the two reasons
 > above, and ran correctly the third time. The hub showed the token as spent
-> and the node as `up`. **Not run:** `cloud-init` itself (no new instance was
-> made), FreeBSD `nuageinit` (a jail has no config drive), and a node ID taken
-> from anything but the default on Linux.
+> and the node as `up`. **cloud-init itself** (DIVERGENCE 5.708): a fresh
+> Vultr Ubuntu 22.04.5 instance booted the Linux script above as its user-data.
+> cloud-init 26.1 ran it from its final stage, and the node enrolled with an
+> `hbt_` token and started. The script also waited for the "image" files,
+> which were copied in over SSH after boot, because the provider's user-data
+> cannot carry the binary. With no `node_id` set, the node took the host's
+> name. **nuageinit cannot run there:** on Vultr's FreeBSD 14.5 and 15.1
+> images it looks for a `config-2` or `cidata` drive, or an OpenStack SMBIOS
+> product, finds neither, and exits with `ERROR: Impossible to find a cloud
+> init provider`. **Not run:** nuageinit on any host, and a cloud-config
+> document rather than a script.
 
 ### Images
 

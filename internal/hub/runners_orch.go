@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/edlitmus/halite/internal/job"
+	"github.com/edlitmus/halite/internal/orchplan"
 	"sort"
 	"time"
 
@@ -19,6 +20,9 @@ func registerStateRunner(r *Runners) {
 		runnerOpt("env", signature.String, "", "The environment to compile from."),
 		runnerOpt("pillar", signature.Map, nil, "Pillar overrides the run compiles with."),
 		runnerOpt("test", signature.Bool, false, "Report what each step would do without dispatching."),
+		runnerOpt("plan", signature.String, "", "A signed plan from `halite-hub orch plan`, as its JSON text: "+
+			"every fleet step is sent as the plan's signed job, and the run is refused before any step "+
+			"if the plan and this compile disagree."),
 	}
 
 	r.Add(
@@ -140,6 +144,8 @@ func registerStateRunner(r *Runners) {
 				runnerArg("from", signature.String, "The step to start at."),
 				runnerOpt("pillar", signature.Map, nil, "The pillar override the run was started with; a resume is refused unless it is the same."),
 				runnerOpt("test", signature.Bool, false, "Report what each step would do without dispatching."),
+				runnerOpt("plan", signature.String, "", "A signed resume plan from `halite-hub orch plan "+
+					"--resume-of`. A resume always needs a new plan."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
 				id, err := parseJID(c.arg("jid"))
@@ -181,6 +187,9 @@ func registerStateRunner(r *Runners) {
 					if m, ok := raw.(*value.Map); ok {
 						req.Pillar = m
 					}
+				}
+				if err := withPlan(c, &req); err != nil {
+					return nil, err
 				}
 				run, err := c.Server.Orchestrate(c.Ctx, req)
 				if err != nil {
@@ -283,7 +292,11 @@ func (c *RunnerContext) visibleRuns(limit int) ([]*OrchRun, []OrchUnreadable, er
 
 // runOrchestration backs state.orchestrate and its short name.
 func runOrchestration(c *RunnerContext) (any, error) {
-	run, err := c.Server.Orchestrate(c.Ctx, orchRequestFrom(c))
+	req := orchRequestFrom(c)
+	if err := withPlan(c, &req); err != nil {
+		return nil, err
+	}
+	run, err := c.Server.Orchestrate(c.Ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -338,6 +351,23 @@ func (c *RunnerContext) authorizeResume(previous *OrchRun) error {
 	return nil
 }
 
+// withPlan reads the `plan` argument, when there is one, into the request.
+// A plan that does not parse refuses the run here, before anything is
+// compiled.
+func withPlan(c *RunnerContext, req *OrchRequest) error {
+	raw := c.arg("plan")
+	if raw == "" {
+		return nil
+	}
+	plan, err := orchplan.Parse([]byte(raw))
+	if err != nil {
+		return fmt.Errorf("the plan cannot be used: %w", err)
+	}
+	req.Plan = plan
+	req.PlanDigest = orchplan.Digest([]byte(raw))
+	return nil
+}
+
 func orchRequestFrom(c *RunnerContext) OrchRequest {
 	req := OrchRequest{
 		Principal:  c.Principal,
@@ -376,6 +406,9 @@ func orchJSON(run *OrchRun, withSteps bool) *value.Map {
 		out.Set("resumed_from", run.ResumedFrom)
 		out.Set("resumed_of", string(run.ResumedOf))
 	}
+	if run.PlanDigest != "" {
+		out.Set("plan_digest", run.PlanDigest)
+	}
 	if !withSteps {
 		out.Set("steps", int64(len(run.Steps)))
 		return out
@@ -394,7 +427,15 @@ func orchStepJSON(step *OrchStep) *value.Map {
 	out.Set("id", step.ID)
 	out.Set("fun", step.Fun)
 	out.Set("order", int64(step.Order))
-	out.Set("result", step.Succeeded())
+	if step.Pending {
+		// No result yet, and none claimed: Succeeded is true of a nil
+		// result, which is a predicted change, and a step still out on
+		// the fleet has not been predicted to do anything.
+		out.Set("result", nil)
+		out.Set("pending", true)
+	} else {
+		out.Set("result", step.Succeeded())
+	}
 	if step.Skipped {
 		out.Set("skipped", true)
 	}
@@ -404,6 +445,9 @@ func orchStepJSON(step *OrchStep) *value.Map {
 	out.Set("duration_ms", step.DurationMS)
 	if step.JID != "" {
 		out.Set("job_jid", step.JID)
+	}
+	if step.Signed {
+		out.Set("signed", true)
 	}
 	if len(step.Nodes) > 0 {
 		out.Set("nodes", stringList(step.Nodes))
