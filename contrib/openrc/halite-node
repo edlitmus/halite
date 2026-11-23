@@ -35,7 +35,7 @@
 # Everything below about supervise-daemon was taken from OpenRC's own
 # documentation (supervise-daemon-guide.md, openrc-run(8) and
 # supervise-daemon(8)). Until the lab has run this script on Alpine,
-# that is what it is: read, not run. DIVERGENCE 5.713.
+# that is what it is: read, not run. DIVERGENCE 5.715.
 
 description="halite node agent"
 

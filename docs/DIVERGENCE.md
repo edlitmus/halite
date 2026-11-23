@@ -49732,7 +49732,28 @@ wait on one request; either can pass `async` now, and neither does by
 itself. That is issue 822.
 
 
-### 5.713 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
+### 5.714 The Windows checkpoint test hid errors from the orchestration store (2026-11-23)
+
+Issue 827 began with a failure on the Windows Server 2022 standard-user
+runner. Both signed jobs returned successfully. The test saw only one
+pending step and discarded errors from the orchestration store.
+
+The hub reads orchestration records with `atomicfile.Read`. On Windows,
+this opens the record with delete sharing and retries transient file
+sharing errors. The test now identifies the step and job and reports
+errors from both the listing and individual records.
+
+The signed checkpoint test passed 100 times on Windows Server 2022 under
+the standard CI account. A separate run with the old read path also
+passed 100 times. The original failure did not recur.
+[Checkpoint runs](https://github.com/edlitmus/halite/actions/runs/45226961476)
+
+A separate test held a handle with delete access open while the store
+read the record. The old read path failed all ten reads with a sharing
+violation. The new read path passed all ten reads. Each job used its own
+Windows Server 2022 runner and ran the test under the standard CI account.
+[File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
+### 5.715 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
 
 Issue 812, found by 5.708's lab run on the Alpine row (Alpine 3.24, OpenRC)
 and the sysvinit row (Debian 13 with `sysvinit-core`, `init` as PID 1).
@@ -49893,7 +49914,7 @@ Debian, and a systemd host were not probed. The FIPS artifact (SPEC 27.4)
 has no switch in either script, so on these hosts a `-fips` node needs the
 `command` or `HALITE_NODE_BINARY` changed by hand. That was not tried.
 
-### 5.713.1 The Linux service-path check could not fail
+### 5.715.1 The Linux service-path check could not fail
 
 `TestServiceFilesAgreeWithTheDefaultRoot` (`internal/config`) fails a line
 that names the other platform's configuration root without naming its
@@ -49902,7 +49923,7 @@ own. On FreeBSD the wrong root, `/etc/halite`, is inside the right one,
 other way round. Every line that names `/usr/local/etc/halite` also
 contains `/etc/halite`, so the Linux case never failed: a systemd unit, or
 now an OpenRC or sysvinit script, could read FreeBSD's configuration path
-and pass. Found by breaking 5.713's OpenRC script that way and watching
+and pass. Found by breaking 5.715's OpenRC script that way and watching
 the test pass.
 
 The check now removes the right root from the line before it looks for
@@ -49912,7 +49933,7 @@ one directly when it is the longer. **Broken on purpose:**
 `halite-node.service`, now each fail the test. Before the change both
 passed.
 
-### 5.713.2 The reload check had skipped itself since agentless runs caught SIGHUP
+### 5.715.2 The reload check had skipped itself since agentless runs caught SIGHUP
 
 `TestNoUnitOffersAReloadThatWouldKillTheService` (`internal/config`)
 skips when anything outside the tests registers a SIGHUP handler, on the
@@ -49920,7 +49941,7 @@ reasoning that a handler means a reload might now be real. `halite-node
 oneshot`, the agentless run, began catching SIGHUP on 2026-10-15 (issue
 358), to remove its inline tree before it exits with 128+n, as the default
 disposition would have. From then on the check skipped on every run, and
-`go test` reported the package `ok`. Found when 5.713's `reload` arms,
+`go test` reported the package `ok`. Found when 5.715's `reload` arms,
 added on purpose, passed.
 
 `oneshot` is not a service and does not reload. The check now lists the
@@ -49932,30 +49953,6 @@ script, `extra_started_commands="reload"` in the OpenRC script, and
 `ExecReload=` in `halite-node.service` each fail the test now. Before the
 change all three passed, as skips. And removing SIGHUP from `oneshot`'s
 signals fails it, naming the stale entry.
-
-
-### 5.714 The Windows checkpoint test hid errors from the orchestration store (2026-11-23)
-
-Issue 827 began with a failure on the Windows Server 2022 standard-user
-runner. Both signed jobs returned successfully. The test saw only one
-pending step and discarded errors from the orchestration store.
-
-The hub reads orchestration records with `atomicfile.Read`. On Windows,
-this opens the record with delete sharing and retries transient file
-sharing errors. The test now identifies the step and job and reports
-errors from both the listing and individual records.
-
-The signed checkpoint test passed 100 times on Windows Server 2022 under
-the standard CI account. A separate run with the old read path also
-passed 100 times. The original failure did not recur.
-[Checkpoint runs](https://github.com/edlitmus/halite/actions/runs/45226961476)
-
-A separate test held a handle with delete access open while the store
-read the record. The old read path failed all ten reads with a sharing
-violation. The new read path passed all ten reads. Each job used its own
-Windows Server 2022 runner and ran the test under the standard CI account.
-[File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
-
 
 
 ## 6. Everything else not started

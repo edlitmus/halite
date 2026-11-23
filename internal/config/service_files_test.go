@@ -158,7 +158,7 @@ func TestRcScriptsUsingDaemonNameTheProcessTheySupervise(t *testing.T) {
 // below with what it does, and does not count. `halite-node oneshot`
 // began catching SIGHUP on 2026-10-15 to remove its inline tree, and from
 // then on this check skipped on every run while the package reported ok
-// (DIVERGENCE 5.713.2). A listed file that stops registering the signal
+// (DIVERGENCE 5.715.2). A listed file that stops registering the signal
 // fails the test, so the list cannot go on excusing a handler that is
 // gone.
 func TestNoUnitOffersAReloadThatWouldKillTheService(t *testing.T) {
@@ -349,7 +349,7 @@ func TestRcScriptsKeepTheirFlagsAwayFromDaemon(t *testing.T) {
 // to anything else is the unprivileged node the unit refuses to be.
 //
 // What it holds is read from OpenRC's documentation, not from running
-// openrc-run (DIVERGENCE 5.713); the lab is where that is checked.
+// openrc-run (DIVERGENCE 5.715); the lab is where that is checked.
 func TestTheOpenRCScriptIsSupervisedAndAvoidsSupervisorTraps(t *testing.T) {
 	path := filepath.Join("..", "..", "contrib", "openrc", "halite-node")
 	body, err := os.ReadFile(path)
@@ -397,7 +397,7 @@ func TestTheOpenRCScriptIsSupervisedAndAvoidsSupervisorTraps(t *testing.T) {
 // name other scripts depend on, so it is this file's own name. LSB's
 // required actions are start, stop, restart, force-reload and status.
 // This is read from the LSB and Debian documentation; update-rc.d itself
-// has not read the header yet (DIVERGENCE 5.713).
+// has not read the header yet (DIVERGENCE 5.715).
 func TestTheSysvinitScriptCarriesItsLSBHeader(t *testing.T) {
 	path := filepath.Join("..", "..", "contrib", "sysvinit", "halite-node")
 	body, err := os.ReadFile(path)
