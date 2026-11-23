@@ -1029,7 +1029,7 @@ other bullets stand as they were last verified.
   `require_job_signature` by function class, with a bridged `signer`
   extension since (5.170). Nothing has signed through a hardware token or
   a KMS. Orchestration steps are signed as a plan made off the hub since
-  5.707 (issue 765); a plan has not been signed through a KMS either.
+  5.710 (issue 765); a plan has not been signed through a KMS either.
 - **Signed state trees** are named in the 25.1 threat model and in phase
   6's contents. Do not mistake gitfs ref verification for it: that
   verifies a ref tip, not a tree manifest.
@@ -2255,7 +2255,7 @@ down to the machine or the link each one still wants.
 **PIV or YubiKey signer** behind the bridge `internal/extsigner`
 already provides — the AWS KMS one is built and demonstrated. The
 orchestration signing question was decided for a pre-approved plan and
-is built (5.707, issue 765); a plan-checking signing service, which would
+is built (5.710, issue 765); a plan-checking signing service, which would
 lift the plan's expiry bound, waits for real use to show it is needed. Item 14's remainder is
 `subscription_manager`, which wants a RHEL subscription rather than a
 host. Item 19b's is launchd's `user/` domain, and agents whose plist is
@@ -2685,7 +2685,7 @@ unbuilt item here is number 7.
    ```
 
    **Orchestration signing is built** as a plan of pre-signed jobs
-   (DIVERGENCE 5.707, issue 765), not as a call per step, because a
+   (DIVERGENCE 5.710, issue 765), not as a call per step, because a
    signer the hub can call signs whatever the hub sends it. What is left
    is driving a plan through the KMS signer on a lab node:
 
