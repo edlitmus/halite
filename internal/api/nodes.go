@@ -279,7 +279,7 @@ func (s *Server) pillar(w http.ResponseWriter, r *http.Request, token *apitoken.
 // runner calls a hub runner and decodes the answer, for a handler that
 // needs the value rather than the response.
 func (s *Server) runner(r *http.Request, token *apitoken.Token, fun string, arg []string, kwarg map[string]any) (any, error) {
-	res, err := s.Hub.Runner(r.Context(), s.runnerRequest(token, fun, arg, kwarg))
+	res, err := s.callRunner(r.Context(), s.runnerRequest(token, fun, arg, kwarg))
 	if err != nil {
 		return nil, err
 	}

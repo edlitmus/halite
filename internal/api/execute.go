@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -245,7 +246,7 @@ func (s *Server) runRunner(w http.ResponseWriter, r *http.Request, token *apitok
 	if !s.authorize(w, token, requestFor(req.Function, "", req.Arg, req.Kwarg, true)) {
 		return
 	}
-	res, err := s.Hub.Runner(r.Context(), s.runnerRequest(token, req.Function, req.Arg, req.Kwarg))
+	res, err := s.callRunner(r.Context(), s.runnerRequest(token, req.Function, req.Arg, req.Kwarg))
 	if err != nil {
 		s.hubError(w, "calling the runner", err)
 		return
@@ -277,6 +278,17 @@ func (s *Server) runRunner(w http.ResponseWriter, r *http.Request, token *apitok
 // is a 500 that blames the wrong component.
 func (s *Server) hubError(w http.ResponseWriter, doing string, err error) {
 	s.warn("the hub refused or failed", "doing", doing, "error", err.Error())
+	var waited *runWaitError
+	if errors.As(err, &waited) {
+		if transport.Permanent(err) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		// The run was started, and is named: the caller can look at it,
+		// which "failed at the hub" alone would not let them do.
+		writeError(w, http.StatusBadGateway, waited.callerMessage())
+		return
+	}
 	if transport.Permanent(err) {
 		writeError(w, http.StatusForbidden, err.Error())
 		return
@@ -337,7 +349,7 @@ func (s *Server) jobDetail(w http.ResponseWriter, r *http.Request, token *apitok
 
 // forwardRunner calls a hub runner and returns what it said.
 func (s *Server) forwardRunner(w http.ResponseWriter, r *http.Request, token *apitoken.Token, fun string, arg []string, kwarg map[string]any) {
-	res, err := s.Hub.Runner(r.Context(), s.runnerRequest(token, fun, arg, kwarg))
+	res, err := s.callRunner(r.Context(), s.runnerRequest(token, fun, arg, kwarg))
 	if err != nil {
 		s.hubError(w, "calling "+fun, err)
 		return

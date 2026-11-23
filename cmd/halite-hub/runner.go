@@ -55,6 +55,20 @@ func runRunner(args *cli.Args) int {
 		cli.Usagef("%v", err)
 	}
 
+	// An orchestration through this command is `orch run`'s call, and it
+	// waited on the one request, which has thirty seconds: a longer run
+	// failed here while it went on on the hub (issue 822, after 815 fixed
+	// `orch run`). So it is waited for the way `orch run` waits.
+	//
+	// Only the runners that take `async`, not every runner. The rest have
+	// no way to answer before their work is done -- the hub binds keyword
+	// arguments strictly and refuses an `async` they do not declare -- so
+	// waiting for any runner would need a second mechanism on the hub for
+	// work that is, today, short. The one exception found is event.listen,
+	// whose own timeout can be set past the client's; that is a timeout
+	// the operator chose, and it is not this.
+	wait := transport.WaitsForRunner(fun, kwargs)
+
 	client := operatorClient(args)
 	res, err := client.Runner(context.Background(), transport.RunnerRequest{
 		Fun:   fun,
@@ -70,7 +84,26 @@ func runRunner(args *cli.Args) int {
 		return 1
 	}
 
-	decoded, err := value.DecodeJSON(res.Return)
+	raw := res.Return
+	if jid := transport.StartedRun(res); wait && jid != "" {
+		ret, unseen := waitForStartedRun(client, res.JID, jid)
+		if ret == nil {
+			return unseen
+		}
+		if !ret.Success {
+			// As before, a failure prints its sentence and not the return;
+			// the job keeps no sentence, so this one names the run.
+			message := ret.FailureText()
+			if message == "" {
+				message = failedRunMessage(jid)
+			}
+			fmt.Fprintf(os.Stderr, "%s: %s\n", res.Fun, message)
+			return 1
+		}
+		raw = ret.Return
+	}
+
+	decoded, err := value.DecodeJSON(raw)
 	if err != nil {
 		cli.Fatalf("the hub's answer is not readable: %v", err)
 	}
