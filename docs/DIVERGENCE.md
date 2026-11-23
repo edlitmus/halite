@@ -16617,7 +16617,7 @@ already built:
   the four remainders this same plan.md item names — **built since, as the bridge
   itself; see 5.170.** What is still missing is the hub calling it once per dispatched
   step rather than an operator calling it once per submission, which is what 5.170's
-  own reference implementation does not attempt.
+  own reference implementation does not attempt. (5.169.1 corrects this.)
 - **A pre-approved plan.** An operator could compile the orchestration ahead of time
   (`state.orchestrate_show_sls` already reports each step's `id`/`fun`/`sls`/`tgt`
   without dispatching anything), sign each step's `Payload` against the plan that
@@ -16640,6 +16640,46 @@ would be closing the sentence and reopening the threat model the sentence is abo
 extension, or a pre-approved-plan workflow neither SPEC.md nor this plan specifies,
 before an orchestration's steps can carry a signature that means what a standalone
 signed job's does. The first half of that sentence is 5.170; the second is still true.
+
+#### 5.169.1 A live signer the hub calls does not keep authority off the hub (2026-11-22)
+
+The first bullet above calls the live signer "exactly the shape that would
+work": the hub calls out per step, "and the KMS signs bytes it is handed rather
+than a private key the hub holds". Read against the signer built since, that
+concludes too much.
+
+The bridged signer protocol hands over a 32-byte digest and gets back a
+signature (5.170). `halite-ext-signer-kms` refuses only a digest that is not 32
+bytes (5.276; `cmd/halite-ext-signer-kms/main.go:143-167`). A signer handed a
+digest cannot know what it is the digest of, and a KMS key policy decides who
+may ask for a signature, not what they may ask to have signed. So a hub that
+can call the signer per step can have **any** payload signed. The key is off
+the hub's disk; the ability to sign is not. That ability is what SPEC 25.6
+exists to deny ("for estates where hub compromise must not equal fleet
+compromise", `SPEC.md:2582`), and it is the hub-held key this section rejects
+below, reached by a longer road. The closing paragraph inherits the same
+conclusion when it says the first half of its sentence "is 5.170": the bridge
+is necessary, and it is not sufficient.
+
+What the bullet got right is the timing. A signature made per step, when the
+real payload is known, is what an orchestration of any length needs, because a
+node bounds a signed job's expiry when it arrives
+(`cmd/halite-node/jobsignature.go:258-271`), and a plan of jobs signed in
+advance has to fit the whole run inside that bound. What it missed is that the
+signer must check each request against something the hub cannot forge: a plan
+the operator signed, checked by a service the hub does not control. That is
+the design `docs/proposals/765-signed-orchestration.md` now proposes (option
+A'), on the maintainer's decision recorded on PR 801.
+
+Found by reading the bullet beside the signer while revising that proposal.
+Nothing was run. The bullet is left as written, with a pointer to this
+subsection, because the reasoning that led to it is part of the record; the
+pointer is there so that a reader who stops at the bullet does not take it as
+settled.
+
+It is the exculpatory shape: "this works, because the KMS holds the key" ended
+an investigation that one more question, *what does the signer see?*, would
+have reopened.
 
 ### 5.170 The bridged `signer` extension, and its reference implementation
 
