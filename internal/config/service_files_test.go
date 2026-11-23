@@ -152,8 +152,23 @@ func TestRcScriptsUsingDaemonNameTheProcessTheySupervise(t *testing.T) {
 // Nothing in this build handles SIGHUP, so Go's default disposition
 // applies and the signal terminates the process. A unit advertising
 // ExecReload therefore turned `systemctl reload` into an outage.
+//
+// The check skips once something registers a SIGHUP handler, because a
+// handler could make a reload real. Every handler it has read is listed
+// below with what it does, and does not count. `halite-node oneshot`
+// began catching SIGHUP on 2026-10-15 to remove its inline tree, and from
+// then on this check skipped on every run while the package reported ok
+// (DIVERGENCE 5.713.2). A listed file that stops registering the signal
+// fails the test, so the list cannot go on excusing a handler that is
+// gone.
 func TestNoUnitOffersAReloadThatWouldKillTheService(t *testing.T) {
-	handled := false
+	read := map[string]string{
+		"cmd/halite-node/oneshot.go": "the agentless run catches SIGHUP to remove its inline " +
+			"tree and then exits 128+n, as the default disposition would; it is not a " +
+			"service and reloads nothing",
+	}
+	seen := map[string]bool{}
+	var unread []string
 	repo := filepath.Join("..", "..")
 	err := repotree.Walk(repo, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
@@ -172,15 +187,30 @@ func TestNoUnitOffersAReloadThatWouldKillTheService(t *testing.T) {
 		// signal is not a handler for it.
 		if strings.Contains(string(body), "signal.Notify") &&
 			strings.Contains(string(body), "syscall.SIGHUP") {
-			handled = true
+			rel, err := filepath.Rel(repo, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			if _, ok := read[rel]; ok {
+				seen[rel] = true
+			} else {
+				unread = append(unread, rel)
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if handled {
-		t.Skip("something handles SIGHUP now; a reload directive may be correct again")
+	for rel, why := range read {
+		if !seen[rel] {
+			t.Errorf("%s no longer registers SIGHUP; drop it from the handlers this check has read (%s)", rel, why)
+		}
+	}
+	if len(unread) > 0 {
+		t.Skipf("%s handle SIGHUP, and this check has not read what they do with it; "+
+			"a reload directive may be correct again", strings.Join(unread, ", "))
 	}
 	// An OpenRC script offers one by naming it in extra_started_commands
 	// or extra_commands, and an LSB script by a `reload` arm in its case

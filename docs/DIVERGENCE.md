@@ -49912,6 +49912,27 @@ one directly when it is the longer. **Broken on purpose:**
 `halite-node.service`, now each fail the test. Before the change both
 passed.
 
+### 5.713.2 The reload check had skipped itself since agentless runs caught SIGHUP
+
+`TestNoUnitOffersAReloadThatWouldKillTheService` (`internal/config`)
+skips when anything outside the tests registers a SIGHUP handler, on the
+reasoning that a handler means a reload might now be real. `halite-node
+oneshot`, the agentless run, began catching SIGHUP on 2026-10-15 (issue
+358), to remove its inline tree before it exits with 128+n, as the default
+disposition would have. From then on the check skipped on every run, and
+`go test` reported the package `ok`. Found when 5.713's `reload` arms,
+added on purpose, passed.
+
+`oneshot` is not a service and does not reload. The check now lists the
+files whose SIGHUP handling it has read, each with what the handler does,
+and skips only for a handler in a file it has not read. It fails if a
+listed file stops registering the signal, so the list cannot go stale and
+excuse nothing. **Broken on purpose:** a `reload)` arm in the sysvinit
+script, `extra_started_commands="reload"` in the OpenRC script, and
+`ExecReload=` in `halite-node.service` each fail the test now. Before the
+change all three passed, as skips. And removing SIGHUP from `oneshot`'s
+signals fails it, naming the stale entry.
+
 
 ### 5.714 The Windows checkpoint test hid errors from the orchestration store (2026-11-23)
 
