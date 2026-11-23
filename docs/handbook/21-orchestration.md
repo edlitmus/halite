@@ -278,6 +278,46 @@ was started with (the carried-forward steps were made under different data).
 Every run is a first-class record: `orch list` shows them, `orch show <jid>`
 the timeline, and the job each step started is in `halite-hub jobs`.
 
+### When the hub stops mid-run
+
+The record is written as the run goes, not only when it ends, so a run
+whose hub was killed, ran out of memory or lost power still says how far
+it got. `orch show` of such a run lists the steps that finished, and the
+step that was out on the fleet as `wait`:
+
+```
+$ halite-hub orch show 20261123T022725922865
+20261123T022725922865  running
+  ok   step1                        salt.function        job 20261123T022725926329 on 1 node(s)
+       cmd.run ran on 1 node(s).
+  ok   step2                        salt.function        job 20261123T022726216917 on 1 node(s)
+       cmd.run ran on 1 node(s).
+  wait step3                        salt.function        job 20261123T022726493629 on 1 node(s)
+       Dispatched as job 20261123T022726493629; no outcome is recorded yet.
+```
+
+The state stays `running`: nothing rewrites it when the hub comes back.
+Resume it as any other run. **Steps that finished are carried forward**,
+never sent again. For the step that was out, choose:
+
+- `--from step3` runs it again, and everything after it. Use this when the
+  step is safe to repeat, or when you know it did not complete.
+- `--from step4` carries it forward too, **if its job finished**. The node
+  does not know the hub stopped; it finishes the job and retries the return
+  for about ten seconds, so a hub back within that gets it. If every node
+  has answered, the step is carried
+  forward with the outcome those returns make. If a node has not, the
+  resume is refused and names the job: read `halite-hub jobs show <jid>`,
+  then wait and resume again, or resume `--from step3`.
+
+If the hub stopped in the instant between deciding to send a step's job
+and learning its jid, the record shows the step as `Dispatching its job`
+with no jid, and a resume past it is refused: whether the job went out is
+not recorded. Resume at that step.
+
+A `salt.runner` or `salt.wheel` step runs on the hub and stops with it; it
+is not recorded as out, and a resume runs it again.
+
 ## Waiting for the outside world
 
 `salt.wait_for_event` turns an orchestration from something that only
@@ -403,7 +443,8 @@ as pillar on the command line, not by editing the file.
 - `orch run --test` runs state steps in test mode and **does not dispatch**
   function steps; each step is authorized twice.
 - `orch resume --from <step>` continues a failed run without repeating the
-  steps before it.
+  steps before it, and after a hub crash too: the record is written per
+  step, and a step that was out is decided by its job's returns.
 - `salt.wait_for_event` lets a procedure wait for a person or a system.
 
 Next: [runners and the mine](22-runners-and-mine.md).

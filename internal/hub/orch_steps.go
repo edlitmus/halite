@@ -300,6 +300,7 @@ func (o *orchRunner) dispatchAndWait(c *exec.Context, args *value.Map, sub Submi
 			fmt.Sprintf("Would run %s on the nodes matching %q.", sub.Fun, sub.Target), nil), nil
 	}
 
+	o.dispatching(c.StateID)
 	j, err := o.server.dispatchFor(o.principal, o.onBehalfOf, sub)
 	if err != nil {
 		return states.False(err.Error()), nil
@@ -308,6 +309,7 @@ func (o *orchRunner) dispatchAndWait(c *exec.Context, args *value.Map, sub Submi
 		"jid": string(o.jid), "step": c.StateID, "job_jid": string(j.JID),
 		"fun": sub.Fun, "target": sub.Target, "nodes": len(j.Nodes),
 	})
+	o.dispatched(c.StateID, j)
 
 	timeout := stepTimeout(c)
 	_, returns, missing, err := o.server.awaitReturns(c.Ctx, j.JID, timeout)
