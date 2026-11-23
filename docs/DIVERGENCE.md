@@ -50954,11 +50954,26 @@ an empty value. It was broken on purpose by returning `localhost` always,
 and it failed on every specific address (`dials "https://localhost:4510",
 want "https://10.0.0.5:4510"`).
 
-**Not run end to end here.** On this Mac a hub listening on the LAN
-address could not be reached by any client, with `--hub` given
-explicitly or without it: the handshake ended in `EOF`, and the hub logged
-`socket is not connected`. That is the Mac's network path, not this
-change, so the run says nothing either way.
+**Run end to end on Linux.** On 2026-11-23, on an arm64 Ubuntu 22.04 host
+(`host-d` of 5.282), two `halite-hub` binaries were built with Go 1.27.4:
+`main` at `2db3fd7c` and this branch. A hub was started unprivileged with
+`listen: <private-ip>:47511`, and `ss` showed it listening on that address
+alone. An admin operator was made, and then `runner manage.status` was run
+with the hub's own `--config` and no `--hub`:
+
+- `main`: `Post "https://localhost:47511/v1/runners": dial tcp
+  127.0.0.1:47511: connect: connection refused`. This is the defect.
+- this branch: it answered `up: []` and `down: []`.
+- this branch with `--hub localhost`: it was refused as `main` was, so an
+  explicit `--hub` still wins.
+
+The build tree, the hub's directories and the toolchain were removed from
+the host afterwards.
+
+The same run on this Mac said nothing either way. No client could reach a
+hub on the LAN address, with `--hub` given or without it: the handshake
+ended in `EOF`, and the hub logged `socket is not connected`. That is the
+Mac's network path.
 
 ### 5.721 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
 
