@@ -2222,10 +2222,13 @@ down to the machine or the link each one still wants.
     and TOTP refused under FIPS. A later run that day put `main` on
     Ubuntu Pro's certified `fips` kernel, which exists only for 20.04
     and older, on amd64. It moved that host into FIPS mode with halite
-    already running, and the grain and `doctor` followed. What is left
-    wants machines: the certified kernel on arm64, a move out of FIPS
-    mode, and an upgrade by a state.
-    Three of the questions those runs opened want a person instead, and
+    already running, and the grain and `doctor` followed. The same move
+    was then run on arm64 with `fips-updates`, because no arm64
+    certified kernel exists: the certified pocket publishes no arm64.
+    The last two machine items, an upgrade by a state and a move out of
+    FIPS mode, were run on a third arm64 host the same day, so nothing
+    is left that wants a machine, and issue 306 is closed. Three
+    questions those runs opened want a person instead (issue 840), and
     each is the shape CLAUDE.md warns about — two things that must
     agree and do not: the hub accepts Ed25519 client signatures under
     `fips140=on` while SPEC 27.4 says Ed25519 is unavailable; the

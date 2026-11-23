@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
-	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -197,71 +195,66 @@ func orchStartAndWait(args *cli.Args, fun string, arg []string, kwargs map[strin
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	jid := runningOrchestration(res)
+	jid := transport.StartedRun(res)
 	if jid == "" {
 		return renderOrch(res.Return, res.Success, res.Error, timeline, format)
 	}
-	fmt.Fprintf(os.Stderr, "orchestration %s is running on the hub; stopping this command does not stop it, "+
-		"and `halite-hub orch show %s` has its timeline\n", jid, jid)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	ret, err := awaitRunnerReturn(ctx, client, res.JID)
-	if errors.Is(err, errStoppedWaiting) {
-		// Stopping this command sends the hub nothing, and the run lives
-		// in the hub's process, not in this request: it was running at the
-		// last poll, and this command did not change that.
-		fmt.Fprintf(os.Stderr, "\nstopped waiting; orchestration %s is still running on the hub, and "+
-			"`halite-hub orch show %s` has its timeline\n", jid, jid)
-		return exitOutcomeUnseen
-	}
-	if errors.Is(err, errHubRestarted) {
-		fmt.Fprintf(os.Stderr, "the hub stopped while orchestration %s was running, and the run stopped with it; "+
-			"`halite-hub orch show %s` has how far it got, and `orch resume %s --from <step>` picks it up\n",
-			jid, jid, jid)
-		return exitOutcomeUnseen
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\norchestration %s may still be running on the hub; "+
-			"`halite-hub orch show %s` has its timeline\n", err, jid, jid)
-		return exitOutcomeUnseen
+	ret, unseen := waitForStartedRun(client, res.JID, jid)
+	if ret == nil {
+		return unseen
 	}
 	message := ""
 	if !ret.Success {
 		// The cached return of a run that failed is its timeline, and the
 		// hub's sentence about it is not kept beside it; a run that
 		// never produced one -- a panic -- is cached as its error text.
-		message = fmt.Sprintf("orchestration %s failed; `orch show %s` has the timeline", jid, jid)
-		if text, err := value.DecodeJSON(ret.Return); err == nil {
-			if s, ok := text.(string); ok {
-				return renderOrch(nil, false, s, timeline, format)
-			}
+		if text := ret.FailureText(); text != "" {
+			return renderOrch(nil, false, text, timeline, format)
 		}
+		message = failedRunMessage(jid)
 	}
 	return renderOrch(ret.Return, ret.Success, message, timeline, format)
 }
 
-// runningOrchestration is the jid of a run the hub has started and not
-// finished, from an `async` call's answer, or "" when the answer is the
-// outcome itself: a refusal, or a run that ended before the hub replied.
-func runningOrchestration(res *transport.RunnerResponse) string {
-	if !res.Success {
-		return ""
+// failedRunMessage is what is said of a waited-for run that failed.
+func failedRunMessage(jid string) string {
+	return fmt.Sprintf("orchestration %s failed; `orch show %s` has the timeline", jid, jid)
+}
+
+// waitForStartedRun says that a run has started and how to look at it,
+// and waits for the outcome of the runner call that started it. It is
+// `orch run`'s wait and `runner state.orchestrate`'s alike (issues 815,
+// 822).
+//
+// A wait that does not see the outcome says why and gives a nil return
+// and exitOutcomeUnseen.
+func waitForStartedRun(client *transport.Client, callJID, jid string) (*transport.RunnerReturn, int) {
+	fmt.Fprintf(os.Stderr, "orchestration %s is running on the hub; stopping this command does not stop it, "+
+		"and `halite-hub orch show %s` has its timeline\n", jid, jid)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ret, err := client.AwaitRunnerReturn(ctx, callJID, orchPollInterval, orchGiveUpAfter)
+	if errors.Is(err, transport.ErrStoppedWaiting) {
+		// Stopping this command sends the hub nothing, and the run lives
+		// in the hub's process, not in this request: it was running at the
+		// last poll, and this command did not change that.
+		fmt.Fprintf(os.Stderr, "\nstopped waiting; orchestration %s is still running on the hub, and "+
+			"`halite-hub orch show %s` has its timeline\n", jid, jid)
+		return nil, exitOutcomeUnseen
 	}
-	decoded, err := value.DecodeJSON(res.Return)
+	if errors.Is(err, transport.ErrRunnerAborted) {
+		fmt.Fprintf(os.Stderr, "the hub stopped while orchestration %s was running, and the run stopped with it; "+
+			"`halite-hub orch show %s` has how far it got, and `orch resume %s --from <step>` picks it up\n",
+			jid, jid, jid)
+		return nil, exitOutcomeUnseen
+	}
 	if err != nil {
-		return ""
+		fmt.Fprintf(os.Stderr, "%v\norchestration %s may still be running on the hub; "+
+			"`halite-hub orch show %s` has its timeline\n", err, jid, jid)
+		return nil, exitOutcomeUnseen
 	}
-	run, ok := decoded.(*value.Map)
-	if !ok {
-		return ""
-	}
-	if state, _ := run.Get("state"); state != "running" {
-		return ""
-	}
-	jid, _ := run.Get("jid")
-	id, _ := jid.(string)
-	return id
+	return ret, 0
 }
 
 // orchGiveUpAfter is how long the hub may fail to answer, poll after
@@ -269,51 +262,6 @@ func runningOrchestration(res *transport.RunnerResponse) string {
 // too, so the outcome would never come; a network blip should not end a
 // wait of hours.
 var orchGiveUpAfter = time.Minute
-
-// errStoppedWaiting is an interrupt, as against a hub that stopped answering.
-var errStoppedWaiting = errors.New("stopped waiting")
-
-// errHubRestarted is a runner call the hub closed as aborted at startup
-// (Server.AbandonRunnerJobs): the hub that was running it has gone, and
-// the run with it. Without this a wait that outlived a quick restart
-// would poll a job nothing will ever answer.
-var errHubRestarted = errors.New("the hub restarted")
-
-// awaitRunnerReturn polls a runner call's job until its return is filed.
-func awaitRunnerReturn(ctx context.Context, client *transport.Client, jid string) (*job.Return, error) {
-	var failingSince time.Time
-	for {
-		status, err := client.JobStatus(ctx, jid)
-		switch {
-		case ctx.Err() != nil:
-			return nil, errStoppedWaiting
-		case err != nil && transport.Permanent(err):
-			return nil, fmt.Errorf("the hub refused to say how it went: %w", err)
-		case err != nil:
-			if failingSince.IsZero() {
-				failingSince = time.Now()
-			}
-			if time.Since(failingSince) > orchGiveUpAfter {
-				return nil, fmt.Errorf("the hub has not answered for %s: %w", orchGiveUpAfter, err)
-			}
-		case len(status.Returns) > 0:
-			var ret job.Return
-			if err := json.Unmarshal(status.Returns[0], &ret); err != nil {
-				return nil, fmt.Errorf("the hub's answer is not readable: %w", err)
-			}
-			return &ret, nil
-		case status.State == string(job.Aborted):
-			return nil, errHubRestarted
-		default:
-			failingSince = time.Time{}
-		}
-		select {
-		case <-ctx.Done():
-			return nil, errStoppedWaiting
-		case <-time.After(orchPollInterval):
-		}
-	}
-}
 
 // renderOrch prints a run, or a listing, the way --out asks, and gives
 // the exit status its success says.

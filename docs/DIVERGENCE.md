@@ -24866,6 +24866,158 @@ route is an internet gateway. It was terminated too. Afterwards both were
 `terminated`, no volume with the run's tag remained, and no Elastic IP was
 associated.
 
+#### arm64: no certified kernel exists, and a move into `fips-updates` with halite running (issue 306, 2026-11-23)
+
+**There is no arm64 certified kernel to test.** The `Release` files of Pro's
+certified pocket were read on 2026-11-23 from
+`esm.ubuntu.com/fips/ubuntu/dists/<suite>/Release`. Their `Architectures:`
+lines were `i386 amd64 s390x ppc64el` for `xenial`, and `i386 amd64 s390x`
+for `bionic` and `focal`. `dists/focal/main/` had no `binary-arm64`. On
+arm64, Ubuntu's FIPS kernels come only through `fips-updates` (whose
+`jammy-updates` lists `amd64 arm64 s390x`) or `fips-preview` (whose `jammy`
+lists the same and has no certificate yet). The item "the certified kernel on
+arm64" in the subsection above names something that does not exist, so it is
+removed from the list. The owner chose to run `fips-updates` on arm64
+instead, enabled from the start on a fresh host.
+
+**The host.** A new AWS instance, `host-f`, in us-west-2. It was t4g.large,
+**arm64**, from Canonical's plain Ubuntu 22.04.5 image. It booted the HWE
+kernel 6.8.0-1070-aws, which has no `/proc/sys/crypto/fips_enabled`, with
+systemd 249. Pro was attached as in the subsection above, and on this
+release Pro offered `fips-preview` and `fips-updates` but no `fips`.
+`pro enable fips-updates` printed `FIPS Updates enabled` and `A reboot is
+required to complete install`. It installed
+`linux-image-5.15.0-1121-aws-fips` (`5.15.0-1121.128+fips1`),
+`openssl-fips-module-3` `3.0.5-0ubuntu0.2+Fips1`, `ubuntu-fips-userspace`
+`1.3.9+update0`, a GRUB drop-in adding `fips=1`, and
+`GRUB_FLAVOUR_ORDER="aws-fips"`. So the reboot had to choose a 5.15 kernel
+over the newer 6.8 one.
+
+**Before the reboot.** `main` at `17c55da3` was built and installed exactly as
+on the amd64 host above (`bmake build fips` as `ubuntu`, Go 1.27.4
+linux-arm64 with a checked sha256, then `make install install-fips` and the
+drop-ins). The hub, the node and the API ran on one host, and the node
+enrolled by `--token-file`. All three units were enabled and active on the
+`-fips` binaries with `GODEBUG=fips140=on`. `grains.item` gave `fips_mode`
+**False**, `fips_build` True, `aarch64` and `6.8.0-1070-aws`. A `state.apply`
+reported `changed=1`, and all three `doctor`s gave **warn** (`this is a FIPS
+build … and the kernel is not in FIPS mode`). systemd 249 accepted the
+units without any `Unknown key name` line.
+
+**After the reboot.** The boot ID changed. The kernel was
+5.15.0-1121-aws-fips, so GRUB had taken the FIPS flavour over 6.8.
+`fips_enabled` was 1 and `fips=1` was on the command line. With no action
+by anyone, all three units were enabled and active on the `-fips`
+executables with `GODEBUG=fips140=on`. The journal at priority `err` had 0
+lines for them. The node was `up`. `grains.item` gave `fips_mode`
+**True** and `kernelrelease` `5.15.0-1121-aws-fips`. The `state.apply`
+reported no change. The FIPS row of every `doctor` **passed** (hub 8 pass and
+1 skip, node 12 pass and 2 skip, API 3 pass and 1 warn for its 2-day
+certificate). The ordinary `halite-node` warned `not a FIPS build`. The API
+answered `ready`, logged in a local account and returned `fips_mode` true
+through `POST /v1/run` over TLSv1.3 and h2.
+
+**What this closes.** A host moving into FIPS mode with halite running, on
+arm64 and on `fips-updates`. The amd64 run above did the same on the
+certified track.
+
+**Still not run.** A move *out of* FIPS mode. An upgrade by a state. A node
+on another host than the hub in either of these runs.
+
+**Teardown.** `pro detach` (`This machine is now detached`). Then the
+instance was terminated. Afterwards it was `terminated`, no volume with this
+run's tag remained, and no instance from these runs was left.
+
+#### An upgrade by a state in FIPS mode, and a move out of FIPS mode (issue 306, 2026-11-23)
+
+**The host.** A new AWS instance, `host-g`, in us-west-2. It was t4g.large,
+**arm64**, from Canonical's plain Ubuntu 22.04.5 image. Pro was attached as
+above, `pro enable fips-updates` was run, and the host was rebooted
+**before** halite was installed. Afterwards it was on 5.15.0-1121-aws-fips,
+with `fips_enabled` 1 and `fips=1`.
+
+**Mixed versions, in FIPS mode.** `main` at `17c55da3` was built with
+`bmake build fips` as `ubuntu`. Its three `-fips` binaries had the same
+sha256 as `host-f`'s build of the same commit, the subsection above:
+`ca1cc52a…` for the node, `01ba9742…` for the hub and `e98ef4bb…` for the
+API. They were installed with `make install install-fips` and the
+drop-ins. The node's `-fips` binary was then replaced with the one from the
+published **v0.2.0** `linux-arm64-fips` archive. The archive was checked
+with `sha256sum -c` and `openssl dgst -verify` (`Verified OK`, key digest
+`7d7ba7ce…`), and that binary reported `halite-node 0.2.0+13efcb548e20 (fips
+v1.0.0)`. The node unit and drop-in were `main`'s. The hub and the API ran
+`main`. The node enrolled by `--token-file`. `manage.versions` showed the hub
+on `0.2.0-58-g17c55da34526` and the node on `0.2.0+13efcb548e20`, under
+`mismatched`.
+
+**The upgrade by a state.** `main`'s `halite-node-fips` went into the hub's
+tree as `salt://halite/bin/halite-node-fips`. The state
+`halite.node-upgrade` had two parts. A `file.managed` of
+`/usr/local/bin/halite-node-fips` from that source, mode `0755`. And a
+`cmd.run` of `systemd-run --on-active=30 --unit=halite-node-restart
+systemctl restart halite-node`, with `onchanges` on the file. This is the
+deferred restart of chapter 36 and of `contrib/examples/tree`.
+
+- `--test` reported both states as `would be` changed (`Result: None`).
+- The apply returned at once (20:08:50 UTC). The binary was `updated: its
+  contents from salt://halite/bin/halite-node-fips`, in 71 ms. The restart
+  command `ran`. The result was `Succeeded: 2 (changed=2)`.
+- `halite-node-restart.service` ran at 20:09:59, 69 seconds later. The
+  agent's `ActiveEnterTimestamp` moved to 20:09:59, and its `MainPID`
+  changed. `/proc/<pid>/exe` was `/usr/local/bin/halite-node-fips`, whose
+  sha256 now began `ca1cc52a`, the build's. `GODEBUG=fips140=on` was still
+  set.
+- `manage.versions` gave `mismatched: []`, and `test.version` gave
+  `0.2.0-58-g17c55da34526`. A second apply reported the binary already in
+  the requested state, and the restart was skipped (`none of its onchanges
+  requisites reported changes`). `grains.item` still gave `fips_mode` True.
+  The journal at priority `err` had 0 lines for `halite-*`.
+
+So the binary a FIPS deployment runs was replaced, and the agent restarted
+on it, by halite's own state, with the job returning before the restart.
+
+**The move out of FIPS mode, with halite running.** Before it, the hub's,
+the node's and the API's `doctor` each passed the FIPS row. In
+`/etc/default/grub.d/99-fips.cfg`, `fips=1` was changed to `fips=0`, then
+`update-grub` was run (6 entries carried `fips=0`), then `systemctl
+reboot`. Afterwards the kernel was the same 5.15.0-1121-aws-fips, with
+`fips=0` on the command line and `fips_enabled` **0**. With no action by
+anyone:
+
+- All three units were enabled and active on their `-fips` executables, still
+  with `GODEBUG=fips140=on`. `version` still said `fips mode on, module
+  v1.0.0, self-tests passed`, because the Go module's mode is the process's
+  own and not the kernel's. The journal at priority `err` had 0 lines for
+  `halite-*`.
+- The node was `up`. `grains.item` gave `fips_mode` **False**, while
+  `fips_build` and `fips_enabled` stayed True.
+- Every `doctor` changed to **warn**: `this is a FIPS build (module v1.0.0)
+  and the kernel is not in FIPS mode`. The counts were hub 7 pass, 1 warn, 1
+  skip; node 11 pass, 1 warn, 2 skip; API 2 pass, 2 warn. The ordinary
+  `halite-node` changed to **pass** (`neither the kernel nor this build is in
+  FIPS mode`).
+- The API answered `ready`. A login and `POST /v1/run` returned 200 with
+  `fips_mode` false, over TLSv1.3 and h2.
+- **Pro followed the kernel too.** `pro status` reported `fips-updates` as
+  `disabled`, although the FIPS kernel, `openssl-fips-module-3` and
+  `ubuntu-fips-userspace` were still installed. This bears on SPEC 14.1's
+  statement that `fips_mode` also reads Pro's state (issue 840).
+
+So the grain and `doctor` followed the kernel in both directions, into FIPS
+mode (the two subsections above) and out of it. The running FIPS processes
+kept their own mode and said so.
+
+**What this closes.** The last two items on issue 306 that wanted machines:
+an upgrade by a state, and a move out of FIPS mode. A node on another host
+than the hub was run in the 2026-11-06 and 2026-11-23 `fips-updates` runs,
+though not in this mode change. The three questions the runs left for a
+person (Ed25519 under `fips140=on`, the operator CLI's `localhost` default,
+and SPEC 14.1's Pro clause) are issue 840.
+
+**Teardown.** `pro detach`, then the instance was terminated. Afterwards it
+was `terminated`. No volume with any of the day's run tags remained, and no
+instance from these runs was left.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
@@ -49752,7 +49904,6 @@ read the record. The old read path failed all ten reads with a sharing
 violation. The new read path passed all ten reads. Each job used its own
 Windows Server 2022 runner and ran the test under the standard CI account.
 [File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
-
 ### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
 
 Issue 810, suspected while revising the issue 765 proposal and filed as
@@ -49813,6 +49964,307 @@ its job's 15-minute default TTL still succeeds on a late return, while
 the job it sent reads `partial`. Whether a step's `timeout` should set its
 job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
 is the second question issue 810 asks and is not answered here.
+### 5.716 A state job's `pillarenv` was carried to the node and ignored (2026-11-23)
+
+Issue 826, the sibling of 5.712, which recorded it as not fixed there. A
+`salt.state`, `salt.sls` or `salt.highstate` orchestration step's
+`pillarenv:`, and `halite-hub run <target> state.apply pillarenv=<env>`,
+put the environment in the job as the keyword argument `pillarenv`.
+Nothing in `cmd/halite-node` read it. The node compiled its own pillar
+environment, rendered the state with that, and reported success.
+
+**Seen.** `TestAStateJobsPillarenvCompilesThatRunsPillarFromIt`, real
+binaries, a hub with five pillar environments and a node whose own
+`pillarenv` is `base`: with `pillarenv=other` the marker the state writes
+held `from-base none`, the same as a run without one.
+
+**What Salt does** (3008.x, `salt/modules/state.py`, `sls` and its
+siblings, and `salt/state.py`, `State._gather_pillar`; read, not run): the
+argument replaces the agent's `pillarenv` for that run, and the pillar is
+compiled again on the Salt server for that environment alone, with any
+`pillar=` override merged over it. That server does not limit which
+environment an agent may name.
+
+**The change.** The node asks the hub for the named environment's pillar
+for that run, with `AllEnvs` off. No protocol change: `/v1/pillar` has
+always carried an environment, and this is the same request a node with
+that `pillarenv` in its configuration makes. A node working from its own
+roots compiles that environment from them, on a copy, so its own
+environment is unchanged. A `pillar=` override is merged over the named
+environment's pillar, as in Salt. Only state functions: to an execution
+function `pillarenv` is an ordinary keyword argument.
+
+What it deliberately does not do:
+
+- **The named environment's pillar is not the node's for quiesce**
+  (5.703). The run compiles the node's own pillar first, through
+  `compilePillarOrErr`, the one place quiesce is recorded, and checks
+  `quiesceAfterPillar` against it; only then is the named environment's
+  pillar fetched, by a path that records nothing. So an environment whose
+  pillar says `quiesce: true` neither quiesces the node nor writes
+  `pillar-quiesce.json`, and one saying `quiesce: false` cannot lift a
+  quiesce the node's own pillar set. That costs a second pillar compile on
+  the hub for each such run, which is the price of not letting a job pick
+  the pillar that decides whether it may run.
+- **A job cannot name an environment the node may not use.** The hub
+  enforces nothing here: `pillarFor` checks that the certificate's identity
+  is the one asked about and compiles whatever environment the request
+  names, so any holder of a node's certificate could already ask for any
+  environment's pillar, as Salt's server allows. What a node is targeted
+  with in that environment's top file is still decided by the hub; a job
+  cannot get another node's pillar. The node's own control is
+  `env_allowlist` and `env_denylist` (SPEC 28.3, 5.551), which it applies
+  to its configured `pillarenv` at start and to a job's `saltenv`; it now
+  applies them to a job's `pillarenv` too, at admission and again in the
+  run. Without the check, a node denied `secret` in its configuration
+  would have read `secret`'s pillar for any job that asked. Under
+  `require_job_signature` the argument is one of the signed keyword
+  arguments, so a hub cannot add or change it (`internal/jobsign`; read,
+  not run with `pillarenv`).
+- **Anything but a string is refused** at admission, before the acceptance
+  record, as a non-string `pillar` override is. An empty string or null is
+  no `pillarenv`, and the run has the node's own pillar; in Salt an
+  explicit null would merge every environment, which is not copied.
+- **Agentless mode refuses it.** `halite-hub ssh` compiles one pillar
+  before the run (the hub's `pillarenv`, 5.288) and sends it with the job;
+  the node has no other to give, so a job naming a `pillarenv` fails
+  rather than running with that one. Unit test only.
+
+**A second gap on the same path.** A node whose first pillar probe failed
+for some reason other than "this hub compiles no pillar", and which later
+learns that the hub compiles none, compiles from its own roots inside the
+fetcher closure built at connect. That closure compiled the agent's own
+environment whatever it was asked for, so a job's `pillarenv`, and a job's
+`saltenv` (which moves the pillar environment, `adoptJobEnvironment`),
+were ignored on that path. It now compiles the environment asked for.
+Read, not run: `TestAStateJobsPillarenvReachesTheNodesOwnRootsOnAHubWithoutPillar`
+reaches the node's own roots through the probe, where `hubPillar` is never
+set, and breaking the closure back left it passing.
+
+**Demonstrated.** Both real-binary tests pass. Against the hub: the named
+environment's value and a key only it has appear and the node's own value
+does not; a `pillar=` override is merged over the named environment; the
+next plain run has the node's own pillar back; `pillarenv=loud` renders
+`quiesce=True` as data with no record written and no quiesce logged;
+`pillarenv=secret` on a node that denies it is refused with
+`excluded by env_denylist`; and `pillarenv=calm`, whose pillar says
+`quiesce: false`, on a node whose own pillar has just quiesced it, fails
+with the quiesce from `quiesceAfterPillar`. On a hub that compiles no
+pillar, the named environment comes from the node's own roots. Broken on
+purpose, each failed: the run's pillar taken from `compilePillarOrErr` (the
+defect, `from-base`); the named environment's pillar recorded for quiesce
+(`pillarenv=loud` left the record); the named environment compiled in
+place of the node's own before the quiesce check (`calm` ran on a
+quiesced node); `checkEnvPermitted` given `base` instead of the job's
+environment (`secret` was applied, and two unit cases admitted); the
+admission check removed (all four unit cases admitted); and the local
+compile left on the node's own environment (both no-hub-pillar tests).
+
+**Not covered.**
+
+- Run on the dev host only (FreeBSD, through its Linux compatibility
+  layer), with a hub and a node over loopback. No lab machine, no relay,
+  no signed job carrying `pillarenv`, no orchestration step (the step
+  sends the same keyword argument; read, not run), and no API-submitted
+  job.
+- A hub outage during such a run answers from the last known good pillar
+  for that environment, if the node keeps one and has fetched that
+  environment before; not run.
+- `pillar.refresh`, or anything else calling `RecompilePillar` during the
+  run, gets the node's own pillar, not the named environment's.
+- `halite-node state apply pillarenv=...` on the command line is unchanged;
+  `--pillarenv` is the flag there.
+- `pillarenv_from_saltenv` is not read, here or anywhere.
+### 5.717 `runner state.orchestrate` and the API still gave up on a run after thirty seconds (2026-11-23)
+
+Issue 822, the rest of 5.713. Two more callers made the call `orch run`
+had stopped making, and waited for the outcome on one request bounded at
+thirty seconds: `halite-hub runner state.orchestrate` (and `state.orch`,
+`state.orch_resume`) through the operator client, and halite-api, whose
+own hub client has `Timeout: 30 * time.Second` (`cmd/halite-api/serve.go`).
+The API reaches the orchestration runners from `POST /v1/orch` and from
+`/v1/run`'s `runner` client. A run longer than that was reported in the
+terminal as `context deadline exceeded`, exit 1, and to an API caller as
+`502 calling the runner failed at the hub`, while it went on on the hub.
+
+The pair here is the same as 5.713's, the client's bound on a request
+against the length of the work, and there was a second one behind it:
+three callers that each had to decide which runner calls to wait for. So
+the waiting is one function now, `transport.Client.AwaitRunnerReturn`,
+moved out of `cmd/halite-hub/orch.go` unchanged, with the list of runners
+that take `async` beside it (`transport.WaitsForRunner`). The hub's test
+`TestTheRunnersThatTakeAsyncAreTheOnesCallersWaitFor` holds that list to
+the runners whose signature declares `async`, both ways.
+
+**`halite-hub runner`: the orchestration runners only.** A runner without
+`async` cannot answer before its work is done, and the hub refuses an
+`async` it does not declare, because keyword arguments are bound strictly.
+Waiting for any runner would need a second mechanism on the hub, for work
+that is short today. A survey of the registry found one other runner that
+can outlast the client: `event.listen`, whose `timeout` the caller sets,
+with a default of thirty seconds, the client's own bound. That one is a
+wait the operator asked for and is left as it is; nothing here measured
+it. The command starts the run `async`, says the run's jid on stderr as
+`orch run` does, and polls the call's job. On success it prints the
+runner's answer as it always has, now the finished run; a failure prints
+`state.orchestrate: orchestration <jid> failed; ...` and exits 1; a wait
+that does not see the outcome exits 3, with `orch run`'s messages. An
+operator who names `async` gets that and no wait.
+
+**The API waits by polling, bounded by the caller's request.** Two
+choices were open: pass `async` and return the jid for the client to poll,
+or wait. Returning the jid would change the documented contract of
+`/v1/run` (SPEC 22.1: "Synchronous execution") and of `POST /v1/orch`,
+and every existing caller with it; waiting changes nothing a caller sees
+except that a long run now succeeds. The API's server has no write
+timeout (`Serve`, for the event stream), so the caller's own request is
+the only bound, and a caller that closes it stops the waiting, not the
+run. `callRunner` is used for every runner call the API makes, and does
+nothing for a runner not on the list. It polls as the API's own
+certificate, which started the call; the caller was authorized before
+the call was made. A failed run is `422` with its timeline, as before,
+and an error naming it, because the job keeps no sentence about why (as in
+5.713). A wait that does not see the outcome is `502` naming the run and
+`GET /v1/orch/<jid>`, where it was "failed at the hub". A caller that puts
+`"async": true` in `kwarg` gets the started run at once, as it already
+could. `runner_async` waits as `runner` does, as it already did.
+
+**Demonstrated.** `cmd/halite-hub/orch_wait_test.go` drives the real
+command against a real hub with the operator client cut to one second,
+as 5.713's tests do. On `main` at `5f5ae87c` with only the tests added,
+`runner state.orchestrate sls=gate` and `runner state.orch` both exited 1
+after 1.01s with `Post "https://localhost:…/v1/runners": context deadline
+exceeded`, and a run that fails at three seconds exited 1 the same way,
+naming no run. With the change they exit 0 after about 3s with
+`"state": "complete"`, and 1 naming the failed run; `async=true` answers at
+once with `"state": "running"`. `internal/hub/api_orch_wait_test.go`
+puts a real `api.Server` in front of this package's hub with the API's
+hub client cut to one second (its `Timeout` field, set by the test: the
+API builds its client from a struct, so no environment variable is
+needed). On `main` `POST /v1/orch` and `/v1/run` with `state.orchestrate`
+and `state.orch` answered 502 after 1.00s, and the failing run 502 where
+422 was wanted. With the change they answer 200 after about 3.02s with
+the finished run, and the failing run 422 with its timeline.
+
+Broken on purpose, twice. With `WaitsForRunner` answering false, every
+one of those tests failed again exactly as on `main`. With `state.orch`
+taken off the list, the agreement test failed naming it.
+
+**Not covered.** No API caller that closes its request mid-wait was
+tested: the run should go on and the API log a `502` nobody reads, and
+that is read, not run. Nor a hub restart or a hub that stops answering
+under the API, which is the same function as `orch run`'s and tested
+there, but not through the API. No run longer than a few seconds, and no
+real thirty-second client. Run on the FreeBSD development host only,
+through the agent's Linux shell. **An API or operator machine upgraded
+before its hub** sends `async` to a hub that refuses it, so every
+orchestration through the API, and `runner state.orchestrate`, fails
+before anything runs: upgrade the hub first, as for 5.713; read, not run
+against an old hub. The added `async` is not seen by the API's own policy
+check, which is made before it is added, so a role with `deny_kwargs:
+['async']` is not refused by the API for it; whether the hub's delegated
+check refuses it was not tried.
+### 5.718 atomicfile replaced a file with MoveFileEx, which no reader can share (2026-11-23)
+
+Issue 799, `internal/atomicfile`, Windows. 5.619 records two rounds of
+retrying a replace that a concurrent read refused. After the second,
+`TestAReplaceAndAReadDoNotBlockEachOther` still failed on the windows-2022
+race leg: `rename …\.job.json.NNN …\job.json: Access is denied.`
+
+**The cause.** `Rename` was `os.Rename`, which is `MoveFileEx` with
+`MOVEFILE_REPLACE_EXISTING`. That replace is refused while any handle on
+the destination is open, also a handle that shares delete, as `Read`'s
+does. 5.619 measured that and did not find which step refuses. The probe
+here shows it with nothing racing: `Read`'s open held on the destination,
+and one `MoveFileEx` onto it, fails with "Access is denied." every time.
+So the retry had to wait for each reader to close, and on a loaded runner
+the window between two reads was sometimes longer than the retry's quiet
+tries.
+
+**Two paths that should agree.** `os.Root.Rename`, which `WriteIn` uses,
+already asked Windows for POSIX rename semantics. Go's `Renameat` uses
+`FileRenameInformationEx` with `FILE_RENAME_POSIX_SEMANTICS` and falls back
+when that is refused. So `WriteIn` never had this race, and `Write` did.
+
+**The change.** `Rename` now opens the source for delete, sharing
+everything, and calls `SetFileInformationByHandle` with `FileRenameInfoEx`
+and `FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS`. The old
+file leaves the directory at once. A reader that shares delete keeps
+reading the file it opened. `x/sys/windows` has the class and the flags,
+but not the `FILE_RENAME_INFO` structure, so the package declares it.
+`FILE_RENAME_IGNORE_READONLY_ATTRIBUTE` is not set, so a read-only
+destination is still refused, as `MoveFileEx` refused it. The retry and
+`heldOpen` are unchanged: a reader that does not share delete still
+refuses the replace, and the retry still waits for it.
+
+**The fallback.** On a FAT32 volume, `FileRenameInfoEx` with the POSIX
+flag fails with `ERROR_INVALID_PARAMETER` (87), and the destination is not
+changed. Then `Rename` uses `os.Rename`, exactly as before, with the same
+retries. It also falls back on `ERROR_INVALID_FUNCTION` and
+`ERROR_NOT_SUPPORTED`; nothing here returned those. It decides again on
+each call and remembers nothing, because one process can write to more
+than one filesystem. A directory also goes through `os.Rename`, because
+`internal/extension` and `internal/gitfs` move directories and were
+written against what `MoveFileEx` does with them. SPEC 27.1's oldest
+Windows is Server 2019, and the flag needs Windows 10 1607 or Server
+2016, so on NTFS the fallback should not be needed.
+
+**Shown.** All on GitHub-hosted windows-2022 runners (Windows Server
+2022, NTFS) in draft PR 831 ("DO NOT MERGE"), run by the runner's
+administrator account, not the standard account of the CI legs. Each
+row is 20 rounds of 200 replaces against 200 concurrent reads, 4,000 of
+each. "Raw" means one attempt and no retry. The two columns are the plain
+and `-race` legs.
+
+| Case | Before (main) | After |
+|---|---|---|
+| raw `MoveFileEx` vs raw shared read: failed replaces | 6, 39 | 12, 39 (unchanged code: the control) |
+| raw POSIX replace vs raw shared read: failed replaces / reads | not in the build | 0 / 0, 0 / 0 |
+| `Rename` vs raw shared read: failed reads (sharing violation) | 7, 12 | 0, 0 |
+| `Write` vs `Read`: failures | 0, 0 | 0, 0 |
+| `Write` vs `os.ReadFile`: failed reads | 10, 20 | 7, 18 |
+
+Before: runs 45250720068 (stress) and 45251613026 (the new test alone on
+the old code). After: run 45252360808.
+
+Read the table with care. `Write` against `Read` failed nowhere in 4,000,
+before or after, so this run did not reproduce the issue's sighting, and
+it does not show that the fix removes it. What it does show is that the
+race under the retry is gone. Before, the replace lost to a held reader
+in 6 and 39 of 4,000 attempts, and the reader lost to a replace in 7 and
+12. After, both are 0. The retry no longer has to win anything against a
+reader that shares delete.
+
+`TestAReplaceDoesNotWaitForAReaderThatSharesDelete` holds a shared reader
+open for the whole replace. On the old code it failed on both legs after
+2.008s and 2.025s with "Access is denied." (run 45251613026). With the fix
+it passes in under 10ms on both legs, and the reader still reads the old
+contents. `TestAFallbackReplaceLandsWhereThereIsNoPOSIXRename` makes the
+POSIX call return `ERROR_INVALID_PARAMETER`. The replace must still land,
+and it does. With `ERROR_INVALID_PARAMETER` taken out of the fallback on
+purpose, that test failed with "The parameter is incorrect." on both
+legs, and so did every write on the FAT32 volume, the first one too
+(run 45253099681). So without the fallback, nothing could be written on
+FAT at all. On the FAT32 volume, a `Write` and then a replace
+through the new code both landed, and the file read back as the new
+contents.
+
+**Not fixed: readers that do not share delete.** `os.ReadFile` does not
+ask for `FILE_SHARE_DELETE`. During the POSIX rename, the source is open
+for delete, so an `os.ReadFile` of the new name is refused with a sharing
+violation. Under `MoveFileEx` it was refused too. The table's last row is
+that reader, before and after. Code that reads a file which `atomicfile`
+replaces must read it with `atomicfile.Read`, as 5.714 did for the
+orchestration store. `MineStore.Get` (`internal/hub/mine.go`) still uses
+`os.ReadFile` on a file that `Write` replaces. No sweep of the other
+`os.ReadFile` calls was done.
+
+**Not verified.** No network share, ReFS or Windows Server 2019 or 2025
+was run. The fallback ran on FAT32 only. The stress ran as an
+administrator and not as the CI legs' standard account. The issue's
+`Write` against `Read` failure did not happen in any run, before or after,
+so this is no evidence that it cannot happen. No antivirus held the file.
+
 ### 5.716 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
 
 Issue 812, found by 5.708's lab run on the Alpine row (Alpine 3.24, OpenRC)
@@ -50135,7 +50587,6 @@ on their defaults. OpenRC on anything but Alpine. A sysvinit agent that
 crashes while a job is running. The probe on a systemd host with OpenRC
 installed, in a chroot, or in a container: those are still fake roots
 only. The revoked-node retry under systemd.
-
 
 
 ## 6. Everything else not started
