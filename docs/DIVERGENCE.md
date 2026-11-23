@@ -48487,6 +48487,34 @@ changed both sides. It now spells `halite-tree-v1\x00` out, and fails.
 - **The traced-job trap** of the proposal's 2.8 (a traced job naming
   another environment falling back to local roots) is still a reading,
   not a run. Verification does not depend on it: both branches verify.
+### 5.706 A documentation change under docs/ ran every CI leg (2026-11-22)
+
+ci.yml's *what changed* job runs two legs, `policy` and the Linux `test`,
+for a change that touches only Markdown, and every leg otherwise. Its
+pattern was `^[^/]*\.md$|^docs/[^/]*\.md$`: Markdown at the top of the
+tree and directly in `docs/`. A file one level deeper -- the whole
+handbook, `docs/handbook/*.md`, and the proposals and audits -- read as
+code. PR 801, which changed `docs/DIVERGENCE.md` and two files under
+`docs/proposals/`, logged `code=true` and ran every platform, the race
+detector, FIPS and the Salt differential.
+
+The second pattern is now `^docs/.*\.md$`. Nothing under `docs/` is
+compiled in (no `go:embed` reads it), and the two legs that still run are
+the ones that read documentation: docsaudit and specaudit in the Linux
+test, the lexicon in `policy`. The one non-Markdown file there,
+`docs/handbook/CONTENTS`, stays code, as do `.github/**/*.md` and Markdown
+elsewhere in the tree.
+
+`TestADocumentationChangeRunsOnlyTheDocLegs` (internal/buildpolicy) reads
+the pattern out of the workflow and holds it to thirteen paths in both
+directions; against the old pattern it fails on the handbook, proposal and
+audit paths. Nothing tested the pattern before, which is how it stayed
+narrow.
+
+**Not verified:** this change's own CI run is a workflow change, so it runs
+every leg; the first documentation-only PR after it is the check that it
+skips them.
+
 ### 5.707 A resume after a hub crash ran the steps that had already run (2026-11-22)
 
 Found by reading while writing the proposal for issue 765 (PR 801), filed
@@ -48654,34 +48682,6 @@ Each part was broken on purpose:
 
 
 
-
-### 5.706 A documentation change under docs/ ran every CI leg (2026-11-22)
-
-ci.yml's *what changed* job runs two legs, `policy` and the Linux `test`,
-for a change that touches only Markdown, and every leg otherwise. Its
-pattern was `^[^/]*\.md$|^docs/[^/]*\.md$`: Markdown at the top of the
-tree and directly in `docs/`. A file one level deeper -- the whole
-handbook, `docs/handbook/*.md`, and the proposals and audits -- read as
-code. PR 801, which changed `docs/DIVERGENCE.md` and two files under
-`docs/proposals/`, logged `code=true` and ran every platform, the race
-detector, FIPS and the Salt differential.
-
-The second pattern is now `^docs/.*\.md$`. Nothing under `docs/` is
-compiled in (no `go:embed` reads it), and the two legs that still run are
-the ones that read documentation: docsaudit and specaudit in the Linux
-test, the lexicon in `policy`. The one non-Markdown file there,
-`docs/handbook/CONTENTS`, stays code, as do `.github/**/*.md` and Markdown
-elsewhere in the tree.
-
-`TestADocumentationChangeRunsOnlyTheDocLegs` (internal/buildpolicy) reads
-the pattern out of the workflow and holds it to thirteen paths in both
-directions; against the old pattern it fails on the handbook, proposal and
-audit paths. Nothing tested the pattern before, which is how it stayed
-narrow.
-
-**Not verified:** this change's own CI run is a workflow change, so it runs
-every leg; the first documentation-only PR after it is the check that it
-skips them.
 
 ## 6. Everything else not started
 
