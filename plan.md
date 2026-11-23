@@ -2216,9 +2216,14 @@ down to the machine or the link each one still wants.
     (#306, DIVERGENCE 5.282 and 5.587). The `-fips` binaries have run
     on Ubuntu FIPS kernels — a hub, an API and a node, enrolled by
     token, under the shipped systemd drop-ins, on arm64 with `main`.
-    What is left wants machines: amd64 `main` (no amd64 FIPS host is
-    left), Ubuntu Pro's certified `fips` kernel, a reboot and a start at
-    boot, TOTP, an upgrade, and a release archive built from `main`.
+    The 2026-11-23 runs added amd64 `main` in RHEL's FIPS mode, and on
+    Ubuntu Pro `fips-updates` arm64: the v0.2.0 archive, `make fips`, an
+    upgrade by hand from v0.2.0 to `main`, a reboot with start at boot,
+    and TOTP refused under FIPS. What is left wants machines: Ubuntu
+    Pro's certified `fips` kernel, which Pro refuses on any host that
+    ever had `fips-updates`, so it needs a fresh instance; a host moving
+    into or out of FIPS mode with halite running; and `main` on amd64
+    on an Ubuntu FIPS kernel.
     Three of the questions those runs opened want a person instead, and
     each is the shape CLAUDE.md warns about — two things that must
     agree and do not: the hub accepts Ed25519 client signatures under
