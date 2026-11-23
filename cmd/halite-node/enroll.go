@@ -978,7 +978,14 @@ func (n *node) useHubPillar(client *transport.Client) {
 					n.log.Warn("the hub compiles no pillar; this node will compile its own",
 						"error", err.Error())
 				})
-				return n.compileLocalPillar()
+				// The environment asked for, not the one this closure's
+				// node was started in: n is the agent, and a job asking
+				// for another pillarenv runs on a copy of it that the
+				// closure never sees. It compiled the agent's own
+				// environment, so a job's pillarenv (and its saltenv,
+				// which moves the pillar environment too) was ignored on
+				// a hub that compiles no pillar. DIVERGENCE 5.716.
+				return n.compileLocalPillarIn(env, all)
 			}
 			if transport.Unreachable(err) {
 				if m, ok := n.lastKnownGoodPillar(env, all); ok {

@@ -374,6 +374,69 @@ func (n *node) mergePillarOverride(p, override *value.Map) *value.Map {
 	return merged
 }
 
+// jobPillarEnv reads a state job's `pillarenv` keyword argument: the
+// pillar environment Salt's state functions compile that run's pillar
+// from, which a `salt.state` orchestration step's `pillarenv:` and
+// `halite-hub run ... pillarenv=...` both send. Empty when the job names
+// none, and the run then has the node's own pillar.
+//
+// Nothing read it before issue 826, so a run asked for another pillar
+// environment rendered with the node's own and reported success.
+// DIVERGENCE 5.716.
+//
+// The environment is held to env_allowlist and env_denylist, as the
+// node's configured pillarenv is at start and a job's saltenv is in
+// adoptJobEnvironment. The hub would compile any environment a node
+// asks for -- it checks the identity in the request and not the
+// environment -- so the node's own controls are the only thing standing
+// between a job and an environment's pillar, and a job must not get past
+// them by naming it here rather than in the node's configuration.
+//
+// Refused rather than ignored in agentless mode, where the pillar is the
+// one the hub compiled before the run and sent with it.
+func (n *node) jobPillarEnv(j *job.Job) (string, error) {
+	raw, present := j.Kwarg["pillarenv"]
+	if !present || raw == nil {
+		return "", nil
+	}
+	env, ok := raw.(string)
+	if !ok {
+		return "", &job.Refusal{
+			Reason: job.ReasonMalforme,
+			Detail: fmt.Sprintf("the job's pillarenv is %s %v, and a pillar environment is named by a string; "+
+				"refused rather than running with this node's own pillar", value.TypeName(value.FromJSON(raw)), raw),
+		}
+	}
+	if env == "" {
+		return "", nil
+	}
+	// Not job.Refusal's "malformed": the job is well formed, and this
+	// node's configuration is what will not have it.
+	if err := checkEnvPermitted(n.cfg, env); err != nil {
+		return "", fmt.Errorf("the job's pillarenv: %w", err)
+	}
+	if n.pillarPushed {
+		return "", fmt.Errorf("the job asks for pillarenv=%s, and an agentless run has only the pillar the hub "+
+			"compiled and sent with it; refused rather than running with that one", env)
+	}
+	return env, nil
+}
+
+// runPillarIn is a run's pillar from the named pillar environment: that
+// environment alone, as Salt compiles a pillar with pillarenv set, and
+// asked of the hub when there is one, as every pillar is.
+//
+// Not through compilePillarOrErr, which is the one place a pillar's
+// quiesce is recorded: this is the job's pillar and not the node's, and
+// the environment is the job's choice, so its pillar can neither quiesce
+// the node nor lift a quiesce the node's own pillar set (5.703).
+func (n *node) runPillarIn(env string) (*value.Map, error) {
+	if n.hubPillar != nil {
+		return n.hubPillar(env, false)
+	}
+	return n.compileLocalPillarIn(env, false)
+}
+
 // runStateJob compiles and, for the applying forms, runs.
 func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 	// A beacon with `disable_during_state_run` is suppressed for as
@@ -386,12 +449,27 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 	if err != nil {
 		return outcome{}, err
 	}
+	pillarEnv, err := n.jobPillarEnv(j)
+	if err != nil {
+		return outcome{}, err
+	}
+	// The node's own pillar first, even for a run that will use another
+	// environment's: it is what says whether the node is quiesced, and a
+	// job admitted before the node read a newly quiescing pillar must
+	// still be stopped by it.
 	p, err := n.compilePillarOrErr()
 	if err != nil {
 		return outcome{}, err
 	}
 	if err := n.quiesceAfterPillar(j); err != nil {
 		return outcome{}, err
+	}
+	if pillarEnv != "" && (pillarEnv != n.pillarEnv || n.pillarAll) {
+		n.log.Info("this run's pillar is compiled from the pillar environment the job names",
+			"jid", string(j.JID), "fun", j.Fun, "pillarenv", pillarEnv)
+		if p, err = n.runPillarIn(pillarEnv); err != nil {
+			return outcome{}, err
+		}
 	}
 	// After both of the above, and not inside compilePillarOrErr, which
 	// is the one place a pillar's quiesce is recorded: an override is
@@ -626,6 +704,11 @@ func (e *executor) Offer(j *job.Job) error {
 	// argument and is the module's to judge.
 	if _, isState := stateFunction(j.Fun); isState {
 		if _, err := jobPillarOverride(j); err != nil {
+			e.node.metrics.countRefusal(err)
+			return err
+		}
+		// And a pillarenv it will not read from, the same way.
+		if _, err := e.node.jobPillarEnv(j); err != nil {
 			e.node.metrics.countRefusal(err)
 			return err
 		}

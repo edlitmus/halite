@@ -49752,7 +49752,6 @@ read the record. The old read path failed all ten reads with a sharing
 violation. The new read path passed all ten reads. Each job used its own
 Windows Server 2022 runner and ran the test under the standard CI account.
 [File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
-
 ### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
 
 Issue 810, suspected while revising the issue 765 proposal and filed as
@@ -49813,6 +49812,119 @@ its job's 15-minute default TTL still succeeds on a late return, while
 the job it sent reads `partial`. Whether a step's `timeout` should set its
 job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
 is the second question issue 810 asks and is not answered here.
+### 5.716 A state job's `pillarenv` was carried to the node and ignored (2026-11-23)
+
+Issue 826, the sibling of 5.712, which recorded it as not fixed there. A
+`salt.state`, `salt.sls` or `salt.highstate` orchestration step's
+`pillarenv:`, and `halite-hub run <target> state.apply pillarenv=<env>`,
+put the environment in the job as the keyword argument `pillarenv`.
+Nothing in `cmd/halite-node` read it. The node compiled its own pillar
+environment, rendered the state with that, and reported success.
+
+**Seen.** `TestAStateJobsPillarenvCompilesThatRunsPillarFromIt`, real
+binaries, a hub with five pillar environments and a node whose own
+`pillarenv` is `base`: with `pillarenv=other` the marker the state writes
+held `from-base none`, the same as a run without one.
+
+**What Salt does** (3008.x, `salt/modules/state.py`, `sls` and its
+siblings, and `salt/state.py`, `State._gather_pillar`; read, not run): the
+argument replaces the agent's `pillarenv` for that run, and the pillar is
+compiled again on the Salt server for that environment alone, with any
+`pillar=` override merged over it. That server does not limit which
+environment an agent may name.
+
+**The change.** The node asks the hub for the named environment's pillar
+for that run, with `AllEnvs` off. No protocol change: `/v1/pillar` has
+always carried an environment, and this is the same request a node with
+that `pillarenv` in its configuration makes. A node working from its own
+roots compiles that environment from them, on a copy, so its own
+environment is unchanged. A `pillar=` override is merged over the named
+environment's pillar, as in Salt. Only state functions: to an execution
+function `pillarenv` is an ordinary keyword argument.
+
+What it deliberately does not do:
+
+- **The named environment's pillar is not the node's for quiesce**
+  (5.703). The run compiles the node's own pillar first, through
+  `compilePillarOrErr`, the one place quiesce is recorded, and checks
+  `quiesceAfterPillar` against it; only then is the named environment's
+  pillar fetched, by a path that records nothing. So an environment whose
+  pillar says `quiesce: true` neither quiesces the node nor writes
+  `pillar-quiesce.json`, and one saying `quiesce: false` cannot lift a
+  quiesce the node's own pillar set. That costs a second pillar compile on
+  the hub for each such run, which is the price of not letting a job pick
+  the pillar that decides whether it may run.
+- **A job cannot name an environment the node may not use.** The hub
+  enforces nothing here: `pillarFor` checks that the certificate's identity
+  is the one asked about and compiles whatever environment the request
+  names, so any holder of a node's certificate could already ask for any
+  environment's pillar, as Salt's server allows. What a node is targeted
+  with in that environment's top file is still decided by the hub; a job
+  cannot get another node's pillar. The node's own control is
+  `env_allowlist` and `env_denylist` (SPEC 28.3, 5.551), which it applies
+  to its configured `pillarenv` at start and to a job's `saltenv`; it now
+  applies them to a job's `pillarenv` too, at admission and again in the
+  run. Without the check, a node denied `secret` in its configuration
+  would have read `secret`'s pillar for any job that asked. Under
+  `require_job_signature` the argument is one of the signed keyword
+  arguments, so a hub cannot add or change it (`internal/jobsign`; read,
+  not run with `pillarenv`).
+- **Anything but a string is refused** at admission, before the acceptance
+  record, as a non-string `pillar` override is. An empty string or null is
+  no `pillarenv`, and the run has the node's own pillar; in Salt an
+  explicit null would merge every environment, which is not copied.
+- **Agentless mode refuses it.** `halite-hub ssh` compiles one pillar
+  before the run (the hub's `pillarenv`, 5.288) and sends it with the job;
+  the node has no other to give, so a job naming a `pillarenv` fails
+  rather than running with that one. Unit test only.
+
+**A second gap on the same path.** A node whose first pillar probe failed
+for some reason other than "this hub compiles no pillar", and which later
+learns that the hub compiles none, compiles from its own roots inside the
+fetcher closure built at connect. That closure compiled the agent's own
+environment whatever it was asked for, so a job's `pillarenv`, and a job's
+`saltenv` (which moves the pillar environment, `adoptJobEnvironment`),
+were ignored on that path. It now compiles the environment asked for.
+Read, not run: `TestAStateJobsPillarenvReachesTheNodesOwnRootsOnAHubWithoutPillar`
+reaches the node's own roots through the probe, where `hubPillar` is never
+set, and breaking the closure back left it passing.
+
+**Demonstrated.** Both real-binary tests pass. Against the hub: the named
+environment's value and a key only it has appear and the node's own value
+does not; a `pillar=` override is merged over the named environment; the
+next plain run has the node's own pillar back; `pillarenv=loud` renders
+`quiesce=True` as data with no record written and no quiesce logged;
+`pillarenv=secret` on a node that denies it is refused with
+`excluded by env_denylist`; and `pillarenv=calm`, whose pillar says
+`quiesce: false`, on a node whose own pillar has just quiesced it, fails
+with the quiesce from `quiesceAfterPillar`. On a hub that compiles no
+pillar, the named environment comes from the node's own roots. Broken on
+purpose, each failed: the run's pillar taken from `compilePillarOrErr` (the
+defect, `from-base`); the named environment's pillar recorded for quiesce
+(`pillarenv=loud` left the record); the named environment compiled in
+place of the node's own before the quiesce check (`calm` ran on a
+quiesced node); `checkEnvPermitted` given `base` instead of the job's
+environment (`secret` was applied, and two unit cases admitted); the
+admission check removed (all four unit cases admitted); and the local
+compile left on the node's own environment (both no-hub-pillar tests).
+
+**Not covered.**
+
+- Run on the dev host only (FreeBSD, through its Linux compatibility
+  layer), with a hub and a node over loopback. No lab machine, no relay,
+  no signed job carrying `pillarenv`, no orchestration step (the step
+  sends the same keyword argument; read, not run), and no API-submitted
+  job.
+- A hub outage during such a run answers from the last known good pillar
+  for that environment, if the node keeps one and has fetched that
+  environment before; not run.
+- `pillar.refresh`, or anything else calling `RecompilePillar` during the
+  run, gets the node's own pillar, not the named environment's.
+- `halite-node state apply pillarenv=...` on the command line is unchanged;
+  `--pillarenv` is the flag there.
+- `pillarenv_from_saltenv` is not read, here or anywhere.
+
+
 
 
 
