@@ -162,6 +162,8 @@ make lab-plan                                     # a plan, changing nothing
 make lab-hosts                                    # the instances in the state, and whether each is ready
 make lab-cidr                                     # the address SSH will be opened to
 make lab-up   LAB_OPEN_HUB_PORT=true              # also the hub port, between the instances
+make lab-up   LAB_INTERNAL_PORTS='[22,2525]'      # further ports, between the instances only
+make lab-up   LAB_USER_DATA='{ubuntu2204="/path/user-data.sh"}'   # boot that row from your user-data
 ```
 
 `LAB_OPEN_HUB_PORT=true` is for a run with a hub on one row and nodes on
@@ -169,6 +171,38 @@ others. Without it the instances can reach each other only by SSH, and the
 install runbooks were run that way, through SSH tunnels (issue 733, item
 9). With it, each instance's own address may reach TCP 4510 (`hub_port`)
 on the others. It opens nothing to any other address.
+
+**Vultr's firewall is not the only one.** The first run with it (DIVERGENCE
+5.706, 2026-11-23) found TCP 4510 still timing out: the Ubuntu image boots
+with `ufw` active and allowing only SSH, so the node saw `dial tcp
+<hub>:4510: i/o timeout` until `ufw allow 4510/tcp` on the hub. Of the rows
+that run, `ubuntu2604`, `debian13` and `alpine` came up with `ufw` active,
+and `rocky9`, `alma8` and `opensuse16` with `firewalld` active;
+`debian13sysv` had neither running. Open the port in the image's own firewall
+on the hub row too. The FreeBSD rows run no packet filter.
+
+`LAB_INTERNAL_PORTS` opens further TCP ports the same way, from each
+instance's own address and from nowhere else: 22 for an agentless run whose
+hub ssh's to another row, a mail or directory port for a client on one row
+and its server on another. 22 is allowed here, where `hub_port` refuses it,
+because between instances is the point; SSH from outside is still the
+operator's alone. **Vultr blocks TCP 25 between instances as well as to the
+internet**: with 25 open in the firewall group and Postfix listening on it, a
+connection from another row never completed, and the same Postfix answered on
+2525 at once. Relay a lab MTA on another port.
+
+`LAB_USER_DATA` gives a Linux row the operator's own user-data in place of the
+lab bootstrap, for a run of cloud-init itself (chapter 31). Such a row has no
+Go, no package list and no ready file, so `lab-test` refuses it, and whatever
+the file holds is in `terraform.tfstate` until `lab-down`: use a short-lived,
+single-use token. FreeBSD rows are refused, because their images run a Vultr
+startup script and not cloud-init. Pass it on every apply while the row
+exists, `lab-repair` included, or the next apply replaces the row with a
+bootstrap host.
+
+**The default region can run out of the plan.** On 2026-11-23 `ewr` refused
+eight of nine instances with `Cannot add instance plan is not available in
+the selected region` and created the ninth. `TF_VAR_region=ord` worked.
 
 `make lab-down` takes `LAB_DISTROS` too, but a subset destroy is not
 supported: `tofu destroy` destroys everything in the state, whichever rows

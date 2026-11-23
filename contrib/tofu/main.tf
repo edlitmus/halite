@@ -58,6 +58,25 @@ resource "vultr_firewall_rule" "hub" {
   notes             = "hub port from ${each.key}"
 }
 
+# The internal_ports, between the lab's own instances, the same way.
+#
+# One rule per instance and port. No rules unless internal_ports names
+# something; variables.tf says what each is for.
+resource "vultr_firewall_rule" "internal" {
+  for_each = {
+    for pair in setproduct(keys(local.selected), var.internal_ports) :
+    "${pair[0]}:${pair[1]}" => { name = pair[0], port = pair[1] }
+  }
+
+  firewall_group_id = vultr_firewall_group.lab.id
+  protocol          = "tcp"
+  ip_type           = "v4"
+  subnet            = vultr_instance.node[each.value.name].main_ip
+  subnet_size       = 32
+  port              = tostring(each.value.port)
+  notes             = "port ${each.value.port} from ${each.value.name}"
+}
+
 # One instance per selected row of the matrix.
 #
 # `activation_email` is off because the mail Vultr would send carries the
@@ -88,7 +107,7 @@ resource "vultr_instance" "node" {
   # instance. Both carry the same rendered script from local.bootstrap;
   # only the route differs, so a row gets exactly one of these and null
   # for the other.
-  user_data = each.value.family == "freebsd" ? null : local.bootstrap[each.key]
+  user_data = each.value.family == "freebsd" ? null : local.first_boot[each.key]
   script_id = each.value.family == "freebsd" ? vultr_startup_script.bootstrap[each.key].id : null
 
   # An edited bootstrap has to mean a rebuilt machine.
@@ -142,8 +161,18 @@ locals {
   }
 }
 
+# What each row boots: the lab bootstrap, or the operator's own user-data
+# for a row named in user_data_files.
+locals {
+  first_boot = {
+    for name, d in local.selected : name => (
+      contains(keys(var.user_data_files), name) ? file(pathexpand(var.user_data_files[name])) : local.bootstrap[name]
+    )
+  }
+}
+
 resource "terraform_data" "bootstrap" {
   for_each = local.selected
 
-  input = local.bootstrap[each.key]
+  input = local.first_boot[each.key]
 }

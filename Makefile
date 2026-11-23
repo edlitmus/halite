@@ -1246,6 +1246,25 @@ LAB_DISTROS ?= []
 # configuration again, and one without it closes the port.
 LAB_OPEN_HUB_PORT ?= false
 
+# Further ports between the instances only, opened the way the hub port is
+# (contrib/tofu/variables.tf says what each run used them for): 22 for an
+# agentless run whose hub ssh's to another row, a mail or directory port for
+# a client on one row and its server on another:
+#
+#	make lab-up LAB_OPEN_HUB_PORT=true LAB_INTERNAL_PORTS='[22,2525]'
+#
+# Give it to lab-repair as well, for the same reason as the hub port.
+LAB_INTERNAL_PORTS ?= []
+
+# Rows that boot the operator's own user-data instead of the lab bootstrap,
+# for a run of cloud-init itself (a row name to a file; Linux rows only):
+#
+#	make lab-up LAB_USER_DATA='{ubuntu2204="/path/to/user-data.sh"}'
+#
+# Pass it on every apply while the row exists, lab-repair included: an apply
+# without it would replace that row with a lab bootstrap host.
+LAB_USER_DATA ?= {}
+
 lab-distros:
 	@echo "rows of the matrix in $(TOFU_DIR)/distros.tf:"
 	@grep -oE '^    [a-z0-9]+ = \{' $(TOFU_DIR)/distros.tf | sed 's/ *= *{//;s/^ */  /'
@@ -1261,7 +1280,9 @@ lab-plan:
 	$(TOFU) -chdir=$(TOFU_DIR) plan -input=false \
 		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
 		-var 'distros=$(LAB_DISTROS)' \
-		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)'
+		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)' \
+		-var 'internal_ports=$(LAB_INTERNAL_PORTS)' \
+		-var 'user_data_files=$(LAB_USER_DATA)'
 
 lab-up:
 	@set -e; \
@@ -1272,7 +1293,9 @@ lab-up:
 	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
 		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
 		-var 'distros=$(LAB_DISTROS)' \
-		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)'
+		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)' \
+		-var 'internal_ports=$(LAB_INTERNAL_PORTS)' \
+		-var 'user_data_files=$(LAB_USER_DATA)'
 	@echo
 	@echo "instances are booting; 'make lab-wait' blocks until they have provisioned."
 	@echo "REMEMBER: 'make lab-down' when you are finished, or they bill until you do."
@@ -1342,7 +1365,9 @@ lab-repair:
 	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
 		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
 		-var 'distros=$(LAB_DISTROS)' \
-		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)'
+		-var 'open_hub_port=$(LAB_OPEN_HUB_PORT)' \
+		-var 'internal_ports=$(LAB_INTERNAL_PORTS)' \
+		-var 'user_data_files=$(LAB_USER_DATA)'
 
 lab-hosts:
 	@$(LAB) hosts $(DISTRO)
