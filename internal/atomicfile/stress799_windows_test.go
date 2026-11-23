@@ -178,6 +178,8 @@ func TestStress799ReplaceAgainstRead(t *testing.T) {
 		// The primitive under the package, with no retry on either side:
 		// how often the race is really met.
 		{"raw MoveFileEx vs raw shared read", func(p string, d []byte) error { return writeOnce(p, d, os.Rename) }, readSharedOnce},
+		// One attempt of the fixed replace, no retry on either side.
+		{"raw replace (POSIX) vs raw shared read", func(p string, d []byte) error { return writeOnce(p, d, replace) }, readSharedOnce},
 		// The package's Rename, no retry on the reader.
 		{"Rename vs raw shared read", func(p string, d []byte) error { return writeOnce(p, d, Rename) }, readSharedOnce},
 		// What callers use: Write and Read, both with their retries.
