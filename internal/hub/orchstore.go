@@ -51,6 +51,10 @@ type OrchRun struct {
 	// carries, and this record is what `orch show` reads -- which never
 	// prints this field. DIVERGENCE 5.201.
 	PillarDigest string `json:"pillar_digest,omitempty"`
+	// PlanDigest identifies the signed plan the run was given (issue
+	// 765), by the SHA-256 of its bytes, and is empty for an unsigned
+	// run.
+	PlanDigest string `json:"plan_digest,omitempty"`
 
 	Started    time.Time   `json:"started"`
 	DurationMS int64       `json:"duration_ms"`
@@ -102,6 +106,10 @@ type OrchStep struct {
 	// reads the job record to find out which, rather than run it again
 	// or assume it ran. DIVERGENCE 5.707.
 	Pending bool `json:"pending,omitempty"`
+	// Signed is a step that sent, or was about to send, its plan's signed
+	// job (issue 765). Kept in the pending record too, so a run stopped
+	// mid-step still says which job was signed.
+	Signed bool `json:"signed,omitempty"`
 }
 
 // Succeeded reports the step's own verdict.
