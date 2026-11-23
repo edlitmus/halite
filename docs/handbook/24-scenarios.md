@@ -412,8 +412,12 @@ goal; a non-empty one lists the node, the state and what it would change.
 > mails arrived in `/var/mail/root`, one per tick, and none came after the
 > node converged. With the node stopped, cron mailed the two stderr lines
 > shown above. The jail's cron runs with a jitter of up to 60 seconds, so
-> ticks came late. **Not run:** `halite-api`, delivery to an address off the
-> machine, and a FreeBSD host that is not a jail.
+> ticks came late. **Off the machine** (DIVERGENCE 5.706): on an Ubuntu
+> 26.04.1 hub host, with Postfix 3.10.6 relaying to Postfix on a Debian 13
+> host on the same provider's network, the line above ran every minute for
+> 48 minutes against six nodes. It sent 48 mails to `ops@` on the other host,
+> each with the report. Port 2525, because the provider blocks 25 between
+> instances. **Not run:** `halite-api`, and a FreeBSD host that is not a jail.
 
 ## Designing your own
 

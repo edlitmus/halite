@@ -178,8 +178,19 @@ A node's binary is just a file. How you replace it depends on how you ship it:
   binary file`. With the fixed agent on the node, the same state returned in
   one second (`Succeeded: 2 (changed=2)`), the restart ran 30 seconds later,
   and `manage.versions` showed the node on the new build. A return of more than
-  16 MiB for any other reason is still lost in the same way. **Not run:**
-  replacing the binary with the state on Linux, and a whole fleet upgrade.
+  16 MiB for any other reason is still lost in the same way. **On Linux, and
+  a fleet** (DIVERGENCE 5.706, `main` at `33dc8e21`, Ubuntu 26.04 hub): the
+  same state moved a canary (AlmaLinux 8.10) and then five nodes to a new
+  binary. The five were on AlmaLinux, Alpine, Debian 13, Debian 13 under
+  sysvinit and openSUSE Leap 16.0, run with `--batch 2`. Each returned
+  `changed=2` and came back `up` on the new version. Where there is no
+  `systemd-run` (OpenRC, sysvinit), the restart was `setsid sh -c 'sleep 30;
+  /etc/init.d/halite-node restart' </dev/null >/dev/null 2>&1 &`. **A batch
+  waits for each node's return, not for its deferred restart**, so the five
+  jobs took one second and the restarts all fell in the next minute and a half.
+  To space restarts in waves, give `--batch-wait` more than 90 seconds (not
+  run). **Not
+  run:** the hub and the API by a state, and a rollback by a state.
 - **By hand**, for a few nodes: the same three commands as the hub, with
   `halite-node` and `halite_node`.
 

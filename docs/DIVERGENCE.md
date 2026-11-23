@@ -24602,6 +24602,52 @@ host had 0 halite files, 0 processes, nothing on port <port> and no user. The
 directory `/srv` was left in place. Salt's agent was active and there was no
 OOM kill.
 
+#### main on amd64 in RHEL's kernel FIPS mode: hub, node, API, a reboot (issue 306, 2026-11-23)
+
+A Vultr `rocky9` row (Rocky Linux 9.8, kernel 5.14.0-687.66.1.el9_8, systemd
+252), put in FIPS mode by `fips-mode-setup --enable` and a reboot. After the
+reboot `/proc/sys/crypto/fips_enabled` read `1`, `fips-mode-setup --check` said
+`FIPS mode is enabled.`, and the crypto policy was `FIPS`. This is RHEL's FIPS
+mode on a Rocky kernel. It is **not Ubuntu Pro's certified `fips` kernel**, and
+it is not a validated module of Rocky's either.
+
+`main` at `33dc8e21` was built on the host as an unprivileged account with
+`make build fips` (`fips artifacts report module v1.0.0 and passing
+self-tests`), and installed as root with `make install` and `make
+install-fips` (5.706, item 8). The three drop-ins from
+`contrib/systemd/fips/` went into `/etc/systemd/system/halite-{hub,node,api}.service.d/`.
+A second hub drop-in carried `--names`, because the FIPS drop-in replaces
+`ExecStart`. `systemctl show` then gave `/usr/local/bin/halite-{hub,node,api}-fips`
+with `GODEBUG=fips140=on` for all three.
+
+- The hub (`enrollment_mode: token`) and the node on the same host: the node
+  enrolled by `--token-file`. `test.ping` answered `True`, and `grains.item
+  fips_mode os osrelease` answered `True`, `Rocky`, `9.8`.
+  `halite-node-fips call grains.item fips_mode` answered `True` locally.
+- `halite-api-fips` with a local account: `/v1/readyz` `ready`, a login, and
+  `POST /v1/run` of `test.ping` answered by the node.
+- **`grains.item fips_mode` and `doctor` agree.** The hub's, the node's and the
+  API's `doctor` each said `pass  FIPS mode consistency  the kernel is in FIPS
+  mode and this is a FIPS build (module v1.0.0, in FIPS mode)`. The non-FIPS
+  `halite-node` on the same host said `warn … the kernel is in FIPS mode and
+  this is not a FIPS build`, and its `fips_mode` grain was still `True`, because
+  the grain reports the kernel.
+- **Start at boot.** After `systemctl reboot`, all three units were `active`
+  with the `-fips` binaries, the node was `up`, and `fips_mode` was `True`.
+
+**The operator's SSH key stopped working at the FIPS reboot.** Rocky's FIPS
+policy refuses Ed25519, so after the reboot sshd offered an ECDSA host key and
+refused the lab's Ed25519 user key (`Permission denied (publickey,…)`). The
+first instance could not be reached again and was replaced. On the second, an
+ECDSA key was added to root's `authorized_keys` before enabling FIPS. That is
+the host's behaviour and not halite's, but it applies to any operator who
+enables FIPS mode on a machine they reach with an Ed25519 key.
+
+**Still not run:** Ubuntu Pro's certified kernel; a FIPS-mode transition with
+halite already running (FIPS was enabled before halite was installed); TOTP
+under FIPS on Linux; arm64 in this mode; the release archive's `-fips` binaries
+(these were built on the host).
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host
@@ -48517,6 +48563,154 @@ narrow.
 **Not verified:** this change's own CI run is a workflow change, so it runs
 every leg; the first documentation-only PR after it is the check that it
 skips them.
+
+### 5.706 Issue 733's remaining install runs, on ten Vultr rows over a real network (2026-11-23)
+
+Every item still open on issue 733, run or dropped. One Vultr session in region
+`ord`, about 10.5 instance-hours, all rows destroyed at the end. Every halite
+binary was built from `main` at `33dc8e21` (`0.2.0-29-g33dc8e21844a`):
+cross-compiled for linux/amd64 and freebsd/amd64 with the release flags, except
+on `rocky9`, where `make build` and `make fips` ran on the host from a git
+checkout of the same commit. The hub of the Linux runs was `ubuntu2604`
+(Ubuntu 26.04.1, kernel 7.0.0-43, systemd 259), installed by chapter 30 as root,
+in `enrollment_mode: token`. The rows reached each other over Vultr's network,
+with no tunnel, through `LAB_OPEN_HUB_PORT=true` and the new
+`LAB_INTERNAL_PORTS` (22, 25, 2525).
+
+| Item | Result |
+|---|---|
+| 1. cloud-init | **Run.** A fresh `ubuntu2204` row (Ubuntu 22.04.5, cloud-init 26.1, `DataSourceVultr`) booted chapter 31's Linux user-data verbatim, except the hub address and a loop that waited for the "image". cloud-init's final stage ran it and the node enrolled. |
+| 1. nuageinit | **Dropped: it cannot run on Vultr's FreeBSD images.** On 14.5-RELEASE-p3 and 15.1-RELEASE-p6, `/etc/rc.d/nuageinit` looks for a config drive labelled `config-2` or `cidata`, or an SMBIOS product starting `OpenStack`. Vultr gives neither: there is no labelled drive, `/dev/cd0` has no medium, and the product is `VC2`. `service nuageinit onestart` printed `ERROR: Impossible to find a cloud init provider` and exited 1. Vultr's own metadata service answers at 169.254.169.254, which nuageinit does not read. |
+| 2. Agentless to Linux | **Run**, from the hub to a bare `debian13` (Debian 13, kernel 6.12.117) over the network, with SSH open between the rows. `test.ping`, `grains.item` and a bootstrap state that placed the binary from `thin_dir`, `node.yaml`, a token file and the unit, ran `enroll --token-file` and started the agent. The node came `up` and answered `test.ping`; a second run changed nothing but the token file. |
+| 3. Upgrade by a state | **Run** on Linux, canary then the whole fleet. Five nodes on four init setups were moved to a differently stamped binary by `file.managed` and a restart deferred past the job's end. All five came back `up` on the new version. |
+| 4. Mail off the machine | **Run.** The chapter 24 crontab line on the hub, Postfix 3.10.6 there relaying to Postfix 3.10.13 on `debian13`, which delivered to `/var/mail/root`. Port 2525, because Vultr blocks 25 between instances. |
+| 5. LDAP, OIDC, TOTP, role map | **Run** on the hub host, against OpenLDAP 2.6.10 (`slapd`, ldaps) and dex v2.43.1 (the LDAP connector to that slapd), both with certificates from a lab CA. halite-api ran under the shipped unit. |
+| 6. Other distributions | **Run** on all six: `alma8`, `alpine`, `opensuse16`, `debian13sysv` and `ubuntu2204` against the Linux hub, and `rocky9` against its own FIPS hub (the 5.282 subsection of this date). |
+| 7. FreeBSD over a wire; node reboot | **Run.** The hub on `freebsd15` (15.1-RELEASE-p6) and the node on `freebsd14` (14.5-RELEASE-p3), over the network. `shutdown -r now` on the node: it came back, the rc script started it, and the hub had it `up`. |
+| 8. `make install` on Linux | **Run** on `rocky9` (Rocky 9.8, GNU make 4.3): `make build fips` as an unprivileged account, `make install` as root before the `halite` account existed, again after it was made, then `make install-fips`. |
+| 9. A lab port between rows | **Confirmed done** (PR 735), and now applied against Vultr, not only a mock. It was not enough on its own, because the image's own firewall dropped the port. |
+| 10. A token whose first character is `-` | **Run** on `freebsd14`, through the rc script, with a token in the older format (below). |
+
+**Item 1, what the user-data actually was.** Vultr's user-data cannot carry
+the 17 MB binary, so the script waited for `/opt/halite/halite-node` and the
+unit. Those were copied in over SSH a minute after boot: that copy is the
+"image" here. The log the script wrote named its parent as `cloud-init
+modules --mode=final`. It enrolled with `--token="$TOKEN"` (an `hbt_` token
+scoped to `halite-lab-ubuntu2204*`, two hours, one use) and ran `systemctl
+enable --now halite-node`. It exited 0 and `cloud-init status` said `done`.
+`node.yaml` set no `node_id`, so the node took the host name,
+`halite-lab-ubuntu2204`. That is the default chapter 31 had not run on Linux.
+A first `state.apply` gave `changed=2`, the second nothing, and `doctor` gave
+`12 pass, 1 skip`.
+
+**Item 2, what the bootstrap state did and did not do.** The binary came from
+`--thin`'s cache, as chapter 17 says (`/var/tmp/halite-thin/<sha256>`, a file
+named by the digest). The token went into `/etc/halite/enrol.token` by
+`file.managed`, and **the job's return printed the token in the diff**. A
+spent token is worth nothing, but a live one in a job return is in the hub's
+job cache. `show_changes: False` exists on `file.managed` and was not tried.
+On a second run the token file was written again, because the state removes
+it after enrolling.
+
+**Item 3, the upgrade.** The state was `file.managed` of
+`/usr/local/bin/halite-node` from `salt://halite/bin/…`, and an `onchanges`
+`cmd.run`. On systemd the restart was `systemd-run --on-active=30`; on Alpine
+and the sysvinit row it was `setsid sh -c 'sleep 30; /etc/init.d/halite-node
+restart'`, because neither has `systemd-run`. The canary, `alma8`, returned
+`Succeeded: 2 (changed=2)` in 0.6 s. Its transient unit restarted the agent 50 s
+after the job, inside chapter 36's "between 30 and 90 seconds", and
+`manage.versions` then put it alone on the new version. `halite-hub run '*'
+state.apply halite.upgrade --batch 2` then took one second for all five. **A
+batch waits for the returns, not for the deferred restarts**, so the batches
+gave no spacing between the restarts. All five were on the new version within
+two minutes. To canary by waves, give `--batch-wait` more than 90 s. That was
+not run. `mismatched` listed all five, because the hub was not upgraded, which
+is what it is for.
+
+**Item 4.** The cron line ran every minute with `--as reporter`, under chapter
+24's `require_kwargs` policy, from 02:31 to 03:19: 48 mails arrived, one for
+each tick. Each came `from hub.lab.example … with ESMTPS` to
+`ops@mail.lab.example`. The report listed the drifted nodes. **It also listed
+nodes that had been converged**, which is the next section.
+
+**Item 5, the logins**, through `POST /v1/login` and `/v1/run`:
+
+- **LDAP**, with `ldap_group_base_dn` and `ldap_group_filter: '(member=%s)'`.
+  `carol`, in `platform`, which maps to a one-function role, got `200`. Her
+  `status.uptime` got `200`, and her `test.ping` got `403 no rule in [readonly]
+  permits test.ping`. A wrong password got `401`. `dave`, in an unmapped group,
+  got `403 you authenticated, and none of your groups (interns) is mapped to a
+  role in this estate`. `erin`, in `oncall`, which is a member of `platform`, got
+  that `403` at `ldap_nested_depth: 0` and `200` at `1`. A username of
+  `*)(uid=*` got `401`.
+- **OIDC, a token from dex**: an ID token from dex's password grant (`aud`
+  `halite`, `groups: [platform]`) posted to `/v1/login/oidc/token` got `200`
+  with the same `200` and `403` as carol's. `dave`'s got the unmapped-group
+  `403`, and a token with its last character changed got `401`.
+- **OIDC, the code flow, driven with curl**: `POST /v1/login/oidc`, dex's login
+  form, the redirect, `POST /v1/login/oidc/callback`. The `state` came back
+  unchanged. The first try got `403 … none of your groups (no groups)`: with
+  only `oidc_groups_claim: groups` set, as `examples/api.yaml` shows, the
+  request asked for `openid` alone, and **dex sends no groups claim unless asked
+  for the `groups` scope**. With `oidc_scopes: groups,email` the URL asked for
+  `openid groups email` and the callback got `200`. Replaying the same callback
+  got `401`.
+- **TOTP**, as root under the systemd unit, with codes from an RFC 6238 client
+  written for the run. The current code got `200`, and the code of a later step
+  got `200`. The same code again, no code, a wrong code, a code two steps old,
+  and a right code with a wrong password each got `401`. **The login backoff
+  answers `429` inside its window**: a first pass, with the attempts a second
+  apart, got `429 too many failed logins for this name; try again in 1s`, not
+  the `401`. Each refusal above was taken 20 s after the last.
+
+**Item 6.** On each row, chapter 31 by token, `test.ping`, `grains.item`, the
+playground state twice (`changed`, then nothing), `doctor` (`12 pass, 1 skip`),
+and a reboot after which every node came back `up`. The rows were AlmaLinux
+8.10 (kernel 4.18.0-553, systemd 239), Alpine 3.24 (6.18.63-lts, OpenRC),
+openSUSE Leap 16.0 (6.12.0-160000, systemd 257), Debian 13 under sysvinit
+(`init` as PID 1), and Ubuntu 22.04.5 (5.15.0-203, systemd 249). **No init
+script ships for OpenRC or sysvinit**, so those two rows ran one written for
+the run (issue 812).
+
+**Item 7 and the chapter 30 example.** The FreeBSD hub was set up with
+chapter 30's FreeBSD line, `sysrc halite_hub_flags='--names hub.example.com,hub'`.
+After that, every local `halite-hub` command failed with `x509: certificate is
+valid for hub.lab.example, not localhost`. The bullets under the same step
+already say that `--names` replaces the defaults, and the Linux line beside it
+lists `localhost,127.0.0.1`. **The FreeBSD line was the one wrong half**, and
+it now lists them too. Reissued with them, the operator commands worked.
+
+**Item 8.** The first `make install`, before the account existed, installed
+the programs, the units and the manual pages, and left the directories owned
+by root. After `useradd`, the second one gave `/etc/halite`, its `pki`,
+`/var/lib/halite`, `/var/cache/halite` and `/var/log/halite` to `halite`. The
+checkout had no tags, so the binaries were stamped `33dc8e21844a`.
+
+**Item 9, the second firewall.** With the Vultr rule in place the node still
+got `dial tcp <hub>:4510: i/o timeout`. The Ubuntu image runs `ufw` with only
+SSH allowed, and `ufw allow 4510/tcp` fixed it. `ufw` was also active on
+`debian13` and `alpine`, and `firewalld` on `rocky9`, `alma8` and `opensuse16`.
+**Chapter 30 never said to open the port in the host's firewall.** It now does.
+
+**Item 10.** A hub built from `9fd108d9`, the commit before 5.674, minted
+tokens into the 15.1 hub's store as `halite` until two began with `-`. It took
+92 mints, then 216, and every other token was revoked. The hub from `main` then
+served. On `freebsd14`, with `halite_node_token='-…'` in `rc.conf`,
+`service halite_node start` enrolled (`enrolled: …/node.crt`) and started the
+node, and the token showed `spent`. After `keys revoke` and `keys delete`, the
+second token went into a 0600 file named by `halite_node_token_file`, and
+enrolled and started the same way. The rc script is `main`'s, with 5.666's
+`--token=`.
+
+**Not covered.** A cloud-init cloud-config document, as distinct from a
+user-data script. nuageinit, on any host. An agentless target over a
+`ProxyJump`. A whole-fleet upgrade of the hub and the API. The drift report
+through `halite-api` or from a schedule. A TOTP code from an authenticator
+app. OIDC through a browser, and from any provider but dex. LDAP with
+`starttls` or with `memberOf`. A FreeBSD node enrolled by
+`--token-file` on the command line, rather than through rc. `make install`
+on any Linux but Rocky 9. arm64.
+
 
 ## 6. Everything else not started
 
