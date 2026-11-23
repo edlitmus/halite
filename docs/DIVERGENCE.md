@@ -41255,7 +41255,8 @@ its own attribute list and has no way to add an entry.
 - The job object cannot be created, or its limit cannot be set. The flag is not
   set, so the child starts running as before.
 
-**Tests, written for the windows-2022 legs.** None of them has run yet.
+**Tests, written for the windows-2022 legs.** Their first run, and what it
+found, is 5.620.2.
 
 - `TestAGrandchildStartedBeforeTheAssignmentIsInTheJobAndDiesWithIt`
   (`internal/exec/suspend_windows_test.go`) does not try to win the race. It
@@ -41287,10 +41288,57 @@ starts a process at once now has that process in its job, so a timeout kills it
 and the extension's process limit counts it.
 
 **Not verified.** Everything here is Windows code. It was compiled with
-`GOOS=windows go vet` and `go test -c`, on a FreeBSD host. It has not run on
-Windows. The CI run on the pull request is the first run. The deliberate break
-(remove `CREATE_SUSPENDED`) has not been run either. We did not run a real
-failure of `ResumeThread`, an admin token, or a domain-joined host.
+`GOOS=windows go vet` and `go test -c`, on a FreeBSD host, and then run on the
+pull request's windows-2022 legs (5.620.2). We did not run a real failure of
+`ResumeThread`, an admin token, or a domain-joined host.
+
+#### 5.620.2 The first runner run of 5.620.1, and a thread that had gone (2026-11-22)
+
+PR 816 ran 5.620.1 on the windows-2022 runners (image 20261116.370.1), on the
+`test` and `race` legs, as `halite-ci`, a standard account that is not an
+administrator. Draft PR 817 ran the same code with `CREATE_SUSPENDED` taken out
+of `confineTree` and `applyPlatform`, and with `WRITE_DAC | WRITE_OWNER` added
+to `winsec`'s `harmless` set.
+
+**What held.**
+
+- `TestAGrandchildStartedBeforeTheAssignmentIsInTheJobAndDiesWithIt` passed on
+  816. On 817 it failed for the reason it was written for: "the job holds [],
+  without the grandchild 5464 the child started on its first line; the child ran
+  before it was assigned", and "the grandchild 5464 outlived the timeout's kill
+  of the job".
+- The `internal/winjob` tests passed on 816.
+- The `WRITE_DAC` and `WRITE_OWNER` cases of
+  `TestOthersNamesAnAccountThatCanAlterTheFileWithoutReadingIt` passed on 816
+  and failed on 817 ("Others reported []").
+
+**A defect the break found.** On 817 the child was running when `winjob.Resume`
+took its thread snapshot. 29 commands (distinct process and thread IDs in the
+log of one leg) failed with "the command was
+started suspended and could not be resumed: resuming process 4864: opening
+thread 1872: The parameter is incorrect", and were killed. A thread had exited
+between the snapshot and `OpenThread`, and `OpenThread` answers
+`ERROR_INVALID_PARAMETER` for an ID that names no thread. On 816 this cannot
+happen, because a suspended process cannot lose a thread. But nothing makes the
+strict answer useful: a thread that has gone is not one that `Resume` was going
+to hold back.
+
+**The change.** `resumeThreads` skips a thread whose `OpenThread` says
+`ERROR_INVALID_PARAMETER`, and fails only if no listed thread was resumed. Any
+other error is still fatal.
+
+**Shown by.** `TestAThreadThatIsGoneIsSkippedWhenAnotherIsResumed`
+(`internal/winjob`). An exited thread cannot be made at the instant between the
+two calls on demand. So the test uses thread ID 3, which names no thread,
+because thread IDs are multiples of four. It first checks that `OpenThread` on
+ID 3 gives `ERROR_INVALID_PARAMETER`, the answer the runner gave for the exited
+threads. Then it resumes `[3, the real thread]` of a suspended `cmd.exe`, needs
+success and a suspend count of 0, and needs `[3]` alone to fail.
+
+**Not verified.** The new test has not run yet. Its break (return the
+`OpenThread` error again) has not run. Whether every exited thread gives
+`ERROR_INVALID_PARAMETER`, and never another code, is known only from the 29
+failures on 817, which all gave it.
 
 ### 5.621 Windows access-list checks missed entries that can alter a file
 
