@@ -148,6 +148,18 @@ func (n *signingNode) jobs() []transport.Message {
 // that requires signatures refuses it.
 func (n *signingNode) connect(t *testing.T, l *lab, nodeID string, fail func(fun string) bool) func() {
 	t.Helper()
+	return n.connectAs(t, l, nodeID, fail, nil)
+}
+
+// connectWith is connect with a hook run on each job before it is answered.
+func (n *signingNode) connectWith(t *testing.T, l *lab, nodeID string, saw func(transport.Message)) func() {
+	t.Helper()
+	return n.connectAs(t, l, nodeID, nil, saw)
+}
+
+func (n *signingNode) connectAs(t *testing.T, l *lab, nodeID string, fail func(fun string) bool,
+	saw func(transport.Message)) func() {
+	t.Helper()
 	client := l.enrolled(t, nodeID)
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
@@ -164,6 +176,9 @@ func (n *signingNode) connect(t *testing.T, l *lab, nodeID string, fail func(fun
 						close(ready)
 					}
 				case transport.MsgJob:
+					if saw != nil {
+						saw(msg)
+					}
 					good := n.record(msg) && (fail == nil || !fail(msg.Fun))
 					client.Return(ctx, job.Return{
 						JID: job.ID(msg.JID), NodeID: nodeID, Fun: msg.Fun, Success: good,
@@ -615,10 +630,10 @@ func TestAResumeRunsOnAFreshPlanAndNotOnTheOriginal(t *testing.T) {
 	}
 }
 
-// A run whose record holds no steps -- what a hub stopped mid-run leaves
-// today, issue 802 -- carries nothing forward, so a resume of it would send
-// every earlier step again. A resume plan does not sign those, and the
-// pre-flight refuses the run naming the first of them, rather than
+// A step before --from that the earlier record does not hold -- a run that
+// never reached it, or a record written before runs were recorded step by
+// step (DIVERGENCE 5.707) -- runs again in the resume. A resume plan does
+// not sign it, and the pre-flight refuses the run naming it, rather than
 // sending anything.
 func TestAResumeOfARunThatRecordedNoStepsIsRefusedNamingThem(t *testing.T) {
 	l := orchLab(t, map[string]string{"deploy.sls": planDeploy})
@@ -696,5 +711,111 @@ func TestASignedStepThatDiffersAtDispatchIsNotSent(t *testing.T) {
 	}
 	if _, err := o.signedStep("nope", sub); err == nil {
 		t.Error("a step the plan does not have was given a signature")
+	}
+}
+
+// The per-step record (DIVERGENCE 5.707) and a resume plan agree. A signed
+// step that was out when its hub stopped, and whose job every node has
+// since answered, is carried forward by the resume: it sends nothing, needs
+// no signature, and the resume plan, which signs from --from on, does not
+// sign it. The record written while the step was out already says it was
+// signed.
+func TestAResumePlanCarriesASignedStepThatWasOutAndAnswered(t *testing.T) {
+	l := orchLab(t, map[string]string{"deploy.sls": planDeploy})
+	signer := newPlanSigner(t)
+	node := &signingNode{keys: signer.keys}
+	defer node.connect(t, l, "web1.example", nil)()
+	plan, digest := signer.plan(t, l.server.Files, PlanOptions{SLS: []string{"deploy"}, Pillar: versionPillar()})
+	first, err := l.server.Orchestrate(context.Background(), OrchRequest{
+		Principal: "cert:CN=ed", SLS: []string{"deploy"}, Pillar: versionPillar(), Plan: plan, PlanDigest: digest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rewrite the record as a hub stopped during deploy_web leaves it: drain
+	// out, its job answered by every node, and nothing after it.
+	stopped, err := l.server.Orch.Get(first.JID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain := *stepByID(t, stopped, "drain")
+	if !drain.Signed {
+		t.Fatalf("the record does not say drain was signed: %+v", drain)
+	}
+	drain.Pending, drain.Result, drain.Comment = true, nil, ""
+	stopped.Steps, stopped.State = []*OrchStep{&drain}, OrchRunning
+	if err := l.server.Orch.Put(stopped); err != nil {
+		t.Fatal(err)
+	}
+	fresh, freshDigest := signer.plan(t, l.server.Files, PlanOptions{SLS: []string{"deploy"}, Pillar: versionPillar(),
+		ResumeOf: string(first.JID), ResumeFrom: "deploy_web"})
+	before := len(node.jobs())
+
+	resumed, err := l.server.Orchestrate(context.Background(), OrchRequest{
+		Principal: "cert:CN=ed", SLS: []string{"deploy"}, Pillar: versionPillar(), Plan: fresh, PlanDigest: freshDigest,
+		ResumeOf: first.JID, ResumeFrom: "deploy_web"})
+
+	if err != nil {
+		t.Fatalf("a resume plan for a run whose signed step was out and answered: %v", err)
+	}
+	if resumed.State != OrchComplete {
+		t.Fatalf("the resumed run is %s: %+v", resumed.State, resumed.Steps)
+	}
+	sent := node.jobs()[before:]
+	if len(sent) != 1 || sent[0].Fun != "state.apply" || !node.verified[sent[0].JID] {
+		t.Fatalf("the resume sent %+v, want only deploy_web's signed job", sent)
+	}
+	if c := stepByID(t, resumed, "drain"); !strings.Contains(c.Comment, "in flight when the hub stopped") {
+		t.Errorf("drain was not carried as a step that was out: %s", c.Comment)
+	}
+}
+
+// A signed step is recorded as out, and as signed, before its job is sent:
+// the same per-step record an unsigned step gets (DIVERGENCE 5.707).
+func TestASignedStepIsRecordedPendingAndSignedBeforeItsJobIsSent(t *testing.T) {
+	l := orchLab(t, map[string]string{"deploy.sls": planDeploy})
+	signer := newPlanSigner(t)
+	plan, digest := signer.plan(t, l.server.Files, PlanOptions{SLS: []string{"deploy"}, Pillar: versionPillar()})
+	var seen []*OrchStep
+	var mu sync.Mutex
+	node := &signingNode{keys: signer.keys}
+	stop := node.connectWith(t, l, "web1.example", func(msg transport.Message) {
+		// What the record says at the moment the job reaches a node. By
+		// step, not by jid: the job can arrive before the hub has written
+		// the jid it learnt from the dispatch, and the write before it
+		// (dispatching) is the one that has to be there.
+		var stepID string
+		for _, e := range plan.Steps {
+			if e.Job.JID == msg.JID {
+				stepID = e.ID
+			}
+		}
+		runs, _, _ := l.server.Orch.List(1)
+		mu.Lock()
+		defer mu.Unlock()
+		for _, run := range runs {
+			for _, s := range run.Steps {
+				if s.ID == stepID {
+					copied := *s
+					seen = append(seen, &copied)
+				}
+			}
+		}
+	})
+	defer stop()
+
+	if _, err := l.server.Orchestrate(context.Background(), OrchRequest{
+		Principal: "cert:CN=ed", SLS: []string{"deploy"}, Pillar: versionPillar(), Plan: plan, PlanDigest: digest}); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 {
+		t.Fatalf("the record named %d of the two jobs as they reached the node: %+v", len(seen), seen)
+	}
+	for _, s := range seen {
+		if !s.Pending || !s.Signed {
+			t.Errorf("%s reached the node recorded pending=%v signed=%v", s.ID, s.Pending, s.Signed)
+		}
 	}
 }

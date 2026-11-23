@@ -197,10 +197,13 @@ configuration (`opts`): the plan tool has none to give it.
        --pillar '{"version":"1.4.2"}' --plan resume.plan.json
    ```
 
-   A refusal naming a step before `--from` means the earlier run did not
-   record it as finished, so the resume would run it again. A run stopped
-   by a hub restart records no steps at all (issue 802). Decide whether
-   that step should run again; if it should, plan from it instead.
+   The resume carries forward the steps the earlier run finished, and a
+   step that was out when its hub stopped once every node has answered its
+   job; neither needs signing. A step that was out and is still short of a
+   node refuses the resume, naming the job: wait for it, or resume (and
+   plan) from that step to run it again. A refusal naming a step before
+   `--from` as not in the plan means the earlier run did not reach it, so
+   the resume would run it; if it should, plan from it instead.
 
 ## The render sandbox
 

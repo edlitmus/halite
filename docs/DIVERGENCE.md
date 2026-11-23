@@ -48633,19 +48633,24 @@ it.
    the template random source with a fixed string instead of the run's
    job id, which the plan tool cannot know, so the two compiles have the
    same inputs except the tree.
-6. **The interrupted-run record is issue 802**, on another branch, and is
-   not fixed here. A resume always needs a new plan: `orch plan
-   --resume-of <jid> --from <step>` signs the step named and every fleet
-   step after it, with new identifiers and a new expiry. The hub carries
-   forward the steps before it from its record and needs no signature for
-   them. A step before `--from` that the record does not hold as finished
-   runs again, so it needs signing too; the pre-flight refuses the run
-   naming it. Today a run stopped by a hub restart records no steps, so a
-   resume of one is refused naming the first step, which is loud and
-   correct, and the operator decides whether to sign the earlier steps
-   again (`TestAResumeOfARunThatRecordedNoStepsIsRefusedNamingThem`).
-   When 802 records steps as they finish, the same resume plan will be
-   accepted with nothing else changed here.
+6. **The interrupted-run record is issue 802**, fixed separately in 5.707,
+   which merged while this was waiting and was rebased onto. A resume
+   always needs a new plan: `orch plan --resume-of <jid> --from <step>`
+   signs the step named and every fleet step after it, with new
+   identifiers and a new expiry. The hub carries forward what 5.707's
+   record lets it carry, and none of that needs a signature: a finished
+   step, and a step that was out when its hub stopped once every node has
+   answered its job (`TestAResumePlanCarriesASignedStepThatWasOutAndAnswered`:
+   the resume plan does not sign it and the resume sends only the steps
+   from `--from`). A step that was out and is still short of a node refuses
+   the resume in 5.707's `inFlightOutcome`, before the plan is looked at;
+   resuming from it means planning from it. A step before `--from` that the
+   record does not hold at all runs again, so the pre-flight refuses the
+   run naming it (`TestAResumeOfARunThatRecordedNoStepsIsRefusedNamingThem`).
+   A signed step is recorded as out, and as `signed`, before its job is
+   sent and again with its jid, as an unsigned one is
+   (`TestASignedStepIsRecordedPendingAndSignedBeforeItsJobIsSent`); the plan
+   is consulted first, so a step its plan refuses is never recorded as out.
 7. **Bound to issue 764's signed tree.** When the checkout carries
    `_halite/manifest.json`, the plan records its `treesign.ID` as
    `tree_revision`, after checking that the checkout is what the manifest
