@@ -444,3 +444,30 @@ func TestTwoRunsAtDifferentRevisionsDoNotShareABody(t *testing.T) {
 		t.Errorf("the older run asking again after the hub moved on: %v", err)
 	}
 }
+
+// Objects no environment's current or previous manifest names are
+// removed when a new revision is accepted; the previous revision's stay,
+// for an exec job still reading it.
+func TestObjectsTwoRevisionsOldAreCollected(t *testing.T) {
+	s := newSignedLab(t, signedFiles)
+	now := time.Now()
+	base, _, _ := s.remote(t, fileserver.SignatureRequired, s.trusted)
+	var paths []string
+	for i, body := range []string{"one\n", "two\n", "three\n"} {
+		s.write(t, "web/nginx.conf", body)
+		s.sign(t, "base", now.Add(time.Duration(i-3)*time.Minute), nil)
+		p, err := base.ForRun().Fetch("base", "salt://web/nginx.conf")
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, p)
+	}
+	if _, err := os.Stat(paths[0]); !os.IsNotExist(err) {
+		t.Errorf("the first revision's object is still there: %v", err)
+	}
+	for _, p := range paths[1:] {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("a current or previous revision's object was removed: %v", err)
+		}
+	}
+}

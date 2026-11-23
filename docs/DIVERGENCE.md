@@ -48377,6 +48377,8 @@ the hub. Each check was broken on purpose, and the named tests failed:
 | `tree verify` blind to a changed file | the binary test |
 | the default bound 0 | freeze-bound-on-by-default |
 | a second signature line refused | any-one-line-of-several |
+| objects never collected | two-revisions-old-collected |
+| the previous manifest's objects not kept | two-revisions-old-collected |
 
 Three breaks first failed to compile rather than fail a test, and so
 proved nothing. They were rewritten to compile (the mark's write
