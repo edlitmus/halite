@@ -213,17 +213,37 @@ func (s *Server) completeIfDone(id job.ID) {
 	// a whole-record write here would put back the spool entry it had
 	// just cleared -- sending the node the job a second time on its
 	// next connection. See job.Cache.Update.
+	settledPartial := false
 	_, err = s.Jobs.Update(id, func(cur *job.Job) error {
 		// Not an aborted one either. An operator's kill is a decision, and
 		// a node that was already running the job answering late makes
 		// nothing missing, which used to read as the job having completed.
 		// DIVERGENCE 5.515.
+		//
+		// Nor a partial one. Partial is what Settle wrote when the job's
+		// expiry passed with a node still owing, and it has already been
+		// answered: by `jobs list`, by GET /v1/jobs/<jid>, and by
+		// halite_jobs_expired_total, which counted it. A node that was
+		// still running the job and answers afterwards is filed -- the
+		// return is the only evidence of what ran -- but moving the record
+		// to complete would make a settled job unsettle itself, and the
+		// counter and every earlier answer disagree with it for ever.
+		// Partial says the window closed with a return outstanding, and
+		// that stays true. DIVERGENCE 5.715.
+		if cur.State == job.Partial {
+			settledPartial = true
+			return errAlreadyComplete
+		}
 		if cur.State == job.Complete || cur.State == job.Aborted {
 			return errAlreadyComplete
 		}
 		cur.State = job.Complete
 		return nil
 	})
+	if settledPartial {
+		s.info("a return arrived after its job was settled; the job stays partial",
+			"jid", string(id), "state", string(job.Partial))
+	}
 	if err != nil && !errors.Is(err, errAlreadyComplete) {
 		s.warn("could not mark a job complete", "jid", string(id), "error", err.Error())
 	}
