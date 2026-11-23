@@ -26,7 +26,7 @@ import (
 // environment the node may not use.
 //
 // Before the fix every run wrote the node's own pillar: the job carried
-// `pillarenv` and nothing on the node read it. DIVERGENCE 5.715.
+// `pillarenv` and nothing on the node read it. DIVERGENCE 5.716.
 func TestAStateJobsPillarenvCompilesThatRunsPillarFromIt(t *testing.T) {
 	lab := startPillarenvLab(t, "hub")
 
@@ -107,7 +107,7 @@ func TestAStateJobsPillarenvCompilesThatRunsPillarFromIt(t *testing.T) {
 // fallback when the probe failed for another reason and a later fetch
 // is told the hub compiles no pillar. Breaking that fallback back to the
 // agent's environment left this test passing, which is how that was
-// found; that path is read, not run. DIVERGENCE 5.715.
+// found; that path is read, not run. DIVERGENCE 5.716.
 func TestAStateJobsPillarenvReachesTheNodesOwnRootsOnAHubWithoutPillar(t *testing.T) {
 	lab := startPillarenvLab(t, "node")
 	if out, code := lab.apply(); code != 0 {

@@ -382,7 +382,7 @@ func (n *node) mergePillarOverride(p, override *value.Map) *value.Map {
 //
 // Nothing read it before issue 826, so a run asked for another pillar
 // environment rendered with the node's own and reported success.
-// DIVERGENCE 5.715.
+// DIVERGENCE 5.716.
 //
 // The environment is held to env_allowlist and env_denylist, as the
 // node's configured pillarenv is at start and a job's saltenv is in

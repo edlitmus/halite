@@ -255,7 +255,7 @@ type node struct {
 	// pillarPushed is agentless mode: hubPillar answers with the one
 	// pillar the hub compiled and sent with the job, whatever
 	// environment it is asked for, so a job naming another pillarenv is
-	// refused rather than given that one. DIVERGENCE 5.715.
+	// refused rather than given that one. DIVERGENCE 5.716.
 	pillarPushed bool
 	// pillarQuiesce is what the last pillar the agent read said about
 	// quiesce, shared by every copy a job runs on. Nil outside the agent,
