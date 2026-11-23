@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -307,6 +308,72 @@ func stateFunction(fun string) (string, bool) {
 	return state.JobFunction(fun)
 }
 
+// jobPillarOverride reads a state job's `pillar` keyword argument: the
+// override Salt's state.apply, state.sls and state.highstate take, which a
+// `salt.state` orchestration step's `pillar:` and `halite-hub run ...
+// pillar=...` both send. Nil when the job has none.
+//
+// Nothing read it before issue 820: the job carried it, the node ran the
+// state with its ordinary pillar, and reported success. DIVERGENCE 5.712.
+//
+// Anything but a mapping is refused. Salt logs "Pillar override was not
+// passed as a dictionary" and applies the state without it (Salt 3008.x,
+// salt/state.py, State._gather_pillar), which is the silent half of the
+// same defect: a run that was asked for a different pillar and got the
+// ordinary one, and said it succeeded.
+//
+// `pillar_enc` is refused too. In Salt it names the renderer, `gpg`, that
+// decrypts the override before it is merged; this node does not, and
+// merging the ciphertext as though it were the value would write it
+// wherever the state put the value.
+func jobPillarOverride(j *job.Job) (*value.Map, error) {
+	if enc, present := j.Kwarg["pillar_enc"]; present && enc != nil {
+		return nil, &job.Refusal{
+			Reason: job.ReasonMalforme,
+			Detail: fmt.Sprintf("the job asks for its pillar override to be decrypted with pillar_enc=%v, "+
+				"which this node does not do; refused rather than merging the ciphertext as the value", enc),
+		}
+	}
+	raw, present := j.Kwarg["pillar"]
+	if !present || raw == nil {
+		return nil, nil
+	}
+	override, ok := value.FromJSON(raw).(*value.Map)
+	if !ok {
+		return nil, &job.Refusal{
+			Reason: job.ReasonMalforme,
+			Detail: fmt.Sprintf("the job's pillar override is %s %v, and a pillar override must be a mapping "+
+				"of keys to merge over this node's pillar; refused rather than running with the ordinary pillar",
+				value.TypeName(value.FromJSON(raw)), raw),
+		}
+	}
+	if override.Len() == 0 {
+		return nil, nil
+	}
+	return override, nil
+}
+
+// mergePillarOverride merges a job's override over the compiled pillar,
+// the way Salt's State.__init__ "reapplies overrides on top of compiled
+// pillar": salt.utils.dictupdate.merge with the node's own
+// pillar_source_merging_strategy and pillar_merge_lists, so under the
+// default a nested mapping is merged key by key and a list is replaced.
+// Neither argument is changed; the node's pillar is not this run's.
+func (n *node) mergePillarOverride(p, override *value.Map) *value.Map {
+	if p == nil {
+		p = value.NewMap(0)
+	}
+	strategy, _ := value.ParseStrategy(n.cfg.String("pillar_source_merging_strategy", "smart"))
+	merged, ok := value.Merge(p, override, value.MergeOpts{
+		Strategy:   strategy,
+		MergeLists: n.cfg.Bool("pillar_merge_lists", false),
+	}).(*value.Map)
+	if !ok {
+		return p
+	}
+	return merged
+}
+
 // runStateJob compiles and, for the applying forms, runs.
 func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 	// A beacon with `disable_during_state_run` is suppressed for as
@@ -315,12 +382,28 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 	n.enterStateRun()
 	defer n.leaveStateRun()
 
+	override, err := jobPillarOverride(j)
+	if err != nil {
+		return outcome{}, err
+	}
 	p, err := n.compilePillarOrErr()
 	if err != nil {
 		return outcome{}, err
 	}
 	if err := n.quiesceAfterPillar(j); err != nil {
 		return outcome{}, err
+	}
+	// After both of the above, and not inside compilePillarOrErr, which
+	// is the one place a pillar's quiesce is recorded: an override is
+	// this run's data, not the node's pillar, so it can neither quiesce
+	// the node (and leave a record that outlives the run) nor lift a
+	// quiesce the compiled pillar set.
+	if override != nil {
+		// The keys and not the values: an override is as likely as a
+		// pillar file to carry a password.
+		n.log.Info("this run's pillar is the node's with the job's override merged over it",
+			"jid", string(j.JID), "fun", j.Fun, "keys", strings.Join(override.StringKeys(), ","))
+		p = n.mergePillarOverride(p, override)
 	}
 	compiler := n.stateCompiler(p, string(j.JID))
 
@@ -536,6 +619,16 @@ func (e *executor) Offer(j *job.Job) error {
 	if _, err := jobTestFlag(j); err != nil {
 		e.node.metrics.countRefusal(err)
 		return err
+	}
+	// A pillar override this node cannot use, for the same reason and
+	// with the same second check in runStateJob. Only a state function
+	// reads one; to an execution function `pillar` is an ordinary keyword
+	// argument and is the module's to judge.
+	if _, isState := stateFunction(j.Fun); isState {
+		if _, err := jobPillarOverride(j); err != nil {
+			e.node.metrics.countRefusal(err)
+			return err
+		}
 	}
 	// Quiesce, in the same place and for the same reason as the test
 	// flag: after the replay records, so a refused jid is spent and a hub

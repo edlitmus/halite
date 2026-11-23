@@ -64,7 +64,7 @@ func TestAPlannedOrchestrationRunsOnANodeThatRequiresSignatures(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the planned orchestration failed:\n%s\nnode:\n%s", out, tail(p.nodeLog.String(), 15))
 	}
-	p.wantMarker("1.4.2")
+	p.wantMarker("1.4.2 app_version=1.4.2")
 	run := decodeRun(t, out)
 	for _, id := range []string{"warm", "apply"} {
 		if step := run.step(t, id); !step.Signed {
@@ -141,7 +141,7 @@ func TestAPlannedOrchestrationRunsOnANodeThatRequiresSignatures(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the resume on a fresh plan failed:\n%s\nnode:\n%s", out, tail(p.nodeLog.String(), 15))
 	}
-	p.wantMarker("2.0")
+	p.wantMarker("2.0 app_version=2.0")
 	resumed := decodeRun(t, out)
 	if step := resumed.step(t, "warm"); step.JID != "" && step.Signed {
 		t.Errorf("the carried-forward step was sent again: %+v", step)
@@ -161,7 +161,7 @@ apply:
     - tgt: plan1
     - sls: [{{ 'v' ~ pillar['version'] | replace('.', '_') }}]
     - pillar:
-        app_version: {{ pillar['version'] }}
+        app_version: "{{ pillar['version'] }}"
     - require:
       - salt: warm
 
@@ -173,14 +173,15 @@ announce:
       - salt: apply
 `
 
-// release is the state one version applies. The version is in the SLS
-// name the orchestration picks rather than read from the step's `pillar:`,
-// because a node does not apply a state job's pillar keyword argument
-// (found writing this test; reported separately, not fixed here). The
-// step still carries `pillar:`, so the signature covers a mapping.
+// release is the state one version applies. It writes both the version
+// in the SLS name the orchestration picked and the `app_version` the
+// step's signed `pillar:` override carries, so a marker reading
+// `1.4.2 app_version=1.4.2` says the right file ran and the override
+// reached it. Writing this test is how issue 820 was found: the node read
+// no override at all, and the second half came out `MISSING`.
 func (p *planLab) release(version string) string {
 	return "marker:\n  file.managed:\n    - name: " + p.marker + "\n    - makedirs: True\n" +
-		"    - contents: \"" + version + "\"\n"
+		"    - contents: \"" + version + " app_version={{ pillar.get('app_version', 'MISSING') }}\"\n"
 }
 
 // brokenRelease writes beneath a regular file, which no node can do.
