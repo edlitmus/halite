@@ -336,6 +336,9 @@ func (s *Server) settleExpired(j *job.Job) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if s.settleAfterMissing != nil {
+		s.settleAfterMissing()
+	}
 	switch {
 	case len(missing) == 0:
 		j.State = job.Complete
