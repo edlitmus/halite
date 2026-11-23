@@ -24866,6 +24866,68 @@ route is an internet gateway. It was terminated too. Afterwards both were
 `terminated`, no volume with the run's tag remained, and no Elastic IP was
 associated.
 
+#### arm64: no certified kernel exists, and a move into `fips-updates` with halite running (issue 306, 2026-11-23)
+
+**There is no arm64 certified kernel to test.** The `Release` files of Pro's
+certified pocket were read on 2026-11-23 from
+`esm.ubuntu.com/fips/ubuntu/dists/<suite>/Release`. Their `Architectures:`
+lines were `i386 amd64 s390x ppc64el` for `xenial`, and `i386 amd64 s390x`
+for `bionic` and `focal`. `dists/focal/main/` had no `binary-arm64`. On
+arm64, Ubuntu's FIPS kernels come only through `fips-updates` (whose
+`jammy-updates` lists `amd64 arm64 s390x`) or `fips-preview` (whose `jammy`
+lists the same and has no certificate yet). The item "the certified kernel on
+arm64" in the subsection above names something that does not exist, so it is
+removed from the list. The owner chose to run `fips-updates` on arm64
+instead, enabled from the start on a fresh host.
+
+**The host.** A new AWS instance, `host-f`, in us-west-2. It was t4g.large,
+**arm64**, from Canonical's plain Ubuntu 22.04.5 image. It booted the HWE
+kernel 6.8.0-1070-aws, which has no `/proc/sys/crypto/fips_enabled`, with
+systemd 249. Pro was attached as in the subsection above, and on this
+release Pro offered `fips-preview` and `fips-updates` but no `fips`.
+`pro enable fips-updates` printed `FIPS Updates enabled` and `A reboot is
+required to complete install`. It installed
+`linux-image-5.15.0-1121-aws-fips` (`5.15.0-1121.128+fips1`),
+`openssl-fips-module-3` `3.0.5-0ubuntu0.2+Fips1`, `ubuntu-fips-userspace`
+`1.3.9+update0`, a GRUB drop-in adding `fips=1`, and
+`GRUB_FLAVOUR_ORDER="aws-fips"`. So the reboot had to choose a 5.15 kernel
+over the newer 6.8 one.
+
+**Before the reboot.** `main` at `17c55da3` was built and installed exactly as
+on the amd64 host above (`bmake build fips` as `ubuntu`, Go 1.27.4
+linux-arm64 with a checked sha256, then `make install install-fips` and the
+drop-ins). The hub, the node and the API ran on one host, and the node
+enrolled by `--token-file`. All three units were enabled and active on the
+`-fips` binaries with `GODEBUG=fips140=on`. `grains.item` gave `fips_mode`
+**False**, `fips_build` True, `aarch64` and `6.8.0-1070-aws`. A `state.apply`
+reported `changed=1`, and all three `doctor`s gave **warn** (`this is a FIPS
+build … and the kernel is not in FIPS mode`). systemd 249 accepted the
+units without any `Unknown key name` line.
+
+**After the reboot.** The boot ID changed. The kernel was
+5.15.0-1121-aws-fips, so GRUB had taken the FIPS flavour over 6.8.
+`fips_enabled` was 1 and `fips=1` was on the command line. With no action
+by anyone, all three units were enabled and active on the `-fips`
+executables with `GODEBUG=fips140=on`. The journal at priority `err` had 0
+lines for them. The node was `up`. `grains.item` gave `fips_mode`
+**True** and `kernelrelease` `5.15.0-1121-aws-fips`. The `state.apply`
+reported no change. The FIPS row of every `doctor` **passed** (hub 8 pass and
+1 skip, node 12 pass and 2 skip, API 3 pass and 1 warn for its 2-day
+certificate). The ordinary `halite-node` warned `not a FIPS build`. The API
+answered `ready`, logged in a local account and returned `fips_mode` true
+through `POST /v1/run` over TLSv1.3 and h2.
+
+**What this closes.** A host moving into FIPS mode with halite running, on
+arm64 and on `fips-updates`. The amd64 run above did the same on the
+certified track.
+
+**Still not run.** A move *out of* FIPS mode. An upgrade by a state. A node
+on another host than the hub in either of these runs.
+
+**Teardown.** `pro detach` (`This machine is now detached`). Then the
+instance was terminated. Afterwards it was `terminated`, no volume with this
+run's tag remained, and no instance from these runs was left.
+
 ### 5.283 The FreeBSD install runbooks, run on FreeBSD as root, found five wrong things
 
 Issue #308 asked for the Handbook's install chapters to be run on a fresh host

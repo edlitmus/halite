@@ -553,8 +553,17 @@ the wrong file. Ask the binary, not its name:
 > back on its `-fips` binary with no action. `fips_mode` read True, and each
 > `doctor` passed. Jobs and the API worked. On that host's systemd 245, the
 > hub's and the API's units logged that `ProtectProc=` is unknown and ignored
-> it. **Not run:** the certified kernel on arm64, a move out of FIPS mode,
-> and an upgrade by a state.
+> it.
+>
+> **There is no certified kernel for arm64.** The certified pocket publishes
+> i386, amd64, s390x and (for 16.04) ppc64el. On arm64, FIPS comes only
+> through `fips-updates` or the uncertified `fips-preview`. A fresh Ubuntu
+> 22.04 arm64 host was therefore given `pro enable fips-updates`. main
+> (`17c55da3`) was built and installed the same way, and it ran on the stock
+> 6.8 kernel. Then the host was rebooted into 5.15.0-1121-aws-fips. The
+> results matched the amd64 host. The units came back with no action, and
+> `fips_mode` changed from False to True. Each `doctor` changed from warn to
+> pass. **Not run:** a move out of FIPS mode, and an upgrade by a state.
 
 ## Secrets: where they are and are not
 
