@@ -57,6 +57,8 @@ func all(t *testing.T) []Check {
 		}),
 		FIPSConsistency(FIPSState{Kernel: &kernel, Platform: "linux"}),
 		RenderIsolation(RenderIsolationState{}),
+		StateSignatures(StateSignatureState{Mode: "true", Keys: 1, Now: time.Now()}),
+		ServedTreeSignatures(1, nil, false),
 	}
 }
 
@@ -223,6 +225,18 @@ func everyOutcome(t *testing.T) []Result {
 		EvidenceChain(EvidenceState{Enabled: true, Dir: "/d"}),
 		EvidenceChain(EvidenceState{Enabled: true, Dir: "/d", Segments: 2,
 			Last: &EvidenceRecord{Seq: 9, Kind: "job.result", TS: "2026-09-23T07:00:00.000000Z", Lost: 2}}),
+
+		// Every branch of the state signature checks, both roles.
+		StateSignatures(StateSignatureState{Mode: "false"}),
+		StateSignatures(StateSignatureState{Mode: "true", RecordErr: errors.New("permission denied")}),
+		StateSignatures(StateSignatureState{Mode: "true"}),
+		StateSignatures(StateSignatureState{Mode: "warn"}),
+		StateSignatures(StateSignatureState{Mode: "warn", Keys: 1, Now: now}),
+		StateSignatures(StateSignatureState{Mode: "true", Keys: 1, MaxAge: time.Hour, Now: now,
+			Revisions: []StateRevision{{Env: "base", Issued: now.Add(-2 * time.Hour), Signer: "ci"}}}),
+		ServedTreeSignatures(0, nil, false),
+		ServedTreeSignatures(1, []string{"environment base: _halite holds notes.txt"}, false),
+		ServedTreeSignatures(1, nil, true),
 	)
 
 	var out []Result

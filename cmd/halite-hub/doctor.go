@@ -70,6 +70,7 @@ func runDoctor(args *cli.Args) int {
 		}),
 		hubCertificateCheck(args, cfg),
 		hubFileServerCheck(cfg),
+		hubTreeSignatureCheck(cfg),
 		hubPillarCheck(cfg, secrets),
 		hubDiskCheck(cfg),
 		hubQueueCheck(cfg),
@@ -311,6 +312,25 @@ func hubFileServerCheck(cfg *config.Config) doctor.Check {
 		}
 	}
 	return doctor.FileServerReachable(source, served, unreadable)
+}
+
+// hubTreeSignatureCheck looks at the `file_roots` trees for the two
+// things that make this hub refuse, or every requiring node refuse, a
+// signed tree: a `_halite/` holding anything else, and a hide rule over
+// the manifest. A gitfs or S3 tree is materialised by the running hub, so
+// it is not read here; the hub logs its refusal of one when a node asks.
+func hubTreeSignatureCheck(cfg *config.Config) doctor.Check {
+	dirs := cfg.Roots("file_roots")
+	roots := fileserver.NewRoots(dirs)
+	roots.IgnoreGlobs = cfg.StringSlice("file_ignore_glob")
+	_ = roots.SetIgnoreRegexes(cfg.StringSlice("file_ignore_regex"))
+	var reserved []string
+	for _, env := range roots.Envs() {
+		if err := roots.ReservedProblem(env); err != nil {
+			reserved = append(reserved, err.Error())
+		}
+	}
+	return doctor.ServedTreeSignatures(len(dirs), reserved, roots.HidesManifest())
 }
 
 // listLen is how many entries a configured list holds.

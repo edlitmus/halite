@@ -40,6 +40,7 @@ func runDoctor(args *cli.Args) int {
 		nodeConnectivityCheck(args, n),
 		nodeClockCheck(args, n),
 		nodeFileServerCheck(n),
+		nodeStateSignatureCheck(n),
 		nodePillarCheck(n),
 		nodeQuiesceCheck(n),
 		nodeDiskCheck(n),
@@ -217,6 +218,26 @@ func nodeFileServerCheck(n *node) doctor.Check {
 		return doctor.FileServerReachable("the hub's file server", []string{"the hub"}, nil)
 	}
 	return doctor.FileServerReachable(source, roots, unreadable)
+}
+
+// nodeStateSignatureCheck reads the requirement and the accepted
+// revisions, and fetches nothing: what the next state run starts from.
+func nodeStateSignatureCheck(n *node) doctor.Check {
+	state := doctor.StateSignatureState{Mode: "false", Now: time.Now()}
+	if g := n.treeGuard; g.Active() {
+		state.Mode = g.Mode.String()
+		state.Keys = len(g.Keys)
+		state.Local = n.treeSignatureLocal
+		state.MaxAge = g.MaxAge
+		records, err := g.Records.Records()
+		state.RecordErr = err
+		for _, r := range records {
+			issued, _ := time.Parse(time.RFC3339Nano, r.Issued)
+			state.Revisions = append(state.Revisions, doctor.StateRevision{
+				Env: r.Env, Issued: issued, Signer: r.Signer, ID: r.ID})
+		}
+	}
+	return doctor.StateSignatures(state)
 }
 
 func nodePillarCheck(n *node) doctor.Check {
