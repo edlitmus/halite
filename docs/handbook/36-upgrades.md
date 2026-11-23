@@ -179,7 +179,7 @@ A node's binary is just a file. How you replace it depends on how you ship it:
   one second (`Succeeded: 2 (changed=2)`), the restart ran 30 seconds later,
   and `manage.versions` showed the node on the new build. A return of more than
   16 MiB for any other reason is still lost in the same way. **On Linux, and
-  a fleet** (DIVERGENCE 5.706, `main` at `33dc8e21`, Ubuntu 26.04 hub): the
+  a fleet** (DIVERGENCE 5.708, `main` at `33dc8e21`, Ubuntu 26.04 hub): the
   same state moved a canary (AlmaLinux 8.10) and then five nodes to a new
   binary. The five were on AlmaLinux, Alpine, Debian 13, Debian 13 under
   sysvinit and openSUSE Leap 16.0, run with `--batch 2`. Each returned
@@ -190,7 +190,7 @@ A node's binary is just a file. How you replace it depends on how you ship it:
   jobs took one second and the restarts all fell in the next minute and a half.
   To space restarts in waves, give `--batch-wait` more than 90 seconds (not
   run). Replacing the binary does not replace the unit file, so a change to
-  the shipped unit (such as DIVERGENCE 5.707's) needs its own state. **Not
+  the shipped unit (such as DIVERGENCE 5.709's) needs its own state. **Not
   run:** the hub and the API by a state, and a rollback by a state.
 - **By hand**, for a few nodes: the same three commands as the hub, with
   `halite-node` and `halite_node`.

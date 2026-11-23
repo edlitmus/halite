@@ -24614,7 +24614,7 @@ it is not a validated module of Rocky's either.
 `main` at `33dc8e21` was built on the host as an unprivileged account with
 `make build fips` (`fips artifacts report module v1.0.0 and passing
 self-tests`), and installed as root with `make install` and `make
-install-fips` (5.706, item 8). The three drop-ins from
+install-fips` (5.708, item 8). The three drop-ins from
 `contrib/systemd/fips/` went into `/etc/systemd/system/halite-{hub,node,api}.service.d/`.
 A second hub drop-in carried `--names`, because the FIPS drop-in replaces
 `ExecStart`. `systemctl show` then gave `/usr/local/bin/halite-{hub,node,api}-fips`
@@ -48563,8 +48563,7 @@ narrow.
 **Not verified:** this change's own CI run is a workflow change, so it runs
 every leg; the first documentation-only PR after it is the check that it
 skips them.
-
-### 5.706 Issue 733's remaining install runs, on ten Vultr rows over a real network (2026-11-23)
+### 5.708 Issue 733's remaining install runs, on ten Vultr rows over a real network (2026-11-23)
 
 Every item still open on issue 733, run or dropped. One Vultr session in region
 `ord`, about 10.5 instance-hours, all rows destroyed at the end. Every halite
@@ -48710,11 +48709,9 @@ app. OIDC through a browser, and from any provider but dex. LDAP with
 `starttls` or with `memberOf`. A FreeBSD node enrolled by
 `--token-file` on the command line, rather than through rc. `make install`
 on any Linux but Rocky 9. arm64.
+### 5.709 The node's unit gave it a private /tmp, and a managed file there vanished at each restart (2026-11-23)
 
-
-### 5.707 The node's unit gave it a private /tmp, and a managed file there vanished at each restart (2026-11-23)
-
-Found by 5.706's drift report. `halite-node.service` and
+Found by 5.708's drift report. `halite-node.service` and
 `halite-highstate.service` set `PrivateTmp=yes`, and that gives the unit its own
 `/tmp` and `/var/tmp`, which systemd discards with the unit. A node manages the
 host, so a state that manages a file under either was managing a namespace that
@@ -48757,6 +48754,10 @@ From the next tick, the mailed report no longer listed either node.
 FIPS drop-in was not run with the new unit. A node already installed keeps the
 old unit until it is reinstalled: an upgrade that replaces the binary alone,
 as chapter 36's state does, leaves `PrivateTmp=yes` in place.
+
+
+
+
 
 ## 6. Everything else not started
 

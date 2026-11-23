@@ -39,7 +39,7 @@ ProtectSystem=no
 # unit. A file.managed there reported itself created, was invisible from a
 # shell on the same host, and was gone at the agent's next restart -- so the
 # next rehearsal reported it missing again, and the drift report mailed the
-# same false drift every morning after every upgrade (DIVERGENCE 5.707).
+# same false drift every morning after every upgrade (DIVERGENCE 5.709).
 PrivateTmp=no
 NoNewPrivileges=no
 # Kernel tunables are managed by the sysctl module, so /proc/sys stays

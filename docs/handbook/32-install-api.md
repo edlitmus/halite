@@ -34,7 +34,7 @@ authority is bounded.
 > worked the same. A code used just before a restart logged in once more after
 > it, as step 5 says. A FIPS build named the account at start and refused every
 > login to it, while an account without `totp` still logged in.
-> **LDAP, OIDC and TOTP on Linux** (DIVERGENCE 5.706): on Ubuntu 26.04.1, as
+> **LDAP, OIDC and TOTP on Linux** (DIVERGENCE 5.708): on Ubuntu 26.04.1, as
 > root under the shipped unit, from `main` at `33dc8e21`, against OpenLDAP
 > 2.6.10 over ldaps and dex v2.43.1, both with certificates from a lab CA.
 > A directory group mapped by `ldap_role_map` gave its member the role. An

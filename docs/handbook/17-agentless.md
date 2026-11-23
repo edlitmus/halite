@@ -248,7 +248,7 @@ the node is connected and self-managing and its roster entry can go.
 > The two hosts could not reach each other (the lab opens only SSH to the
 > operator), so the ssh to the target and the node's connection to the hub both
 > went through tunnels from the operator's machine. **On Linux** (DIVERGENCE
-> 5.706, `main` at `33dc8e21`): the hub on one Vultr instance (Ubuntu 26.04.1)
+> 5.708, `main` at `33dc8e21`): the hub on one Vultr instance (Ubuntu 26.04.1)
 > ran `halite-hub ssh` to a bare Debian 13 instance over the network, with no
 > tunnel. `test.ping` and `grains.item` worked, and then one state placed the
 > binary from `thin_dir`, wrote `node.yaml`, a token file and the systemd unit,

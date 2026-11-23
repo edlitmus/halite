@@ -77,7 +77,7 @@ func TestTheNodeUnitsLeaveKernelModulesReachable(t *testing.T) {
 // on the host could not see it, and after the agent's next restart it was
 // gone and the next rehearsal reported it missing again. Seen on AlmaLinux
 // 8.10 and openSUSE Leap 16.0 lab nodes, as false drift in chapter 24's
-// mailed report after every reboot and upgrade. DIVERGENCE 5.707. The hub
+// mailed report after every reboot and upgrade. DIVERGENCE 5.709. The hub
 // and API manage nothing on the host and keep the setting.
 func TestTheNodeUnitsShareTheHostsTemporaryDirectories(t *testing.T) {
 	checked := 0

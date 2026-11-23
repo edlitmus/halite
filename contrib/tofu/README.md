@@ -173,7 +173,7 @@ install runbooks were run that way, through SSH tunnels (issue 733, item
 on the others. It opens nothing to any other address.
 
 **Vultr's firewall is not the only one.** The first run with it (DIVERGENCE
-5.706, 2026-11-23) found TCP 4510 still timing out: the Ubuntu image boots
+5.708, 2026-11-23) found TCP 4510 still timing out: the Ubuntu image boots
 with `ufw` active and allowing only SSH, so the node saw `dial tcp
 <hub>:4510: i/o timeout` until `ufw allow 4510/tcp` on the hub. Of the rows
 that run, `ubuntu2604`, `debian13` and `alpine` came up with `ufw` active,

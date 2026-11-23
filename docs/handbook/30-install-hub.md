@@ -42,7 +42,7 @@ from a directory you control, one working operator, and a green
 > loader, kernel or `devd`), a firewall, or a network card. The hosts talked
 > over a loopback interface on one machine. A local build has no attestation
 > and no signature, so the `gh attestation` and `openssl` checks of step 1 were
-> not run on that archive. **Later still** (DIVERGENCE 5.706, `main` at `33dc8e21`),
+> not run on that archive. **Later still** (DIVERGENCE 5.708, `main` at `33dc8e21`),
 > on Vultr instances over a real network: a hub on Ubuntu 26.04.1 (kernel 7.0.0-43)
 > by this runbook as root, and one on FreeBSD 15.1-RELEASE-p6. Two things on this
 > page were wrong and are corrected: the FreeBSD `--names` line left out
@@ -318,7 +318,7 @@ The warning about no policy is correct and expected: the next step fixes it.
 
 **Open the port in the host's own firewall** if it runs one. Nodes connect to
 TCP 4510, and a firewall in front of the host does not cover a firewall on it.
-In the lab (DIVERGENCE 5.706) the Ubuntu 26.04 hub had `ufw` active with only
+In the lab (DIVERGENCE 5.708) the Ubuntu 26.04 hub had `ufw` active with only
 SSH allowed, and every node timed out with `dial tcp <hub>:4510: i/o timeout`
 until the port was opened:
 

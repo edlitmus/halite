@@ -34,7 +34,7 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > over a real network between two hosts is therefore run on Linux. On FreeBSD
 > the two jails shared one machine and a loopback interface, so the network
 > path was not a wire. **On fresh Vultr instances over a real network**
-> (DIVERGENCE 5.706, `main` at `33dc8e21`, no tunnels), token enrolment ran
+> (DIVERGENCE 5.708, `main` at `33dc8e21`, no tunnels), token enrolment ran
 > against an Ubuntu 26.04 hub on AlmaLinux 8.10, Alpine 3.24, openSUSE Leap
 > 16.0, Debian 13 under sysvinit and Ubuntu 22.04.5, and on Rocky Linux 9.8
 > against its own FIPS hub. Each answered `test.ping`, applied the playground
@@ -342,7 +342,7 @@ was run.
 > `/etc/rc.local` at jail start, with `node_id: node1.lab.example.com` added
 > and `hub.example.com` in `/etc/hosts`. It failed twice, for the two reasons
 > above, and ran correctly the third time. The hub showed the token as spent
-> and the node as `up`. **cloud-init itself** (DIVERGENCE 5.706): a fresh
+> and the node as `up`. **cloud-init itself** (DIVERGENCE 5.708): a fresh
 > Vultr Ubuntu 22.04.5 instance booted the Linux script above as its user-data.
 > cloud-init 26.1 ran it from its final stage, and the node enrolled with an
 > `hbt_` token and started. The script also waited for the "image" files,
