@@ -49755,6 +49755,107 @@ violation. The new read path passed all ten reads. Each job used its own
 Windows Server 2022 runner and ran the test under the standard CI account.
 [File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
 
+### 5.715 atomicfile replaced a file with MoveFileEx, which no reader can share (2026-11-23)
+
+Issue 799, `internal/atomicfile`, Windows. 5.619 records two rounds of
+retrying a replace that a concurrent read refused. After the second,
+`TestAReplaceAndAReadDoNotBlockEachOther` still failed on the windows-2022
+race leg: `rename …\.job.json.NNN …\job.json: Access is denied.`
+
+**The cause.** `Rename` was `os.Rename`, which is `MoveFileEx` with
+`MOVEFILE_REPLACE_EXISTING`. That replace is refused while any handle on
+the destination is open, also a handle that shares delete, as `Read`'s
+does. 5.619 measured that and did not find which step refuses. The probe
+here shows it with nothing racing: `Read`'s open held on the destination,
+and one `MoveFileEx` onto it, fails with "Access is denied." every time.
+So the retry had to wait for each reader to close, and on a loaded runner
+the window between two reads was sometimes longer than the retry's quiet
+tries.
+
+**Two paths that should agree.** `os.Root.Rename`, which `WriteIn` uses,
+already asked Windows for POSIX rename semantics. Go's `Renameat` uses
+`FileRenameInformationEx` with `FILE_RENAME_POSIX_SEMANTICS` and falls back
+when that is refused. So `WriteIn` never had this race, and `Write` did.
+
+**The change.** `Rename` now opens the source for delete, sharing
+everything, and calls `SetFileInformationByHandle` with `FileRenameInfoEx`
+and `FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS`. The old
+file leaves the directory at once. A reader that shares delete keeps
+reading the file it opened. `x/sys/windows` has the class and the flags,
+but not the `FILE_RENAME_INFO` structure, so the package declares it.
+`FILE_RENAME_IGNORE_READONLY_ATTRIBUTE` is not set, so a read-only
+destination is still refused, as `MoveFileEx` refused it. The retry and
+`heldOpen` are unchanged: a reader that does not share delete still
+refuses the replace, and the retry still waits for it.
+
+**The fallback.** On a FAT32 volume, `FileRenameInfoEx` with the POSIX
+flag fails with `ERROR_INVALID_PARAMETER` (87), and the destination is not
+changed. Then `Rename` uses `os.Rename`, exactly as before, with the same
+retries. It also falls back on `ERROR_INVALID_FUNCTION` and
+`ERROR_NOT_SUPPORTED`; nothing here returned those. It decides again on
+each call and remembers nothing, because one process can write to more
+than one filesystem. A directory also goes through `os.Rename`, because
+`internal/extension` and `internal/gitfs` move directories and were
+written against what `MoveFileEx` does with them. SPEC 27.1's oldest
+Windows is Server 2019, and the flag needs Windows 10 1607 or Server
+2016, so on NTFS the fallback should not be needed.
+
+**Shown.** All on GitHub-hosted windows-2022 runners (Windows Server
+2022, NTFS) in draft PR 831 ("DO NOT MERGE"), run by the runner's
+administrator account, not the standard account of the CI legs. Each
+row is 20 rounds of 200 replaces against 200 concurrent reads, 4,000 of
+each. "Raw" means one attempt and no retry. The two columns are the plain
+and `-race` legs.
+
+| Case | Before (main) | After |
+|---|---|---|
+| raw `MoveFileEx` vs raw shared read: failed replaces | 6, 39 | 12, 39 (unchanged code: the control) |
+| raw POSIX replace vs raw shared read: failed replaces / reads | not in the build | 0 / 0, 0 / 0 |
+| `Rename` vs raw shared read: failed reads (sharing violation) | 7, 12 | 0, 0 |
+| `Write` vs `Read`: failures | 0, 0 | 0, 0 |
+| `Write` vs `os.ReadFile`: failed reads | 10, 20 | 7, 18 |
+
+Before: runs 45250720068 (stress) and 45251613026 (the new test alone on
+the old code). After: run 45252360808.
+
+Read the table with care. `Write` against `Read` failed nowhere in 4,000,
+before or after, so this run did not reproduce the issue's sighting, and
+it does not show that the fix removes it. What it does show is that the
+race under the retry is gone. Before, the replace lost to a held reader
+in 6 and 39 of 4,000 attempts, and the reader lost to a replace in 7 and
+12. After, both are 0. The retry no longer has to win anything against a
+reader that shares delete.
+
+`TestAReplaceDoesNotWaitForAReaderThatSharesDelete` holds a shared reader
+open for the whole replace. On the old code it failed on both legs after
+2.008s and 2.025s with "Access is denied." (run 45251613026). With the fix
+it passes in under 10ms on both legs, and the reader still reads the old
+contents. `TestAFallbackReplaceLandsWhereThereIsNoPOSIXRename` makes the
+POSIX call return `ERROR_INVALID_PARAMETER`. The replace must still land,
+and it does. With `ERROR_INVALID_PARAMETER` taken out of the fallback on
+purpose, that test failed with "The parameter is incorrect." on both
+legs, and so did every write on the FAT32 volume, the first one too
+(run 45253099681). So without the fallback, nothing could be written on
+FAT at all. On the FAT32 volume, a `Write` and then a replace
+through the new code both landed, and the file read back as the new
+contents.
+
+**Not fixed: readers that do not share delete.** `os.ReadFile` does not
+ask for `FILE_SHARE_DELETE`. During the POSIX rename, the source is open
+for delete, so an `os.ReadFile` of the new name is refused with a sharing
+violation. Under `MoveFileEx` it was refused too. The table's last row is
+that reader, before and after. Code that reads a file which `atomicfile`
+replaces must read it with `atomicfile.Read`, as 5.714 did for the
+orchestration store. `MineStore.Get` (`internal/hub/mine.go`) still uses
+`os.ReadFile` on a file that `Write` replaces. No sweep of the other
+`os.ReadFile` calls was done.
+
+**Not verified.** No network share, ReFS or Windows Server 2019 or 2025
+was run. The fallback ran on FAT32 only. The stress ran as an
+administrator and not as the CI legs' standard account. The issue's
+`Write` against `Read` failure did not happen in any run, before or after,
+so this is no evidence that it cannot happen. No antivirus held the file.
+
 
 
 ## 6. Everything else not started
