@@ -27,7 +27,7 @@ import (
 //
 //   - `halite-hub migrate /srv/salt --cmd-default-shell`. The flag was
 //     renamed to `--no-cmd-default-shell` when the `cmd.run` shell
-//     default inverted (DIVERGENCE 5.81) and the row was never touched.
+//     default inverted (DIVERGENCE 5.84) and the row was never touched.
 //   - `halite-hub runner reactor.test --tag … --data …`. A runner takes
 //     its arguments as `key=value` pairs, never as flags; `--data` is
 //     refused outright and `--tag` is accepted only because `event
@@ -329,7 +329,7 @@ func invocationFlags(invocation string) (binary, sub string, flags []string) {
 // A service file is a command line nobody types: it runs at boot, and a
 // flag the program refuses stops the service before it logs anything
 // useful. `cli.RejectUnknownFlags` refuses an undocumented flag outright,
-// so a renamed flag (DIVERGENCE 5.81 renamed one) leaves every unit that
+// so a renamed flag (DIVERGENCE 5.84 renamed one) leaves every unit that
 // still passes the old name as a service that never starts. The reference
 // above was held to the usage text; the units, rc.d scripts and the OpenRC
 // and sysvinit scripts of issue 812 are held the same way here.
