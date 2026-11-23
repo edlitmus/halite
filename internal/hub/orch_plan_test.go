@@ -373,7 +373,12 @@ func TestAPlanThatDisagreesWithTheRunIsRefusedBeforeAnyStep(t *testing.T) {
 			req.ResumeOf, req.ResumeFrom = "20261122T181000123456", "deploy_web"
 		}, ""},
 		{"an expired plan", func(t *testing.T, l *lab, req *OrchRequest) {
-			l.server.Now = func() time.Time { return time.Now().Add(2 * time.Hour) }
+			// Made two hours ago for an hour, rather than moving the hub's
+			// clock: the server is serving, and its fields are not written
+			// once it is (newLabWith).
+			req.Plan, req.PlanDigest = newPlanSigner(t).plan(t, l.server.Files, PlanOptions{
+				SLS: []string{"deploy"}, Pillar: versionPillar(),
+				Created: time.Now().Add(-2 * time.Hour), TTL: time.Hour})
 		}, "the plan expired at"},
 		{"a step whose signed job this hub already sent", func(t *testing.T, l *lab, req *OrchRequest) {
 			entry, _ := req.Plan.Step("drain")
