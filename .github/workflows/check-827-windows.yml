@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 3
+          fetch-depth: 5
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -28,7 +28,7 @@ jobs:
       - name: Restore the previous read path while keeping the test diagnostics
         if: matrix.code == 'baseline'
         shell: bash
-        run: git restore --source=HEAD~2 -- internal/hub/orchstore.go
+        run: git restore --source=5f5ae87cbb1d06dc9407a86c1babc6dc16c9f1a9 -- internal/hub/orchstore.go
       - name: Run the checkpoint repeatedly as a standard user
         shell: powershell
-        run: .github/run-as-standard-user.ps1 test -v -count=100 -timeout=8m -run=^TestASignedStepIsRecordedPendingAndSignedBeforeItsJobIsSent$ ./internal/hub
+        run: .github/run-as-standard-user.ps1 -Command @('test', '-v', '-count=10', '-timeout=2m', '-run=TestOrchStoreReadsARecordOpenForReplacement$', './internal/hub')
