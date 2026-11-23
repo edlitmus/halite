@@ -49426,8 +49426,7 @@ admission check (`TestAStateJobWithAnUnusablePillarOverrideIsRefused`).
 - Run on the dev host only (FreeBSD, through its Linux compatibility
   layer), on a hub and a node over loopback. No lab machine, no relay, no
   API-submitted job (`/v1/run` sends the same keyword).
-
-### 5.711 `orch run` gave up on a run after thirty seconds while the run went on (2026-11-23)
+### 5.713 `orch run` gave up on a run after thirty seconds while the run went on (2026-11-23)
 
 Issue 815, seen once in the first attempt at 5.707's reproduction.
 `halite-hub orch run` and `orch resume` waited for a run's outcome on the
@@ -49513,6 +49512,7 @@ waited on. `halite-hub runner state.orchestrate`, and the API's runner
 calls through its own thirty-second hub client (`cmd/halite-api`), still
 wait on one request; either can pass `async` now, and neither does by
 itself. That is issue 822.
+
 
 
 ## 6. Everything else not started
