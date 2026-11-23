@@ -49923,8 +49923,95 @@ compile left on the node's own environment (both no-hub-pillar tests).
 - `halite-node state apply pillarenv=...` on the command line is unchanged;
   `--pillarenv` is the flag there.
 - `pillarenv_from_saltenv` is not read, here or anywhere.
+### 5.717 `runner state.orchestrate` and the API still gave up on a run after thirty seconds (2026-11-23)
 
+Issue 822, the rest of 5.713. Two more callers made the call `orch run`
+had stopped making, and waited for the outcome on one request bounded at
+thirty seconds: `halite-hub runner state.orchestrate` (and `state.orch`,
+`state.orch_resume`) through the operator client, and halite-api, whose
+own hub client has `Timeout: 30 * time.Second` (`cmd/halite-api/serve.go`).
+The API reaches the orchestration runners from `POST /v1/orch` and from
+`/v1/run`'s `runner` client. A run longer than that was reported in the
+terminal as `context deadline exceeded`, exit 1, and to an API caller as
+`502 calling the runner failed at the hub`, while it went on on the hub.
 
+The pair here is the same as 5.713's, the client's bound on a request
+against the length of the work, and there was a second one behind it:
+three callers that each had to decide which runner calls to wait for. So
+the waiting is one function now, `transport.Client.AwaitRunnerReturn`,
+moved out of `cmd/halite-hub/orch.go` unchanged, with the list of runners
+that take `async` beside it (`transport.WaitsForRunner`). The hub's test
+`TestTheRunnersThatTakeAsyncAreTheOnesCallersWaitFor` holds that list to
+the runners whose signature declares `async`, both ways.
+
+**`halite-hub runner`: the orchestration runners only.** A runner without
+`async` cannot answer before its work is done, and the hub refuses an
+`async` it does not declare, because keyword arguments are bound strictly.
+Waiting for any runner would need a second mechanism on the hub, for work
+that is short today. A survey of the registry found one other runner that
+can outlast the client: `event.listen`, whose `timeout` the caller sets,
+with a default of thirty seconds, the client's own bound. That one is a
+wait the operator asked for and is left as it is; nothing here measured
+it. The command starts the run `async`, says the run's jid on stderr as
+`orch run` does, and polls the call's job. On success it prints the
+runner's answer as it always has, now the finished run; a failure prints
+`state.orchestrate: orchestration <jid> failed; ...` and exits 1; a wait
+that does not see the outcome exits 3, with `orch run`'s messages. An
+operator who names `async` gets that and no wait.
+
+**The API waits by polling, bounded by the caller's request.** Two
+choices were open: pass `async` and return the jid for the client to poll,
+or wait. Returning the jid would change the documented contract of
+`/v1/run` (SPEC 22.1: "Synchronous execution") and of `POST /v1/orch`,
+and every existing caller with it; waiting changes nothing a caller sees
+except that a long run now succeeds. The API's server has no write
+timeout (`Serve`, for the event stream), so the caller's own request is
+the only bound, and a caller that closes it stops the waiting, not the
+run. `callRunner` is used for every runner call the API makes, and does
+nothing for a runner not on the list. It polls as the API's own
+certificate, which started the call; the caller was authorized before
+the call was made. A failed run is `422` with its timeline, as before,
+and an error naming it, because the job keeps no sentence about why (as in
+5.713). A wait that does not see the outcome is `502` naming the run and
+`GET /v1/orch/<jid>`, where it was "failed at the hub". A caller that puts
+`"async": true` in `kwarg` gets the started run at once, as it already
+could. `runner_async` waits as `runner` does, as it already did.
+
+**Demonstrated.** `cmd/halite-hub/orch_wait_test.go` drives the real
+command against a real hub with the operator client cut to one second,
+as 5.713's tests do. On `main` at `5f5ae87c` with only the tests added,
+`runner state.orchestrate sls=gate` and `runner state.orch` both exited 1
+after 1.01s with `Post "https://localhost:…/v1/runners": context deadline
+exceeded`, and a run that fails at three seconds exited 1 the same way,
+naming no run. With the change they exit 0 after about 3s with
+`"state": "complete"`, and 1 naming the failed run; `async=true` answers at
+once with `"state": "running"`. `internal/hub/api_orch_wait_test.go`
+puts a real `api.Server` in front of this package's hub with the API's
+hub client cut to one second (its `Timeout` field, set by the test: the
+API builds its client from a struct, so no environment variable is
+needed). On `main` `POST /v1/orch` and `/v1/run` with `state.orchestrate`
+and `state.orch` answered 502 after 1.00s, and the failing run 502 where
+422 was wanted. With the change they answer 200 after about 3.02s with
+the finished run, and the failing run 422 with its timeline.
+
+Broken on purpose, twice. With `WaitsForRunner` answering false, every
+one of those tests failed again exactly as on `main`. With `state.orch`
+taken off the list, the agreement test failed naming it.
+
+**Not covered.** No API caller that closes its request mid-wait was
+tested: the run should go on and the API log a `502` nobody reads, and
+that is read, not run. Nor a hub restart or a hub that stops answering
+under the API, which is the same function as `orch run`'s and tested
+there, but not through the API. No run longer than a few seconds, and no
+real thirty-second client. Run on the FreeBSD development host only,
+through the agent's Linux shell. **An API or operator machine upgraded
+before its hub** sends `async` to a hub that refuses it, so every
+orchestration through the API, and `runner state.orchestrate`, fails
+before anything runs: upgrade the hub first, as for 5.713; read, not run
+against an old hub. The added `async` is not seen by the API's own policy
+check, which is made before it is added, so a role with `deny_kwargs:
+['async']` is not refused by the API for it; whether the hub's delegated
+check refuses it was not tried.
 
 
 

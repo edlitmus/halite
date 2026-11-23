@@ -475,3 +475,85 @@ func (b *syncBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+// Issue 822: `halite-hub runner state.orchestrate` is the same call as
+// `orch run` through the generic runner command, and it still waited for
+// the outcome on one request after `orch run` had stopped doing so (815).
+// The same lab and the same one-second client: a run held three seconds
+// must be waited for, its outcome printed, and the exit status its own.
+func TestRunnerStateOrchestrateWaitsForARunLongerThanTheClientsTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a hub and waits several seconds for an orchestration")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("uses Unix paths in the tree")
+	}
+	lab := newOrchWaitLab(t)
+
+	for _, fun := range []string{"state.orchestrate", "state.orch"} {
+		t.Run(fun, func(t *testing.T) {
+			released := lab.releaseAfter(3 * time.Second)
+			started := time.Now()
+			got := lab.hub("runner", fun, "sls=gate", "--out", "json")
+			took := time.Since(started)
+			<-released
+			t.Logf("runner %s took %s and exited %d:\n%s%s", fun, took.Round(time.Millisecond), got.code, got.stdout, got.stderr)
+			if got.code != 0 {
+				t.Fatalf("runner %s exited %d for a run that succeeded after %s; the client's timeout is 1s:\n%s%s",
+					fun, got.code, took.Round(time.Millisecond), got.stdout, got.stderr)
+			}
+			if took < 2500*time.Millisecond {
+				t.Fatalf("runner %s returned after %s, before the run could have finished", fun, took)
+			}
+			jid := runningJID(t, got.stderr)
+			for _, want := range []string{`"jid": "` + jid + `"`, `"state": "complete"`} {
+				if !strings.Contains(got.stdout, want) {
+					t.Errorf("the answer does not say %s:\n%s", want, got.stdout)
+				}
+			}
+		})
+	}
+}
+
+// A long run that fails exits 1 through `runner` as through `orch run`,
+// and names the run, so the operator has something to look at.
+func TestRunnerStateOrchestrateReportsALongRunsFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a hub and waits several seconds for an orchestration")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("uses Unix paths in the tree")
+	}
+	lab := newOrchWaitLab(t)
+
+	got := lab.hub("runner", "state.orchestrate", "sls=timesout")
+	t.Logf("runner state.orchestrate exited %d:\n%s%s", got.code, got.stdout, got.stderr)
+	if got.code != 1 {
+		t.Fatalf("runner state.orchestrate exited %d for a run whose step failed after 3s, want 1:\n%s%s",
+			got.code, got.stdout, got.stderr)
+	}
+	jid := runningJID(t, got.stderr)
+	if want := "orchestration " + jid + " failed"; !strings.Contains(got.stderr, want) {
+		t.Errorf("stderr does not say %q:\n%s", want, got.stderr)
+	}
+}
+
+// An operator who names `async` gets what they named: the answer at
+// once, with the run's jid, and no wait.
+func TestRunnerStateOrchestrateWithAsyncAnswersAtOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a hub")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("uses Unix paths in the tree")
+	}
+	lab := newOrchWaitLab(t)
+
+	got := lab.hub("runner", "state.orchestrate", "sls=gate", "async=true", "--out", "json")
+	<-lab.releaseAfter(0)
+	t.Logf("runner state.orchestrate async=true exited %d:\n%s%s", got.code, got.stdout, got.stderr)
+	if got.code != 0 || !strings.Contains(got.stdout, `"state": "running"`) ||
+		strings.Contains(got.stderr, "is running on the hub") {
+		t.Fatalf("an explicit async was not answered at once with the running run:\n%s%s", got.stdout, got.stderr)
+	}
+}

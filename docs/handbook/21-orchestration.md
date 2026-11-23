@@ -260,6 +260,14 @@ command waited on the one request that started the run, and an operator
 request has 30 seconds: a longer run failed in the terminal with `context
 deadline exceeded` while it carried on on the hub.
 
+`halite-hub runner state.orchestrate`, `state.orch` and `state.orch_resume`
+wait the same way, and exit the same way, `3` included. They print the
+runner's answer, not a timeline, as `runner` always has. Name `async=true`
+yourself and the command prints the started run, with its JID, and does
+not wait. The API waits too: `POST /v1/orch`, and these runners through
+`/v1/run`'s `runner` client, answer with the outcome when the run ends,
+for as long as your request stays open ([chapter 27](27-http-api.md)).
+
 ## Failure, rollback and resume
 
 Make the verification step fail (here by checking for a file that does not

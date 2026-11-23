@@ -25,11 +25,12 @@ Everything here is crypto/tls and net/http. Section 6.1 records why at length, a
 
 There is no plaintext mode. Not for loopback, not for a test, not behind a flag — section 6.1 is explicit that such a setting is invariably found in production, and the way to be sure of that is for it not to exist.
 
-**Files:** `bootstrap.go`, `client.go`, `closedrain.go`, `streams.go`, `tls.go`, `unreachable.go`, `wire.go`; with tests.
+**Files:** `bootstrap.go`, `client.go`, `closedrain.go`, `runnerwait.go`, `streams.go`, `tls.go`, `unreachable.go`, `wire.go`; with tests.
 
 **Exports.**
 
 - `ApprovedCurves` (func): ApprovedCurves is approvedCurves for a listener outside this package: the API's, which must hold to the same rule (SPEC 25.3, 27.4) and did not (issue 321, section 5).
+- `AsyncRunners` (func): AsyncRunners names the runners that take `async`, which the callers wait for; it exists so that the hub's test can compare the list with the registry.
 - `Client` (type): Client is a node's connection to its hub.
 - `ClientConfig` (func): ClientConfig builds a node's TLS configuration.
 - `CodeOf` (func): CodeOf answers with the stable code the hub attached to a failure, or an empty string when it attached none.
@@ -69,13 +70,16 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `ResumeResponse` (type): ResumeResponse is the answer to POST /v1/jobs/{jid}/resume.
 - `RunnerRequest` (type): RunnerRequest is an operator asking the hub to run one of its own functions, at POST /v1/runners.
 - `RunnerResponse` (type): RunnerResponse is what the runner returned.
+- `RunnerReturn` (type): RunnerReturn is a runner call's outcome, as its job holds it.
 - `ServerConfig` (func): ServerConfig builds the hub's TLS configuration.
+- `StartedRun` (func): StartedRun is the jid of a run the hub has started and not finished, from an `async` call's answer, or "" when the answer is the outcome itself: a refusal before the first step, or a run that ended before the hub replied.
 - `StatusError` (type): StatusError is a failure the hub reported that may not repeat.
 - `SubmitRequest` (type): SubmitRequest is an operator asking for a job, at POST /v1/jobs.
 - `SubmitResponse` (type): SubmitResponse is the hub's acknowledgement: the jid and who is expected to answer, so that a caller which disconnects can still find out what happened.
 - `Subordinate` (type): Subordinate is one node behind a relay.
 - `SubscribeRequest` (type): SubscribeRequest is the body a node opens the stream with: its initial state, per SPEC 6.2.
 - `Unreachable` (func): Unreachable reports whether a request failed because no hub answered.
+- `WaitsForRunner` (func): WaitsForRunner reports whether a caller should start this call `async` and wait for its job, and sets `async` in kwargs when it should.
 - `WriteError` (func): WriteError sends a failure in the one shape.
 - `WriteJSON` (func): WriteJSON sends a value with the canonical settings of SPEC 6.4: HTML escaping off, because this is not a browser and a `&` in a command line should survive.
 
@@ -649,7 +653,7 @@ Package api is the HTTP API of SPEC section 22.
 
 It is a client of the hub, not a component of it. In Salt the API process loads the control plane's own configuration and calls into its internals, so a flaw in the API is a flaw in the control plane. Here it holds an operator certificate like any other caller, and its worst case is bounded by the RBAC policy that certificate is bound to. \<!-- lexicon:allow -->
 
-**Files:** `auth.go`, `authorize.go`, `events.go`, `execute.go`, `hook.go`, `ldap.go`, `loginlimit.go`, `metrics.go`, `metrics_families.go`, `nodes.go`, `oidc.go`, `server.go`, `wsevents.go`; with tests.
+**Files:** `auth.go`, `authorize.go`, `events.go`, `execute.go`, `hook.go`, `ldap.go`, `loginlimit.go`, `metrics.go`, `metrics_families.go`, `nodes.go`, `oidc.go`, `runnerwait.go`, `server.go`, `wsevents.go`; with tests.
 
 **Exports.**
 
