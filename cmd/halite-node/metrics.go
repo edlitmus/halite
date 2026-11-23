@@ -19,6 +19,7 @@ import (
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/tracing"
+	"github.com/edlitmus/halite/internal/treesign"
 )
 
 // nodeMetrics is what a node counts about itself.
@@ -78,6 +79,9 @@ type nodeMetrics struct {
 	evidenceFailures   *metrics.Counter
 	evidenceUnrecorded *metrics.Counter
 	anchorProblems     *metrics.Counter
+
+	treeRefusals *metrics.Counter
+	treeIssued   *metrics.Gauge
 }
 
 // newNodeMetrics reads the settings and declares the families.
@@ -192,7 +196,42 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 	m.anchorProblems = r.Counter("halite_node_evidence_anchor_problems_total",
 		"Reports of this node's evidence head that were not anchored, by problem.", "problem")
 
+	// Issue 764's signed state content. The refusals count what
+	// `require_state_signature: true` refused, or in `warn` would have.
+	// The issued time is the one to alert on, for its age -- a node frozen
+	// on an old revision -- and for its absence.
+	m.treeRefusals = r.Counter("halite_node_tree_refusals_total",
+		"Signed state content this node refused, or under require_state_signature: warn would have, by reason.",
+		"reason")
+	m.treeIssued = r.Gauge("halite_node_tree_revision_issued_timestamp_seconds",
+		"When the signed manifest this node last accepted for an environment was issued.", "env")
+
 	return m
+}
+
+// countTreeRefusal records one refusal of signed state content.
+func (m *nodeMetrics) countTreeRefusal(reason treesign.Reason) {
+	if m.on() {
+		m.treeRefusals.With(string(reason)).Inc()
+	}
+}
+
+// declareTreeRefusals exports every reason at 0, on a node that checks
+// signed state content, so that increase() sees the first refusal.
+func (m *nodeMetrics) declareTreeRefusals() {
+	if !m.on() {
+		return
+	}
+	for _, reason := range treesign.Reasons {
+		m.treeRefusals.With(string(reason)).Add(0)
+	}
+}
+
+// treeRevision records the revision accepted for an environment.
+func (m *nodeMetrics) treeRevision(env string, issued time.Time) {
+	if m.on() {
+		m.treeIssued.With(env).Set(float64(issued.UnixNano()) / 1e9)
+	}
 }
 
 // on reports whether anything is being recorded.

@@ -311,6 +311,14 @@ type node struct {
 	// rather than incidental.
 	signatureRequired signatureRequirement
 	signerKeyList     []jobsign.SignerKey
+	// treeGuard is issue 764's check of signed state content, nil where
+	// `require_state_signature` is false. Read once at startup for the
+	// reason signatureRequired is, and shared by every copy of the node
+	// and every tree, so the high-water marks are one set.
+	treeGuard *fileserver.TreeGuard
+	// treeSignatureLocal is `state_signature_local`: whether the guard
+	// covers this node's own roots as well as the hub's tree.
+	treeSignatureLocal bool
 	// evidence is SPEC 25.7's hash-chained local record. A pointer,
 	// because a job runs against a shallow copy of the node and both
 	// halves must append to the same chain. Never nil; whether anything
@@ -469,7 +477,8 @@ func setup(args *cli.Args) *node {
 	n.args = args
 	n.root = root
 	n.refusals = make(chan *job.Return, 16)
-	n.files = fileserver.NewFetcher(fileserver.NewRoots(n.fileRootsFor(n.env)))
+	n.buildTreeGuard()
+	n.files = n.localTree(n.env)
 	n.pillars = fileserver.NewRoots(n.pillarRootsFor(n.pillarEnv))
 	return n
 }

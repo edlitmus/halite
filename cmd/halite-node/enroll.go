@@ -468,6 +468,7 @@ func runConnect(args *cli.Args) int {
 	n.log.Info(n.signatureSummary(), "component", "jobsign",
 		"require_job_signature", n.signatureRequired.String(),
 		"signer_keys", len(n.signerKeyList))
+	n.log.Info(n.treeSignatureSummary(), "component", "treesign")
 
 	// SPEC 25.7's record, opened before anything can be accepted and
 	// closed on the way out. A failure to open is loud and is not fatal:
@@ -741,6 +742,9 @@ func (n *node) useHubTree(client *transport.Client) {
 		return
 	}
 	remote.Environments = []string{n.env}
+	// After the probe above, which asks the hub whether it serves files
+	// at all and must not pin a signed revision to the agent.
+	remote.Guard = n.treeGuard
 	n.files = remote
 	n.hubRemote = remote
 	n.hubTree = true
@@ -756,7 +760,7 @@ func (n *node) useHubTree(client *transport.Client) {
 // the saved one is what is wanted then.
 func (n *node) refreshTreeListing() {
 	if n.hubRemote != nil {
-		_, _ = n.hubRemote.ManifestFor(n.env, "")
+		n.hubRemote.RefreshListing(n.env)
 	}
 }
 

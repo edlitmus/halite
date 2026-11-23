@@ -42,6 +42,10 @@ func (n *node) executeJob(j *job.Job) (result *job.Return) {
 	// report what it would do and believe it had done it. The same
 	// applies to the environment a job names.
 	n = n.forJob()
+	// One signed revision per environment for the length of this job, so
+	// a tree that changes on the hub mid-run fails the run rather than
+	// mixing two revisions (issue 764). A no-op without the requirement.
+	n.files = pinTreeForRun(n.files)
 
 	// SPEC 26.3's span per job, under whatever the hub sent. Nil when
 	// tracing is off, and every method on it tolerates that, so nothing
@@ -222,7 +226,7 @@ func (n *node) adoptJobEnvironment(j *job.Job) error {
 		// only the environment the fetcher asks for changes.
 		n.files = remote.ForEnv(j.Env)
 	} else {
-		n.files = fileserver.NewFetcher(fileserver.NewRoots(n.fileRootsFor(n.env)))
+		n.files = pinTreeForRun(n.localTree(n.env))
 	}
 	n.pillars = fileserver.NewRoots(n.pillarRootsFor(n.pillarEnv))
 	return nil
