@@ -15,6 +15,10 @@ import (
 // registerStateRunner installs the `state` runner of SPEC 19.2: the
 // orchestration entry points.
 func registerStateRunner(r *Runners) {
+	asyncParam := runnerOpt("async", signature.Bool, false, "Answer with the run's jid once it has started, "+
+		"rather than with its outcome when it ends. The call's own job is answered when the run ends, "+
+		"so polling that job gives the outcome, as `halite-hub orch run` does. A run refused before its "+
+		"first step is still the call's answer.")
 	orchParams := []signature.Param{
 		runnerArg("sls", signature.String, "The orchestration SLS, or a comma list of them."),
 		runnerOpt("env", signature.String, "", "The environment to compile from."),
@@ -23,6 +27,7 @@ func registerStateRunner(r *Runners) {
 		runnerOpt("plan", signature.String, "", "A signed plan from `halite-hub orch plan`, as its JSON text: "+
 			"every fleet step is sent as the plan's signed job, and the run is refused before any step "+
 			"if the plan and this compile disagree."),
+		asyncParam,
 	}
 
 	r.Add(
@@ -146,6 +151,7 @@ func registerStateRunner(r *Runners) {
 				runnerOpt("test", signature.Bool, false, "Report what each step would do without dispatching."),
 				runnerOpt("plan", signature.String, "", "A signed resume plan from `halite-hub orch plan "+
 					"--resume-of`. A resume always needs a new plan."),
+				asyncParam,
 			),
 			Fn: func(c *RunnerContext) (any, error) {
 				id, err := parseJID(c.arg("jid"))
@@ -191,11 +197,7 @@ func registerStateRunner(r *Runners) {
 				if err := withPlan(c, &req); err != nil {
 					return nil, err
 				}
-				run, err := c.Server.Orchestrate(c.Ctx, req)
-				if err != nil {
-					return nil, err
-				}
-				return orchOutcome(run)
+				return startOrchestration(c, "state.orch_resume", req)
 			},
 		},
 		RunnerModule{
@@ -296,11 +298,81 @@ func runOrchestration(c *RunnerContext) (any, error) {
 	if err := withPlan(c, &req); err != nil {
 		return nil, err
 	}
-	run, err := c.Server.Orchestrate(c.Ctx, req)
-	if err != nil {
-		return nil, err
+	return startOrchestration(c, "state.orchestrate", req)
+}
+
+// startOrchestration runs an orchestration for a runner call: to its end,
+// or, for `async`, until it has started.
+//
+// The asynchronous form exists because the caller cannot otherwise learn
+// the run's outcome. `orch run` waited for it on one request, and the
+// operator client gives a request thirty seconds: a run that took longer
+// -- a database initialisation, a data migration -- failed in the
+// operator's terminal with "context deadline exceeded" while it carried
+// on here, and its result went to nobody (issue 815). Making the client
+// wait longer only moves the ceiling, and an interrupted wait still leaves
+// the operator with no jid to look at.
+//
+// So the call answers as soon as the run is recorded, with its jid, and
+// its own job -- the runner call's, in the job cache -- is answered when
+// the run ends, with the outcome the synchronous call would have
+// returned (laterReturn). The caller polls that job, as `run` polls a
+// node job, in requests of the ordinary length. The job rather than
+// `state.orch_show` because reading the job is held to the grant that
+// started it (requestForJob): a role granted `state.orchestrate` alone --
+// the handbook's `deployer` -- may read it, and would be refused
+// `state.orch_show`.
+//
+// Anything that refuses the run before its first step -- a compile
+// error, a plan that disagrees, a resume that may not be made -- is still
+// this call's answer, because Orchestrate returns it before `started`.
+func startOrchestration(c *RunnerContext, fun string, req OrchRequest) (any, error) {
+	if !c.argBool("async") {
+		run, err := c.Server.Orchestrate(c.Ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return orchOutcome(run)
 	}
-	return orchOutcome(run)
+
+	type outcome struct {
+		ret any
+		err error
+	}
+	started := make(chan job.ID, 1)
+	ended := make(chan outcome, 1)
+	req.started = func(id job.ID) { started <- id }
+	server := c.Server
+	server.goBackground(func() {
+		// The hub's lifetime rather than the request's, which ends with
+		// this call's answer. Orchestrate does not stop on its context
+		// today -- its steps live inside batchContext -- but one that did
+		// would stop every asynchronous run the moment it was answered.
+		background := *c
+		background.Ctx = server.batchContext()
+		ret, err := server.runGuarded(fun, func(*RunnerContext) (any, error) {
+			run, err := server.Orchestrate(background.Ctx, req)
+			if err != nil {
+				return nil, err
+			}
+			return orchOutcome(run)
+		}, &background)
+		ended <- outcome{ret, err}
+	})
+
+	select {
+	case id := <-started:
+		now := value.NewMap(3)
+		now.Set("jid", string(id))
+		now.Set("sls", stringList(req.SLS))
+		now.Set("state", string(OrchRunning))
+		return &laterReturn{now: now, wait: func() (any, error) {
+			o := <-ended
+			return o.ret, o.err
+		}}, nil
+	case o := <-ended:
+		return o.ret, o.err
+	}
 }
 
 // orchOutcome is the shape every orchestration entry point returns.

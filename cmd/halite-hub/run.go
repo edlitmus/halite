@@ -85,9 +85,16 @@ func operatorClient(args *cli.Args) *transport.Client {
 		CA:         ca,
 		Cert:       &pair,
 		ServerName: args.Flag("server-name", ""),
-		Timeout:    30 * time.Second,
+		Timeout:    operatorTimeout,
 	}
 }
+
+// operatorTimeout bounds each request an operator command makes. It is a
+// bound on one request, not on the work a request asks for: a command
+// that waits for something longer -- `run` for its nodes, `orch run` for
+// its run -- polls in requests this long (issue 815). A variable so that
+// a test can shorten it.
+var operatorTimeout = 30 * time.Second
 
 // defaultOperator finds the one operator certificate in the key
 // directory, and refuses to guess between several.

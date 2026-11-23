@@ -378,7 +378,6 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 	s.emit(tagRunNew(string(jid)), "", newRun)
 	s.recordRunnerJob(jid, call, started)
 
-	out := &RunnerOutcome{JID: jid, Fun: call.Fun, Success: true}
 	ret, err := s.runGuarded(call.Fun, reg.fns[call.Fun], &RunnerContext{
 		Ctx:        ctx,
 		Server:     s,
@@ -388,6 +387,33 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		Scope:      scope,
 		OnBehalfOf: call.OnBehalfOf,
 	})
+	if later, ok := ret.(*laterReturn); ok && err == nil {
+		// Answered now with what the runner has so far; the job, its
+		// `ret` event and its return wait for the work to end, so that
+		// whoever reads the job reads the outcome rather than "started".
+		s.goBackground(func() {
+			final, err := later.wait()
+			s.finishRunner(jid, call.Fun, started, final, err)
+		})
+		return &RunnerOutcome{JID: jid, Fun: call.Fun, Success: true, Return: later.now,
+			Duration: s.now().Sub(started)}, nil
+	}
+	return s.finishRunner(jid, call.Fun, started, ret, err), nil
+}
+
+// laterReturn is a runner's answer that is not its outcome: now is what
+// the caller is told at once, and wait blocks until the work has ended
+// and gives what the runner would have returned had it waited. Only an
+// asynchronous orchestration returns one (startOrchestration).
+type laterReturn struct {
+	now  any
+	wait func() (any, error)
+}
+
+// finishRunner closes a runner call: its `ret` event and its return in
+// the job cache, written from what the runner returned.
+func (s *Server) finishRunner(jid job.ID, fun string, started time.Time, ret any, err error) *RunnerOutcome {
+	out := &RunnerOutcome{JID: jid, Fun: fun, Success: true}
 	out.Duration = s.now().Sub(started)
 	// The value and the error both, when a runner produced both. An
 	// orchestration that failed is the case: the run happened, its
@@ -402,12 +428,12 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 
 	s.emit(tagRunRet(string(jid)), "", map[string]any{
 		"jid":     string(jid),
-		"fun":     call.Fun,
+		"fun":     fun,
 		"success": out.Success,
 		"error":   out.Err,
 	})
 	s.recordRunnerReturn(out, started)
-	return out, nil
+	return out
 }
 
 // runGuarded runs a runner and turns a panic in it into the error it is.

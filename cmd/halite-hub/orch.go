@@ -2,11 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -72,10 +78,11 @@ func orchRun(args *cli.Args, lintOnly bool) int {
 		}
 		kwargs["pillar"] = decoded
 	}
-	if !lintOnly {
-		planArgument(args, kwargs)
+	if lintOnly {
+		return orchCall(args, fun, nil, kwargs)
 	}
-	return orchCall(args, fun, nil, kwargs)
+	planArgument(args, kwargs)
+	return orchStartAndWait(args, fun, nil, kwargs)
 }
 
 func orchShow(args *cli.Args) int {
@@ -119,7 +126,7 @@ func orchResume(args *cli.Args) int {
 		kwargs["pillar"] = decoded
 	}
 	planArgument(args, kwargs)
-	return orchCall(args, "state.orch_resume", args.Positional[1:2], kwargs)
+	return orchStartAndWait(args, "state.orch_resume", args.Positional[1:2], kwargs)
 }
 
 // orchCall makes the runner call and renders the answer.
@@ -140,8 +147,181 @@ func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) i
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	return renderOrch(res.Return, res.Success, res.Error, timeline, format)
+}
 
-	decoded, decodeErr := value.DecodeJSON(res.Return)
+// Exit statuses of a waited-for run besides 0 and 1. 3 is `run`'s for a
+// node that never answered: the outcome is not known, which is neither
+// success nor failure.
+const exitOutcomeUnseen = 3
+
+// orchPollInterval is how often a waited-for run's job is read. A read
+// writes nothing on the hub -- not a job, not an event -- so this is
+// cheap for a run of hours; a second is how late the outcome may be
+// printed.
+var orchPollInterval = time.Second
+
+// orchStartAndWait is `orch run` and `orch resume`: start the run, name
+// it, and wait for its outcome a request at a time.
+//
+// They waited on the one request that started the run, and an operator
+// request has thirty seconds (operatorTimeout). A run longer than that --
+// a database initialisation, a data migration -- failed here with
+// "context deadline exceeded" and exit 1 while it carried on on the hub,
+// and its outcome went to nobody (issue 815). Raising the timeout would
+// only move that line, and still leave an operator whose terminal dropped
+// with no jid to look at.
+//
+// So the run is started `async`: the hub answers once the run is recorded,
+// with its jid, which is printed before anything is waited for. The
+// outcome is the answer to the runner call's own job, filed when the run
+// ends, and it is read as `run` reads a node's job -- polled, each poll an
+// ordinary short request. A run refused before its first step is still
+// the first call's answer and is printed as it always was.
+//
+// What this cannot see is said rather than guessed, and exits
+// exitOutcomeUnseen: an interrupt (the run is still running), a hub that
+// restarted (the run stopped with it), and a hub that stops answering (it
+// may be either). Each names the command to look with. Exit 1 stays what
+// it was, a run that failed.
+func orchStartAndWait(args *cli.Args, fun string, arg []string, kwargs map[string]any) int {
+	timeline, format, err := cli.ParseOut("timeline", args.Flag("out", "timeline"))
+	if err != nil {
+		cli.Usagef("%v", err)
+	}
+	kwargs["async"] = true
+	client := operatorClient(args)
+	res, err := client.Runner(context.Background(), transport.RunnerRequest{
+		Fun: fun, Arg: arg, Kwarg: kwargs,
+	})
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	jid := runningOrchestration(res)
+	if jid == "" {
+		return renderOrch(res.Return, res.Success, res.Error, timeline, format)
+	}
+	fmt.Fprintf(os.Stderr, "orchestration %s is running on the hub; stopping this command does not stop it, "+
+		"and `halite-hub orch show %s` has its timeline\n", jid, jid)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ret, err := awaitRunnerReturn(ctx, client, res.JID)
+	if errors.Is(err, errStoppedWaiting) {
+		// Stopping this command sends the hub nothing, and the run lives
+		// in the hub's process, not in this request: it was running at the
+		// last poll, and this command did not change that.
+		fmt.Fprintf(os.Stderr, "\nstopped waiting; orchestration %s is still running on the hub, and "+
+			"`halite-hub orch show %s` has its timeline\n", jid, jid)
+		return exitOutcomeUnseen
+	}
+	if errors.Is(err, errHubRestarted) {
+		fmt.Fprintf(os.Stderr, "the hub stopped while orchestration %s was running, and the run stopped with it; "+
+			"`halite-hub orch show %s` has how far it got, and `orch resume %s --from <step>` picks it up\n",
+			jid, jid, jid)
+		return exitOutcomeUnseen
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\norchestration %s may still be running on the hub; "+
+			"`halite-hub orch show %s` has its timeline\n", err, jid, jid)
+		return exitOutcomeUnseen
+	}
+	message := ""
+	if !ret.Success {
+		// The cached return of a run that failed is its timeline, and the
+		// hub's sentence about it is not kept beside it; a run that
+		// never produced one -- a panic -- is cached as its error text.
+		message = fmt.Sprintf("orchestration %s failed; `orch show %s` has the timeline", jid, jid)
+		if text, err := value.DecodeJSON(ret.Return); err == nil {
+			if s, ok := text.(string); ok {
+				return renderOrch(nil, false, s, timeline, format)
+			}
+		}
+	}
+	return renderOrch(ret.Return, ret.Success, message, timeline, format)
+}
+
+// runningOrchestration is the jid of a run the hub has started and not
+// finished, from an `async` call's answer, or "" when the answer is the
+// outcome itself: a refusal, or a run that ended before the hub replied.
+func runningOrchestration(res *transport.RunnerResponse) string {
+	if !res.Success {
+		return ""
+	}
+	decoded, err := value.DecodeJSON(res.Return)
+	if err != nil {
+		return ""
+	}
+	run, ok := decoded.(*value.Map)
+	if !ok {
+		return ""
+	}
+	if state, _ := run.Get("state"); state != "running" {
+		return ""
+	}
+	jid, _ := run.Get("jid")
+	id, _ := jid.(string)
+	return id
+}
+
+// orchGiveUpAfter is how long the hub may fail to answer, poll after
+// poll, before the wait is abandoned. A restart of the hub stops the run
+// too, so the outcome would never come; a network blip should not end a
+// wait of hours.
+var orchGiveUpAfter = time.Minute
+
+// errStoppedWaiting is an interrupt, as against a hub that stopped answering.
+var errStoppedWaiting = errors.New("stopped waiting")
+
+// errHubRestarted is a runner call the hub closed as aborted at startup
+// (Server.AbandonRunnerJobs): the hub that was running it has gone, and
+// the run with it. Without this a wait that outlived a quick restart
+// would poll a job nothing will ever answer.
+var errHubRestarted = errors.New("the hub restarted")
+
+// awaitRunnerReturn polls a runner call's job until its return is filed.
+func awaitRunnerReturn(ctx context.Context, client *transport.Client, jid string) (*job.Return, error) {
+	var failingSince time.Time
+	for {
+		status, err := client.JobStatus(ctx, jid)
+		switch {
+		case ctx.Err() != nil:
+			return nil, errStoppedWaiting
+		case err != nil && transport.Permanent(err):
+			return nil, fmt.Errorf("the hub refused to say how it went: %w", err)
+		case err != nil:
+			if failingSince.IsZero() {
+				failingSince = time.Now()
+			}
+			if time.Since(failingSince) > orchGiveUpAfter {
+				return nil, fmt.Errorf("the hub has not answered for %s: %w", orchGiveUpAfter, err)
+			}
+		case len(status.Returns) > 0:
+			var ret job.Return
+			if err := json.Unmarshal(status.Returns[0], &ret); err != nil {
+				return nil, fmt.Errorf("the hub's answer is not readable: %w", err)
+			}
+			return &ret, nil
+		case status.State == string(job.Aborted):
+			return nil, errHubRestarted
+		default:
+			failingSince = time.Time{}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errStoppedWaiting
+		case <-time.After(orchPollInterval):
+		}
+	}
+}
+
+// renderOrch prints a run, or a listing, the way --out asks, and gives
+// the exit status its success says.
+func renderOrch(raw []byte, success bool, message string, timeline bool, format cli.Format) int {
+	decoded, decodeErr := value.DecodeJSON(raw)
+	if raw == nil {
+		decoded, decodeErr = nil, nil
+	}
 	if timeline {
 		// A failed run still has a timeline, and printing it is the
 		// point: the operator's next command is `orch resume --from`,
@@ -149,8 +329,8 @@ func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) i
 		if decodeErr == nil {
 			printTimeline(decoded)
 		}
-		if !res.Success {
-			fmt.Fprintf(os.Stderr, "%s\n", res.Error)
+		if !success {
+			fmt.Fprintf(os.Stderr, "%s\n", message)
 			return 1
 		}
 		return 0
@@ -161,8 +341,8 @@ func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) i
 	if err := cli.Write(os.Stdout, decoded, format, 2); err != nil {
 		cli.Fatalf("%v", err)
 	}
-	if !res.Success {
-		fmt.Fprintf(os.Stderr, "%s\n", res.Error)
+	if !success {
+		fmt.Fprintf(os.Stderr, "%s\n", message)
 		return 1
 	}
 	return 0
@@ -293,6 +473,10 @@ Examples:
   halite-hub orch plan deploy.web --tree ~/estate/state --pillar '{"version":"1.2"}' \
       --sign-key ops.key --out deploy.plan.json
   halite-hub orch run deploy.web --pillar '{"version":"1.2"}' --plan deploy.plan.json
+
+run and resume print the run's jid as soon as it has started, then wait for its outcome
+for as long as the run takes. Stopping the command does not stop the run: it exits 3, and
+` + "`orch show <jid>`" + ` has the run.
 
 Flags for run and resume:
   --plan <file>        send every fleet step as the plan's signed job; the hub refuses

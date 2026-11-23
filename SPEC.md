@@ -1932,6 +1932,13 @@ and per-step per-node results. `halite-hub orch show <jid>` prints the timeline,
 `halite-hub orch resume <jid> --from <step>` restarts a failed run from a named step, which Salt
 cannot do and which is what makes a long deployment orchestration usable in practice.
 
+`halite-hub orch run` and `orch resume` wait for a run for as long as it takes. They make the runner
+call with `async`, which the hub answers as soon as the run is recorded, with its `jid`, and print
+that `jid` before they wait; the hub answers the runner call's own job with the run's outcome when
+the run ends, and the command polls that job as `run` polls a node job. A run refused before its
+first step is the call's answer, as without `async`. Stopping the command does not stop the run,
+and a command that stops waiting exits 3, not 1.
+
 The record is written as the run goes: when it starts, when each step that runs has its result,
 and when a fleet step is about to send its job and again once it has, so a hub that stops mid-run
 leaves a record of every step that finished and of the one that was out. A resume carries the

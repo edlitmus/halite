@@ -99,6 +99,7 @@ succeeded; `roll_back` runs **only if** a step it names failed; and
 
 ```
 $ halite-hub orch run rolling-update --pillar '{"version":"1.2"}'
+orchestration 20261011T190632153119 is running on the hub; stopping this command does not stop it, and `halite-hub orch show 20261011T190632153119` has its timeline
 20261011T190632153119  complete
   ok   announce_start     salt.runner     job 20261011T190632163629
        event.send ran on the hub.
@@ -222,6 +223,43 @@ the rest would have run as listed*.
 **prints the timeline either way**, because the next command, `orch resume
 --from <step>`, needs a step name.
 
+### Long runs
+
+An orchestration can take hours: a database initialisation, a data
+migration. `orch run` and `orch resume` wait for as long as the run takes.
+They print the run's JID on stderr as soon as the run has started, before
+the first step, and then read the outcome from the hub once a second, each
+read a short request. A run that is refused before its first step (it does
+not compile, or its plan does not match) is reported at once, with no JID
+line.
+
+**Stopping the command does not stop the run.** The run is on the hub, not
+in your terminal. Press Ctrl-C, or lose the connection, and the command
+says so and exits `3`, which means "the outcome is not known". It is not
+`1`, because nothing failed:
+
+```
+$ halite-hub orch run migrate-db
+orchestration 20261123T145606730063 is running on the hub; stopping this command does not stop it, and `halite-hub orch show 20261123T145606730063` has its timeline
+^C
+stopped waiting; orchestration 20261123T145606730063 is still running on the hub, and `halite-hub orch show 20261123T145606730063` has its timeline
+```
+
+`orch show <jid>` then shows how far the run has got, and its outcome when
+it ends. If the hub restarts while the command waits, the run has stopped
+with it, and the command says so, also with exit `3`; resume the run as in
+[When the hub stops mid-run](#when-the-hub-stops-mid-run). If the hub stops
+answering for a minute, the command gives up and says the run *may* still
+be running.
+
+The wait reads the runner call's own job, which the hub answers when the
+run ends. Reading that job is held to the grant that started the run, so a
+role that may run `state.orchestrate` and nothing else (the `deployer` of
+[chapter 26](26-authorization.md)) still sees its outcome. Before, the
+command waited on the one request that started the run, and an operator
+request has 30 seconds: a longer run failed in the terminal with `context
+deadline exceeded` while it carried on on the hub.
+
 ## Failure, rollback and resume
 
 Make the verification step fail (here by checking for a file that does not
@@ -229,6 +267,7 @@ exist) and run it:
 
 ```
 $ halite-hub orch run rolling-fail --pillar '{"version":"1.3"}'
+orchestration 20261011T190639505610 is running on the hub; stopping this command does not stop it, and `halite-hub orch show 20261011T190639505610` has its timeline
 20261011T190639505610  failed
   ok   announce_start     salt.runner
   ok   rehearse_web       salt.state      job … on 2 node(s)
