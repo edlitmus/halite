@@ -443,6 +443,13 @@ func (r *Remote) ManifestFor(env, prefix string) (*Manifest, error) {
 		if err != nil {
 			return nil, err
 		}
+		if rev != nil && r.Guard.Mode == SignatureWarn {
+			hub, err := r.hubManifest(env, prefix)
+			if err == nil {
+				r.Guard.noteListing(env, hub, rev)
+			}
+			return hub, err
+		}
 		if rev != nil {
 			return listing(env, prefix, rev), nil
 		}

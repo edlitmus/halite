@@ -471,3 +471,23 @@ func TestObjectsTwoRevisionsOldAreCollected(t *testing.T) {
 		}
 	}
 }
+
+// Under warn a listing is the hub's, as without the feature, so a
+// recursive state lays out what it always did; what true would have
+// left out is counted.
+func TestWarnModeListsWhatTheHubServes(t *testing.T) {
+	s := newSignedLab(t, signedFiles)
+	s.sign(t, "base", time.Now(), nil)
+	s.write(t, "web/added.conf", "x\n")
+	r, counted, _ := s.remote(t, fileserver.SignatureWarn, s.trusted)
+	under, err := r.ListUnder("base", "salt://web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(under, ","), "added.conf") {
+		t.Errorf("warn left an unsigned file out of the listing: %v", under)
+	}
+	if counted.of(treesign.ReasonNotInManifest) != 1 {
+		t.Errorf("counted %v", counted.by)
+	}
+}

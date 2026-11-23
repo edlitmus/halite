@@ -99,6 +99,14 @@ func (f *Fetcher) ListUnder(env, prefix string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		if rev != nil && f.Guard.Mode == SignatureWarn {
+			served, err := f.Roots.Manifest(target, StripScheme(prefix), f.HashType)
+			if err != nil {
+				return nil, err
+			}
+			f.Guard.noteListing(target, served, rev)
+			return relativeTo(StripScheme(prefix), served)
+		}
 		if rev != nil {
 			return relativeTo(StripScheme(prefix), listing(target, StripScheme(prefix), rev))
 		}

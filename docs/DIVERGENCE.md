@@ -48379,6 +48379,16 @@ the hub. Each check was broken on purpose, and the named tests failed:
 | a second signature line refused | any-one-line-of-several |
 | objects never collected | two-revisions-old-collected |
 | the previous manifest's objects not kept | two-revisions-old-collected |
+| warn listing from the manifest, hub tree | warn-lists-what-the-hub-serves |
+| warn listing from the manifest, local roots | warn-lists-the-local-roots |
+
+The first cut answered a listing from the manifest under `warn` too, so a
+`file.recurse` on a `warn` node left out a file the signer had not
+published: `warn` changed what a state laid out, which is the one thing it
+must not do. Found by reading the code after the suite passed. Under
+`warn` a listing is now the tree's own, and each entry `true` would leave
+out or refuse is counted; the two warn-listing tests failed against the
+first cut before the fix.
 
 Three breaks first failed to compile rather than fail a test, and so
 proved nothing. They were rewritten to compile (the mark's write

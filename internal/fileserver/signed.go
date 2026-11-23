@@ -374,6 +374,26 @@ func listing(env, prefix string, rev *Revision) *Manifest {
 	return out
 }
 
+// noteListing is warn mode's listing: the tree's own, as without the
+// feature, with each entry `true` would have left out or refused counted.
+// Under `true` the listing is the manifest's, so a recursive state would
+// not lay those files out; `warn` must not change what it lays out.
+func (g *TreeGuard) noteListing(env string, served *Manifest, rev *Revision) {
+	for _, e := range served.Files {
+		if treesign.IsReserved(e.Path) {
+			continue
+		}
+		want, ok := rev.Manifest.Lookup(e.Path)
+		switch {
+		case !ok:
+			g.note(notInRevision(env, e.Path, rev))
+		case served.HashType == rev.Manifest.HashType && want.Hash != e.Hash:
+			g.note(treesign.Refuse(treesign.ReasonDigest, env, e.Path,
+				"the listing of %s gives %s as %s and revision %s says %s", env, e.Path, e.Hash, rev.ID, want.Hash))
+		}
+	}
+}
+
 // collect removes objects that no environment's current or previous
 // accepted manifest names.
 //
