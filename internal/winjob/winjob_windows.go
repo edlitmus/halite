@@ -45,29 +45,59 @@ func Resume(pid uint32) error {
 	if err != nil {
 		return fmt.Errorf("resuming process %d: %w", pid, err)
 	}
-	if len(threads) == 0 {
-		return fmt.Errorf("resuming process %d: it has no threads to resume", pid)
-	}
-	for _, tid := range threads {
-		if err := resumeThread(tid); err != nil {
-			return fmt.Errorf("resuming process %d: %w", pid, err)
-		}
+	if err := resumeThreads(threads); err != nil {
+		return fmt.Errorf("resuming process %d: %w", pid, err)
 	}
 	return nil
 }
 
-func resumeThread(tid uint32) error {
+// resumeThreads resumes each listed thread, and fails unless at least
+// one of them was resumed.
+//
+// A thread that has gone between the snapshot and OpenThread is skipped.
+// OpenThread says ERROR_INVALID_PARAMETER for an ID that names no
+// thread, and a thread that has exited names none. A process held
+// suspended cannot lose a thread that way, but one that was running
+// can, and it did: on a windows-2022 runner, with CREATE_SUSPENDED
+// taken out on purpose, every command whose program had already started
+// a short-lived thread failed with "opening thread 1872: The parameter
+// is incorrect" and was killed (DIVERGENCE 5.620.2). Being strict there
+// buys nothing: a thread that no longer exists is not one this was
+// going to hold back.
+func resumeThreads(threads []uint32) error {
+	resumed := 0
+	for _, tid := range threads {
+		gone, err := resumeThread(tid)
+		if err != nil {
+			return err
+		}
+		if !gone {
+			resumed++
+		}
+	}
+	if resumed == 0 {
+		return fmt.Errorf("it has no threads to resume (%d listed, none still there)", len(threads))
+	}
+	return nil
+}
+
+// resumeThread resumes one thread, and reports gone when it no longer
+// exists.
+func resumeThread(tid uint32) (gone bool, err error) {
 	h, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, tid)
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return true, nil
+	}
 	if err != nil {
-		return fmt.Errorf("opening thread %d: %w", tid, err)
+		return false, fmt.Errorf("opening thread %d: %w", tid, err)
 	}
 	defer windows.CloseHandle(h)
 	// ResumeThread returns the previous suspend count, or 0xFFFFFFFF on
 	// failure, which x/sys turns into err.
 	if _, err := windows.ResumeThread(h); err != nil {
-		return fmt.Errorf("resuming thread %d: %w", tid, err)
+		return false, fmt.Errorf("resuming thread %d: %w", tid, err)
 	}
-	return nil
+	return false, nil
 }
 
 // Threads lists the IDs of the threads a process owns, from a Toolhelp

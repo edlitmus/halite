@@ -3,6 +3,7 @@
 package winjob
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -164,5 +165,48 @@ func TestResumingAProcessWithNoThreadsIsAnError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no threads") {
 		t.Errorf("the error does not say why: %v", err)
+	}
+}
+
+// A thread that has exited between the snapshot and the open is skipped,
+// not fatal, as long as one listed thread was resumed. On the runner,
+// with CREATE_SUSPENDED taken out on purpose, OpenThread on such a
+// thread said "The parameter is incorrect" and every such command was
+// killed (DIVERGENCE 5.620.2).
+//
+// An exited thread cannot be produced on demand at the instant between
+// the two calls, so this stands one in with an ID that names no thread:
+// thread IDs are multiples of four too, so 3 is never one, and OpenThread
+// answers ERROR_INVALID_PARAMETER for it, as it did for the exited ones.
+// That OpenThread gives this answer is checked first rather than assumed.
+func TestAThreadThatIsGoneIsSkippedWhenAnotherIsResumed(t *testing.T) {
+	const noSuchThread = 3
+	if _, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, noSuchThread); !errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		t.Fatalf("OpenThread on an ID that names no thread returned %v, not ERROR_INVALID_PARAMETER; "+
+			"the stand-in is not standing in for an exited thread", err)
+	}
+
+	// Long-lived, so the real thread is still there to be read after the
+	// resume.
+	c := exec.Command(cmdExe(t), "/c", "ping -n 30 127.0.0.1 >NUL")
+	c.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Process.Kill(); _ = c.Wait() })
+	threads, err := Threads(uint32(c.Process.Pid))
+	if err != nil || len(threads) != 1 {
+		t.Fatalf("the suspended process has threads %v (%v), want one", threads, err)
+	}
+
+	if err := resumeThreads([]uint32{noSuchThread, threads[0]}); err != nil {
+		t.Fatalf("a gone thread beside a real one failed the resume: %v", err)
+	}
+	if n := suspendCount(t, threads[0]); n != 0 {
+		t.Errorf("the real thread's suspend count is %d after the resume, want 0", n)
+	}
+
+	if err := resumeThreads([]uint32{noSuchThread}); err == nil || !strings.Contains(err.Error(), "no threads") {
+		t.Errorf("only gone threads should be an error naming that, got %v", err)
 	}
 }
