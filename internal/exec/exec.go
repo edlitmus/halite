@@ -708,6 +708,19 @@ type OSRunner struct {
 // one command, and a line per command would bury everything else.
 var confinementWarned atomic.Bool
 
+// errNeverResumed is what afterStart returns when a child that was
+// created suspended, so that it could be confined before it ran, could
+// not be resumed. Unlike a confinement failure it stops the command:
+// the child exists and will never run a line of it. Only Windows makes
+// one (proc_windows.go).
+type errNeverResumed struct{ err error }
+
+func (e *errNeverResumed) Error() string {
+	return "the command was started suspended and could not be resumed: " + e.err.Error()
+}
+
+func (e *errNeverResumed) Unwrap() error { return e.err }
+
 // confinementOff says, once, that a command is running unconfined.
 //
 // The command still runs. On unix there is nothing to fail; on Windows
@@ -917,6 +930,15 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	err = c.Start()
 	if err == nil {
 		if aerr := afterStart(); aerr != nil {
+			var never *errNeverResumed
+			if errors.As(aerr, &never) {
+				// The child exists and will never run. Kill it and reap
+				// it, rather than wait out the timeout on a process that
+				// was not going to do anything.
+				_ = c.Process.Kill()
+				_ = c.Wait()
+				return Result{Duration: time.Since(start)}, fmt.Errorf("%s: %w", cmd.String(), aerr)
+			}
 			r.confinementOff(cmd, aerr)
 		}
 		err = c.Wait()

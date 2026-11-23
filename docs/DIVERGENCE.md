@@ -41218,6 +41218,80 @@ confinement fails. Nothing else changes.
 `AssignProcessToJobObject`. We did not run the extension path. It is unchanged.
 We did not run a domain-joined host.
 
+#### 5.620.1 The job object is assigned before the child runs (2026-11-22)
+
+Item 1, built. The race did not reproduce on its own, but nothing in the old
+order stopped a child from winning it, and the extension sandbox's limits were
+exposed to the same gap. So the order is changed rather than left to timing.
+
+**The change.** `confineTree` (`internal/exec/proc_windows.go`) and
+`applyPlatform` (`internal/bridge/sandbox_windows.go`) add `CREATE_SUSPENDED` to
+`SysProcAttr.CreationFlags`. `syscall.StartProcess` passes the flag to
+`CreateProcess`. The hook that runs after `Start` assigns the process to the job
+and then calls `winjob.Resume` (`internal/winjob`, new). `syscall.StartProcess`
+closes the primary thread's handle before it returns, so `Resume` finds the
+thread again. It takes a Toolhelp snapshot (`TH32CS_SNAPTHREAD`), selects the
+threads that the process ID owns, and calls `ResumeThread` on each one. The
+process ID is safe to use because `os.Process` holds a handle to the process. A
+process that has never run has one thread.
+
+**Alternatives not taken.** `NtResumeProcess` is one call, but it is an
+undocumented ntdll export. If it changes, every command on a node hangs until
+its timeout. `PROC_THREAD_ATTRIBUTE_JOB_LIST` puts the process in the job when
+`CreateProcess` makes it, with no suspension. But `syscall.SysProcAttr` builds
+its own attribute list and has no way to add an entry.
+
+**Failure modes, and what each caller does.**
+
+- The assignment fails. A command is still resumed and runs, with the 5.620
+  warning. An extension is not resumed, and `Start` kills it and refuses, as
+  before.
+- The resume fails, or the snapshot finds no thread. The process would stay
+  suspended. A command now fails at once with "the command was started suspended
+  and could not be resumed" and the process is killed and reaped. Before, a
+  command could not fail this way. An extension is killed and refused.
+- Another program suspended a thread in the child on purpose before its first
+  instruction. `Resume` resumes it too. Nothing known does this.
+- The job object cannot be created, or its limit cannot be set. The flag is not
+  set, so the child starts running as before.
+
+**Tests, written for the windows-2022 legs.** None of them has run yet.
+
+- `TestAGrandchildStartedBeforeTheAssignmentIsInTheJobAndDiesWithIt`
+  (`internal/exec/suspend_windows_test.go`) does not try to win the race. It
+  makes the assignment wait one second, through the `assignProcessToJobObject`
+  seam. The child starts a grandchild from a Go `init` function and writes the
+  grandchild's process ID to a file. The test reads the job's process list
+  (`JobObjectBasicProcessIdList`) and needs the grandchild in it. Then it needs
+  the grandchild dead after the timeout terminates the job. On the old order the
+  child runs during that second, so the grandchild is outside the job and
+  survives. Both assertions should fail there.
+- `TestAnExtensionHasNotRunWhenItIsAssignedToItsJob`
+  (`internal/bridge/suspend_windows_test.go`) reads the suspend count of every
+  thread of the extension at the moment it is assigned. Each must be at least 1.
+  The extension must then complete its handshake, which needs the resume. On the
+  old order the count is 0.
+- `TestAnExtensionThatCannotBeAssignedIsRefused` makes the assignment fail and
+  needs `Start` to refuse.
+- `TestASuspendedProcessRunsNothingUntilResumedAndItsChildIsBornInTheJob`
+  (`internal/winjob`) uses `cmd.exe` and `ping`, not a Go program. It checks
+  that a suspended process has one suspended thread, that the job holds only
+  `cmd.exe` one second later, and that `ping` is in the job after `Resume`.
+- `TestResumingAProcessWithNoThreadsIsAnError` needs `Resume(3)` to fail.
+  Process IDs are multiples of four.
+- `TestAnUnconfinedCommandIsSaidOnce` (5.620) now also shows that a command
+  whose assignment fails is resumed: it needs the command's output.
+
+**Who sees it.** Nothing, on a healthy machine. A command or an extension that
+starts a process at once now has that process in its job, so a timeout kills it
+and the extension's process limit counts it.
+
+**Not verified.** Everything here is Windows code. It was compiled with
+`GOOS=windows go vet` and `go test -c`, on a FreeBSD host. It has not run on
+Windows. The CI run on the pull request is the first run. The deliberate break
+(remove `CREATE_SUSPENDED`) has not been run either. We did not run a real
+failure of `ResumeThread`, an admin token, or a domain-joined host.
+
 ### 5.621 Windows access-list checks missed entries that can alter a file
 
 Issue 608 item 3, from the issue 321 second-pass audit, round twelve

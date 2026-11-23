@@ -6,7 +6,13 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/edlitmus/halite/internal/winjob"
 )
+
+// assignProcessToJobObject is a variable so that a test can look at the
+// extension at the moment it is assigned: it must not have run yet.
+var assignProcessToJobObject = windows.AssignProcessToJobObject
 
 // The Windows half of SPEC 24.3.
 //
@@ -28,9 +34,16 @@ import (
 // sandbox's limits.
 //
 // The assignment happens after the process exists, because a job object
-// cannot be assigned to one that does not. The returned cleanup closes
-// the job handle: with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE set, that also
-// means an extension outlives neither its timeout nor the agent.
+// cannot be assigned to one that does not, but before it runs: it is
+// created suspended and resumed once it is in the job. It was assigned
+// once it was already running, which left anything it started in the
+// gap outside the job and outside the manifest's limits (issue 608 item
+// 1, DIVERGENCE 5.620 and its follow-up). A failure to assign or to
+// resume is returned, and Start kills the extension, as it did before.
+//
+// The returned cleanup closes the job handle: with
+// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE set, that also means an extension
+// outlives neither its timeout nor the agent.
 func (s *Sandbox) applyPlatform(cmd *exec.Cmd) (func() error, func(), error) {
 	nothing := func() {}
 
@@ -89,20 +102,27 @@ func (s *Sandbox) applyPlatform(cmd *exec.Cmd) (func() error, func(), error) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &windows.SysProcAttr{}
 	}
-	cmd.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED
 
 	afterStart := func() error {
 		if cmd.Process == nil {
 			return nil
 		}
+		pid := uint32(cmd.Process.Pid)
 		h, err := windows.OpenProcess(
-			windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+			windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
 		if err != nil {
 			return fmt.Errorf("confining the extension: %w", err)
 		}
 		defer windows.CloseHandle(h)
-		if err := windows.AssignProcessToJobObject(job, h); err != nil {
+		if err := assignProcessToJobObject(job, h); err != nil {
 			return fmt.Errorf("confining the extension: %w", err)
+		}
+		// Not resumed when the assignment failed: the caller kills an
+		// extension it could not confine, and one that never ran is the
+		// safer thing to kill.
+		if err := winjob.Resume(pid); err != nil {
+			return fmt.Errorf("starting the confined extension: %w", err)
 		}
 		return nil
 	}

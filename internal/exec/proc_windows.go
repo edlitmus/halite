@@ -6,6 +6,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/edlitmus/halite/internal/winjob"
 )
 
 // confineTree puts the child in a job object, so that cancelling the
@@ -22,11 +24,18 @@ import (
 // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE means the tree also dies if halite
 // itself is killed, rather than being left orphaned.
 //
-// The child is assigned once it has started rather than before, because
-// os/exec offers no hook between CreateProcess and the first instruction
-// and gives no way to resume a suspended thread. A process that forks in
-// the microseconds before the assignment escapes the job; a process that
-// forks after it does not, and neither did anything before this existed.
+// The child is created suspended, assigned, and only then resumed. It
+// was assigned once it had started running, because os/exec keeps no
+// thread handle to resume, and a child that started a process of its
+// own before the assignment left that process outside the job, where
+// the timeout's kill did not reach it (issue 608 item 1, DIVERGENCE
+// 5.620 and its follow-up). winjob.Resume finds the thread again. A
+// child that cannot be resumed is the one failure here that stops the
+// command, because a suspended command never runs (errNeverResumed).
+//
+// CREATE_SUSPENDED is set only once the job exists and its limit is
+// set, so every return that does not hand back the resuming afterStart
+// leaves the child to start running as it always did.
 func confineTree(c *exec.Cmd) (afterStart func() error, cleanup func(), err error) {
 	noAfter := func() error { return nil }
 	nothing := func() {}
@@ -54,7 +63,7 @@ func confineTree(c *exec.Cmd) (afterStart func() error, cleanup func(), err erro
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &windows.SysProcAttr{}
 	}
-	c.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP
+	c.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED
 
 	c.Cancel = func() error {
 		// Terminating the job takes the child and everything it
@@ -71,16 +80,15 @@ func confineTree(c *exec.Cmd) (afterStart func() error, cleanup func(), err erro
 		if c.Process == nil {
 			return nil
 		}
-		h, err := windows.OpenProcess(
-			windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(c.Process.Pid))
-		if err != nil {
-			return fmt.Errorf("opening the child to confine it: %w", err)
+		pid := uint32(c.Process.Pid)
+		// Resumed whatever the assignment said. A failed assignment is a
+		// warning and the command still runs (OSRunner.confinementOff),
+		// so it must not be left suspended.
+		confineErr := assign(job, pid)
+		if err := resumeProcess(pid); err != nil {
+			return &errNeverResumed{err: err}
 		}
-		defer windows.CloseHandle(h)
-		if err := assignProcessToJobObject(job, h); err != nil {
-			return fmt.Errorf("assigning the child to its job object: %w", err)
-		}
-		return nil
+		return confineErr
 	}
 	cleanup = func() { _ = windows.CloseHandle(job) }
 	return afterStart, cleanup, nil
@@ -92,4 +100,18 @@ func confineTree(c *exec.Cmd) (afterStart func() error, cleanup func(), err erro
 var (
 	createJobObject          = windows.CreateJobObject
 	assignProcessToJobObject = windows.AssignProcessToJobObject
+	resumeProcess            = winjob.Resume
 )
+
+func assign(job windows.Handle, pid uint32) error {
+	h, err := windows.OpenProcess(
+		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
+	if err != nil {
+		return fmt.Errorf("opening the child to confine it: %w", err)
+	}
+	defer windows.CloseHandle(h)
+	if err := assignProcessToJobObject(job, h); err != nil {
+		return fmt.Errorf("assigning the child to its job object: %w", err)
+	}
+	return nil
+}
