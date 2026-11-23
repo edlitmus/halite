@@ -178,3 +178,19 @@ func TestAHideRuleOverTheManifestIsReported(t *testing.T) {
 		t.Error("`*.swp` was reported")
 	}
 }
+
+// Under warn the local listing is the roots' own, as without the feature.
+func TestWarnModeListsTheLocalRootsAsTheyAre(t *testing.T) {
+	f, dir := guardedLocal(t, localFiles, true)
+	counted := 0
+	f.Guard.Mode = SignatureWarn
+	f.Guard.Refused = func(treesign.Reason) { counted++ }
+	writeTree(t, dir, map[string]string{"app/files/new": "unsigned\n"})
+	under, err := f.ListUnder("base", "salt://app/files")
+	if err != nil || strings.Join(under, ",") != "a,b/c,new" {
+		t.Fatalf("ListUnder: %v, %v", under, err)
+	}
+	if counted != 1 {
+		t.Errorf("counted %d", counted)
+	}
+}
