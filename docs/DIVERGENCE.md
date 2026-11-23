@@ -50925,6 +50925,41 @@ FIPS build.
 
 
 
+### 5.720 The operator command line dialled localhost when the hub listened on one address
+
+`operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
+order: `--hub`, then `hub` in `hub.yaml`, and then `localhost`. It took the
+port from `listen`. With `listen: 10.0.0.5:4510`, the hub listens on that
+address alone. So on the hub itself, `halite-hub run …`, `runner`, `jobs`,
+`orch`, `metrics` and `event` without `--hub` dialled `localhost:4510`, where
+nothing answers. They failed with `dial tcp 127.0.0.1:4510: connect:
+connection refused`. That was seen in the issue 306 runs of 2026-11-05 and
+2026-11-06 (5.282, "Seen again, not fixed"). On 2026-11-23 every command on
+a hub with a specific `listen` passed `--hub` by hand. Issue 840 recorded it
+as a decision for the owner, and the owner chose to dial the `listen`
+address.
+
+**Fix.** `defaultHubAddress(listen)` is the host that `listen` names. For a
+wildcard (`:4510`, `0.0.0.0`, `::`) or no host, it is `localhost`, because
+the hub then answers on loopback too. `--hub` and `hub` still come first. A
+specific `listen` host is also one of the names the hub puts in its own
+certificate. `serverNames` adds it by the same wildcard test, unless
+`--names` replaces the list. So the name dialled is one that verifies.
+
+**Test.** `TestTheDefaultHubAddressFollowsListen`
+(`cmd/halite-hub/huburl_test.go`) checks the URL an operator command dials
+for ten `listen` values. They cover an IPv4 and a host name with ports,
+IPv6 with and without a port, an address with no port, three wildcards and
+an empty value. It was broken on purpose by returning `localhost` always,
+and it failed on every specific address (`dials "https://localhost:4510",
+want "https://10.0.0.5:4510"`).
+
+**Not run end to end here.** On this Mac a hub listening on the LAN
+address could not be reached by any client, with `--hub` given
+explicitly or without it: the handshake ended in `EOF`, and the hub logged
+`socket is not connected`. That is the Mac's network path, not this
+change, so the run says nothing either way.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
