@@ -328,8 +328,8 @@ func (s *Server) checkPlan(req OrchRequest, env string, compiled *state.Compiled
 		if !ok {
 			if req.ResumeOf != "" {
 				return refusePlan(step.ID, "missing", "step %s runs in this resume and is not in the plan: "+
-					"a step before %s that %s did not record as finished runs again, and needs signing too "+
-					"(a run stopped by a hub restart may have recorded no steps; issue 802)",
+					"a step before %s that %s did not record as finished, and that the resume does not "+
+					"carry forward, runs again and needs signing too; resume --from it instead if it should",
 					step.ID, req.ResumeFrom, req.ResumeOf)
 			}
 			return refusePlan(step.ID, "missing", "step %s sends a job and is not in the plan", step.ID)
