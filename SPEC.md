@@ -1940,6 +1940,25 @@ the outcome its returns make when every node has answered, and refused, naming t
 has not, or when the hub stopped before the step had a job to name. Resuming at that step runs it
 again.
 
+On nodes that require signed jobs (section 25.6), an orchestration runs from a **plan**: the
+operator compiles it off the hub with `halite-hub orch plan`, from their own checkout and with the
+hub's compiler, and every step that sends a job is signed as an ordinary signed job, with an
+identifier and an expiry the plan chooses. `orch run --plan` and `orch resume --plan` give the plan
+to the hub, which compiles the orchestration again and refuses the whole run before any step if a
+step, the pillar override, test mode, the environment or the tree revision differs, if the plan has
+expired, or if it has already sent one of its jobs. A planned orchestration may not read the hub's
+configuration, target a nodegroup, or `retry` a fleet step. A resume always needs a new plan, which
+signs the step it resumes at and every fleet step after it. The steps the resume carries forward
+need no signature, including one that was out whose job every node has answered; any other step
+before the resume point that the record does not hold as finished would run again, and the hub
+refuses the run naming it.
+
+A plan authorises a set of jobs, not their order. A hub can send a plan's steps in another order,
+skip some, or send none, and each step it sends is still exactly what was signed; batch, subset,
+`tolerate_failures` and `run_parallel` are outside the signature. Where order matters, make the
+dependent actions one step. Steps that run on the hub (`salt.runner`, `salt.wheel`,
+`salt.wait_for_event`) are listed in the plan and compared by an honest hub, and are not signed.
+
 ### 19.2 Runner inventory
 
 | Runner | Functions |
@@ -2596,7 +2615,12 @@ For estates where hub compromise must not equal fleet compromise:
 - An operator or a CI signer holds an ECDSA key. The public key is distributed to nodes as part of
   their configuration, not through the file server.
 - A job, or an orchestration, is signed over a canonical encoding of `jid`, target, function,
-  arguments, environment, and expiry.
+  arguments, environment, and expiry. An orchestration is signed as a plan made off the hub
+  (section 19.1): every step that sends a job is a signed job, and a node verifies each one as it
+  verifies any other, knowing nothing of plans. A plan authorises those jobs and not their order,
+  and its expiry bounds the whole run: every step expires together, so an orchestration longer
+  than the nodes' `job_signature_max_ttl` is split into plans signed one after another, or runs on
+  nodes whose cap is raised, which lengthens the life of every signed job they accept.
 - The canonical encoding writes each argument with its type, so that values of different types
   never encode alike: a node honours a dry run only for the boolean `test`, and an encoding in
   which `true` and `"true"` were the same bytes let a hub turn a signed dry run into a real one.

@@ -106,13 +106,101 @@ required nothing loudly.
 
 Two limits to know:
 
-- **Orchestration steps are not signed.** The steps of an orchestration are
-  jobs the hub itself dispatches, and the ledger records that this build does
-  not sign them. On a node that requires signatures for a function class, try
-  an orchestration that touches it on a spare node before you rely on it.
+- **An orchestration needs a plan.** Its steps are jobs the hub sends, so
+  on a node that requires signatures they run only from a plan signed off
+  the hub: see [Signing an orchestration](#signing-an-orchestration).
 - **Agentless mode does not check a signature.** `halite-hub ssh` runs the
   binary over SSH, so the caller already has a shell there; a signature
   check would establish nothing.
+
+## Signing an orchestration
+
+An orchestration's steps are jobs the hub makes as it runs, and a hub that
+signed them would be a hub that can sign anything. So you sign them before
+the run: `halite-hub orch plan` compiles the orchestration on your machine,
+from your checkout, with the hub's compiler, and signs every step that
+sends a job with the same key or KMS signer `run` uses. The hub checks the
+plan against its own compile and sends the signed jobs. Nodes need nothing
+new: each step is an ordinary signed job, and a node verifies it as one.
+
+What a plan does **not** protect:
+
+- **Order.** A plan authorises a set of jobs. A hub that has been taken
+  over can send them in another order, skip the drain before a deploy,
+  send the rollback when nothing failed, or send nothing. Every job it
+  sends is still exactly the signed one, to the nodes its target names.
+  Where order matters, make the dependent actions one step.
+- **Batch, subset, safe limit, `tolerate_failures` and `run_parallel`.**
+  These are outside the signature, so they are controls an honest hub
+  honours. `subset: 1` is not a signed canary: every node the target
+  matches accepts the job. To sign a canary, target it by name. A node
+  ignores `run_parallel` on a signed job and runs it alone unless its own
+  `parallel_jobs` says otherwise.
+- **Steps on the hub.** `salt.runner`, `salt.wheel` and
+  `salt.wait_for_event` run on the hub and are authorised by its policy.
+  The plan lists them so an honest hub notices a change; a compromised one
+  runs what it likes.
+
+**The expiry budget.** All the jobs of a plan are signed at one moment and
+expire together, an hour later by default, and a node refuses a signed job
+whose expiry is further off than its `job_signature_max_ttl` (an hour by
+default). So the whole orchestration, every batch and every wait, must
+finish inside the window, and `orch plan` refuses a `--ttl` longer than
+`--max-ttl`. For a longer one, split it into plans signed one after
+another, or raise `job_signature_max_ttl` on the nodes it runs on and pass
+the same value as `--max-ttl`. Raising it lengthens the life of **every**
+signed job those nodes accept, not only the orchestration's.
+
+A plan records the revision of a signed tree ([below](#signing-the-state-content))
+when your checkout carries one and matches it, and a hub serving another
+revision refuses the plan. A planned orchestration cannot read the hub's
+configuration (`opts`): the plan tool has none to give it.
+
+### Runbook: an orchestration on nodes that require signatures
+
+1. **Check out the tree the hub serves**, at the revision it serves. If
+   the tree is signed, `halite-hub tree verify <dir> --env base --keys
+   <file>` first.
+2. **Plan and sign it** on a machine that is not the hub:
+
+   ```sh
+   halite-hub orch plan deploy.web --tree ~/estate/state --pillar '{"version":"1.4.2"}' \
+       --ttl 45m --sign-extension ./halite-ext-signer-kms --out deploy.plan.json
+   ```
+
+   A refusal here names the step: a template that reads `opts`, a nodegroup
+   target, `retry` on a step, or a `--ttl` over `--max-ttl`.
+3. **Read it**: `halite-hub orch plan show deploy.plan.json` prints every
+   signed job, its target, arguments and expiry, and the hub steps.
+4. **Rehearse it**, if you want a dry run on the nodes: plan again with
+   `--test` and run that plan with `orch run --test`. A test plan does not
+   run for real, and a real plan does not run as a test.
+5. **Run it** with the same SLS, environment and `--pillar`:
+
+   ```sh
+   halite-hub orch run deploy.web --pillar '{"version":"1.4.2"}' --plan deploy.plan.json
+   ```
+
+   "refused before it started: step X is signed for target ... and compiles
+   to ..." means the hub's tree or your arguments moved after you planned.
+   Pull, plan again and sign again; nothing was sent. "the plan expired at"
+   means the same. The hub logs the refusal at warn with the step and the
+   field, and counts it in `halite_orch_runs_total{result="plan_refused"}`.
+6. **If a step fails**, fix the cause and plan the resume: a resume always
+   needs a new plan.
+
+   ```sh
+   halite-hub orch plan deploy.web --tree ~/estate/state --pillar '{"version":"1.4.2"}' \
+       --resume-of 20261122T181000123456 --from verify_web \
+       --sign-extension ./halite-ext-signer-kms --out resume.plan.json
+   halite-hub orch resume 20261122T181000123456 --from verify_web \
+       --pillar '{"version":"1.4.2"}' --plan resume.plan.json
+   ```
+
+   A refusal naming a step before `--from` means the earlier run did not
+   record it as finished, so the resume would run it again. A run stopped
+   by a hub restart records no steps at all (issue 802). Decide whether
+   that step should run again; if it should, plan from it instead.
 
 ## The render sandbox
 

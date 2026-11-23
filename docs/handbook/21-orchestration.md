@@ -2,7 +2,7 @@
 
 <!-- abstract: Multi-step, multi-machine procedures that run on the hub: step types, ordering and rollback with requisites, batches, waiting for events, rehearsal, and resuming a failed run. -->
 <!-- kind: guide -->
-<!-- index: orchestration; orch run; orch lint; orch show; orch list; orch resume; salt.state; salt.function; salt.runner; salt.wheel; salt.wait_for_event; salt.parallel; onfail; rollback; rolling update; batch; tolerate_failures; fail_minions; approval gate; state.orchestrate; run_parallel -->
+<!-- index: orchestration; orch run; orch lint; orch show; orch list; orch resume; salt.state; salt.function; salt.runner; salt.wheel; salt.wait_for_event; salt.parallel; onfail; rollback; rolling update; batch; tolerate_failures; fail_minions; approval gate; state.orchestrate; run_parallel; orch plan; signed plan; plan of signed jobs -->
 
 Configuration management brings each machine to a state *independently*.
 Some jobs are not independent. Taking a web server out of rotation, then
@@ -408,6 +408,47 @@ Make sure the principal that reaction runs as holds the
 `state.orchestrate` runner permission, and restrict which orchestrations it
 may run in the policy ([chapter 26](26-authorization.md)).
 
+## On nodes that require signed jobs
+
+A node with `require_job_signature` ([chapter 28](28-hardening.md)) refuses
+a job the hub sends unsigned, and an orchestration's steps are jobs the hub
+sends. Such a node runs an orchestration from a **plan**: you compile it on
+your own machine, from your own checkout, and sign every step that sends a
+job. The hub never holds the key.
+
+```sh
+halite-hub orch plan rolling-update --tree ~/estate/state --pillar '{"version":"1.2"}' \
+    --sign-key signer/ops.key --out rolling-update.plan.json
+halite-hub orch plan show rolling-update.plan.json
+halite-hub orch run rolling-update --pillar '{"version":"1.2"}' --plan rolling-update.plan.json
+```
+
+The hub compiles the orchestration again and compares every step with the
+plan **before it sends anything**. If a target, a function, an argument,
+the override, test mode or the steps themselves differ, it refuses the
+whole run and names the step and the field. Plan again and sign again.
+
+Four rules follow from signing every job in advance:
+
+- **A plan authorises a set of jobs, not their order.** A hub that has
+  been taken over can send the signed steps in another order, or skip one.
+  Where order matters (a drain before a deploy), make the dependent
+  actions one step.
+- **The whole run must finish before the plan expires.** Every step
+  expires at once, an hour after planning by default, and a node refuses a
+  signed job further from expiry than its `job_signature_max_ttl`. For a
+  longer orchestration, such as a database initialisation, split it into
+  plans signed one after another, or raise the setting on those nodes and
+  pass `--max-ttl`; that lengthens the life of every signed job they accept.
+- **A resume always needs a new plan**, made with `--resume-of <jid>
+  --from <step>`: the failed step's job is spent.
+- **A planned orchestration may not read the hub's configuration**
+  (`opts`), target a nodegroup, or `retry` a step that sends a job.
+
+Batches, `subset`, `tolerate_failures` and `run_parallel` still apply, and
+are not signed. Runner, wheel and wait steps run on the hub and are not
+signed either. The hardening chapter has the runbook.
+
 ## Patterns
 
 **Rolling change.** The example above: rehearse everywhere, apply in
@@ -446,5 +487,8 @@ as pillar on the command line, not by editing the file.
   steps before it, and after a hub crash too: the record is written per
   step, and a step that was out is decided by its job's returns.
 - `salt.wait_for_event` lets a procedure wait for a person or a system.
+- On nodes that require signed jobs, `orch plan` signs every step off the
+  hub and `orch run --plan` runs it; a plan authorises a set of jobs, not
+  their order, and its expiry bounds the whole run.
 
 Next: [runners and the mine](22-runners-and-mine.md).
