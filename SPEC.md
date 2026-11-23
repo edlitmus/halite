@@ -1501,8 +1501,14 @@ Cloud grains are opt-in with `cloud_grains: true`, because collecting them costs
 trip on every refresh and because Salt's habit of probing every cloud's metadata endpoint on every
 platform is both slow and noisy. When enabled, EC2 uses IMDSv2 exclusively.
 
-`fips_mode` reads `/proc/sys/crypto/fips_enabled` and, on Ubuntu, the Ubuntu Pro FIPS package state,
-and reports whether the node's own build is a FIPS build. This estate needs that distinction.
+`fips_mode` is the operating system's FIPS state and nothing else: on Linux
+`/proc/sys/crypto/fips_enabled`, on Windows the `FipsAlgorithmPolicy` setting, and `false` on the
+BSDs and macOS. The kernel is the authority. Ubuntu Pro's package state is not read, because the
+kernel is what enforces FIPS mode, and Pro follows the kernel too: on a host booted with `fips=0`
+and the FIPS packages still installed, `pro status` reported `fips-updates` as disabled
+(DIVERGENCE 5.282). An earlier version of this section said `fips_mode` also read Pro's state, and
+no build ever did. Whether the node's own build is a FIPS build is separate grains, `fips_build`,
+`fips_enabled` and `fips_module`, and this estate needs that distinction (SPEC 27.4).
 
 ### 14.2 Custom grains
 
@@ -2883,8 +2889,8 @@ status. Ed25519 *is* available: FIPS 186-5 (2023) approves it for signatures, an
 Cryptographic Module v1.0.0 (CMVP #5247) certifies EdDSA. An earlier version of this section said
 Ed25519 was unavailable, and the x509 module refused it on that word (DIVERGENCE 5.723). A FIPS peer
 built on an older OpenSSL FIPS provider may still not accept an Ed25519 key. The
-`fips_mode` grain reports both the host's kernel FIPS state and the binary's own mode, and a
-mismatch is a `doctor` warning.
+`fips_mode` grain reports the host's FIPS state, `fips_build`, `fips_enabled` and `fips_module`
+report the binary's own, and a mismatch is a `doctor` warning.
 
 **The `-fips` set is Linux only, for now: `linux/amd64` and `linux/arm64`.** Linux is where a
 kernel FIPS mode exists for the `fips_mode` grain to report and compare against the binary's own

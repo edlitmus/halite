@@ -50960,6 +50960,35 @@ explicitly or without it: the handshake ended in `EOF`, and the hub logged
 `socket is not connected`. That is the Mac's network path, not this
 change, so the run says nothing either way.
 
+### 5.721 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
+
+SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
+Ubuntu, the Ubuntu Pro FIPS package state". SPEC 27.4 said the grain
+"reports both the host's kernel FIPS state and the binary's own mode". No
+build has done either. On Linux the grain is `/proc/sys/crypto/fips_enabled`
+alone (`internal/grains/platform_linux.go`). On Windows it is the
+`FipsAlgorithmPolicy` setting. On the BSDs and macOS it is `false`. The
+binary's own state has always been three separate grains, `fips_build`,
+`fips_enabled` and `fips_module` (DIVERGENCE 1.11). Issue 840 asked which
+should give way, and the owner decided that the kernel is the authority,
+so SPEC changes.
+
+The evidence for that choice is from 5.282's last run. An arm64 host on
+Pro `fips-updates` was booted with `fips=0`, with the FIPS kernel and
+packages still installed. `fips_enabled` read 0, `fips_mode` read False, and
+`pro status` reported `fips-updates` as **disabled**. So Pro's own report
+follows the kernel, and reading it as well would have added nothing on
+that host. It would have added a second source that could disagree.
+
+**Fix.** SPEC 14.1 says what each platform reads and that the kernel is the
+authority. It says that Pro is not read and why, and what the earlier text
+claimed. SPEC 27.4 says `fips_mode` is the host's state and that the other
+three grains are the binary's. The comment on `collectFIPSBuild` says the
+same. No code changed.
+
+**Not covered.** No test holds SPEC 14.1's prose to the grain collectors.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
