@@ -47,6 +47,12 @@ type OrchRequest struct {
 	// PlanDigest identifies the plan's bytes, for the record and the log.
 	Plan       *orchplan.Plan
 	PlanDigest string
+
+	// started, when set, is called once the run is recorded and about to
+	// run its first step, with its jid. An `async` runner call returns
+	// then (startOrchestration); a compile error, a refused plan or a bad
+	// resume all come before it, so they are still the call's answer.
+	started func(job.ID)
 }
 
 // orchRunner carries what the step modules need, for one run.
@@ -184,6 +190,12 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		orch.chunks[ch.ID] = ch
 	}
 	s.recordOrch(run)
+	// From here the run has a record `state.orch_show` can read, and
+	// nothing that could still refuse it before a step: this is the
+	// moment an asynchronous caller can be given the jid.
+	if req.started != nil {
+		req.started(jid)
+	}
 
 	result := (&runner.Runner{
 		States: registry,

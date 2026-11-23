@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
 )
@@ -16,8 +17,21 @@ import (
 // Go toolchain is not reachable.
 const reexec = "HALITE_TEST_REEXEC"
 
+// operatorTimeoutEnv cuts the operator client's per-request timeout in a
+// re-executed command, so that a test can hold an orchestration longer
+// than every request without waiting thirty seconds. It is read here, in
+// the test binary, and nowhere in the real one.
+const operatorTimeoutEnv = "HALITE_TEST_OPERATOR_TIMEOUT"
+
 func TestMain(m *testing.M) {
 	if os.Getenv(reexec) != "" {
+		if v := os.Getenv(operatorTimeoutEnv); v != "" {
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				panic(err)
+			}
+			operatorTimeout = d
+		}
 		main()
 		os.Exit(0)
 	}

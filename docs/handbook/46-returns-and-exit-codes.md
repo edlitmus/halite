@@ -19,7 +19,7 @@ the structure of what comes back.
 | `halite-node doctor`, `halite-hub doctor`, `halite-api doctor` | No failures (warnings allowed) | At least one **failure** | | | Usage error |
 | `halite-node verify-evidence` | The chain holds | A break was found | | | Usage error |
 | `halite-hub run` | Every targeted node answered and succeeded | A node answered and failed; no node matched; the request was refused; a safe limit stopped a batch | | A node was sent the job and **did not answer** | Usage error |
-| `halite-hub orch run` | Every step succeeded | A step failed (the timeline is printed either way) | | | Usage error |
+| `halite-hub orch run`, `orch resume` | Every step succeeded | A step failed (the timeline is printed either way), or the run was refused before its first step | | The command **stopped waiting**: Ctrl-C, the hub stopped answering, or the hub restarted and stopped the run. `orch show <jid>` has the run | Usage error |
 | `halite-hub runner` | The runner succeeded | It ran and failed, or was refused | | | Usage error |
 | `halite-hub policy test` | **Allowed** | **Denied** | | | Usage error |
 | `halite-hub migrate` | No finding at or above `--fail-on` | At least one | | | Usage error |

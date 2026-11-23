@@ -49253,11 +49253,92 @@ refuses `--plan`, because a runner's keyword arguments are bound strictly
 (`signature.Bind`, "is not a parameter of this function"); read, not run
 against an old hub.
 
+### 5.711 `orch run` gave up on a run after thirty seconds while the run went on (2026-11-23)
 
+Issue 815, seen once in the first attempt at 5.707's reproduction.
+`halite-hub orch run` and `orch resume` waited for a run's outcome on the
+one request that started it, and the operator client gives every request
+thirty seconds (`cmd/halite-hub/run.go`). A run that took longer -- here,
+anything with a database initialisation or a data migration in it -- made
+the command print `context deadline exceeded` and exit 1, while the run
+carried on on the hub: its steps run inside the hub's lifetime, not the
+request's (`orchContext`, `batchContext`). The operator was told it had
+failed, had no jid to look at, and never got the result.
 
+The two paths that had to agree were the client's bound on a request and
+the length of the work the request asked for. `run` had never had the
+defect: it submits, gets a jid, and polls the job (`gather`), each poll a
+short request. `orch run` asked for the outcome itself.
 
+**The change.** `state.orchestrate`, `state.orch` and `state.orch_resume`
+take `async`. With it the hub answers as soon as the run is recorded, with
+its jid and `state: running`, and answers the runner call's own job --
+the one `CallRunner` records before any runner runs -- when the run ends,
+with what the synchronous call would have returned (`laterReturn`,
+`finishRunner`). Anything that refuses the run before its first step, a
+compile error, a plan that disagrees, a resume that may not be made, is
+still the call's answer, because `Orchestrate` returns it before calling
+back with the jid. `orch run` and `orch resume` make the call with
+`async`, print the jid on stderr before they wait, and poll the runner
+call's job once a second until it is answered. The exit status is the
+run's: 0, or 1 for a run that failed, with the timeline either way.
 
+Polling the job rather than `state.orch_show`, for two reasons, the first
+measured here. Reading a job is held to the grant that ran it (`requestForJob`),
+so the handbook's `deployer` role, `runners: ['state.orchestrate']` and
+nothing else, may read it; the same role is refused `state.orch_show`
+("no rule in [deployer] permits state.orch_show"). And a job read writes
+nothing on the hub, where each `state.orch_show` is a runner call with a
+job record and two events of its own (read in `CallRunner`, not counted):
+at one poll a second, about 3,600 of each an hour for a run being waited on.
 
+What the command cannot see it says, and exits 3, the code `run` uses for
+an outcome it did not get. An interrupt (Ctrl-C, SIGTERM) sends the hub
+nothing, so the run is still running, and the command says so and names
+`orch show <jid>`. A hub that restarts closes the runner call as aborted
+at startup (`AbandonRunnerJobs`, 5.528); the run stopped with it, and the
+command says so and names `orch resume`. Without that case a wait that
+outlived a quick restart polled for ever a job nothing would answer. A hub
+that does not answer for a minute is given up on, saying the run may
+still be running.
+
+**Demonstrated.** `cmd/halite-hub/orch_wait_test.go` runs a real hub and
+the real command, re-executed from the test binary, with the client's
+timeout cut to one second (`operatorTimeout`, set from
+`HALITE_TEST_OPERATOR_TIMEOUT` by the test binary's `TestMain` only). An
+orchestration waits on an event the test sends three seconds in. On
+`main` at `ab60e716` with only the test and the variable added, `orch run`
+exited 1 after 1.04s with `Post "https://localhost:…/v1/runners": context
+deadline exceeded`, which is the issue's report. With the change it exited
+0 after about 3.1s with the complete timeline. A run that fails three
+seconds in exits 1 with its timeline, and so does `orch resume` of it; an
+interrupted wait exits 3, `orch show` then says `running`, and the run
+completes once released; a role with only `state.orchestrate` sees its
+outcome; a hub killed and restarted mid-wait gives exit 3 within about a
+second of coming back. `internal/hub/orch_async_test.go` holds the hub's
+half in process, under `-race`.
+
+Broken on purpose, three ways. Without `async` on the call, three tests
+failed with the original `context deadline exceeded`. With the runner
+call's job answered at once instead of when the run ends, `orch run`
+returned in 31ms, exit 0, for a run that went on to fail. Without the
+aborted case, the restart test was still waiting thirty seconds after the
+hub came back.
+
+**Not covered.** No run longer than a few seconds was waited on, and none
+against a real thirty-second client: the one-second timeout stands in for
+it. The wait was run on beastie (FreeBSD 15.1, through the agent's Linux
+shell) and nowhere else; Windows skips the tests. A hub older than this
+refuses the call, because a runner's keyword arguments are bound strictly
+("is not a parameter of this function"), so the hub must be upgraded
+before an operator machine that runs `orch run` against it; read, not
+run against an old hub. The outcome the command prints is the job
+cache's copy, which `scrubReturn` masks (5.598), where the synchronous
+answer was not masked; no run with a masked value in its timeline was
+waited on. `halite-hub runner state.orchestrate`, and the API's runner
+calls through its own thirty-second hub client (`cmd/halite-api`), still
+wait on one request; either can pass `async` now, and neither does by
+itself. That is issue 822.
 
 ## 6. Everything else not started
 
