@@ -75,7 +75,7 @@ it; ` + "`pki`" + ` and ` + "`keystore`" + ` are identity; ` + "`policy`" + ` is
 nodes; ` + "`api`" + ` and its login packages are the HTTP face.`,
 		Packages: []string{
 			"internal/transport", "internal/nodelink", "internal/hub", "internal/relay", "internal/job",
-			"internal/jobsign", "internal/treesign", "internal/eventbus", "internal/returner", "internal/beacon",
+			"internal/jobsign", "internal/treesign", "internal/orchplan", "internal/eventbus", "internal/returner", "internal/beacon",
 			"internal/schedule", "internal/fileserver", "internal/gitfs", "internal/s3fs",
 			"internal/pki", "internal/keystore", "internal/certreload", "internal/renewal",
 			"internal/policy", "internal/api", "internal/apitoken", "internal/account",

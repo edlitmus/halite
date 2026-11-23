@@ -132,3 +132,49 @@ variable "hub_port" {
     error_message = "hub_port must be a whole number from 1 to 65535, and not 22: SSH is already open, to the operator only, and opening it between instances is not what this variable is for."
   }
 }
+
+# Further TCP ports between the lab's own instances, beyond the hub port.
+#
+# For a run whose second host is a client of something other than the hub:
+# agentless mode, where the hub ssh's to its target (22); a drift report
+# relayed to an MTA on another row (a submission port); a directory or an
+# identity provider on one row and the API on another. Each port is opened
+# exactly as the hub port is -- from each instance's own address as a /32,
+# to the instances of this run, and from nowhere else -- so 22 is allowed
+# here where hub_port refuses it: between instances is the point of this
+# variable, and SSH from the outside is still the operator's alone.
+variable "internal_ports" {
+  description = "Extra TCP ports opened between this run's instances only, as hub_port is. Empty by default."
+  type        = list(number)
+  default     = []
+
+  validation {
+    condition     = alltrue([for p in var.internal_ports : p >= 1 && p <= 65535 && floor(p) == p])
+    error_message = "every internal_ports entry must be a whole number from 1 to 65535."
+  }
+}
+
+# A row whose first boot is the operator's user-data rather than the lab's.
+#
+# For a run of cloud-init itself: a fresh instance that boots a script the
+# runbook gives (chapter 31's user-data section), not the lab bootstrap. The
+# map is row name to a file path; the file's contents are that row's
+# user_data, verbatim. Such a row gets none of the bootstrap -- no Go, no
+# package list, no ready file, password SSH left as the image has it behind
+# the same operator-only firewall -- so `make lab-test` refuses it, which is
+# correct: it is not a lab test host. Linux rows only, since a FreeBSD row's
+# boot script is a Vultr startup script, not cloud-init.
+#
+# The file is read into the state, so whatever it holds (a bootstrap token,
+# say) is in terraform.tfstate until `make lab-down`. Use a token that is
+# short-lived and single-use, which chapter 31 asks for anyway.
+variable "user_data_files" {
+  description = "Row name to a file whose contents replace the lab bootstrap as that row's cloud-init user_data. Linux rows only."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for name, path in var.user_data_files : contains(keys(local.distro_catalog), name) && local.distro_catalog[name].family != "freebsd"])
+    error_message = "user_data_files names a row that is not in distros.tf, or a FreeBSD row, whose image does not run cloud-init."
+  }
+}

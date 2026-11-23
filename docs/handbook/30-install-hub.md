@@ -42,7 +42,13 @@ from a directory you control, one working operator, and a green
 > loader, kernel or `devd`), a firewall, or a network card. The hosts talked
 > over a loopback interface on one machine. A local build has no attestation
 > and no signature, so the `gh attestation` and `openssl` checks of step 1 were
-> not run on that archive. **Not run:** hosts older than those named, SELinux
+> not run on that archive. **Later still** (DIVERGENCE 5.708, `main` at `33dc8e21`),
+> on Vultr instances over a real network: a hub on Ubuntu 26.04.1 (kernel 7.0.0-43)
+> by this runbook as root, and one on FreeBSD 15.1-RELEASE-p6. Two things on this
+> page were wrong and are corrected: the FreeBSD `--names` line left out
+> `localhost,127.0.0.1`, so every local command then failed on the certificate,
+> and nothing said to open 4510 in the host's firewall (step 6). `make install`
+> ran on Rocky Linux 9.8 from a git checkout. **Not run:** hosts older than those named, SELinux
 > or AppArmor profiles, and a hub on FreeBSD hardware.
 
 ## Before you start
@@ -240,7 +246,7 @@ sudo systemctl edit halite-hub
 #   ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml --names hub.example.com,hub,localhost,127.0.0.1
 
 # FreeBSD
-sudo sysrc halite_hub_flags='--names hub.example.com,hub'
+sudo sysrc halite_hub_flags='--names hub.example.com,hub,localhost,127.0.0.1'
 ```
 
 A name missing here is a handshake failure on the node, with a message about
@@ -309,6 +315,20 @@ info: hub listening address=:4510 ca_fingerprint=3e:3e:f8:89:… enrollment_mode
 ```
 
 The warning about no policy is correct and expected: the next step fixes it.
+
+**Open the port in the host's own firewall** if it runs one. Nodes connect to
+TCP 4510, and a firewall in front of the host does not cover a firewall on it.
+In the lab (DIVERGENCE 5.708) the Ubuntu 26.04 hub had `ufw` active with only
+SSH allowed, and every node timed out with `dial tcp <hub>:4510: i/o timeout`
+until the port was opened:
+
+```sh
+sudo ufw allow 4510/tcp                                           # Ubuntu, Debian, Alpine
+sudo firewall-cmd --permanent --add-port=4510/tcp && sudo firewall-cmd --reload   # RHEL family, openSUSE
+```
+
+The `ufw` line was run. The `firewall-cmd` line was not: no node connected to a
+hub on a `firewalld` host.
 
 ### 7. Make yourself an operator
 

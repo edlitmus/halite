@@ -34,8 +34,21 @@ authority is bounded.
 > worked the same. A code used just before a restart logged in once more after
 > it, as step 5 says. A FIPS build named the account at start and refused every
 > login to it, while an account without `totp` still logged in.
-> **Not run:** LDAP, OIDC, and a role map for a directory group; TOTP as root
-> under the rc.d script, on Linux, and with a code from an authenticator app.
+> **LDAP, OIDC and TOTP on Linux** (DIVERGENCE 5.708): on Ubuntu 26.04.1, as
+> root under the shipped unit, from `main` at `33dc8e21`, against OpenLDAP
+> 2.6.10 over ldaps and dex v2.43.1, both with certificates from a lab CA.
+> A directory group mapped by `ldap_role_map` gave its member the role. An
+> unmapped group got `403 you authenticated, and none of your groups … is
+> mapped`, and a group nested in the mapped one counted only with
+> `ldap_nested_depth: 1`. An ID token from dex was accepted at
+> `/v1/login/oidc/token`. The code flow, driven with curl, logged in only after
+> `oidc_scopes: groups,email` was set: **dex sends no groups claim unless asked
+> for the `groups` scope**, and without it the login got `403 … (no groups)`.
+> TOTP refused a reused, old or missing code and a right code with a wrong
+> password, each with `401`. Retry too soon and the login backoff answers `429`
+> instead. **Not run:** TOTP under the rc.d script and with a code from an
+> authenticator app; LDAP by `starttls` or `memberOf`; any other identity
+> provider.
 
 ## Before you start
 
