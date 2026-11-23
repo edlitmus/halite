@@ -1,0 +1,121 @@
+#!/sbin/openrc-run
+# openrc-run sources this into /bin/sh, which on Alpine is busybox ash.
+# The variables below are read by openrc-run, not by this file, which is
+# what SC2034 cannot know.
+# shellcheck shell=sh disable=SC2034
+#
+# halite-node, the managed endpoint agent, under OpenRC (Alpine).
+#
+# Install as /etc/init.d/halite-node, then:
+#
+#   rc-update add halite-node default
+#   rc-service halite-node start
+#
+# Settings go in /etc/conf.d/halite-node, which openrc-run reads before
+# this script:
+#
+#   halite_node_config   Configuration file. Default /etc/halite/node.yaml.
+#   halite_node_args     Extra arguments to `halite-node connect`.
+#
+# What it does matches contrib/systemd/halite-node.service, the Linux
+# service this was written beside: the same binary and arguments, run as
+# root, from /, with output in /var/log/halite/node.log where the unit
+# has the journal. Enrol before starting it (handbook chapter 31, step
+# 5): like the unit, and unlike FreeBSD's rc script, this does not run
+# `enroll` for you, and `connect` refuses to start without a
+# certificate. It says so in the log, and supervise-daemon gives up on
+# it as described under respawn_max below.
+#
+# `connect` holds the subscribe stream open to the hub, runs the jobs
+# that arrive on it, and carries this node's beacons and schedule. It
+# reconnects on its own, with backoff, so an unreachable hub is not a
+# failure. A node with no hub is driven by `halite-node state apply
+# --local` from cron instead (handbook chapter 16).
+#
+# Everything below about supervise-daemon was taken from OpenRC's own
+# documentation (supervise-daemon-guide.md, openrc-run(8) and
+# supervise-daemon(8)). Until the lab has run this script on Alpine,
+# that is what it is: read, not run. DIVERGENCE 5.713.
+
+description="halite node agent"
+
+: "${halite_node_config:=/etc/halite/node.yaml}"
+: "${halite_node_args:=}"
+
+# supervise-daemon runs the program in the foreground as its child and
+# starts it again when it exits. `connect` never forks, which is the one
+# thing supervise-daemon requires of a daemon.
+#
+# Not set, on purpose:
+#
+# - pidfile. Under supervise-daemon it is the *supervisor's* pid file
+#   ("this is not the pid file of the process that is being supervised",
+#   supervise-daemon(8)), and openrc-run picks one itself. Pointing it at
+#   a file the program writes, the way the FreeBSD script's daemon(8)
+#   pidfile is the child's, would be rc.subr's ${name}_program trap in
+#   OpenRC's spelling: a familiar name that means something else here.
+# - command_background. It belongs to start-stop-daemon, and it forks the
+#   program into the background, which a supervised daemon must not do.
+# - command_user. A node applies state to the whole system, so it runs
+#   as root, which is what openrc-run does when this is unset. The unit
+#   says User=root for the same reason.
+# - A private /tmp. OpenRC has no such setting and nothing here makes a
+#   mount namespace, so a state that manages /tmp or /var/tmp manages the
+#   host's, which is what the unit's PrivateTmp=no keeps (DIVERGENCE
+#   5.709).
+supervisor=supervise-daemon
+command="/usr/local/bin/halite-node"
+command_args="connect --config ${halite_node_config} ${halite_node_args}"
+directory="/"
+output_log="/var/log/halite/node.log"
+error_log="/var/log/halite/node.log"
+
+# The unit restarts on failure five seconds later, and not after exit 1,
+# which `connect` uses for the two things a restart cannot fix: this
+# node's enrollment was revoked, or hub_tries was reached. supervise-daemon
+# has no exception by exit status; it respawns on every exit. What it has
+# is a cap: more than respawn_max deaths inside respawn_period and it
+# stops. With a 5 s delay an exit-1 loop dies six times in about half a
+# minute and is given up on, while a crash once an hour is restarted
+# every time.
+respawn_delay=5
+respawn_max=5
+respawn_period=60
+
+# SIGTERM, and SIGKILL if it is still there after 90 seconds: systemd's
+# default stop timeout, which the unit does not change. supervise-daemon's
+# own default is SIGTERM/5, which would kill a node in the middle of a
+# job's return.
+retry="TERM/90/KILL/5"
+
+# No reload. Nothing in halite-node handles SIGHUP, so Go's default
+# disposition applies and the signal terminates the process; the unit has
+# no ExecReload for the same reason. Changing the configuration is a
+# restart: `rc-service halite-node restart`.
+
+depend() {
+	need net
+	use dns logger
+	after firewall
+}
+
+start_pre() {
+	# The FreeBSD script's required_files: a missing configuration is
+	# said on the terminal rather than in a log nobody has opened yet.
+	if [ ! -r "${halite_node_config}" ]; then
+		eerror "${halite_node_config} is missing; write it before starting halite-node"
+		return 1
+	fi
+	# Only when it is missing. An existing directory is left exactly as it
+	# is: a site that gave it to another account or put it on its own
+	# filesystem meant to, and checkpath would reset its mode.
+	if [ ! -d /var/log/halite ]; then
+		install -d -m 0750 /var/log/halite || return 1
+	fi
+	# The unit's LimitNOFILE. Set here on the reading that start_pre runs
+	# in the shell that then starts supervise-daemon, so the agent
+	# inherits it; the lab procedure reads /proc/<pid>/limits to check.
+	# POSIX leaves `ulimit -n` undefined; busybox ash has it.
+	# shellcheck disable=SC3045
+	ulimit -n 65536 || ewarn "could not raise the open-file limit to 65536"
+}

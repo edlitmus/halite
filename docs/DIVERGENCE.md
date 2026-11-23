@@ -49732,6 +49732,167 @@ wait on one request; either can pass `async` now, and neither does by
 itself. That is issue 822.
 
 
+### 5.713 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
+
+Issue 812, found by 5.708's lab run on the Alpine row (Alpine 3.24, OpenRC)
+and the sysvinit row (Debian 13 with `sysvinit-core`, `init` as PID 1).
+`contrib/` shipped systemd units and FreeBSD rc.d scripts only, and
+`make install` decided the service layout from `uname -s` alone, so every
+Linux got the units: on both rows it put them in `/etc/systemd/system`,
+said to run `systemctl daemon-reload`, and installed nothing the host's
+init could start. Chapter 31's step 5 had no line for either. Both rows
+ran under a script written for the run, which is not in the tree. The
+example tree's `halite/node.sls` restarted the node with `systemd-run` on
+every kernel that is not FreeBSD, and neither host has `systemd-run`.
+
+**The change.** Two scripts, for the node only, each matching
+`halite-node.service` as far as its init allows:
+
+- `contrib/openrc/halite-node`, an `openrc-run` script with
+  `supervisor=supervise-daemon`. It runs `/usr/local/bin/halite-node connect
+  --config /etc/halite/node.yaml` as root, from `/`, with standard output
+  and error in `/var/log/halite/node.log`. It needs `net`. It respawns five
+  seconds after an exit (the unit's `RestartSec=5s`), and gives up after
+  more than five deaths in sixty seconds. supervise-daemon has nothing like
+  the unit's `RestartPreventExitStatus=1`, so the cap is what stops a
+  revoked node, which exits 1 at once, from looping. It stops with
+  `TERM/90/KILL/5`, which is systemd's default stop timeout; supervise-
+  daemon's own default is `SIGTERM/5`. It raises the open-file limit to
+  65536 (`LimitNOFILE`) in `start_pre`. It deliberately sets no `pidfile`,
+  `command_background` or `command_user`. Under supervise-daemon `pidfile`
+  is the supervisor's own ("not the pid file of the process that is being
+  supervised", `supervise-daemon(8)`), which is the same trap as rc.subr's
+  `${name}_program` in a new spelling: a familiar name that means something
+  else. `command_background` is start-stop-daemon's and forks the program.
+  Settings are `halite_node_config` and `halite_node_args` in
+  `/etc/conf.d/halite-node`.
+- `contrib/sysvinit/halite-node`, an LSB script with the header
+  `update-rc.d` reads (`Provides: halite-node`, `Required-Start: $network
+  $remote_fs $syslog`, runlevels 2 to 5). It starts the agent with Debian's
+  `start-stop-daemon --background --make-pidfile --output`, so its output
+  reaches the same log, and stops it with `--retry=TERM/90/KILL/5`, matched
+  by `--pidfile` and `--exec`. It has `start`, `stop`, `status`, `restart`
+  and `force-reload`, which is a restart. **Nothing restarts it if it
+  dies:** sysvinit has no supervisor, and adding one (an `inittab` respawn
+  line, or a shell loop) was judged worse than saying so. Settings are
+  `HALITE_NODE_CONFIG` and `HALITE_NODE_FLAGS` in `/etc/default/halite-node`.
+
+Both scripts differ from the unit in the same three ways. The log is a
+file, not the journal. There is no task limit, because the unit's
+`TasksMax` is a cgroup setting. And neither enrols, as the unit does not;
+FreeBSD's rc script is the one that does. Neither offers `reload`, for the
+reason the unit has no `ExecReload`: nothing handles SIGHUP, so the signal
+ends the process. Neither makes a mount namespace, so `/tmp` is the
+host's, which is what 5.709 made the unit say.
+
+**`make install` asks the host.** `INSTALL_INIT` probes the filesystem at
+install time. If `/run/systemd/system` is a directory, systemd is running,
+which is `sd_booted(3)`'s test and the `init` grain's. Otherwise, if
+`/sbin/openrc-run` is executable, the host is OpenRC. Otherwise, if
+`/sbin/init` exists and does not resolve to systemd and
+`/usr/sbin/update-rc.d` is executable, it is a sysvinit Debian. Anything
+else gets the units, as every Linux did before. The order keeps existing
+hosts where they were: a systemd host with OpenRC's package installed is
+still systemd. The `/sbin/init` test is there because Debian's container
+image has `update-rc.d` and no init, and an image built in a chroot has a
+`/sbin/init` that links to systemd. Both stay systemd. `SERVICEDIR` now
+follows the kind (`/etc/init.d` for the two new ones), not `uname`.
+`INSTALL_INIT=` on the command line overrides the probe, and
+`INSTALL_PROBE_ROOT` moves it to another root, for the tests. On OpenRC
+the account hint is busybox's `adduser -S`, because Alpine's base install
+has no `useradd`. Nothing ships for the hub, the API or a periodic
+highstate on either init: the install says so, and chapters 16 and 23 say
+a highstate there is a cron line.
+
+**`halite/node.sls`** now branches on the `init` grain: `daemon(8)` on
+FreeBSD, `systemd-run` where the grain is `systemd`, and otherwise the
+command the lab ran on both rows, `setsid sh -c 'sleep 30;
+/etc/init.d/halite-node restart' </dev/null >/dev/null 2>&1 &`. The grain
+is `systemd` only when `/run/systemd/system` exists, and PID 1's name
+otherwise. The release archives carry the scripts under `service/openrc`
+and `service/sysvinit`, at 0755, and SPEC 27.2 says so.
+
+**Held mechanically.**
+
+- `TestEveryServiceFilesFlagsAreRealFlags` (`internal/docsaudit`) is new.
+  It reads the halite command line out of every file in `contrib/systemd`,
+  `contrib/rc.d`, `contrib/openrc` and `contrib/sysvinit` (15 command
+  lines, 15 flags), and holds each `--flag` to the usage text `cli.RejectUnknownFlags`
+  checks, as the command reference already was. Nothing held the units'
+  `ExecStart` flags before.
+- `TestTheOpenRCScriptIsSupervisedAndAvoidsSupervisorTraps` and
+  `TestTheSysvinitScriptCarriesItsLSBHeader` (`internal/config`) hold the
+  supervisor, the three trap variables, the retry schedule and the
+  `command`/`command_args` names, and the LSB header fields and the
+  required actions.
+- The existing service-file checks now read the two new directories:
+  binary under `/usr/local/bin`, `/etc/halite` not `/usr/local/etc/halite`,
+  and no reload. The reload check also learnt the OpenRC
+  (`extra_started_commands`) and LSB (`reload)`) spellings.
+- `TestInstallPicksTheServiceFilesByTheHostsInit` (`internal/buildpolicy`)
+  builds a fake root for each of seven hosts and reads which files the dry
+  run installs, and where, under bmake, GNU make and this host's `make`.
+  The hosts are systemd, OpenRC, sysvinit, systemd with OpenRC installed,
+  a systemd image in a chroot, a Debian container, and an empty root.
+  `TestInstallMakesTheDirectoriesItInstallsInto` now runs the real install
+  for the two new kinds, probed rather than overridden, and compares the
+  installed script byte for byte. The dry-run test has OpenRC and sysvinit
+  cases. Its Linux case now points the probe at an empty root, because
+  this host's own `/run` and `/sbin` would otherwise decide.
+- `TestTheExampleTreeRestartsTheNodeTheWayItsInitCan` (`cmd/halite-node`)
+  compiles `halite.node` with static `kernel` and `init` grains and reads
+  the restart command for FreeBSD, systemd, `init` and `openrc-init`.
+- `sh -n` passes on both scripts, and ShellCheck 0.11.0 is clean on both.
+  The OpenRC script declares `shell=sh` and disables SC2034, because
+  openrc-run reads its variables. Both disable SC3045 for `ulimit -n`,
+  which POSIX leaves undefined and which busybox ash and dash have.
+
+**Broken on purpose, each failed:** a misspelt flag in each of the OpenRC
+`command_args`, the sysvinit `HALITE_NODE_ARGS`, the systemd unit and the
+rc.d highstate script (the new audit named the file, line and flag); a
+`pidfile`, a `command_background` and no `supervisor` in the OpenRC script;
+`command_args` renamed; the LSB header's opening line, and `Provides`
+changed; the sysvinit binary moved out of `/usr/local/bin`; the probe's
+systemd test removed (the systemd host with OpenRC installed became
+OpenRC); the `/sbin/init` test removed (the chroot image became sysvinit);
+Linux always systemd (the real install put nothing in `/etc/init.d`); the
+OpenRC recipe installing the sysvinit script (byte comparison); the
+`/etc/init.d` default removed; and `halite/node.sls` put back (the `init`
+and `openrc-init` rows got `systemd-run`).
+
+Three breaks passed, and each was a check that could not fail.
+`/usr/local/etc/halite` written into the OpenRC script passed
+`TestServiceFilesAgreeWithTheDefaultRoot`, and the reload checks passed
+with a `reload` added in both spellings. Each is its own subsection,
+and its own commit.
+
+**Not run, and what that leaves unknown.** Neither script has run on a
+real host. Everything about `supervise-daemon` and `openrc-run` above was
+read from OpenRC's documentation (`supervise-daemon-guide.md`,
+`openrc-run(8)`, `supervise-daemon(8)`), which itself disagrees about
+`respawn_period`'s default. It says nothing on whether `command_args` or
+`command_args_foreground` is passed under supervise-daemon, and its own
+variable table gives `command_args` to s6 alone. The script uses
+`command_args`. If supervise-daemon does not pass it, the agent runs with
+no subcommand, prints its usage and exits, and the lab sees a respawn loop
+at once.
+Everything about `start-stop-daemon` was read from Debian 13's manual
+page (dpkg 1.22.22), including `--output`, which needs dpkg 1.20.6 or
+later. Four behaviours are open until the lab:
+
+- whether `ulimit -n` in `start_pre` reaches the supervised process;
+- whether `--output` appends to the log or truncates it at each start;
+- whether `start-stop-daemon --exec` still matches the running agent after
+  an upgrade has replaced `/usr/local/bin/halite-node` in place. A miss
+  would make `restart` start a second agent beside the first;
+- whether the `init` grain on Alpine is `init`, as this entry assumes from
+  busybox being PID 1. Any value but `systemd` takes the right branch.
+
+The probe was run only against fake roots. A real Alpine, a real sysvinit
+Debian, and a systemd host were not probed. The FIPS artifact (SPEC 27.4)
+has no switch in either script, so on these hosts a `-fips` node needs the
+`command` or `HALITE_NODE_BINARY` changed by hand. That was not tried.
+
 
 ### 5.714 The Windows checkpoint test hid errors from the orchestration store (2026-11-23)
 

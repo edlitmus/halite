@@ -45,6 +45,8 @@ func fixture(t *testing.T) options {
 	write(filepath.Join(root, "hb", "index.html"), "<html>\n", 0o600)
 	write(filepath.Join(root, "rcd", "halite_hub"), "#!/bin/sh\n", 0o600)
 	write(filepath.Join(root, "sd", "halite-hub.service"), "[Unit]\n", 0o600)
+	write(filepath.Join(root, "orc", "halite-node"), "#!/sbin/openrc-run\n", 0o600)
+	write(filepath.Join(root, "sysv", "halite-node"), "#!/bin/sh\n", 0o600)
 	write(filepath.Join(root, "LICENSE"), "BSD 2-Clause License\n", 0o600)
 	write(filepath.Join(root, "evidence.md"), "# What has been demonstrated\n", 0o600)
 	return options{
@@ -52,6 +54,7 @@ func fixture(t *testing.T) options {
 		targets: "linux/amd64 windows/arm64", binaries: "halite-node halite-hub",
 		examples: filepath.Join(root, "ex"), man: filepath.Join(root, "man"),
 		handbook: filepath.Join(root, "hb"), rcd: filepath.Join(root, "rcd"), systemd: filepath.Join(root, "sd"),
+		openrc: filepath.Join(root, "orc"), sysvinit: filepath.Join(root, "sysv"),
 		license:  filepath.Join(root, "LICENSE"),
 		evidence: filepath.Join(root, "evidence.md"),
 	}
@@ -142,8 +145,10 @@ func TestTheTarballIsPinned(t *testing.T) {
 		top + "examples/tree/", top + "examples/tree/states/", top + "examples/tree/states/top.sls",
 		top + "handbook/", top + "handbook/index.html",
 		top + "man/", top + "man/man7/", top + "man/man7/halite.7", top + "man/man8/", top + "man/man8/halite-node.8",
-		top + "service/", top + "service/rc.d/", top + "service/rc.d/halite_hub",
+		top + "service/", top + "service/openrc/", top + "service/openrc/halite-node",
+		top + "service/rc.d/", top + "service/rc.d/halite_hub",
 		top + "service/systemd/", top + "service/systemd/halite-hub.service",
+		top + "service/sysvinit/", top + "service/sysvinit/halite-node",
 	}
 	if strings.Join(names, "\n") != strings.Join(wantNames, "\n") {
 		t.Errorf("entries:\n%s\nwant:\n%s", strings.Join(names, "\n"), strings.Join(wantNames, "\n"))
@@ -374,7 +379,7 @@ func TestAnUntrackedFileIsNotPackaged(t *testing.T) {
 		}
 	}
 	git("init", "-q")
-	git("add", "ex", "man", "rcd", "sd")
+	git("add", "ex", "man", "rcd", "sd", "orc", "sysv")
 	scratch := filepath.Join(root, "rcd", "halite_hub.orig")
 	if err := os.WriteFile(scratch, []byte("scratch\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -417,14 +422,15 @@ func TestAnExecutableScriptStaysExecutable(t *testing.T) {
 		}
 	}
 	git("init", "-q")
-	git("add", "ex", "man", "rcd", "sd")
-	git("update-index", "--chmod=+x", "rcd/halite_hub")
+	git("add", "ex", "man", "rcd", "sd", "orc", "sysv")
+	git("update-index", "--chmod=+x", "rcd/halite_hub", "orc/halite-node")
 
 	entries, err := sharedEntries(o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]int64{"service/rc.d/halite_hub": 0o755, "service/systemd/halite-hub.service": 0o644}
+	want := map[string]int64{"service/rc.d/halite_hub": 0o755, "service/systemd/halite-hub.service": 0o644,
+		"service/openrc/halite-node": 0o755, "service/sysvinit/halite-node": 0o644}
 	for _, e := range entries {
 		for suffix, mode := range want {
 			if strings.HasSuffix(e.path, suffix) {
@@ -454,6 +460,14 @@ func TestTheRepositorysRcScriptsAreExecutableInGit(t *testing.T) {
 	for _, name := range []string{"halite_api", "halite_highstate", "halite_hub", "halite_node"} {
 		if got := modes[filepath.Join(dir, name)]; got != 0o755 {
 			t.Errorf("%s: %#o, want 0755", name, got)
+		}
+	}
+	// And the OpenRC and sysvinit scripts, which chapter 31 also installs
+	// with an explicit mode, so a 0644 one would be hidden the same way.
+	for _, kind := range []string{"openrc", "sysvinit"} {
+		dir := filepath.Join("..", "..", "contrib", kind)
+		if got := trackedUnder(dir)[filepath.Join(dir, "halite-node")]; got != 0o755 {
+			t.Errorf("%s/halite-node: %#o, want 0755", kind, got)
 		}
 	}
 }

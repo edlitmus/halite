@@ -147,3 +147,62 @@ func checkWrittenConfig(t *testing.T, label, conf string, chunk map[string]any) 
 		}
 	}
 }
+
+// The example tree's deferred node restart is the command each init
+// system has: daemon(8) on FreeBSD, systemd-run where systemd runs, and
+// setsid with the init script on OpenRC and sysvinit.
+//
+// halite/node.sls used to send every kernel that was not FreeBSD to
+// systemd-run, which neither Alpine nor a sysvinit Debian has, so a
+// changed node.yaml there wrote the file and failed the restart (issue
+// 812). The branch is now on the `init` grain, which is `systemd` only
+// when /run/systemd/system exists, and is PID 1's name otherwise. The
+// grain is set statically here, as the kernel is above, so this machine's
+// own init does not decide.
+//
+// This compiles the state; it runs none of the commands. The setsid line
+// is the one the lab ran from a job on both rows (DIVERGENCE 5.708).
+func TestTheExampleTreeRestartsTheNodeTheWayItsInitCan(t *testing.T) {
+	tree := filepath.Join("..", "..", "contrib", "examples", "tree")
+	states, pillar := filepath.Join(tree, "states"), filepath.Join(tree, "pillar")
+	for _, tc := range []struct{ kernel, init, want string }{
+		{"FreeBSD", "init", "daemon -f /bin/sh -c 'sleep 30; service halite_node restart'"},
+		{"Linux", "systemd", "systemd-run --on-active=30 --unit=halite-node-restart systemctl restart halite-node"},
+		// Alpine's PID 1 is busybox init, and a sysvinit Debian's is init:
+		// both are `init` in /proc/1/comm. openrc-init is named for the
+		// other way OpenRC can boot.
+		{"Linux", "init", "setsid sh -c 'sleep 30; /etc/init.d/halite-node restart' </dev/null >/dev/null 2>&1 &"},
+		{"Linux", "openrc-init", "setsid sh -c 'sleep 30; /etc/init.d/halite-node restart' </dev/null >/dev/null 2>&1 &"},
+	} {
+		label := tc.kernel + "/" + tc.init
+		cfg := filepath.Join(t.TempDir(), "node.yaml")
+		body := "grains:\n  kernel: " + tc.kernel + "\n  init: " + tc.init + "\n"
+		if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := run(t, "state", "show_lowstate", "halite.node", "--local", "--file-root", states,
+			"--pillar-root", pillar, "--root", t.TempDir(), "--config", cfg,
+			"--id", "web1.example.com", "--out", "json")
+		if got.code != 0 {
+			t.Errorf("%s: halite.node does not compile:\n%s", label, got.stderr)
+			continue
+		}
+		var chunks []map[string]any
+		if err := json.Unmarshal([]byte(got.stdout), &chunks); err != nil {
+			t.Fatalf("%s: %v\n%s", label, err, got.stdout)
+		}
+		found := false
+		for _, c := range chunks {
+			if c["__id__"] != "halite node restart when its configuration changes" {
+				continue
+			}
+			found = true
+			if c["name"] != tc.want {
+				t.Errorf("%s: the restart is %q, want %q", label, c["name"], tc.want)
+			}
+		}
+		if !found {
+			t.Errorf("%s: no restart state in halite.node", label)
+		}
+	}
+}

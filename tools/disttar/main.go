@@ -69,6 +69,8 @@ func main() {
 		"the built HTML handbook (tools/handbook build), carried whole under handbook/")
 	flag.StringVar(&o.rcd, "rcd", "contrib/rc.d", "rc.d scripts, carried under service/rc.d")
 	flag.StringVar(&o.systemd, "systemd", "contrib/systemd", "systemd units, carried under service/systemd")
+	flag.StringVar(&o.openrc, "openrc", "contrib/openrc", "OpenRC scripts, carried under service/openrc")
+	flag.StringVar(&o.sysvinit, "sysvinit", "contrib/sysvinit", "sysvinit scripts, carried under service/sysvinit")
 	flag.StringVar(&o.license, "license", "LICENSE", "the licence, copied to the top of every archive")
 	flag.StringVar(&o.evidence, "evidence", "docs/evidence.md",
 		"the generated evidence report, carried in every archive")
@@ -85,7 +87,7 @@ func main() {
 
 type options struct {
 	dist, version, epoch, targets, binaries, examples, man, license, evidence, fipsTargets string
-	handbook, rcd, systemd                                                                 string
+	handbook, rcd, systemd, openrc, sysvinit                                               string
 }
 
 // entry is one file in an archive: where it goes, what it holds, and its
@@ -336,6 +338,15 @@ func sharedEntries(o options) ([]entry, error) {
 		return nil, err
 	}
 	if err := add(o.systemd, "service/systemd", true); err != nil {
+		return nil, err
+	}
+	// The node's scripts for OpenRC and sysvinit (issue 812). Chapter 31
+	// installs them from service/ like the others, so an archive without
+	// them is a chapter that cannot be followed from it.
+	if err := add(o.openrc, "service/openrc", true); err != nil {
+		return nil, err
+	}
+	if err := add(o.sysvinit, "service/sysvinit", true); err != nil {
 		return nil, err
 	}
 	return out, nil

@@ -73,6 +73,8 @@ func TestServiceFilesAgreeWithTheDefaultRoot(t *testing.T) {
 	}{
 		{"../../contrib/rc.d", "/usr/local/etc/halite", "/etc/halite", "FreeBSD"},
 		{"../../contrib/systemd", "/etc/halite", "/usr/local/etc/halite", "systemd"},
+		{"../../contrib/openrc", "/etc/halite", "/usr/local/etc/halite", "OpenRC"},
+		{"../../contrib/sysvinit", "/etc/halite", "/usr/local/etc/halite", "sysvinit"},
 	}
 	for _, c := range cases {
 		// Walked rather than listed: the FIPS drop-ins live in a

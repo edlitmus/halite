@@ -1,0 +1,162 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          halite-node
+# Required-Start:    $network $remote_fs $syslog
+# Required-Stop:     $network $remote_fs $syslog
+# Should-Start:      $named $time
+# Should-Stop:       $named $time
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: halite node agent
+# Description:       Connects this node to its halite hub and runs the
+#                    jobs the hub sends it.
+### END INIT INFO
+#
+# halite-node under sysvinit, with Debian's start-stop-daemon.
+#
+# Install as /etc/init.d/halite-node, then:
+#
+#   update-rc.d halite-node defaults
+#   service halite-node start
+#
+# Settings go in /etc/default/halite-node, which this script reads:
+#
+#   HALITE_NODE_CONFIG   Configuration file. Default /etc/halite/node.yaml.
+#   HALITE_NODE_FLAGS    Extra arguments to `halite-node connect`.
+#
+# What it does matches contrib/systemd/halite-node.service: the same
+# binary and arguments, run as root, from /, with output in
+# /var/log/halite/node.log where the unit has the journal, and stopped
+# with SIGTERM and then SIGKILL after systemd's default 90 seconds. Enrol
+# before starting it (handbook chapter 31, step 5): like the unit, and
+# unlike FreeBSD's rc script, this does not run `enroll` for you.
+#
+# Two differences from the unit, both because sysvinit has no supervisor:
+#
+# - Nothing restarts the agent if it dies. `connect` reconnects to the
+#   hub on its own, so an unreachable hub is not a death; a crash is, and
+#   the node stays down until someone starts it or the machine reboots.
+#   The unit restarts on failure.
+# - No limit on the number of tasks (the unit's TasksMax). The open-file
+#   limit is set, below.
+#
+# No private /tmp: nothing here makes a mount namespace, so a state that
+# manages /tmp or /var/tmp manages the host's, which is what the unit's
+# PrivateTmp=no keeps (DIVERGENCE 5.709).
+#
+# The start-stop-daemon options are Debian's (dpkg 1.20.6 or later for
+# --output), read from its manual page. Until the lab has run this script
+# on a sysvinit Debian, that is what they are: read, not run. DIVERGENCE
+# 5.713.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+NAME=halite-node
+DESC="halite node agent"
+HALITE_NODE_BINARY=/usr/local/bin/halite-node
+HALITE_NODE_CONFIG=/etc/halite/node.yaml
+HALITE_NODE_FLAGS=""
+PIDFILE=/run/halite-node.pid
+LOGFILE=/var/log/halite/node.log
+
+# shellcheck source=/dev/null
+[ -r /etc/default/halite-node ] && . /etc/default/halite-node
+
+# Debian policy: a script whose program has been removed but not purged
+# exits quietly.
+[ -x "$HALITE_NODE_BINARY" ] || exit 0
+
+HALITE_NODE_ARGS="connect --config $HALITE_NODE_CONFIG $HALITE_NODE_FLAGS"
+
+# shellcheck source=/dev/null
+. /lib/lsb/init-functions
+
+# do_start returns 0 when it started the agent, 1 when it was already
+# running, and 2 when it could not start it.
+do_start() {
+	if [ ! -r "$HALITE_NODE_CONFIG" ]; then
+		log_failure_msg "$HALITE_NODE_CONFIG is missing; write it before starting $NAME"
+		return 2
+	fi
+	# Only when it is missing. An existing directory is left exactly as it
+	# is: a site that gave it to another account or put it on its own
+	# filesystem meant to.
+	if [ ! -d /var/log/halite ]; then
+		install -d -m 0750 /var/log/halite || return 2
+	fi
+	# The unit's LimitNOFILE, inherited by the agent. POSIX leaves
+	# `ulimit -n` undefined; Debian's /bin/sh, dash, has it.
+	# shellcheck disable=SC3045
+	ulimit -n 65536 || log_warning_msg "could not raise the open-file limit to 65536"
+
+	start-stop-daemon --start --quiet --test --pidfile "$PIDFILE" \
+		--exec "$HALITE_NODE_BINARY" >/dev/null || return 1
+	# --background because `connect` stays in the foreground, and
+	# --make-pidfile because it writes no pid file of its own. --output
+	# sends its standard output and error to the log; without it they go
+	# to /dev/null, and the reason a node will not start goes with them.
+	# HALITE_NODE_ARGS is split into words on purpose.
+	# shellcheck disable=SC2086
+	start-stop-daemon --start --quiet --background --make-pidfile \
+		--pidfile "$PIDFILE" --chdir / --output "$LOGFILE" \
+		--exec "$HALITE_NODE_BINARY" -- $HALITE_NODE_ARGS || return 2
+}
+
+# do_stop returns 0 when it stopped the agent, 1 when it was not running,
+# and 2 when it was still running after SIGKILL.
+#
+# --exec as well as --pidfile, so that a pid reused by another program is
+# not signalled. After an upgrade replaces the binary in place, the
+# running process's executable is the deleted old file. Whether
+# start-stop-daemon still matches it is the upgrade step of the lab
+# procedure, because a miss there would start a second agent beside the
+# first.
+do_stop() {
+	start-stop-daemon --stop --quiet --retry=TERM/90/KILL/5 \
+		--pidfile "$PIDFILE" --exec "$HALITE_NODE_BINARY" --remove-pidfile
+}
+
+case "$1" in
+start)
+	log_daemon_msg "Starting $DESC" "$NAME"
+	do_start
+	case "$?" in
+	0|1) log_end_msg 0 ;;
+	*) log_end_msg 1; exit 1 ;;
+	esac
+	;;
+stop)
+	log_daemon_msg "Stopping $DESC" "$NAME"
+	do_stop
+	case "$?" in
+	0|1) log_end_msg 0 ;;
+	*) log_end_msg 1; exit 1 ;;
+	esac
+	;;
+status)
+	status_of_proc -p "$PIDFILE" "$HALITE_NODE_BINARY" "$NAME"
+	exit $?
+	;;
+restart|force-reload)
+	# force-reload is a restart. LSB requires the action, and nothing in
+	# halite-node handles SIGHUP, so Go's default disposition applies and
+	# the signal terminates the process. That is why there is no `reload`
+	# here and no ExecReload in the unit.
+	log_daemon_msg "Restarting $DESC" "$NAME"
+	do_stop
+	case "$?" in
+	0|1)
+		do_start
+		case "$?" in
+		0) log_end_msg 0 ;;
+		*) log_end_msg 1; exit 1 ;;
+		esac
+		;;
+	*) log_end_msg 1; exit 1 ;;
+	esac
+	;;
+*)
+	echo "Usage: /etc/init.d/$NAME {start|stop|status|restart|force-reload}" >&2
+	exit 3
+	;;
+esac
+exit 0

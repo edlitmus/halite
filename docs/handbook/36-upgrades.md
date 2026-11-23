@@ -156,7 +156,9 @@ A node's binary is just a file. How you replace it depends on how you ship it:
   it, then restart the agent *after* the job ends so the restart does not kill
   the job doing it. The example tree (`contrib/examples/tree`, `halite.node`)
   does exactly this with a deferred restart (`daemon(8)` on FreeBSD,
-  `systemd-run --on-active` on Linux). Its README says what has been compiled
+  `systemd-run --on-active` where systemd runs, and `setsid` with
+  `/etc/init.d/halite-node restart` on OpenRC and sysvinit, chosen by the
+  `init` grain). Its README says what has been compiled
   and what has been run. The restart command was run inside a real job on
   Ubuntu 26.04 and FreeBSD 15.1: the job finished and returned `True` first,
   and the node restarted afterwards and came back `up`. On Linux the restart
