@@ -205,3 +205,76 @@ func TestTheAPIDoctorScrubsBothOutputPaths(t *testing.T) {
 		}
 	}
 }
+
+// TestAnExpiringServingCertificateIsSentToItsOwnCA. The remedy for an
+// expiring certificate was one sentence for every certificate -- renew a
+// node with `halite-node renew`, reissue an operator with `keys operator
+// create` -- and the certificate a lab API warned about was its serving
+// pair, which comes from the site's HTTPS PKI and which no halite command
+// issues (handbook chapter 32, step 3). Neither command renews it. Issue
+// 813.
+//
+// Through the program's own dispatch, so the kind the API's check gives
+// `tls_cert` is what is held, and not only the sentence the doctor
+// package keeps for that kind.
+func TestAnExpiringServingCertificateIsSentToItsOwnCA(t *testing.T) {
+	now := time.Now()
+	root := t.TempDir()
+	pkiDir := filepath.Join(root, "pki")
+	if err := os.MkdirAll(pkiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	serving := filepath.Join(root, "api.crt")
+	writeAPICert(t, serving, "api.example", now.Add(-24*time.Hour), now.Add(29*24*time.Hour))
+	writeAPICert(t, filepath.Join(pkiDir, pki.CACertFile), "halite enrollment CA",
+		now.Add(-time.Hour), now.Add(3600*24*time.Hour))
+	writeAPICert(t, filepath.Join(pkiDir, pki.OperatorCertFile("api")), "api",
+		now.Add(-time.Hour), now.Add(80*24*time.Hour))
+	if err := os.WriteFile(filepath.Join(root, "api.yaml"),
+		[]byte("tls_cert: "+serving+"\nhub: 127.0.0.1:4599\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, errb, _ := run(t, "doctor", "--root", root, "--pki-dir", pkiDir)
+	all := certificateRow(out + errb)
+	if !strings.Contains(all, "the certificate this service presents expires in") {
+		t.Fatalf("the serving certificate's expiry is not what the check warned about:\n%s", out+errb)
+	}
+	for _, want := range []string{"the CA that issued it", "no restart"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("the remedy does not say %q:\n%s", want, all)
+		}
+	}
+	// Neither of these renews a serving certificate, and the operator
+	// certificate beside it is healthy, so neither belongs here.
+	for _, wrong := range []string{"halite-node renew", "keys operator create"} {
+		if strings.Contains(all, wrong) {
+			t.Errorf("the remedy for the API's serving certificate names `%s`:\n%s", wrong, all)
+		}
+	}
+}
+
+// certificateRow is the certificate check's row of a text report, detail
+// and remedy, and nothing after it. The connectivity row beneath it names
+// `keys operator create` for a reason of its own -- the fixture holds no
+// operator key -- and a test reading the whole report would be holding
+// that row's remedy rather than this one's.
+func certificateRow(report string) string {
+	var row []string
+	inside := false
+	for _, line := range strings.Split(report, "\n") {
+		words := strings.Fields(line)
+		starts := len(words) > 0 && (words[0] == "pass" || words[0] == "warn" ||
+			words[0] == "fail" || words[0] == "skip")
+		switch {
+		case starts && strings.Contains(line, "certificate validity and expiry"):
+			inside = true
+		case starts:
+			inside = false
+		}
+		if inside {
+			row = append(row, line)
+		}
+	}
+	return strings.Join(row, "\n")
+}

@@ -49253,11 +49253,85 @@ refuses `--plan`, because a runner's keyword arguments are bound strictly
 (`signature.Bind`, "is not a parameter of this function"); read, not run
 against an old hub.
 
+### 5.711 doctor gave every certificate the same remedy, and the API's serving certificate the wrong one (2026-11-23)
 
+`CertificateExpiry` in `internal/doctor/checks.go` had one remedy for an
+expiring certificate, whatever the certificate was: "`halite-node renew` on
+a node, `halite-hub keys operator create <name>` for an operator". A lab
+`halite-api doctor` warned that its serving certificate (`tls_cert`) had 29
+days left and gave that sentence. Neither command renews it: chapter 32
+says it comes from the site's HTTPS PKI and that no halite command issues
+it. The failure branch had the same shape with a third clause for the hub.
+Issue 813.
 
+The label could not carry the difference, because it is prose and the
+three programs spell it three ways. So `doctor.Expected` now has a `Kind`,
+and the remedy is one sentence for each kind found, once each. A kind that
+is healthy gets none. The kinds, and what each says, read from the code:
 
+| Kind | Held by | Remedy | Read from |
+|---|---|---|---|
+| node certificate | node | a running `connect` renews it; otherwise `halite-node renew`; an expired one is revoked and deleted on the hub and enrolled again with `halite-node enroll --force` | `cmd/halite-node` renewal.go; chapter 37's table |
+| hub certificate | hub | `halite-hub serve` renews it past half its life, running and at start; past that, the log line "renewing the hub's certificate failed" says why; a restart issues another under the same key | `keepServingRenewed`, `servingCertificate` (5.259) |
+| operator certificate | hub | nothing renews it; `halite-hub keys operator create <name>` keeps the same principal | chapter 37 step 4 |
+| the API's operator certificate | API | the same command; the API reads the pair before each request to the hub, so no restart | `hubClient` (5.271) |
+| the API's serving certificate | API | renew it from the CA that issued it and replace `tls_cert` and `tls_key`; read again on a new connection, so no restart | `servingCertificate` in `cmd/halite-api/serve.go` builds a `certreload.Reloader`, whose `GetCertificate` is what `api.Listen` serves (5.250) |
+| the enrollment CA | all three | no rotation; the lost-CA procedure done on purpose | chapter 37 step 6 |
 
+**The reload claim was checked before it was written.** The issue asked
+for "the API reads it again on each new connection". It is true with one
+qualification: `certreload` looks at the files at most every five seconds
+(`Interval`), on a handshake, and keeps the previous pair when the new one
+does not load, so a certificate replaced without its key is not served.
+The remedy says "on a new connection" and "replace `tls_cert` and
+`tls_key`". `internal/api`'s
+`TestTheAPIServesARenewedCertificateWithoutARestart` and the
+`internal/certreload` tests hold it, and passed here; this change adds
+nothing to them.
 
+A zero `Kind` gets a sentence saying the program does not say who renews
+the certificate, rather than somebody else's remedy. The hub's
+"the hub's policy" row, which stands in for the operators an unreadable
+policy would have named, is an operator kind. Its remedy is the unissued
+one and is unchanged.
+
+**Tests.** `cmd/halite-api`'s
+`TestAnExpiringServingCertificateIsSentToItsOwnCA` runs `doctor` through
+the program's dispatch with a serving certificate 29 days from its end, as
+the issue saw, and reads only the certificate row. It failed on main
+(599f7b50): no "the CA that issued it", no "no restart", and both
+`halite-node renew` and `keys operator create` named. It passes with the
+fix. `internal/doctor`'s `TestEachCertificateKindHasItsOwnRemedy` holds
+each kind, expiring and expired, to its command and to the absence of the
+others'. `TestOnlyTheKindsFoundAreGivenRemedies` holds that two kinds
+expiring together get one remedy each and a healthy one gets none.
+`internal/docsaudit`'s `TestEveryCommandACertificateRemedyNamesExists`
+reads every backticked `halite-*` command out of every kind's remedy and
+holds the subcommand to that binary's dispatch switch and each further
+word and flag to the quoted words of its package, as the manual-page audit
+does. `TestEveryCheckedCertificateHasAKind` parses the three programs and
+fails on any `doctor.Expected` literal with no `Kind`; it found the
+policy row.
+
+Broken on purpose, one at a time, and a test failed each time: the API's
+serving certificate given the operator kind (the API test); every
+remedy given whatever the kinds (the doctor test, for every kind, and the
+API test); `halite-hub keys delete` spelled `key delete` and `--force`
+spelled `--forced` (the docsaudit test, naming both); and the node's
+`Kind` removed from one literal (the AST test, naming the line).
+
+**Not covered.**
+- A relay's upstream certificate (`relay_pki_dir`) is not checked by any
+  `doctor`, so it has no kind. Neither is a node's metrics serving
+  certificate (`metrics_tls_cert`). Both are gaps in coverage that this
+  change did not close.
+- The expired-node remedy (revoke, delete, `enroll --force`) is chapter
+  37's table and the reading that renewal presents the current
+  certificate; it was not run against an expired certificate here.
+- Nothing ran on a lab machine or on FreeBSD as FreeBSD (the dev host's
+  shell is a Linux compatibility layer). A renewed `tls_cert` being served
+  by a running `halite-api serve` was not watched here; the claim rests on
+  the code and the tests named above.
 
 ## 6. Everything else not started
 

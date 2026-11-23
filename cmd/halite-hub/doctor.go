@@ -189,7 +189,7 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	const operatorNotice = 7 * 24 * time.Hour
 
 	certs := map[string]doctor.Expected{}
-	read := func(label, file string, notice time.Duration) {
+	read := func(label, file string, kind doctor.CertificateKind, notice time.Duration) {
 		cert, err := files.ReadCert(file)
 		if err != nil {
 			// Reported as a failure rather than skipped: nothing will
@@ -198,10 +198,10 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 			// unreadable, with the reason, and not as expired: an empty
 			// certificate stood in for it, and its zero NotAfter printed
 			// as "expired -9223372036854ms ago" (DIVERGENCE 5.594).
-			certs[label] = doctor.Expected{Unreadable: err, WarnWithin: notice}
+			certs[label] = doctor.Expected{Kind: kind, Unreadable: err, WarnWithin: notice}
 			return
 		}
-		certs[label] = doctor.Expected{Cert: cert, WarnWithin: notice}
+		certs[label] = doctor.Expected{Kind: kind, Cert: cert, WarnWithin: notice}
 	}
 
 	// Every operator credential the configured key directory holds, from
@@ -240,26 +240,30 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	// yet" into two failures.
 	initialised := files.Exists(pki.HubCertFile) || files.Exists(pki.CACertFile) || len(operators) > 0
 
-	for label, file := range map[string]string{
-		"this hub's certificate": pki.HubCertFile,
-		"the enrollment CA":      pki.CACertFile,
+	for label, held := range map[string]struct {
+		file string
+		kind doctor.CertificateKind
+	}{
+		"this hub's certificate": {pki.HubCertFile, doctor.HubCertificate},
+		"the enrollment CA":      {pki.CACertFile, doctor.EnrollmentCA},
 	} {
 		switch {
-		case files.Exists(file):
-			read(label, file, infraNotice)
+		case files.Exists(held.file):
+			read(label, held.file, held.kind, infraNotice)
 		case initialised:
 			// Named here and not on disk. A nil certificate is reported
 			// rather than skipped, so a hub holding a CA and no
 			// certificate of its own says so instead of passing on the
 			// half it still has.
-			certs[label] = doctor.Expected{WarnWithin: infraNotice}
+			certs[label] = doctor.Expected{Kind: held.kind, WarnWithin: infraNotice}
 		}
 	}
 	for _, name := range operators {
-		read("operator "+name, pki.OperatorCertFile(name), operatorNotice)
+		read("operator "+name, pki.OperatorCertFile(name), doctor.OperatorCertificate, operatorNotice)
 	}
 	for _, name := range unissuedNames {
 		certs["operator "+name] = doctor.Expected{
+			Kind:       doctor.OperatorCertificate,
 			WarnWithin: operatorNotice,
 			Absence:    doctor.Warn,
 			AbsentDetail: "the policy binds " + pki.Principal(name) +
@@ -270,8 +274,15 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	// its name claims, and saying nothing about that is the defect this
 	// entry is about wearing a different hat. Nothing else in `doctor`
 	// reads the policy, so there is no other row for it to appear in.
+	//
+	// Operator, because what it stands in for is the operator
+	// certificates the policy would have named. A Warn absence takes the
+	// unissued remedy rather than a kind's, so the kind changes nothing
+	// printed today; it is set so that a later change to that cannot
+	// print the unclassified sentence here.
 	if policyNote != "" {
 		certs["the hub's policy"] = doctor.Expected{
+			Kind:         doctor.OperatorCertificate,
 			WarnWithin:   operatorNotice,
 			Absence:      doctor.Warn,
 			AbsentDetail: policyNote,
