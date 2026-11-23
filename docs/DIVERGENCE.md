@@ -49752,7 +49752,68 @@ read the record. The old read path failed all ten reads with a sharing
 violation. The new read path passed all ten reads. Each job used its own
 Windows Server 2022 runner and ran the test under the standard CI account.
 [File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
-### 5.715 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
+
+### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
+
+Issue 810, suspected while revising the issue 765 proposal and filed as
+not reproduced. `Settle` closes a job whose expiry has passed with a node
+still owing as `partial`, and counts it in `halite_jobs_expired_total`
+(`settleExpired`, `internal/hub/batch.go`). A node that was still running
+the job is not stopped by that -- the node checks the expiry when the job
+arrives, not while it runs (SPEC 6.3's `expires`) -- so it finishes and
+answers. The return was filed, which is right, and `completeIfDone` then
+moved the job to `complete`, which is the defect: the job read `partial`
+in `jobs list` and `GET /v1/jobs/<jid>`, then `complete`, about one run,
+and the expiry counter had counted a job that by then read as finished.
+The pair that disagreed was the two writers of the job's state, as in
+5.515: `completeIfDone` already left an aborted job alone and did not know
+partial was terminal too.
+
+**Shown.** `TestAJobSettledPartialStaysPartialWhenItsNodeAnswersLate`
+(`internal/hub/expiry_late_return_test.go`) submits to a connected node
+that does not answer, moves the hub's clock past the one-second window,
+settles, and files the node's return through the real return handler.
+On `main` at `5f5ae87c` the first draft of it read, through the API,
+`partial` with the node missing after settling and `complete` after the
+late return.
+
+**The change.** `completeIfDone` leaves a partial job as it is and logs
+`a return arrived after its job was settled; the job stays partial`. The
+return is still filed and announced (`halite/job/<jid>/ret/<node>`), so
+`jobs show` lists it and `missing` is empty; `partial` keeps the meaning
+the type gives it, "the gather window closed with returns outstanding"
+(`internal/job/model.go`), which is still true. This was chosen over
+keeping the flip with an event because SPEC says nothing about a settled
+state changing, and the flip contradicts what every reader had already
+been told; it is a decision for the project, not something SPEC settles.
+Salt has no job state to compare: its `local_cache` returner files any
+return whenever it arrives (`salt/returners/local_cache.py`, a 3008.x
+development checkout at `221495872f`).
+
+A return landing *inside* the settlement -- after `settleExpired` has
+read who is missing and before it writes -- completes the job first, and
+the settlement's write loses on the state guard it already had, so the
+job reads `complete` and is not counted as expired.
+`TestAReturnLandingDuringSettlementCompletesTheJobAndIsNotCountedExpired`
+holds that, using a test hook (`settleAfterMissing`) at that point.
+Whichever writer closes the job first decides its state.
+
+Broken on purpose, twice. Without the new partial case in `completeIfDone`
+the first test fails with `api "complete", record "complete"; want both
+"partial"`. Without `settleExpired`'s dispatched-or-batching guard the
+second fails: Settle closes the job, which reads `partial` with nothing
+missing, and the counter reads 1.
+
+**Not covered.** No real node binary ran a job past its expiry; the node
+is the test's silent connection and the return is filed as a node files
+one. What an orchestration step sees is unchanged and was read, not run:
+`awaitReturns` (`internal/hub/orch.go`) waits on returns until the step's
+own `timeout`, not on the job's state, so a step whose timeout outlasts
+its job's 15-minute default TTL still succeeds on a late return, while
+the job it sent reads `partial`. Whether a step's `timeout` should set its
+job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
+is the second question issue 810 asks and is not answered here.
+### 5.716 A node on OpenRC or sysvinit had no service script, and `make install` gave it systemd units (2026-11-23)
 
 Issue 812, found by 5.708's lab run on the Alpine row (Alpine 3.24, OpenRC)
 and the sysvinit row (Debian 13 with `sysvinit-core`, `init` as PID 1).
@@ -49913,7 +49974,7 @@ Debian, and a systemd host were not probed. The FIPS artifact (SPEC 27.4)
 has no switch in either script, so on these hosts a `-fips` node needs the
 `command` or `HALITE_NODE_BINARY` changed by hand. That was not tried.
 
-### 5.715.1 The Linux service-path check could not fail
+### 5.716.1 The Linux service-path check could not fail
 
 `TestServiceFilesAgreeWithTheDefaultRoot` (`internal/config`) fails a line
 that names the other platform's configuration root without naming its
@@ -49922,7 +49983,7 @@ own. On FreeBSD the wrong root, `/etc/halite`, is inside the right one,
 other way round. Every line that names `/usr/local/etc/halite` also
 contains `/etc/halite`, so the Linux case never failed: a systemd unit, or
 now an OpenRC or sysvinit script, could read FreeBSD's configuration path
-and pass. Found by breaking 5.715's OpenRC script that way and watching
+and pass. Found by breaking 5.716's OpenRC script that way and watching
 the test pass.
 
 The check now removes the right root from the line before it looks for
@@ -49932,7 +49993,7 @@ one directly when it is the longer. **Broken on purpose:**
 `halite-node.service`, now each fail the test. Before the change both
 passed.
 
-### 5.715.2 The reload check had skipped itself since agentless runs caught SIGHUP
+### 5.716.2 The reload check had skipped itself since agentless runs caught SIGHUP
 
 `TestNoUnitOffersAReloadThatWouldKillTheService` (`internal/config`)
 skips when anything outside the tests registers a SIGHUP handler, on the
@@ -49940,7 +50001,7 @@ reasoning that a handler means a reload might now be real. `halite-node
 oneshot`, the agentless run, began catching SIGHUP on 2026-10-15 (issue
 358), to remove its inline tree before it exits with 128+n, as the default
 disposition would have. From then on the check skipped on every run, and
-`go test` reported the package `ok`. Found when 5.715's `reload` arms,
+`go test` reported the package `ok`. Found when 5.716's `reload` arms,
 added on purpose, passed.
 
 `oneshot` is not a service and does not reload. The check now lists the
@@ -49952,67 +50013,6 @@ script, `extra_started_commands="reload"` in the OpenRC script, and
 `ExecReload=` in `halite-node.service` each fail the test now. Before the
 change all three passed, as skips. And removing SIGHUP from `oneshot`'s
 signals fails it, naming the stale entry.
-
-### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
-
-Issue 810, suspected while revising the issue 765 proposal and filed as
-not reproduced. `Settle` closes a job whose expiry has passed with a node
-still owing as `partial`, and counts it in `halite_jobs_expired_total`
-(`settleExpired`, `internal/hub/batch.go`). A node that was still running
-the job is not stopped by that -- the node checks the expiry when the job
-arrives, not while it runs (SPEC 6.3's `expires`) -- so it finishes and
-answers. The return was filed, which is right, and `completeIfDone` then
-moved the job to `complete`, which is the defect: the job read `partial`
-in `jobs list` and `GET /v1/jobs/<jid>`, then `complete`, about one run,
-and the expiry counter had counted a job that by then read as finished.
-The pair that disagreed was the two writers of the job's state, as in
-5.515: `completeIfDone` already left an aborted job alone and did not know
-partial was terminal too.
-
-**Shown.** `TestAJobSettledPartialStaysPartialWhenItsNodeAnswersLate`
-(`internal/hub/expiry_late_return_test.go`) submits to a connected node
-that does not answer, moves the hub's clock past the one-second window,
-settles, and files the node's return through the real return handler.
-On `main` at `5f5ae87c` the first draft of it read, through the API,
-`partial` with the node missing after settling and `complete` after the
-late return.
-
-**The change.** `completeIfDone` leaves a partial job as it is and logs
-`a return arrived after its job was settled; the job stays partial`. The
-return is still filed and announced (`halite/job/<jid>/ret/<node>`), so
-`jobs show` lists it and `missing` is empty; `partial` keeps the meaning
-the type gives it, "the gather window closed with returns outstanding"
-(`internal/job/model.go`), which is still true. This was chosen over
-keeping the flip with an event because SPEC says nothing about a settled
-state changing, and the flip contradicts what every reader had already
-been told; it is a decision for the project, not something SPEC settles.
-Salt has no job state to compare: its `local_cache` returner files any
-return whenever it arrives (`salt/returners/local_cache.py`, a 3008.x
-development checkout at `221495872f`).
-
-A return landing *inside* the settlement -- after `settleExpired` has
-read who is missing and before it writes -- completes the job first, and
-the settlement's write loses on the state guard it already had, so the
-job reads `complete` and is not counted as expired.
-`TestAReturnLandingDuringSettlementCompletesTheJobAndIsNotCountedExpired`
-holds that, using a test hook (`settleAfterMissing`) at that point.
-Whichever writer closes the job first decides its state.
-
-Broken on purpose, twice. Without the new partial case in `completeIfDone`
-the first test fails with `api "complete", record "complete"; want both
-"partial"`. Without `settleExpired`'s dispatched-or-batching guard the
-second fails: Settle closes the job, which reads `partial` with nothing
-missing, and the counter reads 1.
-
-**Not covered.** No real node binary ran a job past its expiry; the node
-is the test's silent connection and the return is filed as a node files
-one. What an orchestration step sees is unchanged and was read, not run:
-`awaitReturns` (`internal/hub/orch.go`) waits on returns until the step's
-own `timeout`, not on the job's state, so a step whose timeout outlasts
-its job's 15-minute default TTL still succeeds on a late return, while
-the job it sent reads `partial`. Whether a step's `timeout` should set its
-job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
-is the second question issue 810 asks and is not answered here.
 
 
 

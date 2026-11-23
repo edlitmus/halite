@@ -107,7 +107,7 @@ func TestServiceFilesAgreeWithTheDefaultRoot(t *testing.T) {
 			// is inside the wrong one, and the check used to be the
 			// FreeBSD one for both: every line naming the wrong root also
 			// named the right one, so the Linux case could not fail
-			// (DIVERGENCE 5.715.1). There the wrong root is asked for
+			// (DIVERGENCE 5.716.1). There the wrong root is asked for
 			// directly.
 			for _, line := range strings.Split(text, "\n") {
 				rest := line

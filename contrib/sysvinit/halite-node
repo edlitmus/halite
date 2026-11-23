@@ -47,7 +47,7 @@
 # The start-stop-daemon options are Debian's (dpkg 1.20.6 or later for
 # --output), read from its manual page. Until the lab has run this script
 # on a sysvinit Debian, that is what they are: read, not run. DIVERGENCE
-# 5.715.
+# 5.716.
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 NAME=halite-node
