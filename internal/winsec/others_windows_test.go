@@ -58,6 +58,12 @@ func TestOthersNamesAnAccountThatCanAlterTheFileWithoutReadingIt(t *testing.T) {
 		{"FILE_APPEND_DATA", "0x000004"},
 		{"FILE_WRITE_ATTRIBUTES", "0x000100"},
 		{"FILE_WRITE_EA", "0x000010"},
+		// Issue 608 item 3 named these two as well. Either lets the
+		// account give itself everything else: rewrite the list, or
+		// take the file and then rewrite the list. They are reported
+		// because harmless does not name them, and this holds that.
+		{"WRITE_DAC", "0x040000"},
+		{"WRITE_OWNER", "0x080000"},
 	} {
 		t.Run(c.what, func(t *testing.T) {
 			path := privateFile(t)
