@@ -1459,6 +1459,10 @@ value rather than hardcoded to `aws`.
   the root.
 - Symlinks inside the served tree are followed only when `fileserver_follow_symlinks` is true, and
   never outside the root.
+- `_halite/` at the root of an environment is reserved for the signed manifest and its signature of
+  section 25.8, `manifest.json` and `manifest.sig`, as regular files. The hub refuses to serve an
+  environment whose `_halite/`, in any of its roots, holds anything else: the listing and every
+  file are answered 409, naming the file, and the hub logs the refusal once per environment.
 - Modules: `cp.get_file`, `cp.get_template`, `cp.get_dir`, `cp.get_url`, `cp.list_master`,
   `cp.list_master_dirs`, `cp.hash_file`, `cp.cache_file`, `cp.cache_dir`, `cp.push`,
   `cp.is_cached`. `cp.get_url` supports `http`, `https`, `ftp` (via the system client), and
@@ -2630,6 +2634,58 @@ accepted are not protected, and a node and hub compromised together are not cove
 check at the hub is a prompt rather than the guarantee — a rewritten chain padded past the highest
 recorded number before it is next reported is accepted there — and the guarantee is the comparison
 `verify-evidence --anchors` makes against every accepted line.
+
+### 25.8 Signed state content
+
+For estates where a compromised hub must not be able to change what a node applies. A node with
+`require_state_signature` applies only files that a signer the hub does not hold a key for
+published, for the environment being read, no older than the newest revision that node has
+already accepted, and all from one revision within a run.
+
+- A signer outside the hub lists an environment's tree (`halite-hub tree manifest`, with the same
+  listing rule the hub serves from) into `_halite/manifest.json`: schema `halite.tree/1`, the
+  environment, an `issued` time in UTC with nanoseconds, an optional `expires`, a `source` that is
+  signed and decides nothing, the `hash_type`, and every file but `_halite/` itself with its
+  digest, size and permission bits. `_halite/manifest.sig` holds base64 ASN.1 DER ECDSA
+  signatures, one per line, each over SHA-256 of `halite-tree-v1\x00` followed by the manifest's
+  exact bytes. The domain is not the job signature's, and the keys, `state_signer_keys`, are not
+  `job_signer_keys`: a tree signer and a job signer are different authorities.
+- One valid signature from one trusted key is enough. The signature file already takes several
+  lines, so that requiring two signers later needs no change of format and does not make an older
+  node refuse a manifest that carries two.
+- The node verifies the signature before it parses the bytes, then parses strictly: an unknown
+  field or schema, an unsorted or duplicated path, a path that is not clean and relative or is under
+  `_halite/`, or MD5 or SHA-1 is refused rather than repaired. The manifest's environment must be
+  the one being read. A manifest past its `expires`, issued longer ago than
+  `state_manifest_max_age` (thirty days by default), or issued in the node's future is refused,
+  with a minute of clock difference tolerated.
+- Each environment has a high-water mark under `<state_dir>/tree-revisions`: the newest manifest
+  accepted, by `issued` and by the SHA-256 of its bytes. An older manifest is a rollback and is
+  refused; one with the same `issued` and different bytes is refused as an equivocation. A newly
+  accepted manifest is recorded, and synced, before any file of its revision is read.
+- For the rest of a run, every read and every listing of that environment is answered from the
+  manifest. A path it does not name is not found, whatever the hub serves. A path it names is
+  fetched with the manifest's digest as the entity tag, and a body that does not hash to the
+  manifest's digest is refused, whatever digest the hub published beside it. Verified bodies are
+  kept by digest under `<cache_dir>/objects`, keeping the file's base name, so two runs at
+  different revisions cannot overwrite each other's file.
+- When the hub cannot be reached, the last accepted revision is applied if every file the run
+  needs is already verified on the node, and refused otherwise. It ages like any other manifest:
+  a hub outage longer than `state_manifest_max_age` stops state runs on every node that requires
+  signatures.
+- `warn` checks everything the same way, logs and counts in `halite_node_tree_refusals_total`
+  each refusal that `true` would have made, and applies the tree as `false` does.
+- `state_signature_local`, on by default, holds the node's own `file_roots` to the same rule, so
+  that a file server unreachable at startup, or `--local`, is not a way round it.
+- An empty `state_signer_keys` with the requirement on does not stop the node: it starts, and
+  refuses every read of the tree saying so, because a node whose configuration is managed by that
+  tree could otherwise be repaired only at its console.
+
+**Pillar is outside this guarantee.** Pillar is compiled by the hub, per node, and a node never sees
+its sources, so a signed state that puts a pillar value into a command, a file's contents or a
+package name is still steered by a compromised hub through that value. Signed state content
+narrows what a hub can make a node do to what a signed tree does with data the hub supplies.
+Which job runs, and when, is section 25.6's question. Agentless mode is not covered.
 
 ## 26. Observability
 

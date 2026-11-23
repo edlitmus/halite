@@ -48204,6 +48204,215 @@ log line so that silence is not taken for refusal. Broken on purpose, it failed 
 - **No real Salt estate** that blacks machines out in pillar has been
   migrated.
 
+### 5.704 A node verifies signed state content before it applies it (2026-11-22)
+
+Issue 764, built from the reviewed proposal in
+`docs/proposals/764-signed-state-content.md` (PR 801), with the
+maintainer's answers to its section 10. SPEC 25.8 is new and states the
+rule. Before this, a node checked each file against the digest the hub
+sent with it. That proves the transfer and nothing else: a hub that has
+been taken over sends a matching digest with whatever it serves. GitFS
+ref verification (`gitfs_verify_signatures`) runs on the hub, so against
+that hub it is the attacker's own check.
+
+**The rule.** A signer off the hub lists an environment's tree into
+`_halite/manifest.json` and signs its exact bytes into
+`_halite/manifest.sig`. A node with `require_state_signature: true`
+verifies the signature against `state_signer_keys`, parses strictly,
+checks the environment, the expiry, the age and the high-water mark,
+records the manifest, synced, and only then reads a file. For the rest
+of the run every read and every listing of that environment is answered
+from the manifest. A path it does not name is not found. A body that
+does not hash to its digest is refused, whatever the hub published.
+
+**The maintainer's decisions**, and what was built for each:
+
+1. The SPEC 25.1 and hardening-table correction is a separate PR. Those
+   rows are not touched here.
+2. A CI clock is an acceptable ordering root. Revisions are ordered by
+   `issued`, against a per-environment high-water mark in
+   `<state_dir>/tree-revisions/<env>.json`.
+3. A freeze bound by default: `state_manifest_max_age` is 30 days
+   (`720h`). The reasoning is on `DefaultStateManifestMaxAge`: nightly or
+   weekly re-signing has weeks of slack; an ordinary outage never reaches
+   it; a frozen node is at most a month behind, which is also the hub's
+   job and event retention. **A hub outage longer than that stops state
+   runs** on every node that requires signatures, because the offline
+   copy ages like any other. The node logs `the manifest for base was
+   issued …, … ago, and this node accepts one at most 720h0m0s old
+   (state_manifest_max_age); sign the tree again`, and `halite-node
+   doctor`'s `state signatures` check fails, naming the environment.
+   `0` turns the bound off.
+4. Separate keys and a separate domain: `state_signer_keys`, and
+   `halite-tree-v1\x00`. `TestATreeSignatureAndAJobSignatureCannotStandInForEachOther`
+   holds the separation in both directions.
+5. Pillar is outside the guarantee. SPEC 25.8, the handbook's chapters
+   10, 28 and 33, the `require_state_signature` reference, the startup
+   line and `doctor` all say so.
+6. One valid signature from one trusted key. The signature file already
+   takes up to 16 lines, any one of which may verify, so that requiring M
+   of N later needs no change of format and an older node does not
+   refuse a manifest carrying two. This is a decision of the maintainer.
+7. `_halite/` is reserved, and the hub refuses to serve an environment
+   whose `_halite/` holds anything but `manifest.json` and
+   `manifest.sig`, as regular files, in any of the environment's roots.
+   The refusal is the whole environment, listing and files, answered 409
+   with `this hub refuses to serve environment "base": environment base:
+   …/_halite holds notes.txt, and _halite/ is reserved for manifest.json
+   and manifest.sig alone`. The hub logs it once per environment and
+   problem, at warn. `halite-hub doctor` fails `state signatures` for a
+   `file_roots` tree in that state, or one whose hide rules hide the
+   manifest. It does not read a gitfs or S3 tree, which only the running
+   hub materialises.
+8. `state_signature_local` covers the node's own `file_roots` by default.
+   This is a decision of the maintainer.
+9. Built before issue 765.
+10. File modes: each entry carries `mode`, four octal digits, required by
+    the parser. Nothing on a node compares it yet, because the hub sends
+    bytes and no mode.
+
+**Where it lives, and the trap it avoids.** The check is inside
+`fileserver.Remote` and `fileserver.Fetcher`, not a wrapper around them.
+The node type-asserts its tree to `*fileserver.Remote` for a job naming
+another environment, for extension synchronization and for tracing (the
+proposal's section 2.8), and a wrapper would fail those assertions and
+stop verifying. Every consumer the proposal lists (SLS sources, template
+loads, `salt://` sources, `archive.extracted`, `cmd.script`,
+`file.recurse`, `_ext/`) reaches `cacheFile` or `ManifestFor`, so all of
+them are covered. A job pins one revision per environment for its
+length (`pinTreeForRun` in `executeJob`). A one-shot command is one run.
+
+**Deviations from the proposal**, each recorded here rather than in the
+proposal file, which nothing holds to the code:
+
+- **The signer is `halite-hub tree manifest <dir>`, not `--repo
+  --commit`.** Materialising a commit means exporting gitfs's
+  `git archive` path, which is unexported. CI runs `git archive "$COMMIT"
+  | tar -x` itself, as the runbook in chapter 33 shows. The listing is
+  `Roots.TreeEntries`, built on `Roots.Manifest`, which is what the hub
+  serves listings from, so the two share one rule.
+- **A manifest issued in the node's future is refused** (`future`).
+  The proposal did not say. Accepted, it would become the high-water
+  mark and make every honest manifest after it a rollback.
+- **The proposal's events are not built.** `tree/refused` and
+  `tree/equivocation` would need adding to `halite-hub event tags` and
+  the event reference. A refusal is logged at warn and counted, and an
+  equivocation is a refusal with its own reason.
+- **The evidence record does not carry the manifest digest.** That
+  changes the record's shape, which the proposal itself left undesigned.
+- **Objects are collected when a new revision is accepted**, keeping
+  every object any environment's current or previous manifest names,
+  rather than after each successful run.
+- **A candidate search's miss is not counted.** `foo.sls` before
+  `foo/init.sls` would otherwise count a refusal for every state. Under
+  `warn`, a path not in the manifest is counted only when the hub or the
+  local roots have it.
+- **`tree_revision` on signed state jobs is not built**, as
+  the proposal planned.
+
+**What an operator sees.** At startup, at info: `signed state content is
+required (require_state_signature: true) for the hub's tree and this
+node's own roots, from 1 trusted key(s), manifests at most 720h0m0s old;
+pillar is not covered`. Each accepted change of revision, at info:
+`signed state content: accepted a new revision` with the environment,
+both `issued` times, the manifest's digest and the signer. Each refusal,
+at warn: `signed state content: refused`, with `env`, `reason`, `path`
+for a file, and the error. Captured from the binary test:
+
+```
+base/app/marker.txt arrived with sha256 886b6748… (the hub published sha256:886b6748…) and revision sha256:8b6e9c73… (issued 2026-11-23T00:03:00.143923216Z, signed by tree-ci) says 2d27fbdf…; it was not used
+the manifest for base was issued 2026-11-23T00:03:00.143923216Z and this node has already accepted one issued 2026-11-23T00:03:05.413218759Z; refusing an older revision
+```
+
+Metrics: `halite_node_tree_refusals_total{reason}` and
+`halite_node_tree_revision_issued_timestamp_seconds{env}`. `doctor` has a
+new check, `state signatures`, on the node and on the hub. SPEC 26.4
+names it.
+
+**Shown.** `internal/treesign` holds the format and the pure rules; a
+signature made by `openssl dgst -sha256 -sign` over the documented bytes
+verifies (OpenSSL 3.5.9 on beastie). `internal/hub/signedtree_test.go`
+drives `fileserver.Remote` through the real hub handler and the real
+transport client, so the 304 and the published digest are the hub's.
+`internal/fileserver/signed_test.go` holds the node's own roots and the
+reserved directory, and `cmd/halite-node/statesignature_test.go` the
+wiring through `setup` and `executeJob`, two environments' top files
+included. `TestASignedTreeIsAppliedAndATamperedOrOlderOneIsNot` builds
+`halite-hub` and `halite-node`, signs the hub's tree with `tree manifest`,
+`tree sign` and `tree verify`, and runs a node with a one-second
+scheduled `state.apply`: the signed revision is applied; a file changed
+on the hub is refused by name and the marker does not change; a new
+signed revision is applied; the first manifest and its content put back
+are refused as a rollback; and a stray `_halite/notes.txt` is refused by
+the hub. Each check was broken on purpose, and the named tests failed:
+
+| Break | Failed |
+|---|---|
+| any signature verifies | flipped-byte, untrusted-key, domain separation, the hub-side untrusted key |
+| the domain changed to the job's | domain separation, the openssl signature |
+| unknown fields accepted | the parse-rule table |
+| the path rules dropped | the parse-rule table |
+| the environment not compared | the freshness table, another environment's manifest |
+| the expiry ignored | the expiry either side of the skew, expired-or-too-old |
+| the age bound ignored | the freshness table, expired-or-too-old |
+| a future `issued` accepted | the freshness table |
+| a rollback accepted | the freshness table, the high-water mark, the binary test |
+| an equivocation accepted | the freshness table, the high-water mark |
+| the mark never written | read-through-the-manifest, the high-water mark, recorded-before-any-read |
+| a path not in the manifest fetched from the hub | not-found-even-though-the-hub-serves-it |
+| a candidate name asked of the hub | read-through-the-manifest (a miss was counted) |
+| the body's digest not compared | a differing body, two runs at two revisions, a changed local file, the binary test |
+| the listing from the hub | not-found-even-though-the-hub-serves-it |
+| the local listing from the roots | the signed local tree |
+| warn refusing | missing-manifest, warn-counts-everything |
+| no new pin per run | the high-water mark, two runs at two revisions |
+| no offline copy | an outage applies the accepted revision |
+| the hub serving a dirty `_halite/` | the hub's refusal, the binary test |
+| the refusal logged per request | the hub's refusal (three lines for three requests) |
+| the reserved directory not checked | reserved-problem |
+| no keys taken as "nothing to check" | the hub-side untrusted key |
+| the guard not given to the node's own roots | own-roots-held-to-the-requirement |
+| an unreadable `require_state_signature` accepted | the mode parser |
+| the refusal series not declared | exported-at-zero |
+| `tree verify` blind to a changed file | the binary test |
+| the default bound 0 | freeze-bound-on-by-default |
+| a second signature line refused | any-one-line-of-several |
+
+Three breaks first failed to compile rather than fail a test, and so
+proved nothing. They were rewritten to compile (the mark's write
+replaced by a function returning nil, the candidate check by `_ = rev`,
+the verify comparison by `&& false`) and then failed as listed. One
+check first passed with its break: the openssl test built its input
+from the package's own `domain` constant, so changing the constant
+changed both sides. It now spells `halite-tree-v1\x00` out, and fails.
+
+**Not verified:**
+
+- **FreeBSD and Linux on real machines.** Every test ran on beastie,
+  under its Linux layer, as an agent's shell does. No FreeBSD 14 or 15
+  node, no Linux node and no lab instance was driven, and no FIPS build
+  (`ref-salt1`) verified a manifest. ECDSA P-256 and P-384 with SHA-256
+  are what a FIPS build offers, by reading, not by running.
+- **A KMS signer.** `tree sign --sign-extension` shares
+  `signDigestWithExtension` with `run --sign-extension`, and was not run,
+  against `halite-ext-signer-kms` or the local reference signer.
+- **gitfs.** No test serves a signed tree from gitfs, and the proposal's
+  differential (a `tree manifest` of `git archive` output against the
+  listing the hub serves for that commit, with a symlink, an
+  `export-ignore`, a hidden file and a non-ASCII path) was not run.
+- **A relay.** Not run behind one.
+- **A case-insensitive file system** (macOS, Windows): two paths that
+  differ only in case land in different object directories by digest,
+  which I expect to be harmless and did not check.
+- **The estate's own tree** was not signed, and must not be by a test.
+  Manifest size, verification time and object store disk use are not
+  measured.
+- **A node killed between recording the mark and reading a file**
+  restarting on the new mark: the order is tested, the crash is not.
+- **Agentless mode** is out of scope and not checked.
+- **The traced-job trap** of the proposal's 2.8 (a traced job naming
+  another environment falling back to local roots) is still a reading,
+  not a run. Verification does not depend on it: both branches verify.
 
 ### 5.704 SPEC 25.1 listed a check the hub runs as a control against the hub (2026-11-22)
 

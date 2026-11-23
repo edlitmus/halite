@@ -22,7 +22,7 @@ Command halite-node is the endpoint agent and the local executor. It replaces th
 
 This build carries everything a node does about its own tree without a hub, and everything it does with one: enrollment, renewal, the subscribe stream, running the jobs that arrive on it, hub-compiled pillar, the file server as a source, beacons, the scheduler, and the mine.
 
-**Files:** `anchor.go`, `beacons.go`, `commands.go`, `doctor.go`, `enroll.go`, `event.go`, `evidence.go`, `execute.go`, `extensions.go`, `grainopts.go`, `hublink.go`, `jobqueue.go`, `jobsignature.go`, `main.go`, `metrics.go`, `mine.go`, `oneshot.go`, `pillarcache.go`, `pillarquiesce.go`, `pillarstore.go`, `quiesce.go`, `rendersandbox.go`, `renewal.go`, `returner.go`, `runtimeconfig.go`, `schedule.go`, `trace.go`; with tests.
+**Files:** `anchor.go`, `beacons.go`, `commands.go`, `doctor.go`, `enroll.go`, `event.go`, `evidence.go`, `execute.go`, `extensions.go`, `grainopts.go`, `hublink.go`, `jobqueue.go`, `jobsignature.go`, `main.go`, `metrics.go`, `mine.go`, `oneshot.go`, `pillarcache.go`, `pillarquiesce.go`, `pillarstore.go`, `quiesce.go`, `rendersandbox.go`, `renewal.go`, `returner.go`, `runtimeconfig.go`, `schedule.go`, `statesignature.go`, `trace.go`; with tests.
 
 ## `cmd/halite-hub`
 
@@ -32,7 +32,7 @@ Command halite-hub is the central service, the file server, the pillar compiler,
 
 This build carries the control plane of SPEC section 6, the fleet commands of section 9, the runners of section 19.2, orchestration, reactors, the mine, metrics, and the tools that audit a tree before a hub exists. \`files\` and \`ssh\` are not built and say so rather than failing obscurely.
 
-**Files:** `doctor.go`, `event.go`, `evidence.go`, `extensioncmd.go`, `extensionrun.go`, `extensions.go`, `extensionverify.go`, `extpillar.go`, `extsign.go`, `gitfs.go`, `jobs.go`, `keys.go`, `main.go`, `metrics.go`, `orch.go`, `pillaropts.go`, `policy.go`, `relay.go`, `run.go`, `runner.go`, `s3fs.go`, `serve.go`, `ssh.go`, `trace.go`; with tests.
+**Files:** `doctor.go`, `event.go`, `evidence.go`, `extensioncmd.go`, `extensionrun.go`, `extensions.go`, `extensionverify.go`, `extpillar.go`, `extsign.go`, `gitfs.go`, `jobs.go`, `keys.go`, `main.go`, `metrics.go`, `orch.go`, `pillaropts.go`, `policy.go`, `relay.go`, `run.go`, `runner.go`, `s3fs.go`, `serve.go`, `ssh.go`, `trace.go`, `treecmd.go`; with tests.
 
 ## `cmd/halite-api`
 
