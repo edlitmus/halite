@@ -80,13 +80,13 @@ error_log="/var/log/halite/node.log"
 # times in about half a minute and is given up on (the lab saw six exits
 # in 27 seconds), while a crash once an hour is restarted every time.
 #
-# A revoked node is not one of those. It exits 1 when the hub tells it,
-# is respawned once, and the new agent does not exit: the hub refuses its
-# certificate at the TLS handshake, and `connect` retries that as it
-# would an unreachable hub, for ever unless hub_tries is set. So the cap
-# does not stop it, and nothing here stands in for the unit's
-# RestartPreventExitStatus=1. Stop and disable the service on a node you
-# revoke (DIVERGENCE 5.719.3).
+# A revoked node is one of those. It exits 1 when the hub tells it, and
+# again at every start after that: the hub refuses its certificate at the
+# TLS handshake, and `connect` exits 1 on that refusal rather than
+# retrying it. Until DIVERGENCE 5.720 it retried for ever, and the cap
+# never fired (5.719.3). Not run under supervise-daemon since that change:
+# the expected result is the hub_tries: 1 run's, six exits and a stop.
+# The service still starts at boot until you `rc-update del` it.
 respawn_delay=5
 respawn_max=5
 respawn_period=60

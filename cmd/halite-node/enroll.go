@@ -578,6 +578,27 @@ func runConnect(args *cli.Args) int {
 			n.clearPillarStore()
 			return 1
 		}
+		if transport.CertificateRefused(err) {
+			// The same answer as the revoke message, given to a node that
+			// was not connected to hear that: started again by its
+			// supervisor or a reboot, it is refused at the handshake.
+			// This retried it as an outage, for ever under the default
+			// hub_tries, so RestartPreventExitStatus=1 and OpenRC's
+			// respawn cap -- both waiting for an exit 1 -- never saw one
+			// (issue 839). Only the alerts no retry can change exit here;
+			// transport.CertificateRefused says which, and why an expired
+			// certificate or a hub that lacks this node's CA still retry.
+			// Go's HTTP/2 client sometimes loses the alert and says only
+			// that the connection could not be established; that attempt
+			// is retried like an outage, and the next one reads the alert
+			// (DIVERGENCE 5.720).
+			n.log.Error("the hub refused this node's certificate, so this node will not retry: "+
+				"its enrollment was revoked, or the hub will not accept this certificate",
+				"hub", client.HubURL, "error", err.Error(),
+				"fix", "if this node should be in the fleet, enrol it again: halite-node enroll --force")
+			n.clearPillarStore()
+			return 1
+		}
 		if err != nil {
 			n.log.Warn("the stream ended", "error", err.Error())
 		} else {
