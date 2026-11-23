@@ -49333,6 +49333,102 @@ spelled `--forced` (the docsaudit test, naming both); and the node's
   by a running `halite-api serve` was not watched here; the claim rests on
   the code and the tests named above.
 
+### 5.712 A state job's pillar override was carried to the node and ignored (2026-11-23)
+
+Issue 820, found writing 5.710's real-binary test. A `salt.state`,
+`salt.sls` or `salt.highstate` orchestration step's `pillar:`, which
+chapter 21 of the handbook documents as "Pillar overrides for this step",
+and `halite-hub run <target> state.apply pillar='{...}'` both put the
+override in the job as the keyword argument `pillar`. Nothing in
+`cmd/halite-node` read it. `runStateJob` compiled the node's ordinary
+pillar, rendered the state with that, and reported success: a run asked
+for a different pillar got the ordinary one and said nothing.
+
+**Seen.** `TestAStateJobsPillarOverrideAppliesToThatRunOnly`, unsigned,
+real binaries: with `pillar={"app_version": "9.9", "nested": {"over":
+"job"}, "only_override": "yes-it-is"}` the marker the state writes held
+`from-pillar kept base none`, the same as a run with no override. The
+issue had seen it only on a signed job; the unsigned job and the command
+line have the same gap, because nothing on either path branches on the
+signature.
+
+**What Salt does** (3008.x, `salt/state.py`, `State.__init__` and
+`State._gather_pillar`): the override is merged over the compiled pillar
+with `salt.utils.dictupdate.merge`, under the agent's own
+`pillar_source_merging_strategy` and `pillar_merge_lists`, so by default
+a nested mapping is merged key by key and a list is replaced. An override
+that is not a dict is logged ("Pillar override was not passed as a
+dictionary") and dropped, and the state runs with the ordinary pillar.
+`pillar_enc: gpg` decrypts the override first.
+
+**The change.** The node merges a state job's `pillar` over its compiled
+pillar for that run, with `value.Merge` under the node's own two
+settings, the same call that merges one pillar file over another. The
+compiled pillar is not changed, so the next job sees the ordinary one.
+The node logs the override's top-level keys, not its values. It applies
+to every state function, the `show_*` forms included; only `state.apply`
+was run.
+
+Three things it deliberately does not do:
+
+- **An override is not the node's pillar for quiesce** (5.703). The merge
+  happens after `compilePillarOrErr`, the one place a pillar's quiesce is
+  recorded, and after `quiesceAfterPillar`. So an override saying
+  `quiesce: true` neither quiesces the node nor leaves
+  `pillar-quiesce.json` behind to keep it quiesced across a restart, and
+  one saying `quiesce: false` cannot lift a quiesce the compiled pillar
+  set. Salt checks blackout against the agent's own `opts["pillar"]`,
+  before the state module has merged anything (`salt/minion.py`, <!-- lexicon:allow -->
+  `_execute_job_function`; read, not run). The
+  override is a job's data and anybody who can send the job can write it;
+  the compiled pillar is the estate's.
+- **Anything but a mapping is refused**, where Salt drops it. Dropping it
+  is the defect this entry is about, with a log line added. Refused at
+  admission, before the acceptance record, as a non-boolean `test` is
+  (5.330), and again in `runStateJob` for the paths that do not come
+  through admission. Only for a state function: to an execution function
+  `pillar` is an ordinary keyword argument.
+- **`pillar_enc` is refused.** This node does not decrypt an override, and
+  merging the ciphertext as the value would write it wherever the state
+  put the value.
+
+**Demonstrated.** The real-binary test passes: the override's keys win,
+the nested key it does not name survives, a key only it has appears, the
+next plain run has the ordinary pillar back, `quiesce: true` in an
+override renders as data with no record written, a string is refused with
+`a pillar override must be a mapping`, and `quiesce: false` in the
+override of a job admitted before the node had read its newly quiescing
+pillar fails with the quiesce from `quiesceAfterPillar`. 5.710's signed
+test now writes the `app_version` the step's signed `pillar:` carries,
+and reads `1.4.2 app_version=1.4.2`. Broken on purpose, each failed:
+discarding the merged pillar (both binary tests, `MISSING` in the signed
+one, `from-pillar` in the unsigned one); recording the merged pillar's
+quiesce (the override's `quiesce: true` left the record); recording it
+before `quiesceAfterPillar` for `quiesce: false` only ("an override
+lifted the pillar's quiesce"); no type check ("succeeded"); and no
+admission check (`TestAStateJobWithAnUnusablePillarOverrideIsRefused`).
+
+**Not the same as Salt, and not covered.**
+
+- In Salt the pillar compile on the server sees the override too, so a pillar
+  file or an external pillar can read it. Here the hub compiles the
+  pillar without it and only the node merges it. A pillar template that
+  reads `pillar.get` of a key only the override sets sees nothing.
+- An override's values are not taught to the redactor. A secret passed
+  in an override is printed wherever the state prints it, as in Salt, and
+  it is in the hub's job cache as part of the job.
+- `pillar.refresh` or anything else that calls `RecompilePillar` during
+  the run gets the pillar without the override.
+- The command line's `halite-node state apply pillar=...` still refuses
+  `pillar=` by name; only jobs read it.
+- `pillarenv` has the same shape: a state step's `pillarenv:` is sent as a
+  keyword argument and no node reads it. Read, not run; not fixed here.
+- Run on the dev host only (FreeBSD, through its Linux compatibility
+  layer), on a hub and a node over loopback. No lab machine, no relay, no
+  API-submitted job (`/v1/run` sends the same keyword).
+
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
