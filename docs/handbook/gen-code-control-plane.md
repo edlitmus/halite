@@ -104,13 +104,14 @@ Package hub is the control plane of SPEC section 6: the endpoints a node talks t
 
 The rule the whole package follows is that a node's identity comes from the certificate the TLS layer verified and never from the request body. A body says what a node wants; the certificate says who is asking.
 
-**Files:** `anchors.go`, `batch.go`, `connlimit.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `returnscrub.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
+**Files:** `anchors.go`, `batch.go`, `connlimit.go`, `delegation.go`, `dispatch.go`, `enrolllimit.go`, `eventreturn.go`, `events.go`, `files.go`, `fleet.go`, `grains.go`, `inflight.go`, `jobs.go`, `listen.go`, `metrics.go`, `metrics_endpoint.go`, `mine.go`, `nodes.go`, `orch.go`, `orch_plan.go`, `orch_steps.go`, `orchstore.go`, `pillar.go`, `queue.go`, `reaction.go`, `reactor.go`, `reactor_config.go`, `relay.go`, `returnscrub.go`, `runner.go`, `runners_fleet.go`, `runners_jobs.go`, `runners_mine.go`, `runners_orch.go`, `runners_pending.go`, `runners_reactor.go`, `runners_tree.go`, `server.go`, `servingcert.go`, `subscribe.go`; with tests.
 
 **Exports.**
 
 - `AnchorPath` (func): AnchorPath is where one node's anchors are kept, refusing a name that is not a node identity so that a name cannot become a path.
 - `AnchorStore` (type): AnchorStore is the hub's record of the evidence heads its nodes have reported: SPEC 25.7's anchor, one append-only file per node.
 - `CompilePillar` (func): CompilePillar compiles one node's pillar with the hub's options, and answers with the values that are secret besides -- what the compile decrypted and what a secret external source returned -- which the node is told to redact.
+- `CompilePlanned` (func): CompilePlanned compiles an orchestration the way a plan is compiled: from loader, with the override, no grains, no `salt` dispatcher, strict undefined names, no nodegroups and no configuration.
 - `EventReturn` (type): EventReturn ships the whole event stream to a returner.
 - `Fleet` (type): Fleet is the set of nodes with a live subscribe stream.
 - `Listen` (func): Listen opens the hub's one TCP port with the transport's TLS configuration.
@@ -119,6 +120,7 @@ The rule the whole package follows is that a node's identity comes from the cert
 - `MineEntry` (type): MineEntry is one function's published data for one node.
 - `MineStore` (type): MineStore keeps what nodes publish.
 - `NewFleet` (func): NewFleet answers with an empty one.
+- `NewPlan` (func): NewPlan compiles an orchestration from loader and lays out its plan, unsigned: every step's job with its identifier and expiry.
 - `NewRunners` (func): NewRunners builds the registry this build ships.
 - `NewServingCert` (func): NewServingCert serves pair until Store replaces it.
 - `NodeCache` (type): NodeCache is the store of node data.
@@ -135,7 +137,11 @@ The rule the whole package follows is that a node's identity comes from the cert
 - `OrchStore` (type): OrchStore keeps the runs on disk.
 - `OrchUnreadable` (type): OrchUnreadable is a record the store holds and could not read.
 - `ParseReactors` (func): ParseReactors reads the `reactor` configuration of SPEC 18.1.
+- `PillarDigest` (func): PillarDigest is the digest a run records for its override, which a plan carries so that it cannot be run with another.
 - `PillarOptions` (type): PillarOptions is what the hub needs to compile pillar for a node.
+- `PlanOptions` (type): PlanOptions is what `halite-hub orch plan` compiles a plan for.
+- `PlanSteps` (func): PlanSteps works out every job a compiled orchestration sends, as a plan signs them, and the hub-side steps it runs.
+- `PlannedStep` (type): PlannedStep is one fleet step and the job it sends, unsigned: the plan tool gives it an identifier, an expiry and a signature.
 - `Reach` (type): Reach says what a runner touches of the nodes (issue 321, M-56).
 - `Reaction` (type): Reaction is one declaration in a reaction SLS: what to run and how.
 - `ReactionContextNames` (func): ReactionContextNames is what a reaction template may read without defining it.
@@ -298,6 +304,36 @@ This version accepts a manifest when any line of the signature file verifies aga
 - `SignatureLine` (func): SignatureLine signs a manifest's bytes with a local key.
 - `Store` (type): Store keeps the high-water marks, and the manifest each one names, so that an outage can apply the last accepted revision whole.
 - `Verify` (func): Verify checks the signature file against every trusted key and answers with the name of the key that verified.
+
+## `internal/orchplan`
+
+Import path `github.com/edlitmus/halite/internal/orchplan`.
+
+Package orchplan is issue 765's signed orchestration plan: the file an operator writes off the hub, holding every fleet step of one orchestration as a complete SPEC 25.6 signed job, so that a node which requires signed jobs can run an orchestration the hub could not have authorised by itself.
+
+### What a plan authorises, and what it does not
+
+Each step's signature is the authority, and it is the job signature a node already checks: the job id, target and target kind, function, arguments, environment and expiry. Nodes never see the plan, and the plan as a whole carries no signature, because the only party that would check one is the hub, which is the party it would have to be protected from.
+
+So a plan authorises a set of jobs, not their order. A hub holding a plan can send its steps in another order, skip one, or send none; each one it sends is still exactly what was signed. Batch, subset, safe limit, \`tolerate\_failures\` and \`run\_parallel\` are outside the signature and are controls an honest hub honours, not authorisations. The hub-side steps (\`salt.runner\`, \`salt.wheel\`, \`salt.wait\_for\_event\`) are listed so that an honest hub can refuse an orchestration that changed, and nothing makes a compromised one honour the list.
+
+### The format
+
+JSON of schema \`halite.orch-plan/1\`, strictly parsed: an unknown field or schema is refused, for the reason treesign gives -- a field this build does not understand could be one that changes what the plan means. Numbers inside keyword arguments are kept as \`json.Number\`, so the payload rebuilt here is the one a node rebuilds from the wire.
+
+**Files:** `orchplan.go`; with tests.
+
+**Exports.**
+
+- `Digest` (func): Digest identifies a plan by its exact bytes, for the run's record and the hub's log.
+- `Encode` (func): Encode writes a plan the way Parse reads it.
+- `FormatTime` (func): FormatTime is the plan's time form: RFC 3339 in UTC with nanoseconds, as the job signature's own expiry is written.
+- `FromJob` (func): FromJob is the plan's form of a job record's signed fields.
+- `HubStep` (type): HubStep is a step the hub runs itself.
+- `Job` (type): Job is job.SigningPayload's field set and nothing else, so that a plan cannot carry something a node does not check.
+- `Parse` (func): Parse reads a plan strictly.
+- `Plan` (type): Plan is one signed orchestration.
+- `Step` (type): Step is one fleet step and the signed job it sends.
 
 ## `internal/eventbus`
 

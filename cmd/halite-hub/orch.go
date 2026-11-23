@@ -37,12 +37,14 @@ func runOrch(args *cli.Args) int {
 		return orchList(args)
 	case "resume":
 		return orchResume(args)
+	case "plan":
+		return orchPlan(args)
 	}
 	// Not cli.Fatalf, which this was: that exits 1, so the `return 2`
 	// that followed it never ran and a mistyped subcommand reported a
 	// failed run. A typo is a usage error, as it is for every other
 	// dispatcher in this program.
-	fmt.Fprintf(os.Stderr, "halite-hub orch has no subcommand %q; there are run, show, list, resume, and lint\n",
+	fmt.Fprintf(os.Stderr, "halite-hub orch has no subcommand %q; there are run, show, list, resume, lint, and plan\n",
 		args.Positional[0])
 	return cli.ExitUsage
 }
@@ -69,6 +71,9 @@ func orchRun(args *cli.Args, lintOnly bool) int {
 			cli.Usagef("--pillar %q is not JSON: %v", raw, err)
 		}
 		kwargs["pillar"] = decoded
+	}
+	if !lintOnly {
+		planArgument(args, kwargs)
 	}
 	return orchCall(args, fun, nil, kwargs)
 }
@@ -113,6 +118,7 @@ func orchResume(args *cli.Args) int {
 		}
 		kwargs["pillar"] = decoded
 	}
+	planArgument(args, kwargs)
 	return orchCall(args, "state.orch_resume", args.Positional[1:2], kwargs)
 }
 
@@ -275,11 +281,42 @@ Usage:
   halite-hub orch list                    recent runs, newest first
   halite-hub orch resume <jid> --from <step>
                                           run again from a named step
+  halite-hub orch plan <sls>... --tree <dir> --out <file> (--sign-key <path> | --sign-extension <path>)
+                                          compile and sign a plan off the hub, for nodes
+                                          that require signed jobs (SPEC section 25.6)
+  halite-hub orch plan show <file>        print every job a plan signs
 
 Examples:
   halite-hub orch run deploy.web
   halite-hub orch run deploy.web --pillar '{"version":"1.2"}'
   halite-hub orch resume 20260823T101500.000000 --from deploy_web
+  halite-hub orch plan deploy.web --tree ~/estate/state --pillar '{"version":"1.2"}' \
+      --sign-key ops.key --out deploy.plan.json
+  halite-hub orch run deploy.web --pillar '{"version":"1.2"}' --plan deploy.plan.json
+
+Flags for run and resume:
+  --plan <file>        send every fleet step as the plan's signed job; the hub refuses
+                       the whole run before any step if its compile disagrees with the plan
+
+Flags for plan:
+  --tree <dir>         the checkout to compile from; the hub is not contacted
+  --out <file>         the plan file to write
+  --sign-key <path>    a PEM key, as keys signer create writes
+  --sign-extension <path>  a bridged signer extension, such as halite-ext-signer-kms
+  --env <name>         the environment, as orch run --env; default base
+  --pillar <json>      the override, which orch run must be given too
+  --test               a test plan, for orch run --test
+  --ttl <dur>          the window for the whole run, every batch and wait included;
+                       default 1h
+  --max-ttl <dur>      the nodes' job_signature_max_ttl; default 1h. A --ttl over it is
+                       refused: split a long orchestration into successive plans, or raise
+                       the setting on those nodes, which lengthens every signed job's life
+  --resume-of <jid> --from <step>
+                       a resume plan, signing <step> and every step after it; a resume
+                       always needs a new plan
+
+A plan authorises a set of jobs, not their order: make dependent actions one step.
+A planned orchestration may not read the hub's configuration (opts).
 
 A step is authorized twice: once as the orchestration, and again as the
 job it dispatches. Permission to run an orchestration is not permission

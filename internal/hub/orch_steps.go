@@ -327,14 +327,40 @@ func (o *orchRunner) dispatchAndWait(c *exec.Context, args *value.Map, sub Submi
 			fmt.Sprintf("Would run %s on the nodes matching %q.", sub.Fun, sub.Target), nil), nil
 	}
 
+	// A planned run sends the plan's signed job for the step. The policy
+	// is still asked, in dispatchFor, as for any step: the signature is in
+	// addition to authorisation, not instead of it. `run_parallel` stays
+	// as the step set it and outside the signature, so a node that
+	// requires signatures ignores it (SPEC 9.6, cmd/halite-node's
+	// schedulingOf): a plan never authorises a job to run beside another.
+	//
+	// The plan is consulted before the step is recorded as dispatching: a
+	// step its plan refuses sends nothing, and a record saying it might
+	// have would make a resume past it refuse for a job that never went.
+	// Signed is set first, so the pending record already says so.
+	signed := o.plan != nil
+	if signed {
+		var err error
+		if sub, err = o.signedStep(c.StateID, sub); err != nil {
+			return states.False(err.Error()), nil
+		}
+		d := o.detail(c.StateID)
+		o.mu.Lock()
+		d.Signed = true
+		o.mu.Unlock()
+	}
 	o.dispatching(c.StateID)
 	j, err := o.server.dispatchFor(o.principal, o.onBehalfOf, sub)
 	if err != nil {
 		return states.False(err.Error()), nil
 	}
+	if signed {
+		o.server.info("dispatched a signed orchestration step", "component", "orchestration",
+			"jid", string(o.jid), "step", c.StateID, "job_jid", string(j.JID), "signed", true)
+	}
 	o.server.emit(tagOrchStep(string(o.jid), c.StateID), "", map[string]any{
 		"jid": string(o.jid), "step": c.StateID, "job_jid": string(j.JID),
-		"fun": sub.Fun, "target": sub.Target, "nodes": len(j.Nodes),
+		"fun": sub.Fun, "target": sub.Target, "nodes": len(j.Nodes), "signed": signed,
 	})
 	o.dispatched(c.StateID, j)
 

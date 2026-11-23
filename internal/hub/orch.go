@@ -15,12 +15,11 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fnmatch"
 	"github.com/edlitmus/halite/internal/job"
-	"github.com/edlitmus/halite/internal/render"
+	"github.com/edlitmus/halite/internal/orchplan"
 	"github.com/edlitmus/halite/internal/runner"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/states"
-	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -42,6 +41,12 @@ type OrchRequest struct {
 	// ResumeOf and ResumeFrom pick a previous run up at a named step.
 	ResumeOf   job.ID
 	ResumeFrom string
+	// Plan is issue 765's signed plan, when the run has one: every fleet
+	// step is sent as the plan's signed job, and the run is refused
+	// before any step if the plan and this hub's compile disagree.
+	// PlanDigest identifies the plan's bytes, for the record and the log.
+	Plan       *orchplan.Plan
+	PlanDigest string
 }
 
 // orchRunner carries what the step modules need, for one run.
@@ -57,6 +62,8 @@ type orchRunner struct {
 	onBehalfOf *transport.Delegation
 	env        string
 	jid        job.ID
+	// plan is the run's signed plan, or nil for an unsigned run.
+	plan *orchplan.Plan
 
 	mu      sync.Mutex
 	details map[string]*OrchStep
@@ -115,9 +122,11 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		Test:       req.Test,
 		// What the run compiled with, for a resume to be held to.
 		PillarDigest: pillarDigest(req.Pillar),
+		PlanDigest:   req.PlanDigest,
 	}
 
-	orch := &orchRunner{server: s, principal: req.Principal, onBehalfOf: req.OnBehalfOf, env: env, jid: jid}
+	orch := &orchRunner{server: s, principal: req.Principal, onBehalfOf: req.OnBehalfOf, env: env, jid: jid,
+		plan: req.Plan}
 	registry := orchStates(orch)
 
 	compileStarted := s.now()
@@ -140,6 +149,26 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 	seed, err := s.resumeSeed(req, compiled, run, orch)
 	if err != nil {
 		return nil, err
+	}
+	if req.Plan != nil {
+		carried := make(map[string]bool, len(seed))
+		for id := range seed {
+			carried[id] = true
+		}
+		if err := s.checkPlan(req, env, compiled, carried); err != nil {
+			kv := []any{"component", "orchestration", "jid", string(jid), "plan_digest", req.PlanDigest,
+				"error", err.Error()}
+			var refusal *planRefusal
+			if errors.As(err, &refusal) {
+				kv = append(kv, "step", refusal.step, "field", refusal.field)
+			}
+			s.warn("orchestration refused before it started", kv...)
+			s.countOrchestration("plan_refused", compileTook)
+			return nil, fmt.Errorf("orchestration %s refused before it started: %w", jid, err)
+		}
+		s.info("orchestration plan accepted", "component", "orchestration", "jid", string(jid),
+			"plan_digest", req.PlanDigest, "signed_steps", len(req.Plan.Steps),
+			"expires_in", planExpiresIn(req.Plan, s.now()).String())
 	}
 
 	newOrch := map[string]any{
@@ -196,45 +225,30 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 }
 
 // compileOrchestration builds the low state for a run.
+//
+// A planned run compiles as the plan tool did (CompilePlanned): no hub
+// configuration, no nodegroups, and a fixed seed in place of the job id,
+// so that the only input that can differ between the two compiles is the
+// tree.
 func (s *Server) compileOrchestration(req OrchRequest, env string, jid job.ID, registry *states.Registry) *state.Compiled {
-	pillar := req.Pillar
-	if pillar == nil {
-		pillar = value.NewMap(0)
-	}
-	c := &state.Compiler{
-		Loader:   s.Files,
-		Registry: registry.Signatures(),
-		Config: state.Config{
-			Env:    env,
-			JobID:  string(jid),
-			NodeID: OrchNodeID,
-			// The hub has no grains of its own to expose here, and
-			// inventing a set would make an orchestration that reads
-			// `grains` look portable when it is not.
-			Grains:       value.NewMap(0),
-			Pillar:       pillar,
-			ConfigValues: s.configValues(),
-			// SPEC 25.5: the hub's dispatcher is restricted, and this
-			// build gives an orchestration template none at all rather
-			// than one that has not been audited against that list.
-			Salt:       nil,
-			Undefined:  template.Strict,
-			Nodegroups: s.nodegroups(),
-			Test:       req.Test,
-			GPG:        render.GPGOptions{},
-			// What each orchestration file rendered to, at debug level,
-			// as a node logs its states'. DIVERGENCE 5.261.
-			OnRendered: func(file, sls string, pipeline []string, text string) {
-				if s.Log != nil {
-					s.Log.Debug("rendered", "file", file, "sls", sls,
-						"pipeline", strings.Join(pipeline, "|"), "rendered", text)
-				}
-			},
+	in := orchCompileInputs{
+		loader:     s.Files,
+		config:     s.configValues(),
+		nodegroups: s.nodegroups(),
+		jobID:      string(jid),
+		// What each orchestration file rendered to, at debug level,
+		// as a node logs its states'. DIVERGENCE 5.261.
+		onRendered: func(file, sls string, pipeline []string, text string) {
+			if s.Log != nil {
+				s.Log.Debug("rendered", "file", file, "sls", sls,
+					"pipeline", strings.Join(pipeline, "|"), "rendered", text)
+			}
 		},
 	}
-	compiled := c.CompileSLS(req.SLS)
-	refuseParallelStateRuns(compiled, registry.Signatures())
-	return compiled
+	if req.Plan != nil {
+		in.config, in.configRefused, in.nodegroups, in.jobID = nil, plannedConfigRefusal, nil, plannedJobID
+	}
+	return compileOrch(in, req.SLS, env, req.Pillar, req.Test, registry.Signatures())
 }
 
 // refuseParallelStateRuns refuses, at compile time, a step that asks for

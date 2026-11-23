@@ -92,6 +92,14 @@ type Options struct {
 	// Config is the effective configuration with secrets redacted,
 	// exposed as `opts`.
 	Config *value.Map
+	// ConfigRefused, when set, binds `opts` and `__opts__` to an
+	// undefined value carrying this text instead of Config, so that a
+	// template reading the configuration fails, under strict undefined,
+	// saying why. Issue 765's planned orchestrations set it: the plan is
+	// compiled off the hub, which has no hub configuration to give it, and
+	// the hub compiles the same orchestration the same way, so that the
+	// two compiles have the same inputs.
+	ConfigRefused string
 
 	// Salt is the execution module dispatcher bound to `salt`. On the hub
 	// this is the restricted set of SPEC section 25.5.
@@ -439,9 +447,14 @@ func buildContext(opts Options) map[string]any {
 	if pillar == nil {
 		pillar = value.NewMap(0)
 	}
-	config := opts.Config
-	if config == nil {
+	var config any = opts.Config
+	if opts.Config == nil {
 		config = value.NewMap(0)
+	}
+	dunderConfig := config
+	if opts.ConfigRefused != "" {
+		config = template.Undefined{Name: "opts", Hint: opts.ConfigRefused}
+		dunderConfig = template.Undefined{Name: "__opts__", Hint: opts.ConfigRefused}
 	}
 
 	slsPath, tplFile := slsPaths(opts.SLS, opts.File)
@@ -478,7 +491,7 @@ func buildContext(opts Options) map[string]any {
 		// The dunder names existing trees reach for.
 		"__env__":    opts.Env,
 		"__sls__":    opts.SLS,
-		"__opts__":   config,
+		"__opts__":   dunderConfig,
 		"__grains__": grains,
 		"__pillar__": pillar,
 	}

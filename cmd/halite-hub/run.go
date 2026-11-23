@@ -598,6 +598,17 @@ func encodeSignature(der []byte) string { return base64.StdEncoding.EncodeToStri
 // through here, so a KMS signer that signs one signs the other, and the
 // two differ only in the digest they hand it.
 func signDigestWithExtension(ctx context.Context, path string, digest [32]byte) ([]byte, error) {
+	sigs, err := signDigestsWithExtension(ctx, path, [][32]byte{digest})
+	if err != nil {
+		return nil, err
+	}
+	return sigs[0], nil
+}
+
+// signDigestsWithExtension is signDigestWithExtension for several digests
+// with one process, as `orch plan` signs every step of a plan: the same
+// "sign" call per digest, so a signer that signs one job signs a plan's.
+func signDigestsWithExtension(ctx context.Context, path string, digests [][32]byte) ([][]byte, error) {
 	dir, err := os.MkdirTemp("", "halite-sign-ext-*")
 	if err != nil {
 		return nil, err
@@ -623,5 +634,13 @@ func signDigestWithExtension(ctx context.Context, path string, digest [32]byte) 
 	defer proc.Close()
 
 	signer := &extsigner.Bridged{Name: path, Ext: proc}
-	return signer.Sign(ctx, digest)
+	out := make([][]byte, 0, len(digests))
+	for _, digest := range digests {
+		der, err := signer.Sign(ctx, digest)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, der)
+	}
+	return out, nil
 }
