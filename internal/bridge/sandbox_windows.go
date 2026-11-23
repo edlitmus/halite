@@ -10,9 +10,13 @@ import (
 	"github.com/edlitmus/halite/internal/winjob"
 )
 
-// assignProcessToJobObject is a variable so that a test can look at the
-// extension at the moment it is assigned: it must not have run yet.
-var assignProcessToJobObject = windows.AssignProcessToJobObject
+// Variables so that a test can make the assignment fail, and can look
+// at the extension once it is in its job and before it is resumed: it
+// must not have run yet.
+var (
+	assignProcessToJobObject = windows.AssignProcessToJobObject
+	resumeProcess            = winjob.Resume
+)
 
 // The Windows half of SPEC 24.3.
 //
@@ -121,7 +125,7 @@ func (s *Sandbox) applyPlatform(cmd *exec.Cmd) (func() error, func(), error) {
 		// Not resumed when the assignment failed: the caller kills an
 		// extension it could not confine, and one that never ran is the
 		// safer thing to kill.
-		if err := winjob.Resume(pid); err != nil {
+		if err := resumeProcess(pid); err != nil {
 			return fmt.Errorf("starting the confined extension: %w", err)
 		}
 		return nil

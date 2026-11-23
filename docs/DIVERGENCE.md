@@ -41340,6 +41340,31 @@ success and a suspend count of 0, and needs `[3]` alone to fail.
 `ERROR_INVALID_PARAMETER`, and never another code, is known only from the 29
 failures on 817, which all gave it.
 
+**A test that showed nothing.** `TestAnExtensionHasNotRunWhenItIsAssignedToItsJob`
+failed on 816 and on 817 alike, on both legs, with "reading the extension's
+threads at assignment: Access is denied." The cause was the test. It was read
+from the code and the documentation, not seen in a run. The assignment seam is
+given the process handle that `applyPlatform` opened with `PROCESS_SET_QUOTA |
+PROCESS_TERMINATE` only. The test called `GetProcessId` on it, and that call
+needs `PROCESS_QUERY_INFORMATION` or `PROCESS_QUERY_LIMITED_INFORMATION` on the
+handle. Every other call in the test's path was one that the product also made
+on the same run and that succeeded: `winjob.Resume` opened the same threads with
+the same right a moment later, and the handshake completed. `Resume` is given the
+process ID and never asks a handle for it.
+
+**The test change.** `applyPlatform` calls `winjob.Resume` through a new
+`resumeProcess` variable. The test wraps that variable, so it gets the process
+ID. It reads the suspend counts once the extension is in its job and before the
+real resume. The test also skips a thread that has exited, as `Resume` now does,
+so that on the break it fails on a count of 0, not on a gone thread. Each error
+now names the call that failed. `TestTheAssignmentHandleCannotBeAskedItsProcessID`
+puts the diagnosis to the runner. It needs `GetProcessId` to be denied on a
+`SET_QUOTA | TERMINATE` handle and to succeed when
+`PROCESS_QUERY_LIMITED_INFORMATION` is added.
+
+**Not verified.** Neither bridge test has run in this form, and the break
+(817's) has not been run against it.
+
 ### 5.621 Windows access-list checks missed entries that can alter a file
 
 Issue 608 item 3, from the issue 321 second-pass audit, round twelve
