@@ -39,7 +39,7 @@ var commandTree = map[string][]string{
 		"state show_lowstate", "state show_sls", "state show_states",
 		"grains items", "grains item", "grains get", "grains ls", "pillar items", "pillar get"},
 	"halite-hub": {"serve", "keys", "run", "runner", "orch", "jobs", "policy", "event", "evidence", "metrics",
-		"ssh", "doctor", "extensions", "migrate", "lint", "version",
+		"ssh", "doctor", "extensions", "tree", "migrate", "lint", "version",
 		"keys list", "keys show", "keys fingerprint", "keys accept", "keys reject", "keys revoke",
 		"keys delete", "keys export-crl", "keys token create", "keys token list", "keys token revoke",
 		"keys token delete", "keys operator create", "keys signer create",
@@ -47,7 +47,7 @@ var commandTree = map[string][]string{
 		"jobs export", "jobs prune", "policy show", "policy test", "event listen", "event tags",
 		"orch run", "orch lint", "orch show", "orch list", "orch resume", "evidence anchors",
 		"extensions list", "extensions sync", "extensions run", "extensions verify",
-		"extensions key create", "extensions sign"},
+		"extensions key create", "extensions sign", "tree", "tree manifest", "tree sign", "tree verify"},
 	"halite-api": {"serve", "token", "account", "doctor", "version",
 		"token list", "token show", "token revoke", "token prune", "account hash", "account list"},
 }

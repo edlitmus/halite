@@ -417,6 +417,38 @@ format `openssl dgst -sign` produces, so a signer backed by a KMS or a
 hardware token can produce one without this program. The exact bytes that
 are signed are in [Operations](operations.md#signing-a-job).
 
+## Signing the state tree
+
+A signed job says which job may run. A signed tree says what a node may
+apply when it runs one: a node with `require_state_signature` applies
+only the files that a manifest signed off the hub names, with the content
+it names. SPEC section 25.8. Pillar is not covered.
+
+```sh
+# in CI, against the tree as the hub serves it
+halite-hub tree manifest "$TREE" --env base --source "commit $COMMIT" --config hub.yaml
+halite-hub tree sign "$TREE" --sign-key ~/.halite/tree-ci.key
+halite-hub tree verify "$TREE" --env base --keys trusted-tree-keys --config hub.yaml
+
+# on each node, in node.yaml
+require_state_signature: warn        # then true
+state_signer_keys:
+  - 'tree-ci MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...'
+```
+
+| Salt | halite | Status |
+|---|---|---|
+| no equivalent | `halite-hub tree manifest <dir> --env <name>` | works |
+| no equivalent | `halite-hub tree sign <dir> --sign-key <path>` | works |
+| no equivalent | `halite-hub tree sign <dir> --sign-extension <path>` | not run |
+| no equivalent | `halite-hub tree verify <dir> --env <name> --keys <file>` | works |
+| no equivalent | `require_state_signature: true` | works |
+
+Make the key with `halite-hub keys signer create`, under a name of its
+own: the node's `state_signer_keys` are separate from its
+`job_signer_keys`. The procedure for CI and for rotating the key is in the
+handbook's configuration runbook.
+
 ## Checking a tree without running it
 
 | Salt | halite | Status |

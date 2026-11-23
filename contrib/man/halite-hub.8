@@ -121,6 +121,33 @@ It exits non-zero on a failure, so it belongs in whatever builds the
 extension.
 It checks the protocol and nothing else: a conforming extension can
 still be wrong about its own job.
+.It Cm tree Ar manifest Ns | Ns Ar sign Ns | Ns Ar verify Ar dir
+Sign a state tree for nodes that set
+.Ic require_state_signature
+(the specification's section 25.8).
+.Cm manifest
+lists
+.Ar dir
+as the hub would serve it into
+.Pa _halite/manifest.json ,
+for the environment
+.Fl -env
+names;
+.Cm sign
+signs it into
+.Pa _halite/manifest.sig
+with
+.Fl -sign-key Ar path
+or
+.Fl -sign-extension Ar path ;
+.Cm verify
+checks the signature against the keys in
+.Fl -keys Ar file
+and every file of the tree against the manifest, and exits non-zero on
+any difference.
+None opens the hub's state.
+Run them where the signing key is, not on the hub.
+Pillar is not covered.
 .It Cm doctor
 Run the diagnostics of the specification's section 26.4 against this hub.
 Changes nothing, and starts no listener, so it is safe on a hub that is

@@ -583,11 +583,24 @@ func signJob(req *transport.SubmitRequest, path string, ttlSeconds int) {
 // hub or a node answering many calls, which this is not.
 func signJobWithExtension(ctx context.Context, req *transport.SubmitRequest, path string, ttlSeconds int) {
 	signed := prepareSigning(req, ttlSeconds)
-	digest := jobsign.Digest(job.SigningPayload(signed))
-
-	dir, err := os.MkdirTemp("", "halite-sign-ext-*")
+	der, err := signDigestWithExtension(ctx, path, jobsign.Digest(job.SigningPayload(signed)))
 	if err != nil {
 		cli.Fatalf("--sign-extension %s: %v", path, err)
+	}
+	req.Signature = encodeSignature(der)
+}
+
+// encodeSignature is how both signatures travel: base64 of the DER.
+func encodeSignature(der []byte) string { return base64.StdEncoding.EncodeToString(der) }
+
+// signDigestWithExtension has a bridged signer sign 32 bytes. The job
+// signature and the tree signature of `halite-hub tree sign` both come
+// through here, so a KMS signer that signs one signs the other, and the
+// two differ only in the digest they hand it.
+func signDigestWithExtension(ctx context.Context, path string, digest [32]byte) ([]byte, error) {
+	dir, err := os.MkdirTemp("", "halite-sign-ext-*")
+	if err != nil {
+		return nil, err
 	}
 	defer os.RemoveAll(dir)
 
@@ -605,14 +618,10 @@ func signJobWithExtension(ctx context.Context, req *transport.SubmitRequest, pat
 		Env: os.Environ(),
 	})
 	if err != nil {
-		cli.Fatalf("--sign-extension %s: %v", path, err)
+		return nil, err
 	}
 	defer proc.Close()
 
 	signer := &extsigner.Bridged{Name: path, Ext: proc}
-	der, err := signer.Sign(ctx, digest)
-	if err != nil {
-		cli.Fatalf("--sign-extension %s: %v", path, err)
-	}
-	req.Signature = base64.StdEncoding.EncodeToString(der)
+	return signer.Sign(ctx, digest)
 }
