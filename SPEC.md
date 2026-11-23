@@ -478,16 +478,15 @@ A node's identity is an X.509 certificate issued by the hub's enrollment CA, wit
 the subject common name and in a URI SAN of the form `halite://node/<node_id>`. The URI SAN is
 authoritative; the CN is for human readability.
 
-| Build | Key algorithm | Signature |
+| `key_algorithm` | Key algorithm | Signature |
 |---|---|---|
-| Default | ECDSA P-256 | ECDSA with SHA-256 |
-| High assurance | ECDSA P-384 | ECDSA with SHA-384 |
-| FIPS 140-3 | ECDSA P-256 or P-384 | As above |
-| Legacy interoperability | RSA-3072 or RSA-4096 | RSA-PSS with SHA-256 |
+| `ecdsa-p256` (default) | ECDSA P-256 | ECDSA with SHA-256 |
+| `ecdsa-p384` | ECDSA P-384 | ECDSA with SHA-384 |
 
-Ed25519 is not the default. It is the better algorithm and it is not approved under FIPS 140-3, and
-this estate has FIPS hosts. Ed25519 is permitted in non-FIPS builds by configuration, and the
-protocol negotiates it, but the default is ECDSA so that one certificate profile works everywhere.
+These are the only two, in every build, FIPS included. The hub's PKI does not issue RSA or Ed25519
+keys. An earlier version of this table listed RSA-3072 and RSA-4096, and said that Ed25519 was
+permitted by configuration, and none of those was ever built (DIVERGENCE 5.720). The default is
+ECDSA so that one certificate profile works everywhere.
 
 The node's private key is generated on the node, never leaves it, and is stored at
 `/etc/halite/pki/node.key` with mode `0600`, or in the Windows certificate store for the machine,

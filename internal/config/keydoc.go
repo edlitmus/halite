@@ -190,7 +190,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"key_algorithm": {
 		Group:  "Enrollment and certificates",
-		Detail: "ECDSA P-256 is the default because one certificate profile then works everywhere, FIPS hosts included. `ed25519` is the better algorithm and is not FIPS-approved, so a FIPS build refuses it by name.",
+		Detail: "The algorithm of the keys the hub generates for its enrollment CA, its own certificate and operators. These are the only two: the hub's PKI issues ECDSA and nothing else, and any other value is refused at start. ECDSA P-256 is the default because one certificate profile then works everywhere, FIPS hosts included.",
 	},
 	"file_roots": {
 		Group:  "The tree: states and pillar",

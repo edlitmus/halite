@@ -50745,6 +50745,49 @@ test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
 
 
+### 5.720 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
+
+SPEC 7.1 had a table of four rows, and two of them did not exist. The
+"Legacy interoperability" row offered RSA-3072 and RSA-4096. The paragraph
+under the table said Ed25519 "is permitted in non-FIPS builds by
+configuration, and the protocol negotiates it". The configuration reference
+(`docs/configuration.md`, generated from `internal/config/keys.go`) said the
+same: `key_algorithm` took "ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or
+ed25519 in non-FIPS builds".
+
+`pki.ParseKeyAlgorithm` has only ever accepted `ecdsa-p256` and `ecdsa-p384`,
+with the aliases `p256`, `ecdsa` and `p384`. `pki.GenerateKey` makes nothing
+but ECDSA. Any other value stops the hub at start with `key_algorithm
+"rsa-4096" is not one this build issues; try ecdsa-p256 or ecdsa-p384`. So an
+operator who chose from the documentation got a hub that would not start. Two
+paths that must agree did not: the documentation of a setting and the parser
+of that setting.
+
+This was found while correcting SPEC 27.4's claim about Ed25519 and FIPS
+(issue 840). That paragraph was where the Ed25519 half of this was written, and
+reading it beside `pki.go` showed that the option it described did not exist.
+
+**Fix.** SPEC 7.1's table now names the two values of `key_algorithm`, says
+they are the only two in every build, and says what the earlier table
+claimed. The key table's text is "ecdsa-p256 or ecdsa-p384.". Its longer
+description no longer offers Ed25519, and the reference is regenerated. The
+comment on `pki.KeyAlgorithm` says the same. No code changed. Adding RSA or
+Ed25519 to the hub's PKI would be a feature, and nobody has asked for it.
+
+**Test.** `TestKeyAlgorithmDocumentationNamesOnlyWhatParses`
+(`internal/pki/keyalgorithm_doc_test.go`) takes every algorithm name in the
+key table's text for `key_algorithm`, and the documented default. Each must
+parse, and each must parse to a different algorithm. It was broken on
+purpose twice, by putting the old text back. With the full old text it
+failed on `rsa-3072` and `rsa-4096` and **passed `ed25519`**: the first
+pattern required a hyphen, so it never saw the name the test exists for. The
+pattern now takes any lowercase word with a digit in it. With only
+`ed25519` added back, it failed on `ed25519`.
+
+**Not covered.** SPEC 7.1's prose is not held to the parser by the test.
+Only the key table, and the reference generated from it, are.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -60,9 +60,10 @@ func NodeIDFromCert(cert *x509.Certificate) (string, error) {
 	return "", fmt.Errorf("the certificate carries no %s://node/<id> URI, which is where the identity lives", URIScheme)
 }
 
-// KeyAlgorithm selects the key to generate. SPEC 7.1 makes ECDSA P-256
-// the default rather than Ed25519, which is the better algorithm and is
-// not approved under FIPS 140-3.
+// KeyAlgorithm selects the key to generate. SPEC 7.1: the hub's PKI
+// issues ECDSA on P-256 or P-384 and nothing else. SPEC once listed RSA
+// and Ed25519 here too, and the configuration reference repeated it,
+// while this type has only ever had the two constants below (5.720).
 type KeyAlgorithm string
 
 const (

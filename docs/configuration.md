@@ -322,9 +322,9 @@ manual or token. `attested` is named and refused; it is not built. There is no a
 
 *`halite-hub` · `ecdsa-p256` · SPEC section 7.1*
 
-ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or ed25519 in non-FIPS builds.
+ecdsa-p256 or ecdsa-p384.
 
-ECDSA P-256 is the default because one certificate profile then works everywhere, FIPS hosts included. `ed25519` is the better algorithm and is not FIPS-approved, so a FIPS build refuses it by name.
+The algorithm of the keys the hub generates for its enrollment CA, its own certificate and operators. These are the only two: the hub's PKI issues ECDSA and nothing else, and any other value is refused at start. ECDSA P-256 is the default because one certificate profile then works everywhere, FIPS hosts included.
 
 ## The tree: states and pillar
 
