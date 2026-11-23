@@ -113,7 +113,7 @@ manager, registry and task scheduler), written so that no vendor library is link
 			"internal/tracing", "internal/doctor", "internal/fips", "internal/version",
 			"internal/atomicfile", "internal/fileperm", "internal/fileperm/permtest", "internal/repotree",
 			"internal/dbus", "internal/varlink", "internal/winreg", "internal/winsec",
-			"internal/winsvc", "internal/wintask",
+			"internal/winjob", "internal/winsvc", "internal/wintask",
 		},
 	},
 	{
