@@ -252,6 +252,11 @@ type node struct {
 	// node working from its own roots, which is what `--local` and a
 	// node with no hub do.
 	hubPillar func(env string, all bool) (*value.Map, error)
+	// pillarPushed is agentless mode: hubPillar answers with the one
+	// pillar the hub compiled and sent with the job, whatever
+	// environment it is asked for, so a job naming another pillarenv is
+	// refused rather than given that one. DIVERGENCE 5.715.
+	pillarPushed bool
 	// pillarQuiesce is what the last pillar the agent read said about
 	// quiesce, shared by every copy a job runs on. Nil outside the agent,
 	// so that `doctor` and a one-shot command, which compile pillars of
@@ -740,6 +745,19 @@ func (n *node) compileLocalPillar() (*value.Map, error) {
 		n.log.Warn(w.String(), "component", "pillar")
 	}
 	return out.Pillar, out.Err()
+}
+
+// compileLocalPillarIn is compileLocalPillar for a named pillar
+// environment, or for every environment merged when all is set, on a copy
+// so the node's own environment is not changed by asking.
+func (n *node) compileLocalPillarIn(env string, all bool) (*value.Map, error) {
+	if env == n.pillarEnv && all == n.pillarAll {
+		return n.compileLocalPillar()
+	}
+	in := n.forJob()
+	in.pillarEnv, in.pillarAll = env, all
+	in.pillars = fileserver.NewRoots(n.pillarRootsFor(env))
+	return in.compileLocalPillar()
 }
 
 // compilePillar is the command-line form: a pillar that will not
