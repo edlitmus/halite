@@ -16,7 +16,7 @@ establishes and, just as importantly, what it does not.
 |---|---|---|
 | **A network attacker** | The ability to send bytes to the hub's port | TLS 1.3 in the standard library; one port; every endpoint refuses a caller without a certificate except two: a health check that returns the hub's version, and enrollment, which reads a bounded request and at most leaves a pending request for you to decide |
 | **One node** | That node's key, its grains, its pillar | Hub-side targeting (it sees only its own jobs); trusted-grain allowlist for pillar; events confined to its own prefix; deny-by-default mine access; short-lived, revocable certificate; evidence chain anchored at the hub |
-| **The hub** | The hub's process and files, including its CA key | Optional **detached job signing** with a key the hub does not hold; node-side expiry and replay caches; signed and pinned extensions; signed git refs; node-local evidence the hub cannot rewrite |
+| **The hub** | The hub's process and files, including its CA key | Optional **detached job signing** with a key the hub does not hold; node-side expiry and replay caches; signed and pinned extensions; node-local evidence the hub cannot rewrite. Signed git refs are not on this row: the hub checks them, so a hub that has been taken over need not. A node that checks the state tree itself is issue 764, not yet built |
 | **A state tree** (someone who can push to it) | The ability to put states, templates and files in front of every node | Signature verification on git refs; strict undefined names; render sandbox and limits; no YAML object construction; `cmd.run` as a distinct permission |
 | **An insider with an operator credential** | Whatever that credential's policy allows | Deny-by-default policy with target, function and argument limits; arbitrary-code functions never wildcarded; every decision logged |
 | **A local unprivileged user on a node** | A shell | Modes on every path; pillar not written to disk in plaintext; no secret in a command line or a child's environment |
@@ -116,13 +116,38 @@ Two limits to know:
 
 ## The render sandbox
 
-All the YAML parsing and template rendering on a node, the largest and most
-attacker-adjacent code in the system, happens in a **child process that
-runs as an unprivileged account** with no network. The node runs as root
-because package and service management need it; the code that reads
-untrusted text does not. The sandbox returns *data*, never a callable and
-never a command to run without validation: the compiled low state is checked
-against the module signatures before anything executes.
+All the YAML parsing and template rendering on a node is the largest and
+most attacker-adjacent code in the system, and none of it needs privilege.
+With `render_sandbox: true` it runs in a **child process**, which a node
+running as root drops to `render_sandbox_user`. The sandbox returns *data*,
+never a callable and never a command to run without validation: the compiled
+low state is checked against the module signatures before anything executes.
+Module dispatch, template loading and gpg decryption stay in the node.
+
+It is **off by default**, and what it can apply depends on the platform:
+
+| Control | Linux | FreeBSD, macOS, other unix | Windows |
+|---|---|---|---|
+| Process boundary | yes | yes | yes |
+| Unprivileged account (`identity`) | when the node is root and `render_sandbox_user` is set | when the node is root and `render_sandbox_user` is set | no |
+| No network (`network`) | when the node is root: a network namespace of its own, loopback down | no | no |
+| Filesystem restriction | no: the child reads what its account can read | no | no |
+
+To make it a requirement rather than a hope, list the controls in
+`render_sandbox_require`:
+
+```yaml
+render_sandbox: true
+render_sandbox_user: halite-render
+render_sandbox_require: [identity, network]   # on FreeBSD: [identity]
+```
+
+Each is checked against what the child reports about itself once it has
+started, not against the settings. A requirement that does not hold refuses
+**every render** with the reason; the node still starts and takes jobs, so
+it can be fixed from the hub. It says so at startup, at error, and
+`halite-node doctor` reports the child's effective uid, the interfaces it
+can see and the filesystem restriction under **render isolation**.
 
 Related limits are enforced on every render regardless of sandbox:
 output at most 64 MiB, ten million loop iterations, recursion depth 100,

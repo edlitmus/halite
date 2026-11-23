@@ -2,7 +2,7 @@
 
 <!-- abstract: Rules that turn events into actions on the hub: configuration, reaction files, the four reaction types, authorization as a principal, rate and loop controls, and how to test one before it fires. -->
 <!-- kind: guide -->
-<!-- index: reactor; reaction; reaction SLS; reactor principal; reactor:default; local reaction; runner reaction; wheel reaction; caller reaction; debounce; dedupe_window; dedupe_key; rate_limit; reactor.test; reactor.list; halite/reactor/error; reactor_workers; reactor_queue_depth; reactor_timeout; max_causality_depth; self-healing -->
+<!-- index: reactor; reaction; reaction SLS; reactor principal; reactor:default; local reaction; runner reaction; wheel reaction; caller reaction; debounce; dedupe_window; dedupe_key; rate_limit; reactor.test; reactor.list; halite/reactor/error; reactor_workers; reactor_queue_depth; reactor_timeout; max_causality_depth; self-healing; run_parallel -->
 
 A **reactor** connects an event to an action. It is a rule, held in the
 hub's configuration:
@@ -165,6 +165,16 @@ check_{{ id }}:
 ```
 
 For `runner`, `args` (or `kwarg`) are the runner's parameters.
+
+A `local` or `caller` reaction can add `run_parallel: true`. The job it
+sends may then run beside other jobs on the node, as `halite-hub run
+--parallel` does ([chapter 12](12-hub-and-nodes.md)); without it, the job
+waits its turn. The value must be `true` or `false`. Anything else is
+refused, and so is `run_parallel` on a `runner` or `wheel` reaction, which
+sends no job. `run_parallel: true` on a state run, such as
+`local.state.apply`, is refused too: a state run always runs alone on a node.
+A refused reaction is reported like any other reaction that does not parse
+(see [When a reaction fails](#when-a-reaction-fails)).
 
 ## Authorization: a reaction is somebody
 
@@ -413,6 +423,8 @@ spoke.
 - A reaction sees only `data`, `tag` and `id`; `data` is the event body
   plus `id` and the envelope keys.
 - Four reaction types: `local`, `runner`, `wheel`, `caller`.
+- `run_parallel: true` on a `local` or `caller` reaction lets its job run
+  beside others on a node.
 - **A reaction is authorized as its principal** (`reactor:default` unless
   you name one) by the same deny-by-default policy as a person.
 - `halite-hub runner reactor.test` shows what would be dispatched **and

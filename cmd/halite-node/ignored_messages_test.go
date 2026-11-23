@@ -8,10 +8,12 @@ import (
 	"github.com/edlitmus/halite/internal/transport"
 )
 
-// A quiesce or drain from the hub changes nothing on a node (issue 782),
-// and the node says so at warn, by name, with what to do instead. It was
-// an info line naming only a type, so an operator who asked the hub to
-// quiesce a node had nothing to find.
+// A quiesce or drain changes nothing on a node, and the node says so at
+// warn, by name, with what to do instead. Neither is part of the protocol
+// (issue 782, DIVERGENCE 5.699.1), but earlier drafts of SPEC 6.2 named
+// both, so a peer of another version may send one. It was an info line
+// naming only a type, so an operator who asked for a quiesce had nothing
+// to find.
 func TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName(t *testing.T) {
 	for _, kind := range []string{transport.MsgQuiesce, transport.MsgDrain} {
 		t.Run(kind, func(t *testing.T) {
@@ -23,7 +25,7 @@ func TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName(t *testing.T) {
 			}
 
 			line := logged.String()
-			for _, want := range []string{`"level":"warn"`, `"type":"` + kind + `"`, "does not act on", "maintenance window", "set quiesce in this node's configuration"} {
+			for _, want := range []string{`"level":"warn"`, `"type":"` + kind + `"`, "does not act on", "maintenance window", "set quiesce in this node's pillar", "in its configuration and restart it"} {
 				if !strings.Contains(line, want) {
 					t.Errorf("the log does not say %q:\n%s", want, line)
 				}

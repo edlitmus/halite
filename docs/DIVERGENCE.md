@@ -47672,6 +47672,110 @@ starting two seconds later.
   by default. No new setting was added.
 - **Orchestration steps** and the reactor dispatch without the flag, so
   their jobs run alone unless the node sets `parallel_jobs`.
+
+#### 5.698.1 Orchestration steps and reactions ask with `run_parallel` (2026-11-22)
+
+The orchestration and reactor half of issue 785. The API half landed
+first, in PR 798: `"parallel": true` on the request body. Here the key is
+`run_parallel`, decided by the maintainer, because SPEC 19.1 already lists
+`parallel` per step. That is the per-state option of SPEC 11.7, which asks
+for steps to run at once, and this build does not do that (DIVERGENCE 4.4).
+One name for two meanings would make an author guess which one a step
+gets.
+
+**Where it is accepted.** Only on what sends a job to nodes, and only
+where the node can honour it:
+
+- **`salt.function`** takes it. `callFunction` sets `Submission.Parallel`
+  from it, and the job record, `messageFor` and `Message.Parallel` carry it
+  from there as they do for `--parallel` (5.698).
+- **`salt.state`, `salt.sls` and `salt.highstate`** declare it, so that
+  writing it there gets a reason, not "is not a parameter". With `true` the
+  orchestration does not compile: *"`run_parallel: true` is refused: the
+  step sends state.apply, and a state run always runs alone on a node"*.
+  The same applies to a `salt.function` step whose `name` is a `state.*`
+  function. The other choice was to accept it and send it, and that is the
+  accept-but-ignore defect. The author reads an orchestration that overlaps
+  a highstate with other work, and gets one that waits. `false` is
+  allowed, because it describes what will happen. So a value templated
+  across every step still compiles.
+- **A `local` or `caller` reaction** takes it, with the same refusal for a
+  state run. A **`runner` or `wheel` reaction** refuses it with any value,
+  as it refuses `tgt` (5.522): it runs on the hub and sends no job.
+
+**"Is this a state run" is one function now.** The node decided it inline
+in `schedulingOf`. The hub's refusals need the same answer, and a second
+copy of the rule could drift, so a refusal would then describe a rule the
+node no longer applies. `job.AlwaysAlone` is the rule, and `job.Family` is
+the family lock's key. The node calls both.
+
+**Misspelt or the wrong type is refused, not dropped.** An orchestration
+step is bound against its signature, so `run_paralel` is *"not a parameter
+of this function"* and `run_parallel: maybe` is not a boolean. Both are
+refused at compile time, and `orch lint` reports them, because it is the
+same compile. The value is read through the step's signature, so `"no"`
+means false, as it does for every other boolean step option. A reaction
+has no signature. It accepts a YAML boolean and nothing else, so `'no'` and
+`1` are refused, and a misspelt key falls into the existing "is not a
+reaction argument" refusal. `value.Truthy` would have read the string
+`"no"` as true.
+
+**Resume.** An orchestration record does not store step arguments. `orch
+resume` compiles the SLS again, so the flag on a resumed step is the one in
+the file. The step's job record keeps `parallel`, which is what a batch
+resumed after a hub restart is delivered from.
+
+**Salt has no such key.** In Salt's source at `~/saltstack` (Salt's development
+branch, 3008.x), `salt/states/saltmod.py` has no `run_parallel`. The
+nearest thing is `concurrent` on `salt.state`, which is passed to the state
+function and lets two state runs overlap on one node. That is the
+opposite of SPEC 9.6, where a state run always runs alone. Nothing in
+`internal/migrate` maps `concurrent`, and nothing maps to `run_parallel`,
+so there is nothing for `halite-hub migrate` to convert.
+
+**Shown**, in `internal/hub/run_parallel_test.go`:
+
+- `TestARunParallelStepSendsAParallelJobAndOthersDoNot` reads the flag as
+  the node receives it. It checks a step with `true`, a step without the
+  key, and a state step with `false`.
+- `TestRunParallelThatCannotBeHonouredIsRefusedAtCompile` has six cases,
+  and checks that nothing was dispatched.
+- `TestOrchLintRefusesRunParallelOnAStateStep` uses
+  `state.orchestrate_show_sls`.
+- `TestAResumedStepAfterARestartKeepsRunParallel` resumes from a record
+  store opened again from the same directory, and reads the resumed job's
+  record.
+- `TestARunParallelReactionDispatchesAParallelJob` covers `local` and
+  `caller`, with and without the key.
+- `TestRunParallelThatCannotBeHonouredIsRefusedInAReaction` has seven
+  refusals and two acceptances.
+
+Each of these was broken on purpose, and a test failed each time:
+
+- the flag dropped from `callFunction`: the live test and the resume test
+  failed
+- the flag forced to true: the step without the key arrived parallel
+- `refuseParallelStateRuns` not called: three compile cases and the lint
+  test failed
+- the flag dropped from the `local` path, and separately from the
+  `caller` path
+- `checkRunParallel` not called: four refusals were accepted
+- the reaction's value read with `value.Truthy`: the string and the
+  integer were accepted
+- `job.AlwaysAlone` answering false: the state-run refusals on both paths
+  failed, and so did the node's existing scheduling and starvation tests
+
+**Not verified:**
+
+- **No real node** has run an orchestration step or a reaction with
+  `run_parallel`. The tests use the hub and a subscriber in the test
+  process, and read the message, not the node's scheduling. The node half
+  is 5.698's, measured with `halite-hub run`.
+- **A signed orchestration or reaction job** was not tried. Neither path
+  signs a job today, so the node's rule that it ignores the flag on a
+  signed job is not reached from here.
+- **`salt.function` steps in `--test` mode** dispatch nothing, so the flag
+  goes nowhere then, as every other option does.
 ### 5.699 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
 
 Issue 782, found while building quiesce for issue 763 (5.694).
@@ -47734,15 +47838,395 @@ these binaries, and certificate rotation of the CA, which halite does not
 have. The run was by hand, not a script, so repeating it means following the
 handbook's chapter 36 table and this entry.
 
+### 5.701 The render sandbox described its confinement and nothing could require it (2026-11-21)
+
+Issue 762, from an outside review at `9a8eae7e`, priority P1.
+
+**The defect.** SPEC 25.4 and the handbook's hardening chapter said YAML
+parsing and template rendering happen in a child *"running as an
+unprivileged account, with no network"*. As built the sandbox is off by
+default; the account is dropped to only when the node is root and
+`render_sandbox_user` is set; the network is denied only on Linux, and only
+as root; and nothing narrows the filesystem on any platform. `Describe`
+logged that honestly when a child was started, and `Unenforced` warned about
+an account that could not be applied -- but an operator who needed the
+isolation had no way to make it a condition, so a node moved to a machine
+where it ran unprivileged, or a FreeBSD host where it was assumed to have
+Linux's namespace, rendered anyway, with a log line saying less than the
+handbook did.
+
+**The change.** `render_sandbox_require` takes `identity`, `network` or
+both. The child now reports on itself in its hello -- protocol 3 -- with its
+uid and gid read by itself and the interfaces it can see up, and a
+requirement is checked against that, not against what the parent asked the
+kernel for. A child that does not meet it is closed and the render refused
+with what was seen (*"identity is required, and the child runs as uid 1001
+rather than as nobody (uid 65534), because this process cannot drop
+privilege here"*). Not cached: the next render starts a child and looks
+again. A misspelt name refuses every render, and so does a requirement with
+`render_sandbox` off, which would otherwise render in the node's own process
+unchecked. The node reports at startup, at error, whether the requirement
+holds, and `halite-node doctor` gains **render isolation**: the child's
+effective uid and gid, the interfaces it sees, and the filesystem as not
+restricted.
+
+**Refused per render, not at startup, on purpose.** A node that will not
+start cannot be reached from the hub to have this fixed, and the jobs that
+would fix it -- `file.managed` on its configuration, a `cmd.run` -- render no
+tree. A node that is up and refuses every highstate with the reason can be.
+
+**Filesystem is not a requirement name**, because it is built nowhere and a
+requirement that can only refuse is a setting nobody can use. It is reported
+as not restricted, and SPEC 25.4 and the handbook now say so, with a table of
+what each platform applies.
+
+**Tests.** `internal/rendersandbox`: the child reports the uid it runs as;
+an identity it cannot be dropped to, or none configured, refuses the render;
+an identity that holds -- the account the test already runs as -- renders, so
+the refusals above are not a gate that refuses everything; a network denial
+the child does not have refuses and names an interface it saw up. Those ran on
+`beastie` natively, FreeBSD 15.1 amd64, unprivileged, where the child shares
+the host's interfaces. `cmd/halite-node`: required with the sandbox off
+refuses and says so at startup; a misspelt name refuses; startup reports unmet
+and met; `doctor` reports the child's uid. `internal/doctor`: each verdict.
+Broken on purpose and seen to fail: the render gate removed, the hello
+carrying an empty observation, and the sandbox-off case rendering in-process.
+
+**The privileged run** is `TestLiveRenderSandboxConfinesTheChildAsRequired`,
+for the fleet's linux leg as root: `nobody`, both requirements, and two
+probes run by the child itself -- reading a root-only file, which must be
+refused, and dialling a listener on the host's loopback, which must fail --
+with a control child keeping root's identity to show the read probe can
+succeed. The leg now fails if it skips. Adding it found that
+`internal/buildpolicy`'s check that every filter pattern selects a live test
+read only `internal/builtin` and `cmd/`, so a live test anywhere else read as
+a pattern selecting nothing; it now reads the whole tree, and still fails a
+planted pattern that matches no test.
+
+**Not verified.** The privileged run has not executed: it was compiled for
+Linux here and not run, and this entry was written before the leg ran it. The
+FreeBSD half -- identity as root -- was not run as root anywhere. Windows was
+vetted, not run. No seccomp filter exists, which SPEC 25.4 also asks for.
+
+### 5.702 A renewal cut the running agent off from its pillar and files (2026-11-21)
+
+Issue 792, found running issue 766's rolling upgrade with the 0.1.1 and 0.2.0
+release binaries on FreeBSD 15.1 (`beastie`), and then on `main`.
+
+**The defect.** After a node's certificate was renewed, its running
+`halite-node connect` stopped converging. Every highstate failed with
+*"/v1/pillar: this node's enrollment is revoked: superseded by a renewal"*,
+and the refusal deleted the node's last known good pillar on the way, so a
+node that lost its hub afterwards had nothing to fall back on. The subscribe
+stream reconnected on the new certificate within a second, so the node looked
+connected; the hub logged *"a revoked node is still connected"* at every job.
+Only restarting the agent recovered it.
+
+Both ways a renewal happens did it. `halite-node renew --force` is the
+handbook's way to rotate a key that may have leaked. The agent's own renewal at
+half its certificate's life is what every node does on schedule -- every 45
+days at the default 90-day life -- which is why this is not an edge case: the
+whole estate stops converging once per certificate life, a node at a time.
+Restarts for upgrades have been hiding it.
+
+**The cause** is two paths that must agree. The connect loop rebuilt its
+client from disk on every reconnect, so the stream followed the identity, and
+returns re-read it per post (`returnClient`). The pillar fetcher and the file
+server's remote did not: `attachToHub` gave them the client of the first
+connection and kept them (`if n.hubPillar == nil`, `if !n.hubTree`), and a
+client carries the certificate it was built with.
+
+**The change.** Both fetch through a `hubLink`, one per node and shared by
+every job's copy, which `attachToHub` replaces on every connection and the
+agent's renewal replaces as soon as the new certificate is installed.
+
+**Measured.** In the lab, a v0.2.0 hub and then `main`'s, with nodes at 0.1.1,
+0.2.0 and `main`: an out-of-band `renew --force` cut each one off until
+restart, and on `main` so did the agent's own renewal of a ten-minute
+certificate. `TestAHighstateAfterARenewalUsesTheNewCertificate`, real hub and
+node binaries with a scheduled highstate, has a subtest for each way: both
+failed on unfixed `main` (the marker kept the pillar value from before the
+renewal) and both pass with the change. With the pillar fetch put back on the
+first client, and separately with the file server's, the by-hand subtest
+fails, so both halves are needed.
+
+**An odd result on the way, recorded because it nearly went into this entry.**
+The first `renew --force` on `main`'s node was piped through `head -1`, which
+closed the pipe after the first log line; the next write killed `renew` with
+SIGPIPE before it reached the hub, and the highstate after it passed, which
+read as `main` being fixed. The certificate on disk was the enrolment one. A
+probe that silently does nothing looks exactly like a fix.
+
+**Not verified.** Only on FreeBSD; the code is not platform-specific. A relay's
+own upstream identity renews through `renewal.Loop` too, and was not checked
+for the same shape.
 
 
 
 
+#### 5.699.1 There is no hub `quiesce` or `drain` message (2026-11-22)
+
+Issue 782, decided by the maintainer: neither message is part of the
+protocol. A hub-driven quiesce is to go through the node's pillar, which
+issue 780 is to make able to set it; that is not built here, and until it
+is the hub cannot quiesce a node at all.
+
+**What was there.** `grep` for `MsgQuiesce` and `MsgDrain` over the tree,
+and `git log -S` over its history, find no producer anywhere: no hub, no
+relay and no test has ever built a message of either type. The consumers
+are the relay, which passed both down with `event`, `revoke`, `reload` and
+`kill`; the node, which since 5.699 warns that it does not act on them;
+and that section's test. SPEC 6.2 listed both, and its example stream
+carried an event tagged `halite/hub/quiesce/start`. `halite-hub event
+tags` does not list that tag and nothing in the tree emits it, so it was
+an illustration of the undecided feature rather than an event anybody
+could react to.
+
+**The change.** SPEC 6.2 lists `job`, `ping`, `event`, `revoke` and
+`reload`, says there is no `quiesce` or `drain`, and says why a stream
+message was the wrong shape: it would need its own RBAC grant and its own
+answer to `require_job_signature` (SPEC 25.6), and a reconnect would lift
+it. The example event is now `halite/presence/change`, which the hub
+does fire. Handbook chapter 12 says the hub cannot quiesce a node.
+
+**The constants stay, and so does the relay's forwarding.** Deleting
+`transport.MsgQuiesce` and `MsgDrain` would put both back under the
+node's default case, which is the info line naming a type that 5.699
+replaced. A fleet is upgraded one machine at a time (handbook chapter
+36), and SPEC told any peer built to it that the names exist, so a node
+should go on saying by name that it did nothing. The relay goes on
+passing both down for the same reason: it acts on neither, and a relay
+that swallowed them would leave the node behind it silent, with the
+operator who asked for a quiesce looking at that node for a reason it
+never logs. The relay's choice is now `passesDown`, which
+`TestARelayPassesDownTheMessagesItsNodesWarnAbout` holds; with quiesce
+and drain removed from it, the test fails on both.
+`TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName` is unchanged.
+
+**A citation found on the way.** The sentence 5.699 added to SPEC 6.2
+ended by citing SPEC 9.6 for how a node is quiesced. SPEC 9.6 is
+*Concurrency on the node* and does not mention quiesce; no SPEC section
+does, beyond the glossary row. The rewritten paragraph names the setting
+instead. The comment at the head of `internal/migrate/blackout.go` cited
+SPEC 9.6 for the same thing, and now cites 5.694.
+
+**Not verified.** The relay test checks which types the relay chooses to
+pass down, not delivery: a subordinate's stream cannot be attached from
+outside package `hub`, and the path down is `forwardDown`, which the
+other passed types share. No peer has sent either message to a running
+node or relay. The pillar route to quiesce does not exist yet.
+
+### 5.703 A node's pillar may quiesce it, and never lift a quiesce its configuration sets (2026-11-22)
+
+Issue 780, option B, as the maintainer decided it: **a pillar may set
+quiesce and never lift it.** 5.696 was option A. It made `migrate`
+report a blackout set in pillar or a grain, because halite read
+`quiesce` only from the node's configuration (5.694), and Salt reads
+its blackout only from pillar and grains. The Salt read for this entry
+is the tip of its development branch, `221495872f` of 2026-11-19, in
+`~/saltstack`. `salt/minion.py` at line 3586 and <!-- lexicon:allow -->
+`salt/utils/schedule.py` at line 834 are unchanged from what 5.696
+read at 3006.9.
+
+**The rule.** A node is quiesced when its configuration says so or
+its pillar says so. When both do, only a function on both allowlists
+runs. So a pillar can narrow what the configuration allows, and it can
+never widen it or switch it off. What a pillar set, a pillar can lift.
+
+Each choice, and why:
+
+- **Which keys.** `quiesce` and `quiesce_allowlist` at the top of the
+  pillar, and Salt's `minion_blackout` and `minion_blackout_whitelist` <!-- lexicon:allow -->
+  as well. A pillar tree is the one thing an estate brings across
+  unchanged. The hub compiles it as Salt would, and `migrate` converts
+  nothing in it. Reading only halite's name would leave every node a
+  Salt estate blacked out back in automation, which is the defect this
+  issue is about. Each pair is a source of its own: a pillar that sets
+  both is quiesced by both, and the stricter list applies.
+- **How the allowlists combine.** As an intersection: a function runs
+  only if every source that quiesces the node lists it. This is the
+  only answer under which a pillar can never lift any part of a local
+  quiesce. It is also what Salt does with its own two sources. In
+  `minion.py` the pillar check and the grains check each raise the <!-- lexicon:allow -->
+  violation on their own, so a function must pass both. Local-only was
+  the other safe answer. It would make a pillar's list mean nothing on
+  a node that is already quiesced, and nothing would say so.
+- **Grains are not read**, though Salt reads them. A grain here is a
+  fact the node measured, or a `grains:` entry in the node's own
+  configuration, which is where `quiesce` already lives and what
+  `migrate` points at. Or it is one written by `grains.setval` from
+  the hub, which is a second hub-driven road with its own questions
+  about lifting. One hub-driven road is enough. `migrate` still reports
+  a grain's blackout at review severity.
+- **Values** are read as the configuration's are, failing closed:
+  absent, null and false are off; a value that is neither true nor
+  false is on; an allowlist that is not a list or a name is empty.
+
+**When the node reads it.** Every pillar the agent reads successfully
+passes through `compilePillarOrErr`, and that is where the answer is
+recorded. That covers every job, since every job compiles its pillar,
+and the beacons and the signature check too. Two places use it:
+
+1. **Admission**, in `executor.Offer` and `runScheduled`, where 5.694
+   put the check. The job is held against the last pillar read. When a
+   pillar's quiesce is what refuses the job, the node reads its pillar
+   again first. So a pillar that has lifted its quiesce lets the job
+   through, and Salt's always-allowed `saltutil.refresh_pillar` is not
+   needed.
+2. **After the job compiles its pillar.** A job admitted before the
+   node read a quiescing pillar is refused by its own pillar, before
+   anything runs. Without this, the first job after an operator
+   quiesced a node in pillar would run. That job is usually the
+   highstate the quiesce was meant to stop. It has an acceptance
+   record by then, so it fails with the refusal instead of being
+   refused.
+
+**A failed read changes nothing.** This is the two-paths case. The
+pillar a job runs with and the quiesce it is admitted under must
+agree, and both come from the last pillar that was read. Only a read
+that succeeded is recorded. When the hub is down, the last known good
+pillar (5.577) is a success, and it says what it said when it was
+saved. A hub that refuses, a pillar that does not compile, and an
+outage with no cached pillar are all failures, and leave the answer as
+it was. A refusal names the failed re-read. The answer is kept on disk
+in `state_dir/pillar-quiesce.json`, which exists only while a pillar
+quiesces the node. So a restart with the hub away does not lift it
+either. It is kept even with `pillar_cache_disk: false`, because that
+setting is about secrets and this file holds none. A file that cannot
+be read is taken as quiesced with nothing allowed.
+
+**Only the agent records it.** `doctor` and the one-shot commands
+compile pillars of their own. `doctor` compiles the node's local roots,
+which on a node managed from a hub are not the pillar the agent runs
+with. If either recorded its answer, it would overwrite the agent's.
+Agentless mode still does not check quiesce (5.694).
+
+**What an operator sees.** At warn: `the pillar has quiesced this node`,
+`the pillar's quiesce has changed`, `the pillar no longer quiesces this
+node`, and `...; its configuration still does`. At startup, from the
+file: `this node's pillar quiesced it when it was last read, and it
+stays quiesced until a pillar says otherwise`. A refusal names what
+quiesced the node: `this node is quiesced by its configuration and by
+its pillar's quiesce and runs only test.ping, which state.apply is not`.
+`halite-node doctor` has a new check, `quiesce`, its thirteenth with render isolation (5.701). It warns when the
+node is quiesced, and says by what and what still runs. It reads the
+agent's file and compiles nothing. SPEC 26.4 now names the check. There
+is no other status surface: the hub does not know that a node is
+quiesced. The `doctor` example in handbook chapter 12 was captured on
+2026-11-05, before this check. Its new `quiesce` line comes from this
+branch's binary, run against a scratch configuration on beastie. It
+was not captured from the node in that example, and the example still
+has no render isolation line.
+
+**What this changes in 5.699.1.** That section, written before this
+one, says a hub-driven quiesce is to go through the pillar, that it is
+not built, and that the hub cannot quiesce a node at all. That was true
+when it was written and is not now. 5.699.1 is left as it is. SPEC 6.2
+and handbook chapter 12 now say the hub quiesces a node through the
+node's pillar, citing SPEC 9.6 and this section, and they keep 5.699.1's
+point: there is no `quiesce` or `drain` stream message.
+The node's warning for either message (5.699) said
+`instead: set quiesce in this node's configuration and restart it`. It
+now says `set quiesce in this node's pillar, or in its configuration and
+restart it`, and `TestAMessageTheNodeDoesNotActOnIsWarnedAboutByName`
+checks both halves.
+
+`migrate` now reports a pillar's blackout key as a `note`, which says
+there is nothing to do. A state file's key, almost always a grain, is
+still `review`, and its action now says only that grains are not read.
+
+**Shown.** Unit tests in `cmd/halite-node/pillarquiesce_test.go`
+drive `acceptJob`, `runScheduled` and `executeJob` against a stub of
+the hub's pillar. Each rule was broken on purpose, and the tests named
+failed:
+
+| Break | Failed |
+|---|---|
+| the pillar not read | eight, from the either-name test to the value table |
+| Salt's key not read | its case of the either-name test, the schedule, the value table |
+| any source's list enough (a union) | cannot-lift-a-local-quiesce, the intersection |
+| no re-read before a pillar refusal | lifts-its-own, failed-fetch |
+| a failed read recorded as an empty pillar | failed-fetch, survives-a-restart, unreadable-record |
+| the file not written | survives-a-restart |
+| no check after the job's own pillar | the first job after a pillar quiesce |
+| a holder made for a node that is not the agent | only-the-agent-records |
+| an unreadable file taken as no file | unreadable-record |
+
+`internal/migrate` holds the new severities, and leaving the pillar
+finding at `review` fails it. `internal/doctor` holds the new check to
+SPEC 26.4 and to the remedy rules.
+
+**Real binaries.** `TestAPillarQuiesceHoldsThroughAHubOutageAndLiftsOnlyItsOwn`
+builds `halite-hub` and `halite-node` and runs them on loopback. The
+node has `pillar_cache_disk: false` and a one-second scheduled
+`state.apply` that writes a file holding the pillar's `quiesce`. The test walks through these steps:
+
+1. The state runs.
+2. The hub's pillar sets `quiesce`. The node logs it, writes the file,
+   and stops running the state. `doctor` prints
+   `warn  quiesce  quiesced by its pillar's quiesce; runs only test.ping`.
+3. The hub is killed. The node stays quiesced, and stays quiesced
+   after a restart while the hub is still away.
+4. The hub returns without the key. The same process runs the state
+   again and removes the file.
+5. Local `quiesce` with `[test.ping, state.apply]` runs the state. A
+   pillar `[test.ping]` stops it, and a pillar `quiesce: false` lets
+   it run again. Local `[test.ping]` with a pillar `quiesce: false` and
+   `[state.apply]` stays refused.
+
+Each quiet stretch is five ticks, and the test checks the schedule's
+log line so that silence is not taken for refusal. Broken on purpose, it failed four ways: a failed read recorded as an empty pillar (at the outage), the file not written (at the restart), any source's list enough (at step 5), and no re-read before a pillar refusal (at step 4, waiting for a lift that never came). Without the check after a job's own pillar it first passed: only the tick that first read the quiescing pillar is affected, and the test cleared the file after it. The state now writes what its pillar said, and the test fails if `quiesce=True` is ever written; with the check removed it then failed at step 2, and with it in place it passes.
+
+**Not verified:**
+
+- **FreeBSD and Linux.** The binary test ran on beastie under its
+  Linux layer, as an agent's shell does. CI's legs run it as part of
+  `go test ./...`. No FreeBSD host was driven by hand.
+- **A job from `halite-hub run`** was not sent in the binary test;
+  only the schedule was used. The dispatched path is the unit tests'
+  `acceptJob`, and it shares `quiesceRefusal` with the schedule.
+- **Open question: a job that names another pillar environment.** The
+  recorded answer is the last pillar read for any environment. A job
+  that names another environment compiles that environment's pillar
+  (`adoptJobEnvironment`). If that pillar does not quiesce the node,
+  the job replaces the recorded answer, and so it could lift a quiesce
+  that the node's own pillar set. The job runs only if the node lets
+  it through: a pillar refusal re-reads the node's own environment,
+  not the job's. But the next pillar read in the node's own
+  environment sets the quiesce again. This was found by reading the
+  code. It was not run, and no test holds it. Whether the record should
+  be kept per environment, or only for the node's own environment, is
+  undecided.
+- **The cost.** A node quiesced by its pillar asks the hub for its
+  pillar once for every job it refuses, and once on every schedule
+  tick, from the stream reader. That was not measured on a large
+  pillar.
+- **No real Salt estate** that blacks machines out in pillar has been
+  migrated.
 
 
+### 5.704 SPEC 25.1 listed a check the hub runs as a control against the hub (2026-11-22)
 
+Found writing the proposal for issue 764 (PR 801), and corrected on the
+maintainer's decision to do it at once rather than with that feature.
 
+SPEC 25.1's threat table gave *"signed gitfs refs"* among the controls
+against a compromised hub, and the hardening chapter's table said *"signed
+git refs"* on its row for the hub. Ref signatures are verified in
+`internal/gitfs` (`Options.verify`, SPEC 13.3's `gitfs_verify_signatures`),
+and the only program that imports that package is `halite-hub`. A hub that
+has been taken over is the process doing the checking, so it can skip the
+check, serve an unsigned tree, or serve any bytes it likes after a check
+that passed. Nothing on a node looks at a ref or a signature.
 
+The control is real against the adversary on the next row, somebody who can
+push to the state tree but does not hold the hub, and it stays there. Both
+tables now leave it off the hub's row and say why, and point at issue 764,
+which is the node-side check the row needs and does not have yet.
+
+The same table's state-tree row still lists *"optional signed state trees"*,
+which describes issue 764 as a design and is not built; it is left as SPEC's
+statement of intent.
 
 ## 6. Everything else not started
 

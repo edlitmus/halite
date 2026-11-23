@@ -71,6 +71,11 @@ on:
       # account swapped (TestLiveACLIsNotCopiedOntoAFileTheAccountLinked,
       # DIVERGENCE 5.566); it needs root and `nobody`.
       - "internal/atomicfile/xattr*.go"
+      # The render child dropped to nobody in a network namespace of its
+      # own, checked from inside it (TestLiveRenderSandbox, issue 762);
+      # it needs root and `nobody`.
+      - "internal/rendersandbox/*.go"
+      - "cmd/halite-node/rendersandbox.go"
       # ssh_auth and ssh_known_hosts writing another account's files as
       # root, through a ~/.ssh or a `config` directory the account linked
       # (TestLiveSSHRefuses, TestLiveSSHConfig; DIVERGENCE 5.349, 5.569).
@@ -594,7 +599,7 @@ jobs:
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 40m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks' ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ 2>&1 && status=0 || status=$?
+              go test -count=1 -v -timeout 40m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks|TestLiveRenderSandbox' ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ ./internal/rendersandbox/ 2>&1 && status=0 || status=$?
             echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
           test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"
@@ -633,6 +638,19 @@ jobs:
           echo "TestLiveSnap tests that passed: $passed"
           if [ "$passed" -lt 2 ]; then
             echo '::error::fewer than the two TestLiveSnap tests passed, and none skipped, so one of them failed or stopped existing. Both are meant to run here.'
+            exit 1
+          fi
+
+      # The render sandbox's confinement is the one claim here that only
+      # a root run on Linux can check, and the test skips everywhere else,
+      # so a skip here is the claim going unchecked (issue 762).
+      - name: the render sandbox test ran rather than skipping
+        if: always()
+        run: |
+          test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
+          if ! grep -q '^--- PASS: TestLiveRenderSandboxConfinesTheChildAsRequired' /tmp/live.txt; then
+            grep -B 1 'TestLiveRenderSandbox' /tmp/live.txt || true
+            echo '::error::TestLiveRenderSandboxConfinesTheChildAsRequired did not pass here, which is the one place it can: as root, on Linux, with an account called nobody.'
             exit 1
           fi
 

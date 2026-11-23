@@ -444,6 +444,14 @@ The group the render child drops to. Defaults to the account's own.
 
 The group for the render child. Empty takes the account's own primary group.
 
+### `render_sandbox_require`
+
+*`halite-node` · no default · SPEC section 25.4*
+
+Controls a render must be under: identity, network. Unmet, every render is refused.
+
+A list of the render sandbox controls this node requires: `identity`, the child running as `render_sandbox_user`, and `network`, the child seeing no network interface up. Each is checked against what the child reports about itself after it starts, not against what was asked for. A requirement that is not met refuses every render with the reason, and the node says so at startup and in `doctor`; it still starts and takes jobs, because a node that will not start cannot be reached to fix this. `identity` needs a node running as root with an account configured; `network` is available on Linux only. Setting this with `render_sandbox` off refuses every render, rather than rendering in this process unchecked.
+
 ### `render_sandbox_user`
 
 *`halite-node` · no default · SPEC section 25.4*
@@ -1980,7 +1988,7 @@ Lets jobs run alongside one another by default, as `halite-hub run --parallel` d
 
 Refuse jobs other than the allowlist. Salt calls this blackout.
 
-Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout. It covers a job sent live, one queued while the node was away, and the node's own schedule; each is refused with the reason `quiesced`, recorded in the evidence chain and counted in `halite_node_jobs_refused_total`. No job can lift it, because it is this node's own configuration: edit it and restart the node.
+Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout. It covers a job sent live, one queued while the node was away, and the node's own schedule; each is refused with the reason `quiesced`, recorded in the evidence chain and counted in `halite_node_jobs_refused_total`. No job can lift it, because it is this node's own configuration: edit it and restart the node. The node's pillar can quiesce it as well, by this key or Salt's `minion_blackout`, and can never lift a quiesce set here; when both quiesce the node, only a function on both allowlists runs (SPEC 9.6). <!-- lexicon:allow -->
 
 ### `quiesce_allowlist`
 
@@ -1988,7 +1996,7 @@ Refuses every job but the allowlist, so a machine can be taken out of automation
 
 Functions still permitted while quiesced.
 
-What is still permitted while quiesced, as a list of exact function names. `grains.*` is not a pattern here, as it is not in Salt's `minion_blackout_whitelist`. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one. Empty, a quiesced node refuses everything. <!-- lexicon:allow -->
+What is still permitted while quiesced, as a list of exact function names. `grains.*` is not a pattern here, as it is not in Salt's `minion_blackout_whitelist`. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one. Empty, a quiesced node refuses everything. A pillar's own `quiesce_allowlist` can narrow this list and never widen it. <!-- lexicon:allow -->
 
 ### `require_job_signature`
 
@@ -2280,6 +2288,7 @@ Every setting, and which programs read it.
 | `relay_upstream_port` | `halite-hub` | `4510` | Relays |
 | `render_sandbox` | `halite-node` | `false` | The tree: states and pillar |
 | `render_sandbox_group` | `halite-node` | — | The tree: states and pillar |
+| `render_sandbox_require` | `halite-node` | — | The tree: states and pillar |
 | `render_sandbox_user` | `halite-node` | — | The tree: states and pillar |
 | `renderer` | `halite-node`, `halite-hub` | `jinja|yaml` | Rendering and templates |
 | `require_job_signature` | `halite-node` | `false` | Node execution controls |

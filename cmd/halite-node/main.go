@@ -236,6 +236,8 @@ type node struct {
 	// The holder is shared, so the agent and every job use one child and
 	// the agent closes it.
 	sandbox *sandboxHolder
+	// hub is the client pillar and file fetches go through; see hubLink.
+	hub *hubLink
 	// args and root are kept so that a job from a hub naming a
 	// different environment can have its roots rebuilt, rather than
 	// silently running against the environment this invocation happened
@@ -250,6 +252,11 @@ type node struct {
 	// node working from its own roots, which is what `--local` and a
 	// node with no hub do.
 	hubPillar func(env string, all bool) (*value.Map, error)
+	// pillarQuiesce is what the last pillar the agent read said about
+	// quiesce, shared by every copy a job runs on. Nil outside the agent,
+	// so that `doctor` and a one-shot command, which compile pillars of
+	// their own, never change what the agent recorded. DIVERGENCE 5.703.
+	pillarQuiesce *pillarQuiesce
 	// events forwards an event to the hub's bus. Nil for a node with
 	// no hub, and `event.send` says so rather than reporting a success
 	// nobody received.
@@ -370,6 +377,7 @@ func setup(args *cli.Args) *node {
 		statesRunning: new(atomic.Int64),
 		evidence:      &evidenceState{},
 		sandbox:       &sandboxHolder{},
+		hub:           &hubLink{},
 		metrics:       newNodeMetrics(cfg),
 		cfg:           cfg,
 		log:           logger,
@@ -659,10 +667,22 @@ func (n *node) compilePillarOrErr() (*value.Map, error) {
 	// A node with a hub gets its pillar from the hub: SPEC 12.1 puts
 	// the compilation there so that the node holds none of it and
 	// cannot read another node's.
+	var p *value.Map
+	var err error
 	if n.hubPillar != nil {
-		return n.hubPillar(n.pillarEnv, n.pillarAll)
+		p, err = n.hubPillar(n.pillarEnv, n.pillarAll)
+	} else {
+		p, err = n.compileLocalPillar()
 	}
-	return n.compileLocalPillar()
+	// Every pillar the agent reads comes through here, and only a read
+	// that succeeded says anything about quiesce: a failure must not lift
+	// a quiesce the last good pillar set. The last known good pillar,
+	// served while the hub is away, is a success, and says what it said
+	// when it was saved.
+	if err == nil {
+		n.notePillarQuiesce(p)
+	}
+	return p, err
 }
 
 // compileLocalPillar assembles this node's pillar from its own roots.

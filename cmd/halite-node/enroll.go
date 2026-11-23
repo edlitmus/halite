@@ -438,6 +438,9 @@ func needsRenewal(cert *x509.Certificate) bool {
 // work, and a job arriving was refused. That stopped being true long ago.)
 func runConnect(args *cli.Args) int {
 	n := setup(args)
+	// Before the hub is attached, so that the first pillar read is
+	// compared with what the last one said.
+	n.startPillarQuiesce()
 	client, _ := n.hubClient(args)
 	if client.Cert == nil {
 		cli.Fatalf("this node is not enrolled; `halite-node enroll` is the first step")
@@ -487,6 +490,7 @@ func runConnect(args *cli.Args) int {
 	// down. It is a no-op when no render ever started one.
 	// DIVERGENCE 5.144.
 	defer n.closeRenderSandbox()
+	n.reportRenderIsolation()
 
 	// The executor runs jobs; the loop below reads the stream. They are
 	// separate goroutines with a bounded queue between them, per SPEC
@@ -699,6 +703,7 @@ func (n *node) attachToHub(args *cli.Args, client *transport.Client) {
 	if args.Bool("local", false) {
 		return
 	}
+	n.link().set(client)
 	n.useHubEvents(client)
 	n.useHubMine(client)
 	if !n.hubTree {
@@ -720,8 +725,11 @@ func (n *node) attachToHub(args *cli.Args, client *transport.Client) {
 // file server is briefly unreachable is worse than one that applies the
 // tree it already has.
 func (n *node) useHubTree(client *transport.Client) {
+	// Set here as well as in attachToHub: a one-shot command reaches this
+	// directly, with no connection loop to set it.
+	n.link().set(client)
 	cacheDir := n.cfg.String("cache_dir", config.DefaultCacheDir)
-	remote := fileserver.NewRemote(client, cacheDir, nil)
+	remote := fileserver.NewRemote(n.link(), cacheDir, nil)
 	remote.HashType = n.cfg.String("hash_type", "sha256")
 	remote.Unreachable = transport.Unreachable
 	remote.Warn = n.log.Warn
@@ -889,6 +897,7 @@ func (n *node) pillarRequest(env string, all bool, grains json.RawMessage) trans
 // estate migrating one piece at a time should not lose its pillar the
 // moment it enrols.
 func (n *node) useHubPillar(client *transport.Client) {
+	n.link().set(client) // See useHubTree.
 	n.removePillarStoreIfDisabled()
 	grains, err := value.EncodeJSON(n.grainsNow(), 0)
 	if err != nil {
@@ -951,7 +960,7 @@ func (n *node) useHubPillar(client *transport.Client) {
 		// Asked again for every run rather than cached: pillar is
 		// where an operator changes a value expecting the next
 		// highstate to use it, and a cache would mean it does not.
-		res, err := client.Pillar(context.Background(), n.pillarRequest(env, all, grains))
+		res, err := n.link().client().Pillar(context.Background(), n.pillarRequest(env, all, grains))
 		if err != nil {
 			if transport.CodeOf(err) == transport.CodeNoPillar {
 				// The answer the probe would have acted on, arriving
@@ -1256,17 +1265,19 @@ func (n *node) handle(msg transport.Message) error {
 	case transport.MsgJob:
 		n.acceptJob(msg)
 	case transport.MsgQuiesce, transport.MsgDrain:
-		// SPEC 6.2 names both and the relay forwards both, and this
-		// node does not act on either: what a hub's quiesce should
-		// mean, who may send it and whether it outlives a restart are
-		// undecided (issue 782). Said at warn and by name, because an
-		// operator who asked the hub to quiesce a node and saw nothing
-		// change has to be able to find out why here; under the
-		// default case it was one info line naming a type. A node is
-		// quiesced by its own `quiesce` setting (DIVERGENCE 5.694).
+		// Neither is part of the protocol (SPEC 6.2, DIVERGENCE
+		// 5.699.1): no hub in this tree sends them, and a hub
+		// quiesces a node through its pillar (DIVERGENCE 5.703). Earlier drafts
+		// of SPEC named both, so a peer of another version may, and the
+		// relay passes them down. Said at warn and by name, because an
+		// operator who asked for a quiesce and saw nothing change has
+		// to be able to find out why here; under the default case it
+		// was one info line naming a type (5.699). A node is quiesced
+		// by its own `quiesce` setting (DIVERGENCE 5.694) or by its
+		// pillar's.
 		n.log.Warn("the hub sent a message this node does not act on, so nothing changed",
 			"type", msg.T, "reason", msg.Reason,
-			"instead", "set quiesce in this node's configuration and restart it")
+			"instead", "set quiesce in this node's pillar, or in its configuration and restart it")
 	default:
 		n.log.Info("message", "type", msg.T)
 	}

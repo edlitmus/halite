@@ -44,6 +44,7 @@ func all(t *testing.T) []Check {
 		}),
 		FileServerReachable("local roots", []string{"/srv/halite"}, nil),
 		PillarCompiles(nil, 3),
+		Quiesce(QuiesceState{}),
 		DiskFree(map[string]FreeSpace{"/var/lib/halite": {Free: 100 << 30}}, 1<<30, 128<<20),
 		QueueDepths(map[string]QueueDepth{"reactor": {Depth: 1, Limit: 10000}}),
 		ExtensionSignatures(true, []ExtensionTrust{{Name: "ext", Signed: true}}),
@@ -55,6 +56,7 @@ func all(t *testing.T) []Check {
 			Last:     &EvidenceRecord{Seq: 12, Kind: "job.accepted", TS: "2026-09-23T07:00:00.000000Z"},
 		}),
 		FIPSConsistency(FIPSState{Kernel: &kernel, Platform: "linux"}),
+		RenderIsolation(RenderIsolationState{}),
 	}
 }
 
@@ -143,6 +145,9 @@ func everyOutcome(t *testing.T) []Result {
 	var checks []Check
 
 	checks = append(checks,
+		Quiesce(QuiesceState{By: []string{"its configuration"}}),
+		Quiesce(QuiesceState{By: []string{"its configuration", "its pillar's quiesce"}, Allowlist: []string{"test.ping"}}),
+		Quiesce(QuiesceState{By: []string{"its pillar"}, RecordErr: errors.New("the record cannot be read")}),
 		ConfigValidity("/etc/halite/node.yaml", errors.New("line 3: bad indent"), nil, Running{}),
 		ConfigValidity("/etc/halite/node.yaml", nil, []string{"tracing"}, Running{}),
 		ConfigValidity("/etc/halite/node.yaml", nil, nil, Running{Known: true, Basis: "the record"}),

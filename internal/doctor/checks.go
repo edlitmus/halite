@@ -372,6 +372,58 @@ func PillarCompiles(err error, keys int) Check {
 	}
 }
 
+// QuiesceState is what quiesces a node, as the node's own configuration
+// and the agent's record of its last pillar say.
+type QuiesceState struct {
+	// By names each thing that quiesces the node, in the node's words:
+	// "its configuration", "its pillar's quiesce".
+	By []string
+	// Allowlist is what still runs: the functions every source permits.
+	Allowlist []string
+	// RecordErr is the agent's record of the pillar's quiesce failing to
+	// read, which the agent takes as quiesced.
+	RecordErr error
+}
+
+// Quiesce reports whether the node is quiesced, and by what.
+//
+// A warning rather than a pass when it is, because a quiesced node and a
+// broken one return the same refusals, and the first thing somebody
+// running doctor on a node that "does nothing" needs is to be told which
+// it is. Not a failure: somebody meant it.
+//
+// The pillar half is the agent's record and not a fresh compile. doctor
+// is a separate process that compiles the node's local pillar, which on a
+// node managed from a hub is not the pillar the agent runs with, so its
+// own compile would answer a different question (DIVERGENCE 5.703).
+func Quiesce(state QuiesceState) Check {
+	return Check{
+		Name:  "quiesce",
+		Roles: []string{RoleNode},
+		Run: func(context.Context) Result {
+			res := Result{Name: "quiesce"}
+			if len(state.By) == 0 {
+				res.Status = Pass
+				res.Detail = "not quiesced, by its configuration or by the last pillar the agent read"
+				return res
+			}
+			res.Status = Warn
+			runs := "runs nothing"
+			if len(state.Allowlist) > 0 {
+				runs = "runs only " + strings.Join(state.Allowlist, ", ")
+			}
+			res.Detail = fmt.Sprintf("quiesced by %s; %s", strings.Join(state.By, " and by "), runs)
+			if state.RecordErr != nil {
+				res.Detail += "; " + firstLine(state.RecordErr.Error())
+			}
+			res.Remedy = "Expected if somebody took this machine out of automation. A quiesce in the " +
+				"configuration is lifted by setting `quiesce: false` and restarting the node; one in " +
+				"the pillar by removing `quiesce` from the pillar, which the node reads again at its next job."
+			return res
+		},
+	}
+}
+
 // DiskFree checks the directories this process writes to.
 //
 // Free bytes rather than a percentage: a 2% margin is comfortable on a

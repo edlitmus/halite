@@ -42,10 +42,10 @@ halite-api doctor
 Each runs the checks that apply to it, prints `pass`, `warn`, `fail` or `skip`
 (with the reason), and gives a remediation line for anything not a pass. It
 exits non-zero **only on a failure, not a warning**, so it is safe in a
-monitoring probe and in a cron job. A node runs eleven checks (configuration,
+monitoring probe and in a cron job. A node runs thirteen checks (configuration,
 certificate expiry, connectivity, clock skew against the hub, file server,
-pillar compilation, disk space, extension signatures, module verification,
-evidence chain, FIPS consistency); a hub eight; the API four. A warning is a
+pillar compilation, quiesce, disk space, extension signatures, module verification,
+evidence chain, FIPS consistency, render isolation); a hub eight; the API four. A warning is a
 thing to do this month, not a reason to page anybody.
 
 ## Procedure

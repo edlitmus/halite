@@ -17,6 +17,7 @@ import (
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/runner"
+	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/template"
@@ -218,7 +219,59 @@ func (s *Server) compileOrchestration(req OrchRequest, env string, jid job.ID, r
 			},
 		},
 	}
-	return c.CompileSLS(req.SLS)
+	compiled := c.CompileSLS(req.SLS)
+	refuseParallelStateRuns(compiled, registry.Signatures())
+	return compiled
+}
+
+// refuseParallelStateRuns refuses, at compile time, a step that asks for
+// a state run to share a node.
+//
+// A state run always runs alone on the node (SPEC 9.6), so `run_parallel:
+// true` on `salt.state`, `salt.sls` or `salt.highstate` -- or on a
+// `salt.function` step whose function is a state run -- asks for something
+// the job will not get. Accepting it and sending the flag would be the
+// accept-but-ignore defect: the author reads an orchestration that
+// overlaps a highstate with other work and gets one that waits. Refusing
+// it where it is written is what lets them find out before a deployment
+// rather than from its timing. `run_parallel: false` says what will happen
+// anyway and is allowed, so a value templated across every step compiles.
+//
+// The truth of the value is read through the step's own signature, so
+// `"no"` here means what it means to the step; a value the signature
+// cannot read is already an error from the compiler's own check.
+func refuseParallelStateRuns(compiled *state.Compiled, sigs *signature.Registry) {
+	for _, ch := range compiled.Low {
+		if ch.Args == nil || !ch.Args.Has("run_parallel") {
+			continue
+		}
+		sig, ok := sigs.Lookup(ch.Func())
+		if !ok {
+			continue
+		}
+		bound, errs := sig.Bind(nil, ch.Args)
+		if len(errs) > 0 {
+			continue
+		}
+		if asked, _ := bound.Get("run_parallel"); asked != true {
+			continue
+		}
+		fun := "state.apply"
+		if ch.Func() == "salt.function" {
+			fun = ch.Name
+			if name, ok := bound.Get("name"); ok {
+				fun = value.KeyString(name)
+			}
+		}
+		if !job.AlwaysAlone(fun) {
+			continue
+		}
+		compiled.Diags.Add(ch.Pos, ch.SLS, ch.ID,
+			"%s: `run_parallel: true` is refused: the step sends %s, and a state run "+
+				"always runs alone on a node (SPEC section 9.6), so it would wait for "+
+				"other jobs whatever the step says; remove it, or set it to false",
+			ch.Func(), fun)
+	}
 }
 
 // OrchNodeID is what an orchestration template sees as `id`. It is the

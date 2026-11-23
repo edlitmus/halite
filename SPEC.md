@@ -392,14 +392,19 @@ a truncated stream is unambiguous.
 ```json
 {"t":"job","jid":"20260819T142211123456","fun":"state.apply","arg":["webserver"],"kwarg":{"test":true},"env":"base","ret":"","expires":"2026-08-19T14:37:11Z","nonce":"..."}
 {"t":"ping","seq":4412}
-{"t":"event","tag":"halite/hub/quiesce/start","data":{}}
+{"t":"event","tag":"halite/presence/change","data":{}}
 {"t":"revoke","reason":"enrollment revoked","final":true}
 ```
 
-Message types on the subscribe stream: `job`, `ping`, `event`, `revoke`, `reload`, `quiesce`,
-`drain`. Nodes reply to `ping` on `/v1/return` with a `pong`; a missed ping budget triggers a
-reconnect from the node side. No hub sends `quiesce` or `drain` yet, and a node that receives one
-does not act on it and logs that at warn; a node is quiesced by its own configuration (9.6).
+Message types on the subscribe stream: `job`, `ping`, `event`, `revoke`, `reload`. Nodes reply
+to `ping` on `/v1/return` with a `pong`; a missed ping budget triggers a reconnect from the node
+side.
+
+There is no `quiesce` or `drain` message. A node is quiesced by its own `quiesce` setting or by its
+pillar, and the hub quiesces a node through that node's pillar (9.6, DIVERGENCE 5.703), not through
+a stream message, which would need an RBAC grant and an answer to `require_job_signature` (25.6) of
+its own and would be lifted by any reconnect. Earlier drafts of this section listed both names, so a node that receives either logs at warn, by name, that it does not
+act on it, and a relay passes them down unchanged so that the node meant is the one that says so.
 
 ### 6.3 Replay and job authenticity
 
@@ -740,6 +745,7 @@ than Salt, whose agent runs every job at once and keeps only state runs apart.
   families while serializing within one.
 - `--parallel` marks a job as safe to run alongside others, and `parallel_jobs` makes that every
   job's default. A signed job's `--parallel` is ignored, because the signature does not cover it.
+  An orchestration step or a reaction asks for it with `run_parallel` (sections 18.1 and 19.1).
 - A state run always runs alone: it reaches every family at once. It waits for running jobs, and
   no job that arrives after it starts before it.
 - The node's own schedule shares the queue with jobs from the hub.
@@ -747,6 +753,14 @@ than Salt, whose agent runs every job at once and keeps only state runs apart.
   separate goroutines with a bounded queue between them.
 - `halite-node` refuses a job when its queue is full and says so, rather than growing memory. Salt's
   minion under a reactor storm does the latter.
+- A quiesced node refuses every job and scheduled job whose function is not on its allowlist, matched
+  exactly; Salt calls this blackout. The node's configuration sets `quiesce` and
+  `quiesce_allowlist`, and so may its pillar, by those keys or by Salt's `minion_blackout` and
+  `minion_blackout_whitelist`. <!-- lexicon:allow --> **A pillar may set quiesce and never lift one
+  the configuration sets**: the node is quiesced if either says so, and when both do, only a function
+  on every allowlist runs. Grains are not read. The agent reads its pillar again with every job, and
+  before refusing a job for a pillar's quiesce, so a pillar lifts its own at the next job. A read
+  that fails changes nothing: the last pillar's answer stands, and is kept on disk across restarts.
 
 ## 10. Renderers
 
@@ -1814,7 +1828,10 @@ record_it:
 
 Reaction types, matching Salt: `local` (a remote execution job), `runner` (a hub runner),
 `wheel` (a hub management function such as key acceptance), and `caller` (a local execution on the
-node that fired the event, used from a node's own reactor). The template context provides `data`,
+node that fired the event, used from a node's own reactor). A `local` or `caller` reaction may set
+`run_parallel: true`, which asks for section 9.6's `--parallel` on the job it sends. The value is a
+boolean or the reaction is refused, as it is on a `runner` or `wheel` reaction, which sends no job,
+and as `true` is on a state run, which always runs alone. The template context provides `data`,
 `tag`, `id`, `grains`, `pillar`, and `salt` with the hub-safe module set.
 
 ### 18.2 Execution model
@@ -1895,6 +1912,12 @@ Supported step types: `salt.state`, `salt.sls`, `salt.highstate`, `salt.function
 including `onfail`, which is what makes a rollback step expressible. `batch`, `subset`,
 `fail_minions` (renamed `tolerate_failures`, old name accepted), `queue`, `pillar`, `pillarenv`,
 `saltenv`, `timeout`, `retry`, and `parallel` are all supported per step.
+
+`run_parallel: true` on a `salt.function` step asks for section 9.6's `--parallel` on the job the
+step sends. It is named apart from `parallel`, which is about running steps at once rather than
+how a job shares a node. Salt has no such key. A state run always runs alone, so `true` on
+`salt.state`, `salt.sls`, `salt.highstate`, or a `salt.function` step that names a `state.*`
+function, is refused when the orchestration compiles.
 
 `salt.wait_for_event` is a step that blocks until a matching event arrives or a timeout expires,
 which turns orchestration into something that can coordinate with an external system rather than
@@ -2478,7 +2501,7 @@ number. Changing it is a decision recorded here, not an implementation detail.
 | Unauthenticated network attacker reaching the hub port | Can send arbitrary TCP bytes | TLS 1.3 in the standard library, refusing a peer that does not offer `halite/1` or presents a revoked certificate; one port. A client certificate is verified when presented but not required at the handshake, because enrollment must reach a node that has none; each route checks it instead. Every route but two refuses a peer without one before its handler runs. `/v1/health` returns the build's version. `POST /v1/enroll` is application parsing before authentication by design: it reads a bounded JSON body, parses a CSR, checks a token and may write a pending record, under the bounds of 6.5. A test reads the hub's router and fails on a third such route |
 | Unauthenticated network attacker reaching the API port | Can call the endpoints that issue a token | TLS 1.3; one answer for every failed login; a per-source-and-name login backoff that does not reveal which names exist, and a per-source budget of failed logins; a bound on password checks in flight and on OIDC logins in flight (section 23.2) |
 | Compromised node | Full control of one node, its key, its grains | Hub-side targeting so it sees only its own jobs; trusted-grain allowlist for pillar; event tag restrictions; deny-by-default peer access; rate limits; its certificate is revocable and short-lived; its evidence chain anchored at the hub, so a rewrite of anything it had reported contradicts the hub's record |
-| Compromised hub | Full control of the hub process | Optional detached job signing by an operator key the hub does not hold; node-side job expiry and replay caches; signed and pinned extensions; signed gitfs refs; append-only local evidence on the node, holding receipts the hub signed for the heads it anchored |
+| Compromised hub | Full control of the hub process | Optional detached job signing by an operator key the hub does not hold; node-side job expiry and replay caches; signed and pinned extensions; append-only local evidence on the node, holding receipts the hub signed for the heads it anchored. Not signed gitfs refs: that check runs on the hub (`internal/gitfs`, imported only by `halite-hub`), so a compromised hub skips it; node-verified state content is issue 764 |
 | Malicious or compromised state tree | Can put arbitrary SLS, templates, and files in the file server | gitfs signature verification; strict undefined; render sandbox; template resource limits; no YAML object construction; `cmd.run` as a distinct permission; optional signed state trees |
 | Malicious insider with API access | A valid operator credential | Deny-by-default RBAC with target, function, and argument scoping; separate permission for `cmd.run` and the wheel write functions; full decision logging; token binding |
 | Supply chain attacker | Can publish a malicious library version | Section 4: near-zero third-party code, vendored, digest-pinned, offline builds, reproducible builds, SBOM from the linked binary, signed provenance |
@@ -2530,6 +2553,11 @@ The node runs as root because package and service management require it. Inside 
   read access to the cached tree and nothing else. All YAML parsing and all template rendering happen
   there. This matters because the parser and the template engine are the largest and most
   attacker-adjacent code in the system, and they need no privilege at all.
+- As built, the sandbox is off unless `render_sandbox` is set, and what it applies depends on the
+  platform: the account on any unix when the node is root, the network on Linux only, and no
+  narrowing of the filesystem anywhere. `render_sandbox_require` lists the controls a render must be
+  under, checked against the child's own report of itself; when one does not hold, every render is
+  refused with the reason and `doctor` says so (DIVERGENCE 5.701).
 - Module execution happens in the privileged parent, but only after the compiled low state has been
   validated against module signatures. The sandbox returns data, never a callable and never a
   command to run without validation.
@@ -2660,7 +2688,7 @@ and needs no OpenTelemetry SDK. Tracing is off by default and sampled when on.
 `halite-node doctor`, `halite-hub doctor` and `halite-api doctor` check configuration validity,
 clock skew against the
 hub, certificate validity and expiry, connectivity, file server reachability, pillar compilation,
-disk space, queue depths, extension signatures, module verification, evidence chain, and FIPS mode consistency,
+quiesce, disk space, queue depths, extension signatures, module verification, evidence chain, FIPS mode consistency, and render isolation,
 and print a pass or fail per check with a remediation line.
 Each command runs the subset that applies to it: a check that does not apply to the role is not run
 at all rather than skipped. `halite-api` holds three certificates — the one it presents to callers,

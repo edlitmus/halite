@@ -31,7 +31,7 @@ func Serve(in io.Reader, out io.Writer) error {
 
 	// The parent reads this before it sends anything, so a mismatched
 	// pair is found before a pillar crosses the boundary.
-	if err := writeFrame(out, frame{Kind: frameHello, Version: codecVersion}); err != nil {
+	if err := writeFrame(out, frame{Kind: frameHello, Version: codecVersion, Observed: observeSelf()}); err != nil {
 		return err
 	}
 
