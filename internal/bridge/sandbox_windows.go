@@ -102,7 +102,7 @@ func (s *Sandbox) applyPlatform(cmd *exec.Cmd) (func() error, func(), error) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &windows.SysProcAttr{}
 	}
-	cmd.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP
 
 	afterStart := func() error {
 		if cmd.Process == nil {

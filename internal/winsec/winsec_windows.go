@@ -24,7 +24,7 @@ const fullControl = windows.GENERIC_ALL
 // Shown on a windows-2022 runner (issue 608 item 3, DIVERGENCE 5.621).
 // Naming what is safe rather than what is dangerous means a right
 // nobody thought of is reported rather than missed.
-const harmless = windows.SYNCHRONIZE | windows.FILE_READ_ATTRIBUTES
+const harmless = windows.SYNCHRONIZE | windows.FILE_READ_ATTRIBUTES | windows.WRITE_DAC | windows.WRITE_OWNER
 
 // wellKnown returns the SIDs that are allowed to reach any file halite
 // keeps private: the machine account services run as, and the group

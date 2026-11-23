@@ -63,7 +63,7 @@ func confineTree(c *exec.Cmd) (afterStart func() error, cleanup func(), err erro
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &windows.SysProcAttr{}
 	}
-	c.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED
+	c.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP
 
 	c.Cancel = func() error {
 		// Terminating the job takes the child and everything it
