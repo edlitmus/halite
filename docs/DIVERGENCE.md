@@ -49866,6 +49866,67 @@ compile left on the node's own environment (both no-hub-pillar tests).
 
 
 
+### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
+
+Issue 810, suspected while revising the issue 765 proposal and filed as
+not reproduced. `Settle` closes a job whose expiry has passed with a node
+still owing as `partial`, and counts it in `halite_jobs_expired_total`
+(`settleExpired`, `internal/hub/batch.go`). A node that was still running
+the job is not stopped by that -- the node checks the expiry when the job
+arrives, not while it runs (SPEC 6.3's `expires`) -- so it finishes and
+answers. The return was filed, which is right, and `completeIfDone` then
+moved the job to `complete`, which is the defect: the job read `partial`
+in `jobs list` and `GET /v1/jobs/<jid>`, then `complete`, about one run,
+and the expiry counter had counted a job that by then read as finished.
+The pair that disagreed was the two writers of the job's state, as in
+5.515: `completeIfDone` already left an aborted job alone and did not know
+partial was terminal too.
+
+**Shown.** `TestAJobSettledPartialStaysPartialWhenItsNodeAnswersLate`
+(`internal/hub/expiry_late_return_test.go`) submits to a connected node
+that does not answer, moves the hub's clock past the one-second window,
+settles, and files the node's return through the real return handler.
+On `main` at `5f5ae87c` the first draft of it read, through the API,
+`partial` with the node missing after settling and `complete` after the
+late return.
+
+**The change.** `completeIfDone` leaves a partial job as it is and logs
+`a return arrived after its job was settled; the job stays partial`. The
+return is still filed and announced (`halite/job/<jid>/ret/<node>`), so
+`jobs show` lists it and `missing` is empty; `partial` keeps the meaning
+the type gives it, "the gather window closed with returns outstanding"
+(`internal/job/model.go`), which is still true. This was chosen over
+keeping the flip with an event because SPEC says nothing about a settled
+state changing, and the flip contradicts what every reader had already
+been told; it is a decision for the project, not something SPEC settles.
+Salt has no job state to compare: its `local_cache` returner files any
+return whenever it arrives (`salt/returners/local_cache.py`, a 3008.x
+development checkout at `221495872f`).
+
+A return landing *inside* the settlement -- after `settleExpired` has
+read who is missing and before it writes -- completes the job first, and
+the settlement's write loses on the state guard it already had, so the
+job reads `complete` and is not counted as expired.
+`TestAReturnLandingDuringSettlementCompletesTheJobAndIsNotCountedExpired`
+holds that, using a test hook (`settleAfterMissing`) at that point.
+Whichever writer closes the job first decides its state.
+
+Broken on purpose, twice. Without the new partial case in `completeIfDone`
+the first test fails with `api "complete", record "complete"; want both
+"partial"`. Without `settleExpired`'s dispatched-or-batching guard the
+second fails: Settle closes the job, which reads `partial` with nothing
+missing, and the counter reads 1.
+
+**Not covered.** No real node binary ran a job past its expiry; the node
+is the test's silent connection and the return is filed as a node files
+one. What an orchestration step sees is unchanged and was read, not run:
+`awaitReturns` (`internal/hub/orch.go`) waits on returns until the step's
+own `timeout`, not on the job's state, so a step whose timeout outlasts
+its job's 15-minute default TTL still succeeds on a late return, while
+the job it sent reads `partial`. Whether a step's `timeout` should set its
+job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
+is the second question issue 810 asks and is not answered here.
+
 
 
 ## 6. Everything else not started
