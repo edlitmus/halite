@@ -174,7 +174,7 @@ func Rename(oldpath, newpath string) error {
 // shares delete: the old file is superseded rather than unlinked, and NTFS
 // will not supersede a file with an open handle. The retry above waits that
 // out, and on the windows-2022 race leg three quiet tries a few milliseconds
-// apart did not (DIVERGENCE 5.619, 5.715).
+// apart did not (DIVERGENCE 5.619, 5.718).
 //
 // FILE_RENAME_POSIX_SEMANTICS asks for what rename(2) does instead: the old
 // file leaves the namespace at once and lives on for whoever has it open,
@@ -307,7 +307,7 @@ func renamePOSIX(oldpath, newpath string) error {
 // MoveFileEx behaviour this replaced, so the test leans towards falling
 // back. The codes are what a filesystem without the class answers; which
 // of them FAT gives on a windows-2022 runner is recorded in DIVERGENCE
-// 5.715.
+// 5.718.
 func posixRenameRefused(err error) bool {
 	return errors.Is(err, windows.ERROR_INVALID_PARAMETER) ||
 		errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||

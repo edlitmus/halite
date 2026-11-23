@@ -50012,8 +50012,7 @@ against an old hub. The added `async` is not seen by the API's own policy
 check, which is made before it is added, so a role with `deny_kwargs:
 ['async']` is not refused by the API for it; whether the hub's delegated
 check refuses it was not tried.
-
-### 5.715 atomicfile replaced a file with MoveFileEx, which no reader can share (2026-11-23)
+### 5.718 atomicfile replaced a file with MoveFileEx, which no reader can share (2026-11-23)
 
 Issue 799, `internal/atomicfile`, Windows. 5.619 records two rounds of
 retrying a replace that a concurrent read refused. After the second,

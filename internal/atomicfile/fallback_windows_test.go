@@ -12,7 +12,7 @@ import (
 // stand-in, because a runner's NTFS never refuses: what is exercised is
 // the fallback path itself, and that a refusal is not reported as the
 // rename failing. A real FAT volume was measured on the issue 799 draft
-// (DIVERGENCE 5.715).
+// (DIVERGENCE 5.718).
 func TestAFallbackReplaceLandsWhereThereIsNoPOSIXRename(t *testing.T) {
 	refused := 0
 	saved := setRenameInfo
