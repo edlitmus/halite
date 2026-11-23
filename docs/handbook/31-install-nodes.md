@@ -38,9 +38,11 @@ answers `test.ping`, and has applied (or rehearsed) its highstate.
 > against an Ubuntu 26.04 hub on AlmaLinux 8.10, Alpine 3.24, openSUSE Leap
 > 16.0, Debian 13 under sysvinit and Ubuntu 22.04.5, and on Rocky Linux 9.8
 > against its own FIPS hub. Each answered `test.ping`, applied the playground
-> state twice, and came back `up` after a reboot. **No init script ships for
-> Alpine's OpenRC or for sysvinit**, so on those two rows step 5 used one
-> written for the run (issue 812). A FreeBSD 14.5-RELEASE-p3 node enrolled
+> state twice, and came back `up` after a reboot. On the Alpine and sysvinit
+> rows step 5 used an init script written for the run (issue 812). The OpenRC
+> and sysvinit scripts that now ship in `service/openrc` and
+> `service/sysvinit` were written after it and **have not been run** on
+> either (DIVERGENCE 5.719). A FreeBSD 14.5-RELEASE-p3 node enrolled
 > against a FreeBSD 15.1 hub over the wire, and came back `up` after a reboot,
 > started by the rc script. It was enrolled twice through the rc script with
 > tokens that began with `-`, minted by a hub from before ledger 5.674: once
@@ -159,12 +161,38 @@ sudo systemctl daemon-reload && sudo systemctl enable --now halite-node
 sudo install -m 0555 service/rc.d/halite_node /usr/local/etc/rc.d/
 sudo sysrc halite_node_enable=YES
 sudo service halite_node start
+
+# Alpine, or any Linux booted by OpenRC
+install -m 0755 service/openrc/halite-node /etc/init.d/halite-node
+rc-update add halite-node default
+rc-service halite-node start
+
+# Debian booted by sysvinit
+sudo install -m 0755 service/sysvinit/halite-node /etc/init.d/halite-node
+sudo update-rc.d halite-node defaults
+sudo service halite-node start
 ```
 
 On FreeBSD the rc script enrols if the node holds no certificate, and
 refuses to start until it does, printing the `keys accept` line to *your*
 terminal rather than into a log. The systemd unit has no equivalent: enrol
-before you start the unit.
+before you start the unit. Nor do the OpenRC and sysvinit scripts.
+
+(Alpine has no `sudo` until you install it; run those lines as root.) `make
+install` from a source checkout picks the right one of the four for the host
+it runs on, by asking which init is there. The OpenRC script runs the agent
+under `supervise-daemon`, which restarts it when it dies, but gives up after
+six deaths in a minute. That cap does not stop a node whose enrollment was
+revoked: it is restarted once, and the new agent keeps retrying the hub,
+which refuses it. Stop and disable the service on a node you revoke
+(`rc-service halite-node stop`, `rc-update del halite-node`).
+The sysvinit script has no supervisor: a node that crashes stays down until
+it is started again. Both log to `/var/log/halite/node.log`, and neither
+takes `reload`: change the configuration and restart. Settings go in
+`/etc/conf.d/halite-node` (OpenRC: `halite_node_config`, `halite_node_args`)
+or `/etc/default/halite-node` (sysvinit: `HALITE_NODE_CONFIG`,
+`HALITE_NODE_FLAGS`). Both scripts were run on Alpine 3.24 with OpenRC 0.63
+and on a sysvinit Debian 13 (DIVERGENCE 5.719.3).
 
 ### Many nodes: token enrolment
 

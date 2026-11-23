@@ -73,6 +73,8 @@ func TestServiceFilesAgreeWithTheDefaultRoot(t *testing.T) {
 	}{
 		{"../../contrib/rc.d", "/usr/local/etc/halite", "/etc/halite", "FreeBSD"},
 		{"../../contrib/systemd", "/etc/halite", "/usr/local/etc/halite", "systemd"},
+		{"../../contrib/openrc", "/etc/halite", "/usr/local/etc/halite", "OpenRC"},
+		{"../../contrib/sysvinit", "/etc/halite", "/usr/local/etc/halite", "sysvinit"},
 	}
 	for _, c := range cases {
 		// Walked rather than listed: the FIPS drop-ins live in a
@@ -98,10 +100,21 @@ func TestServiceFilesAgreeWithTheDefaultRoot(t *testing.T) {
 				t.Fatal(err)
 			}
 			text := string(body)
-			// The wrong prefix appears inside the right one, so the
-			// check is for the wrong one standing alone.
+			// One root is inside the other, in a different direction on
+			// each side. On FreeBSD the wrong root (/etc/halite) is inside
+			// the right one, so the right one is taken out of the line
+			// before the wrong one is looked for. On Linux the right root
+			// is inside the wrong one, and the check used to be the
+			// FreeBSD one for both: every line naming the wrong root also
+			// named the right one, so the Linux case could not fail
+			// (DIVERGENCE 5.719.1). There the wrong root is asked for
+			// directly.
 			for _, line := range strings.Split(text, "\n") {
-				if strings.Contains(line, c.wrong) && !strings.Contains(line, c.want) {
+				rest := line
+				if !strings.Contains(c.wrong, c.want) {
+					rest = strings.ReplaceAll(line, c.want, "")
+				}
+				if strings.Contains(rest, c.wrong) {
 					t.Errorf("%s references %s, but a %s host reads %s",
 						path, c.wrong, c.platform, c.want)
 				}

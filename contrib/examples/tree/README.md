@@ -91,9 +91,15 @@ That is all it does. It compiles; it applies nothing, because nearly
 every state here writes under `/etc` or `/usr/local/etc` and drives a
 service manager. **Not run by this project:**
 
-- **The deferred node restart, as this tree's own state.** The two
-  commands in `halite/node.sls` (`daemon(8)` on FreeBSD,
-  `systemd-run --on-active` on Linux) were run, verbatim, from a small
+- **The deferred node restart, as this tree's own state.** Of the three
+  commands in `halite/node.sls`, the `setsid` one for OpenRC and sysvinit
+  (picked when the `init` grain is not `systemd`) was run by hand on
+  Alpine and a sysvinit Debian from a similar upgrade state (DIVERGENCE
+  5.708), and then from this file, with a lab pillar rather than this
+  tree's, inside a job on Alpine 3.24 and a sysvinit Debian 13: the job
+  returned in two seconds, and one new agent replaced the old one about 30
+  seconds later (DIVERGENCE 5.719.3). The other two (`daemon(8)` on FreeBSD,
+  `systemd-run --on-active` under systemd) were run, verbatim, from a small
   state of the same shape inside a real job on Ubuntu 26.04 and FreeBSD
   15.1: the job returned first and the node restarted after it and came back
   up (DIVERGENCE 5.482). The timer's `30` is `30` to `90` seconds on Linux.

@@ -697,9 +697,10 @@ release-publish:
 # `.if` and GNU make spells them `ifeq`, and no file can carry both.
 INSTALL_OS != uname -s
 
-# INSTALL_KIND is which of three service layouts this platform gets:
-# rc.d scripts on a BSD, systemd units on Linux (and, as before, on any
-# platform nobody has named), and none at all on macOS.
+# INSTALL_KIND is which of five service layouts this platform gets:
+# rc.d scripts on a BSD; on Linux, systemd units, an OpenRC script or a
+# sysvinit script, by what the host runs (systemd, as before, on any
+# platform nobody has named); and none at all on macOS.
 #
 # macOS used to fall into the `*)` arm with Linux, so `make install` on a
 # Mac said "installing for Darwin" and then installed systemd units,
@@ -721,7 +722,47 @@ INSTALL_OS != uname -s
 # internal/buildpolicy's TestInstallOnDarwinInstallsNoSystemdUnits reads
 # exactly that dry run, for each kind, with INSTALL_OS set on the command
 # line, which is also how to see another platform's branch from this one.
-INSTALL_KIND != case "$(INSTALL_OS)" in FreeBSD|OpenBSD|NetBSD|DragonFly) echo rcd ;; Darwin) echo darwin ;; *) echo systemd ;; esac
+#
+# # Linux is three kinds, and the host is asked which
+#
+# Linux used to be `systemd` unconditionally, so `make install` on Alpine
+# or on a Debian converted to sysvinit put units in /etc/systemd/system,
+# told the operator to run systemctl, and installed nothing that host's
+# init could start (issue 812). The init system cannot be read out of
+# `uname`, so INSTALL_INIT probes the filesystem of the host make runs on,
+# at install time, in this order:
+#
+#   1. /run/systemd/system is a directory: systemd is running. This is
+#      sd_booted(3)'s own test, and the `init` grain asks the same.
+#   2. /sbin/openrc-run is executable: OpenRC.
+#   3. /sbin/init exists and does not resolve to systemd, and
+#      /usr/sbin/update-rc.d is executable: sysvinit, the Debian way.
+#   4. Anything else is systemd, as before.
+#
+# The order is what keeps existing hosts where they were. A systemd host
+# with OpenRC's package installed beside it is still systemd, because
+# systemd is the one running. An image being built in a chroot or a
+# container has no /run/systemd/system, and Debian's base image has
+# update-rc.d, so the third test also asks what /sbin/init is: a systemd
+# image's is a link to systemd, and a container's is usually absent; both
+# fall through to systemd as they always did. A sysvinit Debian's is
+# sysvinit-core's own binary.
+#
+# INSTALL_PROBE_ROOT is prefixed to every path probed, and is empty on a
+# real install. It exists for internal/buildpolicy's tests, which build a
+# fake root holding only the files one kind of host has and read which
+# kind the Makefile picks from it. INSTALL_INIT=openrc (or sysvinit, or
+# systemd) on the command line overrides the probe, which is the
+# operator's way out when it is wrong, and the way to stage another
+# host's install from this one.
+INSTALL_PROBE_ROOT ?=
+INSTALL_INIT != r="$(INSTALL_PROBE_ROOT)"; \
+	if [ -d "$$r/run/systemd/system" ]; then echo systemd; \
+	elif [ -x "$$r/sbin/openrc-run" ]; then echo openrc; \
+	elif [ -e "$$r/sbin/init" ] && [ -x "$$r/usr/sbin/update-rc.d" ] && \
+		! readlink -f "$$r/sbin/init" 2>/dev/null | grep -q systemd; then echo sysvinit; \
+	else echo systemd; fi
+INSTALL_KIND != case "$(INSTALL_OS)" in FreeBSD|OpenBSD|NetBSD|DragonFly) echo rcd ;; Darwin) echo darwin ;; *) echo "$(INSTALL_INIT)" ;; esac
 
 # BINDIR is /usr/local/bin on every platform, because that is the path
 # written into the rc.d scripts and the systemd units. Moving it means
@@ -729,7 +770,9 @@ INSTALL_KIND != case "$(INSTALL_OS)" in FreeBSD|OpenBSD|NetBSD|DragonFly) echo r
 BINDIR    ?= /usr/local/bin
 CONFDIR   != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /usr/local/etc/halite ;; *) echo /etc/halite ;; esac
 STATEDIR  != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /var/db/halite ;; *) echo /var/lib/halite ;; esac
-SERVICEDIR != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /usr/local/etc/rc.d ;; *) echo /etc/systemd/system ;; esac
+# SERVICEDIR follows the kind rather than `uname`, because Linux has three
+# kinds and two of them keep their scripts in /etc/init.d.
+SERVICEDIR != case "$(INSTALL_KIND)" in rcd) echo /usr/local/etc/rc.d ;; openrc|sysvinit) echo /etc/init.d ;; *) echo /etc/systemd/system ;; esac
 
 # MANDIR follows BINDIR to /usr/local for the same reason it does: one
 # prefix on every platform, so nothing has to know which one it is on.
@@ -756,6 +799,10 @@ HALITE_USER ?= halite
 # text on macOS 26; nobody has run it, which would need root.
 INSTALL_ACCOUNT_HINT_rcd = echo "      pw useradd $(HALITE_USER) -d /nonexistent -s /usr/sbin/nologin" >&2
 INSTALL_ACCOUNT_HINT_systemd = echo "      useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin $(HALITE_USER)" >&2
+# Alpine's useradd is in the shadow package, which a base install does
+# not have; busybox's adduser is always there.
+INSTALL_ACCOUNT_HINT_openrc = echo "      adduser -S -D -H -h /nonexistent -s /sbin/nologin $(HALITE_USER)" >&2
+INSTALL_ACCOUNT_HINT_sysvinit = $(INSTALL_ACCOUNT_HINT_systemd)
 INSTALL_ACCOUNT_HINT_darwin = echo "      sysadminctl -addUser $(HALITE_USER) -UID <an unused UID below 500> -shell /usr/bin/false -home /var/empty" >&2; \
 	echo "      (dscl . -list /Users UniqueID lists the UIDs already taken)" >&2
 
@@ -765,6 +812,8 @@ INSTALL_ACCOUNT_HINT_darwin = echo "      sysadminctl -addUser $(HALITE_USER) -U
 # would refuse an install over a directory it never uses.
 INSTALL_SERVICEDIR_rcd = "$(SERVICEDIR)"
 INSTALL_SERVICEDIR_systemd = "$(SERVICEDIR)"
+INSTALL_SERVICEDIR_openrc = "$(SERVICEDIR)"
+INSTALL_SERVICEDIR_sysvinit = "$(SERVICEDIR)"
 INSTALL_SERVICEDIR_darwin =
 
 # NEAREST_EXISTING sets $$a to $$d, or to the nearest directory above it
@@ -787,6 +836,8 @@ INSTALL_SERVICE_CHECK_rcd = d="$(SERVICEDIR)"; $(NEAREST_EXISTING); \
 	test -w "$$a" || { \
 		echo "cannot write $(SERVICEDIR) — run as root, or set SERVICEDIR" >&2; exit 1; }
 INSTALL_SERVICE_CHECK_systemd = $(INSTALL_SERVICE_CHECK_rcd)
+INSTALL_SERVICE_CHECK_openrc = $(INSTALL_SERVICE_CHECK_rcd)
+INSTALL_SERVICE_CHECK_sysvinit = $(INSTALL_SERVICE_CHECK_rcd)
 INSTALL_SERVICE_CHECK_darwin = true
 
 INSTALL_SERVICE_rcd = install -d -m 0755 "$(SERVICEDIR)" || exit 1; \
@@ -800,6 +851,20 @@ INSTALL_SERVICE_systemd = install -d -m 0755 "$(SERVICEDIR)" || exit 1; \
 		install -m 0644 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
 	done; \
 	echo "  run systemctl daemon-reload before enabling anything"
+# OpenRC and sysvinit get the node's script only: contrib/ has none for
+# the hub, the API or a periodic highstate on either (issue 812 asked for
+# the node, and a periodic highstate is a cron line). Saying so is the
+# honest version of installing nothing for them.
+INSTALL_SERVICE_openrc = install -d -m 0755 "$(SERVICEDIR)" || exit 1; \
+	echo "  $(SERVICEDIR)/halite-node"; \
+	install -m 0755 contrib/openrc/halite-node "$(SERVICEDIR)/halite-node" || exit 1; \
+	echo "  enable it with: rc-update add halite-node default"; \
+	echo "  no OpenRC script ships for halite-hub or halite-api; a periodic highstate is a cron line (handbook chapter 16)"
+INSTALL_SERVICE_sysvinit = install -d -m 0755 "$(SERVICEDIR)" || exit 1; \
+	echo "  $(SERVICEDIR)/halite-node"; \
+	install -m 0755 contrib/sysvinit/halite-node "$(SERVICEDIR)/halite-node" || exit 1; \
+	echo "  enable it with: update-rc.d halite-node defaults"; \
+	echo "  no sysvinit script ships for halite-hub or halite-api; a periodic highstate is a cron line (handbook chapter 16)"
 INSTALL_SERVICE_darwin = echo "  no service files: macOS runs services under launchd, and halite ships no launchd job yet."; \
 	echo "  run the programs in the foreground, or under a job of your own, for example"; \
 	echo "      $(BINDIR)/halite-node connect --config $(CONFDIR)/node.yaml"; \
@@ -807,6 +872,8 @@ INSTALL_SERVICE_darwin = echo "  no service files: macOS runs services under lau
 
 INSTALL_SERVICE_SUMMARY_rcd = echo "  service files  $(SERVICEDIR)"
 INSTALL_SERVICE_SUMMARY_systemd = $(INSTALL_SERVICE_SUMMARY_rcd)
+INSTALL_SERVICE_SUMMARY_openrc = echo "  service files  $(SERVICEDIR)/halite-node (OpenRC)"
+INSTALL_SERVICE_SUMMARY_sysvinit = echo "  service files  $(SERVICEDIR)/halite-node (sysvinit)"
 INSTALL_SERVICE_SUMMARY_darwin = echo "  service files  none (no launchd job is shipped)"
 
 # install puts the binaries, the service files, and the directories in

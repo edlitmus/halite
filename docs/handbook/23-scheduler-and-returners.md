@@ -125,7 +125,8 @@ equally well, and there is a real argument for leaving them in charge: they
 are one less thing in the agent, and every operator can read a crontab. The
 shipped timer is `contrib/systemd/halite-highstate.timer`, and on FreeBSD
 `contrib/rc.d/halite_highstate` plus a cron line
-([chapter 33](33-configuration.md)). Use the built-in scheduler when you want
+([chapter 33](33-configuration.md)); on OpenRC and sysvinit, a cron line
+alone ([chapter 16](16-fleet-operations.md)). Use the built-in scheduler when you want
 the schedule to travel with the node, change without a restart, or catch up
 after an outage.
 

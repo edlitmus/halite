@@ -27,7 +27,7 @@ import (
 //
 //   - `halite-hub migrate /srv/salt --cmd-default-shell`. The flag was
 //     renamed to `--no-cmd-default-shell` when the `cmd.run` shell
-//     default inverted (DIVERGENCE 5.81) and the row was never touched.
+//     default inverted (DIVERGENCE 5.84) and the row was never touched.
 //   - `halite-hub runner reactor.test --tag … --data …`. A runner takes
 //     its arguments as `key=value` pairs, never as flags; `--data` is
 //     refused outright and `--tag` is accepted only because `event
@@ -321,4 +321,185 @@ func invocationFlags(invocation string) (binary, sub string, flags []string) {
 	}
 	sort.Strings(flags)
 	return binary, sub, flags
+}
+
+// Every flag a shipped service file passes to a halite program is a flag
+// that program takes.
+//
+// A service file is a command line nobody types: it runs at boot, and a
+// flag the program refuses stops the service before it logs anything
+// useful. `cli.RejectUnknownFlags` refuses an undocumented flag outright,
+// so a renamed flag (DIVERGENCE 5.84 renamed one) leaves every unit that
+// still passes the old name as a service that never starts. The reference
+// above was held to the usage text; the units, rc.d scripts and the OpenRC
+// and sysvinit scripts of issue 812 are held the same way here.
+//
+// The command lines are found by anchor, not parsed as shell. An anchor is
+// a halite binary named by path (`/usr/local/bin/halite-node`, the FIPS
+// form too), a variable that holds one (`${halite_node_binary}`,
+// `$HALITE_NODE_BINARY`), or an assignment of the arguments
+// (`command_args=`, `HALITE_NODE_ARGS=`). Backslash-continued lines are
+// joined first, and the last anchor on a line wins, because the rc.d
+// scripts' command_args puts daemon(8)'s own flags before the binary.
+// After it, the first word that is not a flag or a variable is the
+// subcommand and every `--name` is a flag. Which binary a variable means
+// is read from the file's name; every file here is one program's.
+//
+// It cannot see a flag built up in a variable elsewhere (the rc.d
+// script's enrol `_flags`, which TestTheRCScriptPassesATokenThatBeginsWithAHyphen
+// runs), and it does not run the program, only the check the program runs.
+func TestEveryServiceFilesFlagsAreRealFlags(t *testing.T) {
+	root := repoRoot(t)
+	accepted := map[string]map[string]bool{}
+	for _, binary := range []string{"halite-node", "halite-hub", "halite-api"} {
+		accepted[binary] = flagsAcceptedBy(t, root, binary)
+	}
+
+	perDir := map[string]int{}
+	var flags int
+	for _, dir := range []string{"systemd", "rc.d", "openrc", "sysvinit"} {
+		base := filepath.Join(root, "contrib", dir)
+		err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(root, path)
+			for _, inv := range serviceInvocations(rel, string(body)) {
+				known, ok := accepted[inv.binary]
+				if !ok {
+					t.Errorf("%s:%d runs %s, which this audit does not know", rel, inv.line, inv.binary)
+					continue
+				}
+				perDir[dir]++
+				t.Logf("%s:%d: %s %s --%s", rel, inv.line, inv.binary, inv.sub, strings.Join(inv.flags, " --"))
+				for _, flag := range inv.flags {
+					flags++
+					if known[flag] || known[inv.sub+" "+flag] {
+						continue
+					}
+					t.Errorf("%s:%d passes --%s to `%s %s`, and no usage text of %s "+
+						"documents it, so `cli.RejectUnknownFlags` stops the service "+
+						"before it starts", rel, inv.line, flag, inv.binary, inv.sub, inv.binary)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dir := range []string{"systemd", "rc.d", "openrc", "sysvinit"} {
+		if perDir[dir] == 0 {
+			t.Errorf("read no halite command line out of contrib/%s; this audit has stopped "+
+				"checking it", dir)
+		}
+	}
+	if flags == 0 {
+		t.Fatal("read no flags out of any service file; this audit has stopped checking anything")
+	}
+	t.Logf("checked %d flag(s) across %v command line(s) per directory", flags, perDir)
+}
+
+// invocation is one halite command line read out of a service file.
+type invocation struct {
+	line        int
+	binary, sub string
+	flags       []string
+}
+
+var (
+	serviceAnchor = regexp.MustCompile(
+		`/usr/local/bin/(halite-(?:node|hub|api))(?:-fips)?\b` +
+			`|\$\{?[A-Za-z_]*_(?i:binary)\}?` +
+			`|\b(?:command_args|[A-Za-z_]*_(?i:args))="`)
+	serviceBinaryInName = regexp.MustCompile(`halite[-_](node|hub|api|highstate)`)
+)
+
+// serviceInvocations finds the halite command lines in one service file.
+func serviceInvocations(name, body string) []invocation {
+	var out []invocation
+	var logical strings.Builder
+	start := 0
+	for i, raw := range strings.Split(body, "\n") {
+		if logical.Len() == 0 {
+			start = i + 1
+		}
+		if strings.HasSuffix(raw, "\\") {
+			logical.WriteString(strings.TrimSuffix(raw, "\\") + " ")
+			continue
+		}
+		logical.WriteString(raw)
+		line := logical.String()
+		logical.Reset()
+		if inv, ok := serviceInvocation(name, line); ok {
+			inv.line = start
+			out = append(out, inv)
+		}
+	}
+	return out
+}
+
+// serviceInvocation reads the command line after the last anchor on one
+// logical line, if there is one.
+func serviceInvocation(name, line string) (invocation, bool) {
+	if strings.HasPrefix(strings.TrimSpace(line), "#") {
+		return invocation{}, false
+	}
+	matches := serviceAnchor.FindAllStringSubmatchIndex(line, -1)
+	if len(matches) == 0 {
+		return invocation{}, false
+	}
+	last := matches[len(matches)-1]
+	var inv invocation
+	if last[2] >= 0 {
+		inv.binary = line[last[2]:last[3]]
+	} else if m := serviceBinaryInName.FindStringSubmatch(filepath.Base(name)); m != nil {
+		inv.binary = "halite-" + m[1]
+		if m[1] == "highstate" {
+			inv.binary = "halite-node"
+		}
+	} else {
+		return invocation{}, false
+	}
+	// start-stop-daemon takes the program after --exec and the program's
+	// arguments after `--`; everything between is its own, so on its line
+	// nothing counts until the `--`.
+	wrapped := strings.Contains(line, "start-stop-daemon")
+	for _, field := range strings.Fields(line[last[1]:]) {
+		field = strings.Trim(field, `"'\;}`)
+		if wrapped {
+			wrapped = field != "--"
+			continue
+		}
+		// The end of the command: a redirection, a pipe or list
+		// operator, or the close of a test.
+		if field == "||" || field == "&&" || field == "|" || field == "]" || field == ")" ||
+			strings.HasPrefix(field, ">") || strings.HasPrefix(field, "<") {
+			break
+		}
+		switch {
+		case field == "--":
+			// start-stop-daemon's end of its own options: what came
+			// before was the wrapper's (`--exec "$BINARY" --remove-pidfile`),
+			// and the program's arguments follow.
+			inv.sub, inv.flags = "", nil
+		case field == "" || strings.HasPrefix(field, "$"):
+			continue
+		case strings.HasPrefix(field, "--"):
+			if flag, _, _ := strings.Cut(strings.TrimPrefix(field, "--"), "="); flag != "" {
+				inv.flags = append(inv.flags, flag)
+			}
+		case inv.sub == "" && !strings.HasPrefix(field, "-"):
+			inv.sub = field
+		}
+	}
+	if inv.sub == "" && len(inv.flags) == 0 {
+		return invocation{}, false
+	}
+	sort.Strings(inv.flags)
+	return inv, true
 }

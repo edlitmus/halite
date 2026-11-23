@@ -171,7 +171,9 @@ operator can read a crontab. `contrib/systemd/halite-highstate.timer`
 runs `halite-node state apply --local` with `RandomizedDelaySec`, and the
 service carries `SuccessExitStatus=0 2` so a converged run is not a failed
 unit; on FreeBSD, `contrib/rc.d/halite_highstate` and a cron line do the
-same. Use the built-in scheduler when you want the schedule to travel with
+same. On OpenRC and sysvinit nothing ships, because a cron line alone is
+the whole of it: `halite-node state apply --local --config
+/etc/halite/node.yaml`, with exit status 2 (converged) counted as success. Use the built-in scheduler when you want the schedule to travel with
 the node, to change without a restart, or to catch up after an outage.
 
 ### Converging at boot
